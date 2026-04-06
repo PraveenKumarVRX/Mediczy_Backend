@@ -309,10 +309,14 @@ router.post('/register', registerLimiter, upload.array('documents', 5), async (r
       return res.status(409).json({ success: false, message: 'Email already registered' });
     }
 
-    // Upload registration documents to MinIO (optional — graceful fallback)
+    // Upload registration documents to MinIO — required, not optional
+    const { uploadToMinio } = await import('../../services/minio-upload.service.js');
     const registrationDocs = [];
     if (req.files?.length > 0) {
-      for (const file of req.files) {
+      for (let i = 0; i < req.files.length; i++) {
+        const file = req.files[i];
+        const docType = req.body[`docType_${i}`] || 'other';
+
         // ── Magic bytes validation (prevent MIME spoofing) ───────────────────
         if (!validateMagicBytes(file.buffer, file.mimetype)) {
           return res.status(400).json({
@@ -331,11 +335,23 @@ router.post('/register', registerLimiter, upload.array('documents', 5), async (r
           });
         }
 
-        try {
-          const { uploadToMinio } = await import('../../services/minio-upload.service.js');
-          const result = await uploadToMinio({ buffer: file.buffer, originalName: file.originalname, mimeType: file.mimetype, keyPrefix: 'registrations/clinic' });
-          if (result.success) registrationDocs.push({ name: file.originalname, url: result.url, key: result.key, size: file.size, uploadedAt: new Date() });
-        } catch (e) { console.warn('Clinic doc upload skipped:', e.message); }
+        // ── Upload to MinIO ─────────────────────────────────────────────────
+        const result = await uploadToMinio({
+          buffer: file.buffer,
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          keyPrefix: `registrations/clinic/${email.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
+        });
+        registrationDocs.push({
+          docType,
+          originalName: file.originalname,
+          url: result.url,
+          key: result.key,
+          bucket: result.bucket,
+          mimeType: file.mimetype,
+          size: file.size,
+          uploadedAt: new Date()
+        });
       }
     }
 
@@ -373,6 +389,20 @@ router.post('/register', registerLimiter, upload.array('documents', 5), async (r
         }
       });
       const submittedAt = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+      const fmtBytes = b => b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`;
+      const docRows = registrationDocs.length > 0
+        ? registrationDocs.map((d, i) => `
+            <tr style="${i % 2 === 0 ? '' : 'background:#f1f5f9'}">
+              <td style="padding:10px ${i % 2 === 0 ? '0' : '8px'};color:#64748b;font-weight:600;width:160px">${d.docType || 'Document ' + (i + 1)}</td>
+              <td style="padding:10px ${i % 2 === 0 ? '0' : '8px'};color:#0f172a">
+                <a href="${d.url}" target="_blank" style="color:#0d9488;text-decoration:none;font-weight:600">
+                  📎 ${d.originalName}
+                </a>
+                <span style="color:#94a3b8;font-size:11px;margin-left:8px">${fmtBytes(d.size)}</span>
+              </td>
+            </tr>`).join('')
+        : `<tr><td colspan="2" style="padding:10px 0;color:#94a3b8;font-style:italic">No documents uploaded</td></tr>`;
+
       await adminTransporter.sendMail({
         from: `"Mediczy Leads" <${process.env.SMTP_USER || 'support@mediqzy.com'}>`,
         to: 'info@mysmarthealth.in',
@@ -386,15 +416,23 @@ router.post('/register', registerLimiter, upload.array('documents', 5), async (r
             <div style="padding:28px 32px">
               <table style="width:100%;border-collapse:collapse;font-size:14px">
                 <tr><td style="padding:10px 0;color:#64748b;font-weight:600;width:160px">Clinic Name</td><td style="padding:10px 0;color:#0f172a;font-weight:700">${name}</td></tr>
-                <tr style="background:#f1f5f9;border-radius:6px"><td style="padding:10px 8px;color:#64748b;font-weight:600">Email</td><td style="padding:10px 8px;color:#0f172a"><a href="mailto:${email}" style="color:#0d9488;text-decoration:none">${email}</a></td></tr>
+                <tr style="background:#f1f5f9"><td style="padding:10px 8px;color:#64748b;font-weight:600">Email</td><td style="padding:10px 8px;color:#0f172a"><a href="mailto:${email}" style="color:#0d9488;text-decoration:none">${email}</a></td></tr>
                 <tr><td style="padding:10px 0;color:#64748b;font-weight:600">Phone</td><td style="padding:10px 0;color:#0f172a">+91 ${phone}</td></tr>
                 <tr style="background:#f1f5f9"><td style="padding:10px 8px;color:#64748b;font-weight:600">Clinic Type</td><td style="padding:10px 8px;color:#0f172a">${clinicType}</td></tr>
                 <tr><td style="padding:10px 0;color:#64748b;font-weight:600">City</td><td style="padding:10px 0;color:#0f172a">${city}${state ? ', ' + state : ''}</td></tr>
                 ${registrationNumber ? `<tr style="background:#f1f5f9"><td style="padding:10px 8px;color:#64748b;font-weight:600">Reg. Number</td><td style="padding:10px 8px;color:#0f172a">${registrationNumber}</td></tr>` : ''}
-                <tr><td style="padding:10px 0;color:#64748b;font-weight:600">Documents</td><td style="padding:10px 0;color:#0f172a">${registrationDocs.length} file(s) uploaded</td></tr>
               </table>
+
+              ${registrationDocs.length > 0 ? `
+              <div style="margin-top:20px">
+                <h3 style="margin:0 0 12px;font-size:13px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.08em">Uploaded Documents</h3>
+                <table style="width:100%;border-collapse:collapse;font-size:14px">
+                  ${docRows}
+                </table>
+              </div>` : ''}
+
               <div style="margin-top:24px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px">
-                <p style="margin:0;font-size:13px;color:#166534">✅ Registration ID: <strong>${clinic.id}</strong> — Status: <strong>Pending Review</strong></p>
+                <p style="margin:0;font-size:13px;color:#166534">✅ Registration ID: <strong>${clinic.id}</strong> — Status: <strong>Pending Review</strong> — ${registrationDocs.length} document(s) stored in MinIO</p>
               </div>
               <div style="margin-top:20px;text-align:center">
                 <a href="https://mediqzy.com/super-admin/clinics" style="display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#0d9488,#0891b2);color:#fff;font-weight:700;font-size:13px;border-radius:8px;text-decoration:none">View in Admin Panel →</a>
@@ -405,7 +443,7 @@ router.post('/register', registerLimiter, upload.array('documents', 5), async (r
             </div>
           </div>
         `,
-        text: `New Clinic Lead\n\nClinic: ${name}\nEmail: ${email}\nPhone: +91 ${phone}\nType: ${clinicType}\nCity: ${city}${state ? ', ' + state : ''}\nRegistration ID: ${clinic.id}\nSubmitted: ${submittedAt} IST`
+        text: `New Clinic Lead\n\nClinic: ${name}\nEmail: ${email}\nPhone: +91 ${phone}\nType: ${clinicType}\nCity: ${city}${state ? ', ' + state : ''}\nRegistration ID: ${clinic.id}\nSubmitted: ${submittedAt} IST\n\nDocuments:\n${registrationDocs.map(d => `- ${d.docType}: ${d.originalName} → ${d.url}`).join('\n') || 'None'}`
       });
       console.log(`Admin lead notification sent for clinic: ${name} (${email})`);
     } catch (mailErr) {
