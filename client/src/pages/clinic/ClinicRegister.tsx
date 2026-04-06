@@ -227,6 +227,9 @@ export default function ClinicRegister() {
   });
   const [doctorIdCard, setDoctorIdCard] = useState<File | null>(null);
   const doctorIdCardRef = useRef<HTMLInputElement>(null);
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const addressRef = useRef<HTMLInputElement>(null);
+  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const set = (k: keyof typeof form, v: string) => setForm(f => ({ ...f, [k]: v }));
 
   // — Email OTP state —
@@ -252,6 +255,60 @@ export default function ClinicRegister() {
     const t = setTimeout(() => setCountdown(c => c - 1), 1000);
     return () => clearTimeout(t);
   }, [countdown]);
+
+  // — Google Places Autocomplete —
+  const initAutocomplete = useCallback(() => {
+    if (!addressRef.current || !window.google?.maps?.places || autocompleteRef.current) return;
+    const ac = new window.google.maps.places.Autocomplete(addressRef.current, {
+      componentRestrictions: { country: "in" },
+      fields: ["formatted_address", "address_components", "geometry", "name"],
+      types: ["geocode", "establishment"],
+    });
+    ac.addListener("place_changed", () => {
+      const place = ac.getPlace();
+      if (!place.geometry?.location) return;
+      const lat = place.geometry.location.lat();
+      const lng = place.geometry.location.lng();
+      setCoords({ lat, lng });
+      let city = "", state = "";
+      for (const comp of place.address_components || []) {
+        if (comp.types.includes("locality")) city = comp.long_name;
+        else if (comp.types.includes("administrative_area_level_2") && !city) city = comp.long_name;
+        if (comp.types.includes("administrative_area_level_1")) state = comp.long_name;
+      }
+      setForm(f => ({
+        ...f,
+        address: place.formatted_address || f.address,
+        ...(city && { city }),
+        ...(state && { state }),
+      }));
+    });
+    autocompleteRef.current = ac;
+  }, []);
+
+  // Load Google Maps Places script once
+  useEffect(() => {
+    const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    if (!key) return;
+    if (window.google?.maps?.places) { initAutocomplete(); return; }
+    if (document.querySelector("script[data-gplaces]")) return;
+    // Inject pac-container z-index fix
+    const style = document.createElement("style");
+    style.textContent = ".pac-container { z-index: 9999 !important; }";
+    document.head.appendChild(style);
+    const s = document.createElement("script");
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places`;
+    s.async = true;
+    s.dataset.gplaces = "1";
+    s.onload = () => initAutocomplete();
+    document.head.appendChild(s);
+  }, [initAutocomplete]);
+
+  // Re-attach when step 2 mounts (autocomplete ref cleared on leave)
+  useEffect(() => {
+    if (step === 2) { initAutocomplete(); }
+    return () => { if (step === 2) { autocompleteRef.current = null; } };
+  }, [step, initAutocomplete]);
 
   // — Files —
   const addFiles = useCallback((files: FileList | null) => {
@@ -336,6 +393,7 @@ export default function ClinicRegister() {
   };
   const validateStep2 = () => {
     if (!form.phone.trim()) return setError("Phone number is required"), false;
+    if (!form.address.trim()) return setError("Clinic address is required"), false;
     if (!form.city.trim()) return setError("City is required"), false;
     if (!form.doctorName.trim()) return setError("Doctor name is required"), false;
     if (!form.doctorQualification.trim()) return setError("Doctor qualification is required"), false;
@@ -352,6 +410,7 @@ export default function ClinicRegister() {
     try {
       const fd = new FormData();
       Object.entries(form).forEach(([k, v]) => fd.append(k, v));
+      if (coords) { fd.append("lat", String(coords.lat)); fd.append("lng", String(coords.lng)); }
       uploadedFiles.forEach((u, i) => { fd.append("documents", u.file); fd.append(`docType_${i}`, u.docType); });
       if (doctorIdCard) fd.append("doctorIdCard", doctorIdCard);
       // Bot protection fields
@@ -654,18 +713,35 @@ export default function ClinicRegister() {
                     </select>
                   </DField>
 
+                  <DField label="Clinic Address" required hint="Start typing — select from Google suggestions to auto-fill city, state & coordinates">
+                    <div className="relative">
+                      <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none z-10" />
+                      <input
+                        ref={addressRef}
+                        type="text"
+                        value={form.address}
+                        onChange={e => { set("address", e.target.value); if (!e.target.value) setCoords(null); }}
+                        placeholder="Start typing your clinic address…"
+                        autoComplete="off"
+                        className="w-full h-11 bg-white/[0.04] border border-white/[0.09] rounded-xl text-white placeholder:text-slate-600 text-sm focus:outline-none focus:border-teal-500/50 focus:bg-white/[0.07] focus:ring-1 focus:ring-teal-500/25 transition-all pl-10 pr-4"
+                      />
+                    </div>
+                    {coords && (
+                      <p className="text-[11px] text-teal-400 mt-1.5 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3 h-3 shrink-0" />
+                        Coordinates captured: {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
+                      </p>
+                    )}
+                  </DField>
+
                   <div className="grid grid-cols-2 gap-3">
-                    <DField label="City">
+                    <DField label="City" hint="Auto-filled from address">
                       <DInput icon={MapPin} value={form.city} onChange={e => set("city", e.target.value)} placeholder="Bengaluru" />
                     </DField>
-                    <DField label="State">
+                    <DField label="State" hint="Auto-filled from address">
                       <DInput value={form.state} onChange={e => set("state", e.target.value)} placeholder="Karnataka" />
                     </DField>
                   </div>
-
-                  <DField label="Full Address">
-                    <DInput value={form.address} onChange={e => set("address", e.target.value)} placeholder="Street, Area, Landmark" />
-                  </DField>
 
                   <DField label="Clinic Registration Number" hint="Optional — MCI / State medical council registration">
                     <DInput value={form.registrationNumber} onChange={e => set("registrationNumber", e.target.value)} placeholder="MCI/State registration number" />

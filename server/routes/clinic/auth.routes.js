@@ -285,7 +285,9 @@ router.post('/register', registerLimiter, uploadFields, async (req, res) => {
       doctorRegNumber,
       medicalCouncil,
       _hp,          // honeypot — must be empty
-      _fat          // form-arrival-time (ms since epoch) — must be > 4s ago
+      _fat,         // form-arrival-time (ms since epoch) — must be > 4s ago
+      lat,
+      lng
     } = req.body;
 
     // ── Bot protection: honeypot ─────────────────────────────────────────────
@@ -426,6 +428,7 @@ router.post('/register', registerLimiter, uploadFields, async (req, res) => {
           medicalCouncil,
           idCard: doctorIdCardMeta
         },
+        coordinates: (lat && lng) ? { lat: parseFloat(lat), lng: parseFloat(lng) } : null,
         submittedAt: new Date()
       },
       status: 'pending',
