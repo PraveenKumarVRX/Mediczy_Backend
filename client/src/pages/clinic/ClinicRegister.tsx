@@ -179,7 +179,7 @@ function PrimaryBtn({ children, className = "", ...props }: React.ButtonHTMLAttr
         shadow-[0_4px_24px_rgba(20,184,166,0.35)] hover:shadow-[0_4px_36px_rgba(20,184,166,0.55)]
         hover:from-teal-400 hover:to-cyan-400 transition-all flex items-center justify-center gap-2
         disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
-    />
+    >{children}</button>
   );
 }
 
