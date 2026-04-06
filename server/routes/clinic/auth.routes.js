@@ -259,6 +259,58 @@ router.post('/register', authLimiter, upload.array('documents', 5), async (req, 
       registrationId: clinic.id,
       entityType: 'clinic'
     });
+
+    // ── Fire-and-forget: notify admin of new clinic lead ─────────────────
+    try {
+      const smtpPort = parseInt(process.env.SMTP_PORT) || 587;
+      const adminTransporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || 'smtp.gmail.com',
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: {
+          user: (process.env.SMTP_USER || '').trim(),
+          pass: (process.env.SMTP_PASSWORD || process.env.SMTP_PASS || '').trim()
+        }
+      });
+      const submittedAt = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+      await adminTransporter.sendMail({
+        from: `"Mediczy Leads" <${process.env.SMTP_USER || 'support@mediqzy.com'}>`,
+        to: 'info@mysmarthealth.in',
+        subject: `🏥 New Clinic Lead: ${name} — ${city || 'India'}`,
+        html: `
+          <div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;background:#f8fafc;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0">
+            <div style="background:linear-gradient(135deg,#0d9488,#0891b2);padding:28px 32px">
+              <h1 style="margin:0;color:#fff;font-size:20px;font-weight:800;letter-spacing:-0.3px">🏥 New Clinic Registration Lead</h1>
+              <p style="margin:6px 0 0;color:rgba(255,255,255,0.8);font-size:13px">Received on ${submittedAt} IST</p>
+            </div>
+            <div style="padding:28px 32px">
+              <table style="width:100%;border-collapse:collapse;font-size:14px">
+                <tr><td style="padding:10px 0;color:#64748b;font-weight:600;width:160px">Clinic Name</td><td style="padding:10px 0;color:#0f172a;font-weight:700">${name}</td></tr>
+                <tr style="background:#f1f5f9;border-radius:6px"><td style="padding:10px 8px;color:#64748b;font-weight:600">Email</td><td style="padding:10px 8px;color:#0f172a"><a href="mailto:${email}" style="color:#0d9488;text-decoration:none">${email}</a></td></tr>
+                <tr><td style="padding:10px 0;color:#64748b;font-weight:600">Phone</td><td style="padding:10px 0;color:#0f172a">+91 ${phone}</td></tr>
+                <tr style="background:#f1f5f9"><td style="padding:10px 8px;color:#64748b;font-weight:600">Clinic Type</td><td style="padding:10px 8px;color:#0f172a">${clinicType}</td></tr>
+                <tr><td style="padding:10px 0;color:#64748b;font-weight:600">City</td><td style="padding:10px 0;color:#0f172a">${city}${state ? ', ' + state : ''}</td></tr>
+                ${registrationNumber ? `<tr style="background:#f1f5f9"><td style="padding:10px 8px;color:#64748b;font-weight:600">Reg. Number</td><td style="padding:10px 8px;color:#0f172a">${registrationNumber}</td></tr>` : ''}
+                <tr><td style="padding:10px 0;color:#64748b;font-weight:600">Documents</td><td style="padding:10px 0;color:#0f172a">${registrationDocs.length} file(s) uploaded</td></tr>
+              </table>
+              <div style="margin-top:24px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px">
+                <p style="margin:0;font-size:13px;color:#166534">✅ Registration ID: <strong>${clinic.id}</strong> — Status: <strong>Pending Review</strong></p>
+              </div>
+              <div style="margin-top:20px;text-align:center">
+                <a href="https://mediqzy.com/super-admin/clinics" style="display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#0d9488,#0891b2);color:#fff;font-weight:700;font-size:13px;border-radius:8px;text-decoration:none">View in Admin Panel →</a>
+              </div>
+            </div>
+            <div style="padding:16px 32px;border-top:1px solid #e2e8f0;text-align:center">
+              <p style="margin:0;font-size:11px;color:#94a3b8">Mediczy · support@mediqzy.com · Bengaluru, India</p>
+            </div>
+          </div>
+        `,
+        text: `New Clinic Lead\n\nClinic: ${name}\nEmail: ${email}\nPhone: +91 ${phone}\nType: ${clinicType}\nCity: ${city}${state ? ', ' + state : ''}\nRegistration ID: ${clinic.id}\nSubmitted: ${submittedAt} IST`
+      });
+      console.log(`Admin lead notification sent for clinic: ${name} (${email})`);
+    } catch (mailErr) {
+      console.warn('Admin lead email failed (non-critical):', mailErr.message);
+    }
   } catch (error) {
     console.error('Clinic registration error:', error);
     res.status(500).json({ success: false, message: 'Registration failed', error: error.message });
