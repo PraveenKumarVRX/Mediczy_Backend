@@ -11,6 +11,7 @@ import { tmpdir } from 'os';
 import path from 'path';
 import { randomBytes } from 'crypto';
 import rateLimit from 'express-rate-limit';
+import { ipKeyGenerator } from 'express-rate-limit';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
@@ -39,7 +40,7 @@ const uploadFields = upload.fields([
 const registerLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 3,
-  keyGenerator: req => req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || '0.0.0.0',
+  keyGenerator: req => ipKeyGenerator(req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || '0.0.0.0'),
   handler: (req, res) => res.status(429).json({ success: false, message: 'Too many registration attempts. Please try again in an hour.' }),
   skipSuccessfulRequests: false
 });
