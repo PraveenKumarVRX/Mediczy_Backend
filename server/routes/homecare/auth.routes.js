@@ -1,21 +1,16 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import multer from 'multer';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import HomecareProvider from '../../models/postgres/homecare.model.postgres.js';
 import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
 import bcrypt from 'bcryptjs';
+import {
+  createUploadMiddleware, registerLimiter,
+  uploadDocuments, uploadIdCard, sendAdminLeadEmail, addOtpRoutes,
+} from '../shared/registrationHelpers.js';
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (_, file, cb) => {
-    const allowed = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    cb(null, allowed.includes(file.mimetype));
-  }
-});
-
+const hcUploadFields = createUploadMiddleware('contactIdCard');
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
 
@@ -134,77 +129,60 @@ router.post('/logout', (req, res) => {
 });
 
 /**
- * POST /api/homecare/register
- * Register a new homecare provider
+ * POST /api/homecare/register  (full security: bot-protection, ClamAV, MinIO, admin email)
  */
-router.post('/register', authLimiter, upload.array('documents', 5), async (req, res) => {
+router.post('/register', registerLimiter, hcUploadFields, async (req, res) => {
   try {
-    const {
-      name,
-      email,
-      password,
-      confirmPassword,
-      phone,
-      registrationNumber,
-      address,
-      city,
-      state,
-      serviceArea,
-      providerType = 'homecare'
-    } = req.body;
+    const { name, email, password, confirmPassword, phone, serviceType, city, state, address,
+            registrationNumber, coordinatorName, coordinatorQual, coordinatorCert,
+            _hp, _fat, lat, lng } = req.body;
 
-    if (!name || !email || !password || !phone) {
-      return res.status(400).json({ success: false, message: 'Name, email, password, and phone are required' });
-    }
-    if (password !== confirmPassword) {
+    if (_hp?.trim()) return res.status(201).json({ success: true });
+    if (_fat && Date.now() - parseInt(_fat, 10) < 4000) return res.status(201).json({ success: true });
+    if (!name || !email || !password || !phone || !city)
+      return res.status(400).json({ success: false, message: 'Name, email, password, phone, and city are required' });
+    if (!coordinatorName || !coordinatorQual)
+      return res.status(400).json({ success: false, message: 'Service Coordinator name and qualification are required' });
+    if (password !== confirmPassword)
       return res.status(400).json({ success: false, message: 'Passwords do not match' });
-    }
-    if (password.length < 8) {
+    if (password.length < 8)
       return res.status(400).json({ success: false, message: 'Password must be at least 8 characters' });
-    }
 
-    const normalizedEmail = String(email).toLowerCase();
+    const normalizedEmail = email.toLowerCase();
     const existing = await HomecareProvider.findOne({ where: { email: normalizedEmail } });
-    if (existing) {
-      return res.status(409).json({ success: false, message: 'Email already registered' });
-    }
+    if (existing) return res.status(409).json({ success: false, message: 'Email already registered' });
 
-    const registrationDocs = [];
-    if (req.files?.length > 0) {
-      for (const file of req.files) {
-        try {
-          const { uploadToMinio } = await import('../../services/minio-upload.service.js');
-          const result = await uploadToMinio({ buffer: file.buffer, originalName: file.originalname, mimeType: file.mimetype, keyPrefix: 'registrations/homecare' });
-          if (result.success) registrationDocs.push({ name: file.originalname, url: result.url, key: result.key, size: file.size, uploadedAt: new Date() });
-        } catch (e) { console.warn('Homecare doc upload skipped:', e.message); }
-      }
-    }
+    const emailKey = normalizedEmail.replace(/[^a-z0-9]/g, '_');
+    const docs   = await uploadDocuments({ files: req.files?.documents || [], emailKey, entityKey: 'homecare', req });
+    const idCard = await uploadIdCard({ file: req.files?.contactIdCard?.[0], emailKey, entityKey: 'homecare', req });
 
     const provider = await HomecareProvider.create({
-      name,
-      email: normalizedEmail,
-      password,
-      phone,
+      name, email: normalizedEmail, password, phone,
+      address: { street: address || '', city, state: state || '', zipCode: '',
+                 coordinates: lat && lng ? { lat: parseFloat(lat), lng: parseFloat(lng) } : null },
+      providerType: serviceType || 'Nursing Care',
       registrationNumber: registrationNumber || null,
-      address: address ? { street: address, city: city || '', state: state || '' } : {},
-      serviceAreas: serviceArea ? [{ city: serviceArea }] : [],
-      providerType,
-      metadata: { registrationDocs, submittedAt: new Date() },
-      status: 'pending',
-      isVerified: false,
-      isAvailable: false
+      metadata: { registrationDocs: docs,
+        primaryContact: { name: coordinatorName, qualification: coordinatorQual,
+                          certification: coordinatorCert || '', idCard },
+        submittedAt: new Date() },
+      status: 'pending', isVerified: false, isAvailable: false,
     });
 
-    res.status(201).json({
-      success: true,
-      message: 'Application submitted. Our team will review and activate your account within 24–48 hours.',
+    res.status(201).json({ success: true, message: 'Application submitted. Our team will review within 24–48 hours.', registrationId: provider.id, entityType: 'homecare' });
+
+    sendAdminLeadEmail({ entityLabel: 'Homecare', name, email: normalizedEmail, phone, city, state: state || '',
       registrationId: provider.id,
-      entityType: 'homecare'
-    });
-  } catch (error) {
-    console.error('Homecare registration error:', error);
-    res.status(500).json({ success: false, message: 'Registration failed', error: error.message });
+      extraRows: [['Service Type', serviceType || 'Nursing Care'], ['Coordinator', coordinatorName], ['Qualification', coordinatorQual]],
+      docs, idCardMeta: idCard });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+    console.error('Homecare registration error:', err);
+    res.status(500).json({ success: false, message: 'Registration failed', error: err.message });
   }
 });
+
+// OTP routes (send-email-otp, verify-email-otp, send-phone-otp, verify-phone-otp)
+addOtpRoutes(router, 'Homecare', '#f43f5e');
 
 export default router;

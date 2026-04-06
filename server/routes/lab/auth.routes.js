@@ -1,20 +1,14 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import multer from 'multer';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import Lab from '../../models/postgres/lab.model.postgres.js';
 import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
 import bcrypt from 'bcryptjs';
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (_, file, cb) => {
-    const allowed = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    cb(null, allowed.includes(file.mimetype));
-  }
-});
+import {
+  createUploadMiddleware, registerLimiter,
+  uploadDocuments, uploadIdCard, sendAdminLeadEmail, addOtpRoutes,
+} from '../shared/registrationHelpers.js';
 
 const router = express.Router();
 
@@ -132,75 +126,64 @@ router.post('/logout', (req, res) => {
   });
 });
 
+const labUploadFields = createUploadMiddleware('contactIdCard');
+
 /**
- * POST /api/lab/register
- * Register a new diagnostic laboratory
+ * POST /api/lab/register  (full security: bot-protection, ClamAV, MinIO, admin email)
  */
-router.post('/register', authLimiter, upload.array('documents', 5), async (req, res) => {
+router.post('/register', registerLimiter, labUploadFields, async (req, res) => {
   try {
-    const {
-      name,
-      email,
-      password,
-      confirmPassword,
-      phoneNumber,
-      licenseNumber,
-      address,
-      city,
-      state,
-      labType = 'Diagnostic'
-    } = req.body;
+    const { name, email, password, confirmPassword, phone, labType, city, state, address,
+            registrationNumber, directorName, directorQual, directorRegNo, medicalCouncil,
+            _hp, _fat, lat, lng } = req.body;
 
-    if (!name || !email || !password || !phoneNumber) {
-      return res.status(400).json({ success: false, message: 'Name, email, password, and phone are required' });
-    }
-    if (password !== confirmPassword) {
+    if (_hp?.trim()) return res.status(201).json({ success: true });
+    if (_fat && Date.now() - parseInt(_fat, 10) < 4000) return res.status(201).json({ success: true });
+    if (!name || !email || !password || !phone || !city)
+      return res.status(400).json({ success: false, message: 'Name, email, password, phone, and city are required' });
+    if (!directorName || !directorQual)
+      return res.status(400).json({ success: false, message: 'Lab Director name and qualification are required' });
+    if (password !== confirmPassword)
       return res.status(400).json({ success: false, message: 'Passwords do not match' });
-    }
-    if (password.length < 8) {
+    if (password.length < 8)
       return res.status(400).json({ success: false, message: 'Password must be at least 8 characters' });
-    }
 
-    const normalizedEmail = String(email).toLowerCase();
+    const normalizedEmail = email.toLowerCase();
     const existing = await Lab.findOne({ where: { email: normalizedEmail } });
-    if (existing) {
-      return res.status(409).json({ success: false, message: 'Email already registered' });
-    }
+    if (existing) return res.status(409).json({ success: false, message: 'Email already registered' });
 
-    const registrationDocs = [];
-    if (req.files?.length > 0) {
-      for (const file of req.files) {
-        try {
-          const { uploadToMinio } = await import('../../services/minio-upload.service.js');
-          const result = await uploadToMinio({ buffer: file.buffer, originalName: file.originalname, mimeType: file.mimetype, keyPrefix: 'registrations/lab' });
-          if (result.success) registrationDocs.push({ name: file.originalname, url: result.url, key: result.key, size: file.size, uploadedAt: new Date() });
-        } catch (e) { console.warn('Lab doc upload skipped:', e.message); }
-      }
-    }
+    const emailKey = normalizedEmail.replace(/[^a-z0-9]/g, '_');
+    const docs   = await uploadDocuments({ files: req.files?.documents || [], emailKey, entityKey: 'lab', req });
+    const idCard = await uploadIdCard({ file: req.files?.contactIdCard?.[0], emailKey, entityKey: 'lab', req });
 
     const lab = await Lab.create({
-      name,
-      email: normalizedEmail,
-      password,
-      phoneNumber,
-      licenseNumber: licenseNumber || null,
-      address: address ? { street: address, city: city || '', state: state || '' } : {},
-      labType,
-      metadata: { registrationDocs, submittedAt: new Date() },
-      status: 'pending',
-      isVerified: false
+      name, email: normalizedEmail, password, phoneNumber: phone,
+      address: { street: address || '', city, state: state || '', zipCode: '',
+                 coordinates: lat && lng ? { lat: parseFloat(lat), lng: parseFloat(lng) } : null },
+      labType: labType || 'Pathology',
+      registrationNumber: registrationNumber || null,
+      metadata: { registrationDocs: docs,
+        primaryContact: { name: directorName, qualification: directorQual,
+                          regNumber: directorRegNo || '', medicalCouncil: medicalCouncil || '', idCard },
+        submittedAt: new Date() },
+      status: 'pending', isVerified: false,
     });
 
-    res.status(201).json({
-      success: true,
-      message: 'Application submitted. Our team will review and activate your account within 24–48 hours.',
+    res.status(201).json({ success: true, message: 'Application submitted. Our team will review within 24–48 hours.', registrationId: lab.id, entityType: 'lab' });
+
+    sendAdminLeadEmail({ entityLabel: 'Lab', name, email: normalizedEmail, phone, city, state: state || '',
       registrationId: lab.id,
-      entityType: 'lab'
-    });
-  } catch (error) {
-    console.error('Lab registration error:', error);
-    res.status(500).json({ success: false, message: 'Registration failed', error: error.message });
+      extraRows: [['Lab Type', labType || 'Pathology'], ...(registrationNumber ? [['Reg. Number', registrationNumber]] : []),
+                  ['Director', directorName], ['Qualification', directorQual]],
+      docs, idCardMeta: idCard });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+    console.error('Lab registration error:', err);
+    res.status(500).json({ success: false, message: 'Registration failed', error: err.message });
   }
 });
+
+// OTP routes (send-email-otp, verify-email-otp, send-phone-otp, verify-phone-otp)
+addOtpRoutes(router, 'Lab', '#8b5cf6');
 
 export default router;

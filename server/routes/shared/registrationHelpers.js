@@ -1,0 +1,307 @@
+/**
+ * shared/registrationHelpers.js
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Common utilities for entity registration routes:
+ *   • multer config (files + id card)
+ *   • rate limiter
+ *   • magic-bytes validation
+ *   • ClamAV scanner
+ *   • OTP route installer (addOtpRoutes)
+ *   • MinIO document uploader (uploadDocuments)
+ *   • Admin lead email sender (sendAdminLeadEmail)
+ */
+
+import multer from 'multer';
+import rateLimit from 'express-rate-limit';
+import { ipKeyGenerator } from 'express-rate-limit';
+import { execFile } from 'child_process';
+import { writeFile, unlink } from 'fs/promises';
+import { tmpdir } from 'os';
+import path from 'path';
+import { randomBytes } from 'crypto';
+import nodemailer from 'nodemailer';
+import twilio from 'twilio';
+import OTP from '../../models/otp.model.intelligent.js';
+import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
+
+// ── Multer ────────────────────────────────────────────────────────────────────
+const ALLOWED_MIMES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+const DANGEROUS_EXT = /\.(php|js|exe|sh|bat|cmd|py|rb|pl|asp|aspx|jsp|cgi|msi|dll|so|elf)$/i;
+
+const _storage = multer.memoryStorage();
+const _filter = (_, file, cb) => {
+  if (!ALLOWED_MIMES.includes(file.mimetype)) return cb(new Error('Invalid file type. Only PDF, JPEG, PNG, WebP allowed.'));
+  if (DANGEROUS_EXT.test(file.originalname)) return cb(new Error('Suspicious file name rejected.'));
+  cb(null, true);
+};
+
+/**
+ * Returns a multer `upload.fields` middleware.
+ * @param {string} [idCardFieldName='contactIdCard'] - name attribute for optional ID card field
+ */
+export function createUploadMiddleware(idCardFieldName = 'contactIdCard') {
+  const upload = multer({
+    storage: _storage,
+    limits: { fileSize: 10 * 1024 * 1024, files: 6 },
+    fileFilter: _filter,
+  });
+  return upload.fields([
+    { name: 'documents', maxCount: 5 },
+    { name: idCardFieldName, maxCount: 1 },
+  ]);
+}
+
+// ── Rate limiter ──────────────────────────────────────────────────────────────
+export const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 3,
+  keyGenerator: req =>
+    ipKeyGenerator(req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || '0.0.0.0'),
+  handler: (_, res) =>
+    res.status(429).json({ success: false, message: 'Too many registration attempts. Please try again in an hour.' }),
+  skipSuccessfulRequests: false,
+});
+
+// ── Magic bytes validator ─────────────────────────────────────────────────────
+export function validateMagicBytes(buffer, mimetype) {
+  if (!buffer || buffer.length < 12) return false;
+  const b = buffer;
+  switch (mimetype) {
+    case 'application/pdf':      return b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46;
+    case 'image/jpeg':
+    case 'image/jpg':            return b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF;
+    case 'image/png':            return b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47;
+    case 'image/webp':           return b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+                                        b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50;
+    default:                     return false;
+  }
+}
+
+// ── ClamAV virus scanner ──────────────────────────────────────────────────────
+export async function scanWithClamAV(buffer, filename) {
+  const tmpPath = path.join(tmpdir(), `mediczy_scan_${randomBytes(12).toString('hex')}`);
+  try {
+    await writeFile(tmpPath, buffer);
+    return await new Promise(resolve => {
+      execFile('/usr/bin/clamscan', ['--no-summary', '--stdout', tmpPath], { timeout: 30000 }, (err, stdout) => {
+        if (err?.code === 1) {
+          const line = stdout?.split('\n').find(l => l.includes('FOUND')) || 'Malware detected';
+          resolve({ clean: false, threat: line.trim() });
+        } else {
+          if (err?.code === 2) console.warn(`ClamAV scan error for ${filename}:`, err.message);
+          resolve({ clean: true });
+        }
+      });
+    });
+  } finally {
+    unlink(tmpPath).catch(() => {});
+  }
+}
+
+// ── Helper: validate and upload files to MinIO ────────────────────────────────
+export async function uploadDocuments({ files, emailKey, entityKey, req }) {
+  const { uploadToMinio } = await import('../../services/minio-upload.service.js');
+  const docs = [];
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const docType = req.body[`docType_${i}`] || 'other';
+    if (!validateMagicBytes(file.buffer, file.mimetype)) {
+      throw { status: 400, message: `File "${file.originalname}" failed content validation. Ensure it is a genuine PDF or image.` };
+    }
+    const scan = await scanWithClamAV(file.buffer, file.originalname);
+    if (!scan.clean) {
+      console.error(`Malware detected in upload from IP ${req.ip}: ${scan.threat}`);
+      throw { status: 400, message: `File "${file.originalname}" was rejected by our virus scanner.` };
+    }
+    const result = await uploadToMinio({
+      buffer: file.buffer,
+      originalName: file.originalname,
+      mimeType: file.mimetype,
+      keyPrefix: `registrations/${entityKey}/${emailKey}`,
+    });
+    docs.push({ docType, originalName: file.originalname, url: result.url, key: result.key, bucket: result.bucket, mimeType: file.mimetype, size: file.size, uploadedAt: new Date() });
+  }
+  return docs;
+}
+
+export async function uploadIdCard({ file, emailKey, entityKey, req }) {
+  if (!file) return null;
+  const { uploadToMinio } = await import('../../services/minio-upload.service.js');
+  if (!validateMagicBytes(file.buffer, file.mimetype)) {
+    throw { status: 400, message: `ID card failed content validation.` };
+  }
+  const scan = await scanWithClamAV(file.buffer, file.originalname);
+  if (!scan.clean) throw { status: 400, message: `ID card was rejected by our virus scanner.` };
+  const result = await uploadToMinio({
+    buffer: file.buffer,
+    originalName: file.originalname,
+    mimeType: file.mimetype,
+    keyPrefix: `registrations/${entityKey}-id/${emailKey}`,
+  });
+  return { originalName: file.originalname, url: result.url, key: result.key, bucket: result.bucket, mimeType: file.mimetype, size: file.size, uploadedAt: new Date() };
+}
+
+// ── Admin notification email ──────────────────────────────────────────────────
+const fmtBytes = b => b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`;
+
+export async function sendAdminLeadEmail({ entityLabel, name, email, phone, city, state, registrationId, extraRows = [], docs = [], idCardMeta = null }) {
+  try {
+    const smtpPort = parseInt(process.env.SMTP_PORT) || 587;
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: smtpPort,
+      secure: smtpPort === 465,
+      auth: { user: (process.env.SMTP_USER || '').trim(), pass: (process.env.SMTP_PASSWORD || process.env.SMTP_PASS || '').trim() },
+    });
+    const submittedAt = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+    const docRows = docs.length > 0
+      ? docs.map((d, i) => `<tr style="${i % 2 === 0 ? '' : 'background:#f1f5f9'}"><td style="padding:10px 0;color:#64748b;font-weight:600;width:160px">${d.docType}</td><td style="padding:10px 0;color:#0f172a"><a href="${d.url}" style="color:#0d9488">${d.originalName}</a> <span style="color:#94a3b8;font-size:11px">${fmtBytes(d.size)}</span></td></tr>`).join('')
+      : '';
+    const extraTableRows = extraRows.map((r, i) => `<tr${i % 2 === 0 ? '' : ' style="background:#f1f5f9"'}><td style="padding:10px ${i % 2 === 0 ? '0' : '8px'};color:#64748b;font-weight:600;width:160px">${r[0]}</td><td style="padding:10px ${i % 2 === 0 ? '0' : '8px'};color:#0f172a">${r[1]}</td></tr>`).join('');
+
+    await transporter.sendMail({
+      from: `"Mediczy Leads" <${process.env.SMTP_USER || 'support@mediqzy.com'}>`,
+      to: 'info@mysmarthealth.in',
+      subject: `🏥 New ${entityLabel} Lead: ${name} — ${city || 'India'}`,
+      html: `
+        <div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;background:#f8fafc;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0">
+          <div style="background:linear-gradient(135deg,#0d9488,#0891b2);padding:28px 32px">
+            <h1 style="margin:0;color:#fff;font-size:20px;font-weight:800">🏥 New ${entityLabel} Registration</h1>
+            <p style="margin:6px 0 0;color:rgba(255,255,255,0.8);font-size:13px">Received on ${submittedAt} IST</p>
+          </div>
+          <div style="padding:28px 32px">
+            <table style="width:100%;border-collapse:collapse;font-size:14px">
+              <tr><td style="padding:10px 0;color:#64748b;font-weight:600;width:160px">${entityLabel} Name</td><td style="padding:10px 0;color:#0f172a;font-weight:700">${name}</td></tr>
+              <tr style="background:#f1f5f9"><td style="padding:10px 8px;color:#64748b;font-weight:600">Email</td><td style="padding:10px 8px;color:#0f172a"><a href="mailto:${email}" style="color:#0d9488">${email}</a></td></tr>
+              <tr><td style="padding:10px 0;color:#64748b;font-weight:600">Phone</td><td style="padding:10px 0;color:#0f172a">+91 ${phone}</td></tr>
+              <tr style="background:#f1f5f9"><td style="padding:10px 8px;color:#64748b;font-weight:600">Location</td><td style="padding:10px 8px;color:#0f172a">${city}${state ? ', ' + state : ''}</td></tr>
+              ${extraTableRows}
+            </table>
+            ${docs.length > 0 ? `<div style="margin-top:20px"><h3 style="margin:0 0 12px;font-size:13px;font-weight:800;color:#475569;text-transform:uppercase">Documents</h3><table style="width:100%;border-collapse:collapse;font-size:14px">${docRows}</table></div>` : ''}
+            ${idCardMeta ? `<div style="margin-top:16px"><p style="margin:0;font-size:14px;color:#64748b">ID Card: <a href="${idCardMeta.url}" style="color:#0d9488">${idCardMeta.originalName}</a></p></div>` : ''}
+            <div style="margin-top:24px;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px">
+              <p style="margin:0;font-size:13px;color:#166534">✅ Registration ID: <strong>${registrationId}</strong> — Status: <strong>Pending Review</strong></p>
+            </div>
+          </div>
+          <div style="padding:16px 32px;border-top:1px solid #e2e8f0;text-align:center">
+            <p style="margin:0;font-size:11px;color:#94a3b8">Mediczy · support@mediqzy.com</p>
+          </div>
+        </div>`,
+    });
+    console.log(`Admin lead notification sent for ${entityLabel}: ${name} (${email})`);
+  } catch (mailErr) {
+    console.warn(`Admin lead email failed (non-critical) for ${entityLabel}:`, mailErr.message);
+  }
+}
+
+// ── OTP route installer ───────────────────────────────────────────────────────
+/**
+ * Adds send-email-otp, verify-email-otp, send-phone-otp, verify-phone-otp
+ * endpoints to the given Express router.
+ * @param {import('express').Router} router
+ * @param {string} entityLabel - e.g. 'Lab', 'Pharmacy'
+ * @param {string} [accentColor='#0d9488']
+ */
+export function addOtpRoutes(router, entityLabel, accentColor = '#0d9488') {
+  // ─── Send Email OTP ────────────────────────────────────────────────────────
+  router.post('/send-email-otp', authLimiter, async (req, res) => {
+    const { email } = req.body;
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ success: false, message: 'Valid email required' });
+    }
+    try {
+      const otp = await OTP.generate({ email, purpose: 'registration', expiryMinutes: 10 });
+      const port = parseInt(process.env.SMTP_PORT) || 587;
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || 'smtp.gmail.com',
+        port,
+        secure: port === 465,
+        auth: { user: (process.env.SMTP_USER || '').trim(), pass: (process.env.SMTP_PASSWORD || process.env.SMTP_PASS || '').trim() },
+      });
+      await transporter.sendMail({
+        from: `"Mediczy" <${process.env.SMTP_USER || 'noreply@mediczy.com'}>`,
+        to: email,
+        subject: `${otp.code} — Your Mediczy Email Verification OTP`,
+        html: `
+          <div style="font-family:sans-serif;max-width:480px;margin:0 auto;background:#07101f;color:#e2e8f0;border-radius:16px;overflow:hidden">
+            <div style="background:linear-gradient(135deg,${accentColor},#0891b2);padding:28px 32px">
+              <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800">Mediczy ${entityLabel} Portal</h1>
+              <p style="margin:6px 0 0;color:rgba(255,255,255,0.8);font-size:14px">Email Verification</p>
+            </div>
+            <div style="padding:32px">
+              <p style="margin:0 0 24px;color:#94a3b8;font-size:14px">Use the OTP below to verify your email for ${entityLabel.toLowerCase()} registration.</p>
+              <div style="background:rgba(13,148,136,0.15);border:1px solid rgba(13,148,136,0.3);border-radius:12px;padding:24px;text-align:center;margin-bottom:24px">
+                <p style="margin:0 0 8px;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:2px">Your OTP</p>
+                <p style="margin:0;font-size:40px;font-weight:900;letter-spacing:12px;color:#2dd4bf">${otp.code}</p>
+              </div>
+              <p style="margin:0;color:#64748b;font-size:12px;text-align:center">Expires in 10 minutes. Do not share with anyone.</p>
+            </div>
+          </div>`,
+      });
+      res.json({ success: true, message: 'OTP sent to your email address' });
+    } catch (err) {
+      console.error(`${entityLabel} email OTP error:`, err.message);
+      res.status(500).json({ success: false, message: 'Failed to send OTP. Please try again.' });
+    }
+  });
+
+  // ─── Verify Email OTP ──────────────────────────────────────────────────────
+  router.post('/verify-email-otp', async (req, res) => {
+    const { email, code } = req.body;
+    if (!email || !code) return res.status(400).json({ success: false, message: 'Email and code required' });
+    try {
+      const result = await OTP.verify({ email, code, purpose: 'registration' });
+      if (result.success) return res.json({ success: true, message: 'Email verified successfully' });
+      return res.status(400).json({ success: false, message: result.message || 'Invalid or expired OTP' });
+    } catch (err) {
+      console.error(`${entityLabel} email OTP verify error:`, err.message);
+      res.status(500).json({ success: false, message: 'Verification failed' });
+    }
+  });
+
+  // ─── Send Phone OTP via WhatsApp ───────────────────────────────────────────
+  router.post('/send-phone-otp', authLimiter, async (req, res) => {
+    let { phone } = req.body;
+    if (!phone) return res.status(400).json({ success: false, message: 'Phone number required' });
+    phone = phone.replace(/\s+/g, '');
+    if (!phone.startsWith('+')) phone = `+91${phone.replace(/^0/, '')}`;
+    try {
+      const otp = await OTP.generate({ phone, purpose: 'registration', expiryMinutes: 10 });
+      const accountSid = process.env.TWILIO_ACCOUNT_SID;
+      const authToken  = process.env.TWILIO_AUTH_TOKEN;
+      const waFrom     = process.env.TWILIO_WHATSAPP_NUMBER;
+      if (accountSid && authToken && waFrom) {
+        const client = twilio(accountSid, authToken);
+        await client.messages.create({
+          from: waFrom,
+          to: `whatsapp:${phone}`,
+          contentSid: 'HX33ae0014bd63fad4404789d2373b6174',
+          contentVariables: JSON.stringify({ 1: otp.code }),
+        });
+        console.log(`✅ ${entityLabel} WhatsApp OTP → ${phone}`);
+      } else {
+        console.warn(`⚠️  Twilio not configured — ${entityLabel} OTP generated but not sent`);
+      }
+      res.json({ success: true, message: 'OTP sent via WhatsApp', phone });
+    } catch (err) {
+      console.error(`${entityLabel} phone OTP error:`, err.message);
+      res.status(500).json({ success: false, message: 'Failed to send OTP. Please verify your phone number.' });
+    }
+  });
+
+  // ─── Verify Phone OTP ──────────────────────────────────────────────────────
+  router.post('/verify-phone-otp', async (req, res) => {
+    let { phone, code } = req.body;
+    if (!phone || !code) return res.status(400).json({ success: false, message: 'Phone and code required' });
+    phone = phone.replace(/\s+/g, '');
+    if (!phone.startsWith('+')) phone = `+91${phone.replace(/^0/, '')}`;
+    try {
+      const result = await OTP.verify({ phone, code, purpose: 'registration' });
+      if (result.success) return res.json({ success: true, message: 'Phone verified successfully' });
+      return res.status(400).json({ success: false, message: result.message || 'Invalid or expired OTP' });
+    } catch (err) {
+      console.error(`${entityLabel} phone OTP verify error:`, err.message);
+      res.status(500).json({ success: false, message: 'Verification failed' });
+    }
+  });
+}

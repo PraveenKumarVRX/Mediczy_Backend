@@ -4,7 +4,12 @@ import { JWT_CONFIG } from '../../config/auth.config.js';
 import Ambulance from '../../models/postgres/ambulance.model.postgres.js';
 import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
+import {
+  createUploadMiddleware, registerLimiter,
+  uploadDocuments, uploadIdCard, sendAdminLeadEmail, addOtpRoutes,
+} from '../shared/registrationHelpers.js';
 
+const ambulanceUploadFields = createUploadMiddleware('contactIdCard');
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
 
@@ -113,5 +118,65 @@ router.post('/logout', (req, res) => {
     message: 'Logged out successfully'
   });
 });
+
+/**
+ * POST /api/ambulance/register
+ */
+router.post('/register', registerLimiter, ambulanceUploadFields, async (req, res) => {
+  try {
+    const { name, email, password, confirmPassword, phone, ambulanceType, city, state, address,
+            registrationNumber, managerName, managerPhone, vehicleRegNo,
+            _hp, _fat, lat, lng } = req.body;
+
+    if (_hp?.trim()) return res.status(201).json({ success: true });
+    if (_fat && Date.now() - parseInt(_fat, 10) < 4000) return res.status(201).json({ success: true });
+    if (!name || !email || !password || !phone || !city)
+      return res.status(400).json({ success: false, message: 'Provider name, email, password, phone, and city are required' });
+    if (!managerName)
+      return res.status(400).json({ success: false, message: 'Fleet Manager name is required' });
+    if (password !== confirmPassword)
+      return res.status(400).json({ success: false, message: 'Passwords do not match' });
+    if (password.length < 8)
+      return res.status(400).json({ success: false, message: 'Password must be at least 8 characters' });
+
+    const normalizedEmail = email.toLowerCase();
+    const existing = await Ambulance.findOne({ where: { email: normalizedEmail } });
+    if (existing) return res.status(409).json({ success: false, message: 'Email already registered' });
+
+    const emailKey = normalizedEmail.replace(/[^a-z0-9]/g, '_');
+    const docs   = await uploadDocuments({ files: req.files?.documents || [], emailKey, entityKey: 'ambulance', req });
+    const idCard = await uploadIdCard({ file: req.files?.contactIdCard?.[0], emailKey, entityKey: 'ambulance', req });
+
+    const ambulance = await Ambulance.create({
+      providerName: name, email: normalizedEmail, password, phone,
+      baseLocation: { street: address || '', city, state: state || '', zipCode: '',
+                      latitude: lat ? parseFloat(lat) : null, longitude: lng ? parseFloat(lng) : null },
+      ambulanceType: ambulanceType || 'BLS',
+      registrationNumber: registrationNumber || null,
+      metadata: {
+        registrationDocs: docs,
+        primaryContact: { name: managerName, phone: managerPhone || '', vehicleRegNo: vehicleRegNo || '', idCard },
+        submittedAt: new Date(),
+      },
+      status: 'pending', isVerified: false,
+    });
+
+    res.status(201).json({ success: true, message: 'Application submitted. Our team will review within 24–48 hours.', registrationId: ambulance.id, entityType: 'ambulance' });
+
+    sendAdminLeadEmail({ entityLabel: 'Ambulance Service', name, email: normalizedEmail, phone, city, state: state || '',
+      registrationId: ambulance.id,
+      extraRows: [['Service Type', ambulanceType || 'BLS'], ...(registrationNumber ? [['Reg. Number', registrationNumber]] : []),
+                  ['Fleet Manager', managerName], ...(managerPhone ? [['Manager Phone', managerPhone]] : []),
+                  ...(vehicleRegNo ? [['Vehicle Reg', vehicleRegNo]] : [])],
+      docs, idCardMeta: idCard });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+    console.error('Ambulance registration error:', err);
+    res.status(500).json({ success: false, message: 'Registration failed', error: err.message });
+  }
+});
+
+// OTP routes
+addOtpRoutes(router, 'Ambulance', '#f97316');
 
 export default router;

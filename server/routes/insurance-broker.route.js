@@ -7,122 +7,69 @@ import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
+import {
+  createUploadMiddleware, registerLimiter,
+  uploadDocuments, uploadIdCard, sendAdminLeadEmail, addOtpRoutes,
+} from './shared/registrationHelpers.js';
 
+const brokerUploadFields = createUploadMiddleware('contactIdCard');
 const router = express.Router();
 
 /**
  * Broker Registration
  * POST /api/insurance-broker/register
  */
-router.post('/register', async (req, res) => {
+router.post('/register', registerLimiter, brokerUploadFields, async (req, res) => {
   try {
-    const {
-      brokerName,
-      contactPersonName,
-      email,
-      password,
-      phoneNumber,
-      irdaiLicenseNumber,
-      licenseValidityDate,
-      panNumber,
-      gstin,
-      businessType,
-      officeAddress,
-      city,
-      state,
-      pincode,
-      specializations,
-      serviceAreas
-    } = req.body;
+    const { name, email, password, confirmPassword, phone, brokerType, city, state, address,
+            registrationNumber, contactPersonName, irdaiLicenseNumber, panNumber,
+            _hp, _fat, lat, lng } = req.body;
 
-    // Validate required fields
-    if (!brokerName || !contactPersonName || !email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Broker name, contact person, email, and password are required'
-      });
-    }
+    if (_hp?.trim()) return res.status(201).json({ success: true });
+    if (_fat && Date.now() - parseInt(_fat, 10) < 4000) return res.status(201).json({ success: true });
+    if (!name || !email || !password || !phone || !city)
+      return res.status(400).json({ success: false, message: 'Broker name, email, password, phone, and city are required' });
+    if (!contactPersonName)
+      return res.status(400).json({ success: false, message: 'Principal Broker name is required' });
+    if (password !== confirmPassword)
+      return res.status(400).json({ success: false, message: 'Passwords do not match' });
+    if (password.length < 8)
+      return res.status(400).json({ success: false, message: 'Password must be at least 8 characters' });
 
-    // Check if broker already exists
-    const existingBroker = await InsuranceBroker.findOne({ where: { email } });
-    if (existingBroker) {
-      return res.status(409).json({
-        success: false,
-        message: 'Broker with this email already exists'
-      });
-    }
+    const normalizedEmail = email.toLowerCase();
+    const existing = await InsuranceBroker.findOne({ where: { email: normalizedEmail } });
+    if (existing) return res.status(409).json({ success: false, message: 'Email already registered' });
 
-    // Check IRDAI license uniqueness
-    if (irdaiLicenseNumber) {
-      const existingLicense = await InsuranceBroker.findOne({
-        where: { irdaiLicenseNumber }
-      });
-      if (existingLicense) {
-        return res.status(409).json({
-          success: false,
-          message: 'This IRDAI license number is already registered'
-        });
-      }
-    }
+    const emailKey = normalizedEmail.replace(/[^a-z0-9]/g, '_');
+    const docs   = await uploadDocuments({ files: req.files?.documents || [], emailKey, entityKey: 'insurance-broker', req });
+    const idCard = await uploadIdCard({ file: req.files?.contactIdCard?.[0], emailKey, entityKey: 'insurance-broker', req });
 
-    // Create broker
     const broker = await InsuranceBroker.create({
-      brokerName,
-      contactPersonName,
-      email,
-      password,
-      phoneNumber,
-      irdaiLicenseNumber,
-      licenseValidityDate,
-      panNumber,
-      gstin,
-      businessType: businessType || 'individual',
-      officeAddress,
-      city,
-      state,
-      pincode,
-      specializations: specializations || [],
-      serviceAreas: serviceAreas || [],
-      status: 'active',
-      isVerified: false
-    });
-
-    // Generate JWT token
-    const token = jwt.sign(
-      {
-        id: broker.id,
-        email: broker.email,
-        role: 'broker',
-        userType: 'broker',
-        brokerId: broker.id
+      brokerName: name, contactPersonName, email: normalizedEmail, password, phoneNumber: phone,
+      officeAddress: address || '', city, state: state || '',
+      businessType: brokerType || 'Health',
+      irdaiLicenseNumber: irdaiLicenseNumber || null,
+      panNumber: panNumber || null,
+      registrationNumber: registrationNumber || null,
+      metadata: {
+        registrationDocs: docs,
+        primaryContact: { name: contactPersonName, irdaiLicenseNumber: irdaiLicenseNumber || '', panNumber: panNumber || '', idCard },
+        submittedAt: new Date(),
       },
-      JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
-    );
+      status: 'pending', isVerified: false,
+    });
 
-    res.status(201).json({
-      success: true,
-      message: 'Insurance broker registered successfully',
-      token,
-      broker: {
-        id: broker.id,
-        brokerName: broker.brokerName,
-        contactPersonName: broker.contactPersonName,
-        email: broker.email,
-        phoneNumber: broker.phoneNumber,
-        irdaiLicenseNumber: broker.irdaiLicenseNumber,
-        businessType: broker.businessType,
-        status: broker.status,
-        isVerified: broker.isVerified
-      }
-    });
-  } catch (error) {
-    console.error('Broker registration error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to register broker',
-      error: error.message
-    });
+    res.status(201).json({ success: true, message: 'Application submitted. Our team will review within 24–48 hours.', registrationId: broker.id, entityType: 'insurance-broker' });
+
+    sendAdminLeadEmail({ entityLabel: 'Insurance Broker', name, email: normalizedEmail, phone, city, state: state || '',
+      registrationId: broker.id,
+      extraRows: [['Broker Type', brokerType || 'Health'], ...(irdaiLicenseNumber ? [['IRDAI License', irdaiLicenseNumber]] : []),
+                  ...(panNumber ? [['PAN', panNumber]] : []), ['Contact Person', contactPersonName]],
+      docs, idCardMeta: idCard });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+    console.error('Broker registration error:', err);
+    res.status(500).json({ success: false, message: 'Registration failed', error: err.message });
   }
 });
 
@@ -807,5 +754,8 @@ router.get('/support', authUser, requireRole('broker'), async (req, res) => {
     });
   }
 });
+
+// OTP routes
+addOtpRoutes(router, 'Insurance Broker', '#f59e0b');
 
 export default router;

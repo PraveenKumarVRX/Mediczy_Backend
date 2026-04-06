@@ -6,20 +6,17 @@
 import express from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import multer from 'multer';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { Pharmacy } from '../models/index.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
+import {
+  createUploadMiddleware, registerLimiter,
+  uploadDocuments, uploadIdCard, sendAdminLeadEmail, addOtpRoutes,
+} from './shared/registrationHelpers.js';
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (_, file, cb) => {
-    const allowed = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    cb(null, allowed.includes(file.mimetype));
-  }
-});
+const pharmUploadFields = createUploadMiddleware('contactIdCard');
+
 import dashboardRouter from './pharmacy/dashboard.routes.js';
 import inventoryRouter from './pharmacy/inventory.routes.js';
 import posRouter from './pharmacy/pos.routes.js';
@@ -150,70 +147,59 @@ router.post('/login', authLimiter, async (req, res) => {
  * POST /api/pharmacy/register
  * Register new pharmacy
  */
-router.post('/register', async (req, res) => {
+/**
+ * POST /api/pharmacy/register  (full security: bot-protection, ClamAV, MinIO, admin email)
+ */
+router.post('/register', registerLimiter, pharmUploadFields, async (req, res) => {
   try {
-    const {
-      name,
-      email,
-      password,
-      phone,
-      licenseNumber,
-      address,
-      type = 'Retail',
-      city,
-      state
-    } = req.body;
+    const { name, email, password, confirmPassword, phone, pharmacyType, city, state, address,
+            registrationNumber, pharmacistName, pharmacistQual, pharmacistRegNo,
+            _hp, _fat, lat, lng } = req.body;
 
-    if (!name || !email || !password) {
-      return res.status(400).json({ success: false, message: 'Name, email, and password are required' });
-    }
+    if (_hp?.trim()) return res.status(201).json({ success: true });
+    if (_fat && Date.now() - parseInt(_fat, 10) < 4000) return res.status(201).json({ success: true });
+    if (!name || !email || !password || !phone || !city)
+      return res.status(400).json({ success: false, message: 'Pharmacy name, email, password, phone, and city are required' });
+    if (!pharmacistName)
+      return res.status(400).json({ success: false, message: 'Pharmacist-in-Charge name is required' });
+    if (password !== confirmPassword)
+      return res.status(400).json({ success: false, message: 'Passwords do not match' });
+    if (password.length < 8)
+      return res.status(400).json({ success: false, message: 'Password must be at least 8 characters' });
 
-    // Check if pharmacy exists
-    const existing = await Pharmacy.findOne({ where: { email: String(email).toLowerCase() } });
-    if (existing) {
-      return res.status(409).json({
-        success: false,
-        message: 'Email already registered'
-      });
-    }
+    const normalizedEmail = email.toLowerCase();
+    const existing = await Pharmacy.findOne({ where: { email: normalizedEmail } });
+    if (existing) return res.status(409).json({ success: false, message: 'Email already registered' });
 
-    const registrationDocs = [];
-    if (req.files?.length > 0) {
-      for (const file of req.files) {
-        try {
-          const { uploadToMinio } = await import('../services/minio-upload.service.js');
-          const result = await uploadToMinio({ buffer: file.buffer, originalName: file.originalname, mimeType: file.mimetype, keyPrefix: 'registrations/pharmacy' });
-          if (result.success) registrationDocs.push({ name: file.originalname, url: result.url, key: result.key, size: file.size, uploadedAt: new Date() });
-        } catch (e) { console.warn('Pharmacy doc upload skipped:', e.message); }
-      }
-    }
+    const emailKey = normalizedEmail.replace(/[^a-z0-9]/g, '_');
+    const docs   = await uploadDocuments({ files: req.files?.documents || [], emailKey, entityKey: 'pharmacy', req });
+    const idCard = await uploadIdCard({ file: req.files?.contactIdCard?.[0], emailKey, entityKey: 'pharmacy', req });
 
-    // Create pharmacy (model hook hashes password + status defaults to pending)
     const pharmacy = await Pharmacy.create({
-      name,
-      email: String(email).toLowerCase(),
-      password,
-      phoneNumber: phone,
-      licenseNumber: licenseNumber || null,
-      address: address ? { street: address, city: city || '', state: state || '' } : {},
-      pharmacyType: type,
-      metadata: { registrationDocs, submittedAt: new Date() },
-      status: 'pending'
+      name, email: normalizedEmail, password, phoneNumber: phone,
+      address: { street: address || '', city, state: state || '', zipCode: '',
+                 coordinates: lat && lng ? { lat: parseFloat(lat), lng: parseFloat(lng) } : null },
+      pharmacyType: pharmacyType || 'Retail',
+      registrationNumber: registrationNumber || null,
+      metadata: {
+        registrationDocs: docs,
+        primaryContact: { name: pharmacistName, qualification: pharmacistQual || '', regNumber: pharmacistRegNo || '', idCard },
+        submittedAt: new Date(),
+      },
+      status: 'pending', isVerified: false,
     });
 
-    res.status(201).json({
-      success: true,
-      message: 'Application submitted. Our team will review and activate your account within 24–48 hours.',
+    res.status(201).json({ success: true, message: 'Application submitted. Our team will review within 24–48 hours.', registrationId: pharmacy.id, entityType: 'pharmacy' });
+
+    sendAdminLeadEmail({ entityLabel: 'Pharmacy', name, email: normalizedEmail, phone, city, state: state || '',
       registrationId: pharmacy.id,
-      entityType: 'pharmacy'
-    });
-  } catch (error) {
-    console.error('Pharmacy registration error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Registration failed',
-      error: error.message
-    });
+      extraRows: [['Pharmacy Type', pharmacyType || 'Retail'], ...(registrationNumber ? [['Reg. Number', registrationNumber]] : []),
+                  ['Pharmacist', pharmacistName], ...(pharmacistQual ? [['Qualification', pharmacistQual]] : [])],
+      docs, idCardMeta: idCard });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+    console.error('Pharmacy registration error:', err);
+    res.status(500).json({ success: false, message: 'Registration failed', error: err.message });
   }
 });
 
@@ -252,5 +238,8 @@ router.get('/profile', async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to fetch profile', error: error.message });
   }
 });
+
+// OTP routes
+addOtpRoutes(router, 'Pharmacy', '#10b981');
 
 export default router;
