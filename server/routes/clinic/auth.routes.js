@@ -3,10 +3,13 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import { Sequelize } from 'sequelize';
+import nodemailer from 'nodemailer';
+import twilio from 'twilio';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
 import Hospital from '../../models/hospital.model.intelligent.js';
+import OTP from '../../models/otp.model.intelligent.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -259,6 +262,124 @@ router.post('/register', authLimiter, upload.array('documents', 5), async (req, 
   } catch (error) {
     console.error('Clinic registration error:', error);
     res.status(500).json({ success: false, message: 'Registration failed', error: error.message });
+  }
+});
+
+// ─── OTP: Send Email OTP for registration ───────────────────────────────────
+router.post('/send-email-otp', authLimiter, async (req, res) => {
+  const { email } = req.body;
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ success: false, message: 'Valid email required' });
+  }
+  try {
+    const otp = await OTP.generate({ email, purpose: 'registration', expiryMinutes: 10 });
+
+    // Send email
+    const port = parseInt(process.env.SMTP_PORT) || 587;
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port,
+      secure: port === 465,
+      auth: {
+        user: (process.env.SMTP_USER || '').trim(),
+        pass: (process.env.SMTP_PASSWORD || process.env.SMTP_PASS || '').trim()
+      }
+    });
+
+    const html = `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;background:#07101f;color:#e2e8f0;border-radius:16px;overflow:hidden">
+        <div style="background:linear-gradient(135deg,#0d9488,#0891b2);padding:28px 32px">
+          <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800">Mediczy Clinic Portal</h1>
+          <p style="margin:6px 0 0;color:rgba(255,255,255,0.8);font-size:14px">Email Verification</p>
+        </div>
+        <div style="padding:32px">
+          <p style="margin:0 0 24px;color:#94a3b8;font-size:14px">Use the OTP below to verify your email address for clinic registration.</p>
+          <div style="background:rgba(13,148,136,0.15);border:1px solid rgba(13,148,136,0.3);border-radius:12px;padding:24px;text-align:center;margin-bottom:24px">
+            <p style="margin:0 0 8px;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:2px">Your OTP</p>
+            <p style="margin:0;font-size:40px;font-weight:900;letter-spacing:12px;color:#2dd4bf">${otp.code}</p>
+          </div>
+          <p style="margin:0;color:#64748b;font-size:12px;text-align:center">This OTP expires in 10 minutes. Do not share it with anyone.</p>
+        </div>
+      </div>`;
+
+    await transporter.sendMail({
+      from: `"Mediczy" <${process.env.SMTP_USER || 'noreply@mediczy.com'}>`,
+      to: email,
+      subject: `${otp.code} — Your Mediczy Email Verification OTP`,
+      html
+    });
+
+    res.json({ success: true, message: 'OTP sent to your email address' });
+  } catch (err) {
+    console.error('Clinic email OTP error:', err.message);
+    res.status(500).json({ success: false, message: 'Failed to send OTP. Please try again.' });
+  }
+});
+
+// ─── OTP: Verify Email OTP ───────────────────────────────────────────────────
+router.post('/verify-email-otp', async (req, res) => {
+  const { email, code } = req.body;
+  if (!email || !code) return res.status(400).json({ success: false, message: 'Email and code required' });
+  try {
+    const result = await OTP.verify({ email, code, purpose: 'registration' });
+    if (result.success) return res.json({ success: true, message: 'Email verified successfully' });
+    return res.status(400).json({ success: false, message: result.message || 'Invalid or expired OTP' });
+  } catch (err) {
+    console.error('Clinic email OTP verify error:', err.message);
+    res.status(500).json({ success: false, message: 'Verification failed' });
+  }
+});
+
+// ─── OTP: Send Phone OTP via WhatsApp ────────────────────────────────────────
+router.post('/send-phone-otp', authLimiter, async (req, res) => {
+  let { phone } = req.body;
+  if (!phone) return res.status(400).json({ success: false, message: 'Phone number required' });
+
+  // Normalize phone to E.164
+  phone = phone.replace(/\s+/g, '');
+  if (!phone.startsWith('+')) phone = `+91${phone.replace(/^0/, '')}`;
+
+  try {
+    const otp = await OTP.generate({ phone, purpose: 'registration', expiryMinutes: 10 });
+
+    // Try WhatsApp via Twilio
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const whatsappFrom = process.env.TWILIO_WHATSAPP_NUMBER;
+
+    if (accountSid && authToken && whatsappFrom) {
+      const client = twilio(accountSid, authToken);
+      await client.messages.create({
+        from: whatsappFrom,
+        to: `whatsapp:${phone}`,
+        contentSid: 'HX33ae0014bd63fad4404789d2373b6174',
+        contentVariables: JSON.stringify({ 1: otp.code })
+      });
+      console.log(`✅ Clinic registration WhatsApp OTP → ${phone}`);
+    } else {
+      console.warn('⚠️  Twilio not configured — OTP generated but not sent via WhatsApp');
+    }
+
+    res.json({ success: true, message: 'OTP sent via WhatsApp', phone });
+  } catch (err) {
+    console.error('Clinic phone OTP error:', err.message);
+    res.status(500).json({ success: false, message: 'Failed to send OTP. Please verify your phone number.' });
+  }
+});
+
+// ─── OTP: Verify Phone OTP ───────────────────────────────────────────────────
+router.post('/verify-phone-otp', async (req, res) => {
+  let { phone, code } = req.body;
+  if (!phone || !code) return res.status(400).json({ success: false, message: 'Phone and code required' });
+  phone = phone.replace(/\s+/g, '');
+  if (!phone.startsWith('+')) phone = `+91${phone.replace(/^0/, '')}`;
+  try {
+    const result = await OTP.verify({ phone, code, purpose: 'registration' });
+    if (result.success) return res.json({ success: true, message: 'Phone verified successfully' });
+    return res.status(400).json({ success: false, message: result.message || 'Invalid or expired OTP' });
+  } catch (err) {
+    console.error('Clinic phone OTP verify error:', err.message);
+    res.status(500).json({ success: false, message: 'Verification failed' });
   }
 });
 
