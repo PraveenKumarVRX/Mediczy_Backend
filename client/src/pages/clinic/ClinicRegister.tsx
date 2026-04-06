@@ -25,7 +25,7 @@ interface UploadedFile { file: File; docType: string; }
 const fmtBytes = (b: number) => b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`;
 
 // ── OTP digit input ──────────────────────────────────────────────────────────
-function OtpInput({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
+function OtpInput({ value, onChange, disabled, status = "idle" }: { value: string; onChange: (v: string) => void; disabled?: boolean; status?: "idle" | "verifying" | "success" | "error" }) {
   const r0 = useRef<HTMLInputElement>(null);
   const r1 = useRef<HTMLInputElement>(null);
   const r2 = useRef<HTMLInputElement>(null);
@@ -82,7 +82,11 @@ function OtpInput({ value, onChange, disabled }: { value: string; onChange: (v: 
           onFocus={e => e.target.select()}
           className={`w-11 h-13 sm:w-12 sm:h-14 text-center text-xl font-bold rounded-xl border-2 transition-all duration-200 outline-none
             ${value[i]
-              ? "border-teal-400 bg-teal-500/10 text-teal-300 shadow-[0_0_14px_rgba(20,184,166,0.3)]"
+              ? status === "error"
+                ? "border-red-400 bg-red-500/10 text-red-300 shadow-[0_0_14px_rgba(239,68,68,0.3)]"
+                : status === "verifying"
+                ? "border-amber-400/60 bg-amber-500/10 text-amber-300"
+                : "border-teal-400 bg-teal-500/10 text-teal-300 shadow-[0_0_14px_rgba(20,184,166,0.3)]"
               : "border-white/12 bg-white/5 text-white focus:border-teal-500/60 focus:bg-white/8"}
             ${disabled ? "opacity-50 cursor-not-allowed" : ""}
           `}
@@ -135,10 +139,12 @@ function StepBar({ step }: { step: number }) {
 }
 
 // ── Reusable dark input ──────────────────────────────────────────────────────
-function DField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function DField({ label, hint, children, required }: { label: string; hint?: string; children: React.ReactNode; required?: boolean }) {
   return (
     <div>
-      <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-[0.12em] mb-1.5">{label}</label>
+      <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-[0.12em] mb-1.5">
+        {label}{required && <span className="text-red-400 ml-0.5">*</span>}
+      </label>
       {children}
       {hint && <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">{hint}</p>}
     </div>
@@ -224,6 +230,10 @@ export default function ClinicRegister() {
   const [phoneOtpLoading, setPhoneOtpLoading] = useState(false);
   const [phoneVerified, setPhoneVerified] = useState(false);
 
+  // — OTP inline status —
+  const [emailOtpStatus, setEmailOtpStatus] = useState<"idle"|"verifying"|"success"|"error">("idle");
+  const [phoneOtpStatus, setPhoneOtpStatus] = useState<"idle"|"verifying"|"success"|"error">("idle");
+
   // — Countdown for resend —
   const [countdown, setCountdown] = useState(0);
   useEffect(() => {
@@ -257,15 +267,20 @@ export default function ClinicRegister() {
   };
 
   // ── Verify Email OTP ──
-  const verifyEmailOtp = async () => {
-    if (emailOtp.length !== 6) return setError("Enter the complete 6-digit OTP");
+  const verifyEmailOtp = async (inlineCode?: string) => {
+    const code = inlineCode ?? emailOtp;
+    if (code.length !== 6) return setError("Enter the complete 6-digit OTP");
+    setEmailOtpStatus("verifying");
     setLoading(true); setError("");
     try {
-      await api.post("/clinic/verify-email-otp", { email: form.email, code: emailOtp }, { skipAuth: true } as any);
+      await api.post("/clinic/verify-email-otp", { email: form.email, code }, { skipAuth: true } as any);
+      setEmailOtpStatus("success");
       setEmailVerified(true);
       setTimeout(() => setStep(2), 700);
     } catch (e: any) {
+      setEmailOtpStatus("error");
       setError(e.response?.data?.message || "Incorrect OTP. Please try again.");
+      setTimeout(() => { setEmailOtp(""); setEmailOtpStatus("idle"); }, 1500);
     } finally { setLoading(false); }
   };
 
@@ -283,15 +298,20 @@ export default function ClinicRegister() {
   };
 
   // ── Verify Phone OTP ──
-  const verifyPhoneOtp = async () => {
-    if (phoneOtp.length !== 6) return setError("Enter the complete 6-digit OTP");
+  const verifyPhoneOtp = async (inlineCode?: string) => {
+    const code = inlineCode ?? phoneOtp;
+    if (code.length !== 6) return setError("Enter the complete 6-digit OTP");
+    setPhoneOtpStatus("verifying");
     setLoading(true); setError("");
     try {
-      await api.post("/clinic/verify-phone-otp", { phone: form.phone, code: phoneOtp }, { skipAuth: true } as any);
+      await api.post("/clinic/verify-phone-otp", { phone: form.phone, code }, { skipAuth: true } as any);
+      setPhoneOtpStatus("success");
       setPhoneVerified(true);
       setTimeout(() => setStep(4), 700);
     } catch (e: any) {
+      setPhoneOtpStatus("error");
       setError(e.response?.data?.message || "Incorrect OTP. Please try again.");
+      setTimeout(() => { setPhoneOtp(""); setPhoneOtpStatus("idle"); }, 1500);
     } finally { setLoading(false); }
   };
 
@@ -426,8 +446,30 @@ export default function ClinicRegister() {
                     <DInput icon={Building2} value={form.name} onChange={e => set("name", e.target.value)} placeholder="Apollo Clinic, Koramangala" />
                   </DField>
 
-                  <DField label="Email Address" hint="A verification OTP will be sent to this address">
-                    <DInput icon={Mail} type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="clinic@example.com" />
+                  <DField label="Email Address" required hint="A verification OTP will be sent to this address">
+                    <div className="relative">
+                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none z-10" />
+                      <input
+                        type="email" value={form.email}
+                        onChange={e => set("email", e.target.value)}
+                        placeholder="clinic@example.com"
+                        className={`w-full h-11 bg-white/[0.04] border rounded-xl text-white placeholder:text-slate-600 text-sm focus:outline-none focus:ring-1 transition-all pl-10 pr-10
+                          ${form.email.length > 0
+                            ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)
+                              ? "border-teal-500/50 focus:border-teal-500/70 focus:ring-teal-500/25"
+                              : "border-red-500/40 focus:border-red-500/60 focus:ring-red-500/20"
+                            : "border-white/[0.09] focus:border-teal-500/50 focus:ring-teal-500/25"
+                          }`}
+                      />
+                      {form.email.length > 0 && (
+                        <span className="absolute right-3.5 top-1/2 -translate-y-1/2">
+                          {/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)
+                            ? <CheckCircle2 className="w-4 h-4 text-teal-400" />
+                            : <AlertCircle className="w-4 h-4 text-red-400" />
+                          }
+                        </span>
+                      )}
+                    </div>
                   </DField>
 
                   <DField label="Password">
@@ -503,10 +545,24 @@ export default function ClinicRegister() {
                 ) : (
                   <div className="space-y-5">
                     <div className="text-center text-xs text-slate-600 mb-1">Enter the 6-digit code from your inbox</div>
-                    <OtpInput value={emailOtp} onChange={v => { setEmailOtp(v); setError(""); }} disabled={loading} />
-                    <PrimaryBtn onClick={verifyEmailOtp} disabled={loading || emailOtp.length < 6}>
-                      {loading ? <><RefreshCw className="w-4 h-4 animate-spin" /> Verifying…</> : <><CheckCircle2 className="w-4 h-4" /> Verify OTP</>}
-                    </PrimaryBtn>
+                    <OtpInput
+                      value={emailOtp}
+                      onChange={v => { setEmailOtp(v); setEmailOtpStatus("idle"); setError(""); if (v.length === 6) verifyEmailOtp(v); }}
+                      disabled={emailOtpStatus === "verifying" || emailOtpStatus === "success"}
+                      status={emailOtpStatus}
+                    />
+                    <div className="text-center min-h-[20px]">
+                      {emailOtpStatus === "verifying" && (
+                        <p className="text-amber-400 text-xs flex items-center justify-center gap-1.5">
+                          <RefreshCw className="w-3 h-3 animate-spin" /> Verifying…
+                        </p>
+                      )}
+                      {emailOtpStatus === "error" && (
+                        <p className="text-red-400 text-xs flex items-center justify-center gap-1.5">
+                          <AlertCircle className="w-3 h-3" /> Incorrect OTP — clearing in a moment
+                        </p>
+                      )}
+                    </div>
                     <div className="text-center">
                       {countdown > 0
                         ? <p className="text-slate-500 text-sm">Resend in <span className="text-teal-400 font-bold tabular-nums">{countdown}s</span></p>
@@ -533,7 +589,7 @@ export default function ClinicRegister() {
                 <ErrBanner msg={error} />
 
                 <div className="space-y-4">
-                  <DField label="Phone Number" hint="You'll receive a WhatsApp OTP to verify this number">
+                  <DField label="Phone Number" required hint="You'll receive a WhatsApp OTP to verify this number">
                     <div className="flex gap-2">
                       <div className="flex items-center gap-1.5 px-3 h-11 bg-white/[0.04] border border-white/[0.09] rounded-xl shrink-0">
                         <span className="text-base">🇮🇳</span>
@@ -545,8 +601,22 @@ export default function ClinicRegister() {
                           type="tel" value={form.phone}
                           onChange={e => set("phone", e.target.value.replace(/\D/g, "").slice(0, 10))}
                           placeholder="98765 43210"
-                          className="w-full h-11 bg-white/[0.04] border border-white/[0.09] rounded-xl text-white placeholder:text-slate-600 text-sm focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/25 transition-all pl-10 pr-4"
+                          className={`w-full h-11 bg-white/[0.04] border rounded-xl text-white placeholder:text-slate-600 text-sm focus:outline-none focus:ring-1 transition-all pl-10 pr-10
+                            ${form.phone.length > 0
+                              ? form.phone.length === 10
+                                ? "border-teal-500/50 focus:border-teal-500/70 focus:ring-teal-500/25"
+                                : "border-red-500/40 focus:border-red-500/60 focus:ring-red-500/20"
+                              : "border-white/[0.09] focus:border-teal-500/50 focus:ring-teal-500/25"
+                            }`}
                         />
+                        {form.phone.length > 0 && (
+                          <span className="absolute right-3.5 top-1/2 -translate-y-1/2">
+                            {form.phone.length === 10
+                              ? <CheckCircle2 className="w-4 h-4 text-teal-400" />
+                              : <AlertCircle className="w-4 h-4 text-red-400" />
+                            }
+                          </span>
+                        )}
                       </div>
                     </div>
                   </DField>
@@ -626,13 +696,24 @@ export default function ClinicRegister() {
                 ) : (
                   <div className="space-y-5">
                     <div className="text-center text-xs text-slate-600 mb-1">Enter the 6-digit code from WhatsApp</div>
-                    <OtpInput value={phoneOtp} onChange={v => { setPhoneOtp(v); setError(""); }} disabled={loading} />
-                    <button type="button" onClick={verifyPhoneOtp} disabled={loading || phoneOtp.length < 6}
-                      className="w-full h-12 rounded-2xl bg-[#25D366] hover:bg-[#22C55E] text-white font-bold text-sm
-                        shadow-[0_4px_24px_rgba(37,211,102,0.35)] transition-all flex items-center justify-center gap-2
-                        disabled:opacity-50 disabled:cursor-not-allowed">
-                      {loading ? <><RefreshCw className="w-4 h-4 animate-spin" /> Verifying…</> : <><CheckCircle2 className="w-4 h-4" /> Verify OTP</>}
-                    </button>
+                    <OtpInput
+                      value={phoneOtp}
+                      onChange={v => { setPhoneOtp(v); setPhoneOtpStatus("idle"); setError(""); if (v.length === 6) verifyPhoneOtp(v); }}
+                      disabled={phoneOtpStatus === "verifying" || phoneOtpStatus === "success"}
+                      status={phoneOtpStatus}
+                    />
+                    <div className="text-center min-h-[20px]">
+                      {phoneOtpStatus === "verifying" && (
+                        <p className="text-amber-400 text-xs flex items-center justify-center gap-1.5">
+                          <RefreshCw className="w-3 h-3 animate-spin" /> Verifying…
+                        </p>
+                      )}
+                      {phoneOtpStatus === "error" && (
+                        <p className="text-red-400 text-xs flex items-center justify-center gap-1.5">
+                          <AlertCircle className="w-3 h-3" /> Incorrect OTP — clearing in a moment
+                        </p>
+                      )}
+                    </div>
                     <div className="text-center">
                       {countdown > 0
                         ? <p className="text-slate-500 text-sm">Resend in <span className="text-[#25D366] font-bold tabular-nums">{countdown}s</span></p>
