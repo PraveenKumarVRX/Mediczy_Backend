@@ -19,7 +19,7 @@ import OTP from '../../models/otp.model.intelligent.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024, files: 5 },
+  limits: { fileSize: 10 * 1024 * 1024, files: 6 },
   fileFilter: (_, file, cb) => {
     const allowed = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
     // Reject disallowed MIME types
@@ -30,6 +30,10 @@ const upload = multer({
     cb(null, true);
   }
 });
+const uploadFields = upload.fields([
+  { name: 'documents', maxCount: 5 },
+  { name: 'doctorIdCard', maxCount: 1 },
+]);
 
 // ── Strict rate limiter for registration endpoint (3 attempts per IP per hour) ──
 const registerLimiter = rateLimit({
@@ -261,7 +265,7 @@ router.post('/logout', (req, res) => {
  * POST /api/clinic/register
  * Register a new clinic
  */
-router.post('/register', registerLimiter, upload.array('documents', 5), async (req, res) => {
+router.post('/register', registerLimiter, uploadFields, async (req, res) => {
   try {
     const {
       name,
@@ -274,6 +278,12 @@ router.post('/register', registerLimiter, upload.array('documents', 5), async (r
       city,
       state,
       registrationNumber,
+      doctorName,
+      doctorQualification,
+      doctorSpecialty,
+      systemOfMedicine,
+      doctorRegNumber,
+      medicalCouncil,
       _hp,          // honeypot — must be empty
       _fat          // form-arrival-time (ms since epoch) — must be > 4s ago
     } = req.body;
@@ -297,6 +307,12 @@ router.post('/register', registerLimiter, upload.array('documents', 5), async (r
     if (!name || !email || !password || !phone || !city) {
       return res.status(400).json({ success: false, message: 'Name, email, password, phone, and city are required' });
     }
+    if (!doctorName || !doctorQualification || !doctorSpecialty || !doctorRegNumber || !medicalCouncil) {
+      return res.status(400).json({ success: false, message: 'Doctor name, qualification, specialty, registration number, and medical council are required' });
+    }
+    if (!req.files?.doctorIdCard?.[0]) {
+      return res.status(400).json({ success: false, message: 'Doctor ID card upload is required' });
+    }
     if (password !== confirmPassword) {
       return res.status(400).json({ success: false, message: 'Passwords do not match' });
     }
@@ -312,9 +328,10 @@ router.post('/register', registerLimiter, upload.array('documents', 5), async (r
     // Upload registration documents to MinIO — required, not optional
     const { uploadToMinio } = await import('../../services/minio-upload.service.js');
     const registrationDocs = [];
-    if (req.files?.length > 0) {
-      for (let i = 0; i < req.files.length; i++) {
-        const file = req.files[i];
+    const docFiles = req.files?.documents || [];
+    if (docFiles.length > 0) {
+      for (let i = 0; i < docFiles.length; i++) {
+        const file = docFiles[i];
         const docType = req.body[`docType_${i}`] || 'other';
 
         // ── Magic bytes validation (prevent MIME spoofing) ───────────────────
@@ -355,6 +372,38 @@ router.post('/register', registerLimiter, upload.array('documents', 5), async (r
       }
     }
 
+    // Upload doctor ID card to MinIO
+    const idCardFile = req.files.doctorIdCard[0];
+    if (!validateMagicBytes(idCardFile.buffer, idCardFile.mimetype)) {
+      return res.status(400).json({
+        success: false,
+        message: `Doctor ID card failed content validation. Ensure it is a genuine PDF or image.`
+      });
+    }
+    const idCardScan = await scanWithClamAV(idCardFile.buffer, idCardFile.originalname);
+    if (!idCardScan.clean) {
+      console.error(`Malware in doctor ID card from IP ${req.ip}: ${idCardScan.threat}`);
+      return res.status(400).json({
+        success: false,
+        message: `Doctor ID card was rejected by our virus scanner. Please upload a clean file.`
+      });
+    }
+    const idCardUpload = await uploadToMinio({
+      buffer: idCardFile.buffer,
+      originalName: idCardFile.originalname,
+      mimeType: idCardFile.mimetype,
+      keyPrefix: `registrations/clinic-doctor-id/${email.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
+    });
+    const doctorIdCardMeta = {
+      originalName: idCardFile.originalname,
+      url: idCardUpload.url,
+      key: idCardUpload.key,
+      bucket: idCardUpload.bucket,
+      mimeType: idCardFile.mimetype,
+      size: idCardFile.size,
+      uploadedAt: new Date()
+    };
+
     const clinic = await Hospital.create({
       hospitalName: name,
       email: email.toLowerCase(),
@@ -364,7 +413,21 @@ router.post('/register', registerLimiter, upload.array('documents', 5), async (r
       state: state || '',
       address: address || '',
       registrationNumber: registrationNumber || null,
-      metadata: { clinicType, registeredAs: 'clinic', registrationDocs, submittedAt: new Date() },
+      metadata: {
+        clinicType,
+        registeredAs: 'clinic',
+        registrationDocs,
+        primaryDoctor: {
+          name: doctorName,
+          qualification: doctorQualification,
+          specialty: doctorSpecialty,
+          systemOfMedicine: systemOfMedicine || 'Allopathy',
+          regNumber: doctorRegNumber,
+          medicalCouncil,
+          idCard: doctorIdCardMeta
+        },
+        submittedAt: new Date()
+      },
       status: 'pending',
       isVerified: false
     });
@@ -423,6 +486,19 @@ router.post('/register', registerLimiter, upload.array('documents', 5), async (r
                 ${registrationNumber ? `<tr style="background:#f1f5f9"><td style="padding:10px 8px;color:#64748b;font-weight:600">Reg. Number</td><td style="padding:10px 8px;color:#0f172a">${registrationNumber}</td></tr>` : ''}
               </table>
 
+              <div style="margin-top:20px">
+                <h3 style="margin:0 0 12px;font-size:13px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.08em">Primary Doctor</h3>
+                <table style="width:100%;border-collapse:collapse;font-size:14px">
+                  <tr><td style="padding:10px 0;color:#64748b;font-weight:600;width:160px">Doctor Name</td><td style="padding:10px 0;color:#0f172a;font-weight:700">${doctorName}</td></tr>
+                  <tr style="background:#f1f5f9"><td style="padding:10px 8px;color:#64748b;font-weight:600">Qualification</td><td style="padding:10px 8px;color:#0f172a">${doctorQualification}</td></tr>
+                  <tr><td style="padding:10px 0;color:#64748b;font-weight:600">Specialty</td><td style="padding:10px 0;color:#0f172a">${doctorSpecialty}</td></tr>
+                  <tr style="background:#f1f5f9"><td style="padding:10px 8px;color:#64748b;font-weight:600">System</td><td style="padding:10px 8px;color:#0f172a">${systemOfMedicine || 'Allopathy'}</td></tr>
+                  <tr><td style="padding:10px 0;color:#64748b;font-weight:600">Reg. Number</td><td style="padding:10px 0;color:#0f172a">${doctorRegNumber}</td></tr>
+                  <tr style="background:#f1f5f9"><td style="padding:10px 8px;color:#64748b;font-weight:600">Medical Council</td><td style="padding:10px 8px;color:#0f172a">${medicalCouncil}</td></tr>
+                  <tr><td style="padding:10px 0;color:#64748b;font-weight:600">ID Card</td><td style="padding:10px 0;color:#0f172a"><a href="${doctorIdCardMeta.url}" target="_blank" style="color:#0d9488;text-decoration:none;font-weight:600">📎 ${doctorIdCardMeta.originalName}</a> <span style="color:#94a3b8;font-size:11px;margin-left:8px">${fmtBytes(doctorIdCardMeta.size)}</span></td></tr>
+                </table>
+              </div>
+
               ${registrationDocs.length > 0 ? `
               <div style="margin-top:20px">
                 <h3 style="margin:0 0 12px;font-size:13px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.08em">Uploaded Documents</h3>
@@ -443,7 +519,7 @@ router.post('/register', registerLimiter, upload.array('documents', 5), async (r
             </div>
           </div>
         `,
-        text: `New Clinic Lead\n\nClinic: ${name}\nEmail: ${email}\nPhone: +91 ${phone}\nType: ${clinicType}\nCity: ${city}${state ? ', ' + state : ''}\nRegistration ID: ${clinic.id}\nSubmitted: ${submittedAt} IST\n\nDocuments:\n${registrationDocs.map(d => `- ${d.docType}: ${d.originalName} → ${d.url}`).join('\n') || 'None'}`
+        text: `New Clinic Lead\n\nClinic: ${name}\nEmail: ${email}\nPhone: +91 ${phone}\nType: ${clinicType}\nCity: ${city}${state ? ', ' + state : ''}\nRegistration ID: ${clinic.id}\nSubmitted: ${submittedAt} IST\n\nDoctor: ${doctorName}\nQualification: ${doctorQualification}\nSpecialty: ${doctorSpecialty}\nSystem: ${systemOfMedicine || 'Allopathy'}\nDoctor Reg: ${doctorRegNumber}\nMedical Council: ${medicalCouncil}\nID Card: ${doctorIdCardMeta.url}\n\nDocuments:\n${registrationDocs.map(d => `- ${d.docType}: ${d.originalName} → ${d.url}`).join('\n') || 'None'}`
       });
       console.log(`Admin lead notification sent for clinic: ${name} (${email})`);
     } catch (mailErr) {

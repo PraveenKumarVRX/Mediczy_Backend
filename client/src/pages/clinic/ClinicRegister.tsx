@@ -6,6 +6,7 @@ import {
   Building2, Mail, Lock, Phone, MapPin, FileText, Upload, X, CheckCircle2,
   Eye, EyeOff, ChevronRight, AlertCircle, Stethoscope, Users, BookOpen,
   Shield, HeartPulse, Sparkles, ArrowLeft, MessageCircle, RefreshCw,
+  GraduationCap, UserCheck,
 } from "lucide-react";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -20,6 +21,10 @@ const REQUIRED_DOCS = [
   { id: "address_proof", label: "Address Proof",               hint: "Utility bill, lease agreement, or property document" },
 ];
 const STEPS = ["Account","Verify Email","Clinic Details","Verify Phone","Documents"];
+const SYSTEMS_OF_MEDICINE = [
+  "Allopathy","Homeopathy","Ayurveda","Unani","Siddha",
+  "Naturopathy","Yoga & Naturopathy","Dental","Veterinary","Other",
+];
 
 interface UploadedFile { file: File; docType: string; }
 const fmtBytes = (b: number) => b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`;
@@ -217,7 +222,11 @@ export default function ClinicRegister() {
     name: "", email: "", password: "", confirmPassword: "",
     phone: "", clinicType: "General Practice",
     city: "", state: "", address: "", registrationNumber: "",
+    doctorName: "", doctorQualification: "", doctorSpecialty: "",
+    systemOfMedicine: "Allopathy", doctorRegNumber: "", medicalCouncil: "",
   });
+  const [doctorIdCard, setDoctorIdCard] = useState<File | null>(null);
+  const doctorIdCardRef = useRef<HTMLInputElement>(null);
   const set = (k: keyof typeof form, v: string) => setForm(f => ({ ...f, [k]: v }));
 
   // — Email OTP state —
@@ -328,6 +337,12 @@ export default function ClinicRegister() {
   const validateStep2 = () => {
     if (!form.phone.trim()) return setError("Phone number is required"), false;
     if (!form.city.trim()) return setError("City is required"), false;
+    if (!form.doctorName.trim()) return setError("Doctor name is required"), false;
+    if (!form.doctorQualification.trim()) return setError("Doctor qualification is required"), false;
+    if (!form.doctorSpecialty.trim()) return setError("Doctor specialty is required"), false;
+    if (!form.doctorRegNumber.trim()) return setError("Doctor registration number is required"), false;
+    if (!form.medicalCouncil.trim()) return setError("Medical council name is required"), false;
+    if (!doctorIdCard) return setError("Doctor ID card upload is required"), false;
     return true;
   };
 
@@ -338,6 +353,7 @@ export default function ClinicRegister() {
       const fd = new FormData();
       Object.entries(form).forEach(([k, v]) => fd.append(k, v));
       uploadedFiles.forEach((u, i) => { fd.append("documents", u.file); fd.append(`docType_${i}`, u.docType); });
+      if (doctorIdCard) fd.append("doctorIdCard", doctorIdCard);
       // Bot protection fields
       fd.append("_hp", "");                                          // honeypot — always empty
       fd.append("_fat", String(formArrivalTime.current));            // form arrival time
@@ -651,8 +667,75 @@ export default function ClinicRegister() {
                     <DInput value={form.address} onChange={e => set("address", e.target.value)} placeholder="Street, Area, Landmark" />
                   </DField>
 
-                  <DField label="Registration Number" hint="Optional — MCI / State medical council registration">
+                  <DField label="Clinic Registration Number" hint="Optional — MCI / State medical council registration">
                     <DInput value={form.registrationNumber} onChange={e => set("registrationNumber", e.target.value)} placeholder="MCI/State registration number" />
+                  </DField>
+
+                  {/* ── Primary Doctor Information ── */}
+                  <div className="pt-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-px flex-1 bg-white/[0.07]" />
+                      <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-[0.12em] px-2">Primary Doctor</span>
+                      <div className="h-px flex-1 bg-white/[0.07]" />
+                    </div>
+                  </div>
+
+                  <DField label="Doctor Full Name" required>
+                    <DInput icon={UserCheck} value={form.doctorName} onChange={e => set("doctorName", e.target.value)} placeholder="Dr. Ramesh Kumar" />
+                  </DField>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <DField label="Qualification" required>
+                      <DInput icon={GraduationCap} value={form.doctorQualification} onChange={e => set("doctorQualification", e.target.value)} placeholder="MBBS, MD" />
+                    </DField>
+                    <DField label="Specialty" required>
+                      <DInput icon={Stethoscope} value={form.doctorSpecialty} onChange={e => set("doctorSpecialty", e.target.value)} placeholder="Cardiology" />
+                    </DField>
+                  </div>
+
+                  <DField label="System of Medicine" required>
+                    <select value={form.systemOfMedicine} onChange={e => set("systemOfMedicine", e.target.value)}
+                      className="w-full h-11 bg-white/[0.04] border border-white/[0.09] rounded-xl text-white text-sm px-4 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/25 transition-all appearance-none cursor-pointer">
+                      {SYSTEMS_OF_MEDICINE.map(s => <option key={s} className="bg-[#0f1f35] text-white">{s}</option>)}
+                    </select>
+                  </DField>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <DField label="Medical Reg. Number" required>
+                      <DInput icon={FileText} value={form.doctorRegNumber} onChange={e => set("doctorRegNumber", e.target.value)} placeholder="MCI/State reg. no." />
+                    </DField>
+                    <DField label="Medical Council" required>
+                      <DInput icon={Shield} value={form.medicalCouncil} onChange={e => set("medicalCouncil", e.target.value)} placeholder="Delhi Medical Council" />
+                    </DField>
+                  </div>
+
+                  <DField label="Doctor ID Card" required hint="Upload medical council ID, degree certificate, or registration card (PDF/JPG/PNG)">
+                    {doctorIdCard ? (
+                      <div className="flex items-center gap-3 p-3 bg-teal-500/[0.08] border border-teal-500/25 rounded-xl">
+                        <div className="w-9 h-9 bg-teal-500/20 rounded-lg flex items-center justify-center shrink-0">
+                          <FileText className="w-4 h-4 text-teal-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-white truncate">{doctorIdCard.name}</p>
+                          <p className="text-xs text-slate-500">{fmtBytes(doctorIdCard.size)}</p>
+                        </div>
+                        <button type="button" onClick={() => { setDoctorIdCard(null); if (doctorIdCardRef.current) doctorIdCardRef.current.value = ""; }}
+                          className="p-1.5 hover:bg-red-500/15 rounded-lg text-slate-500 hover:text-red-400 transition-colors">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div onClick={() => doctorIdCardRef.current?.click()}
+                        className="flex items-center gap-3 p-4 border border-dashed border-white/15 rounded-xl cursor-pointer hover:border-teal-500/40 hover:bg-teal-500/[0.03] transition-all">
+                        <Upload className="w-5 h-5 text-slate-600 shrink-0" />
+                        <div>
+                          <p className="text-sm text-slate-400 font-medium">Click to upload ID card</p>
+                          <p className="text-xs text-slate-600 mt-0.5">PDF, JPG, PNG · Max 10 MB</p>
+                        </div>
+                        <input ref={doctorIdCardRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden"
+                          onChange={e => { const f = e.target.files?.[0]; if (f && f.size <= 10 * 1024 * 1024) setDoctorIdCard(f); }} />
+                      </div>
+                    )}
                   </DField>
                 </div>
 
