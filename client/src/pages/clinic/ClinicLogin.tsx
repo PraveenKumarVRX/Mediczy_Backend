@@ -142,9 +142,12 @@ const ClinicLogin = () => {
               >
                 <Clock className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
                 <div>
-                  <p className="font-bold text-amber-300 text-sm">Account Under Review</p>
+                  <p className="font-bold text-amber-300 text-sm">Account Pending Admin Approval</p>
                   <p className="text-amber-400/80 text-xs mt-1 leading-relaxed">
-                    Your registration is pending approval. You'll receive login credentials by email within 24–48 hours.
+                    Your registration has been received and is awaiting review by our team. You'll receive an email at the address you registered with once your account is approved — typically within 24–48 hours.
+                  </p>
+                  <p className="text-amber-400/60 text-xs mt-1.5">
+                    Questions? Email <a href="mailto:support@mediqzy.com" className="underline text-amber-300">support@mediqzy.com</a>
                   </p>
                 </div>
               </motion.div>
