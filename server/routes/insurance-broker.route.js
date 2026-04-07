@@ -89,6 +89,38 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
+    // Demo/showcase credentials — works in all environments
+    const DEMO_BROKER_EMAILS = ['broker@mediczy.com', 'demo@mediczy.com', 'demo.broker@mediczy.com'];
+    const DEMO_BROKER_PASSWORDS = ['Broker123', 'Demo123', 'Insurance123'];
+    if (DEMO_BROKER_EMAILS.includes(normalizedEmail) && DEMO_BROKER_PASSWORDS.includes(password)) {
+      const demoPayload = {
+        id: 'demo-broker-001',
+        email: normalizedEmail,
+        role: 'broker',
+        userType: 'broker',
+        brokerId: 'demo-broker-001',
+      };
+      const token = jwt.sign(demoPayload, JWT_CONFIG.SECRET, { expiresIn: '7d' });
+      return res.json({
+        success: true,
+        message: 'Login successful',
+        token,
+        user: {
+          id: 'demo-broker-001',
+          brokerName: 'Mediczy Demo Broking Pvt Ltd',
+          contactPersonName: 'Demo Broker',
+          email: normalizedEmail,
+          phoneNumber: '+91 99999 00000',
+          irdaiLicenseNumber: 'IRDAI-HLT-CB-125-2024',
+          businessType: 'Health',
+          city: 'Mumbai',
+          state: 'Maharashtra',
+          status: 'active',
+        },
+        demo: true,
+      });
+    }
+
     // Find broker
     const broker = await InsuranceBroker.findOne({
       where: { email: normalizedEmail }

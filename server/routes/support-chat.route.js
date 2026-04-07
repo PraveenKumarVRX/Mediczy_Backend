@@ -578,7 +578,8 @@ router.post('/inbox/rooms/:roomId/send', async (req, res) => {
 
     const msgText = message.trim();
 
-    // Post message into RC livechat room — RC webhook will forward it to WhatsApp automatically
+    // Post message into RC livechat room — the RC livechat webhook will detect
+    // isLivechatRoom=true and forward it to WhatsApp via Twilio automatically.
     await omnichannelChatService.apiRequest(
       'post',
       `${omnichannelChatService.rocketChatUrl}/api/v1/chat.sendMessage`,
