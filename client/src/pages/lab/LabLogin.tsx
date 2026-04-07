@@ -22,7 +22,18 @@ const LabLogin = () => {
   useEffect(() => {
     const token = localStorage.getItem('labToken');
     if (token) {
-      console.log('✅ Lab already authenticated, redirecting...');
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        if (payload?.exp && Date.now() >= payload.exp * 1000) {
+          localStorage.removeItem('labToken');
+          setIsCheckingAuth(false);
+          return;
+        }
+      } catch {
+        localStorage.removeItem('labToken');
+        setIsCheckingAuth(false);
+        return;
+      }
       navigate('/lab/dashboard');
       return;
     }
@@ -196,25 +207,6 @@ const LabLogin = () => {
                     <ArrowRight className="ml-2 h-5 w-5" />
                   </>
                 )}
-              </Button>
-
-              <Button
-                type="button"
-                variant="outline"
-                disabled={loading}
-                className="w-full h-12 text-base"
-                onClick={() => {
-                  setEmail(demoCreds.email);
-                  setPassword(demoCreds.password);
-                  establishLabSession('lab-demo-offline-token', {
-                    id: 'lab_demo_offline',
-                    email: demoCreds.email,
-                    name: 'Demo Lab (Offline)',
-                  });
-                  navigate('/lab/dashboard', { replace: true });
-                }}
-              >
-                Use Demo Login
               </Button>
             </form>
             

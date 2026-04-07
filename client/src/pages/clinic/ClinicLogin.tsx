@@ -29,28 +29,6 @@ const ClinicLogin = () => {
     setError(null);
     setLoading(true);
     
-    console.log('Clinic login attempt:', { email, password: '***' });
-    
-    // Development mode bypass - allows login without backend (DEV only)
-    if (import.meta.env.DEV && email === 'clinic@mediczy.com' && password === 'Clinic123') {
-      console.log('🚀 Development mode: Using quick authentication bypass');
-      
-      localStorage.removeItem('token');
-      
-      localStorage.setItem('userType', 'clinic');
-      localStorage.setItem('clinicToken', 'dev-clinic-token');
-      localStorage.setItem('clinicData', JSON.stringify({
-        id: 'clinic_dev',
-        email: 'clinic@mediczy.com',
-        name: 'Sample Clinic',
-        type: 'Specialty Clinic'
-      }));
-      
-      setLoading(false);
-      navigate('/clinic/dashboard');
-      return;
-    }
-    
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);

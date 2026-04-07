@@ -16,7 +16,6 @@ import {
   CheckCircle2,
   Building2,
 } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
 
 const toSlug = (name: string) =>
@@ -30,34 +29,25 @@ const InsurancePortalLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const navigate = useNavigate();
-  const { toast } = useToast();
 
   const goToDashboard = (slug: string) => navigate(`/hospital/${slug}/insurance/dashboard`, { replace: true });
-
-  const setDemoSession = () => {
-    const demoData = {
-      id: 'demo-insurance-portal',
-      name: 'Mediqzy Insurance Portal Demo',
-      email: 'insurance@mediczy.com',
-      phone: '+91 99999 99999',
-      hospitalName: 'Mediqzy Demo Hospital',
-      city: 'Delhi',
-      state: 'Delhi',
-      role: 'insurance_desk',
-    };
-
-    const slug = toSlug(demoData.hospitalName);
-    localStorage.setItem('hospitalInsuranceToken', `demo-insurance-token-${Date.now()}`);
-    localStorage.setItem('hospitalInsuranceData', JSON.stringify(demoData));
-    localStorage.setItem('hospitalInsuranceSlug', slug);
-    localStorage.setItem('userType', 'hospitalInsurance');
-    toast({ title: 'Offline demo login', description: 'Loaded insurance portal demo session locally.' });
-    goToDashboard(slug);
-  };
 
   useEffect(() => {
     const token = localStorage.getItem('hospitalInsuranceToken');
     if (token) {
+      // Validate expiry before trusting the token
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        if (payload?.exp && Date.now() >= payload.exp * 1000) {
+          localStorage.removeItem('hospitalInsuranceToken');
+          setIsCheckingAuth(false);
+          return;
+        }
+      } catch {
+        localStorage.removeItem('hospitalInsuranceToken');
+        setIsCheckingAuth(false);
+        return;
+      }
       const slug = localStorage.getItem('hospitalInsuranceSlug') || 'hospital';
       goToDashboard(slug);
       return;
@@ -107,14 +97,6 @@ const InsurancePortalLogin = () => {
       goToDashboard(slug);
     } catch (err: any) {
       console.error('Insurance portal login error:', err);
-      const isDemoCredentials = email === 'insurance@mediczy.com' && password === 'Insurance123';
-
-      if (isDemoCredentials) {
-        setError(null);
-        setDemoSession();
-        return;
-      }
-
       if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
         setError('Request timeout. Please check your connection and try again.');
       } else {
@@ -241,11 +223,7 @@ const InsurancePortalLogin = () => {
                     {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
                   </button>
                 </div>
-                <div className="text-right">
-                  <span className="text-xs text-muted-foreground">
-                    Demo: insurance@mediczy.com / Insurance123
-                  </span>
-                </div>
+
               </div>
 
               <Button

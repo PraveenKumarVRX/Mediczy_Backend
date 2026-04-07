@@ -13,6 +13,7 @@ import { InsuranceBroker, AuditLog } from '../models/index.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
 const router = express.Router();
 
@@ -117,7 +118,7 @@ router.post(
       // Generate JWT token
       const token = jwt.sign(
         { id: aggregator.id, email: aggregator.email, role: 'aggregator' },
-        process.env.JWT_SECRET || 'your_jwt_secret',
+        JWT_CONFIG.SECRET,
         { expiresIn: '7d' }
       );
 
@@ -228,7 +229,7 @@ router.post(
       // Generate JWT token
       const token = jwt.sign(
         { id: aggregator.id, email: aggregator.email, role: 'aggregator' },
-        process.env.JWT_SECRET || 'your_jwt_secret',
+        JWT_CONFIG.SECRET,
         { expiresIn: '7d' }
       );
 

@@ -28,13 +28,6 @@ const verifyClinicToken = async (req, res, next) => {
       });
     }
 
-    // Allow dev-clinic-token for development
-    if (token === 'dev-clinic-token') {
-      req.clinic = { id: 'clinic_dev', name: 'Sample Clinic' };
-      req.clinicId = 'clinic_dev';
-      return next();
-    }
-
     const decoded = jwt.verify(token, JWT_SECRET);
 
     if (decoded.type !== 'clinic') {

@@ -65,15 +65,6 @@ const verifyHospitalToken = (req, res, next) => {
     return res.status(401).json({ success: false, message: 'Authentication required' });
   }
 
-  // Dev bypass token used by frontend seed login
-  if (token === 'dev-hospital-token') {
-    req.hospitalId = 1;  // Use numeric ID for dev mode
-    req.hospitalOrgId = 1;  // Organization ID for queries
-    req.hospitalName = 'Sample Hospital';
-    req.tenantId = 1;
-    return next();
-  }
-
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     const role = decoded.role || decoded.userType;

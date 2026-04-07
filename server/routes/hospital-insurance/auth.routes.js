@@ -8,6 +8,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import { authUser, requireRole } from '../../middleware/auth.middleware.js';
+import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
 
 const router = express.Router();
 
@@ -16,51 +17,12 @@ const router = express.Router();
  * Authenticates hospital insurance desk users
  * Uses the hospital user pool but grants insurance-specific claims
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ success: false, message: 'Email and password are required' });
-    }
-
-    // Demo/showcase credentials — works in all environments (including production)
-    // This is a presentation-ready demo login that does not require a DB record
-    const DEMO_EMAILS = ['insurance@mediczy.com', 'demo@mediczy.com'];
-    const DEMO_PASSWORDS = ['Insurance123', 'Hospital123', 'Demo123'];
-
-    if (DEMO_EMAILS.includes(email.toLowerCase().trim()) && DEMO_PASSWORDS.includes(password)) {
-      const demoPayload = {
-        id: 'demo-insurance-001',
-        email: email.toLowerCase().trim(),
-        role: 'hospital',
-        userType: 'hospital',
-        portal: 'insurance',
-        hospitalId: 'demo-hospital-001',
-        hospital_id: 'demo-hospital-001',
-        hospitalName: 'Mediczy Demo Hospital',
-      };
-
-      const token = jwt.sign(demoPayload, JWT_CONFIG.SECRET || process.env.JWT_SECRET || 'mediczy-secret', {
-        expiresIn: '24h',
-      });
-
-      return res.json({
-        success: true,
-        token,
-        user: {
-          id: demoPayload.id,
-          email: demoPayload.email,
-          name: demoPayload.hospitalName,
-          hospitalName: demoPayload.hospitalName,
-          role: 'insurance_desk',
-          portal: 'insurance',
-          city: 'Delhi',
-          state: 'Delhi',
-          phone: '+91 99999 99999',
-        },
-        demo: true,
-      });
     }
 
     // Try PostgreSQL hospital model first
@@ -84,7 +46,7 @@ router.post('/login', async (req, res) => {
     }
 
     if (!hospital) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials. Hospital not found.' });
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
     // Check password
@@ -108,13 +70,6 @@ router.post('/login', async (req, res) => {
       }
     }
 
-    // Dev bypass for demo credentials
-    if (!passwordValid && process.env.NODE_ENV !== 'production') {
-      if (password === 'Insurance123' || password === 'Hospital123' || password === 'Demo123') {
-        passwordValid = true;
-      }
-    }
-
     if (!passwordValid) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
@@ -129,7 +84,7 @@ router.post('/login', async (req, res) => {
       hospitalName: plain.name || plain.hospitalName,
     };
 
-    const token = jwt.sign(tokenPayload, JWT_CONFIG.SECRET || process.env.JWT_SECRET || 'mediczy-secret', {
+    const token = jwt.sign(tokenPayload, JWT_CONFIG.SECRET, {
       expiresIn: '24h',
     });
 
@@ -166,7 +121,7 @@ router.get('/verify', async (req, res) => {
     }
 
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-    const decoded = jwt.verify(token, JWT_CONFIG.SECRET || process.env.JWT_SECRET || 'mediczy-secret');
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
 
     res.json({
       success: true,

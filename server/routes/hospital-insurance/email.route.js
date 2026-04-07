@@ -23,6 +23,7 @@ const router = Router();
 // ─── Auth middleware for insurance portal ─────────────────────────────────────
 // The insurance JWT is stored under hospitalInsuranceToken and carries { portal:'insurance', hospitalId }
 import jwt from 'jsonwebtoken';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 
 function insuranceAuth(req, res, next) {
   const auth = req.headers.authorization || '';
@@ -30,10 +31,10 @@ function insuranceAuth(req, res, next) {
   if (!token) return res.status(401).json({ success: false, message: 'Insurance portal token required' });
 
   try {
-    const secret = process.env.JWT_SECRET || 'mediczy-secret';
+    const secret = JWT_CONFIG.SECRET;
     const decoded = jwt.verify(token, secret);
     req.insuranceUser = decoded;
-    req.hospitalId    = decoded.hospitalId || decoded.hospital_id || 'demo-hospital-001';
+    req.hospitalId    = decoded.hospitalId || decoded.hospital_id;
     next();
   } catch (err) {
     return res.status(401).json({ success: false, message: 'Invalid or expired token' });

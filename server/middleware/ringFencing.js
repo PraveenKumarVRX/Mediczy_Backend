@@ -692,13 +692,6 @@ const ringFencingMiddleware = (req, res, next) => {
 
   const token = authHeader.split(' ')[1];
 
-  // Allow dev tokens in development/testing (they'll be validated by route-specific middleware)
-  const devTokens = ['dev-clinic-token', 'dev-hospital-token', 'dev-lab-token', 'dev-pharmacy-token', 'dev-assistant-token', 'dev-nurse-token', 'dev-corporate-token'];
-  if (devTokens.includes(token)) {
-    console.log(`✅ Ring-fencing: Allowing dev token bypass for ${requestPath}`);
-    return next();
-  }
-
   try {
     // Verify and decode token
     const decoded = jwt.verify(token, JWT_SECRET);

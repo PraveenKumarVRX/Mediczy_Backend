@@ -6,6 +6,36 @@ import { getToken, getUserType } from "@/hooks/auth";
 import { profileProps, doctorProfileProps } from "@/lib/user.type";
 import "@/App.css";
 
+/**
+ * Decode a JWT and check whether its `exp` claim is in the past.
+ * Does NOT verify the signature — that is the server's responsibility.
+ * Returns true when the token is missing, malformed, or expired.
+ */
+const isTokenExpired = (token: string | null): boolean => {
+  if (!token) return true;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    if (!payload?.exp) return false; // no expiry claim — treat as valid
+    return Date.now() >= payload.exp * 1000;
+  } catch {
+    return true; // malformed token
+  }
+};
+
+/**
+ * Validate a portal token from localStorage.
+ * Removes it from storage and returns null if it is expired or absent.
+ */
+const getValidPortalToken = (key: string): string | null => {
+  const token = localStorage.getItem(key);
+  if (!token) return null;
+  if (isTokenExpired(token)) {
+    localStorage.removeItem(key);
+    return null;
+  }
+  return token;
+};
+
 interface AuthContextType {
   currentUser: profileProps | null;
   currentDoctor: doctorProfileProps | null;
@@ -105,8 +135,8 @@ export const AuthProvider = ({ children }) => {
     const isAdminRoute = location.pathname.startsWith('/admin');
     
     // Preload common tokens so we can reroute before generic login redirects
-    const adminToken = localStorage.getItem('adminToken');
-    const teamToken = localStorage.getItem('teamToken');
+    const adminToken = getValidPortalToken('adminToken');
+    const teamToken = getValidPortalToken('teamToken');
     
     // If an admin or team member is already authenticated and clicks a generic
     // appointments link, send them to their portal instead of the patient login.
@@ -177,7 +207,7 @@ export const AuthProvider = ({ children }) => {
     
     // Check team routes - require teamToken
     if (isTeamRoute) {
-      const teamToken = localStorage.getItem('teamToken');
+      const teamToken = getValidPortalToken('teamToken');
       if (!teamToken && location.pathname !== '/team/login' && location.pathname !== '/team-login') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/team/login", { replace: true });
@@ -189,7 +219,7 @@ export const AuthProvider = ({ children }) => {
     
     // Check nurse routes - require nurseToken
     if (isNurseRoute) {
-      const nurseToken = localStorage.getItem('nurseToken');
+      const nurseToken = getValidPortalToken('nurseToken');
       if (!nurseToken && location.pathname !== '/nurse/login') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/nurse/login", { replace: true });
@@ -201,7 +231,7 @@ export const AuthProvider = ({ children }) => {
     
     // Check assistant routes - require assistantToken
     if (isAssistantRoute) {
-      const assistantToken = localStorage.getItem('assistantToken');
+      const assistantToken = getValidPortalToken('assistantToken');
       if (!assistantToken && location.pathname !== '/assistant/login') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/assistant/login", { replace: true });
@@ -213,7 +243,7 @@ export const AuthProvider = ({ children }) => {
     
     // Check hospital insurance portal routes - require hospitalInsuranceToken
     if (isHospitalInsuranceRoute) {
-      const insuranceToken = localStorage.getItem('hospitalInsuranceToken');
+      const insuranceToken = getValidPortalToken('hospitalInsuranceToken');
       if (!insuranceToken && location.pathname !== '/hospital-insurance/login') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/hospital-insurance/login", { replace: true });
@@ -225,7 +255,7 @@ export const AuthProvider = ({ children }) => {
     
     // Check portal routes - require respective tokens
     if (isHospitalRoute) {
-      const hospitalToken = localStorage.getItem('hospitalToken');
+      const hospitalToken = getValidPortalToken('hospitalToken');
       if (!hospitalToken && location.pathname !== '/hospital/login') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/hospital/login", { replace: true });
@@ -236,7 +266,7 @@ export const AuthProvider = ({ children }) => {
     }
     
     if (isClinicRoute) {
-      const clinicToken = localStorage.getItem('clinicToken');
+      const clinicToken = getValidPortalToken('clinicToken');
       if (!clinicToken && location.pathname !== '/clinic/login' && location.pathname !== '/clinic/register') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/clinic/login", { replace: true });
@@ -247,7 +277,7 @@ export const AuthProvider = ({ children }) => {
     }
     
     if (isLabRoute) {
-      const labToken = localStorage.getItem('labToken');
+      const labToken = getValidPortalToken('labToken');
       if (!labToken && location.pathname !== '/lab/login' && location.pathname !== '/lab/register') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/lab/login", { replace: true });
@@ -258,7 +288,7 @@ export const AuthProvider = ({ children }) => {
     }
     
     if (isPharmacyRoute) {
-      const pharmacyToken = localStorage.getItem('pharmacyToken');
+      const pharmacyToken = getValidPortalToken('pharmacyToken');
       if (!pharmacyToken && location.pathname !== '/pharmacy/login' && location.pathname !== '/pharmacy/register') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/pharmacy/login", { replace: true });
@@ -269,7 +299,7 @@ export const AuthProvider = ({ children }) => {
     }
     
     if (isAmbulanceRoute) {
-      const ambulanceToken = localStorage.getItem('ambulanceToken');
+      const ambulanceToken = getValidPortalToken('ambulanceToken');
       if (!ambulanceToken && location.pathname !== '/ambulance/login') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/ambulance/login", { replace: true });

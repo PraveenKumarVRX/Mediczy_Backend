@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Pill, Eye, EyeOff, Activity, Lock, ArrowRight, CheckCircle2, Clock } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
 
 const PharmacyLogin = () => {
@@ -18,27 +17,22 @@ const PharmacyLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const navigate = useNavigate();
-  const { toast } = useToast();
-
-  const setDemoSession = () => {
-    const demoPharmacy = {
-      id: 'demo-pharmacy',
-      name: 'Mediczy Pharmacy Demo',
-      email: 'pharmacy@mediczy.com',
-      phone: '+91 99999 99999',
-      city: 'Delhi',
-      state: 'Delhi',
-    };
-
-    localStorage.setItem('pharmacyToken', `demo-pharmacy-token-${Date.now()}`);
-    localStorage.setItem('pharmacyData', JSON.stringify(demoPharmacy));
-    toast({ title: 'Offline demo login', description: 'Loaded pharmacy demo session locally.' });
-    navigate('/pharmacy/dashboard');
-  };
 
   useEffect(() => {
     const token = localStorage.getItem('pharmacyToken');
     if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        if (payload?.exp && Date.now() >= payload.exp * 1000) {
+          localStorage.removeItem('pharmacyToken');
+          setIsCheckingAuth(false);
+          return;
+        }
+      } catch {
+        localStorage.removeItem('pharmacyToken');
+        setIsCheckingAuth(false);
+        return;
+      }
       navigate('/pharmacy/dashboard');
       return;
     }
@@ -102,15 +96,6 @@ const PharmacyLogin = () => {
     } catch (err: any) {
       console.error('Pharmacy login error:', err);
       if (err?.response?.data?.pending) { setIsPending(true); return; }
-      const isDemoCredentials = email === 'pharmacy@mediczy.com' && password === 'Pharmacy123';
-
-      // Allow offline demo login when API is unavailable
-      if (isDemoCredentials) {
-        setError(null);
-        setDemoSession();
-        return;
-      }
-
       if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
         setError('Request timeout. Please check your connection and try again.');
       } else {
