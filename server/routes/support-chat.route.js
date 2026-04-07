@@ -9,6 +9,17 @@ import omnichannelChatService from '../services/omnichannel-chat.service.js';
 import userModel from '../models/user.model.intelligent.js';
 import sharedPool from '../db/pgPool.js';
 
+// Middleware that requires a valid JWT AND a team/admin role.
+// Applied to all /inbox/* routes (support agents only).
+const authInbox = [
+  authUser,
+  (req, res, next) => {
+    const role = req.userRole;
+    if (role === 'team' || role === 'admin') return next();
+    return res.status(403).json({ success: false, message: 'Support team access required' });
+  }
+];
+
 const router = express.Router();
 
 // ============================================================================
@@ -386,17 +397,8 @@ router.post('/webhook/rocketchat', async (req, res) => {
   try {
     const webhookData = req.body;
 
-    // Debug: Log the FULL webhook payload with complete structure
-    console.log('🔔 [RC Webhook] Full payload keys:', Object.keys(webhookData));
-    console.log('🔔 [RC Webhook] Payload:', JSON.stringify(webhookData, null, 2));
-    
-    // Log individual fields for clarity
-    if (webhookData.message) {
-      console.log('🔔 [RC Webhook] Message object:', JSON.stringify(webhookData.message, null, 2).substring(0, 300));
-    }
-    if (webhookData.room) {
-      console.log('🔔 [RC Webhook] Room object:', JSON.stringify(webhookData.room, null, 2).substring(0, 300));
-    }
+    // Log only non-sensitive summary fields
+    console.log('🔔 [RC Webhook] Event received:', webhookData.type || webhookData.event || 'unknown');
 
     // Forward agent message to WhatsApp if applicable
     const result = await omnichannelChatService.sendToWhatsApp(webhookData);
@@ -465,7 +467,7 @@ router.get('/agents', async (req, res) => {
  * GET /api/support/inbox/conversations
  * Return open RC livechat rooms for the WhatsApp inbox UI
  */
-router.get('/inbox/conversations', async (req, res) => {
+router.get('/inbox/conversations', ...authInbox, async (req, res) => {
   try {
     const { count = 50, offset = 0, open = 'true' } = req.query;
     const rooms = await omnichannelChatService.getLivechatRooms({
@@ -538,7 +540,7 @@ router.get('/inbox/conversations', async (req, res) => {
  * GET /api/support/inbox/rooms/:roomId/messages
  * Fetch messages in a specific livechat room
  */
-router.get('/inbox/rooms/:roomId/messages', async (req, res) => {
+router.get('/inbox/rooms/:roomId/messages', ...authInbox, async (req, res) => {
   try {
     const { roomId } = req.params;
     const { count = 50, offset = 0 } = req.query;
@@ -570,7 +572,7 @@ router.get('/inbox/rooms/:roomId/messages', async (req, res) => {
  * POST /api/support/inbox/rooms/:roomId/send
  * Agent sends a message to a livechat room AND directly forwards to WhatsApp
  */
-router.post('/inbox/rooms/:roomId/send', async (req, res) => {
+router.post('/inbox/rooms/:roomId/send', ...authInbox, async (req, res) => {
   try {
     const { roomId } = req.params;
     const { message, phone } = req.body;
@@ -601,7 +603,7 @@ router.post('/inbox/rooms/:roomId/send', async (req, res) => {
  * POST /api/support/inbox/rooms/:roomId/close
  * Close a livechat room as agent
  */
-router.post('/inbox/rooms/:roomId/close', async (req, res) => {
+router.post('/inbox/rooms/:roomId/close', ...authInbox, async (req, res) => {
   try {
     const { roomId } = req.params;
     await omnichannelChatService.apiRequest(
@@ -620,7 +622,7 @@ router.post('/inbox/rooms/:roomId/close', async (req, res) => {
  * POST /api/support/inbox/rooms/:roomId/note
  * Post an internal note (displayed in RC, NOT sent to WhatsApp customer)
  */
-router.post('/inbox/rooms/:roomId/note', async (req, res) => {
+router.post('/inbox/rooms/:roomId/note', ...authInbox, async (req, res) => {
   try {
     const { roomId } = req.params;
     const { text } = req.body;
@@ -641,7 +643,7 @@ router.post('/inbox/rooms/:roomId/note', async (req, res) => {
  * GET /api/support/inbox/canned-responses
  * List canned responses (RC API + custom Redis-stored ones)
  */
-router.get('/inbox/canned-responses', async (req, res) => {
+router.get('/inbox/canned-responses', ...authInbox, async (req, res) => {
   try {
     let cannedList = [];
     try {
@@ -672,7 +674,7 @@ router.get('/inbox/canned-responses', async (req, res) => {
  * POST /api/support/inbox/canned-responses
  * Create a custom canned response (stored in Redis)
  */
-router.post('/inbox/canned-responses', async (req, res) => {
+router.post('/inbox/canned-responses', ...authInbox, async (req, res) => {
   try {
     const { shortcut, text } = req.body;
     if (!shortcut?.trim() || !text?.trim()) {
@@ -692,7 +694,7 @@ router.post('/inbox/canned-responses', async (req, res) => {
  * DELETE /api/support/inbox/canned-responses/:id
  * Delete a custom canned response from Redis
  */
-router.delete('/inbox/canned-responses/:id', async (req, res) => {
+router.delete('/inbox/canned-responses/:id', ...authInbox, async (req, res) => {
   try {
     const { id } = req.params;
     const { cache } = await import('../db/redis.js');
@@ -708,7 +710,7 @@ router.delete('/inbox/canned-responses/:id', async (req, res) => {
  * GET /api/support/inbox/templates
  * List WhatsApp message templates (built-in + custom from Redis)
  */
-router.get('/inbox/templates', async (req, res) => {
+router.get('/inbox/templates', ...authInbox, async (req, res) => {
   try {
     const builtIn = [
       {
@@ -758,7 +760,7 @@ router.get('/inbox/templates', async (req, res) => {
  * POST /api/support/inbox/broadcast
  * Send a WhatsApp message to multiple phone numbers
  */
-router.post('/inbox/broadcast', async (req, res) => {
+router.post('/inbox/broadcast', ...authInbox, async (req, res) => {
   try {
     const { phones, message } = req.body;
     if (!Array.isArray(phones) || !phones.length || !message?.trim()) {
@@ -792,7 +794,7 @@ router.post('/inbox/broadcast', async (req, res) => {
  * PUT /api/support/inbox/rooms/:roomId/tags
  * Update labels/tags for a conversation (stored in Redis)
  */
-router.put('/inbox/rooms/:roomId/tags', async (req, res) => {
+router.put('/inbox/rooms/:roomId/tags', ...authInbox, async (req, res) => {
   try {
     const { roomId } = req.params;
     const { tags } = req.body;
@@ -811,7 +813,7 @@ router.put('/inbox/rooms/:roomId/tags', async (req, res) => {
  * GET /api/support/inbox/rooms/:roomId/profile
  * Get contact profile, SLA metrics, tag history, and conversation count
  */
-router.get('/inbox/rooms/:roomId/profile', async (req, res) => {
+router.get('/inbox/rooms/:roomId/profile', ...authInbox, async (req, res) => {
   try {
     const { roomId } = req.params;
     let room = null;
@@ -896,7 +898,7 @@ router.get('/inbox/rooms/:roomId/profile', async (req, res) => {
  * POST /api/support/inbox/rooms/:roomId/send-media
  * Send a media file (image/doc/audio/video URL) via Twilio WhatsApp, posted to RC too
  */
-router.post('/inbox/rooms/:roomId/send-media', async (req, res) => {
+router.post('/inbox/rooms/:roomId/send-media', ...authInbox, async (req, res) => {
   try {
     const { roomId } = req.params;
     const { mediaUrl, caption = '', phone } = req.body;
@@ -923,7 +925,7 @@ router.post('/inbox/rooms/:roomId/send-media', async (req, res) => {
  * GET /api/support/inbox/rooms/:roomId/delivery
  * Check WhatsApp delivery status of last sent message (read receipts)
  */
-router.get('/inbox/rooms/:roomId/delivery', async (req, res) => {
+router.get('/inbox/rooms/:roomId/delivery', ...authInbox, async (req, res) => {
   try {
     const { roomId } = req.params;
     const { cache } = await import('../db/redis.js');

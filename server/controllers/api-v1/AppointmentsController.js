@@ -23,9 +23,14 @@ export const getAppointment = asyncHandler(async (req, res) => {
  * List appointments with filters
  */
 export const listAppointments = asyncHandler(async (req, res) => {
-  const { userId, userType, status, fromDate, toDate } = req.query;
+  // Enforce ownership: only admins/doctors may query arbitrary users
+  const PRIVILEGED_ROLES = ['admin', 'doctor', 'provider', 'team'];
+  const resolvedUserId = PRIVILEGED_ROLES.includes(req.role)
+    ? (req.query.userId || req.userId)
+    : req.userId;
+  const { userType, status, fromDate, toDate } = req.query;
   const options = {
-    userId,
+    userId: resolvedUserId,
     userType,
     status,
     fromDate,
@@ -36,7 +41,7 @@ export const listAppointments = asyncHandler(async (req, res) => {
     sortOrder: req.query.sortOrder || 'DESC'
   };
   
-  const result = await appointmentsService.listAppointments(req.tenantId, userId, options);
+  const result = await appointmentsService.listAppointments(req.tenantId, resolvedUserId, options);
   res.json(result);
 });
 

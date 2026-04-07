@@ -12,84 +12,10 @@ class AuthService extends BaseService {
    * Authenticate user via OIDC (ABHA integration)
    */
   async authenticateOIDC(tenantId, code, redirectUri) {
-    // In production, this would exchange the authorization code with ABHA
-    // For now, this is a placeholder implementation
-
-    const abhaTokenUrl = process.env.ABHA_TOKEN_URL || 'https://abhasbx.abdm.gov.in/abha/api/v3/profile/token';
-    const clientId = process.env.ABHA_CLIENT_ID;
-    const clientSecret = process.env.ABHA_CLIENT_SECRET;
-
-    if (!clientId || !clientSecret) {
-      throw ErrorTypes.InternalServer('ABHA credentials not configured');
-    }
-
-    // Exchange authorization code for tokens (simplified)
-    // In production, you would make a POST request to ABHA token endpoint
-    const tokenExchangeData = {
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: redirectUri,
-      client_id: clientId,
-      client_secret: clientSecret
-    };
-
-    // Placeholder: This would be an actual HTTP request to ABHA
-    // const response = await fetch(abhaTokenUrl, {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify(tokenExchangeData)
-    // });
-    // const tokens = await response.json();
-
-    // For now, return a mock response
-    const mockAbhaTokens = {
-      access_token: 'abha_access_token_placeholder',
-      id_token: 'abha_id_token_placeholder',
-      refresh_token: 'abha_refresh_token_placeholder',
-      expires_in: 3600
-    };
-
-    // Decode ID token to get user info (simplified)
-    // In production, verify the JWT signature with ABHA's public key
-    const userInfo = {
-      abha_id: 'mock_abha_id',
-      name: 'Mock User',
-      email: 'user@example.com',
-      phone: '+919876543210',
-      phr_address: 'user@abdm'
-    };
-
-    // Find or create user in our system
-    let user = await this.findUserByAbhaId(tenantId, userInfo.abha_id);
-
-    if (!user) {
-      // Create new user
-      const userId = this.generateId('user');
-      const userData = {
-        id: userId,
-        abha_id: userInfo.abha_id,
-        phr_address: userInfo.phr_address,
-        name: userInfo.name,
-        email: userInfo.email,
-        phone: userInfo.phone,
-        email_verified: true,
-        phone_verified: true,
-        is_active: true
-      };
-
-      user = await this.create(userData, tenantId);
-    }
-
-    // Generate our own JWT tokens
-    const { accessToken, refreshToken } = await this.generateJWT(user, ['user.read', 'user.write']);
-
-    return {
-      user: this.sanitize(user),
-      accessToken,
-      refreshToken,
-      expiresIn: 3600,
-      tokenType: 'Bearer'
-    };
+    // ABHA OIDC integration is not yet configured for this environment.
+    // Returning mock tokens is a security risk — this endpoint is disabled
+    // until real ABHA credentials and token exchange are implemented.
+    throw ErrorTypes.InternalServer('ABHA OIDC integration is not available in this environment');
   }
 
   /**

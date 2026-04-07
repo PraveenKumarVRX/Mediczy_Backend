@@ -9,8 +9,8 @@
 export const oauthClients = {
   // Rocket.Chat OAuth Client
   rocketchat: {
-    client_id: process.env.OAUTH_ROCKETCHAT_CLIENT_ID || 'rocketchat-client-id',
-    client_secret: process.env.OAUTH_ROCKETCHAT_CLIENT_SECRET || 'rocketchat-client-secret-secure',
+    client_id: process.env.OAUTH_ROCKETCHAT_CLIENT_ID,
+    client_secret: process.env.OAUTH_ROCKETCHAT_CLIENT_SECRET,
     redirect_uris: [
       'http://localhost:3100/_oauth/mediqzy',
       'https://rocket.mediqzy.com/_oauth/mediqzy',

@@ -95,6 +95,11 @@ class DoctorsService extends BaseService {
       paramIndex++;
     }
 
+    const ALLOWED_SORT_COLUMNS = ['rating', 'created_at', 'updated_at', 'name', 'id'];
+    const ALLOWED_SORT_ORDERS = ['ASC', 'DESC'];
+    const safeSortBy = ALLOWED_SORT_COLUMNS.includes(sortBy) ? sortBy : 'rating';
+    const safeSortOrder = ALLOWED_SORT_ORDERS.includes(sortOrder?.toUpperCase()) ? sortOrder.toUpperCase() : 'DESC';
+
     const whereClause = whereConditions.join(' AND ');
     
     const page = paginationOptions.page || 1;
@@ -104,7 +109,7 @@ class DoctorsService extends BaseService {
     const sql = `
       SELECT * FROM ${this.tableName}
       WHERE ${whereClause}
-      ORDER BY ${sortBy} ${sortOrder}
+      ORDER BY ${safeSortBy} ${safeSortOrder}
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
     params.push(limit, offset);

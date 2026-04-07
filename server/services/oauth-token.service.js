@@ -88,7 +88,7 @@ class OAuthTokenService {
           client_id,
           scope: codeData.scope
         },
-        process.env.JWT_SECRET || 'your-secret-key',
+        process.env.JWT_SECRET,
         { expiresIn: TOKEN_EXPIRY }
       );
 
@@ -115,7 +115,7 @@ class OAuthTokenService {
     try {
       const payload = jwt.verify(
         token,
-        process.env.JWT_SECRET || 'your-secret-key'
+        process.env.JWT_SECRET
       );
       return payload;
     } catch (error) {

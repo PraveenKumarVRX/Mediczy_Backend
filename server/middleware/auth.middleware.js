@@ -474,11 +474,6 @@ export const authUser = async (req, res, next) => {
     return next();
   } catch (error) {
     console.log("❌ Token verification FAILED. Error:", error.message);
-    console.log(
-      "❌ JWT_SECRET being used:",
-      (JWT_CONFIG.SECRET || "").slice(0, 10) + "..."
-    );
-    console.log("❌ Token being verified:", token?.slice(0, 50) + "...");
     return res.status(401).json({ message: error.message });
   }
 };

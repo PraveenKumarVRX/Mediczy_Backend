@@ -28,11 +28,15 @@ const pool = new Pool({
   password: process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD,
 });
 
-// JWT secret keys
-const JWT_SECRET = process.env.JWT_SECRET || 'mediczy-platform-secret-key-change-in-production';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'mediczy-refresh-secret-key-change-in-production';
+// JWT secret keys — must be set via environment variables (no fallback for security)
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h';
 const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '7d';
+
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required but not set');
+}
 
 /**
  * Exchange external OIDC token for Mediqzy access token

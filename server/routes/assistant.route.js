@@ -14,24 +14,6 @@ export const authAssistant = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
 
-    // Development bypass: allow the Vite dev token without requiring JWT signing.
-    // This keeps assistant portal pages functional in local dev environments.
-    if (token === 'dev-assistant-token' && process.env.NODE_ENV !== 'production') {
-      req.assistant = {
-        id: 'assistant_001',
-        email: 'assistant@mediczy.com',
-        role: 'assistant',
-        linkedDoctorIds: [1],
-        primaryDoctorId: 1,
-        linkedFacilityId: 1,
-        linkedFacilityType: 'hospital',
-        linkedFacilityName: 'Mediczy Hospital',
-        canAccessDoctorCalendar: true,
-        canManagePatients: true
-      };
-      return next();
-    }
-
     if (!token) {
       return res.status(401).json({
         success: false,
@@ -86,94 +68,6 @@ router.post('/login', authLimiter, [
 ], async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    // DEV/DEMO: Allow known test assistants to log in even if DB is empty
-    if (process.env.NODE_ENV !== 'production') {
-      const testAssistants = {
-        'assistant@mediczy.com': {
-          id: 'A7X9K2',  // 6-char alphanumeric starting with A
-          email: 'assistant@mediczy.com',
-          password: 'Assistant123',
-          firstName: 'Emily',
-          lastName: 'Davis',
-          roleTitle: 'Medical Secretary',
-          linkedDoctorIds: [70],  // Use numeric doctor ID
-          primaryDoctorId: 70,    // Use numeric doctor ID
-          linkedFacilityId: 1,     // Use numeric facility ID
-          linkedFacilityType: 'clinic',
-          linkedFacilityName: 'Mediczy Health Clinic',
-          workSchedule: { monday: '9:00-17:00', tuesday: '9:00-17:00', wednesday: '9:00-17:00', thursday: '9:00-17:00', friday: '9:00-17:00' },
-          permissions: ['view_appointments', 'manage_appointments', 'view_patients', 'send_messages'],
-          canAccessDoctorCalendar: true,
-          canManagePatients: true,
-          phoneNumber: '+91 9876543210'
-        },
-        'secretary@mediczy.com': {
-          id: 'A3M8P5',  // 6-char alphanumeric starting with A
-          email: 'secretary@mediczy.com',
-          password: 'SecretaryPass123',
-          firstName: 'Sarah',
-          lastName: 'Johnson',
-          roleTitle: 'Doctor Secretary',
-          linkedDoctorIds: ['doc_002', 'doc_003'],
-          primaryDoctorId: 'doc_002',
-          linkedFacilityId: 'facility_001',
-          linkedFacilityType: 'hospital',
-          linkedFacilityName: 'Mediczy Hospital',
-          workSchedule: { monday: '8:00-16:00', tuesday: '8:00-16:00', wednesday: '8:00-16:00', thursday: '8:00-16:00', friday: '8:00-16:00' },
-          permissions: ['view_appointments', 'manage_appointments', 'view_patients', 'manage_patients', 'send_messages', 'view_billing'],
-          canAccessDoctorCalendar: true,
-          canManagePatients: true,
-          phoneNumber: '+91 9876543211'
-        }
-      };
-
-      // Check test credentials first
-      const testAssistant = testAssistants[email];
-      if (testAssistant && testAssistant.password === password) {
-        const token = jwt.sign(
-          {
-            id: testAssistant.id,
-            email: testAssistant.email,
-            role: 'assistant',
-            userType: 'assistant',
-            linkedDoctorIds: testAssistant.linkedDoctorIds,
-            primaryDoctorId: testAssistant.primaryDoctorId,
-            linkedFacilityId: testAssistant.linkedFacilityId,
-            linkedFacilityType: testAssistant.linkedFacilityType,
-            linkedFacilityName: testAssistant.linkedFacilityName,
-            canAccessDoctorCalendar: testAssistant.canAccessDoctorCalendar,
-            canManagePatients: testAssistant.canManagePatients
-          },
-          JWT_CONFIG.SECRET,
-          { expiresIn: '8h' }
-        );
-
-        await auditLoginAttempt(req, testAssistant.id, testAssistant.email, true);
-        return res.status(200).json({
-          success: true,
-          message: 'Assistant login successful',
-          token,
-          assistant: {
-            id: testAssistant.id,
-            email: testAssistant.email,
-            firstName: testAssistant.firstName,
-            lastName: testAssistant.lastName,
-            roleTitle: testAssistant.roleTitle,
-            linkedDoctorIds: testAssistant.linkedDoctorIds,
-            primaryDoctorId: testAssistant.primaryDoctorId,
-            linkedFacilityId: testAssistant.linkedFacilityId,
-            linkedFacilityType: testAssistant.linkedFacilityType,
-            linkedFacilityName: testAssistant.linkedFacilityName,
-            workSchedule: testAssistant.workSchedule,
-            permissions: testAssistant.permissions,
-            canAccessDoctorCalendar: testAssistant.canAccessDoctorCalendar,
-            canManagePatients: testAssistant.canManagePatients,
-            phoneNumber: testAssistant.phoneNumber
-          }
-        });
-      }
-    } // End NODE_ENV !== 'production' check
 
     // Check database for assistant
     const normalizedEmail = String(email).toLowerCase();

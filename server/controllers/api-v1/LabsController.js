@@ -23,7 +23,11 @@ export const getBooking = asyncHandler(async (req, res) => {
  * List all lab bookings for a user
  */
 export const listBookings = asyncHandler(async (req, res) => {
-  const { userId } = req.query;
+  // Enforce ownership: only admins/doctors may query arbitrary users
+  const PRIVILEGED_ROLES = ['admin', 'doctor', 'provider', 'team'];
+  const resolvedUserId = PRIVILEGED_ROLES.includes(req.role)
+    ? (req.query.userId || req.userId)
+    : req.userId;
   const options = {
     page: parseInt(req.query.page) || 1,
     limit: parseInt(req.query.limit) || 20,
@@ -31,7 +35,7 @@ export const listBookings = asyncHandler(async (req, res) => {
     sortOrder: req.query.sortOrder || 'DESC'
   };
   
-  const result = await labsService.listBookings(req.tenantId, userId, options);
+  const result = await labsService.listBookings(req.tenantId, resolvedUserId, options);
   res.json(result);
 });
 

@@ -19,17 +19,6 @@ export const authNurse = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
 
-    // Development bypass: allow the Vite dev token without requiring JWT signing.
-    // This keeps nurse portal pages functional in local dev environments.
-    if (token === 'dev-nurse-token' && process.env.NODE_ENV !== 'production') {
-      req.nurse = {
-        id: 'nurse_001',
-        email: 'nurse@mediczy.com',
-        role: 'nurse'
-      };
-      return next();
-    }
-
     if (!token) {
       return res.status(401).json({
         success: false,

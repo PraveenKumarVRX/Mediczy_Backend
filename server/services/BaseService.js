@@ -55,6 +55,12 @@ export class BaseService {
       select = '*'
     } = options;
 
+    // Allowlist to prevent ORDER BY injection
+    const ALLOWED_SORT_COLUMNS = ['created_at', 'updated_at', 'id', 'name', 'date', 'status', 'amount', 'booking_date', 'order_date'];
+    const ALLOWED_SORT_ORDERS = ['ASC', 'DESC'];
+    const safeSortBy = ALLOWED_SORT_COLUMNS.includes(sortBy) ? sortBy : 'created_at';
+    const safeSortOrder = ALLOWED_SORT_ORDERS.includes(sortOrder?.toUpperCase()) ? sortOrder.toUpperCase() : 'DESC';
+
     const offset = (page - 1) * limit;
     const whereClauses = ['tenant_id = $1'];
     const params = [tenantId];
@@ -80,7 +86,7 @@ export class BaseService {
     const dataResult = await this.query(
       `SELECT ${select} FROM ${this.tableName} 
        WHERE ${whereClause}
-       ORDER BY ${sortBy} ${sortOrder}
+       ORDER BY ${safeSortBy} ${safeSortOrder}
        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
       [...params, limit, offset]
     );

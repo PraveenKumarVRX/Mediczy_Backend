@@ -34,12 +34,6 @@ const InsuranceCompanyLogin = () => {
       return;
     }
 
-    // Development mode: Auto-set credentials
-    if (import.meta.env.DEV) {
-      setEmail('insurance@mediczy.com');
-      setPassword('SecurePass123');
-    }
-
     setIsCheckingAuth(false);
   }, [navigate]);
 
@@ -49,36 +43,6 @@ const InsuranceCompanyLogin = () => {
     setLoading(true);
 
     console.log('Insurance Company login attempt:', { email, password: '***' });
-
-    // Development mode: Quick bypass for valid credentials
-    if (import.meta.env.DEV && email === 'insurance@mediczy.com' && password === 'SecurePass123') {
-      console.log('🚀 Development mode: Using quick authentication bypass');
-
-      // Clear any other role tokens first
-      localStorage.removeItem('adminToken');
-      localStorage.removeItem('teamToken');
-      localStorage.removeItem('nurseToken');
-      localStorage.removeItem('assistantToken');
-      localStorage.removeItem('insuranceBrokerToken');
-      localStorage.removeItem('tpaToken');
-      localStorage.removeItem('token');
-      localStorage.removeItem('userType');
-
-      // Set dev token directly
-      localStorage.setItem('insuranceCompanyToken', 'dev-insurance-company-token');
-      localStorage.setItem('insuranceCompanyData', JSON.stringify({
-        id: 'insurance_dev',
-        email: 'insurance@mediczy.com',
-        role: 'insurance_company',
-        firstName: 'Insurance',
-        lastName: 'Company',
-        company: 'MediCare Insurance Ltd.'
-      }));
-
-      setLoading(false);
-      navigate('/insurance-company/dashboard');
-      return;
-    }
 
     try {
       // Add timeout to prevent long waits

@@ -64,36 +64,6 @@ const TpaLogin = () => {
 
     console.log('TPA login attempt:', { email, password: '***' });
 
-    // Development mode: Quick bypass for valid credentials
-    if (import.meta.env.DEV && email === 'tpa@mediczy.com' && password === 'SecurePass123') {
-      console.log('🚀 Development mode: Using quick authentication bypass');
-
-      // Clear any other role tokens first
-      localStorage.removeItem('adminToken');
-      localStorage.removeItem('teamToken');
-      localStorage.removeItem('nurseToken');
-      localStorage.removeItem('assistantToken');
-      localStorage.removeItem('insuranceBrokerToken');
-      localStorage.removeItem('insuranceCompanyToken');
-      localStorage.removeItem('token');
-      localStorage.removeItem('userType');
-
-      // Set dev token directly
-      localStorage.setItem('tpaToken', 'dev-tpa-token');
-      localStorage.setItem('tpaData', JSON.stringify({
-        id: 'tpa_dev',
-        email: 'tpa@mediczy.com',
-        role: 'tpa',
-        firstName: 'TPA',
-        lastName: 'Administrator',
-        company: 'MediCare TPA Services'
-      }));
-
-      setLoading(false);
-      navigate('/tpa/dashboard');
-      return;
-    }
-
     try {
       // Add timeout to prevent long waits
       const controller = new AbortController();

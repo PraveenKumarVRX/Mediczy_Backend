@@ -60,7 +60,11 @@ export const getOrder = asyncHandler(async (req, res) => {
  * List all pharmacy orders for a user
  */
 export const listOrders = asyncHandler(async (req, res) => {
-  const { userId } = req.query;
+  // Enforce ownership: only admins/doctors may query arbitrary users
+  const PRIVILEGED_ROLES = ['admin', 'doctor', 'provider', 'team'];
+  const resolvedUserId = PRIVILEGED_ROLES.includes(req.role)
+    ? (req.query.userId || req.userId)
+    : req.userId;
   const options = {
     page: parseInt(req.query.page) || 1,
     limit: parseInt(req.query.limit) || 20,
@@ -68,7 +72,7 @@ export const listOrders = asyncHandler(async (req, res) => {
     sortOrder: req.query.sortOrder || 'DESC'
   };
   
-  const result = await pharmacyService.listOrders(req.tenantId, userId, options);
+  const result = await pharmacyService.listOrders(req.tenantId, resolvedUserId, options);
   res.json(result);
 });
 
