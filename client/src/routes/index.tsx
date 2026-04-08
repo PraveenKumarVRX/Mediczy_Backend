@@ -655,6 +655,8 @@ const SecurityStaffLogPage     = lazyNamed(_SecurityModulePages, "SecurityStaffL
 const SecurityReportsPage      = lazyNamed(_SecurityModulePages, "SecurityReportsPage");
 const SecuritySettingsPage     = lazyNamed(_SecurityModulePages, "SecuritySettingsPage");
 const SecuritySupportPage      = lazyNamed(_SecurityModulePages, "SecuritySupportPage");
+const SecurityAssetTrackingPage = lazyNamed(_SecurityModulePages, "SecurityAssetTrackingPage");
+const SecurityImplementationPage = lazyNamed(_SecurityModulePages, "SecurityImplementationPage");
 
 // ─── PageLoader — Suspense fallback ──────────────────────────────────────────
 const PageLoader = () => (
@@ -1242,6 +1244,8 @@ const AppRoutes = () => {
         <Route path="/security/guard-duty"    element={<SecurityGuardDutyPage />} />
         <Route path="/security/visitors"      element={<SecurityVisitorsPage />} />
         <Route path="/security/staff-log"     element={<SecurityStaffLogPage />} />
+        <Route path="/security/assets"         element={<SecurityAssetTrackingPage />} />
+        <Route path="/security/implementation"  element={<SecurityImplementationPage />} />
         <Route path="/security/reports"       element={<SecurityReportsPage />} />
         <Route path="/security/settings"      element={<SecuritySettingsPage />} />
         <Route path="/security/support"       element={<SecuritySupportPage />} />
