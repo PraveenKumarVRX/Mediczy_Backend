@@ -287,59 +287,6 @@ router.get('/team-bookings', authUser, async (req, res) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
-  try {
-    const labId = parseInt(req.params.id);
-    if (!labId || isNaN(labId)) {
-      return res.status(404).json({ success: false, message: 'Laboratory not found' });
-    }
-    const lab = await Lab.findOne({
-      where: { 
-        id: labId,
-        status: 'active' 
-      }
-    });
-    
-    if (!lab) {
-      return res.status(404).json({
-        success: false,
-        message: 'Laboratory not found'
-      });
-    }
-    
-    // Enhanced response with additional computed fields
-    const enhancedLab = {
-      ...lab.toJSON(),
-      computed: {
-        totalTestsOffered: lab.testCatalog ?
-          Object.keys(lab.testCatalog).length : 0,
-        accreditationScore: (lab.accreditation?.length || 0) * 20,
-        digitalScore: lab.digitalFeatures ? 
-          Object.values(lab.digitalFeatures).filter(Boolean).length * 10 : 0,
-        serviceScore: (lab.services?.length || 0) * 5,
-        overallScore: function() {
-          return this.accreditationScore + this.digitalScore + this.serviceScore;
-        }
-      }
-    };
-    
-    enhancedLab.computed.overallScore = enhancedLab.computed.overallScore();
-    
-    res.json({
-      success: true,
-      data: enhancedLab
-    });
-    
-  } catch (error) {
-    console.error('Error fetching lab details:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch laboratory details',
-      error: error.message
-    });
-  }
-});
-
 // GET /api/labs/search/advanced - Advanced search with test-specific queries
 router.get('/search/advanced', async (req, res) => {
   try {
@@ -437,9 +384,10 @@ router.get('/search/advanced', async (req, res) => {
 router.get('/categories/tests', (req, res) => {
   try {
     const { category, detailed = false } = req.query;
-    
+    const TEST_CATEGORIES = Lab.COMPREHENSIVE_TEST_CATEGORIES || {};
+
     if (category) {
-      const categoryData = Lab.COMPREHENSIVE_TEST_CATEGORIES[category];
+      const categoryData = TEST_CATEGORIES[category];
       if (!categoryData) {
         return res.status(404).json({
           success: false,
@@ -457,11 +405,11 @@ router.get('/categories/tests', (req, res) => {
       });
     } else {
       const categories = detailed === 'true' 
-        ? Lab.COMPREHENSIVE_TEST_CATEGORIES
-        : Object.keys(Lab.COMPREHENSIVE_TEST_CATEGORIES).reduce((acc, key) => {
+        ? TEST_CATEGORIES
+        : Object.keys(TEST_CATEGORIES).reduce((acc, key) => {
             acc[key] = {
-              name: Lab.COMPREHENSIVE_TEST_CATEGORIES[key].name,
-              subcategories: Object.keys(Lab.COMPREHENSIVE_TEST_CATEGORIES[key].subcategories || {})
+              name: TEST_CATEGORIES[key].name,
+              subcategories: Object.keys(TEST_CATEGORIES[key].subcategories || {})
             };
             return acc;
           }, {});
@@ -470,7 +418,7 @@ router.get('/categories/tests', (req, res) => {
         success: true,
         data: {
           categories,
-          totalCategories: Object.keys(Lab.COMPREHENSIVE_TEST_CATEGORIES).length
+          totalCategories: Object.keys(TEST_CATEGORIES).length
         }
       });
     }
@@ -578,14 +526,14 @@ router.get('/statistics', async (req, res) => {
           emergencyServiceRate: ((emergencyLabs / totalLabs) * 100).toFixed(1),
           featuredRate: ((featuredLabs / totalLabs) * 100).toFixed(1)
         },
-        testCapabilities: {
+        testCapabilities: Lab.COMPREHENSIVE_TEST_CATEGORIES ? {
           totalCategories: Object.keys(Lab.COMPREHENSIVE_TEST_CATEGORIES).length,
           totalTests: Object.values(Lab.COMPREHENSIVE_TEST_CATEGORIES)
             .reduce((total, category) => {
               return total + Object.values(category.subcategories || {})
                 .reduce((subTotal, sub) => subTotal + (sub.tests?.length || 0), 0);
             }, 0)
-        }
+        } : { totalCategories: 0, totalTests: 0 }
       }
     });
     
@@ -604,7 +552,7 @@ function findTestCategories(testName) {
   const categories = [];
   const lowerTestName = testName.toLowerCase();
   
-  Object.entries(Lab.COMPREHENSIVE_TEST_CATEGORIES).forEach(([categoryKey, categoryData]) => {
+  Object.entries(Lab.COMPREHENSIVE_TEST_CATEGORIES || {}).forEach(([categoryKey, categoryData]) => {
     Object.values(categoryData.subcategories || {}).forEach(subcategory => {
       if (subcategory.tests && subcategory.tests.some(test => 
         test.toLowerCase().includes(lowerTestName) || lowerTestName.includes(test.toLowerCase())
@@ -686,6 +634,60 @@ function calculateSuitabilityScore(lab, criteria) {
   
   return Math.min(100, Math.round(score));
 }
+
+// GET /api/labs/:id - Get single lab details (must be after all named routes)
+router.get('/:id', async (req, res) => {
+  try {
+    const labId = parseInt(req.params.id);
+    if (!labId || isNaN(labId)) {
+      return res.status(404).json({ success: false, message: 'Laboratory not found' });
+    }
+    const lab = await Lab.findOne({
+      where: { 
+        id: labId,
+        status: 'active' 
+      }
+    });
+    
+    if (!lab) {
+      return res.status(404).json({
+        success: false,
+        message: 'Laboratory not found'
+      });
+    }
+    
+    // Enhanced response with additional computed fields
+    const enhancedLab = {
+      ...lab.toJSON(),
+      computed: {
+        totalTestsOffered: lab.testCatalog ?
+          Object.keys(lab.testCatalog).length : 0,
+        accreditationScore: (lab.accreditation?.length || 0) * 20,
+        digitalScore: lab.digitalFeatures ? 
+          Object.values(lab.digitalFeatures).filter(Boolean).length * 10 : 0,
+        serviceScore: (lab.services?.length || 0) * 5,
+        overallScore: function() {
+          return this.accreditationScore + this.digitalScore + this.serviceScore;
+        }
+      }
+    };
+    
+    enhancedLab.computed.overallScore = enhancedLab.computed.overallScore();
+    
+    res.json({
+      success: true,
+      data: enhancedLab
+    });
+    
+  } catch (error) {
+    console.error('Error fetching lab details:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch laboratory details',
+      error: error.message
+    });
+  }
+});
 
 /**
  * POST /api/labs/book

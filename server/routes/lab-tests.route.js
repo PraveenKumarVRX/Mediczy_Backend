@@ -89,13 +89,8 @@ router.post('/', authUser, async (req, res) => {
       }
     };
     
-    // For users directly registered under MediQzy (not part of corporate/hospital/org)
-    // Automatically assign to SmartHealth Clinic with referral by Dr. Nandita Agarwal
-    if (!organizationId || organizationId === null) {
-      labTestData.hospitalId = 3; // SmartHealth Clinic
-      labTestData.referralNote = 'Referred by Dr. Nandita Agarwal, CMO - SmartHealth Clinic & My SmartHealth Corporate';
-      console.log('✅ Auto-assigned to SmartHealth Clinic (ID: 3) with Dr. Nandita Agarwal referral');
-    } else if (hospitalId !== undefined && hospitalId !== null && hospitalId !== '' && !isNaN(parseInt(hospitalId))) {
+    // hospitalId is optional (nullable), only set if explicitly provided and valid
+    if (hospitalId !== undefined && hospitalId !== null && hospitalId !== '' && !isNaN(parseInt(hospitalId))) {
       // Only include hospitalId if it's provided and valid
       const parsedHospitalId = parseInt(hospitalId);
       if (parsedHospitalId > 0) {

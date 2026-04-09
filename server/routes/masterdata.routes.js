@@ -288,7 +288,35 @@ router.get('/pharmacies', async (req, res) => {
         const { page = 1, limit = 50, search = '', city = '', state = '' } = req.query;
         
         const pharmaciesDir = path.join(PROVIDERS_BASE, 'pharmacies');
-        const files = await fs.readdir(pharmaciesDir);
+        let files = [];
+        try {
+            files = await fs.readdir(pharmaciesDir);
+        } catch (e) {
+            // directory missing or empty — fall through to DB
+        }
+        
+        if (files.length === 0) {
+            // Fall back to DB
+            const conditions = [];
+            const values = [];
+            if (search) { conditions.push(`(name ILIKE $${values.length+1} OR address::text ILIKE $${values.length+1})`); values.push(`%${search}%`); }
+            if (city) { conditions.push(`address->>'city' ILIKE $${values.length+1}`); values.push(`%${city}%`); }
+            if (state) { conditions.push(`address->>'state' ILIKE $${values.length+1}`); values.push(`%${state}%`); }
+            const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+            const countResult = await pool.query(`SELECT COUNT(*) FROM pharmacies ${where}`, values);
+            const total = parseInt(countResult.rows[0].count);
+            const offset = (page - 1) * limit;
+            const rows = await pool.query(`SELECT id, name, address, "phoneNumber", email, status, "createdAt" FROM pharmacies ${where} ORDER BY name LIMIT $${values.length+1} OFFSET $${values.length+2}`, [...values, limit, offset]);
+            return res.json({
+                success: true,
+                data: rows.rows.map(p => ({
+                    id: p.id, name: p.name, address: p.address,
+                    city: p.address?.city, state: p.address?.state,
+                    contact: p.phoneNumber, email: p.email, status: p.status
+                })),
+                pagination: { total, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(total / limit) }
+            });
+        }
         
         // Load pharmacy profiles
         let pharmacies = await Promise.all(
