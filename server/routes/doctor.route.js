@@ -13,6 +13,7 @@ import { authLimiter } from "../middleware/rateLimiter.middleware.js";
 import { Doctor, Appointment, User } from "../models/index.js";
 import { UserPlan } from "../models/postgres/membershipPlan.model.postgres.js";
 import { Op } from 'sequelize';
+import { Notification } from '../services/notification.service.js';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { cache } from '../db/redis.js';
@@ -276,12 +277,39 @@ router.get("/alerts", authDoctor, async (req, res) => {
     const dismissed = new Set(state.dismissedIds || []);
     const readIds = new Set(state.readIds || []);
 
-    const alerts = baseAlerts
+    const aggregateAlerts = baseAlerts
       .filter(alert => !dismissed.has(alert.id))
       .map(alert => ({
         ...alert,
         isRead: readIds.has(alert.id)
       }));
+
+    // Fetch real per-appointment notifications from the notifications table
+    const dbNotifications = await Notification.findAll({
+      where: {
+        userId: doctorId,
+        userType: 'doctor',
+        type: { [Op.in]: ['appointment_request', 'appointment', 'appointment_cancelled', 'payment_received', 'consultation_reminder', 'consultation_starting'] }
+      },
+      order: [['createdAt', 'DESC']],
+      limit: 30
+    });
+
+    const dbAlerts = dbNotifications
+      .filter(n => !dismissed.has(`notif-${n.id}`))
+      .map(n => ({
+        id: `notif-${n.id}`,
+        type: n.type === 'appointment_request' ? 'warning' : 'info',
+        title: n.title,
+        message: n.message,
+        timestamp: n.createdAt.toISOString(),
+        category: 'appointment',
+        isRead: n.isRead || readIds.has(`notif-${n.id}`),
+        actionRequired: n.type === 'appointment_request',
+        data: n.data
+      }));
+
+    const alerts = [...dbAlerts, ...aggregateAlerts];
 
     res.json({
       success: true,
@@ -319,6 +347,17 @@ router.patch("/alerts/:alertId/read", authDoctor, async (req, res) => {
     }
 
     await setCachedValue(stateKey, state, ALERT_STATE_TTL, localAlertState);
+
+    // If alertId is a DB notification (prefixed with 'notif-'), mark it read in DB too
+    if (alertId.startsWith('notif-')) {
+      const notifId = parseInt(alertId.replace('notif-', ''), 10);
+      if (!isNaN(notifId)) {
+        await Notification.update(
+          { isRead: true, readAt: new Date() },
+          { where: { id: notifId, userId: doctorId } }
+        );
+      }
+    }
 
     res.json({ success: true, message: 'Alert marked as read' });
   } catch (error) {
@@ -365,6 +404,12 @@ router.patch("/alerts/mark-all-read", authDoctor, async (req, res) => {
     state.readIds = Array.from(new Set([...(state.readIds || []), ...baseAlerts.map(a => a.id)]));
     await setCachedValue(stateKey, state, ALERT_STATE_TTL, localAlertState);
 
+    // Also mark all DB notifications for this doctor as read
+    await Notification.update(
+      { isRead: true, readAt: new Date() },
+      { where: { userId: doctorId, userType: 'doctor', isRead: false } }
+    );
+
     res.json({ success: true, message: 'All alerts marked as read' });
   } catch (error) {
     console.error('Mark all alerts read error:', error);
@@ -396,6 +441,15 @@ router.delete("/alerts/:alertId", authDoctor, async (req, res) => {
     }
 
     await setCachedValue(stateKey, state, ALERT_STATE_TTL, localAlertState);
+
+    // If alertId is a DB notification, delete it from the DB as well
+    if (alertId.startsWith('notif-')) {
+      const notifId = parseInt(alertId.replace('notif-', ''), 10);
+      if (!isNaN(notifId)) {
+        await Notification.destroy({ where: { id: notifId, userId: doctorId } });
+      }
+    }
+
     res.json({ success: true, message: 'Alert dismissed' });
   } catch (error) {
     console.error('Dismiss alert error:', error);

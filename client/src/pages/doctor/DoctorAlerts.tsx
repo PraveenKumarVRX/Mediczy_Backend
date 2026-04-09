@@ -36,7 +36,8 @@ const DoctorAlerts: React.FC = () => {
         return [];
       }
     },
-    staleTime: 30 * 1000, // 30 seconds - alerts should be relatively fresh
+    staleTime: 0,
+    refetchInterval: 30 * 1000, // Poll every 30 seconds for new appointment notifications
   });
 
   const handleMarkAsRead = async (alertId: string) => {

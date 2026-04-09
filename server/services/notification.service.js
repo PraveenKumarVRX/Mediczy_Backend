@@ -365,8 +365,8 @@ class NotificationService {
         stringData.click_action = actionUrl;
       }
 
-      // Use dedicated call notification for video call types (includes appointmentId, meetingLink, etc.)
-      const isCallNotification = data.action === 'join_call' || data.appointmentId;
+      // Use dedicated call notification only for active video/voice call events
+      const isCallNotification = data.action === 'join_call';
       let result;
 
       if (isCallNotification && data.appointmentId) {

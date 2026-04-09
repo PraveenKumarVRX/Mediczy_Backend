@@ -1,7 +1,7 @@
 # Mediqzy — Doctor Mobile App API Integration Guide
 
-> **Version:** 1.0 · **Last Updated:** 2026-03-10  
-> **Base URL (Production):** `https://mediqzy.com/api`  
+> **Version:** 2.0 · **Last Updated:** 2026-04-09  
+> **Base URL (Production):** `https://api.mediqzy.com`  
 > **WebSocket URL:** `https://mediqzy.com` (path: `/socket.io`)  
 > **LiveKit URL:** `wss://video.mediqzy.com`
 
@@ -35,6 +35,18 @@
 24. [Rate Limits](#24-rate-limits)
 25. [WebSocket Events Reference](#25-websocket-events-reference)
 26. [Enums & Constants](#26-enums--constants)
+- [Appendix A: Typical Integration Flows](#appendix-a-typical-integration-flows)
+- [Appendix B: Mobile App Specific Notes](#appendix-b-mobile-app-specific-notes)
+- [Appendix C: Test Credentials](#appendix-c-test-credentials-development--staging)
+
+---
+
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| **2.0** | 2026-04-09 | Section 21 (Alerts) rewritten with full DB-backed notification API detail; Section 12 updated with alert polling guidance; Appendix C (test credentials) added; Base URL corrected to `https://api.mediqzy.com`; valid `consultationType` values clarified |
+| 1.0 | 2026-03-10 | Initial release |
 
 ---
 
@@ -43,7 +55,7 @@
 ### Base Configuration
 
 ```
-Production API:   https://mediqzy.com/api
+Production API:   https://api.mediqzy.com
 WebSocket:        https://mediqzy.com  (path: /socket.io)
 LiveKit Server:   wss://video.mediqzy.com
 ```
@@ -1793,6 +1805,28 @@ Authorization: Bearer <token>
 
 Sends a test push notification to the current user's registered devices.
 
+### 12.9 Doctor Alerts Polling (In-App Feed)
+
+For the in-app alert feed (appointment requests, confirmations, reminders), use the dedicated alerts endpoint rather than the generic notifications endpoint:
+
+```
+GET /api/doctors/alerts
+Authorization: Bearer <token>
+```
+
+**Recommended polling config (React Query / any query client):**
+
+```javascript
+{
+  queryKey: ['doctorAlerts'],
+  queryFn: () => fetch('/api/doctors/alerts', { headers: { Authorization: `Bearer ${token}` } }),
+  staleTime: 0,           // always consider data stale so it re-fetches on focus
+  refetchInterval: 30000  // poll every 30 seconds
+}
+```
+
+See [Section 21: Alerts & Messages](#21-alerts--messages) for full endpoint documentation including response shape, mark-read, and dismiss flows.
+
 ### Notification Types for Doctors
 
 | Type | Trigger |
@@ -2508,6 +2542,14 @@ Authorization: Bearer <token>
 
 ## 21. Alerts & Messages
 
+The alerts system provides a **DB-backed, real-time notification feed** for doctors. Every alert comes from one of two sources:
+
+1. **DB Notifications** (`notif-*` prefix) — Real per-appointment records stored in the `notifications` table. Created automatically when patients book, cancel, or trigger payment events. ID format: `notif-<db_id>` (e.g., `notif-1203`).
+2. **Aggregate Alerts** — Dynamic counts of pending/today's appointments computed on-the-fly from the `appointments` table. Not stored in DB.
+
+> **Mobile App Polling:** Poll `GET /api/doctors/alerts` every **30 seconds** to ensure alerts appear promptly after patient actions.  
+> React Query config: `{ staleTime: 0, refetchInterval: 30000 }`
+
 ### 21.1 Get Alerts
 
 ```
@@ -2515,11 +2557,95 @@ GET /api/doctors/alerts
 Authorization: Bearer <token>
 ```
 
+Returns a merged, filtered list of DB notification alerts and aggregate appointment alerts, with dismissed items removed.
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "unreadCount": 2,
+  "alerts": [
+    {
+      "id": "notif-1203",
+      "type": "warning",
+      "title": "New Appointment Request",
+      "message": "Test User has requested an appointment on 2026-04-09 at 10:00 AM (video)",
+      "timestamp": "2026-04-09T08:15:00.000Z",
+      "category": "appointment",
+      "isRead": false,
+      "actionRequired": true,
+      "data": {
+        "appointmentId": 142,
+        "patientId": 19,
+        "appointmentDate": "2026-04-09",
+        "appointmentTime": "10:00",
+        "consultationType": "video"
+      }
+    },
+    {
+      "id": "notif-1201",
+      "type": "info",
+      "title": "Appointment Confirmed",
+      "message": "Appointment with Test User has been confirmed",
+      "timestamp": "2026-04-09T08:10:00.000Z",
+      "category": "appointment",
+      "isRead": true,
+      "actionRequired": false,
+      "data": { "appointmentId": 141 }
+    },
+    {
+      "id": "aggregate-pending",
+      "type": "warning",
+      "title": "Pending Appointments",
+      "message": "You have 2 pending appointment requests that need your attention",
+      "timestamp": "2026-04-09T08:00:00.000Z",
+      "category": "appointment",
+      "isRead": false,
+      "actionRequired": true,
+      "data": { "count": 2 }
+    }
+  ]
+}
+```
+
+**Alert ID Format:**
+
+| Pattern | Source | Persisted in DB? |
+|---------|--------|-----------------|
+| `notif-<number>` | `notifications` table record | ✅ Yes |
+| `aggregate-pending` | Pending appointment count | ❌ No |
+| `aggregate-today` | Today's appointment count | ❌ No |
+
+**Alert `type` values:** `warning` (for `appointment_request` notifications) · `info` (all others)
+
+**DB Notification Types Returned by This Endpoint:**
+
+| `type` value | When created |
+|-------------|-------------|
+| `appointment_request` | Patient books a new appointment |
+| `appointment` | Appointment status changes |
+| `appointment_cancelled` | Appointment cancelled |
+| `payment_received` | Payment confirmed |
+| `consultation_reminder` | Reminder sent before consultation |
+| `consultation_starting` | Consultation is about to start |
+
 ### 21.2 Mark Alert as Read
 
 ```
 PATCH /api/doctors/alerts/:alertId/read
 Authorization: Bearer <token>
+```
+
+`:alertId` — the `id` from the alert object (e.g., `notif-1203` or `aggregate-pending`).
+
+- For `notif-*` alerts: marks both the Redis state cache **and** the `notifications` DB record (`isRead = true`, `readAt = now()`).
+- For `aggregate-*` alerts: marks only the Redis cache.
+
+**Response (200):**
+
+```json
+{ "success": true, "message": "Alert marked as read" }
 ```
 
 ### 21.3 Mark All Alerts as Read
@@ -2529,6 +2655,14 @@ PATCH /api/doctors/alerts/mark-all-read
 Authorization: Bearer <token>
 ```
 
+Marks **all** aggregate alerts (Redis cache) and **all** unread DB notifications for this doctor as read in a single call.
+
+**Response (200):**
+
+```json
+{ "success": true, "message": "All alerts marked as read" }
+```
+
 ### 21.4 Dismiss Alert
 
 ```
@@ -2536,21 +2670,49 @@ DELETE /api/doctors/alerts/:alertId
 Authorization: Bearer <token>
 ```
 
-### 21.5 Get Messages (Inbox)
+- For `notif-*` alerts: adds to Redis dismissed set **and** deletes the DB record permanently.
+- For `aggregate-*` alerts: adds to Redis dismissed set only (re-appears after 7-day Redis TTL if the condition still applies).
+
+**Response (200):**
+
+```json
+{ "success": true, "message": "Alert dismissed" }
+```
+
+> **Redis Cache:** Per-doctor alert state (read IDs, dismissed IDs) is cached at key `doctor:alerts:state:<doctorId>` with a **7-day TTL**.
+
+### 21.5 Alert Notification Flow
+
+When a patient books an appointment, the full server-side chain is:
+
+```
+POST /api/appointments  (patient app)
+  └─ appointment.controller.js
+       └─ notificationService.notifyAppointmentRequest(appointment)
+            └─ notification.service.js: creates notifications table record
+                 { userId: doctorId, userType: 'doctor',
+                   type: 'appointment_request', isRead: false }
+                      └─ GET /api/doctors/alerts (doctor polls every 30s)
+                           └─ Returns as { id: "notif-<db_id>", actionRequired: true, ... }
+```
+
+> **Note:** The notification service also attempts email and WhatsApp delivery. Those channels may fail silently in production (resulting in `status: 'failed'` in the DB row) without affecting the in-app alert visibility.
+
+### 21.6 Get Messages (Inbox)
 
 ```
 GET /api/doctors/messages
 Authorization: Bearer <token>
 ```
 
-### 21.6 Mark Message as Read
+### 21.7 Mark Message as Read
 
 ```
 PATCH /api/doctors/messages/:messageId/read
 Authorization: Bearer <token>
 ```
 
-### 21.7 Reply to Message
+### 21.8 Reply to Message
 
 ```
 POST /api/doctors/messages/reply
@@ -2963,6 +3125,65 @@ Store the JWT token securely:
 - Server enforces 15-minute idle timeout
 - App should implement auto-lock after inactivity
 - Store no PHI in plaintext local storage
+
+---
+
+## Appendix C: Test Credentials (Development / Staging)
+
+These credentials are verified against the production API and can be used for integration testing.
+
+> ⚠️ **Do not commit these credentials to public repositories.**
+
+### Patient Account
+
+| Field | Value |
+|-------|-------|
+| Email | `user@mediczy.com` |
+| Password | `User123` |
+| Login endpoint | `POST /api/auth/login` |
+| Patient ID | `19` |
+| Display name | Test User |
+
+### Doctor Account
+
+| Field | Value |
+|-------|-------|
+| Email | `doctor@mediczy.com` |
+| Password | `Doctor123` |
+| Login endpoint | `POST /api/doctors/login` |
+| Doctor ID | `70` |
+| Display name | Nandita Agarwal (General Physician) |
+| Hospital | Mediczy Test Hospital |
+
+### Security / Staff Account
+
+| Field | Value |
+|-------|-------|
+| Email | `security@mediczy.com` |
+| Password | `Security@123` |
+| Login endpoint | `POST /api/hospital/staff/security/login` |
+| Staff ID | `4883` |
+| Login URL | `https://app.mediqzy.com/security/login` |
+
+### E2E Appointment Notification Test Flow
+
+```
+1. Login as patient  →  POST /api/auth/login  →  save patient token
+2. Login as doctor   →  POST /api/doctors/login  →  save doctor token
+3. Patient books appointment:
+   POST /api/appointments
+   { doctorId: 70, consultationType: "video", appointmentDate: "YYYY-MM-DD",
+     appointmentTime: "HH:MM", symptoms: "..." }
+4. Doctor polls alerts (≤ 30 s later):
+   GET /api/doctors/alerts  →  expect notif-* alert with type "appointment_request"
+5. Doctor marks read:
+   PATCH /api/doctors/alerts/notif-<id>/read  →  { success: true }
+6. Bulk read:
+   PATCH /api/doctors/alerts/mark-all-read    →  { success: true }
+```
+
+**Valid `consultationType` values (as of v2.0):** `video` · `audio` · `chat` · `in-person`  
+`online` is **not** a valid value and will be rejected by the validator.
 
 ---
 
