@@ -78,6 +78,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/poc-devices',  // POC device management
       '/api/firebase',  // Firebase status & test
       '/api/ehr',  // Electronic Health Records
+      '/api/emr',  // EMR folder (own record)
       '/api/homecare',  // Homecare service booking (patients book home visits)
       '/api/pharmacy-orders',  // Patient-facing pharmacy order management
       '/v1'  // API v1 multi-tenant mobile app endpoints
@@ -158,6 +159,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/poc-devices',  // POC device management
       '/api/firebase',  // Firebase status & test
       '/api/ehr',  // Electronic Health Records
+      '/api/emr',  // EMR folder (own record)
       '/api/homecare',  // Homecare service booking (patients book home visits)
       '/api/pharmacy-orders',  // Patient-facing pharmacy order management
       '/v1'  // API v1 multi-tenant mobile app endpoints
@@ -193,6 +195,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/v3/ai-brain',  // AI Brain intelligence layer
       '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
       '/api/ehr',  // Electronic Health Records - patient records access
+      '/api/emr',  // EMR folder (own record)
       '/api/fhir',  // FHIR R4 interoperability endpoints
       '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
@@ -276,6 +279,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/whatsapp',  // Team access to WhatsApp templates & messaging
       '/api/sib-chatbots',  // Team access to SIB AI chatbots
       '/api/ehr',  // Electronic Health Records
+      '/api/emr',  // EMR folder — team can view all users
       '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'teamId'

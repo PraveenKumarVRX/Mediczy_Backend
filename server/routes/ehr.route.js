@@ -21,11 +21,11 @@ router.get('/patient/:patientId', authUser, async (req, res) => {
     const { patientId } = req.params;
     const { recordType, startDate, endDate, status } = req.query;
     
-    // Check authorization - admin, doctor, or the patient themselves
+    // Check authorization - admin, doctor, team, or the patient themselves
     const userRole = req.user?.role || req.userRole;
     const userId = req.user?.id || req.user?.dataValues?.id || req.user?._id;
     
-    if (userRole !== 'admin' && userRole !== 'doctor' && parseInt(patientId) !== parseInt(userId)) {
+    if (userRole !== 'admin' && userRole !== 'doctor' && userRole !== 'team' && parseInt(patientId) !== parseInt(userId)) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
     
@@ -76,7 +76,7 @@ router.get('/record/:id', authUser, async (req, res) => {
     const userRole = req.user?.role || req.userRole;
     const userId = req.user?.id || req.user?.dataValues?.id || req.user?._id;
     
-    if (userRole !== 'admin' && userRole !== 'doctor' && record.patientId !== parseInt(userId)) {
+    if (userRole !== 'admin' && userRole !== 'doctor' && userRole !== 'team' && record.patientId !== parseInt(userId)) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
     
@@ -107,7 +107,7 @@ router.get('/summary/:patientId', authUser, async (req, res) => {
     const userRole = req.user?.role || req.userRole;
     const userId = req.user?.id || req.user?.dataValues?.id || req.user?._id;
     
-    if (userRole !== 'admin' && userRole !== 'doctor' && parseInt(patientId) !== parseInt(userId)) {
+    if (userRole !== 'admin' && userRole !== 'doctor' && userRole !== 'team' && parseInt(patientId) !== parseInt(userId)) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
     
@@ -169,7 +169,7 @@ router.get('/prescriptions/:patientId', authUser, async (req, res) => {
     const userRole = req.user?.role || req.userRole;
     const userId = req.user?.id || req.user?.dataValues?.id || req.user?._id;
     
-    if (userRole !== 'admin' && userRole !== 'doctor' && parseInt(patientId) !== parseInt(userId)) {
+    if (userRole !== 'admin' && userRole !== 'doctor' && userRole !== 'team' && parseInt(patientId) !== parseInt(userId)) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
     
@@ -337,7 +337,7 @@ router.get('/reports/:patientId', authUser, async (req, res) => {
     const userRole = req.user?.role || req.userRole;
     const userId = req.user?.id || req.user?.dataValues?.id || req.user?._id;
 
-    if (userRole !== 'admin' && userRole !== 'doctor' && parseInt(patientId) !== parseInt(userId)) {
+    if (userRole !== 'admin' && userRole !== 'doctor' && userRole !== 'team' && parseInt(patientId) !== parseInt(userId)) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
