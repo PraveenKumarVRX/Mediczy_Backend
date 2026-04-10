@@ -375,7 +375,7 @@ router.get('/', authUser, async (req, res) => {
     
     const assessment = await UserHealthAssessment.findOne({
       where: { userId },
-      order: [['assessedAt', 'DESC']]
+      order: [['assessed_at', 'DESC']]
     }).catch(() => null);
 
     if (!assessment) {

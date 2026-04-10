@@ -3,7 +3,7 @@ import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 
 /**
  * UserHealthAssessment Model
- * Stores user health assessments with risk calculations
+ * Field names match the health-assessment route exactly.
  */
 const UserHealthAssessment = sequelize.define('UserHealthAssessment', {
   id: {
@@ -14,213 +14,59 @@ const UserHealthAssessment = sequelize.define('UserHealthAssessment', {
   userId: {
     type: DataTypes.INTEGER,
     allowNull: false,
-    field: 'user_id',
-    references: {
-      model: 'users',
-      key: 'id'
-    }
+    field: 'user_id'
   },
-  
-  // Basic Information
-  age: {
-    type: DataTypes.INTEGER,
-    allowNull: true
-  },
-  gender: {
-    type: DataTypes.STRING(20),
-    allowNull: true
-  },
-  
-  // Physical Measurements
-  height: {
-    type: DataTypes.DECIMAL(5, 2),
-    allowNull: true,
-    comment: 'Height in cm'
-  },
-  weight: {
-    type: DataTypes.DECIMAL(5, 2),
-    allowNull: true,
-    comment: 'Weight in kg'
-  },
-  waistCircumference: {
-    type: DataTypes.DECIMAL(5, 2),
-    allowNull: true,
-    field: 'waist_circumference',
-    comment: 'Waist circumference in cm'
-  },
-  hipCircumference: {
-    type: DataTypes.DECIMAL(5, 2),
-    allowNull: true,
-    field: 'hip_circumference',
-    comment: 'Hip circumference in cm'
-  },
-  
-  // Calculated Metrics
-  bmi: {
-    type: DataTypes.DECIMAL(5, 2),
-    allowNull: true,
-    comment: 'Body Mass Index'
-  },
-  waistHipRatio: {
-    type: DataTypes.DECIMAL(5, 3),
-    allowNull: true,
-    field: 'waist_hip_ratio',
-    comment: 'Waist-to-Hip Ratio'
-  },
-  bodyFatPercentage: {
-    type: DataTypes.DECIMAL(5, 2),
-    allowNull: true,
-    field: 'body_fat_percentage',
-    comment: 'Estimated body fat percentage'
-  },
-  
-  // Lifestyle Factors
-  smokingStatus: {
-    type: DataTypes.STRING(50),
-    allowNull: true,
-    field: 'smoking_status',
-    comment: 'never, former, current'
-  },
-  alcoholConsumption: {
-    type: DataTypes.STRING(50),
-    allowNull: true,
-    field: 'alcohol_consumption',
-    comment: 'none, moderate, heavy'
-  },
-  exerciseFrequency: {
-    type: DataTypes.STRING(50),
-    allowNull: true,
-    field: 'exercise_frequency',
-    comment: 'sedentary, light, moderate, active, very_active'
-  },
-  sleepHours: {
-    type: DataTypes.DECIMAL(3, 1),
-    allowNull: true,
-    field: 'sleep_hours',
-    comment: 'Average hours of sleep per night'
-  },
-  stressLevel: {
-    type: DataTypes.STRING(50),
-    allowNull: true,
-    field: 'stress_level',
-    comment: 'low, moderate, high'
-  },
-  
-  // Medical History
-  chronicConditions: {
-    type: DataTypes.ARRAY(DataTypes.STRING),
-    allowNull: true,
-    defaultValue: [],
-    field: 'chronic_conditions',
-    comment: 'Array of chronic conditions'
-  },
-  familyHistory: {
-    type: DataTypes.JSONB,
-    allowNull: true,
-    field: 'family_history',
-    comment: 'Family medical history'
-  },
-  currentMedications: {
-    type: DataTypes.ARRAY(DataTypes.STRING),
-    allowNull: true,
-    defaultValue: [],
-    field: 'current_medications',
-    comment: 'List of current medications'
-  },
-  
-  // Vital Signs
-  bloodPressureSystolic: {
-    type: DataTypes.INTEGER,
-    allowNull: true,
-    field: 'blood_pressure_systolic'
-  },
-  bloodPressureDiastolic: {
-    type: DataTypes.INTEGER,
-    allowNull: true,
-    field: 'blood_pressure_diastolic'
-  },
-  heartRate: {
-    type: DataTypes.INTEGER,
-    allowNull: true,
-    field: 'heart_rate'
-  },
-  bloodGlucose: {
-    type: DataTypes.DECIMAL(5, 2),
-    allowNull: true,
-    field: 'blood_glucose',
-    comment: 'Fasting blood glucose in mg/dL'
-  },
-  cholesterolTotal: {
-    type: DataTypes.DECIMAL(5, 2),
-    allowNull: true,
-    field: 'cholesterol_total',
-    comment: 'Total cholesterol in mg/dL'
-  },
-  cholesterolLDL: {
-    type: DataTypes.DECIMAL(5, 2),
-    allowNull: true,
-    field: 'cholesterol_ldl',
-    comment: 'LDL cholesterol in mg/dL'
-  },
-  cholesterolHDL: {
-    type: DataTypes.DECIMAL(5, 2),
-    allowNull: true,
-    field: 'cholesterol_hdl',
-    comment: 'HDL cholesterol in mg/dL'
-  },
-  
-  // Risk Assessment
-  riskScore: {
-    type: DataTypes.DECIMAL(5, 2),
-    allowNull: true,
-    field: 'risk_score',
-    comment: 'Overall health risk score (0-100)'
-  },
-  riskLevel: {
-    type: DataTypes.STRING(20),
-    allowNull: true,
-    field: 'risk_level',
-    comment: 'LOW, MILD, MODERATE, HIGH, VERY_HIGH'
-  },
-  riskFactors: {
-    type: DataTypes.ARRAY(DataTypes.STRING),
-    allowNull: true,
-    defaultValue: [],
-    field: 'risk_factors',
-    comment: 'Identified risk factors'
-  },
-  recommendations: {
-    type: DataTypes.JSONB,
-    allowNull: true,
-    comment: 'Personalized health recommendations'
-  },
-  
-  // Metadata
-  assessmentDate: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW,
-    field: 'assessment_date'
-  },
-  notes: {
-    type: DataTypes.TEXT,
-    allowNull: true,
-    comment: 'Additional notes or observations'
-  }
+
+  // Demographics
+  age:    { type: DataTypes.INTEGER,    allowNull: true },
+  gender: { type: DataTypes.STRING(20), allowNull: true },
+
+  // Physical measurements
+  height: { type: DataTypes.DECIMAL(5,2), allowNull: true },
+  weight: { type: DataTypes.DECIMAL(5,2), allowNull: true },
+  waist:  { type: DataTypes.DECIMAL(5,2), allowNull: true },
+  hip:    { type: DataTypes.DECIMAL(5,2), allowNull: true },
+  bmi:    { type: DataTypes.DECIMAL(5,2), allowNull: true },
+  whr:    { type: DataTypes.DECIMAL(5,3), allowNull: true },
+
+  // Lifestyle
+  smoking:            { type: DataTypes.STRING(50), allowNull: true },
+  alcohol:            { type: DataTypes.STRING(50), allowNull: true },
+  exercise_frequency: { type: DataTypes.STRING(50), allowNull: true },
+  stress_level:       { type: DataTypes.INTEGER,    allowNull: true },
+  sleep_hours:        { type: DataTypes.DECIMAL(3,1), allowNull: true },
+  diet_quality:       { type: DataTypes.STRING(50), allowNull: true },
+
+  // Medical history
+  hypertension:  { type: DataTypes.STRING(10), allowNull: true },
+  diabetes:      { type: DataTypes.STRING(10), allowNull: true },
+  heart_disease: { type: DataTypes.STRING(10), allowNull: true },
+  cholesterol:   { type: DataTypes.STRING(10), allowNull: true },
+  mental_health: { type: DataTypes.STRING(50), allowNull: true },
+
+  // Family history
+  family_heart_disease: { type: DataTypes.STRING(10), allowNull: true },
+  family_diabetes:      { type: DataTypes.STRING(10), allowNull: true },
+  family_cancer:        { type: DataTypes.STRING(10), allowNull: true },
+
+  // Risk results
+  riskScore:   { type: DataTypes.DECIMAL(5,2), allowNull: true, field: 'risk_score' },
+  riskLevel:   { type: DataTypes.STRING(20),   allowNull: true, field: 'risk_level'  },
+  riskFactors: { type: DataTypes.JSONB, defaultValue: [], field: 'risk_factors' },
+
+  // Full questionnaire responses
+  allResponses: { type: DataTypes.JSONB, defaultValue: {}, field: 'all_responses' },
+
+  // Assessment timestamp (set explicitly by route)
+  assessedAt: { type: DataTypes.DATE, defaultValue: DataTypes.NOW, field: 'assessed_at' },
 }, {
   tableName: 'user_health_assessments',
   timestamps: true,
-  createdAt: 'assessmentDate',
-  updatedAt: 'updatedAt',
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
   indexes: [
-    {
-      fields: ['user_id']
-    },
-    {
-      fields: ['assessment_date']
-    },
-    {
-      fields: ['risk_level']
-    }
+    { fields: ['user_id'] },
+    { fields: ['assessed_at'] },
   ]
 });
 
