@@ -5,7 +5,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
@@ -20,10 +19,8 @@ import {
   HeartPulse,
   LucideIcon,
   Shield,
-  ShieldAlert,
   Users,
   Wine,
-  ArrowRight,
   CheckCircle2,
   TrendingUp,
   Calculator,
@@ -33,21 +30,17 @@ import {
   Lightbulb,
   Sparkles,
   Clock,
-  Stethoscope,
-  Zap,
-  Target,
   Calendar,
   Gift,
   TrendingDown,
   BarChart3,
-  ArrowDown,
-  ArrowUp,
   Minus,
+  Loader2,
+  RotateCcw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   MAX_THEORETICAL_SCORE,
-  RISK_SCORE_BANDS,
   RiskCategoryId,
   RiskResponses,
   calculateRiskScore,
@@ -56,13 +49,8 @@ import {
   summarizeSections,
 } from '@/lib/health-risk';
 import {
-  BayesianEvidence,
   BayesianRiskResult,
-  buildBayesianEvidence,
   computeBayesianRisk,
-  EvidenceNode,
-  EvidenceState,
-  PosteriorState,
 } from '@/lib/bayesian-risk';
 import api from '@/utils/api';
 import { useAuth } from '@/auth/AuthProvider';
@@ -421,7 +409,6 @@ const UserHealthRiskAssessment = () => {
   const totalScore = calculateRiskScore(responses);
   const scoreBand = resolveScoreBand(totalScore);
   const sectionBreakdown = useMemo(() => summarizeSections(responses), [responses]);
-  const bayesianEvidence = useMemo(() => buildBayesianEvidence(sectionBreakdown), [sectionBreakdown]);
   const bayesianResult = useMemo(() => computeBayesianRisk(sectionBreakdown), [sectionBreakdown]);
 
   // Load assessment history (all periods)
@@ -467,9 +454,16 @@ const UserHealthRiskAssessment = () => {
     setMeasurements(prev => ({ ...prev, [field]: value }));
   };
 
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+
   const handleReset = () => {
+    if (Object.keys(responses).length === 0) return;
+    setShowResetConfirm(true);
+  };
+
+  const confirmReset = () => {
     setResponses({});
-    // Keep measurements from profile
+    setShowResetConfirm(false);
   };
 
   const handleSaveAssessment = async () => {
@@ -584,6 +578,29 @@ const UserHealthRiskAssessment = () => {
               Personalized health evaluation across lifestyle, vitals, medical history, and wellness factors.
               {currentUser && <span className="text-teal-300"> (Account: {currentUser.firstName})</span>}
             </p>
+            {/* Quick Stats */}
+            {savedAssessments.length > 0 && (
+              <div className="flex flex-wrap gap-3 mt-4">
+                <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-1.5">
+                  <Activity className="h-3.5 w-3.5 text-teal-300" />
+                  <span className="text-xs font-medium">{savedAssessments.length} Assessment{savedAssessments.length > 1 ? 's' : ''}</span>
+                </div>
+                {savedAssessments[0]?.risk_level && (
+                  <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-1.5">
+                    <Shield className="h-3.5 w-3.5 text-teal-300" />
+                    <span className="text-xs font-medium">Latest: {savedAssessments[0].risk_level}</span>
+                  </div>
+                )}
+                {savedAssessments[0]?.assessed_at && (
+                  <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-1.5">
+                    <Clock className="h-3.5 w-3.5 text-teal-300" />
+                    <span className="text-xs font-medium">
+                      {new Date(savedAssessments[0].assessed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -793,17 +810,30 @@ const UserHealthRiskAssessment = () => {
                     className="flex-1 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white shadow-lg shadow-teal-500/20"
                   >
                     {submitting ? (
-                      <><span className="animate-spin mr-2">⟳</span>Saving...</>
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>
                     ) : (
                       <><CheckCircle2 className="h-4 w-4 mr-2" />Save Assessment</>
                     )}
                   </Button>
-                  <Button 
-                    onClick={handleReset}
-                    variant="outline"
-                  >
-                    Reset
-                  </Button>
+                  {showResetConfirm ? (
+                    <div className="flex gap-1">
+                      <Button onClick={confirmReset} variant="destructive" size="sm">
+                        Confirm
+                      </Button>
+                      <Button onClick={() => setShowResetConfirm(false)} variant="ghost" size="sm">
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button 
+                      onClick={handleReset}
+                      variant="outline"
+                      disabled={Object.keys(responses).length === 0}
+                    >
+                      <RotateCcw className="h-4 w-4 mr-1" />
+                      Reset
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -824,8 +854,8 @@ const UserHealthRiskAssessment = () => {
                       return (
                         <div key={section.id} className="space-y-4 pb-6 border-b last:border-b-0">
                           <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-lg bg-orange-100/50">
-                              <Icon className="h-4 w-4 text-orange-600" />
+                            <div className="p-2 rounded-lg bg-teal-100/50 dark:bg-teal-900/30">
+                              <Icon className="h-4 w-4 text-teal-600 dark:text-teal-400" />
                             </div>
                             <div>
                               <h3 className="font-semibold">{section.title}</h3>
@@ -833,7 +863,7 @@ const UserHealthRiskAssessment = () => {
                             </div>
                           </div>
 
-                          <div className="space-y-4 ml-11">
+                          <div className="space-y-4 ml-0 md:ml-11">
                             {section.questions.map((question) => {
                               const isAutoCalculated = AUTO_CALCULATED_QUESTIONS.includes(question.id);
                               return (
@@ -868,7 +898,9 @@ const UserHealthRiskAssessment = () => {
                                           ? responses[question.id] === option.id 
                                             ? 'bg-teal-100 dark:bg-teal-800/30' 
                                             : 'opacity-60'
-                                          : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                                          : responses[question.id] === option.id
+                                            ? 'bg-teal-50 dark:bg-teal-900/20 border border-teal-300 dark:border-teal-700 shadow-sm'
+                                            : 'hover:bg-slate-50 dark:hover:bg-slate-700/50 border border-transparent'
                                       )}
                                       onClick={() => handleSelectOption(question.id, option.id)}
                                     >
@@ -915,8 +947,18 @@ const UserHealthRiskAssessment = () => {
 
           {/* Sidebar - Insights & History */}
           <div className="space-y-6">
+            {/* Loading indicator */}
+            {loading && (
+              <Card className="border-slate-200/50">
+                <CardContent className="py-8 flex flex-col items-center gap-3">
+                  <Loader2 className="h-6 w-6 animate-spin text-teal-600" />
+                  <p className="text-sm text-muted-foreground">Loading your health data...</p>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Risk Insights */}
-            {totalScore > 0 && (
+            {!loading && totalScore > 0 && (
               <Card className="border-amber-200/50">
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">

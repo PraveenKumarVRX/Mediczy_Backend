@@ -527,7 +527,159 @@ add_text(slide, Inches(0.7), Inches(6.85), Inches(12.0), Inches(0.4),
 
 
 # ════════════════════════════════════════════════════════════
-# SLIDE 8 — TELEMEDICINE & VIRTUAL CARE
+# SLIDE 8 — SMART ASSET TRACKING (RFID | BLE | GPS)
+# ════════════════════════════════════════════════════════════
+slide = prs.slides.add_slide(prs.slide_layouts[6])
+set_bg_color(slide, DARK_BG)
+
+# Gradient left panel
+add_shape(slide, Inches(0), Inches(0), Inches(5.5), Inches(7.5), DARK_CARD)
+add_shape(slide, Inches(0), Inches(0), Inches(0.06), Inches(7.5), TEAL)
+
+# Tag label
+add_text(slide, Inches(0.5), Inches(0.45), Inches(5), Inches(0.35),
+         "SMART ASSET TRACKING", size=12, color=TEAL, bold=True)
+add_shape(slide, Inches(0.5), Inches(0.85), Inches(3.5), Inches(0.03), TEAL)
+
+# Title
+add_text(slide, Inches(0.5), Inches(0.95), Inches(5.0), Inches(0.65),
+         "RFID  |  BLE  |  GPS", size=36, color=WHITE, bold=True)
+add_text(slide, Inches(0.5), Inches(1.65), Inches(5.0), Inches(0.45),
+         "Complete Real-Time Location System for Hospital Assets", size=14, color=GRAY)
+
+# Tracking technology cards (left panel)
+tech_items = [
+    ("📡", "Passive RFID", "Low-cost sticker tags on every asset\nExit gate theft alerts & check-out logs\nBulk scanning — no line-of-sight needed", TEAL),
+    ("📶", "BLE Beacons", "Indoor real-time location tracking\n1–3m accuracy across wards & floors\nInstant zone entry/exit detection", BLUE),
+    ("🛰️", "GPS Tracking", "Ambulances & mobile healthcare units\nLive route tracking + ETA prediction\nGeofence alerts for field equipment", EMERALD),
+]
+for i, (icon, title, desc, accent) in enumerate(tech_items):
+    y = Inches(2.3 + i * 1.65)
+    card = add_shape(slide, Inches(0.4), y, Inches(4.8), Inches(1.45), RGBColor(0x16, 0x22, 0x34), radius=True)
+    add_shape(slide, Inches(0.44), y + Inches(0.1), Inches(0.035), Inches(1.25), accent)
+    add_text(slide, Inches(0.55), y + Inches(0.1), Inches(0.45), Inches(0.4),
+             icon, size=22, color=accent, font="Segoe UI Emoji")
+    add_text(slide, Inches(1.0), y + Inches(0.12), Inches(3.8), Inches(0.3),
+             title, size=14, color=WHITE, bold=True)
+    add_text(slide, Inches(1.0), y + Inches(0.5), Inches(3.8), Inches(0.85),
+             desc, size=10.5, color=GRAY)
+
+# RTLS engine badge
+add_shape(slide, Inches(0.4), Inches(7.1), Inches(4.8), Inches(0.3), TEAL, radius=True)
+add_text(slide, Inches(0.4), Inches(7.12), Inches(4.8), Inches(0.25),
+         "⚡  Unified RTLS Engine — Complete Facility Visibility", size=11, color=WHITE, bold=True, align=PP_ALIGN.CENTER)
+
+# Right panel — asset categories + visual
+add_text(slide, Inches(5.8), Inches(0.5), Inches(7.2), Inches(0.45),
+         "Tracked Across Every Department", size=18, color=WHITE, bold=True)
+add_shape(slide, Inches(5.8), Inches(0.95), Inches(2.5), Inches(0.03), TEAL)
+
+# Asset category grid
+asset_cats = [
+    ("🏥", "Medical Equipment", "Ventilators, infusion pumps,\nwheelchairs, defibrillators", TEAL),
+    ("🩺", "Clinical Devices", "ECG monitors, ultrasound,\nportable X-ray units", BLUE),
+    ("🚑", "Ambulances & Fleet", "Live GPS, dispatch routing,\nETA & fleet health", EMERALD),
+    ("💊", "Pharmacy Assets", "Drug carts, crash carts,\ncold-chain equipment", PURPLE),
+    ("🔬", "Lab Equipment", "Centrifuges, analyzers,\nsample transport racks", ORANGE),
+    ("🛏️", "Beds & Furniture", "Stretchers, surgical tables,\nICU bed allocation", ROSE),
+]
+for i, (icon, title, desc, accent) in enumerate(asset_cats):
+    col = i % 2
+    row = i // 2
+    x = Inches(5.8 + col * 3.7)
+    y = Inches(1.3 + row * 2.0)
+    card = add_shape(slide, x, y, Inches(3.3), Inches(1.7), DARK_CARD, radius=True)
+    add_shape(slide, x + Inches(0.08), y + Inches(0.08), Inches(3.15), Inches(0.035), accent)
+    add_text(slide, x + Inches(0.2), y + Inches(0.2), Inches(0.4), Inches(0.35),
+             icon, size=20, color=accent, font="Segoe UI Emoji")
+    add_text(slide, x + Inches(0.65), y + Inches(0.22), Inches(2.5), Inches(0.3),
+             title, size=13, color=WHITE, bold=True)
+    add_text(slide, x + Inches(0.2), y + Inches(0.65), Inches(2.9), Inches(0.85),
+             desc, size=10.5, color=GRAY)
+
+# Bottom info bar
+add_shape(slide, Inches(5.8), Inches(7.1), Inches(7.3), Inches(0.3), DARK_CARD, radius=True)
+add_text(slide, Inches(5.9), Inches(7.12), Inches(7.1), Inches(0.25),
+         "Protocols: ISO 15693  •  IEEE 802.15.1  •  NMEA 0183  •  MQTT  •  REST API  •  WebSocket Streams",
+         size=10, color=TEAL_LIGHT, align=PP_ALIGN.CENTER)
+
+
+# ════════════════════════════════════════════════════════════
+# SLIDE 9 — ASSET INTELLIGENCE & BUSINESS IMPACT
+# ════════════════════════════════════════════════════════════
+slide = prs.slides.add_slide(prs.slide_layouts[6])
+set_bg_color(slide, DARK_BG)
+
+# Top header bar
+add_shape(slide, Inches(0), Inches(0), Inches(13.33), Inches(1.4), DARK_CARD)
+add_shape(slide, Inches(0), Inches(1.38), Inches(13.33), Inches(0.04), TEAL)
+
+add_text(slide, Inches(0.8), Inches(0.1), Inches(5), Inches(0.3),
+         "ASSET INTELLIGENCE", size=12, color=TEAL, bold=True)
+add_text(slide, Inches(0.8), Inches(0.4), Inches(9), Inches(0.7),
+         "Asset Intelligence & Business Impact", size=34, color=WHITE, bold=True)
+add_text(slide, Inches(0.8), Inches(1.05), Inches(9), Inches(0.3),
+         "AI-driven visibility, zone-aware alerting, and predictive maintenance — all in one dashboard", size=13, color=GRAY)
+
+# Impact stats row (top)
+impact_stats_asset = [
+    ("30–40%", "Reduction in\nAsset Loss", TEAL),
+    ("20–30%", "Lower Equipment\nCost", EMERALD),
+    ("25%", "Faster Asset\nRetrieval", BLUE),
+    ("99%", "Asset Location\nAccuracy (BLE)", PURPLE),
+]
+for i, (val, label, accent) in enumerate(impact_stats_asset):
+    x = Inches(0.5 + i * 3.2)
+    card = add_shape(slide, x, Inches(1.6), Inches(2.9), Inches(1.1), DARK_CARD, radius=True)
+    add_shape(slide, x + Inches(0.08), Inches(1.64), Inches(2.74), Inches(0.035), accent)
+    add_text(slide, x + Inches(0.15), Inches(1.7), Inches(1.5), Inches(0.55),
+             val, size=28, color=accent, bold=True)
+    add_text(slide, x + Inches(1.65), Inches(1.75), Inches(1.1), Inches(0.55),
+             label, size=10, color=LIGHT_GRAY)
+
+# Feature details — left column
+left_features = [
+    ("📍", "Live Asset Dashboard", "Real-time map view of every tagged asset across all floors and departments. Filter by category, zone, or alert status. One-click asset history log.", TEAL),
+    ("🚨", "Zone-Based Smart Alerts", "Automated alerts for ICU, OT, pharmacy vaults, and exit gates. Unauthorized movement detection with instant escalation to security and department heads.", ORANGE),
+    ("🤖", "AI-Driven Asset Allocation", "Machine learning predicts equipment demand by department, shift, and admission volume. Prevents bottlenecks before they happen.", EMERALD),
+]
+for i, (icon, title, desc, accent) in enumerate(left_features):
+    y = Inches(2.9 + i * 1.5)
+    card = add_shape(slide, Inches(0.4), y, Inches(6.0), Inches(1.3), DARK_CARD, radius=True)
+    add_shape(slide, Inches(0.44), y + Inches(0.1), Inches(0.035), Inches(1.1), accent)
+    add_text(slide, Inches(0.6), y + Inches(0.1), Inches(0.4), Inches(0.35),
+             icon, size=22, color=accent, font="Segoe UI Emoji")
+    add_text(slide, Inches(1.1), y + Inches(0.12), Inches(5.0), Inches(0.3),
+             title, size=14, color=WHITE, bold=True)
+    add_text(slide, Inches(1.1), y + Inches(0.5), Inches(5.0), Inches(0.75),
+             desc, size=10.5, color=GRAY)
+
+# Right column — Maintenance + ROI
+right_features = [
+    ("🔧", "Predictive Maintenance", "Track asset usage cycles and flag equipment due for servicing before failure. Integrated work-order generation with biomedical teams.", PURPLE),
+    ("📊", "Utilization Analytics", "Benchmark asset usage rates by ward, shift, and doctor. Identify idle or hoarded equipment and redeploy in real time.", BLUE),
+    ("💰", "ROI Calculator", "With RFID + BLE deployment across 200-bed hospital:\n• Save ₹15–25L/yr in lost/stolen equipment\n• Cut equipment rental costs by 20–30%\n• Eliminate 80% of manual audit hours", ROSE),
+]
+for i, (icon, title, desc, accent) in enumerate(right_features):
+    y = Inches(2.9 + i * 1.5)
+    card = add_shape(slide, Inches(6.8), y, Inches(6.1), Inches(1.3), DARK_CARD, radius=True)
+    add_shape(slide, Inches(6.84), y + Inches(0.1), Inches(0.035), Inches(1.1), accent)
+    add_text(slide, Inches(7.0), y + Inches(0.1), Inches(0.4), Inches(0.35),
+             icon, size=22, color=accent, font="Segoe UI Emoji")
+    add_text(slide, Inches(7.5), y + Inches(0.12), Inches(5.0), Inches(0.3),
+             title, size=14, color=WHITE, bold=True)
+    add_text(slide, Inches(7.5), y + Inches(0.5), Inches(5.2), Inches(0.75),
+             desc, size=10.5, color=GRAY)
+
+# Bottom ribbon
+add_shape(slide, Inches(0), Inches(7.18), Inches(13.33), Inches(0.32), TEAL)
+highlights = "🏥  Hospital-Wide RTLS  •  📡  RFID + BLE + GPS  •  🤖  AI Allocation  •  🔔  Zone Alerts  •  📊  Utilization Dashboards  •  🔧  Predictive Maintenance"
+add_text(slide, Inches(0), Inches(7.2), Inches(13.33), Inches(0.28),
+         highlights, size=10.5, color=WHITE, bold=True, align=PP_ALIGN.CENTER)
+
+
+# ════════════════════════════════════════════════════════════
+# SLIDE 10 (was 8) — TELEMEDICINE & VIRTUAL CARE
 # ════════════════════════════════════════════════════════════
 slide = prs.slides.add_slide(prs.slide_layouts[6])
 set_bg_image(slide, os.path.join(ASSETS, "bg_section_3.png"))
@@ -960,16 +1112,24 @@ diffs = [
     ("2", "AI-First Clinical Suite", "9 integrated AI capabilities: offline AI Scribe,\nCDSS, AI Vision, AI Doctor — core to every\nclinical workflow, not bolt-on features.", EMERALD),
     ("3", "RIS/PACS Tele-Radiology", "Full radiology workflow — DICOM viewer, tele-\nradiology with SLA tracking, AI-assisted reads,\nstructured reporting & multi-modality.", BLUE),
     ("4", "IoT Patient Monitoring", "Connected device ecosystem for real-time vitals\n— ICU bedside, RPM at home, smart alerts,\npredictive deterioration scoring.", PURPLE),
-    ("5", "India-Ready Compliance", "Native ABDM/ABHA, ICD-10, DICOM/HL7/FHIR,\nHIPAA-grade security, NABH-ready — built for\nIndian & global regulations.", ORANGE),
-    ("6", "White-Label SaaS", "Multi-tenant architecture with PostgreSQL RLS,\ncustom domains, module access control —\nperfect for healthcare aggregators & chains.", ROSE),
+    ("5", "Smart Asset Tracking", "RFID + BLE + GPS-powered RTLS covering every\nasset across departments. Zone alerts, AI\nallocation & predictive maintenance built in.", ORANGE),
+    ("6", "India-Ready Compliance", "Native ABDM/ABHA, ICD-10, DICOM/HL7/FHIR,\nHIPAA-grade security, NABH-ready — built for\nIndian & global regulations.", ROSE),
+    ("7", "White-Label SaaS", "Multi-tenant architecture with PostgreSQL RLS,\ncustom domains, module access control —\nperfect for healthcare aggregators & chains.", AMBER),
 ]
 
-for i, (num, title, desc, accent) in enumerate(diffs):
-    col = i % 3
-    row = i // 3
-    x = Inches(0.8 + col * 4.0)
-    y = Inches(1.8 + row * 2.7)
-    add_accent_card(slide, x, y, Inches(3.6), Inches(2.4), accent, title, desc, num)
+# Layout: row 0 → 4 cards, row 1 → 3 cards centred
+row0 = diffs[:4]
+row1 = diffs[4:]
+for i, (num, title, desc, accent) in enumerate(row0):
+    x = Inches(0.4 + i * 3.25)
+    y = Inches(1.8)
+    add_accent_card(slide, x, y, Inches(3.0), Inches(2.3), accent, title, desc, num)
+
+row1_start_x = Inches(1.25)
+for i, (num, title, desc, accent) in enumerate(row1):
+    x = row1_start_x + Inches(i * 3.65)
+    y = Inches(4.35)
+    add_accent_card(slide, x, y, Inches(3.3), Inches(2.3), accent, title, desc, num)
 
 
 # ════════════════════════════════════════════════════════════
