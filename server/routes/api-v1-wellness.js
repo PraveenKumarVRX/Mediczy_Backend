@@ -15,7 +15,7 @@ import { verifyToken, verifyTenant, requireScopes } from '../middleware/api-auth
 import { wellnessValidation, handleValidationErrors } from '../middleware/validation.js';
 import * as wellnessController from '../controllers/api-v1/WellnessController.js';
 
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
 
 // Apply authentication and tenant verification to all routes
 router.use(verifyToken, verifyTenant);

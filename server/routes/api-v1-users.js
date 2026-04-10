@@ -15,7 +15,7 @@ import express from 'express';
 import { verifyToken, verifyTenant, requireScopes } from '../middleware/api-auth.js';
 import * as usersController from '../controllers/api-v1/UsersController.js';
 
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
 
 // Apply authentication and tenant verification to all routes  
 router.use(verifyToken, verifyTenant);

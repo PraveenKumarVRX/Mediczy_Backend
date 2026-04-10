@@ -78,6 +78,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/poc-devices',  // POC device management
       '/api/firebase',  // Firebase status & test
       '/api/ehr',  // Electronic Health Records
+      '/api/homecare',  // Homecare service booking (patients book home visits)
       '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'userId'
@@ -156,6 +157,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/poc-devices',  // POC device management
       '/api/firebase',  // Firebase status & test
       '/api/ehr',  // Electronic Health Records
+      '/api/homecare',  // Homecare service booking (patients book home visits)
       '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'userId'
@@ -576,6 +578,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/broker-integrations/claims/submit',
   '/api/broker-integrations/webhooks',
   '/api/homecare/login',
+  '/api/homecare/book',    // Patient homecare booking (public — no auth required)
   '/api/corporate/login',
   '/api/ngo/login',
   '/api/oauth',

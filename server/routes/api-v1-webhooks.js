@@ -18,7 +18,7 @@ import { verifyToken, verifyTenant, requireScopes } from '../middleware/api-auth
 import { webhooksValidation, handleValidationErrors } from '../middleware/validation.js';
 import * as webhooksController from '../controllers/api-v1/WebhooksController.js';
 
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
 
 // Apply authentication and tenant verification to all routes
 router.use(verifyToken, verifyTenant);

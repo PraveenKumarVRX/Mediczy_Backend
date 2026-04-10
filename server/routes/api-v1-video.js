@@ -13,7 +13,7 @@ import express from 'express';
 import { verifyToken, verifyTenant, requireScopes } from '../middleware/api-auth.js';
 import * as videoController from '../controllers/api-v1/VideoController.js';
 
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
 
 // Apply authentication and tenant verification to all routes
 router.use(verifyToken, verifyTenant);

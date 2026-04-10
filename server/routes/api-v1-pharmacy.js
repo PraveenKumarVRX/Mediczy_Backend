@@ -16,7 +16,7 @@ import { verifyToken, verifyTenant, requireScopes } from '../middleware/api-auth
 import { pharmacyValidation, handleValidationErrors } from '../middleware/validation.js';
 import * as pharmacyController from '../controllers/api-v1/PharmacyController.js';
 
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
 
 // Apply authentication and tenant verification to all routes
 router.use(verifyToken, verifyTenant);
