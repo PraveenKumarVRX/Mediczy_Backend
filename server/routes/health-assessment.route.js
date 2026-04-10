@@ -131,11 +131,14 @@ const calculateHealthRiskScore = (assessment) => {
     riskFactors.push('Family History - Cancer');
   }
 
+  // Cap at 100
+  score = Math.min(score, 100);
+
   // Determine risk level
   let riskLevel = 'LOW';
-  if (score >= 60) {
+  if (score >= 70) {
     riskLevel = 'VERY_HIGH';
-  } else if (score >= 45) {
+  } else if (score >= 50) {
     riskLevel = 'HIGH';
   } else if (score >= 30) {
     riskLevel = 'MODERATE';

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import React from 'react';
 import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +30,12 @@ import {
   Ruler,
   Scale,
   User,
+  Lightbulb,
+  Sparkles,
+  Clock,
+  Stethoscope,
+  Zap,
+  Target,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -176,11 +183,119 @@ const getAgeCategory = (age: number): string => {
   return '80_plus';
 };
 
+// ─── Animated Risk Gauge (SVG donut) ────────────────────────────────────────
+const RiskGauge = ({ score, max, band }: { score: number; max: number; band: { label: string; color: string; description: string } }) => {
+  const [animatedScore, setAnimatedScore] = useState(0);
+  useEffect(() => {
+    let raf: number;
+    const start = performance.now();
+    const from = animatedScore;
+    const to = score;
+    const duration = 800;
+    const animate = (now: number) => {
+      const t = Math.min((now - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - t, 3);
+      setAnimatedScore(Math.round(from + (to - from) * ease));
+      if (t < 1) raf = requestAnimationFrame(animate);
+    };
+    raf = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(raf);
+  }, [score]);
+
+  const pct = max > 0 ? Math.min(animatedScore / max, 1) : 0;
+  const r = 58;
+  const circ = 2 * Math.PI * r;
+  const arc = circ * 0.75; // 270° arc
+  const strokeDash = arc * pct;
+
+  const gaugeColor =
+    pct <= 0.33 ? '#10b981' : pct <= 0.5 ? '#f59e0b' : pct <= 0.7 ? '#f97316' : '#ef4444';
+
+  return (
+    <div className="flex flex-col items-center">
+      <div className="relative w-40 h-40">
+        <svg viewBox="0 0 140 140" className="w-full h-full -rotate-[135deg]">
+          <circle cx="70" cy="70" r={r} fill="none" stroke="currentColor" strokeWidth="10"
+            className="text-slate-100 dark:text-slate-800"
+            strokeLinecap="round" strokeDasharray={`${arc} ${circ}`}
+          />
+          <circle cx="70" cy="70" r={r} fill="none" stroke={gaugeColor} strokeWidth="10"
+            strokeLinecap="round" strokeDasharray={`${strokeDash} ${circ}`}
+            className="transition-all duration-700"
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-4xl font-black" style={{ color: gaugeColor }}>{animatedScore}</span>
+          <span className="text-[10px] text-muted-foreground font-medium">/ {max}</span>
+        </div>
+      </div>
+      <Badge className={cn('mt-1 text-sm py-1 px-3 font-semibold', {
+        'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300': band.label === 'Low Risk',
+        'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300': band.label === 'Moderate Risk',
+        'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300': band.label === 'High Risk',
+        'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300': band.label === 'Severe Risk',
+      })}>{band.label}</Badge>
+      <p className="text-[11px] text-muted-foreground mt-1.5 text-center max-w-[200px]">{band.description}</p>
+    </div>
+  );
+};
+
+// ─── Bayesian Posterior Bar ─────────────────────────────────────────────────
+const BayesianBar = ({ result }: { result: BayesianRiskResult }) => {
+  const segments = [
+    { key: 'low', label: 'Low', pct: result.posterior.low, color: 'bg-emerald-500' },
+    { key: 'elevated', label: 'Elevated', pct: result.posterior.elevated, color: 'bg-amber-500' },
+    { key: 'critical', label: 'Critical', pct: result.posterior.critical, color: 'bg-red-500' },
+  ];
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 mb-1">
+        <Sparkles className="h-3.5 w-3.5 text-violet-500" />
+        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Bayesian Risk Posterior</span>
+      </div>
+      <div className="flex h-3 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800">
+        {segments.map(s => (
+          <div key={s.key} className={cn(s.color, 'transition-all duration-700')}
+            style={{ width: `${(s.pct * 100).toFixed(1)}%` }}
+            title={`${s.label}: ${(s.pct * 100).toFixed(1)}%`}
+          />
+        ))}
+      </div>
+      <div className="flex justify-between text-[10px] text-muted-foreground">
+        {segments.map(s => (
+          <span key={s.key}>{s.label} {(s.pct * 100).toFixed(0)}%</span>
+        ))}
+      </div>
+      <p className="text-[11px] text-muted-foreground italic">{result.summary}</p>
+    </div>
+  );
+};
+
+// ─── Section completion indicators ──────────────────────────────────────────
+const SectionDots = ({ sections, responses: resp }: { sections: typeof healthRiskSections; responses: RiskResponses }) => (
+  <div className="flex gap-1.5 flex-wrap">
+    {sections.map(section => {
+      const answered = section.questions.filter(q => resp[q.id]).length;
+      const total = section.questions.length;
+      const pct = total > 0 ? answered / total : 0;
+      const color = pct === 0 ? 'bg-slate-200 dark:bg-slate-700' :
+        pct < 1 ? 'bg-amber-400 dark:bg-amber-500' : 'bg-emerald-500 dark:bg-emerald-400';
+      return (
+        <div key={section.id} className="flex items-center gap-1" title={`${section.title}: ${answered}/${total}`}>
+          <div className={cn('w-2 h-2 rounded-full transition-colors duration-300', color)} />
+          <span className="text-[10px] text-muted-foreground hidden md:block">{section.title}</span>
+        </div>
+      );
+    })}
+  </div>
+);
+
 const UserHealthRiskAssessment = () => {
   const { currentUser } = useAuth();
   const { toast } = useToast();
   const [responses, setResponses] = useState<RiskResponses>({});
   const [savedAssessments, setSavedAssessments] = useState<any[]>([]);
+  const [serverRecs, setServerRecs] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   
@@ -303,12 +418,12 @@ const UserHealthRiskAssessment = () => {
   // Load saved assessments
   useEffect(() => {
     const loadAssessments = async () => {
-      if (!currentUser?._id) return;
+      if (!currentUser?.id) return;
       try {
         setLoading(true);
-        const res = await api.get(`/health-risk/${currentUser._id}/history`);
-        if (res.data?.assessments) {
-          setSavedAssessments(res.data.assessments);
+        const res = await api.get('/health-assessment');
+        if (res.data?.assessment) {
+          setSavedAssessments([res.data.assessment]);
         }
       } catch (error) {
         console.log('No previous assessments found');
@@ -317,7 +432,7 @@ const UserHealthRiskAssessment = () => {
       }
     };
     loadAssessments();
-  }, [currentUser?._id]);
+  }, [currentUser?.id]);
 
   const handleSelectOption = (questionId: string, optionId: string) => {
     // Don't allow manual selection for auto-calculated questions
@@ -341,7 +456,7 @@ const UserHealthRiskAssessment = () => {
   };
 
   const handleSaveAssessment = async () => {
-    if (!currentUser?._id) {
+    if (!currentUser?.id) {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -359,25 +474,63 @@ const UserHealthRiskAssessment = () => {
       return;
     }
 
+    const heightVal = parseFloat(measurements.height);
+    const weightVal = parseFloat(measurements.weight);
+    const ageVal = parseInt(measurements.age);
+
+    if (!ageVal || !heightVal || !weightVal) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing measurements',
+        description: 'Please enter your age, height and weight before saving.',
+      });
+      return;
+    }
+
     try {
       setSubmitting(true);
       const payload = {
-        memberId: currentUser._id,
-        memberName: `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim(),
+        age: ageVal,
+        gender: measurements.gender,
+        height: heightVal,
+        weight: weightVal,
+        waist: parseFloat(measurements.waist) || undefined,
+        hip: parseFloat(measurements.hip) || undefined,
+        bmi: calculatedValues.bmi.value > 0 ? parseFloat(calculatedValues.bmi.value.toFixed(2)) : undefined,
+        whr: calculatedValues.whr.value > 0 ? parseFloat(calculatedValues.whr.value.toFixed(3)) : undefined,
+        smoking: responses.smoking || 'never',
+        alcohol: responses.alcohol || 'none',
+        exercise_frequency: responses.exercise_frequency || 'sedentary',
+        hypertension: responses.hypertension || 'no',
+        diabetes: responses.diabetes || 'no',
+        heart_disease: responses.heart_disease || 'no',
+        cholesterol: responses.cholesterol || 'no',
+        mental_health: responses.mental_health || 'normal',
+        family_heart_disease: responses.family_heart_disease || 'no',
+        family_diabetes: responses.family_diabetes || 'no',
+        family_cancer: responses.family_cancer || 'no',
+        stress_level: responses.stress_level ? parseInt(String(responses.stress_level)) : 5,
+        sleep_hours: responses.sleep_hours ? parseFloat(String(responses.sleep_hours)) : 7,
+        diet_quality: responses.diet_quality || 'fair',
         responses,
-        notes: null,
       };
 
-      const res = await api.post(`/health-risk/${currentUser._id}/assessments`, payload);
+      const res = await api.post('/health-assessment/save', payload);
       
       if (res.data?.success) {
         toast({
-          title: 'Success',
-          description: 'Your health risk assessment has been saved!',
+          title: 'Assessment Saved',
+          description: `Risk level: ${res.data.riskAssessment?.riskLevel || 'N/A'} — Score: ${res.data.riskAssessment?.score ?? 0}/100`,
         });
-        // Refresh saved assessments
-        if (res.data.assessment) {
-          setSavedAssessments((prev) => [res.data.assessment, ...prev]);
+        // Merge riskAssessment into the saved assessment object
+        const merged = {
+          ...res.data.assessment,
+          riskAssessment: res.data.riskAssessment,
+        };
+        setSavedAssessments((prev) => [merged, ...prev]);
+        // Capture server-generated recommendations
+        if (res.data.riskAssessment?.recommendations) {
+          setServerRecs(res.data.riskAssessment.recommendations);
         }
       }
     } catch (error: any) {
@@ -576,15 +729,16 @@ const UserHealthRiskAssessment = () => {
               </CardContent>
             </Card>
 
-            {/* Progress Overview */}
-            <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-teal-200 dark:hover:border-teal-500/50 transition-colors">
-              <CardHeader>
+            {/* Progress + Risk Score */}
+            <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-teal-200 dark:hover:border-teal-500/50 transition-colors overflow-hidden">
+              <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
                   <Activity className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                   Assessment Progress
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-5">
+                {/* Progress bar + section dots */}
                 <div>
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-sm font-medium text-slate-800 dark:text-white">{completionPct}% Complete</span>
@@ -593,31 +747,23 @@ const UserHealthRiskAssessment = () => {
                     </span>
                   </div>
                   <Progress value={completionPct} className="h-2" />
+                  <div className="mt-2">
+                    <SectionDots sections={healthRiskSections} responses={responses} />
+                  </div>
                 </div>
 
                 <Separator />
 
-                {/* Score Display */}
-                <div className="space-y-2">
-                  <h3 className="font-semibold text-sm">Current Risk Score</h3>
-                  <div className="flex items-end gap-4">
-                    <div>
-                      <div className="text-4xl font-bold text-orange-600">{totalScore}</div>
-                      <div className="text-xs text-muted-foreground">out of {MAX_THEORETICAL_SCORE}</div>
-                    </div>
-                    <div className="flex-1">
-                      <Badge className={cn('text-base py-2', {
-                        'bg-emerald-100 text-emerald-800': scoreBand.label === 'Low Risk',
-                        'bg-amber-100 text-amber-800': scoreBand.label === 'Moderate Risk',
-                        'bg-orange-100 text-orange-800': scoreBand.label === 'High Risk',
-                        'bg-red-100 text-red-800': scoreBand.label === 'Severe Risk',
-                      })}>
-                        {scoreBand.label}
-                      </Badge>
-                      <p className="text-xs text-muted-foreground mt-2">{scoreBand.description}</p>
-                    </div>
-                  </div>
-                </div>
+                {/* Animated risk gauge */}
+                <RiskGauge score={totalScore} max={MAX_THEORETICAL_SCORE} band={scoreBand} />
+
+                {/* Bayesian Risk Bar */}
+                {Object.keys(responses).length >= 3 && (
+                  <>
+                    <Separator />
+                    <BayesianBar result={bayesianResult} />
+                  </>
+                )}
 
                 <Separator />
 
@@ -625,10 +771,13 @@ const UserHealthRiskAssessment = () => {
                   <Button 
                     onClick={handleSaveAssessment}
                     disabled={completionPct === 0 || submitting}
-                    className="flex-1 bg-orange-600 hover:bg-orange-700"
+                    className="flex-1 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white shadow-lg shadow-teal-500/20"
                   >
-                    <CheckCircle2 className="h-4 w-4 mr-2" />
-                    {submitting ? 'Saving...' : 'Save Assessment'}
+                    {submitting ? (
+                      <><span className="animate-spin mr-2">⟳</span>Saving...</>
+                    ) : (
+                      <><CheckCircle2 className="h-4 w-4 mr-2" />Save Assessment</>
+                    )}
                   </Button>
                   <Button 
                     onClick={handleReset}
@@ -793,26 +942,37 @@ const UserHealthRiskAssessment = () => {
                 <CardContent>
                   <ScrollArea className="h-[300px]">
                     <div className="space-y-2 pr-4">
-                      {savedAssessments.map((assessment, idx) => (
-                        <div
-                          key={idx}
-                          className="p-3 rounded-lg border border-slate-200 hover:border-orange-300 hover:bg-orange-50/30 transition-colors"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-medium">
-                                Score: {assessment.totalScore || 0}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {new Date(assessment.createdAt).toLocaleDateString()}
-                              </p>
+                      {savedAssessments.map((assessment: any, idx: number) => {
+                        const score = assessment.riskAssessment?.score ?? 0;
+                        const level = assessment.riskAssessment?.riskLevel || 'N/A';
+                        const levelColors: Record<string, string> = {
+                          LOW: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+                          MILD: 'bg-blue-100 text-blue-700 border-blue-200',
+                          MODERATE: 'bg-amber-100 text-amber-700 border-amber-200',
+                          HIGH: 'bg-orange-100 text-orange-700 border-orange-200',
+                          VERY_HIGH: 'bg-red-100 text-red-700 border-red-200',
+                        };
+                        return (
+                          <div
+                            key={idx}
+                            className="p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-teal-300 hover:bg-teal-50/30 dark:hover:bg-teal-900/10 transition-colors"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <p className="text-sm font-medium text-slate-800 dark:text-white">
+                                  Score: {score}/100
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {new Date(assessment.assessedAt || assessment.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                </p>
+                              </div>
+                              <Badge className={cn('text-[10px] font-semibold', levelColors[level] || 'bg-gray-100 text-gray-600')}>
+                                {level.replace('_', ' ')}
+                              </Badge>
                             </div>
-                            <Badge variant="outline" className="text-[10px]">
-                              {assessment.scoreBand || 'N/A'}
-                            </Badge>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </ScrollArea>
                 </CardContent>
@@ -820,27 +980,30 @@ const UserHealthRiskAssessment = () => {
             )}
 
             {/* Recommendations */}
-            <Card className="border-green-200/50 bg-gradient-to-br from-green-50/30 to-transparent">
-              <CardHeader>
+            <Card className="border-teal-200/50 dark:border-teal-800/30 bg-gradient-to-br from-teal-50/40 to-transparent dark:from-teal-900/10">
+              <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-green-600" />
-                  Next Steps
+                  <Lightbulb className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+                  {serverRecs.length > 0 ? 'Personalized Recommendations' : 'Next Steps'}
                 </CardTitle>
+                {serverRecs.length > 0 && (
+                  <CardDescription className="flex items-center gap-1 text-xs">
+                    <Sparkles className="h-3 w-3" /> Based on your risk profile
+                  </CardDescription>
+                )}
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="space-y-2 text-sm">
-                  <div className="flex gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0 mt-0.5" />
-                    <span>Complete the assessment regularly for better insights</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0 mt-0.5" />
-                    <span>Consult with your doctor based on your risk level</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0 mt-0.5" />
-                    <span>Track lifestyle changes over time</span>
-                  </div>
+                  {(serverRecs.length > 0 ? serverRecs : [
+                    'Complete the assessment regularly for better insights',
+                    'Consult with your doctor based on your risk level',
+                    'Track lifestyle changes over time',
+                  ]).map((rec, i) => (
+                    <div key={i} className="flex gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-teal-600 dark:text-teal-400 flex-shrink-0 mt-0.5" />
+                      <span className="text-slate-700 dark:text-slate-300">{rec}</span>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
