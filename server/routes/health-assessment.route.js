@@ -415,6 +415,24 @@ router.get('/history', authUser, async (req, res) => {
     const dob = user?.dateOfBirth ? new Date(user.dateOfBirth) : null;
 
     const now = new Date();
+
+    // ── Daily cycle: 9 PM to 9 PM (IST 21:00 = UTC 15:30) ──
+    // Find the most recent 9PM boundary
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // +5:30 IST
+    const nowIST = new Date(now.getTime() + IST_OFFSET_MS);
+    const todayIST = new Date(nowIST.getFullYear(), nowIST.getMonth(), nowIST.getDate());
+    // If IST time is before 21:00, the daily cycle started at yesterday 21:00 IST
+    const istHour = nowIST.getHours();
+    let dailyCycleStartIST;
+    if (istHour >= 21) {
+      dailyCycleStartIST = new Date(todayIST.getFullYear(), todayIST.getMonth(), todayIST.getDate(), 21, 0, 0);
+    } else {
+      dailyCycleStartIST = new Date(todayIST.getFullYear(), todayIST.getMonth(), todayIST.getDate() - 1, 21, 0, 0);
+    }
+    // Convert back to UTC
+    const dailyCycleStart = new Date(dailyCycleStartIST.getTime() - IST_OFFSET_MS);
+    const dailyCycleEnd = new Date(dailyCycleStart.getTime() + 24 * 60 * 60 * 1000);
+
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     // Helper: start of ISO week (Monday)
@@ -429,11 +447,12 @@ router.get('/history', authUser, async (req, res) => {
       ? new Date(now.getFullYear(), 0, 1)
       : new Date(now.getFullYear(), 6, 1);
 
-    // Birthday-based annual period: from last birthday to next birthday
+    // ── Birthday-based annual period: from last birthday to next birthday ──
     let annualStart = null;
     let annualEnd = null;
     let nextBirthday = null;
     let daysUntilBirthday = null;
+    let birthdayMonths = []; // 12 monthly buckets from birthday
     if (dob) {
       const bdayThisYear = new Date(now.getFullYear(), dob.getMonth(), dob.getDate());
       if (bdayThisYear > now) {
@@ -446,6 +465,19 @@ router.get('/history', authUser, async (req, res) => {
       }
       nextBirthday = annualEnd > now ? annualEnd : new Date(now.getFullYear() + 1, dob.getMonth(), dob.getDate());
       daysUntilBirthday = Math.ceil((nextBirthday - now) / (1000 * 60 * 60 * 24));
+
+      // Build 12 birthday-month buckets (birthday+0m, birthday+1m, ..., birthday+11m)
+      for (let m = 0; m < 12; m++) {
+        const bucketStart = new Date(annualStart.getFullYear(), annualStart.getMonth() + m, annualStart.getDate());
+        const bucketEnd = new Date(annualStart.getFullYear(), annualStart.getMonth() + m + 1, annualStart.getDate());
+        birthdayMonths.push({
+          month: m + 1,
+          label: bucketStart.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' }),
+          start: bucketStart.toISOString(),
+          end: bucketEnd.toISOString(),
+          isCurrent: now >= bucketStart && now < bucketEnd,
+        });
+      }
     }
 
     // Classify each assessment into periods
@@ -461,13 +493,23 @@ router.get('/history', authUser, async (req, res) => {
         bmi: a.bmi ? parseFloat(a.bmi) : null,
         whr: a.whr ? parseFloat(a.whr) : null,
         periods: {
-          daily: d >= todayStart,
+          daily: d >= dailyCycleStart && d < dailyCycleEnd,
           weekly: d >= weekStart,
           monthly: d >= monthStart,
           quarterly: d >= quarterStart,
           halfYearly: d >= halfStart,
           annual: annualStart ? (d >= annualStart && d < annualEnd) : false,
-        }
+        },
+        // Tag which birthday-month bucket this falls into (0-indexed, -1 if none)
+        birthdayMonth: (() => {
+          if (!annualStart) return -1;
+          for (let m = 0; m < 12; m++) {
+            const bStart = new Date(annualStart.getFullYear(), annualStart.getMonth() + m, annualStart.getDate());
+            const bEnd = new Date(annualStart.getFullYear(), annualStart.getMonth() + m + 1, annualStart.getDate());
+            if (d >= bStart && d < bEnd) return m;
+          }
+          return -1;
+        })()
       };
     });
 
@@ -496,17 +538,32 @@ router.get('/history', authUser, async (req, res) => {
       }
     }
 
+    // Attach per-birthday-month scores
+    const birthdayMonthSummaries = birthdayMonths.map((bucket, idx) => {
+      const items = mapped.filter(a => a.birthdayMonth === idx);
+      if (items.length === 0) return { ...bucket, count: 0, avgScore: null };
+      const scores = items.map(i => i.score);
+      const avgScore = Math.round(scores.reduce((s, v) => s + v, 0) / scores.length);
+      return { ...bucket, count: items.length, avgScore };
+    });
+
     res.json({
       success: true,
       total: assessments.length,
       assessments: mapped,
       periodSummaries: summaries,
+      dailyCycle: {
+        start: dailyCycleStart.toISOString(),
+        end: dailyCycleEnd.toISOString(),
+        label: '9 PM – 9 PM IST'
+      },
       birthday: dob ? {
         date: dob.toISOString(),
         nextBirthday: nextBirthday?.toISOString() || null,
         daysUntilBirthday,
         annualPeriodStart: annualStart?.toISOString() || null,
-        annualPeriodEnd: annualEnd?.toISOString() || null
+        annualPeriodEnd: annualEnd?.toISOString() || null,
+        monthlyMonitoring: birthdayMonthSummaries
       } : null
     });
   } catch (error) {

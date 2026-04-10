@@ -966,7 +966,7 @@ const UserHealthRiskAssessment = () => {
                 {/* Period Selector */}
                 <div className="flex flex-wrap gap-1">
                   {([
-                    { key: 'daily', label: 'Day', icon: '📅' },
+                    { key: 'daily', label: '24h', icon: '🌙' },
                     { key: 'weekly', label: 'Week', icon: '📊' },
                     { key: 'monthly', label: 'Month', icon: '🗓️' },
                     { key: 'quarterly', label: 'Quarter', icon: '📈' },
@@ -998,6 +998,14 @@ const UserHealthRiskAssessment = () => {
                     );
                   })}
                 </div>
+
+                {/* Daily cycle indicator */}
+                {selectedPeriod === 'daily' && historyData?.dailyCycle && (
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200/50 dark:border-indigo-800/30 text-[11px] text-indigo-700 dark:text-indigo-400">
+                    <Clock className="h-3 w-3" />
+                    <span className="font-medium">24h cycle: {historyData.dailyCycle.label}</span>
+                  </div>
+                )}
 
                 {/* Period Summary Card */}
                 {(() => {
@@ -1093,7 +1101,7 @@ const UserHealthRiskAssessment = () => {
                   );
                 })()}
 
-                {/* Birthday Annual Milestone */}
+                {/* Birthday Annual Milestone + Monthly Monitoring */}
                 {historyData?.birthday && (
                   <div className="bg-gradient-to-r from-violet-50 via-pink-50 to-amber-50 dark:from-violet-900/20 dark:via-pink-900/10 dark:to-amber-900/10 rounded-xl p-3 border border-violet-200/50 dark:border-violet-800/30">
                     <div className="flex items-center gap-2 mb-1">
@@ -1134,6 +1142,43 @@ const UserHealthRiskAssessment = () => {
                         </div>
                       );
                     })()}
+
+                    {/* Monthly Monitoring Grid — 12 birthday-month buckets */}
+                    {historyData.birthday.monthlyMonitoring && historyData.birthday.monthlyMonitoring.length > 0 && (
+                      <div className="mt-3">
+                        <div className="text-[10px] font-medium text-violet-700 dark:text-violet-400 mb-1.5">Monthly Monitoring (Birthday → Birthday)</div>
+                        <div className="grid grid-cols-6 gap-1">
+                          {historyData.birthday.monthlyMonitoring.map((m: any) => {
+                            const hasData = m.count > 0;
+                            const scoreColor = !hasData ? 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+                              : m.avgScore < 15 ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                              : m.avgScore < 30 ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                              : m.avgScore < 50 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                              : m.avgScore < 70 ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
+                              : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400';
+                            return (
+                              <div
+                                key={m.month}
+                                className={cn(
+                                  'rounded-md px-1 py-1.5 text-center transition-all',
+                                  scoreColor,
+                                  m.isCurrent && 'ring-2 ring-violet-400 dark:ring-violet-500 ring-offset-1'
+                                )}
+                                title={`${m.label}: ${hasData ? `${m.avgScore}/100 (${m.count} assessments)` : 'No data'}`}
+                              >
+                                <div className="text-[9px] font-medium leading-none">{m.label}</div>
+                                <div className="text-[11px] font-bold leading-tight mt-0.5">
+                                  {hasData ? m.avgScore : '—'}
+                                </div>
+                                {hasData && (
+                                  <div className="text-[8px] opacity-70">{m.count}×</div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
