@@ -15,7 +15,7 @@ import {
   Wifi, Bluetooth, Navigation, Signal, Cpu, Zap,
   Activity, CheckCircle2, Clock, AlertOctagon, TrendingUp, BookOpen,
   FlaskConical, ShieldEllipsis, Eye, HardDrive, LocateFixed, RefreshCw,
-  Fingerprint, Badge as BadgeIcon, BookMarked, ListChecks,
+  Fingerprint, Badge as BadgeIcon, BookMarked, ListChecks, X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useSecurityPortalData } from './useSecurityPortalData';
@@ -205,10 +205,220 @@ const SecurityDataState = ({ loading, error, refresh }: { loading: boolean; erro
   );
 };
 
+// ─── Video Wall ──────────────────────────────────────────────────────────────
+type WallLayout = '2x2' | '3x3' | '4x4' | '1+5';
+type CameraTile = { id: string; zone: string; online: boolean };
+
+const WALL_LAYOUTS: { key: WallLayout; label: string; cols: number; count: number }[] = [
+  { key: '2x2', label: '2×2', cols: 2, count: 4 },
+  { key: '3x3', label: '3×3', cols: 3, count: 9 },
+  { key: '4x4', label: '4×4', cols: 4, count: 16 },
+  { key: '1+5', label: '1+5', cols: 0, count: 6 },
+];
+
+function buildWallTiles(
+  zones: Array<{ zone: string; cameras: number; online: number }>,
+  count: number,
+): CameraTile[] {
+  const pool: CameraTile[] = [];
+  for (const z of zones) {
+    for (let i = 1; i <= z.cameras && pool.length < 64; i++) {
+      pool.push({
+        id: `${z.zone.replace(/\s+/g, '-')}-${String(i).padStart(2, '0')}`,
+        zone: z.zone,
+        online: i <= z.online,
+      });
+    }
+  }
+  if (pool.length === 0) return [];
+  return Array.from({ length: count }, (_, i) => pool[i % pool.length]);
+}
+
+const MockFeedTile = ({ tile, small = false }: { tile: CameraTile; small?: boolean }) => {
+  const [secs, setSecs] = React.useState(() => new Date());
+  React.useEffect(() => {
+    const id = setInterval(() => setSecs(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const ts = `${String(secs.getHours()).padStart(2, '0')}:${String(secs.getMinutes()).padStart(2, '0')}:${String(secs.getSeconds()).padStart(2, '0')}`;
+  return (
+    <div className="relative w-full h-full bg-slate-950 border border-slate-800 overflow-hidden select-none group">
+      {/* scanlines overlay */}
+      <div
+        className="absolute inset-0 pointer-events-none opacity-[0.04]"
+        style={{ backgroundImage: 'repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(255,255,255,.15) 2px,rgba(255,255,255,.15) 3px)' }}
+      />
+      {/* center camera icon */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <Camera className={`${small ? 'h-5 w-5' : 'h-10 w-10'} text-slate-800`} />
+      </div>
+      {/* top-left: record / offline indicator */}
+      <div className="absolute top-1.5 left-2 flex items-center gap-1.5">
+        {tile.online ? (
+          <>
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+            </span>
+            <span className="text-red-400 font-bold text-[9px] uppercase tracking-wide">LIVE</span>
+          </>
+        ) : (
+          <span className="text-slate-600 text-[9px] font-medium uppercase tracking-wide">OFFLINE</span>
+        )}
+      </div>
+      {/* top-right: timestamp */}
+      <div className="absolute top-1.5 right-2">
+        <span className="text-slate-500 text-[9px] font-mono">{ts}</span>
+      </div>
+      {/* bottom bar */}
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5">
+        <div className="flex items-end justify-between gap-1">
+          <span className={`text-white font-medium truncate ${small ? 'text-[8px]' : 'text-[10px]'}`}>{tile.zone}</span>
+          <span className={`text-slate-500 font-mono shrink-0 ${small ? 'text-[8px]' : 'text-[9px]'}`}>
+            {tile.id.split('-').slice(-2).join('-')}
+          </span>
+        </div>
+      </div>
+      {/* hover highlight */}
+      <div className="absolute inset-0 border-2 border-transparent group-hover:border-teal-500/50 pointer-events-none transition-colors" />
+    </div>
+  );
+};
+
+const VideoWallModal = ({
+  open,
+  onClose,
+  zones,
+}: {
+  open: boolean;
+  onClose: () => void;
+  zones: Array<{ zone: string; cameras: number; online: number }>;
+}) => {
+  const [layout, setLayout] = React.useState<WallLayout>('2x2');
+  if (!open) return null;
+  const lConfig = WALL_LAYOUTS.find(l => l.key === layout)!;
+  const tiles = buildWallTiles(zones, lConfig.count);
+  const totalOnline = zones.reduce((s, z) => s + z.online, 0);
+  const totalCams   = zones.reduce((s, z) => s + z.cameras, 0);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black flex flex-col">
+      {/* Header bar */}
+      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-900 border-b border-slate-800 shrink-0">
+        <div className="flex items-center gap-3">
+          <Camera className="h-4 w-4 text-teal-400" />
+          <span className="text-white font-semibold text-sm">Video Wall — Live Surveillance</span>
+          <span className="text-[11px] text-slate-400 hidden sm:block">
+            {totalOnline}/{totalCams} cameras online · {zones.length} zones
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-slate-500 mr-1 hidden sm:block">Layout:</span>
+          {WALL_LAYOUTS.map(l => (
+            <button
+              key={l.key}
+              onClick={() => setLayout(l.key)}
+              className={`text-xs px-2.5 py-1 rounded border transition-colors ${
+                layout === l.key
+                  ? 'bg-teal-600 border-teal-500 text-white'
+                  : 'border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white bg-transparent'
+              }`}
+            >
+              {l.label}
+            </button>
+          ))}
+          <button
+            onClick={onClose}
+            className="ml-2 text-slate-400 hover:text-white transition-colors p-1.5 rounded hover:bg-slate-700"
+            aria-label="Close video wall"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Camera grid */}
+      <div className="flex-1 p-1.5 overflow-hidden min-h-0">
+        {layout === '1+5' ? (
+          <div className="flex h-full gap-1.5">
+            <div className="flex-[2] min-w-0">
+              <MockFeedTile tile={tiles[0]} />
+            </div>
+            <div className="flex-[1] flex flex-col gap-1.5 min-w-0">
+              {tiles.slice(1).map((t, i) => (
+                <div key={i} className="flex-1 min-h-0">
+                  <MockFeedTile tile={t} small />
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div
+            className="h-full gap-1.5"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${lConfig.cols}, 1fr)`,
+              gridTemplateRows: `repeat(${Math.ceil(lConfig.count / lConfig.cols)}, 1fr)`,
+            }}
+          >
+            {tiles.map((t, i) => (
+              <MockFeedTile key={i} tile={t} small={lConfig.cols >= 4} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Footer hint */}
+      <div className="px-4 py-1.5 bg-slate-900 border-t border-slate-800 shrink-0 flex items-center justify-between">
+        <span className="text-[10px] text-slate-600">
+          Mock feeds — connect RTSP/HLS streams per camera to activate live view
+        </span>
+        <span className="text-[10px] text-slate-600">{lConfig.count} tiles · {lConfig.label}</span>
+      </div>
+    </div>
+  );
+};
+
 export const SecurityCCTVPage = () => {
   const { data, loading, error, refresh } = useSecurityPortalData();
   const cctv = data?.cctv ?? fallbackCctv;
-  return <PageShell title="CCTV Monitor" subtitle="Campus camera health, zone coverage, and analytics watchlists" actions={<><Button variant="outline" size="sm" className="gap-1"><Download className="h-4 w-4" />Export Uptime</Button><Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700"><Camera className="h-4 w-4" />Open Video Wall</Button></>}><SecurityDataState loading={loading} error={error} refresh={refresh} /><div className="grid grid-cols-2 xl:grid-cols-4 gap-4"><StatCard label="Total Cameras" value={String(cctv.reduce((sum, row) => sum + row.cameras, 0))} sub="Across all hospital zones" icon={Camera} color="text-blue-600" /><StatCard label="Online Streams" value={String(cctv.reduce((sum, row) => sum + row.online, 0))} sub="Current active feeds" icon={ShieldCheck} color="text-emerald-600" /><StatCard label="Analytics Zones" value={String(cctv.length)} sub="AI-assisted security coverage" icon={ScanLine} color="text-violet-600" /><StatCard label="Degraded Areas" value={String(cctv.filter((row) => row.status !== 'Operational').length)} sub="Needs maintenance follow-up" icon={AlertTriangle} color="text-amber-600" /></div><Card><CardHeader><CardTitle className="text-base">Zone Camera Matrix</CardTitle></CardHeader><CardContent><SectionTable headers={['Zone', 'Cameras', 'Online', 'Analytics', 'Status']} rows={cctv.map((row) => [row.zone, String(row.cameras), String(row.online), row.analytics, <ToneBadge value={row.status} />])} /></CardContent></Card></PageShell>;
+  const [wallOpen, setWallOpen] = React.useState(false);
+  return (
+    <>
+      <VideoWallModal open={wallOpen} onClose={() => setWallOpen(false)} zones={cctv} />
+      <PageShell
+        title="CCTV Monitor"
+        subtitle="Campus camera health, zone coverage, and analytics watchlists"
+        actions={
+          <>
+            <Button variant="outline" size="sm" className="gap-1">
+              <Download className="h-4 w-4" />Export Uptime
+            </Button>
+            <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700" onClick={() => setWallOpen(true)}>
+              <Camera className="h-4 w-4" />Open Video Wall
+            </Button>
+          </>
+        }
+      >
+        <SecurityDataState loading={loading} error={error} refresh={refresh} />
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+          <StatCard label="Total Cameras"  value={String(cctv.reduce((sum, row) => sum + row.cameras, 0))} sub="Across all hospital zones"       icon={Camera}      color="text-blue-600"   />
+          <StatCard label="Online Streams" value={String(cctv.reduce((sum, row) => sum + row.online,  0))} sub="Current active feeds"             icon={ShieldCheck} color="text-emerald-600" />
+          <StatCard label="Analytics Zones" value={String(cctv.length)}                                    sub="AI-assisted security coverage"   icon={ScanLine}    color="text-violet-600" />
+          <StatCard label="Degraded Areas" value={String(cctv.filter(row => row.status !== 'Operational').length)} sub="Needs maintenance follow-up" icon={AlertTriangle} color="text-amber-600" />
+        </div>
+        <Card>
+          <CardHeader><CardTitle className="text-base">Zone Camera Matrix</CardTitle></CardHeader>
+          <CardContent>
+            <SectionTable
+              headers={['Zone', 'Cameras', 'Online', 'Analytics', 'Status']}
+              rows={cctv.map(row => [row.zone, String(row.cameras), String(row.online), row.analytics, <ToneBadge value={row.status} />])}
+            />
+          </CardContent>
+        </Card>
+      </PageShell>
+    </>
+  );
 };
 
 export const SecurityAccessPointsPage = () => {
