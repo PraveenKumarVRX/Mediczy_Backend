@@ -118,6 +118,7 @@ import clinicRouter from './routes/clinic.route.js';
 import pharmacyRouter from './routes/pharmacy.route.js';
 import ambulanceRouter from './routes/ambulance.route.js';
 import homecareRouter from './routes/homecare.route.js';
+import patientPharmacyOrdersRouter from './routes/patient-pharmacy-orders.route.js';
 import deviceRouter from './routes/device.route.js';
 import wearableRouter from './routes/wearable.route.js';
 import pocDeviceRouter from './routes/poc-device.route.js';
@@ -1172,6 +1173,7 @@ app.use('/api/labs', enhancedLabRouter); // Enhanced laboratory management with 
 app.use('/api/pharmacy', pharmacyRouter); // Pharmacy authentication and management
 app.use('/api/ambulance', ambulanceRouter); // Ambulance service authentication and management
 app.use('/api/homecare', homecareRouter); // Homecare provider authentication and management
+app.use('/api/pharmacy-orders', patientPharmacyOrdersRouter); // Patient-facing pharmacy order management
 app.use('/api/devices', deviceRouter); // Device management (smart tablets with SIM)
 app.use('/api/wearables', wearableRouter); // Wearable devices (smartwatch, band, ring)
 app.use('/api/health-data', healthDataRouter); // BLE device health data sync

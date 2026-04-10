@@ -79,6 +79,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/firebase',  // Firebase status & test
       '/api/ehr',  // Electronic Health Records
       '/api/homecare',  // Homecare service booking (patients book home visits)
+      '/api/pharmacy-orders',  // Patient-facing pharmacy order management
       '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'userId'
@@ -158,6 +159,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/firebase',  // Firebase status & test
       '/api/ehr',  // Electronic Health Records
       '/api/homecare',  // Homecare service booking (patients book home visits)
+      '/api/pharmacy-orders',  // Patient-facing pharmacy order management
       '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'userId'
