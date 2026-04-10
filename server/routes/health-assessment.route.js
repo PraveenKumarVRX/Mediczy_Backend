@@ -259,42 +259,16 @@ router.post('/save', authUser, async (req, res) => {
     // Calculate risk score
     const riskAssessment = calculateHealthRiskScore(assessmentData);
 
-    // Save to database or update existing assessment
-    const assessment = await UserHealthAssessment.findOne({ where: { userId } })
-      .then(existing => {
-        if (existing) {
-          return existing.update({
-            ...assessmentData,
-            riskScore: riskAssessment.score,
-            riskLevel: riskAssessment.riskLevel,
-            riskFactors: riskAssessment.riskFactors,
-            allResponses: responses,
-            assessedAt: new Date()
-          });
-        }
-        
-        return UserHealthAssessment.create({
-          userId,
-          ...assessmentData,
-          riskScore: riskAssessment.score,
-          riskLevel: riskAssessment.riskLevel,
-          riskFactors: riskAssessment.riskFactors,
-          allResponses: responses,
-          assessedAt: new Date()
-        });
-      })
-      .catch(err => {
-        console.warn('⚠️ Database save error (non-blocking):', err.message);
-        // Continue without database persistence if model doesn't exist
-        return {
-          id: 'temp-' + userId,
-          userId,
-          ...assessmentData,
-          riskScore: riskAssessment.score,
-          riskLevel: riskAssessment.riskLevel,
-          riskFactors: riskAssessment.riskFactors
-        };
-      });
+    // Always create a new assessment row (keep full history)
+    const assessment = await UserHealthAssessment.create({
+      userId,
+      ...assessmentData,
+      riskScore: riskAssessment.score,
+      riskLevel: riskAssessment.riskLevel,
+      riskFactors: riskAssessment.riskFactors,
+      allResponses: responses,
+      assessedAt: new Date()
+    });
 
     // Update user profile with health data
     try {
@@ -415,6 +389,131 @@ router.get('/', authUser, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to retrieve health assessment',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/health-assessment/history
+ * @desc    Get all assessment history with period-based grouping
+ * @access  Private
+ */
+router.get('/history', authUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Fetch all assessments ordered by date
+    const assessments = await UserHealthAssessment.findAll({
+      where: { userId },
+      order: [['assessed_at', 'DESC']],
+      attributes: ['id', 'riskScore', 'riskLevel', 'riskFactors', 'assessedAt', 'age', 'bmi', 'whr']
+    });
+
+    // Get user DOB for birthday-based annual calculation
+    const user = await User.findByPk(userId, { attributes: ['dateOfBirth'] }).catch(() => null);
+    const dob = user?.dateOfBirth ? new Date(user.dateOfBirth) : null;
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    // Helper: start of ISO week (Monday)
+    const weekStart = new Date(todayStart);
+    const dayOfWeek = weekStart.getDay() || 7; // Sun=7, Mon=1 etc
+    weekStart.setDate(weekStart.getDate() - (dayOfWeek - 1));
+
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
+    const quarterStart = new Date(now.getFullYear(), quarterMonth, 1);
+    const halfStart = now.getMonth() < 6
+      ? new Date(now.getFullYear(), 0, 1)
+      : new Date(now.getFullYear(), 6, 1);
+
+    // Birthday-based annual period: from last birthday to next birthday
+    let annualStart = null;
+    let annualEnd = null;
+    let nextBirthday = null;
+    let daysUntilBirthday = null;
+    if (dob) {
+      const bdayThisYear = new Date(now.getFullYear(), dob.getMonth(), dob.getDate());
+      if (bdayThisYear > now) {
+        // Birthday hasn't happened yet this year
+        annualStart = new Date(now.getFullYear() - 1, dob.getMonth(), dob.getDate());
+        annualEnd = bdayThisYear;
+      } else {
+        annualStart = bdayThisYear;
+        annualEnd = new Date(now.getFullYear() + 1, dob.getMonth(), dob.getDate());
+      }
+      nextBirthday = annualEnd > now ? annualEnd : new Date(now.getFullYear() + 1, dob.getMonth(), dob.getDate());
+      daysUntilBirthday = Math.ceil((nextBirthday - now) / (1000 * 60 * 60 * 24));
+    }
+
+    // Classify each assessment into periods
+    const mapped = assessments.map(a => {
+      const d = new Date(a.assessedAt || a.created_at);
+      return {
+        id: a.id,
+        score: parseFloat(a.riskScore) || 0,
+        riskLevel: a.riskLevel,
+        riskFactors: a.riskFactors,
+        assessedAt: d.toISOString(),
+        age: a.age,
+        bmi: a.bmi ? parseFloat(a.bmi) : null,
+        whr: a.whr ? parseFloat(a.whr) : null,
+        periods: {
+          daily: d >= todayStart,
+          weekly: d >= weekStart,
+          monthly: d >= monthStart,
+          quarterly: d >= quarterStart,
+          halfYearly: d >= halfStart,
+          annual: annualStart ? (d >= annualStart && d < annualEnd) : false,
+        }
+      };
+    });
+
+    // Compute period summaries
+    const periodNames = ['daily', 'weekly', 'monthly', 'quarterly', 'halfYearly', 'annual'];
+    const summaries = {};
+    for (const p of periodNames) {
+      const items = mapped.filter(a => a.periods[p]);
+      if (items.length === 0) {
+        summaries[p] = { count: 0, avgScore: null, latestScore: null, latestLevel: null, trend: null };
+      } else {
+        const scores = items.map(i => i.score);
+        const avgScore = Math.round(scores.reduce((s, v) => s + v, 0) / scores.length);
+        const latestScore = scores[0]; // already sorted DESC
+        const latestLevel = items[0].riskLevel;
+        // Trend: compare first half to second half of period items
+        let trend = 'stable';
+        if (items.length >= 2) {
+          const mid = Math.floor(items.length / 2);
+          const recentAvg = scores.slice(0, mid).reduce((s, v) => s + v, 0) / mid;
+          const olderAvg = scores.slice(mid).reduce((s, v) => s + v, 0) / (items.length - mid);
+          if (recentAvg < olderAvg - 3) trend = 'improving';
+          else if (recentAvg > olderAvg + 3) trend = 'worsening';
+        }
+        summaries[p] = { count: items.length, avgScore, latestScore, latestLevel, trend };
+      }
+    }
+
+    res.json({
+      success: true,
+      total: assessments.length,
+      assessments: mapped,
+      periodSummaries: summaries,
+      birthday: dob ? {
+        date: dob.toISOString(),
+        nextBirthday: nextBirthday?.toISOString() || null,
+        daysUntilBirthday,
+        annualPeriodStart: annualStart?.toISOString() || null,
+        annualPeriodEnd: annualEnd?.toISOString() || null
+      } : null
+    });
+  } catch (error) {
+    console.error('❌ Health assessment history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve assessment history',
       error: error.message
     });
   }

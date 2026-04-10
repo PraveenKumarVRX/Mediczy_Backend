@@ -36,6 +36,13 @@ import {
   Stethoscope,
   Zap,
   Target,
+  Calendar,
+  Gift,
+  TrendingDown,
+  BarChart3,
+  ArrowDown,
+  ArrowUp,
+  Minus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -296,6 +303,8 @@ const UserHealthRiskAssessment = () => {
   const [responses, setResponses] = useState<RiskResponses>({});
   const [savedAssessments, setSavedAssessments] = useState<any[]>([]);
   const [serverRecs, setServerRecs] = useState<string[]>([]);
+  const [historyData, setHistoryData] = useState<any>(null);
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('weekly');
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   
@@ -415,24 +424,32 @@ const UserHealthRiskAssessment = () => {
   const bayesianEvidence = useMemo(() => buildBayesianEvidence(sectionBreakdown), [sectionBreakdown]);
   const bayesianResult = useMemo(() => computeBayesianRisk(sectionBreakdown), [sectionBreakdown]);
 
-  // Load saved assessments
-  useEffect(() => {
-    const loadAssessments = async () => {
-      if (!currentUser?.id) return;
+  // Load assessment history (all periods)
+  const loadHistory = useCallback(async () => {
+    if (!currentUser?.id) return;
+    try {
+      setLoading(true);
+      const res = await api.get('/health-assessment/history');
+      if (res.data?.success) {
+        setHistoryData(res.data);
+        setSavedAssessments(res.data.assessments || []);
+      }
+    } catch (error) {
+      // Fallback: try the single-assessment endpoint
       try {
-        setLoading(true);
         const res = await api.get('/health-assessment');
         if (res.data?.assessment) {
           setSavedAssessments([res.data.assessment]);
         }
-      } catch (error) {
+      } catch (_) {
         console.log('No previous assessments found');
-      } finally {
-        setLoading(false);
       }
-    };
-    loadAssessments();
+    } finally {
+      setLoading(false);
+    }
   }, [currentUser?.id]);
+
+  useEffect(() => { loadHistory(); }, [loadHistory]);
 
   const handleSelectOption = (questionId: string, optionId: string) => {
     // Don't allow manual selection for auto-calculated questions
@@ -532,6 +549,8 @@ const UserHealthRiskAssessment = () => {
         if (res.data.riskAssessment?.recommendations) {
           setServerRecs(res.data.riskAssessment.recommendations);
         }
+        // Reload full history to refresh period summaries
+        loadHistory();
       }
     } catch (error: any) {
       toast({
@@ -932,52 +951,233 @@ const UserHealthRiskAssessment = () => {
               </Card>
             )}
 
-            {/* Previous Assessments */}
-            {savedAssessments.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Assessment History</CardTitle>
-                  <CardDescription>{savedAssessments.length} assessment(s) completed</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="h-[300px]">
-                    <div className="space-y-2 pr-4">
-                      {savedAssessments.map((assessment: any, idx: number) => {
-                        const score = assessment.riskAssessment?.score ?? 0;
-                        const level = assessment.riskAssessment?.riskLevel || 'N/A';
-                        const levelColors: Record<string, string> = {
-                          LOW: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-                          MILD: 'bg-blue-100 text-blue-700 border-blue-200',
-                          MODERATE: 'bg-amber-100 text-amber-700 border-amber-200',
-                          HIGH: 'bg-orange-100 text-orange-700 border-orange-200',
-                          VERY_HIGH: 'bg-red-100 text-red-700 border-red-200',
-                        };
+            {/* Period-Based Score Tracking */}
+            <Card className="border-slate-200/80 dark:border-slate-700/50">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+                  Score Tracker
+                </CardTitle>
+                <CardDescription>
+                  {historyData?.total || savedAssessments.length} assessment(s) recorded
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {/* Period Selector */}
+                <div className="flex flex-wrap gap-1">
+                  {([
+                    { key: 'daily', label: 'Day', icon: '📅' },
+                    { key: 'weekly', label: 'Week', icon: '📊' },
+                    { key: 'monthly', label: 'Month', icon: '🗓️' },
+                    { key: 'quarterly', label: 'Quarter', icon: '📈' },
+                    { key: 'halfYearly', label: '6 Months', icon: '⏳' },
+                    { key: 'annual', label: 'Annual', icon: '🎂' },
+                  ] as const).map(p => {
+                    const summary = historyData?.periodSummaries?.[p.key];
+                    const isActive = selectedPeriod === p.key;
+                    return (
+                      <button
+                        key={p.key}
+                        onClick={() => setSelectedPeriod(p.key)}
+                        className={cn(
+                          'px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all border',
+                          isActive
+                            ? 'bg-teal-600 text-white border-teal-600 shadow-sm shadow-teal-500/20'
+                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-teal-300',
+                          summary?.count > 0 && !isActive && 'border-teal-200 dark:border-teal-800'
+                        )}
+                      >
+                        <span className="mr-1">{p.icon}</span>{p.label}
+                        {summary?.count > 0 && (
+                          <span className={cn(
+                            'ml-1 px-1 py-0.5 rounded text-[9px]',
+                            isActive ? 'bg-white/20' : 'bg-teal-100 dark:bg-teal-900 text-teal-700 dark:text-teal-300'
+                          )}>{summary.count}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Period Summary Card */}
+                {(() => {
+                  const summary = historyData?.periodSummaries?.[selectedPeriod];
+                  if (!summary || summary.count === 0) {
+                    return (
+                      <div className="text-center py-6 text-sm text-muted-foreground">
+                        <Calendar className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                        No assessments in this period yet.
+                        <br />
+                        <span className="text-xs">Take an assessment to start tracking!</span>
+                      </div>
+                    );
+                  }
+                  const TrendIcon = summary.trend === 'improving' ? TrendingDown : summary.trend === 'worsening' ? TrendingUp : Minus;
+                  const trendColor = summary.trend === 'improving' ? 'text-emerald-600' : summary.trend === 'worsening' ? 'text-red-500' : 'text-slate-400';
+                  const trendLabel = summary.trend === 'improving' ? 'Improving' : summary.trend === 'worsening' ? 'Worsening' : 'Stable';
+                  const levelColors: Record<string, string> = {
+                    LOW: 'text-emerald-600',
+                    MILD: 'text-blue-600',
+                    MODERATE: 'text-amber-600',
+                    HIGH: 'text-orange-600',
+                    VERY_HIGH: 'text-red-600',
+                  };
+
+                  return (
+                    <div className="bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800/50 dark:to-slate-800/30 rounded-xl p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-3xl font-bold text-slate-800 dark:text-white">{summary.avgScore}</div>
+                          <div className="text-xs text-muted-foreground">avg score / 100</div>
+                        </div>
+                        <div className="text-right">
+                          <div className={cn('text-sm font-semibold', levelColors[summary.latestLevel] || 'text-slate-600')}>
+                            {summary.latestLevel?.replace('_', ' ') || '—'}
+                          </div>
+                          <div className={cn('flex items-center gap-1 text-xs font-medium', trendColor)}>
+                            <TrendIcon className="h-3 w-3" /> {trendLabel}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Mini sparkline of scores in this period */}
+                      {(() => {
+                        const periodItems = (historyData?.assessments || [])
+                          .filter((a: any) => a.periods?.[selectedPeriod])
+                          .reverse(); // oldest first for chart
+                        if (periodItems.length < 2) return null;
+                        const scores = periodItems.map((a: any) => a.score);
+                        const maxS = Math.max(...scores, 100);
+                        const minS = Math.min(...scores, 0);
+                        const range = maxS - minS || 1;
+                        const width = 200;
+                        const height = 40;
+                        const points = scores.map((s: number, i: number) => {
+                          const x = (i / (scores.length - 1)) * width;
+                          const y = height - ((s - minS) / range) * (height - 4) - 2;
+                          return `${x},${y}`;
+                        }).join(' ');
                         return (
-                          <div
-                            key={idx}
-                            className="p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-teal-300 hover:bg-teal-50/30 dark:hover:bg-teal-900/10 transition-colors"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div>
-                                <p className="text-sm font-medium text-slate-800 dark:text-white">
-                                  Score: {score}/100
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {new Date(assessment.assessedAt || assessment.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                </p>
-                              </div>
-                              <Badge className={cn('text-[10px] font-semibold', levelColors[level] || 'bg-gray-100 text-gray-600')}>
-                                {level.replace('_', ' ')}
-                              </Badge>
+                          <div className="pt-1">
+                            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-10 overflow-visible">
+                              <polyline
+                                points={points}
+                                fill="none"
+                                stroke="url(#sparkGrad)"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                              <defs>
+                                <linearGradient id="sparkGrad" x1="0" y1="0" x2="1" y2="0">
+                                  <stop offset="0%" stopColor="#14b8a6" />
+                                  <stop offset="100%" stopColor="#0891b2" />
+                                </linearGradient>
+                              </defs>
+                              {/* Last point dot */}
+                              {(() => {
+                                const last = points.split(' ').pop()?.split(',');
+                                if (!last) return null;
+                                return <circle cx={last[0]} cy={last[1]} r="3" fill="#0891b2" />;
+                              })()}
+                            </svg>
+                            <div className="flex justify-between text-[10px] text-muted-foreground -mt-1">
+                              <span>{new Date(periodItems[0].assessedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                              <span>{scores.length} assessments</span>
+                              <span>{new Date(periodItems[periodItems.length - 1].assessedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
                             </div>
                           </div>
                         );
-                      })}
+                      })()}
                     </div>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
-            )}
+                  );
+                })()}
+
+                {/* Birthday Annual Milestone */}
+                {historyData?.birthday && (
+                  <div className="bg-gradient-to-r from-violet-50 via-pink-50 to-amber-50 dark:from-violet-900/20 dark:via-pink-900/10 dark:to-amber-900/10 rounded-xl p-3 border border-violet-200/50 dark:border-violet-800/30">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Gift className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                      <span className="text-sm font-semibold text-violet-800 dark:text-violet-300">Birthday Health Year</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-600 dark:text-slate-400">
+                        {historyData.birthday.daysUntilBirthday === 0
+                          ? '🎉 Happy Birthday!'
+                          : `${historyData.birthday.daysUntilBirthday} days until your birthday`}
+                      </span>
+                      <span className="text-violet-600 dark:text-violet-400 font-medium">
+                        {historyData.periodSummaries?.annual?.count || 0} check-ups this year
+                      </span>
+                    </div>
+                    {/* Birthday year progress bar */}
+                    {(() => {
+                      const bday = historyData.birthday;
+                      if (!bday.annualPeriodStart || !bday.annualPeriodEnd) return null;
+                      const start = new Date(bday.annualPeriodStart).getTime();
+                      const end = new Date(bday.annualPeriodEnd).getTime();
+                      const now = Date.now();
+                      const pct = Math.round(((now - start) / (end - start)) * 100);
+                      return (
+                        <div className="mt-2">
+                          <div className="flex justify-between text-[10px] text-muted-foreground mb-0.5">
+                            <span>{new Date(bday.annualPeriodStart).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                            <span>{pct}% of health year</span>
+                            <span>{new Date(bday.annualPeriodEnd).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+                          </div>
+                          <div className="h-1.5 bg-violet-100 dark:bg-violet-900/30 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-violet-500 to-pink-500 rounded-full transition-all duration-500"
+                              style={{ width: `${Math.min(pct, 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* Assessment list for selected period */}
+                {(() => {
+                  const items = (historyData?.assessments || savedAssessments)
+                    .filter((a: any) => a.periods ? a.periods[selectedPeriod] : true)
+                    .slice(0, 10);
+                  if (items.length === 0) return null;
+                  const levelColors: Record<string, string> = {
+                    LOW: 'bg-emerald-100 text-emerald-700',
+                    MILD: 'bg-blue-100 text-blue-700',
+                    MODERATE: 'bg-amber-100 text-amber-700',
+                    HIGH: 'bg-orange-100 text-orange-700',
+                    VERY_HIGH: 'bg-red-100 text-red-700',
+                  };
+                  return (
+                    <ScrollArea className="h-[180px]">
+                      <div className="space-y-1.5 pr-2">
+                        {items.map((a: any, idx: number) => {
+                          const score = a.score ?? a.riskAssessment?.score ?? 0;
+                          const level = a.riskLevel ?? a.riskAssessment?.riskLevel ?? 'N/A';
+                          const date = new Date(a.assessedAt || a.created_at);
+                          return (
+                            <div key={a.id || idx} className="flex items-center justify-between px-2.5 py-2 rounded-lg border border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                              <div className="flex items-center gap-2">
+                                <div className="text-sm font-semibold w-8 text-slate-800 dark:text-white">{Math.round(score)}</div>
+                                <div className="text-[11px] text-muted-foreground">
+                                  {date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                                  <span className="ml-1 text-[10px]">{date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                                </div>
+                              </div>
+                              <Badge className={cn('text-[9px] px-1.5 py-0.5', levelColors[level] || 'bg-gray-100 text-gray-600')}>
+                                {level.replace('_', ' ')}
+                              </Badge>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </ScrollArea>
+                  );
+                })()}
+              </CardContent>
+            </Card>
 
             {/* Recommendations */}
             <Card className="border-teal-200/50 dark:border-teal-800/30 bg-gradient-to-br from-teal-50/40 to-transparent dark:from-teal-900/10">
@@ -1013,7 +1213,5 @@ const UserHealthRiskAssessment = () => {
     </MainLayout>
   );
 };
-
-import { Lightbulb } from 'lucide-react';
 
 export default UserHealthRiskAssessment;
