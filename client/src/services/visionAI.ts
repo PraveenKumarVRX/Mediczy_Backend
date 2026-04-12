@@ -1,13 +1,28 @@
 /**
- * Vision AI (Edge) Service
- * =========================
+ * Vision AI (Edge + Cloud) Service
+ * ==================================
  * 
- * Browser-based AI vision analysis for emergency triage:
- * - Person & object detection (YOLO-based via TensorFlow.js)
- * - Pose estimation (MediaPipe)
- * - Motion analysis (Optical flow)
+ * Browser-based + Gemini Vision AI analysis for emergency triage:
+ * - Person & pose detection (MediaPipe Pose)
+ * - Motion analysis (Optical flow / frame differencing)
+ * - Cloud scene analysis via Gemini Vision (accident/trauma scene understanding)
  * - Vital signs estimation from video
+ * - Chaos/crowd/injury detection
  */
+
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+// Gemini Vision for cloud-powered scene analysis
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+let geminiModel: any = null;
+
+const getGeminiVision = () => {
+  if (!geminiModel && GEMINI_API_KEY) {
+    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    geminiModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  }
+  return geminiModel;
+};
 
 // MediaPipe globals (loaded via CDN scripts)
 declare global {
@@ -39,6 +54,22 @@ interface VisionAnalysisResult {
   vitalEstimates: VitalEstimates;
   alerts: string[];
   sceneDescription: string;
+  // Cloud AI scene analysis (populated periodically by Gemini)
+  cloudAnalysis?: CloudSceneAnalysis | null;
+}
+
+interface CloudSceneAnalysis {
+  sceneType: string;         // "accident_site", "ambulance_interior", "hospital", "home"
+  victimCount: number;
+  injuries: string[];        // visible injuries described
+  environmentHazards: string[];
+  crowdLevel: 'none' | 'few' | 'moderate' | 'crowded' | 'chaotic';
+  urgencyAssessment: string; // AI-generated urgency summary
+  triageRecommendation: string;
+  visibleEquipment: string[];
+  lightingCondition: string;
+  actionableInsights: string[];
+  confidence: number;        // 0-1
 }
 
 interface PoseData {
@@ -370,9 +401,23 @@ export const analyzeVideoFrame = async (
   // Person detection (simplified - checks for skin-tone pixels)
   const personDetected = detectPersonPresence(currentFrame);
   
-  // Pose analysis (would use MediaPipe in production)
+  // Pose analysis — use MediaPipe landmarks if available
   let poseData: PoseData | null = null;
-  const poseEstimate = analyzePoseForMedical([]);
+  let landmarks: any[] = [];
+  if (mediapipePose && personDetected) {
+    try {
+      const results = await new Promise<any>((resolve) => {
+        mediapipePose.onResults((r: any) => resolve(r));
+        mediapipePose.send({ image: videoElement instanceof HTMLVideoElement ? videoElement : analysisCanvas });
+      });
+      if (results?.poseLandmarks?.length) {
+        landmarks = results.poseLandmarks;
+      }
+    } catch {
+      // MediaPipe send failed — use empty landmarks
+    }
+  }
+  const poseEstimate = analyzePoseForMedical(landmarks);
   
   if (personDetected) {
     poseData = {
@@ -463,9 +508,19 @@ const detectPersonPresence = (frame: ImageData): boolean => {
 export const initializeVisionAI = async (): Promise<boolean> => {
   try {
     initializeCanvas();
-    // Optionally load MediaPipe models
-    // await loadMediaPipePose();
-    console.log('✅ Vision AI initialized (edge mode)');
+    // Load MediaPipe Pose for body position analysis
+    try {
+      await loadMediaPipePose();
+      console.log('✅ MediaPipe Pose loaded');
+    } catch (e) {
+      console.warn('MediaPipe not available, using fallback pose:', e);
+    }
+    // Warm up Gemini Vision
+    if (GEMINI_API_KEY) {
+      getGeminiVision();
+      console.log('✅ Gemini Vision ready');
+    }
+    console.log('✅ Vision AI initialized (edge + cloud mode)');
     return true;
   } catch (error) {
     console.error('Vision AI initialization failed:', error);
@@ -481,6 +536,78 @@ export const cleanupVisionAI = () => {
   motionHistory = [];
   analysisCanvas = null;
   analysisCtx = null;
+  lastCloudAnalysis = null;
+  lastCloudAnalysisTime = 0;
+};
+
+// Cloud analysis cache — Gemini called at most every 8 seconds
+let lastCloudAnalysis: CloudSceneAnalysis | null = null;
+let lastCloudAnalysisTime = 0;
+const CLOUD_ANALYSIS_INTERVAL = 8000; // ms
+let cloudAnalysisInFlight = false;
+
+/**
+ * Analyze a video frame with Gemini Vision for intelligent scene understanding.
+ * Returns cached result if called within CLOUD_ANALYSIS_INTERVAL.
+ */
+export const analyzeSceneWithGemini = async (
+  videoOrCanvas: HTMLVideoElement | HTMLCanvasElement
+): Promise<CloudSceneAnalysis | null> => {
+  const now = Date.now();
+  if (now - lastCloudAnalysisTime < CLOUD_ANALYSIS_INTERVAL) return lastCloudAnalysis;
+  if (cloudAnalysisInFlight) return lastCloudAnalysis;
+
+  const model = getGeminiVision();
+  if (!model) return null;
+
+  cloudAnalysisInFlight = true;
+  try {
+    // Capture frame as base64 JPEG
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 480;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(videoOrCanvas, 0, 0, 640, 480);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+    const base64 = dataUrl.split(',')[1];
+
+    const prompt = `You are an emergency medical AI triage assistant analyzing a LIVE video frame from an accident/emergency scene viewed through an iPad or ambulance camera.
+
+Analyze this image and respond in STRICT JSON (no markdown, no backticks):
+{
+  "sceneType": "accident_site|ambulance_interior|hospital|roadside|home|indoor|outdoor|unknown",
+  "victimCount": <number of visible victims/patients, 0 if none>,
+  "injuries": ["<visible injury descriptions>"],
+  "environmentHazards": ["<visible hazards: fire, debris, traffic, water, chemicals, crowd>"],
+  "crowdLevel": "none|few|moderate|crowded|chaotic",
+  "urgencyAssessment": "<1-2 sentence triage urgency summary>",
+  "triageRecommendation": "<specific clinical recommendation for the remote doctor>",
+  "visibleEquipment": ["<any visible medical equipment, stretchers, vehicles>"],
+  "lightingCondition": "bright|adequate|dim|dark|flashlight",
+  "actionableInsights": ["<3-5 specific actions the paramedic should take NOW based on what you see>"],
+  "confidence": <0.0-1.0>
+}
+
+Be medically precise. If you see a person lying down, assess posture. If you see blood or injury, describe location. If the scene is chaotic (multiple victims, crowd, debris), flag it. If this looks like a normal room/office, say so with low urgency.`;
+
+    const result = await model.generateContent([
+      prompt,
+      { inlineData: { mimeType: 'image/jpeg', data: base64 } }
+    ]);
+    const text = result.response.text().trim();
+    // Parse JSON — strip markdown fences if present
+    const jsonStr = text.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim();
+    const parsed: CloudSceneAnalysis = JSON.parse(jsonStr);
+    lastCloudAnalysis = parsed;
+    lastCloudAnalysisTime = now;
+    return parsed;
+  } catch (err) {
+    console.warn('[VisionAI] Gemini scene analysis error:', err);
+    return lastCloudAnalysis; // return stale cache on error
+  } finally {
+    cloudAnalysisInFlight = false;
+  }
 };
 
 /**
@@ -505,8 +632,23 @@ export const getTriageSummary = (analysis: VisionAnalysisResult): string => {
   if (analysis.alerts.length > 0) {
     parts.push(`\n🚨 Alerts:\n${analysis.alerts.join('\n')}`);
   }
+
+  // Cloud AI scene analysis
+  if (analysis.cloudAnalysis) {
+    const ca = analysis.cloudAnalysis;
+    parts.push(`\n🤖 AI Scene Analysis (${Math.round(ca.confidence * 100)}% confidence):`);
+    parts.push(`  Scene: ${ca.sceneType} | Victims: ${ca.victimCount} | Crowd: ${ca.crowdLevel}`);
+    if (ca.injuries.length > 0) parts.push(`  Injuries: ${ca.injuries.join('; ')}`);
+    if (ca.environmentHazards.length > 0) parts.push(`  Hazards: ${ca.environmentHazards.join('; ')}`);
+    parts.push(`  Urgency: ${ca.urgencyAssessment}`);
+    parts.push(`  Recommendation: ${ca.triageRecommendation}`);
+    if (ca.actionableInsights.length > 0) {
+      parts.push(`  Actions:`);
+      ca.actionableInsights.forEach((a, i) => parts.push(`    ${i + 1}. ${a}`));
+    }
+  }
   
   return parts.join('\n');
 };
 
-export type { VisionAnalysisResult, PoseData, VitalEstimates };
+export type { VisionAnalysisResult, PoseData, VitalEstimates, CloudSceneAnalysis };

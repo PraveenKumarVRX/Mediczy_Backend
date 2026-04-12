@@ -81,7 +81,7 @@ import api from "@/utils/api";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
-import { analyzeVideoFrame, initializeVisionAI, cleanupVisionAI, getTriageSummary, type VisionAnalysisResult } from '@/services/visionAI';
+import { analyzeVideoFrame, analyzeSceneWithGemini, initializeVisionAI, cleanupVisionAI, getTriageSummary, type VisionAnalysisResult, type CloudSceneAnalysis } from '@/services/visionAI';
 import socketService from '@/services/socket.service';
 import { IncomingCallNotification } from '@/components/IncomingCallNotification';
 import { SimpleLiveKitRoom } from '@/components/video/LiveKitRoom';
@@ -252,6 +252,7 @@ const DoctorTriage = () => {
   const [isVisionAIEnabled, setIsVisionAIEnabled] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [visionAnalysis, setVisionAnalysis] = useState<VisionAnalysisResult | null>(null);
+  const [cloudSceneAnalysis, setCloudSceneAnalysis] = useState<CloudSceneAnalysis | null>(null);
   const [vitalSigns, setVitalSigns] = useState<VitalSigns | null>(null);
   const [sceneDescription, setSceneDescription] = useState<string>('');
   const [visionAlerts, setVisionAlerts] = useState<string[]>([]);
@@ -271,7 +272,9 @@ const DoctorTriage = () => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const visionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const cloudIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<any>(null);
   
@@ -374,6 +377,9 @@ const DoctorTriage = () => {
     return () => {
       if (visionIntervalRef.current) {
         clearInterval(visionIntervalRef.current);
+      }
+      if (cloudIntervalRef.current) {
+        clearInterval(cloudIntervalRef.current);
       }
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
@@ -661,27 +667,41 @@ const DoctorTriage = () => {
     });
   };
 
-  // Vision AI continuous analysis
+  // Vision AI continuous analysis — analyzes REMOTE participant's video feed
   const startVisionAIAnalysis = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480 },
-        audio: false
-      });
+      // Check if remote video is available from LiveKit
+      const videoSource = remoteVideoRef.current || localVideoRef.current;
       
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-        await localVideoRef.current.play();
+      if (!videoSource) {
+        // Fallback: start local camera if no remote video yet
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480 },
+          audio: false
+        });
+        
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+          await localVideoRef.current.play();
+        }
+        localStreamRef.current = stream;
       }
       
-      localStreamRef.current = stream;
       setIsVisionAIEnabled(true);
       
-      // Start analysis loop
+      // Edge analysis loop — every 2s
       visionIntervalRef.current = setInterval(async () => {
-        if (localVideoRef.current && isVisionAIEnabled && isInVideoCall) {
+        // Prefer remote video (accident scene), fallback to local
+        const source = remoteVideoRef.current || localVideoRef.current;
+        if (source && isVisionAIEnabled && isInVideoCall) {
           try {
-            const analysis = await analyzeVideoFrame(localVideoRef.current);
+            const analysis = await analyzeVideoFrame(source);
+            
+            // Attach cloud analysis if available
+            if (cloudSceneAnalysis) {
+              analysis.cloudAnalysis = cloudSceneAnalysis;
+            }
+            
             setVisionAnalysis(analysis);
             
             // Update vital signs from vision analysis
@@ -713,11 +733,46 @@ const DoctorTriage = () => {
             console.error('Vision analysis error:', error);
           }
         }
-      }, 2000); // Reduced from 1000ms to 2000ms to reduce re-renders
+      }, 2000);
+      
+      // Cloud analysis loop — Gemini Vision every 8s for intelligent scene understanding
+      cloudIntervalRef.current = setInterval(async () => {
+        const source = remoteVideoRef.current || localVideoRef.current;
+        if (source && isVisionAIEnabled && isInVideoCall) {
+          try {
+            const cloudResult = await analyzeSceneWithGemini(source);
+            if (cloudResult) {
+              setCloudSceneAnalysis(cloudResult);
+              
+              // Push cloud hazards/insights as AI suggestions
+              const cloudSuggestions: string[] = [];
+              if (cloudResult.urgencyAssessment) {
+                cloudSuggestions.push(`🤖 ${cloudResult.urgencyAssessment}`);
+              }
+              if (cloudResult.injuries.length > 0) {
+                cloudSuggestions.push(`🩸 Injuries: ${cloudResult.injuries.join(', ')}`);
+              }
+              if (cloudResult.environmentHazards.length > 0) {
+                cloudSuggestions.push(`⚠️ Hazards: ${cloudResult.environmentHazards.join(', ')}`);
+              }
+              if (cloudSuggestions.length > 0) {
+                setAiSuggestions(prev => {
+                  const merged = [...prev, ...cloudSuggestions];
+                  return [...new Set(merged)].slice(-8);
+                });
+              }
+            }
+          } catch (err) {
+            console.warn('Cloud analysis error:', err);
+          }
+        }
+      }, 8000);
       
       toast({
         title: "👁️ Vision AI Active",
-        description: "Analyzing video for medical signs",
+        description: remoteVideoRef.current 
+          ? "Analyzing remote scene (accident/ambulance) with Edge + Cloud AI"
+          : "Analyzing video for medical signs (will switch to remote when available)",
       });
     } catch (err) {
       console.error('Failed to start Vision AI:', err);
@@ -725,16 +780,34 @@ const DoctorTriage = () => {
     }
   };
 
+  // Callback when remote video element changes from LiveKit
+  const handleRemoteVideo = useCallback((video: HTMLVideoElement | null) => {
+    remoteVideoRef.current = video;
+    if (video && isVisionAIEnabled) {
+      console.log('🎥 Remote video track captured — switching Vision AI to remote scene');
+      toast({
+        title: "📡 Remote Scene Connected",
+        description: "Vision AI now analyzing the accident/ambulance scene",
+      });
+    }
+  }, [isVisionAIEnabled]);
+
   // Stop Vision AI
   const stopVisionAI = () => {
     if (visionIntervalRef.current) {
       clearInterval(visionIntervalRef.current);
       visionIntervalRef.current = null;
     }
+    if (cloudIntervalRef.current) {
+      clearInterval(cloudIntervalRef.current);
+      cloudIntervalRef.current = null;
+    }
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
     }
+    remoteVideoRef.current = null;
     setIsVisionAIEnabled(false);
+    setCloudSceneAnalysis(null);
     cleanupVisionAI();
   };
 
@@ -1008,6 +1081,7 @@ const DoctorTriage = () => {
             <SimpleLiveKitRoom
               serverUrl={currentVideoServerUrl}
               token={currentVideoToken}
+              onRemoteVideo={handleRemoteVideo}
             />
           ) : (
             <div className="h-full w-full flex items-center justify-center text-slate-300">
@@ -1017,31 +1091,70 @@ const DoctorTriage = () => {
           
           {/* Vision AI Overlay */}
           {isVisionAIEnabled && (
-            <div className="absolute top-4 left-4 bg-black/70 rounded-lg p-3 max-w-xs">
+            <div className="absolute top-4 left-4 bg-black/80 backdrop-blur-sm rounded-xl p-3 max-w-sm shadow-2xl border border-cyan-500/30">
               <h4 className="text-cyan-400 text-sm font-semibold mb-2 flex items-center gap-2">
-                <Eye className="h-4 w-4" /> Vision AI Analysis
+                <Eye className="h-4 w-4" />
+                <span>Vision AI</span>
+                <span className="ml-auto text-[10px] text-cyan-300/60 animate-pulse">● LIVE</span>
               </h4>
               {visionAnalysis ? (
-                <div className="text-white/80 space-y-1 text-xs">
-                  <p>👤 {visionAnalysis.personDetected ? 'Person detected' : 'No person'}</p>
-                  <p>🏃 Motion: {visionAnalysis.motionType || 'Normal'}</p>
-                  <p>📊 Level: {visionAnalysis.motionLevel?.toFixed(0) || 0}%</p>
-                  {visionAnalysis.poseData && (
-                    <p>🧍 {visionAnalysis.poseData.isLying ? 'Lying' : visionAnalysis.poseData.isSeated ? 'Seated' : 'Standing'}</p>
+                <div className="text-white/80 space-y-1.5 text-xs">
+                  {/* Edge analysis */}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span>👤 {visionAnalysis.personDetected ? 'Person' : 'No person'}</span>
+                    <span>🏃 {visionAnalysis.motionType}</span>
+                    <span>📊 {visionAnalysis.motionLevel?.toFixed(0) || 0}%</span>
+                    {visionAnalysis.poseData && (
+                      <span>🧍 {visionAnalysis.poseData.isLying ? 'Lying' : visionAnalysis.poseData.isSeated ? 'Seated' : 'Standing'}</span>
+                    )}
+                  </div>
+                  {/* Cloud AI scene analysis */}
+                  {cloudSceneAnalysis && (
+                    <div className="mt-2 pt-2 border-t border-cyan-500/20 space-y-1">
+                      <div className="flex items-center gap-1.5 text-[11px] text-cyan-300 font-medium">
+                        <Zap className="h-3 w-3" /> Gemini Scene AI
+                        <span className="ml-auto text-[9px] text-cyan-400/50">{Math.round(cloudSceneAnalysis.confidence * 100)}%</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        <Badge variant="outline" className="text-[9px] border-cyan-500/40 text-cyan-200 px-1.5 py-0">
+                          {cloudSceneAnalysis.sceneType?.replace('_', ' ')}
+                        </Badge>
+                        {cloudSceneAnalysis.victimCount > 0 && (
+                          <Badge variant="outline" className="text-[9px] border-red-500/40 text-red-200 px-1.5 py-0">
+                            {cloudSceneAnalysis.victimCount} victim{cloudSceneAnalysis.victimCount > 1 ? 's' : ''}
+                          </Badge>
+                        )}
+                        <Badge variant="outline" className="text-[9px] border-amber-500/40 text-amber-200 px-1.5 py-0">
+                          {cloudSceneAnalysis.crowdLevel}
+                        </Badge>
+                        <Badge variant="outline" className="text-[9px] border-slate-400/40 text-slate-200 px-1.5 py-0">
+                          {cloudSceneAnalysis.lightingCondition}
+                        </Badge>
+                      </div>
+                      {cloudSceneAnalysis.injuries.length > 0 && (
+                        <p className="text-red-300 text-[10px]">🩸 {cloudSceneAnalysis.injuries.slice(0, 2).join('; ')}</p>
+                      )}
+                      {cloudSceneAnalysis.environmentHazards.length > 0 && (
+                        <p className="text-amber-300 text-[10px]">⚠️ {cloudSceneAnalysis.environmentHazards.slice(0, 2).join('; ')}</p>
+                      )}
+                      <p className="text-cyan-100/90 text-[10px] italic">{cloudSceneAnalysis.urgencyAssessment}</p>
+                    </div>
                   )}
                 </div>
               ) : (
-                <p className="text-white/50 text-xs">Initializing...</p>
+                <div className="flex items-center gap-2 text-white/50 text-xs">
+                  <Loader2 className="h-3 w-3 animate-spin" /> Initializing edge + cloud AI...
+                </div>
               )}
             </div>
           )}
           
           {/* Alerts Overlay */}
           {visionAlerts.length > 0 && (
-            <div className="absolute top-4 right-4 bg-red-900/90 rounded-lg p-3 max-w-xs border border-red-500">
-              <h4 className="text-red-400 text-sm font-semibold mb-2">🚨 Alerts</h4>
+            <div className="absolute top-4 right-4 bg-red-900/90 backdrop-blur-sm rounded-xl p-3 max-w-xs border border-red-500 shadow-2xl">
+              <h4 className="text-red-400 text-sm font-semibold mb-2 flex items-center gap-2">🚨 Alerts</h4>
               {visionAlerts.map((alert, i) => (
-                <p key={i} className="text-red-200 text-xs">{alert}</p>
+                <p key={i} className="text-red-200 text-xs mb-1">{alert}</p>
               ))}
             </div>
           )}
@@ -1091,8 +1204,64 @@ const DoctorTriage = () => {
               {/* Scene Description */}
               {sceneDescription && (
                 <div className="mb-4 bg-blue-900/30 rounded-lg p-3 border border-blue-500/30">
-                  <h5 className="text-blue-400 text-sm font-semibold mb-2">👁️ Scene Analysis</h5>
+                  <h5 className="text-blue-400 text-sm font-semibold mb-2">👁️ Edge Scene Analysis</h5>
                   <p className="text-blue-200 text-xs">{sceneDescription}</p>
+                </div>
+              )}
+
+              {/* Cloud AI Scene Intelligence */}
+              {cloudSceneAnalysis && (
+                <div className="mb-4 bg-gradient-to-br from-cyan-900/40 to-blue-900/30 rounded-lg p-3 border border-cyan-500/30">
+                  <h5 className="text-cyan-400 text-sm font-semibold mb-2 flex items-center gap-2">
+                    <Zap className="h-3.5 w-3.5" /> Gemini Scene Intelligence
+                    <span className="ml-auto text-[9px] text-cyan-300/50">{Math.round(cloudSceneAnalysis.confidence * 100)}% conf</span>
+                  </h5>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex flex-wrap gap-1">
+                      <Badge className="bg-slate-700/80 text-cyan-200 text-[10px]">{cloudSceneAnalysis.sceneType?.replace('_', ' ')}</Badge>
+                      {cloudSceneAnalysis.victimCount > 0 && (
+                        <Badge className="bg-red-800/60 text-red-200 text-[10px]">{cloudSceneAnalysis.victimCount} victim{cloudSceneAnalysis.victimCount > 1 ? 's' : ''}</Badge>
+                      )}
+                      <Badge className="bg-amber-800/50 text-amber-200 text-[10px]">Crowd: {cloudSceneAnalysis.crowdLevel}</Badge>
+                    </div>
+                    
+                    {cloudSceneAnalysis.injuries.length > 0 && (
+                      <div className="bg-red-900/30 rounded p-2 border border-red-500/20">
+                        <p className="text-red-300 font-medium text-[10px] mb-1">🩸 Visible Injuries</p>
+                        {cloudSceneAnalysis.injuries.map((inj, i) => (
+                          <p key={i} className="text-red-200/80 text-[10px] ml-2">• {inj}</p>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {cloudSceneAnalysis.environmentHazards.length > 0 && (
+                      <div className="bg-amber-900/30 rounded p-2 border border-amber-500/20">
+                        <p className="text-amber-300 font-medium text-[10px] mb-1">⚠️ Hazards</p>
+                        {cloudSceneAnalysis.environmentHazards.map((h, i) => (
+                          <p key={i} className="text-amber-200/80 text-[10px] ml-2">• {h}</p>
+                        ))}
+                      </div>
+                    )}
+                    
+                    <div className="bg-cyan-900/30 rounded p-2 border border-cyan-500/20">
+                      <p className="text-cyan-300 font-medium text-[10px] mb-1">🎯 Triage Recommendation</p>
+                      <p className="text-cyan-100/80 text-[10px]">{cloudSceneAnalysis.triageRecommendation}</p>
+                    </div>
+                    
+                    {cloudSceneAnalysis.actionableInsights.length > 0 && (
+                      <div className="bg-green-900/30 rounded p-2 border border-green-500/20">
+                        <p className="text-green-300 font-medium text-[10px] mb-1">📋 Immediate Actions</p>
+                        {cloudSceneAnalysis.actionableInsights.map((action, i) => (
+                          <p key={i} className="text-green-200/80 text-[10px] ml-2">{i + 1}. {action}</p>
+                        ))}
+                      </div>
+                    )}
+
+                    {cloudSceneAnalysis.visibleEquipment.length > 0 && (
+                      <p className="text-slate-300 text-[10px]">🧰 Equipment: {cloudSceneAnalysis.visibleEquipment.join(', ')}</p>
+                    )}
+                    <p className="text-slate-400 text-[10px]">💡 Lighting: {cloudSceneAnalysis.lightingCondition}</p>
+                  </div>
                 </div>
               )}
               

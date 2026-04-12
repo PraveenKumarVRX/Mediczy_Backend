@@ -24,8 +24,8 @@ import llmProvider from './ai-brain/llm-provider.js';
 
 // ─── Red Flag Conditions (ESI Level 1-2) ────────────────────
 const RED_FLAGS = [
-  { pattern: /chest.?pain|angina|mi|myocardial|heart.?attack/i, esi: 1, category: 'cardiac', action: 'ACTIVATE_CODE_STEMI' },
-  { pattern: /stroke|facial.?droop|slurred.?speech|arm.?weakness|tia|hemiplegia/i, esi: 1, category: 'stroke', action: 'ACTIVATE_CODE_STROKE' },
+  { pattern: /chest.?pain|angina|\bmi\b|myocardial|heart.?attack/i, esi: 1, category: 'cardiac', action: 'ACTIVATE_CODE_STEMI' },
+  { pattern: /stroke|facial.?droop|slurred.?speech|arm.?weakness|\btia\b|hemiplegia/i, esi: 1, category: 'stroke', action: 'ACTIVATE_CODE_STROKE' },
   { pattern: /anaphyla|severe.?allerg|throat.?swell|can.?t.?breath|airway/i, esi: 1, category: 'anaphylaxis', action: 'EPINEPHRINE_READY' },
   { pattern: /unresponsive|unconscious|cardiac.?arrest|no.?pulse|not.?breathing/i, esi: 1, category: 'arrest', action: 'ACTIVATE_CODE_BLUE' },
   { pattern: /severe.?bleed|hemorrhag|massive.?blood/i, esi: 1, category: 'hemorrhage', action: 'MASSIVE_TRANSFUSION' },

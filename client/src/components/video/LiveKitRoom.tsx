@@ -208,16 +208,77 @@ export default function LiveKitRoom({
   );
 }
 
+/**
+ * RemoteVideoCapture — captures the remote participant's camera track
+ * into a hidden <video> element and exposes it via callback.
+ * Must be rendered INSIDE an <LKRoom> context.
+ */
+function RemoteVideoCapture({
+  onRemoteVideo,
+}: {
+  onRemoteVideo?: (video: HTMLVideoElement | null) => void;
+}) {
+  const videoRef = useCallback(
+    (node: HTMLVideoElement | null) => {
+      onRemoteVideo?.(node);
+    },
+    [onRemoteVideo],
+  );
+
+  // Subscribe to all camera tracks (local + remote)
+  const tracks = useTracks(
+    [{ source: Track.Source.Camera, withPlaceholder: false }],
+    { onlySubscribed: true },
+  );
+
+  // Find the first remote camera track
+  const remoteTrack = tracks.find(
+    (t) => t.participant?.isLocal === false && t.publication?.track,
+  );
+
+  useEffect(() => {
+    if (!remoteTrack?.publication?.track) {
+      onRemoteVideo?.(null);
+      return;
+    }
+    // Attach the track to the hidden video element
+    const el = document.getElementById('__remote-capture-video') as HTMLVideoElement | null;
+    if (el) {
+      remoteTrack.publication.track.attach(el);
+      onRemoteVideo?.(el);
+    }
+    return () => {
+      if (el) {
+        remoteTrack.publication?.track?.detach(el);
+      }
+    };
+  }, [remoteTrack?.publication?.track, onRemoteVideo]);
+
+  return (
+    <video
+      id="__remote-capture-video"
+      ref={videoRef}
+      className="hidden"
+      muted
+      playsInline
+      style={{ width: 0, height: 0, position: 'absolute', pointerEvents: 'none' }}
+    />
+  );
+}
+
 // Simplified room component for embedding (medical calls — no screen share)
 export function SimpleLiveKitRoom({
   serverUrl,
   token,
   onDisconnect,
+  onRemoteVideo,
   controls,
 }: {
   serverUrl: string;
   token: string;
   onDisconnect?: () => void;
+  /** Callback fired when a remote participant's camera video element is available (or null when lost) */
+  onRemoteVideo?: (video: HTMLVideoElement | null) => void;
   /** Override which controls are shown. Defaults to { screenShare: false } */
   controls?: ControlBarControls;
 }) {
@@ -234,6 +295,7 @@ export function SimpleLiveKitRoom({
       >
         <MedicalVideoLayout controls={controls} />
         <RoomAudioRenderer />
+        {onRemoteVideo && <RemoteVideoCapture onRemoteVideo={onRemoteVideo} />}
       </LKRoom>
     </div>
   );
