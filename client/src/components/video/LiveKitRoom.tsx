@@ -209,6 +209,45 @@ export default function LiveKitRoom({
 }
 
 /**
+ * RemoteAudioCapture — captures the remote participant's audio track
+ * as a MediaStream and exposes it via callback.
+ * Must be rendered INSIDE an <LKRoom> context.
+ */
+function RemoteAudioCapture({
+  onRemoteAudio,
+}: {
+  onRemoteAudio?: (stream: MediaStream | null) => void;
+}) {
+  const tracks = useTracks(
+    [{ source: Track.Source.Microphone, withPlaceholder: false }],
+    { onlySubscribed: true },
+  );
+
+  // Find the first remote audio track
+  const remoteTrack = tracks.find(
+    (t) => t.participant?.isLocal === false && t.publication?.track,
+  );
+
+  useEffect(() => {
+    if (!remoteTrack?.publication?.track) {
+      onRemoteAudio?.(null);
+      return;
+    }
+    // Get the MediaStream from the remote audio track
+    const mediaStreamTrack = remoteTrack.publication.track.mediaStreamTrack;
+    if (mediaStreamTrack) {
+      const stream = new MediaStream([mediaStreamTrack]);
+      onRemoteAudio?.(stream);
+    }
+    return () => {
+      onRemoteAudio?.(null);
+    };
+  }, [remoteTrack?.publication?.track, onRemoteAudio]);
+
+  return null; // No DOM element needed for audio
+}
+
+/**
  * RemoteVideoCapture — captures the remote participant's camera track
  * into a hidden <video> element and exposes it via callback.
  * Must be rendered INSIDE an <LKRoom> context.
@@ -272,6 +311,7 @@ export function SimpleLiveKitRoom({
   token,
   onDisconnect,
   onRemoteVideo,
+  onRemoteAudio,
   controls,
 }: {
   serverUrl: string;
@@ -279,6 +319,8 @@ export function SimpleLiveKitRoom({
   onDisconnect?: () => void;
   /** Callback fired when a remote participant's camera video element is available (or null when lost) */
   onRemoteVideo?: (video: HTMLVideoElement | null) => void;
+  /** Callback fired when a remote participant's audio MediaStream is available (or null when lost) */
+  onRemoteAudio?: (stream: MediaStream | null) => void;
   /** Override which controls are shown. Defaults to { screenShare: false } */
   controls?: ControlBarControls;
 }) {
@@ -296,6 +338,7 @@ export function SimpleLiveKitRoom({
         <MedicalVideoLayout controls={controls} />
         <RoomAudioRenderer />
         {onRemoteVideo && <RemoteVideoCapture onRemoteVideo={onRemoteVideo} />}
+        {onRemoteAudio && <RemoteAudioCapture onRemoteAudio={onRemoteAudio} />}
       </LKRoom>
     </div>
   );

@@ -82,6 +82,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { analyzeVideoFrame, analyzeSceneWithGemini, initializeVisionAI, cleanupVisionAI, getTriageSummary, type VisionAnalysisResult, type CloudSceneAnalysis } from '@/services/visionAI';
+import { initializeAudioAI, connectAudioStream, analyzeAudioFrame, analyzeAudioWithGemini, cleanupAudioAI, startFullCallRecording, stopFullCallRecording, getRecordingDuration, type AudioAnalysisResult, type CloudAudioAnalysis } from '@/services/audioAI';
 import socketService from '@/services/socket.service';
 import { IncomingCallNotification } from '@/components/IncomingCallNotification';
 import { SimpleLiveKitRoom } from '@/components/video/LiveKitRoom';
@@ -253,6 +254,10 @@ const DoctorTriage = () => {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [visionAnalysis, setVisionAnalysis] = useState<VisionAnalysisResult | null>(null);
   const [cloudSceneAnalysis, setCloudSceneAnalysis] = useState<CloudSceneAnalysis | null>(null);
+  const [audioAnalysis, setAudioAnalysis] = useState<AudioAnalysisResult | null>(null);
+  const [cloudAudioAnalysis, setCloudAudioAnalysis] = useState<CloudAudioAnalysis | null>(null);
+  const [isAudioAIEnabled, setIsAudioAIEnabled] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
   const [vitalSigns, setVitalSigns] = useState<VitalSigns | null>(null);
   const [sceneDescription, setSceneDescription] = useState<string>('');
   const [visionAlerts, setVisionAlerts] = useState<string[]>([]);
@@ -273,8 +278,12 @@ const DoctorTriage = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteAudioStreamRef = useRef<MediaStream | null>(null);
   const visionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const cloudIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const audioIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const cloudAudioIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<any>(null);
   
@@ -655,6 +664,15 @@ const DoctorTriage = () => {
       console.warn('Vision AI initialization failed:', err);
     }
     
+    // Initialize Audio AI
+    try {
+      await initializeAudioAI();
+      setIsAudioAIEnabled(true);
+      // Audio analysis starts when remote audio stream connects (handleRemoteAudio)
+    } catch (err) {
+      console.warn('Audio AI initialization failed:', err);
+    }
+    
     // Start transcription
     startLiveTranscription();
     
@@ -791,6 +809,137 @@ const DoctorTriage = () => {
       });
     }
   }, [isVisionAIEnabled]);
+
+  // Callback when remote audio stream is available from LiveKit
+  const handleRemoteAudio = useCallback(async (stream: MediaStream | null) => {
+    remoteAudioStreamRef.current = stream;
+    if (stream && isAudioAIEnabled) {
+      console.log('🔊 Remote audio stream captured — starting Audio AI analysis');
+      const connected = await connectAudioStream(stream);
+      if (connected) {
+        startAudioAIAnalysis();
+        toast({
+          title: "🔊 Audio AI Connected",
+          description: "Listening to accident scene audio — edge + Gemini cloud analysis",
+        });
+      }
+    }
+  }, [isAudioAIEnabled]);
+
+  // Audio AI continuous analysis — edge every 1s, cloud every 10s
+  const startAudioAIAnalysis = () => {
+    // Edge audio analysis — every 1s
+    audioIntervalRef.current = setInterval(() => {
+      if (isAudioAIEnabled && isInVideoCall) {
+        const result = analyzeAudioFrame();
+        if (result) {
+          setAudioAnalysis(result);
+          
+          // Push audio alerts as AI suggestions
+          if (result.alerts.length > 0) {
+            setAiSuggestions(prev => {
+              const merged = [...prev, ...result.alerts];
+              return [...new Set(merged)].slice(-8);
+            });
+          }
+        }
+      }
+    }, 1000);
+
+    // Cloud audio analysis — Gemini every 10s
+    cloudAudioIntervalRef.current = setInterval(async () => {
+      if (isAudioAIEnabled && isInVideoCall) {
+        try {
+          const cloudResult = await analyzeAudioWithGemini();
+          if (cloudResult) {
+            setCloudAudioAnalysis(cloudResult);
+            
+            // Push audio cloud insights
+            const audioSuggestions: string[] = [];
+            if (cloudResult.distressLevel !== 'none') {
+              audioSuggestions.push(`🔊 Audio: ${cloudResult.distressLevel} distress detected`);
+            }
+            if (cloudResult.patientSounds.length > 0) {
+              audioSuggestions.push(`🩺 Patient sounds: ${cloudResult.patientSounds.join(', ')}`);
+            }
+            if (audioSuggestions.length > 0) {
+              setAiSuggestions(prev => {
+                const merged = [...prev, ...audioSuggestions];
+                return [...new Set(merged)].slice(-8);
+              });
+            }
+          }
+        } catch (err) {
+          console.warn('Cloud audio analysis error:', err);
+        }
+      }
+    }, 10000);
+  };
+
+  // Stop Audio AI
+  const stopAudioAI = () => {
+    if (audioIntervalRef.current) {
+      clearInterval(audioIntervalRef.current);
+      audioIntervalRef.current = null;
+    }
+    if (cloudAudioIntervalRef.current) {
+      clearInterval(cloudAudioIntervalRef.current);
+      cloudAudioIntervalRef.current = null;
+    }
+    remoteAudioStreamRef.current = null;
+    setIsAudioAIEnabled(false);
+    setAudioAnalysis(null);
+    setCloudAudioAnalysis(null);
+    cleanupAudioAI();
+  };
+
+  // Start/Stop full call recording (wired to the Recording button)
+  const toggleRecording = async () => {
+    if (isRecording) {
+      // Stop recording
+      const blob = await stopFullCallRecording();
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      setIsRecording(false);
+      setRecordingDuration(0);
+      
+      if (blob) {
+        // Save recording as downloadable file
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `triage-recording-${selectedCase?.patientName || 'unknown'}-${new Date().toISOString().slice(0, 19)}.webm`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast({
+          title: "Recording Saved",
+          description: `Audio recording downloaded (${Math.round(blob.size / 1024)} KB)`,
+        });
+      }
+    } else {
+      // Start recording — use remote audio stream if available
+      const stream = remoteAudioStreamRef.current;
+      if (stream) {
+        const started = startFullCallRecording(stream);
+        if (started) {
+          setIsRecording(true);
+          // Update duration counter
+          recordingTimerRef.current = setInterval(() => {
+            setRecordingDuration(getRecordingDuration());
+          }, 1000);
+          toast({ title: "🎙️ Recording Started", description: "Capturing scene audio" });
+        }
+      } else {
+        toast({
+          title: "No Audio Stream",
+          description: "Remote audio not yet connected — start a video call first",
+          variant: "destructive",
+        });
+      }
+    }
+  };
 
   // Stop Vision AI
   const stopVisionAI = () => {
@@ -933,6 +1082,17 @@ const DoctorTriage = () => {
     setCurrentVideoServerUrl('');
     setCurrentVideoJoinUrl('');
     stopVisionAI();
+    stopAudioAI();
+    // Stop recording if active
+    if (isRecording) {
+      stopFullCallRecording();
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      setIsRecording(false);
+      setRecordingDuration(0);
+    }
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       recognitionRef.current = null;
@@ -943,6 +1103,8 @@ const DoctorTriage = () => {
     setVisionAlerts([]);
     setVitalSigns(null);
     setVisionAnalysis(null);
+    setAudioAnalysis(null);
+    setCloudAudioAnalysis(null);
     
     // Show response dialog to document the consultation
     if (selectedCase) {
@@ -1082,6 +1244,7 @@ const DoctorTriage = () => {
               serverUrl={currentVideoServerUrl}
               token={currentVideoToken}
               onRemoteVideo={handleRemoteVideo}
+              onRemoteAudio={handleRemoteAudio}
             />
           ) : (
             <div className="h-full w-full flex items-center justify-center text-slate-300">
@@ -1149,12 +1312,94 @@ const DoctorTriage = () => {
             </div>
           )}
           
+          {/* Audio AI Overlay */}
+          {isAudioAIEnabled && (
+            <div className="absolute bottom-4 left-4 bg-black/80 backdrop-blur-sm rounded-xl p-3 max-w-xs shadow-2xl border border-purple-500/30">
+              <h4 className="text-purple-400 text-sm font-semibold mb-2 flex items-center gap-2">
+                <Volume2 className="h-4 w-4" />
+                <span>Audio AI</span>
+                <span className="ml-auto text-[10px] text-purple-300/60 animate-pulse">● LIVE</span>
+              </h4>
+              {audioAnalysis ? (
+                <div className="text-white/80 space-y-1.5 text-xs">
+                  {/* Edge audio analysis */}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="flex items-center gap-1">
+                      🔊 {audioAnalysis.volumeLevel}%
+                      <div className="w-16 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                          className={cn("h-full rounded-full transition-all", audioAnalysis.volumeLevel > 60 ? "bg-red-500" : audioAnalysis.volumeLevel > 30 ? "bg-amber-500" : "bg-green-500")}
+                          style={{ width: `${audioAnalysis.volumeLevel}%` }}
+                        />
+                      </div>
+                    </span>
+                    <span>{audioAnalysis.isSpeechDetected ? '🗣️ Speech' : '🔇 No speech'}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Badge variant="outline" className={cn("text-[9px] px-1.5 py-0", {
+                      'border-green-500/40 text-green-200': audioAnalysis.audioPattern === 'silence' || audioAnalysis.audioPattern === 'ambient_noise',
+                      'border-blue-500/40 text-blue-200': audioAnalysis.audioPattern === 'speech',
+                      'border-amber-500/40 text-amber-200': audioAnalysis.audioPattern === 'shouting' || audioAnalysis.audioPattern === 'crowd_noise',
+                      'border-red-500/40 text-red-200': audioAnalysis.audioPattern === 'distress_vocalization' || audioAnalysis.audioPattern === 'impact_sound',
+                      'border-purple-500/40 text-purple-200': audioAnalysis.audioPattern === 'siren_detected',
+                    })}>
+                      {audioAnalysis.audioPattern.replace(/_/g, ' ')}
+                    </Badge>
+                    <Badge variant="outline" className="text-[9px] border-slate-400/40 text-slate-200 px-1.5 py-0">
+                      {audioAnalysis.dominantFrequency} Hz
+                    </Badge>
+                  </div>
+                  {/* Cloud audio analysis */}
+                  {cloudAudioAnalysis && (
+                    <div className="mt-2 pt-2 border-t border-purple-500/20 space-y-1">
+                      <div className="flex items-center gap-1.5 text-[11px] text-purple-300 font-medium">
+                        <Zap className="h-3 w-3" /> Gemini Audio AI
+                        <span className="ml-auto text-[9px] text-purple-400/50">{Math.round(cloudAudioAnalysis.confidence * 100)}%</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        <Badge variant="outline" className="text-[9px] border-purple-500/40 text-purple-200 px-1.5 py-0">
+                          {cloudAudioAnalysis.sceneAudioType?.replace(/_/g, ' ')}
+                        </Badge>
+                        <Badge variant="outline" className={cn("text-[9px] px-1.5 py-0", {
+                          'border-green-500/40 text-green-200': cloudAudioAnalysis.distressLevel === 'none' || cloudAudioAnalysis.distressLevel === 'mild',
+                          'border-amber-500/40 text-amber-200': cloudAudioAnalysis.distressLevel === 'moderate',
+                          'border-red-500/40 text-red-200': cloudAudioAnalysis.distressLevel === 'severe' || cloudAudioAnalysis.distressLevel === 'critical',
+                        })}>
+                          Distress: {cloudAudioAnalysis.distressLevel}
+                        </Badge>
+                        {cloudAudioAnalysis.speakerCount > 0 && (
+                          <Badge variant="outline" className="text-[9px] border-blue-500/40 text-blue-200 px-1.5 py-0">
+                            {cloudAudioAnalysis.speakerCount} speaker{cloudAudioAnalysis.speakerCount > 1 ? 's' : ''}
+                          </Badge>
+                        )}
+                      </div>
+                      {cloudAudioAnalysis.patientSounds.length > 0 && (
+                        <p className="text-red-300 text-[10px]">🩺 {cloudAudioAnalysis.patientSounds.join(', ')}</p>
+                      )}
+                      <p className="text-purple-200/80 text-[10px]">🫁 Breathing: {cloudAudioAnalysis.breathingPattern?.replace(/_/g, ' ')}</p>
+                      {cloudAudioAnalysis.dominantSounds.length > 0 && (
+                        <p className="text-slate-300 text-[10px]">🎵 {cloudAudioAnalysis.dominantSounds.slice(0, 3).join(', ')}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-white/50 text-xs">
+                  <Loader2 className="h-3 w-3 animate-spin" /> Waiting for remote audio...
+                </div>
+              )}
+            </div>
+          )}
+          
           {/* Alerts Overlay */}
-          {visionAlerts.length > 0 && (
+          {(visionAlerts.length > 0 || (audioAnalysis?.alerts?.length ?? 0) > 0) && (
             <div className="absolute top-4 right-4 bg-red-900/90 backdrop-blur-sm rounded-xl p-3 max-w-xs border border-red-500 shadow-2xl">
               <h4 className="text-red-400 text-sm font-semibold mb-2 flex items-center gap-2">🚨 Alerts</h4>
               {visionAlerts.map((alert, i) => (
-                <p key={i} className="text-red-200 text-xs mb-1">{alert}</p>
+                <p key={`v-${i}`} className="text-red-200 text-xs mb-1">{alert}</p>
+              ))}
+              {audioAnalysis?.alerts?.map((alert, i) => (
+                <p key={`a-${i}`} className="text-red-200 text-xs mb-1">{alert}</p>
               ))}
             </div>
           )}
@@ -1265,6 +1510,103 @@ const DoctorTriage = () => {
                 </div>
               )}
               
+              {/* Gemini Audio Intelligence */}
+              {cloudAudioAnalysis && (
+                <div className="mb-4 bg-gradient-to-br from-purple-900/40 to-indigo-900/30 rounded-lg p-3 border border-purple-500/30">
+                  <h5 className="text-purple-400 text-sm font-semibold mb-2 flex items-center gap-2">
+                    <Volume2 className="h-3.5 w-3.5" /> Gemini Audio Intelligence
+                    <span className="ml-auto text-[9px] text-purple-300/50">{Math.round(cloudAudioAnalysis.confidence * 100)}% conf</span>
+                  </h5>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex flex-wrap gap-1">
+                      <Badge className="bg-slate-700/80 text-purple-200 text-[10px]">{cloudAudioAnalysis.sceneAudioType?.replace(/_/g, ' ')}</Badge>
+                      <Badge className={cn("text-[10px]", {
+                        'bg-green-800/50 text-green-200': cloudAudioAnalysis.distressLevel === 'none' || cloudAudioAnalysis.distressLevel === 'mild',
+                        'bg-amber-800/50 text-amber-200': cloudAudioAnalysis.distressLevel === 'moderate',
+                        'bg-red-800/50 text-red-200': cloudAudioAnalysis.distressLevel === 'severe' || cloudAudioAnalysis.distressLevel === 'critical',
+                      })}>Distress: {cloudAudioAnalysis.distressLevel}</Badge>
+                      {cloudAudioAnalysis.speakerCount > 0 && (
+                        <Badge className="bg-blue-800/50 text-blue-200 text-[10px]">{cloudAudioAnalysis.speakerCount} speaker{cloudAudioAnalysis.speakerCount > 1 ? 's' : ''}</Badge>
+                      )}
+                    </div>
+                    
+                    {cloudAudioAnalysis.dominantSounds.length > 0 && (
+                      <div className="bg-indigo-900/30 rounded p-2 border border-indigo-500/20">
+                        <p className="text-indigo-300 font-medium text-[10px] mb-1">🎵 Dominant Sounds</p>
+                        {cloudAudioAnalysis.dominantSounds.map((s, i) => (
+                          <p key={i} className="text-indigo-200/80 text-[10px] ml-2">• {s}</p>
+                        ))}
+                      </div>
+                    )}
+
+                    {cloudAudioAnalysis.patientSounds.length > 0 && (
+                      <div className="bg-red-900/30 rounded p-2 border border-red-500/20">
+                        <p className="text-red-300 font-medium text-[10px] mb-1">🩺 Patient Sounds</p>
+                        {cloudAudioAnalysis.patientSounds.map((s, i) => (
+                          <p key={i} className="text-red-200/80 text-[10px] ml-2">• {s}</p>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="bg-purple-900/30 rounded p-2 border border-purple-500/20">
+                      <p className="text-purple-300 font-medium text-[10px] mb-1">🫁 Breathing Pattern</p>
+                      <p className="text-purple-100/80 text-[10px]">{cloudAudioAnalysis.breathingPattern?.replace(/_/g, ' ')}</p>
+                    </div>
+
+                    {cloudAudioAnalysis.urgencyIndicators.length > 0 && (
+                      <div className="bg-red-900/30 rounded p-2 border border-red-500/20">
+                        <p className="text-red-300 font-medium text-[10px] mb-1">🚨 Urgency Indicators</p>
+                        {cloudAudioAnalysis.urgencyIndicators.map((u, i) => (
+                          <p key={i} className="text-red-200/80 text-[10px] ml-2">• {u}</p>
+                        ))}
+                      </div>
+                    )}
+
+                    {cloudAudioAnalysis.environmentSounds.length > 0 && (
+                      <p className="text-slate-300 text-[10px]">🌍 Environment: {cloudAudioAnalysis.environmentSounds.join(', ')}</p>
+                    )}
+
+                    {cloudAudioAnalysis.audioInsights.length > 0 && (
+                      <div className="bg-green-900/30 rounded p-2 border border-green-500/20">
+                        <p className="text-green-300 font-medium text-[10px] mb-1">💡 Audio Insights</p>
+                        {cloudAudioAnalysis.audioInsights.map((a, i) => (
+                          <p key={i} className="text-green-200/80 text-[10px] ml-2">{i + 1}. {a}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Edge Audio Analysis */}
+              {audioAnalysis && (
+                <div className="mb-4 bg-indigo-900/30 rounded-lg p-3 border border-indigo-500/30">
+                  <h5 className="text-indigo-400 text-sm font-semibold mb-2 flex items-center gap-2">
+                    <Volume2 className="h-4 w-4" /> Edge Audio Analysis
+                    {isAudioAIEnabled && <span className="text-[10px] text-indigo-300 animate-pulse">● Live</span>}
+                  </h5>
+                  <div className="space-y-1 text-xs text-indigo-200/80">
+                    <div className="flex items-center gap-2">
+                      <span>Volume:</span>
+                      <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                          className={cn("h-full rounded-full transition-all", audioAnalysis.volumeLevel > 60 ? "bg-red-500" : audioAnalysis.volumeLevel > 30 ? "bg-amber-500" : "bg-green-500")}
+                          style={{ width: `${audioAnalysis.volumeLevel}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] w-8 text-right">{audioAnalysis.volumeLevel}%</span>
+                    </div>
+                    <p>Pattern: <span className="text-white">{audioAnalysis.audioPattern.replace(/_/g, ' ')}</span></p>
+                    <p>Speech: <span className="text-white">{audioAnalysis.isSpeechDetected ? 'Yes' : 'No'}</span> | Freq: <span className="text-white">{audioAnalysis.dominantFrequency} Hz</span></p>
+                    <div className="flex gap-2 text-[10px]">
+                      <span>Bass: {audioAnalysis.frequencyBands.bass}</span>
+                      <span>Mid: {audioAnalysis.frequencyBands.midLow}/{audioAnalysis.frequencyBands.midHigh}</span>
+                      <span>Treble: {audioAnalysis.frequencyBands.treble}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               {/* AI Suggestions */}
               {aiSuggestions.length > 0 && (
                 <div className="mb-4 bg-purple-900/30 rounded-lg p-3 border border-purple-500/30">
@@ -1321,11 +1663,11 @@ const DoctorTriage = () => {
               </div>
             </ScrollArea>
             
-            {/* Simple Recording Button */}
+            {/* Recording Button — now wired to actual MediaRecorder */}
             <div className="p-3 border-t border-slate-700">
               <Button
                 variant={isRecording ? "destructive" : "default"}
-                onClick={() => setIsRecording(!isRecording)}
+                onClick={toggleRecording}
                 className="w-full"
               >
                 {isRecording ? (
@@ -1335,14 +1677,14 @@ const DoctorTriage = () => {
                   </>
                 ) : (
                   <>
-                    <Video className="h-4 w-4 mr-2" />
-                    Start Recording
+                    <Mic className="h-4 w-4 mr-2" />
+                    Record Scene Audio
                   </>
                 )}
               </Button>
               {isRecording && (
                 <p className="text-center text-xs text-red-400 mt-2 animate-pulse">
-                  🔴 Recording in progress...
+                  🔴 Recording — {Math.floor(recordingDuration / 60)}:{String(recordingDuration % 60).padStart(2, '0')}
                 </p>
               )}
             </div>
@@ -1364,10 +1706,32 @@ const DoctorTriage = () => {
         </Button>
         
         <Button
+          variant={isAudioAIEnabled ? "default" : "outline"}
+          onClick={async () => {
+            if (isAudioAIEnabled) {
+              stopAudioAI();
+            } else {
+              await initializeAudioAI();
+              setIsAudioAIEnabled(true);
+              if (remoteAudioStreamRef.current) {
+                await connectAudioStream(remoteAudioStreamRef.current);
+                startAudioAIAnalysis();
+              }
+            }
+          }}
+          className={cn(
+            isAudioAIEnabled ? "bg-purple-600 hover:bg-purple-700" : "border-slate-600 text-white"
+          )}
+        >
+          <Volume2 className="h-4 w-4 mr-2" />
+          Audio AI {isAudioAIEnabled ? 'ON' : 'OFF'}
+        </Button>
+        
+        <Button
           variant={showScribePanel ? "default" : "outline"}
           onClick={() => setShowScribePanel(!showScribePanel)}
           className={cn(
-            showScribePanel ? "bg-purple-600 hover:bg-purple-700" : "border-slate-600 text-white"
+            showScribePanel ? "bg-indigo-600 hover:bg-indigo-700" : "border-slate-600 text-white"
           )}
         >
           <Brain className="h-4 w-4 mr-2" />
