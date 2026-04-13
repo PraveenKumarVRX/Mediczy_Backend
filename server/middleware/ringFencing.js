@@ -199,6 +199,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/ehr',  // Electronic Health Records - patient records access
       '/api/emr',  // EMR folder (own record)
       '/api/fhir',  // FHIR R4 interoperability endpoints
+      '/api/fcm',  // FCM push notification token registration
       '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'doctorId'
