@@ -424,6 +424,7 @@ const Diet = () => {
   const [gender, setGender] = useState("male");
   const [activityLevel, setActivityLevel] = useState("moderate");
   const [dietaryPreference, setDietaryPreference] = useState("balanced");
+  const [cuisineRegion, setCuisineRegion] = useState("north_indian");
   const [savedMeals, setSavedMeals] = useState<SavedMeal[]>([]);
   const [backendPlan, setBackendPlan] = useState<any>(null);
   const [backendLoading, setBackendLoading] = useState(false);
@@ -595,6 +596,7 @@ const Diet = () => {
         gender,
         activityLevel: activityLevel === 'veryActive' ? 'very_active' : activityLevel,
         dietaryPreference,
+        cuisineRegion,
         dietaryRestrictions: currentUser?.allergies?.join(', ') || '',
       });
       if (data.success) {
@@ -616,7 +618,7 @@ const Diet = () => {
 
     handlePlanChange(selectedPlan as "weight_loss" | "weight_gain" | "maintenance");
     fetchBackendDiet(selectedPlan);
-  }, [weight, height, feet, inches, heightUnit, age, gender, activityLevel, selectedPlan, dietaryPreference]);
+  }, [weight, height, feet, inches, heightUnit, age, gender, activityLevel, selectedPlan, dietaryPreference, cuisineRegion]);
 
   const bmi = calculateBMI();
   const tdee = calculateTDEE();
@@ -787,15 +789,35 @@ const Diet = () => {
                 </Select>
               </div>
               <div className="group">
-                <Label className="text-sm font-medium mb-1.5 block text-slate-700 dark:text-slate-300">Dietary Preference</Label>
+                <Label className="text-sm font-medium mb-1.5 block text-slate-700 dark:text-slate-300">Food Type</Label>
                 <Select value={dietaryPreference} onValueChange={setDietaryPreference}>
                   <SelectTrigger className="w-full focus:ring-2 focus:ring-teal-500/20 bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-600 text-slate-800 dark:text-white">
-                    <SelectValue placeholder="Select dietary preference" />
+                    <SelectValue placeholder="Select food type" />
                   </SelectTrigger>
                   <SelectContent className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-                    <SelectItem value="balanced" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">Balanced (Non-Veg)</SelectItem>
-                    <SelectItem value="vegetarian" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">Vegetarian</SelectItem>
-                    <SelectItem value="vegan" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">Vegan</SelectItem>
+                    <SelectItem value="vegetarian" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">🥬 Vegetarian</SelectItem>
+                    <SelectItem value="balanced" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">🍗 Non-Vegetarian</SelectItem>
+                    <SelectItem value="eggetarian" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">🥚 Eggetarian</SelectItem>
+                    <SelectItem value="vegan" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">🌱 Vegan</SelectItem>
+                    <SelectItem value="jain" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">🙏 Jain (No onion/garlic)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="group">
+                <Label className="text-sm font-medium mb-1.5 block text-slate-700 dark:text-slate-300">Cuisine Region</Label>
+                <Select value={cuisineRegion} onValueChange={setCuisineRegion}>
+                  <SelectTrigger className="w-full focus:ring-2 focus:ring-teal-500/20 bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-600 text-slate-800 dark:text-white">
+                    <SelectValue placeholder="Select cuisine region" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+                    <SelectItem value="north_indian" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">🏔️ North Indian</SelectItem>
+                    <SelectItem value="south_indian" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">🌴 South Indian</SelectItem>
+                    <SelectItem value="bengali" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">🐟 Bengali</SelectItem>
+                    <SelectItem value="gujarati" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">🫓 Gujarati</SelectItem>
+                    <SelectItem value="maharashtrian" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">🌶️ Maharashtrian</SelectItem>
+                    <SelectItem value="punjabi" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">🫘 Punjabi</SelectItem>
+                    <SelectItem value="kerala" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">🥥 Kerala</SelectItem>
+                    <SelectItem value="rajasthani" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">🏜️ Rajasthani</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -941,6 +963,53 @@ const Diet = () => {
                       </li>
                     ))}
                   </ul>
+                </div>
+              )}
+
+              {/* Regional Meal Suggestions from Backend */}
+              {backendPlan?.mealPlan && !backendLoading && (
+                <div className="mt-8">
+                  <h3 className="text-xl font-medium mb-4 flex items-center gap-2 text-slate-800 dark:text-white">
+                    <Utensils className="h-5 w-5 text-orange-500 dark:text-orange-400" />
+                    Regional Meal Ideas
+                    <Badge variant="outline" className="text-xs bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800">
+                      {cuisineRegion.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} • {dietaryPreference === 'balanced' ? 'Non-Veg' : dietaryPreference.charAt(0).toUpperCase() + dietaryPreference.slice(1)}
+                    </Badge>
+                  </h3>
+                  <div className="space-y-4">
+                    {Object.entries(backendPlan.mealPlan).map(([mealKey, mealData]: [string, any]) => {
+                      const mealLabels: Record<string, string> = {
+                        breakfast: '🌅 Breakfast',
+                        midMorningSnack: '🍎 Mid-Morning',
+                        lunch: '☀️ Lunch',
+                        eveningSnack: '🫖 Evening Snack',
+                        dinner: '🌙 Dinner',
+                      };
+                      return (
+                        <div key={mealKey} className="p-4 border border-orange-200 dark:border-orange-800/50 rounded-xl bg-orange-50/50 dark:bg-orange-900/10">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-medium text-slate-800 dark:text-white">{mealLabels[mealKey] || mealKey}</span>
+                            <Badge variant="outline" className="text-xs bg-white dark:bg-slate-800 border-orange-200 dark:border-orange-700 text-orange-600 dark:text-orange-400">
+                              ~{mealData.calories} cal
+                            </Badge>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {mealData.suggestions?.map((item: string, i: number) => (
+                              <span key={i} className="text-xs px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-slate-700 dark:text-slate-300 hover:border-orange-300 dark:hover:border-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors cursor-default">
+                                {item}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {backendLoading && (
+                <div className="mt-8 flex items-center gap-2 p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <Loader2 className="h-4 w-4 animate-spin text-orange-500" />
+                  <span className="text-sm text-slate-500 dark:text-slate-400">Loading regional meal suggestions...</span>
                 </div>
               )}
             </div>
