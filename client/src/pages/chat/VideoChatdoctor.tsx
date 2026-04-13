@@ -421,7 +421,7 @@ const Chat = () => {
             callerName: currentDoctor 
               ? `Dr. ${currentDoctor.firstName} ${currentDoctor.lastName}`
               : `${currentUser?.firstName} ${currentUser?.lastName}`,
-            recipientId: selectedRecipient._id
+            recipientId: selectedRecipient._id || (selectedRecipient as any).id
           });
         }
       } else {

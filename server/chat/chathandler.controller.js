@@ -49,7 +49,10 @@ export function setupSocketIO(server) {
 
     // Handle user connection
     socket.on("user-connect", (userData) => {
-      const { userId, userType, fcmToken } = userData;
+      const { userType, fcmToken } = userData;
+      // CRITICAL: Normalize userId to String to prevent Map key type mismatches
+      // (client may send number from PostgreSQL .id or string from MongoDB ._id)
+      const userId = userData.userId != null ? String(userData.userId) : null;
 
       if (userId) {
         // Store user connection
@@ -266,10 +269,12 @@ export function setupSocketIO(server) {
     // Handle video call invitation
     socket.on("video-call-invitation", async (callData) => {
       try {
-        const { channelName, callerId, callerName, recipientId } = callData;
+        const { channelName, callerId, callerName } = callData;
+        // Normalize recipientId to String to match onlineUsers Map keys
+        const recipientId = callData.recipientId != null ? String(callData.recipientId) : null;
 
         // Emit to recipient if online
-        const recipientSocket = onlineUsers.get(recipientId);
+        const recipientSocket = recipientId ? onlineUsers.get(recipientId) : null;
         if (recipientSocket) {
           io.to(recipientSocket.socketId).emit("video-call-invitation", {
             channelName,
@@ -279,8 +284,18 @@ export function setupSocketIO(server) {
           });
         }
 
+        // Also emit to Socket.IO room as fallback (room names are always strings)
+        if (recipientId) {
+          io.to(`user-${recipientId}`).emit("video-call-invitation", {
+            channelName,
+            callerId,
+            callerName,
+            recipientId
+          });
+        }
+
         // Send FCM notification for video call
-        const recipientFCMToken = userFCMTokens.get(recipientId);
+        const recipientFCMToken = recipientId ? userFCMTokens.get(recipientId) : null;
         if (recipientFCMToken) {
           try {
             await sendVideoCallNotification(recipientFCMToken, {

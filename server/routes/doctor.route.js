@@ -2676,11 +2676,16 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     }
 
     // Emit socket event for real-time notification
+    let socketDelivered = false;
     try {
       const io = req.app.get('io');
       if (io) {
-        // Emit to user-{userId} room (matching the room joined in chathandler)
-        io.to(`user-${appointment.userId}`).emit('doctor-initiated-call', {
+        // CRITICAL: Use String() to match the normalized userId in chathandler rooms
+        const targetRoom = `user-${String(appointment.userId)}`;
+        const room = io.sockets.adapter.rooms.get(targetRoom);
+        const roomSize = room ? room.size : 0;
+
+        io.to(targetRoom).emit('doctor-initiated-call', {
           appointmentId: appointment.id,
           doctorName,
           doctorId: doctorId,
@@ -2689,7 +2694,11 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
           appointmentDate: appointment.appointmentDate,
           appointmentTime: appointment.appointmentTime
         });
-        console.log(`✅ Socket event emitted to user-${appointment.userId}`);
+
+        socketDelivered = roomSize > 0;
+        console.log(`✅ Socket event emitted to ${targetRoom} (${roomSize} socket(s) in room, delivered: ${socketDelivered})`);
+      } else {
+        console.warn('⚠️ Socket.IO not available on req.app');
       }
     } catch (socketError) {
       console.error('⚠️ Failed to emit socket event:', socketError);
@@ -2721,7 +2730,10 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
 
     res.json({
       success: true,
-      message: 'Call initiated successfully. Patient has been notified.',
+      message: socketDelivered 
+        ? 'Call initiated successfully. Patient has been notified.'
+        : 'Call initiated. Patient may not have received real-time notification (not online). They can still join via the appointment link.',
+      patientOnline: socketDelivered,
       video: {
         ...videoPayload
       },

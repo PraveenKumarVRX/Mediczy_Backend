@@ -14,8 +14,6 @@ import api from "@/utils/api";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/auth/AuthProvider";
-import { io, Socket } from "socket.io-client";
-import { normalizeSocketUrl } from "@/utils/socket";
 import {
   Calendar,
   Clock,
@@ -151,7 +149,6 @@ const Appointments = () => {
     appointmentDate?: string;
     appointmentTime?: string;
   } | null>(null);
-  const [socket, setSocket] = useState<Socket | null>(null);
 
   const { data: analytics } = useQuery({
     queryKey: ["appointmentAnalytics"],
@@ -470,27 +467,12 @@ const Appointments = () => {
     }
   }, [appointments]);
 
-  // Socket.io connection for incoming doctor calls
+  // Listen for doctor-initiated calls via the global socket (from useSocketConnection in MainLayout)
   useEffect(() => {
     const userId = currentUser?.id || currentUser?._id;
     if (!userId) return;
 
-    const socketUrl = normalizeSocketUrl(
-      import.meta.env.VITE_SOCKET_URL ||
-      import.meta.env.VITE_API_URL ||
-      window.location.origin
-    );
-    const newSocket = io(socketUrl, {
-      auth: {
-        token: localStorage.getItem('token')
-      },
-      transports: ['websocket', 'polling']
-    });
-
-    setSocket(newSocket);
-
-    // Listen for doctor-initiated calls
-    newSocket.on('doctor-initiated-call', (data) => {
+    const handleDoctorCall = (data: any) => {
       console.log('📞 Incoming call from doctor:', data);
 
       setIncomingCall({
@@ -513,22 +495,31 @@ const Appointments = () => {
       // Play notification sound
       const audio = new Audio('/sounds/notification.mp3');
       audio.play().catch(() => console.log('Could not play notification sound'));
-    });
+    };
 
-    newSocket.on('connect', () => {
-      console.log('✅ Socket connected');
-      newSocket.emit('user-connect', {
-        userId,
-        userType: 'user'
-      });
-    });
+    // Use global socket from MainLayout's useSocketConnection
+    const attachListener = () => {
+      const sock = window.socket;
+      if (sock) {
+        sock.on('doctor-initiated-call', handleDoctorCall);
+        return true;
+      }
+      return false;
+    };
 
-    newSocket.on('disconnect', () => {
-      console.log('❌ Socket disconnected');
-    });
+    // Try immediately, then poll until socket is available
+    if (!attachListener()) {
+      const interval = setInterval(() => {
+        if (attachListener()) clearInterval(interval);
+      }, 1000);
+      return () => {
+        clearInterval(interval);
+        window.socket?.off('doctor-initiated-call', handleDoctorCall);
+      };
+    }
 
     return () => {
-      newSocket.disconnect();
+      window.socket?.off('doctor-initiated-call', handleDoctorCall);
     };
   }, [toast, currentUser?.id, currentUser?._id]);
 
