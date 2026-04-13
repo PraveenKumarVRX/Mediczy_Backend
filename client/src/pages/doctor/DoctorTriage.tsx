@@ -397,6 +397,7 @@ const DoctorTriage = () => {
         recognitionRef.current.stop();
       }
       cleanupVisionAI();
+      cleanupAudioAI();
     };
   }, []);
 
@@ -1146,13 +1147,29 @@ const DoctorTriage = () => {
     });
   };
 
-  const filteredCases = triageCases?.filter((c: TriageCase) => {
+  const urgencyOrder = { IMMEDIATE: 0, URGENT: 1, LESS_URGENT: 2, NON_URGENT: 3 };
+  const filteredCases = (triageCases?.filter((c: TriageCase) => {
     if (activeTab === 'all') return true;
     if (activeTab === 'pending') return c.status === 'pending';
     if (activeTab === 'in_progress') return ['in_review', 'in_consultation'].includes(c.status);
     if (activeTab === 'resolved') return ['resolved', 'referred', 'escalated'].includes(c.status);
     return true;
-  }) || [];
+  }) || []).sort((a, b) => {
+    const ua = urgencyOrder[a.urgencyLevel] ?? 9;
+    const ub = urgencyOrder[b.urgencyLevel] ?? 9;
+    if (ua !== ub) return ua - ub;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+
+  const formatTimeAgo = (dateStr: string) => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  };
 
   // Video Call UI Component - renders inline to prevent remounting
   const renderVideoConsultationPanel = () => {
@@ -1203,6 +1220,11 @@ const DoctorTriage = () => {
           {isVisionAIEnabled && (
             <Badge className="bg-cyan-600 text-white text-xs">
               👁️ Vision AI
+            </Badge>
+          )}
+          {isAudioAIEnabled && (
+            <Badge className="bg-purple-600/80 text-white text-xs">
+              🔊 Audio AI
             </Badge>
           )}
           
@@ -1811,63 +1833,87 @@ const DoctorTriage = () => {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 shadow-sm">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Total</p>
-                  <p className="text-2xl font-bold">{stats?.total || 0}</p>
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Total</p>
+                  <p className="text-2xl font-bold mt-1">{stats?.total || 0}</p>
                 </div>
-                <ClipboardList className="h-8 w-8 text-slate-400" />
+                <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-700/50">
+                  <ClipboardList className="h-5 w-5 text-slate-500" />
+                </div>
               </div>
             </CardContent>
           </Card>
           
-          <Card className="bg-white dark:bg-slate-800/50 border-orange-500/50">
+          <Card className="bg-white dark:bg-slate-800/50 border-l-4 border-l-orange-500 shadow-sm">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-orange-600 dark:text-orange-400">Pending</p>
-                  <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{stats?.pending || 0}</p>
+                  <p className="text-xs font-medium uppercase tracking-wider text-orange-600 dark:text-orange-400">Pending</p>
+                  <p className="text-2xl font-bold text-orange-600 dark:text-orange-400 mt-1">{stats?.pending || 0}</p>
                 </div>
-                <Clock className="h-8 w-8 text-orange-500" />
+                <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
+                  <Clock className="h-5 w-5 text-orange-500" />
+                </div>
               </div>
             </CardContent>
           </Card>
           
-          <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
+          <Card className="bg-white dark:bg-slate-800/50 border-l-4 border-l-blue-500 shadow-sm">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">In Progress</p>
-                  <p className="text-2xl font-bold">{stats?.inProgress || 0}</p>
+                  <p className="text-xs font-medium uppercase tracking-wider text-blue-600 dark:text-blue-400">In Progress</p>
+                  <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{stats?.inProgress || 0}</p>
                 </div>
-                <Activity className="h-8 w-8 text-blue-500" />
+                <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                  <Activity className="h-5 w-5 text-blue-500" />
+                </div>
               </div>
             </CardContent>
           </Card>
           
-          <Card className="bg-white dark:bg-slate-800/50 border-red-500/50">
+          <Card className="bg-white dark:bg-slate-800/50 border-l-4 border-l-red-500 shadow-sm">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-red-600 dark:text-red-400">Immediate</p>
-                  <p className="text-2xl font-bold text-red-600 dark:text-red-400">{stats?.immediate || 0}</p>
+                  <p className="text-xs font-medium uppercase tracking-wider text-red-600 dark:text-red-400">Immediate</p>
+                  <p className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">{stats?.immediate || 0}</p>
                 </div>
-                <AlertTriangle className="h-8 w-8 text-red-500" />
+                <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
+                  <AlertTriangle className="h-5 w-5 text-red-500 animate-pulse" />
+                </div>
               </div>
             </CardContent>
           </Card>
           
-          <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
+          <Card className="bg-white dark:bg-slate-800/50 border-l-4 border-l-amber-500 shadow-sm">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Resolved</p>
-                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">{stats?.resolved || 0}</p>
+                  <p className="text-xs font-medium uppercase tracking-wider text-amber-600 dark:text-amber-400">Urgent</p>
+                  <p className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">{stats?.urgent || 0}</p>
                 </div>
-                <CheckCircle className="h-8 w-8 text-green-500" />
+                <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+                  <AlertCircle className="h-5 w-5 text-amber-500" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-white dark:bg-slate-800/50 border-l-4 border-l-green-500 shadow-sm">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wider text-green-600 dark:text-green-400">Resolved</p>
+                  <p className="text-2xl font-bold text-green-600 dark:text-green-400 mt-1">{stats?.resolved || 0}</p>
+                </div>
+                <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
+                  <CheckCircle className="h-5 w-5 text-green-500" />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1877,20 +1923,33 @@ const DoctorTriage = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
           {/* Triage Queue */}
           <div className="lg:col-span-1">
-            <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
+            <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 shadow-sm">
               <CardHeader className="pb-3 px-3 sm:px-6">
-                <CardTitle className="text-base sm:text-lg">Triage Queue</CardTitle>
+                <div className="flex items-center justify-between mb-2">
+                  <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                    Triage Queue
+                    {filteredCases.length > 0 && (
+                      <Badge variant="secondary" className="text-xs">{filteredCases.length}</Badge>
+                    )}
+                  </CardTitle>
+                  {isSocketConnected && (
+                    <div className="flex items-center gap-1.5 text-xs text-green-500">
+                      <Wifi className="h-3 w-3" />
+                      <span className="hidden sm:inline">Live</span>
+                    </div>
+                  )}
+                </div>
                 <Tabs value={activeTab} onValueChange={setActiveTab}>
-                  <TabsList className="grid grid-cols-4 w-full h-auto">
-                    <TabsTrigger value="pending" className="text-[10px] sm:text-xs px-1 py-1.5 sm:px-2 sm:py-2">Pending</TabsTrigger>
-                    <TabsTrigger value="in_progress" className="text-[10px] sm:text-xs px-1 py-1.5 sm:px-2 sm:py-2">Active</TabsTrigger>
-                    <TabsTrigger value="resolved" className="text-[10px] sm:text-xs px-1 py-1.5 sm:px-2 sm:py-2">Done</TabsTrigger>
-                    <TabsTrigger value="all" className="text-[10px] sm:text-xs px-1 py-1.5 sm:px-2 sm:py-2">All</TabsTrigger>
+                  <TabsList className="grid grid-cols-4 w-full">
+                    <TabsTrigger value="pending" className="text-xs">Pending</TabsTrigger>
+                    <TabsTrigger value="in_progress" className="text-xs">Active</TabsTrigger>
+                    <TabsTrigger value="resolved" className="text-xs">Done</TabsTrigger>
+                    <TabsTrigger value="all" className="text-xs">All</TabsTrigger>
                   </TabsList>
                 </Tabs>
               </CardHeader>
               <CardContent className="px-3 sm:px-6">
-                <ScrollArea className="h-[400px] sm:h-[500px]">
+                <ScrollArea className="h-[400px] sm:h-[500px] lg:h-[calc(100vh-380px)]">
                   {isLoading ? (
                     <div className="flex items-center justify-center py-10">
                       <Loader2 className="h-8 w-8 animate-spin text-teal-500" />
@@ -1898,67 +1957,85 @@ const DoctorTriage = () => {
                   ) : filteredCases.length === 0 ? (
                     <div className="text-center py-10 text-muted-foreground">
                       <Stethoscope className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p>No triage cases in this category</p>
+                      <p className="font-medium">No triage cases</p>
+                      <p className="text-xs mt-1">Cases will appear here in real-time</p>
                     </div>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {filteredCases.map((caseItem: TriageCase) => {
                         const config = urgencyConfig[caseItem.urgencyLevel];
                         const IconComponent = config.icon;
+                        const isSelected = selectedCase?.id === caseItem.id;
                         return (
                           <div
                             key={caseItem.id}
                             onClick={() => setSelectedCase(caseItem)}
                             className={cn(
-                              "p-3 rounded-lg border cursor-pointer transition-all hover:shadow-md",
-                              selectedCase?.id === caseItem.id 
-                                ? "border-teal-500 bg-teal-50 dark:bg-teal-950/30" 
-                                : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600",
-                              config.bgColor
+                              "p-3 rounded-lg border-l-4 border cursor-pointer transition-all hover:shadow-md group",
+                              config.borderColor,
+                              isSelected 
+                                ? "bg-teal-50 dark:bg-teal-950/30 border-r-teal-500 border-t-teal-500 border-b-teal-500 shadow-md ring-1 ring-teal-500/20" 
+                                : "bg-white dark:bg-slate-800/30 border-r-slate-200 border-t-slate-200 border-b-slate-200 dark:border-r-slate-700 dark:border-t-slate-700 dark:border-b-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50"
                             )}
                           >
-                            <div className="flex items-start justify-between mb-2">
-                              <div className="flex items-center gap-2">
-                                <Avatar className="h-8 w-8">
-                                  <AvatarFallback className="text-xs">
-                                    {caseItem.patientName.split(' ').map(n => n[0]).join('')}
+                            <div className="flex items-start justify-between mb-1.5">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <Avatar className={cn("h-9 w-9 ring-2 ring-offset-1 shrink-0", {
+                                  'ring-red-500': caseItem.urgencyLevel === 'IMMEDIATE',
+                                  'ring-orange-500': caseItem.urgencyLevel === 'URGENT',
+                                  'ring-yellow-500': caseItem.urgencyLevel === 'LESS_URGENT',
+                                  'ring-green-500': caseItem.urgencyLevel === 'NON_URGENT',
+                                })}>
+                                  <AvatarFallback className={cn("text-xs font-bold text-white", {
+                                    'bg-red-500': caseItem.urgencyLevel === 'IMMEDIATE',
+                                    'bg-orange-500': caseItem.urgencyLevel === 'URGENT',
+                                    'bg-yellow-600': caseItem.urgencyLevel === 'LESS_URGENT',
+                                    'bg-green-600': caseItem.urgencyLevel === 'NON_URGENT',
+                                  })}>
+                                    {caseItem.patientName.split(' ').map(n => n[0]).join('').slice(0, 2)}
                                   </AvatarFallback>
                                 </Avatar>
-                                <div>
-                                  <p className="font-medium text-sm">{caseItem.patientName}</p>
+                                <div className="min-w-0">
+                                  <p className="font-semibold text-sm truncate">{caseItem.patientName}</p>
                                   <p className="text-xs text-muted-foreground">
-                                    {caseItem.patientAge}y, {caseItem.patientGender}
+                                    {caseItem.patientAge}y • {caseItem.patientGender}
                                   </p>
                                 </div>
                               </div>
-                              <Badge className={config.color}>
+                              <Badge className={cn(config.color, "text-[10px] shrink-0")}>
                                 <IconComponent className="h-3 w-3 mr-1" />
                                 {config.label}
                               </Badge>
                             </div>
-                            <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
+                            <p className="text-xs text-muted-foreground line-clamp-2 mb-2 pl-[46px]">
                               {caseItem.symptoms}
                             </p>
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs text-muted-foreground">
-                                {new Date(caseItem.createdAt).toLocaleTimeString()}
+                            {caseItem.patientLocation && (
+                              <p className="text-[11px] text-muted-foreground mb-1.5 pl-[46px] flex items-center gap-1">
+                                <MapPin className="h-3 w-3 shrink-0" /> {caseItem.patientLocation}
+                              </p>
+                            )}
+                            <div className="flex items-center justify-between pl-[46px]">
+                              <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {formatTimeAgo(caseItem.createdAt)}
                               </span>
-                              <div className="flex gap-1">
+                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <Button
                                   size="sm"
-                                  variant="ghost"
-                                  className="h-7 px-2"
+                                  variant="outline"
+                                  className="h-7 px-2.5 text-[10px] gap-1 bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700 text-green-700 dark:text-green-400 hover:bg-green-100"
                                   onClick={(e) => { e.stopPropagation(); handleStartVideoCall(caseItem); }}
                                 >
-                                  <Video className="h-3 w-3 text-green-500" />
+                                  <Video className="h-3 w-3" /> Call
                                 </Button>
                                 <Button
                                   size="sm"
-                                  variant="ghost"
-                                  className="h-7 px-2"
+                                  variant="outline"
+                                  className="h-7 px-2.5 text-[10px] gap-1 bg-teal-50 dark:bg-teal-900/20 border-teal-300 dark:border-teal-700 text-teal-700 dark:text-teal-400 hover:bg-teal-100"
                                   onClick={(e) => { e.stopPropagation(); handleAcceptCase(caseItem); }}
                                 >
-                                  <UserCheck className="h-3 w-3 text-teal-500" />
+                                  <UserCheck className="h-3 w-3" /> Accept
                                 </Button>
                               </div>
                             </div>
@@ -1979,21 +2056,42 @@ const DoctorTriage = () => {
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-4">
-                      <Avatar className="h-14 w-14">
-                        <AvatarFallback className="text-lg">
-                          {selectedCase.patientName.split(' ').map(n => n[0]).join('')}
+                      <Avatar className={cn("h-14 w-14 ring-2 ring-offset-2", {
+                        'ring-red-500': selectedCase.urgencyLevel === 'IMMEDIATE',
+                        'ring-orange-500': selectedCase.urgencyLevel === 'URGENT',
+                        'ring-yellow-500': selectedCase.urgencyLevel === 'LESS_URGENT',
+                        'ring-green-500': selectedCase.urgencyLevel === 'NON_URGENT',
+                      })}>
+                        <AvatarFallback className={cn("text-lg font-bold text-white", {
+                          'bg-red-500': selectedCase.urgencyLevel === 'IMMEDIATE',
+                          'bg-orange-500': selectedCase.urgencyLevel === 'URGENT',
+                          'bg-yellow-600': selectedCase.urgencyLevel === 'LESS_URGENT',
+                          'bg-green-600': selectedCase.urgencyLevel === 'NON_URGENT',
+                        })}>
+                          {selectedCase.patientName.split(' ').map(n => n[0]).join('').slice(0, 2)}
                         </AvatarFallback>
                       </Avatar>
                       <div>
                         <CardTitle className="text-xl">{selectedCase.patientName}</CardTitle>
-                        <CardDescription>
-                          {selectedCase.patientAge} years • {selectedCase.patientGender} • {selectedCase.patientPhone}
+                        <CardDescription className="flex flex-col gap-1">
+                          <span>{selectedCase.patientAge} years • {selectedCase.patientGender} • {selectedCase.patientPhone}</span>
+                          <span className="flex items-center gap-2">
+                            <Clock className="h-3 w-3" /> {formatTimeAgo(selectedCase.createdAt)}
+                            {selectedCase.patientLocation && (
+                              <><MapPin className="h-3 w-3 ml-1" /> {selectedCase.patientLocation}</>
+                            )}
+                          </span>
                         </CardDescription>
                       </div>
                     </div>
-                    <Badge className={urgencyConfig[selectedCase.urgencyLevel].color}>
-                      {urgencyConfig[selectedCase.urgencyLevel].label}
-                    </Badge>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <Badge className={urgencyConfig[selectedCase.urgencyLevel].color}>
+                        {urgencyConfig[selectedCase.urgencyLevel].label}
+                      </Badge>
+                      <Badge variant="outline" className="text-[10px] capitalize">
+                        {selectedCase.status?.replace('_', ' ') || 'pending'}
+                      </Badge>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -2030,41 +2128,66 @@ const DoctorTriage = () => {
                         Vital Signs
                       </h4>
                       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                        {selectedCase.vitalSigns.heartRate && (
-                          <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/30 text-center">
-                            <Heart className="h-5 w-5 text-red-500 mx-auto mb-1" />
-                            <p className="text-lg font-bold">{selectedCase.vitalSigns.heartRate}</p>
-                            <p className="text-xs text-muted-foreground">BPM</p>
-                          </div>
-                        )}
-                        {selectedCase.vitalSigns.bloodPressure && (
-                          <div className="p-3 rounded-lg bg-purple-50 dark:bg-purple-950/30 text-center">
-                            <Activity className="h-5 w-5 text-purple-500 mx-auto mb-1" />
-                            <p className="text-lg font-bold">{selectedCase.vitalSigns.bloodPressure}</p>
-                            <p className="text-xs text-muted-foreground">BP</p>
-                          </div>
-                        )}
-                        {selectedCase.vitalSigns.temperature && (
-                          <div className="p-3 rounded-lg bg-orange-50 dark:bg-orange-950/30 text-center">
-                            <Thermometer className="h-5 w-5 text-orange-500 mx-auto mb-1" />
-                            <p className="text-lg font-bold">{selectedCase.vitalSigns.temperature}°C</p>
-                            <p className="text-xs text-muted-foreground">Temp</p>
-                          </div>
-                        )}
-                        {selectedCase.vitalSigns.oxygenSaturation && (
-                          <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 text-center">
-                            <Droplets className="h-5 w-5 text-blue-500 mx-auto mb-1" />
-                            <p className="text-lg font-bold">{selectedCase.vitalSigns.oxygenSaturation}%</p>
-                            <p className="text-xs text-muted-foreground">SpO2</p>
-                          </div>
-                        )}
-                        {selectedCase.vitalSigns.respiratoryRate && (
-                          <div className="p-3 rounded-lg bg-teal-50 dark:bg-teal-950/30 text-center">
-                            <Wind className="h-5 w-5 text-teal-500 mx-auto mb-1" />
-                            <p className="text-lg font-bold">{selectedCase.vitalSigns.respiratoryRate}</p>
-                            <p className="text-xs text-muted-foreground">RR/min</p>
-                          </div>
-                        )}
+                        {selectedCase.vitalSigns.heartRate && (() => {
+                          const hr = Number(selectedCase.vitalSigns!.heartRate);
+                          const isAbnormal = hr > 100 || hr < 60;
+                          return (
+                            <div className={cn("p-3 rounded-lg text-center border-2 transition-colors", isAbnormal ? "bg-red-100 dark:bg-red-950/50 border-red-400 dark:border-red-600" : "bg-red-50 dark:bg-red-950/30 border-transparent")}>
+                              <Heart className={cn("h-5 w-5 mx-auto mb-1", isAbnormal ? "text-red-600 animate-pulse" : "text-red-500")} />
+                              <p className={cn("text-lg font-bold", isAbnormal && "text-red-700 dark:text-red-400")}>{selectedCase.vitalSigns!.heartRate}</p>
+                              <p className="text-xs text-muted-foreground">BPM</p>
+                              {isAbnormal && <p className="text-[10px] font-medium text-red-600 dark:text-red-400 mt-0.5">Abnormal</p>}
+                            </div>
+                          );
+                        })()}
+                        {selectedCase.vitalSigns.bloodPressure && (() => {
+                          const systolic = parseInt(selectedCase.vitalSigns!.bloodPressure!.split('/')[0]);
+                          const isAbnormal = systolic > 140 || systolic < 90;
+                          return (
+                            <div className={cn("p-3 rounded-lg text-center border-2 transition-colors", isAbnormal ? "bg-purple-100 dark:bg-purple-950/50 border-purple-400 dark:border-purple-600" : "bg-purple-50 dark:bg-purple-950/30 border-transparent")}>
+                              <Activity className={cn("h-5 w-5 mx-auto mb-1", isAbnormal ? "text-purple-600 animate-pulse" : "text-purple-500")} />
+                              <p className={cn("text-lg font-bold", isAbnormal && "text-purple-700 dark:text-purple-400")}>{selectedCase.vitalSigns!.bloodPressure}</p>
+                              <p className="text-xs text-muted-foreground">BP</p>
+                              {isAbnormal && <p className="text-[10px] font-medium text-purple-600 dark:text-purple-400 mt-0.5">Abnormal</p>}
+                            </div>
+                          );
+                        })()}
+                        {selectedCase.vitalSigns.temperature && (() => {
+                          const temp = Number(selectedCase.vitalSigns!.temperature);
+                          const isAbnormal = temp > 38.5 || temp < 36;
+                          return (
+                            <div className={cn("p-3 rounded-lg text-center border-2 transition-colors", isAbnormal ? "bg-orange-100 dark:bg-orange-950/50 border-orange-400 dark:border-orange-600" : "bg-orange-50 dark:bg-orange-950/30 border-transparent")}>
+                              <Thermometer className={cn("h-5 w-5 mx-auto mb-1", isAbnormal ? "text-orange-600 animate-pulse" : "text-orange-500")} />
+                              <p className={cn("text-lg font-bold", isAbnormal && "text-orange-700 dark:text-orange-400")}>{selectedCase.vitalSigns!.temperature}°C</p>
+                              <p className="text-xs text-muted-foreground">Temp</p>
+                              {isAbnormal && <p className="text-[10px] font-medium text-orange-600 dark:text-orange-400 mt-0.5">Abnormal</p>}
+                            </div>
+                          );
+                        })()}
+                        {selectedCase.vitalSigns.oxygenSaturation && (() => {
+                          const spo2 = Number(selectedCase.vitalSigns!.oxygenSaturation);
+                          const isAbnormal = spo2 < 95;
+                          return (
+                            <div className={cn("p-3 rounded-lg text-center border-2 transition-colors", isAbnormal ? "bg-blue-100 dark:bg-blue-950/50 border-blue-400 dark:border-blue-600" : "bg-blue-50 dark:bg-blue-950/30 border-transparent")}>
+                              <Droplets className={cn("h-5 w-5 mx-auto mb-1", isAbnormal ? "text-blue-600 animate-pulse" : "text-blue-500")} />
+                              <p className={cn("text-lg font-bold", isAbnormal && "text-blue-700 dark:text-blue-400")}>{selectedCase.vitalSigns!.oxygenSaturation}%</p>
+                              <p className="text-xs text-muted-foreground">SpO2</p>
+                              {isAbnormal && <p className="text-[10px] font-medium text-blue-600 dark:text-blue-400 mt-0.5">Critical</p>}
+                            </div>
+                          );
+                        })()}
+                        {selectedCase.vitalSigns.respiratoryRate && (() => {
+                          const rr = Number(selectedCase.vitalSigns!.respiratoryRate);
+                          const isAbnormal = rr > 20 || rr < 12;
+                          return (
+                            <div className={cn("p-3 rounded-lg text-center border-2 transition-colors", isAbnormal ? "bg-teal-100 dark:bg-teal-950/50 border-teal-400 dark:border-teal-600" : "bg-teal-50 dark:bg-teal-950/30 border-transparent")}>
+                              <Wind className={cn("h-5 w-5 mx-auto mb-1", isAbnormal ? "text-teal-600 animate-pulse" : "text-teal-500")} />
+                              <p className={cn("text-lg font-bold", isAbnormal && "text-teal-700 dark:text-teal-400")}>{selectedCase.vitalSigns!.respiratoryRate}</p>
+                              <p className="text-xs text-muted-foreground">RR/min</p>
+                              {isAbnormal && <p className="text-[10px] font-medium text-teal-600 dark:text-teal-400 mt-0.5">Abnormal</p>}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
@@ -2091,9 +2214,10 @@ const DoctorTriage = () => {
                   <div className="flex flex-wrap gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
                     <Button
                       onClick={() => handleStartVideoCall(selectedCase)}
-                      className="bg-green-600 hover:bg-green-700"
+                      size="lg"
+                      className="bg-green-600 hover:bg-green-700 shadow-md shadow-green-600/20 hover:shadow-lg hover:shadow-green-600/30 transition-all"
                     >
-                      <Video className="h-4 w-4 mr-2" />
+                      <Video className="h-5 w-5 mr-2" />
                       Start Video Call with AI
                     </Button>
                     <Button
@@ -2115,11 +2239,16 @@ const DoctorTriage = () => {
                 </CardContent>
               </Card>
             ) : (
-              <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 h-full flex items-center justify-center">
-                <CardContent className="text-center py-20">
-                  <Stethoscope className="h-16 w-16 mx-auto mb-4 text-slate-300 dark:text-slate-600" />
+              <Card className="bg-gradient-to-br from-slate-50 to-teal-50/30 dark:from-slate-800/50 dark:to-teal-900/10 border-slate-200 dark:border-slate-700 h-full flex items-center justify-center">
+                <CardContent className="text-center py-20 max-w-sm mx-auto">
+                  <div className="relative mx-auto mb-6 w-20 h-20">
+                    <div className="absolute inset-0 bg-teal-100 dark:bg-teal-900/30 rounded-full animate-ping opacity-20" />
+                    <div className="relative flex items-center justify-center w-20 h-20 bg-teal-100 dark:bg-teal-900/30 rounded-full">
+                      <Stethoscope className="h-10 w-10 text-teal-500" />
+                    </div>
+                  </div>
                   <h3 className="text-lg font-semibold mb-2">Select a Triage Case</h3>
-                  <p className="text-muted-foreground">Click on a case from the queue to view details and start consultation</p>
+                  <p className="text-sm text-muted-foreground leading-relaxed">Choose a patient from the queue to review their symptoms, vital signs, and AI assessment — then start a video consultation.</p>
                 </CardContent>
               </Card>
             )}

@@ -12,7 +12,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { DrISHAChat } from "@/components/DrISHAChat";
 import { drIshaAPI } from '@/services/drIsha';
 import api from "@/utils/api";
 import { Badge } from "@/components/ui/badge";
@@ -268,7 +267,6 @@ const Emergency = () => {
   const [paymentInfo, setPaymentInfo] = useState<{pendingAmount: number, hcRequired: number} | null>(null);
   const [showPurchaseHCDialog, setShowPurchaseHCDialog] = useState(false);
   const [vitalSigns, setVitalSigns] = useState<{pulse?: string, breathing?: string, consciousness?: string} | null>(null);
-  const [isRecordingConsultation, setIsRecordingConsultation] = useState(false);
   
   // Vision AI States
   const [visionAIEnabled, setVisionAIEnabled] = useState(true);
@@ -2579,12 +2577,14 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
             markersRef.current.push(marker);
 
             const popupContent = document.createElement('div');
+            // Safely escape text to prevent XSS from Overpass API data
+            const esc = (s: string) => { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; };
             popupContent.innerHTML = `
               <div class="hospital-popup">
-                <h3 class="font-bold">${hospital.name}</h3>
-                <p class="text-sm text-teal-600">${hospital.type}</p>
-                ${hospital.address !== 'Address not available' ? `<p class="text-sm">${hospital.address}</p>` : ''}
-                <p class="text-sm">Phone: ${hospital.phone}</p>
+                <h3 class="font-bold">${esc(hospital.name)}</h3>
+                <p class="text-sm text-teal-600">${esc(hospital.type)}</p>
+                ${hospital.address !== 'Address not available' ? `<p class="text-sm">${esc(hospital.address)}</p>` : ''}
+                <p class="text-sm">Phone: ${esc(hospital.phone)}</p>
                 <p class="text-sm text-blue-600">Distance: ${hospital.distance?.toFixed(1)} km</p>
                 ${hospital.emergency ? '<p class="text-sm text-red-600 font-medium">🏥 24/7 Emergency Services</p>' : ''}
                 <div class="flex gap-2 mt-2">
