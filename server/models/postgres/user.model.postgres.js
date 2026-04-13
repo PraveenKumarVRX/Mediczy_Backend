@@ -164,6 +164,32 @@ const User = sequelize.define('User', {
     defaultValue: {},
     comment: 'Comprehensive medical history in JSON format'
   },
+
+  // Physical Measurements
+  height: {
+    type: DataTypes.DECIMAL(5, 1),
+    allowNull: true,
+    comment: 'Height in cm'
+  },
+  weight: {
+    type: DataTypes.DECIMAL(5, 1),
+    allowNull: true,
+    comment: 'Weight in kg'
+  },
+
+  // Family History as JSONB
+  familyHistory: {
+    type: DataTypes.JSONB,
+    defaultValue: {},
+    comment: 'Family medical history { diabetes: bool, hypertension: bool, heartDisease: bool, cancer: bool, ... details: string }'
+  },
+
+  // Personal / Lifestyle History as JSONB
+  personalHistory: {
+    type: DataTypes.JSONB,
+    defaultValue: {},
+    comment: 'Lifestyle history { smoking: string, alcohol: string, exercise: string, diet: string, sleep: string, occupation: string }'
+  },
   
   // Profile
   profileImage: {

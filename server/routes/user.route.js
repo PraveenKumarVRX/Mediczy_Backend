@@ -1228,7 +1228,7 @@ router.put("/profile", authUser, async (req, res) => {
     if (membershipType !== undefined) user.membershipType = membershipType;
     
     // Update other allowed fields
-    const allowedFields = ['bloodType', 'allergies', 'medications', 'chronicConditions', 'medicalHistory'];
+    const allowedFields = ['bloodType', 'allergies', 'medications', 'chronicConditions', 'medicalHistory', 'height', 'weight', 'familyHistory', 'personalHistory'];
     allowedFields.forEach(field => {
       if (otherFields[field] !== undefined) {
         user[field] = otherFields[field];
@@ -1269,7 +1269,16 @@ router.put("/profile", authUser, async (req, res) => {
         employerName: user.employerName,
         employeeId: user.employeeId,
         corporateId: user.corporateId,
-        membershipType: user.membershipType
+        membershipType: user.membershipType,
+        bloodType: user.bloodType,
+        height: user.height,
+        weight: user.weight,
+        allergies: user.allergies,
+        medications: user.medications,
+        chronicConditions: user.chronicConditions,
+        medicalHistory: user.medicalHistory,
+        familyHistory: user.familyHistory,
+        personalHistory: user.personalHistory
       }
     });
   } catch (error) {

@@ -178,6 +178,48 @@ const User = sequelize.define('User', {
     type: DataTypes.STRING,
     allowNull: true,
     comment: 'URL to user profile image (MinIO)'
+  },
+
+  // Health & Medical Fields
+  bloodType: {
+    type: DataTypes.STRING(10),
+    allowNull: true
+  },
+  height: {
+    type: DataTypes.DECIMAL(5, 1),
+    allowNull: true,
+    comment: 'Height in cm'
+  },
+  weight: {
+    type: DataTypes.DECIMAL(5, 1),
+    allowNull: true,
+    comment: 'Weight in kg'
+  },
+  allergies: {
+    type: DataTypes.ARRAY(DataTypes.STRING),
+    defaultValue: []
+  },
+  medications: {
+    type: DataTypes.ARRAY(DataTypes.STRING),
+    defaultValue: []
+  },
+  chronicConditions: {
+    type: DataTypes.ARRAY(DataTypes.STRING),
+    defaultValue: []
+  },
+  medicalHistory: {
+    type: DataTypes.JSONB,
+    defaultValue: {}
+  },
+  familyHistory: {
+    type: DataTypes.JSONB,
+    defaultValue: {},
+    comment: 'Family medical history'
+  },
+  personalHistory: {
+    type: DataTypes.JSONB,
+    defaultValue: {},
+    comment: 'Lifestyle history (smoking, alcohol, exercise, diet, etc.)'
   }
 }, {
   tableName: 'users',
