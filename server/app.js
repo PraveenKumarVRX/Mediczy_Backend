@@ -34,6 +34,7 @@ import revenueInsightsRouter from './routes/revenue-insights.route.js';
 import patientEngagementRouter from './routes/patient-engagement.route.js';
 import fitnessRouter from "./routes/fitness.route.js";
 import fitnessDataRouter from "./routes/fitnessData.js";
+import activityTrackerRouter from "./routes/activityTracker.route.js";
 import appleHealthRouter from "./routes/apple-health.route.js";
 import aiRouter from "./routes/ai.js";
 import medicalAIRouter from "./routes/medical-ai.route.js";
@@ -1080,6 +1081,7 @@ app.use("/api/billing", billingRouter); // Billing, orders, invoices, and paymen
 app.use("/api/notifications", notificationRouter); // In-app notification management
 app.use("/api/fitness", fitnessRouter);
 app.use("/api/fitness-data", fitnessDataRouter); // Health and fitness tracking data
+app.use("/api/activity-tracker", activityTrackerRouter); // Daily activity: steps, stairs, sleep, exercise, calories, vitals
 app.use("/api/apple-health", appleHealthRouter); // Apple HealthKit integration for iOS
 app.use("/api/ai", aiRouter);
 app.use("/api/medical-ai", medicalAIRouter);

@@ -33,6 +33,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/wallet',  // User wallet and payments
       '/api/fitness',  // Fitness tracking
       '/api/fitness-data',  // Health and fitness data
+      '/api/activity-tracker',  // Daily activity: steps, stairs, sleep, exercise, calories, vitals
       '/api/health',  // Unified health metrics
       '/api/apple-health',  // Apple Health integration
       '/api/health-diary',  // Health diary entries
@@ -116,6 +117,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/fitness',  // Fitness tracking
       '/api/fitness-data',  // Health and fitness data
       '/api/health',  // Unified health metrics
+      '/api/activity-tracker',  // Daily activity: steps, stairs, sleep, exercise, calories, vitals
       '/api/apple-health',  // Apple Health integration
       '/api/health-diary',  // Health diary entries
       '/api/health-data',  // BLE device health data sync

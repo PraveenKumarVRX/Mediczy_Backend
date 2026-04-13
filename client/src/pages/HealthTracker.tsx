@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import GoogleFitDashboard from "@/components/GoogleFitDashboard";
 import AppleHealthDashboard from "@/components/AppleHealthDashboard";
 import DrISHAChat from "@/components/DrISHAChat";
@@ -24,7 +26,15 @@ import {
   MessageSquare,
   Sparkles,
   Clock,
-  Award
+  Award,
+  Footprints,
+  Moon,
+  Flame,
+  Dumbbell,
+  Thermometer,
+  Droplets,
+  Save,
+  RefreshCw
 } from "lucide-react";
 
 interface HealthInsight {
@@ -51,7 +61,7 @@ interface HealthGoal {
 }
 
 const HealthTracker = () => {
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState("activity");
   const [healthInsights, setHealthInsights] = useState<HealthInsight[]>([]);
   const [healthGoals, setHealthGoals] = useState<HealthGoal[]>([]);
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
@@ -60,6 +70,96 @@ const HealthTracker = () => {
   const [lastAnalysis, setLastAnalysis] = useState<Date | null>(null);
   const [loadingFitness, setLoadingFitness] = useState(false);
   const [fitnessError, setFitnessError] = useState<string | null>(null);
+
+  // Activity tracker state
+  const [activityForm, setActivityForm] = useState({
+    steps: '', stairs: '', caloriesBurned: '', caloriesConsumed: '',
+    exerciseType: '', exerciseMinutes: '', sleepHours: '', sleepQuality: '',
+    heartRate: '', bpSystolic: '', bpDiastolic: '', spo2: '',
+    temperature: '', weight: '', bloodSugar: '', notes: ''
+  });
+  const [todayActivity, setTodayActivity] = useState<any>(null);
+  const [weeklySummary, setWeeklySummary] = useState<any>(null);
+  const [savingActivity, setSavingActivity] = useState(false);
+  const [activitySaved, setActivitySaved] = useState(false);
+
+  // Load today's activity
+  useEffect(() => {
+    const loadTodayActivity = async () => {
+      try {
+        const { data } = await api.get('/activity-tracker/today');
+        if (data.success && data.activity) {
+          setTodayActivity(data.activity);
+          const a = data.activity;
+          setActivityForm({
+            steps: a.steps?.toString() || '',
+            stairs: a.stairs?.toString() || '',
+            caloriesBurned: a.calories_burned?.toString() || '',
+            caloriesConsumed: a.calories_consumed?.toString() || '',
+            exerciseType: a.exercise_type || '',
+            exerciseMinutes: a.exercise_minutes?.toString() || '',
+            sleepHours: a.sleep_hours?.toString() || '',
+            sleepQuality: a.sleep_quality || '',
+            heartRate: a.heart_rate?.toString() || '',
+            bpSystolic: a.blood_pressure_systolic?.toString() || '',
+            bpDiastolic: a.blood_pressure_diastolic?.toString() || '',
+            spo2: a.spo2?.toString() || '',
+            temperature: a.temperature?.toString() || '',
+            weight: a.weight?.toString() || '',
+            bloodSugar: a.blood_sugar?.toString() || '',
+            notes: a.notes || ''
+          });
+        }
+        const { data: summary } = await api.get('/activity-tracker/summary?period=week');
+        if (summary.success) setWeeklySummary(summary);
+      } catch (err) {
+        console.error('Failed to load activity:', err);
+      }
+    };
+    loadTodayActivity();
+  }, []);
+
+  const saveActivity = async () => {
+    setSavingActivity(true);
+    setActivitySaved(false);
+    try {
+      const payload: any = {};
+      if (activityForm.steps) payload.steps = parseInt(activityForm.steps);
+      if (activityForm.stairs) payload.stairs = parseInt(activityForm.stairs);
+      if (activityForm.caloriesBurned) payload.caloriesBurned = parseInt(activityForm.caloriesBurned);
+      if (activityForm.caloriesConsumed) payload.caloriesConsumed = parseInt(activityForm.caloriesConsumed);
+      if (activityForm.exerciseType) payload.exerciseType = activityForm.exerciseType;
+      if (activityForm.exerciseMinutes) payload.exerciseMinutes = parseInt(activityForm.exerciseMinutes);
+      if (activityForm.sleepHours) payload.sleepHours = parseFloat(activityForm.sleepHours);
+      if (activityForm.sleepQuality) payload.sleepQuality = activityForm.sleepQuality;
+      if (activityForm.heartRate) payload.heartRate = parseInt(activityForm.heartRate);
+      if (activityForm.bpSystolic) payload.bpSystolic = parseInt(activityForm.bpSystolic);
+      if (activityForm.bpDiastolic) payload.bpDiastolic = parseInt(activityForm.bpDiastolic);
+      if (activityForm.spo2) payload.spo2 = parseInt(activityForm.spo2);
+      if (activityForm.temperature) payload.temperature = parseFloat(activityForm.temperature);
+      if (activityForm.weight) payload.weight = parseFloat(activityForm.weight);
+      if (activityForm.bloodSugar) payload.bloodSugar = parseInt(activityForm.bloodSugar);
+      if (activityForm.notes) payload.notes = activityForm.notes;
+
+      const { data } = await api.post('/activity-tracker/log', payload);
+      if (data.success) {
+        setTodayActivity(data.activity);
+        setActivitySaved(true);
+        // Refresh summary
+        const { data: summary } = await api.get('/activity-tracker/summary?period=week');
+        if (summary.success) setWeeklySummary(summary);
+        setTimeout(() => setActivitySaved(false), 3000);
+      }
+    } catch (err) {
+      console.error('Failed to save activity:', err);
+    } finally {
+      setSavingActivity(false);
+    }
+  };
+
+  const updateField = (field: string, value: string) => {
+    setActivityForm(prev => ({ ...prev, [field]: value }));
+  };
 
   // Load fitness summary from intelligent DB backend
   useEffect(() => {
@@ -492,9 +592,12 @@ const HealthTracker = () => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+          <TabsList className="grid w-full grid-cols-5 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+            <TabsTrigger value="activity" className="data-[state=active]:bg-teal-500 data-[state=active]:text-white text-slate-600 dark:text-slate-300">
+              Activity
+            </TabsTrigger>
             <TabsTrigger value="overview" className="data-[state=active]:bg-teal-500 data-[state=active]:text-white text-slate-600 dark:text-slate-300">
-              Overview
+              Devices
             </TabsTrigger>
             <TabsTrigger value="insights" className="data-[state=active]:bg-teal-500 data-[state=active]:text-white text-slate-600 dark:text-slate-300">
               AI Insights
@@ -506,6 +609,203 @@ const HealthTracker = () => {
               Trends
             </TabsTrigger>
           </TabsList>
+
+          {/* Activity Tab — Daily Log + Stats */}
+          <TabsContent value="activity" className="space-y-6">
+            {/* Today's Quick Stats */}
+            {todayActivity && (
+              <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+                {[
+                  { icon: Footprints, label: 'Steps', value: todayActivity.steps?.toLocaleString() || '—', color: 'text-blue-500' },
+                  { icon: Activity, label: 'Stairs', value: todayActivity.stairs || '—', color: 'text-indigo-500' },
+                  { icon: Flame, label: 'Cal Burned', value: todayActivity.calories_burned || '—', color: 'text-orange-500' },
+                  { icon: Moon, label: 'Sleep', value: todayActivity.sleep_hours ? `${todayActivity.sleep_hours}h` : '—', color: 'text-violet-500' },
+                  { icon: Dumbbell, label: 'Exercise', value: todayActivity.exercise_minutes ? `${todayActivity.exercise_minutes}m` : '—', color: 'text-green-500' },
+                  { icon: Heart, label: 'Heart Rate', value: todayActivity.heart_rate ? `${todayActivity.heart_rate}` : '—', color: 'text-red-500' },
+                ].map((stat, i) => (
+                  <Card key={i} className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
+                    <CardContent className="p-3 text-center">
+                      <stat.icon className={`h-5 w-5 mx-auto mb-1 ${stat.color}`} />
+                      <p className="text-lg font-bold text-slate-800 dark:text-white">{stat.value}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{stat.label}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {/* Log Form */}
+            <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
+              <CardHeader>
+                <CardTitle className="flex items-center text-slate-800 dark:text-white">
+                  <Calendar className="h-5 w-5 mr-2 text-teal-500" />
+                  Log Today's Activity
+                  {activitySaved && <Badge className="ml-2 bg-green-500 text-white">Saved!</Badge>}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Steps & Stairs & Calories */}
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300 mb-3 flex items-center">
+                    <Footprints className="h-4 w-4 mr-1 text-blue-500" /> Activity
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">Steps</label>
+                      <Input type="number" placeholder="0" value={activityForm.steps} onChange={e => updateField('steps', e.target.value)} className="dark:bg-slate-700 dark:border-slate-600" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">Stairs (flights)</label>
+                      <Input type="number" placeholder="0" value={activityForm.stairs} onChange={e => updateField('stairs', e.target.value)} className="dark:bg-slate-700 dark:border-slate-600" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">Calories Burned</label>
+                      <Input type="number" placeholder="0" value={activityForm.caloriesBurned} onChange={e => updateField('caloriesBurned', e.target.value)} className="dark:bg-slate-700 dark:border-slate-600" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">Calories Consumed</label>
+                      <Input type="number" placeholder="0" value={activityForm.caloriesConsumed} onChange={e => updateField('caloriesConsumed', e.target.value)} className="dark:bg-slate-700 dark:border-slate-600" />
+                    </div>
+                  </div>
+                </div>
+
+                <Separator className="bg-slate-200 dark:bg-slate-700" />
+
+                {/* Exercise & Sleep */}
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300 mb-3 flex items-center">
+                    <Dumbbell className="h-4 w-4 mr-1 text-green-500" /> Exercise & Sleep
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">Exercise Type</label>
+                      <Select value={activityForm.exerciseType} onValueChange={v => updateField('exerciseType', v)}>
+                        <SelectTrigger className="dark:bg-slate-700 dark:border-slate-600">
+                          <SelectValue placeholder="Select..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {['walking', 'running', 'cycling', 'swimming', 'yoga', 'gym', 'sports', 'dance', 'other'].map(t => (
+                            <SelectItem key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">Duration (min)</label>
+                      <Input type="number" placeholder="0" value={activityForm.exerciseMinutes} onChange={e => updateField('exerciseMinutes', e.target.value)} className="dark:bg-slate-700 dark:border-slate-600" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">Sleep (hours)</label>
+                      <Input type="number" step="0.5" placeholder="0" value={activityForm.sleepHours} onChange={e => updateField('sleepHours', e.target.value)} className="dark:bg-slate-700 dark:border-slate-600" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">Sleep Quality</label>
+                      <Select value={activityForm.sleepQuality} onValueChange={v => updateField('sleepQuality', v)}>
+                        <SelectTrigger className="dark:bg-slate-700 dark:border-slate-600">
+                          <SelectValue placeholder="Select..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {['poor', 'fair', 'good', 'excellent'].map(q => (
+                            <SelectItem key={q} value={q}>{q.charAt(0).toUpperCase() + q.slice(1)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+
+                <Separator className="bg-slate-200 dark:bg-slate-700" />
+
+                {/* Vitals */}
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300 mb-3 flex items-center">
+                    <Heart className="h-4 w-4 mr-1 text-red-500" /> Vitals
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">Heart Rate (bpm)</label>
+                      <Input type="number" placeholder="72" value={activityForm.heartRate} onChange={e => updateField('heartRate', e.target.value)} className="dark:bg-slate-700 dark:border-slate-600" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">BP Systolic</label>
+                      <Input type="number" placeholder="120" value={activityForm.bpSystolic} onChange={e => updateField('bpSystolic', e.target.value)} className="dark:bg-slate-700 dark:border-slate-600" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">BP Diastolic</label>
+                      <Input type="number" placeholder="80" value={activityForm.bpDiastolic} onChange={e => updateField('bpDiastolic', e.target.value)} className="dark:bg-slate-700 dark:border-slate-600" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">SpO2 (%)</label>
+                      <Input type="number" placeholder="98" value={activityForm.spo2} onChange={e => updateField('spo2', e.target.value)} className="dark:bg-slate-700 dark:border-slate-600" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">Temperature (°C)</label>
+                      <Input type="number" step="0.1" placeholder="36.6" value={activityForm.temperature} onChange={e => updateField('temperature', e.target.value)} className="dark:bg-slate-700 dark:border-slate-600" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">Weight (kg)</label>
+                      <Input type="number" step="0.1" placeholder="68" value={activityForm.weight} onChange={e => updateField('weight', e.target.value)} className="dark:bg-slate-700 dark:border-slate-600" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 dark:text-slate-400">Blood Sugar (mg/dL)</label>
+                      <Input type="number" placeholder="95" value={activityForm.bloodSugar} onChange={e => updateField('bloodSugar', e.target.value)} className="dark:bg-slate-700 dark:border-slate-600" />
+                    </div>
+                  </div>
+                </div>
+
+                <Separator className="bg-slate-200 dark:bg-slate-700" />
+
+                {/* Notes & Save */}
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-slate-500 dark:text-slate-400">Notes</label>
+                    <Input placeholder="How was your day?" value={activityForm.notes} onChange={e => updateField('notes', e.target.value)} className="dark:bg-slate-700 dark:border-slate-600" />
+                  </div>
+                  <Button
+                    onClick={saveActivity}
+                    disabled={savingActivity}
+                    className="w-full bg-gradient-to-r from-teal-500 to-teal-600 text-white hover:from-teal-600 hover:to-teal-700"
+                  >
+                    {savingActivity ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Saving...</> : <><Save className="h-4 w-4 mr-2" /> Save Today's Activity</>}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Weekly Summary */}
+            {weeklySummary?.summary?.days_logged > 0 && (
+              <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
+                <CardHeader>
+                  <CardTitle className="flex items-center text-slate-800 dark:text-white">
+                    <BarChart3 className="h-5 w-5 mr-2 text-teal-500" />
+                    Weekly Summary ({weeklySummary.summary.days_logged} days logged)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {[
+                      { label: 'Avg Steps', value: weeklySummary.summary.avg_steps?.toLocaleString(), icon: Footprints, color: 'text-blue-500' },
+                      { label: 'Avg Calories', value: weeklySummary.summary.avg_calories_burned, icon: Flame, color: 'text-orange-500' },
+                      { label: 'Avg Sleep', value: `${weeklySummary.summary.avg_sleep_hours}h`, icon: Moon, color: 'text-violet-500' },
+                      { label: 'Total Exercise', value: `${weeklySummary.summary.total_exercise_minutes}m`, icon: Dumbbell, color: 'text-green-500' },
+                      { label: 'Avg Heart Rate', value: weeklySummary.summary.avg_heart_rate ? `${weeklySummary.summary.avg_heart_rate} bpm` : '—', icon: Heart, color: 'text-red-500' },
+                      { label: 'Avg SpO2', value: weeklySummary.summary.avg_spo2 ? `${weeklySummary.summary.avg_spo2}%` : '—', icon: Droplets, color: 'text-cyan-500' },
+                      { label: 'Avg BP', value: weeklySummary.summary.avg_bp_systolic ? `${weeklySummary.summary.avg_bp_systolic}/${weeklySummary.summary.avg_bp_diastolic}` : '—', icon: Activity, color: 'text-indigo-500' },
+                      { label: 'Avg Weight', value: weeklySummary.summary.avg_weight ? `${weeklySummary.summary.avg_weight} kg` : '—', icon: Target, color: 'text-teal-500' },
+                    ].map((stat, i) => (
+                      <div key={i} className="flex items-center space-x-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/30">
+                        <stat.icon className={`h-5 w-5 ${stat.color} flex-shrink-0`} />
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800 dark:text-white">{stat.value}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">{stat.label}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
           
           {/* Overview Tab - Google Fit Dashboard */}
           <TabsContent value="overview" className="space-y-6">
