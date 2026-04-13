@@ -297,15 +297,16 @@ const UserHealthRiskAssessment = () => {
   const [submitting, setSubmitting] = useState(false);
   
   // Measurement inputs for auto-calculation
-  const [measurements, setMeasurements] = useState<Measurements>({
-    height: '',
-    weight: '',
-    age: '',
-    gender: 'male',
-    waist: '',
-    hip: '',
-    neck: '',
+  const [measurements, setMeasurements] = useState<Measurements>(() => {
+    try {
+      const draft = localStorage.getItem('hra_measurements_draft');
+      if (draft) return JSON.parse(draft);
+    } catch {}
+    return { height: '', weight: '', age: '', gender: 'male', waist: '', hip: '', neck: '' };
   });
+
+  // Restore responses draft from localStorage
+  const [responsesLoaded, setResponsesLoaded] = useState(false);
 
   // Calculated values for display
   const calculatedValues = useMemo(() => {
@@ -438,6 +439,35 @@ const UserHealthRiskAssessment = () => {
 
   useEffect(() => { loadHistory(); }, [loadHistory]);
 
+  // Restore responses from localStorage on mount
+  useEffect(() => {
+    try {
+      const draft = localStorage.getItem('hra_responses_draft');
+      if (draft) {
+        const parsed = JSON.parse(draft);
+        if (Object.keys(parsed).length > 0) {
+          setResponses(parsed);
+          toast({ title: 'Draft Restored', description: 'Your previous in-progress assessment has been restored.' });
+        }
+      }
+    } catch {}
+    setResponsesLoaded(true);
+  }, []);
+
+  // Persist drafts to localStorage
+  useEffect(() => {
+    if (!responsesLoaded) return;
+    try {
+      localStorage.setItem('hra_responses_draft', JSON.stringify(responses));
+    } catch {}
+  }, [responses, responsesLoaded]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('hra_measurements_draft', JSON.stringify(measurements));
+    } catch {}
+  }, [measurements]);
+
   const handleSelectOption = (questionId: string, optionId: string) => {
     // Don't allow manual selection for auto-calculated questions
     if (AUTO_CALCULATED_QUESTIONS.includes(questionId)) {
@@ -450,7 +480,23 @@ const UserHealthRiskAssessment = () => {
     setResponses((prev) => ({ ...prev, [questionId]: optionId }));
   };
 
+  // Measurement validation constraints
+  const MEASUREMENT_LIMITS: Record<string, { min: number; max: number }> = {
+    age: { min: 1, max: 120 },
+    height: { min: 50, max: 250 },
+    weight: { min: 10, max: 300 },
+    waist: { min: 30, max: 200 },
+    hip: { min: 30, max: 200 },
+    neck: { min: 15, max: 70 },
+  };
+
   const handleMeasurementChange = (field: keyof Measurements, value: string) => {
+    const limits = MEASUREMENT_LIMITS[field];
+    if (limits && value !== '') {
+      const num = parseFloat(value);
+      if (isNaN(num) || num < 0) return;
+      if (num > limits.max) value = String(limits.max);
+    }
     setMeasurements(prev => ({ ...prev, [field]: value }));
   };
 
@@ -464,6 +510,10 @@ const UserHealthRiskAssessment = () => {
   const confirmReset = () => {
     setResponses({});
     setShowResetConfirm(false);
+    try {
+      localStorage.removeItem('hra_responses_draft');
+      localStorage.removeItem('hra_measurements_draft');
+    } catch {}
   };
 
   const handleSaveAssessment = async () => {
@@ -545,6 +595,11 @@ const UserHealthRiskAssessment = () => {
         }
         // Reload full history to refresh period summaries
         loadHistory();
+        // Clear draft since assessment was saved
+        try {
+          localStorage.removeItem('hra_responses_draft');
+          localStorage.removeItem('hra_measurements_draft');
+        } catch {}
       }
     } catch (error: any) {
       toast({
@@ -629,6 +684,8 @@ const UserHealthRiskAssessment = () => {
                       id="age"
                       type="number"
                       placeholder="Years"
+                      min={1}
+                      max={120}
                       value={measurements.age}
                       onChange={(e) => handleMeasurementChange('age', e.target.value)}
                       className="bg-white dark:bg-slate-700"
@@ -655,6 +712,8 @@ const UserHealthRiskAssessment = () => {
                       id="height"
                       type="number"
                       placeholder="cm"
+                      min={50}
+                      max={250}
                       value={measurements.height}
                       onChange={(e) => handleMeasurementChange('height', e.target.value)}
                       className="bg-white dark:bg-slate-700"
@@ -668,6 +727,8 @@ const UserHealthRiskAssessment = () => {
                       id="weight"
                       type="number"
                       placeholder="kg"
+                      min={10}
+                      max={300}
                       value={measurements.weight}
                       onChange={(e) => handleMeasurementChange('weight', e.target.value)}
                       className="bg-white dark:bg-slate-700"
@@ -683,6 +744,8 @@ const UserHealthRiskAssessment = () => {
                       id="waist"
                       type="number"
                       placeholder="At navel level"
+                      min={30}
+                      max={200}
                       value={measurements.waist}
                       onChange={(e) => handleMeasurementChange('waist', e.target.value)}
                       className="bg-white dark:bg-slate-700"
@@ -694,6 +757,8 @@ const UserHealthRiskAssessment = () => {
                       id="hip"
                       type="number"
                       placeholder="Widest point"
+                      min={30}
+                      max={200}
                       value={measurements.hip}
                       onChange={(e) => handleMeasurementChange('hip', e.target.value)}
                       className="bg-white dark:bg-slate-700"
@@ -705,6 +770,8 @@ const UserHealthRiskAssessment = () => {
                       id="neck"
                       type="number"
                       placeholder="Below larynx"
+                      min={15}
+                      max={70}
                       value={measurements.neck}
                       onChange={(e) => handleMeasurementChange('neck', e.target.value)}
                       className="bg-white dark:bg-slate-700"
@@ -847,7 +914,7 @@ const UserHealthRiskAssessment = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <ScrollArea className="h-[600px] pr-4">
+                <ScrollArea className="h-[600px] lg:h-[calc(100vh-260px)] pr-4">
                   <div className="space-y-8">
                     {healthRiskSections.map((section) => {
                       const Icon = sectionIconMap[section.id] ?? HeartPulse;
