@@ -23,9 +23,38 @@ interface profileProps {
   email: string;
   phoneNumber?: string;
   dob?: string;
+  dateOfBirth?: string;
   gender?: string;
   isOnline?: boolean;
   location?: locationProp;
+  height?: number;
+  weight?: number;
+  bloodType?: string;
+  allergies?: string[];
+  medications?: string[];
+  chronicConditions?: string[];
+  medicalHistory?: string;
+  familyHistory?: {
+    diabetes?: boolean;
+    hypertension?: boolean;
+    heartDisease?: boolean;
+    cancer?: boolean;
+    stroke?: boolean;
+    asthma?: boolean;
+    thyroid?: boolean;
+    mentalHealth?: boolean;
+    kidney?: boolean;
+    details?: string;
+  };
+  personalHistory?: {
+    smoking?: string;
+    alcohol?: string;
+    exercise?: string;
+    diet?: string;
+    sleep?: string;
+    occupation?: string;
+    stressLevel?: string;
+  };
 }
 
 interface doctorProfileProps {

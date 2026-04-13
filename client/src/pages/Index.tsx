@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Activity,
   Stethoscope,
@@ -127,19 +127,111 @@ const Index = () => {
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Health Tip of the Day
-  const healthTips = [
-    { emoji: "💧", tip: "Drink a glass of water first thing in the morning to kickstart your metabolism.", category: "Hydration" },
-    { emoji: "🧘", tip: "Take 5 deep breaths every hour to reduce stress and improve focus.", category: "Mindfulness" },
-    { emoji: "🥗", tip: "Aim for 5 servings of fruits and vegetables every day for optimal nutrition.", category: "Nutrition" },
-    { emoji: "🚶", tip: "A 30-minute walk after meals can improve digestion and lower blood sugar.", category: "Activity" },
-    { emoji: "😴", tip: "Avoid screens 1 hour before bed for better sleep quality.", category: "Sleep" },
-    { emoji: "🫀", tip: "Regular cardio exercise strengthens your heart and reduces disease risk.", category: "Heart Health" },
-    { emoji: "🧠", tip: "Learning something new every day keeps your brain sharp and healthy.", category: "Mental Health" },
-    { emoji: "☀️", tip: "15 minutes of morning sunlight boosts vitamin D and regulates sleep.", category: "Wellness" },
-    { emoji: "🦷", tip: "Brushing for 2 minutes twice daily prevents 90% of dental issues.", category: "Dental" },
-    { emoji: "🫁", tip: "Practice 4-7-8 breathing: inhale 4s, hold 7s, exhale 8s for instant calm.", category: "Breathing" },
-  ];
+  // Health Tip of the Day — personalized based on user's health profile
+  const healthTips = useMemo(() => {
+    const generalTips = [
+      { emoji: "💧", tip: "Drink a glass of water first thing in the morning to kickstart your metabolism.", category: "Hydration" },
+      { emoji: "🧘", tip: "Take 5 deep breaths every hour to reduce stress and improve focus.", category: "Mindfulness" },
+      { emoji: "🥗", tip: "Aim for 5 servings of fruits and vegetables every day for optimal nutrition.", category: "Nutrition" },
+      { emoji: "🚶", tip: "A 30-minute walk after meals can improve digestion and lower blood sugar.", category: "Activity" },
+      { emoji: "😴", tip: "Avoid screens 1 hour before bed for better sleep quality.", category: "Sleep" },
+      { emoji: "🫀", tip: "Regular cardio exercise strengthens your heart and reduces disease risk.", category: "Heart Health" },
+      { emoji: "🧠", tip: "Learning something new every day keeps your brain sharp and healthy.", category: "Mental Health" },
+      { emoji: "☀️", tip: "15 minutes of morning sunlight boosts vitamin D and regulates sleep.", category: "Wellness" },
+      { emoji: "🦷", tip: "Brushing for 2 minutes twice daily prevents 90% of dental issues.", category: "Dental" },
+      { emoji: "🫁", tip: "Practice 4-7-8 breathing: inhale 4s, hold 7s, exhale 8s for instant calm.", category: "Breathing" },
+    ];
+
+    const personalTips: typeof generalTips = [];
+    const conditions = currentUser?.chronicConditions || [];
+    const allergies = currentUser?.allergies || [];
+    const family = currentUser?.familyHistory;
+    const lifestyle = currentUser?.personalHistory;
+
+    // Condition-specific tips
+    conditions.forEach((c: string) => {
+      const cl = c.toLowerCase();
+      if (cl.includes('diabetes')) {
+        personalTips.push(
+          { emoji: "🩸", tip: "Monitor your blood sugar before and after meals. Low-GI foods like oats and lentils help maintain stable levels.", category: "Diabetes Care" },
+          { emoji: "🥬", tip: "Include bitter gourd, fenugreek seeds, and cinnamon in your diet — they help regulate blood sugar naturally.", category: "Diabetes Care" },
+        );
+      }
+      if (cl.includes('hypertension') || cl.includes('blood pressure')) {
+        personalTips.push(
+          { emoji: "🧂", tip: "Limit sodium to under 2,300mg/day. Replace table salt with herbs, lemon, and spices for flavor.", category: "Heart Health" },
+          { emoji: "🍌", tip: "Eat potassium-rich foods like bananas, spinach, and sweet potatoes to help lower blood pressure.", category: "Heart Health" },
+        );
+      }
+      if (cl.includes('asthma') || cl.includes('respiratory')) {
+        personalTips.push(
+          { emoji: "🌬️", tip: "Practice diaphragmatic breathing daily. Keep rescue inhaler accessible and avoid known triggers.", category: "Respiratory" },
+        );
+      }
+      if (cl.includes('thyroid')) {
+        personalTips.push(
+          { emoji: "🦋", tip: "Take thyroid medication on an empty stomach and wait 30-60 minutes before eating for best absorption.", category: "Thyroid Care" },
+        );
+      }
+      if (cl.includes('cholesterol') || cl.includes('heart')) {
+        personalTips.push(
+          { emoji: "❤️", tip: "Include omega-3 rich foods like walnuts, flaxseeds, and fish to support heart health and lower cholesterol.", category: "Heart Health" },
+        );
+      }
+    });
+
+    // Allergy awareness
+    if (allergies.length > 0) {
+      personalTips.push(
+        { emoji: "⚠️", tip: `Remember to check food labels for your allergens: ${allergies.slice(0, 3).join(', ')}. Always carry antihistamines.`, category: "Allergy Alert" },
+      );
+    }
+
+    // Family history preventive tips
+    if (family?.diabetes && !conditions.some((c: string) => c.toLowerCase().includes('diabetes'))) {
+      personalTips.push(
+        { emoji: "🏃", tip: "With diabetes in your family, regular exercise and maintaining a healthy weight reduces your risk by up to 58%.", category: "Prevention" },
+      );
+    }
+    if (family?.heartDisease && !conditions.some((c: string) => c.toLowerCase().includes('heart'))) {
+      personalTips.push(
+        { emoji: "💓", tip: "Family history of heart disease detected. Get annual lipid profile tests and aim for 150 minutes of cardio per week.", category: "Prevention" },
+      );
+    }
+    if (family?.hypertension && !conditions.some((c: string) => c.toLowerCase().includes('hypertension'))) {
+      personalTips.push(
+        { emoji: "🫀", tip: "Monitor your blood pressure regularly. With a family history, reducing sodium and managing stress are key preventive steps.", category: "Prevention" },
+      );
+    }
+
+    // Lifestyle tips
+    if (lifestyle?.smoking === 'current' || lifestyle?.smoking === 'occasional') {
+      personalTips.push(
+        { emoji: "🚭", tip: "Every cigarette-free day helps. After 20 minutes, heart rate drops. After 1 year, heart disease risk halves.", category: "Quit Smoking" },
+      );
+    }
+    if (lifestyle?.sleep === 'less-than-5' || lifestyle?.sleep === '5-6') {
+      personalTips.push(
+        { emoji: "🌙", tip: "You're getting less sleep than recommended. Set a consistent bedtime — even 30 extra minutes improves immunity and focus.", category: "Sleep" },
+      );
+    }
+    if (lifestyle?.stressLevel === 'high' || lifestyle?.stressLevel === 'very-high') {
+      personalTips.push(
+        { emoji: "🧘‍♂️", tip: "High stress detected. Try the 5-4-3-2-1 grounding technique: notice 5 things you see, 4 you touch, 3 you hear, 2 you smell, 1 you taste.", category: "Stress Relief" },
+      );
+    }
+
+    // Merge: personal tips first, then fill with general tips (no duplicates)
+    if (personalTips.length > 0) {
+      const merged = [...personalTips];
+      for (const tip of generalTips) {
+        if (merged.length >= 15) break;
+        if (!merged.some(t => t.category === tip.category)) merged.push(tip);
+      }
+      return merged;
+    }
+    return generalTips;
+  }, [currentUser]);
   const todayTipIndex = new Date().getDate() % healthTips.length;
   const todayTip = healthTips[todayTipIndex];
 

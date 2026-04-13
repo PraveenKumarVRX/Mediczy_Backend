@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Scale,
   Apple,
@@ -13,6 +13,9 @@ import {
   Plus,
   X,
   List,
+  Droplets,
+  Loader2,
+  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -41,6 +44,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useAuth } from "@/auth/AuthProvider";
+import api from "@/utils/api";
 
 interface MealPlan {
   time: string;
@@ -407,6 +412,7 @@ const foodCategories = [
 
 const Diet = () => {
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const [selectedPlan, setSelectedPlan] = useState<string>("maintenance");
   const [personalizedPlan, setPersonalizedPlan] = useState<DietPlan | null>(null);
   const [weight, setWeight] = useState("");
@@ -417,7 +423,40 @@ const Diet = () => {
   const [age, setAge] = useState("");
   const [gender, setGender] = useState("male");
   const [activityLevel, setActivityLevel] = useState("moderate");
+  const [dietaryPreference, setDietaryPreference] = useState("balanced");
   const [savedMeals, setSavedMeals] = useState<SavedMeal[]>([]);
+  const [backendPlan, setBackendPlan] = useState<any>(null);
+  const [backendLoading, setBackendLoading] = useState(false);
+
+  // Auto-populate from user profile
+  useEffect(() => {
+    if (currentUser) {
+      if (currentUser.weight) setWeight(String(currentUser.weight));
+      if (currentUser.height) setHeight(String(currentUser.height));
+      if (currentUser.gender) setGender(currentUser.gender.toLowerCase());
+      if (currentUser.personalHistory?.exercise) {
+        const exerciseMap: Record<string, string> = {
+          sedentary: "sedentary", light: "light", moderate: "moderate",
+          active: "active", "very-active": "veryActive", intense: "veryActive",
+        };
+        setActivityLevel(exerciseMap[currentUser.personalHistory.exercise] || "moderate");
+      }
+      if (currentUser.personalHistory?.diet) {
+        const dietMap: Record<string, string> = {
+          vegetarian: "vegetarian", vegan: "vegan", mixed: "balanced",
+          "non-vegetarian": "balanced", eggetarian: "vegetarian",
+        };
+        setDietaryPreference(dietMap[currentUser.personalHistory.diet] || "balanced");
+      }
+      if (currentUser.dateOfBirth || currentUser.dob) {
+        const dob = new Date(currentUser.dateOfBirth || currentUser.dob || "");
+        if (!isNaN(dob.getTime())) {
+          const ageDiff = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+          if (ageDiff > 0 && ageDiff < 150) setAge(String(ageDiff));
+        }
+      }
+    }
+  }, [currentUser]);
 
   // Load saved meals when component mounts
   useEffect(() => {
@@ -539,6 +578,35 @@ const Diet = () => {
     }
   };
 
+  // Fetch personalized diet data from backend
+  const fetchBackendDiet = async (goal: string) => {
+    const heightInCm = getHeightInCm();
+    const weightNum = parseFloat(weight);
+    const ageNum = parseFloat(age);
+    if (!weightNum || !heightInCm || !ageNum) return;
+    
+    setBackendLoading(true);
+    try {
+      const { data } = await api.post('/diet/generate', {
+        age: ageNum,
+        weight: weightNum,
+        height: heightInCm,
+        goal,
+        gender,
+        activityLevel: activityLevel === 'veryActive' ? 'very_active' : activityLevel,
+        dietaryPreference,
+        dietaryRestrictions: currentUser?.allergies?.join(', ') || '',
+      });
+      if (data.success) {
+        setBackendPlan(data.plan);
+      }
+    } catch (err) {
+      console.error('Backend diet fetch failed, using client-side plan:', err);
+    } finally {
+      setBackendLoading(false);
+    }
+  };
+
   useEffect(() => {
     const hasWeight = Boolean(weight);
     const hasHeight = heightUnit === "cm" ? Boolean(height) : Boolean(feet || inches);
@@ -547,7 +615,8 @@ const Diet = () => {
     }
 
     handlePlanChange(selectedPlan as "weight_loss" | "weight_gain" | "maintenance");
-  }, [weight, height, feet, inches, heightUnit, age, gender, activityLevel, selectedPlan]);
+    fetchBackendDiet(selectedPlan);
+  }, [weight, height, feet, inches, heightUnit, age, gender, activityLevel, selectedPlan, dietaryPreference]);
 
   const bmi = calculateBMI();
   const tdee = calculateTDEE();
@@ -717,6 +786,25 @@ const Diet = () => {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="group">
+                <Label className="text-sm font-medium mb-1.5 block text-slate-700 dark:text-slate-300">Dietary Preference</Label>
+                <Select value={dietaryPreference} onValueChange={setDietaryPreference}>
+                  <SelectTrigger className="w-full focus:ring-2 focus:ring-teal-500/20 bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-600 text-slate-800 dark:text-white">
+                    <SelectValue placeholder="Select dietary preference" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+                    <SelectItem value="balanced" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">Balanced (Non-Veg)</SelectItem>
+                    <SelectItem value="vegetarian" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">Vegetarian</SelectItem>
+                    <SelectItem value="vegan" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">Vegan</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {currentUser && (
+                <div className="flex items-center gap-2 p-3 bg-teal-50 dark:bg-teal-900/20 rounded-lg border border-teal-200 dark:border-teal-800">
+                  <User className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+                  <span className="text-xs text-teal-700 dark:text-teal-300">Auto-filled from your profile</span>
+                </div>
+              )}
             </div>
 
             {bmi && tdee && (
@@ -739,6 +827,45 @@ const Diet = () => {
                     <span className="text-slate-500 dark:text-slate-400">calories</span>
                   </div>
                 </div>
+                
+                {/* Macronutrient Breakdown from Backend */}
+                {backendLoading && (
+                  <div className="flex items-center gap-2 p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <Loader2 className="h-4 w-4 animate-spin text-teal-500" />
+                    <span className="text-sm text-slate-500 dark:text-slate-400">Generating personalized plan...</span>
+                  </div>
+                )}
+                {backendPlan?.macronutrients && !backendLoading && (
+                  <div className="p-5 bg-gradient-to-br from-teal-50 to-cyan-50 dark:from-teal-900/20 dark:to-cyan-900/20 rounded-xl border border-teal-200 dark:border-teal-800">
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">Macronutrient Breakdown</p>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="text-center p-3 bg-white dark:bg-slate-800/60 rounded-lg">
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Protein</p>
+                        <p className="text-lg font-bold text-teal-600 dark:text-teal-400">{backendPlan.macronutrients.protein.grams}g</p>
+                        <p className="text-xs text-slate-400 dark:text-slate-500">{backendPlan.macronutrients.protein.percentage}%</p>
+                      </div>
+                      <div className="text-center p-3 bg-white dark:bg-slate-800/60 rounded-lg">
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Carbs</p>
+                        <p className="text-lg font-bold text-cyan-600 dark:text-cyan-400">{backendPlan.macronutrients.carbs.grams}g</p>
+                        <p className="text-xs text-slate-400 dark:text-slate-500">{backendPlan.macronutrients.carbs.percentage}%</p>
+                      </div>
+                      <div className="text-center p-3 bg-white dark:bg-slate-800/60 rounded-lg">
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Fats</p>
+                        <p className="text-lg font-bold text-amber-600 dark:text-amber-400">{backendPlan.macronutrients.fats.grams}g</p>
+                        <p className="text-xs text-slate-400 dark:text-slate-500">{backendPlan.macronutrients.fats.percentage}%</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {backendPlan?.hydration && !backendLoading && (
+                  <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800 flex items-center gap-3">
+                    <Droplets className="h-5 w-5 text-blue-500 dark:text-blue-400" />
+                    <div>
+                      <p className="text-sm font-medium text-blue-700 dark:text-blue-300">Daily Hydration: {backendPlan.hydration.daily}</p>
+                      <p className="text-xs text-blue-500 dark:text-blue-400">{backendPlan.hydration.recommendation}</p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </Card>
