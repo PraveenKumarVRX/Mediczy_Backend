@@ -40,10 +40,10 @@ router.post('/doctor-to-patient', authUser, requireRole('doctor'), async (req, r
     const [doctorDetails] = await postgresSequelize.query(`
       SELECT 
         id,
-        first_name,
-        last_name,
+        "firstName" AS first_name,
+        "lastName" AS last_name,
         specialization,
-        profile_pic_url
+        "profileImage" AS profile_pic_url
       FROM doctors
       WHERE id = :doctorId
     `, {
@@ -112,14 +112,15 @@ router.post('/doctor-to-patient', authUser, requireRole('doctor'), async (req, r
     // Log the call notification event
     await postgresSequelize.query(`
       INSERT INTO notifications (
-        user_id, 
-        user_type, 
+        "userId", 
+        "userType", 
         type, 
         title, 
         message, 
         data, 
-        is_read, 
-        created_at
+        "isRead", 
+        "createdAt",
+        "updatedAt"
       ) VALUES (
         :patientId,
         'patient',
@@ -128,6 +129,7 @@ router.post('/doctor-to-patient', authUser, requireRole('doctor'), async (req, r
         :message,
         :data,
         false,
+        NOW(),
         NOW()
       )
     `, {

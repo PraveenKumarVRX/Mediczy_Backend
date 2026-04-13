@@ -99,6 +99,14 @@ const sendPushNotification = async (token, notification, data = {}) => {
   }
 
   try {
+    // FCM requires ALL data values to be strings — coerce everything
+    const stringData = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (value !== null && value !== undefined) {
+        stringData[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
+      }
+    }
+
     const message = {
       notification: {
         title: notification.title,
@@ -106,7 +114,7 @@ const sendPushNotification = async (token, notification, data = {}) => {
         image: notification.image || undefined,
       },
       data: {
-        ...data,
+        ...stringData,
         timestamp: new Date().toISOString(),
         clickAction: notification.clickAction || 'FLUTTER_NOTIFICATION_CLICK'
       },
@@ -175,6 +183,14 @@ const sendMulticastNotification = async (tokens, notification, data = {}) => {
   }
 
   try {
+    // FCM requires ALL data values to be strings — coerce everything
+    const stringData = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (value !== null && value !== undefined) {
+        stringData[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
+      }
+    }
+
     const message = {
       notification: {
         title: notification.title,
@@ -182,7 +198,7 @@ const sendMulticastNotification = async (tokens, notification, data = {}) => {
         image: notification.image || undefined,
       },
       data: {
-        ...data,
+        ...stringData,
         timestamp: new Date().toISOString(),
       },
       tokens: tokens,
