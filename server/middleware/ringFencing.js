@@ -38,6 +38,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/health-diary',  // Health diary entries
       '/api/health-data',  // BLE device health data sync
       '/api/health-assessment',  // Health risk assessments
+      '/api/hra',  // HRA alias for health assessments
       '/api/health-intelligence',  // Dr. iSHA Health Intelligence Dashboard
       '/api/reports',  // Medical report uploads and analysis
       '/api/labs',  // Lab tests and diagnostic centers
@@ -119,6 +120,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/health-diary',  // Health diary entries
       '/api/health-data',  // BLE device health data sync
       '/api/health-assessment',  // Health risk assessments
+      '/api/hra',  // HRA alias for health assessments
       '/api/health-intelligence',  // Dr. iSHA Health Intelligence Dashboard
       '/api/reports',  // Medical report uploads and analysis
       '/api/labs',  // Lab tests and diagnostic centers
@@ -635,6 +637,8 @@ const PUBLIC_ENDPOINTS = [
   '/api/public/', // Public signed-token download endpoints (report PDFs, etc.)
   '/api/notifications/send-internal', // n8n internal workflow notification endpoint (token-auth at route level)
   '/api/webhooks/n8n-callback/', // n8n workflow callbacks (server-to-server, token-auth at route level)
+  '/api/pharmacy/medicines', // Public medicine search from master database
+  '/health', // Public health check
 ];
 
 /**

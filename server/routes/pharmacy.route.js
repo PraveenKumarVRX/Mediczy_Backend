@@ -49,6 +49,46 @@ router.use('/invoices', invoicesRouter);
 router.use('/analytics', analyticsRouter);
 
 /**
+ * GET /api/pharmacy/medicines
+ * Public medicine search from master database (no pharmacy auth required)
+ */
+router.get('/medicines', async (req, res) => {
+  try {
+    const { search, category, page = 1, limit = 50 } = req.query;
+    // Import master medicines from inventory module
+    const { MASTER_MEDICINES } = await import('./pharmacy/inventory.routes.js');
+    let results = MASTER_MEDICINES || [];
+
+    if (search) {
+      const q = search.toLowerCase();
+      results = results.filter(m =>
+        m.name.toLowerCase().includes(q) ||
+        m.genericName.toLowerCase().includes(q) ||
+        m.category.toLowerCase().includes(q) ||
+        m.manufacturer.toLowerCase().includes(q)
+      );
+    }
+    if (category) {
+      results = results.filter(m => m.category.toLowerCase() === category.toLowerCase());
+    }
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const paged = results.slice(offset, offset + parseInt(limit));
+
+    res.json({
+      success: true,
+      medicines: paged,
+      total: results.length,
+      page: parseInt(page),
+      limit: parseInt(limit)
+    });
+  } catch (error) {
+    console.error('[Pharmacy] Medicine search error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to search medicines' });
+  }
+});
+
+/**
  * POST /api/pharmacy/login
  * Pharmacy login
  */

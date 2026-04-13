@@ -785,8 +785,8 @@ app.get('/health/ready', authUser, requireRole('admin'), async (req, res) => {
   }
 });
 
-// Detailed health check endpoint
-app.get('/health', authUser, requireRole('admin'), async (req, res) => {
+// Detailed health check endpoint (public for monitoring/LB)
+app.get('/health', async (req, res) => {
   try {
     const health = await orchestrator.healthCheck();
     const mem = process.memoryUsage();
@@ -1026,6 +1026,7 @@ app.use((req, res, next) => {
 app.use("/api/reports", reportsRouter); // Patient medical reports
 app.use("/api/reports", uploadRouter); // Medical report upload
 app.use("/api/health-assessment", healthAssessmentRouter); // Health risk assessment
+app.use("/api/hra", authUser, healthAssessmentRouter); // HRA alias for /api/health-assessment
 app.use("/api/reports", reportAnalysisRouter); // Report analysis
 
 // Doctor routes - all mounted under /api/doctors for consistency
@@ -1085,6 +1086,7 @@ app.use("/api/medical-ai", medicalAIRouter);
 app.use("/api/ai-health", aiHealthRouter); // AI health assistant, diet plans, Dr. ISHA
 app.use("/api/v3/ai-brain", authUser, aiBrainRouter); // AI Brain intelligence layer (agentic LLM + RAG + 15 tools)
 app.use("/api/v3/ai-intelligence", authUser, aiIntelligenceRouter); // Drug interactions, insurance, triage, risk scores, insights
+app.use("/api/emergency", authUser, aiIntelligenceRouter); // Emergency alias (triage/assess, risk-score)
 app.use("/api/v3/ai-analytics", authUser, aiAnalyticsRouter); // AI analytics dashboard (LLM ops, quality, tools, population health)
 app.use("/api/diet", dietRouter); // Diet plan shortcut (alias for /api/ai-health/diet)
 app.use("/api/ayushman", ayushmanRouter);

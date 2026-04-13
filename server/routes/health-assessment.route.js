@@ -395,6 +395,39 @@ router.get('/', authUser, async (req, res) => {
 });
 
 /**
+ * @route   GET /api/health-assessment/latest
+ * @desc    Alias for GET / — returns latest health assessment
+ * @access  Private
+ */
+router.get('/latest', authUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const assessment = await UserHealthAssessment.findOne({
+      where: { userId },
+      order: [['assessed_at', 'DESC']]
+    }).catch(() => null);
+
+    if (!assessment) {
+      return res.status(404).json({ success: false, message: 'No health assessment found' });
+    }
+
+    res.json({
+      success: true,
+      assessment: {
+        id: assessment.id,
+        userId,
+        assessedAt: assessment.assessedAt,
+        measurements: { age: assessment.age, height: assessment.height, weight: assessment.weight, bmi: assessment.bmi, waist: assessment.waist, hip: assessment.hip, whr: assessment.whr },
+        riskAssessment: { score: assessment.riskScore, riskLevel: assessment.riskLevel, riskFactors: assessment.riskFactors }
+      }
+    });
+  } catch (error) {
+    console.error('❌ Health assessment retrieval error:', error);
+    res.status(500).json({ success: false, message: 'Failed to retrieve health assessment', error: error.message });
+  }
+});
+
+/**
  * @route   GET /api/health-assessment/history
  * @desc    Get all assessment history with period-based grouping
  * @access  Private
