@@ -827,10 +827,10 @@ function App() {
               ))}
             </div>
 
-            <div className="mt-10 rounded-[1.75rem] border border-amber-400/10 bg-[linear-gradient(180deg,rgba(251,191,36,0.05),rgba(255,255,255,0.02))] p-6 md:p-8">
+            <div className="mt-10 rounded-2xl border border-teal-500/10 bg-[linear-gradient(180deg,rgba(20,184,166,0.04),rgba(255,255,255,0.015))] p-6 md:p-8">
               <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-300">CDSS for Doctors</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-teal-400">CDSS for Doctors</p>
                   <h3 className="mt-3 text-3xl font-extrabold text-white md:text-4xl">
                     Clinical decision support at the point of care.
                   </h3>
@@ -846,7 +846,7 @@ function App() {
                       { label: 'Doctor output', value: 'Warnings, ICD-10, differentials, references' },
                     ].map((item) => (
                       <div key={item.label} className="rounded-2xl border border-white/[0.06] bg-black/10 px-4 py-4">
-                        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-amber-200/80">{item.label}</p>
+                        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-teal-300/80">{item.label}</p>
                         <p className="mt-2 text-sm text-slate-300">{item.value}</p>
                       </div>
                     ))}
@@ -859,13 +859,13 @@ function App() {
                     <div className="mt-5 grid gap-3">
                       {CDSS_POINTS.map((point) => (
                         <div key={point} className="flex items-start gap-3">
-                          <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-amber-300" />
+                          <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-teal-400" />
                           <p className="text-sm leading-relaxed text-slate-400">{point}</p>
                         </div>
                       ))}
                     </div>
-                    <div className="mt-6 rounded-2xl border border-amber-400/10 bg-amber-400/[0.04] px-4 py-4">
-                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-200/80">Clinical Safety Positioning</p>
+                    <div className="mt-6 rounded-2xl border border-teal-500/10 bg-teal-500/[0.04] px-4 py-4">
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-teal-300/80">Clinical Safety Positioning</p>
                       <p className="mt-2 text-sm leading-relaxed text-slate-300">
                         CDSS is designed to support doctor judgment, not replace it. It accelerates review, surfaces evidence and medication risks, and helps clinicians start from a better-informed position.
                       </p>
@@ -887,7 +887,7 @@ function App() {
 
                       <div className="mt-4 grid gap-4 md:grid-cols-2">
                         <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-4">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-amber-200/80">Top Differential</p>
+                          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-teal-300/80">Top Differential</p>
                           <div className="mt-3 space-y-2 text-sm text-slate-300">
                             <p>1. Stable angina with high cardiovascular risk</p>
                             <p>2. ACS to rule out urgently</p>
@@ -895,7 +895,7 @@ function App() {
                           </div>
                         </div>
                         <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-4">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-amber-200/80">Suggested Workup</p>
+                          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-teal-300/80">Suggested Workup</p>
                           <div className="mt-3 space-y-2 text-sm text-slate-300">
                             <p>ECG and serial troponin</p>
                             <p>HbA1c, renal function, lipid profile</p>
@@ -1269,7 +1269,7 @@ function App() {
               Trusted by healthcare leaders.
             </h2>
             <p className="mt-4 max-w-2xl text-sm leading-relaxed text-slate-400 md:text-base">
-              A scrolling wall of customer stories so the section can keep growing as Mediqzy expands across hospitals, clinics, ambulance networks, and corporate health programs.
+              From hospital administrators and clinical directors to solo practitioners and ambulance networks — hear how Mediqzy is transforming daily workflows.
             </p>
 
             <div className="testimonial-scroll mt-12 flex gap-5 overflow-x-auto pb-4">
@@ -1298,7 +1298,7 @@ function App() {
         {/* ═══ COMPLIANCE ═════════════════════════ */}
         <section id="compliance" aria-label="Compliance and integrations" className="border-t border-white/[0.04] bg-[#0a1628] py-14 md:py-20">
           <div className="mx-auto max-w-7xl px-6">
-            <p className="mb-4 text-center text-xs font-bold uppercase tracking-[0.2em] text-slate-600">
+            <p className="mb-4 text-center text-xs font-bold uppercase tracking-[0.2em] text-teal-400">
               Compliance & Integrations
             </p>
             <h2 className="mx-auto max-w-3xl text-center text-3xl font-extrabold text-white md:text-4xl">
