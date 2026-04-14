@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Home, Eye, EyeOff, AlertCircle, Loader2, Clock } from "lucide-react";
+import { Home, Eye, EyeOff, Loader2, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import api from '@/utils/api';
 
@@ -39,45 +39,11 @@ const HomecareLogin = () => {
     setIsCheckingAuth(false);
   }, [navigate]);
 
-  // Dev credentials
-  const DEV_EMAIL = "homecare@mediczy.com";
-  const DEV_PASSWORD = "Homecare123";
+
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-
-    // Development mode bypass - allows login without backend (DEV only)
-    if (import.meta.env.DEV && email === DEV_EMAIL && password === DEV_PASSWORD) {
-      console.log('🚀 Development mode: Using quick authentication bypass for Homecare');
-      
-      // Clear all other tokens for ring-fencing
-      const otherTokens = [
-        'token', 'doctorToken', 'adminToken', 'teamToken', 
-        'nurseToken', 'assistantToken', 'corporateToken',
-        'hospitalToken', 'clinicToken', 'labToken', 'pharmacyToken', 'ambulanceToken'
-      ];
-      otherTokens.forEach(token => localStorage.removeItem(token));
-
-      localStorage.setItem('homecareToken', 'dev-homecare-token');
-      localStorage.setItem('homecareData', JSON.stringify({
-        id: 'homecare_dev',
-        email: DEV_EMAIL,
-        name: 'Sample Homecare Services',
-        type: 'Home Healthcare Provider',
-        services: ['Nursing', 'Physiotherapy', 'Elder Care', 'Post-Surgery Care'],
-        status: 'active'
-      }));
-
-      toast({
-        title: "Login Successful",
-        description: "Welcome back, Sample Homecare Services!",
-      });
-
-      setIsLoading(false);
-      navigate("/homecare/dashboard");
-      return;
-    }
 
     try {
       const { data } = await api.post('/homecare/login', { email, password }, { skipAuth: true });
@@ -221,23 +187,6 @@ const HomecareLogin = () => {
                 </>
               )}
             </Button>
-
-            <div className="mt-6 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="h-5 w-5 text-purple-600 dark:text-purple-400 mt-0.5 flex-shrink-0" />
-                <div className="space-y-1 text-sm">
-                  <p className="font-semibold text-purple-900 dark:text-purple-100">
-                    Development Credentials
-                  </p>
-                  <p className="text-purple-700 dark:text-purple-300">
-                    Email: {DEV_EMAIL}
-                  </p>
-                  <p className="text-purple-700 dark:text-purple-300">
-                    Password: {DEV_PASSWORD}
-                  </p>
-                </div>
-              </div>
-            </div>
           </form>
 
           <div className="mt-6 text-center space-y-2">

@@ -96,35 +96,6 @@ const DoctorLogin = () => {
   };
 
   const onSubmit = (values: { email: string; password: string }) => {
-    const devAuthBypassEnabled =
-      import.meta.env.DEV &&
-      import.meta.env.VITE_ENABLE_DEV_AUTH_BYPASS === 'true';
-
-    // Dev bypass for testing
-    const emailLower = values.email.toLowerCase().trim();
-    if (
-      devAuthBypassEnabled &&
-      emailLower === 'doctor@mediczy.com' &&
-      values.password === 'Doctor123'
-    ) {
-      console.log('🚀 Doctor: Using quick authentication bypass');
-      establishDoctorSession('dev-doctor-token', {
-        id: 'doctor_dev',
-        email: 'doctor@mediczy.com',
-        firstName: 'John',
-        lastName: 'Smith',
-        specialty: 'General Medicine'
-      });
-      
-      toast({
-        title: "Success",
-        description: "Logged in successfully. Redirecting...",
-      });
-      
-      navigate("/doctor-dashboard");
-      return;
-    }
-
     loginMutation.mutate(
       { credentials: values, loginType: "doctor" },
       {

@@ -199,47 +199,6 @@ const Login = () => {
   };
 
   const onSubmit = (values: { email: string; password: string }) => {
-    const devAuthBypassEnabled =
-      import.meta.env.DEV &&
-      import.meta.env.VITE_ENABLE_DEV_AUTH_BYPASS === 'true';
-
-    // Dev bypass for testing
-    const emailLower = values.email.toLowerCase().trim();
-    if (
-      devAuthBypassEnabled &&
-      emailLower === 'user@mediczy.com' &&
-      values.password === 'User123'
-    ) {
-      console.log('🚀 User: Using quick authentication bypass');
-      
-      const devToken = 'dev-user-token';
-      
-      // Clear other portal tokens to prevent wrong redirects
-      clearAuthTokens();
-      
-      localStorage.setItem('token', devToken);
-      localStorage.setItem('userType', 'user');
-      localStorage.setItem('userId', '1');
-      localStorage.setItem('userData', JSON.stringify({
-        id: 1,
-        email: 'user@mediczy.com',
-        firstName: 'Demo',
-        lastName: 'User',
-        phone: '+91 9876543210'
-      }));
-      
-      toast({
-        title: "Success",
-        description: "Logged in successfully. Redirecting...",
-      });
-      
-      // Dispatch auth change event
-      window.dispatchEvent(new Event('authChange'));
-      
-      navigate("/", { replace: true });
-      return;
-    }
-
     loginMutation.mutate(
       { credentials: values, loginType: "user" },
       {

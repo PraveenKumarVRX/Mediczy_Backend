@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Ambulance, Eye, EyeOff, AlertCircle, Loader2 } from "lucide-react";
+import { Ambulance, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import api from '@/utils/api';
 
@@ -38,45 +38,11 @@ const AmbulanceLogin = () => {
     setIsCheckingAuth(false);
   }, [navigate]);
 
-  // Dev credentials
-  const DEV_EMAIL = "ambulance@mediczy.com";
-  const DEV_PASSWORD = "Ambulance123";
+
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-
-    // Development mode bypass - allows login without backend (DEV only)
-    if (import.meta.env.DEV && email === DEV_EMAIL && password === DEV_PASSWORD) {
-      console.log('🚀 Development mode: Using quick authentication bypass for Ambulance');
-      
-      // Clear all other tokens for ring-fencing
-      const otherTokens = [
-        'token', 'doctorToken', 'adminToken', 'teamToken', 
-        'nurseToken', 'assistantToken', 'corporateToken',
-        'hospitalToken', 'clinicToken', 'labToken', 'pharmacyToken', 'homecareToken'
-      ];
-      otherTokens.forEach(token => localStorage.removeItem(token));
-
-      localStorage.setItem('ambulanceToken', 'dev-ambulance-token');
-      localStorage.setItem('ambulanceData', JSON.stringify({
-        id: 'ambulance_dev',
-        email: DEV_EMAIL,
-        name: 'Sample Ambulance Service',
-        type: 'Emergency Medical Services',
-        vehicles: 5,
-        status: 'active'
-      }));
-
-      toast({
-        title: "Login Successful",
-        description: "Welcome back, Sample Ambulance Service!",
-      });
-
-      setIsLoading(false);
-      navigate("/ambulance/dashboard");
-      return;
-    }
 
     try {
       const { data } = await api.post('/ambulance/login', { email, password }, { skipAuth: true });
@@ -210,23 +176,6 @@ const AmbulanceLogin = () => {
                 </>
               )}
             </Button>
-
-            <div className="mt-6 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
-                <div className="space-y-1 text-sm">
-                  <p className="font-semibold text-red-900 dark:text-red-100">
-                    Development Credentials
-                  </p>
-                  <p className="text-red-700 dark:text-red-300">
-                    Email: {DEV_EMAIL}
-                  </p>
-                  <p className="text-red-700 dark:text-red-300">
-                    Password: {DEV_PASSWORD}
-                  </p>
-                </div>
-              </div>
-            </div>
           </form>
 
           <div className="mt-6 text-center space-y-2">

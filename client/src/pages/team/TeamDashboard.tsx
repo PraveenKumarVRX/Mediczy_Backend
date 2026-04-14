@@ -59,37 +59,6 @@ const TeamDashboard = () => {
           return;
         }
 
-        // Handle development token
-        if (token === 'dev-team-token') {
-          const defaultTeamUser = {
-            id: 999,
-            firstName: 'Team',
-            lastName: 'Developer',
-            email: 'team@mediczy.com',
-            department: 'Development',
-            designation: 'Team Lead',
-            role: 'Team Lead',
-            permissions: [
-              'User Management', 'Doctor Management', 'Appointment Management',
-              'Patient Reports', 'System Settings', 'Content Management', 
-              'Analytics Reports', 'Audit Logs', 'Chat Dashboard Access',
-              'Hospital Management', 'Clinic Management', 'Lab Management',
-              'Pharmacy Management', 'Health Plans Access',
-              'Email Management', 'Team Directory Access', 'Backup Management'
-            ],
-            modules: [
-              'users', 'doctors', 'appointments', 'chat', 'hospitals', 'clinics', 'labs',
-              'pharmacies', 'plans', 'reports', 'team_directory', 'profile', 'notifications'
-            ],
-            lastLogin: new Date().toISOString(),
-            isActive: true
-          };
-          setTeamUser(defaultTeamUser);
-          localStorage.setItem('teamUserData', JSON.stringify(defaultTeamUser));
-          setLoading(false);
-          return;
-        }
-
         // Fetch profile from API to ensure data is fresh
         try {
           const response = await api.get('/team/profile');

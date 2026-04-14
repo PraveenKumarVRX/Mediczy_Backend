@@ -281,26 +281,6 @@ const AdminLogin = () => {
                       </div>
                     )}
                   </Button>
-                  
-                  {/* Development Quick Login */}
-                  {import.meta.env.DEV && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => {
-                        console.log('🚀 Quick development login');
-                        establishAdminSession('dev-admin-token', {
-                          id: 'admin_dev',
-                          email: 'Admin@mediczy.com',
-                          role: 'super_admin'
-                        });
-                        navigate('/admin/dashboard');
-                      }}
-                      className="w-full h-9 text-xs text-slate-400 hover:text-slate-600 hover:bg-slate-50"
-                    >
-                      Dev Mode: Quick Access
-                    </Button>
-                  )}
                 </form>
 
                 <div className="mt-6 text-center space-y-2">

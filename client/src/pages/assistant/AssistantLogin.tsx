@@ -37,14 +37,6 @@ const AssistantLogin = () => {
       return;
     }
 
-    // Development mode: Auto-fill test credentials
-    if (import.meta.env.DEV) {
-      setFormData({
-        email: 'assistant@mediczy.com',
-        password: 'Assistant123'
-      });
-    }
-
     setIsCheckingAuth(false);
   }, [navigate]);
 
@@ -113,24 +105,6 @@ const AssistantLogin = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
-
-    if (
-      import.meta.env.DEV &&
-      formData.email === 'assistant@mediczy.com' &&
-      formData.password === 'Assistant123'
-    ) {
-      console.log('🚀 Assistant development mode: quick auth bypass');
-      establishAssistantSession('dev-assistant-token', {
-        id: 'A7X9K2',  // 6-char alphanumeric starting with A
-        email: 'assistant@mediczy.com',
-        firstName: 'Emily',
-        lastName: 'Davis',
-        roleTitle: 'Medical Secretary'
-      });
-      setLoading(false);
-      navigate('/assistant/dashboard', { replace: true });
-      return;
-    }
 
     try {
       const { data } = await api.post('/assistant/login', formData, { skipAuth: true });

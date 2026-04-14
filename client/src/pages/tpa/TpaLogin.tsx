@@ -282,30 +282,6 @@ const TpaLogin = () => {
                   </div>
                 )}
               </Button>
-
-              {/* Development Quick Login */}
-              {import.meta.env.DEV && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    console.log('🚀 Quick development login');
-                    localStorage.setItem('tpaToken', 'dev-tpa-token');
-                    localStorage.setItem('tpaData', JSON.stringify({
-                      id: 'tpa_dev',
-                      email: 'tpa@mediczy.com',
-                      role: 'tpa',
-                      firstName: 'TPA',
-                      lastName: 'Administrator',
-                      company: 'MediCare TPA Services'
-                    }));
-                    navigate('/tpa/dashboard');
-                  }}
-                  className="w-full h-9 text-xs text-slate-400 hover:text-slate-600 hover:bg-slate-50"
-                >
-                  Dev Mode: Quick Access
-                </Button>
-              )}
             </form>
           </CardContent>
         </Card>

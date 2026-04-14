@@ -249,30 +249,6 @@ const InsuranceCompanyLogin = () => {
                   </div>
                 )}
               </Button>
-
-              {/* Development Quick Login */}
-              {import.meta.env.DEV && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    console.log('🚀 Quick development login');
-                    localStorage.setItem('insuranceCompanyToken', 'dev-insurance-company-token');
-                    localStorage.setItem('insuranceCompanyData', JSON.stringify({
-                      id: 'insurance_dev',
-                      email: 'insurance@mediczy.com',
-                      role: 'insurance_company',
-                      firstName: 'Insurance',
-                      lastName: 'Company',
-                      company: 'MediCare Insurance Ltd.'
-                    }));
-                    navigate('/insurance-company/dashboard');
-                  }}
-                  className="w-full h-9 text-xs text-slate-400 hover:text-slate-600 hover:bg-slate-50"
-                >
-                  Dev Mode: Quick Access
-                </Button>
-              )}
             </form>
           </CardContent>
         </Card>

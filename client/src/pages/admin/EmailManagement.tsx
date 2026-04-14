@@ -335,11 +335,6 @@ const sampleEmailLogs: EmailLog[] = [
 ];
 
 const EmailManagement = () => {
-  // Set admin token immediately for development
-  if (!localStorage.getItem('adminToken')) {
-    localStorage.setItem('adminToken', 'dev-admin-token');
-  }
-
   const [activeTab, setActiveTab] = useState('dashboard');
   const [config, setConfig] = useState<any>(null);
   const [loading, setLoading] = useState(true);

@@ -56,7 +56,7 @@ const CorporateLogin = () => {
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { email: "corporate@mediczy.com", password: "Corporate123" },
+    defaultValues: { email: "", password: "" },
   });
 
   const loginMutation = useLogin();

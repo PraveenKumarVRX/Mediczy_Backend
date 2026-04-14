@@ -37,14 +37,6 @@ const NurseLogin = () => {
       return;
     }
 
-    // Development mode: Auto-fill test credentials
-    if (import.meta.env.DEV) {
-      setFormData({
-        email: 'nurse@mediczy.com',
-        password: 'Nurse123'
-      });
-    }
-
     setIsCheckingAuth(false);
   }, [navigate]);
 
@@ -82,27 +74,6 @@ const NurseLogin = () => {
     setLoading(true);
     setError('');
     console.log('[NurseLogin] Submitting credentials', { email: formData.email, ts: Date.now() });
-
-    // Development mode bypass - allows login without backend
-    if (
-      import.meta.env.DEV &&
-      formData.email === 'nurse@mediczy.com' &&
-      formData.password === 'Nurse123'
-    ) {
-      console.log('🚀 Development mode: Using quick authentication bypass for Nurse');
-      establishNurseSession('dev-nurse-token', {
-        id: 'nurse_dev',
-        email: 'nurse@mediczy.com',
-        firstName: 'Sample',
-        lastName: 'Nurse',
-        department: 'General Ward',
-        shift: 'Morning',
-        assignedWard: 'General Ward'
-      });
-      setLoading(false);
-      navigate('/nurse/dashboard', { replace: true });
-      return;
-    }
 
     try {
       console.log('[NurseLogin] POST /nurse/login start with body', formData);
