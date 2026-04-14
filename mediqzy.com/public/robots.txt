@@ -1,0 +1,8 @@
+# Mediqzy — https://mediqzy.com
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+
+# Sitemap
+Sitemap: https://mediqzy.com/sitemap.xml

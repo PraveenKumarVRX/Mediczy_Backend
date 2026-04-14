@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="g1" x1="8" y1="6" x2="40" y2="42">
+      <stop stop-color="#F5DEB3"/>
+      <stop offset="0.35" stop-color="#D4AF37"/>
+      <stop offset="0.7" stop-color="#C5962C"/>
+      <stop offset="1" stop-color="#A67C20"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="10" y1="8" x2="38" y2="36">
+      <stop stop-color="#F5DEB3" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#D4AF37" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- Heart shape formed by handshake -->
+  <!-- Right heart lobe -->
+  <path d="M24 14c0-4.5 3.8-8 8.5-8C37.2 6 41 9.5 41 14c0 5-3.5 9.5-8 14l-9 9" stroke="url(#g1)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Left heart lobe -->
+  <path d="M24 14c0-4.5-3.8-8-8.5-8C10.8 6 7 9.5 7 14c0 5 3.5 9.5 8 14l9 9" stroke="url(#g1)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Handshake - left hand -->
+  <path d="M12 22c2-1 4-0.5 5.5 0.5L21 25c1 0.7 1 2-0.2 2.5l-3.5 2" stroke="url(#g1)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Handshake - right hand -->
+  <path d="M36 22c-2-1-4-0.5-5.5 0.5L27 25c-1 0.7-1 2 0.2 2.5l3.5 2" stroke="url(#g1)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Clasped fingers detail -->
+  <path d="M20.8 25c0.6 0.8 1.5 1.2 2.5 1.2h1.4c1 0 1.9-0.4 2.5-1.2" stroke="url(#g1)" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <!-- Fingers left -->
+  <path d="M15 27.5c1.2 1 2.8 1.5 4.2 0.8" stroke="url(#g1)" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+  <!-- Fingers right -->
+  <path d="M33 27.5c-1.2 1-2.8 1.5-4.2 0.8" stroke="url(#g1)" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+  <!-- Subtle highlight -->
+  <path d="M24 14c0-4.5 3.8-8 8.5-8C37.2 6 41 9.5 41 14" stroke="url(#g2)" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+</svg>

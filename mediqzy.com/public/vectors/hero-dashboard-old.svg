@@ -1,0 +1,118 @@
+<svg width="920" height="640" viewBox="0 0 920 640" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="hg1" x1="0" y1="0" x2="920" y2="640" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F0F9FF"/><stop offset="1" stop-color="#E0F2FE"/>
+    </linearGradient>
+    <linearGradient id="hg2" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#F0F9FF"/>
+    </linearGradient>
+    <filter id="ds" x="-4%" y="-4%" width="108%" height="108%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#0C4A6E" flood-opacity="0.06"/>
+    </filter>
+  </defs>
+
+  <!-- Outer frame -->
+  <rect x="1" y="1" width="918" height="638" rx="28" fill="url(#hg1)" stroke="#BAE6FD"/>
+
+  <!-- Top bar -->
+  <rect x="24" y="24" width="872" height="56" rx="14" fill="#0C4A6E"/>
+  <circle cx="52" cy="52" r="8" fill="#F87171"/>
+  <circle cx="76" cy="52" r="8" fill="#FBBF24"/>
+  <circle cx="100" cy="52" r="8" fill="#34D399"/>
+  <rect x="340" y="40" width="240" height="24" rx="12" fill="#075985"/>
+  <text x="460" y="57" text-anchor="middle" fill="#BAE6FD" font-family="Arial" font-size="12" font-weight="600">mediqzy.com/dashboard</text>
+
+  <!-- Sidebar -->
+  <rect x="24" y="92" width="200" height="546" rx="14" fill="url(#hg2)" stroke="#E0F2FE"/>
+  <rect x="44" y="118" width="160" height="36" rx="10" fill="#0EA5E9"/>
+  <text x="124" y="141" text-anchor="middle" fill="#FFFFFF" font-family="Arial" font-size="13" font-weight="700">Dashboard</text>
+  <rect x="44" y="168" width="160" height="32" rx="8" fill="#F0F9FF"/>
+  <text x="124" y="189" text-anchor="middle" fill="#0C4A6E" font-family="Arial" font-size="12" font-weight="600">Patients</text>
+  <rect x="44" y="210" width="160" height="32" rx="8" fill="#F0F9FF"/>
+  <text x="124" y="231" text-anchor="middle" fill="#0C4A6E" font-family="Arial" font-size="12" font-weight="600">Appointments</text>
+  <rect x="44" y="252" width="160" height="32" rx="8" fill="#F0F9FF"/>
+  <text x="124" y="273" text-anchor="middle" fill="#0C4A6E" font-family="Arial" font-size="12" font-weight="600">Insurance Claims</text>
+  <rect x="44" y="294" width="160" height="32" rx="8" fill="#F0F9FF"/>
+  <text x="124" y="315" text-anchor="middle" fill="#0C4A6E" font-family="Arial" font-size="12" font-weight="600">Staff &amp; Ops</text>
+  <rect x="44" y="336" width="160" height="32" rx="8" fill="#F0F9FF"/>
+  <text x="124" y="357" text-anchor="middle" fill="#0C4A6E" font-family="Arial" font-size="12" font-weight="600">Analytics</text>
+  <rect x="44" y="378" width="160" height="32" rx="8" fill="#F0F9FF"/>
+  <text x="124" y="399" text-anchor="middle" fill="#0C4A6E" font-family="Arial" font-size="12" font-weight="600">Settings</text>
+
+  <!-- Stat cards row -->
+  <rect x="248" y="104" width="196" height="100" rx="16" fill="#FFFFFF" stroke="#E0F2FE" filter="url(#ds)"/>
+  <text x="268" y="136" fill="#64748B" font-family="Arial" font-size="12" font-weight="600">Patients Today</text>
+  <text x="268" y="170" fill="#0C4A6E" font-family="Arial" font-size="32" font-weight="800">284</text>
+  <text x="340" y="170" fill="#10B981" font-family="Arial" font-size="13" font-weight="700">+12%</text>
+
+  <rect x="464" y="104" width="196" height="100" rx="16" fill="#FFFFFF" stroke="#E0F2FE" filter="url(#ds)"/>
+  <text x="484" y="136" fill="#64748B" font-family="Arial" font-size="12" font-weight="600">Claims Processed</text>
+  <text x="484" y="170" fill="#0C4A6E" font-family="Arial" font-size="32" font-weight="800">67</text>
+  <text x="522" y="170" fill="#10B981" font-family="Arial" font-size="13" font-weight="700">+24%</text>
+
+  <rect x="680" y="104" width="196" height="100" rx="16" fill="#FFFFFF" stroke="#E0F2FE" filter="url(#ds)"/>
+  <text x="700" y="136" fill="#64748B" font-family="Arial" font-size="12" font-weight="600">Revenue (Today)</text>
+  <text x="700" y="170" fill="#0C4A6E" font-family="Arial" font-size="32" font-weight="800">₹4.2L</text>
+  <text x="776" y="170" fill="#10B981" font-family="Arial" font-size="13" font-weight="700">+8%</text>
+
+  <!-- Chart area -->
+  <rect x="248" y="224" width="412" height="220" rx="16" fill="#FFFFFF" stroke="#E0F2FE" filter="url(#ds)"/>
+  <text x="272" y="256" fill="#0F172A" font-family="Arial" font-size="15" font-weight="700">Revenue &amp; Claims Trend</text>
+  <!-- Grid lines -->
+  <line x1="272" y1="280" x2="636" y2="280" stroke="#F1F5F9" stroke-width="1"/>
+  <line x1="272" y1="320" x2="636" y2="320" stroke="#F1F5F9" stroke-width="1"/>
+  <line x1="272" y1="360" x2="636" y2="360" stroke="#F1F5F9" stroke-width="1"/>
+  <line x1="272" y1="400" x2="636" y2="400" stroke="#F1F5F9" stroke-width="1"/>
+  <!-- Revenue line -->
+  <polyline points="292,390 340,370 388,355 436,340 484,310 532,295 580,280 628,268" stroke="#0EA5E9" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Claims line -->
+  <polyline points="292,400 340,392 388,380 436,375 484,355 532,340 580,325 628,310" stroke="#7DD3FC" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 4"/>
+  <!-- Dots -->
+  <circle cx="628" cy="268" r="5" fill="#0EA5E9"/>
+  <circle cx="628" cy="310" r="5" fill="#7DD3FC"/>
+
+  <!-- Right column: recent activity -->
+  <rect x="680" y="224" width="196" height="220" rx="16" fill="#FFFFFF" stroke="#E0F2FE" filter="url(#ds)"/>
+  <text x="700" y="256" fill="#0F172A" font-family="Arial" font-size="14" font-weight="700">Recent Activity</text>
+  <circle cx="710" cy="284" r="6" fill="#0EA5E9"/>
+  <text x="724" y="288" fill="#334155" font-family="Arial" font-size="11">Claim #4521 approved</text>
+  <circle cx="710" cy="312" r="6" fill="#10B981"/>
+  <text x="724" y="316" fill="#334155" font-family="Arial" font-size="11">Patient discharged</text>
+  <circle cx="710" cy="340" r="6" fill="#F59E0B"/>
+  <text x="724" y="344" fill="#334155" font-family="Arial" font-size="11">Lab results ready</text>
+  <circle cx="710" cy="368" r="6" fill="#0EA5E9"/>
+  <text x="724" y="372" fill="#334155" font-family="Arial" font-size="11">New admission</text>
+  <circle cx="710" cy="396" r="6" fill="#8B5CF6"/>
+  <text x="724" y="400" fill="#334155" font-family="Arial" font-size="11">Insurance pre-auth OK</text>
+
+  <!-- Bottom: patient table -->
+  <rect x="248" y="464" width="628" height="164" rx="16" fill="#FFFFFF" stroke="#E0F2FE" filter="url(#ds)"/>
+  <text x="272" y="496" fill="#0F172A" font-family="Arial" font-size="15" font-weight="700">Active Patients</text>
+  <!-- Header -->
+  <rect x="268" y="510" width="588" height="28" rx="6" fill="#F0F9FF"/>
+  <text x="288" y="529" fill="#475569" font-family="Arial" font-size="11" font-weight="700">Name</text>
+  <text x="420" y="529" fill="#475569" font-family="Arial" font-size="11" font-weight="700">Department</text>
+  <text x="560" y="529" fill="#475569" font-family="Arial" font-size="11" font-weight="700">Status</text>
+  <text x="700" y="529" fill="#475569" font-family="Arial" font-size="11" font-weight="700">Claim</text>
+  <!-- Row 1 -->
+  <circle cx="282" cy="558" r="8" fill="#BAE6FD"/>
+  <text x="298" y="562" fill="#1E293B" font-family="Arial" font-size="12">Rajesh Mehta</text>
+  <text x="420" y="562" fill="#64748B" font-family="Arial" font-size="12">Cardiology</text>
+  <rect x="548" y="548" width="70" height="20" rx="10" fill="#DCFCE7"/>
+  <text x="583" y="563" text-anchor="middle" fill="#15803D" font-family="Arial" font-size="10" font-weight="700">Active</text>
+  <text x="700" y="562" fill="#64748B" font-family="Arial" font-size="12">Pre-auth</text>
+  <!-- Row 2 -->
+  <circle cx="282" cy="588" r="8" fill="#FDE68A"/>
+  <text x="298" y="592" fill="#1E293B" font-family="Arial" font-size="12">Priya Sharma</text>
+  <text x="420" y="592" fill="#64748B" font-family="Arial" font-size="12">Orthopaedics</text>
+  <rect x="548" y="578" width="70" height="20" rx="10" fill="#FEF9C3"/>
+  <text x="583" y="593" text-anchor="middle" fill="#A16207" font-family="Arial" font-size="10" font-weight="700">Waiting</text>
+  <text x="700" y="592" fill="#64748B" font-family="Arial" font-size="12">Approved</text>
+  <!-- Row 3 -->
+  <circle cx="282" cy="618" r="8" fill="#C7D2FE"/>
+  <text x="298" y="622" fill="#1E293B" font-family="Arial" font-size="12">Amit Desai</text>
+  <text x="420" y="622" fill="#64748B" font-family="Arial" font-size="12">General</text>
+  <rect x="548" y="608" width="70" height="20" rx="10" fill="#DBEAFE"/>
+  <text x="583" y="623" text-anchor="middle" fill="#1D4ED8" font-family="Arial" font-size="10" font-weight="700">Review</text>
+  <text x="700" y="622" fill="#64748B" font-family="Arial" font-size="12">Pending</text>
+</svg>

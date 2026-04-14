@@ -1,0 +1,200 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,800&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import 'tailwindcss';
+
+:root {
+  --ink: #0f172a;
+  --primary: #14b8a6;
+  --accent: #00FFF3;
+  --bg-dark: #0F172A;
+  --bg-darker: #07101f;
+  --surface: #1E293B;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 80px;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--ink);
+  background: var(--bg-darker);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+#root {
+  isolation: isolate;
+}
+
+h1, h2 {
+  font-family: 'Fraunces', Georgia, serif;
+  font-variation-settings: 'SOFT' 40, 'WONK' 0;
+  text-wrap: balance;
+}
+
+h3, h4 {
+  font-family: 'Manrope', system-ui, sans-serif;
+}
+
+::selection {
+  background: rgba(45, 212, 191, 0.28);
+  color: #fff;
+}
+
+/* ── Gradient text utility ──────────────── */
+
+.primary-grad {
+  background: linear-gradient(135deg, #8ef3df 0%, #2dd4bf 45%, #f1c97b 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Form inputs ────────────────────────── */
+
+.form-input {
+  width: 100%;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.03));
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  color: #fff;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.form-input:focus {
+  border-color: rgba(45, 212, 191, 0.55);
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.12);
+}
+
+.form-input::placeholder {
+  color: #475569;
+}
+
+/* select arrow fix */
+select.form-input {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23475569' d='M3 4.5l3 3 3-3'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  padding-right: 2rem;
+}
+
+select.form-input option {
+  color: #e2e8f0;
+  background: #0f172a;
+}
+
+select.form-input:invalid {
+  color: #64748b;
+}
+
+/* ── Animations ─────────────────────────── */
+
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes floatFast {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes revealUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.float-slow {
+  animation: floatSlow 6s ease-in-out infinite;
+}
+
+.float-fast {
+  animation: floatFast 4.2s ease-in-out infinite;
+}
+
+.reveal-up {
+  animation: revealUp 0.8s ease-out;
+}
+
+/* ── Testimonial rail ───────────────────── */
+
+.testimonial-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #2b455d transparent;
+  scroll-snap-type: x proximity;
+}
+
+.testimonial-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.testimonial-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.testimonial-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, #1e3a50, #2b455d);
+  border-radius: 999px;
+}
+
+/* ── FAQ accordion ──────────────────────── */
+
+.faq-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.35s ease;
+}
+
+.faq-body-open {
+  max-height: 300px;
+}
+
+/* ── Dark scrollbar ─────────────────────── */
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 999px;
+}
+
+/* ── Form autofill fix for dark inputs ──── */
+
+input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px #0f172a inset;
+  -webkit-text-fill-color: #fff;
+}
+
+/* ── Hide scrollbar for tabs ────────────── */
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

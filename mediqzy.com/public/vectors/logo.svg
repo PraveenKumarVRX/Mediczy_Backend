@@ -1,0 +1,23 @@
+<svg width="200" height="48" viewBox="0 0 200 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="icon-bg" x1="2" y1="2" x2="42" y2="42" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F766E"/>
+      <stop offset="0.45" stop-color="#14B8A6"/>
+      <stop offset="1" stop-color="#06B6D4"/>
+    </linearGradient>
+    <linearGradient id="wm-grad" x1="130" y1="14" x2="200" y2="36" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5EEAD4"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+  </defs>
+  <!-- Icon: Gradient squircle -->
+  <rect x="2" y="4" width="40" height="40" rx="12" fill="url(#icon-bg)"/>
+  <!-- Glass highlight -->
+  <rect x="2" y="4" width="40" height="20" rx="12" fill="white" opacity="0.07"/>
+  <!-- ECG heartbeat line -->
+  <path d="M12 24h6l2.5-8 4 16 4-16 2.5 8h6" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/>
+  <!-- Wordmark: "medi" in white -->
+  <text x="52" y="32" fill="white" font-family="Inter,-apple-system,BlinkMacSystemFont,system-ui,sans-serif" font-size="24" font-weight="800" letter-spacing="-0.8">medi</text>
+  <!-- Wordmark: "qzy" in gradient -->
+  <text x="120" y="32" fill="url(#wm-grad)" font-family="Inter,-apple-system,BlinkMacSystemFont,system-ui,sans-serif" font-size="24" font-weight="800" letter-spacing="-0.8">qzy</text>
+</svg>

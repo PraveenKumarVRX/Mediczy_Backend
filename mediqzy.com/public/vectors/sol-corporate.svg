@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" fill="none">
+  <rect width="480" height="360" rx="24" fill="#06b6d4" fill-opacity="0.04"/>
+  <!-- Office building -->
+  <rect x="160" y="50" width="160" height="210" rx="8" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
+  <!-- Office windows grid -->
+  <g opacity="0.5">
+    <rect x="175" y="70" width="20" height="14" rx="2" fill="#14b8a6" opacity="0.15"/>
+    <rect x="205" y="70" width="20" height="14" rx="2" fill="#06b6d4" opacity="0.15"/>
+    <rect x="235" y="70" width="20" height="14" rx="2" fill="#14b8a6" opacity="0.1"/>
+    <rect x="265" y="70" width="20" height="14" rx="2" fill="#06b6d4" opacity="0.15"/>
+    <rect x="175" y="95" width="20" height="14" rx="2" fill="#06b6d4" opacity="0.1"/>
+    <rect x="205" y="95" width="20" height="14" rx="2" fill="#14b8a6" opacity="0.15"/>
+    <rect x="235" y="95" width="20" height="14" rx="2" fill="#06b6d4" opacity="0.15"/>
+    <rect x="265" y="95" width="20" height="14" rx="2" fill="#14b8a6" opacity="0.1"/>
+    <rect x="175" y="120" width="20" height="14" rx="2" fill="#14b8a6" opacity="0.15"/>
+    <rect x="205" y="120" width="20" height="14" rx="2" fill="#06b6d4" opacity="0.1"/>
+    <rect x="235" y="120" width="20" height="14" rx="2" fill="#14b8a6" opacity="0.1"/>
+    <rect x="265" y="120" width="20" height="14" rx="2" fill="#06b6d4" opacity="0.15"/>
+  </g>
+  <!-- Corporate sign -->
+  <rect x="195" y="150" width="90" height="18" rx="4" fill="#1e293b" stroke="#14b8a6" stroke-width="0.5" stroke-opacity="0.3"/>
+  <text x="210" y="163" font-size="7" fill="#14b8a6" font-family="system-ui">ACME Corp</text>
+  <!-- Lobby entrance -->
+  <rect x="210" y="210" width="60" height="50" rx="4" fill="#1e293b" stroke="#14b8a6" stroke-width="0.6" stroke-opacity="0.3"/>
+  <!-- Employees walking in -->
+  <!-- Person 1 -->
+  <g transform="translate(140, 210)">
+    <circle cx="10" cy="8" r="7" fill="#f8d7a4"/>
+    <rect x="3" y="16" width="14" height="20" rx="4" fill="#3b82f6" opacity="0.6"/>
+    <rect x="5" y="36" width="5" height="14" rx="2" fill="#475569"/>
+    <rect x="12" y="36" width="5" height="14" rx="2" fill="#475569"/>
+  </g>
+  <!-- Person 2 -->
+  <g transform="translate(170, 215)">
+    <circle cx="10" cy="8" r="7" fill="#c68642"/>
+    <rect x="3" y="16" width="14" height="20" rx="4" fill="#14b8a6" opacity="0.4"/>
+    <rect x="5" y="36" width="5" height="12" rx="2" fill="#475569"/>
+    <rect x="12" y="36" width="5" height="12" rx="2" fill="#475569"/>
+  </g>
+  <!-- Person 3 -->
+  <g transform="translate(290, 212)">
+    <circle cx="10" cy="8" r="7" fill="#deb887"/>
+    <rect x="3" y="16" width="14" height="20" rx="4" fill="#8b5cf6" opacity="0.4"/>
+    <rect x="5" y="36" width="5" height="13" rx="2" fill="#475569"/>
+    <rect x="12" y="36" width="5" height="13" rx="2" fill="#475569"/>
+  </g>
+  <!-- Wellness dashboard card -->
+  <g transform="translate(30, 30)">
+    <rect width="130" height="110" rx="10" fill="#1e293b" stroke="#14b8a6" stroke-width="0.8" stroke-opacity="0.4"/>
+    <text x="10" y="18" font-size="6.5" fill="#14b8a6" font-family="system-ui">🏃 Wellness Dashboard</text>
+    <line x1="10" y1="26" x2="120" y2="26" stroke="#334155" stroke-width="0.5"/>
+    <!-- Employee health score -->
+    <text x="10" y="42" font-size="5.5" fill="#94a3b8" font-family="system-ui">Org Health Score</text>
+    <text x="90" y="42" font-size="8" fill="#22c55e" font-weight="bold" font-family="system-ui">87</text>
+    <!-- Progress bar -->
+    <rect x="10" y="48" width="110" height="4" rx="2" fill="#334155"/>
+    <rect x="10" y="48" width="96" height="4" rx="2" fill="#22c55e" opacity="0.6"/>
+    <!-- Stats -->
+    <text x="10" y="64" font-size="5" fill="#94a3b8" font-family="system-ui">🧘 120 active in wellness</text>
+    <text x="10" y="76" font-size="5" fill="#94a3b8" font-family="system-ui">🏆 45 fitness streaks</text>
+    <text x="10" y="88" font-size="5" fill="#94a3b8" font-family="system-ui">📊 15% health improvement</text>
+    <text x="10" y="100" font-size="5" fill="#14b8a6" font-family="system-ui">🎯 Next: Health Camp Apr 20</text>
+  </g>
+  <!-- Leaderboard card -->
+  <g transform="translate(340, 30)">
+    <rect width="110" height="100" rx="10" fill="#1e293b" stroke="#f59e0b" stroke-width="0.6" stroke-opacity="0.3"/>
+    <text x="10" y="18" font-size="6.5" fill="#f59e0b" font-family="system-ui">🏆 Leaderboard</text>
+    <line x1="10" y1="26" x2="100" y2="26" stroke="#334155" stroke-width="0.5"/>
+    <text x="10" y="40" font-size="5" fill="#f59e0b" font-family="system-ui">🥇 Ankit S. • 2,450 pts</text>
+    <text x="10" y="53" font-size="5" fill="#94a3b8" font-family="system-ui">🥈 Priya R. • 2,280 pts</text>
+    <text x="10" y="66" font-size="5" fill="#94a3b8" font-family="system-ui">🥉 Karan M. • 2,100 pts</text>
+    <line x1="10" y1="74" x2="100" y2="74" stroke="#334155" stroke-width="0.3"/>
+    <text x="10" y="87" font-size="5" fill="#475569" font-family="system-ui">456 participants this month</text>
+  </g>
+  <!-- Health camp badge -->
+  <g transform="translate(340, 145)">
+    <rect width="110" height="55" rx="8" fill="#1e293b" stroke="#14b8a6" stroke-width="0.6" stroke-opacity="0.3"/>
+    <text x="10" y="18" font-size="6" fill="#14b8a6" font-family="system-ui">🏕 Health Camps</text>
+    <text x="10" y="32" font-size="5" fill="#94a3b8" font-family="system-ui">8 camps completed</text>
+    <text x="10" y="44" font-size="5" fill="#94a3b8" font-family="system-ui">1,200 employees screened</text>
+  </g>
+  <!-- Fitness tracking visualization -->
+  <g transform="translate(30, 155)">
+    <rect width="100" height="60" rx="8" fill="#1e293b" stroke="#06b6d4" stroke-width="0.6" stroke-opacity="0.3"/>
+    <text x="10" y="16" font-size="5.5" fill="#06b6d4" font-family="system-ui">Steps This Week</text>
+    <!-- Mini bar chart -->
+    <rect x="12" y="42" width="8" height="10" rx="1" fill="#14b8a6" opacity="0.4"/>
+    <rect x="24" y="35" width="8" height="17" rx="1" fill="#14b8a6" opacity="0.5"/>
+    <rect x="36" y="30" width="8" height="22" rx="1" fill="#14b8a6" opacity="0.6"/>
+    <rect x="48" y="38" width="8" height="14" rx="1" fill="#14b8a6" opacity="0.4"/>
+    <rect x="60" y="25" width="8" height="27" rx="1" fill="#06b6d4" opacity="0.6"/>
+    <rect x="72" y="32" width="8" height="20" rx="1" fill="#14b8a6" opacity="0.5"/>
+    <rect x="84" y="40" width="8" height="12" rx="1" fill="#14b8a6" opacity="0.3"/>
+    <text x="10" y="56" font-size="4.5" fill="#475569" font-family="system-ui">M  T  W  T  F  S  S</text>
+  </g>
+  <!-- Ground line -->
+  <rect x="100" y="260" width="280" height="3" rx="1.5" fill="#1e293b"/>
+</svg>

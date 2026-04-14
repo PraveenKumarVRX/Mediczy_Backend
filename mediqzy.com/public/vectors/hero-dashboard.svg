@@ -1,0 +1,294 @@
+<svg width="960" height="640" viewBox="0 0 960 640" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="960" y2="640">
+      <stop stop-color="#0B1120"/><stop offset="1" stop-color="#0F1D32"/>
+    </linearGradient>
+    <linearGradient id="tealGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#14b8a6"/><stop offset="1" stop-color="#06b6d4"/>
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="rgba(255,255,255,0.06)"/><stop offset="1" stop-color="rgba(255,255,255,0.02)"/>
+    </linearGradient>
+    <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#14b8a6" stop-opacity="0.3"/><stop offset="1" stop-color="#14b8a6" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="chartFill2" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#8b5cf6" stop-opacity="0.2"/><stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="sideGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#0D1526"/><stop offset="1" stop-color="#0B1120"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <filter id="cardShadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="12" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+    <clipPath id="roundFrame"><rect width="960" height="640" rx="20"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#roundFrame)">
+    <!-- Background -->
+    <rect width="960" height="640" fill="url(#bg)"/>
+    <!-- Subtle grid -->
+    <g opacity="0.03">
+      <line x1="0" y1="80" x2="960" y2="80" stroke="#fff"/>
+      <line x1="0" y1="160" x2="960" y2="160" stroke="#fff"/>
+      <line x1="0" y1="240" x2="960" y2="240" stroke="#fff"/>
+      <line x1="0" y1="320" x2="960" y2="320" stroke="#fff"/>
+      <line x1="0" y1="400" x2="960" y2="400" stroke="#fff"/>
+      <line x1="0" y1="480" x2="960" y2="480" stroke="#fff"/>
+      <line x1="0" y1="560" x2="960" y2="560" stroke="#fff"/>
+      <line x1="200" y1="0" x2="200" y2="640" stroke="#fff"/>
+      <line x1="400" y1="0" x2="400" y2="640" stroke="#fff"/>
+      <line x1="600" y1="0" x2="600" y2="640" stroke="#fff"/>
+      <line x1="800" y1="0" x2="800" y2="640" stroke="#fff"/>
+    </g>
+    <!-- Ambient glow orbs -->
+    <circle cx="700" cy="150" r="200" fill="#14b8a6" opacity="0.04"/>
+    <circle cx="200" cy="500" r="180" fill="#8b5cf6" opacity="0.03"/>
+    <circle cx="500" cy="350" r="250" fill="#06b6d4" opacity="0.02"/>
+
+    <!-- Frame border -->
+    <rect x="0.5" y="0.5" width="959" height="639" rx="20" stroke="#fff" stroke-opacity="0.06" fill="none"/>
+
+    <!-- ═══ TOP BAR ═══ -->
+    <rect x="0" y="0" width="960" height="52" fill="#0B1120"/>
+    <rect x="0" y="51" width="960" height="1" fill="#fff" fill-opacity="0.06"/>
+    <!-- Traffic lights -->
+    <circle cx="24" cy="26" r="6" fill="#EF4444" opacity="0.8"/>
+    <circle cx="44" cy="26" r="6" fill="#F59E0B" opacity="0.8"/>
+    <circle cx="64" cy="26" r="6" fill="#22C55E" opacity="0.8"/>
+    <!-- Title -->
+    <text x="96" y="30" fill="#14b8a6" font-family="system-ui" font-size="13" font-weight="700">Mediqzy</text>
+    <text x="158" y="30" fill="#475569" font-family="system-ui" font-size="12">Hospital Operating System</text>
+    <!-- Search bar -->
+    <rect x="360" y="14" width="240" height="26" rx="13" fill="#fff" fill-opacity="0.04" stroke="#fff" stroke-opacity="0.08"/>
+    <text x="380" y="31" fill="#475569" font-family="system-ui" font-size="11">⌘ Search patients, modules...</text>
+    <!-- Right icons -->
+    <circle cx="850" cy="26" r="4" fill="#22C55E"/>
+    <text x="860" y="30" fill="#64748b" font-family="system-ui" font-size="10">Online</text>
+    <rect x="900" y="16" width="36" height="20" rx="10" fill="#14b8a6" fill-opacity="0.15"/>
+    <text x="909" y="30" fill="#14b8a6" font-family="system-ui" font-size="10" font-weight="600">DR</text>
+
+    <!-- ═══ SIDEBAR ═══ -->
+    <rect x="0" y="52" width="180" height="588" fill="url(#sideGrad)"/>
+    <rect x="179" y="52" width="1" height="588" fill="#fff" fill-opacity="0.04"/>
+
+    <!-- Active item -->
+    <rect x="12" y="68" width="156" height="36" rx="10" fill="#14b8a6" fill-opacity="0.12"/>
+    <rect x="12" y="68" width="3" height="36" rx="1.5" fill="#14b8a6"/>
+    <text x="28" y="90" fill="#14b8a6" font-family="system-ui" font-size="12" font-weight="600">◉ Dashboard</text>
+
+    <!-- Menu items -->
+    <text x="28" y="128" fill="#64748b" font-family="system-ui" font-size="11" font-weight="500">👤 Patients</text>
+    <text x="28" y="158" fill="#64748b" font-family="system-ui" font-size="11" font-weight="500">📅 Appointments</text>
+    <text x="28" y="188" fill="#64748b" font-family="system-ui" font-size="11" font-weight="500">🏥 OPD / IPD</text>
+    <text x="28" y="218" fill="#64748b" font-family="system-ui" font-size="11" font-weight="500">🔬 Lab / Radiology</text>
+    <text x="28" y="248" fill="#64748b" font-family="system-ui" font-size="11" font-weight="500">💊 Pharmacy</text>
+    <text x="28" y="278" fill="#64748b" font-family="system-ui" font-size="11" font-weight="500">🛡️ Insurance</text>
+    <text x="28" y="308" fill="#64748b" font-family="system-ui" font-size="11" font-weight="500">📊 Analytics</text>
+    <text x="28" y="338" fill="#64748b" font-family="system-ui" font-size="11" font-weight="500">🤖 AI Scribe</text>
+    <text x="28" y="368" fill="#64748b" font-family="system-ui" font-size="11" font-weight="500">📹 Telemedicine</text>
+    <text x="28" y="398" fill="#64748b" font-family="system-ui" font-size="11" font-weight="500">🚑 Ambulance</text>
+    <text x="28" y="428" fill="#64748b" font-family="system-ui" font-size="11" font-weight="500">🏠 Homecare</text>
+    <text x="28" y="458" fill="#64748b" font-family="system-ui" font-size="11" font-weight="500">🏢 Corporate</text>
+    <text x="28" y="488" fill="#64748b" font-family="system-ui" font-size="11" font-weight="500">📡 Communication</text>
+    <text x="28" y="518" fill="#64748b" font-family="system-ui" font-size="11" font-weight="500">🔒 Security</text>
+    <text x="28" y="548" fill="#64748b" font-family="system-ui" font-size="11" font-weight="500">👥 HR &amp; Payroll</text>
+    <text x="28" y="578" fill="#64748b" font-family="system-ui" font-size="11" font-weight="500">⚙️ Settings</text>
+
+    <!-- Sidebar bottom card -->
+    <rect x="12" y="596" width="156" height="36" rx="8" fill="#14b8a6" fill-opacity="0.06" stroke="#14b8a6" stroke-opacity="0.15"/>
+    <text x="26" y="618" fill="#14b8a6" font-family="system-ui" font-size="10" font-weight="600">✨ AI Assistant Active</text>
+
+    <!-- ═══ MAIN CONTENT ═══ -->
+
+    <!-- Header row -->
+    <text x="200" y="82" fill="#f8fafc" font-family="system-ui" font-size="18" font-weight="700">Dashboard</text>
+    <text x="200" y="100" fill="#475569" font-family="system-ui" font-size="11">Monday, 14 April 2026 · City General Hospital</text>
+
+    <!-- ═══ STAT CARDS ROW (4 cards) ═══ -->
+
+    <!-- Card 1: Patients Today -->
+    <rect x="200" y="114" width="172" height="90" rx="14" fill="url(#cardGrad)" stroke="#fff" stroke-opacity="0.06" filter="url(#cardShadow)"/>
+    <text x="220" y="140" fill="#94a3b8" font-family="system-ui" font-size="10" font-weight="600" letter-spacing="0.5">PATIENTS TODAY</text>
+    <text x="220" y="172" fill="#f8fafc" font-family="system-ui" font-size="28" font-weight="800">284</text>
+    <rect x="280" y="156" width="40" height="18" rx="9" fill="#22C55E" fill-opacity="0.12"/>
+    <text x="290" y="169" fill="#22C55E" font-family="system-ui" font-size="10" font-weight="700">+12%</text>
+    <text x="220" y="193" fill="#475569" font-family="system-ui" font-size="9">142 OPD · 98 IPD · 44 ER</text>
+
+    <!-- Card 2: Revenue -->
+    <rect x="388" y="114" width="172" height="90" rx="14" fill="url(#cardGrad)" stroke="#fff" stroke-opacity="0.06" filter="url(#cardShadow)"/>
+    <text x="408" y="140" fill="#94a3b8" font-family="system-ui" font-size="10" font-weight="600" letter-spacing="0.5">REVENUE TODAY</text>
+    <text x="408" y="172" fill="#f8fafc" font-family="system-ui" font-size="28" font-weight="800">$48.2K</text>
+    <rect x="498" y="156" width="36" height="18" rx="9" fill="#22C55E" fill-opacity="0.12"/>
+    <text x="507" y="169" fill="#22C55E" font-family="system-ui" font-size="10" font-weight="700">+8%</text>
+    <text x="408" y="193" fill="#475569" font-family="system-ui" font-size="9">Claims: $31K · OOP: $17K</text>
+
+    <!-- Card 3: Claims -->
+    <rect x="576" y="114" width="172" height="90" rx="14" fill="url(#cardGrad)" stroke="#fff" stroke-opacity="0.06" filter="url(#cardShadow)"/>
+    <text x="596" y="140" fill="#94a3b8" font-family="system-ui" font-size="10" font-weight="600" letter-spacing="0.5">CLAIMS PROCESSED</text>
+    <text x="596" y="172" fill="#f8fafc" font-family="system-ui" font-size="28" font-weight="800">67</text>
+    <rect x="640" y="156" width="44" height="18" rx="9" fill="#22C55E" fill-opacity="0.12"/>
+    <text x="649" y="169" fill="#22C55E" font-family="system-ui" font-size="10" font-weight="700">+24%</text>
+    <text x="596" y="193" fill="#475569" font-family="system-ui" font-size="9">Approved: 52 · Pending: 15</text>
+
+    <!-- Card 4: Bed Occupancy -->
+    <rect x="764" y="114" width="172" height="90" rx="14" fill="url(#cardGrad)" stroke="#fff" stroke-opacity="0.06" filter="url(#cardShadow)"/>
+    <text x="784" y="140" fill="#94a3b8" font-family="system-ui" font-size="10" font-weight="600" letter-spacing="0.5">BED OCCUPANCY</text>
+    <text x="784" y="172" fill="#f8fafc" font-family="system-ui" font-size="28" font-weight="800">87%</text>
+    <rect x="840" y="156" width="52" height="18" rx="9" fill="#F59E0B" fill-opacity="0.12"/>
+    <text x="849" y="169" fill="#F59E0B" font-family="system-ui" font-size="10" font-weight="700">Near Full</text>
+    <text x="784" y="193" fill="#475569" font-family="system-ui" font-size="9">218 / 250 beds occupied</text>
+
+    <!-- ═══ CHART: Revenue Trend ═══ -->
+    <rect x="200" y="220" width="370" height="200" rx="14" fill="url(#cardGrad)" stroke="#fff" stroke-opacity="0.06" filter="url(#cardShadow)"/>
+    <text x="220" y="248" fill="#f8fafc" font-family="system-ui" font-size="13" font-weight="700">Revenue &amp; Claims Trend</text>
+    <text x="500" y="248" fill="#475569" font-family="system-ui" font-size="10" text-anchor="end">Last 7 days</text>
+
+    <!-- Y-axis labels -->
+    <text x="222" y="278" fill="#334155" font-family="system-ui" font-size="8">$60K</text>
+    <text x="222" y="308" fill="#334155" font-family="system-ui" font-size="8">$40K</text>
+    <text x="222" y="338" fill="#334155" font-family="system-ui" font-size="8">$20K</text>
+    <text x="222" y="368" fill="#334155" font-family="system-ui" font-size="8">$10K</text>
+    <!-- Grid lines -->
+    <line x1="248" y1="275" x2="550" y2="275" stroke="#fff" stroke-opacity="0.03"/>
+    <line x1="248" y1="305" x2="550" y2="305" stroke="#fff" stroke-opacity="0.03"/>
+    <line x1="248" y1="335" x2="550" y2="335" stroke="#fff" stroke-opacity="0.03"/>
+    <line x1="248" y1="365" x2="550" y2="365" stroke="#fff" stroke-opacity="0.03"/>
+    <!-- X-axis labels -->
+    <text x="270" y="395" fill="#334155" font-family="system-ui" font-size="8">Mon</text>
+    <text x="318" y="395" fill="#334155" font-family="system-ui" font-size="8">Tue</text>
+    <text x="366" y="395" fill="#334155" font-family="system-ui" font-size="8">Wed</text>
+    <text x="414" y="395" fill="#334155" font-family="system-ui" font-size="8">Thu</text>
+    <text x="462" y="395" fill="#334155" font-family="system-ui" font-size="8">Fri</text>
+    <text x="510" y="395" fill="#334155" font-family="system-ui" font-size="8">Sat</text>
+
+    <!-- Revenue area fill -->
+    <path d="M270 360 L318 340 L366 325 L414 310 L462 290 L510 280 L540 270 L540 385 L270 385 Z" fill="url(#chartFill)"/>
+    <!-- Revenue line -->
+    <polyline points="270,360 318,340 366,325 414,310 462,290 510,280 540,270" stroke="#14b8a6" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Claims area fill -->
+    <path d="M270 375 L318 365 L366 350 L414 345 L462 330 L510 320 L540 305 L540 385 L270 385 Z" fill="url(#chartFill2)"/>
+    <!-- Claims line -->
+    <polyline points="270,375 318,365 366,350 414,345 462,330 510,320 540,305" stroke="#8b5cf6" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6 3"/>
+    <!-- Data points -->
+    <circle cx="540" cy="270" r="4" fill="#14b8a6"/>
+    <circle cx="540" cy="305" r="4" fill="#8b5cf6"/>
+    <!-- Legend -->
+    <rect x="220" y="405" width="8" height="3" rx="1.5" fill="#14b8a6"/>
+    <text x="232" y="409" fill="#64748b" font-family="system-ui" font-size="8">Revenue</text>
+    <rect x="280" y="405" width="8" height="3" rx="1.5" fill="#8b5cf6"/>
+    <text x="292" y="409" fill="#64748b" font-family="system-ui" font-size="8">Claims</text>
+
+    <!-- ═══ AI SCRIBE LIVE PANEL ═══ -->
+    <rect x="586" y="220" width="350" height="200" rx="14" fill="url(#cardGrad)" stroke="#14b8a6" stroke-opacity="0.15" filter="url(#cardShadow)"/>
+    <rect x="606" y="240" width="8" height="8" rx="4" fill="#22C55E">
+      <animate attributeName="opacity" values="1;0.3;1" dur="1.5s" repeatCount="indefinite"/>
+    </rect>
+    <text x="620" y="248" fill="#14b8a6" font-family="system-ui" font-size="11" font-weight="700">AI Scribe — Live Transcription</text>
+    <text x="860" y="248" fill="#334155" font-family="system-ui" font-size="9" text-anchor="end">Room 204</text>
+
+    <!-- Transcription text -->
+    <text x="606" y="272" fill="#94a3b8" font-family="system-ui" font-size="9" font-weight="600">Dr. Vikram — Cardiology Consult</text>
+    <rect x="606" y="280" width="310" height="1" fill="#fff" fill-opacity="0.04"/>
+    <text x="606" y="298" fill="#cbd5e1" font-family="system-ui" font-size="9">"Patient presents with chest tightness for 3 days.</text>
+    <text x="606" y="312" fill="#cbd5e1" font-family="system-ui" font-size="9">No radiation. Mild SOB on exertion. Previous MI in</text>
+    <text x="606" y="326" fill="#cbd5e1" font-family="system-ui" font-size="9">2024. Currently on Aspirin 75mg, Atorvastatin 40mg."</text>
+    <text x="606" y="348" fill="#475569" font-family="system-ui" font-size="8">Auto-generated:</text>
+    <rect x="606" y="354" width="130" height="18" rx="4" fill="#14b8a6" fill-opacity="0.08"/>
+    <text x="614" y="367" fill="#14b8a6" font-family="system-ui" font-size="8" font-weight="600">Dx: Angina Pectoris (ICD: I20.9)</text>
+    <rect x="742" y="354" width="90" height="18" rx="4" fill="#8b5cf6" fill-opacity="0.08"/>
+    <text x="750" y="367" fill="#8b5cf6" font-family="system-ui" font-size="8" font-weight="600">Rx: Auto-generated ✓</text>
+
+    <!-- Audio waveform visualization -->
+    <g transform="translate(606, 385)">
+      <rect x="0" y="6" width="2" height="8" rx="1" fill="#14b8a6" opacity="0.6"><animate attributeName="height" values="8;16;8" dur="0.8s" repeatCount="indefinite"/></rect>
+      <rect x="6" y="4" width="2" height="12" rx="1" fill="#14b8a6" opacity="0.5"><animate attributeName="height" values="12;6;12" dur="0.6s" repeatCount="indefinite"/></rect>
+      <rect x="12" y="2" width="2" height="16" rx="1" fill="#14b8a6" opacity="0.7"><animate attributeName="height" values="16;8;16" dur="0.9s" repeatCount="indefinite"/></rect>
+      <rect x="18" y="5" width="2" height="10" rx="1" fill="#14b8a6" opacity="0.4"><animate attributeName="height" values="10;18;10" dur="0.7s" repeatCount="indefinite"/></rect>
+      <rect x="24" y="3" width="2" height="14" rx="1" fill="#14b8a6" opacity="0.6"><animate attributeName="height" values="14;6;14" dur="0.5s" repeatCount="indefinite"/></rect>
+      <rect x="30" y="6" width="2" height="8" rx="1" fill="#14b8a6" opacity="0.5"><animate attributeName="height" values="8;14;8" dur="0.8s" repeatCount="indefinite"/></rect>
+      <rect x="36" y="4" width="2" height="12" rx="1" fill="#14b8a6" opacity="0.7"><animate attributeName="height" values="12;4;12" dur="0.6s" repeatCount="indefinite"/></rect>
+    </g>
+    <text x="660" y="399" fill="#475569" font-family="system-ui" font-size="8">Recording · 04:32</text>
+
+    <!-- ═══ ACTIVE PATIENTS TABLE ═══ -->
+    <rect x="200" y="436" width="445" height="190" rx="14" fill="url(#cardGrad)" stroke="#fff" stroke-opacity="0.06" filter="url(#cardShadow)"/>
+    <text x="220" y="464" fill="#f8fafc" font-family="system-ui" font-size="13" font-weight="700">Active Patients</text>
+    <text x="576" y="464" fill="#14b8a6" font-family="system-ui" font-size="10" text-anchor="end" font-weight="600">View All →</text>
+
+    <!-- Table header -->
+    <rect x="212" y="476" width="421" height="24" rx="6" fill="#fff" fill-opacity="0.03"/>
+    <text x="226" y="492" fill="#64748b" font-family="system-ui" font-size="9" font-weight="700">Patient</text>
+    <text x="340" y="492" fill="#64748b" font-family="system-ui" font-size="9" font-weight="700">Department</text>
+    <text x="450" y="492" fill="#64748b" font-family="system-ui" font-size="9" font-weight="700">Status</text>
+    <text x="550" y="492" fill="#64748b" font-family="system-ui" font-size="9" font-weight="700">Claim</text>
+
+    <!-- Row 1 -->
+    <circle cx="230" cy="520" r="10" fill="#14b8a6" fill-opacity="0.15"/>
+    <text x="230" y="524" fill="#14b8a6" font-family="system-ui" font-size="8" font-weight="700" text-anchor="middle">RM</text>
+    <text x="248" y="524" fill="#e2e8f0" font-family="system-ui" font-size="10" font-weight="500">Rajesh M.</text>
+    <text x="340" y="524" fill="#94a3b8" font-family="system-ui" font-size="10">Cardiology</text>
+    <rect x="440" y="512" width="56" height="18" rx="9" fill="#22C55E" fill-opacity="0.1"/>
+    <text x="455" y="525" fill="#22C55E" font-family="system-ui" font-size="9" font-weight="600">Active</text>
+    <rect x="540" y="512" width="64" height="18" rx="9" fill="#14b8a6" fill-opacity="0.1"/>
+    <text x="555" y="525" fill="#14b8a6" font-family="system-ui" font-size="9" font-weight="600">Pre-auth</text>
+
+    <!-- Row 2 -->
+    <circle cx="230" cy="550" r="10" fill="#8b5cf6" fill-opacity="0.15"/>
+    <text x="230" y="554" fill="#8b5cf6" font-family="system-ui" font-size="8" font-weight="700" text-anchor="middle">PS</text>
+    <text x="248" y="554" fill="#e2e8f0" font-family="system-ui" font-size="10" font-weight="500">Priya S.</text>
+    <text x="340" y="554" fill="#94a3b8" font-family="system-ui" font-size="10">Orthopaedics</text>
+    <rect x="440" y="542" width="56" height="18" rx="9" fill="#F59E0B" fill-opacity="0.1"/>
+    <text x="452" y="555" fill="#F59E0B" font-family="system-ui" font-size="9" font-weight="600">Waiting</text>
+    <rect x="540" y="542" width="64" height="18" rx="9" fill="#22C55E" fill-opacity="0.1"/>
+    <text x="549" y="555" fill="#22C55E" font-family="system-ui" font-size="9" font-weight="600">Approved</text>
+
+    <!-- Row 3 -->
+    <circle cx="230" cy="580" r="10" fill="#06b6d4" fill-opacity="0.15"/>
+    <text x="230" y="584" fill="#06b6d4" font-family="system-ui" font-size="8" font-weight="700" text-anchor="middle">AD</text>
+    <text x="248" y="584" fill="#e2e8f0" font-family="system-ui" font-size="10" font-weight="500">Amit D.</text>
+    <text x="340" y="584" fill="#94a3b8" font-family="system-ui" font-size="10">General Med</text>
+    <rect x="440" y="572" width="56" height="18" rx="9" fill="#3B82F6" fill-opacity="0.1"/>
+    <text x="453" y="585" fill="#3B82F6" font-family="system-ui" font-size="9" font-weight="600">Review</text>
+    <rect x="540" y="572" width="64" height="18" rx="9" fill="#F59E0B" fill-opacity="0.1"/>
+    <text x="552" y="585" fill="#F59E0B" font-family="system-ui" font-size="9" font-weight="600">Pending</text>
+
+    <!-- Row 4 -->
+    <circle cx="230" cy="610" r="10" fill="#ec4899" fill-opacity="0.15"/>
+    <text x="230" y="614" fill="#ec4899" font-family="system-ui" font-size="8" font-weight="700" text-anchor="middle">SK</text>
+    <text x="248" y="614" fill="#e2e8f0" font-family="system-ui" font-size="10" font-weight="500">Sarah K.</text>
+    <text x="340" y="614" fill="#94a3b8" font-family="system-ui" font-size="10">Neurology</text>
+    <rect x="440" y="602" width="56" height="18" rx="9" fill="#22C55E" fill-opacity="0.1"/>
+    <text x="455" y="615" fill="#22C55E" font-family="system-ui" font-size="9" font-weight="600">Active</text>
+    <rect x="540" y="602" width="64" height="18" rx="9" fill="#22C55E" fill-opacity="0.1"/>
+    <text x="549" y="615" fill="#22C55E" font-family="system-ui" font-size="9" font-weight="600">Approved</text>
+
+    <!-- ═══ RIGHT COLUMN: LIVE ACTIVITY + QUICK ACTIONS ═══ -->
+
+    <!-- Live Activity Feed -->
+    <rect x="661" y="436" width="275" height="110" rx="14" fill="url(#cardGrad)" stroke="#fff" stroke-opacity="0.06" filter="url(#cardShadow)"/>
+    <text x="681" y="460" fill="#f8fafc" font-family="system-ui" font-size="12" font-weight="700">Live Activity</text>
+
+    <circle cx="685" cy="484" r="4" fill="#22C55E"/><text x="697" y="488" fill="#cbd5e1" font-family="system-ui" font-size="9">Claim #4521 approved — $2.4K</text>
+    <text x="900" y="488" fill="#334155" font-family="system-ui" font-size="8" text-anchor="end">2m</text>
+    <circle cx="685" cy="504" r="4" fill="#14b8a6"/><text x="697" y="508" fill="#cbd5e1" font-family="system-ui" font-size="9">Patient discharged — Room 108</text>
+    <text x="900" y="508" fill="#334155" font-family="system-ui" font-size="8" text-anchor="end">5m</text>
+    <circle cx="685" cy="524" r="4" fill="#F59E0B"/><text x="697" y="528" fill="#cbd5e1" font-family="system-ui" font-size="9">Lab results ready — CBC, LFT</text>
+    <text x="900" y="528" fill="#334155" font-family="system-ui" font-size="8" text-anchor="end">8m</text>
+
+    <!-- Quick Actions -->
+    <rect x="661" y="558" width="275" height="68" rx="14" fill="url(#cardGrad)" stroke="#fff" stroke-opacity="0.06" filter="url(#cardShadow)"/>
+    <text x="681" y="582" fill="#f8fafc" font-family="system-ui" font-size="12" font-weight="700">Quick Actions</text>
+
+    <rect x="681" y="592" width="72" height="22" rx="6" fill="#14b8a6" fill-opacity="0.1" stroke="#14b8a6" stroke-opacity="0.2"/>
+    <text x="695" y="607" fill="#14b8a6" font-family="system-ui" font-size="8" font-weight="600">+ Admit</text>
+    <rect x="761" y="592" width="72" height="22" rx="6" fill="#8b5cf6" fill-opacity="0.1" stroke="#8b5cf6" stroke-opacity="0.2"/>
+    <text x="773" y="607" fill="#8b5cf6" font-family="system-ui" font-size="8" font-weight="600">+ Claim</text>
+    <rect x="841" y="592" width="76" height="22" rx="6" fill="#06b6d4" fill-opacity="0.1" stroke="#06b6d4" stroke-opacity="0.2"/>
+    <text x="853" y="607" fill="#06b6d4" font-family="system-ui" font-size="8" font-weight="600">📹 Consult</text>
+  </g>
+</svg>

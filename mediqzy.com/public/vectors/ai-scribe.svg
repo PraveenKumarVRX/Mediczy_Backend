@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" fill="none">
+  <rect width="480" height="360" rx="24" fill="#14b8a6" fill-opacity="0.03"/>
+  <!-- Voice waveform on left -->
+  <g transform="translate(30, 80)">
+    <!-- Microphone icon -->
+    <rect x="20" y="0" width="24" height="36" rx="12" fill="#1e293b" stroke="#14b8a6" stroke-width="1"/>
+    <line x1="32" y1="40" x2="32" y2="55" stroke="#14b8a6" stroke-width="1.5"/>
+    <line x1="22" y1="55" x2="42" y2="55" stroke="#14b8a6" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M16 22 Q16 44 32 44 Q48 44 48 22" fill="none" stroke="#14b8a6" stroke-width="1" opacity="0.5"/>
+    <!-- Audio wave lines -->
+    <g transform="translate(60, 5)">
+      <rect x="0" y="10" width="3" height="14" rx="1.5" fill="#14b8a6" opacity="0.4"/>
+      <rect x="7" y="5" width="3" height="24" rx="1.5" fill="#14b8a6" opacity="0.6"/>
+      <rect x="14" y="0" width="3" height="34" rx="1.5" fill="#06b6d4" opacity="0.8"/>
+      <rect x="21" y="7" width="3" height="20" rx="1.5" fill="#14b8a6" opacity="0.5"/>
+      <rect x="28" y="2" width="3" height="30" rx="1.5" fill="#06b6d4" opacity="0.7"/>
+      <rect x="35" y="9" width="3" height="16" rx="1.5" fill="#14b8a6" opacity="0.4"/>
+      <rect x="42" y="4" width="3" height="26" rx="1.5" fill="#06b6d4" opacity="0.6"/>
+      <rect x="49" y="11" width="3" height="12" rx="1.5" fill="#14b8a6" opacity="0.3"/>
+    </g>
+    <!-- Speech text -->
+    <text x="60" y="55" font-size="5" fill="#64748b" font-family="system-ui" font-style="italic">"Patient presents with chronic lower</text>
+    <text x="60" y="63" font-size="5" fill="#64748b" font-family="system-ui" font-style="italic">back pain, radiating to left leg..."</text>
+  </g>
+  <!-- Transformation arrow -->
+  <g transform="translate(210, 140)">
+    <circle cx="30" cy="20" r="20" fill="#1e293b" stroke="#14b8a6" stroke-width="1"/>
+    <text x="18" y="24" font-size="10" fill="#14b8a6" font-family="system-ui">AI</text>
+    <!-- Sparkles -->
+    <circle cx="8" cy="5" r="2" fill="#06b6d4" opacity="0.6"/>
+    <circle cx="52" cy="8" r="1.5" fill="#14b8a6" opacity="0.5"/>
+    <circle cx="50" cy="35" r="1.8" fill="#06b6d4" opacity="0.4"/>
+  </g>
+  <!-- Structured medical note output -->
+  <g transform="translate(280, 40)">
+    <rect width="180" height="280" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
+    <rect width="180" height="32" rx="12" fill="#1e293b"/>
+    <text x="12" y="20" font-size="7" fill="#14b8a6" font-weight="bold" font-family="system-ui">📝 AI Scribe Output</text>
+    <!-- Chief Complaint -->
+    <text x="12" y="52" font-size="6" fill="#14b8a6" font-family="system-ui">Chief Complaint</text>
+    <rect x="12" y="56" width="156" height="20" rx="4" fill="#1e293b"/>
+    <text x="18" y="70" font-size="5" fill="#94a3b8" font-family="system-ui">Chronic lower back pain with L-leg radiculopathy</text>
+    <!-- History -->
+    <text x="12" y="92" font-size="6" fill="#14b8a6" font-family="system-ui">History of Present Illness</text>
+    <rect x="12" y="96" width="156" height="30" rx="4" fill="#1e293b"/>
+    <text x="18" y="108" font-size="5" fill="#94a3b8" font-family="system-ui">• Duration: 3 months, progressive</text>
+    <text x="18" y="118" font-size="5" fill="#94a3b8" font-family="system-ui">• Pain score: 7/10, worse on bending</text>
+    <!-- Examination -->
+    <text x="12" y="142" font-size="6" fill="#14b8a6" font-family="system-ui">Examination Findings</text>
+    <rect x="12" y="146" width="156" height="30" rx="4" fill="#1e293b"/>
+    <text x="18" y="158" font-size="5" fill="#94a3b8" font-family="system-ui">• SLR positive at 40° (Left)</text>
+    <text x="18" y="168" font-size="5" fill="#94a3b8" font-family="system-ui">• Tenderness L4-L5 region</text>
+    <!-- Diagnosis -->
+    <text x="12" y="192" font-size="6" fill="#14b8a6" font-family="system-ui">Provisional Diagnosis</text>
+    <rect x="12" y="196" width="156" height="16" rx="4" fill="#14b8a6" fill-opacity="0.1"/>
+    <text x="18" y="208" font-size="5" fill="#14b8a6" font-family="system-ui">L4-L5 Lumbar Disc Herniation (ICD: M51.16)</text>
+    <!-- Prescription -->
+    <text x="12" y="232" font-size="6" fill="#06b6d4" font-family="system-ui">Auto-Generated Prescription</text>
+    <rect x="12" y="236" width="156" height="30" rx="4" fill="#06b6d4" fill-opacity="0.06"/>
+    <text x="18" y="248" font-size="5" fill="#94a3b8" font-family="system-ui">1. Tab Pregabalin 75mg BD × 14 days</text>
+    <text x="18" y="258" font-size="5" fill="#94a3b8" font-family="system-ui">2. Tab Etoricoxib 90mg OD × 7 days</text>
+  </g>
+  <!-- Doctor caricature bottom left -->
+  <g transform="translate(50, 215)">
+    <circle cx="25" cy="15" r="15" fill="#f8d7a4"/>
+    <!-- Stethoscope -->
+    <path d="M12 28 Q12 50 25 50 Q38 50 38 28" fill="none" stroke="#6b7280" stroke-width="1.5"/>
+    <circle cx="25" cy="52" r="4" fill="#6b7280"/>
+    <!-- White coat -->
+    <rect x="8" y="28" width="34" height="40" rx="6" fill="white" opacity="0.9"/>
+    <line x1="25" y1="28" x2="25" y2="68" stroke="#e2e8f0" stroke-width="0.5"/>
+    <!-- Speaking indicator -->
+    <g transform="translate(45, 5)">
+      <circle cx="0" cy="0" r="3" fill="#22c55e" opacity="0.6"/>
+      <circle cx="8" cy="-3" r="2" fill="#22c55e" opacity="0.4"/>
+      <circle cx="14" cy="-5" r="1.5" fill="#22c55e" opacity="0.3"/>
+    </g>
+  </g>
+  <!-- Badge -->
+  <g transform="translate(120, 300)">
+    <rect width="100" height="24" rx="12" fill="#14b8a6" fill-opacity="0.15" stroke="#14b8a6" stroke-width="0.5" stroke-opacity="0.3"/>
+    <text x="10" y="16" font-size="6" fill="#14b8a6" font-family="system-ui">⚡ 80% Time Saved</text>
+  </g>
+</svg>

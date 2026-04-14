@@ -1,0 +1,37 @@
+<svg width="860" height="620" viewBox="0 0 860 620" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="860" y2="620" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F5FBFF"/>
+      <stop offset="1" stop-color="#EAF6FF"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F2FAFF"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="858" height="618" rx="30" fill="url(#bg)" stroke="#CFE8FA"/>
+  <rect x="48" y="66" width="764" height="84" rx="18" fill="url(#card)" stroke="#D8EFFF"/>
+  <circle cx="88" cy="108" r="12" fill="#86C8FF"/>
+  <rect x="118" y="95" width="180" height="12" rx="6" fill="#A5D6FA"/>
+  <rect x="118" y="114" width="112" height="10" rx="5" fill="#D1EAFC"/>
+  <rect x="637" y="91" width="130" height="34" rx="10" fill="#0C4A6E"/>
+  <rect x="72" y="190" width="338" height="176" rx="20" fill="url(#card)" stroke="#D8EFFF"/>
+  <rect x="92" y="220" width="155" height="11" rx="5.5" fill="#9ED2F7"/>
+  <rect x="92" y="243" width="276" height="10" rx="5" fill="#D1EAFC"/>
+  <rect x="92" y="261" width="226" height="10" rx="5" fill="#D1EAFC"/>
+  <rect x="92" y="298" width="294" height="42" rx="12" fill="#EAF6FF"/>
+  <circle cx="116" cy="319" r="9" fill="#38BDF8"/>
+  <rect x="133" y="314" width="152" height="10" rx="5" fill="#9ED2F7"/>
+  <rect x="442" y="190" width="338" height="176" rx="20" fill="url(#card)" stroke="#D8EFFF"/>
+  <rect x="462" y="220" width="140" height="11" rx="5.5" fill="#9ED2F7"/>
+  <rect x="462" y="243" width="210" height="10" rx="5" fill="#D1EAFC"/>
+  <rect x="462" y="267" width="286" height="84" rx="14" fill="#0EA5E9"/>
+  <rect x="72" y="394" width="338" height="160" rx="20" fill="url(#card)" stroke="#D8EFFF"/>
+  <rect x="92" y="424" width="140" height="11" rx="5.5" fill="#9ED2F7"/>
+  <rect x="92" y="447" width="276" height="10" rx="5" fill="#D1EAFC"/>
+  <rect x="92" y="476" width="292" height="54" rx="13" fill="#EAF6FF"/>
+  <rect x="442" y="394" width="338" height="160" rx="20" fill="url(#card)" stroke="#D8EFFF"/>
+  <path d="M476 512C501 483 526 488 549 501C574 515 598 527 628 498C655 472 681 476 706 490" stroke="#0EA5E9" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="706" cy="490" r="9" fill="#0EA5E9"/>
+  <circle cx="476" cy="512" r="9" fill="#0EA5E9"/>
+</svg>

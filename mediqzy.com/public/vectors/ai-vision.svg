@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" fill="none">
+  <rect width="480" height="360" rx="24" fill="#06b6d4" fill-opacity="0.03"/>
+  <!-- X-ray / Scan image on left -->
+  <g transform="translate(30, 30)">
+    <rect width="200" height="250" rx="12" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
+    <rect width="200" height="28" rx="12" fill="#1e293b"/>
+    <text x="12" y="18" font-size="6.5" fill="#94a3b8" font-family="system-ui">🔬 Medical Image Analysis</text>
+    <!-- Chest X-ray silhouette -->
+    <g transform="translate(30, 45)">
+      <!-- Ribcage outline -->
+      <ellipse cx="70" cy="75" rx="65" ry="80" fill="#1e293b" stroke="#334155" stroke-width="0.8"/>
+      <!-- Lungs -->
+      <ellipse cx="40" cy="65" rx="28" ry="50" fill="#1e293b" stroke="#475569" stroke-width="0.5" opacity="0.6"/>
+      <ellipse cx="100" cy="65" rx="28" ry="50" fill="#1e293b" stroke="#475569" stroke-width="0.5" opacity="0.6"/>
+      <!-- Spine -->
+      <line x1="70" y1="10" x2="70" y2="150" stroke="#475569" stroke-width="2" opacity="0.3"/>
+      <!-- Ribs -->
+      <path d="M30 35 Q70 25 110 35" fill="none" stroke="#475569" stroke-width="0.5" opacity="0.4"/>
+      <path d="M25 55 Q70 42 115 55" fill="none" stroke="#475569" stroke-width="0.5" opacity="0.4"/>
+      <path d="M22 75 Q70 60 118 75" fill="none" stroke="#475569" stroke-width="0.5" opacity="0.4"/>
+      <path d="M25 95 Q70 80 115 95" fill="none" stroke="#475569" stroke-width="0.5" opacity="0.4"/>
+      <!-- AI detected anomaly highlight -->
+      <circle cx="95" cy="50" r="18" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4 2" opacity="0.8"/>
+      <text x="82" y="78" font-size="5" fill="#ef4444" font-family="system-ui" opacity="0.8">Opacity</text>
+      <!-- Finding marker -->
+      <circle cx="95" cy="50" r="3" fill="#ef4444" opacity="0.6"/>
+      <!-- Confidence line -->
+      <line x1="113" y1="50" x2="140" y2="50" stroke="#ef4444" stroke-width="0.8" opacity="0.5" stroke-dasharray="2 2"/>
+    </g>
+    <!-- Scan type badge -->
+    <rect x="12" y="220" width="60" height="16" rx="8" fill="#334155"/>
+    <text x="22" y="231" font-size="5" fill="#94a3b8" font-family="system-ui">Chest PA</text>
+    <rect x="80" y="220" width="50" height="16" rx="8" fill="#14b8a6" fill-opacity="0.15"/>
+    <text x="88" y="231" font-size="5" fill="#14b8a6" font-family="system-ui">AI: ON</text>
+  </g>
+  <!-- AI Analysis panel -->
+  <g transform="translate(255, 30)">
+    <rect width="200" height="160" rx="12" fill="#0f172a" stroke="#14b8a6" stroke-width="0.8" stroke-opacity="0.4"/>
+    <rect width="200" height="28" rx="12" fill="#14b8a6" fill-opacity="0.1"/>
+    <text x="12" y="18" font-size="6.5" fill="#14b8a6" font-weight="bold" font-family="system-ui">🤖 AI Vision Findings</text>
+    <!-- Finding 1 -->
+    <g transform="translate(12, 40)">
+      <circle cx="5" cy="5" r="5" fill="#ef4444" opacity="0.2"/>
+      <text x="3" y="8" font-size="5" fill="#ef4444" font-family="system-ui">!</text>
+      <text x="15" y="8" font-size="5.5" fill="#f8fafc" font-family="system-ui">Right lower lobe opacity</text>
+      <rect x="15" y="12" width="100" height="4" rx="2" fill="#334155"/>
+      <rect x="15" y="12" width="88" height="4" rx="2" fill="#ef4444" opacity="0.5"/>
+      <text x="120" y="16" font-size="4.5" fill="#ef4444" font-family="system-ui">88%</text>
+    </g>
+    <!-- Finding 2 -->
+    <g transform="translate(12, 70)">
+      <circle cx="5" cy="5" r="5" fill="#f59e0b" opacity="0.2"/>
+      <text x="3" y="8" font-size="5" fill="#f59e0b" font-family="system-ui">⚠</text>
+      <text x="15" y="8" font-size="5.5" fill="#f8fafc" font-family="system-ui">Cardiomegaly suspected</text>
+      <rect x="15" y="12" width="100" height="4" rx="2" fill="#334155"/>
+      <rect x="15" y="12" width="72" height="4" rx="2" fill="#f59e0b" opacity="0.5"/>
+      <text x="120" y="16" font-size="4.5" fill="#f59e0b" font-family="system-ui">72%</text>
+    </g>
+    <!-- Finding 3 -->
+    <g transform="translate(12, 100)">
+      <circle cx="5" cy="5" r="5" fill="#22c55e" opacity="0.2"/>
+      <text x="3" y="8" font-size="5" fill="#22c55e" font-family="system-ui">✓</text>
+      <text x="15" y="8" font-size="5.5" fill="#f8fafc" font-family="system-ui">No pneumothorax</text>
+      <rect x="15" y="12" width="100" height="4" rx="2" fill="#334155"/>
+      <rect x="15" y="12" width="95" height="4" rx="2" fill="#22c55e" opacity="0.5"/>
+      <text x="120" y="16" font-size="4.5" fill="#22c55e" font-family="system-ui">95%</text>
+    </g>
+    <!-- Suggested actions -->
+    <text x="12" y="135" font-size="5" fill="#06b6d4" font-family="system-ui">Suggested: HRCT Chest, 2D Echo</text>
+    <text x="12" y="147" font-size="4.5" fill="#64748b" font-family="system-ui">Analysis time: 2.3s • Model: MediVision v3</text>
+  </g>
+  <!-- Drug suggestions panel -->
+  <g transform="translate(255, 205)">
+    <rect width="200" height="100" rx="10" fill="#0f172a" stroke="#06b6d4" stroke-width="0.6" stroke-opacity="0.3"/>
+    <text x="12" y="18" font-size="6" fill="#06b6d4" font-family="system-ui">💊 Suggested Treatment</text>
+    <line x1="12" y1="26" x2="188" y2="26" stroke="#334155" stroke-width="0.5"/>
+    <text x="12" y="42" font-size="5" fill="#94a3b8" font-family="system-ui">• Amoxicillin 500mg TID × 7d</text>
+    <text x="12" y="55" font-size="5" fill="#94a3b8" font-family="system-ui">• Tab Montelukast 10mg OD</text>
+    <text x="12" y="68" font-size="5" fill="#94a3b8" font-family="system-ui">• Chest physiotherapy advised</text>
+    <rect x="12" y="78" width="70" height="14" rx="7" fill="#14b8a6" fill-opacity="0.15"/>
+    <text x="20" y="88" font-size="5" fill="#14b8a6" font-family="system-ui">Accept All →</text>
+  </g>
+  <!-- Supported modalities -->
+  <g transform="translate(30, 295)">
+    <text x="0" y="10" font-size="5" fill="#64748b" font-family="system-ui">Supports:</text>
+    <rect x="50" y="0" width="45" height="16" rx="8" fill="#1e293b" stroke="#334155" stroke-width="0.5"/>
+    <text x="58" y="11" font-size="4.5" fill="#94a3b8" font-family="system-ui">X-Ray</text>
+    <rect x="102" y="0" width="35" height="16" rx="8" fill="#1e293b" stroke="#334155" stroke-width="0.5"/>
+    <text x="110" y="11" font-size="4.5" fill="#94a3b8" font-family="system-ui">CT</text>
+    <rect x="144" y="0" width="38" height="16" rx="8" fill="#1e293b" stroke="#334155" stroke-width="0.5"/>
+    <text x="152" y="11" font-size="4.5" fill="#94a3b8" font-family="system-ui">MRI</text>
+    <rect x="189" y="0" width="55" height="16" rx="8" fill="#1e293b" stroke="#334155" stroke-width="0.5"/>
+    <text x="197" y="11" font-size="4.5" fill="#94a3b8" font-family="system-ui">Pathology</text>
+    <rect x="251" y="0" width="60" height="16" rx="8" fill="#1e293b" stroke="#334155" stroke-width="0.5"/>
+    <text x="259" y="11" font-size="4.5" fill="#94a3b8" font-family="system-ui">Skin/Derm</text>
+  </g>
+</svg>

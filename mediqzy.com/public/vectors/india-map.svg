@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" fill="none">
+  <rect width="480" height="360" rx="24" fill="#14b8a6" fill-opacity="0.03"/>
+  <!-- India map outline (simplified) -->
+  <g transform="translate(100, 15)">
+    <path d="M160 10 L180 15 L195 8 L210 20 L225 18 L240 30 L250 45 L260 40 L270 50 L265 65 L275 80 L270 95 L280 110 L275 130 L265 140 L270 160 L260 175 L250 190 L235 200 L220 210 L205 225 L195 240 L180 255 L170 270 L155 280 L145 275 L130 265 L120 250 L110 240 L100 225 L90 210 L80 195 L70 180 L65 165 L60 150 L55 135 L50 120 L55 105 L60 90 L65 75 L75 60 L85 50 L95 40 L110 30 L125 22 L140 15 Z" fill="#14b8a6" fill-opacity="0.08" stroke="#14b8a6" stroke-width="1.5" stroke-opacity="0.4"/>
+    <!-- City dots with labels -->
+    <!-- Delhi -->
+    <circle cx="140" cy="60" r="5" fill="#14b8a6" opacity="0.8"/>
+    <circle cx="140" cy="60" r="8" fill="#14b8a6" opacity="0.15"/>
+    <text x="150" y="58" font-size="5" fill="#14b8a6" font-family="system-ui">Delhi</text>
+    <text x="150" y="66" font-size="3.5" fill="#64748b" font-family="system-ui">48 facilities</text>
+    <!-- Mumbai -->
+    <circle cx="90" cy="170" r="6" fill="#06b6d4" opacity="0.8"/>
+    <circle cx="90" cy="170" r="10" fill="#06b6d4" opacity="0.12"/>
+    <text x="55" y="165" font-size="5" fill="#06b6d4" font-family="system-ui">Mumbai</text>
+    <text x="55" y="173" font-size="3.5" fill="#64748b" font-family="system-ui">62 facilities</text>
+    <!-- Bangalore -->
+    <circle cx="145" cy="230" r="5" fill="#8b5cf6" opacity="0.8"/>
+    <circle cx="145" cy="230" r="8" fill="#8b5cf6" opacity="0.12"/>
+    <text x="155" y="228" font-size="5" fill="#8b5cf6" font-family="system-ui">Bangalore</text>
+    <text x="155" y="236" font-size="3.5" fill="#64748b" font-family="system-ui">38 facilities</text>
+    <!-- Chennai -->
+    <circle cx="190" cy="235" r="4" fill="#f59e0b" opacity="0.8"/>
+    <circle cx="190" cy="235" r="7" fill="#f59e0b" opacity="0.12"/>
+    <text x="198" y="240" font-size="5" fill="#f59e0b" font-family="system-ui">Chennai</text>
+    <!-- Hyderabad -->
+    <circle cx="160" cy="190" r="5" fill="#ec4899" opacity="0.8"/>
+    <circle cx="160" cy="190" r="8" fill="#ec4899" opacity="0.12"/>
+    <text x="170" y="188" font-size="5" fill="#ec4899" font-family="system-ui">Hyderabad</text>
+    <text x="170" y="196" font-size="3.5" fill="#64748b" font-family="system-ui">35 facilities</text>
+    <!-- Kolkata -->
+    <circle cx="230" cy="120" r="4" fill="#22c55e" opacity="0.8"/>
+    <circle cx="230" cy="120" r="7" fill="#22c55e" opacity="0.12"/>
+    <text x="240" y="118" font-size="5" fill="#22c55e" font-family="system-ui">Kolkata</text>
+    <!-- Pune -->
+    <circle cx="105" cy="185" r="3.5" fill="#14b8a6" opacity="0.6"/>
+    <!-- Ahmedabad -->
+    <circle cx="90" cy="120" r="3.5" fill="#06b6d4" opacity="0.6"/>
+    <!-- Jaipur -->
+    <circle cx="120" cy="85" r="3.5" fill="#f59e0b" opacity="0.6"/>
+    <!-- Lucknow -->
+    <circle cx="170" cy="90" r="3" fill="#8b5cf6" opacity="0.6"/>
+    <!-- Smaller city dots -->
+    <circle cx="115" cy="210" r="2" fill="#14b8a6" opacity="0.4"/>
+    <circle cx="200" cy="200" r="2" fill="#14b8a6" opacity="0.4"/>
+    <circle cx="130" cy="150" r="2" fill="#14b8a6" opacity="0.4"/>
+    <circle cx="175" cy="140" r="2" fill="#14b8a6" opacity="0.4"/>
+    <circle cx="100" cy="100" r="2" fill="#14b8a6" opacity="0.4"/>
+    <circle cx="210" cy="100" r="2" fill="#14b8a6" opacity="0.4"/>
+    <circle cx="150" cy="260" r="2" fill="#14b8a6" opacity="0.4"/>
+    <circle cx="80" cy="145" r="2" fill="#14b8a6" opacity="0.4"/>
+    <!-- Connection lines between cities -->
+    <line x1="140" y1="60" x2="90" y2="170" stroke="#14b8a6" stroke-width="0.5" opacity="0.15" stroke-dasharray="4 3"/>
+    <line x1="140" y1="60" x2="160" y2="190" stroke="#14b8a6" stroke-width="0.5" opacity="0.15" stroke-dasharray="4 3"/>
+    <line x1="90" y1="170" x2="145" y2="230" stroke="#14b8a6" stroke-width="0.5" opacity="0.15" stroke-dasharray="4 3"/>
+    <line x1="160" y1="190" x2="190" y2="235" stroke="#14b8a6" stroke-width="0.5" opacity="0.15" stroke-dasharray="4 3"/>
+    <line x1="140" y1="60" x2="230" y2="120" stroke="#14b8a6" stroke-width="0.5" opacity="0.15" stroke-dasharray="4 3"/>
+  </g>
+  <!-- Stats overlay cards -->
+  <g transform="translate(15, 35)">
+    <rect width="80" height="50" rx="8" fill="#0f172a" stroke="#14b8a6" stroke-width="0.6" stroke-opacity="0.3"/>
+    <text x="10" y="18" font-size="5" fill="#94a3b8" font-family="system-ui">Total Facilities</text>
+    <text x="10" y="36" font-size="14" fill="#14b8a6" font-weight="bold" font-family="system-ui">500+</text>
+  </g>
+  <g transform="translate(390, 35)">
+    <rect width="75" height="50" rx="8" fill="#0f172a" stroke="#06b6d4" stroke-width="0.6" stroke-opacity="0.3"/>
+    <text x="10" y="18" font-size="5" fill="#94a3b8" font-family="system-ui">States Covered</text>
+    <text x="10" y="36" font-size="14" fill="#06b6d4" font-weight="bold" font-family="system-ui">28+</text>
+  </g>
+  <g transform="translate(15, 270)">
+    <rect width="80" height="50" rx="8" fill="#0f172a" stroke="#8b5cf6" stroke-width="0.6" stroke-opacity="0.3"/>
+    <text x="10" y="18" font-size="5" fill="#94a3b8" font-family="system-ui">Lives Impacted</text>
+    <text x="10" y="36" font-size="14" fill="#8b5cf6" font-weight="bold" font-family="system-ui">1M+</text>
+  </g>
+  <g transform="translate(390, 270)">
+    <rect width="75" height="50" rx="8" fill="#0f172a" stroke="#22c55e" stroke-width="0.6" stroke-opacity="0.3"/>
+    <text x="10" y="18" font-size="5" fill="#94a3b8" font-family="system-ui">Uptime</text>
+    <text x="10" y="36" font-size="14" fill="#22c55e" font-weight="bold" font-family="system-ui">99.9%</text>
+  </g>
+</svg>

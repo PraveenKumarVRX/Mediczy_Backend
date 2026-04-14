@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" fill="none">
+  <defs>
+    <linearGradient id="hg1" x1="0" y1="0" x2="480" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#14b8a6" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#06b6d4" stop-opacity="0.04"/>
+    </linearGradient>
+    <linearGradient id="hg2" x1="180" y1="60" x2="300" y2="280" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#14b8a6"/>
+      <stop offset="1" stop-color="#0d9488"/>
+    </linearGradient>
+    <linearGradient id="hg3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e293b"/>
+      <stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="480" height="360" rx="24" fill="url(#hg1)"/>
+  <!-- Hospital building -->
+  <rect x="150" y="100" width="180" height="180" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <rect x="155" y="105" width="170" height="10" rx="2" fill="#14b8a6" opacity="0.3"/>
+  <!-- Cross -->
+  <rect x="226" y="125" width="28" height="8" rx="2" fill="#14b8a6"/>
+  <rect x="236" y="115" width="8" height="28" rx="2" fill="#14b8a6"/>
+  <!-- Windows grid -->
+  <rect x="170" y="155" width="30" height="22" rx="3" fill="#0f172a" stroke="#334155" stroke-width="0.5"/>
+  <rect x="170" y="155" width="30" height="5" rx="1" fill="#14b8a6" opacity="0.4"/>
+  <rect x="210" y="155" width="30" height="22" rx="3" fill="#0f172a" stroke="#334155" stroke-width="0.5"/>
+  <rect x="210" y="155" width="30" height="5" rx="1" fill="#06b6d4" opacity="0.4"/>
+  <rect x="250" y="155" width="30" height="22" rx="3" fill="#0f172a" stroke="#334155" stroke-width="0.5"/>
+  <rect x="250" y="155" width="30" height="5" rx="1" fill="#14b8a6" opacity="0.4"/>
+  <rect x="290" y="155" width="30" height="22" rx="3" fill="#0f172a" stroke="#334155" stroke-width="0.5"/>
+  <rect x="290" y="155" width="30" height="5" rx="1" fill="#06b6d4" opacity="0.4"/>
+  <rect x="170" y="190" width="30" height="22" rx="3" fill="#0f172a" stroke="#334155" stroke-width="0.5"/>
+  <rect x="210" y="190" width="30" height="22" rx="3" fill="#0f172a" stroke="#334155" stroke-width="0.5"/>
+  <rect x="250" y="190" width="30" height="22" rx="3" fill="#0f172a" stroke="#334155" stroke-width="0.5"/>
+  <rect x="290" y="190" width="30" height="22" rx="3" fill="#0f172a" stroke="#334155" stroke-width="0.5"/>
+  <!-- Entrance -->
+  <rect x="218" y="235" width="44" height="45" rx="4" fill="#0f172a" stroke="#14b8a6" stroke-width="1" stroke-opacity="0.4"/>
+  <line x1="240" y1="235" x2="240" y2="280" stroke="#14b8a6" stroke-width="0.5" stroke-opacity="0.3"/>
+  <!-- Connected floating modules - left side -->
+  <g transform="translate(40, 80)">
+    <rect width="80" height="36" rx="8" fill="#1e293b" stroke="#14b8a6" stroke-width="0.8" stroke-opacity="0.4"/>
+    <circle cx="16" cy="18" r="7" fill="#14b8a6" opacity="0.2"/>
+    <text x="16" y="21" text-anchor="middle" font-size="8" fill="#14b8a6">♥</text>
+    <text x="30" y="15" font-size="7" fill="#94a3b8" font-family="system-ui">EMR</text>
+    <text x="30" y="25" font-size="5.5" fill="#475569" font-family="system-ui">Records</text>
+    <line x1="80" y1="18" x2="150" y2="150" stroke="#14b8a6" stroke-width="0.8" stroke-opacity="0.3" stroke-dasharray="4 3"/>
+  </g>
+  <g transform="translate(40, 145)">
+    <rect width="80" height="36" rx="8" fill="#1e293b" stroke="#06b6d4" stroke-width="0.8" stroke-opacity="0.4"/>
+    <circle cx="16" cy="18" r="7" fill="#06b6d4" opacity="0.2"/>
+    <text x="16" y="21" text-anchor="middle" font-size="8" fill="#06b6d4">💊</text>
+    <text x="30" y="15" font-size="7" fill="#94a3b8" font-family="system-ui">Pharmacy</text>
+    <text x="30" y="25" font-size="5.5" fill="#475569" font-family="system-ui">Inventory</text>
+    <line x1="80" y1="18" x2="150" y2="110" stroke="#06b6d4" stroke-width="0.8" stroke-opacity="0.3" stroke-dasharray="4 3"/>
+  </g>
+  <g transform="translate(40, 210)">
+    <rect width="80" height="36" rx="8" fill="#1e293b" stroke="#14b8a6" stroke-width="0.8" stroke-opacity="0.4"/>
+    <circle cx="16" cy="18" r="7" fill="#14b8a6" opacity="0.2"/>
+    <text x="16" y="21" text-anchor="middle" font-size="8" fill="#14b8a6">🧪</text>
+    <text x="30" y="15" font-size="7" fill="#94a3b8" font-family="system-ui">Lab</text>
+    <text x="30" y="25" font-size="5.5" fill="#475569" font-family="system-ui">Testing</text>
+    <line x1="80" y1="18" x2="150" y2="80" stroke="#14b8a6" stroke-width="0.8" stroke-opacity="0.3" stroke-dasharray="4 3"/>
+  </g>
+  <!-- Connected modules - right side -->
+  <g transform="translate(360, 80)">
+    <rect width="80" height="36" rx="8" fill="#1e293b" stroke="#06b6d4" stroke-width="0.8" stroke-opacity="0.4"/>
+    <circle cx="16" cy="18" r="7" fill="#06b6d4" opacity="0.2"/>
+    <text x="16" y="21" text-anchor="middle" font-size="8" fill="#06b6d4">📊</text>
+    <text x="30" y="15" font-size="7" fill="#94a3b8" font-family="system-ui">Billing</text>
+    <text x="30" y="25" font-size="5.5" fill="#475569" font-family="system-ui">Revenue</text>
+    <line x1="0" y1="18" x2="-30" y2="80" stroke="#06b6d4" stroke-width="0.8" stroke-opacity="0.3" stroke-dasharray="4 3"/>
+  </g>
+  <g transform="translate(360, 145)">
+    <rect width="80" height="36" rx="8" fill="#1e293b" stroke="#14b8a6" stroke-width="0.8" stroke-opacity="0.4"/>
+    <circle cx="16" cy="18" r="7" fill="#14b8a6" opacity="0.2"/>
+    <text x="16" y="21" text-anchor="middle" font-size="8" fill="#14b8a6">🛡</text>
+    <text x="30" y="15" font-size="7" fill="#94a3b8" font-family="system-ui">Insurance</text>
+    <text x="30" y="25" font-size="5.5" fill="#475569" font-family="system-ui">Claims</text>
+    <line x1="0" y1="18" x2="-30" y2="60" stroke="#14b8a6" stroke-width="0.8" stroke-opacity="0.3" stroke-dasharray="4 3"/>
+  </g>
+  <g transform="translate(360, 210)">
+    <rect width="80" height="36" rx="8" fill="#1e293b" stroke="#06b6d4" stroke-width="0.8" stroke-opacity="0.4"/>
+    <circle cx="16" cy="18" r="7" fill="#06b6d4" opacity="0.2"/>
+    <text x="16" y="21" text-anchor="middle" font-size="8" fill="#06b6d4">🏥</text>
+    <text x="30" y="15" font-size="7" fill="#94a3b8" font-family="system-ui">OPD/IPD</text>
+    <text x="30" y="25" font-size="5.5" fill="#475569" font-family="system-ui">Patient Flow</text>
+    <line x1="0" y1="18" x2="-30" y2="40" stroke="#06b6d4" stroke-width="0.8" stroke-opacity="0.3" stroke-dasharray="4 3"/>
+  </g>
+  <!-- Doctor character (caricature) -->
+  <g transform="translate(345, 270)">
+    <!-- Body -->
+    <rect x="0" y="22" width="26" height="35" rx="6" fill="white"/>
+    <rect x="4" y="22" width="18" height="8" rx="2" fill="#14b8a6" opacity="0.15"/>
+    <!-- Head -->
+    <circle cx="13" cy="14" r="12" fill="#f8d7a4"/>
+    <!-- Hair -->
+    <path d="M3 10c0-8 8-12 16-9 2 1 3 3 3 6-2-5-8-7-14-4-3 1-5 4-5 7z" fill="#1e293b"/>
+    <!-- Face -->
+    <circle cx="9" cy="13" r="1.2" fill="#1e293b"/>
+    <circle cx="17" cy="13" r="1.2" fill="#1e293b"/>
+    <path d="M10 18c1.5 1.5 4 1.5 6 0" stroke="#c28a5a" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+    <!-- Stethoscope -->
+    <path d="M8 22c-4 6-3 15-3 15" stroke="#14b8a6" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    <circle cx="5" cy="37" r="3" fill="none" stroke="#14b8a6" stroke-width="1.2"/>
+    <!-- Tablet -->
+    <rect x="18" y="38" width="18" height="24" rx="3" fill="#0f172a" stroke="#334155" stroke-width="0.8"/>
+    <rect x="20" y="41" width="14" height="14" rx="1" fill="#14b8a6" opacity="0.15"/>
+    <line x1="20" y1="45" x2="34" y2="45" stroke="#14b8a6" stroke-width="0.5" opacity="0.5"/>
+    <line x1="20" y1="48" x2="30" y2="48" stroke="#14b8a6" stroke-width="0.5" opacity="0.3"/>
+    <line x1="20" y1="51" x2="32" y2="51" stroke="#06b6d4" stroke-width="0.5" opacity="0.4"/>
+  </g>
+  <!-- Nurse character -->
+  <g transform="translate(90, 270)">
+    <!-- Body -->
+    <rect x="0" y="22" width="26" height="35" rx="6" fill="#e0f2fe"/>
+    <rect x="4" y="22" width="18" height="8" rx="2" fill="#06b6d4" opacity="0.2"/>
+    <!-- Head -->
+    <circle cx="13" cy="14" r="12" fill="#deb887"/>
+    <!-- Cap -->
+    <path d="M2 8c0-3 5-7 11-7s11 4 11 7c0 1-2 1-3 0-2-3-5-4-8-4s-6 1-8 4c-1 1-3 1-3 0z" fill="white" stroke="#14b8a6" stroke-width="0.5"/>
+    <rect x="9" y="2" width="8" height="3" rx="1" fill="#14b8a6" opacity="0.5"/>
+    <!-- Face -->
+    <circle cx="9" cy="13" r="1.2" fill="#1e293b"/>
+    <circle cx="17" cy="13" r="1.2" fill="#1e293b"/>
+    <path d="M9 18c2 2 5 2 7 0" stroke="#c28a5a" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+    <!-- Clipboard -->
+    <rect x="-8" y="32" width="18" height="24" rx="2" fill="white" stroke="#94a3b8" stroke-width="0.6"/>
+    <rect x="-3" y="30" width="8" height="4" rx="1.5" fill="#94a3b8"/>
+    <line x1="-4" y1="38" x2="6" y2="38" stroke="#14b8a6" stroke-width="0.6" opacity="0.5"/>
+    <line x1="-4" y1="41" x2="4" y2="41" stroke="#94a3b8" stroke-width="0.5" opacity="0.4"/>
+    <line x1="-4" y1="44" x2="6" y2="44" stroke="#14b8a6" stroke-width="0.6" opacity="0.5"/>
+    <line x1="-4" y1="47" x2="3" y2="47" stroke="#94a3b8" stroke-width="0.5" opacity="0.4"/>
+    <rect x="-3" y="50" width="5" height="3" rx="1" fill="#14b8a6" opacity="0.4"/>
+  </g>
+  <!-- Floating pulse line -->
+  <path d="M50 310 L100 310 L115 295 L125 325 L135 300 L145 310 L430 310" stroke="#14b8a6" stroke-width="1" opacity="0.2" fill="none"/>
+</svg>

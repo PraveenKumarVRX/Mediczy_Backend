@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 260" fill="none">
+  <!-- Patient using health app on phone -->
+  <g transform="translate(35, 10)">
+    <!-- Head -->
+    <circle cx="60" cy="40" r="30" fill="#deb887"/>
+    <!-- Hair -->
+    <path d="M30 32 Q30 8 60 6 Q90 8 90 32" fill="#4a3728"/>
+    <!-- Side hair -->
+    <path d="M30 32 Q28 45 30 55" fill="#4a3728" stroke="#4a3728" stroke-width="3"/>
+    <path d="M90 32 Q92 45 90 55" fill="#4a3728" stroke="#4a3728" stroke-width="3"/>
+    <!-- Eyes -->
+    <ellipse cx="48" cy="40" rx="3" ry="3.5" fill="#1e293b"/>
+    <ellipse cx="72" cy="40" rx="3" ry="3.5" fill="#1e293b"/>
+    <circle cx="49" cy="39" r="1" fill="white"/>
+    <circle cx="73" cy="39" r="1" fill="white"/>
+    <!-- Eyebrows -->
+    <path d="M42 34 Q48 31 54 35" fill="none" stroke="#4a3728" stroke-width="1.2"/>
+    <path d="M66 35 Q72 31 78 34" fill="none" stroke="#4a3728" stroke-width="1.2"/>
+    <!-- Happy smile -->
+    <path d="M48 52 Q60 62 72 52" fill="none" stroke="#b8860b" stroke-width="1.2"/>
+    <!-- Nose -->
+    <path d="M58 43 Q60 48 62 43" fill="none" stroke="#c4a46c" stroke-width="0.8"/>
+    <!-- Casual T-shirt -->
+    <path d="M28 70 L28 180 Q28 188 38 188 L82 188 Q92 188 92 180 L92 70 Q92 63 80 63 L40 63 Q28 63 28 70Z" fill="#3b82f6" opacity="0.6"/>
+    <!-- T-shirt collar -->
+    <path d="M48 63 Q60 75 72 63" fill="none" stroke="#2563eb" stroke-width="1" opacity="0.4"/>
+    <!-- T-shirt design element -->
+    <circle cx="60" cy="120" r="12" fill="#2563eb" opacity="0.2"/>
+    <text x="54" y="124" font-size="8" fill="#93c5fd" font-family="system-ui" opacity="0.6">♥</text>
+    <!-- Both arms holding phone in front -->
+    <!-- Left arm -->
+    <path d="M28 80 Q15 100 25 140" fill="none" stroke="#3b82f6" stroke-width="8" stroke-linecap="round" opacity="0.6"/>
+    <!-- Right arm -->
+    <path d="M92 80 Q105 100 95 140" fill="none" stroke="#3b82f6" stroke-width="8" stroke-linecap="round" opacity="0.6"/>
+    <!-- Hands -->
+    <circle cx="25" cy="137" r="8" fill="#deb887"/>
+    <circle cx="95" cy="137" r="8" fill="#deb887"/>
+    <!-- Large phone being held -->
+    <rect x="30" y="125" width="60" height="95" rx="8" fill="#0f172a" stroke="#1e293b" stroke-width="1.5"/>
+    <!-- Phone screen -->
+    <rect x="34" y="132" width="52" height="78" rx="4" fill="#1e293b"/>
+    <!-- Mediczy app on screen -->
+    <rect x="36" y="134" width="48" height="14" rx="3" fill="#14b8a6" fill-opacity="0.1"/>
+    <text x="40" y="144" font-size="5" fill="#14b8a6" font-weight="bold" font-family="system-ui">Mediczy</text>
+    <!-- Health summary card -->
+    <rect x="36" y="152" width="48" height="22" rx="3" fill="#0f172a" stroke="#14b8a6" stroke-width="0.3" stroke-opacity="0.3"/>
+    <text x="39" y="161" font-size="3.5" fill="#94a3b8" font-family="system-ui">Your Health Score</text>
+    <text x="39" y="170" font-size="7" fill="#22c55e" font-weight="bold" font-family="system-ui">92/100</text>
+    <!-- Upcoming appointment -->
+    <rect x="36" y="178" width="48" height="16" rx="3" fill="#0f172a" stroke="#06b6d4" stroke-width="0.3" stroke-opacity="0.3"/>
+    <text x="39" y="187" font-size="3.5" fill="#06b6d4" font-family="system-ui">📅 Dr. Sharma • 3:00 PM</text>
+    <text x="39" y="192" font-size="3" fill="#64748b" font-family="system-ui">Video Consultation</text>
+    <!-- Quick actions -->
+    <g transform="translate(36, 198)">
+      <rect width="14" height="10" rx="2" fill="#14b8a6" fill-opacity="0.15"/>
+      <text x="3" y="8" font-size="4" font-family="system-ui">🏥</text>
+      <rect x="17" y="0" width="14" height="10" rx="2" fill="#8b5cf6" fill-opacity="0.15"/>
+      <text x="20" y="8" font-size="4" font-family="system-ui">💊</text>
+      <rect x="34" y="0" width="14" height="10" rx="2" fill="#f59e0b" fill-opacity="0.15"/>
+      <text x="37" y="8" font-size="4" font-family="system-ui">🔬</text>
+    </g>
+    <!-- Phone home button -->
+    <rect x="52" y="214" width="16" height="3" rx="1.5" fill="#334155"/>
+    <!-- Jeans -->
+    <rect x="33" y="186" width="22" height="55" rx="4" fill="#475569"/>
+    <rect x="62" y="186" width="22" height="55" rx="4" fill="#475569"/>
+    <!-- Shoes -->
+    <rect x="30" y="236" width="28" height="10" rx="5" fill="#94a3b8"/>
+    <rect x="59" y="236" width="28" height="10" rx="5" fill="#94a3b8"/>
+  </g>
+  <!-- Satisfaction hearts floating -->
+  <text x="135" y="30" font-size="12" opacity="0.4">❤️</text>
+  <text x="20" y="50" font-size="8" opacity="0.3">💚</text>
+  <text x="155" y="70" font-size="6" opacity="0.2">✨</text>
+</svg>
