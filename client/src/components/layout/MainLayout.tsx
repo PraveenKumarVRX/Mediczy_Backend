@@ -30,7 +30,6 @@ import {
 import { BRAND, getShortRoleLabel } from "@/config/brand";
 import VideoCallNotification from "@/components/notifications/VideoCallNotification";
 import { useSocketConnection } from "@/hooks/useSocketConnection";
-import ChatApplet from "@/components/chat/ChatApplet";
 import { PageTransition } from "@/components/PageTransition";
 import FloatingDrISHA from "@/components/FloatingDrISHA";
 import GlobalSearch from "@/components/GlobalSearch";
@@ -443,9 +442,6 @@ const MainLayout = ({ children }: MainLayoutProps) => {
       
       {/* Floating AI Doctor Assistant */}
       <FloatingDrISHA />
-      
-      {/* Team Chat Communication Module */}
-      {isTeamUser && <ChatApplet />}
       
       {/* Universal Quick Appointment Booking Modal */}
       <QuickAppointmentModal 
