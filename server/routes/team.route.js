@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import userModel from '../models/user.model.intelligent.js';
 import jwt from 'jsonwebtoken';
 import { InsuranceBroker } from '../models/insurance-broker.model.intelligent.js';
+import { Op } from 'sequelize';
 import { authTeam, requireModule, attachAccessLevel } from '../middleware/team.middleware.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
@@ -1602,7 +1603,6 @@ router.get('/activity-stats', authTeam, async (req, res) => {
 router.get('/brokers', authTeam, async (req, res) => {
   try {
     const { search = '', status = 'all', limit = 50, offset = 0 } = req.query;
-    const { Op } = await import('sequelize');
     const where = {};
     if (status !== 'all') where.status = status;
     if (search) {
@@ -1617,7 +1617,7 @@ router.get('/brokers', authTeam, async (req, res) => {
       where,
       limit: Math.min(Number(limit), 100),
       offset: Number(offset),
-      order: [['createdAt', 'DESC']],
+      order: [['created_at', 'DESC']],
       attributes: { exclude: ['password'] },
     });
     return res.json({ success: true, data: rows, total: count });
