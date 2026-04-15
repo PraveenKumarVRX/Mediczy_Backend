@@ -50,7 +50,8 @@ import {
   Gift,
   UsersRound,
   Zap,
-  Sparkles
+  Sparkles,
+  Briefcase
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -118,6 +119,7 @@ const teamSidebarItems: SidebarItem[] = [
   { icon: Users, label: "User Management", path: "/team/user-management", category: "Management" },
   { icon: Stethoscope, label: "Doctors", path: "/team/doctor-management", category: "Management" },
   { icon: Building2, label: "Corporate Management", path: "/team/corporate-management", category: "Management" },
+  { icon: Briefcase, label: "Broker Management", path: "/team/broker-management", category: "Management" },
   { icon: FlaskConical, label: "Corporate Health Booking", path: "/team/corporate-health-booking", category: "Management" },
   { icon: Building2, label: "Hospital Management", path: "/team/hospital-management", category: "Management" },
   { icon: Building, label: "Clinic Management", path: "/team/clinic-management", category: "Management" },
