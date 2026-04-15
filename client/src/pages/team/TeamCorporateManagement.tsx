@@ -320,6 +320,8 @@ const TeamCorporateManagement = () => {
   
   // Mock data for employees and network
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [empCurrentPage, setEmpCurrentPage] = useState(1);
+  const EMP_PAGE_SIZE = 10;
   const [labPartners, setLabPartners] = useState<LabPartner[]>([]);
   const [hospitalPartners, setHospitalPartners] = useState<HospitalPartner[]>([]);
   const [clinicPartners, setClinicPartners] = useState<ClinicPartner[]>([]);
@@ -366,6 +368,7 @@ const TeamCorporateManagement = () => {
       });
       
       if (response.data?.success && response.data?.employees) {
+        setEmpCurrentPage(1);
         setEmployees(response.data.employees.map((emp: any) => {
           const meta = emp.metadata || {};
           const firstName = emp.firstName || meta.firstName || '';
@@ -1612,7 +1615,7 @@ const TeamCorporateManagement = () => {
                           </TableCell>
                         </TableRow>
                       ) : (
-                        employees.map((emp) => (
+                        employees.slice((empCurrentPage - 1) * EMP_PAGE_SIZE, empCurrentPage * EMP_PAGE_SIZE).map((emp) => (
                           <TableRow key={emp.id}>
                             <TableCell>{emp.employeeId}</TableCell>
                             <TableCell className="font-medium">{emp.name}</TableCell>
@@ -1664,6 +1667,32 @@ const TeamCorporateManagement = () => {
                       )}
                     </TableBody>
                   </Table>
+                  {employees.length > 0 && (
+                    <div className="flex items-center justify-between px-2 py-3 border-t text-sm text-muted-foreground">
+                      <span>
+                        Showing {Math.min((empCurrentPage - 1) * EMP_PAGE_SIZE + 1, employees.length)}–{Math.min(empCurrentPage * EMP_PAGE_SIZE, employees.length)} of {employees.length} employees
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span>Page {empCurrentPage} of {Math.ceil(employees.length / EMP_PAGE_SIZE)}</span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={empCurrentPage === 1}
+                          onClick={() => setEmpCurrentPage(p => p - 1)}
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={empCurrentPage >= Math.ceil(employees.length / EMP_PAGE_SIZE)}
+                          onClick={() => setEmpCurrentPage(p => p + 1)}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
