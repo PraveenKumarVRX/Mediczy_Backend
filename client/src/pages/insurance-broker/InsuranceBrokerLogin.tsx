@@ -78,8 +78,8 @@ const InsuranceBrokerLogin = () => {
           <div className="w-9 h-9 bg-emerald-500 rounded-lg flex items-center justify-center">
             <Briefcase className="w-5 h-5 text-white" />
           </div>
-          <span className="text-white font-semibold text-lg">InsureCorrect</span>
-          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Broker Portal</span>
+          <span className="text-white font-semibold text-lg">Mediqzy</span>
+          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Intermediary Wellness Portal</span>
         </div>
 
         <div>
@@ -124,7 +124,7 @@ const InsuranceBrokerLogin = () => {
             <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
               <Briefcase className="w-4 w-4 text-white" />
             </div>
-            <span className="text-white font-semibold">InsureCorrect Broker Portal</span>
+            <span className="text-white font-semibold">Intermediary Wellness Portal</span>
           </div>
 
           <div className="mb-8">

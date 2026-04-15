@@ -50,7 +50,7 @@ const BrokerDashboard = () => {
 
   if (loading) {
     return (
-      <BrokerLayout title="Dashboard" subtitle="Welcome back to your insurance broker portal">
+      <BrokerLayout title="Dashboard" subtitle="Welcome back to your Intermediary Wellness Portal">
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
         </div>
@@ -59,7 +59,7 @@ const BrokerDashboard = () => {
   }
 
   return (
-    <BrokerLayout title="Dashboard" subtitle="Welcome back to your InsureCorrect broker portal">
+    <BrokerLayout title="Dashboard" subtitle="Welcome back to your Intermediary Wellness Portal">
       <div className="space-y-6">
         {/* Welcome Section */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-lg p-6 text-white shadow-lg">

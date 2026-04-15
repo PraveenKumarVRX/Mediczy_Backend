@@ -133,7 +133,7 @@ export const BrokerProfile = () => {
   };
 
   return (
-    <BrokerLayout title="My Profile" subtitle="Maintain InsureCorrect broker profile and contact details">
+    <BrokerLayout title="My Profile" subtitle="Maintain your broker profile and contact details">
       {loading ? <LoadingState /> : (
         <Card className="border-slate-700 bg-slate-800/50 max-w-3xl">
           <CardHeader>
@@ -180,7 +180,7 @@ export const BrokerReports = () => {
     <BrokerLayout title="Reports" subtitle="Business KPIs and operational summary">
       {loading ? <LoadingState /> : (
         <Card className="border-slate-700 bg-slate-800/50">
-          <CardHeader><CardTitle>InsureCorrect Report Snapshot</CardTitle><CardDescription>Generated at {(data as any)?.generatedAt ? new Date((data as any).generatedAt).toLocaleString('en-IN') : '-'}</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Report Snapshot</CardTitle><CardDescription>Generated at {(data as any)?.generatedAt ? new Date((data as any).generatedAt).toLocaleString('en-IN') : '-'}</CardDescription></CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-4 border border-slate-700 rounded-lg bg-slate-900/50"><p className="text-slate-400 text-sm">Total Policies</p><p className="text-white text-2xl font-bold">{(data as any)?.kpis?.totalPolicies || 0}</p></div>
             <div className="p-4 border border-slate-700 rounded-lg bg-slate-900/50"><p className="text-slate-400 text-sm">Premium Facilitated</p><p className="text-white text-2xl font-bold">{currency((data as any)?.kpis?.premiumFacilitated || 0)}</p></div>
@@ -216,7 +216,7 @@ export const BrokerNotifications = () => {
         <Card className="border-slate-700 bg-slate-800/50">
           <CardHeader>
             <CardTitle>Unread: {(data as any).unreadCount || 0}</CardTitle>
-            <CardDescription>Broker notifications for InsureCorrect operations</CardDescription>
+            <CardDescription>Broker notifications and operational alerts</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {Array.isArray((data as any).notifications) && (data as any).notifications.length > 0 ? (data as any).notifications.map((item: any) => (
@@ -254,7 +254,7 @@ export const BrokerSettings = () => {
   };
 
   return (
-    <BrokerLayout title="Settings" subtitle="Configure InsureCorrect broker portal preferences">
+    <BrokerLayout title="Settings" subtitle="Configure your portal preferences">
       {loading ? <LoadingState /> : (
         <Card className="border-slate-700 bg-slate-800/50 max-w-2xl">
           <CardHeader><CardTitle>Portal Preferences</CardTitle></CardHeader>
@@ -276,10 +276,10 @@ export const BrokerSupport = () => {
   const { data, loading } = usePageLoader('/insurance-broker/support', {}, 'support');
 
   return (
-    <BrokerLayout title="Help & Support" subtitle="Dedicated support for InsureCorrect broker operations">
+    <BrokerLayout title="Help & Support" subtitle="Dedicated support for broker operations">
       {loading ? <LoadingState /> : (
         <Card className="border-slate-700 bg-slate-800/50 max-w-3xl">
-          <CardHeader><CardTitle>{(data as any).portalName || 'InsureCorrect Broker Portal'}</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{(data as any).portalName || 'Intermediary Wellness Portal'}</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             <p className="text-slate-300">Email: {(data as any).email || '-'}</p>
             <p className="text-slate-300">Phone: {(data as any).phone || '-'}</p>
