@@ -603,7 +603,7 @@ function App() {
                 <h1 className="reveal-up text-[clamp(2.4rem,5vw,4.5rem)] font-extrabold leading-[1.02] tracking-tight text-white">
                   One <span className="primary-grad">operating system</span>
                   <br />
-                  for modern healthcare.
+                  for modern hospital.
                 </h1>
 
                 <p className="reveal-up mt-6 max-w-lg text-base leading-relaxed text-slate-400 md:text-lg">
