@@ -32,6 +32,7 @@ import VideoCallNotification from "@/components/notifications/VideoCallNotificat
 import { useSocketConnection } from "@/hooks/useSocketConnection";
 import { PageTransition } from "@/components/PageTransition";
 import FloatingDrISHA from "@/components/FloatingDrISHA";
+import ChatApplet from "@/components/chat/ChatApplet";
 import GlobalSearch from "@/components/GlobalSearch";
 import aiHealthServices from "@/services/aiHealthServices";
 
@@ -440,8 +441,11 @@ const MainLayout = ({ children }: MainLayoutProps) => {
       {/* Video Call Notification System */}
       <VideoCallNotification />
       
-      {/* Floating AI Doctor Assistant */}
-      <FloatingDrISHA />
+      {/* Floating AI Doctor Assistant - hidden for team portal */}
+      {!isTeamUser && <FloatingDrISHA />}
+
+      {/* Team Chat Communication Module */}
+      {isTeamUser && <ChatApplet />}
       
       {/* Universal Quick Appointment Booking Modal */}
       <QuickAppointmentModal 
