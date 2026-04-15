@@ -315,24 +315,16 @@
     ]
   },
   "ai_smart_notif": {
-    "lastRun": "2026-04-15T06:28:31.310Z",
+    "lastRun": "2026-04-15T08:15:00.064Z",
     "lastStatus": "success",
-    "runCount": 324,
+    "runCount": 325,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
       "total": 0,
-      "elapsedMs": 12
+      "elapsedMs": 32
     },
     "recentLogs": [
-      {
-        "ts": "2026-04-13T16:15:00.115Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 79
-        }
-      },
       {
         "ts": "2026-04-13T16:31:51.033Z",
         "status": "success",
@@ -563,6 +555,14 @@
         "details": {
           "total": 0,
           "elapsedMs": 12
+        }
+      },
+      {
+        "ts": "2026-04-15T08:15:00.064Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 32
         }
       }
     ]
@@ -883,9 +883,9 @@
     ]
   },
   "appt_reminder": {
-    "lastRun": "2026-04-15T07:30:00.049Z",
+    "lastRun": "2026-04-15T08:00:00.114Z",
     "lastStatus": "success",
-    "runCount": 839,
+    "runCount": 840,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
@@ -894,15 +894,6 @@
       "sent15min": 0
     },
     "recentLogs": [
-      {
-        "ts": "2026-04-14T15:30:00.065Z",
-        "status": "success",
-        "details": {
-          "sent24h": 0,
-          "sent2h": 0,
-          "sent15min": 0
-        }
-      },
       {
         "ts": "2026-04-14T16:30:00.061Z",
         "status": "success",
@@ -1163,62 +1154,26 @@
           "sent2h": 2,
           "sent15min": 0
         }
+      },
+      {
+        "ts": "2026-04-15T08:00:00.114Z",
+        "status": "success",
+        "details": {
+          "sent24h": 0,
+          "sent2h": 2,
+          "sent15min": 0
+        }
       }
     ]
   },
   "device_heartbeat": {
-    "lastRun": "2026-04-15T07:35:00.065Z",
+    "lastRun": "2026-04-15T08:20:00.030Z",
     "lastStatus": "success",
-    "runCount": 5049,
+    "runCount": 5058,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {},
     "recentLogs": [
-      {
-        "ts": "2026-04-15T05:10:00.044Z",
-        "status": "success",
-        "details": {}
-      },
-      {
-        "ts": "2026-04-15T05:15:00.023Z",
-        "status": "success",
-        "details": {}
-      },
-      {
-        "ts": "2026-04-15T05:20:00.027Z",
-        "status": "success",
-        "details": {}
-      },
-      {
-        "ts": "2026-04-15T05:25:00.037Z",
-        "status": "success",
-        "details": {}
-      },
-      {
-        "ts": "2026-04-15T05:30:00.055Z",
-        "status": "success",
-        "details": {}
-      },
-      {
-        "ts": "2026-04-15T05:35:00.024Z",
-        "status": "success",
-        "details": {}
-      },
-      {
-        "ts": "2026-04-15T05:40:00.026Z",
-        "status": "success",
-        "details": {}
-      },
-      {
-        "ts": "2026-04-15T05:45:00.036Z",
-        "status": "success",
-        "details": {}
-      },
-      {
-        "ts": "2026-04-15T05:50:00.020Z",
-        "status": "success",
-        "details": {}
-      },
       {
         "ts": "2026-04-15T05:55:00.022Z",
         "status": "success",
@@ -1323,22 +1278,62 @@
         "ts": "2026-04-15T07:35:00.065Z",
         "status": "success",
         "details": {}
+      },
+      {
+        "ts": "2026-04-15T07:40:00.035Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-15T07:45:00.033Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-15T07:50:00.042Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-15T07:55:00.023Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-15T08:00:00.119Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-15T08:05:00.029Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-15T08:10:00.043Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-15T08:15:00.047Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-15T08:20:00.030Z",
+        "status": "success",
+        "details": {}
       }
     ]
   },
   "device_amc": {
-    "lastRun": "2026-04-15T07:00:00.075Z",
+    "lastRun": "2026-04-15T08:00:00.129Z",
     "lastStatus": "success",
-    "runCount": 423,
+    "runCount": 424,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {},
     "recentLogs": [
-      {
-        "ts": "2026-04-14T00:00:00.142Z",
-        "status": "success",
-        "details": {}
-      },
       {
         "ts": "2026-04-14T01:00:00.083Z",
         "status": "success",
@@ -1483,13 +1478,18 @@
         "ts": "2026-04-15T07:00:00.075Z",
         "status": "success",
         "details": {}
+      },
+      {
+        "ts": "2026-04-15T08:00:00.129Z",
+        "status": "success",
+        "details": {}
       }
     ]
   },
   "webinar_reminder": {
-    "lastRun": "2026-04-15T07:30:00.077Z",
+    "lastRun": "2026-04-15T08:00:00.178Z",
     "lastStatus": "success",
-    "runCount": 839,
+    "runCount": 840,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
@@ -1499,16 +1499,6 @@
       "sent15min": 0
     },
     "recentLogs": [
-      {
-        "ts": "2026-04-14T15:30:00.088Z",
-        "status": "success",
-        "details": {
-          "sent1week": 0,
-          "sent24h": 0,
-          "sent2h": 0,
-          "sent15min": 0
-        }
-      },
       {
         "ts": "2026-04-14T16:30:00.114Z",
         "status": "success",
@@ -1798,28 +1788,30 @@
           "sent2h": 0,
           "sent15min": 0
         }
+      },
+      {
+        "ts": "2026-04-15T08:00:00.178Z",
+        "status": "success",
+        "details": {
+          "sent1week": 0,
+          "sent24h": 0,
+          "sent2h": 0,
+          "sent15min": 0
+        }
       }
     ]
   },
   "ai_clinical_insights": {
-    "lastRun": "2026-04-15T06:30:01.331Z",
+    "lastRun": "2026-04-15T08:00:00.183Z",
     "lastStatus": "success",
-    "runCount": 150,
+    "runCount": 151,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
       "total": 0,
-      "elapsedMs": 26
+      "elapsedMs": 103
     },
     "recentLogs": [
-      {
-        "ts": "2026-04-12T00:00:00.161Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 69
-        }
-      },
       {
         "ts": "2026-04-12T08:00:00.153Z",
         "status": "success",
@@ -2051,13 +2043,21 @@
           "total": 0,
           "elapsedMs": 26
         }
+      },
+      {
+        "ts": "2026-04-15T08:00:00.183Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 103
+        }
       }
     ]
   },
   "appt_notification": {
-    "lastRun": "2026-04-15T07:35:00.080Z",
+    "lastRun": "2026-04-15T08:24:00.043Z",
     "lastStatus": "success",
-    "runCount": 25187,
+    "runCount": 25236,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
@@ -2065,210 +2065,210 @@
     },
     "recentLogs": [
       {
-        "ts": "2026-04-15T07:06:00.026Z",
+        "ts": "2026-04-15T07:55:00.033Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:07:00.027Z",
+        "ts": "2026-04-15T07:56:00.029Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:08:00.019Z",
+        "ts": "2026-04-15T07:57:00.032Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:09:00.020Z",
+        "ts": "2026-04-15T07:58:00.025Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:10:00.034Z",
+        "ts": "2026-04-15T07:59:00.031Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:11:00.024Z",
+        "ts": "2026-04-15T08:00:00.110Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:12:00.028Z",
+        "ts": "2026-04-15T08:01:00.028Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:13:00.014Z",
+        "ts": "2026-04-15T08:02:00.019Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:14:00.021Z",
+        "ts": "2026-04-15T08:03:00.026Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:15:00.072Z",
+        "ts": "2026-04-15T08:04:00.021Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:16:00.019Z",
+        "ts": "2026-04-15T08:05:00.029Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:17:00.015Z",
+        "ts": "2026-04-15T08:06:00.021Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:18:00.023Z",
+        "ts": "2026-04-15T08:07:00.026Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:19:00.013Z",
+        "ts": "2026-04-15T08:08:00.022Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:20:00.043Z",
+        "ts": "2026-04-15T08:09:00.033Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:21:00.014Z",
+        "ts": "2026-04-15T08:10:00.042Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:22:00.020Z",
+        "ts": "2026-04-15T08:11:00.017Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:23:00.019Z",
+        "ts": "2026-04-15T08:12:00.031Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:24:00.029Z",
+        "ts": "2026-04-15T08:13:00.028Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:25:00.033Z",
+        "ts": "2026-04-15T08:14:00.017Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:26:00.014Z",
+        "ts": "2026-04-15T08:15:00.047Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:27:00.020Z",
+        "ts": "2026-04-15T08:16:00.022Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:28:00.019Z",
+        "ts": "2026-04-15T08:17:00.020Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:29:00.024Z",
+        "ts": "2026-04-15T08:18:00.031Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:30:00.057Z",
+        "ts": "2026-04-15T08:19:00.015Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:31:00.022Z",
+        "ts": "2026-04-15T08:20:00.027Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:32:00.025Z",
+        "ts": "2026-04-15T08:21:00.017Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:33:00.027Z",
+        "ts": "2026-04-15T08:22:00.021Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:34:00.017Z",
+        "ts": "2026-04-15T08:23:00.028Z",
         "status": "success",
         "details": {
           "checked": 5
         }
       },
       {
-        "ts": "2026-04-15T07:35:00.080Z",
+        "ts": "2026-04-15T08:24:00.043Z",
         "status": "success",
         "details": {
           "checked": 5
@@ -2377,9 +2377,9 @@
     ]
   },
   "ai_proactive_alerts": {
-    "lastRun": "2026-04-15T04:00:00.106Z",
+    "lastRun": "2026-04-15T08:00:00.184Z",
     "lastStatus": "success",
-    "runCount": 105,
+    "runCount": 106,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
@@ -2389,16 +2389,6 @@
       "adherence": 0
     },
     "recentLogs": [
-      {
-        "ts": "2026-04-10T04:00:00.151Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "overdue": 0,
-          "labTrend": 0,
-          "adherence": 0
-        }
-      },
       {
         "ts": "2026-04-10T08:00:00.140Z",
         "status": "success",
@@ -2681,6 +2671,16 @@
       },
       {
         "ts": "2026-04-15T04:00:00.106Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-15T08:00:00.184Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -3356,9 +3356,9 @@
     ]
   },
   "medication_morning": {
-    "lastRun": "2026-04-14T08:00:00.082Z",
+    "lastRun": "2026-04-15T08:00:00.100Z",
     "lastStatus": "success",
-    "runCount": 18,
+    "runCount": 19,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {},
@@ -3452,13 +3452,18 @@
         "ts": "2026-04-14T08:00:00.082Z",
         "status": "success",
         "details": {}
+      },
+      {
+        "ts": "2026-04-15T08:00:00.100Z",
+        "status": "success",
+        "details": {}
       }
     ]
   },
   "device_health_report": {
-    "lastRun": "2026-04-14T08:00:00.096Z",
+    "lastRun": "2026-04-15T08:00:00.140Z",
     "lastStatus": "success",
-    "runCount": 18,
+    "runCount": 19,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {},
@@ -3550,6 +3555,11 @@
       },
       {
         "ts": "2026-04-14T08:00:00.096Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-15T08:00:00.140Z",
         "status": "success",
         "details": {}
       }

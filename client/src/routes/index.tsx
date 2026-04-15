@@ -226,6 +226,7 @@ const CorporateHealthBooking   = lazy(() => import("@/pages/team/CorporateHealth
 const TeamEmployeeManagement   = lazy(() => import("@/pages/team/TeamEmployeeManagement"));
 const TeamSettings             = lazy(() => import("@/pages/team/TeamSettings"));
 const TeamHealthPlans          = lazy(() => import("@/pages/team/TeamHealthPlans"));
+const TeamBrokerManagement     = lazy(() => import("@/pages/team/TeamBrokerManagement"));
 
 const _TeamModulePages = () => import("@/pages/team/TeamModulePages");
 const TeamUserManagementPage     = lazyNamed(_TeamModulePages, "TeamUserManagementPage");
@@ -943,6 +944,7 @@ const AppRoutes = () => {
         <Route path="/team/whatsapp-inbox"           element={<WhatsAppInbox />} />
         <Route path="/team/rc-omnichannel"           element={<RocketChatOmnichannel />} />
         <Route path="/team/health-plans"             element={<TeamHealthPlans />} />
+        <Route path="/team/broker-management"        element={<TeamBrokerManagement />} />
         <Route path="/team/activity"                 element={<TeamActivityLogsPage />} />
         <Route path="/team/settings"                 element={<TeamSettings />} />
 

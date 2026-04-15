@@ -24,7 +24,8 @@ import {
   MessageSquare,
   Ticket,
   MessageCircle,
-  Mail
+  Mail,
+  Briefcase
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '@/utils/api';
@@ -233,6 +234,15 @@ const TeamDashboard = () => {
       iconColor: "text-amber-500",
       link: "/team/health-plans",
       pattern: "radial-gradient(circle at 50% 50%, rgba(245, 158, 11, 0.05) 0%, transparent 50%)",
+    },
+    {
+      title: "Broker Management",
+      description: "Manage intermediary & broker accounts",
+      icon: Briefcase,
+      color: "bg-gradient-to-br from-violet-500/10 to-purple-500/10 border-violet-500/20",
+      iconColor: "text-violet-500",
+      link: "/team/broker-management",
+      pattern: "radial-gradient(circle at 100% 0%, rgba(139, 92, 246, 0.05) 0%, transparent 50%)",
     }
   ];
 

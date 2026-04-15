@@ -4,6 +4,7 @@ import { createHash } from 'crypto';
 import { randomUUID } from 'crypto';
 import userModel from '../models/user.model.intelligent.js';
 import jwt from 'jsonwebtoken';
+import { InsuranceBroker } from '../models/insurance-broker.model.intelligent.js';
 import { authTeam, requireModule, attachAccessLevel } from '../middleware/team.middleware.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
@@ -1593,6 +1594,67 @@ router.get('/activity-stats', authTeam, async (req, res) => {
   } catch (error) {
     console.error('[Team] activity-stats error:', error);
     return res.status(500).json({ success: false, message: 'Failed to fetch activity stats' });
+  }
+});
+
+// ─── Broker Management ───────────────────────────────────────────────────────
+
+router.get('/brokers', authTeam, async (req, res) => {
+  try {
+    const { search = '', status = 'all', limit = 50, offset = 0 } = req.query;
+    const { Op } = await import('sequelize');
+    const where = {};
+    if (status !== 'all') where.status = status;
+    if (search) {
+      where[Op.or] = [
+        { brokerName: { [Op.iLike]: `%${search}%` } },
+        { email: { [Op.iLike]: `%${search}%` } },
+        { contactPersonName: { [Op.iLike]: `%${search}%` } },
+        { city: { [Op.iLike]: `%${search}%` } },
+      ];
+    }
+    const { count, rows } = await InsuranceBroker.findAndCountAll({
+      where,
+      limit: Math.min(Number(limit), 100),
+      offset: Number(offset),
+      order: [['createdAt', 'DESC']],
+      attributes: { exclude: ['password'] },
+    });
+    return res.json({ success: true, data: rows, total: count });
+  } catch (err) {
+    console.error('[Team] brokers list error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch brokers' });
+  }
+});
+
+router.get('/brokers/:id', authTeam, async (req, res) => {
+  try {
+    const broker = await InsuranceBroker.findByPk(req.params.id, {
+      attributes: { exclude: ['password'] },
+    });
+    if (!broker) return res.status(404).json({ success: false, message: 'Broker not found' });
+    return res.json({ success: true, broker });
+  } catch (err) {
+    console.error('[Team] broker get error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch broker' });
+  }
+});
+
+router.put('/brokers/:id', authTeam, async (req, res) => {
+  try {
+    const broker = await InsuranceBroker.findByPk(req.params.id);
+    if (!broker) return res.status(404).json({ success: false, message: 'Broker not found' });
+    const allowed = ['status', 'contactPersonName', 'phoneNumber', 'city', 'state', 'pincode',
+      'businessType', 'commissionPercentage', 'officeAddress', 'irdaiLicenseNumber'];
+    const updates = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    await broker.update(updates);
+    return res.json({ success: true, broker: { ...broker.toJSON(), password: undefined } });
+  } catch (err) {
+    console.error('[Team] broker update error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to update broker' });
   }
 });
 
