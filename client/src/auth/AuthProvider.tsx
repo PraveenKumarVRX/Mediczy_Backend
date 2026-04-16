@@ -179,9 +179,9 @@ export const AuthProvider = ({ children }) => {
     const normalizedPath = location.pathname.toLowerCase();
     const isHomecareRoute = normalizedPath.startsWith('/homecare');
     // Doctor portal routes (exclude /doctors which is for patients to browse doctors)
-    const isDoctorRoute = normalizedPath === '/doctor' || (
-      normalizedPath.startsWith('/doctor/') && !normalizedPath.startsWith('/doctors')
-    );
+    const isDoctorRoute = normalizedPath === '/doctor' ||
+      normalizedPath === '/doctor-dashboard' ||
+      (normalizedPath.startsWith('/doctor/') && !normalizedPath.startsWith('/doctors'));
     
     // Admin portal routes use their own token (adminToken) and must not fall back to user login.
     if (isAdminRoute) {
@@ -457,7 +457,7 @@ export const AuthProvider = ({ children }) => {
       // Redirect authenticated users away from login pages to their dashboard
       let redirectPath = "/";
       if (authState.userType === "doctor") {
-        redirectPath = "/doctor-dashboard";
+        redirectPath = "/doctor/dashboard";
       } else if (authState.userType === "corporate") {
         redirectPath = "/corporate/dashboard";
       } else if (authState.userType === "user") {

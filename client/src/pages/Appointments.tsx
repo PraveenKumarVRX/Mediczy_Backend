@@ -492,9 +492,24 @@ const Appointments = () => {
         duration: 10000,
       });
 
-      // Play notification sound
-      const audio = new Audio('/sounds/notification.mp3');
-      audio.play().catch(() => console.log('Could not play notification sound'));
+      // Play notification sound via Web Audio API (no file needed)
+      try {
+        const ctx = new AudioContext();
+        const playNote = (freq: number, start: number, dur: number) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.type = 'sine'; osc.frequency.setValueAtTime(freq, start);
+          gain.gain.setValueAtTime(0, start);
+          gain.gain.linearRampToValueAtTime(0.45, start + 0.02);
+          gain.gain.linearRampToValueAtTime(0, start + dur);
+          osc.start(start); osc.stop(start + dur);
+        };
+        const t = ctx.currentTime;
+        playNote(880,  t,        0.25);
+        playNote(1175, t + 0.28, 0.35);
+        setTimeout(() => ctx.close(), 1000);
+      } catch (_) { /* audio context not available */ }
     };
 
     // Use global socket from MainLayout's useSocketConnection

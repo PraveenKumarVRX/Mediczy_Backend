@@ -344,12 +344,17 @@ class NotificationService {
         return { success: false, error: 'Firebase not initialized' };
       }
 
-      // Get FCM token for user
-      const tokenRecord = await FCMToken.findOne({
-        where: { userId, userType, isActive: true }
+      // Get ALL active FCM tokens for user.
+      // Try both the canonical userType and common aliases ('patient' ↔ 'user')
+      // to handle tokens registered under an older schema.
+      const aliasMap = { patient: ['patient', 'user'], user: ['user', 'patient'], doctor: ['doctor'], admin: ['admin'] };
+      const userTypeVariants = aliasMap[userType] || [userType];
+
+      const tokenRecords = await FCMToken.findAll({
+        where: { userId, userType: userTypeVariants, isActive: true }
       });
 
-      if (!tokenRecord) {
+      if (!tokenRecords || tokenRecords.length === 0) {
         return { success: false, error: 'No FCM token found' };
       }
 
@@ -367,27 +372,32 @@ class NotificationService {
 
       // Use dedicated call notification only for active video/voice call events
       const isCallNotification = data.action === 'join_call';
-      let result;
 
-      if (isCallNotification && data.appointmentId) {
-        result = await sendDoctorCallingNotification(
-          tokenRecord.token,
-          {
-            doctorName: stringData.doctorName || title.replace('📞 ', '').replace(' is calling', ''),
-            appointmentId: stringData.appointmentId,
-            meetingLink: stringData.meetingLink || actionUrl || '',
-            doctorId: stringData.doctorId || '',
-            callInitiatedAt: stringData.callInitiatedAt || new Date().toISOString()
+      // Send to ALL registered devices for this user
+      const results = await Promise.allSettled(
+        tokenRecords.map(tokenRecord => {
+          if (isCallNotification && data.appointmentId) {
+            return sendDoctorCallingNotification(
+              tokenRecord.token,
+              {
+                doctorName: stringData.doctorName || title.replace('📞 ', '').replace(' is calling', ''),
+                appointmentId: stringData.appointmentId,
+                meetingLink: stringData.meetingLink || actionUrl || '',
+                doctorId: stringData.doctorId || '',
+                callInitiatedAt: stringData.callInitiatedAt || new Date().toISOString()
+              }
+            );
+          } else {
+            return sendSystemNotification(
+              tokenRecord.token,
+              { title, message, category: 'appointment', clickAction: actionUrl, extraData: stringData }
+            );
           }
-        );
-      } else {
-        result = await sendSystemNotification(
-          tokenRecord.token,
-          { title, message, category: 'appointment', clickAction: actionUrl, extraData: stringData }
-        );
-      }
+        })
+      );
 
-      return { success: true, result };
+      const anySuccess = results.some(r => r.status === 'fulfilled');
+      return { success: anySuccess, result: results };
     } catch (error) {
       return { success: false, error: error.message };
     }

@@ -129,7 +129,20 @@ export default function DoctorMobileHome() {
     setSocketOk(true);
     const handler = (callData: any) => {
       setIncomingCall(callData);
-      try { new Audio("/notification-sound.mp3").play(); } catch (_) {}
+      try {
+        const ctx = new AudioContext();
+        const t = ctx.currentTime;
+        [[880, 0.0], [880, 0.2], [1175, 0.4]].forEach(([freq, start]) => {
+          const osc = ctx.createOscillator(); const gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.type = 'square'; osc.frequency.setValueAtTime(freq as number, start as number);
+          gain.gain.setValueAtTime(0, start as number);
+          gain.gain.linearRampToValueAtTime(0.55, (start as number) + 0.01);
+          gain.gain.linearRampToValueAtTime(0, (start as number) + 0.14);
+          osc.start(t + (start as number)); osc.stop(t + (start as number) + 0.14);
+        });
+        setTimeout(() => ctx.close(), 1000);
+      } catch (_) { /* ignore audio failures */ }
       if ("Notification" in window && Notification.permission === "granted") {
         new Notification("🚨 Emergency Call", {
           body: `${callData.patientName} needs urgent help`,

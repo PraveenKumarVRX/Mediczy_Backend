@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { Link, useLocation } from "react-router-dom";
 import { BRAND } from "@/config/brand";
+import { MediqzyLogo3D } from "@/components/ui/MediqzyLogo3D";
 import {
   Activity,
   AlignCenterVertical,
@@ -287,11 +288,7 @@ export function Sidebar() {
 
         {/* Logo */}
         <div className="flex items-center gap-3 border-b border-slate-700/50 px-6 py-5">
-          <img 
-            src={BRAND.logo} 
-            alt={BRAND.name} 
-            className="h-10 w-auto object-contain"
-          />
+          <MediqzyLogo3D size="lg" interactive theme="light" />
           <span className="text-xl font-bold text-white tracking-tight">{BRAND.name}</span>
         </div>
 

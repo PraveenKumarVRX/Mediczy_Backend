@@ -177,7 +177,7 @@ export async function sendDoctorWelcomeEmail(doctorData, temporaryPassword) {
           </ul>
           
           <div style="text-align: center; margin: 35px 0;">
-            <a href="https://mediqzy.com/doctor/login" style="background-color: #0d9488; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
+            <a href="https://app.mediqzy.com/doctor/login" style="background-color: #0d9488; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
               Login to Doctor Portal →
             </a>
           </div>
@@ -281,7 +281,7 @@ export async function sendHospitalWelcomeEmail(hospitalData, temporaryPassword) 
           </ul>
           
           <div style="text-align: center; margin: 35px 0;">
-            <a href="https://mediqzy.com/hospital/login" style="background-color: #0d9488; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
+            <a href="https://app.mediqzy.com/hospital/login" style="background-color: #0d9488; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
               Access Hospital Portal →
             </a>
           </div>
@@ -379,7 +379,7 @@ export async function sendCorporateWelcomeEmail(corporateData, temporaryPassword
           </ul>
           
           <div style="text-align: center; margin: 35px 0;">
-            <a href="https://mediqzy.com/corporate/login" style="background-color: #7c3aed; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
+            <a href="https://app.mediqzy.com/corporate/login" style="background-color: #7c3aed; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
               Access Corporate Portal →
             </a>
           </div>
@@ -548,7 +548,7 @@ export async function sendTeamWelcomeEmail(userData, temporaryPassword) {
           </div>
           
           <div style="text-align: center; margin: 35px 0;">
-            <a href="https://mediqzy.com/login" style="background-color: #2563eb; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
+            <a href="https://app.mediqzy.com/login" style="background-color: #2563eb; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
               Login to Portal →
             </a>
           </div>

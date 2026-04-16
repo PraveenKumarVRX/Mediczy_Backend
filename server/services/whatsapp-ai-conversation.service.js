@@ -164,7 +164,7 @@ class WhatsAppAIConversationHandler {
         response += `1. What type of consultation do you need?\n`;
         response += `2. Any preferred doctor or specialization?\n`;
         response += `3. Preferred date and time?\n\n`;
-        response += `Or you can book directly: https://mediqzy.com/book-appointment`;
+        response += `Or you can book directly: https://app.mediqzy.com/book-appointment`;
         break;
         
       case 'check':
@@ -179,10 +179,10 @@ class WhatsAppAIConversationHandler {
           });
         } else if (userContext.isKnownUser) {
           response = `Hi ${userName}! You don't have any upcoming appointments scheduled.\n\n`;
-          response += `Would you like to book one? Just say "book appointment" or visit: https://mediqzy.com/book-appointment`;
+          response += `Would you like to book one? Just say "book appointment" or visit: https://app.mediqzy.com/book-appointment`;
         } else {
           response = `Hi! To check your appointments, I'll need to verify your identity.\n\n`;
-          response += `Please provide your registered email or phone number, or log in at: https://mediqzy.com/login`;
+          response += `Please provide your registered email or phone number, or log in at: https://app.mediqzy.com/login`;
         }
         break;
         
@@ -197,7 +197,7 @@ class WhatsAppAIConversationHandler {
           response += `\nWhich appointment would you like to ${intent.intent}? Please reply with the number.`;
         } else {
           response = `Hi ${userName}! I don't see any upcoming appointments to ${intent.intent}.\n\n`;
-          response += `If you recently booked, it may take a few minutes to appear. Please check: https://mediqzy.com/my-appointments`;
+          response += `If you recently booked, it may take a few minutes to appear. Please check: https://app.mediqzy.com/my-appointments`;
         }
         break;
         
@@ -458,7 +458,7 @@ Remember their name is ${userContext.user.firstName}. Address them personally an
       greeting += `• Booking appointments\n`;
       greeting += `• Understanding symptoms\n`;
       greeting += `• Medication guidance\n\n`;
-      greeting += `For a personalized experience, register at: https://mediqzy.com/register\n\n`;
+      greeting += `For a personalized experience, register at: https://app.mediqzy.com/register\n\n`;
       greeting += `How can I assist you today?`;
     }
     

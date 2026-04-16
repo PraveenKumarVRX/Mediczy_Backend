@@ -391,7 +391,7 @@ class DoctorPerformanceReportService {
   </div>
 
   <div style="text-align: center;">
-    <a href="https://mediqzy.com/doctor/dashboard" class="cta-button">View Full Dashboard</a>
+    <a href="https://app.mediqzy.com/doctor/dashboard" class="cta-button">View Full Dashboard</a>
   </div>
 
   <div class="footer">

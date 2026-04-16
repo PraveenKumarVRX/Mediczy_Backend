@@ -9,7 +9,7 @@ import { redisClient } from '../config/redis.js';
 
 const INVITE_TTL_SECONDS = 4 * 60 * 60; // 4 hours
 const INVITE_SECRET = process.env.VIDEO_INVITE_SECRET || JWT_CONFIG.SECRET + ':video-invite';
-const FRONTEND_BASE = (process.env.FRONTEND_URL || 'https://mediqzy.com').replace(/\/+$/, '');
+const FRONTEND_BASE = (process.env.FRONTEND_URL || 'https://app.mediqzy.com').replace(/\/+$/, '');
 
 // Redis key prefix for invite codes (cluster-safe, persists across restarts)
 const INVITE_REDIS_PREFIX = 'video:invite:';
@@ -20,14 +20,14 @@ class VideoController {
   // Test endpoint for video calling system
   static testVideoSystem = (req, res) => {
     try {
-      const livekitDomain = (process.env.LIVEKIT_URL || 'wss://video.mediqzy.com').replace(/^wss?:\/\//, '');
+      const turnHost = process.env.TURN_SERVER_HOST || '13.234.17.52';
       const serverConfig = {
-        turnServer: `turns:${livekitDomain}:5349`,
+        turnServer: `turn:${turnHost}:3478`,
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: `turns:${livekitDomain}:5349?transport=tcp`, username: 'livekit', credential: 'livekit' },
-          { urls: `turn:${livekitDomain}:3478?transport=udp`, username: 'livekit', credential: 'livekit' }
+          { urls: `turn:${turnHost}:3478?transport=udp`, username: 'livekit', credential: 'livekit' },
+          { urls: `turn:${turnHost}:3478?transport=tcp`, username: 'livekit', credential: 'livekit' }
         ]
       };
 
@@ -124,8 +124,8 @@ class VideoController {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: `turns:${(process.env.LIVEKIT_URL || 'wss://video.mediqzy.com').replace(/^wss?:\/\//, '')}:5349?transport=tcp`, username: 'livekit', credential: 'livekit' },
-          { urls: `turn:${(process.env.LIVEKIT_URL || 'wss://video.mediqzy.com').replace(/^wss?:\/\//, '')}:3478?transport=udp`, username: 'livekit', credential: 'livekit' }
+          { urls: `turn:${process.env.TURN_SERVER_HOST || '13.234.17.52'}:3478?transport=udp`, username: 'livekit', credential: 'livekit' },
+          { urls: `turn:${process.env.TURN_SERVER_HOST || '13.234.17.52'}:3478?transport=tcp`, username: 'livekit', credential: 'livekit' }
         ]
       });
 

@@ -1525,12 +1525,22 @@ const RemoteHealthMonitoring = () => {
   // Play alert sound
   const playAlertSound = useCallback(() => {
     try {
-      if (!audioRef.current) {
-        audioRef.current = new Audio('/sounds/emergency-alert.mp3');
-      }
-      audioRef.current.play().catch(() => {
-        // Ignore autoplay-related failures.
-      });
+      const ctx = new AudioContext();
+      const playNote = (freq: number, start: number, dur: number, vol: number) => {
+        const osc = ctx.createOscillator(); const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'square'; osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(vol, start + 0.01);
+        gain.gain.linearRampToValueAtTime(0, start + dur);
+        osc.start(start); osc.stop(start + dur);
+      };
+      // Urgent 3-beep alert
+      const t = ctx.currentTime;
+      playNote(880, t + 0.0, 0.12, 0.6);
+      playNote(880, t + 0.2, 0.12, 0.6);
+      playNote(1175, t + 0.4, 0.20, 0.55);
+      setTimeout(() => ctx.close(), 1200);
     } catch (e) {
       // Audio playback failures should not block monitoring flow.
     }

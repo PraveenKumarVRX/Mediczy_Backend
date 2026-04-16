@@ -94,10 +94,22 @@ const DoctorDashboard = () => {
       console.log('📞 Emergency call request received:', callData);
       setIncomingCall(callData);
       
-      // Play notification sound
+      // Play notification sound via Web Audio API
       try {
-        const audio = new Audio('/notification-sound.mp3');
-        audio.play().catch(e => console.log('Audio play failed:', e));
+        const ctx = new AudioContext();
+        const playNote = (freq: number, start: number, dur: number) => {
+          const osc = ctx.createOscillator(); const gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.type = 'sine'; osc.frequency.setValueAtTime(freq, start);
+          gain.gain.setValueAtTime(0, start);
+          gain.gain.linearRampToValueAtTime(0.5, start + 0.02);
+          gain.gain.linearRampToValueAtTime(0, start + dur);
+          osc.start(start); osc.stop(start + dur);
+        };
+        const t = ctx.currentTime;
+        playNote(784, t, 0.18); playNote(988, t + 0.2, 0.18);
+        playNote(1175, t + 0.4, 0.18); playNote(1568, t + 0.62, 0.32);
+        setTimeout(() => ctx.close(), 1500);
       } catch (e) {
         console.log('Audio initialization failed:', e);
       }

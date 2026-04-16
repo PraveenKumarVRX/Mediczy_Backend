@@ -49,17 +49,38 @@ export function IncomingCallNotification({
   const [timeLeft, setTimeLeft] = useState(autoRejectTimeout);
   const [isRinging, setIsRinging] = useState(true);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const ringingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    // Play ringtone (using system sound for now)
-    // In production, add an actual ringtone audio file
-    try {
-      audioRef.current = new Audio('/ringtone.mp3');
-      audioRef.current.loop = true;
-      audioRef.current.play().catch(console.error);
-    } catch (error) {
-      console.error('Failed to play ringtone:', error);
-    }
+    // Play ringtone using Web Audio API (G5→B5→D6→G6 ascending arpeggio)
+    const playRingCycle = () => {
+      try {
+        if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+          audioCtxRef.current = new AudioContext();
+        }
+        if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+        const ctx = audioCtxRef.current;
+        const t = ctx.currentTime;
+        const playNote = (freq: number, start: number, dur: number, vol: number) => {
+          const osc = ctx.createOscillator(); const gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.type = 'sine'; osc.frequency.setValueAtTime(freq, start);
+          gain.gain.setValueAtTime(0, start);
+          gain.gain.linearRampToValueAtTime(vol, start + 0.02);
+          gain.gain.linearRampToValueAtTime(0, start + dur);
+          osc.start(start); osc.stop(start + dur);
+        };
+        playNote(784,  t + 0.00, 0.18, 0.50);
+        playNote(988,  t + 0.20, 0.18, 0.50);
+        playNote(1175, t + 0.40, 0.18, 0.48);
+        playNote(1568, t + 0.62, 0.32, 0.38);
+      } catch (error) {
+        console.error('Failed to play ringtone:', error);
+      }
+    };
+    playRingCycle();
+    ringingTimerRef.current = setInterval(playRingCycle, 2000);
 
     // Countdown timer
     const timer = setInterval(() => {
@@ -82,9 +103,10 @@ export function IncomingCallNotification({
     return () => {
       clearInterval(timer);
       clearInterval(pulseInterval);
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
+      if (ringingTimerRef.current) clearInterval(ringingTimerRef.current);
+      if (audioCtxRef.current) {
+        try { audioCtxRef.current.close(); } catch (_) { /* ignore */ }
+        audioCtxRef.current = null;
       }
     };
   }, [callData.appointmentId, onReject]);

@@ -28,7 +28,7 @@ import {
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 
-// API_URL already includes '/api' in production (https://mediqzy.com/api)
+// API_URL already includes '/api' in production (https://app.mediqzy.com/api)
 // Remove /api prefix if present to avoid duplication
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const API_URL = API_BASE.replace(/\/api$/, ''); // Remove trailing /api if present

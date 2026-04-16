@@ -163,7 +163,7 @@ router.post(
       organization = '',
       entityType = '',
       requirements = '',
-      sourcePage = 'https://mediqzy.com/#demo',
+      sourcePage = 'https://app.mediqzy.com/#demo',
     } = req.body;
 
     const cleanPhone = String(phone).replace(/\D/g, '');

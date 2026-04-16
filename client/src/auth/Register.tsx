@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { BRAND } from "@/config/brand";
+import { MediqzyLogo3D } from "@/components/ui/MediqzyLogo3D";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -226,11 +227,7 @@ const Register = () => {
       <div className="auth-Image relative hidden h-full flex-col bg-cover bg-center bg-muted p-10 text-white dark:border-r lg:flex">
         <div className="absolute inset-0" />
         <div className="relative z-20 flex items-center gap-2 text-lg font-bold">
-          <img 
-            src={BRAND.logo} 
-            alt={BRAND.name} 
-            className="h-10 w-auto object-contain"
-          />
+          <MediqzyLogo3D size="lg" interactive float />
         </div>
         <div className="relative z-20 mt-auto">
           <blockquote className="space-y-2">

@@ -12,6 +12,7 @@ import User from '../models/postgres/user.model.postgres.js';
 import Tenant from '../models/postgres/tenant.model.postgres.js';
 import { validationResult } from 'express-validator';
 import { Op } from 'sequelize';
+import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { JWT_CONFIG } from '../config/auth.config.js';
@@ -385,15 +386,21 @@ export const searchClinics = async (req, res) => {
     }
 
     if (city) {
-      whereClause.city = { [Op.iLike]: `%${city}%` };
+      whereClause[Op.and] = [
+        ...(whereClause[Op.and] || []),
+        sequelize.where(sequelize.fn('lower', sequelize.cast(sequelize.json('address.city'), 'text')), { [Op.like]: `%${city.toLowerCase()}%` })
+      ];
     }
 
     if (state) {
-      whereClause.state = { [Op.iLike]: `%${state}%` };
+      whereClause[Op.and] = [
+        ...(whereClause[Op.and] || []),
+        sequelize.where(sequelize.fn('lower', sequelize.cast(sequelize.json('address.state'), 'text')), { [Op.like]: `%${state.toLowerCase()}%` })
+      ];
     }
 
     if (type) {
-      whereClause.organization_type = type;
+      whereClause.type = type;
     }
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -404,26 +411,40 @@ export const searchClinics = async (req, res) => {
         'id',
         'name',
         'slug',
-        'logo',
-        'organization_type',
+        'type',
+        'branding',
         'address',
-        'city',
-        'state',
-        'country',
         'phone',
         'email',
-        'website',
-        'description'
+        'website'
       ],
       limit: parseInt(limit),
       offset,
       order: [['name', 'ASC']]
     });
 
+    const clinicsNormalized = clinics.map(c => {
+      const plain = c.toJSON ? c.toJSON() : c;
+      return {
+        id: plain.id,
+        name: plain.name,
+        slug: plain.slug,
+        type: plain.type,
+        logo: plain.branding?.logo_url || null,
+        address: plain.address,
+        city: plain.address?.city || null,
+        state: plain.address?.state || null,
+        country: plain.address?.country || null,
+        phone: plain.phone,
+        email: plain.email,
+        website: plain.website
+      };
+    });
+
     res.status(200).json({
       success: true,
       data: {
-        clinics,
+        clinics: clinicsNormalized,
         pagination: {
           total: count,
           page: parseInt(page),

@@ -1397,36 +1397,46 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
       }
     }
 
-    // Check if within appointment window (15 mins before to 1 hour after)
+    // Check if within appointment window
     // Skip timing check for:
     //   - Emergency triage appointments (immediate access)
+    //   - Doctors (they manage their own schedule)
     //   - Doctor-initiated calls (doctor already validated timing on their side)
     const isDoctorInitiated = appointment.callInitiatedBy === 'doctor' && appointment.callInitiatedAt;
 
-    if (!isEmergencyTriage && !isDoctorInitiated) {
-      const appointmentDateTime = new Date(`${appointment.appointmentDate}T${appointment.appointmentTime}`);
-      const now = new Date();
-      const windowStart = new Date(appointmentDateTime.getTime() - 15 * 60 * 1000);
-      const windowEnd = new Date(appointmentDateTime.getTime() + 60 * 60 * 1000);
+    if (!isEmergencyTriage && !isDoctor && !isDoctorInitiated) {
+      // Use IST-aware same-day check: appointment date must match today (IST)
+      const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const todayIST = nowIST.toISOString().slice(0, 10);
+      const aptDate = String(appointment.appointmentDate).slice(0, 10);
 
-      if (now < windowStart) {
-        return res.status(400).json({
-          success: false,
-          message: 'Video call will be available 15 minutes before the appointment',
-          appointmentTime: appointmentDateTime.toISOString(),
-          canJoinAt: windowStart.toISOString()
-        });
-      }
+      if (aptDate !== todayIST) {
+        // Allow joining 1 day before or if appointment is today
+        const aptDateObj = new Date(aptDate);
+        const todayDateObj = new Date(todayIST);
+        const diffDays = Math.round((aptDateObj - todayDateObj) / (1000 * 60 * 60 * 24));
 
-      if (now > windowEnd) {
-        return res.status(400).json({
-          success: false,
-          message: 'Appointment time has passed',
-          appointmentTime: appointmentDateTime.toISOString()
-        });
+        if (diffDays > 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'Video call will be available on the day of your appointment',
+            appointmentDate: aptDate,
+            today: todayIST
+          });
+        }
+
+        if (diffDays < -1) {
+          return res.status(400).json({
+            success: false,
+            message: 'This appointment has already passed',
+            appointmentDate: aptDate
+          });
+        }
       }
     } else if (isEmergencyTriage) {
       console.log('⚡ Emergency triage appointment - bypassing timing window check');
+    } else if (isDoctor) {
+      console.log('👨‍⚕️ Doctor joining - bypassing timing window check');
     } else if (isDoctorInitiated) {
       console.log('📞 Doctor-initiated call - bypassing timing window check for patient join');
     }

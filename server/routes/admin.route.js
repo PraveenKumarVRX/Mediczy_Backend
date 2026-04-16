@@ -4342,7 +4342,7 @@ router.get('/settings/system', authUser, requireRole('admin'), async (req, res) 
       success: true,
       settings: {
         siteName: process.env.SITE_NAME || 'Mediqzy',
-        siteUrl: process.env.SITE_URL || 'https://mediqzy.com',
+        siteUrl: process.env.SITE_URL || 'https://app.mediqzy.com',
         emailFrom: process.env.SENDGRID_FROM_EMAIL || 'noreply@mediqzy.com',
         timezone: process.env.TZ || 'Asia/Kolkata',
         maintenanceMode: process.env.MAINTENANCE_MODE === 'true',

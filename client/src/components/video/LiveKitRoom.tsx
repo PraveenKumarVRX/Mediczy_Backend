@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   LiveKitRoom as LKRoom,
+  LayoutContextProvider,
   RoomAudioRenderer,
   useRoomContext,
   useParticipants,
@@ -178,31 +179,33 @@ export default function LiveKitRoom({
         }}
         style={{ height: '100vh', width: '100vw' }}
       >
-        {/* Custom header overlay */}
-        <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between p-4 bg-gradient-to-b from-slate-900/80 to-transparent">
-          <div className="flex items-center gap-3">
-            <div className="px-3 py-1.5 rounded-full bg-slate-700/50 text-xs font-medium text-white">
-              {roomName}
+        <LayoutContextProvider>
+          {/* Custom header overlay */}
+          <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between p-4 bg-gradient-to-b from-slate-900/80 to-transparent">
+            <div className="flex items-center gap-3">
+              <div className="px-3 py-1.5 rounded-full bg-slate-700/50 text-xs font-medium text-white">
+                {roomName}
+              </div>
+              <ConnectionIndicator />
+              <ParticipantsBadge />
             </div>
-            <ConnectionIndicator />
-            <ParticipantsBadge />
+            <Button
+              onClick={handleDisconnect}
+              variant="destructive"
+              size="sm"
+              className="flex items-center gap-2"
+            >
+              <PhoneOff className="w-4 h-4" />
+              End Call
+            </Button>
           </div>
-          <Button
-            onClick={handleDisconnect}
-            variant="destructive"
-            size="sm"
-            className="flex items-center gap-2"
-          >
-            <PhoneOff className="w-4 h-4" />
-            End Call
-          </Button>
-        </div>
 
-        {/* Main video conference area — no screen share */}
-        <MedicalVideoLayout controls={controls} />
-        
-        {/* Audio renderer */}
-        <RoomAudioRenderer />
+          {/* Main video conference area — no screen share */}
+          <MedicalVideoLayout controls={controls} />
+          
+          {/* Audio renderer */}
+          <RoomAudioRenderer />
+        </LayoutContextProvider>
       </LKRoom>
     </div>
   );

@@ -12,6 +12,8 @@ import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import sharedPool from '../db/pgPool.js';
+import nodemailer from 'nodemailer';
+import doctorModel from '../models/doctor.model.intelligent.js';
 
 const router = express.Router();
 
@@ -1655,6 +1657,160 @@ router.put('/brokers/:id', authTeam, async (req, res) => {
   } catch (err) {
     console.error('[Team] broker update error:', err);
     return res.status(500).json({ success: false, message: 'Failed to update broker' });
+  }
+});
+
+// ─── Doctor Registration Management ─────────────────────────────────────────
+
+const _teamMailer = () => {
+  const port = parseInt(process.env.SMTP_PORT) || 587;
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com', port,
+    secure: port === 465,
+    auth: { user: (process.env.SMTP_USER||'').trim(), pass: (process.env.SMTP_PASSWORD||process.env.SMTP_PASS||'').trim() },
+  });
+};
+
+// List all registered doctors (with search + status filter)
+router.get('/registered-doctors', authTeam, async (req, res) => {
+  try {
+    const { search = '', status = 'all', limit = 50, offset = 0 } = req.query;
+    const where = {};
+    if (status === 'pending')  where.isVerified = false;
+    if (status === 'active')   where.isVerified = true;
+    if (search) {
+      where[Op.or] = [
+        { firstName: { [Op.iLike]: `%${search}%` } },
+        { lastName:  { [Op.iLike]: `%${search}%` } },
+        { email:     { [Op.iLike]: `%${search}%` } },
+        { specialization: { [Op.iLike]: `%${search}%` } },
+      ];
+    }
+    const { count, rows } = await doctorModel.findAndCountAll({
+      where,
+      limit: Math.min(Number(limit), 100),
+      offset: Number(offset),
+      order: [['createdAt', 'DESC']],
+      attributes: { exclude: ['password', 'passwordResetToken'] },
+    });
+    return res.json({ success: true, data: rows, total: count });
+  } catch (err) {
+    console.error('[Team] registered-doctors list error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch doctors' });
+  }
+});
+
+// Get single doctor detail
+router.get('/registered-doctors/:id', authTeam, async (req, res) => {
+  try {
+    const doctor = await doctorModel.findByPk(req.params.id, {
+      attributes: { exclude: ['password', 'passwordResetToken'] },
+    });
+    if (!doctor) return res.status(404).json({ success: false, message: 'Doctor not found' });
+    return res.json({ success: true, doctor });
+  } catch (err) {
+    console.error('[Team] registered-doctor get error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch doctor' });
+  }
+});
+
+// Activate doctor account
+router.patch('/registered-doctors/:id/activate', authTeam, async (req, res) => {
+  try {
+    const doctor = await doctorModel.findByPk(req.params.id);
+    if (!doctor) return res.status(404).json({ success: false, message: 'Doctor not found' });
+    await doctor.update({ isVerified: true, documentVerified: true });
+    const doctorName = `${doctor.prefix || ''} ${doctor.firstName} ${doctor.lastName}`.trim();
+    // Send activation email to doctor
+    try {
+      await _teamMailer().sendMail({
+        from: `"Mediczy Team" <${process.env.SMTP_USER || 'support@mediczy.com'}>`,
+        to: doctor.email,
+        subject: `✅ Your Mediczy Doctor Account is Active — Welcome, ${doctorName}!`,
+        html: `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f0f4f8;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#f0f4f8"><tr><td align="center" style="padding:40px 20px;">
+<table width="580" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.09);">
+  <tr><td style="background:linear-gradient(135deg,#059669,#0d9488);padding:40px;text-align:center;">
+    <div style="width:72px;height:72px;background:rgba(255,255,255,0.2);border-radius:50%;margin:0 auto 20px;line-height:72px;font-size:36px;">✅</div>
+    <h1 style="margin:0;color:#fff;font-size:24px;font-weight:800;">Account Activated!</h1>
+    <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">Your Mediczy doctor account is now live</p>
+  </td></tr>
+  <tr><td style="padding:36px 40px;">
+    <p style="font-size:16px;color:#0f172a;font-weight:600;margin:0 0 12px">Hello, ${doctorName}!</p>
+    <p style="color:#475569;line-height:1.8;font-size:14px;margin:0 0 28px">
+      Congratulations! Our team has reviewed and verified your registration documents.
+      Your Mediczy doctor account is now <strong style="color:#059669">fully active</strong>.
+      You can now log in and start seeing patients.
+    </p>
+    <div style="text-align:center;margin-bottom:28px">
+      <a href="${process.env.FRONTEND_URL || 'https://app.mediczy.com'}/doctor/login"
+         style="background:linear-gradient(135deg,#059669,#0d9488);color:#fff;text-decoration:none;padding:14px 36px;border-radius:12px;font-weight:700;font-size:15px;display:inline-block">
+        Login to Your Dashboard →
+      </a>
+    </div>
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px 20px">
+      <p style="margin:0;font-size:13px;color:#166534">📧 Login Email: <strong>${doctor.email}</strong></p>
+      <p style="margin:6px 0 0;font-size:13px;color:#166534">🔐 Use the password you created during registration.</p>
+    </div>
+  </td></tr>
+  <tr><td style="padding:16px 40px;border-top:1px solid #e2e8f0;text-align:center">
+    <p style="margin:0;font-size:11px;color:#94a3b8">Mediczy · Mayden SmartHealth Pvt Ltd · support@mediczy.com</p>
+  </td></tr>
+</table></td></tr></table></body></html>`,
+      });
+    } catch (mailErr) { console.warn('[Team] Activation email failed:', mailErr.message); }
+    return res.json({ success: true, message: 'Doctor account activated', doctor: { id: doctor.id, isVerified: true } });
+  } catch (err) {
+    console.error('[Team] activate doctor error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to activate doctor' });
+  }
+});
+
+// Reject doctor account
+router.patch('/registered-doctors/:id/reject', authTeam, async (req, res) => {
+  try {
+    const doctor = await doctorModel.findByPk(req.params.id);
+    if (!doctor) return res.status(404).json({ success: false, message: 'Doctor not found' });
+    const { reason = 'Your documents could not be verified. Please re-register with valid documents.' } = req.body;
+    await doctor.update({ isVerified: false, documentVerified: false, accountStatus: 'rejected' });
+    const doctorName = `${doctor.prefix || ''} ${doctor.firstName} ${doctor.lastName}`.trim();
+    try {
+      await _teamMailer().sendMail({
+        from: `"Mediczy Team" <${process.env.SMTP_USER || 'support@mediczy.com'}>`,
+        to: doctor.email,
+        subject: `Mediczy Doctor Registration — Update Required`,
+        html: `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f0f4f8;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#f0f4f8"><tr><td align="center" style="padding:40px 20px;">
+<table width="580" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.09);">
+  <tr><td style="background:linear-gradient(135deg,#dc2626,#b91c1c);padding:40px;text-align:center;">
+    <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800">Registration Update</h1>
+    <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px">Action required for your Mediczy doctor account</p>
+  </td></tr>
+  <tr><td style="padding:36px 40px;">
+    <p style="font-size:16px;color:#0f172a;font-weight:600;margin:0 0 12px">Hello, ${doctorName},</p>
+    <p style="color:#475569;line-height:1.8;font-size:14px;margin:0 0 20px">
+      After reviewing your registration, we were unable to activate your account at this time.
+    </p>
+    <div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:10px;padding:16px 20px;margin-bottom:24px">
+      <p style="margin:0;font-size:13px;color:#b91c1c;font-weight:700">Reason:</p>
+      <p style="margin:6px 0 0;font-size:13px;color:#dc2626">${reason}</p>
+    </div>
+    <p style="color:#475569;font-size:14px;line-height:1.7">
+      Please contact <a href="mailto:support@mediczy.com" style="color:#1d4ed8">support@mediczy.com</a> for assistance or to re-submit your application.
+    </p>
+  </td></tr>
+  <tr><td style="padding:16px 40px;border-top:1px solid #e2e8f0;text-align:center">
+    <p style="margin:0;font-size:11px;color:#94a3b8">Mediczy · Mayden SmartHealth Pvt Ltd · support@mediczy.com</p>
+  </td></tr>
+</table></td></tr></table></body></html>`,
+      });
+    } catch (mailErr) { console.warn('[Team] Rejection email failed:', mailErr.message); }
+    return res.json({ success: true, message: 'Doctor registration rejected', reason });
+  } catch (err) {
+    console.error('[Team] reject doctor error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to reject doctor' });
   }
 });
 

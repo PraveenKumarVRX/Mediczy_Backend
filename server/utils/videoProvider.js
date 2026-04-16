@@ -45,7 +45,7 @@ export const resolveVideoProvider = () => 'livekit';
 export const getProviderLabel = () => 'LiveKit';
 
 const resolveFrontendBaseUrl = () => {
-  const base = process.env.FRONTEND_URL || process.env.SITE_URL || 'https://mediqzy.com';
+  const base = process.env.FRONTEND_URL || process.env.SITE_URL || 'https://app.mediqzy.com';
   return normalizeUrl(base);
 };
 

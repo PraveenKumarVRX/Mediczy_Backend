@@ -23,6 +23,15 @@ import { uploadToMinio } from '../services/minio-upload.service.js';
 
 const router = express.Router();
 
+// Sensitive fields that must NEVER be returned in public doctor listing APIs
+const DOCTOR_SENSITIVE_FIELDS = [
+  'password', 'passwordResetToken', 'passwordResetExpires',
+  'verificationDocuments', 'documents', 'metadata',
+  'search_vector', 'uid', 'unique_id', 'userId',
+  'lastLoginAt', 'lastActivityAt',
+  'passwordResetToken', 'passwordResetExpires'
+];
+
 // Configure multer for file uploads — memory storage (file goes to MinIO)
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -117,7 +126,7 @@ router.get('/available', [
 
     const { count, rows: doctors } = await doctorModel.findAndCountAll({
       where: whereClause,
-      attributes: { exclude: ['password', 'verificationDocuments'] },
+      attributes: { exclude: DOCTOR_SENSITIVE_FIELDS },
       limit: parseInt(limit),
       offset,
       order: [
@@ -142,8 +151,7 @@ router.get('/available', [
     console.error('Get available doctors error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch available doctors',
-      error: error.message
+      message: 'Failed to fetch available doctors'
     });
   }
 });
@@ -181,7 +189,7 @@ router.get('/partnered', authUser, async (req, res) => {
         organization_id: { [sequelize.Sequelize.Op.in]: partnerIds },
         isVerified: true
       },
-      attributes: { exclude: ['password', 'verificationDocuments'] },
+      attributes: { exclude: DOCTOR_SENSITIVE_FIELDS },
       order: [
         ['isOnline', 'DESC'],
         ['rating', 'DESC'],
@@ -198,8 +206,7 @@ router.get('/partnered', authUser, async (req, res) => {
     console.error('Get partnered doctors error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch partner clinic doctors',
-      error: error.message
+      message: 'Failed to fetch partner clinic doctors'
     });
   }
 });
@@ -257,7 +264,7 @@ router.get('/', [
 
     const { count, rows: doctors } = await doctorModel.findAndCountAll({
       where: whereClause,
-      attributes: { exclude: ['password', 'verificationDocuments'] },
+      attributes: { exclude: DOCTOR_SENSITIVE_FIELDS },
       limit: parseInt(limit),
       offset,
       order: [
@@ -281,8 +288,7 @@ router.get('/', [
     console.error('List doctors error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch doctors',
-      error: error.message
+      message: 'Failed to fetch doctors'
     });
   }
 });
@@ -366,25 +372,54 @@ router.post('/register', [
  */
 router.post('/login', authLimiter, async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const normalizedEmail = String(email || '').toLowerCase();
+    const { email, phone, phoneNumber, identifier, password } = req.body;
+    const rawIdentifier = email || phone || phoneNumber || identifier;
+    const password_val = password;
 
-    if (!email || !password) {
+    if (!rawIdentifier || !password_val) {
       return res.status(400).json({
         success: false,
-        message: 'Email and password are required'
+        message: 'Email or phone number and password are required'
       });
     }
 
-    // Find doctor (case-insensitive email)
-    const doctor = await doctorModel.findOne({
-      where: sequelize.where(
-        sequelize.fn('LOWER', sequelize.col('email')),
-        sequelize.fn('LOWER', normalizedEmail)
-      )
-    });
+    const identifierStr = String(rawIdentifier).trim();
+    const digitsOnly = identifierStr.replace(/[^0-9]/g, '');
+    const isPhone = digitsOnly.length >= 7 && digitsOnly.length <= 15 && !/[@.]/.test(identifierStr);
+    const normalizedPhone = isPhone
+      ? (digitsOnly.length > 10 ? digitsOnly.slice(-10) : digitsOnly)
+      : null;
+    const normalizedEmail = isPhone ? null : identifierStr.toLowerCase();
+
+    const loginIdentifier = normalizedEmail || normalizedPhone || identifierStr;
+
+    // Find doctor by email or phone number
+    let doctor = null;
+    if (!isPhone) {
+      doctor = await doctorModel.findOne({
+        where: sequelize.where(
+          sequelize.fn('LOWER', sequelize.col('email')),
+          sequelize.fn('LOWER', normalizedEmail)
+        )
+      });
+    } else {
+      // Try phone match using regexp_replace to normalize stored numbers
+      doctor = await doctorModel.findOne({
+        where: sequelize.where(
+          sequelize.fn('regexp_replace', sequelize.col('phoneNumber'), '[^0-9]', '', 'g'),
+          normalizedPhone
+        )
+      });
+      if (!doctor) {
+        doctor = await doctorModel.findOne({ where: { phoneNumber: normalizedPhone } });
+      }
+      if (!doctor) {
+        doctor = await doctorModel.findOne({ where: { phoneNumber: identifierStr } });
+      }
+    }
+    const normalizedIdentifier = loginIdentifier;
     if (!doctor) {
-      await auditLoginAttempt(req, null, normalizedEmail, false, 'Doctor not found');
+      await auditLoginAttempt(req, null, normalizedIdentifier, false, 'Doctor not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -393,10 +428,10 @@ router.post('/login', authLimiter, async (req, res) => {
 
     // Verify password
     const isValidPassword = typeof doctor.comparePassword === 'function'
-      ? await doctor.comparePassword(password)
-      : await bcrypt.compare(password, doctor.password);
+      ? await doctor.comparePassword(password_val)
+      : await bcrypt.compare(password_val, doctor.password);
     if (!isValidPassword) {
-      await auditLoginAttempt(req, doctor.id, normalizedEmail, false, 'Invalid password');
+      await auditLoginAttempt(req, doctor.id, normalizedIdentifier, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -428,7 +463,7 @@ router.post('/login', authLimiter, async (req, res) => {
         { expiresIn: '7d' }
       );
 
-    await auditLoginAttempt(req, doctor.id, normalizedEmail, true);
+    await auditLoginAttempt(req, doctor.id, normalizedIdentifier, true);
 
     res.json({
       success: true,

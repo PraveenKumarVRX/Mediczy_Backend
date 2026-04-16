@@ -681,7 +681,7 @@ router.post('/:doctorId/create-login', async (req, res) => {
                 doctorId,
                 email,
                 loginCreated: true,
-                loginUrl: 'https://mediqzy.com/doctor/login'
+                loginUrl: 'https://app.mediqzy.com/doctor/login'
             }
         });
     } catch (error) {

@@ -35,7 +35,8 @@ interface CallNotification {
 export default function VideoCallNotification() {
   const [notification, setNotification] = useState<CallNotification | null>(null);
   const [isRinging, setIsRinging] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const ringingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const vibrateIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const navigate = useNavigate();
   const { currentUser, currentDoctor } = useAuth();
@@ -66,13 +67,8 @@ export default function VideoCallNotification() {
     }
   };
 
-  // Initialize audio elements
+  // Cleanup audio on unmount
   useEffect(() => {
-    // Create audio element for ringing sound
-    const audio = new Audio();
-    audio.loop = true;
-    audioRef.current = audio;
-
     return () => {
       stopRinging();
     };
@@ -219,6 +215,17 @@ export default function VideoCallNotification() {
     socket.on('triage-call-request', handleTriageCallRequest);
     socket.on('triage-call-accepted', handleTriageCallAccepted);
 
+    // Re-attach on reconnect in case the server drops the room (socket.io
+    // keeps the same socket instance across reconnects but the server-side
+    // rooms are lost — a "reconnect" event fires when the transport recovers)
+    socket.off('reconnect', (socket as any)._vcnReconnectHandler);
+    const reconnectHandler = () => {
+      console.log('🔁 Socket reconnected — re-attaching VideoCallNotification listeners');
+      setupSocketListeners(window.socket);
+    };
+    (socket as any)._vcnReconnectHandler = reconnectHandler;
+    socket.on('reconnect', reconnectHandler);
+
     // Mark that we've set up listeners using a custom property
     (socket as unknown as { _hasVideoCallListeners?: boolean })._hasVideoCallListeners = true;
   }, []);
@@ -254,45 +261,96 @@ export default function VideoCallNotification() {
     };
   }, [setupSocketListeners]);
 
-  const playRingingSound = () => {
-    if (audioRef.current) {
-      // Use data URL for inline ringtone (simple beep pattern)
-      audioRef.current.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIHGu99+eVRwkNUKrm796nUQ0JWT/z0odLEQxhufHvllsXDT1t5d+5aRoMU6zp4rJWGA0/cvnUlFAWCk+v9N+3dSQLM3bs+uKgURQNU6Ll3bFcHAo+efDZlFEWCVCw9uG5dCQKNXXp+eWjTxULVqzj2q1UGgk+dO/YklEVCU6t+eK7fCkKN3Tp++emUBQLWazk27FWGwo+de3ZlVIXCU2u+uO/gyoLOHPr++ilUBQKV67k3LNZGgo/dOzWlFIXCU2t+eO/gisMOXTs+eimUBUKWa/k3LNZGgo/c+rZlVIXCk6u++a/gysMOXTs+eimUBUKWa/k3LNaGwo/derYlVIXCk6u++W/gysMOXTs+eimUBUKWa/k3LNaGwo/dOvYlVIXCk+u+uW+gysMOXTs+eimUBUKWa/k3LNaGwo/c+zYlVIXCk+u+uW+gysMOXTs+eimUBUKWa/k3LNaGwo/c+3YlVIXCk+u+uW+gysMOXTs+eimUBUKWa/k3LNaGwo/c+zYlVIXCk+u+uW+gysMOXTs+eimUBUKWa/k3LNaGwo/c+zYlVIXCk+u+uW+gysMOXTs+eimUBUKWa/k3LNaGwo/c+zYlVIXCk+u+uW+gysMOXTs+eimUBUKWa/k3LNaGwo/c+zYlVIXCk+u+uW+gysMOXTs+eimUBUKWa/k3LNaGgo/c+zYlVIXCk+u+uW+gysMOXTs+eimUBUKWa/k3LNaGgo/';
-      audioRef.current.volume = 0.8;
-      audioRef.current.play().catch(err => console.log('Audio play failed:', err));
-      setIsRinging(true);
+  // ─── Web Audio API ringtone helpers ───────────────────────────────────────
+
+  const getAudioCtx = () => {
+    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+      audioCtxRef.current = new AudioContext();
     }
+    if (audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume();
+    }
+    return audioCtxRef.current;
+  };
+
+  const playTone = (ctx: AudioContext, freq: number, start: number, dur: number, vol = 0.5) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, start);
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(vol, start + 0.02);
+    gain.gain.setValueAtTime(vol, start + dur - 0.06);
+    gain.gain.linearRampToValueAtTime(0, start + dur);
+    osc.start(start);
+    osc.stop(start + dur);
+  };
+
+  // One ring cycle: G5 → B5 → D6 → G6 ascending arpeggio (pentatonic, pleasant)
+  const playRingCycle = () => {
+    try {
+      const ctx = getAudioCtx();
+      const t = ctx.currentTime;
+      playTone(ctx, 784,  t + 0.00, 0.18, 0.50);  // G5
+      playTone(ctx, 988,  t + 0.20, 0.18, 0.50);  // B5
+      playTone(ctx, 1175, t + 0.40, 0.18, 0.48);  // D6
+      playTone(ctx, 1568, t + 0.62, 0.32, 0.38);  // G6 (longer, softer — the "top")
+    } catch (e) {
+      console.log('Web Audio ring failed:', e);
+    }
+  };
+
+  const playRingingSound = () => {
+    playRingCycle();
+    ringingTimerRef.current = setInterval(playRingCycle, 2000);
+    setIsRinging(true);
   };
 
   const playCallingSound = () => {
-    if (audioRef.current) {
-      audioRef.current.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIHGu99+eVRwkNUKrm796nUQ0JWT/z0odLEQxhufHvllsXDT1t5d+5aRoMU6zp4rJWGA0/cvnUlFAWCk+v9N+3dSQLM3bs+uKgURQNU6Ll3bFcHAo+efDZlFEWCVCw9uG5dCQKNXXp+eWjTxULVqzj2q1UGgk+dO/YklEVCU6t+eK7fCkKN3Tp++emUBQLWazk27FWGwo+de3ZlVIXCU2u+uO/gyoLOHPr++ilUBQKV67k3LNZGgo/dOzWlFIXCU2t+eO/gisMOXTs+eimUBUKWa/k3LNZGgo/c+rZlVIXCk6u++a/gysMOXTs+eimUBUKWa/k3LNaGwo/derYlVIXCk6u++W/gysMOXTs+eimUBUKWa/k3LNaGwo/dOvYlVIXCk+u+uW+gysMOXTs+eimUBUKWa/k3LNaGwo/c+zYlVIXCk+u+uW+gysMOXTs+eimUBUKWa/k3LNaGwo/c+3YlVIXCk+u+uW+gysMOXTs+eimUBUKWa/k3LNaGwo/c+zYlVIXCk+u+uW+gysMOXTs+eimUBUKWa/k3LNaGwo/c+zYlVIXCk+u+uW+gysMOXTs+eimUBUKWa/k3LNaGwo/c+zYlVIXCk+u+uW+gysMOXTs+eimUBUKWa/k3LNaGwo/c+zYlVIXCk+u+uW+gysMOXTs+eimUBUKWa/k3LNaGgo/c+zYlVIXCk+u+uW+gysMOXTs+eimUBUKWa/k3LNaGgo/';
-      audioRef.current.volume = 0.6;
-      audioRef.current.loop = true;
-      audioRef.current.play().catch(err => console.log('Audio play failed:', err));
-      setIsRinging(true);
-    }
+    // Outgoing ringing: classic two-tone 440/330 Hz pulse
+    const playPulse = () => {
+      try {
+        const ctx = getAudioCtx();
+        const t = ctx.currentTime;
+        playTone(ctx, 440, t + 0.0, 0.38, 0.35);
+        playTone(ctx, 330, t + 0.5, 0.38, 0.32);
+      } catch (e) {
+        console.log('Web Audio calling failed:', e);
+      }
+    };
+    playPulse();
+    ringingTimerRef.current = setInterval(playPulse, 1200);
+    setIsRinging(true);
   };
 
   const playNotificationSound = () => {
-    if (audioRef.current) {
-      audioRef.current.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIHGu99+eVRwkNUKrm796nUQ==';
-      audioRef.current.volume = 0.5;
-      audioRef.current.loop = false;
-      audioRef.current.play().catch(err => console.log('Audio play failed:', err));
+    // Single 2-note gentle chime: A5 → D6
+    try {
+      const ctx = getAudioCtx();
+      const t = ctx.currentTime;
+      playTone(ctx, 880,  t,        0.25, 0.45);  // A5
+      playTone(ctx, 1175, t + 0.28, 0.35, 0.35);  // D6
+    } catch (e) {
+      console.log('Web Audio notification failed:', e);
     }
   };
 
   const stopRinging = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      setIsRinging(false);
+    if (ringingTimerRef.current) {
+      clearInterval(ringingTimerRef.current);
+      ringingTimerRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      try { audioCtxRef.current.close(); } catch (_) { /* ignore */ }
+      audioCtxRef.current = null;
     }
     if (vibrateIntervalRef.current) {
       clearInterval(vibrateIntervalRef.current);
       vibrateIntervalRef.current = null;
     }
+    setIsRinging(false);
   };
 
   const startVibration = () => {

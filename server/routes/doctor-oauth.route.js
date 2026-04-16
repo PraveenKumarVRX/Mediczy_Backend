@@ -236,7 +236,7 @@ router.get(
 
 router.get('/oauth/status', (req, res) => {
   const baseUrl = process.env.NODE_ENV === 'production'
-    ? 'https://mediqzy.com'
+    ? 'https://app.mediqzy.com'
     : 'http://localhost:8000';
   
   res.json({

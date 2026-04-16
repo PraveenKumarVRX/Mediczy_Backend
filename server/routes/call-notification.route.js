@@ -61,10 +61,12 @@ router.post('/doctor-to-patient', authUser, requireRole('doctor'), async (req, r
     const doctorName = `Dr. ${doctorDetails.first_name} ${doctorDetails.last_name}`;
 
     // Get patient's FCM token(s)
+    // Include both 'patient' and 'user' userType since some tokens may be
+    // registered under the generic 'user' role rather than 'patient'
     const patientTokens = await FCMToken.findAll({
       where: { 
         userId: patientId, 
-        userType: 'patient', 
+        userType: ['patient', 'user'],
         isActive: true 
       }
     });
@@ -226,7 +228,7 @@ router.get('/patient/:patientId/status', authUser, requireRole('doctor'), async 
     const tokens = await FCMToken.findAll({
       where: { 
         userId: patientId, 
-        userType: 'patient', 
+        userType: ['patient', 'user'],
         isActive: true 
       },
       attributes: ['deviceType', 'updatedAt']

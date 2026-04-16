@@ -62,10 +62,10 @@ const SettingsPage = () => {
   // API Settings
   const [apiSettings, setApiSettings] = useState({
     apiKey: 'medi_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-    webhookUrl: 'https://mediqzy.com/api/webhooks',
+    webhookUrl: 'https://app.mediqzy.com/api/webhooks',
     rateLimitPerMinute: 60,
     enableCors: true,
-    allowedOrigins: 'https://mediqzy.com, https://app.mediqzy.com',
+    allowedOrigins: 'https://app.mediqzy.com, https://app.mediqzy.com',
     apiVersion: 'v2.0',
     enableApiLogs: true
   });

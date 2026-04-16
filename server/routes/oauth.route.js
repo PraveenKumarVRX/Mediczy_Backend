@@ -35,7 +35,7 @@ const router = express.Router();
  * - state: CSRF protection parameter (recommended)
  * 
  * Example:
- * https://mediqzy.com/oauth/authorize?
+ * https://app.mediqzy.com/oauth/authorize?
  *   client_id=rocketchat&
  *   redirect_uri=http://localhost:3100/_oauth/mediqzy&
  *   response_type=code&

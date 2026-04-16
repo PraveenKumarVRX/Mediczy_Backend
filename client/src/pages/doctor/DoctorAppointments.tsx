@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { format } from "date-fns";
+import { format, isToday, isPast, isFuture, parseISO } from "date-fns";
 import {
   Calendar,
   Clock,
@@ -10,11 +10,17 @@ import {
   MessageSquare,
   User,
   FileText,
-  CheckCircle,
-  XCircle,
   Loader2,
-  Filter,
   Search,
+  ChevronRight,
+  Activity,
+  CheckCircle2,
+  AlertCircle,
+  TrendingUp,
+  MapPin,
+  CreditCard,
+  Stethoscope,
+  X,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -70,6 +76,62 @@ interface Appointment {
   createdAt: string;
 }
 
+// ── helpers ────────────────────────────────────────────────────────────────
+const normalizeStatus = (s?: string) =>
+  String(s || "").toLowerCase().replace(/_/g, "-");
+
+const canInitiateCall = (s?: string) =>
+  ["scheduled", "confirmed", "accepted", "in-progress"].includes(normalizeStatus(s));
+
+const getDisplayStatus = (apt: Appointment): string => {
+  const today = format(new Date(), "yyyy-MM-dd");
+  const ns = normalizeStatus(apt.status);
+  if (apt.appointmentDate < today && ["scheduled", "confirmed", "in-progress", "pending"].includes(ns))
+    return "expired";
+  return ns;
+};
+
+const formatTime = (t?: string) => {
+  if (!t) return "—";
+  try {
+    const [h, m] = t.split(":").map(Number);
+    const date = new Date();
+    date.setHours(h, m);
+    return date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+  } catch { return t; }
+};
+
+const formatDate = (d: string) => {
+  try {
+    const date = parseISO(d);
+    if (isToday(date)) return "Today";
+    return format(date, "d MMM yyyy");
+  } catch { return d; }
+};
+
+const getInitials = (name?: string) => {
+  if (!name) return "?";
+  return name.split(" ").slice(0, 2).map(n => n[0]).join("").toUpperCase();
+};
+
+const AVATAR_COLORS = [
+  "bg-violet-500", "bg-indigo-500", "bg-sky-500", "bg-teal-500",
+  "bg-emerald-500", "bg-amber-500", "bg-rose-500", "bg-pink-500",
+];
+const avatarColor = (id: number) => AVATAR_COLORS[id % AVATAR_COLORS.length];
+
+const STATUS_CONFIG: Record<string, { label: string; border: string; badge: string; dot: string }> = {
+  scheduled:    { label: "Scheduled",    border: "border-l-blue-400",    badge: "bg-blue-100 text-blue-700",    dot: "bg-blue-400" },
+  confirmed:    { label: "Confirmed",    border: "border-l-green-400",   badge: "bg-green-100 text-green-700",  dot: "bg-green-400" },
+  "in-progress":{ label: "In Progress",  border: "border-l-yellow-400",  badge: "bg-yellow-100 text-yellow-700",dot: "bg-yellow-400" },
+  completed:    { label: "Completed",    border: "border-l-emerald-400", badge: "bg-emerald-100 text-emerald-700",dot: "bg-emerald-400" },
+  cancelled:    { label: "Cancelled",    border: "border-l-red-400",     badge: "bg-red-100 text-red-700",      dot: "bg-red-400" },
+  "no-show":    { label: "No Show",      border: "border-l-gray-400",    badge: "bg-gray-100 text-gray-600",    dot: "bg-gray-400" },
+  expired:      { label: "Expired",      border: "border-l-orange-300",  badge: "bg-orange-50 text-orange-600", dot: "bg-orange-300" },
+};
+const statusCfg = (s: string) => STATUS_CONFIG[normalizeStatus(s)] ?? STATUS_CONFIG["scheduled"];
+
+// ── component ──────────────────────────────────────────────────────────────
 const DoctorAppointments = () => {
   const { toast } = useToast();
   const { currentDoctor } = useAuth();
@@ -85,47 +147,7 @@ const DoctorAppointments = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
 
-  // Helper function to get display status (marks past non-completed appointments as expired)
-  const getDisplayStatus = (appointment: Appointment): string => {
-    const today = format(new Date(), "yyyy-MM-dd");
-    const isPast = appointment.appointmentDate < today;
-    // Normalize status to lowercase with hyphens for comparison
-    const normalizedStatus = (appointment.status || '').toLowerCase().replace(/_/g, '-');
-    const incompleteStatuses = ['scheduled', 'confirmed', 'in-progress', 'pending'];
-    const isIncomplete = incompleteStatuses.includes(normalizedStatus);
-
-    // If it's a past appointment that wasn't completed, show as expired
-    if (isPast && isIncomplete) {
-      return 'EXPIRED';
-    }
-    return appointment.status;
-  };
-
-  // Helper function to get status color including expired
-  const getStatusColorWithExpired = (status: string): string => {
-    // Normalize status for comparison
-    const normalizedStatus = (status || '').toLowerCase().replace(/_/g, '-');
-    switch (normalizedStatus) {
-      case "scheduled":
-        return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300";
-      case "confirmed":
-        return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300";
-      case "in-progress":
-        return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300";
-      case "completed":
-        return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300";
-      case "cancelled":
-        return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300";
-      case "no-show":
-        return "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300";
-      case "expired":
-        return "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300";
-      default:
-        return "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300";
-    }
-  };
-
-  // Fetch doctor's enhanced appointments
+  // ── queries ──────────────────────────────────────────────────────────────
   const { data: appointments = [], isLoading } = useQuery({
     queryKey: ["doctorEnhancedAppointments", doctorId],
     queryFn: async () => {
@@ -144,549 +166,476 @@ const DoctorAppointments = () => {
     enabled: !!doctorId,
   });
 
-  // Update status mutation
+  // ── mutations ─────────────────────────────────────────────────────────────
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status, appointment }: { id: number; status: string; appointment?: Appointment }) => {
+    mutationFn: async ({ id, status }: { id: number; status: string; appointment?: Appointment }) => {
       await api.patch(`/appointments/${id}/status`, { status });
-      return { status, appointment };
+      return { status };
     },
-    onSuccess: (data) => {
+    onSuccess: ({ status }) => {
       queryClient.invalidateQueries({ queryKey: ["doctorEnhancedAppointments", doctorId] });
-
-      // If marking as completed, notify the doctor that patient's usage will be tracked
-      if (data.status === "completed") {
-        toast({
-          title: "✅ Consultation Completed",
-          description: "Patient's plan usage will be automatically tracked when they provide feedback",
-        });
-      } else {
-        toast({
-          title: "Success",
-          description: "Appointment status updated",
-        });
-      }
-
-      // Note: Patient's plan usage is tracked when they submit rating/feedback in MyBookings
-      // This ensures the consultation was actually completed and prevents double-counting
-
+      toast({
+        title: status === "completed" ? "✅ Consultation Completed" : "Status Updated",
+        description: status === "completed"
+          ? "Patient's plan usage will be tracked after feedback."
+          : "Appointment status has been updated.",
+      });
       setStatusDialogOpen(false);
       setSelectedAppointment(null);
     },
     onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error.response?.data?.message || "Failed to update status",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.response?.data?.message || "Failed to update status", variant: "destructive" });
     },
   });
 
-  // Update notes mutation
   const updateNotesMutation = useMutation({
     mutationFn: async ({ id, notes }: { id: number; notes: string }) => {
       await api.patch(`/appointments/${id}/status`, { notes });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["doctorEnhancedAppointments", doctorId] });
-      toast({
-        title: "Success",
-        description: "Notes saved successfully",
-      });
+      toast({ title: "Notes Saved", description: "Consultation notes updated successfully." });
       setNotesDialogOpen(false);
       setSelectedAppointment(null);
       setNotes("");
     },
     onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error.response?.data?.message || "Failed to save notes",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.response?.data?.message || "Failed to save notes", variant: "destructive" });
     },
   });
 
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = {
-      scheduled: "bg-blue-100 text-blue-700",
-      confirmed: "bg-green-100 text-green-700",
-      "in-progress": "bg-purple-100 text-purple-700",
-      completed: "bg-emerald-100 text-emerald-700",
-      cancelled: "bg-red-100 text-red-700",
-      "no-show": "bg-gray-100 text-gray-700",
-    };
-    return colors[status] || "bg-gray-100 text-gray-700";
-  };
-
-  const getConsultationIcon = (type: string) => {
-    switch (type) {
-      case "video":
-        return <Video className="h-4 w-4" />;
-      case "phone":
-      case "audio":
-        return <Phone className="h-4 w-4" />;
-      case "chat":
-        return <MessageSquare className="h-4 w-4" />;
-      case "in-person":
-        return <Calendar className="h-4 w-4" />;
-      default:
-        return <Video className="h-4 w-4" />;
-    }
-  };
-
-  const getConsultationLabel = (appointment: Appointment) => {
-    if (appointment.consultationType === "walkin") {
-      const clinic = appointment.clinicName || appointment.clinicAddress || "Clinic / Hospital";
-      return `Walk-in at ${clinic}`;
-    }
-    const channel = appointment.channel || "video";
-    const channelLabel =
-      channel === "phone" ? "Phone" : channel === "in-person" ? "In-person" : "Video";
-    return `Online • ${channelLabel}`;
-  };
-
-  const normalizeStatus = (status?: string) => String(status || '').toLowerCase().replace(/_/g, '-');
-  const canInitiateCall = (status?: string) =>
-    ['scheduled', 'confirmed', 'accepted', 'in-progress'].includes(normalizeStatus(status));
-
-  const handleAddNotes = (appointment: Appointment) => {
-    setSelectedAppointment(appointment);
-    setNotes(appointment.notes || "");
-    setNotesDialogOpen(true);
-  };
-
-  const handleUpdateStatus = (appointment: Appointment) => {
-    setSelectedAppointment(appointment);
-    setNewStatus(appointment.status);
-    setStatusDialogOpen(true);
-  };
-
+  // ── handlers ──────────────────────────────────────────────────────────────
   const handleStartConsultation = async (appointment: Appointment) => {
-    const isLongNumericId = (value?: string | number) => {
-      if (value === null || value === undefined) return false;
-      const str = String(value);
-      return /^\d+$/.test(str) && str.length > 10;
+    const isExternalMeetingLink = (link?: string) => {
+      if (!link) return false;
+      try { return !new URL(link).hostname.endsWith("mediqzy.com"); }
+      catch { return false; }
     };
-    const isExternalMeetingLink = (meetingLink?: string) => {
-      if (!meetingLink) return false;
-      try {
-        const parsed = new URL(meetingLink);
-        return !parsed.hostname.endsWith('mediqzy.com');
-      } catch (error) {
-        return false;
+    const channel = normalizeStatus(appointment.channel || "");
+    const ct = normalizeStatus(appointment.consultationType || "");
+    const isVideo = channel.includes("video") || ct === "online" || ct.includes("video") || ct.includes("tele");
+
+    if (isVideo) {
+      if (!canInitiateCall(appointment.status)) {
+        toast({ variant: "destructive", title: "Cannot Start Call", description: `Status is ${appointment.status}.` });
+        return;
       }
-    };
-
-    // Navigate to video consultation page based on consultation type
-    const channel = String(appointment.channel || "").toLowerCase();
-    const consultType = String(appointment.consultationType || "").toLowerCase();
-    const isVideoConsultation =
-      channel.includes("video") ||
-      consultType === "online" ||
-      consultType.includes("video") ||
-      consultType.includes("tele");
-
-    if (isVideoConsultation) {
+      toast({ title: "📞 Starting call…", description: "Notifying patient and preparing room…" });
       try {
-        if (!canInitiateCall(appointment.status)) {
-          toast({
-            variant: "destructive",
-            title: "Cannot Start Call",
-            description: `Appointment status is ${appointment.status}. Only scheduled/confirmed/in-progress calls can be started.`,
-          });
-          return;
-        }
-
-        // Call initiate-call API to notify patient and get meeting link
-        toast({
-          title: "📞 Starting Call...",
-          description: "Notifying patient and preparing video room...",
-        });
-
-        if (isLongNumericId(appointment.id)) {
-          const roomId = appointment.meetingId || appointment.meetingLink || String(appointment.id);
-          navigate(`/doctor/video?room=${encodeURIComponent(roomId)}&appointmentId=${appointment.id}&userId=${appointment.userId}`);
-          return;
-        }
-
         const response = await api.post(`/doctors/appointments/${appointment.id}/initiate-call`);
-        
         if (response.data.success) {
-          const meetingLink = response.data.video?.meetingLink || response.data.video?.directJoinUrl;
+          const meetingLink = response.data.video?.meetingLink;
           const roomId = response.data.video?.meetingId || `apt-${appointment.id}`;
-          
-          toast({
-            title: "✅ Patient Notified",
-            description: `${response.data.appointment?.patientName || 'Patient'} has been notified. Opening video room...`,
-          });
-
-          // Open external meeting link directly if available, otherwise use in-app video route
+          toast({ title: "✅ Patient Notified", description: `${response.data.appointment?.patientName || "Patient"} has been notified.` });
           if (meetingLink && isExternalMeetingLink(meetingLink)) {
-            window.open(meetingLink, '_blank', 'width=1280,height=720');
+            window.open(meetingLink, "_blank", "width=1280,height=720");
           } else {
             navigate(`/doctor/video?room=${encodeURIComponent(roomId)}&appointmentId=${appointment.id}&userId=${appointment.userId}`);
           }
         }
       } catch (error: any) {
-        console.error('Failed to initiate call:', error);
-        toast({
-          variant: "destructive",
-          title: "Failed to Start Call",
-          description: error.response?.data?.message || "Please try again",
-        });
+        toast({ variant: "destructive", title: "Failed to Start Call", description: error.response?.data?.message || "Please try again." });
       }
     } else {
-      // For phone/chat consultations, go to chat
       window.location.href = `/doctor/chat?userId=${appointment.userId}`;
     }
   };
 
-  // Filter appointments
-  const filteredAppointments = appointments.filter((appointment: Appointment) => {
-    const matchesSearch =
-      (appointment.patientName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (appointment.patientEmail || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (appointment.patientPhone || '').includes(searchQuery);
+  // ── filtering & grouping ──────────────────────────────────────────────────
+  const filtered = useMemo(() => appointments.filter((apt: Appointment) => {
+    const q = searchQuery.toLowerCase();
+    const matchSearch = !q || (apt.patientName || "").toLowerCase().includes(q) ||
+      (apt.patientEmail || "").toLowerCase().includes(q) || (apt.patientPhone || "").includes(q);
+    const matchStatus = filterStatus === "all" || normalizeStatus(apt.status) === filterStatus;
+    return matchSearch && matchStatus;
+  }), [appointments, searchQuery, filterStatus]);
 
-    const matchesStatus = filterStatus === "all" || appointment.status === filterStatus;
+  const today = format(new Date(), "yyyy-MM-dd");
+  const todayApts = filtered.filter((a: Appointment) => a.appointmentDate === today)
+    .sort((a: Appointment, b: Appointment) => (a.appointmentTime || "").localeCompare(b.appointmentTime || ""));
+  const upcomingApts = filtered.filter((a: Appointment) => a.appointmentDate > today)
+    .sort((a: Appointment, b: Appointment) => a.appointmentDate.localeCompare(b.appointmentDate) || (a.appointmentTime || "").localeCompare(b.appointmentTime || ""));
+  const pastApts = filtered.filter((a: Appointment) => a.appointmentDate < today)
+    .sort((a: Appointment, b: Appointment) => b.appointmentDate.localeCompare(a.appointmentDate));
 
-    return matchesSearch && matchesStatus;
+  // Next upcoming appointment today
+  const now = new Date();
+  const nextToday = todayApts.find((a: Appointment) => {
+    const ns = normalizeStatus(a.status);
+    if (!["scheduled", "confirmed", "in-progress"].includes(ns)) return false;
+    const [h, m] = (a.appointmentTime || "00:00").split(":").map(Number);
+    const aTime = new Date(); aTime.setHours(h, m, 0, 0);
+    return aTime >= now;
   });
 
-  // Group appointments by date
-  const today = format(new Date(), "yyyy-MM-dd");
-  const todayAppointments = filteredAppointments.filter(
-    (apt: Appointment) => apt.appointmentDate === today
-  );
-  const upcomingAppointments = filteredAppointments.filter(
-    (apt: Appointment) => apt.appointmentDate > today
-  );
-  const pastAppointments = filteredAppointments.filter(
-    (apt: Appointment) => apt.appointmentDate < today
+  // Stats
+  const totalToday = todayApts.length;
+  const completedToday = todayApts.filter((a: Appointment) => normalizeStatus(a.status) === "completed").length;
+  const pendingToday = todayApts.filter((a: Appointment) => ["scheduled", "confirmed"].includes(normalizeStatus(a.status))).length;
+  const inProgressToday = todayApts.filter((a: Appointment) => normalizeStatus(a.status) === "in-progress").length;
+
+  // ── sub-components ────────────────────────────────────────────────────────
+  const ConsultIcon = ({ apt }: { apt: Appointment }) => {
+    const ch = apt.channel || apt.consultationType;
+    if (ch === "video" || ch === "online") return <Video className="h-3.5 w-3.5" />;
+    if (ch === "phone" || ch === "audio") return <Phone className="h-3.5 w-3.5" />;
+    if (ch === "chat") return <MessageSquare className="h-3.5 w-3.5" />;
+    return <MapPin className="h-3.5 w-3.5" />;
+  };
+
+  const consultLabel = (apt: Appointment) => {
+    if (apt.consultationType === "walkin") return apt.clinicName || "Walk-in";
+    const ch = apt.channel || "video";
+    if (ch === "phone") return "Phone call";
+    if (ch === "in-person") return "In-person";
+    return "Video call";
+  };
+
+  const AppointmentCard = ({ apt, highlight = false }: { apt: Appointment; highlight?: boolean }) => {
+    const ds = getDisplayStatus(apt);
+    const cfg = statusCfg(ds);
+    const initials = getInitials(apt.patientName);
+    const color = avatarColor(apt.id);
+
+    return (
+      <div
+        className={`relative bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800
+          border-l-4 ${cfg.border} shadow-sm hover:shadow-md transition-all duration-200
+          ${highlight ? "ring-2 ring-indigo-400/40 dark:ring-indigo-500/30" : ""}`}
+      >
+        {highlight && (
+          <div className="absolute -top-2.5 left-5 bg-indigo-500 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-widest">
+            Next Up
+          </div>
+        )}
+
+        <div className="p-5">
+          {/* Top row */}
+          <div className="flex items-start gap-3.5 mb-4">
+            <div className={`h-11 w-11 rounded-xl ${color} flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>
+              {initials}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100 truncate">{apt.patientName || "Unknown"}</h3>
+                <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full flex-shrink-0 ${cfg.badge}`}>
+                  {cfg.label}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 truncate mt-0.5">{apt.patientEmail}</p>
+              {apt.patientPhone && <p className="text-xs text-gray-500">{apt.patientPhone}</p>}
+            </div>
+          </div>
+
+          {/* Meta chips */}
+          <div className="flex flex-wrap gap-2 mb-3.5">
+            <span className="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 px-2.5 py-1 rounded-lg">
+              <Calendar className="h-3 w-3" />
+              {formatDate(apt.appointmentDate)}
+            </span>
+            <span className="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 px-2.5 py-1 rounded-lg">
+              <Clock className="h-3 w-3" />
+              {formatTime(apt.appointmentTime)}
+            </span>
+            <span className="inline-flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 px-2.5 py-1 rounded-lg">
+              <ConsultIcon apt={apt} />
+              {consultLabel(apt)}
+            </span>
+            {apt.consultationFee != null && (
+              <span className="inline-flex items-center gap-1 text-xs bg-gray-50 dark:bg-gray-800 px-2.5 py-1 rounded-lg">
+                <CreditCard className="h-3 w-3 text-gray-500" />
+                <span className="font-medium text-gray-900 dark:text-gray-100">₹{apt.consultationFee}</span>
+                <span className={`ml-0.5 font-semibold ${apt.paymentStatus === "paid" ? "text-emerald-600" : "text-amber-500"}`}>
+                  · {apt.paymentStatus === "paid" ? "Paid" : "Pending"}
+                </span>
+              </span>
+            )}
+          </div>
+
+          {/* Symptoms / reason */}
+          {(apt.symptoms || apt.reason) && (
+            <div className="mb-3.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/30 rounded-xl px-3.5 py-2.5">
+              <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider mb-1">
+                {apt.symptoms ? "Symptoms" : "Reason"}
+              </p>
+              <p className="text-xs text-gray-700 dark:text-gray-300 line-clamp-2">
+                {apt.symptoms || apt.reason}
+              </p>
+            </div>
+          )}
+
+          {/* Notes */}
+          {apt.notes && (
+            <div className="mb-3.5 bg-violet-50 dark:bg-violet-900/20 border border-violet-100 dark:border-violet-800/30 rounded-xl px-3.5 py-2.5">
+              <p className="text-[11px] font-semibold text-violet-700 dark:text-violet-400 uppercase tracking-wider mb-1">Notes</p>
+              <p className="text-xs text-gray-700 dark:text-gray-300 line-clamp-2">{apt.notes}</p>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 pt-3.5 border-t border-gray-100 dark:border-gray-800">
+            {canInitiateCall(apt.status) && (
+              <Button
+                size="sm"
+                onClick={() => handleStartConsultation(apt)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-4 gap-1.5 h-8 text-xs font-semibold"
+              >
+                <ConsultIcon apt={apt} />
+                Start Call
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setSelectedAppointment(apt); setNotes(apt.notes || ""); setNotesDialogOpen(true); }}
+              className="rounded-xl h-8 text-xs gap-1.5"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              {apt.notes ? "Edit Notes" : "Add Notes"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setSelectedAppointment(apt); setNewStatus(apt.status); setStatusDialogOpen(true); }}
+              className="rounded-xl h-8 text-xs ml-auto text-gray-500 hover:text-gray-800"
+            >
+              Update Status
+              <ChevronRight className="h-3.5 w-3.5 ml-1" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const EmptyState = ({ message }: { message: string }) => (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <div className="h-16 w-16 rounded-2xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-4">
+        <Calendar className="h-8 w-8 text-gray-400" />
+      </div>
+      <p className="text-gray-500 text-sm">{message}</p>
+    </div>
   );
 
   if (isLoading) {
     return (
       <MainLayout>
         <div className="flex items-center justify-center min-h-[400px]">
-          <Loader2 className="h-8 w-8 animate-spin" />
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+            <p className="text-sm text-gray-500">Loading appointments…</p>
+          </div>
         </div>
       </MainLayout>
     );
   }
 
-  const AppointmentCard = ({ appointment }: { appointment: Appointment }) => (
-    <Card className="p-6 hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-start gap-4">
-          <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-            <User className="h-6 w-6 text-primary" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-lg">{appointment.patientName}</h3>
-            <p className="text-sm text-gray-600">{appointment.patientEmail}</p>
-            <p className="text-sm text-gray-600">{appointment.patientPhone}</p>
-          </div>
-        </div>
-        <Badge className={getStatusColorWithExpired(getDisplayStatus(appointment))}>
-          {getDisplayStatus(appointment).toUpperCase().replace("-", " ")}
-        </Badge>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-4 mb-4">
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-gray-600">
-            <Calendar className="h-4 w-4" />
-            <span>{new Date(appointment.appointmentDate).toLocaleDateString('en-IN', {
-              day: 'numeric',
-              month: 'long',
-              year: 'numeric'
-            })}</span>
-          </div>
-          <div className="flex items-center gap-2 text-gray-600">
-            <Clock className="h-4 w-4" />
-            <span>{appointment.appointmentTime}</span>
-          </div>
-        </div>
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-gray-600">
-            {getConsultationIcon(appointment.channel || appointment.consultationType)}
-            <span>{getConsultationLabel(appointment)}</span>
-          </div>
-          <div className="text-gray-600">
-            <span className="font-semibold">₹{appointment.consultationFee}</span>
-            <Badge
-              variant="outline"
-              className={`ml-2 ${appointment.paymentStatus === "paid"
-                  ? "bg-green-50 text-green-700"
-                  : "bg-yellow-50 text-yellow-700"
-                }`}
-            >
-              {(appointment.paymentStatus || 'pending').toUpperCase()}
-            </Badge>
-          </div>
-        </div>
-      </div>
-
-      {appointment.symptoms && (
-        <div className="mb-4 p-3 bg-amber-50 rounded-lg">
-          <p className="text-sm font-medium text-amber-900 mb-1">Symptoms:</p>
-          <p className="text-sm text-gray-700">{appointment.symptoms}</p>
-        </div>
-      )}
-
-      {appointment.reason && (
-        <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-          <p className="text-sm font-medium text-blue-900 mb-1">Reason:</p>
-          <p className="text-sm text-gray-700">{appointment.reason}</p>
-        </div>
-      )}
-
-      {appointment.notes && (
-        <div className="mb-4 p-3 bg-purple-50 rounded-lg">
-          <p className="text-sm font-medium text-purple-900 mb-1">Your Notes:</p>
-          <p className="text-sm text-gray-700">{appointment.notes}</p>
-        </div>
-      )}
-
-      <div className="flex items-center gap-3 flex-wrap pt-4 border-t">
-        {canInitiateCall(appointment.status) && (
-          <Button
-            onClick={() => handleStartConsultation(appointment)}
-            size="sm"
-          >
-            {getConsultationIcon(appointment.channel || appointment.consultationType)}
-            <span className="ml-2">Start Consultation</span>
-          </Button>
-        )}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => handleAddNotes(appointment)}
-        >
-          <FileText className="h-4 w-4 mr-2" />
-          {appointment.notes ? "Edit Notes" : "Add Notes"}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => handleUpdateStatus(appointment)}
-        >
-          Update Status
-        </Button>
-      </div>
-    </Card>
-  );
-
   return (
     <MainLayout>
-      <div className="max-w-7xl mx-auto space-y-6">
+      <div className="max-w-4xl mx-auto space-y-6">
+
+        {/* ── Page header ──────────────────────────────────────────────── */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold">My Appointments</h1>
-            <p className="text-gray-600 mt-1">Manage your patient appointments</p>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Appointments</h1>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {format(new Date(), "EEEE, d MMMM yyyy")}
+            </p>
+          </div>
+          <div className="hidden sm:flex items-center gap-2 text-xs text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-xl px-3 py-2">
+            <Activity className="h-4 w-4 text-indigo-500" />
+            <span>{appointments.length} total appointments</span>
           </div>
         </div>
 
-        {/* Search and Filters */}
-        <Card className="p-4">
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Search by patient name, email, or phone..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
+        {/* ── Stats bar ────────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: "Today", value: totalToday, icon: <Calendar className="h-4 w-4" />, color: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40" },
+            { label: "Pending", value: pendingToday, icon: <AlertCircle className="h-4 w-4" />, color: "text-amber-600 bg-amber-50 dark:bg-amber-950/40" },
+            { label: "In Progress", value: inProgressToday, icon: <Activity className="h-4 w-4" />, color: "text-yellow-600 bg-yellow-50 dark:bg-yellow-950/40" },
+            { label: "Completed", value: completedToday, icon: <CheckCircle2 className="h-4 w-4" />, color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40" },
+          ].map(({ label, value, icon, color }) => (
+            <div key={label} className={`${color} rounded-2xl p-4`}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium opacity-70">{label}</span>
+                {icon}
+              </div>
+              <p className="text-2xl font-bold">{value}</p>
             </div>
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-gray-400" />
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="scheduled">Scheduled</SelectItem>
-                  <SelectItem value="confirmed">Confirmed</SelectItem>
-                  <SelectItem value="in-progress">In Progress</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </Card>
+          ))}
+        </div>
 
-        {/* Appointments Tabs */}
+        {/* ── Search + Filter pills ─────────────────────────────────────── */}
+        <div className="space-y-3">
+          <div className="relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Search patient name, email or phone…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 pr-10 rounded-xl h-10 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {["all", "scheduled", "confirmed", "in-progress", "completed", "cancelled"].map((s) => (
+              <button
+                key={s}
+                onClick={() => setFilterStatus(s)}
+                className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+                  filterStatus === s
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+                }`}
+              >
+                {s === "all" ? "All" : s.replace("-", " ").replace(/\b\w/g, c => c.toUpperCase())}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Tabs ─────────────────────────────────────────────────────── */}
         <Tabs defaultValue="today" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="today">
-              Today ({todayAppointments.length})
-            </TabsTrigger>
-            <TabsTrigger value="upcoming">
-              Upcoming ({upcomingAppointments.length})
-            </TabsTrigger>
-            <TabsTrigger value="past">
-              Past ({pastAppointments.length})
-            </TabsTrigger>
+          <TabsList className="grid w-full grid-cols-3 rounded-2xl bg-gray-100 dark:bg-gray-800 p-1 h-auto">
+            {[
+              { value: "today", label: "Today", count: todayApts.length },
+              { value: "upcoming", label: "Upcoming", count: upcomingApts.length },
+              { value: "past", label: "Past", count: pastApts.length },
+            ].map(({ value, label, count }) => (
+              <TabsTrigger
+                key={value}
+                value={value}
+                className="rounded-xl data-[state=active]:bg-white dark:data-[state=active]:bg-gray-900 data-[state=active]:shadow-sm py-2 text-sm font-medium"
+              >
+                {label}
+                {count > 0 && (
+                  <span className="ml-1.5 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                    {count}
+                  </span>
+                )}
+              </TabsTrigger>
+            ))}
           </TabsList>
 
-          <TabsContent value="today" className="space-y-4 mt-6">
-            {todayAppointments.length === 0 ? (
-              <Card className="p-12 text-center">
-                <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                <h3 className="text-lg font-semibold mb-2">No Appointments Today</h3>
-                <p className="text-gray-600">You have no scheduled appointments for today.</p>
-              </Card>
-            ) : (
-              todayAppointments.map((appointment: Appointment) => (
-                <AppointmentCard key={appointment.id} appointment={appointment} />
-              ))
-            )}
+          {/* Today */}
+          <TabsContent value="today" className="space-y-3 mt-5">
+            {todayApts.length === 0
+              ? <EmptyState message="No appointments scheduled for today." />
+              : todayApts.map((apt: Appointment) => (
+                  <AppointmentCard key={apt.id} apt={apt} highlight={apt.id === nextToday?.id} />
+                ))
+            }
           </TabsContent>
 
-          <TabsContent value="upcoming" className="space-y-4 mt-6">
-            {upcomingAppointments.length === 0 ? (
-              <Card className="p-12 text-center">
-                <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                <h3 className="text-lg font-semibold mb-2">No Upcoming Appointments</h3>
-                <p className="text-gray-600">You have no upcoming appointments scheduled.</p>
-              </Card>
-            ) : (
-              upcomingAppointments.map((appointment: Appointment) => (
-                <AppointmentCard key={appointment.id} appointment={appointment} />
-              ))
-            )}
+          {/* Upcoming */}
+          <TabsContent value="upcoming" className="space-y-3 mt-5">
+            {upcomingApts.length === 0
+              ? <EmptyState message="No upcoming appointments scheduled." />
+              : upcomingApts.map((apt: Appointment) => (
+                  <AppointmentCard key={apt.id} apt={apt} />
+                ))
+            }
           </TabsContent>
 
-          <TabsContent value="past" className="space-y-4 mt-6">
-            {pastAppointments.length === 0 ? (
-              <Card className="p-12 text-center">
-                <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                <h3 className="text-lg font-semibold mb-2">No Past Appointments</h3>
-                <p className="text-gray-600">You have no past appointments.</p>
-              </Card>
-            ) : (
-              pastAppointments.map((appointment: Appointment) => (
-                <AppointmentCard key={appointment.id} appointment={appointment} />
-              ))
-            )}
+          {/* Past */}
+          <TabsContent value="past" className="space-y-3 mt-5">
+            {pastApts.length === 0
+              ? <EmptyState message="No past appointments found." />
+              : pastApts.map((apt: Appointment) => (
+                  <AppointmentCard key={apt.id} apt={apt} />
+                ))
+            }
           </TabsContent>
         </Tabs>
 
-        {/* Notes Dialog */}
+        {/* ── Notes Dialog ─────────────────────────────────────────────── */}
         <Dialog open={notesDialogOpen} onOpenChange={setNotesDialogOpen}>
-          <DialogContent>
+          <DialogContent className="rounded-2xl">
             <DialogHeader>
-              <DialogTitle>Add/Edit Notes</DialogTitle>
+              <DialogTitle>Consultation Notes</DialogTitle>
               <DialogDescription>
-                Add consultation notes for {selectedAppointment?.patientName}
+                Notes for {selectedAppointment?.patientName}
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div>
-                <Label>Consultation Notes</Label>
-                <Textarea
-                  placeholder="Enter your consultation notes..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={6}
-                />
-              </div>
+            <div className="py-3">
+              <Label className="text-xs uppercase tracking-wider text-gray-500 mb-2 block">Notes</Label>
+              <Textarea
+                placeholder="Enter consultation notes…"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={6}
+                className="rounded-xl resize-none"
+              />
             </div>
             <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setNotesDialogOpen(false)}
-                disabled={updateNotesMutation.isPending}
-              >
+              <Button variant="outline" onClick={() => setNotesDialogOpen(false)} disabled={updateNotesMutation.isPending} className="rounded-xl">
                 Cancel
               </Button>
               <Button
-                onClick={() =>
-                  selectedAppointment &&
-                  updateNotesMutation.mutate({
-                    id: selectedAppointment.id,
-                    notes,
-                  })
-                }
+                onClick={() => selectedAppointment && updateNotesMutation.mutate({ id: selectedAppointment.id, notes })}
                 disabled={updateNotesMutation.isPending}
+                className="rounded-xl bg-indigo-600 hover:bg-indigo-700"
               >
-                {updateNotesMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  "Save Notes"
-                )}
+                {updateNotesMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</> : "Save Notes"}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
-        {/* Status Update Dialog */}
+        {/* ── Status Dialog ─────────────────────────────────────────────── */}
         <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
-          <DialogContent>
+          <DialogContent className="rounded-2xl">
             <DialogHeader>
-              <DialogTitle>Update Appointment Status</DialogTitle>
+              <DialogTitle>Update Status</DialogTitle>
               <DialogDescription>
-                Update status for {selectedAppointment?.patientName}'s appointment
+                {selectedAppointment?.patientName} · {formatDate(selectedAppointment?.appointmentDate || "")} {formatTime(selectedAppointment?.appointmentTime)}
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div>
-                <Label>Status</Label>
-                <Select value={newStatus} onValueChange={setNewStatus}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="scheduled">Scheduled</SelectItem>
-                    <SelectItem value="confirmed">Confirmed</SelectItem>
-                    <SelectItem value="in-progress">In Progress</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                    <SelectItem value="cancelled">Cancelled</SelectItem>
-                    <SelectItem value="no-show">No Show</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="py-3">
+              <Label className="text-xs uppercase tracking-wider text-gray-500 mb-2 block">New Status</Label>
+              <Select value={newStatus} onValueChange={setNewStatus}>
+                <SelectTrigger className="rounded-xl">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  {["scheduled", "confirmed", "in-progress", "completed", "cancelled", "no-show"].map(s => (
+                    <SelectItem key={s} value={s}>
+                      <div className="flex items-center gap-2">
+                        <span className={`h-2 w-2 rounded-full ${statusCfg(s).dot}`} />
+                        {statusCfg(s).label}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setStatusDialogOpen(false)}
-                disabled={updateStatusMutation.isPending}
-              >
+              <Button variant="outline" onClick={() => setStatusDialogOpen(false)} disabled={updateStatusMutation.isPending} className="rounded-xl">
                 Cancel
               </Button>
               <Button
-                onClick={() =>
-                  selectedAppointment &&
-                  updateStatusMutation.mutate({
-                    id: selectedAppointment.id,
-                    status: newStatus,
-                    appointment: selectedAppointment,
-                  })
-                }
+                onClick={() => selectedAppointment && updateStatusMutation.mutate({ id: selectedAppointment.id, status: newStatus, appointment: selectedAppointment })}
                 disabled={updateStatusMutation.isPending}
+                className="rounded-xl bg-indigo-600 hover:bg-indigo-700"
               >
-                {updateStatusMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Updating...
-                  </>
-                ) : (
-                  "Update Status"
-                )}
+                {updateStatusMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Updating…</> : "Update"}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
       </div>
     </MainLayout>
   );
 };
 
 export default DoctorAppointments;
+

@@ -515,7 +515,7 @@ router.post('/register', registerLimiter, uploadFields, async (req, res) => {
                 <p style="margin:0;font-size:13px;color:#166534">✅ Registration ID: <strong>${clinic.id}</strong> — Status: <strong>Pending Review</strong> — ${registrationDocs.length} document(s) stored in MinIO</p>
               </div>
               <div style="margin-top:20px;text-align:center">
-                <a href="https://mediqzy.com/super-admin/clinics" style="display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#0d9488,#0891b2);color:#fff;font-weight:700;font-size:13px;border-radius:8px;text-decoration:none">View in Admin Panel →</a>
+                <a href="https://app.mediqzy.com/super-admin/clinics" style="display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#0d9488,#0891b2);color:#fff;font-weight:700;font-size:13px;border-radius:8px;text-decoration:none">View in Admin Panel →</a>
               </div>
             </div>
             <div style="padding:16px 32px;border-top:1px solid #e2e8f0;text-align:center">

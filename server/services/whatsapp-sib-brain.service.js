@@ -439,7 +439,7 @@ ${message}
     if (lowerMessage.includes('symptom') || lowerMessage.includes('pain') || 
         lowerMessage.includes('feel') || lowerMessage.includes('sick')) {
       response += `I understand you're not feeling well. While I'm having some technical difficulties right now, please share your symptoms and I'll do my best to help.\n\n`;
-      response += `For any serious symptoms, please consult a doctor immediately. You can book an appointment at: https://mediqzy.com/book-appointment`;
+      response += `For any serious symptoms, please consult a doctor immediately. You can book an appointment at: https://app.mediqzy.com/book-appointment`;
     }
     // General greeting
     else if (lowerMessage.includes('hi') || lowerMessage.includes('hello') || 

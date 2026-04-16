@@ -236,6 +236,15 @@ const TeamDashboard = () => {
       pattern: "radial-gradient(circle at 50% 50%, rgba(245, 158, 11, 0.05) 0%, transparent 50%)",
     },
     {
+      title: "Doctor Management",
+      description: "Review registrations, verify documents, activate doctors",
+      icon: Stethoscope,
+      color: "bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border-blue-500/20",
+      iconColor: "text-blue-400",
+      link: "/team/doctor-management",
+      pattern: "radial-gradient(circle at 80% 20%, rgba(59, 130, 246, 0.06) 0%, transparent 50%)",
+    },
+    {
       title: "Broker Management",
       description: "Manage intermediary & broker accounts",
       icon: Briefcase,

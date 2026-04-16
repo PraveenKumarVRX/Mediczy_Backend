@@ -1172,7 +1172,7 @@ export async function saveHealthReportFromEmail(email) {
         process.env.JWT_SECRET,
         { expiresIn: '7d' }
       );
-      const publicReportUrl = `https://mediqzy.com/api/public/report-download/${downloadToken}`;
+      const publicReportUrl = `https://app.mediqzy.com/api/public/report-download/${downloadToken}`;
       const filePath = publicReportUrl;
       const reportName = (nameFromFile || att.filename?.replace(/\.pdf$/i, '') || 'Health Report');
 

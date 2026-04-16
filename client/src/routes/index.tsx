@@ -227,6 +227,7 @@ const TeamEmployeeManagement   = lazy(() => import("@/pages/team/TeamEmployeeMan
 const TeamSettings             = lazy(() => import("@/pages/team/TeamSettings"));
 const TeamHealthPlans          = lazy(() => import("@/pages/team/TeamHealthPlans"));
 const TeamBrokerManagement     = lazy(() => import("@/pages/team/TeamBrokerManagement"));
+const TeamDoctorManagement     = lazy(() => import("@/pages/team/TeamDoctorManagement"));
 
 const _TeamModulePages = () => import("@/pages/team/TeamModulePages");
 const TeamUserManagementPage     = lazyNamed(_TeamModulePages, "TeamUserManagementPage");
@@ -928,7 +929,7 @@ const AppRoutes = () => {
         <Route path="/team/tools"                    element={<TeamTools />} />
         <Route path="/team/pharmacy-edit"            element={<TeamPharmacyEdit />} />
         <Route path="/team/user-management"          element={<TeamEmployeeManagement />} />
-        <Route path="/team/doctor-management"        element={<TeamDoctorManagementPage />} />
+        <Route path="/team/doctor-management"        element={<TeamDoctorManagement />} />
         <Route path="/team/corporate-management"     element={<TeamCorporateManagement />} />
         <Route path="/team/corporate-health-booking" element={<CorporateHealthBooking />} />
         <Route path="/team/hospital-management"      element={<TeamHospitalManagementPage />} />

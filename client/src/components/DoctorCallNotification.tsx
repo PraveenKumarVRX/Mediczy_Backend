@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Phone, PhoneOff, User, Clock, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -48,16 +48,36 @@ export function DoctorCallNotification({
     return () => clearInterval(timer);
   }, [onDecline]);
 
-  // Play ringtone sound (optional)
+  // Play ringtone sound via Web Audio API
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const ringTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
-    const audio = new Audio('/sounds/ringtone.mp3');
-    audio.loop = true;
-    if (isRinging) {
-      audio.play().catch(() => console.log('Could not play ringtone'));
+    if (!isRinging) {
+      if (ringTimerRef.current) clearInterval(ringTimerRef.current);
+      if (audioCtxRef.current) { try { audioCtxRef.current.close(); } catch (_) {} audioCtxRef.current = null; }
+      return;
     }
+    const playRingCycle = () => {
+      try {
+        if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') audioCtxRef.current = new AudioContext();
+        if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+        const ctx = audioCtxRef.current; const t = ctx.currentTime;
+        [[784, 0.0, 0.18, 0.50], [988, 0.2, 0.18, 0.50], [1175, 0.4, 0.18, 0.48], [1568, 0.62, 0.32, 0.38]].forEach(([freq, start, dur, vol]) => {
+          const osc = ctx.createOscillator(); const gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.type = 'sine'; osc.frequency.setValueAtTime(freq, t + start);
+          gain.gain.setValueAtTime(0, t + start);
+          gain.gain.linearRampToValueAtTime(vol, t + start + 0.02);
+          gain.gain.linearRampToValueAtTime(0, t + start + dur);
+          osc.start(t + start); osc.stop(t + start + dur);
+        });
+      } catch (_) {}
+    };
+    playRingCycle();
+    ringTimerRef.current = setInterval(playRingCycle, 2000);
     return () => {
-      audio.pause();
-      audio.currentTime = 0;
+      if (ringTimerRef.current) clearInterval(ringTimerRef.current);
+      if (audioCtxRef.current) { try { audioCtxRef.current.close(); } catch (_) {} audioCtxRef.current = null; }
     };
   }, [isRinging]);
 

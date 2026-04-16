@@ -10,6 +10,8 @@ import {
 import { getDoctorAppointments } from "../controller/appointment.controller.js";
 import { authDoctor } from "../middleware/auth.middleware.js";
 import { authLimiter } from "../middleware/rateLimiter.middleware.js";
+import { addOtpRoutes } from './shared/registrationHelpers.js';
+import googlePlacesService from '../services/google-places.service.js';
 import { Doctor, Appointment, User } from "../models/index.js";
 import { UserPlan } from "../models/postgres/membershipPlan.model.postgres.js";
 import { Op } from 'sequelize';
@@ -550,7 +552,7 @@ router.get("/dashboard/stats", authDoctor, async (req, res) => {
     });
 
     // Revenue: sum of consultation fees from completed appointments this month
-    const revenueResult = await Appointment.sum('consultationFee', {
+    const revenueResult = await Appointment.sum('paymentAmount', {
       where: { doctorId, status: 'completed', appointmentDate: { [Op.gte]: startOfMonth } }
     });
     const revenue = revenueResult || 0;
@@ -1556,13 +1558,13 @@ router.post(
 
       // Send welcome notification via SMS, WhatsApp, and Email
       try {
-        const credentialsMessage = `Welcome to Mediczy! 🏥\n\nYour account has been created by ${doctorName}.\n\n📱 *Login Credentials:*\nPhone: ${phoneNumber}\nEmail: ${generatedEmail}\nTemporary Password: *${tempPassword}*\n\n🔐 Please login at https://mediqzy.com and change your password immediately.\n\n_This is an auto-generated message. Please do not reply._`;
+        const credentialsMessage = `Welcome to Mediczy! 🏥\n\nYour account has been created by ${doctorName}.\n\n📱 *Login Credentials:*\nPhone: ${phoneNumber}\nEmail: ${generatedEmail}\nTemporary Password: *${tempPassword}*\n\n🔐 Please login at https://app.mediqzy.com and change your password immediately.\n\n_This is an auto-generated message. Please do not reply._`;
 
         // 1. Send SMS
         const notificationService = await import('../services/notification.service.js');
         await notificationService.default.sendSMS(
           phoneNumber,
-          `Welcome to Mediczy! Your account created by ${doctorName}.\nTemp Password: ${tempPassword}\nLogin: https://mediqzy.com`
+          `Welcome to Mediczy! Your account created by ${doctorName}.\nTemp Password: ${tempPassword}\nLogin: https://app.mediqzy.com`
         );
 
         // 2. Send WhatsApp (session message)
@@ -1583,7 +1585,7 @@ router.post(
           await notificationService.default.sendEmail(
             email,
             'Welcome to Mediczy - Account Created',
-            `Dear ${firstName} ${lastName},\n\nYour Mediczy account has been created by ${doctorName}.\n\nLogin Credentials:\nEmail/Phone: ${phoneNumber}\nTemporary Password: ${tempPassword}\n\nPlease login at https://mediqzy.com and change your password immediately.\n\nBest regards,\nMediczy Team`
+            `Dear ${firstName} ${lastName},\n\nYour Mediczy account has been created by ${doctorName}.\n\nLogin Credentials:\nEmail/Phone: ${phoneNumber}\nTemporary Password: ${tempPassword}\n\nPlease login at https://app.mediqzy.com and change your password immediately.\n\nBest regards,\nMediczy Team`
           );
         }
       } catch (notificationError) {
@@ -2591,33 +2593,19 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
       }
     }
 
-    // Check if within appointment window (15 mins before to 1 hour after)
-    // Skip for emergency triage appointments
-    const isEmergencyTriage = appointment.sourceChannel === 'emergency_triage' ||
-      (appointment.notes_json && appointment.notes_json.type === 'emergency_triage');
-
-    if (!isEmergencyTriage) {
-      const appointmentDateTime = new Date(`${appointment.appointmentDate}T${appointment.appointmentTime}`);
-      const now = new Date();
-      const windowStart = new Date(appointmentDateTime.getTime() - 15 * 60 * 1000);
-      const windowEnd = new Date(appointmentDateTime.getTime() + 60 * 60 * 1000);
-
-      if (now < windowStart) {
-        return res.status(400).json({
-          success: false,
-          message: 'You can initiate the call 15 minutes before the appointment time',
-          appointmentTime: appointmentDateTime.toISOString(),
-          canInitiateAt: windowStart.toISOString()
-        });
-      }
-
-      if (now > windowEnd) {
-        return res.status(400).json({
-          success: false,
-          message: 'Appointment time has passed. Please reschedule.',
-          appointmentTime: appointmentDateTime.toISOString()
-        });
-      }
+    // Doctors can initiate calls at any time on the appointment day.
+    // (The stored appointmentTime is in IST while the server runs UTC, so a
+    //  strict ±15-min UTC window incorrectly blocks valid IST-time calls.)
+    // A light guardrail: block only if the appointment date itself has not
+    // yet arrived (i.e., tomorrow or later) — same-day and past calls are allowed.
+    const appointmentDateStr = String(appointment.appointmentDate).slice(0, 10); // "YYYY-MM-DD"
+    const nowDateStr = new Date().toISOString().slice(0, 10);
+    if (appointmentDateStr > nowDateStr) {
+      return res.status(400).json({
+        success: false,
+        message: 'You can only initiate the call on the day of the appointment.',
+        appointmentDate: appointmentDateStr
+      });
     }
 
     // Generate or get meeting link
@@ -2758,6 +2746,27 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
       message: 'Failed to initiate call',
       error: error.message
     });
+  }
+});
+
+// ─── Doctor OTP routes (pre-auth, for registration) ──────────────────────────
+addOtpRoutes(router, 'Doctor', '#1d4ed8');
+
+// ─── Public places autocomplete (no auth — used during doc registration) ──────
+router.get('/places-autocomplete', authLimiter, async (req, res) => {
+  const { input, type } = req.query;
+  if (!input || String(input).length < 2) {
+    return res.status(400).json({ success: false, message: 'input required (min 2 chars)' });
+  }
+  try {
+    const options = {};
+    if (type) options.types = String(type);                     // e.g. 'establishment'
+    options.components = 'country:in';                          // Restrict to India
+    const predictions = await googlePlacesService.autocomplete(String(input), options);
+    res.json({ success: true, data: predictions });
+  } catch (err) {
+    console.error('Doctor places-autocomplete error:', err.message);
+    res.status(500).json({ success: false, message: 'Address lookup failed' });
   }
 });
 

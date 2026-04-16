@@ -83,6 +83,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/emr',  // EMR folder (own record)
       '/api/homecare',  // Homecare service booking (patients book home visits)
       '/api/pharmacy-orders',  // Patient-facing pharmacy order management
+      '/api/unified',  // Unified patient portal (search doctors, clinics, etc.)
       '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'userId'
@@ -166,6 +167,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/emr',  // EMR folder (own record)
       '/api/homecare',  // Homecare service booking (patients book home visits)
       '/api/pharmacy-orders',  // Patient-facing pharmacy order management
+      '/api/unified',  // Unified patient portal (search doctors, clinics, etc.)
       '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'userId'
@@ -509,6 +511,11 @@ const PUBLIC_ENDPOINTS = [
   '/api/users/login/verify-otp',
   '/api/doctors/login',
   '/api/doctors/register',
+  '/api/doctors/send-email-otp',
+  '/api/doctors/verify-email-otp',
+  '/api/doctors/send-phone-otp',
+  '/api/doctors/verify-phone-otp',
+  '/api/doctors/places-autocomplete',
   '/api/doctors/search', // Public doctor search
   '/api/doctors/available', // Public available doctors list
   '/api/consultation/doctors', // Public consultation doctor listing (browse/book)

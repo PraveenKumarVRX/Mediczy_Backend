@@ -257,8 +257,8 @@ router.post('/from-appointment/:appointmentId', authDoctor, [
         status: prescription.status,
         createdAt: prescription.createdAt,
         expiresAt: prescription.expiresAt,
-        pdfUrl: `https://mediqzy.com/api/prescriptions/${prescription.prescriptionId}/pdf`,
-        shareUrl: `https://mediqzy.com/api/prescriptions/${prescription.prescriptionId}/share/whatsapp`
+        pdfUrl: `https://app.mediqzy.com/api/prescriptions/${prescription.prescriptionId}/pdf`,
+        shareUrl: `https://app.mediqzy.com/api/prescriptions/${prescription.prescriptionId}/share/whatsapp`
       }
     });
   } catch (error) {
@@ -1346,7 +1346,7 @@ router.get('/:id/share/whatsapp', authUser, async (req, res) => {
     }
 
     // Generate shareable link
-    const baseUrl = process.env.FRONTEND_URL || 'https://mediqzy.com';
+    const baseUrl = process.env.FRONTEND_URL || 'https://app.mediqzy.com';
 
     // Get a fresh token for the patient to access the prescription
     const jwt = await import('jsonwebtoken');
@@ -1409,7 +1409,7 @@ router.post('/:id/share/whatsapp/:phone', authDoctor, async (req, res) => {
     }
 
     // Generate prescription URL
-    const baseUrl = process.env.FRONTEND_URL || 'https://mediqzy.com';
+    const baseUrl = process.env.FRONTEND_URL || 'https://app.mediqzy.com';
 
     // Create a share token for the patient
     const jwt = await import('jsonwebtoken');
@@ -1604,7 +1604,7 @@ router.post('/:id/share', authDoctor, [
     }
 
     // Generate shareable links
-    const baseUrl = process.env.FRONTEND_URL || 'https://mediqzy.com';
+    const baseUrl = process.env.FRONTEND_URL || 'https://app.mediqzy.com';
     const jwt = await import('jsonwebtoken');
     
     // Generate a share token valid for 30 days

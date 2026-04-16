@@ -237,6 +237,108 @@ import jwt from "jsonwebtoken";
 import intelligentDb from "../utils/intelligentDbClient.js";
 import { auditLoginAttempt } from "../middleware/audit.middleware.js";
 import { fn, col, where as sequelizeWhere } from "sequelize";
+import nodemailer from "nodemailer";
+
+// ─── Mailer helper (reusable inside this controller) ─────────────────────────
+function getDoctorMailTransporter() {
+  const port = parseInt(process.env.SMTP_PORT) || 587;
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port,
+    secure: port === 465,
+    auth: { user: (process.env.SMTP_USER || '').trim(), pass: (process.env.SMTP_PASSWORD || process.env.SMTP_PASS || '').trim() },
+  });
+}
+
+// ─── Send registration notification to support@mediczy.com ───────────────────
+async function sendDoctorRegistrationAlert(doctor, docs) {
+  try {
+    const transporter = getDoctorMailTransporter();
+    const submittedAt = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+    const doctorName = `${doctor.prefix || ''} ${doctor.firstName} ${doctor.lastName}`.trim();
+
+    // Build document attachment list for email body
+    const docLabels = { idProof: 'ID Proof', addressProof: 'Address Proof', medicalDegree: 'Medical Degree', councilCertificate: 'Council Certificate' };
+    const docRows = Object.entries(docLabels)
+      .filter(([k]) => docs[k])
+      .map(([k, label], i) => `<tr${i%2!==0?' style="background:#f1f5f9"':''}><td style="padding:9px 0;color:#64748b;font-weight:600;width:170px">${label}</td><td style="padding:9px 0;color:#0f172a">${docs[k].name || '—'} <span style="color:#94a3b8;font-size:11px">(${docs[k].type || ''})</span></td></tr>`)
+      .join('');
+
+    const agreementId = docs.agreement?.agreementId || 'N/A';
+    const signedAt    = docs.agreement?.signedAt ? new Date(docs.agreement.signedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '—';
+
+    // Attach PDF if present (data URI → buffer)
+    const attachments = [];
+    if (docs.agreement?.pdf) {
+      try {
+        const base64 = docs.agreement.pdf.replace(/^data:application\/pdf;base64,/, '');
+        attachments.push({
+          filename: `Agreement_${doctorName.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.pdf`,
+          content: Buffer.from(base64, 'base64'),
+          contentType: 'application/pdf',
+        });
+      } catch { /* skip attachment on decode error */ }
+    }
+
+    await transporter.sendMail({
+      from: `"Mediczy Registrations" <${process.env.SMTP_USER || 'noreply@mediczy.com'}>`,
+      to: 'support@mediczy.com',
+      subject: `🩺 New Doctor Registration — ${doctorName} | Pending Verification`,
+      attachments,
+      html: `
+<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f0f4f8;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#f0f4f8">
+<tr><td align="center" style="padding:40px 20px;">
+<table width="620" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.09);">
+  <tr><td style="background:linear-gradient(135deg,#1d4ed8,#0284c7);padding:36px 40px;">
+    <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800">🩺 New Doctor Registration</h1>
+    <p style="margin:6px 0 0;color:rgba(255,255,255,0.82);font-size:13px">Received on ${submittedAt} IST · Pending manual verification</p>
+  </td></tr>
+  <tr><td style="padding:36px 40px;">
+    <h2 style="margin:0 0 20px;font-size:15px;color:#0f172a;border-bottom:1px solid #e2e8f0;padding-bottom:12px">Doctor Details</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:14px">
+      <tr><td style="padding:9px 0;color:#64748b;font-weight:600;width:170px">Full Name</td><td style="padding:9px 0;color:#0f172a;font-weight:700">${doctorName}</td></tr>
+      <tr style="background:#f1f5f9"><td style="padding:9px 8px;color:#64748b;font-weight:600">Email</td><td style="padding:9px 8px;color:#0f172a"><a href="mailto:${doctor.email}" style="color:#1d4ed8">${doctor.email}</a></td></tr>
+      <tr><td style="padding:9px 0;color:#64748b;font-weight:600">Phone</td><td style="padding:9px 0;color:#0f172a">${doctor.phoneNumber || '—'}</td></tr>
+      <tr style="background:#f1f5f9"><td style="padding:9px 8px;color:#64748b;font-weight:600">Specialization</td><td style="padding:9px 8px;color:#0f172a">${doctor.specialization || '—'}</td></tr>
+      <tr><td style="padding:9px 0;color:#64748b;font-weight:600">Experience</td><td style="padding:9px 0;color:#0f172a">${doctor.experience || '—'} years</td></tr>
+      <tr style="background:#f1f5f9"><td style="padding:9px 8px;color:#64748b;font-weight:600">Qualifications</td><td style="padding:9px 8px;color:#0f172a">${(doctor.qualifications||[]).join(', ') || '—'}</td></tr>
+      <tr><td style="padding:9px 0;color:#64748b;font-weight:600">Reg. Number</td><td style="padding:9px 0;color:#0f172a">${doctor.registrationNumber || doctor.medicalCouncilRegistrationNumber || '—'}</td></tr>
+      <tr style="background:#f1f5f9"><td style="padding:9px 8px;color:#64748b;font-weight:600">Medical Council</td><td style="padding:9px 8px;color:#0f172a">${doctor.medicalCouncilName || '—'}</td></tr>
+      <tr><td style="padding:9px 0;color:#64748b;font-weight:600">Practice Address</td><td style="padding:9px 0;color:#0f172a">${[doctor.practiceAddress, doctor.practiceCity, doctor.practiceState, doctor.practiceZipCode].filter(Boolean).join(', ') || '—'}</td></tr>
+    </table>
+
+    <h2 style="margin:28px 0 16px;font-size:15px;color:#0f172a;border-bottom:1px solid #e2e8f0;padding-bottom:12px">Submitted Documents</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:14px">${docRows || '<tr><td colspan="2" style="color:#94a3b8;padding:8px 0">No documents uploaded</td></tr>'}</table>
+
+    <h2 style="margin:28px 0 16px;font-size:15px;color:#0f172a;border-bottom:1px solid #e2e8f0;padding-bottom:12px">Agreement</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:14px">
+      <tr><td style="padding:9px 0;color:#64748b;font-weight:600;width:170px">Agreement ID</td><td style="padding:9px 0;color:#0f172a">${agreementId}</td></tr>
+      <tr style="background:#f1f5f9"><td style="padding:9px 8px;color:#64748b;font-weight:600">Signed At</td><td style="padding:9px 8px;color:#0f172a">${signedAt}</td></tr>
+      <tr><td style="padding:9px 0;color:#64748b;font-weight:600">Parties</td><td style="padding:9px 0;color:#0f172a">Mayden SmartHealth Pvt Ltd ↔ ${doctorName}</td></tr>
+      ${attachments.length > 0 ? '<tr style="background:#f1f5f9"><td style="padding:9px 8px;color:#64748b;font-weight:600">PDF Agreement</td><td style="padding:9px 8px;color:#059669;font-weight:600">✅ Attached to this email</td></tr>' : ''}
+    </table>
+
+    <div style="margin-top:28px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;padding:18px 22px">
+      <p style="margin:0;font-size:13px;color:#1e40af;font-weight:700">⏳ Action Required</p>
+      <p style="margin:8px 0 0;font-size:13px;color:#1d4ed8;line-height:1.6">
+        This doctor account is <strong>pending manual activation</strong>. Log in to the team portal and go to
+        <strong>Doctor Management</strong> to review documents and activate or reject this registration.
+      </p>
+    </div>
+  </td></tr>
+  <tr><td style="padding:16px 40px;border-top:1px solid #e2e8f0;text-align:center">
+    <p style="margin:0;font-size:11px;color:#94a3b8">Mediczy · Mayden SmartHealth Pvt Ltd · support@mediczy.com</p>
+  </td></tr>
+</table></td></tr></table>
+</body></html>`,
+    });
+    console.log(`[DoctorReg] Registration alert sent to support@mediczy.com for ${doctorName}`);
+  } catch (mailErr) {
+    console.warn('[DoctorReg] Registration alert email failed (non-critical):', mailErr.message);
+  }
+}
 
 const toPlainDoctor = (doctorInstance) => {
   if (!doctorInstance) return null;
@@ -265,9 +367,12 @@ export async function registerDoctor(req, res) {
     }
 
     // Create doctor (password will be hashed automatically by beforeCreate hook)
-    const newDoctor = await doctorModel.create(req.body);
+    // isVerified defaults to false — manual activation required
+    const newDoctor = await doctorModel.create({ ...req.body, isVerified: false });
 
-    const token = newDoctor.generateAuthToken();
+    // Send registration alert to support (fire-and-forget)
+    const docsPayload = req.body.documents || {};
+    sendDoctorRegistrationAlert(newDoctor, docsPayload);
 
     // Mirror doctor profile into intelligent DB (fire-and-forget)
     (async () => {
@@ -291,9 +396,10 @@ export async function registerDoctor(req, res) {
       }
     })();
 
+    // Return WITHOUT auth token — account needs manual activation by team
     return res.status(201).json({
-      message: "Doctor registered successfully",
-      token,
+      message: "Registration submitted successfully. Your application is under review. You will receive an email once your account is activated.",
+      pendingActivation: true,
       doctor: {
         id: newDoctor.id,
         prefix: newDoctor.prefix,
@@ -373,6 +479,15 @@ export async function signInDoctor(req, res) {
       if (!isPasswordValid) {
         await auditLoginAttempt(req, doctor.id, normalizedEmail, false, 'Invalid password');
         return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      // ── Manual activation gate ─────────────────────────────────────────────
+      if (!doctor.isVerified) {
+        await auditLoginAttempt(req, doctor.id, normalizedEmail, false, 'Account pending activation');
+        return res.status(403).json({
+          message: "Your registration is under review. Our team will activate your account after document verification. Please check your email for updates.",
+          pendingActivation: true,
+        });
       }
 
       console.log('💚 [signInDoctor] About to generate token...');
