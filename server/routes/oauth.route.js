@@ -8,7 +8,10 @@
  */
 
 import express from 'express';
+import passport from 'passport';
+import jwt from 'jsonwebtoken';
 import { authUser } from '../middleware/auth.middleware.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
 import userModel from '../models/postgres/user.model.postgres.js';
 import oauthTokenService from '../services/oauth-token.service.js';
 import {
@@ -320,5 +323,97 @@ router.get('/.well-known/openid-configuration', (req, res) => {
     claims_supported: ['sub', 'email', 'email_verified', 'name', 'given_name', 'family_name', 'username']
   });
 });
+
+// ============================================================================
+// GOOGLE OAUTH2 - PATIENT LOGIN
+// ============================================================================
+
+// ============================================================================
+// FACEBOOK OAUTH2 - PATIENT LOGIN
+// ============================================================================
+
+/**
+ * GET /api/auth/facebook
+ * Initiates Facebook OAuth2 login for patients
+ */
+router.get('/facebook', passport.authenticate('facebook', {
+  scope: ['email', 'public_profile'],
+  session: false
+}));
+
+/**
+ * GET /api/auth/facebook/callback
+ * Facebook OAuth2 callback for patients
+ */
+router.get('/facebook/callback',
+  passport.authenticate('facebook', { session: false, failureRedirect: '/login?error=facebook_auth_failed' }),
+  (req, res) => {
+    try {
+      const { user } = req.user;
+      const token = jwt.sign(
+        {
+          id: user.id,
+          userId: user.id,
+          email: user.email,
+          role: user.role || 'patient',
+          userType: user.userType || 'patient',
+          firstName: user.firstName,
+          lastName: user.lastName
+        },
+        JWT_CONFIG.SECRET || process.env.JWT_SECRET,
+        { expiresIn: '30d' }
+      );
+      const redirectUrl = process.env.NODE_ENV === 'production'
+        ? `https://app.mediqzy.com/oauth-callback?token=${token}&userType=patient&provider=facebook`
+        : `http://localhost:5173/oauth-callback?token=${token}&userType=patient&provider=facebook`;
+      res.redirect(redirectUrl);
+    } catch (error) {
+      console.error('Patient Facebook OAuth success handler error:', error);
+      res.redirect('/login?error=oauth_failed');
+    }
+  }
+);
+
+/**
+ * GET /api/auth/google
+ * Initiates Google OAuth2 login for patients
+ */
+router.get('/google', passport.authenticate('google', {
+  scope: ['profile', 'email'],
+  session: false
+}));
+
+/**
+ * GET /api/auth/google/callback
+ * Google OAuth2 callback for patients
+ */
+router.get('/google/callback',
+  passport.authenticate('google', { session: false, failureRedirect: '/login?error=google_auth_failed' }),
+  (req, res) => {
+    try {
+      const { user } = req.user;
+      const token = jwt.sign(
+        {
+          id: user.id,
+          userId: user.id,
+          email: user.email,
+          role: user.role || 'patient',
+          userType: user.userType || 'patient',
+          firstName: user.firstName,
+          lastName: user.lastName
+        },
+        JWT_CONFIG.SECRET || process.env.JWT_SECRET,
+        { expiresIn: '30d' }
+      );
+      const redirectUrl = process.env.NODE_ENV === 'production'
+        ? `https://app.mediqzy.com/oauth-callback?token=${token}&userType=patient&provider=google`
+        : `http://localhost:5173/oauth-callback?token=${token}&userType=patient&provider=google`;
+      res.redirect(redirectUrl);
+    } catch (error) {
+      console.error('Patient Google OAuth success handler error:', error);
+      res.redirect('/login?error=oauth_failed');
+    }
+  }
+);
 
 export default router;

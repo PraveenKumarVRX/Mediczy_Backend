@@ -34,6 +34,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       }
     }
   );
+  passport.use('google-doctor', googleDoctorStrategy);
 } else {
   console.warn('⚠️  Google OAuth not configured for doctors - skipping Google strategy');
 }

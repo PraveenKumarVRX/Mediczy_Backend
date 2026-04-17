@@ -505,6 +505,14 @@ const PUBLIC_ENDPOINTS = [
   '/api/auth/register', // Generic auth registration endpoint
   '/api/auth/send-otp', // OTP login (legacy alias)
   '/api/auth/verify-otp', // OTP login (legacy alias)
+  '/api/auth/google', // Google OAuth2 initiation (patient)
+  '/api/auth/google/callback', // Google OAuth2 callback (patient)
+  '/api/auth/doctor/google', // Google OAuth2 initiation (doctor)
+  '/api/auth/doctor/google/callback', // Google OAuth2 callback (doctor)
+  '/api/auth/facebook', // Facebook OAuth2 initiation (patient)
+  '/api/auth/facebook/callback', // Facebook OAuth2 callback (patient)
+  '/api/auth/doctor/facebook', // Facebook OAuth2 initiation (doctor)
+  '/api/auth/doctor/facebook/callback', // Facebook OAuth2 callback (doctor)
   '/api/users/login',
   '/api/users/register',
   '/api/users/login/send-otp',
