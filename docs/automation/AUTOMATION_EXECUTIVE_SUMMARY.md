@@ -231,7 +231,7 @@ Initialization Controller
 ✅ All 14 services initialized  
 ✅ Server restarted successfully  
 ✅ Frontend dashboard updated  
-✅ Automation dashboard accessible (https://mediqzy.com/admin/workflow-automation)  
+✅ Automation dashboard accessible (https://app.mediqzy.com/admin/workflow-automation)  
 ✅ All cron jobs scheduled  
 ✅ Real-time triggers active  
 
@@ -244,7 +244,7 @@ pm2 status mediczy-server → ✅ online
 pm2 logs mediczy-server | grep "All cron jobs" → ✅ Found
 
 # Dashboard accessible
-curl https://mediqzy.com/admin/workflow-automation → ✅ 200 OK
+curl https://app.mediqzy.com/admin/workflow-automation → ✅ 200 OK
 
 # Database health
 curl http://localhost:8000/api/db/health → ✅ healthy
@@ -321,7 +321,7 @@ curl http://localhost:8000/api/db/health → ✅ healthy
 ## 📞 Support & Maintenance
 
 ### Monitoring Dashboard
-**URL:** https://mediqzy.com/admin/workflow-automation  
+**URL:** https://app.mediqzy.com/admin/workflow-automation  
 **Access:** Admin role required  
 **Features:** Real-time status, metrics, manual triggers, logs
 

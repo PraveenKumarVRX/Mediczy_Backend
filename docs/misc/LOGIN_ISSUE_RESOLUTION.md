@@ -153,11 +153,11 @@ curl -X POST http://localhost:8000/api/users/login \
 # Expected response: 200 OK with auth token
 ```
 
-### Production Environment (https://mediqzy.com)
+### Production Environment (https://app.mediqzy.com)
 
 ```bash
 # After applying the fix to production:
-curl -X POST https://mediqzy.com/api/users/login \
+curl -X POST https://app.mediqzy.com/api/users/login \
   -H "Content-Type: application/json" \
   -d '{"email":"user@mediczy.com","password":"User123"}'
 
@@ -246,7 +246,7 @@ To verify or fix these accounts, use the same script:
 2. **For Staging:** Run password reset script against staging database
 3. **For Production:** 
    - Apply fix using one of the methods above
-   - Test login at https://mediqzy.com/api/users/login
+   - Test login at https://app.mediqzy.com/api/users/login
    - Verify token is valid for subsequent API calls
    - Monitor logs for any auth-related errors
 

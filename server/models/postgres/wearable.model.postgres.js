@@ -254,6 +254,7 @@ const Wearable = sequelize.define('Wearable', {
 }, {
   tableName: 'wearables',
   timestamps: true,
+  underscored: true,
   indexes: [
     {
       fields: ['device_id'],

@@ -246,7 +246,7 @@ Features:
 
 ### Base URL
 ```
-Production: https://mediqzy.com/api/membership-plans
+Production: https://app.mediqzy.com/api/membership-plans
 ```
 
 ### Authentication
@@ -804,7 +804,7 @@ Track these KPIs:
 
 ---
 
-**Production URL**: https://mediqzy.com/api/membership-plans
+**Production URL**: https://app.mediqzy.com/api/membership-plans
 
 *Document created: December 19, 2025*
 *Version: 1.0*

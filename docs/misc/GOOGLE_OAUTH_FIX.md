@@ -7,7 +7,7 @@ Google OAuth is **NOT ENABLED** because the Client Secret is missing.
 {
   "google": {
     "configured": false,
-    "url": "https://mediqzy.com/api/auth/google",
+    "url": "https://app.mediqzy.com/api/auth/google",
     "enabled": false
   }
 }
@@ -47,7 +47,7 @@ The script will:
 While in the OAuth client editor:
 1. Scroll to **"Authorized redirect URIs"**
 2. Add these URLs:
-   - Production: `https://mediqzy.com/api/auth/google/callback`
+   - Production: `https://app.mediqzy.com/api/auth/google/callback`
    - Development: `http://localhost:8000/api/auth/google/callback`
 3. Click **SAVE**
 
@@ -84,7 +84,7 @@ Should show:
 {
   "google": {
     "configured": true,
-    "url": "https://mediqzy.com/api/auth/google",
+    "url": "https://app.mediqzy.com/api/auth/google",
     "enabled": true
   }
 }
@@ -93,7 +93,7 @@ Should show:
 ## 🧪 Test Google Login
 
 Once enabled:
-1. Go to https://mediqzy.com/login
+1. Go to https://app.mediqzy.com/login
 2. Click the **Google** button
 3. Sign in with Google account
 4. Should redirect to dashboard
@@ -105,7 +105,7 @@ Once enabled:
 ```bash
 GOOGLE_CLIENT_ID=982376166047-j975co5qc5enqhcesggbsee3obnj7tqa.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=                    # ❌ EMPTY - NEEDS TO BE SET
-GOOGLE_CALLBACK_URL=https://mediqzy.com/api/auth/google/callback
+GOOGLE_CALLBACK_URL=https://app.mediqzy.com/api/auth/google/callback
 ```
 
 ### Frontend (.env)

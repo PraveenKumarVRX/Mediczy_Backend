@@ -26,6 +26,7 @@ import {
   Mail, 
   Phone, 
   Calendar,
+  CalendarDays,
   TrendingUp,
   UserPlus,
   Package,
@@ -48,7 +49,15 @@ import {
   AlertCircle,
   Key,
   Copy,
-  UserCheck
+  UserCheck,
+  Dumbbell,
+  Brain,
+  Salad,
+  Trophy,
+  Clock,
+  MapPin,
+  Bell,
+  ChevronLeft
 } from 'lucide-react';
 import api from '@/utils/api';
 import { useNavigate } from 'react-router-dom';
@@ -56,6 +65,7 @@ import { useNavigate } from 'react-router-dom';
 interface Corporate {
   id: number;
   uid?: string;
+  uniqueId?: string;  // 6-char alphanumeric, e.g. C1ZNHW
   companyName: string;
   contactPerson: string;
   email: string;
@@ -122,6 +132,26 @@ interface HealthPackage {
   tests: string[];
   price: number;
   validityDays: number;
+}
+
+interface WellnessEvent {
+  id: number;
+  corporate_id: number;
+  title: string;
+  description?: string;
+  event_type: string;
+  event_date: string;
+  event_time?: string;
+  end_date?: string;
+  end_time?: string;
+  location?: string;
+  organizer?: string;
+  max_participants?: number;
+  registered_count: number;
+  status: string;
+  color: string;
+  notify_employees: boolean;
+  created_at?: string;
 }
 
 interface CorporatePlan {
@@ -318,6 +348,51 @@ const TeamCorporateManagement = () => {
     healthPackageIds: [] as string[],
   });
   
+  // Wellness Calendar
+  const [wellnessEvents, setWellnessEvents] = useState<WellnessEvent[]>([]);
+  const [calendarView, setCalendarView] = useState<'month' | 'list'>('month');
+  const [calendarDate, setCalendarDate] = useState<Date>(new Date());
+  const [showCreateEventDialog, setShowCreateEventDialog] = useState(false);
+  const [showEditEventDialog, setShowEditEventDialog] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<WellnessEvent | null>(null);
+  const eventTypeColors: Record<string, string> = {
+    'Wellness Session': 'teal',
+    'Health Checkup': 'blue',
+    'Fitness Activity': 'orange',
+    'Mental Health': 'purple',
+    'Yoga & Meditation': 'indigo',
+    'Nutrition Workshop': 'green',
+    'Sports Day': 'red',
+    'Safety Training': 'yellow',
+    'Other': 'slate',
+  };
+  const colorClasses: Record<string, string> = {
+    teal:   'bg-teal-100 text-teal-800 border-teal-200 dark:bg-teal-900/30 dark:text-teal-300',
+    blue:   'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300',
+    orange: 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300',
+    purple: 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300',
+    indigo: 'bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300',
+    green:  'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-300',
+    red:    'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300',
+    yellow: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300',
+    slate:  'bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-900/30 dark:text-slate-300',
+  };
+  const defaultEventForm = {
+    title: '',
+    description: '',
+    eventType: 'Wellness Session',
+    eventDate: '',
+    eventTime: '',
+    endDate: '',
+    endTime: '',
+    location: '',
+    organizer: '',
+    maxParticipants: '',
+    status: 'upcoming',
+    notifyEmployees: false,
+  };
+  const [eventForm, setEventForm] = useState(defaultEventForm);
+
   // Mock data for employees and network
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [empCurrentPage, setEmpCurrentPage] = useState(1);
@@ -351,6 +426,7 @@ const TeamCorporateManagement = () => {
       fetchHealthPackages(selectedCorporate.id);
       fetchCorporatePlans(selectedCorporate.id);
       fetchNetworkPartners(selectedCorporate.id);
+      fetchWellnessEvents(selectedCorporate.id);
     }
   }, [selectedCorporate?.id]);
 
@@ -620,6 +696,159 @@ const TeamCorporateManagement = () => {
       setAvailLoading(false);
     }
   };
+
+  // ─── Wellness Calendar helpers ──────────────────────────────────────────────
+  const fetchWellnessEvents = async (corporateId: number, month?: string) => {
+    try {
+      const token = localStorage.getItem('teamToken');
+      const url = month
+        ? `/admin/corporate-calendar/${corporateId}?month=${month}`
+        : `/admin/corporate-calendar/${corporateId}`;
+      const res = await api.get(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      setWellnessEvents(res.data?.events || []);
+    } catch {
+      setWellnessEvents([]);
+    }
+  };
+
+  const handleCreateEvent = async () => {
+    if (!eventForm.title || !eventForm.eventDate) {
+      toast({ variant: 'destructive', title: 'Required', description: 'Title and date are required' });
+      return;
+    }
+    try {
+      const token = localStorage.getItem('teamToken');
+      await api.post('/admin/corporate-calendar', {
+        corporateId: selectedCorporate?.id,
+        title: eventForm.title,
+        description: eventForm.description,
+        eventType: eventForm.eventType,
+        eventDate: eventForm.eventDate,
+        eventTime: eventForm.eventTime || undefined,
+        endDate: eventForm.endDate || undefined,
+        endTime: eventForm.endTime || undefined,
+        location: eventForm.location,
+        organizer: eventForm.organizer,
+        maxParticipants: eventForm.maxParticipants ? parseInt(eventForm.maxParticipants) : undefined,
+        status: eventForm.status,
+        color: eventTypeColors[eventForm.eventType] || 'teal',
+        notifyEmployees: eventForm.notifyEmployees,
+      }, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      toast({ title: 'Event Created', description: `${eventForm.title} added to calendar` });
+      setShowCreateEventDialog(false);
+      setEventForm(defaultEventForm);
+      if (selectedCorporate?.id) fetchWellnessEvents(selectedCorporate.id);
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Error', description: e.response?.data?.message || 'Failed to create event' });
+    }
+  };
+
+  const handleUpdateEvent = async () => {
+    if (!editingEvent) return;
+    try {
+      const token = localStorage.getItem('teamToken');
+      await api.put(`/admin/corporate-calendar/${editingEvent.id}`, {
+        title: eventForm.title,
+        description: eventForm.description,
+        eventType: eventForm.eventType,
+        eventDate: eventForm.eventDate,
+        eventTime: eventForm.eventTime || null,
+        endDate: eventForm.endDate || null,
+        endTime: eventForm.endTime || null,
+        location: eventForm.location,
+        organizer: eventForm.organizer,
+        maxParticipants: eventForm.maxParticipants ? parseInt(eventForm.maxParticipants) : null,
+        status: eventForm.status,
+        color: eventTypeColors[eventForm.eventType] || editingEvent.color,
+        notifyEmployees: eventForm.notifyEmployees,
+      }, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      toast({ title: 'Event Updated' });
+      setShowEditEventDialog(false);
+      setEditingEvent(null);
+      setEventForm(defaultEventForm);
+      if (selectedCorporate?.id) fetchWellnessEvents(selectedCorporate.id);
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Error', description: e.response?.data?.message || 'Failed to update event' });
+    }
+  };
+
+  const handleDeleteEvent = async (eventId: number, title: string) => {
+    if (!window.confirm(`Delete "${title}"?`)) return;
+    try {
+      const token = localStorage.getItem('teamToken');
+      await api.delete(`/admin/corporate-calendar/${eventId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      toast({ title: 'Event Deleted' });
+      if (selectedCorporate?.id) fetchWellnessEvents(selectedCorporate.id);
+    } catch {
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to delete event' });
+    }
+  };
+
+  const openEditEvent = (ev: WellnessEvent) => {
+    setEditingEvent(ev);
+    setEventForm({
+      title: ev.title,
+      description: ev.description || '',
+      eventType: ev.event_type,
+      eventDate: ev.event_date ? ev.event_date.slice(0, 10) : '',
+      eventTime: ev.event_time || '',
+      endDate: ev.end_date ? ev.end_date.slice(0, 10) : '',
+      endTime: ev.end_time || '',
+      location: ev.location || '',
+      organizer: ev.organizer || '',
+      maxParticipants: ev.max_participants ? String(ev.max_participants) : '',
+      status: ev.status,
+      notifyEmployees: ev.notify_employees,
+    });
+    setShowEditEventDialog(true);
+  };
+
+  /** Build a calendar grid for the currently viewed month */
+  const buildCalendarGrid = () => {
+    const year = calendarDate.getFullYear();
+    const month = calendarDate.getMonth();
+    const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const cells: (number | null)[] = [...Array(firstDay).fill(null)];
+    for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+    while (cells.length % 7 !== 0) cells.push(null);
+    return cells;
+  };
+
+  const eventsForDay = (day: number) => {
+    const yr = calendarDate.getFullYear();
+    const mo = String(calendarDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(day).padStart(2, '0');
+    const target = `${yr}-${mo}-${dd}`;
+    return wellnessEvents.filter(e => e.event_date?.slice(0, 10) === target);
+  };
+
+  const navigateMonth = (delta: number) => {
+    const d = new Date(calendarDate);
+    d.setMonth(d.getMonth() + delta);
+    setCalendarDate(d);
+    if (selectedCorporate?.id) {
+      const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      fetchWellnessEvents(selectedCorporate.id, m);
+    }
+  };
+
+  const eventTypeIcon = (type: string) => {
+    switch (type) {
+      case 'Fitness Activity': return <Dumbbell className="h-3 w-3" />;
+      case 'Mental Health': return <Brain className="h-3 w-3" />;
+      case 'Yoga & Meditation': return <Heart className="h-3 w-3" />;
+      case 'Nutrition Workshop': return <Salad className="h-3 w-3" />;
+      case 'Sports Day': return <Trophy className="h-3 w-3" />;
+      case 'Health Checkup': return <Stethoscope className="h-3 w-3" />;
+      default: return <Activity className="h-3 w-3" />;
+    }
+  };
+  // ────────────────────────────────────────────────────────────────────────────
 
   const fetchCorporates = async () => {
     try {
@@ -1378,6 +1607,9 @@ const TeamCorporateManagement = () => {
                       <div>
                         <h3 className="font-semibold">{corp.companyName}</h3>
                         <p className="text-sm text-muted-foreground">{corp.industry}</p>
+                        {corp.uniqueId && (
+                          <span className="inline-block mt-0.5 text-[10px] font-mono bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded">{corp.uniqueId}</span>
+                        )}
                       </div>
                     </div>
                     {getStatusBadge(corp.status)}
@@ -1401,12 +1633,15 @@ const TeamCorporateManagement = () => {
         {/* Selected Corporate Management */}
         {selectedCorporate && (
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-6">
+            <TabsList className="grid w-full grid-cols-7">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="hr-admin">HR Admin</TabsTrigger>
               <TabsTrigger value="employees">Employees</TabsTrigger>
               <TabsTrigger value="plans">Plans</TabsTrigger>
               <TabsTrigger value="packages">Health Packages</TabsTrigger>
+              <TabsTrigger value="calendar" className="flex items-center gap-1.5">
+                <CalendarDays className="h-3.5 w-3.5" />Calendar
+              </TabsTrigger>
               <TabsTrigger value="network">Network</TabsTrigger>
             </TabsList>
 
@@ -1507,6 +1742,19 @@ const TeamCorporateManagement = () => {
                       <div>
                         <Label className="text-muted-foreground">Onboarded On</Label>
                         <p className="font-medium">{new Date(selectedCorporate.createdAt).toLocaleDateString()}</p>
+                      </div>
+                      <div>
+                        <Label className="text-muted-foreground">Corporate ID</Label>
+                        <p className="font-mono font-semibold text-teal-600 dark:text-teal-400 flex items-center gap-1.5">
+                          {selectedCorporate.uniqueId || `ID-${selectedCorporate.id}`}
+                          {selectedCorporate.uniqueId && (
+                            <button
+                              title="Copy Corporate ID"
+                              className="text-slate-400 hover:text-teal-600"
+                              onClick={() => { navigator.clipboard.writeText(selectedCorporate.uniqueId!); toast({ title: 'Copied', description: `Corporate ID ${selectedCorporate.uniqueId} copied` }); }}
+                            ><Copy className="h-3.5 w-3.5" /></button>
+                          )}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -1799,7 +2047,7 @@ const TeamCorporateManagement = () => {
                       ))
                     )}
 
-                    <Card className="border-dashed">
+                    <Card className="border-dashed cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setShowCreatePlanDialog(true)}>
                       <CardContent className="flex flex-col items-center justify-center h-full py-8">
                         <Plus className="h-8 w-8 text-muted-foreground mb-2" />
                         <p className="text-sm text-muted-foreground">Create New Plan</p>
@@ -1883,6 +2131,175 @@ const TeamCorporateManagement = () => {
                         <p className="text-sm text-muted-foreground">Create New Package</p>
                       </CardContent>
                     </Card>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Health Calendar Tab */}
+            <TabsContent value="calendar" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <CalendarDays className="h-5 w-5 text-teal-600" />
+                        Wellness Calendar
+                      </CardTitle>
+                      <CardDescription>
+                        Manage wellness engagement activities for {selectedCorporate?.companyName}
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex rounded-md border overflow-hidden">
+                        <Button
+                          variant={calendarView === 'month' ? 'default' : 'ghost'}
+                          size="sm"
+                          className="rounded-none h-8"
+                          onClick={() => setCalendarView('month')}
+                        >Month</Button>
+                        <Button
+                          variant={calendarView === 'list' ? 'default' : 'ghost'}
+                          size="sm"
+                          className="rounded-none h-8"
+                          onClick={() => setCalendarView('list')}
+                        >List</Button>
+                      </div>
+                      <Button size="sm" onClick={() => { setEventForm(defaultEventForm); setShowCreateEventDialog(true); }}>
+                        <Plus className="h-4 w-4 mr-1" />Add Event
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {/* Month navigation */}
+                  <div className="flex items-center justify-between mb-4">
+                    <Button variant="ghost" size="icon" onClick={() => navigateMonth(-1)}>
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <h3 className="text-base font-semibold">
+                      {calendarDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
+                    </h3>
+                    <Button variant="ghost" size="icon" onClick={() => navigateMonth(1)}>
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  {calendarView === 'month' ? (
+                    <div>
+                      {/* Day headers */}
+                      <div className="grid grid-cols-7 mb-1">
+                        {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                          <div key={d} className="text-center text-xs font-medium text-muted-foreground py-1">{d}</div>
+                        ))}
+                      </div>
+                      {/* Calendar cells */}
+                      <div className="grid grid-cols-7 border-l border-t">
+                        {buildCalendarGrid().map((day, idx) => {
+                          const dayEvents = day ? eventsForDay(day) : [];
+                          const isToday = day !== null && (() => {
+                            const t = new Date();
+                            return t.getDate() === day && t.getMonth() === calendarDate.getMonth() && t.getFullYear() === calendarDate.getFullYear();
+                          })();
+                          return (
+                            <div
+                              key={idx}
+                              className={`min-h-[80px] border-r border-b p-1 ${!day ? 'bg-muted/30' : 'bg-card'}`}
+                            >
+                              {day && (
+                                <>
+                                  <div className={`text-xs font-medium mb-1 w-6 h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-teal-500 text-white' : 'text-foreground'}`}>
+                                    {day}
+                                  </div>
+                                  <div className="space-y-0.5">
+                                    {dayEvents.slice(0, 2).map(ev => (
+                                      <div
+                                        key={ev.id}
+                                        className={`text-[10px] px-1 py-0.5 rounded truncate cursor-pointer border flex items-center gap-0.5 ${colorClasses[ev.color] || colorClasses.teal}`}
+                                        title={ev.title}
+                                        onClick={() => openEditEvent(ev)}
+                                      >
+                                        {eventTypeIcon(ev.event_type)}
+                                        <span className="truncate">{ev.title}</span>
+                                      </div>
+                                    ))}
+                                    {dayEvents.length > 2 && (
+                                      <div className="text-[10px] text-muted-foreground pl-1">+{dayEvents.length - 2} more</div>
+                                    )}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    /* List view */
+                    <div className="space-y-3">
+                      {wellnessEvents.length === 0 ? (
+                        <div className="text-center py-12 text-muted-foreground">
+                          <CalendarDays className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                          <p className="text-sm">No wellness events scheduled.</p>
+                          <p className="text-xs mt-1">Click "Add Event" to schedule your first activity.</p>
+                        </div>
+                      ) : (
+                        wellnessEvents.map(ev => (
+                          <div key={ev.id} className="flex items-start gap-3 p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors">
+                            <div className={`flex-shrink-0 p-2 rounded-lg border ${colorClasses[ev.color] || colorClasses.teal}`}>
+                              {eventTypeIcon(ev.event_type)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <p className="text-sm font-medium">{ev.title}</p>
+                                <Badge variant="outline" className="text-xs capitalize">{ev.status}</Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-0.5">{ev.event_type}</p>
+                              <div className="flex flex-wrap gap-3 mt-1.5">
+                                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <Calendar className="h-3 w-3" />
+                                  {new Date(ev.event_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                  {ev.event_time && ` • ${ev.event_time.slice(0,5)}`}
+                                </span>
+                                {ev.location && (
+                                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                    <MapPin className="h-3 w-3" />{ev.location}
+                                  </span>
+                                )}
+                                {ev.organizer && (
+                                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                    <UserCheck className="h-3 w-3" />{ev.organizer}
+                                  </span>
+                                )}
+                                {ev.max_participants && (
+                                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                    <Users className="h-3 w-3" />{ev.registered_count}/{ev.max_participants}
+                                  </span>
+                                )}
+                              </div>
+                              {ev.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{ev.description}</p>}
+                            </div>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditEvent(ev)}>
+                                <Edit className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50" onClick={() => handleDeleteEvent(ev.id, ev.title)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {/* Event type legend */}
+                  <div className="mt-4 pt-3 border-t flex flex-wrap gap-2">
+                    {Object.entries(eventTypeColors).map(([type, color]) => (
+                      <span key={type} className={`text-[10px] px-2 py-0.5 rounded-full border flex items-center gap-1 ${colorClasses[color]}`}>
+                        {eventTypeIcon(type)}{type}
+                      </span>
+                    ))}
                   </div>
                 </CardContent>
               </Card>
@@ -4158,6 +4575,97 @@ const TeamCorporateManagement = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* ─── Create / Edit Wellness Event Dialog ─── */}
+        {[
+          { open: showCreateEventDialog, setOpen: setShowCreateEventDialog, onSave: handleCreateEvent, title: 'Add Wellness Event' },
+          { open: showEditEventDialog,   setOpen: (v: boolean) => { setShowEditEventDialog(v); if (!v) setEditingEvent(null); }, onSave: handleUpdateEvent, title: 'Edit Wellness Event' },
+        ].map(({ open, setOpen, onSave, title: dialogTitle }) => (
+          <Dialog key={dialogTitle} open={open} onOpenChange={setOpen}>
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{dialogTitle}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-1">
+                  <Label>Event Title <span className="text-red-500">*</span></Label>
+                  <Input placeholder="e.g. Annual Health Checkup Drive" value={eventForm.title} onChange={e => setEventForm(p => ({ ...p, title: e.target.value }))} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label>Event Type</Label>
+                    <Select value={eventForm.eventType} onValueChange={v => setEventForm(p => ({ ...p, eventType: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {Object.keys(eventTypeColors).map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Status</Label>
+                    <Select value={eventForm.status} onValueChange={v => setEventForm(p => ({ ...p, status: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="upcoming">Upcoming</SelectItem>
+                        <SelectItem value="ongoing">Ongoing</SelectItem>
+                        <SelectItem value="completed">Completed</SelectItem>
+                        <SelectItem value="cancelled">Cancelled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label>Start Date <span className="text-red-500">*</span></Label>
+                    <Input type="date" value={eventForm.eventDate} onChange={e => setEventForm(p => ({ ...p, eventDate: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Start Time</Label>
+                    <Input type="time" value={eventForm.eventTime} onChange={e => setEventForm(p => ({ ...p, eventTime: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label>End Date</Label>
+                    <Input type="date" value={eventForm.endDate} onChange={e => setEventForm(p => ({ ...p, endDate: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>End Time</Label>
+                    <Input type="time" value={eventForm.endTime} onChange={e => setEventForm(p => ({ ...p, endTime: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />Location</Label>
+                  <Input placeholder="Conference Hall, Canteen, Zoom link…" value={eventForm.location} onChange={e => setEventForm(p => ({ ...p, location: e.target.value }))} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="flex items-center gap-1"><UserCheck className="h-3.5 w-3.5" />Organizer</Label>
+                    <Input placeholder="HR Team, Vendor name…" value={eventForm.organizer} onChange={e => setEventForm(p => ({ ...p, organizer: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="flex items-center gap-1"><Users className="h-3.5 w-3.5" />Max Participants</Label>
+                    <Input type="number" min={1} placeholder="Leave blank for unlimited" value={eventForm.maxParticipants} onChange={e => setEventForm(p => ({ ...p, maxParticipants: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label>Description</Label>
+                  <Textarea rows={2} placeholder="Brief description of the activity…" value={eventForm.description} onChange={e => setEventForm(p => ({ ...p, description: e.target.value }))} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch id="notifyEmp" checked={eventForm.notifyEmployees} onCheckedChange={v => setEventForm(p => ({ ...p, notifyEmployees: v }))} />
+                  <Label htmlFor="notifyEmp" className="flex items-center gap-1 cursor-pointer">
+                    <Bell className="h-3.5 w-3.5" />Notify employees
+                  </Label>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                <Button onClick={onSave}>{dialogTitle.startsWith('Add') ? 'Create Event' : 'Save Changes'}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        ))}
       </div>
     </MainLayout>
   );

@@ -62,7 +62,7 @@ VITE_GOOGLE_CLIENT_ID=982376166047-j975co5qc5enqhcesggbsee3obnj7tqa.apps.googleu
 # Backend (.env)
 GOOGLE_CLIENT_ID=982376166047-j975co5qc5enqhcesggbsee3obnj7tqa.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=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
-GOOGLE_CALLBACK_URL=https://mediqzy.com/api/auth/google/callback
+GOOGLE_CALLBACK_URL=https://app.mediqzy.com/api/auth/google/callback
 ```
 
 **Current Implementation:**

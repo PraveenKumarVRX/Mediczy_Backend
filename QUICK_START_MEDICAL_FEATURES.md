@@ -34,7 +34,7 @@ Three powerful new features have been added to the discharge summary scribe:
 
 ### Step 1: Open Discharge Summary
 
-Navigate to: `https://mediqzy.com/hospital/discharge-summary`
+Navigate to: `https://app.mediqzy.com/hospital/discharge-summary`
 
 ### Step 2: Select Medical Specialty
 

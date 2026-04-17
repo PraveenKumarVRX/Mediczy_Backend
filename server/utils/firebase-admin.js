@@ -123,10 +123,12 @@ const sendPushNotification = async (token, notification, data = {}) => {
         notification: {
           icon: 'notification_icon',
           color: '#2563eb',
-          sound: 'default',
+          sound: notification.sound || 'default',
           priority: 'high',
-          defaultSound: true,
-          channelId: 'mediczy_notifications'
+          defaultSound: !notification.sound,
+          channelId: notification.channelId || 'mediczy_notifications',
+          notificationPriority: notification.notificationPriority || 'PRIORITY_DEFAULT',
+          visibility: notification.visibility || 'PRIVATE',
         },
         priority: 'high',
         ttl: 3600 * 1000, // 1 hour
@@ -361,35 +363,85 @@ const sendCallRejectedNotification = async (recipientToken, rejectData) => {
 };
 
 /**
+ * Send a data-only FCM message for incoming call notifications.
+ * Data-only messages wake the Android app even when it's killed/backgrounded,
+ * allowing the app to display a full-screen call UI and play a ringtone.
+ * @param {string} token - FCM token of the recipient
+ * @param {object} data - Call data payload
+ */
+const sendCallDataOnlyMessage = async (token, data = {}) => {
+  if (!isFirebaseInitialized || !messaging) {
+    console.warn('Firebase not initialized. Cannot send call notification.');
+    return Promise.resolve(null);
+  }
+
+  try {
+    const stringData = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (value !== null && value !== undefined) {
+        stringData[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
+      }
+    }
+    stringData.timestamp = new Date().toISOString();
+
+    const message = {
+      data: stringData,
+      token: token,
+      android: {
+        priority: 'high',    // wakes the device even in Doze mode
+        ttl: 30 * 1000,      // 30-second TTL — discard if device offline > 30 s
+      },
+      apns: {
+        headers: {
+          'apns-priority': '10',
+          'apns-push-type': 'alert',
+        },
+        payload: {
+          aps: {
+            badge: 1,
+            sound: 'call_ringtone.caf',
+            category: 'INCOMING_CALL',
+            'content-available': 1,
+          }
+        }
+      }
+    };
+
+    const response = await messaging.send(message);
+    console.log('Successfully sent call data notification:', response);
+    return response;
+  } catch (error) {
+    console.error('Error sending call data notification:', error);
+    throw error;
+  }
+};
+
+/**
  * Send doctor calling notification to patient
  * @param {string} recipientToken - FCM token of patient
  * @param {object} callData - Call data with doctor info and meeting link
  */
 const sendDoctorCallingNotification = async (recipientToken, callData) => {
-  const notification = {
-    title: `📞 ${callData.doctorName} is calling`,
-    body: 'Your doctor has started the video consultation. Tap to join now!',
-    icon: '/doctor-calling-icon.png',
-    requireInteraction: true,
-    category: 'CALL',
-    tag: `doctor-call-${callData.appointmentId}`,
-    renotify: true,
-    vibrate: [200, 100, 200, 100, 200, 100, 200],
-    sound: 'call_ringtone'
-  };
-
+  // Use data-only message so the Android app wakes up and handles the call UI.
+  // A notification+data message lets the OS handle it silently in the background.
   const data = {
     type: FCM_NOTIFICATION_TYPES.VIDEO_CALL,
+    notificationType: 'incoming_call',
     appointmentId: String(callData.appointmentId),
     meetingLink: callData.meetingLink || '',
     doctorName: callData.doctorName || '',
     doctorId: String(callData.doctorId || ''),
     callInitiatedAt: callData.callInitiatedAt || new Date().toISOString(),
     action: 'join_call',
-    clickAction: 'join_video_call'
+    clickAction: 'join_video_call',
+    // Notification display hints for the Android handler
+    title: `📞 ${callData.doctorName || 'Your doctor'} is calling`,
+    body: 'Your doctor has started the video consultation. Tap to join now!',
+    sound: 'call_ringtone',
+    channelId: 'mediczy_incoming_call',
   };
 
-  return sendPushNotification(recipientToken, notification, data);
+  return sendCallDataOnlyMessage(recipientToken, data);
 };
 
 /**
@@ -517,6 +569,7 @@ const validateToken = async (token) => {
 
 export {
   sendPushNotification,
+  sendCallDataOnlyMessage,
   sendMulticastNotification,
   sendVideoCallNotification,
   sendTriageCallNotification,

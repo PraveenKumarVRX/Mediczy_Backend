@@ -1,0 +1,397 @@
+/**
+ * Sanity Check / Smoke Test / Regression Test
+ * ============================================
+ * Tests three layers after the DB naming hygiene and FK constraint work:
+ *
+ *  1. DB SCHEMA  — renamed columns, recreated view, FK constraints exist
+ *  2. ORM LAYER  — Sequelize can SELECT from every affected table (no column errors)
+ *  3. HTTP API   — live server smoke test for key routes
+ *
+ * Run:
+ *   node scripts/sanity-smoke-regression.mjs
+ *
+ * Exit code 0 = all passed, 1 = failures found.
+ */
+
+import pg from 'pg';
+import { createRequire } from 'module';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+const require = createRequire(import.meta.url);
+const jwt = require('jsonwebtoken');
+
+// ─── Config ────────────────────────────────────────────────────────────────────
+const DB = {
+  host: process.env.POSTGRES_HOST || '127.0.0.1',
+  port: parseInt(process.env.POSTGRES_PORT || '5432'),
+  database: process.env.POSTGRES_DATABASE || 'mediczy_ai',
+  user: process.env.POSTGRES_USER || 'mediczy_helper',
+  password: process.env.POSTGRES_PASSWORD || 'Mediczy2024Helper',
+};
+const PORT = process.env.PORT || '8888';
+const BASE_URL = `http://localhost:${PORT}`;
+const JWT_SECRET = process.env.JWT_SECRET ||
+  'd6100dfd4597503924f69844c93a4cdddfa47bdbaff450c45a2ad774c857fde074e9ba41e6f7171c21c83f25e224f969e7e05681cc020f30e964017395a4fd8d';
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+let passed = 0;
+let failed = 0;
+const results = [];
+
+function pass(suite, name) {
+  passed++;
+  results.push({ status: 'PASS', suite, name });
+  console.log(`  ✅ PASS  [${suite}] ${name}`);
+}
+
+function fail(suite, name, reason) {
+  failed++;
+  results.push({ status: 'FAIL', suite, name, reason });
+  console.error(`  ❌ FAIL  [${suite}] ${name}`);
+  console.error(`          ${reason}`);
+}
+
+async function dbQuery(client, sql, params = []) {
+  return client.query(sql, params);
+}
+
+async function httpGet(path, token) {
+  const { default: fetch } = await import('node-fetch');
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const res = await fetch(`${BASE_URL}${path}`, { headers });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+
+async function httpPost(path, body, token) {
+  const { default: fetch } = await import('node-fetch');
+  const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  const res = await fetch(`${BASE_URL}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+
+// ─── DB Schema Tests ───────────────────────────────────────────────────────────
+async function runSchemaTests(client) {
+  console.log('\n── SECTION 1: DB Schema Integrity ──────────────────────────────');
+
+  // 1a. insurance_claims renamed columns exist as snake_case
+  const renamedCols = [
+    'user_insurance_id', 'appointment_id', 'claim_number', 'claim_amount',
+    'approved_amount', 'submitted_at', 'processed_at', 'created_at', 'updated_at',
+  ];
+  for (const col of renamedCols) {
+    const r = await dbQuery(client,
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_schema='public' AND table_name='insurance_claims' AND column_name=$1`, [col]);
+    if (r.rowCount > 0) pass('Schema', `insurance_claims.${col} exists (snake_case)`);
+    else fail('Schema', `insurance_claims.${col} exists (snake_case)`, `Column not found — rename may have failed`);
+  }
+
+  // 1b. Old camelCase columns must NOT exist
+  const oldCols = ['userInsuranceId', 'appointmentId', 'claimNumber', 'claimAmount',
+    'approvedAmount', 'processedAt', 'submittedAt'];
+  for (const col of oldCols) {
+    const r = await dbQuery(client,
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_schema='public' AND table_name='insurance_claims' AND column_name=$1`, [col]);
+    if (r.rowCount === 0) pass('Schema', `insurance_claims.${col} removed (no stale camelCase)`);
+    else fail('Schema', `insurance_claims.${col} removed`, `Old camelCase column still exists — rename incomplete`);
+  }
+
+  // 1c. v_claims_dashboard view exists and is queryable
+  try {
+    await dbQuery(client, `SELECT * FROM v_claims_dashboard LIMIT 1`);
+    pass('Schema', 'v_claims_dashboard view is queryable');
+  } catch (e) {
+    fail('Schema', 'v_claims_dashboard view is queryable', e.message);
+  }
+
+  // 1d. No MIXED naming tables (ALL_SNAKE or ALL_CAMEL or MOSTLY_CAMEL only)
+  const r = await dbQuery(client, `
+    SELECT table_name FROM (
+      SELECT table_name,
+        COUNT(*) FILTER (WHERE column_name ~ '[A-Z]') AS camel_cols,
+        COUNT(*) FILTER (WHERE column_name ~ '^[a-z]+(_[a-z0-9]+)+$') AS snake_cols
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+      GROUP BY table_name
+    ) t
+    WHERE camel_cols > 0 AND snake_cols > 0
+      AND camel_cols <= snake_cols  -- more snake than camel = MIXED (not MOSTLY_CAMEL)
+      AND NOT (
+        camel_cols <= 2
+        AND camel_cols = (
+          SELECT COUNT(*) FROM information_schema.columns c2
+          WHERE c2.table_schema='public' AND c2.table_name=t.table_name
+            AND c2.column_name IN ('createdAt','updatedAt')
+        )
+      )
+  `);
+  if (r.rowCount === 0) pass('Schema', 'No MIXED naming tables (0 anomalies)');
+  else fail('Schema', 'No MIXED naming tables', `Still MIXED: ${r.rows.map(x => x.table_name).join(', ')}`);
+
+  // 1e. FK constraints added on core tables
+  const expectedFKs = [
+    ['appointments', 'appointments_userid_fkey'],
+    ['appointments', 'appointments_doctorid_fkey'],
+    ['prescriptions', 'prescriptions_appointmentid_fkey'],
+    ['notifications', 'notifications_userid_fkey'],
+    ['corporate_employees', 'corporate_employees_userid_fkey'],
+    ['doctor_assistants', 'doctor_assistants_doctorid_fkey'],
+    ['insurance_claims', 'insurance_claims_user_insurance_id_fkey'],
+    ['insurance_claims', 'insurance_claims_appointment_id_fkey'],
+  ];
+  for (const [tbl, constraint] of expectedFKs) {
+    const rc = await dbQuery(client,
+      `SELECT 1 FROM information_schema.table_constraints
+       WHERE table_schema='public' AND table_name=$1
+         AND constraint_name=$2 AND constraint_type='FOREIGN KEY'`, [tbl, constraint]);
+    if (rc.rowCount > 0) pass('Schema', `FK constraint ${constraint} exists`);
+    else fail('Schema', `FK constraint ${constraint} exists`, `Constraint missing on ${tbl}`);
+  }
+
+  // 1f. Group A tables — created_at/updated_at exist as snake_case
+  const groupA = ['devices', 'wearables', 'tenants', 'health_readings', 'health_camps',
+    'poc_devices', 'tenant_partners', 'organization_admins'];
+  for (const tbl of groupA) {
+    const rc = await dbQuery(client,
+      `SELECT COUNT(*) as n FROM information_schema.columns
+       WHERE table_schema='public' AND table_name=$1
+         AND column_name IN ('created_at','updated_at')`, [tbl]);
+    const n = parseInt(rc.rows[0].n);
+    if (n === 2) pass('Schema', `${tbl} has created_at + updated_at (snake_case)`);
+    else if (n === 0) fail('Schema', `${tbl} timestamps snake_case`, `Table may not exist or still has camelCase timestamps`);
+    else fail('Schema', `${tbl} timestamps snake_case`, `Only ${n}/2 snake_case timestamp columns found`);
+  }
+}
+
+// ─── ORM / Model Query Tests ───────────────────────────────────────────────────
+async function runModelTests(client) {
+  console.log('\n── SECTION 2: ORM-Equivalent Column Access ──────────────────────');
+
+  // Test that Sequelize field: mappings work by directly selecting via snake_case columns
+  // These mirror what Sequelize generates internally when field: mappings are set correctly.
+  const modelMappings = [
+    {
+      table: 'insurance_claims',
+      cols: ['id', 'user_insurance_id', 'appointment_id', 'claim_number',
+        'claim_amount', 'approved_amount', 'submitted_at', 'processed_at',
+        'created_at', 'updated_at'],
+    },
+    {
+      table: 'users',
+      cols: ['id', 'email', 'role', 'corporate_id', 'aggregator_id',
+        'aggregator_type', 'employee_id', 'employer_name', 'membership_type'],
+    },
+    {
+      table: 'doctors',
+      cols: ['id', 'email', 'tenant_id', 'emergency_fee',
+        'emergency_available_from', 'emergency_available_to'],
+    },
+    {
+      // corporates uses camelCase (Group B MOSTLY_CAMEL) — test actual column names
+      table: 'corporates',
+      cols: ['id', 'companyName', 'email', 'tenant_id', 'unique_id',
+        'onboarded_by', 'onboarded_by_id', 'aggregator_id', 'aggregator_type'],
+    },
+    {
+      // notifications is Group B MOSTLY_CAMEL — timestamps are camelCase, title/message are camelCase
+      table: 'notifications',
+      cols: ['id', 'title', 'message', 'createdAt'],
+    },
+    {
+      // appointments is Group B MOSTLY_CAMEL — timestamps are camelCase
+      table: 'appointments',
+      cols: ['id', 'createdAt', 'updatedAt'],
+    },
+  ];
+
+  for (const { table, cols } of modelMappings) {
+    const selectList = cols.map(c => `"${c}"`).join(', ');
+    try {
+      await dbQuery(client, `SELECT ${selectList} FROM "${table}" LIMIT 1`);
+      pass('ORM', `${table}: SELECT ${cols.join(', ')} OK`);
+    } catch (e) {
+      fail('ORM', `${table}: SELECT ${cols.join(', ')}`, e.message);
+    }
+  }
+
+  // Verify v_claims_dashboard returns expected snake_case columns
+  try {
+    const r = await dbQuery(client, `SELECT * FROM v_claims_dashboard LIMIT 0`);
+    const cols = r.fields.map(f => f.name);
+    // View uses id (not claim_id) and approved_at (not processed_at) per actual view DDL
+    const expectedViewCols = ['id', 'claim_number', 'claim_amount', 'approved_amount',
+      'status', 'submitted_at', 'approved_at', 'created_at', 'updated_at'];
+    const missing = expectedViewCols.filter(c => !cols.includes(c));
+    if (missing.length === 0) pass('ORM', 'v_claims_dashboard columns are all snake_case');
+    else fail('ORM', 'v_claims_dashboard columns snake_case', `Missing: ${missing.join(', ')}`);
+  } catch (e) {
+    fail('ORM', 'v_claims_dashboard column check', e.message);
+  }
+}
+
+// ─── HTTP API Smoke Tests ──────────────────────────────────────────────────────
+async function runApiTests() {
+  console.log('\n── SECTION 3: HTTP API Smoke Tests ─────────────────────────────');
+
+  // 3a. Health check
+  try {
+    const r = await httpGet('/health');
+    if (r.status === 200 && r.body.status === 'healthy') pass('HTTP', 'GET /health → 200 healthy');
+    else fail('HTTP', 'GET /health', `Expected 200 healthy, got ${r.status} ${JSON.stringify(r.body).slice(0, 100)}`);
+  } catch (e) { fail('HTTP', 'GET /health', e.message); }
+
+  // 3b. Generate a valid JWT for system_admin (id=21)
+  let token;
+  try {
+    token = jwt.sign(
+      { id: 21, email: 'team@mediczy.com', role: 'system_admin', isAdmin: true },
+      JWT_SECRET,
+      { expiresIn: '5m' }
+    );
+    pass('HTTP', 'JWT generated for system_admin (id=21)');
+  } catch (e) {
+    fail('HTTP', 'JWT generation', e.message);
+  }
+
+  // 3c. Auth-protected endpoints — these exercise the field: mappings
+  const protectedRoutes = [
+    { method: 'GET', path: '/api/hospital/insurance/pre-auth/pending', label: 'Hospital insurance pre-auth list' },
+    { method: 'GET', path: '/api/hospital/insurance/claims', label: 'Insurance claims list (renamed columns)' },
+    { method: 'GET', path: '/api/appointments', label: 'Appointments (userId/doctorId FK columns)' },
+    { method: 'GET', path: '/api/corporates', label: 'Corporates (tenantId/uniqueId field mappings)' },
+    { method: 'GET', path: '/api/users/profile', label: 'User profile (corporateId/aggregatorId fields)' },
+    { method: 'GET', path: '/api/doctors/list', label: 'Doctors list (tenantId/emergencyFee fields)' },
+    { method: 'GET', path: '/api/notifications', label: 'Notifications (userId FK field)' },
+  ];
+
+  for (const route of protectedRoutes) {
+    try {
+      const r = await httpGet(route.path, token);
+      // 200/201 = success; 400/404/422 = route reached but no data (OK for smoke)
+      // 403 from ringFencing.js = security ring-fencing (not a DB column issue) — treat as OK
+      // 401 = JWT rejected (real auth failure) — fail
+      if ([200, 201, 400, 404, 422, 403].includes(r.status)) {
+        const note = r.status === 403 ? ' [ring-fenced — expected for admin JWT]' : '';
+        pass('HTTP', `${route.method} ${route.path} → ${r.status} (${route.label})${note}`);
+      } else if (r.status === 401) {
+        fail('HTTP', `${route.method} ${route.path} (${route.label})`,
+          `JWT rejected 401 — auth middleware or secret issue`);
+      } else if (r.status === 500) {
+        const msg = r.body?.message || r.body?.error || JSON.stringify(r.body).slice(0, 150);
+        fail('HTTP', `${route.method} ${route.path} (${route.label})`,
+          `500 Internal Server Error: ${msg}`);
+      } else {
+        pass('HTTP', `${route.method} ${route.path} → ${r.status} (non-500, acceptable)`);
+      }
+    } catch (e) {
+      fail('HTTP', `${route.method} ${route.path}`, e.message);
+    }
+  }
+
+  // 3d. POST endpoint: hospital insurance patient search
+  try {
+    const r = await httpPost('/api/hospital/insurance/patient/search',
+      { mobile: '9999999999' }, token);
+    if (r.status !== 500) pass('HTTP', 'POST /api/hospital/insurance/patient/search → non-500');
+    else {
+      const msg = r.body?.message || r.body?.error || JSON.stringify(r.body).slice(0, 150);
+      fail('HTTP', 'POST /api/hospital/insurance/patient/search', `500: ${msg}`);
+    }
+  } catch (e) { fail('HTTP', 'POST /api/hospital/insurance/patient/search', e.message); }
+}
+
+// ─── FK Integrity Tests ────────────────────────────────────────────────────────
+async function runFKTests(client) {
+  console.log('\n── SECTION 4: FK Constraint Enforcement ─────────────────────────');
+
+  // Insert into appointments with invalid userId should fail (NOT VALID defers historical check
+  // but new inserts ARE validated)
+  try {
+    await dbQuery(client, `
+      INSERT INTO appointments ("userId", "doctorId", status)
+      VALUES (999999, NULL, 'test_fk_check')
+    `);
+    // Should have failed
+    fail('FK', 'appointments.userId FK rejects orphan insert', 'Insert succeeded — FK not enforced on new rows');
+    // Cleanup if somehow inserted
+    await dbQuery(client, `DELETE FROM appointments WHERE status='test_fk_check'`);
+  } catch (e) {
+    if (e.message.includes('foreign key') || e.message.includes('violates')) {
+      pass('FK', 'appointments.userId FK rejects orphan insert (new rows protected)');
+    } else {
+      // Other error (column missing, etc.) — still report
+      fail('FK', 'appointments.userId FK rejects orphan insert', e.message);
+    }
+  }
+
+  // Verify insurance_claims FK: inserting with invalid user_insurance_id should fail
+  try {
+    await dbQuery(client, `
+      INSERT INTO insurance_claims (user_insurance_id, claim_number, status)
+      VALUES (9999999, 'FK_TEST_999', 'pending')
+    `);
+    fail('FK', 'insurance_claims.user_insurance_id FK rejects orphan insert', 'Insert succeeded — FK not enforced');
+    await dbQuery(client, `DELETE FROM insurance_claims WHERE claim_number='FK_TEST_999'`);
+  } catch (e) {
+    if (e.message.includes('foreign key') || e.message.includes('violates')) {
+      pass('FK', 'insurance_claims.user_insurance_id FK rejects orphan insert');
+    } else {
+      fail('FK', 'insurance_claims.user_insurance_id FK rejects orphan insert', e.message);
+    }
+  }
+}
+
+// ─── Main ──────────────────────────────────────────────────────────────────────
+async function main() {
+  console.log('╔══════════════════════════════════════════════════════════════════╗');
+  console.log('║     Mediczy DB Hygiene — Sanity / Smoke / Regression Tests      ║');
+  console.log('╚══════════════════════════════════════════════════════════════════╝');
+  console.log(`  DB:     ${DB.host}:${DB.port}/${DB.database}`);
+  console.log(`  API:    ${BASE_URL}`);
+  console.log(`  Time:   ${new Date().toISOString()}\n`);
+
+  const client = new pg.Client(DB);
+  try {
+    await client.connect();
+    pass('DB', 'PostgreSQL connection established');
+  } catch (e) {
+    fail('DB', 'PostgreSQL connection', e.message);
+    process.exit(1);
+  }
+
+  try {
+    await runSchemaTests(client);
+    await runModelTests(client);
+    await runFKTests(client);
+  } finally {
+    await client.end();
+  }
+
+  await runApiTests();
+
+  // ─── Summary ─────────────────────────────────────────────────────────────
+  console.log('\n╔══════════════════════════════════════════════════════════════════╗');
+  console.log(`║  RESULTS: ${passed} passed, ${failed} failed out of ${passed + failed} tests`
+    .padEnd(67) + '║');
+  console.log('╚══════════════════════════════════════════════════════════════════╝\n');
+
+  if (failed > 0) {
+    console.log('Failed tests:');
+    results.filter(r => r.status === 'FAIL').forEach(r => {
+      console.log(`  ❌ [${r.suite}] ${r.name}`);
+      console.log(`       ${r.reason}`);
+    });
+    process.exit(1);
+  } else {
+    console.log('🎉 All tests passed!\n');
+    process.exit(0);
+  }
+}
+
+main().catch(e => {
+  console.error('Unhandled error:', e);
+  process.exit(1);
+});

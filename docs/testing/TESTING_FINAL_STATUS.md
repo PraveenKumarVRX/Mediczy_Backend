@@ -106,7 +106,7 @@ npm test -- e2e/admin-login.spec.ts -g "dashboard"
 pm2 logs mediczy-server --lines 20
 
 # Try admin login directly
-curl -X POST https://mediqzy.com/api/admin/login \
+curl -X POST https://app.mediqzy.com/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@mediqzy.com","password":"SecurePass123"}'
 ```

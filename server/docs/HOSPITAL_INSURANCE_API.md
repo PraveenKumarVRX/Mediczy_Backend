@@ -595,7 +595,7 @@ Query and rejection trends over time.
 ### Connection
 
 ```javascript
-const socket = io("https://mediqzy.com");
+const socket = io("https://app.mediqzy.com");
 
 socket.emit("authenticate", {
   userId: 123,
@@ -757,4 +757,4 @@ Test coverage includes:
 
 **Last Updated:** January 30, 2025  
 **API Version:** v1.0  
-**Base URL:** https://mediqzy.com/api/hospital/insurance
+**Base URL:** https://app.mediqzy.com/api/hospital/insurance

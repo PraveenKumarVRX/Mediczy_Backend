@@ -90,14 +90,14 @@ Patient sees rejection message
 #### Step 1: Login as Doctor
 ```bash
 # Open browser
-https://mediqzy.com/doctor/login
+https://app.mediqzy.com/doctor/login
 
 # Login credentials
 Email: doctor@mediczy.com
 Password: (your doctor password)
 
 # Navigate to
-https://mediqzy.com/doctor/triage
+https://app.mediqzy.com/doctor/triage
 ```
 
 **Expected:**
@@ -108,11 +108,11 @@ https://mediqzy.com/doctor/triage
 #### Step 2: Login as Patient (Different Browser/Incognito)
 ```bash
 # Open incognito/different browser
-https://mediqzy.com/login
+https://app.mediqzy.com/login
 
 # Login as patient
 # Navigate to Emergency page
-https://mediqzy.com/emergency
+https://app.mediqzy.com/emergency
 ```
 
 **Expected:**

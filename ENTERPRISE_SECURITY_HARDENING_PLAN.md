@@ -1352,7 +1352,7 @@ jobs:
       - name: Health Check
         run: |
           sleep 60
-          curl -f https://mediqzy.com/health || exit 1
+          curl -f https://app.mediqzy.com/health || exit 1
 
       - name: Monitor Error Rate
         run: npm run monitor:errors -- --threshold 0.5 --duration 300

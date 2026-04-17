@@ -211,7 +211,7 @@ drwxrwxr-x 2 ubuntu ubuntu 4096 Feb  1 12:58 /home/ubuntu/Mediczy/server/public/
 ---
 
 **Deployment Status:** ✅ **SUCCESS**  
-**Production URL:** https://mediqzy.com/api/hospital/insurance  
+**Production URL:** https://app.mediqzy.com/api/hospital/insurance  
 **PM2 Status:** ✅ **ONLINE** (2 instances)  
 **Redis Status:** ✅ **CONNECTED**  
 **WebSocket Status:** ✅ **INITIALIZED**

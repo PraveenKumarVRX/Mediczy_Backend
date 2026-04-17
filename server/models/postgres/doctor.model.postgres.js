@@ -45,6 +45,7 @@ const Doctor = sequelize.define('Doctor', {
     allowNull: true,
     defaultValue: 'individual'
   },
+  tenantId: { type: DataTypes.INTEGER, allowNull: true, field: 'tenant_id' },
 
   // Basic Information
   prefix: {
@@ -447,6 +448,10 @@ const Doctor = sequelize.define('Doctor', {
     field: 'emergency_available_until',
     comment: 'Timestamp until which doctor is available for emergency calls'
   },
+  emergencyFee: { type: DataTypes.DECIMAL(10, 2), allowNull: true, field: 'emergency_fee' },
+  emergencyAvailableFrom: { type: DataTypes.TIME, allowNull: true, field: 'emergency_available_from' },
+  emergencyAvailableTo: { type: DataTypes.TIME, allowNull: true, field: 'emergency_available_to' },
+  affiliatedOrganizations: { type: DataTypes.JSONB, allowNull: true, defaultValue: [], field: 'affiliated_organizations' },
 
   // Full-Text Search
   search_vector: {

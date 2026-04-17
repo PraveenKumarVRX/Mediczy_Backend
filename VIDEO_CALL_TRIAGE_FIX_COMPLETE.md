@@ -40,7 +40,7 @@ Updated `/etc/nginx/sites-available/video.mediqzy.com` with modern security head
 ```nginx
 # Security Headers for Iframe Embedding
 add_header X-Frame-Options "SAMEORIGIN" always;
-add_header Content-Security-Policy "frame-ancestors 'self' https://app.mediqzy.com https://mediqzy.com https://www.mediqzy.com https://mayden.in https://www.mayden.in http://localhost:5173 http://localhost:3000 http://localhost:8080" always;
+add_header Content-Security-Policy "frame-ancestors 'self' https://app.mediqzy.com https://app.mediqzy.com https://www.mediqzy.com https://mayden.in https://www.mayden.in http://localhost:5173 http://localhost:3000 http://localhost:8080" always;
 ```
 
 **Verification:**

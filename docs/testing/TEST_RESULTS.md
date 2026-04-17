@@ -136,7 +136,7 @@ tcp6   :::3010         LISTEN    (mirotalk)
 
 #### Browser 1 (Doctor) 🩺
 ```
-1. Open: https://mediqzy.com/doctor/login
+1. Open: https://app.mediqzy.com/doctor/login
 2. Login: doctor@mediczy.com
 3. Navigate to: /doctor/triage
 4. Open DevTools Console (F12)
@@ -148,7 +148,7 @@ tcp6   :::3010         LISTEN    (mirotalk)
 
 #### Browser 2 (Patient) 👤
 ```
-1. Open: https://mediqzy.com/login
+1. Open: https://app.mediqzy.com/login
 2. Login as patient
 3. Navigate to: /emergency
 4. Open DevTools Console (F12)

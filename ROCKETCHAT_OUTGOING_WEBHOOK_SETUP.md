@@ -50,7 +50,7 @@ Channel: #general
 
 **URLs:**
 ```
-URLs: https://mediqzy.com/api/support/webhook/rocketchat
+URLs: https://app.mediqzy.com/api/support/webhook/rocketchat
 
 Note: Use the public domain, not localhost
 ```
@@ -200,7 +200,7 @@ RocketChat sends this payload to your webhook when an agent sends a message:
 **Test URL Accessibility:**
 ```bash
 # From RocketChat server
-curl -X POST https://mediqzy.com/api/support/webhook/rocketchat \
+curl -X POST https://app.mediqzy.com/api/support/webhook/rocketchat \
   -H "Content-Type: application/json" \
   -d '{"test":true}'
 
@@ -246,7 +246,7 @@ After configuring the webhook:
 - [ ] Webhook created in RocketChat admin
 - [ ] Webhook enabled (toggle ON)
 - [ ] Channel set to `#general`
-- [ ] URL: `https://mediqzy.com/api/support/webhook/rocketchat`
+- [ ] URL: `https://app.mediqzy.com/api/support/webhook/rocketchat`
 - [ ] Method: POST
 - [ ] Send WhatsApp message → appears in RocketChat
 - [ ] Agent replies in RocketChat → user receives on WhatsApp

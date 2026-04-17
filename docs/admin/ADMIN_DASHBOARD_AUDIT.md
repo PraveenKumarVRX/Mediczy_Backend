@@ -1,6 +1,6 @@
 # Admin Dashboard Comprehensive Audit
 **Date:** November 30, 2025  
-**Production URL:** https://mediqzy.com/admin
+**Production URL:** https://app.mediqzy.com/admin
 
 ## Executive Summary
 Complete audit of all admin dashboard sections with functional status, design issues, and recommended fixes.
@@ -446,7 +446,7 @@ Complete audit of all admin dashboard sections with functional status, design is
 - [ ] Clear browser cache (Ctrl+Shift+Delete)
 - [ ] Hard reload (Ctrl+F5)
 - [ ] Open browser console (F12)
-- [ ] Navigate to https://mediqzy.com/admin/doctors
+- [ ] Navigate to https://app.mediqzy.com/admin/doctors
 - [ ] Check for JavaScript errors in console
 - [ ] Verify API calls in Network tab
 - [ ] Test search functionality

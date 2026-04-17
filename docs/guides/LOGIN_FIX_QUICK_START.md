@@ -26,7 +26,7 @@ Updated the password hash in PostgreSQL `users` table to correctly hash "User123
 
 ## For Production
 
-To apply this fix to production (https://mediqzy.com), run:
+To apply this fix to production (https://app.mediqzy.com), run:
 
 ```bash
 cd /home/ubuntu/Mediczy

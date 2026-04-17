@@ -307,7 +307,7 @@ Processing Results:
 To test these features in production:
 
 1. **Navigate to Discharge Summary**
-   - URL: https://mediqzy.com/hospital/discharge-summary
+   - URL: https://app.mediqzy.com/hospital/discharge-summary
 
 2. **Select Medical Specialty**
    - Choose from 14 options (Cardiology, Orthopedics, etc.)

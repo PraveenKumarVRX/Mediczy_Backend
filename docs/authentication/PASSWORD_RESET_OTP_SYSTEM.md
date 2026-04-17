@@ -469,7 +469,7 @@ SMTP_USER=noreply@mediczy.com
 SMTP_PASSWORD=your_app_password
 
 # Frontend URL (for email links if needed)
-FRONTEND_URL=https://mediqzy.com
+FRONTEND_URL=https://app.mediqzy.com
 ```
 
 ### SMS Provider Support

@@ -26,7 +26,7 @@ curl -s http://localhost:8000/api/auth/oauth/status | jq
 
 echo ""
 echo "3. Expected callback URLs:"
-echo "   Production: https://mediqzy.com/api/auth/google/callback"
+echo "   Production: https://app.mediqzy.com/api/auth/google/callback"
 echo "   Development: http://localhost:8000/api/auth/google/callback"
 echo ""
 echo "4. Make sure Google OAuth consent screen has these redirect URIs allowed!"

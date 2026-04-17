@@ -319,7 +319,7 @@ class WebinarNotificationService {
   async sendEmailNotification(to, { subject, html, attachments = [] }) {
     return await emailService.sendEmail({
       to,
-      from: process.env.SMTP_FROM || 'webinars@mediczy.com',
+      from: process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@mediqzy.com',
       subject,
       html,
       attachments

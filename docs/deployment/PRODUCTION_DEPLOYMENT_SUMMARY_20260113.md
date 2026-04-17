@@ -3,7 +3,7 @@
 ## ✅ Deployment Status: COMPLETE
 
 **Deployment Time:** January 13, 2026 19:43 UTC  
-**Domain:** https://mediqzy.com  
+**Domain:** https://app.mediqzy.com  
 **Environment:** Production
 
 ---
@@ -144,7 +144,7 @@ pm2 restart mediczy-server
 
 ### Frontend Accessibility
 ```bash
-curl -I https://mediqzy.com
+curl -I https://app.mediqzy.com
 ```
 **Response:**
 ```
@@ -156,7 +156,7 @@ server: cloudflare
 
 ### Backend API
 ```bash
-curl https://mediqzy.com/api/health
+curl https://app.mediqzy.com/api/health
 ```
 **Response:**
 ```json
@@ -228,8 +228,8 @@ pm2 save
 
 **Frontend (.env.production):**
 ```env
-VITE_API_URL=https://mediqzy.com/api
-VITE_SOCKET_URL=https://mediqzy.com
+VITE_API_URL=https://app.mediqzy.com/api
+VITE_SOCKET_URL=https://app.mediqzy.com
 VITE_MIROTALK_URL=https://video.mediqzy.com
 VITE_GEMINI_API_KEY=[configured]
 VITE_FIREBASE_*=[configured]
@@ -331,10 +331,10 @@ pm2 restart mediczy-server
 ## 📞 Support Information
 
 ### Health Checks
-- Website: https://mediqzy.com
-- API Health: https://mediqzy.com/api/health
-- DB Health: https://mediqzy.com/api/db/health
-- Metrics: https://mediqzy.com/metrics
+- Website: https://app.mediqzy.com
+- API Health: https://app.mediqzy.com/api/health
+- DB Health: https://app.mediqzy.com/api/db/health
+- Metrics: https://app.mediqzy.com/metrics
 
 ### Monitoring Commands
 ```bash
@@ -361,7 +361,7 @@ sudo lsof -i :8000
 **Deployment completed successfully!**
 
 - ✅ Production build generated (8.6 MB → 1.93 MB gzipped)
-- ✅ Deployed to https://mediqzy.com
+- ✅ Deployed to https://app.mediqzy.com
 - ✅ Backend API running on port 8000
 - ✅ All database connections active
 - ✅ Nginx serving content with Cloudflare SSL

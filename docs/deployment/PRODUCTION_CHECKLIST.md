@@ -98,7 +98,7 @@ export CORS_ORIGIN="https://yourdomain.com,https://www.yourdomain.com,https://ap
 
 Update in `.env.production`:
 ```env
-CORS_ORIGIN=https://mediqzy.com,https://www.mediqzy.com
+CORS_ORIGIN=https://app.mediqzy.com,https://www.mediqzy.com
 ```
 
 ---

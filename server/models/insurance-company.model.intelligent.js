@@ -336,6 +336,7 @@ export const CorporateEmployee = sequelize.define('CorporateEmployee', {
   corporateId: {
     type: DataTypes.INTEGER,
     allowNull: false,
+    field: 'corporate_id',
     references: {
       model: 'corporates',
       key: 'id'
@@ -390,12 +391,12 @@ export const CorporateEmployee = sequelize.define('CorporateEmployee', {
   tableName: 'corporate_employees',
   timestamps: true,
   indexes: [
-    { fields: ['corporateId'] },
+    { fields: ['corporate_id'] },
     { fields: ['userId'] },
     { fields: ['employeeId'] },
     { fields: ['isActive'] },
     { 
-      fields: ['corporateId', 'employeeId'],
+      fields: ['corporate_id', 'employeeId'],
       unique: true,
       name: 'unique_corporate_employee'
     }

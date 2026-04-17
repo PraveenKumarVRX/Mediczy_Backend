@@ -87,8 +87,8 @@ if [ -f "/home/ubuntu/Mediczy/uploads/prescriptions/RX-MJFZZNY5-SYD16.pdf" ]; th
   echo ""
   ls -lh /home/ubuntu/Mediczy/uploads/prescriptions/RX-MJFZZNY5-SYD16.pdf | awk '{print "   📄 PDF Size: " $5}'
   echo ""
-  echo "   🔗 PDF URL: https://mediqzy.com/api/prescriptions/RX-MJFZZNY5-SYD16/pdf"
-  echo "   📱 Share URL: https://mediqzy.com/api/prescriptions/RX-MJFZZNY5-SYD16/share/whatsapp"
+  echo "   🔗 PDF URL: https://app.mediqzy.com/api/prescriptions/RX-MJFZZNY5-SYD16/pdf"
+  echo "   📱 Share URL: https://app.mediqzy.com/api/prescriptions/RX-MJFZZNY5-SYD16/share/whatsapp"
   echo ""
 else
   echo "⚠️  No demo prescription found"

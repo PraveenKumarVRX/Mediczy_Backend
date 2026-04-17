@@ -32,7 +32,7 @@ echo "2. Using localhost (if on same machine):"
 echo "   http://localhost:8000/api/prescriptions/RX-MJFXG1H6-PDJHU/html?token=$SHARE_TOKEN"
 echo ""
 echo "3. Using domain (ONLY if mediqzy.com points to this server):"
-echo "   https://mediqzy.com/api/prescriptions/RX-MJFXG1H6-PDJHU/html?token=$SHARE_TOKEN"
+echo "   https://app.mediqzy.com/api/prescriptions/RX-MJFXG1H6-PDJHU/html?token=$SHARE_TOKEN"
 echo ""
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

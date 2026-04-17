@@ -313,6 +313,7 @@ const Tenant = sequelize.define('Tenant', {
 }, {
   tableName: 'tenants',
   timestamps: true,
+  underscored: true,
   indexes: [
     {
       fields: ['slug'],

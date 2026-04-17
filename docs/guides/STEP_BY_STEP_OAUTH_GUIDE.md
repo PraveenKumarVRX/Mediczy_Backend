@@ -99,12 +99,12 @@ Scroll down to find **"Authorized JavaScript origins"** section
 
 #### Add Origin 2: Production
 1. Click **"+ ADD URI"** button again
-2. Type exactly: `https://mediqzy.com`
+2. Type exactly: `https://app.mediqzy.com`
 3. Press Enter or click outside the box
 
 ### ⚠️ IMPORTANT NOTES:
-- ✅ NO trailing slash: `https://mediqzy.com` (correct)
-- ❌ With trailing slash: `https://mediqzy.com/` (wrong)
+- ✅ NO trailing slash: `https://app.mediqzy.com` (correct)
+- ❌ With trailing slash: `https://app.mediqzy.com/` (wrong)
 - ✅ Exact lowercase: `mediqzy.com` (correct)
 - ❌ Wrong case: `Mediqzy.com` (wrong)
 - ✅ Correct protocol: Development=`http://`, Production=`https://`
@@ -126,7 +126,7 @@ Scroll to **"Authorized redirect URIs"** section
 
 #### Add Redirect URI 2: Production
 1. Click **"+ ADD URI"** button again
-2. Type exactly: `https://mediqzy.com`
+2. Type exactly: `https://app.mediqzy.com`
 3. Press Enter or click outside the box
 
 ### 3.3 Save Configuration
@@ -139,11 +139,11 @@ Your configuration should now show:
 ```
 Authorized JavaScript origins (2):
   - http://localhost:9443
-  - https://mediqzy.com
+  - https://app.mediqzy.com
 
 Authorized redirect URIs (2):
   - http://localhost:9443
-  - https://mediqzy.com
+  - https://app.mediqzy.com
 ```
 
 ---
@@ -175,7 +175,7 @@ The Client IDs should match exactly (including `.apps.googleusercontent.com` at 
 
 ### 5.1 For Chrome/Edge
 1. Open your browser
-2. Go to: `https://mediqzy.com`
+2. Go to: `https://app.mediqzy.com`
 3. Look at the address bar (top)
 4. You might see a popup blocked icon (🚫 or crossed-out window)
 5. Click the icon
@@ -184,7 +184,7 @@ The Client IDs should match exactly (including `.apps.googleusercontent.com` at 
 
 ### 5.2 For Firefox
 1. Open Firefox
-2. Go to: `https://mediqzy.com`
+2. Go to: `https://app.mediqzy.com`
 3. Look for popup notification at the top
 4. Click **Options**
 5. Select **"Allow popups for mediqzy.com"**
@@ -202,14 +202,14 @@ Before testing, manually configure:
 **Chrome/Edge:**
 1. Open: `chrome://settings/content/popups` (or `edge://settings/content/popups`)
 2. Click **Add** next to "Allowed to send pop-ups and use redirects"
-3. Enter: `https://mediqzy.com`
+3. Enter: `https://app.mediqzy.com`
 4. Click **Add**
 
 **Firefox:**
 1. Open: `about:preferences#privacy`
 2. Scroll to **Permissions** section
 3. Click **Exceptions...** next to "Block pop-up windows"
-4. Enter: `https://mediqzy.com`
+4. Enter: `https://app.mediqzy.com`
 5. Click **Allow** then **Save Changes**
 
 ---
@@ -217,13 +217,13 @@ Before testing, manually configure:
 ## 🧪 TESTING YOUR CONFIGURATION
 
 ### Option 1: Use Test Tool (Recommended)
-1. Open: https://mediqzy.com/test-google-fit-config.html
+1. Open: https://app.mediqzy.com/test-google-fit-config.html
 2. Check all boxes in the checklist
 3. Click **"Test Google Fit Connection"** button
 4. Watch for success or error messages
 
 ### Option 2: Test in Production App
-1. Go to: https://mediqzy.com
+1. Go to: https://app.mediqzy.com
 2. Log into your account
 3. Navigate to **Google Fit Dashboard** or **Health Tracker**
 4. Click **"Connect Google Fit"** button
@@ -269,10 +269,10 @@ Before testing, manually configure:
 **Fix:**
 1. Go back to [Step 3](#step-3-add-authorized-redirect-uris)
 2. Check for these common mistakes:
-   - ❌ `https://mediqzy.com/` (has trailing slash)
-   - ✅ `https://mediqzy.com` (correct)
+   - ❌ `https://app.mediqzy.com/` (has trailing slash)
+   - ✅ `https://app.mediqzy.com` (correct)
    - ❌ `http://mediqzy.com` (wrong protocol for production)
-   - ✅ `https://mediqzy.com` (correct protocol)
+   - ✅ `https://app.mediqzy.com` (correct protocol)
 3. Remove any incorrect URIs
 4. Add the correct ones
 5. Click SAVE
@@ -356,7 +356,7 @@ If you're still stuck after following all steps:
 
 1. **Check browser console** (Press F12, go to Console tab)
 2. **Copy the exact error message**
-3. **Use the test tool**: https://mediqzy.com/test-google-fit-config.html
+3. **Use the test tool**: https://app.mediqzy.com/test-google-fit-config.html
 4. **Screenshot** what you see in Google Cloud Console
 5. **Compare** with the screenshots/examples in this guide
 

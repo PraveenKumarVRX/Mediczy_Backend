@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand __tests__/hospital-insurance.test.js",
+    "test:smoke": "node scripts/sanity-smoke-regression.mjs",
     "test:all": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
     "start": "node index.js",
     "dev": "nodemon index.js",

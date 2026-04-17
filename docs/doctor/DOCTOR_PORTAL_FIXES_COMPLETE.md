@@ -69,7 +69,7 @@ Fixed 4 critical issues in the Doctor Portal that were preventing data persisten
 
 **Verification:**
 - ✅ Endpoint supports `emergency_triage` type: `/api/doctors/video-consultations/upcoming` filters by type `['video', 'emergency_triage', 'telemedicine']`
-- ✅ MiroTalk base URL correctly configured: `https://mediqzy.com:3010` or `https://video.mediczy.com`
+- ✅ MiroTalk base URL correctly configured: `https://app.mediqzy.com:3010` or `https://video.mediczy.com`
 - ✅ Meeting ID generation works: `MEDCALL-{appointmentId}-{randomHex}`
 
 **Impact:** Emergency video calls now properly initialize with complete room information. MiroTalk SFU integrations work correctly.
@@ -218,7 +218,7 @@ POST /api/billing/doctor/invoices/create         ✅ Create invoice (enhanced)
 
 ### Environment Variables
 ```bash
-MIROTALK_URL=https://video.mediczy.com    # or https://mediqzy.com:3010
+MIROTALK_URL=https://video.mediczy.com    # or https://app.mediqzy.com:3010
 JWT_SECRET=<your-secret>
 ```
 

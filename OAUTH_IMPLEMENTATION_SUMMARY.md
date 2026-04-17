@@ -235,9 +235,9 @@ The implementation is ready for production deployment:
 ### 1. Configure Rocket.Chat OAuth (Admin Panel)
 ```
 Administration → Settings → OAuth → Custom Registration
-- Authorize URL: https://mediqzy.com/oauth/authorize
-- Access Token URL: https://mediqzy.com/oauth/token
-- API URL: https://mediqzy.com/oauth/userinfo
+- Authorize URL: https://app.mediqzy.com/oauth/authorize
+- Access Token URL: https://app.mediqzy.com/oauth/token
+- API URL: https://app.mediqzy.com/oauth/userinfo
 - Client ID: rocketchat-client-id
 - Client Secret: rocketchat-client-secret-secure-key
 - Test connection before saving

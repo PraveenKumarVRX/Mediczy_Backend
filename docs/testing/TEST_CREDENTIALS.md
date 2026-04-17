@@ -236,8 +236,8 @@ Assistant: assistant@mediczy.com → Support Operations
 
 ### Production
 ```
-Base: https://mediqzy.com
-API:  https://mediqzy.com/api
+Base: https://app.mediqzy.com
+API:  https://app.mediqzy.com/api
 ```
 
 ### Development
@@ -252,14 +252,14 @@ API:  http://localhost:8000/api
 
 ### Login Example (cURL)
 ```bash
-curl -X POST https://mediqzy.com/api/clinic/login \
+curl -X POST https://app.mediqzy.com/api/clinic/login \
   -H "Content-Type: application/json" \
   -d '{"email":"clinic@mediczy.com","password":"Clinic123"}'
 ```
 
 ### Authenticated Request
 ```bash
-curl -X GET https://mediqzy.com/api/clinic/dashboard/stats \
+curl -X GET https://app.mediqzy.com/api/clinic/dashboard/stats \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 

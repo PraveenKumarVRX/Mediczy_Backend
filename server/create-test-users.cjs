@@ -184,8 +184,8 @@ async function printSummary(users) {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('   Email: clinic@mediczy.com');
   console.log('   Password: Clinic123');
-  console.log('   URL: https://mediqzy.com/clinic/login');
-  console.log('   Dashboard: https://mediqzy.com/clinic/dashboard');
+  console.log('   URL: https://app.mediqzy.com/clinic/login');
+  console.log('   Dashboard: https://app.mediqzy.com/clinic/dashboard');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
   
   console.log('🎯 NEXT STEPS:');

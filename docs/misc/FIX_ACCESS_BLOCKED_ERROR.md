@@ -37,7 +37,7 @@ third.tester@gmail.com
 
 ### Step 5: Test Again
 1. Wait 1-2 minutes for changes to propagate
-2. Go back to: https://mediqzy.com
+2. Go back to: https://app.mediqzy.com
 3. Try connecting Google Fit again
 4. Should work now! ✅
 
@@ -58,8 +58,8 @@ third.tester@gmail.com
 3. Confirm by clicking **"CONFIRM"**
 4. Fill out additional information Google requires:
    - App logo (optional but recommended)
-   - Privacy policy URL: https://mediqzy.com/privacy
-   - Terms of service URL: https://mediqzy.com/terms
+   - Privacy policy URL: https://app.mediqzy.com/privacy
+   - Terms of service URL: https://app.mediqzy.com/terms
 5. Submit for verification
 6. Wait for Google approval (1-2 weeks typically)
 
@@ -101,11 +101,11 @@ While you're on the same page, verify you see all 5 scopes:
 2. Click on your OAuth Client ID: 982376166047-j975co5qc5enqhcesggbsee3obnj7tqa
 3. Under "Authorized redirect URIs" add:
    - http://localhost:9443
-   - https://mediqzy.com
+   - https://app.mediqzy.com
    - storagerelay://https/mediqzy.com
 4. Under "Authorized JavaScript origins" add:
    - http://localhost:9443
-   - https://mediqzy.com
+   - https://app.mediqzy.com
 5. Click SAVE
 ```
 
@@ -118,7 +118,7 @@ storagerelay://https/mediqzy.com
 ### Step 4: Test Again
 1. Wait 2 minutes for changes to propagate
 2. Clear browser cache (Ctrl+Shift+Delete)
-3. Go to: https://mediqzy.com
+3. Go to: https://app.mediqzy.com
 4. Try Google Fit connection again
 
 ---
@@ -130,7 +130,7 @@ I noticed from your error that the OAuth library is using a storage relay redire
 ```
 Authorized redirect URIs:
 - http://localhost:9443
-- https://mediqzy.com
+- https://app.mediqzy.com
 - storagerelay://https/mediqzy.com
 ```
 
@@ -147,7 +147,7 @@ Complete these in order:
 - [ ] Edit OAuth Client ID
 - [ ] Add storagerelay://https/mediqzy.com to redirect URIs
 - [ ] Verify http://localhost:9443 is in redirect URIs
-- [ ] Verify https://mediqzy.com is in redirect URIs
+- [ ] Verify https://app.mediqzy.com is in redirect URIs
 - [ ] Click SAVE
 - [ ] Wait 2 minutes
 - [ ] Clear browser cache

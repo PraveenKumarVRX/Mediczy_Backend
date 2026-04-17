@@ -192,6 +192,11 @@ const Ambulance = postgresSequelize.define('Ambulance', {
     defaultValue: {},
     comment: 'Additional data: response time, hospital partnerships'
   },
+
+  // === FIELDS ADDED VIA SQL MIGRATIONS ===
+  aggregatorId: { type: DataTypes.INTEGER, allowNull: true, field: 'aggregator_id' },
+  aggregatorType: { type: DataTypes.STRING, allowNull: true, field: 'aggregator_type' },
+
   createdAt: {
     type: DataTypes.DATE,
     allowNull: false,

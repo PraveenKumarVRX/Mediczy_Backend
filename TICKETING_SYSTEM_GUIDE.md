@@ -9,11 +9,11 @@ Your Mediczy app has a **comprehensive support ticketing system** fully integrat
 ## 📍 Access Points
 
 ### **Admin Panel**
-- URL: https://mediqzy.com/admin/tickets
+- URL: https://app.mediqzy.com/admin/tickets
 - Features: Full ticket management, statistics, bulk operations, exports
 
 ### **Team Portal**
-- URL: https://mediqzy.com/team/support-tickets
+- URL: https://app.mediqzy.com/team/support-tickets
 - Features: View and manage assigned tickets, team collaboration
 
 ### **RocketChat**
@@ -60,7 +60,7 @@ When a ticket is created:
 
 ### **Creating a Ticket Manually (Admin/Team)**
 
-1. Login to https://mediqzy.com/admin/tickets or /team/support-tickets
+1. Login to https://app.mediqzy.com/admin/tickets or /team/support-tickets
 2. Click **"New Ticket"** button
 3. Fill in:
    - Title (required)
@@ -79,8 +79,8 @@ When a ticket is created:
 ### **Creating Ticket from Customer Portal**
 
 Customers can create tickets from:
-- https://mediqzy.com/corporate/support (Corporate users)
-- https://mediqzy.com/clinic/support (Clinic staff)
+- https://app.mediqzy.com/corporate/support (Corporate users)
+- https://app.mediqzy.com/clinic/support (Clinic staff)
 
 Form includes:
 - Title
@@ -94,7 +94,7 @@ Form includes:
 
 ```javascript
 // Example: Create ticket from WhatsApp conversation
-const response = await fetch('https://mediqzy.com/api/tickets/from-whatsapp', {
+const response = await fetch('https://app.mediqzy.com/api/tickets/from-whatsapp', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -618,7 +618,7 @@ ROCKETCHAT_AUTH_TOKEN=0hoYIxI2zxVuyUVX6rltCNswMkXcb9WWCwdMRGQiRNs
 
 Test RocketChat connection:
 ```bash
-curl https://mediqzy.com/api/rocketchat/test
+curl https://app.mediqzy.com/api/rocketchat/test
 ```
 
 Should return: `{"success": true, "message": "RocketChat connection working"}`
@@ -648,7 +648,7 @@ curl http://localhost:8000/api/tickets/from-whatsapp -X POST \
 ## 📞 Support
 
 For system issues with the ticketing system itself:
-- Create a ticket at https://mediqzy.com/admin/tickets
+- Create a ticket at https://app.mediqzy.com/admin/tickets
 - Email: tech-support@mediczy.com
 - Emergency: WhatsApp +918098998998
 
@@ -716,7 +716,7 @@ Your ticketing system is **production-ready** with:
 **Start using it now!**
 
 1. Login to RocketChat: https://smart-chat.live (parinitha@mysmarthealth.in / Welcome@2026)
-2. Check tickets: https://mediqzy.com/admin/tickets
+2. Check tickets: https://app.mediqzy.com/admin/tickets
 3. Monitor #general channel for new tickets
 4. Join ticket channels to collaborate
 

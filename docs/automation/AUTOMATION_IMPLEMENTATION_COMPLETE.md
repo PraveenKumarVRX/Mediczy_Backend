@@ -230,7 +230,7 @@ node scripts/setup-automation.js
 **Create Test Appointment:**
 ```bash
 # Create appointment for tomorrow at 10:00 AM
-curl -X POST https://mediqzy.com/api/appointments \
+curl -X POST https://app.mediqzy.com/api/appointments \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
     "doctorId": 1,
@@ -257,7 +257,7 @@ pm2 logs mediczy-server | grep reminder
 **Create Test Invoice:**
 ```bash
 # Create invoice due in 3 days
-curl -X POST https://mediqzy.com/api/billing/doctor/invoices/create \
+curl -X POST https://app.mediqzy.com/api/billing/doctor/invoices/create \
   -H "Authorization: Bearer $DOCTOR_TOKEN" \
   -d '{
     "patientId": 1,

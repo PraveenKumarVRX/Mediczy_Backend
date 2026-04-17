@@ -16,7 +16,7 @@ NC='\033[0m'
 
 # Configuration
 API_BASE="http://localhost:8888"
-FRONTEND_URL="https://mediqzy.com"
+FRONTEND_URL="https://app.mediqzy.com"
 
 # Test data
 TEST_EMAIL="patient@test.com"

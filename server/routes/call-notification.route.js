@@ -104,6 +104,15 @@ router.post('/doctor-to-patient', authUser, requireRole('doctor'), async (req, r
           messageId
         });
       } catch (error) {
+        // Auto-deactivate stale/unregistered tokens so future calls go to valid devices
+        const code = error.errorInfo?.code || error.code || '';
+        if (code.includes('registration-token-not-registered') || code.includes('invalid-registration-token')) {
+          console.warn(`[FCM] Stale token detected, deactivating for userId=${tokenRecord.userId}:`, tokenRecord.token.slice(0, 20) + '...');
+          await postgresSequelize.query(
+            'UPDATE fcm_tokens SET "isActive"=false WHERE id=:id',
+            { replacements: { id: tokenRecord.id } }
+          ).catch(() => {});
+        }
         errors.push({
           deviceType: tokenRecord.deviceType,
           error: error.message

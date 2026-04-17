@@ -217,10 +217,10 @@ pm2 status
 ### Public URLs
 | Environment | URL |
 |-------------|-----|
-| **Main App** | https://mediqzy.com |
-| **Admin Panel** | https://mediqzy.com/admin/login |
-| **Team Portal** | https://mediqzy.com/team/login |
-| **API** | https://mediqzy.com/api |
+| **Main App** | https://app.mediqzy.com |
+| **Admin Panel** | https://app.mediqzy.com/admin/login |
+| **Team Portal** | https://app.mediqzy.com/team/login |
+| **API** | https://app.mediqzy.com/api |
 
 ### Internal URLs (Development)
 | Service | URL |

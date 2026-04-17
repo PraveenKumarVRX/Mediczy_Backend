@@ -1,6 +1,6 @@
 # Mediczy — Doctor Mobile App API Reference
 
-> **Base URL:** `https://mediqzy.com/api` (production) · `http://localhost:8000/api` (dev)
+> **Base URL:** `https://app.mediqzy.com/api` (production) · `http://localhost:8000/api` (dev)
 >
 > **Auth Header:** `Authorization: Bearer <JWT>`
 >
@@ -2210,7 +2210,7 @@
 
 ## 27. Socket.IO Real-time Events
 
-> **Connection URL:** `wss://mediqzy.com` (or `ws://localhost:8000`)
+> **Connection URL:** `wss://app.mediqzy.com` (or `ws://localhost:8000`)
 >
 > **Path:** `/socket.io`
 >

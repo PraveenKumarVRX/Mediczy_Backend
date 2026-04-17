@@ -203,7 +203,7 @@ tail -100 /home/ubuntu/Mediczy/logs/server-out.log | grep -i oauth
 **If RC config fails:**
 1. See manual config: ROCKETCHAT_OAUTH_SETUP_GUIDE.md
 2. Check RC logs: `/var/log/rocketchat/*.log`
-3. Verify URL accessibility: `curl https://mediqzy.com/oauth/authorize`
+3. Verify URL accessibility: `curl https://app.mediqzy.com/oauth/authorize`
 
 **If production deployment fails:**
 1. Quick rollback: `pm2 restart mediczy-server`

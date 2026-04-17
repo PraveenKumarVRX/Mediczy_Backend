@@ -91,7 +91,7 @@ echo ""
 echo "── EXTERNAL HTTPS ──"
 R=$(curl -sk -o /dev/null -w "%{http_code}" https://app.mediqzy.com/ 2>/dev/null)
 t "20. Frontend (app.mediqzy.com)" "$R" "200"
-R=$(curl -sk -o /dev/null -w "%{http_code}" https://mediqzy.com/api/health 2>/dev/null)
+R=$(curl -sk -o /dev/null -w "%{http_code}" https://app.mediqzy.com/api/health 2>/dev/null)
 t "21. API HTTPS (mediqzy.com)" "$R" "200"
 
 echo ""

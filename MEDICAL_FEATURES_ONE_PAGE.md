@@ -36,7 +36,7 @@ Three powerful medical enhancements for the hospital discharge summary scribe:
 
 ### Step 1: Open Discharge Summary
 
-→ https://mediqzy.com/hospital/discharge-summary
+→ https://app.mediqzy.com/hospital/discharge-summary
 
 ### Step 2: Select Specialty & Start Dictating
 

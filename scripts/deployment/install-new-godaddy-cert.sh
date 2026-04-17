@@ -100,7 +100,7 @@ if sudo nginx -t; then
     echo ""
     echo "🎉 GoDaddy SSL Certificate Installation Completed!"
     echo "================================================"
-    echo "🌐 Your site: https://mediqzy.com"
+    echo "🌐 Your site: https://app.mediqzy.com"
     echo "🔒 SSL Status: Trusted (GoDaddy Certificate)"
     echo "📊 Test SSL: https://www.ssllabs.com/ssltest/analyze.html?d=mediqzy.com"
     echo ""

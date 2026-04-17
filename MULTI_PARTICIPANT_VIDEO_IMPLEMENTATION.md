@@ -158,11 +158,11 @@ To verify multi-participant support after deployment:
 
 ```bash
 # Check configuration includes rich room types
-curl -s https://mediqzy.com/api/video/config \
+curl -s https://app.mediqzy.com/api/video/config \
   -H "Authorization: Bearer YOUR_TOKEN" | jq '.roomTypes'
 
 # Generate token for multi-participant room
-curl -X POST https://mediqzy.com/api/video/livekit/token \
+curl -X POST https://app.mediqzy.com/api/video/livekit/token \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"roomId":"group-meeting-001","displayName":"User 1","userId":123}'

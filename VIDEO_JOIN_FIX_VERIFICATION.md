@@ -142,7 +142,7 @@ router.get(
 Test Suite: sanity-check-video-fix.sh
 Test Date: 2026-02-05
 API Server: http://localhost:8888
-Frontend: https://mediqzy.com
+Frontend: https://app.mediqzy.com
 
 Total Tests: 8
 Passed: 8

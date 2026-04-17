@@ -3,7 +3,7 @@
 # Production Login Diagnostic Script
 # Tests login endpoint and common issues
 
-PRODUCTION_URL="${1:-https://mediqzy.com}"
+PRODUCTION_URL="${1:-https://app.mediqzy.com}"
 EMAIL="${2:-user@test.com}"
 PASSWORD="${3:-password123}"
 
@@ -16,7 +16,7 @@ echo ""
 # Test 1: CORS preflight
 echo "1. Testing CORS preflight..."
 CORS_RESPONSE=$(curl -s -i -X OPTIONS "$PRODUCTION_URL/api/users/login" \
-  -H "Origin: https://mediqzy.com" \
+  -H "Origin: https://app.mediqzy.com" \
   -H "Access-Control-Request-Method: POST" 2>&1)
 
 if echo "$CORS_RESPONSE" | grep -q "200"; then

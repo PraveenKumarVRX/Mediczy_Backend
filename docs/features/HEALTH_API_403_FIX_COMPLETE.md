@@ -5,7 +5,7 @@
 The Health Dashboard was returning a **403 Forbidden** error when trying to load health statistics:
 
 ```
-GET https://mediqzy.com/api/health/latest?includeAdvanced=true 403 (Forbidden)
+GET https://app.mediqzy.com/api/health/latest?includeAdvanced=true 403 (Forbidden)
 Error: Request failed with status code 403
 ```
 

@@ -51,14 +51,14 @@ const UserInsuranceModel = sequelize.define('UserInsurance', {
 // Define InsuranceClaim model
 const InsuranceClaimModel = sequelize.define('InsuranceClaim', {
   id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-  userInsuranceId: { type: DataTypes.INTEGER, allowNull: false },
-  appointmentId: { type: DataTypes.INTEGER },
-  claimNumber: { type: DataTypes.STRING(100), unique: true },
-  claimAmount: { type: DataTypes.DECIMAL(10, 2) },
-  approvedAmount: { type: DataTypes.DECIMAL(10, 2) },
+  userInsuranceId: { type: DataTypes.INTEGER, allowNull: false, field: 'user_insurance_id' },
+  appointmentId: { type: DataTypes.INTEGER, field: 'appointment_id' },
+  claimNumber: { type: DataTypes.STRING(100), unique: true, field: 'claim_number' },
+  claimAmount: { type: DataTypes.DECIMAL(10, 2), field: 'claim_amount' },
+  approvedAmount: { type: DataTypes.DECIMAL(10, 2), field: 'approved_amount' },
   status: { type: DataTypes.STRING(50), defaultValue: 'pending' },
-  submittedAt: { type: DataTypes.DATE },
-  processedAt: { type: DataTypes.DATE },
+  submittedAt: { type: DataTypes.DATE, field: 'submitted_at' },
+  processedAt: { type: DataTypes.DATE, field: 'processed_at' },
   documents: { type: DataTypes.JSONB, defaultValue: [] },
   notes: { type: DataTypes.TEXT },
   metadata: { type: DataTypes.JSONB, defaultValue: {} }

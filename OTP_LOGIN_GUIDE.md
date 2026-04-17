@@ -15,7 +15,7 @@ The OTP (One-Time Password) login flow allows users to log in without rememberin
 ## User Flow
 
 ### Step 1: Choose OTP Login
-1. Navigate to **https://mediqzy.com** or `/auth/login`
+1. Navigate to **https://app.mediqzy.com** or `/auth/login`
 2. Click the **"Use OTP"** button (top right of login form)
 3. The form switches to OTP mode
 
@@ -333,7 +333,7 @@ interface OTPInputProps {
 ### Manual Testing
 
 #### Test Case 1: Email OTP Login
-1. Go to https://mediqzy.com
+1. Go to https://app.mediqzy.com
 2. Click "Use OTP"
 3. Enter: `user@mediczy.com`
 4. Click "Send OTP"
@@ -343,7 +343,7 @@ interface OTPInputProps {
 8. ✅ Should be logged in
 
 #### Test Case 2: Phone OTP Login
-1. Go to https://mediqzy.com
+1. Go to https://app.mediqzy.com
 2. Click "Use OTP"
 3. Enter: `7373007737`
 4. Click "Send OTP"
@@ -456,7 +456,7 @@ WHATSAPP_PHONE_ID=your-phone-id
 
 **Frontend (.env.production):**
 ```bash
-VITE_API_URL=https://mediqzy.com/api
+VITE_API_URL=https://app.mediqzy.com/api
 ```
 
 ---

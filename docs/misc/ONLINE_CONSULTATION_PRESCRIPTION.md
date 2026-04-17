@@ -93,8 +93,8 @@ Creates prescription after video/in-person consultation.
     "consultationType": "online",
     "status": "active",
     "createdAt": "2025-12-21T17:25:17.691Z",
-    "pdfUrl": "https://mediqzy.com/api/prescriptions/RX-MJFZZNY5-SYD16/pdf",
-    "shareUrl": "https://mediqzy.com/api/prescriptions/RX-MJFZZNY5-SYD16/share/whatsapp"
+    "pdfUrl": "https://app.mediqzy.com/api/prescriptions/RX-MJFZZNY5-SYD16/pdf",
+    "shareUrl": "https://app.mediqzy.com/api/prescriptions/RX-MJFZZNY5-SYD16/share/whatsapp"
   }
 }
 ```
@@ -129,7 +129,7 @@ Generates WhatsApp share link with consultation type.
 {
   "success": true,
   "whatsappUrl": "https://wa.me/?text=...",
-  "pdfUrl": "https://mediqzy.com/api/prescriptions/RX-MJFZZNY5-SYD16/pdf?token=...",
+  "pdfUrl": "https://app.mediqzy.com/api/prescriptions/RX-MJFZZNY5-SYD16/pdf?token=...",
   "message": "🏥 *Prescription from Kumar Sharma*\n\nPatient: Rahul Verma\nDate: 21/12/2025\nConsultation Type: online\nPrescription ID: RX-MJFZZNY5-SYD16\n\n📥 Download: https://...",
   "consultationType": "online"
 }

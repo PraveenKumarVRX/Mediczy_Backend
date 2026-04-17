@@ -61,7 +61,7 @@ if [ "$has_project" = "y" ]; then
         echo "3. Choose 'Web application'"
         echo "4. Add redirect URIs:"
         echo "   - http://localhost:9443 (development)"
-        echo "   - https://mediqzy.com (production)"
+        echo "   - https://app.mediqzy.com (production)"
         echo "5. Copy the Client ID and run this script again"
     fi
 else
@@ -90,7 +90,7 @@ else
     echo "   - Choose 'Web application'"
     echo "   - Add authorized redirect URIs:"
     echo "     • http://localhost:9443"
-    echo "     • https://mediqzy.com"
+    echo "     • https://app.mediqzy.com"
     echo ""
     echo "6. 📝 Run this script again with your new Client ID"
 fi

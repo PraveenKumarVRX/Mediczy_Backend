@@ -156,6 +156,15 @@ const Corporate = postgresSequelize.define('Corporate', {
     allowNull: true,
     comment: 'Expiry time for password reset token'
   },
+
+  // === FIELDS ADDED VIA SQL MIGRATIONS ===
+  tenantId: { type: DataTypes.INTEGER, allowNull: true, field: 'tenant_id' },
+  uniqueId: { type: DataTypes.STRING(20), allowNull: true, field: 'unique_id' },
+  onboardedBy: { type: DataTypes.STRING, allowNull: true, field: 'onboarded_by' },
+  onboardedById: { type: DataTypes.INTEGER, allowNull: true, field: 'onboarded_by_id' },
+  aggregatorId: { type: DataTypes.INTEGER, allowNull: true, field: 'aggregator_id' },
+  aggregatorType: { type: DataTypes.STRING, allowNull: true, field: 'aggregator_type' },
+
   createdAt: {
     type: DataTypes.DATE,
     allowNull: false,

@@ -240,8 +240,8 @@ socket.on("claim:update", (notification) => {
 
 ## 🔗 Deployed Endpoints
 
-**Frontend:** https://mediqzy.com  
-**Backend API:** https://mediqzy.com/api/hospital/insurance  
+**Frontend:** https://app.mediqzy.com  
+**Backend API:** https://app.mediqzy.com/api/hospital/insurance  
 **WebSocket:** wss://mediqzy.com
 
 ### Key Endpoints
@@ -304,7 +304,7 @@ socket.on("claim:update", (notification) => {
 
 ### 1. Access the System
 
-Visit: https://mediqzy.com/hospital/insurance
+Visit: https://app.mediqzy.com/hospital/insurance
 
 ### 2. View Dashboard
 
@@ -410,7 +410,7 @@ All 9 tasks have been successfully completed. The Hospital Insurance Management 
 - Production deployment
 
 **Status:** ✅ **READY FOR PRODUCTION USE**  
-**URL:** https://mediqzy.com/hospital/insurance  
+**URL:** https://app.mediqzy.com/hospital/insurance  
 **PM2:** ✅ Online (2 instances)  
 **Build:** ✅ Success (1m 14s)
 

@@ -205,8 +205,8 @@ async function verifySetup(clinic, users) {
   console.log(`   Name: ${clinic.name}`);
   console.log(`   Email: ${clinic.email}`);
   console.log(`   Password: Clinic123`);
-  console.log(`   Login URL: https://mediqzy.com/clinic/login`);
-  console.log(`   Dashboard: https://mediqzy.com/clinic/dashboard`);
+  console.log(`   Login URL: https://app.mediqzy.com/clinic/login`);
+  console.log(`   Dashboard: https://app.mediqzy.com/clinic/dashboard`);
   
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('👥 TEST USERS CREATED');
@@ -232,7 +232,7 @@ async function verifySetup(clinic, users) {
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('🎯 NEXT STEPS');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('   1. Test clinic login at https://mediqzy.com/clinic/login');
+  console.log('   1. Test clinic login at https://app.mediqzy.com/clinic/login');
   console.log('   2. Use credentials: clinic@mediczy.com / Clinic123');
   console.log('   3. Check email inbox for test user passwords');
   console.log('   4. Update clinic auth routes to use database (next task)');

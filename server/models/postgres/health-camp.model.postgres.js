@@ -37,6 +37,7 @@ const HealthCamp = sequelize.define('HealthCamp', {
 }, {
   tableName: 'health_camps',
   timestamps: true,
+  underscored: true,
   indexes: [
     { fields: ['tenant_id'] },
     { fields: ['status'] },

@@ -632,7 +632,7 @@ room:
 webhooks:
   api_key: "sk_livekit_..."
   urls:
-    - "https://mediqzy.com/api/video/webhook"
+    - "https://app.mediqzy.com/api/video/webhook"
 ```
 
 ---

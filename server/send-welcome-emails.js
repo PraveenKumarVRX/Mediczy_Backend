@@ -43,7 +43,7 @@ import emailService from './controller/email.controller.js';
             </ul>
             
             <div style="text-align: center; margin: 35px 0;">
-              <a href="https://mediqzy.com/hospital/login" style="background-color: #0d9488; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
+              <a href="https://app.mediqzy.com/hospital/login" style="background-color: #0d9488; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
                 Access Your Dashboard →
               </a>
             </div>
@@ -66,8 +66,8 @@ import emailService from './controller/email.controller.js';
           <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">
             <p>© 2026 Mediqzy Healthcare. All rights reserved.</p>
             <p>
-              <a href="https://mediqzy.com/privacy" style="color: #0d9488; text-decoration: none;">Privacy Policy</a> | 
-              <a href="https://mediqzy.com/terms" style="color: #0d9488; text-decoration: none;">Terms of Service</a>
+              <a href="https://app.mediqzy.com/privacy" style="color: #0d9488; text-decoration: none;">Privacy Policy</a> | 
+              <a href="https://app.mediqzy.com/terms" style="color: #0d9488; text-decoration: none;">Terms of Service</a>
             </p>
           </div>
         </div>
@@ -117,7 +117,7 @@ import emailService from './controller/email.controller.js';
             </ul>
             
             <div style="text-align: center; margin: 35px 0;">
-              <a href="https://mediqzy.com/corporate/login" style="background-color: #7c3aed; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
+              <a href="https://app.mediqzy.com/corporate/login" style="background-color: #7c3aed; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
                 Access Corporate Portal →
               </a>
             </div>
@@ -146,8 +146,8 @@ import emailService from './controller/email.controller.js';
           <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">
             <p>© 2026 Mediqzy Healthcare. All rights reserved.</p>
             <p>
-              <a href="https://mediqzy.com/privacy" style="color: #7c3aed; text-decoration: none;">Privacy Policy</a> | 
-              <a href="https://mediqzy.com/terms" style="color: #7c3aed; text-decoration: none;">Terms of Service</a>
+              <a href="https://app.mediqzy.com/privacy" style="color: #7c3aed; text-decoration: none;">Privacy Policy</a> | 
+              <a href="https://app.mediqzy.com/terms" style="color: #7c3aed; text-decoration: none;">Terms of Service</a>
             </p>
           </div>
         </div>

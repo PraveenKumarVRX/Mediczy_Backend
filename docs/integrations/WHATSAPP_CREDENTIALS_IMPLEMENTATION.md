@@ -35,7 +35,7 @@ Phone: +919876543210
 Email: patient@example.com
 Temporary Password: *1E61DDDA*
 
-🔐 Please login at https://mediqzy.com
+🔐 Please login at https://app.mediqzy.com
 and change your password immediately.
 
 _This is an auto-generated message. Please do not reply._
@@ -53,13 +53,13 @@ _This is an auto-generated message. Please do not reply._
 ```javascript
 // Send welcome notification via SMS, WhatsApp, and Email
 try {
-  const credentialsMessage = `Welcome to Mediczy! 🏥\n\nYour account has been created by ${doctorName}.\n\n📱 *Login Credentials:*\nPhone: ${phoneNumber}\nEmail: ${generatedEmail}\nTemporary Password: *${tempPassword}*\n\n🔐 Please login at https://mediqzy.com and change your password immediately.\n\n_This is an auto-generated message. Please do not reply._`;
+  const credentialsMessage = `Welcome to Mediczy! 🏥\n\nYour account has been created by ${doctorName}.\n\n📱 *Login Credentials:*\nPhone: ${phoneNumber}\nEmail: ${generatedEmail}\nTemporary Password: *${tempPassword}*\n\n🔐 Please login at https://app.mediqzy.com and change your password immediately.\n\n_This is an auto-generated message. Please do not reply._`;
 
   // 1. Send SMS
   const notificationService = await import('../services/notification.service.js');
   await notificationService.default.sendSMS(
     phoneNumber,
-    `Welcome to Mediczy! Your account created by ${doctorName}.\nTemp Password: ${tempPassword}\nLogin: https://mediqzy.com`
+    `Welcome to Mediczy! Your account created by ${doctorName}.\nTemp Password: ${tempPassword}\nLogin: https://app.mediqzy.com`
   );
 
   // 2. Send WhatsApp (session message)

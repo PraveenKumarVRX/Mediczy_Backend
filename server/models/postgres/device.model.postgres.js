@@ -241,6 +241,7 @@ const Device = sequelize.define('Device', {
 }, {
   tableName: 'devices',
   timestamps: true,
+  underscored: true,
   indexes: [
     {
       fields: ['device_id'],

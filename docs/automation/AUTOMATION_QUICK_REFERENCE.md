@@ -65,7 +65,7 @@ cd /home/ubuntu/Mediczy/server
 node scripts/setup-automation.js
 
 # Create test appointment (24h reminder will trigger)
-curl -X POST https://mediqzy.com/api/appointments \
+curl -X POST https://app.mediqzy.com/api/appointments \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"appointmentDate": "tomorrow", "appointmentTime": "10:00"}'
 ```

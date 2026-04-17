@@ -8,7 +8,7 @@
 ## 🔥 Critical Issue Fixed
 
 ### **Problem**: Doubled API Path
-- **Error**: `GET https://mediqzy.com/api/api/sib/health 401 (Unauthorized)`
+- **Error**: `GET https://app.mediqzy.com/api/api/sib/health 401 (Unauthorized)`
 - **Root Cause**: `VITE_API_URL` already includes `/api`, code added it again
 - **Impact**: All SIB endpoints were unreachable in production
 
@@ -36,7 +36,7 @@ const API_URL = API_BASE.replace(/\/api$/, '');
 1. ✅ Fixed API URL path duplication
 2. ✅ Rebuilt client: `npm run build`
 3. ✅ Deployed to production: `/var/www/html/`
-4. ✅ Verified endpoint: `https://mediqzy.com/api/sib/health` returns `{"success": true}`
+4. ✅ Verified endpoint: `https://app.mediqzy.com/api/sib/health` returns `{"success": true}`
 
 ---
 
@@ -44,13 +44,13 @@ const API_URL = API_BASE.replace(/\/api$/, '');
 
 ### **Before Fix**:
 ```bash
-curl https://mediqzy.com/api/api/sib/health
+curl https://app.mediqzy.com/api/api/sib/health
 # 401 Unauthorized (path doesn't exist)
 ```
 
 ### **After Fix**:
 ```bash
-curl https://mediqzy.com/api/sib/health | jq
+curl https://app.mediqzy.com/api/sib/health | jq
 # {
 #   "success": true,
 #   "data": { ... }
@@ -64,13 +64,13 @@ curl https://mediqzy.com/api/sib/health | jq
 When users access the SIB Control Dashboard now:
 
 ✅ **Public Health Endpoint** - Works without authentication
-- URL: `https://mediqzy.com/api/sib/health`
+- URL: `https://app.mediqzy.com/api/sib/health`
 - No 401/403 errors
 - Dashboard shows system health
 
 ✅ **Protected Admin Endpoints** - Require valid admin token
-- URL: `https://mediqzy.com/api/sib/approvals/pending`
-- URL: `https://mediqzy.com/api/sib/metrics`
+- URL: `https://app.mediqzy.com/api/sib/approvals/pending`
+- URL: `https://app.mediqzy.com/api/sib/metrics`
 - Proper error messages if not authenticated
 
 ✅ **User Experience**

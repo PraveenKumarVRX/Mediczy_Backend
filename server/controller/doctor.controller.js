@@ -250,6 +250,102 @@ function getDoctorMailTransporter() {
   });
 }
 
+// ─── Send confirmation email TO THE DOCTOR with signed agreement ──────────────
+async function sendDoctorConfirmationEmail(doctor, docs) {
+  try {
+    const transporter = getDoctorMailTransporter();
+    const submittedAt = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+    const doctorName = `${doctor.prefix || ''} ${doctor.firstName} ${doctor.lastName}`.trim();
+    const agreementId = docs.agreement?.agreementId || 'N/A';
+    const signedAt    = docs.agreement?.signedAt ? new Date(docs.agreement.signedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : submittedAt;
+
+    // Build submitted-documents list
+    const docLabels = { idProof: 'ID Proof', addressProof: 'Address Proof', medicalDegree: 'Medical Degree', councilCertificate: 'Council Certificate' };
+    const docRows = Object.entries(docLabels)
+      .filter(([k]) => docs[k])
+      .map(([k, label], i) => `<tr${i%2!==0?' style="background:#f8fafc"':''}><td style="padding:8px 0;color:#64748b;font-weight:600;width:160px">${label}</td><td style="padding:8px 0;color:#0f172a">${docs[k].name || '—'}</td></tr>`)
+      .join('');
+
+    // Attach signed agreement PDF
+    const attachments = [];
+    if (docs.agreement?.pdf) {
+      try {
+        const base64 = docs.agreement.pdf.replace(/^data:application\/pdf;base64,/, '');
+        attachments.push({
+          filename: `Mediqzy_Agreement_${doctorName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.pdf`,
+          content: Buffer.from(base64, 'base64'),
+          contentType: 'application/pdf',
+        });
+      } catch { /* skip if decode fails */ }
+    }
+
+    await transporter.sendMail({
+      from: `"Mediqzy" <${process.env.SMTP_USER || 'noreply@mediczy.com'}>`,
+      to: doctor.email,
+      subject: `✅ Application Received — Your Signed Agreement | Mediqzy`,
+      attachments,
+      html: `
+<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f0f4f8;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#f0f4f8">
+<tr><td align="center" style="padding:40px 20px;">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.09);">
+  <!-- Header -->
+  <tr><td style="background:linear-gradient(135deg,#1d4ed8,#0284c7);padding:36px 40px;">
+    <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800">Application Received!</h1>
+    <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:13px">Submitted on ${submittedAt} IST</p>
+  </td></tr>
+  <!-- Body -->
+  <tr><td style="padding:36px 40px;">
+    <p style="margin:0 0 20px;font-size:15px;color:#0f172a;line-height:1.7">
+      Dear <strong>${doctorName}</strong>,<br><br>
+      Thank you for registering on <strong>Mediqzy</strong>. We have received your application and all submitted documents. Our team will verify your credentials and activate your account within <strong>1–2 business days</strong>.
+    </p>
+
+    <!-- Agreement box -->
+    <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;padding:20px 24px;margin-bottom:28px">
+      <p style="margin:0 0 10px;font-size:14px;font-weight:700;color:#1e40af">📄 Practitioner Engagement Agreement</p>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <tr><td style="padding:6px 0;color:#64748b;font-weight:600;width:140px">Agreement ID</td><td style="padding:6px 0;color:#0f172a">${agreementId}</td></tr>
+        <tr><td style="padding:6px 0;color:#64748b;font-weight:600">Signed At</td><td style="padding:6px 0;color:#0f172a">${signedAt}</td></tr>
+        <tr><td style="padding:6px 0;color:#64748b;font-weight:600">Between</td><td style="padding:6px 0;color:#0f172a">Mayden SmartHealth Pvt Ltd &amp; ${doctorName}</td></tr>
+      </table>
+      ${attachments.length > 0 ? '<p style="margin:12px 0 0;font-size:13px;color:#059669;font-weight:600">✅ Your signed agreement PDF is attached to this email.</p>' : ''}
+    </div>
+
+    <!-- Documents -->
+    ${docRows ? `
+    <h2 style="margin:0 0 14px;font-size:14px;font-weight:700;color:#0f172a;border-bottom:1px solid #e2e8f0;padding-bottom:10px">Documents Submitted</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:28px">${docRows}</table>
+    ` : ''}
+
+    <!-- What's next -->
+    <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:12px;padding:20px 24px;margin-bottom:28px">
+      <p style="margin:0 0 10px;font-size:14px;font-weight:700;color:#15803d">⏳ What happens next?</p>
+      <ul style="margin:0;padding-left:18px;font-size:13px;color:#166534;line-height:1.9">
+        <li>Our team will verify your ID proof, address proof, and medical credentials.</li>
+        <li>You will receive an <strong>activation email</strong> once your account is approved.</li>
+        <li>Activation typically takes <strong>1–2 business days</strong>.</li>
+      </ul>
+    </div>
+
+    <p style="margin:0;font-size:13px;color:#64748b">
+      Questions? Reply to this email or write to us at <a href="mailto:support@mediczy.com" style="color:#1d4ed8">support@mediczy.com</a>.
+    </p>
+  </td></tr>
+  <!-- Footer -->
+  <tr><td style="padding:16px 40px;border-top:1px solid #e2e8f0;text-align:center">
+    <p style="margin:0;font-size:11px;color:#94a3b8">Mediqzy · Mayden SmartHealth Pvt Ltd · Chennai, Tamil Nadu, India</p>
+  </td></tr>
+</table></td></tr></table>
+</body></html>`,
+    });
+    console.log(`[DoctorReg] Confirmation email with signed agreement sent to ${doctor.email}`);
+  } catch (mailErr) {
+    console.warn('[DoctorReg] Doctor confirmation email failed (non-critical):', mailErr.message);
+  }
+}
+
 // ─── Send registration notification to support@mediczy.com ───────────────────
 async function sendDoctorRegistrationAlert(doctor, docs) {
   try {
@@ -373,6 +469,8 @@ export async function registerDoctor(req, res) {
     // Send registration alert to support (fire-and-forget)
     const docsPayload = req.body.documents || {};
     sendDoctorRegistrationAlert(newDoctor, docsPayload);
+    // Send confirmation email with signed agreement to the doctor (fire-and-forget)
+    sendDoctorConfirmationEmail(newDoctor, docsPayload);
 
     // Mirror doctor profile into intelligent DB (fire-and-forget)
     (async () => {

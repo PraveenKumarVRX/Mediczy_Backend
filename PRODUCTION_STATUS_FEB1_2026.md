@@ -7,7 +7,7 @@
 ## ✅ DEPLOYMENT VERIFIED - ALL SYSTEMS OPERATIONAL
 
 ### 🌐 Production Site
-- **Domain:** https://mediqzy.com
+- **Domain:** https://app.mediqzy.com
 - **Status:** ✅ HTTP/2 200 OK
 - **CDN:** ✅ Cloudflare Active
 - **SSL:** ✅ Enabled & Valid
@@ -96,8 +96,8 @@ Additional Services:
 ## 🔗 Access Information
 
 ### Production URLs
-- **Main Site:** https://mediqzy.com
-- **Insurance Dashboard:** https://mediqzy.com/hospital/insurance-claims
+- **Main Site:** https://app.mediqzy.com
+- **Insurance Dashboard:** https://app.mediqzy.com/hospital/insurance-claims
 
 ### Development URLs
 - **Local Dev:** http://localhost:9443/hospital/insurance-claims

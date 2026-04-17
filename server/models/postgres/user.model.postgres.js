@@ -308,7 +308,18 @@ const User = sequelize.define('User', {
     allowNull: true,
     comment: 'Full-text search index combining firstName, lastName, email'
   },
-  
+
+  // === FIELDS ADDED VIA SQL MIGRATIONS ===
+  corporateId: { type: DataTypes.INTEGER, allowNull: true, references: { model: 'corporates', key: 'id' }, field: 'corporate_id' },
+  aggregatorId: { type: DataTypes.INTEGER, allowNull: true, field: 'aggregator_id' },
+  aggregatorType: { type: DataTypes.STRING, allowNull: true, field: 'aggregator_type' },
+  employeeId: { type: DataTypes.STRING, allowNull: true, field: 'employee_id' },
+  employerName: { type: DataTypes.STRING, allowNull: true, field: 'employer_name' },
+  membershipType: { type: DataTypes.STRING, allowNull: true, field: 'membership_type' },
+  emergencyTriageCreditsUsed: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 0, field: 'emergency_triage_credits_used' },
+  emergencyTriageCreditLimit: { type: DataTypes.INTEGER, allowNull: true, defaultValue: 10, field: 'emergency_triage_credit_limit' },
+  emergencyTriagePendingAmount: { type: DataTypes.DECIMAL(10, 2), allowNull: true, defaultValue: 0, field: 'emergency_triage_pending_amount' },
+
   // Timestamps (Sequelize auto-manages these)
   createdAt: {
     type: DataTypes.DATE,

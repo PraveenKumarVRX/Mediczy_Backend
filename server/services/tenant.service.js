@@ -275,7 +275,7 @@ async function sendVerificationEmail(tenant, owner) {
       
       await sgMail.send({
         to: owner.email,
-        from: process.env.FROM_EMAIL || 'noreply@mayden.in',
+        from: process.env.FROM_EMAIL || process.env.SMTP_FROM || 'noreply@mediqzy.com',
         subject: `Welcome to ${tenant.name} on Mediczy!`,
         html: `
           <h1>Welcome to Mediczy!</h1>

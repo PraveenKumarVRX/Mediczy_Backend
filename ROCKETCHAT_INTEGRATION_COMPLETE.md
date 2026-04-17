@@ -15,7 +15,7 @@ ROCKETCHAT_INCOMING_WEBHOOK_URL=https://smart-chat.live/hooks/697d27420d23b15e77
 
 # Outgoing webhook - Backend receives agent replies FROM RocketChat
 # (Configure this URL in RocketChat Admin → Integrations → Outgoing Webhooks)
-ROCKETCHAT_OUTGOING_WEBHOOK_HANDLER=https://mediqzy.com/api/support/webhook/rocketchat
+ROCKETCHAT_OUTGOING_WEBHOOK_HANDLER=https://app.mediqzy.com/api/support/webhook/rocketchat
 ```
 
 ✅ **Webhook Tested Successfully!** Response: `{"success": true}`
@@ -234,7 +234,7 @@ Login to RocketChat admin panel and create outgoing webhook:
 - Enabled: ✅ Yes
 - Event Trigger: **Message Sent**
 - Channel: `#general`
-- URLs: `https://mediqzy.com/api/support/webhook/rocketchat`
+- URLs: `https://app.mediqzy.com/api/support/webhook/rocketchat`
 - Method: **POST**
 - Send as JSON: ✅ Yes
 

@@ -82,7 +82,7 @@ ssh -i "$SSH_KEY" "$PROD_SERVER" "echo '  Disk:'; df -h / | tail -1 | awk '{prin
 
 echo ""
 echo "🔗 Production URLs:"
-echo "  • API: https://mediqzy.com"
+echo "  • API: https://app.mediqzy.com"
 echo "  • Backend: http://13.234.17.52:8888"
 echo "  • OAuth: http://13.234.17.52:8888/oauth/"
 echo ""

@@ -252,17 +252,17 @@ curl http://localhost:8000/health
 ### Manual Triggers (Admin Only)
 ```bash
 # Trigger appointment reminders now
-curl -X POST https://mediqzy.com/api/admin/trigger-automation \
+curl -X POST https://app.mediqzy.com/api/admin/trigger-automation \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
   -d '{"automation": "appointment_reminder"}'
 
 # Trigger payment reminders now
-curl -X POST https://mediqzy.com/api/admin/trigger-automation \
+curl -X POST https://app.mediqzy.com/api/admin/trigger-automation \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
   -d '{"automation": "payment_reminder"}'
 
 # Generate doctor performance report now
-curl -X POST https://mediqzy.com/api/admin/trigger-automation \
+curl -X POST https://app.mediqzy.com/api/admin/trigger-automation \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
   -d '{"automation": "doctor_performance"}'
 ```
@@ -384,7 +384,7 @@ INFO NOTIFICATIONS
 
 ## 📱 Web Dashboard Access
 
-**URL:** https://mediqzy.com/admin/workflow-automation
+**URL:** https://app.mediqzy.com/admin/workflow-automation
 
 **Features:**
 - ✅ Real-time automation status grid

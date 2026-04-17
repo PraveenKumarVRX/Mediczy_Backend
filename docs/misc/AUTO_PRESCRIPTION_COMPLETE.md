@@ -455,8 +455,8 @@ POST /api/prescriptions/from-appointment/33
   "prescription": {
     "prescriptionId": "RX-MJG09I34-9MFUS",
     "status": "active",
-    "pdfUrl": "https://mediqzy.com/api/prescriptions/RX-MJG09I34-9MFUS/pdf",
-    "shareUrl": "https://mediqzy.com/api/prescriptions/RX-MJG09I34-9MFUS/share/whatsapp"
+    "pdfUrl": "https://app.mediqzy.com/api/prescriptions/RX-MJG09I34-9MFUS/pdf",
+    "shareUrl": "https://app.mediqzy.com/api/prescriptions/RX-MJG09I34-9MFUS/share/whatsapp"
   }
 }
 ```
@@ -471,7 +471,7 @@ GET /api/prescriptions/RX-MJG09I34-9MFUS/share/whatsapp
 {
   "success": true,
   "whatsappUrl": "https://wa.me/?text=...",
-  "pdfUrl": "https://mediqzy.com/api/prescriptions/RX-MJG09I34-9MFUS/pdf?token=...",
+  "pdfUrl": "https://app.mediqzy.com/api/prescriptions/RX-MJG09I34-9MFUS/pdf?token=...",
   "message": "🏥 *Prescription from Kumar Sharma*\n\nPatient: Rahul Verma\nDate: 21/12/2025\nConsultation Type: online\nPrescription ID: RX-MJG09I34-9MFUS\n\n📥 Download: https://...",
   "consultationType": "online"
 }

@@ -126,13 +126,13 @@ Corporate            /corporate/login              ✅ OK - SPA loaded
 ```
 
 ### Production URLs
-- User: https://mediqzy.com/login ✅
-- Doctor: https://mediqzy.com/doctor-login ✅
-- Admin: https://mediqzy.com/admin/login ✅
-- Nurse: https://mediqzy.com/nurse/login ✅
-- Team: https://mediqzy.com/team/login ✅
-- Assistant: https://mediqzy.com/assistant/login ✅
-- Corporate: https://mediqzy.com/corporate/login ✅
+- User: https://app.mediqzy.com/login ✅
+- Doctor: https://app.mediqzy.com/doctor-login ✅
+- Admin: https://app.mediqzy.com/admin/login ✅
+- Nurse: https://app.mediqzy.com/nurse/login ✅
+- Team: https://app.mediqzy.com/team/login ✅
+- Assistant: https://app.mediqzy.com/assistant/login ✅
+- Corporate: https://app.mediqzy.com/corporate/login ✅
 
 ## Technical Details
 
@@ -216,7 +216,7 @@ Each user type has its own authentication system:
 ## Testing in Browser
 
 To verify in a browser:
-1. Open https://mediqzy.com/nurse/login
+1. Open https://app.mediqzy.com/nurse/login
 2. Page should load without redirecting
 3. Nurse login form should be displayed
 4. F12 → Network tab should show no redirects

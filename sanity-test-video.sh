@@ -4,7 +4,7 @@
 ###############################################################################
 
 BASE="http://localhost:8888"
-PUBLIC="https://mediqzy.com"
+PUBLIC="https://app.mediqzy.com"
 PASS=0; FAIL=0; WARN=0; TOTAL=0
 RESULTS=()
 

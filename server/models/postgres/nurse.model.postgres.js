@@ -153,6 +153,10 @@ const Nurse = postgresSequelize.define('Nurse', {
     defaultValue: {},
     comment: 'Additional data: {languages, skills, preferences, emergencyContact}'
   },
+
+  // === FIELDS ADDED VIA SQL MIGRATIONS ===
+  tenantId: { type: DataTypes.INTEGER, allowNull: true, field: 'tenant_id' },
+
   createdAt: {
     type: DataTypes.DATE,
     allowNull: false,

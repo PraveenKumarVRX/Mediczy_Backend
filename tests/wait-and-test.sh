@@ -9,7 +9,7 @@ echo "🔒 Checking admin login rate limit status..."
 echo ""
 
 # Try to login
-RESPONSE=$(curl -s -X POST https://mediqzy.com/api/admin/login \
+RESPONSE=$(curl -s -X POST https://app.mediqzy.com/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@mediqzy.com","password":"SecurePass123"}')
 

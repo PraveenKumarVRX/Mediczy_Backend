@@ -207,6 +207,30 @@ class NotificationService {
         priority: 'critical',
         sound: 'call_ringtone',
         requireInteraction: true
+      },
+
+      // Appointment reminder — 24 hours before
+      appointment_reminder_24h: {
+        title: 'Appointment Tomorrow 🗓️',
+        message: 'Reminder: Your appointment with Dr. {{doctorName}} is tomorrow on {{date}} at {{time}}.',
+        channels: ['push', 'email', 'in-app', 'whatsapp'],
+        priority: 'high'
+      },
+
+      // Appointment reminder — 2 hours before
+      appointment_reminder_2h: {
+        title: 'Appointment in 2 Hours ⏰',
+        message: 'Your appointment with Dr. {{doctorName}} is in 2 hours at {{time}}.',
+        channels: ['push', 'in-app', 'whatsapp'],
+        priority: 'high'
+      },
+
+      // Appointment reminder — 15 minutes before
+      appointment_reminder_15min: {
+        title: 'Appointment in 15 Minutes 🔔',
+        message: 'Your appointment with Dr. {{doctorName}} starts in 15 minutes. Get ready!',
+        channels: ['push', 'in-app'],
+        priority: 'urgent'
       }
     };
   }
@@ -396,6 +420,20 @@ class NotificationService {
         })
       );
 
+      // Auto-deactivate stale tokens (FCM returns NotRegistered when app uninstalled / token refreshed)
+      const staleErrorCodes = ['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'];
+      await Promise.all(
+        results.map(async (result, i) => {
+          if (result.status === 'rejected') {
+            const code = result.reason?.errorInfo?.code || result.reason?.code || '';
+            if (staleErrorCodes.some(c => code.includes(c.split('/')[1]))) {
+              console.warn(`[FCM] Deactivating stale token for userId=${userId}:`, tokenRecords[i].token.slice(0, 20) + '...');
+              await tokenRecords[i].update({ isActive: false }).catch(() => {});
+            }
+          }
+        })
+      );
+
       const anySuccess = results.some(r => r.status === 'fulfilled');
       return { success: anySuccess, result: results };
     } catch (error) {
@@ -407,9 +445,9 @@ class NotificationService {
    * Send Email Notification
    */
   async sendEmail(userId, userType, title, message, type, variables, appointmentData = null) {
+    let email;
     try {
       // Get user email
-      let email;
       if (userType === 'doctor') {
         const { Doctor } = await import('../models/index.js');
         const doctor = await Doctor.findByPk(userId);
@@ -427,8 +465,9 @@ class NotificationService {
       // Build HTML email
       const htmlContent = this.buildEmailHTML(title, message, type, variables);
 
-      // Prepare email options
-      const emailOptions = {
+      // Prepare mail options
+      const mailOptions = {
+        from: `"Mediczy" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
         to: email,
         subject: title,
         html: htmlContent
@@ -437,29 +476,34 @@ class NotificationService {
       // Attach iCal file for appointment notifications
       if (appointmentData && (type === 'appointment_request' || type === 'appointment_booked')) {
         try {
-          // Generate iCal content based on user role
           const icalContent = userType === 'doctor'
             ? generateDoctorICalFile(appointmentData)
             : generateICalFile(appointmentData);
-
-          // Generate filename
           const filename = generateICalFilename(appointmentData, userType);
-
-          // Add attachment
-          emailOptions.attachments = [{
+          mailOptions.attachments = [{
             filename: filename,
             content: icalContent,
             contentType: 'text/calendar; charset=utf-8'
           }];
-
           console.log(`📅 Attached calendar file: ${filename}`);
         } catch (icalError) {
           console.error('Error generating iCal attachment:', icalError);
-          // Continue without attachment if iCal generation fails
         }
       }
 
-      const result = await emailService.sendEmail(emailOptions);
+      // Send via nodemailer directly
+      const nodemailer = (await import('nodemailer')).default;
+      const smtpPort = parseInt(process.env.SMTP_PORT) || 465;
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || 'smtppro.zoho.in',
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: {
+          user: (process.env.SMTP_USER || '').trim(),
+          pass: (process.env.SMTP_PASSWORD || process.env.SMTP_PASS || '').trim()
+        }
+      });
+      const result = await transporter.sendMail(mailOptions);
 
       _logChannelActivity(
         `Email sent — ${title}`,

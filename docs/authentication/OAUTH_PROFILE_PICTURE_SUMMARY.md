@@ -64,7 +64,7 @@ User logged in with profile picture set
 **User OAuth**: `server/config/oauth.config.js`  
 **Doctor OAuth**: `server/routes/doctor-oauth.route.js`  
 **Storage**: `/home/ubuntu/Mediczy/server/uploads/profiles/`  
-**Public URL**: `https://mediqzy.com/uploads/profiles/{filename}`
+**Public URL**: `https://app.mediqzy.com/uploads/profiles/{filename}`
 
 ## API Endpoints
 
@@ -80,7 +80,7 @@ User logged in with profile picture set
 
 1. **Test Google OAuth**:
    ```bash
-   curl -L https://mediqzy.com/api/auth/google
+   curl -L https://app.mediqzy.com/api/auth/google
    # Complete OAuth flow in browser
    # Check logs: pm2 logs mediczy-server
    # Look for: "✅ Profile picture saved: oauth_google_..."
@@ -88,7 +88,7 @@ User logged in with profile picture set
 
 2. **Test Facebook OAuth**:
    ```bash
-   curl -L https://mediqzy.com/api/auth/facebook
+   curl -L https://app.mediqzy.com/api/auth/facebook
    # Complete OAuth flow in browser
    # Check logs for profile picture download
    ```
@@ -113,14 +113,14 @@ Successful download:
 # Google
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
-GOOGLE_CALLBACK_URL=https://mediqzy.com/api/auth/google/callback
-GOOGLE_DOCTOR_CALLBACK_URL=https://mediqzy.com/api/auth/doctor/google/callback
+GOOGLE_CALLBACK_URL=https://app.mediqzy.com/api/auth/google/callback
+GOOGLE_DOCTOR_CALLBACK_URL=https://app.mediqzy.com/api/auth/doctor/google/callback
 
 # Facebook
 FACEBOOK_APP_ID=...
 FACEBOOK_APP_SECRET=...
-FACEBOOK_CALLBACK_URL=https://mediqzy.com/api/auth/facebook/callback
-FACEBOOK_DOCTOR_CALLBACK_URL=https://mediqzy.com/api/auth/doctor/facebook/callback
+FACEBOOK_CALLBACK_URL=https://app.mediqzy.com/api/auth/facebook/callback
+FACEBOOK_DOCTOR_CALLBACK_URL=https://app.mediqzy.com/api/auth/doctor/facebook/callback
 ```
 
 ## Dependencies

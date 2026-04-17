@@ -130,6 +130,10 @@ const Notification = postgresSequelize.define('Notification', {
     allowNull: true,
     comment: 'When notification expires'
   },
+
+  // === FIELDS ADDED VIA SQL MIGRATIONS ===
+  tenantId: { type: DataTypes.INTEGER, allowNull: true, field: 'tenant_id' },
+
   createdAt: {
     type: DataTypes.DATE,
     allowNull: false,

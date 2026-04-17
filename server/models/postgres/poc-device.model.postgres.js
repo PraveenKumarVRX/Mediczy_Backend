@@ -43,6 +43,7 @@ const POCDevice = sequelize.define('POCDevice', {
 }, {
   tableName: 'poc_devices',
   timestamps: true,
+  underscored: true,
   indexes: [
     { fields: ['device_id'], unique: true },
     { fields: ['device_type'] },

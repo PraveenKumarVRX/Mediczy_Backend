@@ -15,7 +15,7 @@
 - [ ] **HTTPS Enabled**
   ```bash
   # Verify HTTPS is configured
-  curl -I https://mediqzy.com/oauth/authorize
+  curl -I https://app.mediqzy.com/oauth/authorize
   # Should return 200-400 (not connection refused)
   ```
   
@@ -34,7 +34,7 @@
 - [ ] **APP_BASE_URL Updated**
   ```bash
   # Update in .env.production
-  APP_BASE_URL=https://mediqzy.com  # NOT http://
+  APP_BASE_URL=https://app.mediqzy.com  # NOT http://
   ```
 
 #### Secrets Management
@@ -79,7 +79,7 @@
 
 - [ ] **CORS Headers Configured**
   ```bash
-  curl -I https://mediqzy.com/oauth/authorize
+  curl -I https://app.mediqzy.com/oauth/authorize
   # Should include CORS headers or proper origin restrictions
   ```
 
@@ -192,8 +192,8 @@
 - [ ] **Health Checks**
   ```bash
   # Verify health check endpoint
-  curl https://mediqzy.com/health
-  # Or: curl https://mediqzy.com/oauth/health
+  curl https://app.mediqzy.com/health
+  # Or: curl https://app.mediqzy.com/oauth/health
   ```
 
 #### Backup & Recovery
@@ -329,7 +329,7 @@ pm2 logs mediczy-server | head -50
 **Step 4: Verify OAuth**
 ```bash
 # Quick verification
-curl https://mediqzy.com/oauth/.well-known/oauth-authorization-server
+curl https://app.mediqzy.com/oauth/.well-known/oauth-authorization-server
 # Should return 200 with metadata
 
 # Monitor logs
@@ -367,7 +367,7 @@ psql -U mediczy_prod mediqzy_prod < /backups/pre-oauth-backup.sql
 pm2 start mediczy-server
 
 # 2. Verify
-curl https://mediqzy.com/health
+curl https://app.mediqzy.com/health
 
 # 3. Notify team
 # Send notification about rollback

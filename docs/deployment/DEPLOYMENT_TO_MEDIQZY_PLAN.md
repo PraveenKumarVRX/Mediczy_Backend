@@ -71,7 +71,7 @@ cp /home/ubuntu/Mediczy/.env.production /home/ubuntu/Mediczy/.env
 
 # Update critical values:
 NODE_ENV=production
-VITE_API_URL=https://mediqzy.com/api
+VITE_API_URL=https://app.mediqzy.com/api
 VITE_APP_NAME=Mediczy
 ```
 
@@ -133,10 +133,10 @@ server {
 ### Phase 6: Health Checks
 ```bash
 # Test API endpoint
-curl -I https://mediqzy.com/api/health
+curl -I https://app.mediqzy.com/api/health
 
 # Test Frontend
-curl -I https://mediqzy.com/
+curl -I https://app.mediqzy.com/
 
 # Check PM2 status
 pm2 status
@@ -266,10 +266,10 @@ pm2 restart all
 ### Health Checks
 ```bash
 # API Health
-curl -s https://mediqzy.com/api/health | jq '.status'
+curl -s https://app.mediqzy.com/api/health | jq '.status'
 
 # Database Check
-curl -s https://mediqzy.com/api/health | jq '.database'
+curl -s https://app.mediqzy.com/api/health | jq '.database'
 
 # Services Check
 pm2 status

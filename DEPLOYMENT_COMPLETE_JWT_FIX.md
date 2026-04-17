@@ -116,14 +116,14 @@ All login types now working consistently:
 ## 🌐 Live Deployment
 
 ### Where Changes Are Live
-1. **Production Website**: https://mediqzy.com
+1. **Production Website**: https://app.mediqzy.com
 2. **GitHub Repository**: https://github.com/MySmartHealth/Mediczy
 3. **Branch**: main
 4. **Commit**: 65baac7
 
 ### API Base URL
 ```
-https://mediqzy.com/api
+https://app.mediqzy.com/api
 ```
 
 ---
@@ -133,17 +133,17 @@ https://mediqzy.com/api
 ### 1. Test Authentication Endpoints
 ```bash
 # Patient Login
-curl -X POST https://mediqzy.com/api/users/login \
+curl -X POST https://app.mediqzy.com/api/users/login \
   -H "Content-Type: application/json" \
   -d '{"email":"patient@test.com","password":"test123"}'
 
 # Doctor Login
-curl -X POST https://mediqzy.com/api/doctors/login \
+curl -X POST https://app.mediqzy.com/api/doctors/login \
   -H "Content-Type: application/json" \
   -d '{"email":"doctor@test.com","password":"test123"}'
 
 # Hospital Login
-curl -X POST https://mediqzy.com/api/hospital/auth/login \
+curl -X POST https://app.mediqzy.com/api/hospital/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"hospital@test.com","password":"test123"}'
 ```

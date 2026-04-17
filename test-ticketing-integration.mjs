@@ -6,7 +6,7 @@
 
 import fetch from 'node-fetch';
 
-const API_BASE = 'https://mediqzy.com/api';
+const API_BASE = 'https://app.mediqzy.com/api';
 
 async function testTicketCreation() {
   console.log('🎫 Testing Ticketing System + RocketChat Integration\n');
@@ -137,7 +137,7 @@ async function listRocketChatChannels() {
     console.log('   3. Password: Welcome@2026');
     console.log('   4. Check #general channel for ticket notification');
     console.log(`   5. Join channel: #ticket-${(ticket.ticketId || ticket._id).toLowerCase()}`);
-    console.log('   6. View ticket in admin: https://mediqzy.com/admin/tickets');
+    console.log('   6. View ticket in admin: https://app.mediqzy.com/admin/tickets');
     console.log('\n📖 Full Documentation: /home/ubuntu/Mediczy/TICKETING_SYSTEM_GUIDE.md');
   } else {
     console.log('\n═══════════════════════════════════════════════════════');

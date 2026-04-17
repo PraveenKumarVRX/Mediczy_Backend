@@ -67,6 +67,7 @@ const Coupon = postgresSequelize.define('Coupon', {
   corporateId: {
     type: DataTypes.INTEGER,
     allowNull: true,
+    field: 'corporate_id',
     comment: 'If linked to a specific corporate account'
   },
   corporateName: {
@@ -97,7 +98,7 @@ const Coupon = postgresSequelize.define('Coupon', {
   timestamps: true,
   indexes: [
     { fields: ['code'], unique: true },
-    { fields: ['corporateId'] },
+    { fields: ['corporate_id'] },
     { fields: ['isActive'] },
     { fields: ['validFrom', 'validUntil'] }
   ]

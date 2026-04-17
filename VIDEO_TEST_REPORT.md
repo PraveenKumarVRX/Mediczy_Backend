@@ -132,8 +132,8 @@ LIVEKIT_MEET_URL=https://video.mediqzy.com
 ### Frontend Configuration (client/.env.production)
 ```bash
 VITE_LIVEKIT_URL=https://video.mediqzy.com
-VITE_API_URL=https://mediqzy.com/api
-VITE_SOCKET_URL=https://mediqzy.com
+VITE_API_URL=https://app.mediqzy.com/api
+VITE_SOCKET_URL=https://app.mediqzy.com
 ```
 
 ---
@@ -176,7 +176,7 @@ const jwt = await token.toJwt();
   "success": true,
   "roomToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "roomId": "room-123",
-  "roomUrl": "https://mediqzy.com/video-room/room-123?token=...",
+  "roomUrl": "https://app.mediqzy.com/video-room/room-123?token=...",
   "expiresAt": "2026-01-26T20:08:11.669Z",
   "iceServers": [...]
 }

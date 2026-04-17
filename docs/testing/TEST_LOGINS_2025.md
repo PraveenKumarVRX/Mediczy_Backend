@@ -9,7 +9,7 @@
 ## 🔐 Login Portals
 
 ### Admin Portal
-**URL**: https://mediqzy.com/admin/login
+**URL**: https://app.mediqzy.com/admin/login
 
 ```
 ✅ Email: admin@mediqzy.com
@@ -20,7 +20,7 @@
 ---
 
 ### User/Staff Login
-**URL**: https://mediqzy.com/login
+**URL**: https://app.mediqzy.com/login
 
 ⚠️ **Status**: User login endpoint needs intelligent-db model fix
 ✅ **Workaround**: Use admin portal to verify accounts exist
@@ -139,5 +139,5 @@
 ---
 
 **Created**: November 29, 2025
-**Domain**: https://mediqzy.com
+**Domain**: https://app.mediqzy.com
 **Environment**: Production (AWS EC2)

@@ -7,7 +7,7 @@ Successfully implemented three major profile enhancements:
 ### 1. Profile Picture Upload 📸
 - **Upload endpoint**: `POST /api/users/profile-picture`
 - **Storage**: `/home/ubuntu/Mediczy/server/uploads/profiles/`
-- **Public URL**: `https://mediqzy.com/uploads/profiles/{filename}`
+- **Public URL**: `https://app.mediqzy.com/uploads/profiles/{filename}`
 - **Validation**: Max 5MB, image types only (JPEG, PNG, GIF, WebP)
 - **UI**: Click camera icon on avatar to upload
 
@@ -54,24 +54,24 @@ Successfully implemented three major profile enhancements:
 
 ## Access
 
-**Profile Page**: https://mediqzy.com/profile
+**Profile Page**: https://app.mediqzy.com/profile
 
 ## API Testing
 
 ```bash
 # Upload profile picture
-curl -X POST https://mediqzy.com/api/users/profile-picture \
+curl -X POST https://app.mediqzy.com/api/users/profile-picture \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -F "profilePicture=@/path/to/image.jpg"
 
 # Update profile with ABHA ID
-curl -X PUT https://mediqzy.com/api/users/profile \
+curl -X PUT https://app.mediqzy.com/api/users/profile \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"abhaHealthId": "12345678901234"}'
 
 # Add family member
-curl -X POST https://mediqzy.com/api/family-members \
+curl -X POST https://app.mediqzy.com/api/family-members \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -82,7 +82,7 @@ curl -X POST https://mediqzy.com/api/family-members \
   }'
 
 # Get family members
-curl -X GET https://mediqzy.com/api/family-members \
+curl -X GET https://app.mediqzy.com/api/family-members \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 

@@ -242,7 +242,7 @@ router.get('/employee-eligibility', authUser, requireTeamOrAdmin, async (req, re
          (uhp."usedAt" IS NULL AND uhp.status = 'active' AND uhp."validTo" > NOW()) AS available
        FROM user_health_packages uhp
        WHERE uhp."userId"   = :employeeId
-         AND uhp."corporateId" = :corporateId
+         AND uhp.corporate_id = :corporateId
          AND uhp.status = 'active'
        ORDER BY uhp."packageId"`,
       {
@@ -340,7 +340,7 @@ router.get('/packages', authUser, requireTeamOrAdmin, async (req, res) => {
          "packageName"  AS name,
          "packageDetails"
        FROM user_health_packages
-       WHERE "corporateId" = :corporateId
+       WHERE corporate_id = :corporateId
          AND status = 'active'
        ORDER BY "packageId", "createdAt" DESC`,
       { replacements: { corporateId: cid }, type: postgresSequelize.QueryTypes.SELECT }

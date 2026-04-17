@@ -350,7 +350,7 @@ const connectToTriageDoctor = async () => {
 
 2. **Browser 1 - Doctor:**
    ```
-   URL: https://mediqzy.com/doctor/login
+   URL: https://app.mediqzy.com/doctor/login
    Login: doctor@mediczy.com
    Navigate to: /doctor/triage
    ```
@@ -358,7 +358,7 @@ const connectToTriageDoctor = async () => {
 
 3. **Browser 2 - Patient:**
    ```
-   URL: https://mediqzy.com/login
+   URL: https://app.mediqzy.com/login
    Login as any patient
    Navigate to: /emergency
    Scroll down to "Connect to Online Doctor"

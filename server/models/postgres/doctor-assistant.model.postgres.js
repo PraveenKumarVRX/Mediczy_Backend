@@ -114,6 +114,10 @@ const DoctorAssistant = postgresSequelize.define('DoctorAssistant', {
     defaultValue: {},
     comment: 'Additional data: {workHours, departments, certifications, notes}'
   },
+
+  // === FIELDS ADDED VIA SQL MIGRATIONS ===
+  tenantId: { type: DataTypes.INTEGER, allowNull: true, field: 'tenant_id' },
+
   createdAt: {
     type: DataTypes.DATE,
     allowNull: false,

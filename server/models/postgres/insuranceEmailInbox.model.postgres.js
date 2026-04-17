@@ -78,6 +78,7 @@ const InsuranceEmailInbox = sequelize.define('InsuranceEmailInbox', {
 }, {
   tableName:  'insurance_email_inbox',
   timestamps: true,
+  underscored: true,
   indexes: [
     { fields: ['hospital_id'] },
     { fields: ['ai_category'] },

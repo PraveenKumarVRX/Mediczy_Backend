@@ -133,6 +133,11 @@ const Lab = postgresSequelize.define('Lab', {
     defaultValue: {},
     comment: 'Additional data: partnerships, certifications, specialties'
   },
+
+  // === FIELDS ADDED VIA SQL MIGRATIONS ===
+  aggregatorId: { type: DataTypes.INTEGER, allowNull: true, field: 'aggregator_id' },
+  aggregatorType: { type: DataTypes.STRING, allowNull: true, field: 'aggregator_type' },
+
   createdAt: {
     type: DataTypes.DATE,
     allowNull: false,

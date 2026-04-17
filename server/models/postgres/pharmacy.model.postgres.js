@@ -158,6 +158,12 @@ const Pharmacy = postgresSequelize.define('Pharmacy', {
     defaultValue: {},
     comment: 'Additional data: partnerships, insurance, payment methods'
   },
+
+  // === FIELDS ADDED VIA SQL MIGRATIONS ===
+  uniqueId: { type: DataTypes.STRING(20), allowNull: true, field: 'unique_id' },
+  aggregatorId: { type: DataTypes.INTEGER, allowNull: true, field: 'aggregator_id' },
+  aggregatorType: { type: DataTypes.STRING, allowNull: true, field: 'aggregator_type' },
+
   createdAt: {
     type: DataTypes.DATE,
     allowNull: false,

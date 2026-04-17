@@ -83,7 +83,7 @@ Authentication: mTLS (if configured) or None
 
 ### Test Admin Login
 ```bash
-curl -X POST https://mediqzy.com/api/admin/login \
+curl -X POST https://app.mediqzy.com/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@mediczy.com","password":"SecurePass123"}'
 ```
@@ -92,8 +92,8 @@ Expected: `HTTP 200` with token in response
 
 ### Test CORS Preflight
 ```bash
-curl -i -X OPTIONS https://mediqzy.com/api/admin/login \
-  -H "Origin: https://mediqzy.com" \
+curl -i -X OPTIONS https://app.mediqzy.com/api/admin/login \
+  -H "Origin: https://app.mediqzy.com" \
   -H "Access-Control-Request-Method: POST"
 ```
 

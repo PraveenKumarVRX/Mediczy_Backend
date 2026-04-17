@@ -2,7 +2,7 @@
 
 **Version:** 1.0  
 **Last Updated:** January 9, 2026  
-**API Base URL:** `https://mediqzy.com/api`
+**API Base URL:** `https://app.mediqzy.com/api`
 
 ## Table of Contents
 
@@ -36,7 +36,7 @@ npm install axios @react-native-async-storage/async-storage
 Create `.env` file in your React Native project root:
 
 ```env
-API_BASE_URL=https://mediqzy.com/api
+API_BASE_URL=https://app.mediqzy.com/api
 API_TIMEOUT=15000
 ```
 
@@ -107,7 +107,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API = axios.create({
-  baseURL: 'https://mediqzy.com/api',
+  baseURL: 'https://app.mediqzy.com/api',
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
@@ -412,7 +412,7 @@ Content-Type: application/json
     "appointmentTime": "10:00",
     "consultationType": "online",
     "status": "confirmed",
-    "meetingLink": "https://mediqzy.com/video/abc123"
+    "meetingLink": "https://app.mediqzy.com/video/abc123"
   }
 }
 ```
@@ -444,7 +444,7 @@ Authorization: Bearer {token}
       "appointmentTime": "10:00",
       "consultationType": "online",
       "status": "confirmed",
-      "meetingLink": "https://mediqzy.com/video/abc123"
+      "meetingLink": "https://app.mediqzy.com/video/abc123"
     }
   ]
 }
@@ -492,7 +492,7 @@ Authorization: Bearer {token}
           "frequency": "Once daily"
         }
       ],
-      "fileUrl": "https://mediqzy.com/records/prescription_789.pdf"
+      "fileUrl": "https://app.mediqzy.com/records/prescription_789.pdf"
     }
   ]
 }
@@ -1079,8 +1079,8 @@ describe('Authentication', () => {
 ## Support & Resources
 
 ### API Documentation
-- Base URL: `https://mediqzy.com/api`
-- Swagger Docs: `https://mediqzy.com/api-docs` (Coming Soon)
+- Base URL: `https://app.mediqzy.com/api`
+- Swagger Docs: `https://app.mediqzy.com/api-docs` (Coming Soon)
 
 ### Contact
 - Email: support@mediczy.com

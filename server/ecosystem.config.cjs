@@ -1,5 +1,27 @@
 module.exports = {
   apps: [
+    // LiveKit SFU Video Server (Ports 7880/7881)
+    {
+      name: 'livekit',
+      script: '/usr/local/bin/livekit-server',
+      args: '--config /home/ubuntu/livekit-config.yaml',
+      cwd: '/home/ubuntu',
+      interpreter: 'none',
+      instances: 1,
+      exec_mode: 'fork',
+      autorestart: true,
+      watch: false,
+      kill_timeout: 8000,       // 8s to fully release ports 7880/7881
+      restart_delay: 5000,      // 5s between restart attempts
+      max_restarts: 5,
+      min_uptime: '10s',
+      error_file: '/home/ubuntu/.pm2/logs/livekit-error.log',
+      out_file: '/home/ubuntu/.pm2/logs/livekit-out.log',
+      merge_logs: true,
+      time: true,
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
+    },
+
     // Production server - no auto-reload
     {
       name: 'mediczy-server',
@@ -43,18 +65,19 @@ module.exports = {
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
     },
     {
-      name: 'bullmq-workers',
-      script: 'worker-process.js',
+      name: 'mediczy-worker',
+      script: 'worker-wrapper.cjs',
       cwd: '/home/ubuntu/Mediczy/server',
+      interpreter: 'node',
       instances: 1,
       exec_mode: 'fork',
       autorestart: true,
-      max_memory_restart: '512M',
+      max_memory_restart: '1G',
       env: {
         NODE_ENV: 'production'
       },
-      error_file: '../logs/bullmq-workers-error.log',
-      out_file: '../logs/bullmq-workers-out.log',
+      error_file: '../logs/mediczy-worker-error.log',
+      out_file: '../logs/mediczy-worker-out.log',
       time: true
     },
     {

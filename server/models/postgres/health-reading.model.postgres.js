@@ -119,6 +119,7 @@ const HealthReading = sequelize.define('HealthReading', {
 }, {
   tableName: 'health_readings',
   timestamps: true,
+  underscored: true,
   indexes: [
     {
       fields: ['wearable_id']

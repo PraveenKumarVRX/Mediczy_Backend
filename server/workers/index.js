@@ -183,7 +183,9 @@ const createWorker = (queueName, processor) => {
     }
   }, { 
     connection,
-    concurrency: 5, // Process 5 jobs concurrently
+    concurrency: 2, // Reduced from 5 to limit memory pressure
+    removeOnComplete: { count: 100 }, // Keep only last 100 completed jobs in Redis
+    removeOnFail:     { count: 50  }, // Keep only last 50 failed jobs
   });
 
   worker.on('completed', (job) => {

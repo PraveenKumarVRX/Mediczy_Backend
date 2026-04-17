@@ -117,7 +117,7 @@ profilePicture   (STRING)              // Profile photo from OAuth
 2. Select **Web application**
 3. Name: "Mediczy Web"
 4. Add **Authorized redirect URIs:**
-   - Production: `https://mediqzy.com/api/auth/google/callback`
+   - Production: `https://app.mediqzy.com/api/auth/google/callback`
    - Development: `http://localhost:8000/api/auth/google/callback`
 5. Click **Create**
 6. Copy the **Client ID** and **Client Secret**
@@ -126,7 +126,7 @@ profilePicture   (STRING)              // Profile photo from OAuth
 ```bash
 GOOGLE_CLIENT_ID=your-client-id-here.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret-here
-GOOGLE_CALLBACK_URL=https://mediqzy.com/api/auth/google/callback
+GOOGLE_CALLBACK_URL=https://app.mediqzy.com/api/auth/google/callback
 ```
 
 ### Step 2: Configure Facebook OAuth2
@@ -151,7 +151,7 @@ GOOGLE_CALLBACK_URL=https://mediqzy.com/api/auth/google/callback
 #### 2.3 Configure OAuth Redirect URIs
 1. Go to **Facebook Login** → **Settings** (left sidebar)
 2. Add **Valid OAuth Redirect URIs:**
-   - Production: `https://mediqzy.com/api/auth/facebook/callback`
+   - Production: `https://app.mediqzy.com/api/auth/facebook/callback`
    - Development: `http://localhost:8000/api/auth/facebook/callback`
 3. Save changes
 
@@ -163,7 +163,7 @@ GOOGLE_CALLBACK_URL=https://mediqzy.com/api/auth/google/callback
 ```bash
 FACEBOOK_APP_ID=your-app-id-here
 FACEBOOK_APP_SECRET=your-app-secret-here
-FACEBOOK_CALLBACK_URL=https://mediqzy.com/api/auth/facebook/callback
+FACEBOOK_CALLBACK_URL=https://app.mediqzy.com/api/auth/facebook/callback
 ```
 
 ### Step 3: Restart Server
@@ -203,7 +203,7 @@ Expected response:
 ## 🧪 Testing OAuth2 Integration
 
 ### Test Google Login
-1. Go to https://mediqzy.com/login
+1. Go to https://app.mediqzy.com/login
 2. Click **Google** button
 3. Select/login with Google account
 4. Verify redirect to `/oauth-callback`
@@ -211,7 +211,7 @@ Expected response:
 6. Verify token stored in localStorage
 
 ### Test Facebook Login
-1. Go to https://mediqzy.com/login
+1. Go to https://app.mediqzy.com/login
 2. Click **Facebook** button
 3. Select/login with Facebook account
 4. Verify redirect to `/oauth-callback`

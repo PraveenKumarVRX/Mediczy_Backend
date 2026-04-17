@@ -1725,7 +1725,7 @@ Response: 201 Created
 
 **Security Team**: security@mediqzy.com  
 **Bug Bounty**: https://hackerone.com/mediqzy  
-**Security Advisories**: https://mediqzy.com/security  
+**Security Advisories**: https://app.mediqzy.com/security  
 
 **Platform Status**: https://status.mediqzy.com  
 **Documentation**: https://docs.mediqzy.com  

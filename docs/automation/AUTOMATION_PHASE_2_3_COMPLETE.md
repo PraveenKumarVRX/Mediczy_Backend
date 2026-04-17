@@ -278,7 +278,7 @@ pm2 logs mediczy-server | grep "✅"
 ## 🔧 Management & Monitoring
 
 ### Automation Dashboard
-Access: `https://mediqzy.com/admin/workflow-automation`
+Access: `https://app.mediqzy.com/admin/workflow-automation`
 
 Features:
 - Real-time automation status
@@ -290,17 +290,17 @@ Features:
 
 ```bash
 # Trigger appointment reminders immediately
-curl -X POST https://mediqzy.com/api/admin/trigger-automation \
+curl -X POST https://app.mediqzy.com/api/admin/trigger-automation \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -d '{"automation": "appointment_reminder"}'
 
 # Trigger payment reminders
-curl -X POST https://mediqzy.com/api/admin/trigger-automation \
+curl -X POST https://app.mediqzy.com/api/admin/trigger-automation \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -d '{"automation": "payment_reminder"}'
 
 # Trigger doctor performance report
-curl -X POST https://mediqzy.com/api/admin/trigger-automation \
+curl -X POST https://app.mediqzy.com/api/admin/trigger-automation \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -d '{"automation": "doctor_performance"}'
 ```
@@ -430,7 +430,7 @@ curl http://localhost:8000/api/db/health
 curl http://localhost:8000/health
 
 # Check automation endpoints
-curl https://mediqzy.com/admin/workflow-automation
+curl https://app.mediqzy.com/admin/workflow-automation
 ```
 
 ---

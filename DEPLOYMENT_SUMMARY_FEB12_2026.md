@@ -239,4 +239,4 @@ pm2 restart mediczy-server
 - Production server logs: `ssh ... 'pm2 logs'`
 - Git history: `git log --oneline -20`
 - Email system status: See SMTP service logs
-- API health: `curl https://mediqzy.com/api/v1/health -H 'Authorization: Bearer TOKEN'`
+- API health: `curl https://app.mediqzy.com/api/v1/health -H 'Authorization: Bearer TOKEN'`

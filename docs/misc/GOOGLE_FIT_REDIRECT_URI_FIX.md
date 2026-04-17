@@ -20,13 +20,13 @@ You should NOT add the `storagerelay://` URI. Instead, use only standard HTTP/HT
 ### Authorized Redirect URIs (Add these ONLY):
 ```
 http://localhost:9443
-https://mediqzy.com
+https://app.mediqzy.com
 ```
 
 ### Authorized JavaScript Origins (Add these):
 ```
 http://localhost:9443
-https://mediqzy.com
+https://app.mediqzy.com
 ```
 
 ### ❌ DO NOT ADD:
@@ -53,13 +53,13 @@ storagerelay://https/mediqzy.com  ❌ Don't add this!
    - Ensure these are present:
      ```
      http://localhost:9443
-     https://mediqzy.com
+     https://app.mediqzy.com
      ```
 4. Under **"Authorized JavaScript origins"** section:
    - Ensure these are present:
      ```
      http://localhost:9443
-     https://mediqzy.com
+     https://app.mediqzy.com
      ```
 5. Click **"SAVE"**
 
@@ -79,7 +79,7 @@ storagerelay://https/mediqzy.com  ❌ Don't add this!
 ### STEP 4: Test
 1. Wait 2-3 minutes for changes to propagate
 2. Clear browser cache (Ctrl+Shift+Delete)
-3. Go to: https://mediqzy.com
+3. Go to: https://app.mediqzy.com
 4. Try Google Fit connection
 5. Should work now! ✅
 
@@ -107,13 +107,13 @@ Since Google doesn't accept `storagerelay://` scheme, the implicit flow with sta
 **Authorized JavaScript origins:**
 ```
 http://localhost:9443
-https://mediqzy.com
+https://app.mediqzy.com
 ```
 
 **Authorized redirect URIs:**
 ```
 http://localhost:9443
-https://mediqzy.com
+https://app.mediqzy.com
 ```
 
 **❌ DO NOT ADD:**
@@ -125,8 +125,8 @@ https://mediqzy.com
 ## 🎯 QUICK ACTION CHECKLIST
 
 - [ ] Add shivakumar.jay@gmail.com as test user
-- [ ] Verify 2 JavaScript origins (http://localhost:9443 and https://mediqzy.com)
-- [ ] Verify 2 redirect URIs (http://localhost:9443 and https://mediqzy.com)
+- [ ] Verify 2 JavaScript origins (http://localhost:9443 and https://app.mediqzy.com)
+- [ ] Verify 2 redirect URIs (http://localhost:9443 and https://app.mediqzy.com)
 - [ ] Remove any storagerelay:// URIs if present
 - [ ] Verify all 5 fitness scopes are added
 - [ ] Save all changes

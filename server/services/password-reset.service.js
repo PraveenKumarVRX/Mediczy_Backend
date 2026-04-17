@@ -265,7 +265,7 @@ class PasswordResetService {
         }
 
         transporter = nodemailer.createTransport(smtpConfig);
-        fromEmail = process.env.SMTP_FROM || 'noreply@mediczy.com';
+        fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@mediqzy.com';
         fromName = 'Mediczy';
       }
 

@@ -253,7 +253,7 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
 ### Test Case 1: Regular User Video Join
 ```bash
 # 1. Login as regular user (patient)
-curl -X POST https://mediqzy.com/api/auth/login \
+curl -X POST https://app.mediqzy.com/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email": "user@mediczy.com", "password": "password123"}'
 
@@ -261,7 +261,7 @@ curl -X POST https://mediqzy.com/api/auth/login \
 TOKEN="<user_token>"
 
 # 3. Try to join video consultation
-curl -X GET https://mediqzy.com/api/consultation/video/join/123 \
+curl -X GET https://app.mediqzy.com/api/consultation/video/join/123 \
   -H "Authorization: Bearer $TOKEN"
 
 # Expected BEFORE fix: 403 Forbidden
@@ -271,12 +271,12 @@ curl -X GET https://mediqzy.com/api/consultation/video/join/123 \
 ### Test Case 2: Doctor Video Join (Should Already Work)
 ```bash
 # 1. Login as doctor
-curl -X POST https://mediqzy.com/api/auth/login \
+curl -X POST https://app.mediqzy.com/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email": "doctor@mediczy.com", "password": "password123"}'
 
 # 2. Join video consultation
-curl -X GET https://mediqzy.com/api/consultation/video/join/123 \
+curl -X GET https://app.mediqzy.com/api/consultation/video/join/123 \
   -H "Authorization: Bearer $TOKEN"
 
 # Expected: 200 OK (already working)

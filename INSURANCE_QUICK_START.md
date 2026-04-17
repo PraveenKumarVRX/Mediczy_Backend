@@ -137,7 +137,7 @@ function InsuranceDashboard() {
 
   useEffect(() => {
     // Connect to WebSocket server
-    const newSocket = io("https://mediqzy.com", {
+    const newSocket = io("https://app.mediqzy.com", {
       transports: ["websocket", "polling"],
     });
 
@@ -324,7 +324,7 @@ REDIS_PASSWORD=
 REDIS_DB=0
 
 # Socket.IO
-CLIENT_URL=https://mediqzy.com
+CLIENT_URL=https://app.mediqzy.com
 
 # Insurance Provider APIs (Optional)
 STAR_HEALTH_API_KEY=your-api-key
@@ -449,7 +449,7 @@ submitClaimWithNotifications(123).then((result) => {
 
 ```javascript
 // Check if server is running
-const socket = io("https://mediqzy.com", {
+const socket = io("https://app.mediqzy.com", {
   transports: ["websocket", "polling"],
   reconnection: true,
   reconnectionDelay: 1000,

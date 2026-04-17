@@ -22,18 +22,18 @@ The browser console showed repeated errors:
 **Location**: [client/src/pages/SIBControlDashboard.tsx](client/src/pages/SIBControlDashboard.tsx#L31)
 
 **Issue**:
-- Production env has `VITE_API_URL=https://mediqzy.com/api` (includes `/api`)
+- Production env has `VITE_API_URL=https://app.mediqzy.com/api` (includes `/api`)
 - Code was calling `${API_URL}/api/sib/health`
-- **Result**: `https://mediqzy.com/api/api/sib/health` ❌ (doubled `/api`)
+- **Result**: `https://app.mediqzy.com/api/api/sib/health` ❌ (doubled `/api`)
 - This non-existent endpoint returned 401 errors
 
 ```tsx
 // ❌ BEFORE - Path duplication
-const API_URL = import.meta.env.VITE_API_URL; // https://mediqzy.com/api
+const API_URL = import.meta.env.VITE_API_URL; // https://app.mediqzy.com/api
 await axios.get(`${API_URL}/api/sib/health`); // /api/api/sib/health ❌
 ```
 
-**Root Cause**: `.env.production` has `VITE_API_URL=https://mediqzy.com/api` but code assumes base URL without `/api`
+**Root Cause**: `.env.production` has `VITE_API_URL=https://app.mediqzy.com/api` but code assumes base URL without `/api`
 
 ### **2. Improper Error Handling on Protected Endpoints**
 **Location**: [client/src/pages/SIBControlDashboard.tsx](client/src/pages/SIBControlDashboard.tsx)
@@ -90,12 +90,12 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const API_URL = API_BASE.replace(/\/api$/, ''); // Remove trailing /api
 
 // Now this works correctly:
-await axios.get(`${API_URL}/api/sib/health`); // https://mediqzy.com/api/sib/health ✅
+await axios.get(`${API_URL}/api/sib/health`); // https://app.mediqzy.com/api/sib/health ✅
 ```
 
 **Impact**:
 - Development: `http://localhost:8000/api/sib/health` ✅
-- Production: `https://mediqzy.com/api/sib/health` ✅
+- Production: `https://app.mediqzy.com/api/sib/health` ✅
 - No more doubled `/api/api/` paths
 
 ### **Fix 2: Enhanced fetchData() Function**

@@ -14,7 +14,7 @@ The Chat Dashboard endpoint at `/admin/chat` is **properly configured and functi
 ## Endpoint Details
 
 ### 1. Frontend Route
-- **URL**: `https://mediqzy.com/admin/chat`
+- **URL**: `https://app.mediqzy.com/admin/chat`
 - **Component**: `AdminChatDashboard.tsx`
 - **Location**: `/client/src/pages/admin/AdminChatDashboard.tsx`
 - **Access**: Listed in Team Tools page under "Support" category

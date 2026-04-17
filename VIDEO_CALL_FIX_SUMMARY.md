@@ -135,7 +135,7 @@ User must test:
 ## Testing Instructions
 
 ### For Users
-1. **Login:** https://mediqzy.com/login
+1. **Login:** https://app.mediqzy.com/login
 2. **Navigate:** Go to "Appointments" or "Video Consultations"
 3. **Join Call:** Click "Join Video Call" on any confirmed appointment
 4. **Verify:** Video room should open (no 403 errors)

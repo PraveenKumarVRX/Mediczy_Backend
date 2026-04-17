@@ -49,7 +49,7 @@ All users created with secure passwords and linked to Clinic ID 3:
 
 ### Clinic Admin Login
 ```
-URL: https://mediqzy.com/clinic/login
+URL: https://app.mediqzy.com/clinic/login
 Email: clinic@mediczy.com
 Password: Clinic123
 ```
@@ -210,7 +210,7 @@ All test users have this metadata in JSONB column:
 - [x] Mock data removed from auth routes
 
 ### 🔄 Ready for Testing
-- [ ] Test clinic login at https://mediqzy.com/clinic/login
+- [ ] Test clinic login at https://app.mediqzy.com/clinic/login
 - [ ] Verify clinic dashboard loads with correct data
 - [ ] Test doctor login at /doctor/login
 - [ ] Test patient login at /login
@@ -230,7 +230,7 @@ All test users have this metadata in JSONB column:
    ```
 
 2. **Test Clinic Login**:
-   - Navigate to https://mediqzy.com/clinic/login
+   - Navigate to https://app.mediqzy.com/clinic/login
    - Enter: clinic@mediczy.com / Clinic123
    - Should redirect to clinic dashboard
    - Check JWT token in localStorage.clinicToken

@@ -26,18 +26,11 @@ const TenantPartner = sequelize.define('TenantPartner', {
     type: DataTypes.JSONB,
     defaultValue: {},
     comment: 'Partner relationship metadata'
-  },
-  createdAt: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW
-  },
-  updatedAt: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW
   }
 }, {
   tableName: 'tenant_partners',
   timestamps: true,
+  underscored: true,
   indexes: [
     {
       unique: true,

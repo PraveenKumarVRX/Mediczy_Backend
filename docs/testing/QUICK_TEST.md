@@ -10,7 +10,7 @@
 
 ## Step 1: Open Doctor Dashboard (Browser 1)
 ```
-URL: https://mediqzy.com/doctor/login
+URL: https://app.mediqzy.com/doctor/login
 Login: doctor@mediczy.com / <password>
 Go to: /doctor/triage
 ```
@@ -20,7 +20,7 @@ Go to: /doctor/triage
 
 ## Step 2: Open Patient Page (Browser 2)
 ```
-URL: https://mediqzy.com/login
+URL: https://app.mediqzy.com/login
 Login: <any patient account>
 Go to: /emergency
 Scroll: Find "Connect to Online Emergency Doctor" card

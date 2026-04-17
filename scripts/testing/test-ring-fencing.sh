@@ -4,7 +4,7 @@
 # Tests that users cannot access routes outside their privileges
 
 API_URL="${API_URL:-http://localhost:8000}"
-FRONTEND_URL="${FRONTEND_URL:-https://mediqzy.com}"
+FRONTEND_URL="${FRONTEND_URL:-https://app.mediqzy.com}"
 
 echo "🔒 RING-FENCING SECURITY TEST"
 echo "=============================="

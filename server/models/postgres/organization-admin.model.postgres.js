@@ -134,6 +134,7 @@ const OrganizationAdmin = sequelize.define('OrganizationAdmin', {
 }, {
   tableName: 'organization_admins',
   timestamps: true,
+  underscored: true,
   indexes: [
     {
       fields: ['user_id']

@@ -162,7 +162,7 @@ Status: ✅ VERIFIED
 ## 🌐 Production URLs
 
 **Frontend:** https://app.mediqzy.com  
-**Backend API:** https://mediqzy.com/api  
+**Backend API:** https://app.mediqzy.com/api  
 **Video Server:** wss://video.mediqzy.com
 
 ---

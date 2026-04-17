@@ -263,7 +263,7 @@ CREATE TABLE user_activity_logs (
 
 ### Base URL
 ```
-Production: https://mediqzy.com/api/wallet
+Production: https://app.mediqzy.com/api/wallet
 Development: http://localhost:8000/api/wallet
 ```
 
@@ -1639,7 +1639,7 @@ The Health Coins Wallet System is **fully implemented and deployed**. Users can:
 4. Monitor usage metrics
 5. Iterate based on user feedback
 
-**Production URL**: https://mediqzy.com/wallet
+**Production URL**: https://app.mediqzy.com/wallet
 
 ---
 

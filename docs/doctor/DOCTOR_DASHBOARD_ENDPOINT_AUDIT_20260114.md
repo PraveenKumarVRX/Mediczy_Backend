@@ -362,22 +362,22 @@ router.get('/endpoint', authDoctor, async (req, res) => {
 ```bash
 # Test my-patients endpoint
 curl -H "Authorization: Bearer $DOCTOR_TOKEN" \
-  https://mediqzy.com/api/doctors/my-patients
+  https://app.mediqzy.com/api/doctors/my-patients
 
 # Test services endpoint
 curl -H "Authorization: Bearer $DOCTOR_TOKEN" \
-  https://mediqzy.com/api/doctors/services
+  https://app.mediqzy.com/api/doctors/services
 
 # Test health monitoring (both paths)
 curl -H "Authorization: Bearer $DOCTOR_TOKEN" \
-  https://mediqzy.com/api/doctors/health-monitoring/patients
+  https://app.mediqzy.com/api/doctors/health-monitoring/patients
 
 curl -H "Authorization: Bearer $DOCTOR_TOKEN" \
-  https://mediqzy.com/api/doctor/health-monitoring/patients
+  https://app.mediqzy.com/api/doctor/health-monitoring/patients
 
 # Test messages endpoint
 curl -H "Authorization: Bearer $DOCTOR_TOKEN" \
-  https://mediqzy.com/api/doctors/messages
+  https://app.mediqzy.com/api/doctors/messages
 ```
 
 ---

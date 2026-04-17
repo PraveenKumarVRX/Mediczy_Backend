@@ -94,7 +94,7 @@ FastAPI Scribe Service (localhost:8005)
 
 All routes require doctor authentication via JWT token.
 
-**Base URL:** `https://mediqzy.com/api/hospital/scribe`
+**Base URL:** `https://app.mediqzy.com/api/hospital/scribe`
 
 #### 1. **POST** `/api/hospital/scribe/transcribe`
 
@@ -103,7 +103,7 @@ Upload audio file for medical transcription (Whisper STT)
 **Request:**
 
 ```bash
-curl -X POST https://mediqzy.com/api/hospital/scribe/transcribe \
+curl -X POST https://app.mediqzy.com/api/hospital/scribe/transcribe \
   -H "Authorization: Bearer <doctor-jwt-token>" \
   -F "audio=@consultation.wav" \
   -F "field_name=diagnosis"
@@ -130,7 +130,7 @@ Expand medical abbreviations in clinical text
 **Request:**
 
 ```bash
-curl -X POST https://mediqzy.com/api/hospital/scribe/expand-abbreviations \
+curl -X POST https://app.mediqzy.com/api/hospital/scribe/expand-abbreviations \
   -H "Authorization: Bearer <doctor-jwt-token>" \
   -H "Content-Type: application/json" \
   -d '{"text": "Patient with HTN, DM, COPD. BP 140/90, HR 88"}'
@@ -180,7 +180,7 @@ Comprehensive medical text analysis
 **Request:**
 
 ```bash
-curl -X POST https://mediqzy.com/api/hospital/scribe/analyze-text \
+curl -X POST https://app.mediqzy.com/api/hospital/scribe/analyze-text \
   -H "Authorization: Bearer <doctor-jwt-token>" \
   -H "Content-Type: application/json" \
   -d '{"text": "45 year old male with chest pain, HTN, DM"}'
@@ -213,7 +213,7 @@ Get list of all available medical specialties
 **Request:**
 
 ```bash
-curl https://mediqzy.com/api/hospital/scribe/specialties \
+curl https://app.mediqzy.com/api/hospital/scribe/specialties \
   -H "Authorization: Bearer <doctor-jwt-token>"
 ```
 
@@ -250,7 +250,7 @@ Get discharge summary template for specific specialty
 **Request:**
 
 ```bash
-curl https://mediqzy.com/api/hospital/scribe/template/cardiology \
+curl https://app.mediqzy.com/api/hospital/scribe/template/cardiology \
   -H "Authorization: Bearer <doctor-jwt-token>"
 ```
 
@@ -287,7 +287,7 @@ Generate complete discharge summary with specialty-specific template
 **Request:**
 
 ```bash
-curl -X POST https://mediqzy.com/api/hospital/scribe/generate-summary \
+curl -X POST https://app.mediqzy.com/api/hospital/scribe/generate-summary \
   -H "Authorization: Bearer <doctor-jwt-token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -312,7 +312,7 @@ Check scribe service health and configuration
 **Request:**
 
 ```bash
-curl https://mediqzy.com/api/hospital/scribe/health \
+curl https://app.mediqzy.com/api/hospital/scribe/health \
   -H "Authorization: Bearer <doctor-jwt-token>"
 ```
 
@@ -342,7 +342,7 @@ Get service statistics and capabilities
 **Request:**
 
 ```bash
-curl https://mediqzy.com/api/hospital/scribe/stats \
+curl https://app.mediqzy.com/api/hospital/scribe/stats \
   -H "Authorization: Bearer <doctor-jwt-token>"
 ```
 

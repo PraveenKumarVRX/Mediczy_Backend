@@ -49,12 +49,12 @@ const payload = {
 # Google OAuth
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
-GOOGLE_CALLBACK_URL=https://mediqzy.com/api/auth/google/callback
+GOOGLE_CALLBACK_URL=https://app.mediqzy.com/api/auth/google/callback
 
 # Facebook OAuth  
 FACEBOOK_APP_ID=your_facebook_app_id
 FACEBOOK_APP_SECRET=your_facebook_app_secret
-FACEBOOK_CALLBACK_URL=https://mediqzy.com/api/auth/facebook/callback
+FACEBOOK_CALLBACK_URL=https://app.mediqzy.com/api/auth/facebook/callback
 ```
 
 ### Google Cloud Console Setup
@@ -67,7 +67,7 @@ FACEBOOK_CALLBACK_URL=https://mediqzy.com/api/auth/facebook/callback
 2. **Authorized Redirect URIs**
    Add these exact URLs:
    ```
-   Production:  https://mediqzy.com/api/auth/google/callback
+   Production:  https://app.mediqzy.com/api/auth/google/callback
    Development: http://localhost:8000/api/auth/google/callback
    ```
 
@@ -170,12 +170,12 @@ GET /api/auth/oauth/status
 {
   "google": {
     "configured": true,
-    "url": "https://mediqzy.com/api/auth/google",
+    "url": "https://app.mediqzy.com/api/auth/google",
     "enabled": true
   },
   "facebook": {
     "configured": true,
-    "url": "https://mediqzy.com/api/auth/facebook",
+    "url": "https://app.mediqzy.com/api/auth/facebook",
     "enabled": true
   }
 }
@@ -227,7 +227,7 @@ Expected:
 {
   "google": {
     "configured": true,
-    "url": "https://mediqzy.com/api/auth/google",
+    "url": "https://app.mediqzy.com/api/auth/google",
     "enabled": true
   }
 }

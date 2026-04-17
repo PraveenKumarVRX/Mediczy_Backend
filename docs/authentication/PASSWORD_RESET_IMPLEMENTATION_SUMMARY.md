@@ -114,7 +114,7 @@ SMTP_USER=noreply@mediczy.com
 SMTP_PASSWORD=your_password
 
 # Frontend URL
-FRONTEND_URL=https://mediqzy.com
+FRONTEND_URL=https://app.mediqzy.com
 ```
 
 ### Frontend Integration Example

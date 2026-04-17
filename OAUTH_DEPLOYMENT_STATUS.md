@@ -160,9 +160,9 @@ End-to-End Flow Test:      3/5 Checks (60%)
 4. **Verification (30 min)**
    ```bash
    # Test OAuth endpoints
-   curl https://mediqzy.com/oauth/authorize
-   curl https://mediqzy.com/oauth/token
-   curl https://mediqzy.com/oauth/userinfo
+   curl https://app.mediqzy.com/oauth/authorize
+   curl https://app.mediqzy.com/oauth/token
+   curl https://app.mediqzy.com/oauth/userinfo
    ```
 
 5. **Rocket.Chat Configuration (30 min)**
@@ -201,7 +201,7 @@ psql -U mediczy_prod mediqzy_prod < /backups/pre-oauth-backup.sql
 pm2 restart mediczy-server
 
 # Verification
-curl https://mediqzy.com/health
+curl https://app.mediqzy.com/health
 ```
 
 ---
@@ -311,8 +311,8 @@ pm2 restart mediczy-server --update-env
 pm2 logs mediczy-server
 
 # 4. Verify
-curl https://mediqzy.com/oauth/.well-known/oauth-authorization-server
-curl -v https://mediqzy.com/oauth/authorize?client_id=rocketchat-client-id
+curl https://app.mediqzy.com/oauth/.well-known/oauth-authorization-server
+curl -v https://app.mediqzy.com/oauth/authorize?client_id=rocketchat-client-id
 
 # 5. Monitor
 tail -f /home/ubuntu/Mediczy/logs/server-out.log | grep -i oauth

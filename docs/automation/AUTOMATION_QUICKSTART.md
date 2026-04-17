@@ -29,7 +29,7 @@ pm2 logs mediczy-server --lines 50 --nostream | grep "All cron jobs"
 # Should show: "✅ All cron jobs and automation services initialized successfully"
 
 # 3. Check dashboard
-curl -s -o /dev/null -w "%{http_code}" https://mediqzy.com/admin/workflow-automation
+curl -s -o /dev/null -w "%{http_code}" https://app.mediqzy.com/admin/workflow-automation
 # Should return: 200
 ```
 
@@ -39,7 +39,7 @@ curl -s -o /dev/null -w "%{http_code}" https://mediqzy.com/admin/workflow-automa
 
 ## 📊 Access Automation Dashboard
 
-**URL:** https://mediqzy.com/admin/workflow-automation
+**URL:** https://app.mediqzy.com/admin/workflow-automation
 
 **What you'll see:**
 - Real-time automation status grid
@@ -78,7 +78,7 @@ sleep 5 && pm2 logs mediczy-server --lines 30 --nostream | grep "✅"
 ### Manual Trigger (Testing)
 ```bash
 # Trigger appointment reminders immediately
-curl -X POST https://mediqzy.com/api/admin/trigger-automation \
+curl -X POST https://app.mediqzy.com/api/admin/trigger-automation \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
   -d '{"automation": "appointment_reminder"}'
 ```
@@ -198,7 +198,7 @@ pm2 restart mediczy-frontend
 | Payment collection time | -25-30% |
 | Patient satisfaction | +2-3 points |
 
-**Where to check:** https://mediqzy.com/admin/workflow-automation
+**Where to check:** https://app.mediqzy.com/admin/workflow-automation
 
 ---
 
@@ -298,7 +298,7 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/mediczy
 Before going live, verify:
 - [ ] Server status: `pm2 status mediczy-server` → online
 - [ ] Cron jobs initialized: Check logs for "All cron jobs"
-- [ ] Dashboard accessible: https://mediqzy.com/admin/workflow-automation → 200 OK
+- [ ] Dashboard accessible: https://app.mediqzy.com/admin/workflow-automation → 200 OK
 - [ ] Database healthy: `curl localhost:8000/api/db/health` → healthy
 - [ ] API keys set: Check `.env` file
 - [ ] Notifications sending: Check dashboard metrics

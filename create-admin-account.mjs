@@ -78,7 +78,7 @@ async function createAdminAccount() {
     console.log(`   Email:    ${email}`);
     console.log(`   Password: ${password}`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('\n🌐 Login at: https://mediqzy.com/admin/login\n');
+    console.log('\n🌐 Login at: https://app.mediqzy.com/admin/login\n');
     
   } catch (error) {
     console.error('❌ Error:', error.message);

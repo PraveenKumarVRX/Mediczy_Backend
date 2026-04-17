@@ -207,6 +207,11 @@ const HomecareProvider = postgresSequelize.define('HomecareProvider', {
     defaultValue: {},
     comment: 'Additional data: languages, specializations, awards'
   },
+
+  // === FIELDS ADDED VIA SQL MIGRATIONS ===
+  aggregatorId: { type: DataTypes.INTEGER, allowNull: true, field: 'aggregator_id' },
+  aggregatorType: { type: DataTypes.STRING, allowNull: true, field: 'aggregator_type' },
+
   createdAt: {
     type: DataTypes.DATE,
     allowNull: false,

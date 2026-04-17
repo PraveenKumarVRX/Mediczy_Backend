@@ -18,7 +18,7 @@
 **Verification Steps:**
 ```bash
 # Test without token (should fail)
-curl -X POST https://mediqzy.com/socket.io/
+curl -X POST https://app.mediqzy.com/socket.io/
 # Expected: "Authentication token required"
 
 # Test with valid JWT (should succeed)
@@ -50,14 +50,14 @@ const socket = io(BACKEND_URL, {
 **Verification Steps:**
 ```bash
 # Test without auth (should fail with 401)
-curl https://mediqzy.com/api/dashboard/stats
+curl https://app.mediqzy.com/api/dashboard/stats
 
 # Test with patient token (should fail with 403)
-curl https://mediqzy.com/api/dashboard/stats \
+curl https://app.mediqzy.com/api/dashboard/stats \
   -H "Authorization: Bearer PATIENT_JWT"
 
 # Test with admin token (should succeed)
-curl https://mediqzy.com/api/dashboard/stats \
+curl https://app.mediqzy.com/api/dashboard/stats \
   -H "Authorization: Bearer ADMIN_JWT"
 # Response should NOT contain user names or emails
 ```
@@ -76,7 +76,7 @@ curl https://mediqzy.com/api/dashboard/stats \
 pm2 logs mediczy-server | grep -i "sql\|injection\|invalid database"
 
 # Verify multi-tenant routing still works
-curl https://mediqzy.com/api/health
+curl https://app.mediqzy.com/api/health
 ```
 
 ---

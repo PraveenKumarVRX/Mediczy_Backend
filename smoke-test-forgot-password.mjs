@@ -3,7 +3,7 @@
  * Run: node smoke-test-forgot-password.mjs
  */
 
-const BASE = 'https://mediqzy.com/api/password-reset';
+const BASE = 'https://app.mediqzy.com/api/password-reset';
 const PASS = '\x1b[32m✅ PASS\x1b[0m';
 const FAIL = '\x1b[31m❌ FAIL\x1b[0m';
 

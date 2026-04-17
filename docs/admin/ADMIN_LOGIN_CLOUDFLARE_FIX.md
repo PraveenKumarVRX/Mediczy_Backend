@@ -2,7 +2,7 @@
 
 ## 🔍 Problem Analysis
 
-**Error**: `POST https://mediqzy.com/api/admin/login 403 (Forbidden)`
+**Error**: `POST https://app.mediqzy.com/api/admin/login 403 (Forbidden)`
 
 **Root Cause**: Cloudflare is blocking the request, not the backend server
 
@@ -44,7 +44,7 @@ Priority: 1
 
 ```bash
 # Direct test
-curl -X POST https://mediqzy.com/api/admin/login \
+curl -X POST https://app.mediqzy.com/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@mediczy.com","password":"SecurePass123"}'
 
@@ -171,7 +171,7 @@ Reason: No whitelist rule for /api/admin/login
 ### Immediate (Do This Now)
 1. ✅ Create "Allow Admin Login" firewall rule
 2. ✅ Clear Cloudflare cache
-3. ✅ Test endpoint: `curl https://mediqzy.com/api/admin/login`
+3. ✅ Test endpoint: `curl https://app.mediqzy.com/api/admin/login`
 4. ✅ Verify it returns HTTP 200
 
 ### Short Term (This Week)
@@ -226,7 +226,7 @@ You should contact Cloudflare support if:
 1. **Test in Incognito Mode**: Clears cached responses
 2. **Use curl with -v flag**: Shows all headers
    ```bash
-   curl -v https://mediqzy.com/api/admin/login
+   curl -v https://app.mediqzy.com/api/admin/login
    ```
 
 3. **Check cf-cache-status**: Look for `HIT`, `MISS`, or `BYPASS`
@@ -247,16 +247,16 @@ You should contact Cloudflare support if:
 
 ```bash
 # 1. Test API endpoint directly
-curl -X POST https://mediqzy.com/api/admin/login \
+curl -X POST https://app.mediqzy.com/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@mediczy.com","password":"SecurePass123"}'
 
 # 2. Check Cloudflare headers
-curl -I https://mediqzy.com/api/admin/login
+curl -I https://app.mediqzy.com/api/admin/login
 
 # 3. Test with specific User-Agent
 curl -A "PostmanRuntime/7.32.0" \
-  -X POST https://mediqzy.com/api/admin/login \
+  -X POST https://app.mediqzy.com/api/admin/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@mediczy.com","password":"SecurePass123"}'
 

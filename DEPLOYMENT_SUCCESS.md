@@ -58,8 +58,8 @@ Memory: ~130MB total
 
 ### Production URLs ✅ LIVE
 
-- **Dashboard:** https://mediqzy.com/hospital/insurance-claims
-- **API Base:** https://mediqzy.com/api/hospital/insurance
+- **Dashboard:** https://app.mediqzy.com/hospital/insurance-claims
+- **API Base:** https://app.mediqzy.com/api/hospital/insurance
 - **Backend:** Port 8000 (PM2 managed, Nginx reverse proxy)
 - **Domain:** mediqzy.com (Cloudflare CDN enabled)
 
@@ -297,7 +297,7 @@ psql -U postgres -d mediczy_ai -f server/migrations/add-hospital-insurance-featu
 
 ```bash
 # Test with valid JWT token
-curl https://mediqzy.com/api/hospital/insurance/statistics?hospitalId=1 \
+curl https://app.mediqzy.com/api/hospital/insurance/statistics?hospitalId=1 \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
@@ -305,7 +305,7 @@ curl https://mediqzy.com/api/hospital/insurance/statistics?hospitalId=1 \
 
 ### 3. Access Dashboard ✅ LIVE
 
-- Navigate to: https://mediqzy.com/hospital/insurance-claims
+- Navigate to: https://app.mediqzy.com/hospital/insurance-claims
 - Login with hospital admin credentials
 - Verify all features are working
 

@@ -211,7 +211,7 @@ async payForAppointment(userId, appointmentId, consultationFeeINR, doctorName) {
 
 ```javascript
 // Book appointment with Health Coins payment
-const response = await fetch('https://mediqzy.com/api/consultation/book', {
+const response = await fetch('https://app.mediqzy.com/api/consultation/book', {
   method: 'POST',
   headers: {
     'Authorization': 'Bearer YOUR_TOKEN',

@@ -2,7 +2,7 @@
 
 ## 🚀 Deployment Summary
 
-Successfully deployed Mediczy notification automation system to production at **https://mediqzy.com**
+Successfully deployed Mediczy notification automation system to production at **https://app.mediqzy.com**
 
 ## Components Deployed
 
@@ -120,7 +120,7 @@ All services running via PM2:
 |---------|-----|--------|
 | Prometheus | http://localhost:9090 | ✅ Running |
 | Grafana | http://localhost:3000 | ✅ Running |
-| Metrics Endpoint | https://mediqzy.com/metrics | ✅ Internal only |
+| Metrics Endpoint | https://app.mediqzy.com/metrics | ✅ Internal only |
 
 ## Health Check Results
 
@@ -139,9 +139,9 @@ All services running via PM2:
 ```
 
 ### Production URL
-✅ **https://mediqzy.com** - Live and serving traffic  
-✅ **https://mediqzy.com/api/db/health** - Database health check passing  
-✅ **https://mediqzy.com/webhook/** - n8n webhooks accessible
+✅ **https://app.mediqzy.com** - Live and serving traffic  
+✅ **https://app.mediqzy.com/api/db/health** - Database health check passing  
+✅ **https://app.mediqzy.com/webhook/** - n8n webhooks accessible
 
 ## API Endpoints
 
@@ -196,13 +196,13 @@ PROMETHEUS_ENABLED=true
 
 1. **Frontend**: ✅
    ```bash
-   curl -I https://mediqzy.com
+   curl -I https://app.mediqzy.com
    # HTTP/1.1 200 OK
    ```
 
 2. **Backend API**: ✅
    ```bash
-   curl https://mediqzy.com/api/db/health
+   curl https://app.mediqzy.com/api/db/health
    # {"status":"healthy","databases":{"postgres":true,...}}
    ```
 
@@ -310,5 +310,5 @@ If issues arise, rollback steps:
 ---
 **Deployed By**: GitHub Copilot  
 **Deployment Date**: December 18, 2025  
-**Production URL**: https://mediqzy.com  
+**Production URL**: https://app.mediqzy.com  
 **Status**: ✅ Live

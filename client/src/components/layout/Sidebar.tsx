@@ -287,9 +287,8 @@ export function Sidebar() {
         </button>
 
         {/* Logo */}
-        <div className="flex items-center gap-3 border-b border-slate-700/50 px-6 py-5">
-          <MediqzyLogo3D size="lg" interactive theme="light" />
-          <span className="text-xl font-bold text-white tracking-tight">{BRAND.name}</span>
+        <div className="flex items-center border-b border-slate-700/50 px-5 py-4">
+          <MediqzyLogo3D size="md" interactive theme="light" />
         </div>
 
         {/* Sidebar Links */}

@@ -50,7 +50,7 @@ Before publishing, gather these:
 
 #### A. Privacy Policy URL
 - **Required**: Public URL with your privacy policy
-- **Example**: https://mediqzy.com/privacy
+- **Example**: https://app.mediqzy.com/privacy
 - Must explain:
   - What data you collect from Google Fit
   - How you use fitness data
@@ -59,7 +59,7 @@ Before publishing, gather these:
 
 #### B. Terms of Service URL
 - **Required**: Public URL with terms of service
-- **Example**: https://mediqzy.com/terms
+- **Example**: https://app.mediqzy.com/terms
 - Must include:
   - User agreement
   - Service description
@@ -67,7 +67,7 @@ Before publishing, gather these:
 
 #### C. App Homepage URL
 - **Required**: Your main website
-- **Example**: https://mediqzy.com
+- **Example**: https://app.mediqzy.com
 
 #### D. Support Email
 - **Required**: Email for user support
@@ -89,9 +89,9 @@ Before publishing, gather these:
    App logo: [Upload 512x512 image]
    User support email: support@mediqzy.com
    App domain: mediqzy.com
-   Application home page: https://mediqzy.com
-   Application privacy policy link: https://mediqzy.com/privacy
-   Application terms of service link: https://mediqzy.com/terms
+   Application home page: https://app.mediqzy.com
+   Application privacy policy link: https://app.mediqzy.com/privacy
+   Application terms of service link: https://app.mediqzy.com/terms
    ```
 
 4. Click **"SAVE AND CONTINUE"**
@@ -129,10 +129,10 @@ Your 5 fitness scopes should already be added:
 
 Before submitting, ensure you have:
 
-- [ ] Privacy policy page published at https://mediqzy.com/privacy
-- [ ] Terms of service page published at https://mediqzy.com/terms
+- [ ] Privacy policy page published at https://app.mediqzy.com/privacy
+- [ ] Terms of service page published at https://app.mediqzy.com/terms
 - [ ] Support email configured (e.g., support@mediqzy.com)
-- [ ] App homepage is accessible (https://mediqzy.com)
+- [ ] App homepage is accessible (https://app.mediqzy.com)
 - [ ] Domain ownership verified with Google Search Console
 - [ ] Clear explanation of how you use fitness data
 - [ ] All 5 fitness scopes justified
@@ -275,7 +275,7 @@ bash /home/ubuntu/Mediczy/verify-my-config.sh
 
 ### Test the integration:
 ```
-https://mediqzy.com/test-google-fit-config.html
+https://app.mediqzy.com/test-google-fit-config.html
 ```
 
 ---

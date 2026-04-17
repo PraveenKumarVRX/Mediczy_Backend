@@ -133,10 +133,10 @@ Video calls in emergency situations were failing to establish connections.
 ### Debug Connection Issues
 ```bash
 # Check MiroTalk server status
-curl https://mediqzy.com:3010/health
+curl https://app.mediqzy.com:3010/health
 
 # Check if meeting room can be accessed
-curl https://mediqzy.com:3010/join/MEDCALL-123-ABC123
+curl https://app.mediqzy.com:3010/join/MEDCALL-123-ABC123
 
 # Check environment variables
 grep MIROTALK /etc/mediczy/.env
@@ -323,7 +323,7 @@ curl http://localhost:8000/api/health
 mysql -u root -p -e "SELECT 1;" mediczy
 
 # Check MiroTalk availability
-curl https://mediqzy.com:3010/health
+curl https://app.mediqzy.com:3010/health
 
 # Check authentication
 curl -X POST http://localhost:8000/api/doctor/login \

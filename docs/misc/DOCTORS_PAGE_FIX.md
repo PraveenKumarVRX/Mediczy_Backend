@@ -86,13 +86,13 @@ sudo systemctl reload nginx
 
 1. **HTML Page Load:**
    ```bash
-   curl -s "https://mediqzy.com/admin/doctors" | grep -o "<title>.*</title>"
+   curl -s "https://app.mediqzy.com/admin/doctors" | grep -o "<title>.*</title>"
    ```
    **Result:** ✅ `<title>Mediqzy - Healthcare Platform</title>`
 
 2. **API Endpoint:**
    ```bash
-   curl -s "https://mediqzy.com/api/masterdata/doctors?page=1&limit=3"
+   curl -s "https://app.mediqzy.com/api/masterdata/doctors?page=1&limit=3"
    ```
    **Result:** ✅ Returns 3 doctors with full data
 
@@ -137,7 +137,7 @@ To verify the fix works in your browser:
 
 - [ ] Clear browser cache (Ctrl+Shift+Delete)
 - [ ] Hard reload page (Ctrl+F5)
-- [ ] Navigate to https://mediqzy.com/admin/doctors
+- [ ] Navigate to https://app.mediqzy.com/admin/doctors
 - [ ] Verify page loads without "Oops!" error
 - [ ] Check stats cards show 624 doctors
 - [ ] Test search functionality
@@ -161,7 +161,7 @@ To verify the fix works in your browser:
 - `server/db/Master Data/Doctors Data/Doctors List 624.xlsx` - Data source
 
 ### Environment
-- `client/.env.production` - Production config with `VITE_API_URL=https://mediqzy.com/api`
+- `client/.env.production` - Production config with `VITE_API_URL=https://app.mediqzy.com/api`
 
 ---
 

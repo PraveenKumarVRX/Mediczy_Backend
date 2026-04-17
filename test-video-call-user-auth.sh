@@ -15,7 +15,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # API Base URL
-API_URL="https://mediqzy.com/api"
+API_URL="https://app.mediqzy.com/api"
 
 echo "🔍 Testing Video Call User Authentication..."
 echo ""
@@ -62,7 +62,7 @@ echo "Test 5: Test User Login Flow"
 echo -e "${YELLOW}NOTE: Manual test required${NC}"
 echo ""
 echo "To test manually:"
-echo "1. Login as a regular user at https://mediqzy.com/login"
+echo "1. Login as a regular user at https://app.mediqzy.com/login"
 echo "2. Go to Appointments page"
 echo "3. Click 'Join Video Call' on a confirmed appointment"
 echo "4. Check browser console and network tab for errors"
@@ -109,13 +109,13 @@ echo "=========================================="
 echo ""
 
 echo "Checking video API endpoints..."
-curl -s -I https://mediqzy.com/api/video/test | head -3
+curl -s -I https://app.mediqzy.com/api/video/test | head -3
 echo ""
 
 echo -e "${GREEN}Test script completed!${NC}"
 echo ""
 echo "For live testing:"
-echo "  1. User Login: https://mediqzy.com/login"
+echo "  1. User Login: https://app.mediqzy.com/login"
 echo "  2. Go to Video Consultations"
 echo "  3. Join a confirmed appointment"
 echo ""

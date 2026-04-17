@@ -229,6 +229,63 @@ function SignaturePad({ canvasRef, isEmpty, setIsEmpty }: {
 // ─── DocFiles ─────────────────────────────────────────────────────────────────
 interface DocFiles { idProof: File | null; addressProof: File | null; medicalDegree: File | null; councilCertificate: File | null; }
 
+// ─── OtpRow ───────────────────────────────────────────────────────────────────
+function OtpRow({ otp, setOtp, onSend, onVerify, label }: {
+  otp: OtpState; setOtp: React.Dispatch<React.SetStateAction<OtpState>>;
+  onSend: () => void; onVerify: () => void; label: string;
+}) {
+  if (otp.verified) {
+    return (
+      <div className="flex items-center gap-2 mt-1.5 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200">
+        <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+        <span className="text-sm font-medium text-emerald-700">{label} verified</span>
+      </div>
+    );
+  }
+  if (!otp.sent) {
+    return (
+      <div className="mt-1.5">
+        <button type="button" onClick={onSend} disabled={otp.sending}
+          className="flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-60 transition-colors">
+          {otp.sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+          {otp.sending ? "Sending…" : `Send verification OTP`}
+        </button>
+        {otp.error && <p className="text-xs text-rose-500 mt-1">{otp.error}</p>}
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2 space-y-2">
+      <div className="flex gap-2">
+        <Input
+          value={otp.code}
+          onChange={(e) => setOtp(o => ({ ...o, code: e.target.value.replace(/\D/g, "").slice(0, 6) }))}
+          placeholder="6-digit OTP"
+          maxLength={6}
+          className="h-10 text-center tracking-[0.3em] font-mono text-lg border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 flex-1"
+        />
+        <button type="button" onClick={onVerify} disabled={otp.code.length !== 6 || otp.verifying}
+          className="h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-all flex items-center gap-1.5">
+          {otp.verifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+          Verify
+        </button>
+      </div>
+      <div className="flex items-center justify-between">
+        {otp.error && <p className="text-xs text-rose-500">{otp.error}</p>}
+        <div className="ml-auto">
+          {otp.timer > 0 ? (
+            <p className="text-xs text-slate-400">Resend in {otp.timer}s</p>
+          ) : (
+            <button type="button" onClick={onSend} className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 font-medium">
+              <RefreshCw className="h-3 w-3" /> Resend OTP
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 const DocRegister = () => {
   const { toast } = useToast();
@@ -723,63 +780,6 @@ const DocRegister = () => {
     exit:  (d: number) => ({ x: d > 0 ? -48 : 48, opacity: 0 }),
   };
 
-  // ─── OTP inline UI helper ─────────────────────────────────────────────────
-  function OtpRow({ otp, setOtp, onSend, onVerify, label }: {
-    otp: OtpState; setOtp: React.Dispatch<React.SetStateAction<OtpState>>;
-    onSend: () => void; onVerify: () => void; label: string;
-  }) {
-    if (otp.verified) {
-      return (
-        <div className="flex items-center gap-2 mt-1.5 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200">
-          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-          <span className="text-sm font-medium text-emerald-700">{label} verified</span>
-        </div>
-      );
-    }
-    if (!otp.sent) {
-      return (
-        <div className="mt-1.5">
-          <button type="button" onClick={onSend} disabled={otp.sending}
-            className="flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-60 transition-colors">
-            {otp.sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
-            {otp.sending ? "Sending…" : `Send verification OTP`}
-          </button>
-          {otp.error && <p className="text-xs text-rose-500 mt-1">{otp.error}</p>}
-        </div>
-      );
-    }
-    return (
-      <div className="mt-2 space-y-2">
-        <div className="flex gap-2">
-          <Input
-            value={otp.code}
-            onChange={(e) => setOtp(o => ({ ...o, code: e.target.value.replace(/\D/g, "").slice(0, 6) }))}
-            placeholder="6-digit OTP"
-            maxLength={6}
-            className="h-10 text-center tracking-[0.3em] font-mono text-lg border-slate-200 bg-slate-50 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 flex-1"
-          />
-          <button type="button" onClick={onVerify} disabled={otp.code.length !== 6 || otp.verifying}
-            className="h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-all flex items-center gap-1.5">
-            {otp.verifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-            Verify
-          </button>
-        </div>
-        <div className="flex items-center justify-between">
-          {otp.error && <p className="text-xs text-rose-500">{otp.error}</p>}
-          <div className="ml-auto">
-            {otp.timer > 0 ? (
-              <p className="text-xs text-slate-400">Resend in {otp.timer}s</p>
-            ) : (
-              <button type="button" onClick={onSend} className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1 font-medium">
-                <RefreshCw className="h-3 w-3" /> Resend OTP
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   // ─── Render ───────────────────────────────────────────────────────────────
   // ── Pending activation screen ───────────────────────────────────────────────
   if (registrationSubmitted) {
@@ -881,7 +881,7 @@ const DocRegister = () => {
         </div>
 
         {/* ─── RIGHT FORM PANEL ────────────────────────────────────────── */}
-        <div className="flex flex-col bg-white min-h-0">
+        <div className="flex flex-col bg-white min-h-0 text-slate-900">
           {/* Header */}
           <div className="px-8 pt-7 pb-4 border-b border-slate-100">
             <div className="flex items-center gap-2 mb-4 lg:hidden">
@@ -930,7 +930,7 @@ const DocRegister = () => {
                                 <FormControl>
                                   <Input {...field} type="email" placeholder="doctor@example.com" autoComplete="email"
                                     disabled={emailOtp.verified}
-                                    className="h-11 pl-10 border-slate-200 bg-slate-50 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-60 transition-all" />
+                                    className="h-11 pl-10 border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-60 transition-all" />
                                 </FormControl>
                               </div>
                               <FormMessage className="text-xs" />
@@ -947,7 +947,7 @@ const DocRegister = () => {
                               <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                               <FormControl>
                                 <Input {...field} type={showPw ? "text" : "password"} placeholder="Create a strong password" autoComplete="new-password"
-                                  className="h-11 pl-10 pr-12 border-slate-200 bg-slate-50 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" />
+                                  className="h-11 pl-10 pr-12 border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" />
                               </FormControl>
                               <button type="button" onClick={() => setShowPw(!showPw)}
                                 className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors">
@@ -988,7 +988,7 @@ const DocRegister = () => {
                                 <FormControl>
                                   <Input {...field} type="tel" placeholder="+91 98765 43210" autoComplete="tel"
                                     disabled={phoneOtp.verified}
-                                    className="h-11 pl-10 border-slate-200 bg-slate-50 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-60 transition-all" />
+                                    className="h-11 pl-10 border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-60 transition-all" />
                                 </FormControl>
                               </div>
                               <FormMessage className="text-xs" />

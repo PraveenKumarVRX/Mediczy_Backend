@@ -245,7 +245,7 @@ AGENT INTERFACE IN ROCKETCHAT:
 **Process:**
 ```
 1. RocketChat fires outgoing webhook
-   POST https://mediqzy.com/api/support/webhook/rocketchat
+   POST https://app.mediqzy.com/api/support/webhook/rocketchat
    
    Payload:
    {

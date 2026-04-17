@@ -21,7 +21,7 @@
 # 2. Create new project → Enable Google+ API
 # 3. Create OAuth2 Client ID (Web application)
 # 4. Add authorized redirect URI:
-#    - Production: https://mediqzy.com/api/auth/google/callback
+#    - Production: https://app.mediqzy.com/api/auth/google/callback
 #    - Development: http://localhost:8000/api/auth/google/callback
 # 5. Copy Client ID and Secret
 ```
@@ -32,7 +32,7 @@
 # 2. Create new app → Select "Consumer"
 # 3. Add "Facebook Login" product
 # 4. Add Valid OAuth Redirect URIs:
-#    - Production: https://mediqzy.com/api/auth/facebook/callback
+#    - Production: https://app.mediqzy.com/api/auth/facebook/callback
 #    - Development: http://localhost:8000/api/auth/facebook/callback
 # 5. Copy App ID and App Secret
 ```
@@ -44,11 +44,11 @@ cd /home/ubuntu/Mediczy/server
 # Edit .env and add:
 GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-google-client-secret
-GOOGLE_CALLBACK_URL=https://mediqzy.com/api/auth/google/callback
+GOOGLE_CALLBACK_URL=https://app.mediqzy.com/api/auth/google/callback
 
 FACEBOOK_APP_ID=your-facebook-app-id
 FACEBOOK_APP_SECRET=your-facebook-app-secret
-FACEBOOK_CALLBACK_URL=https://mediqzy.com/api/auth/facebook/callback
+FACEBOOK_CALLBACK_URL=https://app.mediqzy.com/api/auth/facebook/callback
 ```
 
 ### 4. Restart Services
@@ -121,7 +121,7 @@ curl http://localhost:8000/api/auth/oauth/status
 
 ### Test Google Login
 ```bash
-1. Go to https://mediqzy.com/login
+1. Go to https://app.mediqzy.com/login
 2. Click "Google" button
 3. Sign in with Google account
 4. Verify redirect to dashboard
@@ -133,7 +133,7 @@ curl http://localhost:8000/api/auth/oauth/status
 
 ### Test Facebook Login
 ```bash
-1. Go to https://mediqzy.com/login
+1. Go to https://app.mediqzy.com/login
 2. Click "Facebook" button
 3. Sign in with Facebook account
 4. Verify redirect to dashboard

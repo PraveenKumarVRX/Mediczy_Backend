@@ -11,7 +11,7 @@
 Frontend clinic dashboard was getting 401 Unauthorized error when trying to access dashboard stats:
 
 ```
-GET https://mediqzy.com/api/clinic/dashboard/stats 401 (Unauthorized)
+GET https://app.mediqzy.com/api/clinic/dashboard/stats 401 (Unauthorized)
 Error fetching dashboard stats: AxiosError {message: 'Request failed with status code 401'}
 ```
 
@@ -121,14 +121,14 @@ router.post('/login', handleClinicLogin);
 
 2. ✅ Test clinic login:
    ```bash
-   curl -X POST https://mediqzy.com/api/clinic/login \
+   curl -X POST https://app.mediqzy.com/api/clinic/login \
      -H "Content-Type: application/json" \
      -d '{"email":"clinic@example.com","password":"password"}'
    ```
 
 3. ✅ Test dashboard stats with token:
    ```bash
-   curl -X GET https://mediqzy.com/api/clinic/dashboard/stats \
+   curl -X GET https://app.mediqzy.com/api/clinic/dashboard/stats \
      -H "Authorization: Bearer YOUR_TOKEN"
    ```
 
@@ -156,7 +156,7 @@ router.post('/login', handleClinicLogin);
 **Production Testing**:
 ```bash
 # Login
-curl -X POST https://mediqzy.com/api/clinic/login \
+curl -X POST https://app.mediqzy.com/api/clinic/login \
   -H "Content-Type: application/json" \
   -d '{"email":"clinic@mediczy.com","password":"Clinic123"}'
 
@@ -174,7 +174,7 @@ curl -X POST https://mediqzy.com/api/clinic/login \
 }
 
 # Dashboard Stats (with token)
-curl -X GET https://mediqzy.com/api/clinic/dashboard/stats \
+curl -X GET https://app.mediqzy.com/api/clinic/dashboard/stats \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 
 # Expected Response:

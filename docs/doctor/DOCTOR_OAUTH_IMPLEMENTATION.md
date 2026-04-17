@@ -39,8 +39,8 @@ January 2025
 
 ### 4. Environment Variables
 **File:** `server/.env`
-- Added `GOOGLE_DOCTOR_CALLBACK_URL=https://mediqzy.com/api/auth/doctor/google/callback`
-- Added `FACEBOOK_DOCTOR_CALLBACK_URL=https://mediqzy.com/api/auth/doctor/facebook/callback`
+- Added `GOOGLE_DOCTOR_CALLBACK_URL=https://app.mediqzy.com/api/auth/doctor/google/callback`
+- Added `FACEBOOK_DOCTOR_CALLBACK_URL=https://app.mediqzy.com/api/auth/doctor/facebook/callback`
 
 ### 5. Frontend - Doctor Login
 **File:** `client/src/auth/DoctorLogin.tsx`
@@ -108,11 +108,11 @@ When creating a doctor from OAuth profile:
 - ✅ Enabled
 - ✅ Client ID configured
 - ✅ Client Secret configured
-- ✅ Callback URL: `https://mediqzy.com/api/auth/doctor/google/callback`
+- ✅ Callback URL: `https://app.mediqzy.com/api/auth/doctor/google/callback`
 
 ### Facebook OAuth for Doctors:
 - ⚠️ Pending configuration (requires Facebook App ID and Secret)
-- Callback URL: `https://mediqzy.com/api/auth/doctor/facebook/callback`
+- Callback URL: `https://app.mediqzy.com/api/auth/doctor/facebook/callback`
 
 ## Testing
 
@@ -125,19 +125,19 @@ curl http://localhost:8000/api/auth/doctor/oauth/status | jq
 {
   "google": {
     "configured": true,
-    "url": "https://mediqzy.com/api/auth/doctor/google",
+    "url": "https://app.mediqzy.com/api/auth/doctor/google",
     "enabled": true
   },
   "facebook": {
     "configured": true,
-    "url": "https://mediqzy.com/api/auth/doctor/facebook",
+    "url": "https://app.mediqzy.com/api/auth/doctor/facebook",
     "enabled": true
   }
 }
 ```
 
 ### Manual Testing:
-1. Visit: `https://mediqzy.com/doctor-login`
+1. Visit: `https://app.mediqzy.com/doctor-login`
 2. Click "Google" button
 3. Authenticate with Google
 4. Should be redirected to doctor dashboard with `doctorToken` stored
@@ -159,7 +159,7 @@ curl http://localhost:8000/api/auth/doctor/oauth/status | jq
 
 2. **Google Cloud Console Configuration:**
    - Add doctor callback URL to authorized redirect URLs:
-     - `https://mediqzy.com/api/auth/doctor/google/callback`
+     - `https://app.mediqzy.com/api/auth/doctor/google/callback`
 
 3. **Profile Completion Flow:**
    - Add modal/wizard for doctors to complete profile after OAuth signup

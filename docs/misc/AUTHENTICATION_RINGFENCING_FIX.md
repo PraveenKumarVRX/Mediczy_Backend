@@ -156,7 +156,7 @@ Each role is now isolated:
 
 ✅ Changes built and deployed to production
 ✅ Frontend restarted with PM2
-✅ Available at https://mediqzy.com
+✅ Available at https://app.mediqzy.com
 
 ## Next Steps
 

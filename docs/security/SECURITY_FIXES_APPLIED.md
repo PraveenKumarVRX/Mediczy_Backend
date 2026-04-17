@@ -46,7 +46,7 @@
   ```
 
 ### 6. CORS Policy Tightened
-- ✅ Production now only allows: `https://mediqzy.com`, `https://www.mediqzy.com`
+- ✅ Production now only allows: `https://app.mediqzy.com`, `https://www.mediqzy.com`
 - ✅ Development allows localhost origins
 - ✅ No-origin requests no longer automatically allowed
 - ✅ Environment variable `CORS_ORIGIN` can override defaults
@@ -93,14 +93,14 @@ DB_PASSWORD=KoZk/prBq+u4Y48vuwCf4iSQm6vsOTVWuqZ1X+sTncs=
 
 ### Security Headers Test:
 ```bash
-curl -I https://mediqzy.com
+curl -I https://app.mediqzy.com
 # Should show: X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, 
 #              Permissions-Policy, Content-Security-Policy
 ```
 
 ### Hardcoded Credentials Test:
 ```bash
-curl -X POST https://mediqzy.com/api/team/login \
+curl -X POST https://app.mediqzy.com/api/team/login \
   -H "Content-Type: application/json" \
   -d '{"email":"team@mediczy.com","password":"TeamPass123"}'
 # Should return: 401 Unauthorized (hardcoded creds removed)
@@ -109,7 +109,7 @@ curl -X POST https://mediqzy.com/api/team/login \
 ### Rate Limiting Test:
 ```bash
 for i in {1..10}; do 
-  curl -X POST https://mediqzy.com/api/users/login \
+  curl -X POST https://app.mediqzy.com/api/users/login \
     -H "Content-Type: application/json" -d '{}'; 
 done
 # After 5 attempts, should return 429 Too Many Requests

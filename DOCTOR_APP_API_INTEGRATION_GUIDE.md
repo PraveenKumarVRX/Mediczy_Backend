@@ -2,7 +2,7 @@
 
 > **Version:** 2.0 · **Last Updated:** 2026-04-09  
 > **Base URL (Production):** `https://api.mediqzy.com`  
-> **WebSocket URL:** `https://mediqzy.com` (path: `/socket.io`)  
+> **WebSocket URL:** `https://app.mediqzy.com` (path: `/socket.io`)  
 > **LiveKit URL:** `wss://video.mediqzy.com`
 
 ---
@@ -56,7 +56,7 @@
 
 ```
 Production API:   https://api.mediqzy.com
-WebSocket:        https://mediqzy.com  (path: /socket.io)
+WebSocket:        https://app.mediqzy.com  (path: /socket.io)
 LiveKit Server:   wss://video.mediqzy.com
 ```
 
@@ -1499,7 +1499,7 @@ Authorization: Bearer <token>
   "invite": {
     "code": "a1b2c3d4e5f6",
     "roomId": "apt-101-abc123",
-    "shareableUrl": "https://mediqzy.com/video-consultation?room=apt-101-abc123&invite=a1b2c3d4e5f6",
+    "shareableUrl": "https://app.mediqzy.com/video-consultation?room=apt-101-abc123&invite=a1b2c3d4e5f6",
     "expiresIn": "4 hours",
     "expiresAt": "2026-03-10T16:00:00.000Z",
     "maxUses": 5
@@ -2868,7 +2868,7 @@ HTTP 429 Too Many Requests
 ```javascript
 import { io } from "socket.io-client";
 
-const socket = io("https://mediqzy.com", {
+const socket = io("https://app.mediqzy.com", {
   transports: ["websocket", "polling"],
   path: "/socket.io"
 });

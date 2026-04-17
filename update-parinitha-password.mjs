@@ -18,7 +18,7 @@ import User from './server/models/user.model.intelligent.js';
     console.log('✅ Password updated successfully!');
     console.log('Email:', email);
     console.log('New Password: Mayden@321');
-    console.log('\nYou can now login at: https://mediqzy.com/team-login');
+    console.log('\nYou can now login at: https://app.mediqzy.com/team-login');
     
     process.exit(0);
   } catch (error) {

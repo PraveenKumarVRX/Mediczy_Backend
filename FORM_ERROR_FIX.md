@@ -184,7 +184,7 @@ function MyComponent() {
 ## Testing Checklist
 
 ### Manual Testing
-- [ ] Open production site: https://mediqzy.com
+- [ ] Open production site: https://app.mediqzy.com
 - [ ] Navigate to Profile page
 - [ ] Click "Edit Profile"
 - [ ] Verify form renders without errors
@@ -215,10 +215,10 @@ function MyComponent() {
 
 ## Browser Console Output (After Fix)
 
-Expected console output on https://mediqzy.com:
+Expected console output on https://app.mediqzy.com:
 
 ```
-Auth Base URL: https://mediqzy.com/api
+Auth Base URL: https://app.mediqzy.com/api
 🔧 Firebase messaging compatibility check:
   Service Worker: true
   Notifications: true
@@ -226,7 +226,7 @@ Auth Base URL: https://mediqzy.com/api
   IndexedDB: true
   Push Manager: true
   Promise Support: true
-✅ Main ServiceWorker registered: https://mediqzy.com/
+✅ Main ServiceWorker registered: https://app.mediqzy.com/
 🔧 Service Worker registration summary:
   Main SW: ✅ Active
   Firebase SW: 🚫 Disabled for SSL compatibility

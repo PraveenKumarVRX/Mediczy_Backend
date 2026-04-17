@@ -230,8 +230,8 @@ sudo nginx -t
 sudo systemctl reload nginx
 
 # 6. Verify (15 min)
-curl -I https://mediqzy.com/api/health
-curl -I https://mediqzy.com/
+curl -I https://app.mediqzy.com/api/health
+curl -I https://app.mediqzy.com/
 
 # 7. Monitor (10 min)
 pm2 logs mediczy-server
@@ -300,8 +300,8 @@ After deployment, verify:
 
 | Criterion | How to Check | Target |
 |-----------|-------------|--------|
-| API Health | `curl https://mediqzy.com/api/health` | 200 OK |
-| Frontend Load | `curl https://mediqzy.com/` | 200 OK |
+| API Health | `curl https://app.mediqzy.com/api/health` | 200 OK |
+| Frontend Load | `curl https://app.mediqzy.com/` | 200 OK |
 | Doctor Login | Test via UI | Success |
 | Patient List | Check /doctors/my-patients | Data loads |
 | Video Calls | Start call in UI | Connects |

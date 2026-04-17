@@ -2,6 +2,7 @@ import express from 'express';
 import { body } from 'express-validator';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
+import { requireCorporateAccess } from '../middleware/corporateTenant.js';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import userModel, { generateAuthTokenForUser } from '../models/user.model.intelligent.js';
@@ -1283,9 +1284,9 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
  * Update Corporate
  * PUT /api/admin/corporates/:id
  */
-router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (req, res) => {
+router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), requireCorporateAccess, async (req, res) => {
   try {
-    const corporateId = req.params.id;
+    const corporateId = req.resolvedCorporate.id;
     const corporateData = req.body?.corporate || req.body;
     const { 
       companyName, contactPerson, email, phoneNumber, industry, employeeCount, 
@@ -1296,21 +1297,16 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
       plans // Array of: { sponsorshipId (optional), planId, clinicId, doctorId, startDate, endDate, networkPartners }
     } = corporateData;
     
-    // Verify corporate exists
-    const [existing] = await postgresSequelize.query(`
+    // Fetch existing metadata for partial-update merging
+    const [existingCorporate] = await postgresSequelize.query(`
       SELECT id, metadata, "assignedTo" FROM corporates WHERE id = :corporateId
     `, {
       replacements: { corporateId },
       type: postgresSequelize.QueryTypes.SELECT
     });
     
-    const existingCorporate = Array.isArray(existing) ? existing[0] : existing;
-    
     if (!existingCorporate) {
-      return res.status(404).json({
-        success: false,
-        message: 'Corporate not found'
-      });
+      return res.status(404).json({ success: false, message: 'Corporate not found' });
     }
     
     // Build update query dynamically based on provided fields
@@ -1705,26 +1701,10 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
  * Delete/Deactivate Corporate
  * DELETE /api/admin/corporates/:id
  */
-router.delete('/corporates/:id', authUser, requireRole(['admin', 'team']), async (req, res) => {
+router.delete('/corporates/:id', authUser, requireRole(['admin', 'team']), requireCorporateAccess, async (req, res) => {
   try {
-    const corporateId = req.params.id;
-    
-    // Verify corporate exists
-    const [existing] = await postgresSequelize.query(`
-      SELECT id, "companyName", status FROM corporates WHERE id = :corporateId
-    `, {
-      replacements: { corporateId },
-      type: postgresSequelize.QueryTypes.SELECT
-    });
-    
-    const corporate = Array.isArray(existing) ? existing[0] : existing;
-    
-    if (!corporate) {
-      return res.status(404).json({
-        success: false,
-        message: 'Corporate not found'
-      });
-    }
+    const corporateId = req.resolvedCorporate.id;
+    const corporate = req.resolvedCorporate;
     
     // Soft delete: Update status to Inactive
     await postgresSequelize.query(`
@@ -1883,29 +1863,16 @@ router.post('/corporate-users', authUser, requireRole(['admin', 'team']), async 
  * POST /api/admin/corporate-employees
  * Creates user accounts for corporate employees with patient role
  */
-router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
+router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
   try {
-    const { corporateId, employees } = req.body;
-    
-    if (!corporateId || !employees || !Array.isArray(employees) || employees.length === 0) {
+    const corporate = req.resolvedCorporate;
+    const corporateId = corporate.id;
+    const { employees } = req.body;
+
+    if (!employees || !Array.isArray(employees) || employees.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'corporateId and employees array are required'
-      });
-    }
-    
-    // Verify corporate exists
-    const [corporate] = await postgresSequelize.query(`
-      SELECT id, "companyName" FROM corporates WHERE id = :corporateId
-    `, {
-      replacements: { corporateId },
-      type: postgresSequelize.QueryTypes.SELECT
-    });
-    
-    if (!corporate) {
-      return res.status(404).json({
-        success: false,
-        message: 'Corporate not found'
+        message: 'employees array is required'
       });
     }
     
@@ -1984,17 +1951,19 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
           continue;
         }
         
-        // Create user association to corporate as employee
+        // Create user association to corporate as employee (include corporate_unique_id for traceability)
         await postgresSequelize.query(`
-          INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, metadata, "startDate", "createdAt", "updatedAt")
-          VALUES (:userId, 'corporate', :corporateId, 'employee', false, 'active', :metadata, NOW(), NOW(), NOW())
-          ON CONFLICT ("userId", "entityType", "entityId", role) DO UPDATE SET
+          INSERT INTO user_associations ("userId", "entityType", "entityId", corporate_unique_id, role, "isPrimary", status, metadata, "startDate", "createdAt", "updatedAt")
+          VALUES (:userId, 'corporate', :corporateId, :corpUniqueId, 'employee', false, 'active', :metadata, NOW(), NOW(), NOW())
+          ON CONFLICT ON CONSTRAINT uq_user_assoc_corp_employee DO UPDATE SET
             metadata = EXCLUDED.metadata,
+            corporate_unique_id = EXCLUDED.corporate_unique_id,
             "updatedAt" = NOW()
         `, {
           replacements: { 
             userId, 
             corporateId,
+            corpUniqueId: corporate.uniqueId || null,
             metadata: JSON.stringify({ employeeId, department })
           }
         });
@@ -2046,44 +2015,10 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
  * Get Corporate Employees
  * GET /api/admin/corporate-employees/:corporateId
  */
-router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
+router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
   try {
-    const { corporateId } = req.params;
-    const numericCorporateId = parseInt(corporateId, 10);
-    const userId = req.user.id;
-    const isAdmin = req.user.isAdmin;
+    const numericCorporateId = req.resolvedCorporate.id;
 
-    // Validate corporate ID format
-    if (isNaN(numericCorporateId)) {
-      console.error(`Invalid corporate ID format: ${corporateId}`);
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid corporate ID format. Expected numeric ID.'
-      });
-    }
-
-    // Authorization: team members can only access their assigned corporates
-    if (!isAdmin) {
-      const [hasAccess] = await postgresSequelize.query(`
-        SELECT 1 FROM user_associations
-        WHERE "userId" = :userId
-          AND "entityId" = :corporateId
-          AND "entityType" = 'corporate'
-          AND status = 'active'
-        LIMIT 1
-      `, {
-        replacements: { userId, corporateId: numericCorporateId },
-        type: postgresSequelize.QueryTypes.SELECT
-      });
-
-      if (!hasAccess) {
-        return res.status(403).json({
-          success: false,
-          message: 'Access denied. You do not have permission to access this corporate.'
-        });
-      }
-    }
-    
     const employees = await postgresSequelize.query(`
       SELECT u.id, u.email, u."firstName", u."lastName", u."phoneNumber",
              ua.metadata, ua.status, ua."startDate",
@@ -2095,7 +2030,7 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
       LEFT JOIN LATERAL (
         SELECT "packageId", "packageName", "validTo"
         FROM user_health_packages
-        WHERE "userId" = u.id AND "corporateId" = :corporateId AND status = 'active'
+        WHERE "userId" = u.id AND corporate_id = :corporateId AND status = 'active'
         ORDER BY "validTo" DESC LIMIT 1
       ) uhp ON true
       WHERE ua."entityType" = 'corporate' 
@@ -2129,33 +2064,15 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
  * PUT /api/admin/corporate-employees/:userId
  * Updates user fields and/or association status (active/inactive)
  */
-router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
+router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
   try {
     const { userId } = req.params;
-    const { corporateId, status, firstName, lastName, email, phoneNumber, department, designation, city, pinCode, secondaryEmail, packageId } = req.body;
-
-    if (!corporateId) {
-      return res.status(400).json({ success: false, message: 'corporateId is required' });
-    }
+    const { status, firstName, lastName, email, phoneNumber, department, designation, city, pinCode, secondaryEmail, packageId } = req.body;
     const numericUserId = parseInt(userId, 10);
-    const numericCorporateId = parseInt(corporateId, 10);
+    const numericCorporateId = req.resolvedCorporate.id;
 
-    if (isNaN(numericUserId) || isNaN(numericCorporateId)) {
-      return res.status(400).json({ success: false, message: 'Invalid userId or corporateId' });
-    }
-
-    // Team access check
-    if (!req.user.isAdmin) {
-      const [hasAccess] = await postgresSequelize.query(`
-        SELECT 1 FROM user_associations
-        WHERE "userId" = :requesterId AND "entityId" = :corpId
-          AND "entityType" = 'corporate' AND status = 'active'
-        LIMIT 1
-      `, {
-        replacements: { requesterId: req.user.id, corpId: numericCorporateId },
-        type: postgresSequelize.QueryTypes.SELECT
-      });
-      if (!hasAccess) return res.status(403).json({ success: false, message: 'Access denied.' });
+    if (isNaN(numericUserId)) {
+      return res.status(400).json({ success: false, message: 'Invalid userId' });
     }
 
     // Update users table (personal info fields)
@@ -2195,7 +2112,7 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
       const [pkgRef] = await postgresSequelize.query(`
         SELECT DISTINCT ON ("packageId") "packageId", "packageName", "packageDetails", "validTo"
         FROM user_health_packages
-        WHERE "packageId" = :packageId AND "corporateId" = :corpId
+        WHERE "packageId" = :packageId AND corporate_id = :corpId
         ORDER BY "packageId", "validTo" DESC
       `, {
         replacements: { packageId, corpId: numericCorporateId },
@@ -2207,7 +2124,7 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
           : JSON.stringify(pkgRef.packageDetails || {});
         await postgresSequelize.query(`
           INSERT INTO user_health_packages
-            ("userId", "corporateId", "packageId", "packageName", "packageDetails", "validFrom", "validTo", status, "createdAt", "updatedAt")
+            ("userId", corporate_id, "packageId", "packageName", "packageDetails", "validFrom", "validTo", status, "createdAt", "updatedAt")
           VALUES
             (:userId, :corpId, :packageId, :packageName, :packageDetails, NOW(), :validTo, 'active', NOW(), NOW())
           ON CONFLICT ("userId", "packageId") DO UPDATE SET
@@ -2241,50 +2158,16 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
  * Get Corporate Health Packages
  * GET /api/admin/corporate-health-packages/:corporateId
  */
-router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
+router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
   try {
-    const { corporateId } = req.params;
-    const numericCorporateId = parseInt(corporateId, 10);
-    const userId = req.user.id;
-    const isAdmin = req.user.isAdmin;
-
-    // Validate corporate ID format
-    if (isNaN(numericCorporateId)) {
-      console.error(`Invalid corporate ID format: ${corporateId}`);
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid corporate ID format. Expected numeric ID.'
-      });
-    }
-
-    // Authorization: team members can only access their assigned corporates
-    if (!isAdmin) {
-      const [hasAccess] = await postgresSequelize.query(`
-        SELECT 1 FROM user_associations
-        WHERE "userId" = :userId
-          AND "entityId" = :corporateId
-          AND "entityType" = 'corporate'
-          AND status = 'active'
-        LIMIT 1
-      `, {
-        replacements: { userId, corporateId: numericCorporateId },
-        type: postgresSequelize.QueryTypes.SELECT
-      });
-
-      if (!hasAccess) {
-        return res.status(403).json({
-          success: false,
-          message: 'Access denied. You do not have permission to access this corporate.'
-        });
-      }
-    }
+    const numericCorporateId = req.resolvedCorporate.id;
 
     const packages = await postgresSequelize.query(`
       SELECT "packageId", "packageName", "packageDetails",
              MIN("validFrom") AS "validFrom",
              MAX("validTo") AS "validTo"
       FROM user_health_packages
-      WHERE "corporateId" = :corporateId
+      WHERE corporate_id = :corporateId
       GROUP BY "packageId", "packageName", "packageDetails"
       ORDER BY "packageName" ASC
     `, {
@@ -2311,47 +2194,211 @@ router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['ad
   }
 });
 
+// ─── Corporate Wellness Calendar ─────────────────────────────────────────────
+
+/** Ensure table exists once on startup */
+;(async () => {
+  try {
+    await postgresSequelize.query(`
+      CREATE TABLE IF NOT EXISTS corporate_wellness_events (
+        id            BIGSERIAL PRIMARY KEY,
+        corporate_id  INTEGER NOT NULL,
+        title         VARCHAR(255) NOT NULL,
+        description   TEXT,
+        event_type    VARCHAR(80)  NOT NULL DEFAULT 'Wellness Session',
+        event_date    DATE         NOT NULL,
+        event_time    TIME,
+        end_date      DATE,
+        end_time      TIME,
+        location      VARCHAR(255),
+        organizer     VARCHAR(255),
+        max_participants INTEGER,
+        registered_count INTEGER DEFAULT 0,
+        status        VARCHAR(30)  DEFAULT 'upcoming',
+        color         VARCHAR(20)  DEFAULT 'teal',
+        notify_employees BOOLEAN  DEFAULT FALSE,
+        created_by    INTEGER,
+        created_at    TIMESTAMPTZ  DEFAULT NOW(),
+        updated_at    TIMESTAMPTZ  DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_cwe_corporate ON corporate_wellness_events(corporate_id);
+      CREATE INDEX IF NOT EXISTS idx_cwe_event_date ON corporate_wellness_events(event_date);
+    `);
+  } catch (e) {
+    console.warn('[Wellness Calendar] Table setup warning:', e.message);
+  }
+})();
+
+/**
+ * GET /api/admin/corporate-calendar/:corporateId
+ * List wellness events for a corporate (optional ?month=YYYY-MM)
+ */
+router.get('/corporate-calendar/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
+  try {
+    const corporateId = req.resolvedCorporate.id;
+
+    let dateFilter = '';
+    const { month } = req.query; // e.g. "2026-04"
+    if (month && /^\d{4}-\d{2}$/.test(month)) {
+      dateFilter = `AND DATE_TRUNC('month', event_date) = DATE_TRUNC('month', :monthDate::date)`;
+    }
+
+    const events = await postgresSequelize.query(
+      `SELECT id, corporate_id, title, description, event_type, event_date, event_time,
+              end_date, end_time, location, organizer, max_participants, registered_count,
+              status, color, notify_employees, created_at
+       FROM corporate_wellness_events
+       WHERE corporate_id = :corporateId ${dateFilter}
+       ORDER BY event_date ASC, event_time ASC`,
+      {
+        replacements: { corporateId, monthDate: month ? `${month}-01` : null },
+        type: postgresSequelize.QueryTypes.SELECT
+      }
+    );
+    return res.json({ success: true, events });
+  } catch (error) {
+    console.error('[Wellness Calendar] GET error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch wellness events' });
+  }
+});
+
+/**
+ * POST /api/admin/corporate-calendar
+ * Create a new wellness event
+ */
+router.post('/corporate-calendar', authUser, requireRole(['admin', 'team']), requireCorporateAccess, async (req, res) => {
+  try {
+    const {
+      corporateId, title, description, eventType, eventDate, eventTime,
+      endDate, endTime, location, organizer, maxParticipants, status,
+      color, notifyEmployees
+    } = req.body;
+
+    if (!corporateId || !title || !eventDate) {
+      return res.status(400).json({ success: false, message: 'corporateId, title, and eventDate are required' });
+    }
+
+    const [result] = await postgresSequelize.query(
+      `INSERT INTO corporate_wellness_events
+         (corporate_id, title, description, event_type, event_date, event_time,
+          end_date, end_time, location, organizer, max_participants, status, color,
+          notify_employees, created_by)
+       VALUES (:corporateId, :title, :description, :eventType, :eventDate, :eventTime,
+               :endDate, :endTime, :location, :organizer, :maxParticipants, :status, :color,
+               :notifyEmployees, :createdBy)
+       RETURNING *`,
+      {
+        replacements: {
+          corporateId: parseInt(corporateId, 10),
+          title: title.trim(),
+          description: description || null,
+          eventType: eventType || 'Wellness Session',
+          eventDate,
+          eventTime: eventTime || null,
+          endDate: endDate || null,
+          endTime: endTime || null,
+          location: location || null,
+          organizer: organizer || null,
+          maxParticipants: maxParticipants ? parseInt(maxParticipants, 10) : null,
+          status: status || 'upcoming',
+          color: color || 'teal',
+          notifyEmployees: notifyEmployees === true,
+          createdBy: req.user?.id || null,
+        },
+        type: postgresSequelize.QueryTypes.INSERT
+      }
+    );
+    return res.status(201).json({ success: true, event: Array.isArray(result) ? result[0] : result });
+  } catch (error) {
+    console.error('[Wellness Calendar] POST error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to create wellness event' });
+  }
+});
+
+/**
+ * PUT /api/admin/corporate-calendar/:eventId
+ * Update a wellness event
+ */
+router.put('/corporate-calendar/:eventId', authUser, requireRole(['admin', 'team']), requireCorporateAccess, async (req, res) => {
+  try {
+    const eventId = parseInt(req.params.eventId, 10);
+    if (!eventId) return res.status(400).json({ success: false, message: 'Invalid event ID' });
+
+    const {
+      title, description, eventType, eventDate, eventTime,
+      endDate, endTime, location, organizer, maxParticipants, status, color, notifyEmployees
+    } = req.body;
+
+    await postgresSequelize.query(
+      `UPDATE corporate_wellness_events SET
+         title = COALESCE(:title, title),
+         description = :description,
+         event_type = COALESCE(:eventType, event_type),
+         event_date = COALESCE(:eventDate, event_date),
+         event_time = :eventTime,
+         end_date = :endDate,
+         end_time = :endTime,
+         location = :location,
+         organizer = :organizer,
+         max_participants = :maxParticipants,
+         status = COALESCE(:status, status),
+         color = COALESCE(:color, color),
+         notify_employees = COALESCE(:notifyEmployees, notify_employees),
+         updated_at = NOW()
+       WHERE id = :eventId AND corporate_id = :corporateId`,
+      {
+        replacements: {
+          eventId,
+          corporateId: req.resolvedCorporate.id,
+          title: title?.trim() || null,
+          description: description ?? null,
+          eventType: eventType || null,
+          eventDate: eventDate || null,
+          eventTime: eventTime || null,
+          endDate: endDate || null,
+          endTime: endTime || null,
+          location: location || null,
+          organizer: organizer || null,
+          maxParticipants: maxParticipants ? parseInt(maxParticipants, 10) : null,
+          status: status || null,
+          color: color || null,
+          notifyEmployees: notifyEmployees ?? null,
+        },
+        type: postgresSequelize.QueryTypes.UPDATE
+      }
+    );
+    return res.json({ success: true, message: 'Event updated' });
+  } catch (error) {
+    console.error('[Wellness Calendar] PUT error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to update wellness event' });
+  }
+});
+
+/**
+ * DELETE /api/admin/corporate-calendar/:eventId
+ */
+router.delete('/corporate-calendar/:eventId', authUser, requireRole(['admin', 'team']), requireCorporateAccess, async (req, res) => {
+  try {
+    const eventId = parseInt(req.params.eventId, 10);
+    if (!eventId) return res.status(400).json({ success: false, message: 'Invalid event ID' });
+    await postgresSequelize.query(
+      `DELETE FROM corporate_wellness_events WHERE id = :eventId AND corporate_id = :corporateId`,
+      { replacements: { eventId, corporateId: req.resolvedCorporate.id }, type: postgresSequelize.QueryTypes.DELETE }
+    );
+    return res.json({ success: true, message: 'Event deleted' });
+  } catch (error) {
+    console.error('[Wellness Calendar] DELETE error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to delete wellness event' });
+  }
+});
+
 /**
  * Get Corporate Subscription Plans
  * GET /api/admin/corporate-plans/:corporateId
  */
-router.get('/corporate-plans/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
+router.get('/corporate-plans/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
   try {
-    const { corporateId } = req.params;
-    const numericCorporateId = parseInt(corporateId, 10);
-    const userId = req.user.id;
-    const isAdmin = req.user.isAdmin;
-
-    // Validate corporate ID format
-    if (isNaN(numericCorporateId)) {
-      console.error(`Invalid corporate ID format: ${corporateId}`);
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid corporate ID format. Expected numeric ID.'
-      });
-    }
-
-    // Authorization: team members can only access their assigned corporates
-    if (!isAdmin) {
-      const [hasAccess] = await postgresSequelize.query(`
-        SELECT 1 FROM user_associations
-        WHERE "userId" = :userId
-          AND "entityId" = :corporateId
-          AND "entityType" = 'corporate'
-          AND status = 'active'
-        LIMIT 1
-      `, {
-        replacements: { userId, corporateId: numericCorporateId },
-        type: postgresSequelize.QueryTypes.SELECT
-      });
-
-      if (!hasAccess) {
-        return res.status(403).json({
-          success: false,
-          message: 'Access denied. You do not have permission to access this corporate.'
-        });
-      }
-    }
+    const numericCorporateId = req.resolvedCorporate.id;
 
     const plans = await postgresSequelize.query(`
       SELECT p.id, p.name, p.slug, p.price, p.annual_price, p.currency, p.billing_cycle, p.is_active,
@@ -2376,7 +2423,7 @@ router.get('/corporate-plans/:corporateId', authUser, requireRole(['admin', 'tea
         )
       ORDER BY p.id DESC
     `, {
-      replacements: { corporateId },
+      replacements: { corporateId: numericCorporateId },
       type: postgresSequelize.QueryTypes.SELECT
     });
 
@@ -2398,18 +2445,21 @@ router.get('/corporate-plans/:corporateId', authUser, requireRole(['admin', 'tea
  * Create Corporate Subscription Plan
  * POST /api/admin/corporate-plans
  */
-router.post('/corporate-plans', authUser, requireRole(['admin', 'team']), async (req, res) => {
+router.post('/corporate-plans', authUser, requireRole(['admin', 'team']), requireCorporateAccess, async (req, res) => {
   try {
     const {
       // rich fields from team/admin UI
       planName, planType, description,
-      corporateId, validFrom, validTo,
+      validFrom, validTo,
       totalEmployees, premiumPerEmployee, totalPremium,
       status = 'Active', currency = 'INR', billingCycle,
       features, benefits, coverage,
       // legacy simple-form fallback
       name, slug, price, annualPrice,
     } = req.body || {};
+
+    // corporateId comes from the ring-fenced resolved corporate (not req.body)
+    const corporateId = req.resolvedCorporate?.id || null;
 
     const resolvedName = planName || name;
     const resolvedPrice = premiumPerEmployee != null ? Number(premiumPerEmployee) : (price != null ? Number(price) : null);
@@ -2947,7 +2997,7 @@ router.post('/corporate-package-assignments', authUser, requireRole(['admin', 't
         // Create health package assignment
         await postgresSequelize.query(`
           INSERT INTO user_health_packages (
-            "userId", "corporateId", "packageId", "packageName", 
+            "userId", corporate_id, "packageId", "packageName", 
             "packageDetails", "validFrom", "validTo", status,
             "createdAt", "updatedAt"
           )
@@ -3034,7 +3084,7 @@ router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['ad
         uhp."validFrom", uhp."validTo", uhp.status,
         COUNT(uhp."userId") OVER (PARTITION BY uhp."packageId") as "employeeCount"
       FROM user_health_packages uhp
-      WHERE uhp."corporateId" = :corporateId
+      WHERE uhp.corporate_id = :corporateId
       ORDER BY uhp."packageId",
                (CASE WHEN uhp."packageDetails" != '{}'::jsonb THEN 0 ELSE 1 END) ASC,
                uhp."createdAt" DESC

@@ -22,9 +22,9 @@ ENABLED:  Yes (toggle ON)
 
 | Setting | Value |
 |---------|-------|
-| **Authorize URL** | `http://localhost:8000/oauth/authorize` (dev) or `https://mediqzy.com/oauth/authorize` (prod) |
-| **Access Token URL** | `http://localhost:8000/oauth/token` (dev) or `https://mediqzy.com/oauth/token` (prod) |
-| **Identity URL** | `http://localhost:8000/oauth/userinfo` (dev) or `https://mediqzy.com/oauth/userinfo` (prod) |
+| **Authorize URL** | `http://localhost:8000/oauth/authorize` (dev) or `https://app.mediqzy.com/oauth/authorize` (prod) |
+| **Access Token URL** | `http://localhost:8000/oauth/token` (dev) or `https://app.mediqzy.com/oauth/token` (prod) |
+| **Identity URL** | `http://localhost:8000/oauth/userinfo` (dev) or `https://app.mediqzy.com/oauth/userinfo` (prod) |
 
 #### Client Credentials
 
@@ -83,17 +83,17 @@ OAuth - Custom OAuth Configuration
   
   Authorize URL (Authorize_url):
   ┌─────────────────────────────────────────────────────────┐
-  │ https://mediqzy.com/oauth/authorize                      │
+  │ https://app.mediqzy.com/oauth/authorize                      │
   └─────────────────────────────────────────────────────────┘
   
   Access Token URL (Access_token_url):
   ┌─────────────────────────────────────────────────────────┐
-  │ https://mediqzy.com/oauth/token                          │
+  │ https://app.mediqzy.com/oauth/token                          │
   └─────────────────────────────────────────────────────────┘
   
   Identity URL (Identity_url):
   ┌─────────────────────────────────────────────────────────┐
-  │ https://mediqzy.com/oauth/userinfo                       │
+  │ https://app.mediqzy.com/oauth/userinfo                       │
   └─────────────────────────────────────────────────────────┘
   
   Scope (Scope):
@@ -146,7 +146,7 @@ OAuth - Custom OAuth Configuration
    - Or: "Login with [Application Name]" if custom name set
 
 3. **Click OAuth Button**
-   - Redirected to: `https://mediqzy.com/oauth/authorize?...`
+   - Redirected to: `https://app.mediqzy.com/oauth/authorize?...`
    - Shown: Mediqzy login page
 
 4. **Login with Mediqzy Credentials**
@@ -189,9 +189,9 @@ On subsequent logins:
 **Solution**:
 ```bash
 # Verify endpoints are accessible
-curl https://mediqzy.com/oauth/authorize
-curl https://mediqzy.com/oauth/token
-curl https://mediqzy.com/oauth/userinfo
+curl https://app.mediqzy.com/oauth/authorize
+curl https://app.mediqzy.com/oauth/token
+curl https://app.mediqzy.com/oauth/userinfo
 
 # Check Mediqzy logs
 tail -100 /home/ubuntu/Mediczy/logs/server-out.log | grep -i oauth

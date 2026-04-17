@@ -118,7 +118,7 @@ if [ "$SUCCESS" == "true" ]; then
    │  Email: $EMAIL   │
    │  Temporary Password: *$TEMP_PASS*                    │
    │                                                     │
-   │  🔐 Please login at https://mediqzy.com             │
+   │  🔐 Please login at https://app.mediqzy.com             │
    │  and change your password immediately.              │
    │                                                     │
    │  _This is an auto-generated message._               │

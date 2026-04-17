@@ -12,12 +12,18 @@ const InsuranceClaim = sequelize.define('InsuranceClaim', {
     type: DataTypes.STRING(50),
     allowNull: false,
     unique: true,
-    field: 'claimNumber'  // Fixed: database column is camelCase, not snake_case
+    field: 'claim_number'
+  },
+  userInsuranceId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'user_insurance_id',
+    references: { model: 'user_insurances', key: 'id' }
   },
   patientId: {
     type: DataTypes.INTEGER,
     allowNull: false,
-    field: 'patientId',  // Fixed: database column is camelCase
+    field: 'patient_id',
     references: {
       model: 'users',
       key: 'id'
@@ -26,7 +32,7 @@ const InsuranceClaim = sequelize.define('InsuranceClaim', {
   hospitalId: {
     type: DataTypes.INTEGER,
     allowNull: true,
-    field: 'hospital_id',  // This one IS snake_case in DB
+    field: 'hospital_id',
     references: {
       model: 'organizations',
       key: 'id'
@@ -35,7 +41,7 @@ const InsuranceClaim = sequelize.define('InsuranceClaim', {
   appointmentId: {
     type: DataTypes.INTEGER,
     allowNull: true,
-    field: 'appointmentId',  // Fixed: database column is camelCase
+    field: 'appointment_id',
     references: {
       model: 'appointments',
       key: 'id'
@@ -81,12 +87,12 @@ const InsuranceClaim = sequelize.define('InsuranceClaim', {
   claimAmount: {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: false,
-    field: 'claimAmount'  // Fixed: database column is camelCase
+    field: 'claim_amount'
   },
   approvedAmount: {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: true,
-    field: 'approvedAmount'  // Fixed: database column is camelCase
+    field: 'approved_amount'
   },
   settledAmount: {
     type: DataTypes.DECIMAL(10, 2),
@@ -127,6 +133,11 @@ const InsuranceClaim = sequelize.define('InsuranceClaim', {
     type: DataTypes.DATEONLY,
     allowNull: true,
     field: 'submitted_date'
+  },
+  processedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'processed_at'
   },
   submittedAt: {
     type: DataTypes.DATE,
@@ -238,15 +249,15 @@ const InsuranceClaim = sequelize.define('InsuranceClaim', {
 }, {
   tableName: 'insurance_claims',
   timestamps: true,
-  underscored: false,
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt',
+  underscored: true,
   indexes: [
     { fields: ['organization_id'] },
     { fields: ['patient_id'] },
     { fields: ['hospital_id'] },
     { fields: ['status'] },
-    { fields: ['claimNumber'], unique: true },
+    { fields: ['claim_number'], unique: true },
+    { fields: ['user_insurance_id'] },
+    { fields: ['appointment_id'] },
     { fields: ['insurance_provider'] },
     { fields: ['insurance_provider_id'] },
     { fields: ['settlement_status'] },

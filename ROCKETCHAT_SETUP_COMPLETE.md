@@ -9,7 +9,7 @@
 ROCKETCHAT_INCOMING_WEBHOOK_URL=https://smart-chat.live/hooks/697d27420d23b15e771ff5ff/2g45Kyw4okXM9F47omzqScRzdCiEsei25vytf26jug62nzdn
 
 # Outgoing webhook handler (RocketChat → WhatsApp)
-ROCKETCHAT_OUTGOING_WEBHOOK_HANDLER=https://mediqzy.com/api/support/webhook/rocketchat
+ROCKETCHAT_OUTGOING_WEBHOOK_HANDLER=https://app.mediqzy.com/api/support/webhook/rocketchat
 ```
 
 ### ✅ Backend Status
@@ -51,7 +51,7 @@ ROCKETCHAT_OUTGOING_WEBHOOK_HANDLER=https://mediqzy.com/api/support/webhook/rock
    Enabled: ✅ Yes
    Event Trigger: Message Sent
    Channel: #general
-   URLs: https://mediqzy.com/api/support/webhook/rocketchat
+   URLs: https://app.mediqzy.com/api/support/webhook/rocketchat
    Method: POST
    Send as JSON: ✅ Yes
    ```
@@ -60,7 +60,7 @@ ROCKETCHAT_OUTGOING_WEBHOOK_HANDLER=https://mediqzy.com/api/support/webhook/rock
 **What happens when agent replies:**
 
 1. Agent types in RocketChat #general: "How can I help you?"
-2. RocketChat sends POST to `https://mediqzy.com/api/support/webhook/rocketchat`
+2. RocketChat sends POST to `https://app.mediqzy.com/api/support/webhook/rocketchat`
 3. Backend processes the message
 4. Backend sends to WhatsApp via Twilio
 5. User receives reply instantly

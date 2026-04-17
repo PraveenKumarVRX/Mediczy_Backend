@@ -1,5 +1,5 @@
 #!/bin/bash
-DOMAIN="https://mediqzy.com"
+DOMAIN="https://app.mediqzy.com"
 echo "Testing login page URLs..."
 echo ""
 

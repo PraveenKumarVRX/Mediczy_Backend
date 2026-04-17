@@ -88,7 +88,7 @@ PGPASSWORD=Mediczy2024Helper psql -h 127.0.0.1 -U mediczy_helper -d mediczy_ai -
 
 ### Test API Endpoint
 \`\`\`bash
-curl https://mediqzy.com/api/email/configs -H "Authorization: Bearer <admin_token>"
+curl https://app.mediqzy.com/api/email/configs -H "Authorization: Bearer <admin_token>"
 \`\`\`
 
 ## Benefits

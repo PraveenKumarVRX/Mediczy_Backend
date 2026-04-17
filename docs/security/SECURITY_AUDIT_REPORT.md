@@ -1,6 +1,6 @@
 # Security Audit Report - Mediqzy Production Application
 **Date:** November 26, 2025  
-**Domain:** https://mediqzy.com  
+**Domain:** https://app.mediqzy.com  
 **Auditor:** Security Assessment Tool
 
 ---

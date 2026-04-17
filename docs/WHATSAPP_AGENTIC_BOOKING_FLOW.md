@@ -170,7 +170,7 @@ Thank you for choosing Mediczy! 💙
 ```javascript
 // Just provides information and a link
 response = `Hi! To book an appointment, please visit:\n`;
-response += `https://mediqzy.com/book-appointment`;
+response += `https://app.mediqzy.com/book-appointment`;
 // User has to do everything themselves
 ```
 

@@ -299,7 +299,7 @@ Authorization: Bearer <token>
       "name": "Dr. Nandita Agarwal",
       "email": "nandita@mediqzy.com",
       "phone": "+919876543210",
-      "profileImage": "https://mediqzy.com/images/doctors/nandita.jpg",
+      "profileImage": "https://app.mediqzy.com/images/doctors/nandita.jpg",
       "specialization": "Cardiology",
       "qualifications": "MBBS, MD (Cardiology)",
       "experience": 15,
@@ -498,7 +498,7 @@ Authorization: Bearer <token>
         "id": 70,
         "name": "Dr. Nandita Agarwal",
         "specialization": "Cardiology",
-        "profileImage": "https://mediqzy.com/images/doctors/nandita.jpg"
+        "profileImage": "https://app.mediqzy.com/images/doctors/nandita.jpg"
       },
       "consultationType": "online",
       "appointmentDate": "2026-01-28",
@@ -882,9 +882,9 @@ Content-Type: application/json
     "patientId": 123,
     "diagnosis": "Viral Fever with Myalgia",
     "medications": [...],
-    "pdfUrl": "https://mediqzy.com/prescriptions/RX-789-2026.pdf",
-    "shareUrl": "https://mediqzy.com/rx/RX-789-2026",
-    "whatsappShareUrl": "https://mediqzy.com/api/prescriptions/RX-789-2026/share/whatsapp",
+    "pdfUrl": "https://app.mediqzy.com/prescriptions/RX-789-2026.pdf",
+    "shareUrl": "https://app.mediqzy.com/rx/RX-789-2026",
+    "whatsappShareUrl": "https://app.mediqzy.com/api/prescriptions/RX-789-2026/share/whatsapp",
     "createdAt": "2026-01-28T10:20:00.000Z"
   }
 }
@@ -918,7 +918,7 @@ Authorization: Bearer <token>
     "diagnosis": "Viral Fever with Myalgia",
     "medications": [...],
     "labTests": ["CBC", "ESR"],
-    "pdfUrl": "https://mediqzy.com/prescriptions/RX-789-2026.pdf",
+    "pdfUrl": "https://app.mediqzy.com/prescriptions/RX-789-2026.pdf",
     "createdAt": "2026-01-28T10:20:00.000Z"
   }
 }
@@ -998,7 +998,7 @@ Content-Type: application/json
   "amount": 1000,
   "currency": "INR",
   "razorpayKey": "rzp_live_xxxxx",
-  "callback": "https://mediqzy.com/api/wallet/topup/callback"
+  "callback": "https://app.mediqzy.com/api/wallet/topup/callback"
 }
 ```
 
@@ -1059,7 +1059,7 @@ Authorization: Bearer <token>
 ```javascript
 import io from "socket.io-client";
 
-const socket = io("https://mediqzy.com", {
+const socket = io("https://app.mediqzy.com", {
   auth: {
     token: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   },
@@ -1124,7 +1124,7 @@ socket.on("prescription-ready", (data) => {
   //   appointmentId: 456,
   //   prescriptionId: 789,
   //   prescriptionNumber: "RX-789-2026",
-  //   pdfUrl: "https://mediqzy.com/prescriptions/RX-789-2026.pdf"
+  //   pdfUrl: "https://app.mediqzy.com/prescriptions/RX-789-2026.pdf"
   // }
 
   showNotification({
@@ -1433,7 +1433,7 @@ async function registerFCMToken(authToken) {
   const fcmToken = await messaging().getToken();
 
   // Register with backend
-  await fetch("https://mediqzy.com/api/notifications/fcm/register", {
+  await fetch("https://app.mediqzy.com/api/notifications/fcm/register", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${authToken}`,
@@ -1453,7 +1453,7 @@ async function registerFCMToken(authToken) {
 messaging().onTokenRefresh(async (newToken) => {
   const authToken = await AsyncStorage.getItem("authToken");
   if (authToken) {
-    await fetch("https://mediqzy.com/api/notifications/fcm/register", {
+    await fetch("https://app.mediqzy.com/api/notifications/fcm/register", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${authToken}`,
@@ -1523,7 +1523,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 
 class PushNotificationService {
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
-  final String baseUrl = 'https://mediqzy.com';
+  final String baseUrl = 'https://app.mediqzy.com';
   String? authToken;
 
   Future<void> initialize(String token) async {
@@ -2138,7 +2138,7 @@ For API support and questions:
 
 ### v2.1.0 (2026-02-03)
 
-- **BREAKING**: Clarified Base URL usage - use `https://mediqzy.com` WITHOUT `/api` suffix
+- **BREAKING**: Clarified Base URL usage - use `https://app.mediqzy.com` WITHOUT `/api` suffix
 - Added `/api/mobile/video/token` endpoint for mobile-optimized video tokens
 - Updated SDK examples with correct endpoint configuration
 - Fixed double `/api/` prefix issue in documentation

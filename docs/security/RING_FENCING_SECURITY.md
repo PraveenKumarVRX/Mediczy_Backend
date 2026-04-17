@@ -144,21 +144,21 @@ router.get('/api/users/:id/profile',
 ##### POST `/api/auth/logout`
 Logout current user and clear session:
 ```bash
-curl -X POST https://mediqzy.com/api/auth/logout \
+curl -X POST https://app.mediqzy.com/api/auth/logout \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
 ##### GET `/api/auth/session-info`
 Get current session information:
 ```bash
-curl -X GET https://mediqzy.com/api/auth/session-info \
+curl -X GET https://app.mediqzy.com/api/auth/session-info \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
 ##### POST `/api/auth/revoke-token` (Admin Only)
 Revoke a specific user's token:
 ```bash
-curl -X POST https://mediqzy.com/api/auth/revoke-token \
+curl -X POST https://app.mediqzy.com/api/auth/revoke-token \
   -H "Authorization: Bearer ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"userId": "123", "userType": "doctor"}'
@@ -226,7 +226,7 @@ The test script verifies:
 1. Login as user and get token
 2. Try to access admin endpoint:
 ```bash
-curl -X GET https://mediqzy.com/api/admin/users \
+curl -X GET https://app.mediqzy.com/api/admin/users \
   -H "Authorization: Bearer USER_TOKEN"
 ```
 3. **Expected**: 403 Forbidden response

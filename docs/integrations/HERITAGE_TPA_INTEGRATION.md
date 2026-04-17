@@ -310,7 +310,7 @@ try {
 ### URL
 Access the Heritage TPA interface at:
 ```
-https://mediqzy.com/tpa/heritage
+https://app.mediqzy.com/tpa/heritage
 ```
 
 ### Login Credentials
@@ -448,7 +448,7 @@ pm2 logs mediczy-server | grep "Heritage TPA"
 
 **Build**: index-tN_ZcCr7.js (6.73 MB)
 **Deployed**: December 2024
-**Production URL**: https://mediqzy.com/tpa/heritage
+**Production URL**: https://app.mediqzy.com/tpa/heritage
 **Backend**: PM2 mediczy-server (port 8000)
 **Status**: ✅ **LIVE**
 

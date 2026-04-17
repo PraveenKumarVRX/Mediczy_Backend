@@ -50,7 +50,7 @@ Added comprehensive logging to track video join requests and authorization check
 ## Testing Steps
 
 ### User Testing
-1. Login at https://mediqzy.com/login
+1. Login at https://app.mediqzy.com/login
 2. Go to Appointments
 3. Click "Join Video Call"
 4. **Expected:** Video room loads successfully

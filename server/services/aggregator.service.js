@@ -72,7 +72,7 @@ class AggregatorService {
           c.createdAt,
           c.onboarded_by,
           (SELECT COUNT(*) FROM users WHERE corporate_id = c.id) as employees_count,
-          (SELECT COUNT(*) FROM corporate_employees WHERE corporateId = c.id AND isActive = true) as active_employees
+          (SELECT COUNT(*) FROM corporate_employees WHERE corporate_id = c.id AND isActive = true) as active_employees
         FROM corporates c
         WHERE c.aggregator_id = $1
       `;
@@ -200,15 +200,15 @@ class AggregatorService {
           service_categories,
           coverage_areas,
           contact_person,
-          "createdAt",
-          "updatedAt"
+          created_at,
+          updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
         ON CONFLICT (aggregator_id, aggregator_type, wellness_provider_type, wellness_provider_id)
         DO UPDATE SET 
           network_status = EXCLUDED.network_status,
           commission_percentage = EXCLUDED.commission_percentage,
           service_categories = EXCLUDED.service_categories,
-          "updatedAt" = NOW()
+          updated_at = NOW()
         RETURNING *;
       `;
 
@@ -259,7 +259,7 @@ class AggregatorService {
           ce.isActive
         FROM users u
         JOIN corporate_employees ce ON u.id = ce.userId
-        WHERE ce.corporateId = $1
+        WHERE ce.corporate_id = $1
       `;
 
       const params = [corporateId];
@@ -386,7 +386,7 @@ class AggregatorService {
           COUNT(DISTINCT CASE WHEN ce.isActive = true THEN ce.userId END) as total_active_employees
         FROM aggregator_wellness_network awn
         LEFT JOIN corporates c ON c.aggregator_id = awn.aggregator_id
-        LEFT JOIN corporate_employees ce ON c.id = ce.corporateId
+        LEFT JOIN corporate_employees ce ON c.id = ce.corporate_id
         WHERE awn.aggregator_id = $1 AND awn.aggregator_type = $2
         GROUP BY aggregator_id, aggregator_type
       `;

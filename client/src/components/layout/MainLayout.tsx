@@ -268,10 +268,12 @@ const MainLayout = ({ children }: MainLayoutProps) => {
               <div className="p-1.5 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600 shadow-sm">
                 <HeartPulse className="h-4 w-4 text-white" />
               </div>
-              <span className="text-sm md:text-base font-semibold text-slate-800 dark:text-white">{BRAND.name}</span>
-              <span className="hidden sm:inline text-[10px] uppercase font-semibold bg-gradient-to-r from-teal-600 to-teal-700 text-white px-2.5 py-1 rounded-full tracking-wider">
-                {isTeamUser ? getShortRoleLabel('team') : isNurseRoute ? getShortRoleLabel('nurse') : isAssistantUser ? getShortRoleLabel('assistant') : getShortRoleLabel(userType || 'user')}
-              </span>
+              <div className="flex flex-col leading-none">
+                <span className="text-sm font-semibold text-slate-800 dark:text-white tracking-tight">{BRAND.name}</span>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-widest font-medium">
+                  {isTeamUser ? getShortRoleLabel('team') : isNurseRoute ? getShortRoleLabel('nurse') : isAssistantUser ? getShortRoleLabel('assistant') : getShortRoleLabel(userType || 'user')}
+                </span>
+              </div>
             </div>
             <div className="ml-auto flex items-center gap-2">
               <GlobalSearch />

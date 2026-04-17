@@ -46,7 +46,7 @@ Examples:
 
 **Public URL:**
 ```
-https://mediqzy.com/uploads/profiles/oauth_google_123_a3f5b2c8.jpg
+https://app.mediqzy.com/uploads/profiles/oauth_google_123_a3f5b2c8.jpg
 ```
 
 **Database Field:**
@@ -166,14 +166,14 @@ Required for OAuth to work:
 # Google OAuth
 GOOGLE_CLIENT_ID=your_client_id
 GOOGLE_CLIENT_SECRET=your_client_secret
-GOOGLE_CALLBACK_URL=https://mediqzy.com/api/auth/google/callback
-GOOGLE_DOCTOR_CALLBACK_URL=https://mediqzy.com/api/auth/doctor/google/callback
+GOOGLE_CALLBACK_URL=https://app.mediqzy.com/api/auth/google/callback
+GOOGLE_DOCTOR_CALLBACK_URL=https://app.mediqzy.com/api/auth/doctor/google/callback
 
 # Facebook OAuth
 FACEBOOK_APP_ID=your_app_id
 FACEBOOK_APP_SECRET=your_app_secret
-FACEBOOK_CALLBACK_URL=https://mediqzy.com/api/auth/facebook/callback
-FACEBOOK_DOCTOR_CALLBACK_URL=https://mediqzy.com/api/auth/doctor/facebook/callback
+FACEBOOK_CALLBACK_URL=https://app.mediqzy.com/api/auth/facebook/callback
+FACEBOOK_DOCTOR_CALLBACK_URL=https://app.mediqzy.com/api/auth/doctor/facebook/callback
 
 # JWT
 SECRET_TOKEN=your_secret_token
@@ -200,7 +200,7 @@ GET /api/auth/doctor/facebook/callback - Facebook OAuth callback for doctors
 ## Testing
 
 ### Test Google OAuth Login
-1. Navigate to: `https://mediqzy.com/api/auth/google`
+1. Navigate to: `https://app.mediqzy.com/api/auth/google`
 2. Select Google account
 3. Grant permissions
 4. Check console logs for profile picture download
@@ -208,7 +208,7 @@ GET /api/auth/doctor/facebook/callback - Facebook OAuth callback for doctors
 6. Check database for `profileImage` field updated
 
 ### Test Facebook OAuth Login
-1. Navigate to: `https://mediqzy.com/api/auth/facebook`
+1. Navigate to: `https://app.mediqzy.com/api/auth/facebook`
 2. Select Facebook account
 3. Grant permissions
 4. Check console logs for profile picture download
@@ -296,7 +296,7 @@ emailVerified BOOLEAN     -- Set to true for OAuth users
 ### OAuth Callback Handling
 After successful OAuth, redirect URL includes:
 ```
-https://mediqzy.com/oauth-callback?token={jwt}&userType={user|doctor}&provider={google|facebook}
+https://app.mediqzy.com/oauth-callback?token={jwt}&userType={user|doctor}&provider={google|facebook}
 ```
 
 Frontend should:
@@ -379,7 +379,7 @@ pm2 logs mediczy-server --lines 100 | grep -i "profile picture"
 ```bash
 # Verify uploads location configured
 sudo nginx -t
-curl -I https://mediqzy.com/uploads/profiles/test.jpg
+curl -I https://app.mediqzy.com/uploads/profiles/test.jpg
 ```
 
 **Check 2: Database Value**
