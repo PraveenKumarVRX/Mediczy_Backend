@@ -1,5 +1,5 @@
 import express from 'express';
-import { body, param, query } from 'express-validator';
+import { body, param, query, validationResult } from 'express-validator';
 import { Op } from 'sequelize';
 import { validateBody, validateQuery } from '../validationSchemas/validateRequest.middleware.js';
 import {
@@ -316,6 +316,10 @@ router.patch(
     body('notes').optional().isString()
   ],
   async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
+    }
     try {
       const { id } = req.params;
       const { status, notes } = req.body;
@@ -329,7 +333,8 @@ router.patch(
         Boolean(req.user?.isAdmin) ||
         (typeof req.userRole === 'string' && req.userRole.includes('admin'));
       const isDoctorOwner =
-        req.userRole === 'doctor' && appointment.doctorId === req.user.id;
+        req.userRole === 'doctor' &&
+        Number(appointment.doctorId) === Number(req.user.id);
 
       if (!isAdmin && !isDoctorOwner) {
         return res.status(403).json({ message: 'Unauthorized access' });

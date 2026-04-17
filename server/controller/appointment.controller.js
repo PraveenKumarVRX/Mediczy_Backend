@@ -810,8 +810,10 @@ export const rescheduleAppointment = async (req, res) => {
       return res.status(404).json({ message: 'Appointment not found' });
     }
 
-    // Check authorization
-    if (String(appointment.userId) !== String(userId)) {
+    // Check authorization — allow patient OR the assigned doctor to reschedule
+    const isPatient = String(appointment.userId) === String(userId);
+    const isDoctor = String(appointment.doctorId) === String(userId);
+    if (!isPatient && !isDoctor) {
       return res.status(403).json({ message: 'Unauthorized access' });
     }
 

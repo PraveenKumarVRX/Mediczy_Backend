@@ -623,6 +623,15 @@ router.post('/doctor/accept/:appointmentId', authUser, [
   body('notes').optional().isString()
 ], async (req, res) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
     const { appointmentId } = req.params;
     const { notes } = req.body;
     const doctorId = req.user.id || req.user.dataValues?.id;
@@ -636,7 +645,7 @@ router.post('/doctor/accept/:appointmentId', authUser, [
       });
     }
 
-    if (appointment.doctorId !== doctorId) {
+    if (Number(appointment.doctorId) !== Number(doctorId)) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to accept this appointment'
@@ -721,7 +730,7 @@ router.post('/doctor/reject/:appointmentId', authUser, [
       });
     }
 
-    if (appointment.doctorId !== doctorId) {
+    if (Number(appointment.doctorId) !== Number(doctorId)) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to reject this appointment'

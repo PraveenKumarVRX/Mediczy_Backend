@@ -121,6 +121,8 @@ const AVATAR_COLORS = [
 const avatarColor = (id: number) => AVATAR_COLORS[id % AVATAR_COLORS.length];
 
 const STATUS_CONFIG: Record<string, { label: string; border: string; badge: string; dot: string }> = {
+  pending:      { label: "Pending",      border: "border-l-purple-400",  badge: "bg-purple-100 text-purple-700", dot: "bg-purple-400" },
+  accepted:     { label: "Accepted",     border: "border-l-teal-400",    badge: "bg-teal-100 text-teal-700",    dot: "bg-teal-400" },
   scheduled:    { label: "Scheduled",    border: "border-l-blue-400",    badge: "bg-blue-100 text-blue-700",    dot: "bg-blue-400" },
   confirmed:    { label: "Confirmed",    border: "border-l-green-400",   badge: "bg-green-100 text-green-700",  dot: "bg-green-400" },
   "in-progress":{ label: "In Progress",  border: "border-l-yellow-400",  badge: "bg-yellow-100 text-yellow-700",dot: "bg-yellow-400" },
@@ -142,8 +144,13 @@ const DoctorAppointments = () => {
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [notesDialogOpen, setNotesDialogOpen] = useState(false);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false);
   const [notes, setNotes] = useState("");
   const [newStatus, setNewStatus] = useState("");
+  const [rejectReason, setRejectReason] = useState("");
+  const [rescheduleDate, setRescheduleDate] = useState("");
+  const [rescheduleTime, setRescheduleTime] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
 
@@ -185,6 +192,57 @@ const DoctorAppointments = () => {
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.response?.data?.message || "Failed to update status", variant: "destructive" });
+      setStatusDialogOpen(false);
+      setSelectedAppointment(null);
+    },
+  });
+
+  const acceptMutation = useMutation({
+    mutationFn: async ({ id }: { id: number }) => {
+      const { data } = await api.post(`/consultation/doctor/accept/${id}`);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["doctorEnhancedAppointments", doctorId] });
+      toast({ title: "✅ Appointment Accepted", description: "Patient will be notified to complete payment." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.response?.data?.message || "Failed to accept appointment", variant: "destructive" });
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: number; reason: string }) => {
+      const { data } = await api.post(`/consultation/doctor/reject/${id}`, { reason });
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["doctorEnhancedAppointments", doctorId] });
+      toast({ title: "Appointment Rejected", description: "Patient has been notified." });
+      setRejectDialogOpen(false);
+      setSelectedAppointment(null);
+      setRejectReason("");
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.response?.data?.message || "Failed to reject appointment", variant: "destructive" });
+    },
+  });
+
+  const rescheduleMutation = useMutation({
+    mutationFn: async ({ id, appointmentDate, appointmentTime }: { id: number; appointmentDate: string; appointmentTime: string }) => {
+      const { data } = await api.patch(`/appointments/${id}/reschedule`, { appointmentDate, appointmentTime });
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["doctorEnhancedAppointments", doctorId] });
+      toast({ title: "📅 Appointment Rescheduled", description: "Patient has been notified of the new time." });
+      setRescheduleDialogOpen(false);
+      setSelectedAppointment(null);
+      setRescheduleDate("");
+      setRescheduleTime("");
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.response?.data?.message || "Failed to reschedule appointment", variant: "destructive" });
     },
   });
 
@@ -271,7 +329,7 @@ const DoctorAppointments = () => {
   // Stats
   const totalToday = todayApts.length;
   const completedToday = todayApts.filter((a: Appointment) => normalizeStatus(a.status) === "completed").length;
-  const pendingToday = todayApts.filter((a: Appointment) => ["scheduled", "confirmed"].includes(normalizeStatus(a.status))).length;
+  const pendingToday = todayApts.filter((a: Appointment) => ["scheduled", "confirmed", "pending", "accepted"].includes(normalizeStatus(a.status))).length;
   const inProgressToday = todayApts.filter((a: Appointment) => normalizeStatus(a.status) === "in-progress").length;
 
   // ── sub-components ────────────────────────────────────────────────────────
@@ -373,35 +431,78 @@ const DoctorAppointments = () => {
           )}
 
           {/* Actions */}
-          <div className="flex items-center gap-2 pt-3.5 border-t border-gray-100 dark:border-gray-800">
-            {canInitiateCall(apt.status) && (
+          <div className="flex items-center gap-2 pt-3.5 border-t border-gray-100 dark:border-gray-800 flex-wrap">
+            {normalizeStatus(apt.status) === "pending" ? (
+              <>
+                <Button
+                  size="sm"
+                  onClick={() => acceptMutation.mutate({ id: apt.id })}
+                  disabled={acceptMutation.isPending}
+                  className="bg-green-600 hover:bg-green-700 text-white rounded-xl px-4 gap-1.5 h-8 text-xs font-semibold"
+                >
+                  {acceptMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                  Accept
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => { setSelectedAppointment(apt); setRejectReason(""); setRejectDialogOpen(true); }}
+                  className="border-red-200 text-red-600 hover:bg-red-50 rounded-xl px-4 gap-1.5 h-8 text-xs font-semibold"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Reject
+                </Button>
+              </>
+            ) : (
+              canInitiateCall(apt.status) && (
+                <Button
+                  size="sm"
+                  onClick={() => handleStartConsultation(apt)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-4 gap-1.5 h-8 text-xs font-semibold"
+                >
+                  <ConsultIcon apt={apt} />
+                  Start Call
+                </Button>
+              )
+            )}
+            {["pending", "scheduled", "confirmed", "accepted"].includes(normalizeStatus(apt.status)) && (
               <Button
+                variant="outline"
                 size="sm"
-                onClick={() => handleStartConsultation(apt)}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-4 gap-1.5 h-8 text-xs font-semibold"
+                onClick={() => {
+                  setSelectedAppointment(apt);
+                  setRescheduleDate(apt.appointmentDate);
+                  setRescheduleTime(apt.appointmentTime || "");
+                  setRescheduleDialogOpen(true);
+                }}
+                className="rounded-xl h-8 text-xs gap-1.5"
               >
-                <ConsultIcon apt={apt} />
-                Start Call
+                <Calendar className="h-3.5 w-3.5" />
+                Reschedule
               </Button>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => { setSelectedAppointment(apt); setNotes(apt.notes || ""); setNotesDialogOpen(true); }}
-              className="rounded-xl h-8 text-xs gap-1.5"
-            >
-              <FileText className="h-3.5 w-3.5" />
-              {apt.notes ? "Edit Notes" : "Add Notes"}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => { setSelectedAppointment(apt); setNewStatus(apt.status); setStatusDialogOpen(true); }}
-              className="rounded-xl h-8 text-xs ml-auto text-gray-500 hover:text-gray-800"
-            >
-              Update Status
-              <ChevronRight className="h-3.5 w-3.5 ml-1" />
-            </Button>
+            {normalizeStatus(apt.status) !== "pending" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setSelectedAppointment(apt); setNotes(apt.notes || ""); setNotesDialogOpen(true); }}
+                className="rounded-xl h-8 text-xs gap-1.5"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                {apt.notes ? "Edit Notes" : "Add Notes"}
+              </Button>
+            )}
+            {normalizeStatus(apt.status) !== "pending" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setSelectedAppointment(apt); setNewStatus(apt.status); setStatusDialogOpen(true); }}
+                className="rounded-xl h-8 text-xs ml-auto text-gray-500 hover:text-gray-800"
+              >
+                Update Status
+                <ChevronRight className="h-3.5 w-3.5 ml-1" />
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -486,7 +587,7 @@ const DoctorAppointments = () => {
             )}
           </div>
           <div className="flex flex-wrap gap-2">
-            {["all", "scheduled", "confirmed", "in-progress", "completed", "cancelled"].map((s) => (
+            {["all", "pending", "scheduled", "confirmed", "in-progress", "completed", "cancelled"].map((s) => (
               <button
                 key={s}
                 onClick={() => setFilterStatus(s)}
@@ -627,6 +728,85 @@ const DoctorAppointments = () => {
                 className="rounded-xl bg-indigo-600 hover:bg-indigo-700"
               >
                 {updateStatusMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Updating…</> : "Update"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Reject Dialog ─────────────────────────────────────────────── */}
+        <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+          <DialogContent className="rounded-2xl">
+            <DialogHeader>
+              <DialogTitle>Reject Appointment</DialogTitle>
+              <DialogDescription>
+                {selectedAppointment?.patientName} · {formatDate(selectedAppointment?.appointmentDate || "")} {formatTime(selectedAppointment?.appointmentTime)}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-3">
+              <Label className="text-xs uppercase tracking-wider text-gray-500 mb-2 block">Reason for rejection <span className="text-red-500">*</span></Label>
+              <Textarea
+                placeholder="Enter reason for rejecting this appointment…"
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                rows={4}
+                className="rounded-xl resize-none"
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRejectDialogOpen(false)} disabled={rejectMutation.isPending} className="rounded-xl">
+                Cancel
+              </Button>
+              <Button
+                onClick={() => selectedAppointment && rejectMutation.mutate({ id: selectedAppointment.id, reason: rejectReason })}
+                disabled={rejectMutation.isPending || !rejectReason.trim()}
+                className="rounded-xl bg-red-600 hover:bg-red-700"
+              >
+                {rejectMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Rejecting…</> : "Reject Appointment"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Reschedule Dialog ─────────────────────────────────────────── */}
+        <Dialog open={rescheduleDialogOpen} onOpenChange={setRescheduleDialogOpen}>
+          <DialogContent className="rounded-2xl">
+            <DialogHeader>
+              <DialogTitle>Reschedule Appointment</DialogTitle>
+              <DialogDescription>
+                {selectedAppointment?.patientName} · currently {formatDate(selectedAppointment?.appointmentDate || "")} {formatTime(selectedAppointment?.appointmentTime)}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-3 space-y-4">
+              <div>
+                <Label className="text-xs uppercase tracking-wider text-gray-500 mb-2 block">New Date</Label>
+                <Input
+                  type="date"
+                  value={rescheduleDate}
+                  min={format(new Date(), "yyyy-MM-dd")}
+                  onChange={(e) => setRescheduleDate(e.target.value)}
+                  className="rounded-xl"
+                />
+              </div>
+              <div>
+                <Label className="text-xs uppercase tracking-wider text-gray-500 mb-2 block">New Time (HH:MM)</Label>
+                <Input
+                  type="time"
+                  value={rescheduleTime}
+                  onChange={(e) => setRescheduleTime(e.target.value)}
+                  className="rounded-xl"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRescheduleDialogOpen(false)} disabled={rescheduleMutation.isPending} className="rounded-xl">
+                Cancel
+              </Button>
+              <Button
+                onClick={() => selectedAppointment && rescheduleMutation.mutate({ id: selectedAppointment.id, appointmentDate: rescheduleDate, appointmentTime: rescheduleTime })}
+                disabled={rescheduleMutation.isPending || !rescheduleDate || !rescheduleTime}
+                className="rounded-xl bg-indigo-600 hover:bg-indigo-700"
+              >
+                {rescheduleMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Rescheduling…</> : "Confirm Reschedule"}
               </Button>
             </DialogFooter>
           </DialogContent>
