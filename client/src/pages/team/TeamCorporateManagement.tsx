@@ -101,6 +101,8 @@ interface Employee {
   currentPackageId?: string;
   currentPackageName?: string;
   packageValidTo?: string;
+  gender?: string;
+  dateOfBirth?: string;
 }
 
 interface LabPartner {
@@ -244,6 +246,13 @@ const TeamCorporateManagement = () => {
   const [showBulkUploadDialog, setShowBulkUploadDialog] = useState(false);
   const [showEditPackageDialog, setShowEditPackageDialog] = useState(false);
   const [showAssignPackageDialog, setShowAssignPackageDialog] = useState(false);
+  const [showBulkPlanDialog, setShowBulkPlanDialog] = useState(false);
+  const [bulkPlanId, setBulkPlanId] = useState('');
+  const [bulkPlanFilter, setBulkPlanFilter] = useState<'all'|'gender'|'city'|'department'|'location'|'facility'|'age'>('all');
+  const [bulkPlanFilterValue, setBulkPlanFilterValue] = useState('');
+  const [bulkPlanAgeMin, setBulkPlanAgeMin] = useState('');
+  const [bulkPlanAgeMax, setBulkPlanAgeMax] = useState('');
+  const [bulkAssigning, setBulkAssigning] = useState(false);
   const [showAssignNetworkDialog, setShowAssignNetworkDialog] = useState(false);
   const [assigningNetworks, setAssigningNetworks] = useState<{ id: number; name: string; type: 'lab' | 'hospital' | 'clinic'; city?: string }[]>([]);
   const [selectedNetworkPartnerIds, setSelectedNetworkPartnerIds] = useState<number[]>([]);
@@ -503,6 +512,8 @@ const TeamCorporateManagement = () => {
             currentPackageId: emp.currentPackageId || undefined,
             currentPackageName: emp.currentPackageName || undefined,
             packageValidTo: emp.packageValidTo || undefined,
+            gender: emp.gender || '',
+            dateOfBirth: emp.dateOfBirth || '',
           };
         }));
       } else {
@@ -1528,6 +1539,62 @@ const TeamCorporateManagement = () => {
   };
 
   // Create New Package — persists to DB via corporate-package-assignments
+  const handleBulkAssignPlan = async () => {
+    if (!bulkPlanId || !selectedCorporate) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Please select a plan first.' });
+      return;
+    }
+    setBulkAssigning(true);
+    try {
+      const token = localStorage.getItem('teamToken');
+      // Filter employees client-side
+      let filtered = employees;
+      const today = new Date();
+      if (bulkPlanFilter === 'gender' && bulkPlanFilterValue) {
+        filtered = filtered.filter(e => e.gender?.toLowerCase() === bulkPlanFilterValue.toLowerCase());
+      } else if (bulkPlanFilter === 'city' && bulkPlanFilterValue) {
+        filtered = filtered.filter(e => e.city?.toLowerCase().includes(bulkPlanFilterValue.toLowerCase()));
+      } else if (bulkPlanFilter === 'department' && bulkPlanFilterValue) {
+        filtered = filtered.filter(e => e.department?.toLowerCase().includes(bulkPlanFilterValue.toLowerCase()));
+      } else if (bulkPlanFilter === 'location' && bulkPlanFilterValue) {
+        filtered = filtered.filter(e => e.location?.toLowerCase().includes(bulkPlanFilterValue.toLowerCase()));
+      } else if (bulkPlanFilter === 'facility' && bulkPlanFilterValue) {
+        filtered = filtered.filter(e => e.facility?.toLowerCase().includes(bulkPlanFilterValue.toLowerCase()));
+      } else if (bulkPlanFilter === 'age') {
+        const minAge = bulkPlanAgeMin ? parseInt(bulkPlanAgeMin) : 0;
+        const maxAge = bulkPlanAgeMax ? parseInt(bulkPlanAgeMax) : 999;
+        filtered = filtered.filter(e => {
+          if (!e.dateOfBirth) return false;
+          const age = Math.floor((today.getTime() - new Date(e.dateOfBirth).getTime()) / (365.25 * 24 * 3600 * 1000));
+          return age >= minAge && age <= maxAge;
+        });
+      }
+      const empIds = filtered.map(e => e.id);
+      if (empIds.length === 0) {
+        toast({ variant: 'destructive', title: 'No Matching Employees', description: 'No employees match the selected filter.' });
+        setBulkAssigning(false);
+        return;
+      }
+      const selectedPlan = corporatePlans.find(p => String(p.id) === bulkPlanId) ||
+        healthPackages.find(p => String(p.id) === bulkPlanId);
+      await api.post('/admin/corporate-package-assignments', {
+        corporateId: selectedCorporate.id,
+        packageId: bulkPlanId,
+        packageName: selectedPlan?.name || `Plan ${bulkPlanId}`,
+        packageDetails: {},
+        employeeIds: empIds,
+      }, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      toast({ title: 'Plan Assigned', description: `Plan assigned to ${empIds.length} employee${empIds.length !== 1 ? 's' : ''}.` });
+      setShowBulkPlanDialog(false);
+      fetchEmployees(selectedCorporate.id);
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err?.response?.data?.message || 'Failed to assign plan.' });
+    } finally {
+      setBulkAssigning(false);
+    }
+  };
+
+  // Create New Package — persists to DB via corporate-package-assignments
   const handleCreatePackage = async () => {
     if (!newPackage.name || !newPackage.price) {
       toast({
@@ -1975,6 +2042,10 @@ const TeamCorporateManagement = () => {
                       </CardDescription>
                     </div>
                     <div className="flex gap-2">
+                      <Button variant="outline" onClick={() => { setBulkPlanId(''); setBulkPlanFilter('all'); setBulkPlanFilterValue(''); setBulkPlanAgeMin(''); setBulkPlanAgeMax(''); setShowBulkPlanDialog(true); }}>
+                        <Package className="h-4 w-4 mr-2" />
+                        Bulk Assign Plan
+                      </Button>
                       <Button variant="outline" onClick={() => setShowBulkUploadDialog(true)}>
                         <Upload className="h-4 w-4 mr-2" />
                         Bulk Upload
@@ -3267,12 +3338,12 @@ const TeamCorporateManagement = () => {
 
         {/* Edit Employee Dialog */}
         <Dialog open={showEditEmployeeDialog} onOpenChange={setShowEditEmployeeDialog}>
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
             <DialogHeader>
               <DialogTitle>Edit Employee — {editingEmployee?.name}</DialogTitle>
               <DialogDescription className="sr-only">Edit employee details</DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
+            <div className="space-y-4 py-4 overflow-y-auto flex-1 pr-1">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>First Name</Label>
@@ -3864,6 +3935,116 @@ const TeamCorporateManagement = () => {
                   networkAssignMode === 'department' ? employees.filter(e => selectedDepartmentsForAssign.includes(e.department)).length :
                   selectedEmployeesForAssign.length
                 ) !== 1 ? 's' : ''}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Bulk Plan Assignment Dialog */}
+        <Dialog open={showBulkPlanDialog} onOpenChange={setShowBulkPlanDialog}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Bulk Assign Health Plan</DialogTitle>
+              <DialogDescription>Assign a plan to employees filtered by criteria.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              {/* Plan picker */}
+              <div className="space-y-2">
+                <Label>Select Plan <span className="text-red-500">*</span></Label>
+                <Select value={bulkPlanId} onValueChange={setBulkPlanId}>
+                  <SelectTrigger><SelectValue placeholder="Choose a plan" /></SelectTrigger>
+                  <SelectContent>
+                    {[...corporatePlans.map(p => ({ id: String(p.id), name: p.name })),
+                      ...healthPackages.filter(hp => !corporatePlans.some(p => String(p.id) === hp.id)).map(hp => ({ id: hp.id, name: hp.name }))
+                    ].map(opt => (
+                      <SelectItem key={opt.id} value={opt.id}>{opt.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Filter type */}
+              <div className="space-y-2">
+                <Label>Assign To</Label>
+                <Select value={bulkPlanFilter} onValueChange={(v: any) => { setBulkPlanFilter(v); setBulkPlanFilterValue(''); setBulkPlanAgeMin(''); setBulkPlanAgeMax(''); }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Employees ({employees.length})</SelectItem>
+                    <SelectItem value="gender">By Gender</SelectItem>
+                    <SelectItem value="city">By City</SelectItem>
+                    <SelectItem value="department">By Department</SelectItem>
+                    <SelectItem value="location">By Location / Branch</SelectItem>
+                    <SelectItem value="facility">By Facility</SelectItem>
+                    <SelectItem value="age">By Age Range</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Filter value input */}
+              {bulkPlanFilter === 'gender' && (
+                <div className="space-y-2">
+                  <Label>Gender</Label>
+                  <Select value={bulkPlanFilterValue} onValueChange={setBulkPlanFilterValue}>
+                    <SelectTrigger><SelectValue placeholder="Select gender" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Male">Male</SelectItem>
+                      <SelectItem value="Female">Female</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {['city', 'department', 'location', 'facility'].includes(bulkPlanFilter) && (
+                <div className="space-y-2">
+                  <Label>{bulkPlanFilter === 'city' ? 'City' : bulkPlanFilter === 'department' ? 'Department' : bulkPlanFilter === 'location' ? 'Location / Branch' : 'Facility'}</Label>
+                  <Input placeholder={`Enter ${bulkPlanFilter}...`} value={bulkPlanFilterValue} onChange={e => setBulkPlanFilterValue(e.target.value)} />
+                  {/* Hint with distinct values */}
+                  {(() => {
+                    const vals = [...new Set(employees.map(e => (e as any)[bulkPlanFilter]).filter(Boolean))].slice(0, 10);
+                    return vals.length > 0 ? <p className="text-xs text-muted-foreground">Available: {vals.join(', ')}</p> : null;
+                  })()}
+                </div>
+              )}
+              {bulkPlanFilter === 'age' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Min Age</Label>
+                    <Input type="number" placeholder="e.g. 25" value={bulkPlanAgeMin} onChange={e => setBulkPlanAgeMin(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Max Age</Label>
+                    <Input type="number" placeholder="e.g. 45" value={bulkPlanAgeMax} onChange={e => setBulkPlanAgeMax(e.target.value)} />
+                  </div>
+                </div>
+              )}
+
+              {/* Preview count */}
+              <div className="bg-muted/50 rounded-lg p-3 text-sm text-muted-foreground">
+                {(() => {
+                  const today = new Date();
+                  let count = employees.length;
+                  if (bulkPlanFilter === 'gender' && bulkPlanFilterValue) count = employees.filter(e => e.gender?.toLowerCase() === bulkPlanFilterValue.toLowerCase()).length;
+                  else if (bulkPlanFilter === 'city' && bulkPlanFilterValue) count = employees.filter(e => e.city?.toLowerCase().includes(bulkPlanFilterValue.toLowerCase())).length;
+                  else if (bulkPlanFilter === 'department' && bulkPlanFilterValue) count = employees.filter(e => e.department?.toLowerCase().includes(bulkPlanFilterValue.toLowerCase())).length;
+                  else if (bulkPlanFilter === 'location' && bulkPlanFilterValue) count = employees.filter(e => e.location?.toLowerCase().includes(bulkPlanFilterValue.toLowerCase())).length;
+                  else if (bulkPlanFilter === 'facility' && bulkPlanFilterValue) count = employees.filter(e => e.facility?.toLowerCase().includes(bulkPlanFilterValue.toLowerCase())).length;
+                  else if (bulkPlanFilter === 'age') {
+                    const minAge = bulkPlanAgeMin ? parseInt(bulkPlanAgeMin) : 0;
+                    const maxAge = bulkPlanAgeMax ? parseInt(bulkPlanAgeMax) : 999;
+                    count = employees.filter(e => {
+                      if (!e.dateOfBirth) return false;
+                      const age = Math.floor((today.getTime() - new Date(e.dateOfBirth).getTime()) / (365.25 * 24 * 3600 * 1000));
+                      return age >= minAge && age <= maxAge;
+                    }).length;
+                  }
+                  return <span><strong>{count}</strong> employee{count !== 1 ? 's' : ''} will receive this plan.</span>;
+                })()}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowBulkPlanDialog(false)}>Cancel</Button>
+              <Button onClick={handleBulkAssignPlan} disabled={bulkAssigning || !bulkPlanId}>
+                {bulkAssigning ? 'Assigning...' : 'Assign Plan'}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -2078,6 +2078,7 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
       SELECT u.id, u.email, u."firstName", u."lastName", u."phoneNumber",
              u.address_city, u.address_state, u."address_zipCode",
              u.department_name, u.employee_id AS user_employee_id,
+             u.gender, u."dateOfBirth",
              ua.metadata, ua.status, ua."startDate",
              uhp."packageId" AS "currentPackageId",
              uhp."packageName" AS "currentPackageName",
@@ -2108,6 +2109,8 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
         address_zipCode: e.address_zipCode || null,
         department_name: e.department_name || null,
         user_employee_id: e.user_employee_id || null,
+        gender: e.gender || null,
+        dateOfBirth: e.dateOfBirth || null,
         metadata: typeof e.metadata === 'string' ? JSON.parse(e.metadata) : e.metadata
       }))
     });
@@ -2176,7 +2179,8 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
 
     // Update / assign health plan if packageId provided
     if (packageId) {
-      const [pkgRef] = await postgresSequelize.query(`
+      // Try user_health_packages first (explicit per-corporate packages)
+      let [pkgRef] = await postgresSequelize.query(`
         SELECT DISTINCT ON ("packageId") "packageId", "packageName", "packageDetails", "validTo"
         FROM user_health_packages
         WHERE "packageId" = :packageId AND corporate_id = :corpId
@@ -2185,10 +2189,30 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
         replacements: { packageId, corpId: numericCorporateId },
         type: postgresSequelize.QueryTypes.SELECT
       });
+
+      // Fall back to subscription_plans if not found in user_health_packages
+      if (!pkgRef && /^\d+$/.test(String(packageId))) {
+        const [spRef] = await postgresSequelize.query(`
+          SELECT id::text AS "packageId", name AS "packageName",
+                 COALESCE(features, '{}'::jsonb) AS "packageDetails",
+                 (metadata->>'validTo') AS "validTo"
+          FROM subscription_plans
+          WHERE id = :planId
+            AND (metadata->>'corporateId')::int = :corpId
+            AND is_active = true
+          LIMIT 1
+        `, {
+          replacements: { planId: parseInt(packageId, 10), corpId: numericCorporateId },
+          type: postgresSequelize.QueryTypes.SELECT
+        });
+        pkgRef = spRef;
+      }
+
       if (pkgRef) {
         const pkgDetails = typeof pkgRef.packageDetails === 'string'
           ? pkgRef.packageDetails
           : JSON.stringify(pkgRef.packageDetails || {});
+        const validTo = pkgRef.validTo || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
         await postgresSequelize.query(`
           INSERT INTO user_health_packages
             ("userId", corporate_id, "packageId", "packageName", "packageDetails", "validFrom", "validTo", status, "createdAt", "updatedAt")
@@ -2207,7 +2231,7 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
             packageId,
             packageName: pkgRef.packageName,
             packageDetails: pkgDetails,
-            validTo: pkgRef.validTo
+            validTo
           },
           type: postgresSequelize.QueryTypes.INSERT
         });
@@ -2232,7 +2256,8 @@ router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['ad
   try {
     const numericCorporateId = req.resolvedCorporate.id;
 
-    const packages = await postgresSequelize.query(`
+    // Fetch from user_health_packages (explicit per-corporate packages)
+    const uhpPackages = await postgresSequelize.query(`
       SELECT "packageId", "packageName", "packageDetails",
              MIN("validFrom") AS "validFrom",
              MAX("validTo") AS "validTo"
@@ -2245,13 +2270,37 @@ router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['ad
       type: postgresSequelize.QueryTypes.SELECT
     });
 
+    // Also fetch subscription_plans assigned to this corporate
+    const spPackages = await postgresSequelize.query(`
+      SELECT id::text AS "packageId",
+             name AS "packageName",
+             COALESCE(features, '{}'::jsonb) AS "packageDetails",
+             (metadata->>'validFrom') AS "validFrom",
+             (metadata->>'validTo')   AS "validTo"
+      FROM subscription_plans
+      WHERE type = 'CORPORATE'
+        AND is_active = true
+        AND (metadata->>'corporateId')::int = :corporateId
+      ORDER BY name ASC
+    `, {
+      replacements: { corporateId: numericCorporateId },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+
+    // Merge, de-duplicate by packageId (uhp takes precedence)
+    const uhpIds = new Set(uhpPackages.map(p => String(p.packageId)));
+    const merged = [
+      ...uhpPackages,
+      ...spPackages.filter(p => !uhpIds.has(String(p.packageId)))
+    ];
+
     return res.json({
       success: true,
-      packages: packages.map(pkg => ({
+      packages: merged.map(pkg => ({
         ...pkg,
         packageDetails: typeof pkg.packageDetails === 'string'
           ? JSON.parse(pkg.packageDetails)
-          : pkg.packageDetails
+          : (pkg.packageDetails || {})
       }))
     });
   } catch (error) {
