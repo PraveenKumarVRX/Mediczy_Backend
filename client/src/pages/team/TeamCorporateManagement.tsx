@@ -304,8 +304,25 @@ const TeamCorporateManagement = () => {
     gender: '',
     department: '',
     designation: '',
-    joiningDate: ''
+    joiningDate: '',
+    workCity: '',
+    workState: ''
   });
+  const [empIdStatus, setEmpIdStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
+
+  // Debounced Employee ID duplicate check against already-loaded employees
+  useEffect(() => {
+    const id = newEmployee.employeeId.trim();
+    if (!id) { setEmpIdStatus('idle'); return; }
+    setEmpIdStatus('checking');
+    const t = setTimeout(() => {
+      const exists = employees.some(
+        (e) => e.employeeId?.toLowerCase() === id.toLowerCase()
+      );
+      setEmpIdStatus(exists ? 'duplicate' : 'ok');
+    }, 400);
+    return () => clearTimeout(t);
+  }, [newEmployee.employeeId, employees]);
   
   // Package form
   const [newPackage, setNewPackage] = useState({
@@ -1056,7 +1073,9 @@ const TeamCorporateManagement = () => {
         phoneNumber: newEmployee.phone,
         employeeId: newEmployee.employeeId,
         department: newEmployee.department,
-        gender: newEmployee.gender
+        gender: newEmployee.gender,
+        city: newEmployee.workCity || undefined,
+        state: newEmployee.workState || undefined
       };
       
       const response = await api.post(`/admin/corporate-employees`, {
@@ -1079,7 +1098,8 @@ const TeamCorporateManagement = () => {
       }
 
       setShowAddEmployeeDialog(false);
-      setNewEmployee({ employeeId: '', name: '', email: '', phone: '', gender: '', department: '', designation: '', joiningDate: '' });
+      setNewEmployee({ employeeId: '', name: '', email: '', phone: '', gender: '', department: '', designation: '', joiningDate: '', workCity: '', workState: '' });
+      setEmpIdStatus('idle');
       fetchEmployees(selectedCorporate.id);
 
       if (created?.isNewUser && created?.temporaryPassword) {
@@ -2990,8 +3010,8 @@ const TeamCorporateManagement = () => {
         </Dialog>
 
         {/* Add Employee Dialog */}
-        <Dialog open={showAddEmployeeDialog} onOpenChange={setShowAddEmployeeDialog}>
-          <DialogContent>
+        <Dialog open={showAddEmployeeDialog} onOpenChange={(open) => { setShowAddEmployeeDialog(open); if (!open) { setEmpIdStatus('idle'); } }}>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Add Employee</DialogTitle>
               <DialogDescription className="sr-only">Add a new employee</DialogDescription>
@@ -3000,15 +3020,31 @@ const TeamCorporateManagement = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Employee ID *</Label>
-                  <Input 
-                    placeholder="EMP001"
-                    value={newEmployee.employeeId}
-                    onChange={(e) => setNewEmployee({...newEmployee, employeeId: e.target.value})}
-                  />
+                  <div className="relative">
+                    <Input
+                      placeholder="EMP001"
+                      value={newEmployee.employeeId}
+                      onChange={(e) => setNewEmployee({...newEmployee, employeeId: e.target.value})}
+                      className={empIdStatus === 'duplicate' ? 'border-red-500 pr-8' : empIdStatus === 'ok' ? 'border-green-500 pr-8' : 'pr-8'}
+                    />
+                    <span className="absolute right-2 top-2.5">
+                      {empIdStatus === 'checking' && <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />}
+                      {empIdStatus === 'ok' && <CheckCircle className="h-4 w-4 text-green-500" />}
+                      {empIdStatus === 'duplicate' && <XCircle className="h-4 w-4 text-red-500" />}
+                    </span>
+                  </div>
+                  {empIdStatus === 'duplicate' && (
+                    <p className="text-xs text-red-500 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> Employee ID already exists in this corporate
+                    </p>
+                  )}
+                  {empIdStatus === 'ok' && (
+                    <p className="text-xs text-green-600">Employee ID is available</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Name *</Label>
-                  <Input 
+                  <Input
                     placeholder="Full name"
                     value={newEmployee.name}
                     onChange={(e) => setNewEmployee({...newEmployee, name: e.target.value})}
@@ -3017,7 +3053,7 @@ const TeamCorporateManagement = () => {
               </div>
               <div className="space-y-2">
                 <Label>Email *</Label>
-                <Input 
+                <Input
                   type="email"
                   placeholder="employee@company.com"
                   value={newEmployee.email}
@@ -3027,7 +3063,7 @@ const TeamCorporateManagement = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Phone</Label>
-                  <Input 
+                  <Input
                     placeholder="+91 XXXXX XXXXX"
                     value={newEmployee.phone}
                     onChange={(e) => setNewEmployee({...newEmployee, phone: e.target.value})}
@@ -3047,36 +3083,51 @@ const TeamCorporateManagement = () => {
                   </Select>
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label>Joining Date</Label>
-                <Input 
-                  type="date"
-                  value={newEmployee.joiningDate}
-                  onChange={(e) => setNewEmployee({...newEmployee, joiningDate: e.target.value})}
-                />
-              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
+                  <Label>Joining Date</Label>
+                  <Input
+                    type="date"
+                    value={newEmployee.joiningDate}
+                    onChange={(e) => setNewEmployee({...newEmployee, joiningDate: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-2">
                   <Label>Department</Label>
-                  <Input 
+                  <Input
                     placeholder="Engineering"
                     value={newEmployee.department}
                     onChange={(e) => setNewEmployee({...newEmployee, department: e.target.value})}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Designation</Label>
-                  <Input 
-                    placeholder="Senior Developer"
-                    value={newEmployee.designation}
-                    onChange={(e) => setNewEmployee({...newEmployee, designation: e.target.value})}
+              </div>
+              <div className="space-y-2">
+                <Label>Designation</Label>
+                <Input
+                  placeholder="Senior Developer"
+                  value={newEmployee.designation}
+                  onChange={(e) => setNewEmployee({...newEmployee, designation: e.target.value})}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Work Address</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    placeholder="City"
+                    value={newEmployee.workCity}
+                    onChange={(e) => setNewEmployee({...newEmployee, workCity: e.target.value})}
+                  />
+                  <Input
+                    placeholder="State"
+                    value={newEmployee.workState}
+                    onChange={(e) => setNewEmployee({...newEmployee, workState: e.target.value})}
                   />
                 </div>
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowAddEmployeeDialog(false)}>Cancel</Button>
-              <Button onClick={handleAddEmployee}>Add Employee</Button>
+              <Button onClick={handleAddEmployee} disabled={empIdStatus === 'duplicate'}>Add Employee</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
