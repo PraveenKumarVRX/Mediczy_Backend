@@ -2146,7 +2146,7 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
     if (phoneNumber) { userUpdates.push('"phoneNumber" = :phoneNumber'); userReplacements.phoneNumber = phoneNumber; }
     if (city !== undefined) { userUpdates.push('address_city = :addressCity'); userReplacements.addressCity = city; }
     if (state !== undefined) { userUpdates.push('address_state = :addressState'); userReplacements.addressState = state; }
-    if (pinCode !== undefined) { userUpdates.push('address_zipCode = :addressZip'); userReplacements.addressZip = pinCode; }
+    if (pinCode !== undefined) { userUpdates.push('"address_zipCode" = :addressZip'); userReplacements.addressZip = pinCode; }
     if (department !== undefined) { userUpdates.push('department_name = :deptName'); userReplacements.deptName = department; }
     if (employeeId !== undefined) { userUpdates.push('employee_id = :employeeId'); userReplacements.employeeId = employeeId; }
     await postgresSequelize.query(
