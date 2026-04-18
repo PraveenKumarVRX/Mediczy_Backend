@@ -1880,7 +1880,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
 
     // ─── Internal QC pass ────────────────────────────────────────────────────
     const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const PHONE_RE = /^\d{10}$/;
+    const PHONE_RE = /^(?:\+91[-\s]?)?[6-9]\d{9}$|^\d{10}$/;
     const PIN_RE   = /^\d{6}$/;
     const DOB_RE   = /^\d{4}-\d{2}-\d{2}$/;
     const VALID_GENDERS = new Set(['male', 'female', 'other']);
@@ -1957,7 +1957,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
               email, password, "firstName", "lastName", role, status,
               "isCorporate", "isAdmin", "isTeam", 
               "dateOfBirth", "phoneNumber", gender,
-              address_city, address_state, address_zipCode,
+              address_city, address_state, "address_zipCode",
               department_name, employee_id,
               "createdAt", "updatedAt"
             )
@@ -2049,7 +2049,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
       }
     }
     
-    console.log(`[Corporate Employees] Added ${results.created.length} employees to corporate ${corporateId}, QC issues: ${results.qcLog.length}`);
+    console.log(`[Corporate Employees] Added ${results.created.length}, failed ${results.failed.length}, QC issues: ${results.qcLog.length} — corporate ${corporateId}`);
     
     return res.status(201).json({
       success: true,
