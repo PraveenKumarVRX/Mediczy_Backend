@@ -426,7 +426,52 @@ class DrIshaAPI {
         null,
     };
   }
+
+  /**
+   * Fetch supported Indian languages from Dr. iSHA backend.
+   * Used to populate the language selector in the chat UI.
+   */
+  async getSupportedLanguages(): Promise<{
+    success: boolean;
+    languages?: Array<{ code: string; name: string; script: string }>;
+    default?: string;
+  }> {
+    try {
+      const response = await axios.get(`${this.baseURL}/languages`, {
+        timeout: 8000,
+      });
+      return {
+        success: true,
+        languages: response.data?.supported_languages || [],
+        default: response.data?.default || 'en',
+      };
+    } catch (error) {
+      // Return a static fallback so the UI never breaks
+      return {
+        success: false,
+        languages: INDIC_LANGUAGES_FALLBACK,
+        default: 'en',
+      };
+    }
+  }
 }
+
+// Static fallback in case the /languages endpoint is unreachable
+const INDIC_LANGUAGES_FALLBACK = [
+  { code: 'en', name: 'English',   script: 'latin'      },
+  { code: 'hi', name: 'Hindi',     script: 'devanagari' },
+  { code: 'bn', name: 'Bengali',   script: 'bengali'    },
+  { code: 'te', name: 'Telugu',    script: 'telugu'     },
+  { code: 'mr', name: 'Marathi',   script: 'devanagari' },
+  { code: 'ta', name: 'Tamil',     script: 'tamil'      },
+  { code: 'gu', name: 'Gujarati',  script: 'gujarati'   },
+  { code: 'kn', name: 'Kannada',   script: 'kannada'    },
+  { code: 'ml', name: 'Malayalam', script: 'malayalam'  },
+  { code: 'pa', name: 'Punjabi',   script: 'gurmukhi'   },
+  { code: 'or', name: 'Odia',      script: 'odia'       },
+  { code: 'ur', name: 'Urdu',      script: 'arabic'     },
+  { code: 'as', name: 'Assamese',  script: 'bengali'    },
+];
 
 // Export singleton instance
 export const drIshaAPI = new DrIshaAPI();

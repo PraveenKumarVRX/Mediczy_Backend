@@ -348,6 +348,23 @@ async def health():
     }
 
 
+@app.get("/languages")
+async def list_languages():
+    """
+    List all supported Indian languages for Dr. iSHA chat.
+    Frontend uses this to build the language selector.
+    """
+    try:
+        from utils.indic_translation import list_supported_languages
+        return {
+            "supported_languages": list_supported_languages(),
+            "default": "en",
+            "note": "Pass the language code in the 'language' field of /chat requests"
+        }
+    except Exception as e:
+        return {"error": str(e), "supported_languages": [{"code": "en", "name": "English"}]}
+
+
 @app.post("/query")
 async def ask_question(q: Query):
     """
@@ -456,6 +473,21 @@ async def chat(request: Dict[str, Any]):
     patient_id = request.get("patient_id", f"patient_{int(time.time())}")
     user_id = request.get("user_id")  # Mediczy user ID from auth
     include_risk = request.get("include_risk", False)
+    declared_lang = request.get("language", "en")  # Language declared by frontend
+
+    # ── Indic Language Translation (input) ──────────────────────────────────
+    # Translate non-English messages to English for LLM reasoning.
+    # Dr. iSHA always thinks in English — then we translate back.
+    try:
+        from utils.indic_translation import process_for_llm, translate_response
+        english_message, patient_lang = process_for_llm(message, declared_lang)
+        if patient_lang != "en":
+            logger.info(f"🌐 Translating {patient_lang}→en: '{message[:40]}...'")
+            message = english_message  # Use translated message for all downstream processing
+    except Exception as _te:
+        logger.warning(f"⚠️ Translation init failed: {_te}")
+        patient_lang = declared_lang or "en"
+    # ─────────────────────────────────────────────────────────────────────────
     
     app_state.request_count += 1
     start_time = time.time()
@@ -540,6 +572,16 @@ async def chat(request: Dict[str, Any]):
         
         # Apply prescription guardrail filter
         filtered_response = filter_prescription_language(result.response)
+
+        # ── Translate response back to patient's language ──────────────────
+        if patient_lang != "en":
+            try:
+                from utils.indic_translation import translate_response as _tr
+                filtered_response = _tr(filtered_response, patient_lang)
+                logger.info(f"🌐 Translated response en→{patient_lang}")
+            except Exception as _te:
+                logger.warning(f"⚠️ Response translation failed: {_te}")
+        # ─────────────────────────────────────────────────────────────────────
         
         # Save conversation to PostgreSQL
         if app_state.db:
@@ -602,7 +644,8 @@ async def chat(request: Dict[str, Any]):
             "entities": result.entities[:10],
             "is_emergency": result.is_emergency,
             "pipeline": "medspacy-clinicalbert-pgvector-bayesian-llm",
-            "user_context_loaded": bool(user_context)
+            "user_context_loaded": bool(user_context),
+            "language": patient_lang
         }
     except Exception as pipeline_error:
         logger.warning(f"⚠️ Medical pipeline failed: {pipeline_error}")
@@ -616,6 +659,14 @@ async def chat(request: Dict[str, Any]):
         
         # Safety filter
         safe_answer, safety_alerts = validate_response(llm_result["answer"])
+
+        # Translate fallback response if needed
+        if patient_lang != "en":
+            try:
+                from utils.indic_translation import translate_response as _tr
+                safe_answer = _tr(safe_answer, patient_lang)
+            except Exception:
+                pass
         
         total_latency = (time.time() - start_time) * 1000
         
@@ -648,7 +699,8 @@ async def chat(request: Dict[str, Any]):
             "conversation_id": patient_id,
             "latency_ms": round(total_latency, 2),
             "pipeline": "rag-fallback",
-            "user_context_loaded": bool(user_context)
+            "user_context_loaded": bool(user_context),
+            "language": patient_lang
         }
 
 
