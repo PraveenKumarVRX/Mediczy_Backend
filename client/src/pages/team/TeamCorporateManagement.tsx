@@ -1032,6 +1032,15 @@ const TeamCorporateManagement = () => {
   // Add Employee
   const handleAddEmployee = async () => {
     if (!selectedCorporate) return;
+
+    if (!newEmployee.name.trim()) {
+      toast({ variant: 'destructive', title: 'Validation Error', description: 'Name is required.' });
+      return;
+    }
+    if (!newEmployee.email.trim()) {
+      toast({ variant: 'destructive', title: 'Validation Error', description: 'Email is required.' });
+      return;
+    }
     
     try {
       const token = localStorage.getItem('teamToken');
@@ -1058,7 +1067,17 @@ const TeamCorporateManagement = () => {
       });
 
       const created = response.data?.results?.created?.[0];
-      
+      const failed = response.data?.results?.failed || [];
+
+      if (!created && failed.length > 0) {
+        toast({
+          variant: 'destructive',
+          title: 'Failed to Add Employee',
+          description: failed[0]?.reason || 'Could not create employee account.'
+        });
+        return;
+      }
+
       setShowAddEmployeeDialog(false);
       setNewEmployee({ employeeId: '', name: '', email: '', phone: '', gender: '', department: '', designation: '', joiningDate: '' });
       fetchEmployees(selectedCorporate.id);

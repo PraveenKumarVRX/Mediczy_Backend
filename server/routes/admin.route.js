@@ -1924,8 +1924,13 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
           results.failed.push({ email: email || '', name: `Row data`, reason: 'First Name is required' });
           continue;
         }
+
+        if (!email || !String(email).trim()) {
+          results.failed.push({ email: '', name: `${firstName} ${lastName || ''}`.trim(), reason: 'Email is required' });
+          continue;
+        }
         
-        const normalizedEmail = email.toLowerCase().trim();
+        const normalizedEmail = String(email).toLowerCase().trim();
         
         // Check if user exists
         const [existingUser] = await postgresSequelize.query(`
