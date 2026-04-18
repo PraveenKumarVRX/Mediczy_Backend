@@ -200,6 +200,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/mobile',  // Mobile API gateway for doctor app
       '/api/v3/ai-brain',  // AI Brain intelligence layer
       '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
+      '/api/v3/ai-deeptech',  // Deep Tech AI layer (HIS, NLP, Preauth, FL, Agent Context)
       '/api/ehr',  // Electronic Health Records - patient records access
       '/api/emr',  // EMR folder (own record)
       '/api/fhir',  // FHIR R4 interoperability endpoints
@@ -258,6 +259,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/v3/ai-brain',  // AI Brain intelligence layer
       '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
       '/api/v3/ai-analytics',  // AI analytics dashboard (admin only)
+      '/api/v3/ai-deeptech',  // Deep Tech AI layer (HIS, NLP, Preauth, FL, Agent Context)
       '/api/ehr',  // Electronic Health Records
       '/api/fhir',  // FHIR R4 interoperability endpoints
       '/v1'  // API v1 multi-tenant mobile app endpoints
@@ -287,6 +289,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/whatsapp-production',  // Team access to WhatsApp conversations
       '/api/whatsapp',  // Team access to WhatsApp templates & messaging
       '/api/sib-chatbots',  // Team access to SIB AI chatbots
+      '/api/v3/ai-deeptech',  // Deep Tech AI layer (HIS, NLP, Preauth, FL, Agent Context)
       '/api/ehr',  // Electronic Health Records
       '/api/emr',  // EMR folder — team can view all users
       '/v1'  // API v1 multi-tenant mobile app endpoints

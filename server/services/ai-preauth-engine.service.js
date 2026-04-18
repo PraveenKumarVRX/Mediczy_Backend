@@ -83,8 +83,11 @@ class PreAuthEngine {
       diagnosisCodes, procedureCodes, admissionType, fraudScore
     );
 
+    // Normalize short action names to DB-valid values
+    const normalizeDecision = (d) => ({ approve: 'approved', reject: 'rejected', escalate: 'escalated' }[d] || d);
+
     // 4. If inconclusive (escalate + confidence < 0.75) → LLM review
-    let decision = action;
+    let decision = normalizeDecision(action);
     let finalReason = reason;
     let decisionMethod = 'rule_engine';
 
@@ -105,7 +108,7 @@ class PreAuthEngine {
 
     // 5. Apply fraud override
     if (fraudScore > 0.6 && decision !== 'rejected') {
-      decision    = 'escalate';
+      decision    = 'escalated';
       finalReason = `High fraud score (${fraudScore.toFixed(2)}) — human review required. Original: ${finalReason}`;
     }
 

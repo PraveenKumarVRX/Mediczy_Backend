@@ -303,7 +303,8 @@ router.post('/federated/submit', requireUser, requireAdmin, async (req, res) => 
       return res.status(400).json({ error: 'model_name, sample_count, gradient_delta required' });
     }
     const result = await federatedLearning.submitUpdate(
-      req.user.tenantId, model_name, parseInt(sample_count),
+      req.user.tenantId || req.user.adminId?.toString() || 'system',
+      model_name, parseInt(sample_count),
       feature_stats || {}, gradient_delta, dp_config || {}
     );
     return res.status(201).json({ success: true, data: result });

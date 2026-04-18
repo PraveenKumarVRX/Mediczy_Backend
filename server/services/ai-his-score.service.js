@@ -126,7 +126,7 @@ class HisScoreService {
                p.height, p.weight, p.allergies, p."chronicConditions",
                p."currentMedications", p.status,
                u."firstName", u."lastName", u."dateOfBirth", u.gender,
-               p.tenant_id
+               NULL::text as tenant_id
         FROM patients p
         JOIN users u ON u.id = p."userId"
         WHERE p.status = 'active'
@@ -297,7 +297,7 @@ class HisScoreService {
     // On-demand compute
     const { rows: [patient] } = await db.query(`
       SELECT p.id as patient_id, p."userId" as user_id, p."bloodGroup", p.height, p.weight,
-             p.allergies, p."chronicConditions", p."currentMedications", p.status, p.tenant_id,
+             p.allergies, p."chronicConditions", p."currentMedications", p.status, NULL::text as tenant_id,
              u."firstName", u."lastName", u."dateOfBirth", u.gender
       FROM patients p JOIN users u ON u.id = p."userId"
       WHERE p.id = $1
