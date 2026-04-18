@@ -37,6 +37,21 @@ interface AIScribeConsultationProps {
   appointmentId?: string;
 }
 
+// BCP-47 codes for Web Speech API recogniser
+const SCRIBE_LANGUAGES = [
+  { code: 'en', name: 'English',    bcp47: 'en-IN' },
+  { code: 'hi', name: 'Hindi',      bcp47: 'hi-IN' },
+  { code: 'bn', name: 'Bengali',    bcp47: 'bn-IN' },
+  { code: 'te', name: 'Telugu',     bcp47: 'te-IN' },
+  { code: 'mr', name: 'Marathi',    bcp47: 'mr-IN' },
+  { code: 'ta', name: 'Tamil',      bcp47: 'ta-IN' },
+  { code: 'gu', name: 'Gujarati',   bcp47: 'gu-IN' },
+  { code: 'kn', name: 'Kannada',    bcp47: 'kn-IN' },
+  { code: 'ml', name: 'Malayalam',  bcp47: 'ml-IN' },
+  { code: 'pa', name: 'Punjabi',    bcp47: 'pa-IN' },
+  { code: 'ur', name: 'Urdu',       bcp47: 'ur-IN' },
+];
+
 export const AIScribeConsultation: React.FC<AIScribeConsultationProps> = ({
   onPrescriptionGenerated,
   currentFormData,
@@ -47,6 +62,7 @@ export const AIScribeConsultation: React.FC<AIScribeConsultationProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [generatedPrescription, setGeneratedPrescription] = useState<GeneratedPrescription | null>(null);
   const [interimTranscript, setInterimTranscript] = useState('');
+  const [selectedLang, setSelectedLang] = useState('en');
 
   // Autocomplete state
   const [manualInput, setManualInput] = useState('');
@@ -77,7 +93,8 @@ export const AIScribeConsultation: React.FC<AIScribeConsultationProps> = ({
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.language = 'en-IN'; // Indian English
+    const langEntry = SCRIBE_LANGUAGES.find(l => l.code === selectedLang);
+    recognition.language = langEntry?.bcp47 || 'en-IN';
 
     recognition.onstart = () => {
       console.log('🎤 Voice recording started');
@@ -136,7 +153,7 @@ export const AIScribeConsultation: React.FC<AIScribeConsultationProps> = ({
         recognitionRef.current.abort();
       }
     };
-  }, [toast]);
+  }, [toast, selectedLang]);
 
   // Toggle voice recording
   const toggleRecording = () => {
@@ -177,6 +194,7 @@ export const AIScribeConsultation: React.FC<AIScribeConsultationProps> = ({
         consultationNotes: transcript,
         currentData: currentFormData,
         appointmentId,
+        language: selectedLang,
         saveToDatabase: false,
       });
 
@@ -315,16 +333,34 @@ export const AIScribeConsultation: React.FC<AIScribeConsultationProps> = ({
   return (
     <div className="space-y-4 p-4 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg border-2 border-blue-200 shadow-sm">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="text-base font-bold flex items-center gap-2 text-blue-900">
           🎙️ AI Medical Scribe
           {isRecording && (
-            <span className="flex items-center gap-1 ml-auto">
+            <span className="flex items-center gap-1 ml-2">
               <span className="animate-pulse text-red-500">●</span>
               <span className="text-xs font-normal text-red-600">Recording</span>
             </span>
           )}
         </h3>
+        {/* Language Selector */}
+        <select
+          value={selectedLang}
+          onChange={e => {
+            setSelectedLang(e.target.value);
+            // Stop recording when language changes — recogniser must be re-created
+            if (isRecording && recognitionRef.current) {
+              recognitionRef.current.stop();
+            }
+          }}
+          disabled={isRecording}
+          className="text-xs border border-blue-300 rounded px-2 py-1 bg-white text-blue-800 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          title="Select dictation language"
+        >
+          {SCRIBE_LANGUAGES.map(l => (
+            <option key={l.code} value={l.code}>{l.name}</option>
+          ))}
+        </select>
       </div>
 
       {/* Description */}

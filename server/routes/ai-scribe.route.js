@@ -7,6 +7,30 @@ import { Prescription, Appointment, User, Doctor } from '../models/index.js';
 
 const router = express.Router();
 
+// ── Indic Language Translation Helper ────────────────────────────────────────
+// Delegates to the SIB FastAPI /translate endpoint which reuses indic_translation.py
+const SIB_FASTAPI_URL = process.env.SIB_FASTAPI_URL || 'http://localhost:8001';
+
+async function translateForScribe(text, sourceLang = 'auto', targetLang = 'en') {
+  if (!text?.trim()) return text;
+  if (sourceLang === targetLang) return text;
+  if (sourceLang === 'en' && targetLang === 'en') return text;
+  try {
+    const response = await fetch(`${SIB_FASTAPI_URL}/translate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, source_lang: sourceLang, target_lang: targetLang }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) return text;
+    const data = await response.json();
+    return data.translated || text;
+  } catch {
+    return text; // fail-safe — never break the scribe
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * @route   POST /api/ai/generate-prescription
  * @desc    Generate structured prescription from consultation notes using AI
@@ -25,6 +49,7 @@ router.post('/generate-prescription', authDoctor, async (req, res) => {
       patientGender,
       patientPhone,
       vitals,
+      language = 'en',
       saveToDatabase = true
     } = req.body;
 
@@ -45,13 +70,29 @@ router.post('/generate-prescription', authDoctor, async (req, res) => {
       });
     }
 
+    // ── Indic Language: translate consultation to English for LLM ───────────
+    // The AI prompt is always in English for best extraction quality.
+    // If the doctor dictated in Hindi, Tamil, Telugu, etc., we translate first.
+    const patientLang = (language || 'en').toLowerCase().trim();
+    let englishNotes = consultationNotes;
+    let englishSessionNotes = sessionNotes;
+    if (patientLang !== 'en') {
+      englishNotes = await translateForScribe(consultationNotes, patientLang, 'en');
+      if (sessionNotes?.length) {
+        englishSessionNotes = await Promise.all(
+          sessionNotes.map(n => translateForScribe(n, patientLang, 'en'))
+        );
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     // Build AI prompt for prescription generation
     const prompt = `You are an expert medical AI assistant helping a doctor create a structured prescription.
 
 CONSULTATION TRANSCRIPT:
-${consultationNotes}
+${englishNotes}
 
-${sessionNotes?.length ? `\nSESSION NOTES:\n${sessionNotes.join('\n')}` : ''}
+${englishSessionNotes?.length ? `\nSESSION NOTES:\n${englishSessionNotes.join('\n')}` : ''}
 
 ${existingData ? `\nEXISTING DATA:\n${JSON.stringify(existingData, null, 2)}` : ''}
 
@@ -177,6 +218,23 @@ Generate the prescription JSON:`;
       notes: prescriptionData.notes || ''
     };
 
+    // ── Indic Language: translate patient-facing fields back to source language
+    // Medications, diagnosis, lab tests stay in English (standard medical practice).
+    // Chief complaints and instructions are patient-facing — translate them back.
+    if (patientLang !== 'en') {
+      if (prescriptionContent.chiefComplaints) {
+        prescriptionContent.chiefComplaints = await translateForScribe(
+          prescriptionContent.chiefComplaints, 'en', patientLang
+        );
+      }
+      if (prescriptionContent.instructions?.length) {
+        prescriptionContent.instructions = await Promise.all(
+          prescriptionContent.instructions.map(i => translateForScribe(i, 'en', patientLang))
+        );
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     // Save to database if requested
     let savedPrescription = null;
     if (saveToDatabase) {
@@ -278,6 +336,7 @@ Generate the prescription JSON:`;
         createdAt: savedPrescription.createdAt
       } : null,
       usingFallback: usesFallback,
+      language: patientLang,
       timestamp: new Date().toISOString()
     });
 

@@ -155,6 +155,13 @@ class Query(BaseModel):
     auto_ingest: bool = Field(False, description="Auto-ingest new EHR files before query")
 
 
+class TranslateRequest(BaseModel):
+    """Translation request — used by AI Scribe and other Node.js callers."""
+    text: str = Field(..., description="Text to translate")
+    source_lang: Optional[str] = Field("auto", description="Source language code (auto to detect)")
+    target_lang: Optional[str] = Field("en", description="Target language code")
+
+
 class RiskRequest(BaseModel):
     """Risk assessment request"""
     age: int = Field(..., ge=20, le=100)
@@ -363,6 +370,42 @@ async def list_languages():
         }
     except Exception as e:
         return {"error": str(e), "supported_languages": [{"code": "en", "name": "English"}]}
+
+
+@app.post("/translate")
+async def translate_text(request: TranslateRequest):
+    """
+    General-purpose translation endpoint for use by external callers (e.g. Node.js AI Scribe).
+    Accepts: { text, source_lang, target_lang }
+    source_lang defaults to 'auto' (auto-detect).
+    Returns: { translated, source_lang, target_lang }
+    Always returns 200 — falls back to original text on any error.
+    """
+    text = request.text
+    source_lang = request.source_lang or "auto"
+    target_lang = request.target_lang or "en"
+
+    if not text or not text.strip():
+        return {"translated": text, "source_lang": source_lang, "target_lang": target_lang}
+
+    try:
+        from utils.indic_translation import translate, detect_language
+
+        # Resolve auto-detect
+        if not source_lang or source_lang == "auto":
+            source_lang = detect_language(text)
+
+        # No-op if same language
+        if source_lang == target_lang:
+            return {"translated": text, "source_lang": source_lang, "target_lang": target_lang, "unchanged": True}
+
+        translated = translate(text, source_lang, target_lang)
+        logger.info(f"🌐 /translate: {source_lang}→{target_lang} ({len(text)} chars)")
+        return {"translated": translated, "source_lang": source_lang, "target_lang": target_lang}
+
+    except Exception as e:
+        logger.warning(f"⚠️ /translate error: {e}")
+        return {"translated": text, "source_lang": source_lang, "target_lang": target_lang, "error": str(e)}
 
 
 @app.post("/query")
