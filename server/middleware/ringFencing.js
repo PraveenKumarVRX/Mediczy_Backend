@@ -237,6 +237,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/accounting',
       '/api/payments',
       '/api/coupons',  // Corporate HC coupon management
+      '/api/membership',  // Membership plans management
       '/api/email',
       '/api/sms',
       '/api/whatsapp',
@@ -278,6 +279,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/corporate-bookings',  // Team members book corporate health checkups
       '/api/plans',
       '/api/coupons',  // Team members can manage coupons
+      '/api/membership',  // Membership plans admin (team can manage plans)
       '/api/activity-log',
       '/api/chat',
       '/api/email-settings',  // Team members can configure email settings
@@ -517,6 +519,12 @@ const PUBLIC_ENDPOINTS = [
   '/api/users/register',
   '/api/users/login/send-otp',
   '/api/users/login/verify-otp',
+  '/api/users/forgot-password',
+  '/api/users/verify-reset-otp',
+  '/api/users/reset-password',
+  '/api/users/forgot-password',
+  '/api/users/verify-reset-otp',
+  '/api/users/reset-password',
   '/api/doctors/login',
   '/api/doctors/register',
   '/api/doctors/send-email-otp',

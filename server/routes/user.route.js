@@ -1380,10 +1380,15 @@ router.post("/reset-password", [
   body("userType").optional().isIn(['user', 'doctor']).withMessage("User type must be 'user' or 'doctor'")
 ], async (req, res) => {
   try {
-    const { token, password, userType = 'user' } = req.body;
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const { resetToken, newPassword, userType = 'user' } = req.body;
 
     // Hash the token to compare with stored hash
-    const resetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
 
     // Find account with valid reset token
     let account;
@@ -1421,7 +1426,7 @@ router.post("/reset-password", [
     }
 
     // Hash new password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     // Update password and clear reset token
     if (accountType === 'doctor') {

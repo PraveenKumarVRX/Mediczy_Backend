@@ -1876,14 +1876,52 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
       });
     }
     
-    const results = { created: [], failed: [] };
-    
+    const results = { created: [], failed: [], qcLog: [] };
+
+    // ─── Internal QC pass ────────────────────────────────────────────────────
+    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const PHONE_RE = /^\d{10}$/;
+    const PIN_RE   = /^\d{6}$/;
+    const DOB_RE   = /^\d{4}-\d{2}-\d{2}$/;
+    const VALID_GENDERS = new Set(['male', 'female', 'other']);
+    const seenEmails = new Map(); // email -> rowIndex
+
+    employees.forEach((emp, idx) => {
+      const row = idx + 2; // 1-indexed with header
+      const rowIssues = [];
+
+      if (!emp.firstName || String(emp.firstName).trim() === '') rowIssues.push('Missing First Name');
+      if (emp.email && !EMAIL_RE.test(emp.email)) rowIssues.push(`Invalid email format: ${emp.email}`);
+      if (emp.phoneNumber && !PHONE_RE.test(String(emp.phoneNumber).replace(/[\s\-]/g, ''))) rowIssues.push(`Phone should be 10 digits: ${emp.phoneNumber}`);
+      if (emp.gender && !VALID_GENDERS.has(String(emp.gender).toLowerCase())) rowIssues.push(`Invalid gender (use Male/Female/Other): ${emp.gender}`);
+      if (emp.dateOfBirth && !DOB_RE.test(emp.dateOfBirth)) rowIssues.push(`Date of Birth must be YYYY-MM-DD: ${emp.dateOfBirth}`);
+      if (emp.pinCode && !PIN_RE.test(String(emp.pinCode))) rowIssues.push(`Pin Code must be 6 digits: ${emp.pinCode}`);
+
+      const lowerEmail = (emp.email || '').toLowerCase();
+      if (lowerEmail && seenEmails.has(lowerEmail)) {
+        rowIssues.push(`Duplicate email in CSV (also on row ${seenEmails.get(lowerEmail)}): ${lowerEmail}`);
+      } else if (lowerEmail) {
+        seenEmails.set(lowerEmail, row);
+      }
+
+      if (rowIssues.length > 0) {
+        results.qcLog.push({
+          row,
+          employeeId: emp.employeeId || '',
+          name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
+          email: emp.email || '',
+          issues: rowIssues
+        });
+      }
+    });
+    // ─────────────────────────────────────────────────────────────────────────
+
     for (const emp of employees) {
       try {
-        const { firstName, lastName, email, phoneNumber, employeeId, department } = emp;
+        const { firstName, lastName, email, phoneNumber, employeeId, department, designation, city, state, pinCode, location, facility, gender, dateOfBirth } = emp;
         
-        if (!email || !firstName) {
-          results.failed.push({ email, reason: 'firstName and email are required' });
+        if (!firstName) {
+          results.failed.push({ email: email || '', name: `Row data`, reason: 'First Name is required' });
           continue;
         }
         
@@ -1911,15 +1949,19 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
           
           const [userResult] = await postgresSequelize.query(`
             INSERT INTO users (
-              email, password, "firstName", "lastName", role, 
+              email, password, "firstName", "lastName", role, status,
               "isCorporate", "isAdmin", "isTeam", 
               "dateOfBirth", "phoneNumber", gender,
+              address_city, address_state, address_zipCode,
+              department_name, employee_id,
               "createdAt", "updatedAt"
             )
             VALUES (
-              :email, :password, :firstName, :lastName, 'patient', 
+              :email, :password, :firstName, :lastName, 'patient', 'active',
               true, false, false,
-              '1990-01-01', :phoneNumber, 'Male',
+              :dob, :phoneNumber, :gender,
+              :addressCity, :addressState, :addressZip,
+              :deptName, :empId,
               NOW(), NOW()
             )
             RETURNING id
@@ -1929,7 +1971,14 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
               password: hashedPassword,
               firstName,
               lastName: lastName || '',
-              phoneNumber: phoneNumber || ''
+              phoneNumber: phoneNumber || '',
+              dob: dateOfBirth || '1990-01-01',
+              gender: gender || 'Male',
+              addressCity: city || null,
+              addressState: state || null,
+              addressZip: pinCode || null,
+              deptName: department || null,
+              empId: employeeId || null,
             },
             type: postgresSequelize.QueryTypes.INSERT
           });
@@ -1955,7 +2004,8 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
         await postgresSequelize.query(`
           INSERT INTO user_associations ("userId", "entityType", "entityId", corporate_unique_id, role, "isPrimary", status, metadata, "startDate", "createdAt", "updatedAt")
           VALUES (:userId, 'corporate', :corporateId, :corpUniqueId, 'employee', false, 'active', :metadata, NOW(), NOW(), NOW())
-          ON CONFLICT ON CONSTRAINT uq_user_assoc_corp_employee DO UPDATE SET
+          ON CONFLICT ("userId", "entityType", "entityId", role) WHERE "entityType" = 'corporate' DO UPDATE SET
+            status = 'active',
             metadata = EXCLUDED.metadata,
             corporate_unique_id = EXCLUDED.corporate_unique_id,
             "updatedAt" = NOW()
@@ -1964,7 +2014,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
             userId, 
             corporateId,
             corpUniqueId: corporate.uniqueId || null,
-            metadata: JSON.stringify({ employeeId, department })
+            metadata: JSON.stringify({ employeeId, department, designation, location, facility })
           }
         });
 
@@ -1994,7 +2044,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
       }
     }
     
-    console.log(`[Corporate Employees] Added ${results.created.length} employees to corporate ${corporateId}`);
+    console.log(`[Corporate Employees] Added ${results.created.length} employees to corporate ${corporateId}, QC issues: ${results.qcLog.length}`);
     
     return res.status(201).json({
       success: true,
@@ -2021,6 +2071,8 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
 
     const employees = await postgresSequelize.query(`
       SELECT u.id, u.email, u."firstName", u."lastName", u."phoneNumber",
+             u.address_city, u.address_state, u."address_zipCode",
+             u.department_name, u.employee_id AS user_employee_id,
              ua.metadata, ua.status, ua."startDate",
              uhp."packageId" AS "currentPackageId",
              uhp."packageName" AS "currentPackageName",
@@ -2046,6 +2098,11 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
       success: true,
       employees: employees.map(e => ({
         ...e,
+        address_city: e.address_city || null,
+        address_state: e.address_state || null,
+        address_zipCode: e.address_zipCode || null,
+        department_name: e.department_name || null,
+        user_employee_id: e.user_employee_id || null,
         metadata: typeof e.metadata === 'string' ? JSON.parse(e.metadata) : e.metadata
       }))
     });
@@ -2067,7 +2124,7 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
 router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
   try {
     const { userId } = req.params;
-    const { status, firstName, lastName, email, phoneNumber, department, designation, city, pinCode, secondaryEmail, packageId } = req.body;
+    const { status, firstName, lastName, email, phoneNumber, department, designation, city, state, pinCode, secondaryEmail, packageId, employeeId, location, facility } = req.body;
     const numericUserId = parseInt(userId, 10);
     const numericCorporateId = req.resolvedCorporate.id;
 
@@ -2075,13 +2132,18 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
       return res.status(400).json({ success: false, message: 'Invalid userId' });
     }
 
-    // Update users table (personal info fields)
+    // Update users table (personal info fields + work address fields)
     const userUpdates = ['"updatedAt" = NOW()'];
     const userReplacements = { userId: numericUserId };
     if (firstName) { userUpdates.push('"firstName" = :firstName'); userReplacements.firstName = firstName; }
     if (lastName !== undefined) { userUpdates.push('"lastName" = :lastName'); userReplacements.lastName = lastName; }
     if (email) { userUpdates.push('"email" = :email'); userReplacements.email = email.toLowerCase().trim(); }
     if (phoneNumber) { userUpdates.push('"phoneNumber" = :phoneNumber'); userReplacements.phoneNumber = phoneNumber; }
+    if (city !== undefined) { userUpdates.push('address_city = :addressCity'); userReplacements.addressCity = city; }
+    if (state !== undefined) { userUpdates.push('address_state = :addressState'); userReplacements.addressState = state; }
+    if (pinCode !== undefined) { userUpdates.push('address_zipCode = :addressZip'); userReplacements.addressZip = pinCode; }
+    if (department !== undefined) { userUpdates.push('department_name = :deptName'); userReplacements.deptName = department; }
+    if (employeeId !== undefined) { userUpdates.push('employee_id = :employeeId'); userReplacements.employeeId = employeeId; }
     await postgresSequelize.query(
       `UPDATE users SET ${userUpdates.join(', ')} WHERE id = :userId`,
       { replacements: userReplacements, type: postgresSequelize.QueryTypes.UPDATE }
@@ -2091,13 +2153,13 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
     const assocUpdates = ['"updatedAt" = NOW()'];
     const assocReplacements = { userId: numericUserId, corpId: numericCorporateId };
     if (status) { assocUpdates.push('status = :status'); assocReplacements.status = status; }
-    if (department !== undefined || designation !== undefined || city !== undefined || pinCode !== undefined || secondaryEmail !== undefined) {
+    if (designation !== undefined || secondaryEmail !== undefined || employeeId !== undefined || location !== undefined || facility !== undefined) {
       const metaParts = [];
-      if (department !== undefined) { metaParts.push("'department', :department"); assocReplacements.department = department; }
       if (designation !== undefined) { metaParts.push("'designation', :designation"); assocReplacements.designation = designation; }
-      if (city !== undefined) { metaParts.push("'city', :city"); assocReplacements.city = city; }
-      if (pinCode !== undefined) { metaParts.push("'pinCode', :pinCode"); assocReplacements.pinCode = pinCode; }
       if (secondaryEmail !== undefined) { metaParts.push("'secondaryEmail', :secondaryEmail"); assocReplacements.secondaryEmail = secondaryEmail; }
+      if (employeeId !== undefined) { metaParts.push("'employeeId', :empId"); assocReplacements.empId = employeeId; }
+      if (location !== undefined) { metaParts.push("'location', :location"); assocReplacements.location = location; }
+      if (facility !== undefined) { metaParts.push("'facility', :facility"); assocReplacements.facility = facility; }
       assocUpdates.push(`metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(${metaParts.join(', ')})`);
     }
     await postgresSequelize.query(
@@ -2150,6 +2212,9 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
     return res.json({ success: true, message: 'Employee updated successfully' });
   } catch (error) {
     console.error('Failed to update corporate employee:', error);
+    if (error.name === 'SequelizeUniqueConstraintError' && error.fields && error.fields.email) {
+      return res.status(409).json({ success: false, message: `Email '${error.fields.email}' is already registered to another account.` });
+    }
     return res.status(500).json({ success: false, message: error.message });
   }
 });

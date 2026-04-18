@@ -86,6 +86,16 @@ interface Employee {
   name: string;
   email: string;
   secondaryEmail: string;
+  phone: string;
+  department: string;
+  designation: string;
+  city: string;
+  state: string;
+  pinCode: string;
+  location: string;
+  facility: string;
+  joiningDate: string;
+  healthStatus: string;
   insurancePlan: string;
   status: string;
   currentPackageId?: string;
@@ -224,7 +234,8 @@ const TeamCorporateManagement = () => {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [editEmployeeForm, setEditEmployeeForm] = useState({
     firstName: '', lastName: '', email: '', secondaryEmail: '', phone: '',
-    department: '', designation: '', city: '', pinCode: '',
+    department: '', designation: '', city: '', state: '', pinCode: '',
+    location: '', facility: '', employeeId: '',
     status: 'active', packageId: '',
   });
   const [updatingEmployee, setUpdatingEmployee] = useState(false);
@@ -251,6 +262,7 @@ const TeamCorporateManagement = () => {
   const [bulkUploadResults, setBulkUploadResults] = useState<{
     created: any[];
     failed: any[];
+    qcLog: { row: number; employeeId: string; name: string; email: string; issues: string[] }[];
   } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [showUploadReport, setShowUploadReport] = useState(false);
@@ -451,17 +463,20 @@ const TeamCorporateManagement = () => {
           const lastName = emp.lastName || meta.lastName || '';
           return {
             id: emp.id?.toString() || emp.uid,
-            employeeId: meta.employeeId || emp.employeeId || emp.unique_id || `EMP${emp.id}`,
+            employeeId: emp.user_employee_id || meta.employeeId || emp.employeeId || emp.unique_id || `EMP${emp.id}`,
             firstName,
             lastName,
             name: `${firstName} ${lastName}`.trim() || emp.name || 'Unknown',
             email: emp.email || '',
             secondaryEmail: meta.secondaryEmail || '',
             phone: emp.phoneNumber || meta.phoneNumber || '',
-            department: meta.department || emp.department || 'Not Assigned',
+            department: emp.department_name || meta.department || emp.department || 'Not Assigned',
             designation: meta.designation || emp.designation || 'Not Assigned',
-            city: meta.city || '',
-            pinCode: meta.pinCode || '',
+            city: emp.address_city || meta.city || '',
+            state: emp.address_state || meta.state || '',
+            pinCode: emp.address_zipCode || meta.pinCode || '',
+            location: meta.location || '',
+            facility: meta.facility || '',
             joiningDate: emp.startDate || meta.joiningDate || '',
             healthStatus: meta.healthStatus || emp.healthStatus || 'Not Assessed',
             insurancePlan: emp.currentPackageName || meta.insurancePlan || 'None',
@@ -994,7 +1009,11 @@ const TeamCorporateManagement = () => {
         department: editEmployeeForm.department,
         designation: editEmployeeForm.designation,
         city: editEmployeeForm.city,
+        state: editEmployeeForm.state,
         pinCode: editEmployeeForm.pinCode,
+        location: editEmployeeForm.location,
+        facility: editEmployeeForm.facility,
+        employeeId: editEmployeeForm.employeeId,
         status: editEmployeeForm.status,
         ...(editEmployeeForm.packageId ? { packageId: editEmployeeForm.packageId } : {}),
       }, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
@@ -1090,14 +1109,34 @@ const TeamCorporateManagement = () => {
           'phone': 'phoneNumber',
           'phonenumber': 'phoneNumber',
           'phone number': 'phoneNumber',
+          'mobile': 'phoneNumber',
+          'mobile number': 'phoneNumber',
           'employee id': 'employeeId',
           'employeeid': 'employeeId',
+          'emp id': 'employeeId',
+          'empid': 'employeeId',
           'department': 'department',
+          'dept': 'department',
           'designation': 'designation',
+          'role': 'designation',
           'date of birth': 'dateOfBirth',
           'dateofbirth': 'dateOfBirth',
           'dob': 'dateOfBirth',
-          'gender': 'gender'
+          'gender': 'gender',
+          'city': 'city',
+          'work city': 'city',
+          'state': 'state',
+          'work state': 'state',
+          'pin code': 'pinCode',
+          'pincode': 'pinCode',
+          'zip': 'pinCode',
+          'zip code': 'pinCode',
+          'location': 'location',
+          'branch': 'location',
+          'work location': 'location',
+          'office location': 'location',
+          'facility': 'facility',
+          'work facility': 'facility',
         };
 
         const fieldName = headerMap[header] || header;
@@ -1125,7 +1164,7 @@ const TeamCorporateManagement = () => {
         .toString()
         .toLowerCase()
         .replace(/[^a-z0-9]/g, '') || `emp${Date.now()}${i}`;
-      const email = baseEmail || `${generatedEmailLocal}@equitasbank.com`;
+      const email = baseEmail || `noemail.${generatedEmailLocal}@mediczy.in`;
 
       const normalizedEmployee = {
         firstName: firstName || 'Employee',
@@ -1136,13 +1175,64 @@ const TeamCorporateManagement = () => {
         department: rawEmployee.department || '',
         designation: rawEmployee.designation || '',
         dateOfBirth: rawEmployee.dateOfBirth || '',
-        gender: rawEmployee.gender || ''
+        gender: rawEmployee.gender || '',
+        city: rawEmployee.city || '',
+        state: rawEmployee.state || '',
+        pinCode: rawEmployee.pinCode || '',
+        location: rawEmployee.location || '',
+        facility: rawEmployee.facility || '',
       };
 
       employees.push(normalizedEmployee);
     }
 
     return employees;
+  };
+
+  // Internal QC validator — runs before API call, returns per-row issues
+  const runQC = (empList: any[]) => {
+    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const PHONE_RE = /^\d{10}$/;
+    const PIN_RE   = /^\d{6}$/;
+    const DOB_RE   = /^\d{4}-\d{2}-\d{2}$/;
+    const VALID_GENDERS = ['male', 'female', 'other'];
+    const seenEmails = new Map<string, number>();
+    const errors: { row: number; employeeId: string; name: string; email: string; issues: string[] }[] = [];
+
+    empList.forEach((emp, idx) => {
+      const row = idx + 2;
+      const issues: string[] = [];
+
+      if (!emp.firstName || String(emp.firstName).trim() === '' || emp.firstName === 'Employee')
+        issues.push('Missing First Name');
+
+      const rawEmail = (emp.email || '').trim();
+      if (rawEmail && !rawEmail.includes('@mediczy.in') && !EMAIL_RE.test(rawEmail))
+        issues.push(`Invalid email format: ${rawEmail}`);
+
+      const lowerEmail = rawEmail.toLowerCase();
+      if (lowerEmail && seenEmails.has(lowerEmail))
+        issues.push(`Duplicate email in CSV (also on row ${seenEmails.get(lowerEmail)}): ${lowerEmail}`);
+      else if (lowerEmail)
+        seenEmails.set(lowerEmail, row);
+
+      if (emp.phoneNumber && !PHONE_RE.test(String(emp.phoneNumber).replace(/[\s\-]/g, '')))
+        issues.push(`Phone should be 10 digits: ${emp.phoneNumber}`);
+
+      if (emp.gender && !VALID_GENDERS.includes(String(emp.gender).toLowerCase()))
+        issues.push(`Invalid gender (use Male/Female/Other): ${emp.gender}`);
+
+      if (emp.dateOfBirth && !DOB_RE.test(emp.dateOfBirth))
+        issues.push(`Date of Birth must be YYYY-MM-DD: ${emp.dateOfBirth}`);
+
+      if (emp.pinCode && !/^\d{6}$/.test(String(emp.pinCode)))
+        issues.push(`Pin Code must be 6 digits: ${emp.pinCode}`);
+
+      if (issues.length > 0)
+        errors.push({ row, employeeId: emp.employeeId || '', name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(), email: rawEmail, issues });
+    });
+
+    return errors;
   };
 
   // Bulk Upload Handler
@@ -1171,6 +1261,9 @@ const TeamCorporateManagement = () => {
         });
         return;
       }
+
+      // Run internal QC before sending to server
+      const clientQcLog = runQC(employeeList);
       
       const token = localStorage.getItem('teamToken');
       const { data } = await api.post('/admin/corporate-employees', {
@@ -1182,7 +1275,11 @@ const TeamCorporateManagement = () => {
       
       const created = data.results?.created || [];
       const failed = data.results?.failed || [];
-      setBulkUploadResults({ created, failed });
+      // Merge client QC + server QC (deduplicate by row)
+      const serverQc: any[] = data.results?.qcLog || [];
+      const serverQcRows = new Set(serverQc.map((q: any) => q.row));
+      const mergedQc = [...serverQc, ...clientQcLog.filter(q => !serverQcRows.has(q.row))];
+      setBulkUploadResults({ created, failed, qcLog: mergedQc });
       
       // Close the upload dialog and show the report popup
       setShowBulkUploadDialog(false);
@@ -1205,13 +1302,18 @@ const TeamCorporateManagement = () => {
 
   // Download CSV Template (v2 — includes email column)
   const downloadTemplate = () => {
-    const csvHeaders = ['Name', 'Email', 'Phone Number', 'Employee ID', 'Department', 'Designation'];
+    const csvHeaders = [
+      'Employee ID', 'First Name', 'Last Name', 'Email', 'Phone Number',
+      'Gender', 'Date of Birth', 'Department', 'Designation',
+      'City', 'State', 'Pin Code', 'Location', 'Facility'
+    ];
     const csvRows = [
-      ['Rajesh Kumar', 'rajesh.kumar@company.com', '9876543210', 'E00001', 'Engineering', 'Developer'],
-      ['Priya Sharma', 'priya.sharma@company.com', '9876543211', 'E00002', 'HR', 'Manager']
+      ['E00001', 'Rajesh', 'Kumar', 'rajesh.kumar@company.com', '9876543210', 'Male', '1990-05-15', 'Engineering', 'Software Developer', 'Bengaluru', 'Karnataka', '560001', 'Koramangala HQ', 'Tech Park A'],
+      ['E00002', 'Priya', 'Sharma', 'priya.sharma@company.com', '9876543211', 'Female', '1992-08-22', 'Human Resources', 'HR Manager', 'Delhi', 'Delhi', '110001', 'Delhi Office', 'Block B'],
+      ['E00003', 'Amit', 'Patel', '', '9876543212', 'Male', '1988-03-10', 'Finance', 'Accountant', 'Mumbai', 'Maharashtra', '400001', 'Mumbai Branch', 'Finance Wing'],
     ];
     const template = [csvHeaders.join(','), ...csvRows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([template], { type: 'text/csv' });
+    const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1900,7 +2002,11 @@ const TeamCorporateManagement = () => {
                                     department: emp.department === 'Not Assigned' ? '' : emp.department,
                                     designation: emp.designation === 'Not Assigned' ? '' : emp.designation,
                                     city: emp.city,
+                                    state: emp.state,
                                     pinCode: emp.pinCode,
+                                    location: emp.location,
+                                    facility: emp.facility,
+                                    employeeId: emp.employeeId,
                                     status: emp.status || 'active',
                                     packageId: emp.currentPackageId || '',
                                   });
@@ -3053,7 +3159,11 @@ const TeamCorporateManagement = () => {
                     department: viewingEmployee.department === 'Not Assigned' ? '' : viewingEmployee.department,
                     designation: viewingEmployee.designation === 'Not Assigned' ? '' : viewingEmployee.designation,
                     city: viewingEmployee.city,
+                    state: viewingEmployee.state,
                     pinCode: viewingEmployee.pinCode,
+                    location: viewingEmployee.location,
+                    facility: viewingEmployee.facility,
+                    employeeId: viewingEmployee.employeeId,
                     status: viewingEmployee.status || 'active',
                     packageId: viewingEmployee.currentPackageId || '',
                   });
@@ -3119,8 +3229,22 @@ const TeamCorporateManagement = () => {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
+                  <Label>Employee ID</Label>
+                  <Input placeholder="EMP001" value={editEmployeeForm.employeeId} onChange={(e) => setEditEmployeeForm({...editEmployeeForm, employeeId: e.target.value})} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Location / Branch</Label>
+                  <Input placeholder="Delhi HQ" value={editEmployeeForm.location} onChange={(e) => setEditEmployeeForm({...editEmployeeForm, location: e.target.value})} />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
                   <Label>City</Label>
                   <Input placeholder="Mumbai" value={editEmployeeForm.city} onChange={(e) => setEditEmployeeForm({...editEmployeeForm, city: e.target.value})} />
+                </div>
+                <div className="space-y-2">
+                  <Label>State</Label>
+                  <Input placeholder="Maharashtra" value={editEmployeeForm.state} onChange={(e) => setEditEmployeeForm({...editEmployeeForm, state: e.target.value})} />
                 </div>
                 <div className="space-y-2">
                   <Label>Pin Code</Label>
@@ -4394,7 +4518,7 @@ const TeamCorporateManagement = () => {
 
         {/* Upload Report Dialog */}
         <Dialog open={showUploadReport} onOpenChange={setShowUploadReport}>
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <FileSpreadsheet className="h-5 w-5" />
@@ -4409,28 +4533,55 @@ const TeamCorporateManagement = () => {
               const successPct = total > 0 ? Math.round((bulkUploadResults.created.length / total) * 100) : 0;
               const newUsers = bulkUploadResults.created.filter((e: any) => e.isNewUser).length;
               const linked = bulkUploadResults.created.filter((e: any) => !e.isNewUser).length;
+              const qcLog = bulkUploadResults.qcLog || [];
+
+              const downloadErrorLog = () => {
+                const lines = [
+                  ['Type', 'Row', 'Employee ID', 'Name', 'Email', 'Issue'].join(','),
+                  ...bulkUploadResults.failed.map((f: any, i: number) =>
+                    ['FAILED', '', f.employeeId || '', f.name || '', f.email || '', `"${(f.reason || '').replace(/"/g, '""')}"`].join(',')
+                  ),
+                  ...qcLog.map((q: any) =>
+                    q.issues.map((issue: string) =>
+                      ['QC WARNING', q.row, q.employeeId, `"${q.name}"`, q.email, `"${issue.replace(/"/g, '""')}"`].join(',')
+                    ).join('\n')
+                  ),
+                ].join('\n');
+                const blob = new Blob([lines], { type: 'text/csv;charset=utf-8;' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `upload_error_log_${new Date().toISOString().slice(0, 10)}.csv`;
+                a.click();
+                window.URL.revokeObjectURL(url);
+              };
+
               return (
                 <div className="space-y-4 py-2">
                   {/* Summary Cards */}
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-4 gap-3">
                     <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-center">
                       <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{total}</p>
-                      <p className="text-xs text-blue-600 dark:text-blue-400">Total</p>
+                      <p className="text-xs text-blue-600 dark:text-blue-400">Total Rows</p>
                     </div>
                     <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg p-3 text-center">
                       <p className="text-2xl font-bold text-green-700 dark:text-green-300">{bulkUploadResults.created.length}</p>
-                      <p className="text-xs text-green-600 dark:text-green-400">Successful</p>
+                      <p className="text-xs text-green-600 dark:text-green-400">Activated</p>
                     </div>
                     <div className={`${bulkUploadResults.failed.length > 0 ? 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800' : 'bg-gray-50 dark:bg-gray-950/30 border-gray-200 dark:border-gray-800'} border rounded-lg p-3 text-center`}>
                       <p className={`text-2xl font-bold ${bulkUploadResults.failed.length > 0 ? 'text-red-700 dark:text-red-300' : 'text-gray-500'}`}>{bulkUploadResults.failed.length}</p>
                       <p className={`text-xs ${bulkUploadResults.failed.length > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-500'}`}>Failed</p>
+                    </div>
+                    <div className={`${qcLog.length > 0 ? 'bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800' : 'bg-gray-50 dark:bg-gray-950/30 border-gray-200 dark:border-gray-800'} border rounded-lg p-3 text-center`}>
+                      <p className={`text-2xl font-bold ${qcLog.length > 0 ? 'text-yellow-700 dark:text-yellow-300' : 'text-gray-500'}`}>{qcLog.length}</p>
+                      <p className={`text-xs ${qcLog.length > 0 ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-500'}`}>QC Warnings</p>
                     </div>
                   </div>
 
                   {/* Progress Bar */}
                   <div>
                     <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                      <span>Success Rate</span>
+                      <span>Activation Rate</span>
                       <span>{successPct}%</span>
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
@@ -4441,15 +4592,15 @@ const TeamCorporateManagement = () => {
                     </div>
                   </div>
 
-                  {/* Breakdown */}
+                  {/* Successful */}
                   {bulkUploadResults.created.length > 0 && (
                     <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
                       <p className="text-sm font-medium text-green-800 dark:text-green-300 mb-1 flex items-center gap-1.5">
-                        <CheckCircle className="h-4 w-4" /> Successful Entries
+                        <CheckCircle className="h-4 w-4" /> Activated Employees
                       </p>
                       <div className="text-sm text-green-700 dark:text-green-400 space-y-0.5">
-                        {newUsers > 0 && <p>• {newUsers} new user account{newUsers > 1 ? 's' : ''} created</p>}
-                        {linked > 0 && <p>• {linked} existing user{linked > 1 ? 's' : ''} linked to corporate</p>}
+                        {newUsers > 0 && <p>• {newUsers} new user account{newUsers > 1 ? 's' : ''} created &amp; activated</p>}
+                        {linked > 0 && <p>• {linked} existing user{linked > 1 ? 's' : ''} linked &amp; activated</p>}
                       </div>
                     </div>
                   )}
@@ -4460,11 +4611,11 @@ const TeamCorporateManagement = () => {
                       <p className="text-sm font-medium text-red-800 dark:text-red-300 mb-2 flex items-center gap-1.5">
                         <XCircle className="h-4 w-4" /> Failed Entries
                       </p>
-                      <div className="max-h-32 overflow-y-auto">
+                      <div className="max-h-36 overflow-y-auto">
                         <table className="w-full text-xs">
                           <thead>
                             <tr className="text-red-700 dark:text-red-400 border-b border-red-200 dark:border-red-700">
-                              <th className="text-left py-1 pr-2">#</th>
+                              <th className="text-left py-1 pr-2">Row</th>
                               <th className="text-left py-1 pr-2">Employee</th>
                               <th className="text-left py-1">Reason</th>
                             </tr>
@@ -4482,10 +4633,61 @@ const TeamCorporateManagement = () => {
                       </div>
                     </div>
                   )}
+
+                  {/* QC Log */}
+                  {qcLog.length > 0 && (
+                    <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+                      <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-2 flex items-center gap-1.5">
+                        <AlertCircle className="h-4 w-4" /> QC Warnings ({qcLog.length} rows)
+                        <span className="text-xs font-normal text-yellow-600 dark:text-yellow-400 ml-1">— employees were still activated; review &amp; correct data</span>
+                      </p>
+                      <div className="max-h-48 overflow-y-auto font-mono text-xs space-y-1.5">
+                        {qcLog.map((entry: any, idx: number) => (
+                          <div key={idx} className="border-b border-yellow-200 dark:border-yellow-700 pb-1.5 last:border-0">
+                            <span className="text-yellow-700 dark:text-yellow-300 font-semibold">Row {entry.row}</span>
+                            {entry.employeeId && <span className="text-yellow-600 dark:text-yellow-400"> [{entry.employeeId}]</span>}
+                            {entry.name && <span className="text-yellow-600 dark:text-yellow-400"> {entry.name}</span>}
+                            {entry.email && <span className="text-yellow-500 dark:text-yellow-500"> &lt;{entry.email}&gt;</span>}
+                            <ul className="ml-3 mt-0.5 space-y-0.5">
+                              {entry.issues.map((issue: string, i: number) => (
+                                <li key={i} className="text-yellow-700 dark:text-yellow-400">↳ {issue}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })()}
-            <DialogFooter>
+            <DialogFooter className="gap-2">
+              {bulkUploadResults && (bulkUploadResults.failed.length > 0 || (bulkUploadResults.qcLog || []).length > 0) && (
+                <Button variant="outline" onClick={() => {
+                  const qcLog = bulkUploadResults?.qcLog || [];
+                  const lines = [
+                    ['Type', 'Row', 'Employee ID', 'Name', 'Email', 'Issue'].join(','),
+                    ...(bulkUploadResults?.failed || []).map((f: any) =>
+                      ['FAILED', '', f.employeeId || '', `"${(f.name || '').replace(/"/g, '""')}"`, f.email || '', `"${(f.reason || '').replace(/"/g, '""')}"`].join(',')
+                    ),
+                    ...qcLog.flatMap((q: any) =>
+                      q.issues.map((issue: string) =>
+                        ['QC WARNING', q.row, q.employeeId, `"${q.name.replace(/"/g, '""')}"`, q.email, `"${issue.replace(/"/g, '""')}"`].join(',')
+                      )
+                    ),
+                  ].join('\n');
+                  const blob = new Blob([lines], { type: 'text/csv;charset=utf-8;' });
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `upload_error_log_${new Date().toISOString().slice(0, 10)}.csv`;
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                }}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Download Error Log
+                </Button>
+              )}
               <Button onClick={() => { setShowUploadReport(false); setBulkUploadResults(null); }}>
                 Close
               </Button>
@@ -4501,7 +4703,7 @@ const TeamCorporateManagement = () => {
             setBulkUploadResults(null);
           }
         }}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Bulk Upload Employees</DialogTitle>
               <DialogDescription>
@@ -4515,10 +4717,42 @@ const TeamCorporateManagement = () => {
                   Download Template
                 </Button>
                 <span className="text-sm text-muted-foreground">
-                  Download and fill the template with employee details
+                  Download the template — it has all required columns pre-filled with examples
                 </span>
               </div>
-              
+
+              {/* Column reference */}
+              <div className="rounded-lg border overflow-hidden">
+                <div className="bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">CSV Columns Reference</div>
+                <div className="divide-y text-xs">
+                  {[
+                    { col: 'Employee ID', req: false, eg: 'E00001', note: 'Unique employee identifier' },
+                    { col: 'First Name', req: true, eg: 'Rajesh', note: 'Employee first name' },
+                    { col: 'Last Name', req: false, eg: 'Kumar', note: 'Employee last name' },
+                    { col: 'Email', req: false, eg: 'rajesh@company.com', note: 'Work email — auto-generated if blank' },
+                    { col: 'Phone Number', req: false, eg: '9876543210', note: '10-digit mobile number' },
+                    { col: 'Gender', req: false, eg: 'Male / Female / Other', note: '' },
+                    { col: 'Date of Birth', req: false, eg: '1990-05-15', note: 'Format: YYYY-MM-DD' },
+                    { col: 'Department', req: false, eg: 'Engineering', note: 'Team / department name' },
+                    { col: 'Designation', req: false, eg: 'Software Developer', note: 'Job title / role' },
+                    { col: 'City', req: false, eg: 'Bengaluru', note: 'Work city' },
+                    { col: 'State', req: false, eg: 'Karnataka', note: 'Work state' },
+                    { col: 'Pin Code', req: false, eg: '560001', note: 'Work location pin code' },
+                    { col: 'Location', req: false, eg: 'Koramangala HQ', note: 'Branch / office location name' },
+                    { col: 'Facility', req: false, eg: 'Tech Park A', note: 'Building / facility name' },
+                  ].map(({ col, req, eg, note }) => (
+                    <div key={col} className="grid grid-cols-12 items-center px-3 py-1.5 hover:bg-muted/40">
+                      <div className="col-span-3 font-medium flex items-center gap-1">
+                        {col}
+                        {req && <span className="text-red-500 text-[10px]">*</span>}
+                      </div>
+                      <div className="col-span-4 text-muted-foreground">{eg}</div>
+                      <div className="col-span-5 text-muted-foreground">{note}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               <div className="border-2 border-dashed rounded-lg p-6 text-center">
                 <input
                   type="file"
