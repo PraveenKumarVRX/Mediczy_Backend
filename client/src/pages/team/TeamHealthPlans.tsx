@@ -97,13 +97,35 @@ function PlanFormDialog({
   open: boolean; plan: (Plan & { id?: number }) | null; onClose: () => void; onSaved: () => void;
 }) {
   const { toast } = useToast();
-  const [form, setForm] = useState<ReturnType<typeof emptyForm>>(plan ? { ...plan } : emptyForm());
+
+  // Normalize features/benefits to arrays (they may be objects from JSONB corporate plans)
+  function normalizePlan(p: Plan & { id?: number }) {
+    return {
+      ...p,
+      features: Array.isArray(p.features)
+        ? p.features
+        : typeof p.features === 'object' && p.features !== null
+          ? Object.entries(p.features as Record<string, any>)
+              .filter(([, v]) => (v as any)?.enabled || v === true)
+              .map(([k]) => k)
+          : [],
+      benefits: Array.isArray(p.benefits)
+        ? p.benefits
+        : typeof p.benefits === 'object' && p.benefits !== null
+          ? Object.values(p.benefits as Record<string, any>)
+              .filter((b: any) => b?.isIncluded)
+              .map((b: any) => b.name ?? '')
+          : [],
+    };
+  }
+
+  const [form, setForm] = useState<ReturnType<typeof emptyForm>>(plan ? normalizePlan(plan as Plan & { id?: number }) : emptyForm());
   const [saving, setSaving] = useState(false);
   const [showCoverage, setShowCoverage] = useState(true);
   const isEdit = !!form.id;
 
   // Sync when plan prop changes
-  useState(() => { setForm(plan ? { ...plan } : emptyForm()); });
+  useState(() => { setForm(plan ? normalizePlan(plan as Plan & { id?: number }) : emptyForm()); });
 
   const set = (key: string, val: any) => setForm(f => ({ ...f, [key]: val }));
   const setMeta = (key: string, val: any) => setForm(f => ({
