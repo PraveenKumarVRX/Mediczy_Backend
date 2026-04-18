@@ -151,6 +151,30 @@ class InitializationController {
       const { default: selfLearningPipeline } = await import('../services/ai-self-learning-pipeline.service.js');
       selfLearningPipeline.start();
 
+      // DeepTech: Health Intelligence Score (every 6 hours, offset +30min from healthRiskCron)
+      console.log('🧬 Starting HIS (Health Intelligence Score) cron...');
+      const { default: hisScoreService } = await import('../services/ai-his-score.service.js');
+      hisScoreService.start();
+
+      // DeepTech: Federated Learning weekly aggregation
+      console.log('🌐 Starting Federated Learning pipeline...');
+      const { default: federatedLearning } = await import('../services/ai-federated-learning.service.js');
+      // Weekly aggregation scheduled via setTimeout to not delay startup
+      setTimeout(() => {
+        const WEEKLY_MS = 7 * 24 * 60 * 60 * 1000;
+        federatedLearning.runWeeklyCron().catch(e => console.error('[FL] Cron error:', e.message));
+        setInterval(() => {
+          federatedLearning.runWeeklyCron().catch(e => console.error('[FL] Cron error:', e.message));
+        }, WEEKLY_MS);
+      }, 60 * 1000); // first run after 1 minute startup grace
+
+      // DeepTech: Agent context bridge — cleanup expired sessions nightly
+      console.log('🔗 Starting Agent Context Bridge cleanup...');
+      const { default: agentContextBridge } = await import('../services/ai-agent-context.service.js');
+      setInterval(() => {
+        agentContextBridge.cleanupExpired().catch(e => console.error('[AgentCtx] Cleanup error:', e.message));
+      }, 60 * 60 * 1000); // every hour
+
       console.log('✅ All cron jobs and automation services initialized successfully');
     } catch (error) {
       console.error('❌ Cron jobs initialization failed:', error.message);

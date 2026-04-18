@@ -15,6 +15,8 @@ import drugInteractionChecker from '../../ai-drug-interaction.service.js';
 import emergencyTriageService from '../../ai-emergency-triage.service.js';
 import insuranceBotService from '../../ai-insurance-bot.service.js';
 import pool from '../../../db/pgPool.js';
+import hisScoreService from '../../ai-his-score.service.js';
+import medicalNlpService from '../../ai-medical-nlp.service.js';
 
 // ─── Drug Interaction Check Tool ────────────────────────────
 register({
@@ -310,3 +312,66 @@ register({
     }
   }
 });
+
+// ─── HIS Score Tool ──────────────────────────────────────────
+register({
+  name: 'get_his_score',
+  description: "Get a patient's Mediqzy Health Intelligence Score (HIS) — a single 0-100 composite score summarizing overall health status, risk tier, and 6 clinical dimensions. Use when discussing a patient's overall health, risk level, or when explaining health progress over time.",
+  category: 'clinical',
+  parameters: {
+    type: 'object',
+    properties: {
+      patient_id: { type: 'number', description: 'Patient ID to get HIS score for' },
+    },
+    required: ['patient_id'],
+  },
+  execute: async (params) => {
+    try {
+      const score = await hisScoreService.getScore(params.patient_id, false);
+      if (!score) return { message: 'No HIS score computed yet for this patient.' };
+      return {
+        his_score: score.his_score,
+        risk_tier: score.risk_tier,
+        trend: score.trend_direction,
+        predicted_30d: score.predicted_30d_score,
+        percentile_rank: score.percentile_rank,
+        subscores: score.subscores,
+        computed_at: score.computed_at,
+      };
+    } catch (err) {
+      return { error: 'Failed to retrieve HIS score: ' + err.message };
+    }
+  },
+});
+
+// ─── Medical Entities Tool ───────────────────────────────────
+register({
+  name: 'get_medical_entities',
+  description: "Get structured medical entities (symptoms, diagnoses, medications, allergies, vitals) extracted from a patient's clinical history. Use to understand what conditions, drugs, or symptoms have been documented for a patient.",
+  category: 'clinical',
+  parameters: {
+    type: 'object',
+    properties: {
+      patient_id: { type: 'number', description: 'Patient ID' },
+      days: { type: 'number', description: 'Look-back period in days (default 90)' },
+    },
+    required: ['patient_id'],
+  },
+  execute: async (params) => {
+    try {
+      const entities = await medicalNlpService.getPatientEntities(params.patient_id, params.days || 90);
+      const summary = {};
+      for (const [type, list] of Object.entries(entities)) {
+        summary[type] = list
+          .filter(e => !e.negated)
+          .map(e => e.normalized_name)
+          .filter((v, i, arr) => arr.indexOf(v) === i) // deduplicate
+          .slice(0, 10);
+      }
+      return { entities: summary, total: Object.values(summary).flat().length };
+    } catch (err) {
+      return { error: 'Failed to retrieve medical entities: ' + err.message };
+    }
+  },
+});
+

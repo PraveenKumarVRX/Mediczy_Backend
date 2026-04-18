@@ -172,6 +172,7 @@ import publicWebinarRouter from './routes/webinar.routes.js';
 import aiBrainRouter from './routes/ai-brain.route.js';
 import aiIntelligenceRouter from './routes/ai-intelligence.route.js';
 import aiAnalyticsRouter from './routes/ai-analytics.route.js';
+import aiDeepTechRouter from './routes/ai-deeptech.route.js';
 
 // SIB AI Guard — universal safety middleware for all AI routes
 import { sibAIGuard, attachAIReporter } from './middleware/sib-ai-guard.middleware.js';
@@ -1091,6 +1092,7 @@ app.use("/api/v3/ai-brain", authUser, aiBrainRouter); // AI Brain intelligence l
 app.use("/api/v3/ai-intelligence", authUser, aiIntelligenceRouter); // Drug interactions, insurance, triage, risk scores, insights
 app.use("/api/emergency", authUser, aiIntelligenceRouter); // Emergency alias (triage/assess, risk-score)
 app.use("/api/v3/ai-analytics", authUser, aiAnalyticsRouter); // AI analytics dashboard (LLM ops, quality, tools, population health)
+app.use("/api/v3/ai-deeptech", authUser, aiDeepTechRouter); // DeepTech: HIS, Clinical NLP, Pre-auth, Multi-agent Context, Federated Learning
 app.use("/api/diet", dietRouter); // Diet plan shortcut (alias for /api/ai-health/diet)
 app.use("/api/ayushman", ayushmanRouter);
 app.use('/api/places', placesRouter);
