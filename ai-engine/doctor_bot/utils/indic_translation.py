@@ -37,15 +37,33 @@ SUPPORTED_LANGUAGES = {
     "or":    {"name": "Odia",       "gt_code": "or",    "script": "odia"},
     "ur":    {"name": "Urdu",       "gt_code": "ur",    "script": "arabic"},
     "as":    {"name": "Assamese",   "gt_code": "as",    "script": "bengali"},
+    # Arabic
+    "ar":    {"name": "Arabic",      "gt_code": "ar",    "script": "arabic"},
+    # Major European languages
+    "fr":    {"name": "French",      "gt_code": "fr",    "script": "latin"},
+    "de":    {"name": "German",      "gt_code": "de",    "script": "latin"},
+    "es":    {"name": "Spanish",     "gt_code": "es",    "script": "latin"},
+    "it":    {"name": "Italian",     "gt_code": "it",    "script": "latin"},
+    "pt":    {"name": "Portuguese",  "gt_code": "pt",    "script": "latin"},
+    "ru":    {"name": "Russian",     "gt_code": "ru",    "script": "cyrillic"},
+    "nl":    {"name": "Dutch",       "gt_code": "nl",    "script": "latin"},
+    "pl":    {"name": "Polish",      "gt_code": "pl",    "script": "latin"},
     # Pseudo-code for mixed/Romanized Indian languages handled via auto-detect
     "mixed": {"name": "Mixed/Romanized", "gt_code": "auto", "script": "latin"},
 }
 
 # langdetect → our language code mapping
 LANGDETECT_MAP = {
+    # Indian languages
     "hi": "hi", "bn": "bn", "te": "te", "mr": "mr", "ta": "ta",
     "gu": "gu", "kn": "kn", "ml": "ml", "pa": "pa", "or": "or",
-    "ur": "ur", "as": "as", "en": "en",
+    "ur": "ur", "as": "as",
+    # Arabic
+    "ar": "ar",
+    # Major European languages
+    "fr": "fr", "de": "de", "es": "es", "it": "it", "pt": "pt",
+    "ru": "ru", "nl": "nl", "pl": "pl", "uk": "ru",  # Ukrainian → Russian GT
+    "en": "en",
 }
 
 # Unicode ranges for Indian scripts — used to identify actual Indian-script text
@@ -60,6 +78,10 @@ _INDIC_SCRIPT_RANGES = re.compile(
     r"\u0C80-\u0CFF"    # Kannada
     r"\u0D00-\u0D7F"    # Malayalam
     r"\u0600-\u06FF"    # Arabic / Urdu
+    r"\u0400-\u04FF"    # Cyrillic (Russian, Ukrainian, Bulgarian, etc.)
+    r"\u4E00-\u9FFF"    # CJK Unified Ideographs (Chinese, Japanese Kanji)
+    r"\u3040-\u30FF"    # Hiragana / Katakana (Japanese)
+    r"\uAC00-\uD7AF"    # Hangul (Korean)
     r"]"
 )
 
@@ -100,19 +122,31 @@ def detect_language(text: str) -> str:
     _HINGLISH_HINTS = re.compile(
         r"\b(nahi|nahin|kya|hai|hoon|mujhe|mera|kal|aaj|theek|bahut|bhi|"
         r"ennaku|iruku|illai|sollu|naan|paaru|vanakkam|"
-        r"ente|undo|und|aanu|alla|ketto|"
-        r"mala|aahe|nahi|kay|baro|"
-        r"nenu|meeru|undi|ledu|cheyyi|"
-        r"mane|illa|enu|beku|"
-        r"ane|nange|irodu|agide|"
-        r"paisa|dard|bimar|bukhar|dawai|doctor|medicine)\b",
+        r"ente|aanu|alla|ketto|"
+        r"mala|aahe|kay|baro|"
+        r"nenu|meeru|ledu|cheyyi|"
+        r"mane|enu|beku|"
+        r"nange|irodu|agide|"
+        r"dard|bimar|bukhar|dawai)\b",
         re.IGNORECASE
     )
     if _HINGLISH_HINTS.search(text):
         logger.debug(f"🌐 Romanized Indian text detected → 'mixed'")
         return "mixed"
 
-    # Plain English or unrecognised — return as English
+    # For Latin-script non-Indian text, try langdetect — it IS reliable for
+    # European languages (French, German, Spanish, etc.).  Only Indian Romanized
+    # text was unreliable, and that's already caught by _HINGLISH_HINTS above.
+    try:
+        from langdetect import detect, DetectorFactory
+        DetectorFactory.seed = 42
+        detected = detect(text)
+        lang = LANGDETECT_MAP.get(detected, "en")
+        logger.debug(f"🌐 langdetect (Latin): {detected} → {lang}")
+        return lang
+    except Exception as e:
+        logger.debug(f"langdetect failed for Latin text: {e}")
+
     return "en"
 
 
