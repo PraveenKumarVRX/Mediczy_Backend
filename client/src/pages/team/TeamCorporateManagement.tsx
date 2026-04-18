@@ -3012,12 +3012,12 @@ const TeamCorporateManagement = () => {
 
         {/* Add Employee Dialog */}
         <Dialog open={showAddEmployeeDialog} onOpenChange={(open) => { setShowAddEmployeeDialog(open); if (!open) { setEmpIdStatus('idle'); } }}>
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
             <DialogHeader>
               <DialogTitle>Add Employee</DialogTitle>
               <DialogDescription className="sr-only">Add a new employee</DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
+            <div className="space-y-4 py-4 overflow-y-auto flex-1 pr-1">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Employee ID *</Label>
@@ -3077,9 +3077,9 @@ const TeamCorporateManagement = () => {
                       <SelectValue placeholder="Select gender" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="male">Male</SelectItem>
-                      <SelectItem value="female">Female</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                      <SelectItem value="Male">Male</SelectItem>
+                      <SelectItem value="Female">Female</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

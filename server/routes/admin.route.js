@@ -1978,7 +1978,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
               lastName: lastName || '',
               phoneNumber: phoneNumber || '',
               dob: dateOfBirth || '1990-01-01',
-              gender: gender || 'Male',
+              gender: gender ? (gender.charAt(0).toUpperCase() + gender.slice(1).toLowerCase()) : 'Male',
               addressCity: city || null,
               addressState: state || null,
               addressZip: pinCode || null,
