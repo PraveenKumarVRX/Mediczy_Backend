@@ -80,7 +80,7 @@ const ChangePassword = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-slate-50 via-blue-50/50 to-teal-50/30 relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-slate-50 via-blue-50/50 to-teal-50/30 relative overflow-hidden text-slate-900">
       {/* background blobs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-primary/10 to-teal-400/10 rounded-full blur-3xl animate-pulse" />
