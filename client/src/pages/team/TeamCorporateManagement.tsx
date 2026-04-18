@@ -301,6 +301,7 @@ const TeamCorporateManagement = () => {
     name: '',
     email: '',
     phone: '',
+    gender: '',
     department: '',
     designation: '',
     joiningDate: ''
@@ -1035,13 +1036,18 @@ const TeamCorporateManagement = () => {
     try {
       const token = localStorage.getItem('teamToken');
       // Prepare employee data in the format expected by the backend
+      if (!newEmployee.gender) {
+        toast({ variant: 'destructive', title: 'Validation Error', description: 'Gender is required.' });
+        return;
+      }
       const employeeData = {
         firstName: newEmployee.name.split(' ')[0] || newEmployee.name,
         lastName: newEmployee.name.split(' ').slice(1).join(' ') || '',
         email: newEmployee.email,
         phoneNumber: newEmployee.phone,
         employeeId: newEmployee.employeeId,
-        department: newEmployee.department
+        department: newEmployee.department,
+        gender: newEmployee.gender
       };
       
       const response = await api.post(`/admin/corporate-employees`, {
@@ -1054,7 +1060,7 @@ const TeamCorporateManagement = () => {
       const created = response.data?.results?.created?.[0];
       
       setShowAddEmployeeDialog(false);
-      setNewEmployee({ employeeId: '', name: '', email: '', phone: '', department: '', designation: '', joiningDate: '' });
+      setNewEmployee({ employeeId: '', name: '', email: '', phone: '', gender: '', department: '', designation: '', joiningDate: '' });
       fetchEmployees(selectedCorporate.id);
 
       if (created?.isNewUser && created?.temporaryPassword) {
@@ -3009,13 +3015,26 @@ const TeamCorporateManagement = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Joining Date</Label>
-                  <Input 
-                    type="date"
-                    value={newEmployee.joiningDate}
-                    onChange={(e) => setNewEmployee({...newEmployee, joiningDate: e.target.value})}
-                  />
+                  <Label>Gender *</Label>
+                  <Select value={newEmployee.gender} onValueChange={(v) => setNewEmployee({...newEmployee, gender: v})}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select gender" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="male">Male</SelectItem>
+                      <SelectItem value="female">Female</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Joining Date</Label>
+                <Input 
+                  type="date"
+                  value={newEmployee.joiningDate}
+                  onChange={(e) => setNewEmployee({...newEmployee, joiningDate: e.target.value})}
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
