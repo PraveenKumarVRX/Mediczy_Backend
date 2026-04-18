@@ -1,0 +1,1024 @@
+"""
+Dr. iSHA Doctor Bot - FastAPI Backend
+=====================================
+
+Production-ready multi-role medical AI system:
+- Chat & Q&A with RAG
+- EHR processing & real-time ingestion (PDF/HL7/TXT)
+- Risk scoring & probabilistic reasoning
+- Task prioritization & treatment planning
+- Low-latency CPU-friendly pipeline
+
+Expected latency per query: ~250-350ms
+- Retrieval: 10-20ms
+- LLM: 150-200ms
+- Bayesian Network: <5ms
+- Pre/post-processing: ~50ms
+
+Run with: uvicorn app:app --host 0.0.0.0 --port 8001
+"""
+
+import os
+import sys
+import time
+import logging
+import warnings
+from typing import Dict, List, Any, Optional
+from datetime import datetime
+from pathlib import Path
+from contextlib import asynccontextmanager
+from functools import lru_cache
+import asyncio
+
+# User context cache (TTL 5 minutes)
+USER_CONTEXT_CACHE = {}
+CONTEXT_CACHE_TTL = 300  # 5 minutes
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("dr_isha")
+
+# Suppress noisy third-party warnings that spam the error log
+warnings.filterwarnings("ignore", message=r'.*not a eligible syntax.*')
+warnings.filterwarnings("ignore", category=UserWarning, module="spacy")
+logging.getLogger("root").setLevel(logging.WARNING)  # suppress spaCy root INFO noise
+
+# FastAPI imports
+try:
+    from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import StreamingResponse
+    from pydantic import BaseModel, Field
+    FASTAPI_AVAILABLE = True
+except ImportError:
+    FASTAPI_AVAILABLE = False
+    logger.error("❌ FastAPI not installed. Run: pip install fastapi uvicorn")
+
+# Import utilities
+try:
+    from utils.retrieval_llm import generate_answer, stream_answer, retrieve
+    from utils.bayesian_network import bn_inference, get_full_assessment
+    from utils.safety_filter import filter_dosages, detect_emergencies, safety_check, validate_response
+    from utils.risk_scoring import calculate_all_risks, from_dict as profile_from_dict
+    from utils.preprocess import process_ehr, process_all_ehr
+    from utils.embed_store import embed_and_store, get_stats as get_index_stats, load_index
+    UTILS_AVAILABLE = True
+    logger.info("✅ Core utilities loaded")
+except ImportError as e:
+    UTILS_AVAILABLE = False
+    logger.warning(f"⚠️ Some utilities not available: {e}")
+
+# Import real-time ingestion
+try:
+    from utils.real_time_ingest import (
+        ingest_new_files, 
+        ingest_single_file, 
+        get_ingestion_status,
+        reset_ingestion,
+        extract_text
+    )
+    INGEST_AVAILABLE = True
+    logger.info("✅ Real-time ingestion loaded")
+except ImportError as e:
+    INGEST_AVAILABLE = False
+    logger.warning(f"⚠️ Real-time ingestion not available: {e}")
+
+
+# ==================== Prescription Guardrail ====================
+
+import re
+
+def filter_prescription_language(text: str) -> str:
+    """
+    Filter out prescription/dosage recommendations from AI responses.
+    Replace with educational info and doctor referral.
+    """
+    # First check if this is asking "what is X used for" (educational)
+    # In that case, allow medicine names in explanation context
+    
+    # Patterns for prescription language that must be blocked
+    prescription_patterns = [
+        # Direct medication recommendations
+        (r"(?:take|use)\s+(?:acetaminophen|paracetamol|ibuprofen|aspirin|tylenol|advil|motrin)(?:\s+\([\w\s]+\))?",
+         "consult a licensed physician for appropriate medication"),
+        
+        # "Can help" with medicine names
+        (r"(?:acetaminophen|paracetamol|ibuprofen|aspirin|tylenol|advil|motrin)(?:\s+\([\w\s]+\))?\s+(?:can|may|will|could)\s+help",
+         "a licensed physician can recommend appropriate medication"),
+        
+        # "Like acetaminophen" patterns
+        (r"(?:medications?\s+)?(?:like|such as|including)\s+(?:acetaminophen|paracetamol|ibuprofen|aspirin|tylenol|advil|motrin)",
+         "over-the-counter medications (consult a physician for specific recommendations)"),
+        
+        # Dosage mentions
+        (r"\d+\s*(?:mg|ml|mcg|tablets?|pills?)\s+(?:of\s+)?[\w-]+",
+         "[specific dosing requires physician consultation]"),
+    ]
+    
+    filtered = text
+    made_changes = False
+    
+    for pattern, replacement in prescription_patterns:
+        if re.search(pattern, filtered, re.IGNORECASE):
+            filtered = re.sub(pattern, replacement, filtered, flags=re.IGNORECASE)
+            made_changes = True
+            logger.info(f"🚫 Filtered prescription language: {pattern}")
+    
+    # If we made changes, add disclaimer
+    if made_changes:
+        if "cannot prescribe" not in filtered.lower() and "consult" not in filtered.lower():
+            filtered += "\n\n🚫 Important: I cannot prescribe medications. Please consult a licensed physician who can examine you and provide appropriate treatment."
+    
+    # Fallback: if response still contains medicine names in non-educational context
+    medicine_names = r'\b(acetaminophen|paracetamol|ibuprofen|aspirin|tylenol|advil|motrin)\b'
+    if re.search(medicine_names, filtered, re.IGNORECASE):
+        # Check if it's educational (contains "used for" or "is a medication")
+        if not re.search(r'(?:used for|is a|is an|medication that)', filtered, re.IGNORECASE):
+            logger.warning(f"⚠️ Medicine names detected in non-educational context")
+            if "cannot recommend specific medications" not in filtered:
+                filtered = "I cannot recommend specific medications. Please consult a licensed physician who can examine you and prescribe appropriate treatment. Would you like me to help book a doctor's appointment?"
+    
+    return filtered
+
+
+# ==================== Pydantic Models ====================
+
+class Query(BaseModel):
+    """Query request model"""
+    question: str = Field(..., description="Medical question")
+    patient_data: Optional[Dict[str, Any]] = Field(None, description="Patient health data for BN inference")
+    use_biomedix: bool = Field(False, description="Use BiMediX2 model")
+    include_context: bool = Field(True, description="Include RAG context")
+    auto_ingest: bool = Field(False, description="Auto-ingest new EHR files before query")
+
+
+class RiskRequest(BaseModel):
+    """Risk assessment request"""
+    age: int = Field(..., ge=20, le=100)
+    sex: str = Field(..., pattern="^(male|female)$")
+    systolic_bp: float = Field(..., ge=70, le=250)
+    total_cholesterol: Optional[float] = Field(None, ge=100, le=400)
+    hdl_cholesterol: Optional[float] = Field(None, ge=20, le=100)
+    smoker: bool = False
+    diabetic: bool = False
+    on_bp_treatment: bool = False
+
+
+class ProcessRequest(BaseModel):
+    """EHR processing request"""
+    text: str = Field(..., description="EHR text content")
+    patient_id: Optional[str] = None
+
+
+# ==================== Application State ====================
+
+class AppState:
+    """Application state with PostgreSQL integration"""
+    def __init__(self):
+        self.start_time = datetime.now()
+        self.initialized = False
+        self.warmup_complete = False
+        self.request_count = 0
+        self.db = None  # PostgreSQL DatabaseManager
+    
+    async def initialize(self):
+        """Initialize fast components - skip heavy warmup for faster startup"""
+        logger.info("🚀 Initializing Dr. iSHA...")
+        
+        # Set API keys from environment
+        os.environ.setdefault("GROQ_API_KEY", "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")
+        os.environ.setdefault("GEMINI_API_KEY", "AIzaSyCVa8eKHpCzWvyFrd4jKKxkomxHI8iAp48")
+        
+        # Initialize PostgreSQL connection (fast, ~1s)
+        try:
+            from sib.database import DatabaseManager
+            self.db = DatabaseManager()
+            await self.db.connect()
+            logger.info("✅ PostgreSQL connected for user context & history")
+        except Exception as e:
+            logger.warning(f"⚠️ PostgreSQL connection failed: {e}")
+            self.db = None
+        
+        # NOTE: ClinicalBERT warmup moved to background task to avoid port binding issues
+        # The warmup will happen after server starts listening
+        
+        self.initialized = True
+        logger.info("✅ Dr. iSHA initialized (ClinicalBERT will warm up in background)")
+    
+    def do_background_warmup(self):
+        """Heavy warmup - runs in background after server starts"""
+        if self.warmup_complete:
+            return
+        try:
+            from utils.pgvector_store import warmup
+            warmup()
+            self.warmup_complete = True
+        except Exception as e:
+            logger.warning(f"⚠️ pgvector warmup failed: {e}")
+
+
+app_state = AppState()
+
+
+# ==================== Lifespan ====================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await app_state.initialize()
+    
+    # Start background warmup AFTER server binds port
+    import asyncio
+    import threading
+    
+    def background_warmup():
+        """Run warmup in background thread after server starts"""
+        import time
+        time.sleep(2)  # Wait for server to fully start
+        logger.info("🔥 Starting background ClinicalBERT warmup...")
+        app_state.do_background_warmup()
+    
+    warmup_thread = threading.Thread(target=background_warmup, daemon=True)
+    warmup_thread.start()
+    
+    yield
+    # Cleanup
+    if app_state.db:
+        await app_state.db.close()
+    logger.info("👋 Shutting down Dr. iSHA...")
+
+
+# ==================== FastAPI App ====================
+
+app = FastAPI(
+    title="Dr. iSHA - AI Medical Assistant",
+    description="""
+    Multi-role medical AI system with:
+    - RAG-based Q&A (Llama-3.1 + BiMediX)
+    - Bayesian Network reasoning
+    - CVD risk scoring
+    - EHR processing
+    - Safety filtering
+    
+    Optimized for 4-core CPU + 16GB RAM.
+    Expected latency: 250-350ms per query.
+    """,
+    version="1.0.0",
+    lifespan=lifespan
+) if FASTAPI_AVAILABLE else None
+
+# CORS
+if app:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    # Include Feedback & Learning API router
+    try:
+        from sib.api.feedback_api import router as feedback_router
+        app.include_router(feedback_router, prefix="/api")
+        logger.info("✅ Feedback API router loaded")
+    except ImportError as e:
+        logger.warning(f"⚠️ Could not load feedback router: {e}")
+
+
+# ==================== Endpoints ====================
+
+@app.post("/embed")
+async def embed_text(request: Dict[str, Any]):
+    """Generate ClinicalBERT embeddings for text(s).
+    
+    Body: { "texts": ["text1", "text2", ...] } or { "text": "single text" }
+    Returns: { "embeddings": [[0.1, 0.2, ...], ...], "dimension": 768, "model": "ClinicalBERT" }
+    """
+    from fastapi.responses import JSONResponse
+    from utils.pgvector_store import _get_embed_model
+    
+    texts = request.get("texts") or ([request.get("text")] if request.get("text") else None)
+    if not texts:
+        return JSONResponse(status_code=400, content={"error": "Provide 'text' or 'texts' field"})
+    
+    model = _get_embed_model()
+    if model is None:
+        return JSONResponse(status_code=503, content={"error": "Embedding model not loaded"})
+    
+    embeddings = model.encode(texts, show_progress_bar=False, normalize_embeddings=True)
+    return {
+        "embeddings": [e.tolist() for e in embeddings],
+        "dimension": len(embeddings[0]),
+        "model": "Bio_ClinicalBERT",
+        "count": len(texts)
+    }
+
+
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "name": "Dr. iSHA - AI Medical Assistant",
+        "version": "1.0.0",
+        "status": "online",
+        "docs": "/docs"
+    }
+
+
+@app.get("/health")
+async def health():
+    """Health check"""
+    uptime = (datetime.now() - app_state.start_time).total_seconds()
+    
+    stats = None
+    if UTILS_AVAILABLE:
+        try:
+            stats = get_index_stats()
+        except:
+            pass
+    
+    return {
+        "status": "healthy" if app_state.initialized else "initializing",
+        "uptime_seconds": round(uptime, 2),
+        "request_count": app_state.request_count,
+        "index_stats": stats
+    }
+
+
+@app.post("/query")
+async def ask_question(q: Query):
+    """
+    Main query endpoint
+    
+    Combines RAG + Bayesian Network + Safety Filter
+    Expected latency: 250-350ms
+    
+    Set auto_ingest=True to ingest new EHR files before processing query
+    """
+    if not UTILS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Utilities not available")
+    
+    app_state.request_count += 1
+    start_time = time.time()
+    
+    # Auto-ingest new files if requested
+    ingestion_result = None
+    if q.auto_ingest and INGEST_AVAILABLE:
+        try:
+            ingestion_result = ingest_new_files()
+            logger.info(f"Auto-ingestion: {ingestion_result.get('ingested', 0)} files")
+        except Exception as e:
+            logger.warning(f"Auto-ingestion failed: {e}")
+    
+    # Check for emergencies
+    emergency_alerts = detect_emergencies(q.question)
+    if emergency_alerts:
+        return {
+            "answer": "🚨 EMERGENCY DETECTED - Please call 112 (India) or local emergency services immediately",
+            "emergency": True,
+            "alerts": [{"level": "emergency", "message": a.message} for a in emergency_alerts],
+            "latency_ms": round((time.time() - start_time) * 1000, 2)
+        }
+    
+    # Generate LLM answer with RAG
+    llm_result = generate_answer(
+        q.question,
+        use_biomedix=q.use_biomedix,
+        include_context=q.include_context
+    )
+    
+    # Bayesian Network inference if patient data provided
+    bn_result = None
+    if q.patient_data:
+        bn_result = bn_inference(q.patient_data)
+    
+    # Combine answer
+    answer = llm_result["answer"]
+    
+    if bn_result and bn_result.get("CardioRisk", -1) >= 0:
+        answer += f"\n\n📊 **Probabilistic Analysis:**\n"
+        answer += f"- CardioRisk: {bn_result.get('CardioRisk_label', 'N/A')} ({bn_result.get('CardioRisk_prob', 0):.0%})\n"
+        answer += f"- Treatment Priority: {bn_result.get('TreatmentPriority_label', 'N/A')}"
+    
+    # Safety filter
+    safe_answer, safety_alerts = validate_response(answer)
+    
+    total_latency = (time.time() - start_time) * 1000
+    
+    return {
+        "answer": safe_answer,
+        "model": llm_result.get("model", "unknown"),
+        "latency_ms": round(total_latency, 2),
+        "latency_breakdown": {
+            "llm_ms": llm_result.get("latency_ms", 0),
+            "bn_ms": 5 if bn_result else 0,
+            "safety_ms": round(total_latency - llm_result.get("latency_ms", 0) - 5, 2)
+        },
+        "context_chunks": llm_result.get("context_chunks", 0),
+        "bn_result": bn_result,
+        "safety_alerts": [{"level": a.level.value, "message": a.message} for a in safety_alerts] if safety_alerts else None
+    }
+
+
+@app.post("/chat")
+async def chat(request: Dict[str, Any]):
+    """
+    Chat endpoint with PostgreSQL user context & history integration
+    
+    Full pipeline: 
+    1. Load user context from PostgreSQL
+    2. Retrieve conversation history
+    3. MedSpaCy → ClinicalBERT → FAISS → Bayesian → LLM → Safety Filter
+    4. Save conversation to PostgreSQL
+    5. Sync to health diary if configured
+    
+    Accepts:
+    - message: str - User's message/query
+    - patient_id: str (optional) - Patient ID for conversation tracking
+    - user_id: int (optional) - Mediczy user ID from Node.js backend
+    - include_risk: bool (optional) - Whether to include risk assessment
+    """
+    if not UTILS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Utilities not available")
+    
+    # Ensure warmup is complete before processing
+    if not app_state.warmup_complete:
+        logger.info("🔥 First request - completing warmup...")
+        app_state.do_background_warmup()
+    
+    message = request.get("message")
+    if not message:
+        raise HTTPException(status_code=400, detail="'message' field required")
+    
+    patient_id = request.get("patient_id", f"patient_{int(time.time())}")
+    user_id = request.get("user_id")  # Mediczy user ID from auth
+    include_risk = request.get("include_risk", False)
+    
+    app_state.request_count += 1
+    start_time = time.time()
+    
+    # Load user context from PostgreSQL with caching
+    user_context = {}
+    conversation_history = []
+    db_start = time.time()
+    
+    if app_state.db and user_id:
+        user_id_str = str(user_id)
+        
+        # Check cache first
+        cache_key = f"ctx_{user_id_str}"
+        if cache_key in USER_CONTEXT_CACHE:
+            cached_time, cached_context = USER_CONTEXT_CACHE[cache_key]
+            if (time.time() - cached_time) < CONTEXT_CACHE_TTL:
+                user_context = cached_context
+                logger.info(f"📋 Loaded user context from cache")
+            else:
+                del USER_CONTEXT_CACHE[cache_key]
+        
+        # If not cached, load from DB asynchronously (don't block LLM)
+        if not user_context:
+            try:
+                # Load user context and conversation history in parallel
+                context_task = asyncio.create_task(
+                    app_state.db.get_patient_context(user_id_str)
+                )
+                history_task = asyncio.create_task(
+                    app_state.db.get_chat_history(patient_id, limit=20)
+                )
+                
+                # Don't wait for DB if it's slow - LLM can proceed
+                done, pending = await asyncio.wait(
+                    [context_task, history_task],
+                    timeout=2.0  # 2 second timeout
+                )
+                
+                if context_task in done:
+                    user_context = context_task.result() or {}
+                    # Cache it
+                    USER_CONTEXT_CACHE[cache_key] = (time.time(), user_context)
+                    logger.info(f"📋 Loaded user context from DB")
+                
+                if history_task in done:
+                    conversation_history = history_task.result() or []
+                    logger.info(f"💬 Retrieved {len(conversation_history)} messages")
+                else:
+                    logger.info(f"⚡ Skipping history load (timeout) - proceeding with LLM")
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ DB timeout or error: {e} - proceeding without context")
+    
+    db_latency = (time.time() - db_start) * 1000
+    
+    # Check for emergencies
+    emergency_alerts = detect_emergencies(message)
+    if emergency_alerts:
+        return {
+            "chat_answer": "🚨 EMERGENCY DETECTED - Please call 112 (India) or local emergency services immediately",
+            "provider": "emergency-filter",
+            "emergency": True,
+            "turn_count": 1,
+            "conversation_id": patient_id
+        }
+    
+    # Try full medical pipeline first (MedSpaCy + NER)
+    try:
+        from sib.medical_pipeline import get_pipeline
+        pipeline = get_pipeline()
+        logger.info("🧠 Using full medical pipeline with MedSpaCy NER...")
+        
+        result = pipeline.process(
+            message,
+            include_risk=include_risk,
+            include_retrieval=True,
+            conversation_history=conversation_history
+        )
+        
+        logger.info(f"✅ Medical pipeline completed: {len(result.entities)} entities extracted")
+        
+        # Apply prescription guardrail filter
+        filtered_response = filter_prescription_language(result.response)
+        
+        # Save conversation to PostgreSQL
+        if app_state.db:
+            try:
+                # Save user message
+                await app_state.db.save_chat_message(
+                    conversation_id=patient_id,
+                    patient_id=str(user_id) if user_id else None,
+                    role="user",
+                    content=message,
+                    metadata={
+                        "entities": result.entities[:10],
+                        "is_emergency": result.is_emergency
+                    }
+                )
+                
+                # Save assistant response
+                await app_state.db.save_chat_message(
+                    conversation_id=patient_id,
+                    patient_id=str(user_id) if user_id else None,
+                    role="assistant",
+                    content=filtered_response,
+                    metadata={
+                        "provider": result.provider,
+                        "latency_ms": result.latency_ms,
+                        "db_latency_ms": round(db_latency, 2),
+                        "pipeline": "medspacy-clinicalbert-pgvector-bayesian-llm"
+                    }
+                )
+                
+                # Update patient context with latest interaction
+                if user_id:
+                    await app_state.db.update_patient_context(
+                        patient_id=str(user_id),
+                        context_updates={
+                            "last_query": message,
+                            "last_entities": result.entities[:5],
+                            "total_interactions": len(conversation_history) + 1
+                        }
+                    )
+                
+                logger.info("💾 Conversation saved to PostgreSQL")
+            except Exception as e:
+                logger.error(f"❌ Failed to save conversation: {e}")
+        
+        total_latency = (time.time() - start_time) * 1000
+        
+        return {
+            "chat_answer": filtered_response,
+            "provider": result.provider,
+            "model": result.provider,
+            "turn_count": len(conversation_history) + 1,
+            "conversation_id": patient_id,
+            "latency_ms": {
+                "total": round(total_latency, 2),
+                "llm": result.latency_ms,
+                "database": round(db_latency, 2),
+                "overhead": round(total_latency - result.latency_ms - db_latency, 2)
+            },
+            "entities": result.entities[:10],
+            "is_emergency": result.is_emergency,
+            "pipeline": "medspacy-clinicalbert-pgvector-bayesian-llm",
+            "user_context_loaded": bool(user_context)
+        }
+    except Exception as pipeline_error:
+        logger.warning(f"⚠️ Medical pipeline failed: {pipeline_error}")
+        
+        # Fallback to basic RAG
+        llm_result = generate_answer(
+            message,
+            use_biomedix=False,
+            include_context=True
+        )
+        
+        # Safety filter
+        safe_answer, safety_alerts = validate_response(llm_result["answer"])
+        
+        total_latency = (time.time() - start_time) * 1000
+        
+        # Save fallback conversation to PostgreSQL
+        if app_state.db:
+            try:
+                await app_state.db.save_chat_message(
+                    conversation_id=patient_id,
+                    patient_id=str(user_id) if user_id else None,
+                    role="user",
+                    content=message,
+                    metadata={"pipeline": "rag-fallback"}
+                )
+                await app_state.db.save_chat_message(
+                    conversation_id=patient_id,
+                    patient_id=str(user_id) if user_id else None,
+                    role="assistant",
+                    content=safe_answer,
+                    metadata={"provider": llm_result.get("model")}
+                )
+                logger.info("💾 Fallback conversation saved")
+            except Exception as e:
+                logger.error(f"❌ Failed to save fallback: {e}")
+        
+        return {
+            "chat_answer": safe_answer,
+            "provider": llm_result.get("model", "groq"),
+            "model": llm_result.get("model", "llama-3.3-70b"),
+            "turn_count": len(conversation_history) + 1,
+            "conversation_id": patient_id,
+            "latency_ms": round(total_latency, 2),
+            "pipeline": "rag-fallback",
+            "user_context_loaded": bool(user_context)
+        }
+
+
+@app.post("/query/stream")
+async def stream_question(q: Query):
+    """Streaming query endpoint"""
+    if not UTILS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Utilities not available")
+    
+    # Check emergencies first
+    emergency_alerts = detect_emergencies(q.question)
+    if emergency_alerts:
+        async def emergency_stream():
+            yield "🚨 EMERGENCY DETECTED - Please call 112 (India) or local emergency services immediately"
+        return StreamingResponse(emergency_stream(), media_type="text/plain")
+    
+    async def response_stream():
+        for chunk in stream_answer(q.question):
+            yield chunk
+    
+    return StreamingResponse(response_stream(), media_type="text/plain")
+
+
+@app.post("/risk")
+async def calculate_risk(request: RiskRequest):
+    """
+    CVD Risk Assessment
+    
+    Calculates Framingham and ASCVD risk scores
+    """
+    if not UTILS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Utilities not available")
+    
+    profile = profile_from_dict(request.model_dump())
+    return calculate_all_risks(profile)
+
+
+@app.post("/bn/inference")
+async def bayesian_inference(patient_data: Dict[str, Any]):
+    """
+    Bayesian Network inference
+    
+    Returns CardioRisk and TreatmentPriority
+    """
+    if not UTILS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Utilities not available")
+    
+    return get_full_assessment(patient_data)
+
+
+@app.post("/safety/check")
+async def check_safety(text: str):
+    """
+    Safety check endpoint
+    
+    Detects emergencies, unsafe dosages, etc.
+    """
+    if not UTILS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Utilities not available")
+    
+    return safety_check(text)
+
+
+@app.post("/task")
+async def execute_task(request: Dict[str, Any]):
+    """
+    Unified task execution endpoint
+    
+    ALL operations must route through this endpoint for centralized orchestration:
+    - Chat and consultations
+    - Medical record processing
+    - Appointment scheduling
+    - Notification management
+    - Prescription generation
+    - Task automation
+    - Risk assessment
+    - Emergency detection
+    
+    Request format:
+    {
+        "task_type": "chat|medical_consult|schedule_appointment|...",
+        "payload": { /* task-specific data */ },
+        "user_id": "user_123",
+        "patient_id": "patient_456",
+        "context": { /* optional context */ }
+    }
+    """
+    try:
+        from sib.task_router import TaskType, get_task_router
+        
+        task_router = get_task_router(app_state.db)
+        
+        task_type_str = request.get("task_type")
+        if not task_type_str:
+            raise HTTPException(status_code=400, detail="task_type is required")
+        
+        # Convert string to TaskType enum
+        try:
+            task_type = TaskType(task_type_str.lower())
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Unknown task type: {task_type_str}")
+        
+        # Execute task through unified router
+        result = await task_router.route_task(
+            task_type=task_type,
+            payload=request.get("payload", {}),
+            user_id=request.get("user_id"),
+            patient_id=request.get("patient_id"),
+            context=request.get("context")
+        )
+        
+        return {
+            "success": result.status.value == "completed",
+            "task_type": result.task_type.value,
+            "status": result.status.value,
+            "data": result.data,
+            "error": result.error,
+            "timestamp": result.timestamp
+        }
+    except Exception as e:
+        logger.error(f"Task execution error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/process/ehr")
+async def process_ehr_text(request: ProcessRequest):
+    """
+    Process EHR text
+    
+    Extracts entities, sections, vitals
+    """
+    if not UTILS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Utilities not available")
+    
+    # Create temp file for processing
+    import tempfile
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+        f.write(request.text)
+        temp_path = f.name
+    
+    try:
+        result = process_ehr(temp_path)
+        if request.patient_id:
+            result["patient_id"] = request.patient_id
+        return result
+    finally:
+        os.unlink(temp_path)
+
+
+@app.post("/index/build")
+async def build_index(ehr_dir: str = "./data/ehr_records/"):
+    """
+    Build FAISS index from EHR records
+    
+    Admin endpoint
+    """
+    if not UTILS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Utilities not available")
+    
+    # Process EHR files
+    process_all_ehr(ehr_dir)
+    
+    # Build embeddings
+    count = embed_and_store()
+    
+    return {"status": "success", "chunks_indexed": count}
+
+
+@app.get("/index/stats")
+async def index_stats():
+    """Get FAISS index statistics"""
+    if not UTILS_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Utilities not available")
+    
+    return get_index_stats()
+
+
+# ==================== Real-Time Ingestion Endpoints ====================
+
+@app.post("/ingest/new")
+async def ingest_new():
+    """
+    Ingest all new EHR files from data/ehr_records/
+    
+    Supports: PDF, HL7, TXT files
+    Automatically updates FAISS index without rebuilding
+    """
+    if not INGEST_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Ingestion module not available")
+    
+    start_time = time.time()
+    result = ingest_new_files()
+    result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
+    
+    return result
+
+
+@app.post("/ingest/file")
+async def ingest_file(file: UploadFile = File(...)):
+    """
+    Upload and ingest a single EHR file
+    
+    Supports: PDF, HL7, TXT files
+    """
+    if not INGEST_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Ingestion module not available")
+    
+    # Validate file type
+    allowed_extensions = [".pdf", ".hl7", ".txt"]
+    file_ext = Path(file.filename).suffix.lower()
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Unsupported file type: {file_ext}. Allowed: {allowed_extensions}"
+        )
+    
+    # Save uploaded file
+    ehr_dir = Path(__file__).parent / "data" / "ehr_records"
+    ehr_dir.mkdir(parents=True, exist_ok=True)
+    
+    file_path = ehr_dir / file.filename
+    
+    try:
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+        
+        # Ingest the file
+        start_time = time.time()
+        result = ingest_single_file(str(file_path), force=True)
+        
+        if result:
+            return {
+                "status": "success",
+                "file": file.filename,
+                "patient_id": result.get("patient_id"),
+                "sections": list(result.get("sections", {}).keys()),
+                "entities_count": len(result.get("entities", [])),
+                "latency_ms": round((time.time() - start_time) * 1000, 2)
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to process file")
+    
+    except Exception as e:
+        logger.error(f"File ingestion failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/ingest/status")
+async def ingestion_status():
+    """
+    Get current ingestion status
+    
+    Returns:
+    - Total vectors in FAISS
+    - Ingested file count
+    - Pending files
+    """
+    if not INGEST_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Ingestion module not available")
+    
+    return get_ingestion_status()
+
+
+@app.post("/ingest/reset")
+async def reset_ingestion_state():
+    """
+    Reset ingestion state (admin only)
+    
+    Clears FAISS index, metadata, and ingestion log
+    Use with caution!
+    """
+    if not INGEST_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Ingestion module not available")
+    
+    return reset_ingestion()
+
+
+@app.post("/extract/text")
+async def extract_file_text(file: UploadFile = File(...)):
+    """
+    Extract text from a file without ingesting
+    
+    Useful for previewing file contents
+    """
+    if not INGEST_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Ingestion module not available")
+    
+    import tempfile
+    
+    # Save to temp file
+    file_ext = Path(file.filename).suffix.lower()
+    with tempfile.NamedTemporaryFile(suffix=file_ext, delete=False) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+    
+    try:
+        text = extract_text(tmp_path)
+        return {
+            "filename": file.filename,
+            "text": text,
+            "length": len(text),
+            "lines": len(text.split('\n'))
+        }
+    finally:
+        os.unlink(tmp_path)
+
+
+@app.websocket("/ws/query")
+async def websocket_query(websocket: WebSocket):
+    """
+    WebSocket for real-time queries
+    """
+    await websocket.accept()
+    logger.info("🔌 WebSocket connected")
+    
+    try:
+        while True:
+            data = await websocket.receive_json()
+            question = data.get("question", "")
+            patient_data = data.get("patient_data")
+            
+            # Check emergencies
+            emergency_alerts = detect_emergencies(question)
+            if emergency_alerts:
+                await websocket.send_json({
+                    "type": "emergency",
+                    "message": "🚨 Emergency detected - Call 112 (India)"
+                })
+                continue
+            
+            # Stream response
+            await websocket.send_json({"type": "start"})
+            
+            full_response = ""
+            for chunk in stream_answer(question):
+                await websocket.send_json({"type": "chunk", "content": chunk})
+                full_response += chunk
+            
+            # Add BN result if patient data
+            if patient_data:
+                bn_result = bn_inference(patient_data)
+                await websocket.send_json({
+                    "type": "bn_result",
+                    "data": bn_result
+                })
+            
+            await websocket.send_json({"type": "end"})
+    
+    except WebSocketDisconnect:
+        logger.info("🔌 WebSocket disconnected")
+
+
+# ==================== Main ====================
+
+if __name__ == "__main__":
+    import uvicorn
+    
+    port = int(os.environ.get("DR_ISHA_PORT", 8001))
+    host = os.environ.get("DR_ISHA_HOST", "0.0.0.0")
+    
+    logger.info(f"🩺 Starting Dr. iSHA on {host}:{port}")
+    
+    uvicorn.run(
+        "app:app",
+        host=host,
+        port=port,
+        reload=False,
+        workers=1,
+        log_level="info"
+    )

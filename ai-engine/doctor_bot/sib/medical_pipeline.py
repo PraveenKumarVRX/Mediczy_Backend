@@ -762,7 +762,8 @@ Thank you for sharing your health concern with me.
     
     def process(self, query: str, patient_data: Optional[Dict] = None,
                 include_risk: bool = True, include_retrieval: bool = True,
-                language: str = "en", fast_mode: bool = True, use_rag: bool = False) -> PipelineResult:
+                language: str = "en", fast_mode: bool = True, use_rag: bool = False,
+                conversation_history: Optional[List[Dict]] = None) -> PipelineResult:
         """
         Run medical AI pipeline with TinyLlama routing
         
@@ -840,7 +841,7 @@ Thank you for sharing your health concern with me.
             logger.info("⚡ Fast path: Direct API call (skipping NER/FAISS)")
             
             # Call iSHA API directly
-            response = self._call_isha(query, None, patient_data)
+            response = self._call_isha(query, None, patient_data, conversation_history=conversation_history)
             
             if response:
                 # Quick safety check
@@ -889,7 +890,8 @@ Thank you for sharing your health concern with me.
             query,
             context=context_chunks if context_chunks else None,
             patient_data=patient_data,
-            preferred_backend=preferred_backend
+            preferred_backend=preferred_backend,
+            conversation_history=conversation_history
         )
         
         # Step 6: Safety filter
@@ -915,7 +917,8 @@ Thank you for sharing your health concern with me.
     
     def generate_response_routed(self, query: str, context: Optional[List[str]] = None,
                                   patient_data: Optional[Dict] = None,
-                                  preferred_backend: str = "isha") -> Tuple[str, str]:
+                                  preferred_backend: str = "isha",
+                                  conversation_history: Optional[List[Dict]] = None) -> Tuple[str, str]:
         """
         Generate response using the routed backend
         
@@ -937,17 +940,17 @@ Thank you for sharing your health concern with me.
         for backend in backends:
             try:
                 if backend == "isha":
-                    response = self._call_isha(query, context, patient_data)
+                    response = self._call_isha(query, context, patient_data, conversation_history=conversation_history)
                     if response:
                         return response, "isha-api"
                         
                 elif backend == "groq":
-                    response = self._call_groq(query, context, patient_data)
+                    response = self._call_groq(query, context, patient_data, conversation_history=conversation_history)
                     if response:
                         return response, "groq-llama"
                         
                 elif backend == "gemini":
-                    response = self._call_gemini(query, context, patient_data)
+                    response = self._call_gemini(query, context, patient_data, conversation_history=conversation_history)
                     if response:
                         return response, "gemini"
                         
@@ -995,7 +998,8 @@ Thank you for sharing your health concern with me.
         return None
 
     def _call_isha(self, query: str, context: Optional[List[str]], 
-                   patient_data: Optional[Dict]) -> Optional[str]:
+                   patient_data: Optional[Dict],
+                   conversation_history: Optional[List[Dict]] = None) -> Optional[str]:
         """Call iSHA.buzz API via /v1/chat/completions endpoint with connection pooling"""
         try:
             import requests
@@ -1020,6 +1024,16 @@ Thank you for sharing your health concern with me.
             if context:
                 system_prompt += f"\n\nContext:\n" + "\n".join(context[:2])
             
+            # Build messages array: system + last 6 history turns + current user message
+            messages = [{"role": "system", "content": system_prompt}]
+            if conversation_history:
+                for turn in conversation_history[-6:]:
+                    role = turn.get("role", "user")
+                    content = turn.get("content", "")
+                    if role in ("user", "assistant") and content:
+                        messages.append({"role": role, "content": content})
+            messages.append({"role": "user", "content": query})
+            
             isha_url = os.environ.get("ISHA_AI_URL", "https://ai.isha.buzz")
             # Use the correct endpoint with agent_type
             response = self._isha_session.post(
@@ -1027,10 +1041,7 @@ Thank you for sharing your health concern with me.
                 headers={"Authorization": f"Bearer {token}"},
                 json={
                     "agent_type": "Clinical",
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": query}
-                    ],
+                    "messages": messages,
                     "max_tokens": 300,
                     "temperature": 0.75,
                     "stream": False
@@ -1049,7 +1060,8 @@ Thank you for sharing your health concern with me.
             return None
     
     def _call_groq(self, query: str, context: Optional[List[str]], 
-                   patient_data: Optional[Dict]) -> Optional[str]:
+                   patient_data: Optional[Dict],
+                   conversation_history: Optional[List[Dict]] = None) -> Optional[str]:
         """Call Groq API (Fallback 1) - Fast cloud inference"""
         try:
             from groq import Groq
@@ -1065,15 +1077,22 @@ You are Dr. iSHA 🩺, a friendly AI health assistant. Be warm but ultra-brief. 
             if context:
                 system_prompt += f"\n\nBackground (use only if asked):\n" + "\n".join(context[:1])
             
+            # Build messages array: system + last 6 history turns + current user message
+            messages = [{"role": "system", "content": system_prompt}]
+            if conversation_history:
+                for turn in conversation_history[-6:]:
+                    role = turn.get("role", "user")
+                    content = turn.get("content", "")
+                    if role in ("user", "assistant") and content:
+                        messages.append({"role": role, "content": content})
+            messages.append({"role": "user", "content": query})
+            
             client = Groq(api_key=self.groq_api_key)
             
             response = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": query}
-                ],
-                max_tokens=120,
+                messages=messages,
+                max_tokens=300,
                 temperature=0.75
             )
             
@@ -1084,7 +1103,8 @@ You are Dr. iSHA 🩺, a friendly AI health assistant. Be warm but ultra-brief. 
             return None
     
     def _call_gemini(self, query: str, context: Optional[List[str]], 
-                     patient_data: Optional[Dict]) -> Optional[str]:
+                     patient_data: Optional[Dict],
+                     conversation_history: Optional[List[Dict]] = None) -> Optional[str]:
         """Call Gemini API (Fallback 2) - Google's AI"""
         try:
             import google.generativeai as genai
@@ -1096,13 +1116,27 @@ You are Dr. iSHA 🩺, a friendly AI health assistant. Be warm but ultra-brief. 
             genai.configure(api_key=self.gemini_api_key)
             model = genai.GenerativeModel('gemini-1.5-flash')
             
-            # Build prompt with context
-            prompt = "You are Dr. iSHA 🩺, a friendly AI health assistant at Mediczy. MAXIMUM 3 sentences per reply. Ask ONE follow-up question if needed — never two. No bullet lists. End naturally.\n\n"
+            # Build prompt with history
+            system_context = "You are Dr. iSHA 🩺, a friendly AI health assistant at Mediczy. MAXIMUM 3 sentences per reply. Ask ONE follow-up question if needed — never two. No bullet lists. End naturally.\n\n"
             if context:
-                prompt += f"Context:\n" + "\n".join(context[:2]) + "\n\n"
-            prompt += f"User question: {query}\n\nReply in 3 sentences max:"
+                system_context += f"Context:\n" + "\n".join(context[:2]) + "\n\n"
             
-            response = model.generate_content(prompt)
+            # Inline history into prompt since Gemini uses a flat prompt
+            history_text = ""
+            if conversation_history:
+                for turn in conversation_history[-6:]:
+                    role = turn.get("role", "user")
+                    content = turn.get("content", "")
+                    if role in ("user", "assistant") and content:
+                        label = "Patient" if role == "user" else "Dr. iSHA"
+                        history_text += f"{label}: {content}\n"
+            
+            full_prompt = system_context
+            if history_text:
+                full_prompt += f"Previous conversation:\n{history_text}\n"
+            full_prompt += f"Patient: {query}\n\nDr. iSHA:"
+            
+            response = model.generate_content(full_prompt)
             return response.text
             
         except Exception as e:
