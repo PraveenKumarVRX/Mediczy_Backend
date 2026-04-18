@@ -310,19 +310,6 @@ const TeamCorporateManagement = () => {
   });
   const [empIdStatus, setEmpIdStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
 
-  // Debounced Employee ID duplicate check against already-loaded employees
-  useEffect(() => {
-    const id = newEmployee.employeeId.trim();
-    if (!id) { setEmpIdStatus('idle'); return; }
-    setEmpIdStatus('checking');
-    const t = setTimeout(() => {
-      const exists = employees.some(
-        (e) => e.employeeId?.toLowerCase() === id.toLowerCase()
-      );
-      setEmpIdStatus(exists ? 'duplicate' : 'ok');
-    }, 400);
-    return () => clearTimeout(t);
-  }, [newEmployee.employeeId, employees]);
   
   // Package form
   const [newPackage, setNewPackage] = useState({
@@ -427,6 +414,20 @@ const TeamCorporateManagement = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [empCurrentPage, setEmpCurrentPage] = useState(1);
   const EMP_PAGE_SIZE = 10;
+
+  // Debounced Employee ID duplicate check against already-loaded employees
+  useEffect(() => {
+    const id = newEmployee.employeeId.trim();
+    if (!id) { setEmpIdStatus('idle'); return; }
+    setEmpIdStatus('checking');
+    const t = setTimeout(() => {
+      const exists = employees.some(
+        (e) => e.employeeId?.toLowerCase() === id.toLowerCase()
+      );
+      setEmpIdStatus(exists ? 'duplicate' : 'ok');
+    }, 400);
+    return () => clearTimeout(t);
+  }, [newEmployee.employeeId, employees]);
   const [labPartners, setLabPartners] = useState<LabPartner[]>([]);
   const [hospitalPartners, setHospitalPartners] = useState<HospitalPartner[]>([]);
   const [clinicPartners, setClinicPartners] = useState<ClinicPartner[]>([]);
