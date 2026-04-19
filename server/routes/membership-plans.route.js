@@ -6,6 +6,7 @@ import pool from '../db/pgPool.js';
 import puppeteer from 'puppeteer';
 import QRCode from 'qrcode';
 import userModel from '../models/user.model.intelligent.js';
+import { UserPlan } from '../models/membershipPlan.model.intelligent.js';
 
 const router = express.Router();
 
@@ -68,9 +69,14 @@ router.get('/plans/:slug', async (req, res) => {
  */
 router.get('/subscription', authUser, async (req, res) => {
   try {
-    const subscription = await membershipService.getUserSubscription(req.user.id);
+    const userId = req.user.id;
+    const currentDate = new Date().toISOString().split('T')[0];
+    const userPlan = await UserPlan.findOne({
+      where: { userId, status: 'active' },
+      order: [['endDate', 'DESC']],
+    });
 
-    if (!subscription) {
+    if (!userPlan) {
       return res.json({
         success: true,
         data: { 
@@ -80,11 +86,29 @@ router.get('/subscription', authUser, async (req, res) => {
       });
     }
 
+    let planInfo = null;
+    if (userPlan.membershipPlanId) {
+      const { rows } = await pool.query(
+        'SELECT id, name, type, price, features FROM membership_plans WHERE id = $1 LIMIT 1',
+        [userPlan.membershipPlanId]
+      );
+      if (rows?.length) planInfo = rows[0];
+    }
+
     res.json({
       success: true,
       data: {
-        subscription,
-        hasValidSubscription: true
+        subscription: {
+          id: userPlan.id,
+          userId: userPlan.userId,
+          membershipPlanId: userPlan.membershipPlanId,
+          status: userPlan.status,
+          startDate: userPlan.startDate,
+          endDate: userPlan.endDate,
+          autoRenew: userPlan.autoRenew,
+          plan: planInfo,
+        },
+        hasValidSubscription: true,
       }
     });
   } catch (error) {
@@ -584,10 +608,24 @@ router.get('/card-image', authUser, async (req, res) => {
     const user = await userModel.findByPk(userId);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    // 2. Load subscription
-    const subscription = await membershipService.getUserSubscription(userId);
-    const planName  = subscription?.plan?.name  || 'Basic';
-    const tier      = (subscription?.plan?.tier || 'basic').toLowerCase();
+    // 2. Load active plan via UserPlan (same model as auth middleware)
+    const currentDate = new Date().toISOString().split('T')[0];
+    const userPlan = await UserPlan.findOne({
+      where: { userId, status: 'active' },
+      order: [['endDate', 'DESC']],
+    });
+    let planName = 'Basic';
+    let tier = 'basic';
+    if (userPlan?.membershipPlanId) {
+      const { rows } = await pool.query(
+        'SELECT name, type FROM membership_plans WHERE id = $1 LIMIT 1',
+        [userPlan.membershipPlanId]
+      );
+      if (rows?.length) {
+        planName = rows[0].name || planName;
+        tier = (rows[0].type || tier).toLowerCase();
+      }
+    }
     const gradient  = TIER_GRADIENT[tier] || TIER_GRADIENT.basic;
     const memberId  = `MED-${String(userId).padStart(6, '0')}`;
     const memberSince = user.createdAt
