@@ -193,6 +193,9 @@ const CRMPage                  = lazy(() => import("@/pages/admin/CRMPage"));
 const CRMLeadDetail            = lazy(() => import("@/pages/admin/CRMLeadDetail"));
 const AIAnalyticsDashboard     = lazy(() => import("@/pages/admin/AIAnalyticsDashboard"));
 const SIBAIDashboard           = lazy(() => import("@/pages/admin/SIBAIDashboard"));
+const HyperGridDashboard       = lazy(() => import("@/pages/admin/HyperGridDashboard"));
+const HyperGridAIView          = lazy(() => import("@/pages/admin/HyperGridAIView"));
+const HyperGridIoTView         = lazy(() => import("@/pages/admin/HyperGridIoTView"));
 
 // ─── CRM ─────────────────────────────────────────────────────────────────────
 const CRMLogin     = lazy(() => import("@/pages/crm/CRMLogin"));
@@ -1008,6 +1011,9 @@ const AppRoutes = () => {
         <Route path="/admin/crm/lead/:id"        element={<CRMLeadDetail />} />
         <Route path="/admin/ai-analytics"        element={<AIAnalyticsDashboard />} />
         <Route path="/admin/ai-guard"             element={<SIBAIDashboard />} />
+        <Route path="/admin/hypergrid"            element={<HyperGridDashboard />} />
+        <Route path="/admin/hypergrid-ai"         element={<HyperGridAIView />} />
+        <Route path="/admin/hypergrid-iot"        element={<HyperGridIoTView />} />
         <Route path="/admin/settings"            element={<SettingsPage />} />
         <Route path="/admin/dashboard"           element={<AdminDashboardHome />} />
         <Route path="/admin"                     element={<AdminDashboardHome />} />

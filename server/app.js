@@ -180,6 +180,20 @@ import { sibAIGuard, attachAIReporter } from './middleware/sib-ai-guard.middlewa
 // Phase 4: FHIR R4 Interoperability
 import fhirRouter from './routes/fhir.route.js';
 
+// HyperGrid — IoT/Interoperability/AI Platform
+import hypergridMqttRouter        from './routes/hypergrid-mqtt.route.js';
+import hypergridEventsRouter       from './routes/hypergrid-events.route.js';
+import hypergridTerminologyRouter  from './routes/hypergrid-terminology.route.js';
+import hypergridDicomRouter        from './routes/hypergrid-dicom.route.js';
+import hypergridSmartFhirRouter    from './routes/hypergrid-smart-fhir.route.js';
+import hypergridTwinsRouter        from './routes/hypergrid-twins.route.js';
+import hypergridConnectorRouter    from './routes/hypergrid-connector.route.js';
+import hypergridEdgeRouter         from './routes/hypergrid-edge.route.js';
+import hypergridMarketplaceRouter  from './routes/hypergrid-marketplace.route.js';
+import { startMqttBroker }         from './services/hypergrid-mqtt.service.js';
+import { initEventBus }            from './services/hypergrid-event-bus.service.js';
+import { initTerminologyService }  from './services/hypergrid-terminology.service.js';
+
 // Phase 5: Tenant infrastructure services (AWS-model)
 import tenantRegistry from './services/tenant-registry.service.js';
 import tenantMeteringMiddleware from './middleware/tenant-metering.middleware.js';
@@ -421,6 +435,13 @@ if (process.env.DISABLE_KAFKA !== 'true') {
   });
 } else {
   console.log('📝 Kafka disabled by DISABLE_KAFKA environment variable');
+}
+
+// HyperGrid service init (non-blocking)
+initEventBus().catch(err => console.warn('⚠️  HyperGrid event bus init failed:', err.message));
+initTerminologyService().catch(err => console.warn('⚠️  HyperGrid terminology init failed:', err.message));
+if (process.env.DISABLE_MQTT !== 'true') {
+  startMqttBroker().catch(err => console.warn('⚠️  HyperGrid MQTT broker init failed:', err.message));
 }
 
 // Initialize compliance schedulers (GDPR/DPDP/HIPAA)
@@ -1264,6 +1285,17 @@ app.use('/api/superadmin/tenants', superAdminTenantRouter); // Super admin tenan
 
 // Phase 4: FHIR R4 API — Interoperability endpoints (metadata is public per FHIR spec)
 app.use('/api/fhir/r4', fhirRouter);
+
+// ============== HYPERGRID — IoT / Interoperability / AI Platform ==============
+app.use('/api/hypergrid/mqtt',        hypergridMqttRouter);
+app.use('/api/hypergrid/events',      hypergridEventsRouter);
+app.use('/api/hypergrid/terminology', hypergridTerminologyRouter);
+app.use('/api/hypergrid/dicom',       hypergridDicomRouter);
+app.use('/api/hypergrid/smart',       hypergridSmartFhirRouter);
+app.use('/api/hypergrid/twins',       hypergridTwinsRouter);
+app.use('/api/hypergrid/connectors',  hypergridConnectorRouter);
+app.use('/api/hypergrid/edge',        hypergridEdgeRouter);
+app.use('/api/hypergrid/marketplace', hypergridMarketplaceRouter);
 
 // Ambulance Service Routes
 import ambulanceAuthRouter from './routes/ambulance/auth.routes.js';

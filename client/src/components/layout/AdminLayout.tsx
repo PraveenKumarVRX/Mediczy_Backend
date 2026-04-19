@@ -53,7 +53,10 @@ import {
   Sun,
   RefreshCw,
   Key,
-  BrainCircuit
+  BrainCircuit,
+  Globe,
+  Radio,
+  Cpu
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -364,6 +367,17 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
       items: [
         { icon: BrainCircuit, label: 'AI Analytics', path: '/admin/ai-analytics', color: 'text-violet-500', bg: 'bg-violet-500/10', highlight: true },
         { icon: Shield, label: 'AI Guard', path: '/admin/ai-guard', color: 'text-red-500', bg: 'bg-red-500/10', badge: 'New' },
+      ]
+    },
+    {
+      id: 'hypergrid',
+      label: 'HyperGrid Platform',
+      icon: Globe,
+      color: 'text-indigo-500',
+      items: [
+        { icon: Globe,  label: 'HyperGrid Overview', path: '/admin/hypergrid',     color: 'text-indigo-500', bg: 'bg-indigo-500/10', highlight: true, badge: 'New' },
+        { icon: Radio,  label: 'IoT & Edge Fleet',   path: '/admin/hypergrid-iot', color: 'text-sky-500',    bg: 'bg-sky-500/10'    },
+        { icon: Cpu,    label: 'AI Intelligence',     path: '/admin/hypergrid-ai',  color: 'text-purple-500', bg: 'bg-purple-500/10' },
       ]
     },
     {
