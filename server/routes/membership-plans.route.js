@@ -3,6 +3,9 @@ import { authUser } from '../middleware/auth.middleware.js';
 import membershipService from '../services/membership.service.js';
 import { PLAN_TYPES } from '../config/membership-plans.config.js';
 import pool from '../db/pgPool.js';
+import puppeteer from 'puppeteer';
+import QRCode from 'qrcode';
+import userModel from '../models/user.model.intelligent.js';
 
 const router = express.Router();
 
@@ -551,6 +554,171 @@ router.post('/corporate/create-sponsorship', authUser, async (req, res) => {
       success: false,
       message: error.message
     });
+  }
+});
+
+// ─── Tier config (mirrors frontend) ────────────────────────────────────────
+const TIER_GRADIENT = {
+  free:       'linear-gradient(135deg, #94a3b8 0%, #475569 100%)',
+  basic:      'linear-gradient(135deg, #60a5fa 0%, #2563eb 100%)',
+  premium:    'linear-gradient(135deg, #c084fc 0%, #ec4899 50%, #f43f5e 100%)',
+  enterprise: 'linear-gradient(135deg, #fbbf24 0%, #f97316 50%, #ef4444 100%)',
+  corporate:  'linear-gradient(135deg, #34d399 0%, #14b8a6 50%, #06b6d4 100%)',
+};
+
+/**
+ * GET /api/membership-plans/card-image
+ * Returns the user's membership card as a PNG image.
+ * Mobile apps can display or cache this directly.
+ * Optional query param: ?format=png|jpeg  (default: png)
+ *                       ?scale=1|2|3       (default: 2)
+ */
+router.get('/card-image', authUser, async (req, res) => {
+  let browser;
+  try {
+    const userId = req.user.id;
+    const scale  = Math.min(3, Math.max(1, parseInt(req.query.scale) || 2));
+    const format = req.query.format === 'jpeg' ? 'jpeg' : 'png';
+
+    // 1. Load user
+    const user = await userModel.findByPk(userId);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    // 2. Load subscription
+    const subscription = await membershipService.getUserSubscription(userId);
+    const planName  = subscription?.plan?.name  || 'Basic';
+    const tier      = (subscription?.plan?.tier || 'basic').toLowerCase();
+    const gradient  = TIER_GRADIENT[tier] || TIER_GRADIENT.basic;
+    const memberId  = `MED-${String(userId).padStart(6, '0')}`;
+    const memberSince = user.createdAt
+      ? new Date(user.createdAt).getFullYear()
+      : new Date().getFullYear();
+
+    // 3. QR code (data URL)
+    const qrDataUrl = await QRCode.toDataURL(JSON.stringify({
+      memberId,
+      name:  `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+      email: user.email,
+      tier,
+      ts:    Date.now(),
+    }), { width: 180, margin: 1 });
+
+    // 4. Render HTML card → screenshot
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:480px; height:280px; font-family:'Segoe UI',system-ui,sans-serif; }
+  .card {
+    width:480px; height:280px;
+    background: ${gradient};
+    border-radius:20px;
+    position:relative;
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    padding:28px;
+    color:#fff;
+  }
+  /* shine */
+  .card::before {
+    content:'';
+    position:absolute; inset:0;
+    background:linear-gradient(135deg,rgba(255,255,255,0) 30%,rgba(255,255,255,0.25) 60%,rgba(255,255,255,0) 80%);
+    pointer-events:none;
+  }
+  /* circles bg */
+  .card::after {
+    content:'';
+    position:absolute; right:-60px; bottom:-60px;
+    width:220px; height:220px;
+    border-radius:50%;
+    background:rgba(255,255,255,0.08);
+    pointer-events:none;
+  }
+  .header { display:flex; justify-content:space-between; align-items:flex-start; }
+  .brand { font-size:16px; font-weight:700; letter-spacing:2px; opacity:.95; }
+  .sub   { font-size:11px; opacity:.7; margin-top:2px; }
+  .badge {
+    background:rgba(255,255,255,0.2);
+    border:1px solid rgba(255,255,255,0.35);
+    border-radius:999px; padding:4px 12px;
+    font-size:11px; font-weight:700; letter-spacing:1px;
+  }
+  .mid { display:flex; justify-content:space-between; align-items:flex-end; }
+  .info {}
+  .mid-id  { font-size:11px; opacity:.65; letter-spacing:.5px; margin-bottom:6px; }
+  .mid-num { font-size:20px; font-family:monospace; font-weight:700; letter-spacing:4px; }
+  .name-lbl{ font-size:11px; opacity:.65; margin-top:10px; }
+  .name    { font-size:22px; font-weight:700; letter-spacing:.5px; margin-top:2px; }
+  .since   { font-size:11px; opacity:.6; margin-top:6px; }
+  .qr-wrap { background:#fff; border-radius:12px; padding:8px; }
+  .qr-wrap img { width:80px; height:80px; display:block; }
+  .footer  { display:flex; justify-content:space-between; align-items:center; }
+  .plan    { font-size:12px; opacity:.7; }
+  .plan b  { opacity:1; font-size:13px; }
+  .dots    { display:flex; gap:6px; }
+  .dot     { width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,0.35); }
+  .dot:first-child { background:rgba(255,255,255,0.8); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <div>
+      <div class="brand">MEDIQZY</div>
+      <div class="sub">Healthcare Membership</div>
+    </div>
+    <div class="badge">${tier.toUpperCase()}</div>
+  </div>
+
+  <div class="mid">
+    <div class="info">
+      <div class="mid-id">MEMBER ID</div>
+      <div class="mid-num">${memberId}</div>
+      <div class="name-lbl">Member Name</div>
+      <div class="name">${user.firstName || ''} ${user.lastName || ''}</div>
+      <div class="since">Member since ${memberSince}</div>
+    </div>
+    <div class="qr-wrap">
+      <img src="${qrDataUrl}" alt="QR"/>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="plan">Plan: <b>${planName}</b></div>
+    <div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+  </div>
+</div>
+</body>
+</html>`;
+
+    browser = await puppeteer.launch({
+      executablePath: '/usr/bin/chromium-browser',
+      args: ['--no-sandbox','--disable-setuid-sandbox','--disable-gpu','--disable-dev-shm-usage'],
+    });
+    const page = await browser.newPage();
+    await page.setViewport({ width: 480, height: 280, deviceScaleFactor: scale });
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+
+    const screenshot = await page.screenshot({ type: format, omitBackground: false });
+    await browser.close();
+    browser = null;
+
+    res.set({
+      'Content-Type': `image/${format}`,
+      'Cache-Control': 'private, max-age=300',
+      'Content-Disposition': `inline; filename="mediqzy-card-${memberId}.${format}"`,
+    });
+    return res.send(screenshot);
+
+  } catch (err) {
+    if (browser) await browser.close().catch(() => {});
+    console.error('Card image generation error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to generate card image', error: err.message });
   }
 });
 
