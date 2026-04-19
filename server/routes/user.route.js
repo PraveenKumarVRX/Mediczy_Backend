@@ -1839,4 +1839,126 @@ router.delete('/account', authUser, [
   }
 });
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MY PERSONAL INSURANCE POLICIES  (stored in user.metadata.personalPolicies[])
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @route  GET /api/users/my-insurances
+ * @desc   List user's personally saved insurance policies
+ * @access Private
+ */
+router.get('/my-insurances', authUser, async (req, res) => {
+  try {
+    const user = await userModel.findByPk(req.user.id, { attributes: ['id', 'metadata'] });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    let meta = user.metadata || {};
+    if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { meta = {}; } }
+    const policies = meta.personalPolicies || [];
+    return res.json({ success: true, policies });
+  } catch (err) {
+    console.error('Get my-insurances error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to retrieve policies' });
+  }
+});
+
+/**
+ * @route  POST /api/users/my-insurances
+ * @desc   Add a personal insurance policy (with optional document upload)
+ * @access Private
+ */
+router.post('/my-insurances', authUser, async (req, res) => {
+  try {
+    const { insurerName, policyNumber, policyType, coverageAmount, premiumAmount, premiumFrequency, startDate, endDate, membersName, notes } = req.body;
+    if (!insurerName || !policyNumber) {
+      return res.status(400).json({ success: false, message: 'Insurer name and policy number are required' });
+    }
+
+    const user = await userModel.findByPk(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    let meta = user.metadata || {};
+    if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { meta = {}; } }
+    if (!Array.isArray(meta.personalPolicies)) meta.personalPolicies = [];
+
+    let documentUrl = null;
+    const uploadedFile = req.files?.policyDocument;
+    if (uploadedFile) {
+      const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+      if (!allowedTypes.includes(uploadedFile.mimetype)) {
+        return res.status(400).json({ success: false, message: 'Only PDF and image files are allowed' });
+      }
+      if (uploadedFile.size > 10 * 1024 * 1024) {
+        return res.status(400).json({ success: false, message: 'File must be under 10MB' });
+      }
+      try {
+        const { url } = await uploadToMinio({
+          buffer: uploadedFile.data,
+          originalName: uploadedFile.name,
+          mimeType: uploadedFile.mimetype,
+          keyPrefix: `users/${req.user.id}/insurances`,
+        });
+        documentUrl = url;
+      } catch (uploadErr) {
+        console.error('Insurance doc upload error:', uploadErr);
+      }
+    }
+
+    const newPolicy = {
+      id: Date.now().toString(),
+      insurerName,
+      policyNumber,
+      policyType: policyType || 'Health',
+      coverageAmount: coverageAmount ? parseFloat(coverageAmount) : null,
+      premiumAmount: premiumAmount ? parseFloat(premiumAmount) : null,
+      premiumFrequency: premiumFrequency || 'annual',
+      startDate: startDate || null,
+      endDate: endDate || null,
+      membersName: membersName || null,
+      notes: notes || null,
+      documentUrl,
+      createdAt: new Date().toISOString(),
+    };
+
+    meta.personalPolicies.push(newPolicy);
+    user.metadata = meta;
+    user.changed('metadata', true);
+    await user.save();
+
+    return res.status(201).json({ success: true, policy: newPolicy, message: 'Policy saved successfully' });
+  } catch (err) {
+    console.error('Add my-insurance error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to save policy' });
+  }
+});
+
+/**
+ * @route  DELETE /api/users/my-insurances/:policyId
+ * @desc   Remove a personal insurance policy
+ * @access Private
+ */
+router.delete('/my-insurances/:policyId', authUser, async (req, res) => {
+  try {
+    const { policyId } = req.params;
+    const user = await userModel.findByPk(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    let meta = user.metadata || {};
+    if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { meta = {}; } }
+    const before = (meta.personalPolicies || []).length;
+    meta.personalPolicies = (meta.personalPolicies || []).filter(p => p.id !== policyId);
+    if (meta.personalPolicies.length === before) {
+      return res.status(404).json({ success: false, message: 'Policy not found' });
+    }
+    user.metadata = meta;
+    user.changed('metadata', true);
+    await user.save();
+    return res.json({ success: true, message: 'Policy removed' });
+  } catch (err) {
+    console.error('Delete my-insurance error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to delete policy' });
+  }
+});
+
 export default router;
+

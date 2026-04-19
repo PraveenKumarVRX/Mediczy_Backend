@@ -107,6 +107,9 @@ const OrderCheckout  = lazy(() => import("@/pages/billing/OrderCheckout"));
 const OrderHistory   = lazy(() => import("@/pages/billing/OrderHistory"));
 const OrderDetails   = lazy(() => import("@/pages/billing/OrderDetails"));
 const MyInvoices     = lazy(() => import("@/pages/billing/MyInvoices"));
+const MyInsurancePolicies = lazy(() => import("@/pages/patient/MyInsurancePolicies"));
+const HelpCenter     = lazy(() => import("@/pages/HelpCenter"));
+const ContactUs      = lazy(() => import("@/pages/ContactUs"));
 
 // ─── Doctor ──────────────────────────────────────────────────────────────────
 const DoctorDashboard          = lazy(() => import("@/pages/doctor/DoctorDashboard"));
@@ -1340,6 +1343,11 @@ const AppRoutes = () => {
         <Route path="/billing/orders"          element={<MainLayout><OrderHistory /></MainLayout>} />
         <Route path="/billing/invoices"        element={<MainLayout><MyInvoices /></MainLayout>} />
         <Route path="/billing/orders/:orderId" element={<MainLayout><OrderDetails /></MainLayout>} />
+
+        {/* ── Insurance / Support / Contact ───────────────────────────── */}
+        <Route path="/my-insurance"  element={<MainLayout><MyInsurancePolicies /></MainLayout>} />
+        <Route path="/help"          element={<MainLayout><HelpCenter /></MainLayout>} />
+        <Route path="/contact-us"    element={<MainLayout><ContactUs /></MainLayout>} />
 
         {/* ── Misc ────────────────────────────────────────────────────── */}
         <Route path="/diagnostic" element={<ConnectionDiagnostic />} />

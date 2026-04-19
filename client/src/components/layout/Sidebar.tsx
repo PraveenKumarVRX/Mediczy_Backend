@@ -52,7 +52,9 @@ import {
   UsersRound,
   Zap,
   Sparkles,
-  Briefcase
+  Briefcase,
+  HelpCircle,
+  Phone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -107,9 +109,14 @@ const sidebarItems: SidebarItem[] = [
   { icon: Zap, label: "Claims Express", path: "/claims-express", category: "Finance" },
   { icon: FileStack, label: "Order History", path: "/billing/orders", category: "Finance" },
   { icon: Receipt, label: "My Invoices", path: "/billing/invoices", category: "Finance" },
-  
+  { icon: ShieldCheck, label: "My Insurance", path: "/my-insurance", category: "Finance" },
+
   // Family
   { icon: UsersRound, label: "Family Health Hub", path: "/family-hub", category: "Family" },
+
+  // Support
+  { icon: HelpCircle, label: "Help & Support", path: "/help", category: "Support" },
+  { icon: Phone, label: "Contact Us", path: "/contact-us", category: "Support" },
 ];
 
 const teamSidebarItems: SidebarItem[] = [
