@@ -1571,4 +1571,272 @@ router.post('/change-password', authUser, [
   }
 });
 
+/**
+ * @route   POST /api/users/profile-picture/from-url
+ * @desc    Import profile picture from external URL (Google, Facebook, etc.)
+ * @access  Private
+ */
+router.post('/profile-picture/from-url', authUser, [
+  body('imageUrl').isURL({ protocols: ['https'] }).withMessage('Must be a valid HTTPS URL')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const { imageUrl } = req.body;
+
+    // Only allow known trusted domains for social photo import
+    const allowedHosts = [
+      'lh3.googleusercontent.com',
+      'lh4.googleusercontent.com',
+      'lh5.googleusercontent.com',
+      'lh6.googleusercontent.com',
+      'graph.facebook.com',
+      'scontent.fbom',
+      'avatars.githubusercontent.com',
+      'pbs.twimg.com',
+      'media.licdn.com',
+      'platform-lookaside.fbsbx.com',
+    ];
+    let urlHost;
+    try {
+      urlHost = new URL(imageUrl).hostname;
+    } catch {
+      return res.status(400).json({ success: false, message: 'Invalid URL' });
+    }
+    const isTrusted = allowedHosts.some(h => urlHost === h || urlHost.endsWith('.' + h));
+    if (!isTrusted) {
+      return res.status(400).json({
+        success: false,
+        message: 'URL must be from a trusted social provider (Google, Facebook, GitHub, LinkedIn)'
+      });
+    }
+
+    // Fetch the image
+    const imgResponse = await fetch(imageUrl, {
+      headers: { 'User-Agent': 'Mediczy-App/1.0' },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!imgResponse.ok) {
+      return res.status(400).json({ success: false, message: 'Could not fetch image from URL' });
+    }
+    const contentType = imgResponse.headers.get('content-type') || '';
+    if (!contentType.startsWith('image/')) {
+      return res.status(400).json({ success: false, message: 'URL does not point to an image' });
+    }
+    const buffer = Buffer.from(await imgResponse.arrayBuffer());
+    if (buffer.length > 5 * 1024 * 1024) {
+      return res.status(400).json({ success: false, message: 'Image too large (max 5MB)' });
+    }
+
+    const ext = contentType.split('/')[1]?.split(';')[0] || 'jpg';
+    const { url: minioUrl } = await uploadToMinio({
+      buffer,
+      originalName: `social-photo-${req.user.id}.${ext}`,
+      mimeType: contentType.split(';')[0],
+      keyPrefix: `uploads/profiles/${req.user.id}`,
+    });
+
+    const user = await userModel.findByPk(req.user.id);
+    user.profileImage = minioUrl;
+    await user.save();
+
+    return res.json({ success: true, profileImage: minioUrl, message: 'Profile photo imported successfully' });
+  } catch (error) {
+    console.error('Profile picture from-url error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to import profile picture' });
+  }
+});
+
+/**
+ * @route   GET /api/users/settings
+ * @desc    Get user app settings (notifications, language, timezone, privacy)
+ * @access  Private
+ */
+router.get('/settings', authUser, async (req, res) => {
+  try {
+    const user = await userModel.findByPk(req.user.id, {
+      attributes: ['id', 'metadata']
+    });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    let meta = user.metadata || {};
+    if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { meta = {}; } }
+
+    const settings = {
+      notifications: {
+        email:    meta.settings?.notifications?.email    ?? true,
+        sms:      meta.settings?.notifications?.sms      ?? true,
+        push:     meta.settings?.notifications?.push     ?? true,
+        whatsapp: meta.settings?.notifications?.whatsapp ?? false,
+        appointment_reminders: meta.settings?.notifications?.appointment_reminders ?? true,
+        lab_results:           meta.settings?.notifications?.lab_results           ?? true,
+        prescription_ready:    meta.settings?.notifications?.prescription_ready    ?? true,
+        health_tips:           meta.settings?.notifications?.health_tips           ?? true,
+        billing_alerts:        meta.settings?.notifications?.billing_alerts        ?? true,
+        ai_insights:           meta.settings?.notifications?.ai_insights           ?? false,
+      },
+      language:       meta.settings?.language       || 'en',
+      timezone:       meta.settings?.timezone       || 'Asia/Kolkata',
+      theme:          meta.settings?.theme          || 'system',
+      privacy: {
+        share_data_for_research: meta.settings?.privacy?.share_data_for_research ?? false,
+        show_online_status:      meta.settings?.privacy?.show_online_status      ?? true,
+        allow_doctor_notes:      meta.settings?.privacy?.allow_doctor_notes      ?? true,
+      },
+      accessibility: {
+        font_size:    meta.settings?.accessibility?.font_size    || 'medium',
+        high_contrast: meta.settings?.accessibility?.high_contrast ?? false,
+      }
+    };
+
+    return res.json({ success: true, settings });
+  } catch (error) {
+    console.error('Get settings error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to get settings' });
+  }
+});
+
+/**
+ * @route   PUT /api/users/settings
+ * @desc    Update user app settings
+ * @access  Private
+ */
+router.put('/settings', authUser, async (req, res) => {
+  try {
+    const user = await userModel.findByPk(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    let meta = user.metadata || {};
+    if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { meta = {}; } }
+
+    const allowed = ['notifications', 'language', 'timezone', 'theme', 'privacy', 'accessibility'];
+    const incoming = req.body;
+    if (!meta.settings) meta.settings = {};
+    allowed.forEach(key => {
+      if (incoming[key] !== undefined) {
+        if (typeof incoming[key] === 'object' && !Array.isArray(incoming[key])) {
+          meta.settings[key] = { ...(meta.settings[key] || {}), ...incoming[key] };
+        } else {
+          meta.settings[key] = incoming[key];
+        }
+      }
+    });
+
+    await user.update({ metadata: JSON.stringify(meta) });
+    return res.json({ success: true, message: 'Settings updated', settings: meta.settings });
+  } catch (error) {
+    console.error('Update settings error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to update settings' });
+  }
+});
+
+/**
+ * @route   GET /api/users/security
+ * @desc    Get security status: last login, MFA, session info, password age
+ * @access  Private
+ */
+router.get('/security', authUser, async (req, res) => {
+  try {
+    const user = await userModel.findByPk(req.user.id, {
+      attributes: ['id', 'email', 'metadata', 'createdAt']
+    });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    let meta = user.metadata || {};
+    if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { meta = {}; } }
+
+    return res.json({
+      success: true,
+      security: {
+        last_login_at:       meta.lastLoginAt       || null,
+        last_login_ip:       meta.lastLoginIp       || null,
+        mfa_enabled:         meta.mfaEnabled        || false,
+        password_changed_at: meta.passwordChangedAt || null,
+        account_created_at:  user.createdAt,
+        token_version:       meta.tokenVersion      || 0,
+        login_history:       (meta.loginHistory     || []).slice(0, 10),
+        connected_accounts: {
+          google:    !!meta.googleId,
+          facebook:  !!meta.facebookId,
+          apple:     !!meta.appleId,
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get security error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to get security info' });
+  }
+});
+
+/**
+ * @route   POST /api/users/security/revoke-sessions
+ * @desc    Revoke all active sessions by bumping token version (forces re-login everywhere)
+ * @access  Private
+ */
+router.post('/security/revoke-sessions', authUser, async (req, res) => {
+  try {
+    const user = await userModel.findByPk(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    let meta = user.metadata || {};
+    if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { meta = {}; } }
+
+    meta.tokenVersion = (meta.tokenVersion || 0) + 1;
+    meta.sessionsRevokedAt = new Date().toISOString();
+    await user.update({ metadata: JSON.stringify(meta) });
+
+    console.log(`🔒 All sessions revoked for user ${user.email} (token version: ${meta.tokenVersion})`);
+    return res.json({ success: true, message: 'All sessions have been signed out. Please log in again.' });
+  } catch (error) {
+    console.error('Revoke sessions error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to revoke sessions' });
+  }
+});
+
+/**
+ * @route   DELETE /api/users/account
+ * @desc    Request account deletion (soft delete with 30-day grace period)
+ * @access  Private
+ */
+router.delete('/account', authUser, [
+  body('confirmText').equals('DELETE').withMessage('Please type DELETE to confirm'),
+  body('reason').optional().isString()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const user = await userModel.findByPk(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    let meta = user.metadata || {};
+    if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { meta = {}; } }
+
+    const deletionScheduledAt = new Date();
+    const deletionDate = new Date(deletionScheduledAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+    meta.accountDeletionRequested = true;
+    meta.accountDeletionScheduledAt = deletionScheduledAt.toISOString();
+    meta.accountDeletionDate = deletionDate.toISOString();
+    meta.accountDeletionReason = req.body.reason || 'User requested';
+    meta.tokenVersion = (meta.tokenVersion || 0) + 1;
+
+    await user.update({ status: 'pending_deletion', metadata: JSON.stringify(meta) });
+
+    console.log(`⚠️ Account deletion requested for ${user.email}, scheduled: ${deletionDate.toISOString()}`);
+    return res.json({
+      success: true,
+      message: 'Account deletion scheduled. Your data will be permanently deleted on ' + deletionDate.toDateString() + '. You can cancel this by logging in before then.',
+      deletionDate: deletionDate.toISOString()
+    });
+  } catch (error) {
+    console.error('Account deletion error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to process account deletion' });
+  }
+});
+
 export default router;
