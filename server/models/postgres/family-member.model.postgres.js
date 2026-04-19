@@ -115,6 +115,13 @@ const FamilyMember = sequelize.define('FamilyMember', {
     defaultValue: {},
     comment: 'Emergency contact details'
   },
+
+  // General metadata (insurance policies, custom fields, etc.)
+  metadata: {
+    type: DataTypes.JSONB,
+    defaultValue: {},
+    comment: 'Extensible metadata: insurancePolicies[], custom tags, etc.'
+  },
   
   // Status
   isActive: {

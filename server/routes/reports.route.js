@@ -63,9 +63,18 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
       });
     }
 
-    const { reportType = 'general', description = '', testName = '', labName = '', reportDate = '' } = req.body;
+    const { reportType = 'general', description = '', testName = '', labName = '', reportDate = '', familyMemberId = null } = req.body;
     const userId = req.user.id;
     const organizationId = req.user.organization_id;
+
+    // If linking to a family member, verify ownership
+    if (familyMemberId) {
+      const { default: FamilyMember } = await import('../models/postgres/family-member.model.postgres.js');
+      const member = await FamilyMember.findOne({ where: { id: familyMemberId, userId, isActive: true } });
+      if (!member) {
+        return res.status(403).json({ success: false, message: 'Family member not found or access denied' });
+      }
+    }
 
     // Validate report type
     const validTypes = ['lab', 'imaging', 'prescription', 'general'];
@@ -87,6 +96,7 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
     const savedReport = await Report.create({
       userId,
       organization_id: organizationId,
+      familyMemberId: familyMemberId ? parseInt(familyMemberId) : null,
       fileName: req.file.originalname,
       fileSize: req.file.size,
       mimeType: req.file.mimetype,
@@ -216,13 +226,20 @@ router.get('/', authUser, async (req, res) => {
   try {
     const userId = req.user.id;
     const organizationId = req.user.organization_id;
-    const { type, status = 'active', skip = 0, limit = 20 } = req.query;
+    const { type, status = 'active', skip = 0, limit = 20, familyMemberId } = req.query;
 
     // Build where clause
     const where = {
       userId,
       status: status || 'active'
     };
+
+    // Filter by family member (or null = primary user's own reports)
+    if (familyMemberId === 'null' || familyMemberId === '') {
+      where.familyMemberId = null;
+    } else if (familyMemberId) {
+      where.familyMemberId = parseInt(familyMemberId);
+    }
 
     // Add optional filters
     if (type && ['lab', 'imaging', 'prescription', 'general'].includes(type)) {

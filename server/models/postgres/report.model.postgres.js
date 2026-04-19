@@ -34,6 +34,20 @@ const Report = sequelize.define('Report', {
     index: true
   },
 
+  // Family Member (optional — null means report belongs to the primary user)
+  familyMemberId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'family_member_id',
+    references: {
+      model: 'family_members',
+      key: 'id'
+    },
+    onDelete: 'SET NULL',
+    index: true,
+    comment: 'Links report to a family member; null = primary account holder'
+  },
+
   // File Information
   fileName: {
     type: DataTypes.STRING(255),
@@ -179,6 +193,10 @@ const Report = sequelize.define('Report', {
     {
       fields: ['userId', 'reportType'],
       name: 'idx_reports_user_type'
+    },
+    {
+      fields: ['userId', 'family_member_id'],
+      name: 'idx_reports_user_family'
     },
     {
       fields: ['organization_id', 'userId'],

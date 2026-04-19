@@ -305,4 +305,96 @@ router.delete('/:id', authUser, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/family-members/:id/insurances
+ * List all insurance policies for a family member
+ */
+router.get('/:id/insurances', authUser, async (req, res) => {
+  try {
+    const member = await FamilyMember.findOne({
+      where: { id: req.params.id, userId: req.user.id, isActive: true }
+    });
+    if (!member) return res.status(404).json({ success: false, message: 'Family member not found' });
+
+    const policies = (member.metadata?.insurancePolicies) || [];
+    res.json({ success: true, data: policies });
+  } catch (err) {
+    console.error('Get family insurance error:', err);
+    res.status(500).json({ success: false, message: 'Failed to fetch insurance policies', error: err.message });
+  }
+});
+
+/**
+ * POST /api/family-members/:id/insurances
+ * Add an insurance policy for a family member
+ * Body: insurerName*, policyNumber*, policyType, coverageAmount, premiumAmount,
+ *       premiumFrequency, startDate, endDate, membersName, notes
+ */
+router.post('/:id/insurances', authUser, async (req, res) => {
+  try {
+    const member = await FamilyMember.findOne({
+      where: { id: req.params.id, userId: req.user.id, isActive: true }
+    });
+    if (!member) return res.status(404).json({ success: false, message: 'Family member not found' });
+
+    const { insurerName, policyNumber, policyType, coverageAmount, premiumAmount,
+            premiumFrequency, startDate, endDate, membersName, notes } = req.body;
+
+    if (!insurerName || !policyNumber) {
+      return res.status(400).json({ success: false, message: 'insurerName and policyNumber are required' });
+    }
+
+    const policy = {
+      id: Date.now().toString(),
+      insurerName,
+      policyNumber,
+      policyType: policyType || 'individual',
+      coverageAmount: coverageAmount ? parseFloat(coverageAmount) : null,
+      premiumAmount: premiumAmount ? parseFloat(premiumAmount) : null,
+      premiumFrequency: premiumFrequency || null,
+      startDate: startDate || null,
+      endDate: endDate || null,
+      membersName: membersName || null,
+      notes: notes || null,
+      addedAt: new Date().toISOString(),
+    };
+
+    const existing = member.metadata?.insurancePolicies || [];
+    const updated = { ...(member.metadata || {}), insurancePolicies: [...existing, policy] };
+    await member.update({ metadata: updated });
+
+    res.status(201).json({ success: true, message: 'Insurance policy added', data: policy });
+  } catch (err) {
+    console.error('Add family insurance error:', err);
+    res.status(500).json({ success: false, message: 'Failed to add insurance policy', error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/family-members/:id/insurances/:policyId
+ * Remove an insurance policy from a family member
+ */
+router.delete('/:id/insurances/:policyId', authUser, async (req, res) => {
+  try {
+    const member = await FamilyMember.findOne({
+      where: { id: req.params.id, userId: req.user.id, isActive: true }
+    });
+    if (!member) return res.status(404).json({ success: false, message: 'Family member not found' });
+
+    const existing = member.metadata?.insurancePolicies || [];
+    const filtered = existing.filter(p => p.id !== req.params.policyId);
+    if (filtered.length === existing.length) {
+      return res.status(404).json({ success: false, message: 'Policy not found' });
+    }
+
+    const updated = { ...(member.metadata || {}), insurancePolicies: filtered };
+    await member.update({ metadata: updated });
+
+    res.json({ success: true, message: 'Insurance policy removed' });
+  } catch (err) {
+    console.error('Delete family insurance error:', err);
+    res.status(500).json({ success: false, message: 'Failed to remove insurance policy', error: err.message });
+  }
+});
+
 export default router;
