@@ -1338,11 +1338,21 @@ router.post("/forgot-password", [
 router.post("/verify-reset-otp", [
   body("email").optional().isEmail().withMessage("Must be a valid email"),
   body("phone").optional().matches(/^\+?[1-9]\d{1,14}$/).withMessage("Invalid phone format"),
-  body("code").notEmpty().isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits"),
+  body("code").optional().isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits"),
+  body("otp").optional().isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits"),
   body("userType").optional().isIn(['user', 'doctor']).withMessage("User type must be 'user' or 'doctor'")
 ], async (req, res) => {
   try {
-    const { email, phone, code, userType = 'user' } = req.body;
+    const { email, phone, userType = 'user' } = req.body;
+    // Accept both 'code' (web) and 'otp' (mobile app) field names
+    const code = req.body.code || req.body.otp;
+
+    if (!code || code.length !== 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'OTP must be 6 digits'
+      });
+    }
 
     if (!email && !phone) {
       return res.status(400).json({
