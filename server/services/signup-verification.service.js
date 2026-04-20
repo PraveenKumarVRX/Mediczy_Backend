@@ -198,15 +198,26 @@ class SignupVerificationService {
    */
   async sendOTPViaEmail(account, otpCode) {
     try {
-      // Try to get default config from database first
+      // Always create a fresh (non-pooled) transporter for OTP sends
+      // to avoid Zoho 550 "Unusual activity" on long-lived pooled connections
       let transporter, fromEmail, fromName;
-      
+
       try {
         const defaultConfig = await emailService.getDefaultConfig();
         if (defaultConfig) {
-          transporter = await emailService.getTransporter(defaultConfig);
           fromEmail = defaultConfig.fromEmail;
           fromName = defaultConfig.fromName;
+          // Force a fresh non-pooled transporter instead of the cached pool
+          const nodemailer = (await import('nodemailer')).default;
+          const isSecure = defaultConfig.port === 465 || defaultConfig.port === '465';
+          transporter = nodemailer.createTransport({
+            host: defaultConfig.host,
+            port: defaultConfig.port,
+            secure: isSecure,
+            auth: { user: defaultConfig.username, pass: defaultConfig.password },
+            pool: false,
+            tls: { rejectUnauthorized: false, minVersion: 'TLSv1.2' }
+          });
         }
       } catch (dbError) {
         console.log('No database email config, using environment fallback');
@@ -216,18 +227,18 @@ class SignupVerificationService {
       if (!transporter) {
         const nodemailer = (await import('nodemailer')).default;
         const port = parseInt(process.env.SMTP_PORT) || 587;
-        const smtpConfig = {
+        transporter = nodemailer.createTransport({
           host: process.env.SMTP_HOST || 'smtppro.zoho.in',
           port: port,
           secure: port === 465,
           auth: {
             user: (process.env.SMTP_USER || process.env.SMTP_FROM || '').trim(),
             pass: (process.env.SMTP_PASSWORD || process.env.SMTP_PASS || '').trim()
-          }
-        };
-
-        transporter = nodemailer.createTransport(smtpConfig);
-        fromEmail = smtpConfig.auth.user || 'support@mediqzy.com';
+          },
+          pool: false,
+          tls: { rejectUnauthorized: false, minVersion: 'TLSv1.2' }
+        });
+        fromEmail = (process.env.SMTP_USER || process.env.SMTP_FROM || '').trim();
         fromName = 'Mediqzy';
       }
 
