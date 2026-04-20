@@ -139,10 +139,11 @@ router.post(
         deliveryChannels.whatsapp.error = whatsappError.message;
       }
 
-      if (!deliveryChannels.email.sent || !deliveryChannels.whatsapp.sent) {
+      // Email is required; WhatsApp is best-effort
+      if (!deliveryChannels.email.sent) {
         return res.status(502).json({
           success: false,
-          message: 'Failed to deliver OTP to all channels',
+          message: 'Failed to deliver OTP via email. Please try again.',
           data: { deliveryChannels }
         });
       }
@@ -152,19 +153,23 @@ router.post(
         whatsappOtpId: whatsappOtp.id,
         expiresAt: emailOtp.expiresAt,
         expiresIn: `${SIGNUP_OTP_TTL_MINUTES} minutes`,
-        deliveryChannels
+        deliveryChannels,
+        whatsappAvailable: deliveryChannels.whatsapp.sent
       };
 
       if (includeOtp) {
         responseData.emailOtp = emailOtp.code;
-        responseData.whatsappOtp = whatsappOtp.code;
+        if (deliveryChannels.whatsapp.sent) responseData.whatsappOtp = whatsappOtp.code;
       }
 
-      console.log('📧 Registration OTP sent via Email + WhatsApp:', { email, phoneNumber });
+      const channelMsg = deliveryChannels.whatsapp.sent
+        ? 'OTP sent to your email and WhatsApp'
+        : 'OTP sent to your email (WhatsApp delivery unavailable)';
+      console.log('📧 Registration OTP sent:', { email, phoneNumber, channels: deliveryChannels });
 
       return res.status(200).json({
         success: true,
-        message: 'OTP sent successfully to your email and WhatsApp',
+        message: channelMsg,
         data: responseData
       });
     } catch (error) {
@@ -351,10 +356,10 @@ router.post(
       const verificationKey = buildSignupVerificationKey(email, phoneNumber);
       const verificationState = await cache.get(verificationKey);
 
-      if (!verificationState?.emailVerified || !verificationState?.phoneVerified) {
+      if (!verificationState?.emailVerified) {
         return res.status(400).json({
           success: false,
-          message: 'Email and WhatsApp OTP verification required'
+          message: 'Email OTP verification required'
         });
       }
 
