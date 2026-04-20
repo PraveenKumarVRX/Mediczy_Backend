@@ -23,9 +23,8 @@ import {
   Activity,
   CheckCircle2,
   AlertCircle,
-  Navigation,  FileCheck2,
-  Shield,
-  XCircle,  FileCheck2,
+  Navigation,
+  FileCheck2,
   Shield,
   XCircle,
 } from 'lucide-react';
