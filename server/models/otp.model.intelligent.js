@@ -107,12 +107,30 @@ class OTP {
 
       // Search in Redis first (primary store for cluster mode)
       try {
-        const redisPattern = `otp:${purpose}:${email || phone}:*`;
+        // Try both email and phone patterns to handle key mismatch cases
+        // (e.g. OTP stored with email key but user verifies with phone, or vice versa)
         const { connectRedis } = await import('../db/redis.js');
         const redis = await connectRedis();
-        const keys = await redis.keys(redisPattern);
+
+        let allKeys = [];
+        if (email) {
+          const emailKeys = await redis.keys(`otp:${purpose}:${email}:*`);
+          allKeys = allKeys.concat(emailKeys);
+        }
+        if (phone) {
+          const phoneKeys = await redis.keys(`otp:${purpose}:${phone}:*`);
+          allKeys = allKeys.concat(phoneKeys);
+        }
+        if (allKeys.length === 0) {
+          // Fallback: original single-pattern search
+          const fallbackPattern = `otp:${purpose}:${email || phone}:*`;
+          const fallbackKeys = await redis.keys(fallbackPattern);
+          allKeys = fallbackKeys;
+        }
+        // Deduplicate keys
+        const keys = [...new Set(allKeys)];
         
-        console.log(`🔍 Searching Redis for OTP: ${redisPattern}, found ${keys.length} keys`);
+        console.log(`🔍 Searching Redis for OTP (purpose=${purpose}), found ${keys.length} keys`);
         
         for (const key of keys) {
           const storedOtp = await cache.get(key);
@@ -120,8 +138,8 @@ class OTP {
               storedOtp.code === code && 
               storedOtp.purpose === purpose &&
               !storedOtp.isVerified &&
-              (phone ? storedOtp.phone === phone : true) &&
-              (email ? storedOtp.email === email : true)) {
+              (phone && storedOtp.phone ? storedOtp.phone === phone : true) &&
+              (email && storedOtp.email ? storedOtp.email === email : true)) {
             otp = { ...storedOtp, redisKey: key };
             console.log(`✅ Found matching OTP in Redis: ${key}`);
             break;

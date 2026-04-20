@@ -118,9 +118,11 @@ class PasswordResetService {
 
       const includeOtp = process.env.NODE_ENV === 'development' || process.env.OTP_DEBUG_RESPONSE === 'true';
       // Generate OTP for password reset
+      // IMPORTANT: Key the OTP by the identifier the user used to request (email OR phone),
+      // not always email. This ensures the verify lookup matches the storage key.
       const otp = await OTP.generate({
         phone: account.phoneNumber || account.phone,
-        email: account.email,
+        email: email ? account.email : undefined,
         purpose: 'password_reset',
         expiryMinutes: 10,
         userId: account.id
