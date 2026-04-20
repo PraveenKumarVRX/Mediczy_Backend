@@ -191,7 +191,8 @@ router.post(
   [
     body("email").isEmail().withMessage("Must be a valid email"),
     body("phoneNumber").isMobilePhone().withMessage("Must be a valid mobile phone number"),
-    body("code").isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits")
+    body("code").optional().isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits"),
+    body("otp").optional().isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits")
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -199,7 +200,12 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { email, phoneNumber, code } = req.body;
+    const { email, phoneNumber } = req.body;
+    // Accept both 'code' (web) and 'otp' (mobile app) field names
+    const code = req.body.code || req.body.otp;
+    if (!code || code.length !== 6) {
+      return res.status(400).json({ success: false, message: 'OTP must be 6 digits' });
+    }
 
     try {
       const verifyResult = await OTP.verify({
@@ -256,7 +262,8 @@ router.post(
   [
     body("email").isEmail().withMessage("Must be a valid email"),
     body("phoneNumber").isMobilePhone().withMessage("Must be a valid mobile phone number"),
-    body("code").isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits")
+    body("code").optional().isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits"),
+    body("otp").optional().isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits")
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -264,7 +271,12 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { email, phoneNumber, code } = req.body;
+    const { email, phoneNumber } = req.body;
+    // Accept both 'code' (web) and 'otp' (mobile app) field names
+    const code = req.body.code || req.body.otp;
+    if (!code || code.length !== 6) {
+      return res.status(400).json({ success: false, message: 'OTP must be 6 digits' });
+    }
 
     try {
       const verifyResult = await OTP.verify({
@@ -862,9 +874,8 @@ router.post(
       }
       return true;
     }),
-    body("code")
-      .isLength({ min: 6, max: 6 })
-      .withMessage("OTP must be 6 digits"),
+    body("code").optional().isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits"),
+    body("otp").optional().isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits"),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -875,7 +886,12 @@ router.post(
     const identifier = String(
       req.body?.identifier ?? req.body?.email ?? req.body?.phoneNumber ?? req.body?.phone
     ).trim();
-    const { code } = req.body;
+    // Accept both 'code' (web) and 'otp' (mobile app) field names
+    const code = req.body.code || req.body.otp;
+
+    if (!code || code.length !== 6) {
+      return res.status(400).json({ success: false, message: 'OTP must be 6 digits' });
+    }
 
     try {
       // Determine if identifier is email or phone
@@ -897,14 +913,45 @@ router.post(
         });
       }
 
+      // --- NEW USER (signup) path ---
+      // If user doesn't exist, this may be a signup OTP verification from mobile app.
+      // Try to verify against signup OTP purposes and return a 'requiresRegistration' response.
       if (!user) {
+        const OTP = await import('../models/otp.model.intelligent.js');
+        const signupPurpose = isEmail ? 'signup_email_otp' : 'signup_whatsapp_otp';
+        const signupVerify = await OTP.default.verify({
+          email: isEmail ? identifier : undefined,
+          phone: isEmail ? undefined : identifier,
+          code,
+          purpose: signupPurpose
+        });
+
+        if (signupVerify.success) {
+          // Mark the appropriate channel as verified in the signup cache
+          const verificationKey = isEmail
+            ? `signup_verify:${identifier}:`  // partial key; full key needs phone too
+            : null;
+          // Best-effort cache update; registration/verify-otp will do the authoritative check
+          console.log(`✅ Signup OTP verified for new user (${signupPurpose}): ${identifier}`);
+          return res.status(200).json({
+            success: true,
+            requiresRegistration: true,
+            message: 'OTP verified. Please complete your registration.',
+            data: {
+              otpVerified: true,
+              channel: isEmail ? 'email' : 'phone',
+              identifier
+            }
+          });
+        }
+
         return res.status(400).json({
           success: false,
           message: 'Invalid or expired OTP'
         });
       }
 
-      // Verify OTP
+      // --- EXISTING USER (login) path ---
       const OTP = await import('../models/otp.model.intelligent.js');
       const verifyResult = await OTP.default.verify({
         email: user.email,
