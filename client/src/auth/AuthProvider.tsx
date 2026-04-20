@@ -365,7 +365,20 @@ export const AuthProvider = ({ children }) => {
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
       return;
     }
-    
+
+    // Check CRM routes - require crmToken
+    const isCRMRoute = location.pathname.startsWith('/crm') || location.pathname.startsWith('/rfq');
+    if (isCRMRoute) {
+      const crmToken = getValidPortalToken('crmToken');
+      if (!crmToken && location.pathname !== '/crm/login' && location.pathname !== '/rfq/login') {
+        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+        navigate("/crm/login", { replace: true });
+        return;
+      }
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+
     // Check doctor routes - require doctorToken
     if (isDoctorRoute) {
       const doctorToken = localStorage.getItem('doctorToken');
@@ -436,6 +449,8 @@ export const AuthProvider = ({ children }) => {
       "/intermediary/login",
       "/insurance-broker/login",
       "/aggregator/login",
+      "/crm/login",
+      "/rfq/login",
       "/choose-plan",
       // Hospital department login pages
       "/accounts/login",

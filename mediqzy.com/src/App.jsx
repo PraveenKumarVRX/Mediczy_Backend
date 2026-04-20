@@ -18,7 +18,7 @@ const LogoBrand = () => {
           <span className="bg-gradient-to-b from-amber-300 via-yellow-400 to-amber-600 bg-clip-text text-transparent font-bold">Q</span>
           <span className="bg-gradient-to-b from-amber-200 via-yellow-300 to-amber-500 bg-clip-text text-transparent">zy</span>
         </span>
-        <span className="mt-0.5 text-[8px] font-medium tracking-[0.18em] uppercase text-amber-400/50">Wellness & Care</span>
+        <span className="mt-0.5 text-[8px] font-medium tracking-[0.18em] uppercase text-amber-400/50">Wellness &amp; Care</span>
       </div>
     </div>
   )
@@ -31,9 +31,13 @@ const LogoBrand = () => {
 const NAV_LINKS = [
   { label: 'Platform', href: '#platform' },
   { label: 'AI', href: '#ai' },
+  { label: 'HyperGrid', href: '#hypergrid' },
   { label: 'Solutions', href: '#solutions' },
   { label: 'Products', href: '#products' },
   { label: 'Impact', href: '#impact' },
+  { label: 'Blog', href: '#blog' },
+  { label: 'About', href: '#about' },
+  { label: 'Investors', href: '#investors' },
   { label: 'FAQ', href: '#faq' },
 ]
 
@@ -44,6 +48,8 @@ const HERO_BADGES = [
   'HL7 FHIR',
   'ABDM Integrated',
   'NABH Ready',
+  'DPIIT Recognised',
+  'Startup India Registered',
 ]
 
 const PLATFORM_PILLARS = [
@@ -532,7 +538,7 @@ function App() {
             <LogoBrand />
           </a>
 
-          <nav aria-label="Main navigation" className="hidden items-center gap-6 text-[13px] font-semibold text-slate-400 lg:flex">
+          <nav aria-label="Main navigation" className="hidden items-center gap-6 text-[13px] font-semibold text-slate-200 lg:flex">
             {NAV_LINKS.map((l) => (
               <a key={l.label} href={l.href} className="transition hover:text-white">
                 {l.label}
@@ -562,7 +568,7 @@ function App() {
               <a
                 key={l.label}
                 href={l.href}
-                className="block py-3 text-sm font-medium text-slate-400 transition hover:text-white"
+                className="block py-3 text-sm font-medium text-slate-200 transition hover:text-white"
                 onClick={() => setMobileMenu(false)}
               >
                 {l.label}
@@ -582,10 +588,12 @@ function App() {
         <section className="relative overflow-hidden bg-[#07101f] pb-16 pt-28 md:pb-24 md:pt-36">
           {/* Ambient light */}
           <div className="pointer-events-none absolute inset-0">
-            <div className="float-slow absolute -left-40 top-16 h-[500px] w-[500px] rounded-full bg-teal-500/[0.07] blur-[120px]" />
-            <div className="float-fast absolute -right-32 top-40 h-[400px] w-[400px] rounded-full bg-cyan-400/[0.06] blur-[100px]" />
-            <div className="absolute bottom-0 left-1/2 h-[300px] w-[600px] -translate-x-1/2 rounded-full bg-teal-600/[0.04] blur-[80px]" />
-            {/* Grid overlay */}
+            <div className="float-slow absolute -left-40 top-16 h-[500px] w-[500px] rounded-full bg-teal-500/[0.09] blur-[120px]" />
+            <div className="float-fast absolute -right-32 top-40 h-[400px] w-[400px] rounded-full bg-cyan-400/[0.07] blur-[100px]" />
+            <div className="absolute bottom-0 left-1/2 h-[300px] w-[600px] -translate-x-1/2 rounded-full bg-teal-600/[0.05] blur-[80px]" />
+            {/* Dot grid overlay */}
+            <div className="dot-grid absolute inset-0 opacity-[0.6]" />
+            {/* Grid line overlay */}
             <div className="absolute inset-0 opacity-[0.025]" style={{
               backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)',
               backgroundSize: '60px 60px',
@@ -595,9 +603,26 @@ function App() {
           <div className="relative mx-auto max-w-7xl px-6">
             <div className="grid gap-12 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
               <div>
-                <div className="reveal-up mb-6 inline-flex items-center gap-2 rounded-full border border-teal-500/20 bg-teal-500/[0.06] px-4 py-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-teal-400 animate-pulse" />
-                  <span className="text-xs font-semibold text-teal-400">30+ Integrated Modules &middot; 7 Entity Types &middot; AI-Powered</span>
+                <div className="reveal-up mb-4 flex flex-wrap gap-3">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-teal-500/20 bg-teal-500/[0.06] px-4 py-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-teal-400 animate-pulse" />
+                    <span className="text-xs font-semibold text-teal-400">30+ Integrated Modules &middot; 7 Entity Types &middot; AI-Powered</span>
+                  </div>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/[0.06] px-4 py-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" className="h-3.5 w-5 flex-shrink-0 rounded-[2px]">
+                      <rect width="900" height="600" fill="#138808"/>
+                      <rect width="900" height="400" fill="#fff"/>
+                      <rect width="900" height="200" fill="#FF9933"/>
+                      <circle cx="450" cy="300" r="90" fill="none" stroke="#000088" strokeWidth="8"/>
+                      <circle cx="450" cy="300" r="10" fill="#000088"/>
+                      {[...Array(24)].map((_,i) => (
+                        <line key={i} x1="450" y1="216" x2="450" y2="232"
+                          transform={`rotate(${i*15} 450 300)`}
+                          stroke="#000088" strokeWidth="4"/>
+                      ))}
+                    </svg>
+                    <span className="text-xs font-semibold text-amber-400">From India, for the world.</span>
+                  </div>
                 </div>
 
                 <h1 className="reveal-up text-[clamp(2.4rem,5vw,4.5rem)] font-extrabold leading-[1.02] tracking-tight text-white">
@@ -606,7 +631,7 @@ function App() {
                   for modern hospital.
                 </h1>
 
-                <p className="reveal-up mt-6 max-w-lg text-base leading-relaxed text-slate-400 md:text-lg">
+                <p className="reveal-up mt-6 max-w-lg text-base leading-relaxed text-slate-200 md:text-lg">
                   Clinical workflows, operations, revenue cycle, telemedicine, and AI on one secure on-premise platform for hospital groups, clinics, labs, pharmacies, ambulance networks, homecare teams, and employer health programs.
                 </p>
 
@@ -628,7 +653,7 @@ function App() {
 
                 <div className="reveal-up mt-8 flex flex-wrap gap-2">
                   {HERO_BADGES.map((b) => (
-                    <span key={b} className="rounded-full border border-slate-700 bg-slate-800/50 px-3 py-1 text-[11px] font-semibold text-slate-400">
+                    <span key={b} className="rounded-full border border-slate-700 bg-slate-800/50 px-3 py-1 text-[11px] font-semibold text-slate-200">
                       {b}
                     </span>
                   ))}
@@ -642,13 +667,39 @@ function App() {
                   ].map((item) => (
                     <div key={item.label} className="rounded-2xl border border-white/[0.06] bg-white/[0.03] px-4 py-4 backdrop-blur">
                       <p className="text-lg font-extrabold text-white">{item.value}</p>
-                      <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">{item.label}</p>
+                      <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-300">{item.label}</p>
                     </div>
                   ))}
                 </div>
               </div>
 
               <div className="reveal-up relative">
+                {/* Floating live stat cards */}
+                <div className="absolute -left-6 top-6 z-10 hidden xl:block">
+                  <div className="rounded-xl border border-teal-500/20 bg-[#06101e]/95 px-4 py-3 shadow-2xl backdrop-blur-md">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-teal-400" />
+                      <p className="text-[11px] font-bold text-white">AI Scribe Active</p>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-slate-400">Saved <span className="text-teal-300 font-semibold">42 min</span> today</p>
+                  </div>
+                </div>
+                <div className="absolute -right-5 top-10 z-10 hidden xl:block">
+                  <div className="rounded-xl border border-white/10 bg-[#06101e]/95 px-4 py-3 shadow-2xl backdrop-blur-md">
+                    <p className="text-[11px] font-bold text-white">Patients Today</p>
+                    <p className="mt-0.5 text-xl font-extrabold text-teal-400">247</p>
+                    <p className="text-[10px] text-slate-400">↑ 12% vs yesterday</p>
+                  </div>
+                </div>
+                <div className="absolute -right-5 bottom-14 z-10 hidden xl:block">
+                  <div className="rounded-xl border border-emerald-500/20 bg-[#06101e]/95 px-4 py-3 shadow-2xl backdrop-blur-md">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+                      <p className="text-[11px] font-bold text-white">Revenue Processed</p>
+                    </div>
+                    <p className="mt-0.5 text-[11px] font-extrabold text-emerald-400">₹1.2L today</p>
+                  </div>
+                </div>
                 <div className="absolute -inset-4 rounded-[2rem] bg-gradient-to-br from-teal-500/10 via-transparent to-cyan-500/10 blur-xl" />
                 <div className="relative rounded-2xl border border-white/[0.06] bg-white/[0.03] p-2.5 backdrop-blur">
                   <img src="/vectors/hero-dashboard.svg" alt="Mediqzy Hospital OS — Dashboard with patient census, claims, revenue, and AI analytics" className="w-full rounded-xl" />
@@ -657,6 +708,29 @@ function App() {
             </div>
           </div>
         </section>
+
+        {/* ═══ TRUST STRIP ════════════════════════ */}
+        <div className="border-y border-white/[0.04] bg-[#020b16] py-7">
+          <div className="mx-auto max-w-7xl px-6">
+            <p className="mb-5 text-center text-[10px] font-bold uppercase tracking-[0.22em] text-slate-600">Implemented &amp; validated across healthcare institutions</p>
+            <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
+              {[
+                { name: 'Govt. Primary Health Centres', icon: '🏛️' },
+                { name: 'Private Multispecialty Hospitals', icon: '🏥' },
+                { name: 'ABDM-Linked Clinics', icon: '🩺' },
+                { name: 'TPA Insurance Desks', icon: '🛡️' },
+                { name: 'Rural Pharmacy Networks', icon: '💊' },
+                { name: 'Occupational Health Centres', icon: '🏢' },
+                { name: 'Home Care Agencies', icon: '🏠' },
+              ].map((inst) => (
+                <span key={inst.name} className="inline-flex items-center gap-2 text-[12px] font-semibold text-slate-500 transition hover:text-slate-300">
+                  <span className="text-sm">{inst.icon}</span>
+                  {inst.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
 
         {/* ═══ PROBLEM STATEMENT ══════════════════ */}
         <section className="relative overflow-hidden bg-[#07101f] py-20 md:py-28">
@@ -669,7 +743,7 @@ function App() {
               <h2 className="mt-3 text-3xl font-extrabold text-white md:text-5xl">
                 Healthcare runs on <span className="text-red-400/90">broken systems.</span>
               </h2>
-              <p className="mt-5 text-base leading-relaxed text-slate-400 md:text-lg">
+              <p className="mt-5 text-base leading-relaxed text-slate-200 md:text-lg">
                 Every stakeholder in healthcare — hospitals, doctors, labs, pharmacies, corporates, and insurers — fights the same battle: fragmented tools, scattered data, wasted time, and zero interoperability. Here's what they deal with every day.
               </p>
             </div>
@@ -682,6 +756,8 @@ function App() {
                   description: '10–15 disconnected vendors for OPD, billing, labs, pharmacy, insurance. None talk to each other. Staff re-enter data 5x a day. Patient records scattered across cloud servers you don\'t control.',
                   stat: '73%',
                   statLabel: 'of hospitals use 5+ disconnected systems',
+                  color: 'border-red-500/10 bg-red-500/[0.02] hover:border-red-500/20 hover:bg-red-500/[0.04]',
+                  iconBg: 'bg-red-500/10',
                 },
                 {
                   icon: '🩺',
@@ -689,6 +765,8 @@ function App() {
                   description: '2+ hours daily lost to documentation, toggling between 4–6 screens per patient, and chasing lab reports. By the time notes are done, the next patient is already waiting.',
                   stat: '40%',
                   statLabel: 'of a doctor\'s day lost to admin tasks',
+                  color: 'border-orange-500/10 bg-orange-500/[0.02] hover:border-orange-500/20 hover:bg-orange-500/[0.04]',
+                  iconBg: 'bg-orange-500/10',
                 },
                 {
                   icon: '🔬',
@@ -696,6 +774,8 @@ function App() {
                   description: 'Sample tracking on paper, manual report generation, no integration with ordering physicians. Results delivered late, re-tests ordered, and critical values missed in the handoff chaos.',
                   stat: '18%',
                   statLabel: 'of lab results delayed due to manual processes',
+                  color: 'border-rose-500/10 bg-rose-500/[0.02] hover:border-rose-500/20 hover:bg-rose-500/[0.04]',
+                  iconBg: 'bg-rose-500/10',
                 },
                 {
                   icon: '💊',
@@ -703,6 +783,8 @@ function App() {
                   description: 'Inventory tracked in spreadsheets, expired stock discovered too late, prescriptions deciphered by hand. No real-time visibility into stock levels or automated reorder triggers.',
                   stat: '₹22K Cr',
                   statLabel: 'lost annually to expired pharma inventory globally',
+                  color: 'border-red-500/10 bg-red-500/[0.02] hover:border-red-500/20 hover:bg-red-500/[0.04]',
+                  iconBg: 'bg-red-500/10',
                 },
                 {
                   icon: '🏢',
@@ -710,6 +792,8 @@ function App() {
                   description: 'Employee health programs run on spreadsheets and vendor emails. No unified view of workforce wellness, camp outcomes, or claims utilization. ROI on health spend is unmeasurable.',
                   stat: '60%',
                   statLabel: 'of corporate wellness programs show no measurable ROI',
+                  color: 'border-orange-500/10 bg-orange-500/[0.02] hover:border-orange-500/20 hover:bg-orange-500/[0.04]',
+                  iconBg: 'bg-orange-500/10',
                 },
                 {
                   icon: '🛡️',
@@ -717,18 +801,22 @@ function App() {
                   description: 'Claims are financial cover — but policyholders expect care, not just reimbursement. Insurers have zero visibility into patient journeys, can\'t coordinate care, and lose customers to competitors who offer wellness beyond paperwork.',
                   stat: '68%',
                   statLabel: 'of policyholders want care management, not just claims',
+                  color: 'border-rose-500/10 bg-rose-500/[0.02] hover:border-rose-500/20 hover:bg-rose-500/[0.04]',
+                  iconBg: 'bg-rose-500/10',
                 },
               ].map((problem) => (
                 <article
                   key={problem.title}
-                  className="group rounded-2xl border border-red-500/10 bg-red-500/[0.02] p-6 transition hover:border-red-500/20 hover:bg-red-500/[0.04] md:p-8"
+                  className={`group rounded-2xl border p-6 transition md:p-8 ${problem.color}`}
                 >
-                  <span className="text-3xl">{problem.icon}</span>
+                  <div className={`inline-flex h-12 w-12 items-center justify-center rounded-xl text-2xl ${problem.iconBg}`}>
+                    {problem.icon}
+                  </div>
                   <h3 className="mt-4 text-lg font-bold text-white">{problem.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-400">{problem.description}</p>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-200">{problem.description}</p>
                   <div className="mt-5 border-t border-red-500/10 pt-4">
                     <span className="text-2xl font-extrabold text-red-400/80">{problem.stat}</span>
-                    <p className="mt-1 text-xs text-slate-500">{problem.statLabel}</p>
+                    <p className="mt-1 text-xs text-slate-300">{problem.statLabel}</p>
                   </div>
                 </article>
               ))}
@@ -748,41 +836,57 @@ function App() {
         {/* ═══ PLATFORM (4 OS Pillars) ════════════ */}
         <section id="platform" className="border-t border-teal-500/10 bg-[#07101f] py-20 md:py-28">
           <div className="mx-auto max-w-7xl px-6">
-            <div className="max-w-2xl">
-              <p className="text-xs font-bold uppercase tracking-[0.2em] text-teal-400">The Solution</p>
-              <h2 className="mt-3 text-4xl font-extrabold text-white md:text-5xl">
-                Four operating systems.<br />One unified platform.
-              </h2>
-              <p className="mt-4 text-base text-slate-400">
-                Every module talks to every other module. No fragmentation, no data silos, no switching between tools. One on-premise platform that replaces 10+ vendors.
-              </p>
-            </div>
-
-            <div className="mt-14 grid gap-5 md:grid-cols-2">
-              {PLATFORM_PILLARS.map((p) => (
-                <article
-                  key={p.title}
-                  className="group rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 transition hover:border-teal-500/20 hover:bg-white/[0.04] md:p-8"
-                >
-                  <div className="flex items-start gap-4">
-                    <div className="text-teal-400">
-                      <PillarIcon type={p.icon} />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-bold text-white">{p.title}</h3>
-                      <p className="text-sm text-teal-400/80">{p.subtitle}</p>
-                    </div>
+            <div className="grid gap-12 lg:grid-cols-[1fr_2fr] lg:items-start">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-teal-400">The Solution</p>
+                <h2 className="mt-3 text-4xl font-extrabold text-white md:text-5xl">
+                  Four operating systems.<br />One unified platform.
+                </h2>
+                <p className="mt-4 text-base text-slate-200">
+                  Every module talks to every other module. No fragmentation, no data silos, no switching between tools. One on-premise platform that replaces 10+ vendors.
+                </p>
+                {/* Platform visual */}
+                <div className="relative mt-10 overflow-hidden rounded-2xl border border-white/[0.06]">
+                  <img
+                    src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=600&q=75&auto=format&fit=crop"
+                    alt="Hospital data analytics and operations dashboard"
+                    loading="lazy"
+                    className="h-48 w-full object-cover opacity-40"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#07101f] via-teal-900/20 to-transparent" />
+                  <div className="absolute bottom-4 left-5 right-5">
+                    <p className="text-xs font-bold text-teal-300 uppercase tracking-[0.15em]">Unified Hospital OS</p>
+                    <p className="mt-1 text-[11px] text-white/60">30+ modules · 7 entity types · On-premise</p>
                   </div>
-                  <ul className="mt-5 grid gap-2 sm:grid-cols-2">
-                    {p.features.map((f) => (
-                      <li key={f} className="flex items-start gap-2 text-[13px] text-slate-400">
-                        <span className="mt-1.5 h-1 w-1 flex-shrink-0 rounded-full bg-teal-500/60" />
-                        {f}
-                      </li>
-                    ))}
-                  </ul>
-                </article>
-              ))}
+                </div>
+              </div>
+
+              <div className="grid gap-5 md:grid-cols-2">
+                {PLATFORM_PILLARS.map((p) => (
+                  <article
+                    key={p.title}
+                    className="group rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 transition hover:border-teal-500/20 hover:bg-white/[0.04] md:p-8"
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl border border-teal-500/20 bg-teal-500/10 text-teal-400 shadow-sm shadow-teal-500/10">
+                        <PillarIcon type={p.icon} />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-white">{p.title}</h3>
+                        <p className="text-sm text-teal-400/80">{p.subtitle}</p>
+                      </div>
+                    </div>
+                    <ul className="mt-5 grid gap-2 sm:grid-cols-2">
+                      {p.features.map((f) => (
+                        <li key={f} className="flex items-start gap-2 text-[13px] text-slate-200">
+                          <span className="mt-1.5 h-1 w-1 flex-shrink-0 rounded-full bg-teal-500/60" />
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+                ))}
+              </div>
             </div>
           </div>
         </section>
@@ -797,7 +901,7 @@ function App() {
               <h2 className="mt-3 text-4xl font-extrabold text-white md:text-5xl">
                 Intelligence built into<br />every workflow.
               </h2>
-              <p className="mt-4 text-base text-slate-400">
+              <p className="mt-4 text-base text-slate-200">
                 Four AI engines working across consultations, diagnostics, patient engagement, and predictive analytics.
               </p>
             </div>
@@ -815,10 +919,10 @@ function App() {
                     {ai.tag}
                   </span>
                   <h3 className="mt-3 text-lg font-bold text-white">{ai.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-400">{ai.description}</p>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-200">{ai.description}</p>
                   <div className="mt-4 flex flex-wrap gap-2">
                     {ai.highlights.map((h) => (
-                      <span key={h} className="rounded-full border border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-500 transition group-hover:border-teal-500/30 group-hover:text-teal-400/80">
+                      <span key={h} className="rounded-full border border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-300 transition group-hover:border-teal-500/30 group-hover:text-teal-400/80">
                         {h}
                       </span>
                     ))}
@@ -860,7 +964,7 @@ function App() {
                       {CDSS_POINTS.map((point) => (
                         <div key={point} className="flex items-start gap-3">
                           <span className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-teal-400" />
-                          <p className="text-sm leading-relaxed text-slate-400">{point}</p>
+                          <p className="text-sm leading-relaxed text-slate-200">{point}</p>
                         </div>
                       ))}
                     </div>
@@ -874,12 +978,12 @@ function App() {
                     <div className="mt-6 rounded-2xl border border-teal-400/10 bg-slate-950/70 p-4 md:p-5">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="rounded-full border border-teal-400/20 bg-teal-400/[0.08] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-teal-300">Sample CDSS Output</span>
-                        <span className="rounded-full border border-white/[0.06] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Cardiology</span>
-                        <span className="rounded-full border border-white/[0.06] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Differential + Labs + Safety</span>
+                        <span className="rounded-full border border-white/[0.06] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-300">Cardiology</span>
+                        <span className="rounded-full border border-white/[0.06] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-300">Differential + Labs + Safety</span>
                       </div>
 
                       <div className="mt-4 rounded-2xl border border-white/[0.06] bg-white/[0.03] p-4">
-                        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">Doctor Query</p>
+                        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-300">Doctor Query</p>
                         <p className="mt-2 text-sm leading-relaxed text-slate-200">
                           58-year-old male with exertional chest pain, diabetes, and uncontrolled hypertension. Help with differential diagnosis, initial labs, and medication safety before consultation.
                         </p>
@@ -937,7 +1041,7 @@ function App() {
                 <h2 className="mt-3 text-3xl font-extrabold text-white md:text-4xl">
                   Secure video consultations with AI built in.
                 </h2>
-                <p className="mt-4 text-base text-slate-400">
+                <p className="mt-4 text-base text-slate-200">
                   4-layer cryptographic security. LiveKit-powered rooms. AI Scribe transcribes live. AI Vision analyzes images during calls. Prescriptions generated before hangup.
                 </p>
                 <div className="mt-6 grid grid-cols-2 gap-3">
@@ -946,7 +1050,7 @@ function App() {
                       <svg className="mt-1 h-4 w-4 flex-shrink-0 text-teal-400" fill="none" viewBox="0 0 16 16">
                         <path d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
-                      <span className="text-[13px] text-slate-400">{f}</span>
+                      <span className="text-[13px] text-slate-200">{f}</span>
                     </div>
                   ))}
                 </div>
@@ -961,6 +1065,191 @@ function App() {
           </div>
         </section>
 
+        {/* ═══ HYPERGRID — DeepTech IoT & Interoperability ═══ */}
+        <section id="hypergrid" aria-label="HyperGrid DeepTech IoT and Interoperability Platform" className="relative overflow-hidden border-t border-white/[0.04] bg-[#07101f] py-20 md:py-28">
+          <div className="float-slow absolute -left-40 top-10 h-[500px] w-[500px] rounded-full bg-indigo-500/[0.05] blur-[140px]" />
+          <div className="float-fast absolute -right-40 bottom-10 h-[400px] w-[400px] rounded-full bg-teal-500/[0.05] blur-[120px]" />
+
+          <div className="relative mx-auto max-w-7xl px-6">
+
+            {/* Header */}
+            <div className="mb-14 text-center">
+              <span className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/[0.07] px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-indigo-400">
+                DeepTech · HyperGrid Platform
+              </span>
+              <h2 className="mt-5 text-4xl font-extrabold leading-tight text-white md:text-5xl">
+                The intelligent grid connecting<br />
+                <span className="bg-gradient-to-r from-indigo-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
+                  every device, system &amp; stakeholder.
+                </span>
+              </h2>
+              <p className="mx-auto mt-5 max-w-3xl text-base leading-relaxed text-slate-200">
+                Beyond EMR and workflows, Mediqzy's <strong className="text-white">HyperGrid</strong> is a DeepTech infrastructure layer that connects
+                medical IoT devices, hospital systems, insurance networks, and national health registries into one
+                interoperable, AI-driven grid — transforming fragmented health ecosystems into unified, intelligent health systems.
+              </p>
+            </div>
+
+            {/* Core pillars */}
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-16">
+              {[
+                {
+                  icon: '📡',
+                  color: 'border-indigo-500/20 bg-indigo-500/[0.04]',
+                  label: 'IoT & Edge Fleet',
+                  desc: 'MQTT-native device mesh connecting vitals monitors, wearables, pulse oximeters, glucometers, ECG patches, smart beds, and ambulance sensors — all streaming live telemetry into patient records in real time.',
+                },
+                {
+                  icon: '🔗',
+                  color: 'border-teal-500/20 bg-teal-500/[0.04]',
+                  label: 'Full Interoperability',
+                  desc: 'HL7 FHIR R4, DICOM worklist, SNOMED CT, ICD-10/11, ABDM ABHA, and custom connector API — enabling bi-directional data flow between Mediqzy and any third-party hospital system, lab, insurer, or national health registry.',
+                },
+                {
+                  icon: '🧠',
+                  color: 'border-purple-500/20 bg-purple-500/[0.04]',
+                  label: 'Digital Twins',
+                  desc: 'Live digital twin of every patient, ward, and hospital — continuously updated from IoT streams, lab results, and clinical events. Predictive models surface deterioration risks, bed bottlenecks, and supply gaps before they become crises.',
+                },
+                {
+                  icon: '⚡',
+                  color: 'border-cyan-500/20 bg-cyan-500/[0.04]',
+                  label: 'Real-Time Event Bus',
+                  desc: 'Kafka-backed event streaming layer distributing clinical alerts, device alarms, insurance pre-auth triggers, and supply chain events across every module — zero latency between what happens and who needs to know.',
+                },
+              ].map((p) => (
+                <div key={p.label} className={`rounded-xl border ${p.color} p-6`}>
+                  <div className="mb-3 text-3xl">{p.icon}</div>
+                  <p className="mb-2 text-sm font-bold text-white">{p.label}</p>
+                  <p className="text-xs leading-relaxed text-slate-300">{p.desc}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* How it transforms stakeholders */}
+            <div className="mb-16">
+              <h3 className="mb-2 text-center text-2xl font-extrabold text-white">How HyperGrid transforms every stakeholder</h3>
+              <p className="mb-10 text-center text-sm text-slate-300">One infrastructure layer — measurable impact for every role in the health system.</p>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {[
+                  {
+                    who: '🏥 Hospitals & ICUs',
+                    accent: 'border-l-teal-500',
+                    points: [
+                      'Live bed census fed by IoT smart-bed sensors — zero manual census updates',
+                      'ICU deterioration alerts 15–30 min earlier via continuous vitals streaming',
+                      'Auto-escalation when patient twin crosses clinical threshold',
+                      'DICOM image routing from any scanner to any viewer, zero integration effort',
+                    ],
+                  },
+                  {
+                    who: '👨‍⚕️ Doctors & Clinicians',
+                    accent: 'border-l-indigo-500',
+                    points: [
+                      'Wearable and device readings appear live in the EMR without manual entry',
+                      'AI CDSS enriched by real-time vitals, not just last recorded values',
+                      'Telemedicine sessions with live IoT telemetry overlaid on video call',
+                      'FHIR-compliant patient summary sharable with any hospital globally',
+                    ],
+                  },
+                  {
+                    who: '🚑 Ambulance & Emergency',
+                    accent: 'border-l-red-500',
+                    points: [
+                      'Paramedic vitals stream to ER before patient arrives — zero handoff delay',
+                      'GPS-tracked ambulance fleet with AI triage pre-alerting the receiving team',
+                      'Patient digital twin pre-populated for ER doctors from the field',
+                      'Crash cart and medication inventory tracked via RFID edge nodes',
+                    ],
+                  },
+                  {
+                    who: '🏛️ Governments & NHAs',
+                    accent: 'border-l-amber-500',
+                    points: [
+                      'Real-time disease surveillance dashboards from anonymised event streams',
+                      'ABDM-native — every patient interaction pushes to the national health stack',
+                      'Aggregate population health analytics without moving raw PII off-premise',
+                      'Plug-and-play compliance for new national digital health mandates',
+                    ],
+                  },
+                  {
+                    who: '🏢 Insurers & TPAs',
+                    accent: 'border-l-green-500',
+                    points: [
+                      'Clinical event triggers auto-initiate pre-auth without manual claim filing',
+                      'IoT-verified vitals as objective evidence — reducing claim disputes',
+                      'Real-time eligibility checks embedded in the clinical workflow',
+                      'Fraud detection via anomaly detection on device telemetry streams',
+                    ],
+                  },
+                  {
+                    who: '🔬 Labs & Diagnostics',
+                    accent: 'border-l-purple-500',
+                    points: [
+                      'DICOM worklist sync — orders flow from EMR to modality with zero re-entry',
+                      'Results stream back to patient record the moment the analyser completes',
+                      'HL7 FHIR diagnostic report auto-attached to patient timeline',
+                      'Multi-lab aggregation for hospital networks with one unified view',
+                    ],
+                  },
+                ].map((s) => (
+                  <div key={s.who} className={`rounded-xl border border-white/[0.06] bg-white/[0.02] border-l-2 ${s.accent} p-6`}>
+                    <p className="mb-4 text-sm font-bold text-white">{s.who}</p>
+                    <ul className="space-y-2">
+                      {s.points.map((pt) => (
+                        <li key={pt} className="flex items-start gap-2 text-xs leading-relaxed text-slate-300">
+                          <span className="mt-0.5 text-teal-500 flex-shrink-0">›</span>
+                          {pt}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Tech stack strip */}
+            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-8 mb-16">
+              <h3 className="mb-7 text-center text-xs font-bold uppercase tracking-[0.15em] text-slate-200">HyperGrid Technology Stack</h3>
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  { layer: 'Device Layer', items: ['MQTT v5 broker', 'BLE / Bluetooth', 'RFID edge nodes', 'Wearable SDKs', 'Ambulance telemetry'], icon: '📟' },
+                  { layer: 'Interoperability', items: ['HL7 FHIR R4', 'DICOM 3.0', 'SNOMED CT', 'ICD-10 / ICD-11', 'ABDM / ABHA APIs'], icon: '🔗' },
+                  { layer: 'Intelligence Layer', items: ['Digital twin engine', 'Kafka event bus', 'Predictive deterioration', 'Anomaly detection', 'CDSS integration'], icon: '🧠' },
+                  { layer: 'Compliance & Security', items: ['On-premise deployment', 'End-to-end encryption', 'RBAC + audit trails', 'HIPAA / GDPR ready', 'Zero-trust architecture'], icon: '🛡️' },
+                ].map((t) => (
+                  <div key={t.layer} className="text-center">
+                    <div className="mb-2 text-2xl">{t.icon}</div>
+                    <p className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-200">{t.layer}</p>
+                    <ul className="space-y-1.5">
+                      {t.items.map((i) => (
+                        <li key={i} className="text-xs text-slate-200">{i}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Vision statement */}
+            <div className="rounded-2xl border border-indigo-500/20 bg-gradient-to-br from-indigo-500/[0.04] via-transparent to-teal-500/[0.03] p-10 text-center">
+              <p className="mx-auto max-w-3xl text-xl font-extrabold leading-tight text-white md:text-2xl">
+                "A hospital is no longer just a building.<br />
+                <span className="bg-gradient-to-r from-indigo-400 to-teal-400 bg-clip-text text-transparent">
+                  It is a node in a living, intelligent health grid."
+                </span>
+              </p>
+              <p className="mt-4 text-sm text-slate-300">
+                HyperGrid makes that vision deployable today — on your own infrastructure, under your control.
+              </p>
+              <a href="#demo" className="mt-7 inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-indigo-500 to-teal-500 px-7 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition hover:shadow-indigo-500/30">
+                See HyperGrid in Action →
+              </a>
+            </div>
+
+          </div>
+        </section>
+
         {/* ═══ SOLUTIONS (7 Entity Types) ═════════ */}
         <section id="solutions" className="border-t border-white/[0.04] bg-[#0a1628] py-20 md:py-28">
           <div className="mx-auto max-w-7xl px-6">
@@ -969,7 +1258,7 @@ function App() {
               <h2 className="mt-3 text-4xl font-extrabold text-white md:text-5xl">
                 Seven portals.<br />One ecosystem.
               </h2>
-              <p className="mt-4 text-base text-slate-400">
+              <p className="mt-4 text-base text-slate-200">
                 Hospitals, clinics, labs, pharmacies, ambulances, homecare, and corporate — each gets a dedicated portal with role-specific features.
               </p>
             </div>
@@ -984,7 +1273,7 @@ function App() {
                     className={`flex flex-shrink-0 items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-semibold transition ${
                       solutionIdx === i
                         ? 'bg-gradient-to-r from-teal-500/20 to-teal-600/10 border border-teal-500/30 text-teal-400'
-                        : 'border border-transparent text-slate-500 hover:text-slate-300'
+                        : 'border border-transparent text-slate-300 hover:text-slate-300'
                     }`}
                     onClick={() => setSolutionIdx(i)}
                   >
@@ -1002,7 +1291,7 @@ function App() {
                       <span className="text-3xl">{sol.badge}</span>
                       <h3 className="text-2xl font-bold text-white">{sol.label}</h3>
                     </div>
-                    <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-400">
+                    <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-200">
                       {sol.description}
                     </p>
                     <div className="mt-5 flex flex-wrap gap-2">
@@ -1016,7 +1305,7 @@ function App() {
                       <a href="#demo" className="rounded-lg bg-teal-500 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-teal-400">
                         Get Started
                       </a>
-                      <a href={sol.tryUrl} className="rounded-lg border border-slate-700 px-5 py-2.5 text-sm font-bold text-slate-400 transition hover:text-white">
+                      <a href={sol.tryUrl} className="rounded-lg border border-slate-700 px-5 py-2.5 text-sm font-bold text-slate-200 transition hover:text-white">
                         Try Free
                       </a>
                     </div>
@@ -1046,7 +1335,7 @@ function App() {
                   className={`flex-shrink-0 rounded-lg px-5 py-2.5 text-sm font-bold transition ${
                     prodTab === tab.key
                       ? 'bg-teal-500 text-white shadow-lg shadow-teal-500/20'
-                      : 'border border-slate-800 text-slate-500 hover:text-slate-300'
+                      : 'border border-slate-800 text-slate-300 hover:text-slate-300'
                   }`}
                   onClick={() => setProdTab(tab.key)}
                 >
@@ -1069,7 +1358,8 @@ function App() {
           </div>
         </section>
 
-        {/* ═══ RURAL PHARMACY TELE-CLINIC PITCH ═══ */}
+
+                {/* ═══ RURAL PHARMACY TELE-CLINIC PITCH ═══ */}
         <section id="rural-clinic" className="relative overflow-hidden border-y border-white/[0.04] bg-gradient-to-b from-[#07101f] via-[#0a1628] to-[#07101f] py-20 md:py-28">
           <div className="float-slow absolute -right-32 top-20 h-80 w-80 rounded-full bg-emerald-500/[0.06] blur-[120px]" />
           <div className="float-fast absolute -left-20 bottom-10 h-60 w-60 rounded-full bg-teal-400/[0.05] blur-[100px]" />
@@ -1088,7 +1378,7 @@ function App() {
                   <span className="primary-grad">Tele-Consultation Clinic.</span>
                 </h2>
 
-                <p className="mt-5 text-base leading-relaxed text-slate-400 md:text-lg">
+                <p className="mt-5 text-base leading-relaxed text-slate-200 md:text-lg">
                   Globally, there are 5M+ pharmacies yet doctor access remains limited in underserved regions. Your pharmacy is already the first point of contact for healthcare. Now make it official — launch a virtual clinic from your counter.
                 </p>
 
@@ -1107,7 +1397,7 @@ function App() {
                       </div>
                       <div>
                         <p className="text-sm font-bold text-white">{item.title}</p>
-                        <p className="mt-0.5 text-sm text-slate-400">{item.desc}</p>
+                        <p className="mt-0.5 text-sm text-slate-200">{item.desc}</p>
                       </div>
                     </div>
                   ))}
@@ -1131,6 +1421,21 @@ function App() {
 
               {/* Right — Visual pitch card */}
               <div className="space-y-5">
+                {/* Pharmacy visual */}
+                <div className="card-img-zoom relative overflow-hidden rounded-2xl border border-emerald-500/20">
+                  <img
+                    src="https://images.unsplash.com/photo-1559757175-5700dde675bc?w=800&q=75&auto=format&fit=crop"
+                    alt="Rural pharmacy offering telemedicine consultations through Mediqzy"
+                    loading="lazy"
+                    className="h-44 w-full object-cover opacity-40"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#07101f] via-emerald-900/30 to-transparent" />
+                  <div className="absolute bottom-4 left-5 right-5">
+                    <p className="text-sm font-bold text-emerald-300">₹2.7L–4.5L / month additional revenue</p>
+                    <p className="mt-1 text-xs text-white/60">For a rural pharmacy running 15–25 tele-consults / day</p>
+                  </div>
+                </div>
+
                 {/* Revenue calculator card */}
                 <div className="rounded-2xl border border-emerald-500/20 bg-white/[0.03] p-6 backdrop-blur md:p-8">
                   <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-400">Revenue Calculator</p>
@@ -1146,7 +1451,7 @@ function App() {
                       <div key={row.label} className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-3">
                         <div className="flex items-center gap-3">
                           <span className="text-base">{row.icon}</span>
-                          <span className="text-sm text-slate-400">{row.label}</span>
+                          <span className="text-sm text-slate-200">{row.label}</span>
                         </div>
                         <span className="text-sm font-bold text-emerald-400">{row.value}</span>
                       </div>
@@ -1170,7 +1475,7 @@ function App() {
                         </div>
                         <div>
                           <p className="text-sm font-bold text-white">{s.title}</p>
-                          <p className="mt-0.5 text-xs text-slate-500">{s.desc}</p>
+                          <p className="mt-0.5 text-xs text-slate-300">{s.desc}</p>
                         </div>
                       </div>
                     ))}
@@ -1186,7 +1491,7 @@ function App() {
                   ].map((s) => (
                     <div key={s.label} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-center">
                       <p className="text-xl font-extrabold text-white">{s.num}</p>
-                      <p className="mt-1 text-[10px] text-slate-500">{s.label}</p>
+                      <p className="mt-1 text-[10px] text-slate-300">{s.label}</p>
                     </div>
                   ))}
                 </div>
@@ -1221,6 +1526,196 @@ function App() {
           </div>
         </section>
 
+        {/* ═══ BLOG ═══════════════════════════════ */}
+        <section id="blog" aria-label="Mediqzy healthcare technology blog" className="relative overflow-hidden border-t-2 border-teal-500/40 bg-[#020b16] py-20 md:py-28">
+          <div className="float-slow absolute -left-32 top-20 h-[500px] w-[500px] rounded-full bg-teal-500/[0.07] blur-[140px]" />
+          <div className="float-fast absolute -right-24 bottom-10 h-[380px] w-[380px] rounded-full bg-indigo-500/[0.06] blur-[120px]" />
+
+          <div className="relative mx-auto max-w-7xl px-6">
+            {/* Header */}
+            <div className="mb-14 text-center">
+              <span className="inline-flex items-center gap-2 rounded-full border border-teal-500/40 bg-teal-500/10 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-teal-300">
+                ✦ Insights &amp; Resources
+              </span>
+              <h2 className="mt-5 text-4xl font-extrabold leading-tight text-white md:text-5xl">
+                From the Mediqzy blog
+              </h2>
+              <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-white/80">
+                Deep dives into AI in healthcare, hospital operations, compliance, and the technology reshaping patient care globally.
+              </p>
+            </div>
+
+            {/* Featured post */}
+            <article
+              aria-label="Featured article: Why India's Hospitals Are Moving to an AI-Powered Hospital Operating System"
+              className="card-img-zoom group mb-8 grid overflow-hidden rounded-2xl border border-teal-500/20 bg-gradient-to-br from-teal-500/[0.08] via-white/[0.03] to-indigo-500/[0.06] transition hover:border-teal-500/30 md:grid-cols-[1fr_2fr]"
+            >
+              <div className="relative flex items-center justify-center overflow-hidden bg-[#07101f] p-10 text-center md:p-14">
+                <img
+                  src="https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=800&q=75&auto=format&fit=crop"
+                  alt=""
+                  aria-hidden="true"
+                  loading="lazy"
+                  className="absolute inset-0 h-full w-full object-cover opacity-25"
+                />
+                <div className="absolute inset-0 bg-gradient-to-br from-teal-900/70 via-[#07101f]/60 to-indigo-900/60" />
+                <div className="relative text-center">
+                  <div className="mb-3 inline-flex items-center justify-center rounded-2xl border border-teal-500/30 bg-teal-500/10 p-5 text-6xl shadow-xl shadow-teal-500/20 backdrop-blur-sm">🏥</div>
+                  <p className="mt-3 text-[10px] font-bold uppercase tracking-[0.2em] text-teal-300">Featured</p>
+                  <p className="mt-2 text-sm font-medium text-white/70">Industry Trends · 8 min read</p>
+                </div>
+              </div>
+              <div className="p-8 md:p-10">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-500/15 px-3 py-1 text-[11px] font-bold text-teal-300">Industry Trends</span>
+                <h3 className="mt-4 text-2xl font-extrabold leading-tight text-white transition-colors group-hover:text-teal-200 md:text-3xl">
+                  Why India's Hospitals Are Moving to an AI-Powered Hospital Operating System in 2026
+                </h3>
+                <p className="mt-4 text-base leading-relaxed text-white/75">
+                  The traditional HMIS built in the 2000s — siloed OPD software, disconnected lab systems, manual billing — cannot support modern care complexity. We break down why 2026 is the inflection point for hospital digitisation in India and why an OS-paradigm changes everything for both patients and administrators.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {['Hospital OS', 'Digital Health India', 'AI Healthcare', 'ABDM'].map((tag) => (
+                    <span key={tag} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-semibold text-white/70">{tag}</span>
+                  ))}
+                </div>
+                <div className="mt-6 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-teal-500/25 text-sm font-bold text-teal-200">M</div>
+                    <div>
+                      <p className="text-xs font-bold text-white">Mediqzy Research</p>
+                      <time dateTime="2026-04-15" className="text-xs text-white/55">April 15, 2026</time>
+                    </div>
+                  </div>
+                  <a href="#demo" className="rounded-lg border border-teal-400/40 bg-teal-500/10 px-5 py-2.5 text-sm font-bold text-teal-300 transition hover:bg-teal-500/20 hover:text-teal-200">
+                    Read Article →
+                  </a>
+                </div>
+              </div>
+            </article>
+
+            {/* Post grid */}
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 mb-12">
+              {[
+                {
+                  emoji: '🤖', cat: 'AI & Technology', catColor: 'text-indigo-200 bg-indigo-500/25',
+                  date: '2026-04-10', dateLabel: 'April 10, 2026', readTime: '6 min read',
+                  img: 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=600&q=75&auto=format&fit=crop',
+                  imgGrad: 'from-indigo-900/80 via-slate-900/60 to-transparent',
+                  title: 'AI Medical Scribe: How 207 Clinical Abbreviations Get Auto-Expanded in Real Time',
+                  excerpt: 'Doctors lose 2+ hours daily to documentation. Mediqzy\'s AI Scribe understands clinical shorthand, expands abbreviations, and auto-populates structured prescriptions with zero keystrokes.',
+                  tags: ['AI Scribe', 'Doctor Productivity'],
+                },
+                {
+                  emoji: '📋', cat: 'Compliance', catColor: 'text-amber-200 bg-amber-500/25',
+                  date: '2026-04-05', dateLabel: 'April 5, 2026', readTime: '7 min read',
+                  img: 'https://images.unsplash.com/photo-1532375810709-75b1da00537c?w=600&q=75&auto=format&fit=crop',
+                  imgGrad: 'from-amber-900/80 via-slate-900/60 to-transparent',
+                  title: 'ABDM Compliance Guide for Indian Hospitals: ABHA, PHR & Consent Framework Explained',
+                  excerpt: 'India\'s Ayushman Bharat Digital Mission is reshaping health data ownership. The complete technical guide to ABHA linking, PHR integration, and consent manager workflows your hospital must implement.',
+                  tags: ['ABDM', 'ABHA'],
+                },
+                {
+                  emoji: '📡', cat: 'IoT & HyperGrid', catColor: 'text-teal-200 bg-teal-500/25',
+                  date: '2026-03-30', dateLabel: 'March 30, 2026', readTime: '5 min read',
+                  img: 'https://images.unsplash.com/photo-1581056771107-24ca5f033842?w=600&q=75&auto=format&fit=crop',
+                  imgGrad: 'from-teal-900/80 via-slate-900/60 to-transparent',
+                  title: 'IoT in the ICU: How MQTT-Based Edge Computing Reduces Adverse Events by 30%',
+                  excerpt: 'Connecting bedside monitors, ventilators, and infusion pumps to your HMS no longer requires a million-dollar integration. HyperGrid makes continuous ICU monitoring a 2-week deployment.',
+                  tags: ['IoT Healthcare', 'Patient Safety'],
+                },
+                {
+                  emoji: '📱', cat: 'Telemedicine', catColor: 'text-purple-200 bg-purple-500/25',
+                  date: '2026-03-22', dateLabel: 'March 22, 2026', readTime: '6 min read',
+                  img: 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=600&q=75&auto=format&fit=crop',
+                  imgGrad: 'from-purple-900/80 via-slate-900/60 to-transparent',
+                  title: 'Telemedicine for Tier 2 & 3 India: Closing the Doctor-to-Patient Gap with Technology',
+                  excerpt: 'With 75% of specialist doctors in Tier 1 cities, telemedicine is India\'s only scalable bridge. Real deployment data from Mediqzy\'s rural virtual clinic network across South India.',
+                  tags: ['Telemedicine', 'Rural Healthcare'],
+                },
+                {
+                  emoji: '🏦', cat: 'Insurance & Billing', catColor: 'text-green-200 bg-green-500/25',
+                  date: '2026-03-15', dateLabel: 'March 15, 2026', readTime: '5 min read',
+                  img: 'https://images.unsplash.com/photo-1450101499163-c8848c66ca85?w=600&q=75&auto=format&fit=crop',
+                  imgGrad: 'from-green-900/80 via-slate-900/60 to-transparent',
+                  title: 'Insurance Pre-Auth in 4 Hours, Not 4 Days: How HMS Automation Transforms Cashless Claims',
+                  excerpt: 'Pre-authorization delays cost hospitals cash flow and patients peace of mind. Event-driven claims automation compresses the cashless cycle from days to hours.',
+                  tags: ['Health Insurance', 'Pre-Auth'],
+                },
+                {
+                  emoji: '🛡️', cat: 'Compliance & Security', catColor: 'text-rose-200 bg-rose-500/25',
+                  date: '2026-03-08', dateLabel: 'March 8, 2026', readTime: '8 min read',
+                  img: 'https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=600&q=75&auto=format&fit=crop',
+                  imgGrad: 'from-rose-900/80 via-slate-900/60 to-transparent',
+                  title: 'HIPAA, GDPR & PDPB: The Complete Healthcare Data Compliance Checklist for 2026',
+                  excerpt: 'Hospitals operating globally must navigate three overlapping regulatory frameworks. This checklist covers encryption, data residency, audit trails, and consent workflows.',
+                  tags: ['HIPAA', 'GDPR'],
+                },
+              ].map((post) => (
+                <article
+                  key={post.title}
+                  aria-label={`Blog article: ${post.title}`}
+                  className="card-img-zoom group flex flex-col overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.03] transition hover:border-teal-500/30 hover:shadow-lg hover:shadow-teal-500/[0.08]"
+                >
+                  {/* Image header */}
+                  <div className="relative h-44 overflow-hidden">
+                    <img
+                      src={post.img}
+                      alt=""
+                      aria-hidden="true"
+                      loading="lazy"
+                      className="absolute inset-0 h-full w-full object-cover opacity-55"
+                    />
+                    <div className={`absolute inset-0 bg-gradient-to-t ${post.imgGrad}`} />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#020b16] via-transparent to-transparent opacity-70" />
+                    <div className="absolute bottom-3 left-4 flex items-center gap-2">
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold backdrop-blur-sm ${post.catColor}`}>{post.cat}</span>
+                      <span className="text-[10px] font-medium text-white/70">{post.readTime}</span>
+                    </div>
+                    <div className="absolute right-4 top-4 text-3xl leading-none drop-shadow-lg">{post.emoji}</div>
+                  </div>
+                  <div className="flex flex-1 flex-col p-5">
+                    <h3 className="flex-1 text-sm font-extrabold leading-snug text-white transition-colors group-hover:text-teal-200">
+                      {post.title}
+                    </h3>
+                    <p className="mt-3 text-sm leading-relaxed text-white/65">{post.excerpt}</p>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {post.tags.map((t) => (
+                        <span key={t} className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em] text-white/60">{t}</span>
+                      ))}
+                    </div>
+                    <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-4">
+                      <time dateTime={post.date} className="text-xs text-white/50">{post.dateLabel}</time>
+                      <a href="#demo" className="text-sm font-bold text-teal-400 transition hover:text-teal-200">Read →</a>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            {/* Subscribe CTA */}
+            <div className="rounded-2xl border border-teal-500/20 bg-gradient-to-br from-teal-500/[0.07] via-transparent to-indigo-500/[0.05] p-10">
+              <div className="mx-auto max-w-3xl text-center">
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-teal-400">Stay ahead of the curve</p>
+                <h3 className="mt-3 text-2xl font-extrabold text-white md:text-3xl">
+                  Healthcare technology is moving fast.<br />
+                  <span className="bg-gradient-to-r from-teal-400 to-cyan-300 bg-clip-text text-transparent">Don't get left behind.</span>
+                </h3>
+                <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-white/70">
+                  In-depth guides on AI in healthcare, ABDM compliance, hospital operations, and DeepTech implementation — written by the engineers and clinicians building Mediqzy.
+                </p>
+                <div className="mt-7 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+                  <a href="#demo" className="rounded-lg bg-gradient-to-r from-teal-500 to-cyan-500 px-7 py-3.5 text-sm font-bold text-white shadow-lg shadow-teal-500/25 transition hover:shadow-teal-500/40">
+                    Subscribe to Insights
+                  </a>
+                  <a href="#demo" className="rounded-lg border border-white/10 bg-white/[0.03] px-7 py-3.5 text-sm font-bold text-white/80 transition hover:border-white/20 hover:text-white">
+                    View all articles →
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* ═══ EMPOWERING TEAMS ═══════════════════ */}
         <section aria-label="Empowering your teams" className="bg-[#07101f] py-20 md:py-28">
           <div className="mx-auto max-w-7xl px-6">
@@ -1229,7 +1724,7 @@ function App() {
               <h2 className="mt-3 text-4xl font-extrabold text-white md:text-5xl">
                 Empowering your teams.
               </h2>
-              <p className="mx-auto mt-4 max-w-xl text-base text-slate-400">
+              <p className="mx-auto mt-4 max-w-xl text-base text-slate-200">
                 From doctors and nurses to patients, ambulance crews to insurance desks — Mediczy gives every stakeholder a purpose-built experience.
               </p>
             </div>
@@ -1254,7 +1749,7 @@ function App() {
                     </div>
                   )}
                   <h3 className="mt-4 text-lg font-bold text-white">{p.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-400">{p.desc}</p>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-200">{p.desc}</p>
                 </div>
               ))}
             </div>
@@ -1268,7 +1763,7 @@ function App() {
             <h2 className="mt-3 text-4xl font-extrabold text-white md:text-5xl">
               Trusted by healthcare leaders.
             </h2>
-            <p className="mt-4 max-w-2xl text-sm leading-relaxed text-slate-400 md:text-base">
+            <p className="mt-4 max-w-2xl text-sm leading-relaxed text-slate-200 md:text-base">
               From hospital administrators and clinical directors to solo practitioners and ambulance networks — hear how Mediqzy is transforming daily workflows.
             </p>
 
@@ -1276,17 +1771,25 @@ function App() {
               {TESTIMONIALS.map((t) => (
                 <article
                   key={t.name}
-                  className="w-[320px] flex-shrink-0 snap-start rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 transition hover:border-teal-500/20 hover:bg-white/[0.03] md:w-[380px]"
+                  className="w-[320px] flex-shrink-0 snap-start rounded-2xl border border-white/[0.06] bg-gradient-to-b from-white/[0.04] to-white/[0.02] p-6 transition hover:border-teal-500/20 hover:shadow-xl hover:shadow-teal-500/[0.06] md:w-[380px]"
                 >
+                  {/* Star rating */}
+                  <div className="mb-3 flex gap-0.5">
+                    {[0,1,2,3,4].map((i) => (
+                      <svg key={i} className="h-4 w-4 star-fill" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                      </svg>
+                    ))}
+                  </div>
                   <div className="mb-4 text-4xl leading-none text-teal-500/40">&ldquo;</div>
-                  <p className="text-sm leading-relaxed text-slate-400">{t.quote}</p>
+                  <p className="text-sm leading-relaxed text-slate-200">{t.quote}</p>
                   <div className="mt-6 flex items-center gap-3 border-t border-white/[0.06] pt-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-500/10 text-xs font-bold text-teal-400">
+                    <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-cyan-600 text-xs font-bold text-white shadow-md shadow-teal-500/30">
                       {t.name.split(' ').map((w) => w[0]).join('').slice(0, 2)}
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-white">{t.name}</p>
-                      <p className="text-xs text-slate-500">{t.role}</p>
+                      <p className="text-xs text-slate-300">{t.role}</p>
                     </div>
                   </div>
                 </article>
@@ -1304,7 +1807,7 @@ function App() {
             <h2 className="mx-auto max-w-3xl text-center text-3xl font-extrabold text-white md:text-4xl">
               Enterprise-ready by design.
             </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-center text-sm leading-relaxed text-slate-400 md:text-base">
+            <p className="mx-auto mt-4 max-w-2xl text-center text-sm leading-relaxed text-slate-200 md:text-base">
               Built to fit real hospital environments with interoperable standards, communication infrastructure, payments, and health data integrations already accounted for.
             </p>
             <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1340,12 +1843,12 @@ function App() {
                     aria-expanded={openFaq === i}
                   >
                     <span>{faq.q}</span>
-                    <span className={`ml-4 text-lg text-slate-600 transition-transform duration-300 ${openFaq === i ? 'rotate-45 text-teal-400' : ''}`}>
+                    <span className={`ml-4 text-lg text-slate-200 transition-transform duration-300 ${openFaq === i ? 'rotate-45 text-teal-400' : ''}`}>
                       +
                     </span>
                   </button>
                   <div className={`faq-body ${openFaq === i ? 'faq-body-open' : ''}`}>
-                    <div className="px-6 pb-5 text-sm leading-relaxed text-slate-400">
+                    <div className="px-6 pb-5 text-sm leading-relaxed text-slate-200">
                       {faq.a}
                     </div>
                   </div>
@@ -1355,8 +1858,155 @@ function App() {
           </div>
         </section>
 
+        {/* ═══ INVESTORS ═══════════════════════════ */}
+        <section id="investors" aria-label="Investor relations" className="relative overflow-hidden border-t border-white/[0.04] bg-[#0a1628] py-20 md:py-28">
+          <div className="float-slow absolute -left-32 top-0 h-96 w-96 rounded-full bg-amber-500/[0.04] blur-[120px]" />
+          <div className="float-fast absolute -right-32 bottom-0 h-80 w-80 rounded-full bg-teal-500/[0.04] blur-[100px]" />
+
+          <div className="relative mx-auto max-w-7xl px-6">
+            {/* Header */}
+            <div className="mb-14 text-center">
+              <span className="inline-flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/[0.06] px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-amber-400">
+                Investor Relations
+              </span>
+              <h2 className="mt-5 text-4xl font-extrabold text-white md:text-5xl">
+                Building the backbone of<br />
+                <span className="primary-grad">global healthcare.</span>
+              </h2>
+              <p className="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-slate-200">
+                Mediqzy is a DPIIT-recognised DeepTech company operating at the intersection of AI, clinical workflows,
+                and health infrastructure — targeting a <strong className="text-white">$50B+ global HMS market</strong> with an on-premise,
+                privacy-first architecture that no SaaS competitor can match.
+              </p>
+            </div>
+
+            {/* Opportunity stats */}
+            <div className="grid grid-cols-2 gap-5 sm:grid-cols-4 mb-14">
+              {[
+                { n: '$50B+', label: 'Global HMS market', sub: 'growing at 12% CAGR' },
+                { n: '70K+', label: 'Hospitals in India', sub: 'mostly undigitised' },
+                { n: '7', label: 'Revenue streams', sub: 'across entity types' },
+                { n: '30+', label: 'Modules shipped', sub: 'production-ready today' },
+              ].map((s) => (
+                <div key={s.label} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-6 text-center">
+                  <p className="text-3xl font-extrabold text-white">{s.n}</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-300">{s.label}</p>
+                  <p className="mt-0.5 text-[11px] text-slate-200">{s.sub}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Why invest */}
+            <div className="grid gap-5 md:grid-cols-3 mb-14">
+              {[
+                {
+                  icon: '🔒',
+                  title: 'On-Premise Moat',
+                  body: 'Hospitals and governments globally are tightening data-sovereignty regulations. Our on-premise architecture is a structural competitive moat that cloud-only SaaS cannot replicate without re-architecting from scratch.',
+                  accent: 'border-teal-500/20',
+                },
+                {
+                  icon: '🤖',
+                  title: 'AI-Native from Day One',
+                  body: 'Four embedded AI engines — Scribe, Vision, CDSS, and Dr. iSHA — are already in production, not roadmap. AI is not a layer we bolt on; it is the core of how the platform operates.',
+                  accent: 'border-purple-500/20',
+                },
+                {
+                  icon: '🌐',
+                  title: 'Global-Ready Architecture',
+                  body: 'Multi-tenant, multi-language (20+ languages), multi-currency, and multi-regulatory (HIPAA, GDPR, ABDM, NABH). A single deployment serves hospitals from Chennai to Chicago.',
+                  accent: 'border-amber-500/20',
+                },
+                {
+                  icon: '🏥',
+                  title: 'Deep South India Traction',
+                  body: 'Ground-level implementation experience across Tamil Nadu, Karnataka, Andhra Pradesh, Kerala, and Telangana — validating product-market fit in one of the world\'s most demanding healthcare markets.',
+                  accent: 'border-blue-500/20',
+                },
+                {
+                  icon: '🎓',
+                  title: 'IIT Madras Ecosystem',
+                  body: 'IIT Madras Research Park partner. Access to world-class research, talent pipeline, and institutional credibility — the strongest DeepTech incubation ecosystem in South Asia.',
+                  accent: 'border-cyan-500/20',
+                },
+                {
+                  icon: '📈',
+                  title: 'Multiple Revenue Vectors',
+                  body: 'Licensing fees, SaaS subscriptions for cloud-hybrid clients, marketplace commissions, insurance TPA integrations, telemedicine platform fees, and API access for third-party developers.',
+                  accent: 'border-green-500/20',
+                },
+              ].map((c) => (
+                <div key={c.title} className={`rounded-xl border ${c.accent} bg-white/[0.02] p-6`}>
+                  <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.04] text-xl shadow-sm">
+                    {c.icon}
+                  </div>
+                  <p className="mb-2 text-sm font-bold text-white">{c.title}</p>
+                  <p className="text-xs leading-relaxed text-slate-300">{c.body}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Recognitions strip */}
+            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 mb-14">
+              <p className="mb-5 text-center text-xs font-bold uppercase tracking-[0.15em] text-slate-200">Validated &amp; Recognised By</p>
+              <div className="flex flex-wrap justify-center gap-3">
+                {[
+                  { label: 'DPIIT Recognised Startup', icon: '🏛️' },
+                  { label: 'Startup India Registered', icon: '🇮🇳' },
+                  { label: 'IIT Madras Partner', icon: '🎓' },
+                  { label: 'Telemedicine Society of India', icon: '🩺' },
+                  { label: 'ABDM / ABHA Integrated', icon: '🏥' },
+                  { label: 'HL7 FHIR Compliant', icon: '🔗' },
+                ].map((r) => (
+                  <span key={r.label} className="inline-flex items-center gap-2 rounded-full border border-white/[0.06] bg-white/[0.02] px-4 py-2 text-xs font-medium text-slate-200">
+                    {r.icon} {r.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* CTA */}
+            <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/[0.04] to-transparent p-8 text-center">
+              <p className="text-xl font-bold text-white">Interested in partnering or investing?</p>
+              <p className="mt-2 text-sm text-slate-200">We are open to strategic investors, healthcare VCs, and institutional partners who share our vision of transforming healthcare infrastructure globally.</p>
+              <div className="mt-6 flex flex-wrap justify-center gap-4">
+                <a
+                  href="mailto:invest@mediqzy.com"
+                  className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-6 py-3 text-sm font-bold text-[#07101f] shadow-lg shadow-amber-500/20 transition hover:bg-amber-400"
+                >
+                  ✉ invest@mediqzy.com
+                </a>
+                <a
+                  href="https://wa.me/917826911911"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] px-6 py-3 text-sm font-bold text-white transition hover:bg-white/[0.06]"
+                >
+                  💬 WhatsApp
+                </a>
+                <a
+                  href="#demo"
+                  className="inline-flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] px-6 py-3 text-sm font-bold text-white transition hover:bg-white/[0.06]"
+                >
+                  Request a Deck →
+                </a>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* ═══ CTA + DEMO FORM ════════════════════ */}
         <section id="demo" className="relative overflow-hidden border-t border-white/[0.04] bg-[#0a1628] py-20 md:py-28">
+          {/* Background photo with overlay */}
+          <div className="pointer-events-none absolute inset-0">
+            <img
+              src="https://images.unsplash.com/photo-1538108149393-fbbd81895907?w=1600&auto=format&fit=crop&q=60"
+              alt=""
+              className="h-full w-full object-cover object-center opacity-[0.07]"
+              loading="lazy"
+            />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#0a1628] via-[#0a1628]/90 to-[#0a1628]/70" />
+          </div>
           <div className="float-slow absolute -right-32 bottom-0 h-72 w-72 rounded-full bg-teal-500/[0.06] blur-[100px]" />
 
           <div className="relative mx-auto max-w-7xl px-6">
@@ -1365,19 +2015,19 @@ function App() {
                 <h2 className="text-4xl font-extrabold text-white md:text-5xl">
                   Ready to run your hospital like a system?
                 </h2>
-                <p className="mt-4 text-lg text-slate-400">
+                <p className="mt-4 text-lg text-slate-200">
                   30+ modules. 7 entity types. 4 AI engines. One platform.
                 </p>
                 <div className="mt-8 space-y-4">
-                  <a href="mailto:support@mediqzy.com" className="flex items-center gap-3 text-sm text-slate-400 transition hover:text-white">
+                  <a href="mailto:support@mediqzy.com" className="flex items-center gap-3 text-sm text-slate-200 transition hover:text-white">
                     <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-500/10 text-base">{'✉'}</span>
                     support@mediqzy.com
                   </a>
-                  <a href="https://wa.me/917826911911" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-sm text-slate-400 transition hover:text-white">
+                  <a href="https://wa.me/917826911911" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-sm text-slate-200 transition hover:text-white">
                     <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-500/10 text-base">{'💬'}</span>
                     +91 782-691-1911
                   </a>
-                  <a href="tel:+917826911911" className="flex items-center gap-3 text-sm text-slate-400 transition hover:text-white">
+                  <a href="tel:+917826911911" className="flex items-center gap-3 text-sm text-slate-200 transition hover:text-white">
                     <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-500/10 text-base">{'📞'}</span>
                     +91 782-691-1911
                   </a>
@@ -1386,22 +2036,22 @@ function App() {
                 <div className="mt-10 grid grid-cols-3 gap-4">
                   <div>
                     <p className="text-2xl font-extrabold text-white">30+</p>
-                    <p className="text-xs text-slate-500">Modules</p>
+                    <p className="text-xs text-slate-300">Modules</p>
                   </div>
                   <div>
                     <p className="text-2xl font-extrabold text-white">7</p>
-                    <p className="text-xs text-slate-500">Entity Types</p>
+                    <p className="text-xs text-slate-300">Entity Types</p>
                   </div>
                   <div>
                     <p className="text-2xl font-extrabold text-white">4</p>
-                    <p className="text-xs text-slate-500">AI Engines</p>
+                    <p className="text-xs text-slate-300">AI Engines</p>
                   </div>
                 </div>
               </div>
 
               <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] p-8 backdrop-blur">
                 <p className="mb-2 text-lg font-bold text-white">Plan a tailored product walkthrough</p>
-                <p className="mb-6 text-sm leading-relaxed text-slate-400">
+                <p className="mb-6 text-sm leading-relaxed text-slate-200">
                   Send your requirements. We capture the lead, notify our team by email, and continue the conversation on WhatsApp for the fastest response.
                 </p>
                 <form onSubmit={handleDemoSubmit} className="space-y-4">
@@ -1409,27 +2059,27 @@ function App() {
                   <input type="text" name="_gotcha" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{position:'absolute',left:'-9999px',opacity:0,height:0,width:0,overflow:'hidden'}} />
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-500">Name *</label>
+                      <label className="mb-1.5 block text-xs font-medium text-slate-300">Name *</label>
                       <input type="text" name="name" required className="form-input" placeholder="Your name" />
                     </div>
                     <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-500">Organization</label>
+                      <label className="mb-1.5 block text-xs font-medium text-slate-300">Organization</label>
                       <input type="text" name="organization" className="form-input" placeholder="Hospital / Clinic" />
                     </div>
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-500">Phone *</label>
+                    <label className="mb-1.5 block text-xs font-medium text-slate-300">Phone *</label>
                     <div className="flex gap-2">
-                      <span className="flex items-center rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 text-sm text-slate-500">+91</span>
+                      <span className="flex items-center rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 text-sm text-slate-300">+91</span>
                       <input type="tel" name="phone" required className="form-input" placeholder="Phone number" />
                     </div>
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-500">Email *</label>
+                    <label className="mb-1.5 block text-xs font-medium text-slate-300">Email *</label>
                     <input type="email" name="email" required className="form-input" placeholder="your@email.com" />
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-500">Entity Type</label>
+                    <label className="mb-1.5 block text-xs font-medium text-slate-300">Entity Type</label>
                     <select name="entityType" className="form-input" defaultValue="" required>
                       <option value="" disabled>Select type</option>
                       <option>Hospital</option>
@@ -1442,7 +2092,7 @@ function App() {
                     </select>
                   </div>
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-500">What do you want to see?</label>
+                    <label className="mb-1.5 block text-xs font-medium text-slate-300">What do you want to see?</label>
                     <textarea name="requirements" rows="4" className="form-input resize-none" placeholder="Example: EMR + billing + insurance claims + telemedicine for a 120-bed hospital" />
                   </div>
                   <button
@@ -1452,7 +2102,7 @@ function App() {
                   >
                     {demoSubmitting ? 'Capturing Lead...' : 'Request Demo on WhatsApp'}
                   </button>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-slate-300">
                     Prefer email instead? Write to <a href="mailto:support@mediqzy.com" className="text-teal-400 transition hover:text-teal-300">support@mediqzy.com</a>.
                   </p>
                   {demoError && (
@@ -1471,18 +2121,200 @@ function App() {
           </div>
         </section>
 
-        {/* ═══ VISION BANNER ══════════════════════ */}
-        <section id="about" aria-label="Company vision" className="relative overflow-hidden bg-[#07101f] py-24 md:py-32">
-          <div className="absolute inset-0 bg-gradient-to-br from-teal-900/20 via-transparent to-cyan-900/10" />
-          <div className="float-slow absolute -left-20 bottom-0 h-56 w-56 rounded-full bg-teal-500/[0.08] blur-[80px]" />
-          <div className="float-fast absolute -right-20 top-0 h-56 w-56 rounded-full bg-cyan-400/[0.06] blur-[80px]" />
+        {/* ═══ ABOUT US ═══════════════════════════ */}
+        <section id="about" aria-label="About Mediqzy" className="relative overflow-hidden bg-[#07101f] py-20 md:py-28">
+          <div className="absolute inset-0 bg-gradient-to-br from-teal-900/10 via-transparent to-cyan-900/05" />
+          <div className="float-slow absolute -left-32 bottom-0 h-96 w-96 rounded-full bg-teal-500/[0.06] blur-[120px]" />
+          <div className="float-fast absolute -right-32 top-0 h-80 w-80 rounded-full bg-cyan-400/[0.05] blur-[100px]" />
 
-          <div className="relative mx-auto max-w-4xl px-6 text-center">
-            <h2 className="text-5xl font-extrabold leading-tight text-white md:text-7xl">
-              Futureproofing<br />
-              <span className="primary-grad">Healthcare.</span>
-            </h2>
-            <p className="mt-6 text-base text-slate-500">by Mayden SmartHealth Pvt Ltd</p>
+          <div className="relative mx-auto max-w-7xl px-6">
+            {/* Hero banner for About */}
+            <div className="relative mb-14 overflow-hidden rounded-2xl border border-white/[0.06]">
+              <img
+                src="https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1400&q=75&auto=format&fit=crop"
+                alt="Medical team at work — Mediqzy powers healthcare innovation"
+                loading="lazy"
+                className="h-56 w-full object-cover opacity-30 md:h-72"
+              />
+              <div className="absolute inset-0 bg-gradient-to-r from-[#07101f] via-[#07101f]/60 to-transparent" />
+              <div className="absolute inset-0 flex flex-col justify-center px-8 md:px-14">
+                <span className="inline-flex w-fit items-center gap-2 rounded-full border border-teal-500/20 bg-teal-500/[0.08] px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-teal-400">
+                  About Us
+                </span>
+                <h2 className="mt-4 text-4xl font-extrabold leading-tight text-white md:text-5xl">
+                  Futureproofing<br />
+                  <span className="primary-grad">Healthcare.</span>
+                </h2>
+              </div>
+            </div>
+
+            {/* Intro copy */}
+            <div className="mb-12 text-center">
+              <p className="mx-auto max-w-2xl text-base leading-relaxed text-slate-200">
+                We are <strong className="text-white">Mayden SmartHealth Pvt Ltd</strong> — a <strong className="text-teal-400">DeepTech healthcare company</strong> building
+                the next generation of hospital operating systems. <strong className="text-white">IIT Madras partner</strong>, DPIIT-recognised,
+                Startup India registered, and a proud member of the <strong className="text-white">Telemedicine Society of India</strong> — with proven
+                expertise in deploying integrated health systems across <strong className="text-white">South India</strong>.
+                <br /><br />
+                <span className="inline-flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/[0.06] px-4 py-1.5 text-xs font-semibold text-amber-400">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" className="h-3.5 w-5 flex-shrink-0 rounded-[2px]">
+                    <rect width="900" height="600" fill="#138808"/>
+                    <rect width="900" height="400" fill="#fff"/>
+                    <rect width="900" height="200" fill="#FF9933"/>
+                    <circle cx="450" cy="300" r="90" fill="none" stroke="#000088" strokeWidth="8"/>
+                    <circle cx="450" cy="300" r="10" fill="#000088"/>
+                    {[...Array(24)].map((_,i) => (
+                      <line key={i} x1="450" y1="216" x2="450" y2="232"
+                        transform={`rotate(${i*15} 450 300)`}
+                        stroke="#000088" strokeWidth="4"/>
+                    ))}
+                  </svg>
+                  From India, for the world.
+                </span>
+              </p>
+            </div>
+
+            {/* Mission + Story */}
+            <div className="grid gap-8 md:grid-cols-2 mb-16">
+              <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-8">
+                <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-teal-500/10 text-xl">🎯</div>
+                <h3 className="mb-3 text-lg font-bold text-white">Our Mission</h3>
+                <p className="text-sm leading-relaxed text-slate-200">
+                  To eliminate the operational chaos that plagues hospitals and clinics — fragmented software,
+                  paper workflows, insurance delays, and disconnected care — by replacing them with one
+                  intelligent, on-premise platform that puts clinicians and patients first.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-8">
+                <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500/10 text-xl">💡</div>
+                <h3 className="mb-3 text-lg font-bold text-white">Our Story</h3>
+                <p className="text-sm leading-relaxed text-slate-200">
+                  Mediqzy started from a simple observation: doctors spend more time on paperwork than on patients.
+                  Born in South India and incubated within the IIT Madras ecosystem, we set out to build the hospital
+                  operating system we wished existed — one that handles EMR, billing, insurance, AI transcription,
+                  telemedicine, and 30+ workflows in a single platform, deployed on your servers so your data never
+                  leaves your walls. We have hands-on implementation experience across hospitals, clinics, and labs
+                  throughout Tamil Nadu, Karnataka, Andhra Pradesh, Kerala, and Telangana.
+                </p>
+              </div>
+            </div>
+
+            {/* Recognitions & Affiliations */}
+            <div className="mb-16">
+              <h3 className="mb-8 text-center text-sm font-bold uppercase tracking-[0.15em] text-slate-200">Recognitions &amp; Affiliations</h3>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                {[
+                  { icon: '🎓', title: 'IIT Madras', sub: 'Partner Company', color: 'border-blue-500/20 bg-blue-500/[0.04]' },
+                  { icon: '🏛️', title: 'DPIIT', sub: 'Recognised Startup', color: 'border-amber-500/20 bg-amber-500/[0.04]' },
+                  { icon: '🇮🇳', title: 'Startup India', sub: 'Registered', color: 'border-orange-500/20 bg-orange-500/[0.04]' },
+                  { icon: '🩺', title: 'Telemedicine Society', sub: 'of India — Member', color: 'border-teal-500/20 bg-teal-500/[0.04]' },
+                  { icon: '🤖', title: 'DeepTech', sub: 'Healthcare Company', color: 'border-purple-500/20 bg-purple-500/[0.04]' },
+                ].map((r) => (
+                  <div key={r.title} className={`rounded-xl border ${r.color} p-5 text-center`}>
+                    <div className="mb-2 text-2xl">{r.icon}</div>
+                    <p className="text-sm font-bold text-white leading-tight">{r.title}</p>
+                    <p className="mt-1 text-[11px] text-slate-300 leading-snug">{r.sub}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* South India Presence */}
+            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-8 mb-16">
+              <div className="flex flex-col items-center gap-6 md:flex-row">
+                <div className="text-5xl flex-shrink-0">🗺️</div>
+                <div>
+                  <h3 className="text-lg font-bold text-white mb-2">Deep Roots in South India</h3>
+                  <p className="text-sm leading-relaxed text-slate-200">
+                    We have on-the-ground implementation experience deploying Mediqzy at hospitals, multi-specialty
+                    clinics, diagnostic laboratories, and homecare providers across <strong className="text-white">Tamil Nadu, Karnataka,
+                    Andhra Pradesh, Kerala, and Telangana</strong>. Our team understands the regulatory landscape, language
+                    diversity, and operational realities of South Indian healthcare — from tier-1 corporate hospitals
+                    to rural primary health centres.
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {['Tamil Nadu', 'Karnataka', 'Andhra Pradesh', 'Kerala', 'Telangana'].map(state => (
+                      <span key={state} className="inline-flex items-center rounded-full border border-teal-500/20 bg-teal-500/[0.06] px-3 py-1 text-xs font-medium text-teal-400">
+                        {state}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Values */}
+            <div className="mb-16">
+              <h3 className="mb-8 text-center text-sm font-bold uppercase tracking-[0.15em] text-slate-200">What We Stand For</h3>
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  { icon: '🔒', title: 'Data Sovereignty', body: 'On-premise deployment. Every byte of patient data lives on your own servers — never on a third-party cloud.' },
+                  { icon: '🤝', title: 'Clinician-First', body: 'Every feature is designed around how doctors and nurses actually work, reducing clicks and cognitive load.' },
+                  { icon: '🌍', title: 'Global Compliance', body: 'HIPAA, GDPR, ABDM, NABH, HL7 FHIR — built for global deployment without regulatory compromise.' },
+                  { icon: '⚡', title: 'Relentless Innovation', body: 'AI Scribe, AI Vision, CDSS, Dr. iSHA — we ship clinically meaningful AI that works in real wards today.' },
+                ].map((v) => (
+                  <div key={v.title} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-6">
+                    <div className="mb-3 text-2xl">{v.icon}</div>
+                    <p className="mb-2 text-sm font-bold text-white">{v.title}</p>
+                    <p className="text-xs leading-relaxed text-slate-300">{v.body}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Company Stats */}
+            <div className="rounded-2xl border border-teal-500/10 bg-gradient-to-br from-teal-500/[0.04] to-cyan-500/[0.02] p-8 mb-16">
+              <h3 className="mb-8 text-center text-sm font-bold uppercase tracking-[0.15em] text-slate-200">Mediqzy by the Numbers</h3>
+              <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
+                {[
+                  { n: '30+', label: 'Integrated Modules' },
+                  { n: '7', label: 'Entity Types Supported' },
+                  { n: '4', label: 'AI Engines' },
+                  { n: '20+', label: 'Languages (Dr. iSHA)' },
+                ].map((s) => (
+                  <div key={s.label} className="text-center">
+                    <p className="text-4xl font-extrabold text-white">{s.n}</p>
+                    <p className="mt-1.5 text-xs text-slate-300">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Team */}
+            <div className="mb-16">
+              <h3 className="mb-8 text-center text-sm font-bold uppercase tracking-[0.15em] text-slate-200">Built By</h3>
+              <div className="grid gap-5 sm:grid-cols-3">
+                {[
+                  { role: 'Engineering', desc: 'Full-stack engineers and AI/ML specialists with deep healthcare domain expertise, building scalable on-premise systems.', icon: '⚙️' },
+                  { role: 'Clinical Advisors', desc: 'Practising doctors and hospital administrators who shape every workflow to match real-world clinical realities.', icon: '🩺' },
+                  { role: 'Compliance & Security', desc: 'Legal, data-privacy, and security experts ensuring HIPAA, GDPR, ABDM, and NABH requirements are met globally.', icon: '🛡️' },
+                ].map((t) => (
+                  <div key={t.role} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-6 text-center">
+                    <div className="mb-3 text-3xl">{t.icon}</div>
+                    <p className="mb-2 text-sm font-bold text-white">{t.role}</p>
+                    <p className="text-xs leading-relaxed text-slate-300">{t.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Contact strip */}
+            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-8 text-center">
+              <p className="text-base font-bold text-white">Get in touch</p>
+              <p className="mt-2 text-sm text-slate-300">We&rsquo;d love to hear from healthcare providers, investors, and partners.</p>
+              <div className="mt-5 flex flex-wrap justify-center gap-4">
+                <a href="mailto:support@mediqzy.com" className="inline-flex items-center gap-2 rounded-lg bg-teal-500/10 px-5 py-2.5 text-sm font-medium text-teal-400 transition hover:bg-teal-500/20">
+                  ✉ support@mediqzy.com
+                </a>
+                <a href="https://wa.me/917826911911" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-lg bg-green-500/10 px-5 py-2.5 text-sm font-medium text-green-400 transition hover:bg-green-500/20">
+                  💬 WhatsApp
+                </a>
+                <a href="#demo" className="inline-flex items-center gap-2 rounded-lg bg-white/[0.05] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-white/10">
+                  Book a Demo →
+                </a>
+              </div>
+              <p className="mt-6 text-xs text-slate-300">Mayden SmartHealth Pvt Ltd · Registered in India</p>
+            </div>
           </div>
         </section>
       </main>
@@ -1493,34 +2325,46 @@ function App() {
           <div className="grid gap-10 md:grid-cols-[1.5fr_1fr_1fr_1fr_1fr]">
             <div>
               <LogoBrand />
-              <p className="mt-4 max-w-xs text-xs leading-relaxed text-slate-600">
-                Mediqzy is a product of Mayden SmartHealth Pvt Ltd &mdash; the full-stack Hospital Operating System with 30+ integrated modules, AI diagnostics, and telemedicine.
+              <p className="mt-4 max-w-xs text-xs leading-relaxed text-slate-200">
+                Mediqzy is a DeepTech healthcare product of Mayden SmartHealth Pvt Ltd &mdash; IIT Madras partner, DPIIT recognised, Startup India registered, and a member of the Telemedicine Society of India. From India, for the world.
               </p>
+              <address className="mt-4 not-italic max-w-xs text-xs leading-relaxed text-slate-300">
+                📍 Mayden SmartHealth Pvt Ltd<br />
+                D-Block, 4th Floor<br />
+                IIT Madras Research Park<br />
+                Tharamani, Chennai — 600 113<br />
+                India
+              </address>
               <div className="mt-5 flex gap-2">
-                <a href="mailto:support@mediqzy.com" className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.06] text-xs text-slate-600 transition hover:border-teal-500/30 hover:text-teal-400" aria-label="Email Mediqzy support">
+                <a href="mailto:support@mediqzy.com" className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.06] text-xs text-slate-200 transition hover:border-teal-500/30 hover:text-teal-400" aria-label="Email Mediqzy support">
                   ✉
                 </a>
-                <a href="https://wa.me/917826911911" target="_blank" rel="noopener noreferrer" className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.06] text-xs text-slate-600 transition hover:border-teal-500/30 hover:text-teal-400" aria-label="Chat with Mediqzy on WhatsApp">
+                <a href="https://wa.me/917826911911" target="_blank" rel="noopener noreferrer" className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.06] text-xs text-slate-200 transition hover:border-teal-500/30 hover:text-teal-400" aria-label="Chat with Mediqzy on WhatsApp">
                   💬
                 </a>
-                <a href="https://app.mediqzy.com/register" className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.06] text-xs text-slate-600 transition hover:border-teal-500/30 hover:text-teal-400" aria-label="Open Mediqzy application">
+                <a href="https://www.facebook.com/profile.php?id=61570684224966" target="_blank" rel="noopener noreferrer" className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.06] text-slate-200 transition hover:border-blue-500/40 hover:text-blue-400" aria-label="Mediqzy on Facebook">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.41c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.97h-1.513c-1.491 0-1.956.93-1.956 1.886v2.268h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/>
+                  </svg>
+                </a>
+                <a href="https://app.mediqzy.com/register" className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.06] text-xs text-slate-200 transition hover:border-teal-500/30 hover:text-teal-400" aria-label="Open Mediqzy application">
                   ↗
                 </a>
               </div>
             </div>
 
             {[
-              { title: 'Platform', links: [['Overview', '#platform'], ['AI & Intelligence', '#ai'], ['Solutions', '#solutions'], ['Impact', '#impact'], ['Compliance', '#compliance']] },
+              { title: 'Platform', links: [['Overview', '#platform'], ['AI & Intelligence', '#ai'], ['HyperGrid IoT', '#hypergrid'], ['Solutions', '#solutions'], ['Impact', '#impact'], ['Compliance', '#compliance']] },
               { title: 'Access', links: [['Register', 'https://app.mediqzy.com/register'], ['Hospital Login', 'https://app.mediqzy.com/hospital/login'], ['Quality (NABH) Login', 'https://app.mediqzy.com/quality/login'], ['Clinic Login', 'https://app.mediqzy.com/clinic/login'], ['Corporate Login', 'https://app.mediqzy.com/corporate/login']] },
               { title: 'Contact', links: [['Book a Demo', '#demo'], ['Email Support', 'mailto:support@mediqzy.com'], ['WhatsApp', 'https://wa.me/917826911911'], ['Call Sales', 'tel:+917826911911']] },
-              { title: 'Company', links: [['About Mediqzy', '#about'], ['FAQ', '#faq'], ['Rural Pharmacy', '#rural-clinic'], ['App Home', 'https://app.mediqzy.com']] },
+              { title: 'Company', links: [['About Mediqzy', '#about'], ['Blog & Insights', '#blog'], ['Investors', '#investors'], ['FAQ', '#faq'], ['Rural Pharmacy', '#rural-clinic'], ['App Home', 'https://app.mediqzy.com']] },
             ].map((col) => (
               <div key={col.title}>
-                <p className="mb-4 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-600">{col.title}</p>
+                <p className="mb-4 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-200">{col.title}</p>
                 <ul className="space-y-2.5">
                   {col.links.map(([label, href]) => (
                     <li key={label}>
-                      <a href={href} className="text-sm text-slate-500 transition hover:text-teal-400">
+                      <a href={href} className="text-sm text-slate-300 transition hover:text-teal-400">
                         {label}
                       </a>
                     </li>
@@ -1530,7 +2374,7 @@ function App() {
             ))}
           </div>
 
-          <div className="mt-12 border-t border-white/[0.04] pt-6 text-xs text-slate-700">
+          <div className="mt-12 border-t border-white/[0.04] pt-6 text-xs text-slate-300">
             &copy; 2026 Mayden SmartHealth Pvt Ltd. All rights reserved.
           </div>
         </div>
@@ -1558,7 +2402,7 @@ function StatCard({ stat, visible }) {
   return (
     <div>
       <p className="text-5xl font-extrabold text-white md:text-6xl">{display}</p>
-      <p className="mt-2 text-sm text-slate-500">{stat.label}</p>
+      <p className="mt-2 text-sm text-slate-300">{stat.label}</p>
     </div>
   )
 }

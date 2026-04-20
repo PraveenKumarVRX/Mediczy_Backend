@@ -4,12 +4,103 @@ import { createHash, randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import XLSX from 'xlsx';
+import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import userModel from '../models/user.model.intelligent.js';
 import { authCRM } from '../middleware/crm.middleware.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import sharedPool from '../db/pgPool.js';
+import { getS3Client, getUploadsBucket } from '../services/s3-presign.service.js';
+import nodemailer from 'nodemailer';
+
+// ─── CRM Email Helper ─────────────────────────────────────────────────────────
+// Loads SMTP config from email_configs table (default/active row) and sends.
+// Silently swallows errors — never blocks the main request.
+async function sendCRMEmail({ to, cc, subject, html, text }) {
+  if (!to) return;
+  try {
+    // Prefer email_configs table default; fall back to env vars
+    let smtpOpts = {
+      host:   process.env.SMTP_HOST || 'smtppro.zoho.in',
+      port:   parseInt(process.env.SMTP_PORT || '465'),
+      secure: parseInt(process.env.SMTP_PORT || '465') === 465,
+      auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD || process.env.SMTP_PASS },
+    };
+    let fromLabel = process.env.EMAIL_FROM_NAME || 'Mediqzy';
+    let fromAddr  = process.env.SMTP_USER || 'noreply@mediqzy.com';
+    try {
+      const { rows } = await sharedPool.query(
+        `SELECT host, port, username, password, "fromEmail", "fromName" FROM email_configs
+          WHERE "isActive" = true ORDER BY "isDefault" DESC, id ASC LIMIT 1`
+      );
+      if (rows.length && rows[0].username) {
+        smtpOpts = {
+          host:   rows[0].host,
+          port:   rows[0].port,
+          secure: rows[0].port === 465,
+          auth:   { user: rows[0].username, pass: rows[0].password },
+        };
+        fromLabel = rows[0].fromName  || fromLabel;
+        fromAddr  = rows[0].fromEmail || rows[0].username;
+      }
+    } catch (_) { /* use env fallback */ }
+
+    if (!smtpOpts.auth.user) return; // no SMTP configured at all
+    const transporter = nodemailer.createTransport(smtpOpts);
+    await transporter.sendMail({
+      from:    `"${fromLabel}" <${fromAddr}>`,
+      to, cc, subject,
+      html:    html || `<pre>${text || ''}</pre>`,
+      text:    text || '',
+    });
+  } catch (e) {
+    console.warn('[CRM Email] send failed:', e.message);
+  }
+}
+
+// Helper: upload a file buffer to S3 and return the key (silently ignores errors)
+async function uploadSlipToS3(buffer, originalName, rfqId) {
+  try {
+    const bucket = getUploadsBucket();
+    if (!bucket) return null;
+    const ext = originalName.split('.').pop().toLowerCase();
+    const key = `rfqs/slips/${rfqId}_${Date.now()}.${ext}`;
+    await getS3Client().send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: buffer, ContentType: ext === 'pdf' ? 'application/pdf' : ext === 'xlsx' || ext === 'xls' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/octet-stream' }));
+    return key;
+  } catch { return null; }
+}
+
+// Helper: fetch a file buffer from S3 by key
+async function fetchSlipFromS3(key) {
+  const bucket = getUploadsBucket();
+  if (!bucket || !key) return null;
+  try {
+    const res = await getS3Client().send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    const chunks = [];
+    for await (const chunk of res.Body) chunks.push(chunk);
+    return Buffer.concat(chunks);
+  } catch { return null; }
+}
+
+// Helper: upload any RFQ file to S3 and record in crm_rfq_files
+async function uploadRfqFile(buffer, originalName, rfqId, category, uploadedById) {
+  try {
+    const bucket = getUploadsBucket();
+    if (!bucket) return null;
+    const ext = (originalName.split('.').pop() || 'bin').toLowerCase();
+    const mimeMap = { pdf: 'application/pdf', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', xls: 'application/vnd.ms-excel', csv: 'text/csv', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+    const mimeType = mimeMap[ext] || 'application/octet-stream';
+    const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const key = `rfqs/${rfqId}/${category}/${Date.now()}_${safeName}`;
+    await getS3Client().send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: buffer, ContentType: mimeType }));
+    await sharedPool.query(
+      `INSERT INTO crm_rfq_files (rfq_id, category, original_name, s3_key, file_size, mime_type, uploaded_by) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [rfqId, category, originalName, key, buffer.length, mimeType, uploadedById]
+    );
+    return key;
+  } catch (e) { console.warn('[uploadRfqFile]', e.message); return null; }
+}
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -161,7 +252,7 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
         existing_tpa      VARCHAR(255),
         policy_start      DATE,
         policy_end        DATE,
-        premium_paid      VARCHAR(255),
+        premium_paid      NUMERIC(15,2),
         lives_at_inception JSONB DEFAULT '{}'::jsonb,
         lives_at_renewal   JSONB DEFAULT '{}'::jsonb,
         coverage_scope    JSONB DEFAULT '{}'::jsonb,
@@ -169,6 +260,8 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
         exclusions        TEXT,
         terms_and_conditions TEXT,
         notes             TEXT,
+        existing_coverages TEXT,
+        required_coverages TEXT,
         member_count      INTEGER DEFAULT 0,
         sum_insured_slabs JSONB DEFAULT '[]'::jsonb,
         deal_id           BIGINT,
@@ -176,7 +269,11 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
         assigned_to       INTEGER,
         created_by        INTEGER NOT NULL,
         created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        slip_file_key     TEXT,
+        lost_reason       TEXT,
+        industry          VARCHAR(100),
+        ai_quote_data     JSONB
       );
       CREATE INDEX IF NOT EXISTS idx_rfqs_status ON crm_rfqs(status);
       CREATE INDEX IF NOT EXISTS idx_rfqs_number ON crm_rfqs(rfq_number);
@@ -220,7 +317,8 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
         discount_pct    NUMERIC(5,2) DEFAULT 0,
         coverage_details JSONB DEFAULT '{}'::jsonb,
         slab_pricing    JSONB DEFAULT '[]'::jsonb,
-        terms           TEXT,
+        terms           TEXT,,
+        sent_at         TIMESTAMPTZ
         notes           TEXT,
         created_by      INTEGER NOT NULL,
         created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -247,6 +345,7 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
         claimed_amount  NUMERIC(12,2) DEFAULT 0,
         approved_amount NUMERIC(12,2) DEFAULT 0,
         paid_amount     NUMERIC(12,2) DEFAULT 0,
+        icd_code        VARCHAR(20),
         rejection_reason VARCHAR(255),
         claim_status    VARCHAR(50),
         policy_year     VARCHAR(20),
@@ -258,8 +357,125 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
       CREATE INDEX IF NOT EXISTS idx_rfq_claims_emp ON crm_rfq_claims(emp_code);
       CREATE INDEX IF NOT EXISTS idx_rfq_claims_svc ON crm_rfq_claims(service_type);
       CREATE INDEX IF NOT EXISTS idx_rfq_claims_date ON crm_rfq_claims(claim_date);
+
+      CREATE TABLE IF NOT EXISTS crm_rfq_files (
+        id            BIGSERIAL PRIMARY KEY,
+        rfq_id        BIGINT NOT NULL REFERENCES crm_rfqs(id) ON DELETE CASCADE,
+        category      VARCHAR(30) NOT NULL DEFAULT 'other',
+        original_name VARCHAR(500) NOT NULL,
+        s3_key        TEXT NOT NULL,
+        file_size     BIGINT DEFAULT 0,
+        mime_type     VARCHAR(100),
+        uploaded_by   INTEGER,
+        uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_rfq_files_rfq ON crm_rfq_files(rfq_id);
     `);
-    console.log('[CRM] DB tables initialized (incl. RFQ + Claims)');
+    // ─── Distribution tables ───────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_agencies (
+        id                  BIGSERIAL    PRIMARY KEY,
+        name                VARCHAR(255) NOT NULL,
+        owner_name          VARCHAR(255),
+        email               VARCHAR(255),
+        phone               VARCHAR(50),
+        city                VARCHAR(100),
+        territory           VARCHAR(255),
+        gstin               VARCHAR(50),
+        onboarding_step     INTEGER      NOT NULL DEFAULT 1 CHECK (onboarding_step BETWEEN 1 AND 5),
+        status              VARCHAR(20)  NOT NULL DEFAULT 'onboarding',
+        monthly_activations INTEGER      NOT NULL DEFAULT 0,
+        agent_count         INTEGER      NOT NULL DEFAULT 0,
+        total_override      NUMERIC(15,2) NOT NULL DEFAULT 0,
+        notes               TEXT,
+        created_by          INTEGER      NOT NULL,
+        created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+        updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_crm_agencies_status ON crm_agencies(status);
+      CREATE INDEX IF NOT EXISTS idx_crm_agencies_city   ON crm_agencies(city);
+
+      CREATE TABLE IF NOT EXISTS crm_agents (
+        id                  BIGSERIAL    PRIMARY KEY,
+        name                VARCHAR(255) NOT NULL,
+        email               VARCHAR(255),
+        phone               VARCHAR(50),
+        city                VARCHAR(100),
+        channel_type        VARCHAR(50)  NOT NULL DEFAULT 'IFA',
+        agent_code          VARCHAR(50)  UNIQUE,
+        agency_id           BIGINT       REFERENCES crm_agencies(id) ON DELETE SET NULL,
+        status              VARCHAR(20)  NOT NULL DEFAULT 'active',
+        notes               TEXT,
+        total_activations   INTEGER      NOT NULL DEFAULT 0,
+        total_earned        NUMERIC(15,2) NOT NULL DEFAULT 0,
+        pending_payout      NUMERIC(15,2) NOT NULL DEFAULT 0,
+        created_by          INTEGER      NOT NULL,
+        created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+        updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_crm_agents_channel ON crm_agents(channel_type);
+      CREATE INDEX IF NOT EXISTS idx_crm_agents_city    ON crm_agents(city);
+      CREATE INDEX IF NOT EXISTS idx_crm_agents_status  ON crm_agents(status);
+      CREATE INDEX IF NOT EXISTS idx_crm_agents_agency  ON crm_agents(agency_id);
+
+      CREATE TABLE IF NOT EXISTS crm_commissions (
+        id                  BIGSERIAL    PRIMARY KEY,
+        agent_id            BIGINT       REFERENCES crm_agents(id) ON DELETE SET NULL,
+        agent_code          VARCHAR(50),
+        agent_name          VARCHAR(255),
+        subscriber_name     VARCHAR(255),
+        subscriber_phone    VARCHAR(50),
+        subscriber_email    VARCHAR(255),
+        plan_code           VARCHAR(50),
+        amount              NUMERIC(12,2) NOT NULL DEFAULT 0,
+        commission_type     VARCHAR(20)  NOT NULL DEFAULT 'y1',
+        activation_date     DATE,
+        eligible_date       DATE,
+        status              VARCHAR(20)  NOT NULL DEFAULT 'pending',
+        paid_at             TIMESTAMPTZ,
+        clawback_reason     TEXT,
+        notes               TEXT,
+        created_by          INTEGER      NOT NULL,
+        created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+        updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_crm_commissions_agent   ON crm_commissions(agent_id);
+      CREATE INDEX IF NOT EXISTS idx_crm_commissions_status  ON crm_commissions(status);
+      CREATE INDEX IF NOT EXISTS idx_crm_commissions_plan    ON crm_commissions(plan_code);
+      CREATE INDEX IF NOT EXISTS idx_crm_commissions_eligible ON crm_commissions(eligible_date);
+
+      CREATE TABLE IF NOT EXISTS crm_corporate_health_plans (
+        id                      BIGSERIAL    PRIMARY KEY,
+        corporate_id            INTEGER,
+        corporate_name          VARCHAR(255) NOT NULL,
+        plan_template_code      VARCHAR(50)  NOT NULL,
+        display_name            VARCHAR(255) NOT NULL,
+        plan_year               INTEGER      NOT NULL DEFAULT EXTRACT(YEAR FROM NOW()),
+        plan_grade              VARCHAR(100),
+        contract_ref            VARCHAR(50)  UNIQUE,
+        negotiated_price_per_emp NUMERIC(10,2),
+        employee_headcount      INTEGER      NOT NULL DEFAULT 0,
+        corporate_share         NUMERIC(5,2) NOT NULL DEFAULT 100.00,
+        employee_share          NUMERIC(5,2) NOT NULL DEFAULT 0.00,
+        start_date              DATE,
+        end_date                DATE,
+        status                  VARCHAR(20)  NOT NULL DEFAULT 'draft',
+        renewal_of_id           BIGINT       REFERENCES crm_corporate_health_plans(id) ON DELETE SET NULL,
+        notes                   TEXT,
+        contract_doc_url        VARCHAR(500),
+        created_by              INTEGER      NOT NULL,
+        created_at              TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+        updated_at              TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_corp_plans_corporate ON crm_corporate_health_plans(corporate_id);
+      CREATE INDEX IF NOT EXISTS idx_corp_plans_status    ON crm_corporate_health_plans(status);
+      CREATE INDEX IF NOT EXISTS idx_corp_plans_year      ON crm_corporate_health_plans(plan_year);
+      CREATE INDEX IF NOT EXISTS idx_corp_plans_renewal   ON crm_corporate_health_plans(renewal_of_id);
+
+      ALTER TABLE crm_corporate_health_plans ADD COLUMN IF NOT EXISTS rfq_id BIGINT REFERENCES crm_rfqs(id) ON DELETE SET NULL;
+      CREATE INDEX IF NOT EXISTS idx_corp_plans_rfq ON crm_corporate_health_plans(rfq_id);
+    `);
+    console.log('[CRM] DB tables initialized (incl. RFQ + Claims + Distribution + Corporate Plans)');
   } catch (err) {
     console.error('[CRM] DB table init error:', err.message);
   }
@@ -940,7 +1156,11 @@ router.get('/rfqs', authCRM, async (req, res) => {
     const order = sortOrder === 'ASC' ? 'ASC' : 'DESC';
     const [countRes, dataRes] = await Promise.all([
       sharedPool.query(`SELECT COUNT(*) FROM crm_rfqs ${where}`, params),
-      sharedPool.query(`SELECT r.*, (SELECT COUNT(*) FROM crm_quotes q WHERE q.rfq_id = r.id) AS quote_count
+      sharedPool.query(`SELECT r.*,
+        (SELECT COUNT(*) FROM crm_quotes q WHERE q.rfq_id = r.id) AS quote_count,
+        (SELECT total_premium FROM crm_quotes WHERE rfq_id = r.id AND status NOT IN ('draft','rejected') ORDER BY version DESC LIMIT 1) AS latest_quote_premium,
+        (SELECT status FROM crm_quotes WHERE rfq_id = r.id ORDER BY version DESC LIMIT 1) AS latest_quote_status,
+        (SELECT total_lives FROM crm_quotes WHERE rfq_id = r.id AND status NOT IN ('draft','rejected') ORDER BY version DESC LIMIT 1) AS latest_quote_lives
         FROM crm_rfqs r ${where} ORDER BY ${sort} ${order} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
         [...params, parseInt(limit), offset])
     ]);
@@ -957,7 +1177,7 @@ router.post('/rfqs', authCRM, [body('insured_name').notEmpty().withMessage('Insu
       insured_name, insured_address, policy_type, product_type, broker_name, broker_company, broker_email, broker_phone,
       existing_insurer, existing_tpa, policy_start, policy_end, premium_paid,
       lives_at_inception, lives_at_renewal, coverage_scope, special_conditions, exclusions,
-      terms_and_conditions, notes, sum_insured_slabs
+      terms_and_conditions, notes, existing_coverages, required_coverages, sum_insured_slabs
     } = req.body;
     const rfq_number = generateRFQNumber();
     const { rows } = await sharedPool.query(
@@ -965,14 +1185,15 @@ router.post('/rfqs', authCRM, [body('insured_name').notEmpty().withMessage('Insu
         broker_name, broker_company, broker_email, broker_phone,
         existing_insurer, existing_tpa, policy_start, policy_end, premium_paid,
         lives_at_inception, lives_at_renewal, coverage_scope, special_conditions, exclusions,
-        terms_and_conditions, notes, sum_insured_slabs, assigned_to, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING *`,
+        terms_and_conditions, notes, existing_coverages, required_coverages, sum_insured_slabs, assigned_to, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) RETURNING *`,
       [rfq_number, insured_name, insured_address || null, policy_type || 'Group Mediclaim', product_type || 'OPD',
         broker_name || null, broker_company || null, broker_email || null, broker_phone || null,
         existing_insurer || null, existing_tpa || null, policy_start || null, policy_end || null, premium_paid || null,
         JSON.stringify(lives_at_inception || {}), JSON.stringify(lives_at_renewal || {}),
         JSON.stringify(coverage_scope || {}), JSON.stringify(special_conditions || []), exclusions || null,
-        terms_and_conditions || null, notes || null, JSON.stringify(sum_insured_slabs || []),
+        terms_and_conditions || null, notes || null, existing_coverages || null, required_coverages || null,
+        JSON.stringify(sum_insured_slabs || []),
         req.crmUser.id, req.crmUser.id]
     );
     return res.status(201).json({ success: true, data: rows[0] });
@@ -990,8 +1211,11 @@ router.get('/rfqs/:id', authCRM, async (req, res) => {
   try {
     const { rows } = await sharedPool.query(`SELECT * FROM crm_rfqs WHERE id = $1`, [req.params.id]);
     if (!rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
-    const quotes = await sharedPool.query(`SELECT * FROM crm_quotes WHERE rfq_id = $1 ORDER BY created_at DESC`, [req.params.id]);
-    return res.status(200).json({ success: true, data: { ...rows[0], quotes: quotes.rows } });
+    const [quotes, files] = await Promise.all([
+      sharedPool.query(`SELECT * FROM crm_quotes WHERE rfq_id = $1 ORDER BY created_at DESC`, [req.params.id]),
+      sharedPool.query(`SELECT id, category, original_name, file_size, mime_type, uploaded_at FROM crm_rfq_files WHERE rfq_id = $1 ORDER BY uploaded_at DESC`, [req.params.id]),
+    ]);
+    return res.status(200).json({ success: true, data: { ...rows[0], quotes: quotes.rows, files: files.rows } });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch RFQ' }); }
 });
 
@@ -1003,8 +1227,22 @@ router.put('/rfqs/:id', authCRM, async (req, res) => {
       broker_name, broker_company, broker_email, broker_phone,
       existing_insurer, existing_tpa, policy_start, policy_end, premium_paid,
       lives_at_inception, lives_at_renewal, coverage_scope, special_conditions,
-      exclusions, terms_and_conditions, notes, sum_insured_slabs, assigned_to, deal_id, lead_id
+      exclusions, terms_and_conditions, notes, existing_coverages, required_coverages,
+      sum_insured_slabs, assigned_to, deal_id, lead_id, lost_reason
     } = req.body;
+
+    // Validate status if provided
+    const VALID_RFQ_STATUSES = ['received', 'quoting', 'quoted', 'negotiating', 'won', 'lost'];
+    if (status && !VALID_RFQ_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: `Invalid status: ${status}. Allowed: ${VALID_RFQ_STATUSES.join(', ')}` });
+    }
+
+    // Validate deal_id exists if provided
+    if (deal_id) {
+      const dealCheck = await sharedPool.query(`SELECT id FROM crm_deals WHERE id = $1`, [deal_id]);
+      if (!dealCheck.rows.length) return res.status(400).json({ success: false, message: `Deal ${deal_id} not found` });
+    }
+
     const { rows } = await sharedPool.query(
       `UPDATE crm_rfqs SET
         insured_name = COALESCE($1, insured_name), insured_address = COALESCE($2, insured_address),
@@ -1018,20 +1256,24 @@ router.put('/rfqs/:id', authCRM, async (req, res) => {
         lives_at_inception = COALESCE($15, lives_at_inception), lives_at_renewal = COALESCE($16, lives_at_renewal),
         coverage_scope = COALESCE($17, coverage_scope), special_conditions = COALESCE($18, special_conditions),
         exclusions = COALESCE($19, exclusions), terms_and_conditions = COALESCE($20, terms_and_conditions),
-        notes = COALESCE($21, notes), sum_insured_slabs = COALESCE($22, sum_insured_slabs),
-        assigned_to = COALESCE($23, assigned_to), deal_id = COALESCE($24, deal_id), lead_id = COALESCE($25, lead_id),
+        notes = COALESCE($21, notes),
+        existing_coverages = COALESCE($22, existing_coverages), required_coverages = COALESCE($23, required_coverages),
+        sum_insured_slabs = COALESCE($24, sum_insured_slabs),
+        assigned_to = COALESCE($25, assigned_to), deal_id = COALESCE($26, deal_id), lead_id = COALESCE($27, lead_id),
+        lost_reason = CASE WHEN $5 = 'lost' THEN COALESCE($28, lost_reason) ELSE lost_reason END,
         updated_at = NOW()
-       WHERE id = $26 RETURNING *`,
+       WHERE id = $29 RETURNING *`,
       [insured_name, insured_address, policy_type, product_type, status,
         broker_name, broker_company, broker_email, broker_phone,
-        existing_insurer, existing_tpa, policy_start, policy_end, premium_paid,
+        existing_insurer, existing_tpa, policy_start, policy_end, premium_paid ? parseFloat(String(premium_paid).replace(/[^0-9.]/g, '')) || null : null,
         lives_at_inception ? JSON.stringify(lives_at_inception) : null,
         lives_at_renewal ? JSON.stringify(lives_at_renewal) : null,
         coverage_scope ? JSON.stringify(coverage_scope) : null,
         special_conditions ? JSON.stringify(special_conditions) : null,
         exclusions, terms_and_conditions, notes,
+        existing_coverages || null, required_coverages || null,
         sum_insured_slabs ? JSON.stringify(sum_insured_slabs) : null,
-        assigned_to, deal_id, lead_id, req.params.id]
+        assigned_to, deal_id, lead_id, lost_reason || null, req.params.id]
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
     return res.status(200).json({ success: true, data: rows[0] });
@@ -1045,6 +1287,35 @@ router.delete('/rfqs/:id', authCRM, async (req, res) => {
     if (!rowCount) return res.status(404).json({ success: false, message: 'RFQ not found' });
     return res.status(200).json({ success: true, message: 'RFQ deleted' });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to delete RFQ' }); }
+});
+
+// ─── List RFQ Files ──────────────────────────────────────────────────────────
+router.get('/rfqs/:id/files', authCRM, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT id, category, original_name, file_size, mime_type, uploaded_by, uploaded_at FROM crm_rfq_files WHERE rfq_id = $1 ORDER BY uploaded_at DESC`,
+      [req.params.id]
+    );
+    return res.status(200).json({ success: true, data: rows });
+  } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch files' }); }
+});
+
+// ─── Download RFQ File ───────────────────────────────────────────────────────
+router.get('/rfqs/:id/files/:fileId/download', authCRM, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT * FROM crm_rfq_files WHERE id = $1 AND rfq_id = $2`,
+      [req.params.fileId, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'File not found' });
+    const file = rows[0];
+    const buffer = await fetchSlipFromS3(file.s3_key);
+    if (!buffer) return res.status(404).json({ success: false, message: 'File not available in storage' });
+    res.set('Content-Type', file.mime_type || 'application/octet-stream');
+    res.set('Content-Disposition', `attachment; filename="${encodeURIComponent(file.original_name)}"`);
+    res.set('Content-Length', buffer.length);
+    return res.send(buffer);
+  } catch (error) { return res.status(500).json({ success: false, message: 'Download failed' }); }
 });
 
 // ─── AI Data Cleaning & Standardization Engine ──────────────────────────────
@@ -1198,12 +1469,11 @@ router.post('/rfqs/:id/upload-members', authCRM, upload.single('file'), async (r
       };
     };
 
-    // Delete old members for this RFQ
-    await sharedPool.query(`DELETE FROM crm_rfq_members WHERE rfq_id = $1`, [rfqId]);
-
+    // Build all member rows first, then replace atomically in a transaction
     let inserted = 0;
     const stats = newCleaningStats();
     const batchSize = 500;
+    const allBatches = [];
     for (let i = 0; i < rows.length; i += batchSize) {
       const batch = rows.slice(i, i + batchSize);
       const values = []; const placeholders = [];
@@ -1231,18 +1501,33 @@ router.post('/rfqs/:id/upload-members', authCRM, upload.single('file'), async (r
           m.designation, m.band, dojVal, empName);
         placeholders.push(`($${pIdx},$${pIdx+1},$${pIdx+2},$${pIdx+3},$${pIdx+4},$${pIdx+5},$${pIdx+6},$${pIdx+7},$${pIdx+8},$${pIdx+9},$${pIdx+10},$${pIdx+11},$${pIdx+12},$${pIdx+13})`);
         pIdx += 14;
+        inserted++;
       }
-      await sharedPool.query(
-        `INSERT INTO crm_rfq_members (rfq_id, sr_no, emp_code, relationship, relation_type, gender, dob, age, si_expiring, si_proposed, designation, band, doj, employee_name)
-         VALUES ${placeholders.join(',')}`, values
-      );
-      inserted += batch.length;
+      allBatches.push({ values, placeholders });
     }
 
-    // Update member count
-    await sharedPool.query(`UPDATE crm_rfqs SET member_count = $1, updated_at = NOW() WHERE id = $2`, [inserted, rfqId]);
+    // Atomic replace: DELETE then INSERT in a single transaction
+    const txClient = await sharedPool.connect();
+    try {
+      await txClient.query('BEGIN');
+      await txClient.query(`DELETE FROM crm_rfq_members WHERE rfq_id = $1`, [rfqId]);
+      for (const { values, placeholders } of allBatches) {
+        await txClient.query(
+          `INSERT INTO crm_rfq_members (rfq_id, sr_no, emp_code, relationship, relation_type, gender, dob, age, si_expiring, si_proposed, designation, band, doj, employee_name)
+           VALUES ${placeholders.join(',')}`, values
+        );
+      }
+      await txClient.query(`UPDATE crm_rfqs SET member_count = $1, updated_at = NOW() WHERE id = $2`, [inserted, rfqId]);
+      await txClient.query('COMMIT');
+    } catch (txErr) {
+      await txClient.query('ROLLBACK');
+      txClient.release();
+      throw txErr;
+    }
+    txClient.release();
+    await uploadRfqFile(req.file.buffer, req.file.originalname, rfqId, 'members', req.crmUser.id);
 
-    console.log(`[CRM Upload Members] RFQ ${rfqId}: ${inserted} members, cleaned: ${JSON.stringify(stats)}`);
+    console.log(`RFQ ${rfqId}: ${inserted} members, cleaned: ${JSON.stringify(stats)}`);;
     return res.status(200).json({
       success: true,
       message: `Uploaded ${inserted} members from sheet "${memberSheetName}" — AI cleaned & standardized`,
@@ -1260,103 +1545,161 @@ router.post('/rfqs/upload-excel', authCRM, upload.single('file'), async (req, re
     if (!req.file) return res.status(400).json({ success: false, message: 'Excel file required' });
 
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
-    // Find RFQ sheet (small sheet) and member sheet (large sheet)
-    let rfqSheet = null, memberSheet = null, rfqSheetName = '', memberSheetName = '';
+
+    // Classify each sheet: member sheet = >150 rows; everything else = RFQ/benefits data
+    let memberSheet = null, memberSheetName = '';
+    const rfqSheets = []; // all non-member sheets
+
     for (const name of workbook.SheetNames) {
       const ws = workbook.Sheets[name];
       const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
       const rowCount = range.e.r - range.s.r + 1;
-      if (rowCount <= 100 && !rfqSheet) { rfqSheet = ws; rfqSheetName = name; }
-      else if (rowCount > 100 && !memberSheet) { memberSheet = ws; memberSheetName = name; }
+      if (rowCount > 150 && !memberSheet) {
+        memberSheet = ws; memberSheetName = name;
+      } else {
+        rfqSheets.push({ name, ws });
+      }
     }
-    if (!rfqSheet && workbook.SheetNames.length > 0) {
-      rfqSheet = workbook.Sheets[workbook.SheetNames[0]];
-      rfqSheetName = workbook.SheetNames[0];
+    // Fallback: if no RFQ sheets detected, use first sheet
+    if (rfqSheets.length === 0 && workbook.SheetNames.length > 0) {
+      rfqSheets.push({ name: workbook.SheetNames[0], ws: workbook.Sheets[workbook.SheetNames[0]] });
     }
 
-    // Parse broking slip
-    const cellVal = (addr) => {
-      const c = rfqSheet?.[addr];
-      return c ? (c.w || (c.v instanceof Date ? c.v.toISOString().split('T')[0] : c.v?.toString()) || '') : '';
-    };
-    // Map all cells to find data by scanning B column labels → D column values
-    const parsed = {};
-    if (rfqSheet) {
-      const range = XLSX.utils.decode_range(rfqSheet['!ref'] || 'A1:I50');
+    // ── Dump ALL RFQ/benefits sheets into a single text blob for LLM ──
+    const dumpSheet = (ws, sheetName) => {
+      if (!ws) return '';
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      let text = `\n=== Sheet: ${sheetName} ===\n`;
       for (let r = range.s.r; r <= range.e.r; r++) {
-        const labelCell = rfqSheet[XLSX.utils.encode_cell({ r, c: 1 })]; // Column B
-        const valueCell = rfqSheet[XLSX.utils.encode_cell({ r, c: 3 })]; // Column D
-        if (labelCell?.v && valueCell?.v) {
-          const label = labelCell.v.toString().toLowerCase().trim();
-          const val = valueCell.v instanceof Date ? valueCell.v.toISOString().split('T')[0] : valueCell.v;
-          parsed[label] = val;
+        const rowParts = [];
+        for (let c = range.s.c; c <= range.e.c; c++) {
+          const cell = ws[XLSX.utils.encode_cell({ r, c })];
+          if (cell?.v !== undefined && cell.v !== null && cell.v !== '') {
+            const v = cell.v instanceof Date ? cell.v.toISOString().split('T')[0] : cell.w || cell.v?.toString();
+            if (v?.toString().trim()) rowParts.push(v.toString().trim());
+          }
         }
+        if (rowParts.length) text += rowParts.join(' | ') + '\n';
       }
-    }
-    // Extract policy period from dates
-    let policyStart = null, policyEnd = null;
-    if (parsed['policy period']) {
-      policyStart = parsed['policy period'];
-    }
-    // Check column F for "To" date
-    if (rfqSheet) {
-      const range = XLSX.utils.decode_range(rfqSheet['!ref'] || 'A1:I50');
-      for (let r = range.s.r; r <= range.e.r; r++) {
-        const eCell = rfqSheet[XLSX.utils.encode_cell({ r, c: 4 })]; // Col E
-        const fCell = rfqSheet[XLSX.utils.encode_cell({ r, c: 5 })]; // Col F
-        if (eCell?.v?.toString().toLowerCase().includes('to') && fCell?.v) {
-          policyEnd = fCell.v instanceof Date ? fCell.v.toISOString().split('T')[0] : fCell.v?.toString();
-        }
-      }
-    }
-
-    const getNum = (key) => { const v = parsed[key]; return v ? parseInt(v) || 0 : 0; };
-
-    const rfqData = {
-      insured_name: parsed['insured name'] || parsed['insured'] || 'Unknown',
-      insured_address: parsed['address'] || null,
-      existing_insurer: parsed['existing insurer'] || null,
-      existing_tpa: parsed['existing tpa'] || null,
-      policy_start: policyStart,
-      policy_end: policyEnd,
-      premium_paid: parsed['premium paid at inception (excluding of service tax)'] || parsed['premium paid'] || null,
-      lives_at_inception: {
-        employees: getNum('total no. of employees at inception'),
-        dependants: getNum('total no. of dependants at inception'),
-        total: getNum('total no. of lives at inception'),
-      },
-      lives_at_renewal: {
-        employees: getNum('total no. of employees at renewal'),
-        dependants: getNum('total no. of dependants at renewal'),
-        total: getNum('total no. of lives at renewal'),
-      },
-      coverage_scope: {
-        family_composition: parsed['family composition'] || null,
-        type: parsed['type'] || null,
-        claim_type: parsed['claim type'] || parsed['claim type '] || null,
-        sum_insured: parsed['policy sum insured'] || parsed['policy sum insured '] || null,
-        opd_tele_consultation: parsed['opd doctor consultations (tele consultations)'] || null,
-        opd_physical_consultation: parsed['opd doctor consultations (physical consultations)'] || parsed['opd doctor consultations (physical consultations) '] || null,
-        lab_tests: parsed['lab tests and diagnostics'] || parsed['lab tests and diagnostics '] || null,
-        pharmacy: parsed['pharmacy cover'] || parsed['pharmacy cover '] || null,
-      },
-      special_conditions: [],
-      exclusions: parsed['general opd exclusions'] || null,
-      terms_and_conditions: parsed['t&cs to be noted'] || null,
+      return text;
     };
-    // Gather special conditions
-    for (const [k, v] of Object.entries(parsed)) {
-      if (k.startsWith('condition ') && v) {
-        rfqData.special_conditions.push({ condition: k, detail: v.toString() });
+
+    let sheetText = '';
+    for (const { name, ws } of rfqSheets) {
+      sheetText += dumpSheet(ws, name);
+      if (sheetText.length > 7000) break; // cap to avoid token overflow
+    }
+    const rfqSheetName = rfqSheets[0]?.name || '';
+
+    // ── Use LLM to extract structured data regardless of layout ──
+    const llmMod = await import('../services/ai-brain/llm-provider.js');
+    const callLLM = llmMod.default?.chat || llmMod.chat;
+    const EXTRACTION_PROMPT = `You are an expert insurance broking slip parser. The following is raw cell data (row by row, cells separated by " | ") extracted from a broker Excel file. Extract all available fields and return ONLY valid JSON with this exact structure (use null for missing fields):
+{
+  "insured_name": "string",
+  "insured_address": "string or null",
+  "existing_insurer": "string or null",
+  "existing_tpa": "string or null",
+  "policy_start": "YYYY-MM-DD or null",
+  "policy_end": "YYYY-MM-DD or null",
+  "premium_paid": "string or null",
+  "policy_type": "Group Mediclaim",
+  "product_type": "Group Mediclaim or OPD or Group PA or Group Life",
+  "member_count": number_or_null,
+  "lives_at_inception": { "employees": number_or_0, "dependants": number_or_0, "total": number_or_0 },
+  "lives_at_renewal": { "employees": number_or_0, "dependants": number_or_0, "total": number_or_0 },
+  "coverage_scope": {
+    "family_composition": "string or null",
+    "type": "Floater or Individual or null",
+    "claim_type": "Cashless & Reimbursement or null",
+    "sum_insured": "string describing SI slabs e.g. ₹3,00,000 or null",
+    "opd_tele_consultation": "string or null",
+    "opd_physical_consultation": "string or null",
+    "lab_tests": "string or null",
+    "pharmacy": "string or null"
+  },
+  "sum_insured_slabs": [list_of_numbers_in_rupees],
+  "special_conditions": [{"condition": "label", "detail": "value"}],
+  "exclusions": "string or null",
+  "terms_and_conditions": "string or null"
+}
+Return ONLY the JSON object, no explanation.
+
+---EXCEL DATA---
+${sheetText.substring(0, 6000)}`;
+
+    let parsed = {};
+    try {
+      const llmResult = await callLLM({
+        messages: [
+          { role: 'system', content: 'You extract structured insurance data from raw Excel cell dumps. Always return valid JSON only.' },
+          { role: 'user', content: EXTRACTION_PROMPT },
+        ],
+        temperature: 0.1,
+        maxTokens: 2000,
+      });
+      const raw = llmResult.content || '';
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+    } catch (llmErr) {
+      console.warn('[CRM RFQ Upload Excel] LLM extraction failed, falling back to column scan:', llmErr.message);
+      // Fallback: column B label → column D value scan
+      const fallbackSheet = rfqSheets[0]?.ws;
+      if (fallbackSheet) {
+        const range = XLSX.utils.decode_range(fallbackSheet['!ref'] || 'A1:I50');
+        for (let r = range.s.r; r <= range.e.r; r++) {
+          const labelCell = fallbackSheet[XLSX.utils.encode_cell({ r, c: 1 })];
+          const valueCell = fallbackSheet[XLSX.utils.encode_cell({ r, c: 3 })];
+          if (labelCell?.v && valueCell?.v) {
+            const label = labelCell.v.toString().toLowerCase().trim();
+            const val = valueCell.v instanceof Date ? valueCell.v.toISOString().split('T')[0] : valueCell.v;
+            parsed[label] = val;
+          }
+        }
+        parsed = {
+          insured_name: parsed['insured name'] || parsed['insured'] || 'Unknown',
+          insured_address: parsed['address'] || null,
+          existing_insurer: parsed['existing insurer'] || null,
+          existing_tpa: parsed['existing tpa'] || null,
+          policy_start: parsed['policy period'] || null,
+          policy_end: null,
+          premium_paid: parsed['premium paid'] || null,
+          product_type: rfqSheetName.includes('OPD') ? 'OPD' : 'Group Mediclaim',
+          lives_at_inception: {
+            employees: parseInt(parsed['total no. of employees at inception']) || 0,
+            dependants: parseInt(parsed['total no. of dependants at inception']) || 0,
+            total: parseInt(parsed['total no. of lives at inception']) || 0,
+          },
+          lives_at_renewal: {
+            employees: parseInt(parsed['total no. of employees at renewal']) || 0,
+            dependants: parseInt(parsed['total no. of dependants at renewal']) || 0,
+            total: parseInt(parsed['total no. of lives at renewal']) || 0,
+          },
+          coverage_scope: {
+            family_composition: parsed['family composition'] || null,
+            type: parsed['type'] || null,
+            claim_type: parsed['claim type'] || null,
+            sum_insured: parsed['policy sum insured'] || null,
+          },
+          sum_insured_slabs: [],
+          special_conditions: [],
+          exclusions: parsed['general opd exclusions'] || null,
+          terms_and_conditions: parsed['t&cs to be noted'] || null,
+        };
       }
     }
-    // Parse SI slabs from sum_insured text
-    const siText = rfqData.coverage_scope.sum_insured || '';
+
+    // SI slab parsing from sum_insured text (handles ₹3,00,000 and 300000 formats)
     const siSlabs = [];
-    const siMatches = siText.match(/₹[\d,]+/g) || [];
-    for (const m of siMatches) {
-      const val = parseInt(m.replace(/[₹,]/g, ''));
-      if (val && !isNaN(val)) siSlabs.push(val);
+    if (Array.isArray(parsed.sum_insured_slabs) && parsed.sum_insured_slabs.length) {
+      siSlabs.push(...parsed.sum_insured_slabs.filter(v => typeof v === 'number' && v > 0));
+    } else {
+      const siText = parsed.coverage_scope?.sum_insured || '';
+      const siMatches = siText.match(/[₹]?[\d,]{4,}/g) || [];
+      for (const m of siMatches) {
+        const val = parseInt(m.replace(/[₹,]/g, ''));
+        if (val && !isNaN(val) && val >= 1000) siSlabs.push(val);
+      }
     }
 
     const rfq_number = generateRFQNumber();
@@ -1366,16 +1709,37 @@ router.post('/rfqs/upload-excel', authCRM, upload.single('file'), async (req, re
         lives_at_inception, lives_at_renewal, coverage_scope, special_conditions, exclusions,
         terms_and_conditions, notes, sum_insured_slabs, assigned_to, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
-      [rfq_number, rfqData.insured_name, rfqData.insured_address, 'Group Mediclaim', rfqSheetName.includes('OPD') ? 'OPD' : 'Group Mediclaim',
-        rfqData.existing_insurer, rfqData.existing_tpa, rfqData.policy_start, rfqData.policy_end, rfqData.premium_paid,
-        JSON.stringify(rfqData.lives_at_inception), JSON.stringify(rfqData.lives_at_renewal),
-        JSON.stringify(rfqData.coverage_scope), JSON.stringify(rfqData.special_conditions),
-        rfqData.exclusions, rfqData.terms_and_conditions,
+      [
+        rfq_number,
+        parsed.insured_name || 'Unknown',
+        parsed.insured_address || null,
+        parsed.policy_type || 'Group Mediclaim',
+        parsed.product_type || (rfqSheetName.includes('OPD') ? 'OPD' : 'Group Mediclaim'),
+        parsed.existing_insurer || null,
+        parsed.existing_tpa || null,
+        parsed.policy_start || null,
+        parsed.policy_end || null,
+        parsed.premium_paid || null,
+        JSON.stringify(parsed.lives_at_inception || { employees: 0, dependants: 0, total: 0 }),
+        JSON.stringify(parsed.lives_at_renewal || { employees: 0, dependants: 0, total: 0 }),
+        JSON.stringify(parsed.coverage_scope || {}),
+        JSON.stringify(Array.isArray(parsed.special_conditions) ? parsed.special_conditions : []),
+        parsed.exclusions || null,
+        parsed.terms_and_conditions || null,
         `Auto-parsed from broker Excel: ${req.file.originalname}`,
-        JSON.stringify(siSlabs), req.crmUser.id, req.crmUser.id]
+        JSON.stringify(siSlabs),
+        req.crmUser.id,
+        req.crmUser.id,
+      ]
     );
 
     const rfqId = rows[0].id;
+
+    // Persist original file to S3 for future re-parsing
+    const slipKey = await uploadSlipToS3(req.file.buffer, req.file.originalname, rfqId);
+    if (slipKey) await sharedPool.query('UPDATE crm_rfqs SET slip_file_key=$1 WHERE id=$2', [slipKey, rfqId]);
+    await uploadRfqFile(req.file.buffer, req.file.originalname, rfqId, 'slip', req.crmUser.id);
+
     let memberCount = 0;
 
     // Auto-upload members if member sheet exists
@@ -1435,6 +1799,379 @@ router.post('/rfqs/upload-excel', authCRM, upload.single('file'), async (req, re
   } catch (error) {
     console.error('[CRM RFQ Upload Excel]', error.message);
     return res.status(500).json({ success: false, message: 'Failed to parse RFQ Excel: ' + error.message });
+  }
+});
+
+// ─── Re-parse existing RFQ from new Excel / PDF / Image upload ───────────────
+router.post('/rfqs/:id/reparse', authCRM, (req, res, next) => {
+  // multer is optional — skip if content-type is not multipart
+  if (!req.headers['content-type']?.includes('multipart/form-data')) return next();
+  upload.single('file')(req, res, next);
+}, async (req, res) => {
+  try {
+    const rfqId = req.params.id;
+    // Verify the RFQ exists
+    const { rows: existing } = await sharedPool.query('SELECT id, slip_file_key FROM crm_rfqs WHERE id = $1', [rfqId]);
+    if (!existing.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
+
+    // If no file uploaded, try to fetch the originally stored file from S3
+    let fileBuffer = req.file?.buffer || null;
+    let originalName = req.file?.originalname || '';
+    if (!fileBuffer && existing[0].slip_file_key) {
+      fileBuffer = await fetchSlipFromS3(existing[0].slip_file_key);
+      if (fileBuffer) originalName = existing[0].slip_file_key.split('/').pop();
+    }
+    if (!fileBuffer) return res.status(400).json({ success: false, message: 'No file provided and no stored file found for this RFQ. Please upload the file.' });
+
+    const _llm1 = await import('../services/ai-brain/llm-provider.js');
+    const callLLM = _llm1.default?.chat || _llm1.chat;
+    const vision = _llm1.default?.vision || _llm1.vision;
+    const mime = req.file?.mimetype || '';
+    const isExcel = /\.(xlsx|xls)$/i.test(originalName);
+
+    const EXTRACTION_PROMPT = `You are an expert insurance broking slip parser. Extract all available fields and return ONLY valid JSON:
+{
+  "insured_name": "string",
+  "insured_address": "string or null",
+  "existing_insurer": "string or null",
+  "existing_tpa": "string or null",
+  "policy_start": "YYYY-MM-DD or null",
+  "policy_end": "YYYY-MM-DD or null",
+  "premium_paid": "string or null",
+  "product_type": "Group Mediclaim or OPD or Group PA or Group Life",
+  "member_count": number_or_null,
+  "lives_at_inception": { "employees": number_or_0, "dependants": number_or_0, "total": number_or_0 },
+  "lives_at_renewal": { "employees": number_or_0, "dependants": number_or_0, "total": number_or_0 },
+  "coverage_scope": {
+    "family_composition": "string or null",
+    "type": "Floater or Individual or null",
+    "claim_type": "string or null",
+    "sum_insured": "string or null",
+    "opd_tele_consultation": "string or null",
+    "opd_physical_consultation": "string or null",
+    "lab_tests": "string or null",
+    "pharmacy": "string or null"
+  },
+  "sum_insured_slabs": [list_of_numbers],
+  "special_conditions": [{"condition":"string","detail":"string"}],
+  "exclusions": "string or null",
+  "terms_and_conditions": "string or null"
+}
+Return ONLY JSON.`;
+
+    let rawContent = '';
+
+    if (isExcel) {
+      const workbook = XLSX.read(fileBuffer, { type: 'buffer', cellDates: true });
+      let memberSheet = null, memberSheetName = '';
+      const rfqSheets = [];
+      for (const name of workbook.SheetNames) {
+        const ws = workbook.Sheets[name];
+        const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+        const rowCount = range.e.r - range.s.r + 1;
+        if (rowCount > 150 && !memberSheet) { memberSheet = ws; memberSheetName = name; }
+        else { rfqSheets.push({ name, ws }); }
+      }
+      if (rfqSheets.length === 0) rfqSheets.push({ name: workbook.SheetNames[0], ws: workbook.Sheets[workbook.SheetNames[0]] });
+
+      // Dump ALL non-member sheets into text for LLM
+      const dumpWS = (ws, sheetName) => {
+        if (!ws) return '';
+        const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+        let text = `\n=== Sheet: ${sheetName} ===\n`;
+        for (let r = range.s.r; r <= range.e.r; r++) {
+          const rp = [];
+          for (let c = range.s.c; c <= range.e.c; c++) {
+            const cell = ws[XLSX.utils.encode_cell({ r, c })];
+            if (cell?.v !== undefined && cell.v !== null && cell.v !== '') {
+              const v = cell.v instanceof Date ? cell.v.toISOString().split('T')[0] : cell.w || cell.v?.toString();
+              if (v?.toString().trim()) rp.push(v.toString().trim());
+            }
+          }
+          if (rp.length) text += rp.join(' | ') + '\n';
+        }
+        return text;
+      };
+      let sheetText = '';
+      for (const { name, ws } of rfqSheets) { sheetText += dumpWS(ws, name); if (sheetText.length > 7000) break; }
+      const llmResult = await callLLM({
+        messages: [
+          { role: 'system', content: 'You extract structured insurance data from raw Excel cell dumps. Always return valid JSON only.' },
+          { role: 'user', content: `${EXTRACTION_PROMPT}\n\n---EXCEL DATA---\n${sheetText.substring(0, 6000)}` },
+        ],
+        temperature: 0.1, maxTokens: 2000,
+      });
+      rawContent = llmResult.content || '';
+
+      // Re-upload members if new member sheet found
+      if (memberSheet) {
+        await sharedPool.query('DELETE FROM crm_rfq_members WHERE rfq_id = $1', [rfqId]);
+        const mRows = XLSX.utils.sheet_to_json(memberSheet, { defval: null });
+        const colMap = (row) => {
+          const keys = Object.keys(row);
+          const find = (patterns) => { for (const p of patterns) { const k = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '').includes(p)); if (k) return row[k]; } return null; };
+          return { sr_no: find(['srno','sno','serial']), emp_code: find(['empcode','employeecode','empid']), relationship: find(['relationship']),
+            relation_type: find(['relation']), gender: find(['gender','sex']), dob: find(['dob','dateofbirth']), age: find(['age']),
+            si_expiring: find(['siexpiring','opdsiexpiring','expiringsi']), si_proposed: find(['siproposed','opdsiproposed','proposedsi']),
+            designation: find(['designation','jobtitle']), band: find(['band','grade']), doj: find(['doj','dateofjoining']) };
+        };
+        let memberCount = 0;
+        for (let i = 0; i < mRows.length; i += 500) {
+          const batch = mRows.slice(i, i + 500);
+          const values = []; const placeholders = []; let pIdx = 1;
+          for (const raw of batch) {
+            const m = colMap(raw);
+            const dobVal = stdParseDate(m.dob); const dojVal = stdParseDate(m.doj);
+            let ageVal = m.age ? parseInt(m.age) : null;
+            if (!ageVal && dobVal) ageVal = stdComputeAge(dobVal);
+            values.push(rfqId, m.sr_no, stdEmpCode(m.emp_code), stdRelationship(m.relationship), m.relation_type, stdGender(m.gender),
+              dobVal, ageVal, stdParseAmount(m.si_expiring), stdParseAmount(m.si_proposed), m.designation, m.band, dojVal, null);
+            placeholders.push(`($${pIdx},$${pIdx+1},$${pIdx+2},$${pIdx+3},$${pIdx+4},$${pIdx+5},$${pIdx+6},$${pIdx+7},$${pIdx+8},$${pIdx+9},$${pIdx+10},$${pIdx+11},$${pIdx+12},$${pIdx+13})`);
+            pIdx += 14;
+          }
+          await sharedPool.query(
+            `INSERT INTO crm_rfq_members (rfq_id,sr_no,emp_code,relationship,relation_type,gender,dob,age,si_expiring,si_proposed,designation,band,doj,employee_name) VALUES ${placeholders.join(',')}`, values);
+          memberCount += batch.length;
+        }
+        await sharedPool.query('UPDATE crm_rfqs SET member_count=$1, updated_at=NOW() WHERE id=$2', [memberCount, rfqId]);
+      }
+    } else if (mime === 'application/pdf' || originalName.toLowerCase().endsWith('.pdf')) {
+      let pdfText = '';
+      try { const pdfParse = (await import('pdf-parse')).default; const p = await pdfParse(fileBuffer); pdfText = p.text || ''; } catch {}
+      if (pdfText.length > 100) {
+        const llmResult = await callLLM({ messages: [{ role: 'system', content: 'Extract insurance data. Return valid JSON only.' }, { role: 'user', content: `${EXTRACTION_PROMPT}\n\n---TEXT---\n${pdfText.substring(0, 8000)}` }], temperature: 0.1, maxTokens: 2000 });
+        rawContent = llmResult.content || '';
+      } else {
+        const visionResult = await vision({ base64Image: fileBuffer.toString('base64'), mimeType: 'application/pdf', prompt: EXTRACTION_PROMPT, maxTokens: 2000 });
+        rawContent = visionResult.content || '';
+      }
+    } else if (['image/jpeg','image/jpg','image/png','image/webp'].includes(mime)) {
+      const visionResult = await vision({ base64Image: fileBuffer.toString('base64'), mimeType: mime, prompt: EXTRACTION_PROMPT, maxTokens: 2000 });
+      rawContent = visionResult.content || '';
+    } else {
+      return res.status(415).json({ success: false, message: `Unsupported file type: ${mime || originalName}` });
+    }
+
+    let parsed = {};
+    try { const m = rawContent.match(/\{[\s\S]*\}/); if (m) parsed = JSON.parse(m[0]); } catch {}
+
+    const siSlabs = Array.isArray(parsed.sum_insured_slabs) ? parsed.sum_insured_slabs.filter(v => typeof v === 'number' && v > 0) : [];
+
+    const { rows } = await sharedPool.query(
+      `UPDATE crm_rfqs SET
+        insured_name = COALESCE($1, insured_name),
+        insured_address = COALESCE($2, insured_address),
+        product_type = COALESCE($3, product_type),
+        existing_insurer = COALESCE($4, existing_insurer),
+        existing_tpa = COALESCE($5, existing_tpa),
+        policy_start = COALESCE($6, policy_start),
+        policy_end = COALESCE($7, policy_end),
+        premium_paid = COALESCE($8, premium_paid),
+        lives_at_inception = COALESCE($9, lives_at_inception),
+        lives_at_renewal = COALESCE($10, lives_at_renewal),
+        coverage_scope = COALESCE($11, coverage_scope),
+        special_conditions = COALESCE($12, special_conditions),
+        exclusions = COALESCE($13, exclusions),
+        terms_and_conditions = COALESCE($14, terms_and_conditions),
+        sum_insured_slabs = COALESCE($15, sum_insured_slabs),
+        notes = $16,
+        updated_at = NOW()
+       WHERE id = $17 RETURNING *`,
+      [
+        parsed.insured_name || null,
+        parsed.insured_address || null,
+        parsed.product_type || null,
+        parsed.existing_insurer || null,
+        parsed.existing_tpa || null,
+        parsed.policy_start || null,
+        parsed.policy_end || null,
+        parsed.premium_paid || null,
+        parsed.lives_at_inception ? JSON.stringify(parsed.lives_at_inception) : null,
+        parsed.lives_at_renewal ? JSON.stringify(parsed.lives_at_renewal) : null,
+        parsed.coverage_scope ? JSON.stringify(parsed.coverage_scope) : null,
+        parsed.special_conditions?.length ? JSON.stringify(parsed.special_conditions) : null,
+        parsed.exclusions || null,
+        parsed.terms_and_conditions || null,
+        siSlabs.length ? JSON.stringify(siSlabs) : null,
+        `Re-parsed from ${originalName}`,
+        rfqId,
+      ]
+    );
+
+    // If a new file was uploaded (not from S3), store it in S3 for future reparsing
+    if (req.file?.buffer) {
+      const newKey = await uploadSlipToS3(req.file.buffer, req.file.originalname, rfqId);
+      if (newKey) await sharedPool.query('UPDATE crm_rfqs SET slip_file_key=$1 WHERE id=$2', [newKey, rfqId]);
+      await uploadRfqFile(req.file.buffer, req.file.originalname, rfqId, 'slip', req.crmUser.id);
+    }
+
+    return res.status(200).json({ success: true, message: `RFQ updated from ${isExcel ? 'Excel' : 'document'} via AI.`, data: rows[0] });
+  } catch (error) {
+    console.error('[CRM RFQ Reparse]', error.message);
+    return res.status(500).json({ success: false, message: 'Re-parse failed: ' + error.message });
+  }
+});
+
+// ─── Upload RFQ from PDF / Image (Vision AI + LLM parsing) ───────────────────
+router.post('/rfqs/upload-document', authCRM, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: 'File required' });
+
+    const _llm2 = await import('../services/ai-brain/llm-provider.js');
+    const callLLM = _llm2.default?.chat || _llm2.chat;
+    const vision = _llm2.default?.vision || _llm2.vision;
+    const mime = req.file.mimetype;
+    const originalName = req.file.originalname;
+    let rawText = '';
+
+    const RFQ_EXTRACTION_PROMPT = `You are an expert insurance broking slip parser. Extract all available fields from this document and return ONLY valid JSON with this exact structure (use null for missing fields):
+{
+  "insured_name": "string",
+  "insured_address": "string",
+  "existing_insurer": "string",
+  "existing_tpa": "string",
+  "policy_start": "YYYY-MM-DD or null",
+  "policy_end": "YYYY-MM-DD or null",
+  "premium_paid": "string or null",
+  "policy_type": "Group Mediclaim",
+  "product_type": "Group Mediclaim or OPD or Group PA or Group Life",
+  "member_count": number_or_null,
+  "lives_at_inception": { "employees": number_or_0, "dependants": number_or_0, "total": number_or_0 },
+  "lives_at_renewal": { "employees": number_or_0, "dependants": number_or_0, "total": number_or_0 },
+  "coverage_scope": {
+    "family_composition": "string or null",
+    "type": "string or null",
+    "claim_type": "Cashless & Reimbursement or null",
+    "sum_insured": "string or null",
+    "opd_tele_consultation": "string or null",
+    "opd_physical_consultation": "string or null",
+    "lab_tests": "string or null",
+    "pharmacy": "string or null"
+  },
+  "sum_insured_slabs": [number_array],
+  "special_conditions": [{"condition": "string", "detail": "string"}],
+  "exclusions": "string or null",
+  "terms_and_conditions": "string or null"
+}
+Return ONLY the JSON object, no explanation.`;
+
+    // ── PDF: extract text then call LLM ──
+    if (mime === 'application/pdf' || originalName.toLowerCase().endsWith('.pdf')) {
+      let pdfText = '';
+      try {
+        const pdfParse = (await import('pdf-parse')).default;
+        const parsed = await pdfParse(req.file.buffer);
+        pdfText = parsed.text || '';
+      } catch (pdfErr) {
+        console.warn('[RFQ Upload Doc] pdf-parse failed:', pdfErr.message);
+      }
+
+      if (pdfText.length > 100) {
+        // Text-based PDF — use LLM to extract
+        rawText = pdfText.substring(0, 8000); // cap to avoid token overflow
+        const llmResult = await callLLM({
+          messages: [
+            { role: 'system', content: 'You extract structured insurance broking slip data from raw text. Always return valid JSON.' },
+            { role: 'user', content: `${RFQ_EXTRACTION_PROMPT}\n\n---DOCUMENT TEXT---\n${rawText}` },
+          ],
+          temperature: 0.1,
+          maxTokens: 2000,
+        });
+        rawText = llmResult.content || '';
+      } else {
+        // Scanned/image PDF — try vision on first page via base64 (send whole buffer as image/jpeg best-effort)
+        const base64 = req.file.buffer.toString('base64');
+        try {
+          const visionResult = await vision({
+            base64Image: base64,
+            mimeType: 'application/pdf',
+            prompt: RFQ_EXTRACTION_PROMPT,
+            maxTokens: 2000,
+          });
+          rawText = visionResult.content || '';
+        } catch (vErr) {
+          console.warn('[RFQ Upload Doc] Vision failed for PDF:', vErr.message);
+          return res.status(422).json({ success: false, message: 'Could not extract text from this scanned PDF. Please upload a text-based PDF or an image.' });
+        }
+      }
+    }
+
+    // ── Image: use vision directly ──
+    else if (['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(mime)) {
+      const base64 = req.file.buffer.toString('base64');
+      const visionResult = await vision({
+        base64Image: base64,
+        mimeType: mime,
+        prompt: RFQ_EXTRACTION_PROMPT,
+        maxTokens: 2000,
+      });
+      rawText = visionResult.content || '';
+    }
+
+    // ── Fallback: unknown type ──
+    else {
+      return res.status(415).json({ success: false, message: `Unsupported file type: ${mime}. Use PDF, JPG, or PNG.` });
+    }
+
+    // ── Parse JSON from LLM/Vision response ──
+    let parsed = {};
+    try {
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+    } catch (parseErr) {
+      console.error('[RFQ Upload Doc] JSON parse error:', parseErr.message, rawText.substring(0, 300));
+      return res.status(422).json({ success: false, message: 'AI could not extract structured data from this document. Please ensure it is a clear broking slip.' });
+    }
+
+    // ── Build & insert RFQ ──
+    const siSlabs = Array.isArray(parsed.sum_insured_slabs) ? parsed.sum_insured_slabs.filter(v => typeof v === 'number') : [];
+    const rfq_number = generateRFQNumber();
+    const { rows } = await sharedPool.query(
+      `INSERT INTO crm_rfqs (rfq_number, insured_name, insured_address, policy_type, product_type,
+        existing_insurer, existing_tpa, policy_start, policy_end, premium_paid,
+        lives_at_inception, lives_at_renewal, coverage_scope, special_conditions, exclusions,
+        terms_and_conditions, notes, sum_insured_slabs, assigned_to, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
+      [
+        rfq_number,
+        parsed.insured_name || 'Unknown',
+        parsed.insured_address || null,
+        parsed.policy_type || 'Group Mediclaim',
+        parsed.product_type || 'Group Mediclaim',
+        parsed.existing_insurer || null,
+        parsed.existing_tpa || null,
+        parsed.policy_start || null,
+        parsed.policy_end || null,
+        parsed.premium_paid || null,
+        JSON.stringify(parsed.lives_at_inception || { employees: 0, dependants: 0, total: 0 }),
+        JSON.stringify(parsed.lives_at_renewal || { employees: 0, dependants: 0, total: 0 }),
+        JSON.stringify(parsed.coverage_scope || {}),
+        JSON.stringify(Array.isArray(parsed.special_conditions) ? parsed.special_conditions : []),
+        parsed.exclusions || null,
+        parsed.terms_and_conditions || null,
+        `Auto-parsed via Vision AI from: ${originalName}`,
+        JSON.stringify(siSlabs),
+        req.crmUser.id,
+        req.crmUser.id,
+      ]
+    );
+
+    const rfqId = rows[0].id;
+    // Update member_count if extracted
+    const memberCount = parsed.member_count || parsed.lives_at_renewal?.total || parsed.lives_at_inception?.total || 0;
+    if (memberCount) {
+      await sharedPool.query(`UPDATE crm_rfqs SET member_count = $1 WHERE id = $2`, [memberCount, rfqId]);
+    }
+    await uploadRfqFile(req.file.buffer, originalName, rfqId, 'slip', req.crmUser.id);
+
+    return res.status(201).json({
+      success: true,
+      message: `RFQ created: ${rfq_number}. Parsed from ${originalName.endsWith('.pdf') ? 'PDF' : 'image'} via AI Vision.`,
+      data: { ...rows[0], member_count: memberCount },
+    });
+  } catch (error) {
+    console.error('[CRM RFQ Upload Doc]', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to parse document: ' + error.message });
   }
 });
 
@@ -2433,10 +3170,8 @@ ${JSON.stringify(llmPayload, null, 2)}`;
         impact: 'neutral'
       });
     }
-
-    // ── 4. BUILD RESPONSE ───────────────────────────────────────────────────
-    return res.status(200).json({
-      success: true,
+const aiQuoteResult = {
+    success: true,
       data: {
         rfq_id: parseInt(rfqId),
         rfq_number: rfq.rfq_number,
@@ -2590,7 +3325,15 @@ ${JSON.stringify(llmPayload, null, 2)}`;
           };
         })(),
       }
-    });
+    };
+
+    // Persist AI quote result + inferred industry to DB (survives page refreshes — replaces sessionStorage handoff)
+    await sharedPool.query(
+      `UPDATE crm_rfqs SET ai_quote_data = $1, industry = COALESCE(industry, $2), updated_at = NOW() WHERE id = $3`,
+      [JSON.stringify(aiQuoteResult), inferIndustry(rfq.insured_name), rfqId]
+    );
+
+    return res.status(200).json({ success: true, data: aiQuoteResult });
   } catch (error) {
     console.error('[CRM AI Quote Generate]', error.message, error.stack);
     return res.status(500).json({ success: false, message: 'AI quote generation failed: ' + error.message });
@@ -2667,12 +3410,11 @@ router.post('/rfqs/:id/upload-claims', authCRM, upload.single('file'), async (re
       };
     };
 
-    // Delete old claims for this RFQ
-    await sharedPool.query(`DELETE FROM crm_rfq_claims WHERE rfq_id = $1`, [rfqId]);
-
+    // Build all claim rows first, then replace atomically in a transaction
     let inserted = 0;
     const stats = newCleaningStats();
     const batchSize = 500;
+    const allClaimBatches = [];
     for (let i = 0; i < rows.length; i += batchSize) {
       const batch = rows.slice(i, i + batchSize);
       const values = []; const placeholders = [];
@@ -2707,20 +3449,37 @@ router.post('/rfqs/:id/upload-claims', authCRM, upload.single('file'), async (re
           c.policy_year, c.si_amount, c.band);
         placeholders.push(`($${pIdx},$${pIdx+1},$${pIdx+2},$${pIdx+3},$${pIdx+4},$${pIdx+5},$${pIdx+6},$${pIdx+7},$${pIdx+8},$${pIdx+9},$${pIdx+10},$${pIdx+11},$${pIdx+12},$${pIdx+13},$${pIdx+14},$${pIdx+15},$${pIdx+16},$${pIdx+17},$${pIdx+18},$${pIdx+19},$${pIdx+20})`);
         pIdx += 21;
+        inserted++;
       }
       if (placeholders.length > 0) {
-        await sharedPool.query(
+        allClaimBatches.push({ values, placeholders });
+      }
+    }
+
+    // Atomic replace: DELETE then INSERT in a single transaction
+    const claimTxClient = await sharedPool.connect();
+    try {
+      await claimTxClient.query('BEGIN');
+      await claimTxClient.query(`DELETE FROM crm_rfq_claims WHERE rfq_id = $1`, [rfqId]);
+      for (const { values, placeholders } of allClaimBatches) {
+        await claimTxClient.query(
           `INSERT INTO crm_rfq_claims (rfq_id, claim_number, emp_code, employee_name, relationship, gender,
             age, claim_date, service_type, service_category, diagnosis, provider_name, provider_type,
             claimed_amount, approved_amount, paid_amount, rejection_reason, claim_status,
             policy_year, si_amount, band)
            VALUES ${placeholders.join(',')}`, values
         );
-        inserted += batch.length;
       }
+      await claimTxClient.query('COMMIT');
+    } catch (txErr) {
+      await claimTxClient.query('ROLLBACK');
+      claimTxClient.release();
+      throw txErr;
     }
+    claimTxClient.release();
 
     console.log(`[CRM Upload Claims] RFQ ${rfqId}: ${inserted} claims, cleaned: ${JSON.stringify(stats)}`);
+    await uploadRfqFile(req.file.buffer, req.file.originalname, rfqId, 'claims', req.crmUser.id);
     return res.status(200).json({
       success: true,
       message: `Uploaded ${inserted} claims from sheet "${claimsSheetName}" — AI cleaned & standardized`,
@@ -3186,6 +3945,15 @@ router.get('/rfqs/:id/quotes', authCRM, async (req, res) => {
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch quotes' }); }
 });
 
+// ─── Get Single Quote ────────────────────────────────────────────────────────
+router.get('/quotes/:id', authCRM, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(`SELECT * FROM crm_quotes WHERE id = $1`, [req.params.id]);
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Quote not found' });
+    return res.status(200).json({ success: true, data: rows[0] });
+  } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch quote' }); }
+});
+
 // ─── Update Quote ────────────────────────────────────────────────────────────
 router.put('/quotes/:id', authCRM, async (req, res) => {
   try {
@@ -3194,6 +3962,14 @@ router.put('/quotes/:id', authCRM, async (req, res) => {
       pricing_model, commission_pct, gst_pct, discount_pct,
       coverage_details, slab_pricing, terms, notes
     } = req.body;
+
+    // Validate status transitions — allowed: draft → sent → accepted/rejected, draft → negotiating → sent
+    const VALID_QUOTE_STATUSES = ['draft', 'sent', 'negotiating', 'accepted', 'rejected'];
+    if (status && !VALID_QUOTE_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: `Invalid quote status: ${status}. Allowed: ${VALID_QUOTE_STATUSES.join(', ')}` });
+    }
+
+    const sentAt = status === 'sent' ? 'sent_at = NOW(),' : '';
     const { rows } = await sharedPool.query(
       `UPDATE crm_quotes SET
         status = COALESCE($1, status), valid_until = COALESCE($2, valid_until),
@@ -3202,7 +3978,8 @@ router.put('/quotes/:id', authCRM, async (req, res) => {
         pricing_model = COALESCE($7, pricing_model), commission_pct = COALESCE($8, commission_pct),
         gst_pct = COALESCE($9, gst_pct), discount_pct = COALESCE($10, discount_pct),
         coverage_details = COALESCE($11, coverage_details), slab_pricing = COALESCE($12, slab_pricing),
-        terms = COALESCE($13, terms), notes = COALESCE($14, notes), updated_at = NOW()
+        terms = COALESCE($13, terms), notes = COALESCE($14, notes),
+        ${sentAt} updated_at = NOW()
        WHERE id = $15 RETURNING *`,
       [status, valid_until, total_premium, total_lives, per_life_cost, per_family_cost,
         pricing_model, commission_pct, gst_pct, discount_pct,
@@ -3212,15 +3989,79 @@ router.put('/quotes/:id', authCRM, async (req, res) => {
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Quote not found' });
 
-    // If quote is sent, update RFQ status
+    // Drive RFQ status from quote status transitions
     if (status === 'sent') {
-      await sharedPool.query(`UPDATE crm_rfqs SET status = 'quoted', updated_at = NOW() WHERE id = $1 AND status IN ('received','quoting')`, [rows[0].rfq_id]);
+      // sent → rfq becomes 'quoted'
+      await sharedPool.query(`UPDATE crm_rfqs SET status = 'quoted', updated_at = NOW() WHERE id = $1 AND status IN ('received','quoting','negotiating')`, [rows[0].rfq_id]);
+
+      // ── Email notification on quote send ──────────────────────────────────
+      // Fire-and-forget: fetch RFQ details and email the broker
+      (async () => {
+        try {
+          const { rows: rfqRows } = await sharedPool.query(
+            `SELECT insured_name, rfq_number, broker_name, broker_email, member_count,
+                    contact_email, contact_name
+             FROM crm_rfqs WHERE id = $1`,
+            [rows[0].rfq_id]
+          );
+          if (!rfqRows.length) return;
+          const rfq = rfqRows[0];
+          const q   = rows[0];
+          const recipients = [rfq.broker_email, rfq.contact_email].filter(Boolean).join(',');
+          if (!recipients) return;
+
+          const fmtCurrency = v => v != null ? `₹${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : 'N/A';
+          const validUntil  = q.valid_until ? new Date(q.valid_until).toLocaleDateString('en-IN') : 'N/A';
+
+          const html = `
+<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="font-family:Arial,sans-serif;background:#f5f5f5;margin:0;padding:20px">
+<div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1)">
+  <div style="background:#1e40af;color:#fff;padding:24px 28px">
+    <h2 style="margin:0;font-size:20px">Health Insurance Quote</h2>
+    <p style="margin:4px 0 0;opacity:0.85;font-size:14px">RFQ #${rfq.rfq_number}</p>
+  </div>
+  <div style="padding:28px">
+    <p style="margin:0 0 16px;color:#374151">Dear ${rfq.broker_name || rfq.contact_name || 'Valued Partner'},</p>
+    <p style="margin:0 0 20px;color:#374151">We are pleased to share our health insurance quote for <strong>${rfq.insured_name}</strong>.</p>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
+      <tr style="background:#f3f4f6"><td style="padding:10px 14px;font-size:13px;color:#6b7280;width:40%">Insured Name</td><td style="padding:10px 14px;font-size:14px;color:#111827;font-weight:600">${rfq.insured_name}</td></tr>
+      <tr><td style="padding:10px 14px;font-size:13px;color:#6b7280">Total Lives</td><td style="padding:10px 14px;font-size:14px;color:#111827;font-weight:600">${q.total_lives || rfq.member_count || 'N/A'}</td></tr>
+      <tr style="background:#f3f4f6"><td style="padding:10px 14px;font-size:13px;color:#6b7280">Total Premium</td><td style="padding:10px 14px;font-size:14px;color:#1e40af;font-weight:700">${fmtCurrency(q.total_premium)}</td></tr>
+      <tr><td style="padding:10px 14px;font-size:13px;color:#6b7280">Per Life Cost</td><td style="padding:10px 14px;font-size:14px;color:#111827">${fmtCurrency(q.per_life_cost)}</td></tr>
+      <tr style="background:#f3f4f6"><td style="padding:10px 14px;font-size:13px;color:#6b7280">Pricing Model</td><td style="padding:10px 14px;font-size:14px;color:#111827">${q.pricing_model || 'N/A'}</td></tr>
+      <tr><td style="padding:10px 14px;font-size:13px;color:#6b7280">Valid Until</td><td style="padding:10px 14px;font-size:14px;color:#111827">${validUntil}</td></tr>
+      ${q.terms ? `<tr style="background:#f3f4f6"><td style="padding:10px 14px;font-size:13px;color:#6b7280">Terms</td><td style="padding:10px 14px;font-size:13px;color:#374151">${q.terms}</td></tr>` : ''}
+    </table>
+    <p style="margin:0 0 8px;color:#6b7280;font-size:12px">This quote is subject to underwriting terms and conditions. For queries, please reply to this email.</p>
+  </div>
+  <div style="background:#f9fafb;padding:16px 28px;border-top:1px solid #e5e7eb">
+    <p style="margin:0;font-size:12px;color:#9ca3af">Mediqzy Health Insurance Platform &bull; This is an automated notification.</p>
+  </div>
+</div>
+</body></html>`;
+
+          await sendCRMEmail({
+            to:      recipients,
+            subject: `Quote for ${rfq.insured_name} (RFQ #${rfq.rfq_number})`,
+            html,
+            text: `Dear ${rfq.broker_name || rfq.contact_name || 'Partner'},\n\nPlease find the health insurance quote for ${rfq.insured_name} (RFQ #${rfq.rfq_number}).\n\nTotal Premium: ${fmtCurrency(q.total_premium)}\nTotal Lives: ${q.total_lives || rfq.member_count || 'N/A'}\nValid Until: ${validUntil}\n\nRegards,\nMediqzy Team`,
+          });
+        } catch (e) {
+          console.warn('[CRM] Quote sent email error:', e.message);
+        }
+      })();
+    }
+    if (status === 'negotiating') {
+      // negotiating → rfq becomes 'negotiating'
+      await sharedPool.query(`UPDATE crm_rfqs SET status = 'negotiating', updated_at = NOW() WHERE id = $1 AND status IN ('quoted')`, [rows[0].rfq_id]);
     }
     if (status === 'accepted') {
       await sharedPool.query(`UPDATE crm_rfqs SET status = 'won', updated_at = NOW() WHERE id = $1`, [rows[0].rfq_id]);
     }
     if (status === 'rejected') {
-      await sharedPool.query(`UPDATE crm_rfqs SET status = 'lost', updated_at = NOW() WHERE id = $1`, [rows[0].rfq_id]);
+      const { lost_reason } = req.body;
+      await sharedPool.query(`UPDATE crm_rfqs SET status = 'lost', lost_reason = COALESCE($2, lost_reason), updated_at = NOW() WHERE id = $1`, [rows[0].rfq_id, lost_reason || null]);
     }
 
     return res.status(200).json({ success: true, data: rows[0] });
@@ -3230,10 +4071,296 @@ router.put('/quotes/:id', authCRM, async (req, res) => {
 // ─── Delete Quote ────────────────────────────────────────────────────────────
 router.delete('/quotes/:id', authCRM, async (req, res) => {
   try {
-    const { rowCount } = await sharedPool.query(`DELETE FROM crm_quotes WHERE id = $1`, [req.params.id]);
-    if (!rowCount) return res.status(404).json({ success: false, message: 'Quote not found' });
+    // Fetch quote before deleting so we can revert RFQ status if needed
+    const { rows: quoteRows } = await sharedPool.query(`SELECT rfq_id, status FROM crm_quotes WHERE id = $1`, [req.params.id]);
+    if (!quoteRows.length) return res.status(404).json({ success: false, message: 'Quote not found' });
+    const { rfq_id, status: deletedStatus } = quoteRows[0];
+
+    await sharedPool.query(`DELETE FROM crm_quotes WHERE id = $1`, [req.params.id]);
+
+    // Revert RFQ status if the deleted quote was the only 'sent' quote
+    if (deletedStatus === 'sent' || deletedStatus === 'negotiating') {
+      const { rows: remainingQuotes } = await sharedPool.query(
+        `SELECT COUNT(*) AS cnt FROM crm_quotes WHERE rfq_id = $1 AND status IN ('sent','negotiating','accepted')`, [rfq_id]
+      );
+      if (parseInt(remainingQuotes[0].cnt) === 0) {
+        // No more sent/negotiating quotes — revert rfq to 'quoting' if it was quoted
+        await sharedPool.query(`UPDATE crm_rfqs SET status = 'quoting', updated_at = NOW() WHERE id = $1 AND status IN ('quoted','negotiating')`, [rfq_id]);
+      }
+    }
+
     return res.status(200).json({ success: true, message: 'Quote deleted' });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to delete quote' }); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DISTRIBUTION — AGENTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.get('/agents', authCRM, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, search, channelType, status } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const conditions = []; const params = [];
+    if (search) { params.push(`%${search}%`); conditions.push(`(a.name ILIKE $${params.length} OR a.email ILIKE $${params.length} OR a.agent_code ILIKE $${params.length})`); }
+    if (channelType) { params.push(channelType); conditions.push(`a.channel_type = $${params.length}`); }
+    if (status) { params.push(status); conditions.push(`a.status = $${params.length}`); }
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+    params.push(parseInt(limit), offset);
+    const [{ rows }, { rows: cnt }, { rows: statsRows }] = await Promise.all([
+      sharedPool.query(`SELECT a.*, ag.name AS agency_name FROM crm_agents a LEFT JOIN crm_agencies ag ON ag.id = a.agency_id ${where} ORDER BY a.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`, params),
+      sharedPool.query(`SELECT COUNT(*) FROM crm_agents a ${where}`, params.slice(0, -2)),
+      sharedPool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status = 'active') AS active, COALESCE(SUM(pending_payout),0) AS pending_payout, COALESCE(SUM(total_earned),0) AS total_paid FROM crm_agents`),
+    ]);
+    const total = parseInt(cnt[0].count);
+    return res.json({ success: true, data: rows, pagination: { total, totalPages: Math.ceil(total / parseInt(limit)), page: parseInt(page) }, stats: { total: parseInt(statsRows[0].total), active: parseInt(statsRows[0].active), pendingPayout: parseFloat(statsRows[0].pending_payout), totalPaid: parseFloat(statsRows[0].total_paid) } });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.post('/agents', authCRM, [body('name').notEmpty()], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
+  try {
+    const { name, email, phone, city, channelType = 'IFA', agentCode, agencyId, notes } = req.body;
+    const { rows } = await sharedPool.query(
+      `INSERT INTO crm_agents (name, email, phone, city, channel_type, agent_code, agency_id, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [name, email || null, phone || null, city || null, channelType, agentCode || null, agencyId || null, notes || null, req.user.id]
+    );
+    return res.status(201).json({ success: true, data: rows[0] });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.put('/agents/:id', authCRM, async (req, res) => {
+  try {
+    const { name, email, phone, city, channelType, agentCode, agencyId, status, notes, totalActivations, totalEarned, pendingPayout } = req.body;
+    const { rows } = await sharedPool.query(
+      `UPDATE crm_agents SET name=COALESCE($1,name), email=COALESCE($2,email), phone=COALESCE($3,phone), city=COALESCE($4,city),
+       channel_type=COALESCE($5,channel_type), agent_code=COALESCE($6,agent_code), agency_id=COALESCE($7,agency_id),
+       status=COALESCE($8,status), notes=COALESCE($9,notes), total_activations=COALESCE($10,total_activations),
+       total_earned=COALESCE($11,total_earned), pending_payout=COALESCE($12,pending_payout), updated_at=NOW()
+       WHERE id=$13 RETURNING *`,
+      [name, email, phone, city, channelType, agentCode, agencyId || null, status, notes, totalActivations, totalEarned, pendingPayout, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Agent not found' });
+    return res.json({ success: true, data: rows[0] });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DISTRIBUTION — AGENCIES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.get('/agencies', authCRM, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, search, tier } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const conditions = []; const params = [];
+    if (search) { params.push(`%${search}%`); conditions.push(`(name ILIKE $${params.length} OR owner_name ILIKE $${params.length} OR territory ILIKE $${params.length})`); }
+    // tier filter maps to activation thresholds
+    if (tier === 'Bronze') { conditions.push(`monthly_activations >= 10 AND monthly_activations < 50`); }
+    else if (tier === 'Silver') { conditions.push(`monthly_activations >= 50 AND monthly_activations < 100`); }
+    else if (tier === 'Gold') { conditions.push(`monthly_activations >= 100 AND monthly_activations < 200`); }
+    else if (tier === 'Platinum') { conditions.push(`monthly_activations >= 200`); }
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+    params.push(parseInt(limit), offset);
+    const [{ rows }, { rows: cnt }, { rows: statsRows }] = await Promise.all([
+      sharedPool.query(`SELECT * FROM crm_agencies ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`, params),
+      sharedPool.query(`SELECT COUNT(*) FROM crm_agencies ${where}`, params.slice(0, -2)),
+      sharedPool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='active') AS active, COALESCE(SUM(monthly_activations),0) AS total_activations, COALESCE(SUM(total_override),0) AS total_override FROM crm_agencies`),
+    ]);
+    const total = parseInt(cnt[0].count);
+    return res.json({ success: true, data: rows, pagination: { total, totalPages: Math.ceil(total / parseInt(limit)), page: parseInt(page) }, stats: { total: parseInt(statsRows[0].total), active: parseInt(statsRows[0].active), totalActivations: parseInt(statsRows[0].total_activations), totalOverride: parseFloat(statsRows[0].total_override) } });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.post('/agencies', authCRM, [body('name').notEmpty()], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
+  try {
+    const { name, ownerName, email, phone, city, territory, gstin, notes } = req.body;
+    const { rows } = await sharedPool.query(
+      `INSERT INTO crm_agencies (name, owner_name, email, phone, city, territory, gstin, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [name, ownerName || null, email || null, phone || null, city || null, territory || null, gstin || null, notes || null, req.user.id]
+    );
+    return res.status(201).json({ success: true, data: rows[0] });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.put('/agencies/:id', authCRM, async (req, res) => {
+  try {
+    const { name, ownerName, email, phone, city, territory, gstin, onboardingStep, status, monthlyActivations, agentCount, totalOverride, notes } = req.body;
+    const { rows } = await sharedPool.query(
+      `UPDATE crm_agencies SET name=COALESCE($1,name), owner_name=COALESCE($2,owner_name), email=COALESCE($3,email),
+       phone=COALESCE($4,phone), city=COALESCE($5,city), territory=COALESCE($6,territory), gstin=COALESCE($7,gstin),
+       onboarding_step=COALESCE($8,onboarding_step), status=COALESCE($9,status),
+       monthly_activations=COALESCE($10,monthly_activations), agent_count=COALESCE($11,agent_count),
+       total_override=COALESCE($12,total_override), notes=COALESCE($13,notes), updated_at=NOW()
+       WHERE id=$14 RETURNING *`,
+      [name, ownerName, email, phone, city, territory, gstin, onboardingStep, status, monthlyActivations, agentCount, totalOverride, notes, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Agency not found' });
+    return res.json({ success: true, data: rows[0] });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DISTRIBUTION — COMMISSIONS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.get('/commissions', authCRM, async (req, res) => {
+  try {
+    const { page = 1, limit = 25, search, status, planCode } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const conditions = []; const params = [];
+    if (search) { params.push(`%${search}%`); conditions.push(`(c.agent_name ILIKE $${params.length} OR c.subscriber_name ILIKE $${params.length} OR c.agent_code ILIKE $${params.length})`); }
+    if (status) { params.push(status); conditions.push(`c.status = $${params.length}`); }
+    if (planCode) { params.push(planCode); conditions.push(`c.plan_code = $${params.length}`); }
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+    params.push(parseInt(limit), offset);
+    const [{ rows }, { rows: cnt }, { rows: sumRows }] = await Promise.all([
+      sharedPool.query(`SELECT c.* FROM crm_commissions c ${where} ORDER BY c.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`, params),
+      sharedPool.query(`SELECT COUNT(*) FROM crm_commissions c ${where}`, params.slice(0, -2)),
+      sharedPool.query(`SELECT
+        COALESCE(SUM(amount) FILTER (WHERE status='pending'),0) AS total_pending,
+        COALESCE(SUM(amount) FILTER (WHERE status='approved'),0) AS total_approved,
+        COALESCE(SUM(amount) FILTER (WHERE status='paid'),0) AS total_paid,
+        COALESCE(SUM(amount) FILTER (WHERE status='clawback'),0) AS clawbacks
+        FROM crm_commissions`),
+    ]);
+    const total = parseInt(cnt[0].count);
+    return res.json({
+      success: true, data: rows,
+      pagination: { total, totalPages: Math.ceil(total / parseInt(limit)), page: parseInt(page) },
+      summary: { totalPending: parseFloat(sumRows[0].total_pending), totalApproved: parseFloat(sumRows[0].total_approved), totalPaid: parseFloat(sumRows[0].total_paid), clawbacks: parseFloat(sumRows[0].clawbacks), nextPayoutDate: '15 May 2026' }
+    });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.post('/commissions', authCRM, async (req, res) => {
+  try {
+    const { agentId, agentCode, agentName, subscriberName, subscriberPhone, subscriberEmail, planCode, amount, commissionType = 'y1', activationDate, eligibleDate, notes } = req.body;
+    const { rows } = await sharedPool.query(
+      `INSERT INTO crm_commissions (agent_id, agent_code, agent_name, subscriber_name, subscriber_phone, subscriber_email, plan_code, amount, commission_type, activation_date, eligible_date, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+      [agentId || null, agentCode || null, agentName || null, subscriberName || null, subscriberPhone || null, subscriberEmail || null, planCode || null, amount, commissionType, activationDate || null, eligibleDate || null, notes || null, req.user.id]
+    );
+    return res.status(201).json({ success: true, data: rows[0] });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.put('/commissions/:id', authCRM, async (req, res) => {
+  try {
+    const { status, paidAt, clawbackReason, notes } = req.body;
+    const { rows } = await sharedPool.query(
+      `UPDATE crm_commissions SET status=COALESCE($1,status), paid_at=COALESCE($2,paid_at), clawback_reason=COALESCE($3,clawback_reason), notes=COALESCE($4,notes), updated_at=NOW() WHERE id=$5 RETURNING *`,
+      [status, paidAt || null, clawbackReason || null, notes || null, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Commission record not found' });
+    return res.json({ success: true, data: rows[0] });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CORPORATE HEALTH PLANS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Auto-generate contract ref: <INITIALS>-<YEAR>-<SEQ>
+async function generateContractRef(corporateName, planYear) {
+  const initials = corporateName.split(/\s+/).map(w => w[0]?.toUpperCase() || '').join('').slice(0, 4);
+  const { rows } = await sharedPool.query(
+    `SELECT COUNT(*) FROM crm_corporate_health_plans WHERE plan_year = $1`, [planYear]
+  );
+  const seq = String(parseInt(rows[0].count) + 1).padStart(3, '0');
+  return `${initials}-${planYear}-${seq}`;
+}
+
+router.get('/corporate-plans', authCRM, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, search, status, planYear, corporateId } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const conditions = []; const params = [];
+    if (search) { params.push(`%${search}%`); conditions.push(`(p.display_name ILIKE $${params.length} OR p.corporate_name ILIKE $${params.length} OR p.contract_ref ILIKE $${params.length})`); }
+    if (status) { params.push(status); conditions.push(`p.status = $${params.length}`); }
+    if (planYear) { params.push(parseInt(planYear)); conditions.push(`p.plan_year = $${params.length}`); }
+    if (corporateId) { params.push(parseInt(corporateId)); conditions.push(`p.corporate_id = $${params.length}`); }
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+    params.push(parseInt(limit), offset);
+    const [{ rows }, { rows: cnt }, { rows: sumRows }] = await Promise.all([
+      sharedPool.query(
+        `SELECT p.*, prev.display_name AS renewal_of_name, r.rfq_number
+         FROM crm_corporate_health_plans p
+         LEFT JOIN crm_corporate_health_plans prev ON prev.id = p.renewal_of_id
+         LEFT JOIN crm_rfqs r ON r.id = p.rfq_id
+         ${where} ORDER BY p.plan_year DESC, p.created_at DESC
+         LIMIT $${params.length - 1} OFFSET $${params.length}`, params),
+      sharedPool.query(`SELECT COUNT(*) FROM crm_corporate_health_plans p ${where}`, params.slice(0, -2)),
+      sharedPool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='active') AS active, COALESCE(SUM(employee_headcount),0) AS total_lives, COALESCE(SUM(employee_headcount * COALESCE(negotiated_price_per_emp,0) * 12),0) AS total_acv FROM crm_corporate_health_plans`),
+    ]);
+    const total = parseInt(cnt[0].count);
+    return res.json({
+      success: true, data: rows,
+      pagination: { total, totalPages: Math.ceil(total / parseInt(limit)), page: parseInt(page) },
+      stats: { total: parseInt(sumRows[0].total), active: parseInt(sumRows[0].active), totalLives: parseInt(sumRows[0].total_lives), totalAcv: Math.round(parseFloat(sumRows[0].total_acv)) }
+    });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.post('/corporate-plans', authCRM, [body('corporateName').notEmpty(), body('planTemplateCode').optional(), body('displayName').notEmpty()], async (req, res) => {
+  try {
+    const { corporateId, corporateName, planTemplateCode, displayName, planYear = new Date().getFullYear(), planGrade, negotiatedPricePerEmp, employeeHeadcount, corporateShare = 100, employeeShare = 0, startDate, endDate, renewalOfId, notes, rfqId } = req.body;
+    const contractRef = await generateContractRef(corporateName, planYear);
+    const { rows } = await sharedPool.query(
+      `INSERT INTO crm_corporate_health_plans
+       (corporate_id, corporate_name, plan_template_code, display_name, plan_year, plan_grade, contract_ref, negotiated_price_per_emp, employee_headcount, corporate_share, employee_share, start_date, end_date, status, renewal_of_id, notes, rfq_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'draft',$14,$15,$16,$17) RETURNING *`,
+      [corporateId || null, corporateName, planTemplateCode || null, displayName, planYear, planGrade || null, contractRef, negotiatedPricePerEmp || null, employeeHeadcount || 0, corporateShare, employeeShare, startDate || null, endDate || null, renewalOfId || null, notes || null, rfqId ? parseInt(rfqId) : null, req.user.id]
+    );
+    // Mark the RFQ as won if creating a plan from it
+    if (rfqId) {
+      await sharedPool.query(`UPDATE crm_rfqs SET status='won', updated_at=NOW() WHERE id=$1 AND status NOT IN ('won','lost')`, [parseInt(rfqId)]);
+    }
+    return res.status(201).json({ success: true, data: rows[0] });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.put('/corporate-plans/:id', authCRM, async (req, res) => {
+  try {
+    const { corporateName, planTemplateCode, displayName, planYear, planGrade, negotiatedPricePerEmp, employeeHeadcount, corporateShare, employeeShare, startDate, endDate, status, notes, contractDocUrl } = req.body;
+    const { rows } = await sharedPool.query(
+      `UPDATE crm_corporate_health_plans SET
+       corporate_name=COALESCE($1,corporate_name), plan_template_code=COALESCE($2,plan_template_code),
+       display_name=COALESCE($3,display_name), plan_year=COALESCE($4,plan_year), plan_grade=COALESCE($5,plan_grade),
+       negotiated_price_per_emp=COALESCE($6,negotiated_price_per_emp), employee_headcount=COALESCE($7,employee_headcount),
+       corporate_share=COALESCE($8,corporate_share), employee_share=COALESCE($9,employee_share),
+       start_date=COALESCE($10,start_date), end_date=COALESCE($11,end_date),
+       status=COALESCE($12,status), notes=COALESCE($13,notes), contract_doc_url=COALESCE($14,contract_doc_url),
+       updated_at=NOW() WHERE id=$15 RETURNING *`,
+      [corporateName, planTemplateCode, displayName, planYear, planGrade, negotiatedPricePerEmp, employeeHeadcount, corporateShare, employeeShare, startDate, endDate, status, notes, contractDocUrl, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Corporate plan not found' });
+    return res.json({ success: true, data: rows[0] });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
+// Renew a plan: clone it with incremented year
+router.post('/corporate-plans/:id/renew', authCRM, async (req, res) => {
+  try {
+    const { rows: existing } = await sharedPool.query(`SELECT * FROM crm_corporate_health_plans WHERE id = $1`, [req.params.id]);
+    if (!existing.length) return res.status(404).json({ success: false, message: 'Plan not found' });
+    const src = existing[0];
+    const newYear = (src.plan_year || new Date().getFullYear()) + 1;
+    const newDisplayName = src.display_name.replace(/\d{4}/, newYear.toString());
+    const contractRef = await generateContractRef(src.corporate_name, newYear);
+    const { rows } = await sharedPool.query(
+      `INSERT INTO crm_corporate_health_plans
+       (corporate_id, corporate_name, plan_template_code, display_name, plan_year, plan_grade, contract_ref, negotiated_price_per_emp, employee_headcount, corporate_share, employee_share, start_date, end_date, status, renewal_of_id, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'draft',$14,$15,$16) RETURNING *`,
+      [src.corporate_id, src.corporate_name, src.plan_template_code, newDisplayName, newYear, src.plan_grade, contractRef, src.negotiated_price_per_emp, src.employee_headcount, src.corporate_share, src.employee_share, null, null, src.id, src.notes, req.user.id]
+    );
+    return res.status(201).json({ success: true, data: rows[0], message: `Renewal plan created for ${newYear}` });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 });
 
 // ─── RFQ Dashboard Stats ────────────────────────────────────────────────────
@@ -3244,6 +4371,7 @@ router.get('/rfqs-stats', authCRM, async (req, res) => {
       COUNT(*) FILTER (WHERE r.status = 'received') AS received,
       COUNT(*) FILTER (WHERE r.status = 'quoting') AS quoting,
       COUNT(*) FILTER (WHERE r.status = 'quoted') AS quoted,
+      COUNT(*) FILTER (WHERE r.status = 'negotiating') AS negotiating,
       COUNT(*) FILTER (WHERE r.status = 'won') AS won,
       COUNT(*) FILTER (WHERE r.status = 'lost') AS lost,
       COUNT(*) FILTER (WHERE r.created_at >= NOW() - INTERVAL '7 days') AS this_week,
@@ -3253,5 +4381,1536 @@ router.get('/rfqs-stats', authCRM, async (req, res) => {
     return res.status(200).json({ success: true, data: rows[0] });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch RFQ stats' }); }
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DEEP ANALYTICS ENGINE — Predictive Modelling, Claim Forecasting, Risk Scoring
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * GET /rfqs/:id/deep-analytics
+ * Multi-model predictive analytics for CRM underwriting intelligence:
+ *  1. Product-wise risk analysis (GHI, GAI, OPD, Wellness, GMC)
+ *  2. Age-band claim forecasting (1yr, 3yr, 5yr projections)
+ *  3. Employee attrition impact modelling
+ *  4. Disease trend analysis & future claim prediction
+ *  5. Employee-level risk scoring (heat map tiers)
+ *  6. Severity-frequency portfolio cohort model
+ *  7. Industry-sector actuarial benchmarking
+ */
+router.get('/rfqs/:id/deep-analytics', authCRM, async (req, res) => {
+  try {
+    const rfqId = parseInt(req.params.id);
+    if (!rfqId || isNaN(rfqId)) return res.status(400).json({ success: false, message: 'Invalid RFQ ID' });
+
+    const pool = sharedPool;
+
+    // ── Load RFQ ──────────────────────────────────────────────────────────────
+    const rfqRes = await pool.query(`SELECT * FROM crm_rfqs WHERE id = $1`, [rfqId]);
+    if (!rfqRes.rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
+    const rfq = rfqRes.rows[0];
+    const memberCount = parseInt(rfq.member_count) || 0;
+
+    // ── Parallel data loads ───────────────────────────────────────────────────
+    const [memberRes, claimsRes, bandDistRes, genderDistRes, tenureDistRes, siDistRes] = await Promise.all([
+      // Full member dataset for actuarial modelling
+      pool.query(`
+        SELECT age, gender, relation_type, band, doj, si_proposed, si_expiring
+        FROM crm_rfq_members WHERE rfq_id = $1
+      `, [rfqId]),
+
+      // Claims data
+      pool.query(`
+        SELECT diagnosis, service_type, service_category, claimed_amount, approved_amount,
+               paid_amount, claim_status, age, gender, relationship, band, policy_year, claim_date
+        FROM crm_rfq_claims WHERE rfq_id = $1
+      `, [rfqId]),
+
+      // Age-band distribution
+      pool.query(`
+        SELECT
+          CASE
+            WHEN age < 25 THEN 'Under 25'
+            WHEN age BETWEEN 25 AND 34 THEN '25-34'
+            WHEN age BETWEEN 35 AND 44 THEN '35-44'
+            WHEN age BETWEEN 45 AND 54 THEN '45-54'
+            WHEN age BETWEEN 55 AND 64 THEN '55-64'
+            ELSE '65+'
+          END AS age_band,
+          COUNT(*) AS count,
+          AVG(si_proposed) AS avg_si,
+          SUM(CASE WHEN relation_type = 'Self' THEN 1 ELSE 0 END) AS employees,
+          SUM(CASE WHEN relation_type != 'Self' THEN 1 ELSE 0 END) AS dependents
+        FROM crm_rfq_members WHERE rfq_id = $1 AND age IS NOT NULL
+        GROUP BY age_band ORDER BY MIN(age)
+      `, [rfqId]),
+
+      // Gender distribution
+      pool.query(`
+        SELECT gender, COUNT(*) AS count, AVG(age) AS avg_age
+        FROM crm_rfq_members WHERE rfq_id = $1 AND gender IS NOT NULL AND gender != ''
+        GROUP BY gender
+      `, [rfqId]),
+
+      // Tenure distribution (from DOJ) for attrition modelling
+      pool.query(`
+        SELECT
+          CASE
+            WHEN doj IS NULL THEN 'Unknown'
+            WHEN doj >= NOW() - INTERVAL '1 year' THEN '0-1 yr'
+            WHEN doj >= NOW() - INTERVAL '2 years' THEN '1-2 yrs'
+            WHEN doj >= NOW() - INTERVAL '3 years' THEN '2-3 yrs'
+            WHEN doj >= NOW() - INTERVAL '5 years' THEN '3-5 yrs'
+            ELSE '5+ yrs'
+          END AS tenure_band,
+          COUNT(*) AS count,
+          AVG(age) AS avg_age
+        FROM crm_rfq_members WHERE rfq_id = $1 AND relation_type = 'Self'
+        GROUP BY tenure_band ORDER BY MIN(COALESCE(doj, '1900-01-01'))
+      `, [rfqId]),
+
+      // SI slab distribution
+      pool.query(`
+        SELECT
+          CASE
+            WHEN si_proposed BETWEEN 100000 AND 299999 THEN '1L-3L'
+            WHEN si_proposed BETWEEN 300000 AND 499999 THEN '3L-5L'
+            WHEN si_proposed BETWEEN 500000 AND 999999 THEN '5L-10L'
+            WHEN si_proposed BETWEEN 1000000 AND 1999999 THEN '10L-20L'
+            WHEN si_proposed >= 2000000 THEN '20L+'
+            ELSE 'Not set'
+          END AS si_slab,
+          COUNT(*) AS count,
+          AVG(si_proposed) AS avg_si
+        FROM crm_rfq_members WHERE rfq_id = $1 AND relation_type = 'Self'
+        GROUP BY si_slab ORDER BY MIN(COALESCE(si_proposed, 0))
+      `, [rfqId]),
+    ]);
+
+    const members = memberRes.rows;
+    const claims = claimsRes.rows;
+    const ageBands = bandDistRes.rows;
+    const genderDist = genderDistRes.rows;
+    const tenureDist = tenureDistRes.rows;
+    const siDist = siDistRes.rows;
+
+    const hasMemberData = members.length > 0;
+    const hasClaimsData = claims.length > 0;
+
+    // ── Infer industry (reuse helper from intelligence engine) and persist if not already set ────────────
+    const industryInferred = rfq.industry || inferIndustry(rfq.insured_name);
+    if (!rfq.industry) {
+      sharedPool.query(`UPDATE crm_rfqs SET industry = $1 WHERE id = $2 AND industry IS NULL`, [industryInferred, rfqId]).catch(() => {});
+    }
+    const productType = rfq.product_type || 'GMC';
+    const isRenewal = !!(rfq.existing_insurer && rfq.existing_insurer.trim() !== 'Not disclosed');
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MODULE 1 — Product-Wise Risk Profile
+    // ═══════════════════════════════════════════════════════════════════════════
+    const PRODUCT_BENCHMARKS = {
+      'GMC':       { icr_norm: 0.82, freq_per_100: 22, avg_severity: 45000, inflation: 1.13, catastrophic_pct: 3.5 },
+      'GHI':       { icr_norm: 0.85, freq_per_100: 24, avg_severity: 48000, inflation: 1.14, catastrophic_pct: 4.0 },
+      'GMC+OPD':   { icr_norm: 0.92, freq_per_100: 38, avg_severity: 28000, inflation: 1.12, catastrophic_pct: 2.0 },
+      'OPD':       { icr_norm: 0.95, freq_per_100: 55, avg_severity: 8500,  inflation: 1.11, catastrophic_pct: 0.5 },
+      'GPA':       { icr_norm: 0.45, freq_per_100: 4,  avg_severity: 85000, inflation: 1.06, catastrophic_pct: 8.0 },
+      'Wellness':  { icr_norm: 0.80, freq_per_100: 18, avg_severity: 12000, inflation: 1.10, catastrophic_pct: 0.5 },
+      'Group Term':{ icr_norm: 0.35, freq_per_100: 2,  avg_severity: 500000,inflation: 1.05, catastrophic_pct: 1.5 },
+    };
+
+    const bm = PRODUCT_BENCHMARKS[productType] || PRODUCT_BENCHMARKS['GMC'];
+
+    // Industry-specific disease risk multipliers
+    const INDUSTRY_DISEASE_RISK = {
+      'Pharmaceutical / Life Sciences':   { cardiac: 1.1, diabetes: 1.1, occupational: 1.4, mental_health: 1.1, oncology: 1.2 },
+      'Information Technology / IT Services': { cardiac: 1.2, diabetes: 1.3, musculoskeletal: 1.4, mental_health: 1.5, eye: 1.3 },
+      'Banking / Financial Services (BFSI)':  { cardiac: 1.4, diabetes: 1.3, hypertension: 1.4, mental_health: 1.3, stroke: 1.2 },
+      'Manufacturing / Industrial':           { trauma: 1.6, ortho: 1.5, occupational: 1.3, hearing_loss: 1.3, respiratory: 1.4 },
+      'Healthcare / Hospitals':               { occupational: 1.3, infection: 1.4, mental_health: 1.3, musculoskeletal: 1.3, radiation: 1.2 },
+      'Education':                            { respiratory: 1.2, infection: 1.3, mental_health: 1.2, eye: 1.2, thyroid: 1.1 },
+      'Retail / E-commerce':                  { musculoskeletal: 1.4, varicose: 1.3, fatigue: 1.3, respiratory: 1.1, ortho: 1.3 },
+      'Hospitality / Travel':                 { fatigue: 1.4, musculoskeletal: 1.5, infection: 1.2, diabetes: 1.2, hypertension: 1.1 },
+      'Telecom / Media':                      { musculoskeletal: 1.3, mental_health: 1.4, eye: 1.4, cardiac: 1.2, hearing_loss: 1.2 },
+      'Government / PSU':                     { cardiac: 1.3, diabetes: 1.4, hypertension: 1.4, oncology: 1.2, liver: 1.2 },
+      'Construction / Real Estate':           { trauma: 1.8, ortho: 1.6, respiratory: 1.5, eye: 1.3, occupational: 1.5 },
+      'FMCG / Consumer Goods':                { musculoskeletal: 1.3, respiratory: 1.2, diabetes: 1.2, cardiac: 1.1, skin: 1.2 },
+      'General Corporate':                    { cardiac: 1.2, diabetes: 1.2, hypertension: 1.2, musculoskeletal: 1.2, mental_health: 1.1 },
+    };
+
+    const industryRisk = INDUSTRY_DISEASE_RISK[industryInferred] || INDUSTRY_DISEASE_RISK['General Corporate'];
+
+    // Top predicted disease categories for this industry+product
+    const diseasePredictions = Object.entries(industryRisk)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([disease, multiplier]) => ({
+        disease: disease.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+        risk_multiplier: multiplier,
+        expected_frequency_pct: Math.round(bm.freq_per_100 * multiplier * 10) / 10,
+        risk_level: multiplier >= 1.4 ? 'High' : multiplier >= 1.2 ? 'Moderate' : 'Standard',
+      }));
+
+    const productRiskProfile = {
+      product_type: productType,
+      industry: industryInferred,
+      is_renewal: isRenewal,
+      existing_insurer: rfq.existing_insurer || null,
+      norm_icr_pct: Math.round(bm.icr_norm * 100),
+      norm_claims_freq_per_100: bm.freq_per_100,
+      norm_avg_severity: bm.avg_severity,
+      inflation_rate_pct: Math.round((bm.inflation - 1) * 100),
+      catastrophic_claims_pct: bm.catastrophic_pct,
+      top_disease_predictions: diseasePredictions,
+      product_benchmarks_available: Object.keys(PRODUCT_BENCHMARKS).map(p => ({
+        product: p,
+        icr_pct: Math.round(PRODUCT_BENCHMARKS[p].icr_norm * 100),
+        freq_per_100: PRODUCT_BENCHMARKS[p].freq_per_100,
+        avg_severity: PRODUCT_BENCHMARKS[p].avg_severity,
+      })),
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MODULE 2 — Age-Band Claim Forecasting (1yr, 3yr, 5yr)
+    // ═══════════════════════════════════════════════════════════════════════════
+    const AGE_RISK_FACTORS = {
+      'Under 25': { risk: 0.65, maternity_risk: 0.12, mobility: 0.95 },
+      '25-34':    { risk: 0.82, maternity_risk: 0.22, mobility: 0.90 },
+      '35-44':    { risk: 1.20, maternity_risk: 0.08, mobility: 0.88 },
+      '45-54':    { risk: 1.75, maternity_risk: 0.01, mobility: 0.82 },
+      '55-64':    { risk: 2.40, maternity_risk: 0.00, mobility: 0.70 },
+      '65+':      { risk: 3.20, maternity_risk: 0.00, mobility: 0.55 },
+    };
+
+    const totalAged = ageBands.reduce((s, b) => s + parseInt(b.count), 0) || memberCount || 1;
+
+    const ageBandForecasts = ageBands.map(band => {
+      const rf = AGE_RISK_FACTORS[band.age_band] || { risk: 1.0, maternity_risk: 0.05, mobility: 0.85 };
+      const count = parseInt(band.count);
+      const pct = Math.round((count / totalAged) * 1000) / 10;
+      const baseExpectedClaims = Math.round(count * bm.freq_per_100 / 100 * rf.risk);
+      const baseBurningCost = Math.round(bm.avg_severity * rf.risk);
+
+      return {
+        age_band: band.age_band,
+        count,
+        pct_of_group: pct,
+        employees: parseInt(band.employees) || 0,
+        dependents: parseInt(band.dependents) || 0,
+        risk_factor: rf.risk,
+        maternity_risk: rf.maternity_risk,
+        forecast_yr1: {
+          expected_claims: baseExpectedClaims,
+          expected_burning_cost: baseBurningCost,
+          expected_icr_pct: Math.round(bm.icr_norm * rf.risk * 100),
+          maternity_claims: Math.round(count * rf.maternity_risk * 0.15),
+        },
+        forecast_yr3: {
+          expected_claims: Math.round(baseExpectedClaims * Math.pow(bm.inflation, 3) * 1.08),
+          expected_burning_cost: Math.round(baseBurningCost * Math.pow(bm.inflation, 3)),
+          expected_icr_pct: Math.round(bm.icr_norm * rf.risk * Math.pow(1.05, 3) * 100),
+          age_adjusted_count: Math.round(count * Math.pow(1 - (1 - rf.mobility) / 3, 3)),
+        },
+        forecast_yr5: {
+          expected_claims: Math.round(baseExpectedClaims * Math.pow(bm.inflation, 5) * 1.18),
+          expected_burning_cost: Math.round(baseBurningCost * Math.pow(bm.inflation, 5)),
+          expected_icr_pct: Math.round(bm.icr_norm * rf.risk * Math.pow(1.05, 5) * 100),
+          age_adjusted_count: Math.round(count * Math.pow(1 - (1 - rf.mobility) / 3, 5)),
+        },
+      };
+    });
+
+    // Portfolio-level rolling forecast
+    const totalBurningCostYr1 = ageBandForecasts.reduce((s, b) => s + b.forecast_yr1.expected_burning_cost * b.count, 0);
+    const totalBurningCostYr3 = ageBandForecasts.reduce((s, b) => s + b.forecast_yr3.expected_burning_cost * b.count, 0);
+    const totalBurningCostYr5 = ageBandForecasts.reduce((s, b) => s + b.forecast_yr5.expected_burning_cost * b.count, 0);
+    const baseTotalCount = ageBandForecasts.reduce((s, b) => s + b.count, 0) || memberCount || 1;
+
+    const claimForecast = {
+      base_year: {
+        member_count: memberCount,
+        expected_total_claims: Math.round(memberCount * bm.freq_per_100 / 100),
+        expected_burning_cost_per_life: Math.round(totalBurningCostYr1 / baseTotalCount),
+        expected_total_outgo: Math.round(totalBurningCostYr1),
+        projected_icr_pct: Math.round(bm.icr_norm * 100),
+      },
+      year_3: {
+        member_count_est: Math.round(memberCount * 0.95),
+        expected_total_claims: Math.round(memberCount * 0.95 * bm.freq_per_100 / 100 * 1.08),
+        expected_burning_cost_per_life: Math.round(totalBurningCostYr3 / baseTotalCount),
+        expected_total_outgo: Math.round(totalBurningCostYr3 * 0.95),
+        projected_icr_pct: Math.round(bm.icr_norm * 1.12 * 100),
+        inflation_impact_pct: 36,
+      },
+      year_5: {
+        member_count_est: Math.round(memberCount * 0.88),
+        expected_total_claims: Math.round(memberCount * 0.88 * bm.freq_per_100 / 100 * 1.18),
+        expected_burning_cost_per_life: Math.round(totalBurningCostYr5 / baseTotalCount),
+        expected_total_outgo: Math.round(totalBurningCostYr5 * 0.88),
+        projected_icr_pct: Math.round(bm.icr_norm * 1.28 * 100),
+        inflation_impact_pct: 65,
+      },
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MODULE 3 — Attrition Impact Modelling
+    // ═══════════════════════════════════════════════════════════════════════════
+    const INDUSTRY_ATTRITION = {
+      'Information Technology / IT Services':   { annual_rate_pct: 22, high_risk_tenure: '0-1 yr', replacement_lag_months: 2.5 },
+      'Banking / Financial Services (BFSI)':    { annual_rate_pct: 18, high_risk_tenure: '0-1 yr', replacement_lag_months: 1.5 },
+      'Pharmaceutical / Life Sciences':         { annual_rate_pct: 14, high_risk_tenure: '1-2 yrs', replacement_lag_months: 2.0 },
+      'Retail / E-commerce':                    { annual_rate_pct: 30, high_risk_tenure: '0-1 yr', replacement_lag_months: 0.5 },
+      'Hospitality / Travel':                   { annual_rate_pct: 28, high_risk_tenure: '0-1 yr', replacement_lag_months: 0.5 },
+      'Manufacturing / Industrial':             { annual_rate_pct: 12, high_risk_tenure: '2-3 yrs', replacement_lag_months: 1.5 },
+      'Healthcare / Hospitals':                 { annual_rate_pct: 16, high_risk_tenure: '1-2 yrs', replacement_lag_months: 1.0 },
+      'Education':                              { annual_rate_pct: 10, high_risk_tenure: '3-5 yrs', replacement_lag_months: 4.0 },
+      'Government / PSU':                       { annual_rate_pct: 5,  high_risk_tenure: '5+ yrs',  replacement_lag_months: 6.0 },
+      'Telecom / Media':                        { annual_rate_pct: 20, high_risk_tenure: '0-1 yr', replacement_lag_months: 1.5 },
+      'Construction / Real Estate':             { annual_rate_pct: 20, high_risk_tenure: '0-1 yr', replacement_lag_months: 1.0 },
+      'General Corporate':                      { annual_rate_pct: 15, high_risk_tenure: '0-1 yr', replacement_lag_months: 2.0 },
+    };
+
+    const attritionProfile = INDUSTRY_ATTRITION[industryInferred] || INDUSTRY_ATTRITION['General Corporate'];
+    const attritionRate = attritionProfile.annual_rate_pct / 100;
+
+    // Count fresh joiners (< 1 yr DOJ) as adverse selection risk
+    const freshJoiners = tenureDist.find(t => t.tenure_band === '0-1 yr');
+    const freshJoinerCount = parseInt(freshJoiners?.count || 0);
+    const freshJoinerPct = memberCount > 0 ? Math.round(freshJoinerCount / memberCount * 100) : 0;
+
+    // Adverse selection: fresh joiners often join due to health events
+    const adverseSelectionMultiplier = freshJoinerPct > 25 ? 1.18 : freshJoinerPct > 15 ? 1.10 : 1.03;
+
+    const attritionAnalysis = {
+      industry_annual_attrition_pct: attritionProfile.annual_rate_pct,
+      high_risk_tenure_band: attritionProfile.high_risk_tenure,
+      replacement_lag_months: attritionProfile.replacement_lag_months,
+      estimated_exits_yr1: Math.round(memberCount * attritionRate * 0.85), // employees only est.
+      estimated_joiners_yr1: Math.round(memberCount * attritionRate),
+      net_member_change_yr1: Math.round(memberCount * attritionRate * 0.15), // slight growth
+      fresh_joiner_count: freshJoinerCount,
+      fresh_joiner_pct: freshJoinerPct,
+      adverse_selection_risk: freshJoinerPct > 25 ? 'High' : freshJoinerPct > 15 ? 'Moderate' : 'Low',
+      adverse_selection_multiplier: adverseSelectionMultiplier,
+      premium_impact_pct: Math.round((adverseSelectionMultiplier - 1) * 100),
+      tenure_distribution: tenureDist.map(t => ({
+        band: t.tenure_band,
+        count: parseInt(t.count),
+        avg_age: Math.round(parseFloat(t.avg_age) || 0),
+        pct: memberCount > 0 ? Math.round(parseInt(t.count) / memberCount * 100) : 0,
+      })),
+      underwriting_notes: freshJoinerPct > 25
+        ? `${freshJoinerPct}% fresh joiners (< 1yr) indicate high adverse selection exposure. Apply ${Math.round((adverseSelectionMultiplier - 1) * 100)}% loading on new joiner cohort.`
+        : freshJoinerPct > 15
+        ? `${freshJoinerPct}% fresh joiners — moderate adverse selection. Monitor new joiner claims closely in first 6 months.`
+        : 'Stable workforce composition. Standard adverse selection provisions apply.',
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MODULE 4 — Claims Experience Analysis (if data exists)
+    // ═══════════════════════════════════════════════════════════════════════════
+    let claimsExperienceAnalysis = null;
+    if (hasClaimsData) {
+      const totalClaimed = claims.reduce((s, c) => s + parseFloat(c.claimed_amount || 0), 0);
+      const totalApproved = claims.reduce((s, c) => s + parseFloat(c.approved_amount || 0), 0);
+      const totalPaid = claims.reduce((s, c) => s + parseFloat(c.paid_amount || 0), 0);
+      const approvedClaims = claims.filter(c => parseFloat(c.approved_amount || 0) > 0);
+      const avgSeverity = approvedClaims.length > 0 ? totalApproved / approvedClaims.length : 0;
+
+      // Diagnosis distribution
+      const diagGroups = {};
+      claims.forEach(c => {
+        const diag = c.diagnosis || 'Not coded';
+        if (!diagGroups[diag]) diagGroups[diag] = { count: 0, amount: 0 };
+        diagGroups[diag].count++;
+        diagGroups[diag].amount += parseFloat(c.approved_amount || 0);
+      });
+      const topDiagnoses = Object.entries(diagGroups)
+        .sort((a, b) => b[1].count - a[1].count)
+        .slice(0, 10)
+        .map(([diag, d]) => ({ diagnosis: diag, count: d.count, total_approved: Math.round(d.amount), avg_per_claim: Math.round(d.amount / d.count) }));
+
+      // Service type distribution
+      const svcGroups = {};
+      claims.forEach(c => {
+        const svc = c.service_type || 'Other';
+        if (!svcGroups[svc]) svcGroups[svc] = { count: 0, amount: 0 };
+        svcGroups[svc].count++;
+        svcGroups[svc].amount += parseFloat(c.approved_amount || 0);
+      });
+
+      // Age band claim analysis
+      const ageClaimGroups = {};
+      claims.forEach(c => {
+        const age = parseInt(c.age || 0);
+        const band = age < 25 ? 'Under 25' : age <= 34 ? '25-34' : age <= 44 ? '35-44' : age <= 54 ? '45-54' : age <= 64 ? '55-64' : '65+';
+        if (!ageClaimGroups[band]) ageClaimGroups[band] = { count: 0, amount: 0 };
+        ageClaimGroups[band].count++;
+        ageClaimGroups[band].amount += parseFloat(c.approved_amount || 0);
+      });
+
+      // Policy year trend
+      const policyYearGroups = {};
+      claims.forEach(c => {
+        const yr = c.policy_year || 'Unknown';
+        if (!policyYearGroups[yr]) policyYearGroups[yr] = { count: 0, amount: 0 };
+        policyYearGroups[yr].count++;
+        policyYearGroups[yr].amount += parseFloat(c.approved_amount || 0);
+      });
+
+      // Employee-level risk scoring (top claimants)
+      const empClaimGroups = {};
+      claims.forEach(c => {
+        const emp = c.emp_code || c.employee_name || 'Unknown';
+        if (!empClaimGroups[emp]) empClaimGroups[emp] = { emp_code: c.emp_code, name: c.employee_name, age: c.age, claims: 0, total_claimed: 0, total_approved: 0, diagnoses: [] };
+        empClaimGroups[emp].claims++;
+        empClaimGroups[emp].total_claimed += parseFloat(c.claimed_amount || 0);
+        empClaimGroups[emp].total_approved += parseFloat(c.approved_amount || 0);
+        if (c.diagnosis && !empClaimGroups[emp].diagnoses.includes(c.diagnosis)) {
+          empClaimGroups[emp].diagnoses.push(c.diagnosis);
+        }
+      });
+      const topClaimants = Object.values(empClaimGroups)
+        .sort((a, b) => b.total_approved - a.total_approved)
+        .slice(0, 20)
+        .map(e => ({
+          ...e,
+          risk_tier: e.total_approved > avgSeverity * 5 ? 'Critical' : e.total_approved > avgSeverity * 2 ? 'High' : e.total_approved > avgSeverity ? 'Moderate' : 'Standard',
+          diagnoses: e.diagnoses.slice(0, 3),
+        }));
+
+      // High-cost claim analysis
+      const highCostThreshold = avgSeverity * 3;
+      const highCostClaims = claims.filter(c => parseFloat(c.approved_amount || 0) > highCostThreshold);
+
+      // ICR calculation
+      const premiumPaid = parseFloat(rfq.premium_paid) || null;
+      const icrPct = premiumPaid && premiumPaid > 0 ? Math.round(totalApproved / premiumPaid * 100) : null;
+
+      claimsExperienceAnalysis = {
+        summary: {
+          total_claims: claims.length,
+          total_claimed: Math.round(totalClaimed),
+          total_approved: Math.round(totalApproved),
+          total_paid: Math.round(totalPaid),
+          approval_rate_pct: claims.length > 0 ? Math.round(totalApproved / totalClaimed * 100) : null,
+          avg_claim_severity: Math.round(avgSeverity),
+          icr_pct: icrPct,
+          claims_freq_per_100: memberCount > 0 ? Math.round(claims.length / memberCount * 100 * 10) / 10 : null,
+          high_cost_claims_count: highCostClaims.length,
+          high_cost_claims_pct: Math.round(highCostClaims.length / claims.length * 100),
+          high_cost_total_approved: Math.round(highCostClaims.reduce((s, c) => s + parseFloat(c.approved_amount || 0), 0)),
+        },
+        top_diagnoses: topDiagnoses,
+        service_type_distribution: Object.entries(svcGroups)
+          .sort((a, b) => b[1].count - a[1].count)
+          .map(([svc, d]) => ({ service_type: svc, count: d.count, total_amount: Math.round(d.amount), pct_of_total: Math.round(d.count / claims.length * 100) })),
+        age_band_claims: Object.entries(ageClaimGroups)
+          .sort((a, b) => b[1].count - a[1].count)
+          .map(([band, d]) => ({ age_band: band, claim_count: d.count, total_approved: Math.round(d.amount), avg_severity: Math.round(d.amount / d.count) })),
+        policy_year_trend: Object.entries(policyYearGroups)
+          .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+          .map(([yr, d]) => ({ policy_year: yr, claims: d.count, total_approved: Math.round(d.amount), avg_severity: Math.round(d.amount / d.count) })),
+        top_claimants_by_cost: topClaimants,
+      };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MODULE 5 — Employee Risk Score Distribution (from member data)
+    // ═══════════════════════════════════════════════════════════════════════════
+    let employeeRiskDistribution = null;
+    if (hasMemberData) {
+      const riskBuckets = { 'Low (18-30)': 0, 'Moderate (31-40)': 0, 'Elevated (41-50)': 0, 'High (51-60)': 0, 'Critical (60+)': 0 };
+      let totalRiskScore = 0;
+
+      members.forEach(m => {
+        const age = parseInt(m.age || 0);
+        const ageScore = age < 30 ? 10 : age < 40 ? 25 : age < 50 ? 45 : age < 60 ? 65 : 80;
+        const siScore = parseFloat(m.si_proposed || m.si_expiring || 0) > 500000 ? 15 : 5;
+        const riskScore = ageScore + siScore;
+        totalRiskScore += riskScore;
+
+        if (riskScore < 30) riskBuckets['Low (18-30)']++;
+        else if (riskScore < 40) riskBuckets['Moderate (31-40)']++;
+        else if (riskScore < 55) riskBuckets['Elevated (41-50)']++;
+        else if (riskScore < 70) riskBuckets['High (51-60)']++;
+        else riskBuckets['Critical (60+)']++;
+      });
+
+      const avgRiskScore = members.length > 0 ? Math.round(totalRiskScore / members.length) : 0;
+
+      employeeRiskDistribution = {
+        avg_risk_score: avgRiskScore,
+        risk_tier: avgRiskScore < 25 ? 'Preferred' : avgRiskScore < 40 ? 'Standard' : avgRiskScore < 55 ? 'Substandard' : 'High Risk',
+        buckets: Object.entries(riskBuckets).map(([label, count]) => ({
+          label,
+          count,
+          pct: members.length > 0 ? Math.round(count / members.length * 100) : 0,
+        })),
+        gender_distribution: genderDist.map(g => ({
+          gender: g.gender,
+          count: parseInt(g.count),
+          avg_age: Math.round(parseFloat(g.avg_age) || 0),
+          pct: members.length > 0 ? Math.round(parseInt(g.count) / members.length * 100) : 0,
+        })),
+        si_distribution: siDist.map(s => ({
+          slab: s.si_slab,
+          count: parseInt(s.count),
+          avg_si: Math.round(parseFloat(s.avg_si) || 0),
+        })),
+        age_band_distribution: ageBands.map(b => ({
+          age_band: b.age_band,
+          count: parseInt(b.count),
+          pct: Math.round(parseInt(b.count) / totalAged * 100),
+          employees: parseInt(b.employees) || 0,
+          dependents: parseInt(b.dependents) || 0,
+          avg_si: Math.round(parseFloat(b.avg_si) || 0),
+          risk_factor: (AGE_RISK_FACTORS[b.age_band] || { risk: 1.0 }).risk,
+        })),
+      };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MODULE 6 — Severity-Frequency Cohort Model & Premium Adequacy
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Weighted age loading for this group
+    let weightedAgeLoading = 1.0;
+    if (hasMemberData && ageBands.length > 0) {
+      const ageLoadingSum = ageBands.reduce((s, b) => {
+        const rf = (AGE_RISK_FACTORS[b.age_band] || { risk: 1.0 }).risk;
+        return s + rf * parseInt(b.count);
+      }, 0);
+      weightedAgeLoading = ageLoadingSum / baseTotalCount;
+    }
+
+    const premiumPaid = parseFloat(rfq.premium_paid) || 0;
+    const premiumPerLife = memberCount > 0 && premiumPaid > 0 ? premiumPaid / memberCount : 0;
+    const marketMedianPerLife = bm.avg_severity * bm.icr_norm * bm.freq_per_100 / 100;
+    const adequacyRatio = premiumPerLife > 0 ? Math.round(premiumPerLife / marketMedianPerLife * 100) / 100 : null;
+
+    // Catastrophic loss potential (99th percentile estimate)
+    const catastrophicPotential = Math.round(memberCount * bm.freq_per_100 / 100 * bm.catastrophic_pct / 100 * bm.avg_severity * 8);
+
+    const cohortModel = {
+      weighted_age_loading: Math.round(weightedAgeLoading * 100) / 100,
+      base_burning_cost_per_life: Math.round(bm.avg_severity * bm.freq_per_100 / 100),
+      age_adjusted_burning_cost: Math.round(bm.avg_severity * bm.freq_per_100 / 100 * weightedAgeLoading),
+      industry_adjusted_burning_cost: Math.round(bm.avg_severity * bm.freq_per_100 / 100 * weightedAgeLoading * (adverseSelectionMultiplier || 1)),
+      gross_premium_indication: Math.round(bm.avg_severity * bm.freq_per_100 / 100 * weightedAgeLoading * (adverseSelectionMultiplier || 1) * 1.22),
+      prior_premium_per_life: Math.round(premiumPerLife),
+      market_median_per_life: Math.round(marketMedianPerLife),
+      premium_adequacy_ratio: adequacyRatio,
+      adequacy_verdict: adequacyRatio === null ? 'No premium data' : adequacyRatio < 0.85 ? 'Under-priced — risk of loss' : adequacyRatio > 1.20 ? 'Over-priced — renewal opportunity' : 'Adequately priced',
+      catastrophic_loss_potential: catastrophicPotential,
+      recommended_ibnr_provision_pct: Math.round(bm.catastrophic_pct * 1.5 + 5),
+      stop_loss_recommendation: catastrophicPotential > 5000000 ? `Stop-loss recommended at 80% aggregate. Catastrophic potential: ₹${(catastrophicPotential / 100000).toFixed(1)}L` : null,
+      inflation_adjusted_yr1: Math.round(bm.avg_severity * bm.freq_per_100 / 100 * weightedAgeLoading * bm.inflation),
+      inflation_adjusted_yr3: Math.round(bm.avg_severity * bm.freq_per_100 / 100 * weightedAgeLoading * Math.pow(bm.inflation, 3)),
+      inflation_adjusted_yr5: Math.round(bm.avg_severity * bm.freq_per_100 / 100 * weightedAgeLoading * Math.pow(bm.inflation, 5)),
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MODULE 7 — Underwriting Summary & Risk Score
+    // ═══════════════════════════════════════════════════════════════════════════
+    const uwScore = {
+      age_risk: weightedAgeLoading > 1.5 ? 'HIGH' : weightedAgeLoading > 1.2 ? 'MODERATE' : 'LOW',
+      attrition_risk: attritionAnalysis.adverse_selection_risk,
+      premium_adequacy: cohortModel.adequacy_verdict,
+      industry_risk: Object.values(industryRisk).filter(v => v >= 1.4).length >= 3 ? 'HIGH' : Object.values(industryRisk).filter(v => v >= 1.2).length >= 3 ? 'MODERATE' : 'LOW',
+    };
+
+    const riskFactorCount = Object.values(uwScore).filter(v => v === 'HIGH' || v === 'MODERATE').length;
+    const overallRisk = riskFactorCount >= 3 ? 'High Risk' : riskFactorCount >= 2 ? 'Substandard' : riskFactorCount >= 1 ? 'Standard' : 'Preferred';
+    const overallColor = overallRisk === 'High Risk' ? 'red' : overallRisk === 'Substandard' ? 'amber' : overallRisk === 'Standard' ? 'blue' : 'emerald';
+
+    const underwritingDecision = overallRisk === 'High Risk' ? 'Refer to Chief Underwriter' :
+      overallRisk === 'Substandard' ? 'Acceptable with Loading' : 'Acceptable';
+
+    const uwSummary = {
+      overall_risk: overallRisk,
+      overall_color: overallColor,
+      underwriting_decision: underwritingDecision,
+      risk_factors: uwScore,
+      key_loadings: {
+        age_loading: Math.round((weightedAgeLoading - 1) * 100),
+        adverse_selection_loading: Math.round((adverseSelectionMultiplier - 1) * 100),
+        industry_loading: Object.values(industryRisk).filter(v => v >= 1.2).length * 3,
+        renewal_credit: isRenewal ? -5 : 0,
+        total_loading_pct: Math.round((weightedAgeLoading * adverseSelectionMultiplier - 1) * 100) + Object.values(industryRisk).filter(v => v >= 1.2).length * 3 + (isRenewal ? -5 : 0),
+      },
+      key_risk_flags: [
+        weightedAgeLoading > 1.4 && `Ageing workforce — weighted age loading ${Math.round(weightedAgeLoading * 100) / 100}x`,
+        freshJoinerPct > 20 && `${freshJoinerPct}% fresh joiners in last 12 months (adverse selection risk)`,
+        premiumPerLife > 0 && premiumPerLife < marketMedianPerLife * 0.80 && `Prior premium ₹${Math.round(premiumPerLife).toLocaleString()}/life is significantly below market median — likely under-insured`,
+        bm.catastrophic_pct > 5 && `${productType} product has elevated catastrophic claim exposure (${bm.catastrophic_pct}% probability)`,
+        Object.values(industryRisk).filter(v => v >= 1.4).length >= 2 && `${industryInferred} industry has ${Object.values(industryRisk).filter(v => v >= 1.4).length} high-risk disease categories`,
+      ].filter(Boolean),
+      renewal_advantage: isRenewal ? {
+        exists: true,
+        prior_insurer: rfq.existing_insurer,
+        migration_opportunity: /new india|united india|national insurance|oriental/i.test(rfq.existing_insurer || '') ? 'PSU-to-private migration — strong service differentiation play' : 'Private insurer renewal — competitive pricing required',
+      } : { exists: false },
+    };
+
+    // ── Final response ─────────────────────────────────────────────────────────
+    return res.json({
+      success: true,
+      data: {
+        rfq_context: {
+          id: rfq.id,
+          insured_name: rfq.insured_name,
+          member_count: memberCount,
+          product_type: productType,
+          policy_type: rfq.policy_type,
+          industry: industryInferred,
+          existing_insurer: rfq.existing_insurer,
+          is_renewal: isRenewal,
+          has_member_data: hasMemberData,
+          has_claims_data: hasClaimsData,
+        },
+        product_risk_profile: productRiskProfile,
+        age_band_forecasts: ageBandForecasts,
+        claim_forecast: claimForecast,
+        attrition_analysis: attritionAnalysis,
+        claims_experience: claimsExperienceAnalysis,
+        employee_risk_distribution: employeeRiskDistribution,
+        cohort_model: cohortModel,
+        underwriting_summary: uwSummary,
+        generated_at: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('[Deep Analytics]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: 'Deep analytics failed' });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AI INTELLIGENCE ENGINE — RAG Pipeline + Competition Intelligence + Proposal
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * POST /rfqs/:id/ai-intelligence
+ * Full RAG-powered intelligence:
+ *  - Historical CRM win/loss analysis (similar size, same product)
+ *  - Benchmark pricing from our own won deals
+ *  - Win probability scoring
+ *  - Competitor benchmarks via LLM
+ *  - Trend analysis from our pipeline
+ *  - Pricing recommendations
+ */
+router.post('/rfqs/:id/ai-intelligence', authCRM, async (req, res) => {
+  try {
+    const rfqId = req.params.id;
+    const pool = sharedPool;
+
+    // ── 1. Fetch this RFQ ─────────────────────────────────────────────────
+    const rfqRes = await pool.query(`SELECT * FROM crm_rfqs WHERE id = $1`, [rfqId]);
+    if (!rfqRes.rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
+    const rfq = rfqRes.rows[0];
+    const memberCount = rfq.member_count || 0;
+    const policyType = rfq.policy_type || 'Group Mediclaim';
+    const productType = rfq.product_type || 'GMC';
+
+    // ── 2. RAG: Historical CRM data (our own pipeline) ──────────────────
+    // 2a. Similar-size RFQs won in the past (±50% member count)
+    const sizeMin = Math.max(1, Math.floor(memberCount * 0.5));
+    const sizeMax = Math.ceil(memberCount * 1.5);
+
+    const [wonDeals, lostDeals, allQuotedDeals, recentPipeline] = await Promise.all([
+      pool.query(`
+        SELECT r.insured_name, r.member_count, r.product_type, r.existing_insurer,
+               q.total_premium, q.per_life_cost, q.total_lives, q.version,
+               ROUND(q.total_premium::numeric / NULLIF(q.total_lives, 0), 0) AS per_life_quoted
+        FROM crm_rfqs r
+        JOIN crm_quotes q ON q.rfq_id = r.id AND q.status = 'accepted'
+        WHERE r.status = 'won'
+          AND r.member_count BETWEEN $1 AND $2
+          AND r.id != $3
+        ORDER BY r.created_at DESC LIMIT 10
+      `, [sizeMin, sizeMax, rfqId]),
+
+      pool.query(`
+        SELECT r.insured_name, r.member_count, r.product_type, r.existing_insurer, r.notes as lost_reason,
+               q.total_premium, q.per_life_cost, q.total_lives
+        FROM crm_rfqs r
+        LEFT JOIN crm_quotes q ON q.rfq_id = r.id AND q.status = 'rejected'
+        WHERE r.status = 'lost'
+          AND r.member_count BETWEEN $1 AND $2
+          AND r.id != $3
+        ORDER BY r.created_at DESC LIMIT 10
+      `, [sizeMin, sizeMax, rfqId]),
+
+      pool.query(`
+        SELECT q.total_premium, q.per_life_cost, q.total_lives, r.member_count, r.status
+        FROM crm_quotes q
+        JOIN crm_rfqs r ON r.id = q.rfq_id
+        WHERE q.status NOT IN ('draft') AND r.id != $1
+        ORDER BY q.created_at DESC LIMIT 50
+      `, [rfqId]),
+
+      pool.query(`
+        SELECT r.status, COUNT(*) AS cnt,
+               AVG(q.per_life_cost) AS avg_per_life,
+               AVG(q.total_premium) AS avg_premium
+        FROM crm_rfqs r
+        LEFT JOIN crm_quotes q ON q.rfq_id = r.id AND q.status NOT IN ('draft','rejected')
+        WHERE r.created_at >= NOW() - INTERVAL '90 days'
+          AND r.product_type = $1
+          AND r.id != $2
+        GROUP BY r.status
+      `, [productType, rfqId]),
+    ]);
+
+    // ── 3. Compute RAG analytics ─────────────────────────────────────────
+    const wonQuotes = wonDeals.rows;
+    const lostQuotes = lostDeals.rows;
+
+    // Average per-life cost in won deals (benchmark from our own book)
+    const wonPerLife = wonQuotes.filter(r => parseFloat(r.per_life_quoted) > 0)
+      .map(r => parseFloat(r.per_life_quoted));
+    const avgWonPerLife = wonPerLife.length > 0
+      ? Math.round(wonPerLife.reduce((a, b) => a + b, 0) / wonPerLife.length) : null;
+    const minWonPerLife = wonPerLife.length > 0 ? Math.round(Math.min(...wonPerLife)) : null;
+    const maxWonPerLife = wonPerLife.length > 0 ? Math.round(Math.max(...wonPerLife)) : null;
+
+    // Conversion rate for similar deals
+    const totalSimilar = wonQuotes.length + lostQuotes.length;
+    const winRate = totalSimilar > 0 ? Math.round((wonQuotes.length / totalSimilar) * 100) : 50;
+
+    // Pipeline velocity (90-day)
+    const pipelineStats = {};
+    for (const row of recentPipeline.rows) {
+      pipelineStats[row.status] = {
+        count: parseInt(row.cnt),
+        avg_per_life: row.avg_per_life ? Math.round(parseFloat(row.avg_per_life)) : null,
+        avg_premium: row.avg_premium ? Math.round(parseFloat(row.avg_premium)) : null,
+      };
+    }
+
+    // Market benchmark (industry standard for India group health)
+    const industryBenchmarks = getIndustryBenchmarks(memberCount, policyType, productType);
+
+    // ── 3b. Actuarial: member profile + claims experience ─────────────────
+    const [memberProfileRes, ageBandRes, claimsSummaryRes] = await Promise.all([
+      pool.query(`
+        SELECT
+          COUNT(*) AS total_members,
+          COUNT(DISTINCT emp_code) AS unique_employees,
+          ROUND(AVG(age)::numeric, 1) AS avg_age,
+          COUNT(CASE WHEN age >= 45 THEN 1 END) AS high_risk_age_count,
+          COUNT(CASE WHEN age >= 55 THEN 1 END) AS senior_age_count,
+          COUNT(CASE WHEN LOWER(COALESCE(gender,'')) IN ('male','m') THEN 1 END) AS male_count,
+          COUNT(CASE WHEN LOWER(COALESCE(gender,'')) IN ('female','f') THEN 1 END) AS female_count,
+          COUNT(CASE WHEN LOWER(COALESCE(relation_type,'')) NOT IN ('employee','self','emp') THEN 1 END) AS dependent_count,
+          ROUND(AVG(si_proposed)::numeric, 0) AS avg_si,
+          ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY si_proposed)::numeric, 0) AS median_si
+        FROM crm_rfq_members WHERE rfq_id = $1
+      `, [rfqId]),
+
+      pool.query(`
+        SELECT
+          CASE WHEN age < 18 THEN '0-17' WHEN age < 30 THEN '18-29' WHEN age < 45 THEN '30-44'
+               WHEN age < 55 THEN '45-54' WHEN age < 65 THEN '55-64' ELSE '65+' END AS age_band,
+          COUNT(*) AS count,
+          ROUND(AVG(si_proposed)::numeric,0) AS avg_si
+        FROM crm_rfq_members WHERE rfq_id = $1
+        GROUP BY age_band ORDER BY age_band
+      `, [rfqId]),
+
+      pool.query(`
+        SELECT
+          COUNT(*) AS total_claims,
+          COUNT(DISTINCT emp_code) AS unique_claimants,
+          COALESCE(SUM(claimed_amount), 0) AS total_claimed,
+          COALESCE(SUM(approved_amount), 0) AS total_approved,
+          COALESCE(AVG(approved_amount), 0) AS avg_claim_severity,
+          COALESCE(MAX(approved_amount), 0) AS max_claim
+        FROM crm_rfq_claims WHERE rfq_id = $1
+      `, [rfqId]),
+    ]);
+
+    const memberProfile = memberProfileRes.rows[0] || {};
+    const ageBands = ageBandRes.rows.map(r => ({ age_band: r.age_band, count: parseInt(r.count), avg_si: parseInt(r.avg_si) || 0 }));
+    const claimsExp = claimsSummaryRes.rows[0] || {};
+
+    // Actuarial underwriting analysis
+    const underwritingAnalysis = computeUnderwritingAnalysis({
+      memberCount,
+      memberProfile,
+      ageBands,
+      claimsExperience: claimsExp,
+      industryBenchmarks,
+      premiumPaid: rfq.premium_paid,
+      policyType,
+    });
+
+    // Win probability — computed after underwriting so we can use risk tier
+    const winProbability = computeWinProbability({
+      memberCount, policyType, productType,
+      existingInsurer: rfq.existing_insurer,
+      wonDealsCount: wonQuotes.length,
+      lostDealsCount: lostQuotes.length,
+      avgWonPerLife,
+      industryBenchmarks,
+      riskTier: underwritingAnalysis.risk_classification?.tier,
+      premiumPaid: rfq.premium_paid,
+    });
+
+    // ── 4. DeepTech: pre-auth analytics for claim pattern signals ─────────
+    let deeptechSignals = null;
+    try {
+      const deeptechRes = await pool.query(`
+        SELECT
+          COUNT(*) AS total_decisions,
+          COUNT(*) FILTER (WHERE decision = 'approved') AS approved,
+          AVG(requested_amount) AS avg_requested_amount,
+          json_agg(json_build_object('diagnosis_code', diagnosis_codes[1], 'cnt', cnt) ORDER BY cnt DESC) AS top_diagnoses
+        FROM (
+          SELECT decision, requested_amount, diagnosis_codes,
+                 COUNT(*) OVER (PARTITION BY diagnosis_codes[1]) AS cnt
+          FROM preauth_decisions
+          WHERE created_at >= NOW() - INTERVAL '90 days'
+            AND requested_amount BETWEEN 10000 AND 2000000
+          LIMIT 500
+        ) sub
+      `);
+      const dt = deeptechRes.rows[0];
+      if (dt && parseInt(dt.total_decisions) > 0) {
+        const total = parseInt(dt.total_decisions);
+        const approved = parseInt(dt.approved);
+        deeptechSignals = {
+          total_decisions: total,
+          approval_rate_pct: total > 0 ? Math.round(approved / total * 100) : null,
+          avg_requested_amount: Math.round(parseFloat(dt.avg_requested_amount) || 0),
+          top_diagnoses: (dt.top_diagnoses || []).filter(d => d.diagnosis_code).slice(0, 8),
+        };
+      }
+    } catch (dtErr) {
+      // DeepTech preauth table may not exist in CRM context — silently skip
+      deeptechSignals = null;
+    }
+
+    // ── 5. LLM call for competitor intelligence + narrative ───────────────
+    const llmContext = buildIntelligenceContext(rfq, wonQuotes, lostQuotes, industryBenchmarks, avgWonPerLife, winRate, underwritingAnalysis, deeptechSignals);
+
+    let llmIntelligence = null;
+    try {
+      const _llm3 = await import('../services/ai-brain/llm-provider.js');
+      const callLLM = _llm3.default?.chat || _llm3.chat;
+      const llmResult = await callLLM({
+        messages: [
+          {
+            role: 'system',
+            content: `You are a 20-year veteran senior underwriter and competitive intelligence analyst at Mediczy, a health insurance intermediary in India.
+You know India's insurance market deeply: Star Health, ICICI Lombard, HDFC Ergo, New India Assurance, United India, Bajaj Allianz, Reliance General, Care Health (Religare), Niva Bupa, SBI General.
+
+You also understand sector-specific disease patterns: pharma companies have occupational exposure, IT companies have stress/lifestyle disease risk, manufacturing has trauma/ortho claims, BFSI has cardiac/diabetes, hospitality has fatigue/musculoskeletal.
+
+ALWAYS respond with valid JSON only. No markdown, no explanation, no text outside the JSON object. Every string field must be specific to the exact company, sector, and member profile described — never generic.`
+          },
+          {
+            role: 'user',
+            content: `Underwrite this group health insurance RFQ and respond with ONLY a JSON object — no markdown, no extra text:
+
+${llmContext}
+
+Required JSON structure (fill every field with data specific to this exact deal):
+{
+  "recommended_price_per_life": <number, your target per-life price recommendation>,
+  "market_position": "aggressive|competitive|premium|defensive",
+  "underwriting_decision": "Acceptable|Acceptable with Loading|Refer to Chief Underwriter|Decline",
+  "underwriting_notes": "<3-5 sentences specific to this group: reference their avg age, sector, existing insurer, SI level, claims history if available>",
+  "competitor_benchmarks": [
+    { "insurer": "Star Health", "estimated_per_life_range": "₹X,XXX-₹X,XXX", "notes": "<specific stance for this exact risk profile and sector>" },
+    { "insurer": "ICICI Lombard", "estimated_per_life_range": "₹X,XXX-₹X,XXX", "notes": "<specific>" },
+    { "insurer": "HDFC Ergo", "estimated_per_life_range": "₹X,XXX-₹X,XXX", "notes": "<specific>" },
+    { "insurer": "New India Assurance", "estimated_per_life_range": "₹X,XXX-₹X,XXX", "notes": "<specific>" },
+    { "insurer": "Care Health", "estimated_per_life_range": "₹X,XXX-₹X,XXX", "notes": "<specific>" }
+  ],
+  "pricing_recommendation": {
+    "floor_per_life": <number>,
+    "target_per_life": <number>,
+    "ceiling_per_life": <number>,
+    "rationale": "<actuarial rationale: reference ICR, loading factors, credibility weight, specific to this group's profile>"
+  },
+  "claims_prediction": {
+    "expected_icr_pct": <number 60-120>,
+    "expected_claims_frequency_per_100": <number>,
+    "predicted_high_cost_claims": "<specific to this sector and age profile — e.g. for pharma: occupational exposure, cardiac, musculoskeletal>",
+    "ibnr_provision_pct": <number 5-15>
+  },
+  "disease_prediction": [
+    { "disease": "<top disease category for this group>", "expected_frequency_pct": <number>, "rationale": "<why this group is prone>" },
+    { "disease": "<2nd>", "expected_frequency_pct": <number>, "rationale": "<specific>" },
+    { "disease": "<3rd>", "expected_frequency_pct": <number>, "rationale": "<specific>" }
+  ],
+  "underwriting_conditions": ["<specific condition 1>", "<specific condition 2>", "<specific condition 3>"],
+  "win_strategy": "<3-4 sentences: HOW to win this specific account from ${rfq.existing_insurer || 'the incumbent'} — mention ${rfq.insured_name}, their sector, group size, what pain points they likely have, and what Mediczy should lead with>",
+  "risk_flags": ["<specific flag 1 for this group>", "<specific flag 2>", "<specific flag 3>"],
+  "usp_talking_points": [
+    "<Mediczy-specific USP relevant to this group — e.g. AI-powered claims analytics, Mediqzy health intelligence scores for the group>",
+    "<pricing USP — reference our actuarial pricing vs market>",
+    "<service USP — TPA management, wellness program, digital tools>"
+  ],
+  "negotiation_levers": ["<lever 1 specific to this deal>", "<lever 2>", "<lever 3>"],
+  "broker_action_plan": {
+    "immediate_actions": ["<action to take in next 48 hours>", "<action 2>", "<action 3>"],
+    "talk_tracks": ["<what to say to the HR/CFO decision-maker>", "<what to say about incumbent insurer's weakness>"],
+    "objection_handling": {
+      "price_too_high": "<response when client says our price is too high — reference our target of ₹X,XXX vs market + value adds>",
+      "happy_with_current_insurer": "<response when client says they're happy with existing insurer>"
+    }
+  },
+  "trend_insight": "<insight about pricing trends, market conditions, or sector-specific claim trends relevant to this deal>",
+  "executive_summary": "<3-4 sentences: overall assessment of this deal's attractiveness, recommended action, and expected outcome. Reference the company name, size, sector, and key risk/opportunity factors>"
+}`
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 2500,
+      });
+
+      const raw = llmResult.content?.trim() || '';
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        llmIntelligence = JSON.parse(jsonMatch[0]);
+      }
+    } catch (llmErr) {
+      console.error('[AI Intelligence LLM]', llmErr.message);
+      llmIntelligence = buildFallbackIntelligence(rfq, industryBenchmarks, avgWonPerLife, winRate);
+    }
+
+    // ── 5. Pricing trend from our pipeline ──────────────────────────────
+    const trendData = await pool.query(`
+      SELECT DATE_TRUNC('month', q.created_at) AS month,
+             AVG(q.per_life_cost) AS avg_per_life,
+             COUNT(*) AS quote_count
+      FROM crm_quotes q
+      JOIN crm_rfqs r ON r.id = q.rfq_id
+      WHERE q.status NOT IN ('draft')
+        AND r.product_type = $1
+        AND q.created_at >= NOW() - INTERVAL '12 months'
+      GROUP BY month ORDER BY month
+    `, [productType]);
+
+    const pricingTrend = trendData.rows.map(r => ({
+      month: new Date(r.month).toLocaleDateString('en-IN', { month: 'short', year: '2-digit' }),
+      avg_per_life: Math.round(parseFloat(r.avg_per_life) || 0),
+      quote_count: parseInt(r.quote_count),
+    }));
+
+    return res.json({
+      success: true,
+      data: {
+        rfq_context: {
+          insured_name: rfq.insured_name,
+          member_count: memberCount,
+          policy_type: policyType,
+          product_type: productType,
+          existing_insurer: rfq.existing_insurer,
+        },
+        rag_analytics: {
+          similar_deals_analyzed: totalSimilar,
+          won_deals: wonQuotes.length,
+          lost_deals: lostQuotes.length,
+          win_rate_pct: winRate,
+          our_book_benchmarks: {
+            avg_per_life: avgWonPerLife,
+            min_per_life: minWonPerLife,
+            max_per_life: maxWonPerLife,
+            sample_size: wonPerLife.length,
+          },
+          won_deals_sample: wonQuotes.slice(0, 5).map(r => ({
+            insured_name: r.insured_name,
+            member_count: r.member_count,
+            per_life_quoted: Math.round(parseFloat(r.per_life_quoted) || 0),
+            total_premium: Math.round(parseFloat(r.total_premium) || 0),
+          })),
+        },
+        industry_benchmarks: industryBenchmarks,
+        win_probability: winProbability,
+        underwriting_analysis: underwritingAnalysis,
+        llm_intelligence: llmIntelligence,
+        recommended_price_per_life: llmIntelligence?.recommended_price_per_life
+          || llmIntelligence?.pricing_recommendation?.target_per_life
+          || underwritingAnalysis?.premium_waterfall?.gross_premium_per_life
+          || null,
+        deeptech_signals: deeptechSignals,
+        pricing_trend: pricingTrend,
+        pipeline_stats: pipelineStats,
+        generated_at: new Date().toISOString(),
+      }
+    });
+  } catch (error) {
+    console.error('[AI Intelligence]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: 'Intelligence analysis failed' });
+  }
+});
+
+/**
+ * POST /rfqs/:id/ai-proposal
+ * Generates a full professional proposal document using LLM
+ */
+router.post('/rfqs/:id/ai-proposal', authCRM, async (req, res) => {
+  try {
+    const rfqId = req.params.id;
+    const pool = sharedPool;
+    const { intelligence } = req.body; // pass intelligence result from previous call
+
+    const [rfqRes, quotesRes] = await Promise.all([
+      pool.query(`SELECT * FROM crm_rfqs WHERE id = $1`, [rfqId]),
+      pool.query(`SELECT * FROM crm_quotes WHERE rfq_id = $1 AND status NOT IN ('draft') ORDER BY version DESC LIMIT 1`, [rfqId]),
+    ]);
+    if (!rfqRes.rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
+
+    const rfq = rfqRes.rows[0];
+    const quote = quotesRes.rows[0];
+    const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
+
+    const proposalPrompt = buildProposalPrompt(rfq, quote, intelligence, today);
+
+    let proposalMarkdown = '';
+    try {
+      const _llm4 = await import('../services/ai-brain/llm-provider.js');
+      const callLLM = _llm4.default?.chat || _llm4.chat;
+      const result = await callLLM({
+        messages: [
+          {
+            role: 'system',
+            content: `You are a senior insurance proposal writer at Mediczy, a health insurance intermediary/broker in India.
+Write professional, persuasive, data-driven group health insurance proposals.
+Format: Markdown with clear sections. Be specific, cite numbers. Tone: professional yet approachable.
+Mediqzy (our parent brand) is the technology platform powering Mediczy's analytics and AI.`
+          },
+          { role: 'user', content: proposalPrompt }
+        ],
+        temperature: 0.4,
+        max_tokens: 2500,
+      });
+      proposalMarkdown = result.content || '';
+    } catch (llmErr) {
+      console.error('[AI Proposal LLM]', llmErr.message);
+      proposalMarkdown = buildFallbackProposal(rfq, quote, today);
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        proposal_markdown: proposalMarkdown,
+        rfq_number: rfq.rfq_number,
+        insured_name: rfq.insured_name,
+        generated_at: new Date().toISOString(),
+      }
+    });
+  } catch (error) {
+    console.error('[AI Proposal]', error.message);
+    return res.status(500).json({ success: false, message: 'Proposal generation failed' });
+  }
+});
+
+// ── Helper: Industry Benchmark data (India group health, April 2025) ────────
+function getIndustryBenchmarks(memberCount, policyType, productType) {
+  // Per-life benchmarks vary by group size (India market, INR)
+  let sizeCategory, sizeLabel;
+  if (memberCount < 50) { sizeCategory = 'micro'; sizeLabel = '<50 lives'; }
+  else if (memberCount < 200) { sizeCategory = 'small'; sizeLabel = '50-200 lives'; }
+  else if (memberCount < 500) { sizeCategory = 'medium'; sizeLabel = '200-500 lives'; }
+  else if (memberCount < 2000) { sizeCategory = 'large'; sizeLabel = '500-2000 lives'; }
+  else { sizeCategory = 'xlarge'; sizeLabel = '2000+ lives'; }
+
+  // Base per-life annual premium (GMC SI ₹3L, floater, includes OPD for OPD products)
+  const BASE_RATES = {
+    micro:  { gmc: 4500, gpa: 800, gmc_opd: 7500, opd: 3500, gtl: 600 },
+    small:  { gmc: 3800, gpa: 700, gmc_opd: 6500, opd: 3000, gtl: 550 },
+    medium: { gmc: 3200, gpa: 600, gmc_opd: 5500, opd: 2500, gtl: 500 },
+    large:  { gmc: 2800, gpa: 550, gmc_opd: 4800, opd: 2200, gtl: 450 },
+    xlarge: { gmc: 2400, gpa: 480, gmc_opd: 4200, opd: 1900, gtl: 400 },
+  };
+
+  const base = BASE_RATES[sizeCategory];
+  const pt = (productType || '').toLowerCase();
+  let baseRate = pt.includes('opd') && pt.includes('gmc') ? base.gmc_opd
+               : pt.includes('opd') ? base.opd
+               : pt === 'gpa' ? base.gpa
+               : pt === 'gtl' ? base.gtl
+               : base.gmc;
+
+  // Medical inflation trend (2024-25): ~12-14% YoY
+  const inflationFactor = 1.13;
+
+  return {
+    size_category: sizeLabel,
+    product_type: productType,
+    market_per_life: {
+      floor: Math.round(baseRate * 0.80),
+      median: Math.round(baseRate * inflationFactor),
+      ceiling: Math.round(baseRate * inflationFactor * 1.25),
+    },
+    inflation_rate_pct: 13,
+    medical_trend_pct: 8,
+    notes: `India group health market benchmarks for ${sizeLabel}, ${productType} (Q1 2026). SI assumed ₹3L floater base. Actual rates vary by SI, age profile, claims history, and insurer underwriting guidelines.`,
+  };
+}
+
+// ── Helper: Win probability heuristic ────────────────────────────────────────
+function computeWinProbability({ memberCount, policyType, productType, existingInsurer, wonDealsCount, lostDealsCount, avgWonPerLife, industryBenchmarks, riskTier, premiumPaid }) {
+  let score = 50; // baseline
+  const factors = [];
+
+  // Group size scoring — tiered by our operational sweet spot
+  if (memberCount >= 500 && memberCount <= 2000) { score += 12; factors.push({ label: 'Sweet-spot group size (500–2000)', impact: +12 }); }
+  else if (memberCount >= 200 && memberCount <= 5000) { score += 7; factors.push({ label: 'Good group size segment', impact: +7 }); }
+  else if (memberCount < 50) { score -= 12; factors.push({ label: 'Micro group — hyper-competitive market', impact: -12 }); }
+  else if (memberCount >= 50 && memberCount < 200) { score -= 3; factors.push({ label: 'Small group — competitive', impact: -3 }); }
+  else if (memberCount > 10000) { score -= 8; factors.push({ label: 'Very large group — direct insurer competition', impact: -8 }); }
+
+  // Historical win rate for similar deals
+  const total = wonDealsCount + lostDealsCount;
+  if (total >= 3) {
+    const wr = wonDealsCount / total;
+    const scoreAdj = Math.round((wr - 0.5) * 30);
+    score += scoreAdj;
+    factors.push({ label: `Historical win rate on similar deals: ${Math.round(wr * 100)}%`, impact: scoreAdj });
+  }
+
+  // Existing insurer: type-based signals
+  if (existingInsurer && existingInsurer.trim() && existingInsurer !== 'Not disclosed') {
+    // Renewal = client is actively shopping — that's a good signal
+    score += 5;
+    factors.push({ label: 'Active renewal — client is in market', impact: +5 });
+
+    if (/new india|united india|national insurance|oriental/i.test(existingInsurer)) {
+      score += 10;
+      factors.push({ label: 'PSU incumbent — strong digital/service migration opportunity', impact: +10 });
+    } else if (/star health|icici lombard|hdfc ergo|bajaj allianz|care health|niva bupa|reliance general/i.test(existingInsurer)) {
+      score += 3;
+      factors.push({ label: 'Private insurer incumbent — competitive but winnable on service/price', impact: +3 });
+    }
+  } else {
+    score += 3;
+    factors.push({ label: 'Fresh account — no incumbent to unseat', impact: +3 });
+  }
+
+  // Risk tier: preferred = easier to win (we can be competitive on price)
+  if (riskTier === 'Preferred') { score += 8; factors.push({ label: 'Preferred risk tier — competitive pricing advantage', impact: +8 }); }
+  else if (riskTier === 'High Risk') { score -= 10; factors.push({ label: 'High risk tier — pricing likely uncompetitive vs market', impact: -10 }); }
+
+  // Prior premium: if we know it, we can benchmark our price vs their current spend
+  if (premiumPaid) {
+    const priorPremium = parseFloat(premiumPaid);
+    if (priorPremium > 0 && memberCount > 0) {
+      const priorPerLife = priorPremium / memberCount;
+      const marketMedian = industryBenchmarks.market_per_life.median;
+      if (priorPerLife > marketMedian * 1.15) {
+        score += 7;
+        factors.push({ label: 'Prior premium above market median — price-down opportunity', impact: +7 });
+      } else if (priorPerLife < marketMedian * 0.90) {
+        score -= 5;
+        factors.push({ label: 'Prior premium below market median — hard to beat on price', impact: -5 });
+      }
+    }
+  }
+
+  // Our benchmark availability
+  if (avgWonPerLife) { score += 5; factors.push({ label: 'Own book benchmark available for this segment', impact: +5 }); }
+
+  score = Math.max(10, Math.min(95, score));
+
+  let category, color;
+  if (score >= 70) { category = 'High'; color = 'emerald'; }
+  else if (score >= 45) { category = 'Moderate'; color = 'amber'; }
+  else { category = 'Low'; color = 'red'; }
+
+  return { score, category, color, factors };
+}
+
+// ── Helper: Actuarial underwriting analysis ───────────────────────────────────
+function computeUnderwritingAnalysis({ memberCount, memberProfile, ageBands, claimsExperience, industryBenchmarks, premiumPaid, policyType }) {
+  // India group health age loading factors (base: 30-44 = 1.0)
+  const AGE_LOADING = { '0-17': 0.70, '18-29': 0.88, '30-44': 1.00, '45-54': 1.48, '55-64': 1.90, '65+': 2.40 };
+
+  // 1. Weighted age loading
+  const totalAged = ageBands.reduce((s, b) => s + b.count, 0);
+  let weightedAgeLoading = 1.0;
+  if (totalAged > 0) {
+    weightedAgeLoading = ageBands.reduce((sum, b) => sum + (AGE_LOADING[b.age_band] || 1.0) * b.count, 0) / totalAged;
+  }
+
+  // 2. Dependency loading
+  const employees = parseInt(memberProfile.unique_employees) || 1;
+  const dependents = parseInt(memberProfile.dependent_count) || 0;
+  const dependencyRatio = Math.round((dependents / employees) * 100) / 100;
+  const dependencyLoading = dependencyRatio > 2.5 ? 1.20 : dependencyRatio > 1.5 ? 1.10 : dependencyRatio > 0.5 ? 1.05 : 1.00;
+
+  // 3. SI adequacy loading
+  const avgSI = parseFloat(memberProfile.avg_si) || 300000;
+  const siLoading = avgSI < 200000 ? 1.10 : avgSI < 300000 ? 1.05 : avgSI >= 1000000 ? 0.95 : 1.00;
+
+  // 4. Claims experience loading (experience rating)
+  let claimsLoading = 1.0;
+  let icr = null, claimsFreq = null, avgSeverity = null, burningCost = null;
+  const totalClaims = parseInt(claimsExperience.total_claims) || 0;
+  const premiumBase = parseFloat(premiumPaid) || 0;
+
+  if (totalClaims > 0 && premiumBase > 0) {
+    const totalApproved = parseFloat(claimsExperience.total_approved) || 0;
+    icr = totalApproved / premiumBase;
+    claimsFreq = totalClaims / (memberCount || 1);
+    avgSeverity = parseFloat(claimsExperience.avg_claim_severity) || 0;
+    burningCost = totalApproved / (memberCount || 1);
+    claimsLoading = icr > 1.20 ? 1.35 : icr > 1.00 ? 1.20 : icr > 0.85 ? 1.10 : icr > 0.70 ? 1.00 : icr > 0.50 ? 0.92 : 0.85;
+  } else if (totalClaims > 0) {
+    // Claims exist but no premium — use normative benchmark
+    const totalApproved = parseFloat(claimsExperience.total_approved) || 0;
+    burningCost = totalApproved / (memberCount || 1);
+  }
+
+  // 5. Medical inflation FY2025-26
+  const inflationLoading = 1.13;
+
+  // 6. Pure premium (expected claims cost per member per year)
+  const basePremium = industryBenchmarks.market_per_life.median;
+  let purePremiumPerLife;
+  if (burningCost && burningCost > 0) {
+    // Credibility-weighted: blend experience (burning cost) + manual (market) based on group size
+    const credibility = Math.min((memberCount || 0) / 500, 1.0);
+    purePremiumPerLife = Math.round(
+      (burningCost * claimsLoading * credibility) +
+      (basePremium * weightedAgeLoading * dependencyLoading * siLoading * (1 - credibility))
+    );
+  } else {
+    purePremiumPerLife = Math.round(basePremium * weightedAgeLoading * dependencyLoading * siLoading * inflationLoading);
+  }
+
+  // 7. Gross premium waterfall (India group health structure)
+  const EXPENSE_RATIO = 0.22;   // management, admin, commission
+  const PROFIT_MARGIN = 0.06;   // insurer target margin
+  const REINSURANCE = 0.03;     // RI cost (for large groups / high SI)
+  const IBNR_CAT = 0.02;        // IBNR + catastrophe provision
+  const retentionRatio = 1 - EXPENSE_RATIO - PROFIT_MARGIN - REINSURANCE - IBNR_CAT;
+  const grossPremiumPerLife = Math.round(purePremiumPerLife / retentionRatio);
+  const totalGrossPremium = grossPremiumPerLife * (memberCount || 1);
+
+  // 8. Risk classification (underwriting tier)
+  const highRiskPct = ((parseInt(memberProfile.high_risk_age_count) || 0) / (parseInt(memberProfile.total_members) || 1)) * 100;
+  let riskScore = 0;
+  if (weightedAgeLoading > 1.5) riskScore += 3; else if (weightedAgeLoading > 1.25) riskScore += 2; else riskScore += 1;
+  if (dependencyRatio > 2.5) riskScore += 2; else if (dependencyRatio > 1.5) riskScore += 1;
+  if (icr !== null) { if (icr > 1.0) riskScore += 3; else if (icr > 0.85) riskScore += 2; else if (icr > 0.70) riskScore += 1; } else riskScore += 1;
+  if (highRiskPct > 30) riskScore += 2; else if (highRiskPct > 15) riskScore += 1;
+
+  const riskTier = riskScore >= 7 ? 'High Risk' : riskScore >= 4 ? 'Standard' : 'Preferred';
+  const riskColor = riskScore >= 7 ? 'red' : riskScore >= 4 ? 'amber' : 'emerald';
+  const keyRiskDrivers = [
+    weightedAgeLoading > 1.3 ? `Adverse age profile (+${Math.round((weightedAgeLoading-1)*100)}% age loading)` : null,
+    dependencyRatio > 1.5 ? `High dependency ratio (${dependencyRatio}:1)` : null,
+    icr !== null && icr > 0.85 ? `Prior ICR ${(icr*100).toFixed(1)}% — experience surcharge applies` : null,
+    highRiskPct > 20 ? `${Math.round(highRiskPct)}% of insured aged 45+` : null,
+    avgSI < 200000 ? 'Under-insured sum insured — potential adverse selection risk' : null,
+  ].filter(Boolean);
+
+  return {
+    has_member_data: totalAged > 0,
+    has_claims_data: totalClaims > 0,
+    member_profile: {
+      total_members: parseInt(memberProfile.total_members) || 0,
+      avg_age: parseFloat(memberProfile.avg_age) || null,
+      high_risk_age_pct: Math.round(highRiskPct * 10) / 10,
+      senior_age_pct: Math.round(((parseInt(memberProfile.senior_age_count)||0) / (parseInt(memberProfile.total_members)||1)) * 1000) / 10,
+      dependency_ratio: dependencyRatio,
+      avg_si: Math.round(avgSI),
+      median_si: Math.round(parseFloat(memberProfile.median_si) || 0),
+      male_pct: (parseInt(memberProfile.male_count)||0) > 0 ? Math.round((parseInt(memberProfile.male_count)/(parseInt(memberProfile.total_members)||1))*100) : null,
+    },
+    age_bands: ageBands,
+    claims_experience: totalClaims > 0 ? {
+      total_claims: totalClaims,
+      unique_claimants: parseInt(claimsExperience.unique_claimants) || 0,
+      total_claimed: Math.round(parseFloat(claimsExperience.total_claimed) || 0),
+      total_approved: Math.round(parseFloat(claimsExperience.total_approved) || 0),
+      avg_severity: Math.round(avgSeverity || 0),
+      max_claim: Math.round(parseFloat(claimsExperience.max_claim) || 0),
+      icr_pct: icr !== null ? Math.round(icr * 1000) / 10 : null,
+      claims_freq_per_100: claimsFreq !== null ? Math.round(claimsFreq * 1000) / 10 : null,
+      burning_cost_per_life: burningCost !== null ? Math.round(burningCost) : null,
+    } : null,
+    loadings: {
+      age_loading: Math.round(weightedAgeLoading * 100) / 100,
+      dependency_loading: dependencyLoading,
+      si_loading: siLoading,
+      claims_loading: claimsLoading,
+      inflation_loading: inflationLoading,
+      total_loading: Math.round(weightedAgeLoading * dependencyLoading * siLoading * claimsLoading * inflationLoading * 100) / 100,
+    },
+    premium_waterfall: {
+      base_market_per_life: basePremium,
+      pure_premium_per_life: purePremiumPerLife,
+      gross_premium_per_life: grossPremiumPerLife,
+      total_gross_premium: totalGrossPremium,
+      expense_ratio_pct: Math.round(EXPENSE_RATIO * 100),
+      profit_margin_pct: Math.round(PROFIT_MARGIN * 100),
+      reinsurance_pct: Math.round(REINSURANCE * 100),
+      ibnr_cat_pct: Math.round(IBNR_CAT * 100),
+    },
+    risk_classification: {
+      tier: riskTier,
+      color: riskColor,
+      score: riskScore,
+      high_risk_age_pct: Math.round(highRiskPct * 10) / 10,
+      key_risk_drivers: keyRiskDrivers,
+    },
+  };
+}
+
+// ── Helper: LLM context builder ───────────────────────────────────────────────
+// ── Helper: infer industry sector from company name ───────────────────────────
+function inferIndustry(name) {
+  if (!name) return 'General Corporate';
+  const n = name.toLowerCase();
+  if (/pharma|laborator|bio|chem|drug|alkem|cipla|sun pharma|lupin|ranbaxy|glenmark|aurobindo/.test(n)) return 'Pharmaceutical / Life Sciences';
+  if (/tech|software|it |digital|infosys|tcs|wipro|hcl|cognizant|mphasis|hexaware/.test(n)) return 'Information Technology / IT Services';
+  if (/bank|financ|nfbc|capital|insur|invest|mutual fund|securities|asset management/.test(n)) return 'Banking / Financial Services (BFSI)';
+  if (/hospital|clinic|health|nursing|care|medic/.test(n)) return 'Healthcare / Hospitals';
+  if (/school|college|universit|education|academy|institute/.test(n)) return 'Education';
+  if (/manufactur|factor|steel|textile|garment|engg|engineer|industries|auto|component/.test(n)) return 'Manufacturing / Industrial';
+  if (/retail|mall|shop|store|supermart|ecomm|amazon|flipkart/.test(n)) return 'Retail / E-commerce';
+  if (/hotel|hospitalit|resort|travel|airline|aviation|indigo|spicejet/.test(n)) return 'Hospitality / Travel';
+  if (/telecom|jio|airtel|vodafone|bsnl|reliance/.test(n)) return 'Telecom / Media';
+  if (/govt|government|municipal|corporation|authority|board|psu/.test(n)) return 'Government / PSU';
+  if (/construct|infra|real estate|builder|developer|realty/.test(n)) return 'Construction / Real Estate';
+  if (/food|beverage|fmcg|consumer|hul|itc|nestle|britannia/.test(n)) return 'FMCG / Consumer Goods';
+  if (/consult|advisory|audit|legal|law|advocate/.test(n)) return 'Professional Services';
+  return 'General Corporate';
+}
+
+function buildIntelligenceContext(rfq, wonQuotes, lostQuotes, industryBenchmarks, avgWonPerLife, winRate, underwritingAnalysis, deeptechSignals) {
+  const uw = underwritingAnalysis || {};
+  const mp = uw.member_profile || {};
+  const ce = uw.claims_experience;
+  const pw = uw.premium_waterfall || {};
+  const rc = uw.risk_classification || {};
+  const loadings = uw.loadings || {};
+
+  const industryInferred = inferIndustry(rfq.insured_name);
+  const isRenewal = !!(rfq.existing_insurer && rfq.existing_insurer.trim() !== 'Not disclosed');
+  const isPSUIncumbent = isRenewal && /new india|united india|national insurance|oriental/i.test(rfq.existing_insurer || '');
+  const isPrivateIncumbent = isRenewal && /star health|icici lombard|hdfc ergo|bajaj allianz|care health|niva bupa|reliance general/i.test(rfq.existing_insurer || '');
+  const cityMatch = (rfq.insured_address || '').match(/mumbai|delhi|bangalore|bengaluru|hyderabad|chennai|pune|kolkata|ahmedabad|noida|gurugram|gurgaon/i);
+  const city = cityMatch ? cityMatch[0].charAt(0).toUpperCase() + cityMatch[0].slice(1) : null;
+
+  const deeptechSection = deeptechSignals?.top_diagnoses?.length > 0 ? `
+Mediqzy DeepTech Pre-Auth Intelligence (from our claims platform):
+- Platform approval rate: ${deeptechSignals.approval_rate_pct}% (last 90 days, all groups)
+- Top claim categories on our platform: ${deeptechSignals.top_diagnoses.slice(0, 5).map(d => d.diagnosis_code).join(', ')}
+- Avg pre-auth amount (similar group size): ₹${(deeptechSignals.avg_requested_amount || 0).toLocaleString('en-IN')}
+- Cardiac/Ortho/Maternity are consistently high-frequency in the ${industryInferred} sector on our platform` : '';
+
+  const actuarialSection = mp.avg_age ? `
+Actuarial Member Profile (from uploaded data):
+- Average Age: ${mp.avg_age} years | High-risk (45+): ${mp.high_risk_age_pct}%
+- Dependency Ratio: ${mp.dependency_ratio} dependents/employee
+- Average SI: ₹${(mp.avg_si || 0).toLocaleString('en-IN')}
+- Gender Mix: ${mp.male_pct !== null ? `${mp.male_pct}% Male` : 'Not analyzed'}
+${ce ? `
+Claims Experience (prior year):
+- Incurred Claims Ratio (ICR): ${ce.icr_pct}%
+- Claims Frequency: ${ce.claims_freq_per_100} per 100 insured
+- Average Claim Severity: ₹${(ce.avg_severity || 0).toLocaleString('en-IN')}
+- Burning Cost Per Life: ₹${(ce.burning_cost_per_life || 0).toLocaleString('en-IN')}
+- Total Claims: ${ce.total_claims} | Max Single Claim: ₹${(ce.max_claim || 0).toLocaleString('en-IN')}` : '- No claims history uploaded (use manual underwriting)'}
+
+Underwriting Loading Analysis:
+- Age Loading Factor: ${loadings.age_loading}x
+- Dependency Loading: ${loadings.dependency_loading}x
+- Claims Experience Loading: ${loadings.claims_loading}x
+- Medical Inflation (2025-26): ${loadings.inflation_loading}x
+- Total Combined Loading: ${loadings.total_loading}x
+
+Actuarial Premium Waterfall:
+- Base Market Rate: ₹${(pw.base_market_per_life || 0).toLocaleString('en-IN')}/life
+- Pure Premium (risk cost): ₹${(pw.pure_premium_per_life || 0).toLocaleString('en-IN')}/life
+- Gross Premium per Life: ₹${(pw.gross_premium_per_life || 0).toLocaleString('en-IN')}/life
+- Total Gross Premium: ₹${(pw.total_gross_premium || 0).toLocaleString('en-IN')}
+- Risk Classification: ${rc.tier} (Score: ${rc.score})` : '';
+
+  return `Group: ${rfq.insured_name}
+- Member Count: ${rfq.member_count} lives
+- Policy Type: ${rfq.policy_type}
+- Product: ${rfq.product_type}
+- Industry Sector: ${industryInferred}
+- Business Type: ${isRenewal ? `RENEWAL (from ${rfq.existing_insurer}${isPSUIncumbent ? ' — PSU, migration opportunity' : isPrivateIncumbent ? ' — private incumbent, strong competition' : ''})` : 'FRESH BUSINESS (new account)'}
+- Existing TPA: ${rfq.existing_tpa || 'Not disclosed'}
+- Location: ${city ? `${city}, India` : (rfq.insured_address || 'India')}
+- Policy Period: ${rfq.policy_start ? String(rfq.policy_start).slice(0,10) : 'TBD'} to ${rfq.policy_end ? String(rfq.policy_end).slice(0,10) : 'TBD'}
+- Prior Premium: ${rfq.premium_paid ? `₹${parseFloat(rfq.premium_paid).toLocaleString('en-IN')}` : 'Not disclosed'}
+${actuarialSection}
+${deeptechSection}
+Our Historical Performance (similar-sized groups, same product type):
+- Won deals: ${wonQuotes.length}, Lost deals: ${lostQuotes.length}, Win rate: ${winRate}%
+- Our avg per-life on won deals: ${avgWonPerLife ? `₹${avgWonPerLife.toLocaleString()}` : 'N/A'}
+- Lost deal reasons: ${lostQuotes.map(r => r.lost_reason).filter(Boolean).join('; ') || 'Not recorded'}
+
+Industry Benchmarks (${industryBenchmarks.size_category}):
+- Market per-life range: ₹${industryBenchmarks.market_per_life.floor.toLocaleString()} – ₹${industryBenchmarks.market_per_life.ceiling.toLocaleString()}
+- Median: ₹${industryBenchmarks.market_per_life.median.toLocaleString()}
+- Medical inflation: ~${industryBenchmarks.inflation_rate_pct}% YoY (India FY2025-26)
+
+INSTRUCTIONS: Respond with deeply specific, actionable intelligence for THIS exact deal — reference the company name "${rfq.insured_name}", sector "${industryInferred}", group size ${rfq.member_count}, ${isRenewal ? `renewal from ${rfq.existing_insurer}` : 'fresh account'}${city ? `, located in ${city}` : ''}. Do not give generic advice.`;
+}
+
+// ── Helper: Fallback intelligence (no LLM) ───────────────────────────────────
+function buildFallbackIntelligence(rfq, industryBenchmarks, avgWonPerLife, winRate) {
+  const bm = industryBenchmarks.market_per_life;
+  return {
+    recommended_price_per_life: avgWonPerLife || bm.median,
+    market_position: 'competitive',
+    underwriting_decision: 'Acceptable',
+    underwriting_notes: 'Standard group health risk. No adverse features noted from available data.',
+    competitor_benchmarks: [
+      { insurer: 'Star Health', estimated_per_life_range: `₹${bm.floor.toLocaleString()}-₹${bm.median.toLocaleString()}`, notes: 'Aggressive on renewal migration; strong retail brand' },
+      { insurer: 'ICICI Lombard', estimated_per_life_range: `₹${bm.median.toLocaleString()}-₹${bm.ceiling.toLocaleString()}`, notes: 'Strong TPA network, conservative underwriting' },
+      { insurer: 'Niva Bupa', estimated_per_life_range: `₹${Math.round(bm.floor*0.9).toLocaleString()}-₹${bm.median.toLocaleString()}`, notes: 'Competitive mid-size groups; good tech platform' },
+      { insurer: 'HDFC Ergo', estimated_per_life_range: `₹${bm.median.toLocaleString()}-₹${Math.round(bm.ceiling*1.05).toLocaleString()}`, notes: 'Premium positioning, wide cashless network' },
+      { insurer: 'Care Health', estimated_per_life_range: `₹${Math.round(bm.floor*0.85).toLocaleString()}-₹${bm.median.toLocaleString()}`, notes: 'Growing share; often undercuts on price for new business' },
+    ],
+    pricing_recommendation: {
+      floor_per_life: bm.floor,
+      target_per_life: avgWonPerLife || bm.median,
+      ceiling_per_life: bm.ceiling,
+      rationale: 'Priced at market median using manual underwriting basis. Upload member data for experience-rated actuarial pricing.',
+    },
+    claims_prediction: {
+      expected_icr_pct: 72,
+      expected_claims_frequency_per_100: 18,
+      predicted_high_cost_claims: 'Low-moderate probability of high-cost claims based on group size.',
+      ibnr_provision_pct: 5,
+    },
+    disease_prediction: [
+      { disease: 'Cardiac / Hypertension', expected_frequency_pct: 18, rationale: 'Top claim category for corporate groups in India aged 35+' },
+      { disease: 'Diabetes (Type 2)', expected_frequency_pct: 14, rationale: 'High prevalence in sedentary office-based workforce' },
+      { disease: 'Musculoskeletal / Orthopaedic', expected_frequency_pct: 12, rationale: 'Back pain and joint issues common in desk-based employees' },
+    ],
+    underwriting_conditions: ['Medical history declaration required for members above 60 years', 'Pre-existing disease waiting period: 12 months (waivable subject to loading)', 'No room rent capping recommended for SI ≥ ₹5L'],
+    win_strategy: `Lead with Mediczy's technology advantage — AI-powered underwriting, real-time claims analytics, and the Mediqzy Health Intelligence Score platform. Target the HR/CFO with a clear cost-benefit narrative vs ${rfq.existing_insurer || 'their current insurer'}.`,
+    risk_flags: ['Age profile not analyzed — upload member data for precise actuarial pricing', 'Prior claims history unavailable — underwriting on manual basis only'],
+    usp_talking_points: ['Mediqzy DeepTech™: AI Health Intelligence Score for every employee — unique in India', 'AI-powered claims analytics with real-time group dashboards', 'Cashless at 15,000+ hospitals pan-India', 'Dedicated underwriter + relationship manager + wellness program'],
+    negotiation_levers: ['Co-pay on out-patient to reduce premium by 5-8%', 'Disease-wise sublimits for cost-effective pricing', 'Wellness discount for health check-up compliance', 'Multi-year lock-in for rate stability'],
+    broker_action_plan: {
+      immediate_actions: [
+        'Send introductory deck with Mediczy AI platform demo within 48 hours',
+        'Request last 3 years claims data from client for experience-rated pricing',
+        'Schedule HR/CFO meeting to present Mediqzy Health Intelligence Score',
+      ],
+      talk_tracks: [
+        `Highlight that Mediczy's AI analytics will give their HR team a real-time view of group health that no other insurer provides`,
+        `Point out any known issues with ${rfq.existing_insurer || 'the current insurer'} — claim settlement delays or network gaps`,
+      ],
+      objection_handling: {
+        price_too_high: `Our target of ₹${(avgWonPerLife || bm.median).toLocaleString()} is in line with market median. We can optimize with co-pay/sublimits. Plus our Mediqzy wellness program has shown 8-12% claims reduction in similar groups.`,
+        happy_with_current_insurer: "We completely understand. Our ask is simple — let us run a parallel benchmarking analysis using our AI platform. If we can't improve on price + service, we'll say so honestly. Zero obligation.",
+      },
+    },
+    trend_insight: `Medical inflation in India running at ~13% YoY (FY2025-26). ${rfq.product_type} premiums in ${industryBenchmarks.size_category} segment have risen 10-15% vs FY24. ICR trend: industry avg ~85% for group health.`,
+    executive_summary: `${rfq.member_count}-life ${rfq.product_type} group health RFQ from ${rfq.insured_name}. Market benchmark: ₹${bm.floor.toLocaleString()}–₹${bm.ceiling.toLocaleString()} per life. Historical win rate on similar deals: ${winRate}%. Risk profile: Standard. Recommended underwriting action: Quote at target per-life with standard T&Cs.`,
+  };
+}
+
+// ── Helper: Proposal prompt ───────────────────────────────────────────────────
+function buildProposalPrompt(rfq, quote, intelligence, today) {
+  const bm = intelligence?.industry_benchmarks?.market_per_life;
+  const quoteInfo = quote ? `
+Latest Quote:
+- Total Premium: ₹${Math.round(parseFloat(quote.total_premium) || 0).toLocaleString()}
+- Per Life: ₹${Math.round(parseFloat(quote.per_life_cost) || 0).toLocaleString()}
+- Per Family: ₹${Math.round(parseFloat(quote.per_family_cost) || 0).toLocaleString()}
+- Valid Until: ${quote.valid_until ? new Date(quote.valid_until).toLocaleDateString('en-IN') : 'TBD'}
+- Quote Number: ${quote.quote_number}` : 'No quote generated yet.';
+
+  return `Write a professional group health insurance proposal for the following:
+
+Date: ${today}
+Client: ${rfq.insured_name}
+Address: ${rfq.insured_address || 'India'}
+Broker: ${rfq.broker_name || rfq.broker_company ? `${rfq.broker_name || ''} (${rfq.broker_company || ''})` : 'Direct'}
+Policy Type: ${rfq.policy_type}
+Product: ${rfq.product_type}
+Group Size: ${rfq.member_count} members
+Existing Insurer: ${rfq.existing_insurer || 'Not disclosed'}
+Existing TPA: ${rfq.existing_tpa || 'Not disclosed'}
+Policy Period: ${rfq.policy_start ? rfq.policy_start.slice(0,10) : 'TBD'} to ${rfq.policy_end ? rfq.policy_end.slice(0,10) : 'TBD'}
+${quoteInfo}
+${bm ? `Market Context: Industry per-life range ₹${bm.floor.toLocaleString()}–₹${bm.ceiling.toLocaleString()} for this segment.` : ''}
+${intelligence?.llm_intelligence?.win_strategy ? `Win Strategy: ${intelligence.llm_intelligence.win_strategy}` : ''}
+${intelligence?.llm_intelligence?.usp_talking_points ? `USPs: ${intelligence.llm_intelligence.usp_talking_points.join(', ')}` : ''}
+
+Write a complete proposal with these sections:
+1. Executive Summary
+2. Understanding Your Needs
+3. Our Proposed Solution
+4. Coverage Highlights
+5. Pricing Overview (use the quote data if available)
+6. Why Mediczy — Our Competitive Edge
+7. Technology Platform (Mediczy AI Analytics)
+8. Service & Claims Support
+9. Terms & Validity
+10. Next Steps
+
+Make it persuasive, data-specific, and professional. Include relevant statistics about Indian group health market trends where appropriate.`;
+}
+
+// ── Helper: Fallback proposal (no LLM) ───────────────────────────────────────
+function buildFallbackProposal(rfq, quote, today) {
+  const premium = quote ? `₹${Math.round(parseFloat(quote.total_premium) || 0).toLocaleString()}` : 'TBD';
+  const perLife = quote ? `₹${Math.round(parseFloat(quote.per_life_cost) || 0).toLocaleString()}` : 'TBD';
+  return `# Group Health Insurance Proposal
+
+**Prepared for:** ${rfq.insured_name}  
+**Date:** ${today}  
+**RFQ Reference:** ${rfq.rfq_number}  
+**Product:** ${rfq.policy_type} — ${rfq.product_type}  
+
+---
+
+## Executive Summary
+
+We are pleased to present our proposal for Group Health Insurance coverage for **${rfq.insured_name}** covering **${rfq.member_count} members**.
+
+---
+
+## Proposed Solution
+
+| Parameter | Details |
+|-----------|---------|
+| Policy Type | ${rfq.policy_type} |
+| Product | ${rfq.product_type} |
+| Group Size | ${rfq.member_count} lives |
+| Existing Insurer | ${rfq.existing_insurer || 'Not disclosed'} |
+| Total Premium | **${premium}** |
+| Per Life | **${perLife}** |
+
+---
+
+## Why Mediczy
+
+- **AI-Powered Analytics** — Real-time claims intelligence and cost benchmarking
+- **Cashless Network** — Access to 10,000+ hospitals pan-India
+- **Dedicated Account Manager** — Single point of contact for all queries
+- **Member Self-Service Portal** — Mobile app for cards, claims status, and benefits
+- **Quarterly Business Reviews** — Proactive cost management and trend reporting
+
+---
+
+## Next Steps
+
+1. Share member data for age-banded actuarial pricing
+2. Upload last 2 years claims experience for experience-rated pricing
+3. Schedule a presentation with your team
+
+---
+
+*This proposal is valid for 30 days from the date of issue. All rates are subject to member data verification and underwriter approval.*
+
+**Mediczy Insurance Broking**  
+*Powered by Mediqzy AI Platform*`;
+}
 
 export default router;

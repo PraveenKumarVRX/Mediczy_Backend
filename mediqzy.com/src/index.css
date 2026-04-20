@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,800&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,800;9..144,900&family=Manrope:wght@500;600;700;800;900&display=swap');
 @import 'tailwindcss';
 
 :root {
@@ -23,10 +23,13 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: var(--ink);
+  color: #e2e8f0;
   background: var(--bg-darker);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-weight: 500;
+  font-optical-sizing: auto;
+  text-rendering: optimizeLegibility;
 }
 
 button,
@@ -44,10 +47,17 @@ h1, h2 {
   font-family: 'Fraunces', Georgia, serif;
   font-variation-settings: 'SOFT' 40, 'WONK' 0;
   text-wrap: balance;
+  letter-spacing: -0.02em;
 }
 
 h3, h4 {
   font-family: 'Manrope', system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+p, li, span, td, th {
+  line-height: 1.7;
 }
 
 ::selection {
@@ -84,7 +94,7 @@ h3, h4 {
 }
 
 .form-input::placeholder {
-  color: #475569;
+  color: #64748b;
 }
 
 /* select arrow fix */
@@ -197,4 +207,88 @@ input:-webkit-autofill {
 }
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+/* ── Dot grid background ─────────────────── */
+
+.dot-grid {
+  background-image: radial-gradient(circle, rgba(255,255,255,0.07) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.dot-grid-sm {
+  background-image: radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* ── Card image hover zoom ───────────────── */
+
+.card-img-zoom img {
+  transition: transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.4s ease;
+}
+.card-img-zoom:hover img {
+  transform: scale(1.06);
+}
+
+/* ── Gradient border card ────────────────── */
+
+.grad-border {
+  position: relative;
+}
+.grad-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(45,212,191,0.3), rgba(99,102,241,0.2), rgba(45,212,191,0.1));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* ── Shimmer animation for featured badges ── */
+
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.shimmer-text {
+  background: linear-gradient(90deg, #14b8a6 0%, #a3e635 25%, #14b8a6 50%, #7c3aed 75%, #14b8a6 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 4s linear infinite;
+}
+
+/* ── Glass card utility ──────────────────── */
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+/* ── Section gradient separator ─────────── */
+
+.section-sep {
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(45,212,191,0.25) 30%, rgba(99,102,241,0.2) 70%, transparent 100%);
+}
+
+/* ── Photo credit overlay ────────────────── */
+
+.photo-overlay {
+  background: linear-gradient(to top, rgba(2,11,22,1) 0%, rgba(2,11,22,0.6) 40%, rgba(2,11,22,0.15) 100%);
+}
+
+/* ── Star rating ─────────────────────────── */
+
+.star-fill {
+  fill: #f59e0b;
+  color: #f59e0b;
 }

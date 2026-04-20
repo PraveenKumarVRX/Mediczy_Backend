@@ -405,6 +405,32 @@ const USER_TYPES: Record<string, PortalConfig> = {
     loginPath: '/homecare/login',
     userType: 'homecare'
   },
+  crm: {
+    allowedPaths: [
+      '/crm',
+      '/crm/login',
+      '/crm/dashboard',
+      '/crm/leads',
+      '/crm/deals',
+      '/crm/contacts',
+      '/crm/activities',
+      '/crm/pipeline',
+      '/crm/reports',
+      '/crm/settings',
+      '/crm/rfqs',
+      '/crm/rfqs/:id',
+      '/crm/rfqs/:id/quote/:quoteId',
+      '/crm/agents',
+      '/crm/agencies',
+      '/crm/commissions',
+      '/crm/corporate-plans',
+      '/rfq',
+      '/rfq/login',
+    ],
+    tokenKey: 'crmToken',
+    loginPath: '/crm/login',
+    userType: 'crm'
+  },
   hospital_insurance: {
     allowedPaths: [
       '/hospital-insurance',

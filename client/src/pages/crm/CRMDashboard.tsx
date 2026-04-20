@@ -8,7 +8,7 @@ import {
   Home, PieChart, Settings, Zap, ChevronDown, Bell,
   LayoutGrid, ArrowRight, BrainCircuit, IndianRupee, Shield,
   Sparkles, Gauge, Building2, FileSpreadsheet, Plus, Search,
-  CheckCircle2, XCircle, AlertTriangle, TrendingDown,
+  CheckCircle2, XCircle, AlertTriangle, TrendingDown, UserCheck,
 } from 'lucide-react';
 import api from '@/utils/api';
 
@@ -31,9 +31,16 @@ const sidebarNav = [
   { section: 'MANAGE', items: [
     { icon: Users, label: 'Contacts', path: '/crm/contacts' },
     { icon: Activity, label: 'Activities', path: '/crm/activities' },
+    { icon: Mail, label: 'Email Inbox', path: '/crm/emails' },
   ]},
   { section: 'INSURANCE', items: [
     { icon: FileText, label: 'RFQs', path: '/crm/rfqs' },
+  ]},
+  { section: 'DISTRIBUTION', items: [
+    { icon: UserCheck, label: 'Agents', path: '/crm/agents' },
+    { icon: Building2, label: 'Agencies', path: '/crm/agencies' },
+    { icon: IndianRupee, label: 'Commissions', path: '/crm/commissions' },
+    { icon: Briefcase, label: 'Corp Plans', path: '/crm/corporate-plans' },
   ]},
   { section: 'INSIGHTS', items: [
     { icon: PieChart, label: 'Reports', path: '/crm/reports' },

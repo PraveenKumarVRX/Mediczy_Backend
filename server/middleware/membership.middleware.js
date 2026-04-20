@@ -1,4 +1,4 @@
-import { UserPlan } from '../models/membershipPlan.model.intelligent.js';
+import { UserPlan } from '../models/postgres/membershipPlan.model.postgres.js';
 import { Op } from 'sequelize';
 
 /**

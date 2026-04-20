@@ -30,10 +30,16 @@ async function callIsha(params) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30_000);
 
+  const apiKey = process.env.ISHA_LLM_API_KEY;
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey && apiKey !== 'no-key-required') {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
+
   try {
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },   // NO Authorization header
+      headers,
       body: JSON.stringify(params),
       signal: controller.signal,
     });
@@ -41,7 +47,7 @@ async function callIsha(params) {
 
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new Error(`${res.status} ${body.substring(0, 200)}`);
+      throw new Error(`iSHA ${res.status}: ${body.substring(0, 200)}`);
     }
     return res.json();
   } catch (err) {

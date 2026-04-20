@@ -29,13 +29,16 @@ const TIERS: Record<number, {
   label: string; Icon: React.FC<{ className?: string }>;
   gradient: string; ring: string; badge: string; accent: string; track: string;
 }> = {
-  1: { label: "Basic",    Icon: Shield,  gradient: "from-slate-600 to-slate-800",  ring: "#64748b", badge: "bg-slate-100 text-slate-700 border-slate-300", accent: "text-slate-600", track: "#e2e8f0" },
-  2: { label: "Silver",   Icon: Star,    gradient: "from-sky-500 to-blue-600",     ring: "#0ea5e9", badge: "bg-sky-50 text-sky-700 border-sky-300",       accent: "text-sky-600",   track: "#e0f2fe" },
-  3: { label: "Gold",     Icon: Crown,   gradient: "from-amber-500 to-yellow-600", ring: "#f59e0b", badge: "bg-amber-50 text-amber-700 border-amber-300", accent: "text-amber-600", track: "#fef3c7" },
-  4: { label: "Platinum", Icon: Gem,     gradient: "from-purple-600 to-violet-700",ring: "#7c3aed", badge: "bg-purple-50 text-purple-700 border-purple-300",accent: "text-purple-600",track: "#ede9fe" },
+  0: { label: "Basic",        Icon: Zap,    gradient: "from-gray-500 to-gray-700",              ring: "#6b7280", badge: "bg-gray-100 text-gray-700 border-gray-300",       accent: "text-gray-600",   track: "#f3f4f6" },
+  1: { label: "Silver",       Icon: Shield, gradient: "from-slate-400 to-slate-600",            ring: "#94a3b8", badge: "bg-slate-100 text-slate-700 border-slate-300",   accent: "text-slate-600",  track: "#e2e8f0" },
+  2: { label: "Silver Plus",  Icon: Shield, gradient: "from-slate-300 via-blue-300 to-slate-500",ring: "#64748b", badge: "bg-blue-50 text-blue-700 border-blue-300",         accent: "text-blue-600",   track: "#dbeafe" },
+  3: { label: "Silver Elite", Icon: Shield, gradient: "from-slate-400 via-indigo-300 to-slate-600",ring: "#4f46e5", badge: "bg-indigo-50 text-indigo-700 border-indigo-300",accent: "text-indigo-600", track: "#e0e7ff" },
+  4: { label: "Gold",         Icon: Star,   gradient: "from-amber-500 to-yellow-600",           ring: "#f59e0b", badge: "bg-amber-50 text-amber-700 border-amber-300",    accent: "text-amber-600",  track: "#fef3c7" },
+  5: { label: "Platinum",     Icon: Crown,  gradient: "from-sky-500 to-blue-600",               ring: "#0ea5e9", badge: "bg-sky-50 text-sky-700 border-sky-300",            accent: "text-sky-600",    track: "#e0f2fe" },
+  6: { label: "Diamond",      Icon: Gem,    gradient: "from-purple-600 to-violet-700",          ring: "#7c3aed", badge: "bg-purple-50 text-purple-700 border-purple-300",  accent: "text-purple-600", track: "#ede9fe" },
 };
 
-const TIER_LIST = [1, 2, 3, 4];
+const TIER_LIST = [0, 1, 2, 3, 4, 5, 6];
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface BenefitLimits { pharmacyLimitINR?: number; homeCareLimitINR?: number; ambulanceLimitINR?: number }
@@ -406,7 +409,7 @@ const MyPlans = () => {
   const { data: plansRes, isLoading: loadingPlans } = useQuery({
     queryKey: ["plans", "available"],
     queryFn: async () => {
-      const { data } = await api.get("/membership/plans");
+      const { data } = await api.get("/membership/plans?type=personal");
       return data as { plans: PlanData[] };
     },
     enabled: !currentRes?.userPlan, // only fetch when no active plan (for subscribe flow)
@@ -567,7 +570,7 @@ const MyPlans = () => {
               {loadingPlans ? <Loader2 className="w-5 h-5 animate-spin mx-auto text-amber-500" /> : (
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4 text-left">
                   {availablePlans.map(p => {
-                    const pTier = p.metadata?.tier ?? 1;
+                    const pTier = p.tier ?? 1;
                     const pCfg = TIERS[pTier] ?? TIERS[1];
                     const PIcon = pCfg.Icon;
                     const price = Number(p.discountedPrice ?? p.price ?? 0);
@@ -687,7 +690,7 @@ const MyPlans = () => {
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
                     {upgradeOptions.map((opt, i) => (
                       <motion.div key={opt.id} custom={i} variants={fadeUp}>
-                        <UpgradeCard plan={opt} onRequest={() => setUpgradePending(opt)} isPopular={opt.tier === 3} />
+                        <UpgradeCard plan={opt} onRequest={() => setUpgradePending(opt)} isPopular={opt.metadata?.badge === 'Most Popular'} />
                       </motion.div>
                     ))}
                   </div>

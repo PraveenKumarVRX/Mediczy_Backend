@@ -9,12 +9,24 @@ export const PLAN_TYPES = {
 };
 
 export const PLAN_SLUGS = {
+  // Personal plans
+  BASIC_FREE: 'basic-free',
+  SILVER: 'silver',
+  GOLD: 'gold',
+  PLATINUM: 'platinum',
+  DIAMOND: 'diamond',
+  // Corporate plans
+  CORPORATE_BASIC: 'corporate-basic',
+  CORPORATE_BASIC_PLUS: 'corporate-basic-plus',
+  CORPORATE_PREMIUM: 'corporate-premium',
+  CORPORATE_ELITE: 'corporate-elite',
+  CORPORATE_SIGNATURE: 'corporate-signature',
+  CORPORATE_EXCLUSIVE: 'corporate-exclusive',
+  // Legacy slugs — kept for backward compatibility
   FREE_BASIC: 'free-basic',
   BASIC: 'basic',
   PREMIUM: 'premium',
   ENTERPRISE: 'enterprise',
-  CORPORATE_BASIC: 'corporate-basic',
-  CORPORATE_PREMIUM: 'corporate-premium',
   CORPORATE_ENTERPRISE: 'corporate-enterprise'
 };
 

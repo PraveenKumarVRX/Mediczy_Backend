@@ -7,6 +7,23 @@ import paymentService from '../services/payment.service.js';
 
 const router = express.Router();
 
+// ── Build appliedLimits from a plan's coverageDetails ─────────────────────────
+function buildAppliedLimits(plan) {
+  const coverage = plan.metadata?.coverageDetails || {};
+  return {
+    benefitLimits: {
+      pharmacyLimitINR: coverage.pharmacy?.limitINR ?? 0,
+      homeCareLimitINR: coverage.homeCare?.limitINR ?? 0,
+      ambulanceLimitINR: coverage.ambulance?.limitINR ?? 0,
+    },
+    teleConsultLimits: {
+      allSpecialties: coverage.onlineConsult?.limit ?? 0,
+    },
+    healthCheckPackage: coverage.healthCheck?.package ?? null,
+    priceINR: Number(plan.discountedPrice != null && plan.discountedPrice !== '0.00' && plan.discountedPrice !== 0 ? plan.discountedPrice : plan.price) || 0,
+  };
+}
+
 // -------- Super Admin / Team Endpoints (Master Plans) --------
 router.post('/admin/plans', authUser, requireRole(['admin', 'team']), [
   body('name').notEmpty(),
@@ -94,10 +111,13 @@ router.delete('/admin/plans/:id', authUser, requireRole(['admin', 'team']), [ pa
 });
 
 // -------- User Endpoints --------
-router.get('/plans', async (_req,res) => {
+router.get('/plans', async (req,res) => {
   try {
+    const { type } = req.query;
+    const where = { isActive: true, planType: 'primary' };
+    if (type) where.type = type;
     const plans = await MembershipPlan.findAll({ 
-      where:{ isActive:true, planType: 'primary' }, 
+      where,
       order:[['tier','ASC'],['price','ASC']] 
     });
     res.json({ plans });
@@ -118,10 +138,17 @@ router.get('/my/current', authUser, async (req,res) => {
     if (!userPlan) {
       return res.json({ userPlan: null, plan: null });
     }
-    
+
+    const planObj = userPlan.toJSON();
+    const associatedPlan = userPlan.plan || userPlan.MembershipPlan;
     res.json({ 
-      userPlan,
-      plan: userPlan.plan || userPlan.MembershipPlan 
+      userPlan: {
+        ...planObj,
+        appliedLimits: planObj.metadata?.appliedLimits ||
+          (associatedPlan ? buildAppliedLimits(associatedPlan) : {}),
+        usage: planObj.metadata?.usage || {},
+      },
+      plan: associatedPlan 
     });
   } catch(e) {
     console.error(e);
@@ -140,10 +167,9 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
     if (planType === 'primary') {
       const alreadyActive = await UserPlan.findOne({ 
         where: { userId: req.user.id, status: 'active' },
-        include: [{ model: MembershipPlan, as: 'plan', where: { planType: 'primary' }, required: false }]
+        include: [{ model: MembershipPlan, as: 'plan', where: { planType: 'primary' }, required: true }]
       });
-      // Check if the active plan is a primary plan
-      if (alreadyActive && (!alreadyActive.plan || alreadyActive.plan.planType === 'primary' || !alreadyActive.plan.planType)) {
+      if (alreadyActive) {
         return res.status(400).json({ message: 'You already have an active primary plan. Use upgrade endpoint to switch plans.' });
       }
     }
@@ -168,7 +194,7 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
       membershipPlanId: plan.id,
       startDate: startDate.toISOString().slice(0,10),
       endDate: endDate.toISOString().slice(0,10),
-      paidAmount: plan.discountedPrice || plan.price,
+      paidAmount: Number(plan.discountedPrice != null && plan.discountedPrice !== '0.00' && plan.discountedPrice !== 0 ? plan.discountedPrice : plan.price) || 0,
       metadata: {
         planName: plan.name,
         planType: planType,
@@ -176,7 +202,8 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
         features: plan.features,
         benefits: plan.benefits,
         limitations: plan.limitations,
-        usage: {}
+        appliedLimits: buildAppliedLimits(plan),
+        usage: { benefitINR: { pharmacyINR: 0, homeCareINR: 0, ambulanceINR: 0 }, teleConsult: {} }
       }
     });
 
@@ -339,7 +366,8 @@ router.post('/upgrade/:newPlanId', authUser, [ param('newPlanId').isInt() ], asy
         previousPlanName: currentPlan.name,
         proratedRefund,
         originalPrice: newPlanPrice,
-        usage: {}
+        appliedLimits: buildAppliedLimits(newPlan),
+        usage: { benefitINR: { pharmacyINR: 0, homeCareINR: 0, ambulanceINR: 0 }, teleConsult: {} }
       }
     });
     
@@ -390,13 +418,15 @@ router.get('/upgrade-options', authUser, async (req, res) => {
     const currentPlan = currentUserPlan.plan;
     const currentTier = currentPlan.tier || 1;
     
-    // Find all primary plans with higher or equal tier
+    // Find all primary plans of the same type with a higher tier
+    const upgradeWhere = {
+      isActive: true,
+      [Op.or]: [{ planType: 'primary' }, { planType: null }],
+      id: { [Op.ne]: currentPlan.id }
+    };
+    if (currentPlan.type) upgradeWhere.type = currentPlan.type;
     const upgradeOptions = await MembershipPlan.findAll({
-      where: {
-        isActive: true,
-        planType: ['primary', null], // Include plans without planType set
-        id: { [Op.ne]: currentPlan.id } // Exclude current plan
-      },
+      where: upgradeWhere,
       order: [['tier', 'ASC'], ['price', 'ASC']]
     });
     
@@ -424,7 +454,7 @@ router.get('/upgrade-options', authUser, async (req, res) => {
           name: plan.name,
           description: plan.description,
           tier: plan.tier || 1,
-          tierName: plan.tierName || (plan.tier === 1 ? 'Basic' : plan.tier === 2 ? 'Standard' : plan.tier === 3 ? 'Premium' : 'Enterprise'),
+          tierName: plan.tierName || (['Basic', 'Silver', 'Silver Plus', 'Silver Elite', 'Gold', 'Platinum', 'Diamond'][plan.tier] || `Tier ${plan.tier}`),
           originalPrice: planPrice,
           proratedRefund,
           amountDue,
@@ -516,15 +546,21 @@ router.get('/my/all', authUser, async (req, res) => {
 // Usage summary (remaining limits)
 router.get('/my/usage', authUser, async (req,res) => {
   try {
-    const active = await UserPlan.findOne({ where:{ userId:req.user.id, status:'active' } });
+    const active = await UserPlan.findOne({
+      where: { userId: req.user.id, status: 'active' },
+      include: [{ model: MembershipPlan, as: 'plan' }]
+    });
     if(!active) return res.json({ active:null, remaining:null });
     const meta = active.metadata || {};
-    const limits = meta.appliedLimits?.benefitLimits || {};
-    const usage = meta.usage || {};
-    const remaining = Object.keys(limits).reduce((acc,key)=>{
-      acc[key] = Math.max(limits[key] - (usage[key]||0),0);
-      return acc;
-    },{});
+    // Prefer stored appliedLimits; fall back to deriving from the associated plan definition
+    const limits = meta.appliedLimits?.benefitLimits ||
+      (active.plan ? buildAppliedLimits(active.plan).benefitLimits : {});
+    const usageBenefit = meta.usage?.benefitINR || {};
+    const remaining = {
+      pharmacyLimitINR: Math.max((limits.pharmacyLimitINR || 0) - (usageBenefit.pharmacyINR || 0), 0),
+      homeCareLimitINR: Math.max((limits.homeCareLimitINR || 0) - (usageBenefit.homeCareINR || 0), 0),
+      ambulanceLimitINR: Math.max((limits.ambulanceLimitINR || 0) - (usageBenefit.ambulanceINR || 0), 0),
+    };
     res.json({ active, remaining });
   } catch(e) {
     console.error(e);

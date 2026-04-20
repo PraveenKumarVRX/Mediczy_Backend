@@ -67,6 +67,7 @@ import membershipRouter from './routes/membership.route.js';
 import orgMembershipPlansRouter from './routes/org-membership-plans.route.js';
 import teamRouter from './routes/team.route.js';
 import teamEmailRouter from './routes/teamEmail.route.js';
+import crmEmailRouter from './routes/crmEmail.route.js';
 import welcomeEmailTemplatesRouter from './routes/welcomeEmailTemplates.route.js';
 import emailSettingsRouter from './routes/emailSettings.route.js';
 import marketingLeadsRouter from './routes/marketing-leads.route.js';
@@ -1139,6 +1140,7 @@ app.use('/api/assistant', assistantRouter);
 app.use('/api/patients', patientRouter); // Patient registration by multiple roles
 app.use('/api', activityLogRoutes); // Activity logging routes
 app.use('/api/crm', crmRouter);
+app.use('/api/crm/emails', crmEmailRouter); // CRM email inbox with SMTP/IMAP settings
 app.use('/api/fcm', fcmRouter);
 app.use('/api/call-notification', callNotificationRouter); // Doctor-to-patient call notifications
 app.use('/api/firebase', firebaseStatusRouter);

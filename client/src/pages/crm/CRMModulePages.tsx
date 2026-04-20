@@ -8,7 +8,8 @@ import {
   Clock, LogOut, Phone, Mail, Calendar, FileText,
   Briefcase, ChevronRight, ChevronLeft, LayoutGrid,
   PieChart, Settings, Plus, Search, Trash2, Edit,
-  CheckCircle, X, Save, Bell, ArrowRight,
+  CheckCircle, X, Save, Bell, ArrowRight, UserCheck,
+  Building2, IndianRupee,
 } from 'lucide-react';
 import api from '@/utils/api';
 
@@ -29,6 +30,12 @@ const sidebarNav = [
   ]},
   { section: 'INSURANCE', items: [
     { icon: FileText, label: 'RFQs', path: '/crm/rfqs' },
+  ]},
+  { section: 'DISTRIBUTION', items: [
+    { icon: UserCheck, label: 'Agents', path: '/crm/agents' },
+    { icon: Building2, label: 'Agencies', path: '/crm/agencies' },
+    { icon: IndianRupee, label: 'Commissions', path: '/crm/commissions' },
+    { icon: Briefcase, label: 'Corp Plans', path: '/crm/corporate-plans' },
   ]},
   { section: 'INSIGHTS', items: [
     { icon: PieChart, label: 'Reports', path: '/crm/reports' },

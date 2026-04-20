@@ -200,6 +200,7 @@ const HyperGridIoTView         = lazy(() => import("@/pages/admin/HyperGridIoTVi
 // ─── CRM ─────────────────────────────────────────────────────────────────────
 const CRMLogin     = lazy(() => import("@/pages/crm/CRMLogin"));
 const CRMDashboard = lazy(() => import("@/pages/crm/CRMDashboard"));
+const CRMEmailPage = lazy(() => import("@/pages/crm/CRMEmailPage"));
 
 const _CRMModulePages = () => import("@/pages/crm/CRMModulePages");
 const CRMLeadsPage      = lazyNamed(_CRMModulePages, "CRMLeadsPage");
@@ -214,6 +215,12 @@ const _CRMRFQPages = () => import("@/pages/crm/CRMRFQPages");
 const CRMRFQsPage        = lazyNamed(_CRMRFQPages, "CRMRFQsPage");
 const CRMRFQDetailPage   = lazyNamed(_CRMRFQPages, "CRMRFQDetailPage");
 const CRMQuoteBuilderPage = lazyNamed(_CRMRFQPages, "CRMQuoteBuilderPage");
+
+const _CRMDistributionPages = () => import("@/pages/crm/CRMDistributionPages");
+const CRMAgentsPage          = lazyNamed(_CRMDistributionPages, "CRMAgentsPage");
+const CRMAgenciesPage        = lazyNamed(_CRMDistributionPages, "CRMAgenciesPage");
+const CRMCommissionsPage     = lazyNamed(_CRMDistributionPages, "CRMCommissionsPage");
+const CRMCorporatePlansPage  = lazyNamed(_CRMDistributionPages, "CRMCorporatePlansPage");
 
 // ─── Team ────────────────────────────────────────────────────────────────────
 const TeamLogin              = lazy(() => import("@/pages/team/TeamLogin"));
@@ -914,6 +921,10 @@ const AppRoutes = () => {
 
         {/* ── CRM ─────────────────────────────────────────────────────── */}
         <Route path="/crm/login"         element={<CRMLogin />} />
+        {/* Alias redirects — common alternative URLs for CRM login */}
+        <Route path="/rfq/login"         element={<Navigate to="/crm/login" replace />} />
+        <Route path="/rfq"               element={<Navigate to="/crm/login" replace />} />
+        <Route path="/crm"               element={<Navigate to="/crm/login" replace />} />
         <Route path="/crm/dashboard"     element={<CRMDashboard />} />
         <Route path="/crm/leads"         element={<CRMLeadsPage />} />
         <Route path="/crm/deals"         element={<CRMDealsPage />} />
@@ -925,6 +936,11 @@ const AppRoutes = () => {
         <Route path="/crm/rfqs"           element={<CRMRFQsPage />} />
         <Route path="/crm/rfqs/:id"       element={<CRMRFQDetailPage />} />
         <Route path="/crm/rfqs/:id/quote/:quoteId" element={<CRMQuoteBuilderPage />} />
+        <Route path="/crm/agents"              element={<CRMAgentsPage />} />
+        <Route path="/crm/agencies"            element={<CRMAgenciesPage />} />
+        <Route path="/crm/commissions"         element={<CRMCommissionsPage />} />
+        <Route path="/crm/corporate-plans"     element={<CRMCorporatePlansPage />} />
+        <Route path="/crm/emails"              element={<CRMEmailPage />} />
 
         {/* ── Team ────────────────────────────────────────────────────── */}
         <Route path="/team/login"                    element={<TeamLogin />} />

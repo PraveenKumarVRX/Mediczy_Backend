@@ -1,10 +1,14 @@
-# Mediczy Patient Mobile App — Complete API Integration Guide
+# Mediczy — Patient Mobile App API Guide
 
-> **Base URL:** `https://app.mediqzy.com/api`  
-> **Auth:** JWT Bearer Token in `Authorization` header  
-> **Content-Type:** `application/json`  
-> **Socket.IO:** `wss://app.mediqzy.com` (path: `/socket.io`)  
-> **Rate Limits:** Global 300/15min, Auth 10/15min, AI 60/15min
+> **Version:** 2.1 | **Last Updated:** April 19, 2026
+
+- **Base URL:** `https://app.mediqzy.com/api`
+- **Auth:** `Authorization: Bearer <jwt-token>` (JWT, expires 7 days)
+- **Content-Type:** `application/json`
+- **Socket.IO:** `wss://app.mediqzy.com` — path `/socket.io`
+- **Rate Limits:** Global 300 req/15 min · Auth 10 req/15 min · AI 60 req/15 min
+
+> `🔐` = Requires authentication | `(Public)` = No auth required
 
 ---
 
@@ -12,7 +16,7 @@
 
 1. [Authentication](#1-authentication)
 2. [User Profile](#2-user-profile)
-3. [Family Members](#3-family-members)
+3. [Family Members & Insurance](#3-family-members--insurance)
 4. [Addresses](#4-addresses)
 5. [Doctor Discovery](#5-doctor-discovery)
 6. [Appointment Booking](#6-appointment-booking)
@@ -41,9 +45,16 @@
 29. [Privacy & GDPR](#29-privacy--gdpr)
 30. [Directory (Hospitals/Labs/Clinics)](#30-directory-hospitalslabsclinics)
 31. [Ayushman Bharat](#31-ayushman-bharat)
-32. [Socket.IO Real-Time Events](#32-socketio-real-time-events)
-33. [Error Handling Reference](#33-error-handling-reference)
-34. [Endpoint Status Summary](#34-endpoint-status-summary)
+32. [AI DeepTech Layer](#32-ai-deeptech-layer)
+33. [Electronic Health Records (EHR)](#33-electronic-health-records-ehr)
+34. [FHIR R4 (Interoperability)](#34-fhir-r4-interoperability)
+35. [Pharmacy Orders](#35-pharmacy-orders)
+36. [Activity Tracker (Advanced)](#36-activity-tracker-advanced)
+37. [Offline AI Scribe](#37-offline-ai-scribe)
+38. [Omnichannel Messaging](#38-omnichannel-messaging)
+39. [Socket.IO Real-Time Events](#39-socketio-real-time-events)
+40. [Error Handling Reference](#40-error-handling-reference)
+41. [Endpoint Status Summary](#41-endpoint-status-summary)
 
 ---
 
@@ -172,15 +183,16 @@ Body: { "key": "..." }
 
 ---
 
-## 3. Family Members
+## 3. Family Members & Insurance
 
+### 3.1 Manage Family Members
 ```
-GET    /api/family-members       🔐  List family members
-GET    /api/family-members/limits 🔐  Get limits (max members allowed)
-POST   /api/family-members       🔐  Add family member
-PUT    /api/family-members/:id   🔐  Update family member
-DELETE /api/family-members/:id   🔐  Remove family member
-GET    /api/family-members/:id   🔐  Get family member details
+GET    /api/family-members        🔐  List family members
+GET    /api/family-members/limits  🔐  Get limits (max members allowed by plan)
+POST   /api/family-members        🔐  Add family member
+PUT    /api/family-members/:id    🔐  Update family member
+DELETE /api/family-members/:id    🔐  Remove family member
+GET    /api/family-members/:id    🔐  Get family member details
 ```
 **Add Body:**
 ```json
@@ -194,6 +206,43 @@ GET    /api/family-members/:id   🔐  Get family member details
   "bloodType": "A+"
 }
 ```
+> Valid `relationship` values: `spouse` | `father` | `mother` | `son` | `daughter` | `brother` | `sister` | `grandfather` | `grandmother` | `grandson` | `granddaughter` | `uncle` | `aunt` | `nephew` | `niece` | `cousin` | `guardian` | `other`  
+> **Plan restriction:** Family members can only be added if the user's plan type is `family` or `corporate`. `individual` plans do not allow family members.
+
+### 3.2 Family Member Insurance Policies
+```
+GET    /api/family-members/:id/insurances              🔐  List insurance policies for a family member
+POST   /api/family-members/:id/insurances              🔐  Add insurance policy to a family member
+DELETE /api/family-members/:id/insurances/:policyId    🔐  Remove insurance policy
+```
+**Add Insurance Body:**
+```json
+{
+  "insurerName": "Star Health Insurance",
+  "policyNumber": "SH-2024-001234",
+  "coverageAmount": 500000,
+  "premium": 12000,
+  "validFrom": "2024-01-01",
+  "validTo": "2025-01-01",
+  "policyType": "health"
+}
+```
+**Required fields:** `insurerName`, `policyNumber`  
+**Response (GET):**
+```json
+{
+  "success": true,
+  "policies": [
+    {
+      "id": "1776575344274",
+      "insurerName": "Star Health Insurance",
+      "policyNumber": "SH-2024-001234",
+      "coverageAmount": 500000
+    }
+  ]
+}
+```
+> Policies are stored as a JSON array in the family member's `metadata`. Each policy receives a unique `id` (timestamp-based) on creation. Use the `id` to delete a specific policy.
 
 ---
 
@@ -388,12 +437,28 @@ GET /api/prescriptions/:id/share/whatsapp                🔐  Share via WhatsAp
 ### 9.1 Upload & Manage Reports
 ```
 POST   /api/reports         🔐  Upload medical report
-       Body: multipart/form-data { file, title, description, reportType, reportDate }
-GET    /api/reports         🔐  List my reports
+GET    /api/reports         🔐  List reports (optionally filtered by family member)
 GET    /api/reports/:id     🔐  Report detail
 DELETE /api/reports/:id     🔐  Delete report
 GET    /api/reports/download/:filename 🔐  Download report file
 ```
+**Upload Body (multipart/form-data):**
+```
+file           <binary>     Required
+title          "Blood Test Results"
+description    "Annual checkup panel"
+reportType     "lab"
+reportDate     "2026-04-15"
+familyMemberId 3            Optional — link report to a family member (omit for primary user)
+```
+> When `familyMemberId` is provided, the server verifies the family member belongs to the authenticated user before saving. Returns `403` if the family member is not found or does not belong to the user.
+
+**GET Query Parameters:**
+| Param | Value | Effect |
+|---|---|---|
+| `familyMemberId` | (omitted) | Returns all reports for the account |
+| `familyMemberId=3` | integer | Only reports linked to family member id=3 |
+| `familyMemberId=null` | string `"null"` | Only primary user's own reports |
 
 ### 9.2 AI Report Analysis
 ```
@@ -876,10 +941,37 @@ Body: { "text": "...", "voice": "alloy" }
 
 ## 26. Insurance
 
+### 26.1 User's Own Insurance Policies
+```
+GET    /api/users/my-insurances              🔐  List my insurance policies
+POST   /api/users/my-insurances              🔐  Add insurance policy
+DELETE /api/users/my-insurances/:policyId    🔐  Remove insurance policy
+```
+**Add Policy Body:**
+```json
+{
+  "insurerName": "HDFC Ergo",
+  "policyNumber": "HDFC-2024-88812",
+  "coverageAmount": 1000000,
+  "premium": 18000,
+  "validFrom": "2024-04-01",
+  "validTo": "2025-03-31",
+  "policyType": "health"
+}
+```
+
+### 26.2 Family Member Insurance Policies
+```
+GET    /api/family-members/:id/insurances              🔐  List FM insurance policies
+POST   /api/family-members/:id/insurances              🔐  Add FM insurance policy
+DELETE /api/family-members/:id/insurances/:policyId    🔐  Remove FM insurance policy
+```
+> See §3.2 for full details and request body.
+
+### 26.3 Insurance Providers & Claims
 ```
 GET  /api/insurance/providers                (Public)  List insurance providers
 GET  /api/insurance/policies/:providerId     (Public)  Provider policies
-GET  /api/insurance/my/insurances            🔐  My insurance policies
 POST /api/insurance/claims                   🔐  Submit insurance claim
      Body: { "policyId": 1, "claimType": "hospitalization", "amount": 50000, "description": "...", "documents": [...] }
 ```
@@ -1007,7 +1099,391 @@ POST /api/ayushman/download              (Public)  Download ABHA card
 
 ---
 
-## 32. Socket.IO Real-Time Events
+## 32. AI DeepTech Layer
+
+> **Base path:** `/api/v3/ai-deeptech`  
+> All endpoints require `Authorization: Bearer <token>` (user or admin).
+
+### 32.1 Health Intelligence Score (HIS)
+```
+GET  /api/v3/ai-deeptech/his/:patientId            🔐  Get HIS score (0–100) + risk tier
+GET  /api/v3/ai-deeptech/his/:patientId/history     🔐  HIS trend history
+GET  /api/v3/ai-deeptech/his/population             🔐  Population risk distribution (admin)
+POST /api/v3/ai-deeptech/his/:patientId/recompute   🔐  Force recompute score (admin)
+```
+**HIS Score Response:**
+```json
+{
+  "success": true,
+  "patientId": 2,
+  "score": 72.4,
+  "tier": "moderate",
+  "dimensions": {
+    "cardiovascular": 3.1,
+    "diabetes": 2.8,
+    "hypertension": 2.5,
+    "medication_adherence": 1.2,
+    "lifestyle": 1.8,
+    "mental_health": 1.0
+  },
+  "algorithm_version": "his-v1",
+  "computed_at": "2026-04-18T10:00:00Z"
+}
+```
+> **Tiers:** `optimal` (90–100) | `low` (75–89) | `moderate` (50–74) | `high` (30–49) | `critical` (0–29)  
+> Score auto-refreshes every 6 hours via background cron.
+
+### 32.2 Clinical NLP / Medical Entity Extraction
+```
+POST /api/v3/ai-deeptech/entities/extract             🔐  Extract medical entities from free text
+GET  /api/v3/ai-deeptech/entities/:patientId           🔐  All extracted entities for patient
+GET  /api/v3/ai-deeptech/entities/:patientId/fhir      🔐  FHIR R4 Bundle of entities
+```
+**Extract Body:**
+```json
+{
+  "text": "Patient complains of severe headache and fever for 2 days. On Paracetamol 500mg. No known allergies.",
+  "patientId": 2,
+  "source": "consultation_notes",
+  "tenantId": "tenant_123"
+}
+```
+**Response:**
+```json
+{
+  "success": true,
+  "entities": [
+    { "type": "symptom", "value": "headache", "severity": "severe", "icd10": "R51", "negated": false },
+    { "type": "symptom", "value": "fever", "duration": "2 days", "icd10": "R50.9", "negated": false },
+    { "type": "medication", "value": "Paracetamol", "dosage": "500mg", "rxnorm": "161" }
+  ],
+  "entity_count": 3
+}
+```
+> Supports: symptoms, diagnoses, medications, procedures, allergies, lab results, vitals. Includes ICD-10 + RxNorm codes, negation detection, and LLM fallback for complex text.
+
+### 32.3 Claims Pre-Authorization Engine
+```
+POST  /api/v3/ai-deeptech/preauth                      🔐  Submit pre-auth request
+GET   /api/v3/ai-deeptech/preauth/:ref                 🔐  Get decision by reference
+POST  /api/v3/ai-deeptech/preauth/:ref/override        🔐  Human reviewer override (admin)
+GET   /api/v3/ai-deeptech/preauth/analytics            🔐  Decision analytics (admin)
+```
+**Submit Pre-auth Body:**
+```json
+{
+  "patientId": 2,
+  "claimType": "hospitalization",
+  "procedureCode": "Z51.11",
+  "diagnosisCode": "J18.9",
+  "requestedAmount": 75000,
+  "insurancePolicyId": "POL-2024-001",
+  "tenantId": "tenant_123"
+}
+```
+**Response:**
+```json
+{
+  "success": true,
+  "referenceId": "PAD-20260418-151858",
+  "decision": "escalated",
+  "confidence": 0.78,
+  "fraud_score": 0.12,
+  "processing_time_ms": 2340
+}
+```
+> Decisions: `approved` | `partial` | `rejected` | `escalated` | `pending` | `withdrawn`  
+> Audit hash (IRDA-compliant) attached to every decision. Sub-5-second processing.
+
+### 32.4 Multi-Agent Context Bridge
+```
+POST   /api/v3/ai-deeptech/context/:patientId/session              🔐  Create context session
+GET    /api/v3/ai-deeptech/context/:patientId                       🔐  Get latest active session
+PUT    /api/v3/ai-deeptech/context/:patientId/session/:sessionId    🔐  Update context slot
+DELETE /api/v3/ai-deeptech/context/:patientId/session/:sessionId    🔐  Close session
+```
+**Update Slot Body:**
+```json
+{
+  "slot": "triage_context",
+  "data": {
+    "urgency": "moderate",
+    "symptoms": ["fever", "cough"],
+    "esi_level": 3
+  }
+}
+```
+> Available slots: `triage_context` | `clinical_context` | `billing_context` | `insurance_context` | `his_context`  
+> Sessions expire after 24 hours. Used by AI agents to share patient context across triage → diagnosis → billing pipeline.
+
+### 32.5 Federated Learning (Admin Only)
+```
+GET  /api/v3/ai-deeptech/federated/status                   🔐🔒  FL dashboard (admin)
+POST /api/v3/ai-deeptech/federated/submit                   🔐🔒  Submit local model update (admin)
+GET  /api/v3/ai-deeptech/federated/model/:modelName         🔐🔒  Get global aggregated model (admin)
+```
+> Available models: `his_risk_model` | `triage_esi_model` | `drug_safety_model` | `readmission_model`  
+> Differential privacy enforced (Gaussian noise + gradient clipping). Minimum 2 tenants + 10 samples required to aggregate. No raw patient data leaves the tenant.
+
+---
+
+## 33. Electronic Health Records (EHR)
+
+> **Base path:** `/api/ehr`
+
+```
+GET  /api/ehr/patient/:patientId          🔐  Full EHR for a patient
+GET  /api/ehr/record/:id                  🔐  Single EHR record detail
+GET  /api/ehr/summary/:patientId          🔐  EHR summary (diagnoses, meds, allergies)
+GET  /api/ehr/prescriptions/:patientId    🔐  EHR prescription history
+GET  /api/ehr/reports/:patientId          🔐  EHR lab/diagnostic reports
+POST /api/ehr/record                      🔐  Create new EHR record
+```
+**EHR Summary Response:**
+```json
+{
+  "success": true,
+  "summary": {
+    "diagnoses": ["Hypertension", "Type 2 Diabetes"],
+    "medications": ["Metformin 500mg", "Amlodipine 5mg"],
+    "allergies": ["Penicillin"],
+    "last_visit": "2026-03-15",
+    "upcoming_appointments": 2
+  }
+}
+```
+> Authorization: patients can only access their own records; doctors and admins can access assigned patients.
+
+---
+
+## 34. FHIR R4 (Interoperability)
+
+> **Base path:** `/api/fhir/r4`  
+> Compliant with HL7 FHIR R4 specification for EHR interoperability.
+
+```
+GET /api/fhir/r4/metadata                     (Public)  FHIR capability statement
+GET /api/fhir/r4/Patient/:id                  🔐  Get FHIR Patient resource
+GET /api/fhir/r4/Patient                      🔐  Search patients (FHIR query)
+GET /api/fhir/r4/Encounter/:id                🔐  Get Encounter resource
+GET /api/fhir/r4/Encounter                    🔐  Search encounters
+GET /api/fhir/r4/Condition                    🔐  Patient conditions/diagnoses
+GET /api/fhir/r4/MedicationRequest            🔐  Medication requests (prescriptions)
+GET /api/fhir/r4/Observation                  🔐  Vitals and lab observations
+GET /api/fhir/r4/AllergyIntolerance           🔐  Allergy records
+```
+**Example: Get FHIR Conditions**
+```
+GET /api/fhir/r4/Condition?subject=Patient/2&_format=json
+Authorization: Bearer <token>
+```
+**Response (FHIR Bundle):**
+```json
+{
+  "resourceType": "Bundle",
+  "type": "searchset",
+  "entry": [
+    {
+      "resource": {
+        "resourceType": "Condition",
+        "id": "cond-001",
+        "subject": { "reference": "Patient/2" },
+        "code": { "coding": [{ "system": "http://hl7.org/fhir/sid/icd-10", "code": "I10", "display": "Hypertension" }] },
+        "clinicalStatus": { "coding": [{ "code": "active" }] }
+      }
+    }
+  ]
+}
+```
+> Use FHIR R4 endpoints to export patient data to external EHR systems (Apollo, Practo, government ABDM). Also used internally by the Clinical NLP FHIR bundle endpoint.
+
+---
+
+## 35. Pharmacy Orders
+
+> **Base path:** `/api/pharmacy-orders`
+
+### 35.1 Browse & Order
+```
+GET    /api/pharmacy-orders                   🔐  List my pharmacy orders
+POST   /api/pharmacy-orders                   🔐  Place new pharmacy order
+GET    /api/pharmacy-orders/:orderId          🔐  Order detail
+POST   /api/pharmacy-orders/:orderId/cancel   🔐  Cancel order
+```
+**Place Order Body:**
+```json
+{
+  "items": [
+    { "medicineId": "MED-001", "name": "Paracetamol 500mg", "quantity": 2, "price": 45.00 },
+    { "medicineId": "MED-022", "name": "Metformin 500mg", "quantity": 1, "price": 120.00 }
+  ],
+  "delivery_type": "home_delivery",
+  "delivery_address": {
+    "line1": "123 Main Street",
+    "city": "Mumbai",
+    "pincode": "400001"
+  },
+  "delivery_date": "2026-04-20",
+  "delivery_time_slot": "10:00-12:00",
+  "prescription_note": "Prescription uploaded in reports section",
+  "subtotal": 165.00,
+  "delivery_charge": 30.00,
+  "discount": 0,
+  "total_amount": 195.00,
+  "customer_notes": "Please ring the bell twice"
+}
+```
+> `delivery_type`: `"home_delivery"` | `"store_pickup"`  
+> Order statuses: `pending` | `confirmed` | `dispatched` | `delivered` | `cancelled`
+
+### 35.2 Medicine Search (Public)
+```
+GET /api/pharmacy/medicines?q=paracetamol   (Public)  Search medicine catalog
+```
+
+---
+
+## 36. Activity Tracker (Advanced)
+
+> **Base path:** `/api/activity-tracker`  
+> Logs daily activities: steps, stairs, sleep, exercise, calories, vitals.
+
+```
+POST /api/activity-tracker/log       🔐  Log an activity
+GET  /api/activity-tracker/today     🔐  Today's activity summary
+GET  /api/activity-tracker/history   🔐  Activity history (with date range)
+GET  /api/activity-tracker/summary   🔐  Aggregated stats
+GET  /api/activity-tracker/          🔐  All activity records (paginated)
+```
+**Log Activity Body:**
+```json
+{
+  "activity_type": "steps",
+  "value": 8500,
+  "unit": "count",
+  "date": "2026-04-18",
+  "metadata": { "source": "manual", "deviceId": "phone" }
+}
+```
+> Supported `activity_type` values: `steps` | `stairs` | `sleep` | `exercise` | `calories` | `heart_rate` | `blood_pressure` | `spo2` | `weight` | `water_intake`
+
+**Today Summary Response:**
+```json
+{
+  "success": true,
+  "date": "2026-04-18",
+  "totals": {
+    "steps": 8500,
+    "calories": 320,
+    "sleep_hours": 7.5,
+    "exercise_minutes": 35
+  },
+  "goals": {
+    "steps_goal": 10000,
+    "steps_progress": 85
+  }
+}
+```
+
+---
+
+## 37. Offline AI Scribe
+
+> **Base path:** `/api/offline-scribe`  
+> CPU-only, Indian language speech-to-structured-clinical-notes. Requires `scribe_access` permission on the account (granted to doctors and licensed clinical staff).
+
+### 37.1 Service Info (Public)
+```
+GET /api/offline-scribe/health       (Public)  Service health check
+GET /api/offline-scribe/languages    (Public)  Supported languages (Hindi, Tamil, Telugu, Kannada, Bengali, Marathi + English)
+GET /api/offline-scribe/templates    (Public)  Available note templates
+```
+
+### 37.2 Clinical Transcription (Scribe Access Required)
+```
+POST /api/offline-scribe/transcribe     🔐🎤  Transcribe audio → structured notes
+     multipart/form-data: { audio: <file>, language: "hi", note_type: "opd" }
+
+POST /api/offline-scribe/normalize      🔐  Normalize/clean raw transcription text
+POST /api/offline-scribe/full-pipeline  🔐🎤  Audio → transcribe → normalize → notes (single call)
+     multipart/form-data: { audio: <file>, language: "hi", note_type: "opd" }
+```
+
+### 37.3 Note Generation
+```
+POST /api/offline-scribe/prescription   🔐  Generate prescription from transcribed text
+POST /api/offline-scribe/opd-notes      🔐  Generate OPD consultation notes
+POST /api/offline-scribe/ipd-notes      🔐  Generate IPD admission notes
+POST /api/offline-scribe/discharge      🔐  Generate discharge summary
+POST /api/offline-scribe/batch          🔐  Batch process multiple transcriptions
+GET  /api/offline-scribe/status         🔐  Scribe job status
+```
+**Full Pipeline Body (multipart/form-data):**
+```
+audio: <binary audio file (mp3/wav/ogg/m4a, max 25MB)>
+language: "hi"       // ISO 639-1 code
+note_type: "opd"     // "opd" | "ipd" | "discharge" | "prescription"
+patient_id: 2        // Optional: associate with patient
+```
+**Response:**
+```json
+{
+  "success": true,
+  "transcription": "मरीज़ को 2 दिनों से बुखार और सिरदर्द है...",
+  "normalized": "Patient has had fever and headache for 2 days...",
+  "structured_note": {
+    "chief_complaint": "Fever and headache",
+    "duration": "2 days",
+    "diagnosis": "Viral fever",
+    "medications": [{ "name": "Paracetamol", "dose": "500mg", "frequency": "TDS", "duration": "5 days" }]
+  }
+}
+```
+
+---
+
+## 38. Omnichannel Messaging
+
+> **Base path:** `/api/omnichannel`  
+> Send health messages, reminders, and automated journey campaigns across WhatsApp, SMS, and Email.
+
+```
+GET  /api/omnichannel/journeys          🔐  List messaging journeys
+POST /api/omnichannel/send              🔐  Send a single message
+POST /api/omnichannel/journey           🔐  Start an automated journey
+```
+**Send Message Body:**
+```json
+{
+  "channel": "whatsapp",
+  "recipient": "9884089921",
+  "template": "appointment_reminder",
+  "variables": {
+    "patient_name": "John",
+    "doctor_name": "Dr. Sharma",
+    "appointment_time": "Tomorrow 10:00 AM"
+  }
+}
+```
+> Available channels: `whatsapp` | `sms` | `email`
+
+**Start Journey Body:**
+```json
+{
+  "journey_type": "medication_adherence",
+  "patient_id": 2,
+  "config": {
+    "medication": "Metformin 500mg",
+    "reminder_times": ["08:00", "20:00"],
+    "duration_days": 30
+  }
+}
+```
+> Journey types: `medication_adherence` | `appointment_followup` | `lab_result_notification` | `post_discharge_care` | `health_checkup_reminder`
+
+---
+
+## 39. Socket.IO Real-Time Events
 
 ### Connection Setup
 ```javascript
@@ -1046,7 +1522,7 @@ socket.on("authenticated", (data) => {
 
 ---
 
-## 33. Error Handling Reference
+## 40. Error Handling Reference
 
 ### Standard Error Response
 ```json
@@ -1086,43 +1562,92 @@ socket.on("authenticated", (data) => {
 
 ---
 
-## 34. Endpoint Status Summary
+## 41. Endpoint Status Summary
 
-### Verified Working (200) ✅
-| Feature | Endpoint | Status |
+### Auth & User
+| Endpoint | Method | Status |
 |---|---|---|
-| Login | `POST /api/auth/login` | ✅ 200 |
-| Profile | `GET /api/users/profile` | ✅ 200 |
-| Appointments | `GET /api/appointments` | ✅ 200 |
-| Prescriptions | `GET /api/prescriptions/patient` | ✅ 200 |
-| Prescriptions All | `GET /api/prescriptions/my/all` | ✅ 200 |
-| Wallet | `GET /api/wallet` | ✅ 200 |
-| Wallet Txns | `GET /api/wallet/transactions` | ✅ 200 |
-| Notifications | `GET /api/notifications` | ✅ 200 |
-| Lab Tests | `GET /api/lab-tests` | ✅ 200 |
-| Reports | `GET /api/reports` | ✅ 200 |
-| Doctors Search | `GET /api/doctors/search` | ✅ 200 |
-| Lab Search | `GET /api/labs/` | ✅ 200 |
-| AI Health | `GET /api/medical-ai/health` | ✅ 200 |
-| Triage Doctors | `GET /api/medical-ai/triage-doctors` | ✅ 200 |
-| Family Members | `GET /api/family-members` | ✅ 200 |
-| Health Diary | `GET /api/health-diary` | ✅ 200 |
-| Health Summary | `GET /api/medical-ai/health-summary` | ✅ 200 |
-| Membership | `GET /api/membership/plans` | ✅ 200 |
-| Cart | `GET /api/cart` | ✅ 200 |
-| Addresses | `GET /api/addresses` | ✅ 200 |
-| Corporate Benefits | `GET /api/corporate/my-benefits` | ✅ 200 |
-| Leaderboard | `GET /api/leaderboard/goals` | ✅ 200 |
-| Masterdata | `GET /api/masterdata/specialties` | ✅ 200 |
-| FCM Register | `POST /api/fcm/register-token` | ✅ Ready |
+| `POST /api/auth/login` | Login | ✅ 200 |
+| `GET /api/users/profile` | Get profile | ✅ 200 |
+| `POST /api/fcm/register-token` | Register push token | ✅ 200 |
+
+### Family Members
+| Endpoint | Method | Status |
+|---|---|---|
+| `GET /api/family-members` | List | ✅ 200 |
+| `GET /api/family-members/limits` | Plan limits | ✅ 200 |
+| `GET /api/family-members/:id/insurances` | List FM policies | ✅ 200 |
+| `POST /api/family-members/:id/insurances` | Add FM policy | ✅ 201 |
+| `DELETE /api/family-members/:id/insurances/:policyId` | Remove FM policy | ✅ 200 |
+
+### Medical Records
+| Endpoint | Method | Status |
+|---|---|---|
+| `GET /api/reports` | All reports | ✅ 200 |
+| `GET /api/reports?familyMemberId=:id` | Filter by FM | ✅ 200 |
+| `POST /api/reports` with `familyMemberId` | Upload linked to FM | ✅ 201 |
+| `GET /api/prescriptions/patient` | Prescriptions | ✅ 200 |
+| `GET /api/prescriptions/my/all` | All prescriptions | ✅ 200 |
+| `GET /api/health-diary` | Health diary | ✅ 200 |
+| `GET /api/medical-ai/health-summary` | Health summary | ✅ 200 |
+
+### Appointments & Consultations
+| Endpoint | Method | Status |
+|---|---|---|
+| `GET /api/appointments` | List appointments | ✅ 200 |
+| `GET /api/doctors/search` | Search doctors | ✅ 200 |
+| `GET /api/medical-ai/triage-doctors` | Triage doctors | ✅ 200 |
+
+### Lab & Diagnostics
+| Endpoint | Method | Status |
+|---|---|---|
+| `GET /api/lab-tests` | My lab tests | ✅ 200 |
+| `GET /api/labs/` | Search labs | ✅ 200 |
+| `GET /api/cart` | Cart | ✅ 200 |
+| `GET /api/masterdata/specialties` | Specialties | ✅ 200 |
+
+### Wallet, Payments & Membership
+| Endpoint | Method | Status |
+|---|---|---|
+| `GET /api/wallet` | Wallet balance | ✅ 200 |
+| `GET /api/wallet/transactions` | Transaction history | ✅ 200 |
+| `GET /api/membership/plans` | Browse plans | ✅ 200 |
+
+### Insurance & Corporate
+| Endpoint | Method | Status |
+|---|---|---|
+| `GET /api/users/my-insurances` | User's own policies | ✅ 200 |
+| `GET /api/corporate/my-benefits` | Corporate benefits | ✅ 200 |
+
+### AI & Advanced Features
+| Endpoint | Method | Status |
+|---|---|---|
+| `GET /api/medical-ai/health` | AI service health | ✅ 200 |
+| `GET /api/v3/ai-deeptech/his/2` | HIS score | ✅ 200 |
+| `POST /api/v3/ai-deeptech/entities/extract` | Clinical NLP | ✅ 200 |
+| `POST /api/v3/ai-deeptech/preauth` | Pre-auth engine | ✅ 200 |
+| `POST /api/v3/ai-deeptech/context/2/session` | Context bridge | ✅ 200 |
+| `GET /api/offline-scribe/health` | Offline scribe | ✅ 200 |
+| `GET /api/omnichannel/journeys` | Omnichannel | ✅ 200 |
+
+### EHR, FHIR & Platform
+| Endpoint | Method | Status |
+|---|---|---|
+| `GET /api/ehr/summary/:patientId` | EHR summary | ✅ 200 |
+| `GET /api/fhir/r4/metadata` | FHIR capability | ✅ 200 |
+| `GET /api/fhir/r4/Condition` | FHIR conditions | ✅ 200 |
+| `GET /api/pharmacy-orders` | Pharmacy orders | ✅ 200 |
+| `GET /api/activity-tracker/today` | Activity tracker | ✅ 200 |
+| `GET /api/addresses` | Addresses | ✅ 200 |
+| `GET /api/leaderboard/goals` | Leaderboard goals | ✅ 200 |
+| `GET /api/notifications` | Notifications | ✅ 200 |
 
 ### Known Issues
 | Endpoint | Status | Note |
 |---|---|---|
-| `GET /api/billing/orders` | 500 | DB table may need migration |
-| `GET /api/insurance/my/insurances` | 500 | DB table may need migration |
-| `GET /api/tts/voices` | 503 | ElevenLabs service dependency |
-| `GET /api/appointments/upcoming` | 500 | Query needs fix |
+| `GET /api/billing/orders` | ⚠️ 500 | DB migration pending |
+| `GET /api/tts/voices` | ⚠️ 503 | ElevenLabs service dependency |
+| `GET /api/appointments/upcoming` | ⚠️ 500 | Query needs fix |
 
 ---
 
@@ -1168,5 +1693,14 @@ socket.on("authenticated", (data) => {
 
 ---
 
-*Generated: March 2026 | Audit includes 360+ patient-accessible endpoints across 50+ route files*
-*Ring-fencing updated: 30 new path prefixes added for patient/user role*
+---
+
+## Changelog
+
+| Date | Version | Changes |
+|---|---|---|
+| Apr 19, 2026 | 2.1 | §3 Family member insurance CRUD (`/api/family-members/:id/insurances`); §9 Medical Reports `familyMemberId` upload + filter; §26 Insurance restructured with correct user policy path (`/api/users/my-insurances`) |
+| Apr 2026 | 2.0 | §32 AI DeepTech Layer (HIS, Clinical NLP, Pre-auth, Context Bridge, Federated Learning); §33 EHR; §34 FHIR R4; §35 Pharmacy Orders; §36 Activity Tracker; §37 Offline AI Scribe; §38 Omnichannel Messaging; 30 new path prefixes ring-fenced for patient role |
+| Mar 2026 | 1.0 | Initial release — 400+ patient-accessible endpoints across 55+ route files |
+
+> This guide covers the **Mediczy patient/user role** API surface only. Admin, doctor, hospital, and insurance-company APIs are documented separately.
