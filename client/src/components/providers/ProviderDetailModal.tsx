@@ -23,7 +23,11 @@ import {
   Activity,
   CheckCircle2,
   AlertCircle,
-  Navigation,
+  Navigation,  FileCheck2,
+  Shield,
+  XCircle,  FileCheck2,
+  Shield,
+  XCircle,
 } from 'lucide-react';
 
 interface ProviderDetailModalProps {
@@ -91,11 +95,12 @@ const ProviderDetailModal: React.FC<ProviderDetailModalProps> = ({
         </DialogHeader>
 
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="services">Services</TabsTrigger>
             <TabsTrigger value="location">Location</TabsTrigger>
             <TabsTrigger value="details">Details</TabsTrigger>
+            <TabsTrigger value="agreement">Agreement</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -422,6 +427,67 @@ const ProviderDetailModal: React.FC<ProviderDetailModalProps> = ({
                     {provider.google_place_id}
                   </span>
                 </div>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="agreement" className="space-y-4">
+            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <FileCheck2 className="h-5 w-5" />
+              Service Partner Agreement
+            </h3>
+            {provider.metadata?.agreement?.accepted ? (
+              <>
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3">
+                  <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-green-800">Agreement Accepted</p>
+                    <p className="text-sm text-green-700 mt-0.5">
+                      This hospital has reviewed and accepted the Mediqzy Service Partner Agreement.
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-3 border rounded-lg p-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground text-sm">Agreement Version</span>
+                    <span className="font-mono text-sm font-semibold">v{provider.metadata.agreement.version || '1.0'}</span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground text-sm">Signed At</span>
+                    <span className="text-sm font-semibold">
+                      {provider.metadata.agreement.signedAt
+                        ? new Date(provider.metadata.agreement.signedAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+                        : '—'}
+                    </span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground text-sm">Status</span>
+                    <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-green-700">
+                      <CheckCircle2 className="h-4 w-4" /> Accepted
+                    </span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground text-sm">Agreement Type</span>
+                    <span className="text-sm">Mediqzy Service Partner Agreement</span>
+                  </div>
+                </div>
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center gap-2 text-blue-800 text-sm">
+                    <Shield className="h-4 w-4 shrink-0" />
+                    <span>Agreement signed digitally at registration. Governed by laws of India, jurisdiction: Chennai, Tamil Nadu.</span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <XCircle className="h-12 w-12 text-muted-foreground/30 mb-3" />
+                <p className="font-semibold text-muted-foreground">No Agreement on Record</p>
+                <p className="text-sm text-muted-foreground mt-1 max-w-xs">
+                  This hospital was registered before the Service Partner Agreement was introduced, or agreement data is unavailable.
+                </p>
               </div>
             )}
           </TabsContent>

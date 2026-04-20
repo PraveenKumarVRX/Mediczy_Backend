@@ -5,7 +5,7 @@ import api from "@/utils/api";
 import {
   Mail, Lock, Phone, MapPin, FileText, Upload, X, CheckCircle2,
   Eye, EyeOff, ChevronRight, AlertCircle, Shield, HeartPulse,
-  Sparkles, ArrowLeft, MessageCircle, RefreshCw, Building2,
+  Sparkles, ArrowLeft, MessageCircle, RefreshCw, Building2, FileCheck2,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -190,7 +190,7 @@ function BackBtn({ onClick }: { onClick: () => void }) {
 export default function EntityRegisterWizard({ config }: { config: WizardConfig }) {
   const navigate = useNavigate();
   const c = SCHEMES[config.scheme];
-  const STEPS = ["Account", "Verify Email", config.stepDetailsLabel, "Verify Phone", "Documents"];
+  const STEPS = ["Account", "Verify Email", config.stepDetailsLabel, "Verify Phone", "Documents", "Agreement"];
 
   const [step, setStep] = useState(0);
   const [showPass, setShowPass] = useState(false);
@@ -201,6 +201,7 @@ export default function EntityRegisterWizard({ config }: { config: WizardConfig 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const formArrivalTime = useRef<number>(Date.now());
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   // Base form fields + contact fields initialised to ""
   const baseForm = {
@@ -383,8 +384,11 @@ export default function EntityRegisterWizard({ config }: { config: WizardConfig 
       if (contactIdCardFile) fd.append("contactIdCard", contactIdCardFile);
       fd.append("_hp", "");
       fd.append("_fat", String(formArrivalTime.current));
+      fd.append("agreedToTerms", "true");
+      fd.append("agreementVersion", "1.0");
+      fd.append("agreementSignedAt", new Date().toISOString());
       await api.post(`${config.apiPrefix}/register`, fd, { headers: { "Content-Type": "multipart/form-data" }, skipAuth: true } as any);
-      setStep(5);
+      setStep(6);
     } catch (e: any) {
       setError(e.response?.data?.message || "Registration failed. Please try again.");
     } finally { setLoading(false); }
@@ -469,7 +473,7 @@ export default function EntityRegisterWizard({ config }: { config: WizardConfig 
             <span className="text-sm font-black tracking-widest uppercase" style={{ color: config.accentHex + "cc" }}>Mediczy</span>
           </div>
 
-          {step < 5 && <StepBar step={step} steps={STEPS} c={c} />}
+          {step < 6 && <StepBar step={step} steps={STEPS} c={c} />}
 
           <AnimatePresence mode="wait">
 
@@ -832,17 +836,109 @@ export default function EntityRegisterWizard({ config }: { config: WizardConfig 
                     className="flex-1 h-12 rounded-2xl border border-white/10 text-slate-400 hover:border-white/20 hover:text-white font-semibold text-sm transition-all flex items-center justify-center gap-2">
                     <ArrowLeft className="w-4 h-4" /> Back
                   </button>
-                  <button type="button" onClick={handleSubmit} disabled={loading}
+                  <button type="button" onClick={() => { setError(""); setStep(5); }}
                     style={{ background: config.btnGradient, boxShadow: config.btnShadow }}
-                    className="flex-1 h-12 rounded-2xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
-                    {loading ? <><RefreshCw className="w-4 h-4 animate-spin" /> Submitting…</> : "Submit Application"}
+                    className="flex-1 h-12 rounded-2xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2">
+                    Review Agreement <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
               </motion.div>
             )}
 
-            {/* ── Step 5: Success ── */}
+            {/* ── Step 5: Partnership Agreement ── */}
             {step === 5 && (
+              <motion.div key="s5" initial={{ opacity: 0, x: 28 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -28 }} transition={{ duration: 0.22 }}>
+                <div className="mb-6">
+                  <div className={`w-14 h-14 mb-4 rounded-2xl border flex items-center justify-center ${c.bg} ${c.border}`}>
+                    <FileCheck2 className={`w-7 h-7 ${c.text}`} />
+                  </div>
+                  <h2 className="text-[1.65rem] font-black text-white mb-1">Service Partner Agreement</h2>
+                  <p className="text-slate-500 text-sm">Please read and accept the terms before submitting your application.</p>
+                </div>
+                <ErrBanner msg={error} />
+
+                {/* Scrollable agreement text */}
+                <div className="h-72 overflow-y-auto rounded-2xl border border-white/[0.09] bg-white/[0.02] p-5 text-xs text-slate-400 leading-relaxed space-y-4 mb-5 scrollbar-thin">
+                  <p className="text-white font-bold text-sm">Mediqzy Service Partner Agreement</p>
+                  <p className="text-slate-500">Version 1.0 · Effective from date of acceptance</p>
+
+                  <p><strong className="text-slate-300">1. Parties</strong><br />
+                  This Agreement is between Mayden SmartHealth Pvt Ltd ("Mediqzy") and the registering healthcare facility ("Service Partner"). By accepting, the Service Partner agrees to be bound by these terms.</p>
+
+                  <p><strong className="text-slate-300">2. Scope of Services</strong><br />
+                  The Service Partner agrees to provide healthcare services — including but not limited to OPD consultations, diagnostic tests, imaging, day-care procedures, IPD admissions, health check-up packages, and onsite health camps — to patients referred through the Mediqzy corporate wellness network.</p>
+
+                  <p><strong className="text-slate-300">3. Empanelment & Activation</strong><br />
+                  Empanelment is subject to document verification and approval by Mediqzy. Mediqzy reserves the right to approve, suspend, or terminate empanelment at its sole discretion. Activation typically occurs within 24–48 hours of successful verification.</p>
+
+                  <p><strong className="text-slate-300">4. Service Quality</strong><br />
+                  The Service Partner agrees to (a) maintain applicable regulatory licences and accreditations; (b) provide services of the quality standard expected under NABH guidelines; (c) not discriminate against referred patients based on employer, insurer, or any other factor; and (d) respond to appointment requests within 24 hours.</p>
+
+                  <p><strong className="text-slate-300">5. Billing, Settlement & Credit Period</strong><br />
+                  Services rendered to referred patients shall be billed exclusively at the pre-agreed tariff rates. Mediqzy will facilitate cashless processing through the platform. The credit period for all cashless payments is <strong className="text-white">30 days</strong> from the date of service. No additional charges, surcharges, registration fees, service fees, or any other amounts — beyond the agreed tariff — shall be levied on referred patients under any circumstances. Any violation of this clause will be treated as a material breach of this Agreement.</p>
+
+                  <p><strong className="text-slate-300">6. Patient Care & Conduct</strong><br />
+                  The Service Partner agrees to treat every referred patient with dignity, respect, and utmost care, without exception. This includes (a) assigning dedicated staff to assist referred patients promptly; (b) ensuring zero-tolerance for rude, dismissive, or discriminatory behaviour by any staff member; (c) providing clear communication of treatment plans, costs, and next steps to patients; and (d) addressing patient complaints within 24 hours of escalation through the Mediqzy platform.</p>
+
+                  <p><strong className="text-slate-300">7. Facility Standards & Environment</strong><br />
+                  The Service Partner shall maintain a clean, hygienic, and welcoming environment at all times. This includes (a) ensuring waiting areas, consultation rooms, wards, and restrooms meet basic cleanliness and sanitation standards; (b) maintaining adequate ventilation, lighting, and patient comfort; (c) displaying empanelment credentials visibly at the reception; and (d) adhering to infection-control protocols as per MoHFW guidelines. Mediqzy reserves the right to conduct periodic facility audits, physical or virtual, to verify compliance.</p>
+
+                  <p><strong className="text-slate-300">8. Data & Information Security</strong><br />
+                  The Service Partner is solely responsible for ensuring the security and confidentiality of all patient data accessed through or generated on the Mediqzy platform. This includes (a) restricting platform access to authorised personnel only, using role-based access controls; (b) never storing patient data on unauthorised external devices or third-party systems; (c) complying fully with the Digital Personal Data Protection Act 2023 (DPDPA), DISHA, and applicable state regulations; (d) reporting any data breach or suspected breach to Mediqzy within 24 hours of discovery; and (e) ensuring patient information is never used for marketing, research, or any purpose outside the scope of the agreed services without explicit written consent. Both parties agree to maintain confidentiality of the other's proprietary business information.</p>
+
+                  <p><strong className="text-slate-300">9. Misrepresentation & Immediate Cancellation</strong><br />
+                  Any information provided by the Service Partner during registration or in the course of this Agreement that is found to be false, misleading, fabricated, or of a demeaning nature — including but not limited to forged accreditations, inflated facility credentials, misrepresented staff qualifications, or defamatory statements about patients, Mediqzy, or other partners — shall result in the <strong className="text-white">immediate cancellation of this Agreement</strong> without prior notice, forfeiture of any pending settlements, and potential referral to relevant regulatory and law-enforcement authorities. Mediqzy shall bear no liability arising from such cancellation.</p>
+
+                  <p><strong className="text-slate-300">10. Platform Usage</strong><br />
+                  Access to the Mediqzy platform is granted solely for managing referred patient appointments, claims, and records. Misuse, unauthorised access attempts, or scraping of platform data will result in immediate termination and may attract legal liability.</p>
+
+                  <p><strong className="text-slate-300">11. Indemnification</strong><br />
+                  The Service Partner indemnifies Mediqzy against any claims, losses, or liability arising from (a) medical negligence or malpractice by the Service Partner's staff; (b) breach of applicable healthcare regulations; (c) breach of patient care or facility standards under this Agreement; or (d) any other breach of this Agreement.</p>
+
+                  <p><strong className="text-slate-300">12. Termination</strong><br />
+                  Either party may terminate this Agreement with 30 days written notice. Mediqzy may terminate immediately in cases of fraud, patient harm, regulatory violation, false information, demeaning conduct, or any material breach of this Agreement.</p>
+
+                  <p><strong className="text-slate-300">13. Governing Law</strong><br />
+                  This Agreement is governed by the laws of India. Any dispute shall be subject to the exclusive jurisdiction of courts in Chennai, Tamil Nadu.</p>
+
+                  <p><strong className="text-slate-300">14. Acceptance</strong><br />
+                  By checking the acceptance box and submitting this registration, the authorised representative of the Service Partner confirms they have read, understood, and agree to be bound by this Agreement on behalf of their facility.</p>
+
+                  <p className="text-slate-600">Mayden SmartHealth Pvt Ltd · IIT Madras Research Park, Chennai, Tamil Nadu · support@mediczy.com</p>
+                </div>
+
+                {/* Agree checkbox */}
+                <label className="flex items-start gap-3 cursor-pointer group mb-6">
+                  <div className={`w-5 h-5 mt-0.5 shrink-0 rounded-md border-2 flex items-center justify-center transition-all ${
+                    agreedToTerms ? `${c.stepDone} border-transparent` : "border-white/20 bg-white/[0.04] group-hover:border-white/40"
+                  }`}
+                    onClick={() => setAgreedToTerms(v => !v)}>
+                    {agreedToTerms && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                  </div>
+                  <span className="text-sm text-slate-400 leading-relaxed" onClick={() => setAgreedToTerms(v => !v)}>
+                    I am an authorised representative of this facility and I agree to the
+                    <span className={` font-semibold ${c.text}`}> Mediqzy Service Partner Agreement</span> and{" "}
+                    <span className={`font-semibold ${c.text}`}>Terms of Service</span>.
+                  </span>
+                </label>
+
+                <div className="flex gap-3">
+                  <button type="button" onClick={goBack}
+                    className="flex-1 h-12 rounded-2xl border border-white/10 text-slate-400 hover:border-white/20 hover:text-white font-semibold text-sm transition-all flex items-center justify-center gap-2">
+                    <ArrowLeft className="w-4 h-4" /> Back
+                  </button>
+                  <button type="button" onClick={() => { if (!agreedToTerms) { setError("Please accept the Service Partner Agreement to continue."); return; } handleSubmit(); }}
+                    disabled={loading}
+                    style={{ background: config.btnGradient, boxShadow: config.btnShadow }}
+                    className="flex-1 h-12 rounded-2xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+                    {loading ? <><RefreshCw className="w-4 h-4 animate-spin" /> Submitting…</> : <>Accept &amp; Submit <FileCheck2 className="w-4 h-4" /></>}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {/* ── Step 6: Success ── */}
+            {step === 6 && (
               <motion.div key="s5" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4, ease: "easeOut" }}
                 className="text-center px-2 py-4">
                 <div className="relative inline-flex mb-8">

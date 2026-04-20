@@ -27,6 +27,7 @@ router.post('/register', registerLimiter, hospUploadFields, async (req, res) => 
   try {
     const { name, email, password, confirmPassword, phone, hospitalType, city, state, address,
             registrationNumber, directorName, directorQual, directorRegNo, medicalCouncil,
+            agreedToTerms, agreementVersion, agreementSignedAt,
             _hp, _fat, lat, lng } = req.body;
 
     if (_hp?.trim()) return res.status(201).json({ success: true });
@@ -56,6 +57,11 @@ router.post('/register', registerLimiter, hospUploadFields, async (req, res) => 
       metadata: {
         registrationDocs: docs,
         primaryContact: { name: directorName, qualification: directorQual || '', regNumber: directorRegNo || '', medicalCouncil: medicalCouncil || '', idCard },
+        agreement: agreedToTerms === 'true' ? {
+          accepted: true,
+          version: agreementVersion || '1.0',
+          signedAt: agreementSignedAt || new Date().toISOString(),
+        } : null,
         submittedAt: new Date(),
       },
       status: 'pending', isVerified: false,

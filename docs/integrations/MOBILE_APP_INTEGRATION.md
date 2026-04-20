@@ -1,8 +1,8 @@
 # Mediczy Mobile App Integration Guide
 
-**Version:** 1.0  
-**Last Updated:** January 9, 2026  
-**API Base URL:** `https://app.mediqzy.com/api`
+**Version:** 1.2  
+**Last Updated:** April 20, 2026  
+**API Base URL:** `https://mediqzy.com/api`
 
 ## Table of Contents
 
@@ -36,7 +36,7 @@ npm install axios @react-native-async-storage/async-storage
 Create `.env` file in your React Native project root:
 
 ```env
-API_BASE_URL=https://app.mediqzy.com/api
+API_BASE_URL=https://mediqzy.com/api
 API_TIMEOUT=15000
 ```
 
@@ -46,40 +46,45 @@ API_TIMEOUT=15000
 
 ### Authentication Flow
 
+The API supports two authentication methods:
+1. **Password login** — `POST /api/auth/login`
+2. **OTP login** (mobile preferred) — `POST /api/auth/send-otp` → `POST /api/auth/verify-otp`
+
+> **Important for mobile apps:** Always use the `otp` field name (not `code`) in requests. Both are accepted, but `otp` is the mobile convention.
+
+**Password Login Flow:**
 ```
-┌─────────────┐
-│   User      │
-└──────┬──────┘
-       │
-       ▼
-┌─────────────────┐
-│  Login Screen   │
-└──────┬──────────┘
-       │
-       ▼
-┌──────────────────────────┐
-│ POST /api/login          │
-│ {email, password}        │
-└──────┬───────────────────┘
-       │
-       ▼
-┌──────────────────────────┐
-│ Response:                │
-│ {success, token, user}   │
-└──────┬───────────────────┘
-       │
-       ▼
-┌──────────────────────────┐
-│ Store in AsyncStorage:   │
-│ - authToken              │
-│ - userData               │
-└──────┬───────────────────┘
-       │
-       ▼
-┌──────────────────────────┐
-│ All API requests use     │
-│ Authorization header     │
-└──────────────────────────┘
+POST /api/auth/login  {email, password}
+         ↓
+  {success, token, user}
+         ↓
+  Store token in AsyncStorage
+```
+
+**OTP Login Flow:**
+```
+POST /api/auth/send-otp  {email | phoneNumber}
+         ↓
+  {otpId, expiresAt, deliveryMethod, sentTo}
+         ↓
+POST /api/auth/verify-otp  {email | phoneNumber, otp}
+         ↓
+  {success, token, user}   ← existing user → store token
+  {requiresRegistration: true} ← new user → proceed to register
+```
+
+**New User Signup Flow (OTP-based):**
+```
+POST /api/users/register/send-otp  {email, phoneNumber, firstName}
+         ↓
+  Sends OTP to email + WhatsApp
+         ↓
+POST /api/users/register/verify-email-otp  {email, phoneNumber, otp}
+POST /api/users/register/verify-whatsapp-otp  {email, phoneNumber, otp}
+         ↓  (both OTPs verified)
+POST /api/users/register/verify-otp  {email, phoneNumber, password, firstName, lastName, dateOfBirth, gender}
+         ↓
+  {success, token, user}  ← complete, user is active
 ```
 
 ### Token Management
@@ -107,7 +112,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API = axios.create({
-  baseURL: 'https://app.mediqzy.com/api',
+  baseURL: 'https://mediqzy.com/api',
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
@@ -150,9 +155,11 @@ export default API;
 
 ### 1. Authentication Endpoints
 
-#### **Patient Login**
+> **Field name note:** Mobile apps must send `otp` (not `code`) in all OTP verify requests.
+
+#### **Password Login**
 ```http
-POST /api/login
+POST /api/auth/login
 Content-Type: application/json
 
 {
@@ -173,25 +180,23 @@ Content-Type: application/json
     "lastName": "Doe",
     "email": "patient@example.com",
     "phoneNumber": "+919876543210",
-    "dateOfBirth": "1990-01-01",
-    "gender": "male"
+    "dateOfBirth": "1990-01-01T00:00:00.000Z",
+    "gender": "Male"
   }
 }
 ```
 
-#### **Patient Registration**
+---
+
+#### **OTP Login — Step 1: Send OTP**
 ```http
-POST /api/register
+POST /api/auth/send-otp
 Content-Type: application/json
 
 {
-  "firstName": "John",
-  "lastName": "Doe",
-  "email": "patient@example.com",
-  "password": "Password123",
-  "phoneNumber": "+919876543210",
-  "dateOfBirth": "1990-01-01",
-  "gender": "male"
+  "email": "patient@example.com"
+  // OR
+  "phoneNumber": "+919876543210"
 }
 ```
 
@@ -199,17 +204,215 @@ Content-Type: application/json
 ```json
 {
   "success": true,
-  "message": "Registration successful",
+  "message": "If an account exists, an OTP has been sent.",
+  "data": {
+    "otpId": "74d605a5be90ed90",
+    "expiresAt": "2026-04-20T10:00:00.000Z",
+    "expiresIn": "5 minutes",
+    "deliveryMethod": "email",
+    "sentTo": "pa****@example.com"
+  }
+}
+```
+
+#### **OTP Login — Step 2: Verify OTP**
+```http
+POST /api/auth/verify-otp
+Content-Type: application/json
+
+{
+  "email": "patient@example.com",
+  "otp": "123456"
+}
+```
+
+**Response (existing user — login success):**
+```json
+{
+  "success": true,
+  "message": "Login successful",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": 123,
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "patient@example.com",
+    "phoneNumber": "+919876543210"
+  }
+}
+```
+
+**Response (new user — redirect to registration):**
+```json
+{
+  "success": true,
+  "requiresRegistration": true,
+  "message": "OTP verified. Please complete your registration.",
+  "data": {
+    "otpVerified": true,
+    "channel": "email",
+    "identifier": "patient@example.com"
+  }
+}
+```
+
+> When `requiresRegistration: true`, navigate to the signup form. The email/phone OTP is already verified — proceed to `register/verify-otp` after collecting user details.
+
+---
+
+#### **New User Registration — Step 1: Send OTPs**
+```http
+POST /api/users/register/send-otp
+Content-Type: application/json
+
+{
+  "email": "patient@example.com",
+  "phoneNumber": "+919876543210",
+  "firstName": "John"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "OTP sent successfully to your email and WhatsApp",
+  "data": {
+    "emailOtpId": "abc123",
+    "whatsappOtpId": "def456",
+    "expiresIn": "10 minutes",
+    "deliveryChannels": {
+      "email": { "sent": true },
+      "whatsapp": { "sent": true }
+    }
+  }
+}
+```
+
+#### **New User Registration — Step 2a: Verify Email OTP**
+```http
+POST /api/users/register/verify-email-otp
+Content-Type: application/json
+
+{
+  "email": "patient@example.com",
+  "phoneNumber": "+919876543210",
+  "otp": "123456"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Email OTP verified",
+  "data": { "emailVerified": true, "phoneVerified": false }
+}
+```
+
+#### **New User Registration — Step 2b: Verify WhatsApp OTP**
+```http
+POST /api/users/register/verify-whatsapp-otp
+Content-Type: application/json
+
+{
+  "email": "patient@example.com",
+  "phoneNumber": "+919876543210",
+  "otp": "654321"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "WhatsApp OTP verified",
+  "data": { "emailVerified": true, "phoneVerified": true }
+}
+```
+
+#### **New User Registration — Step 3: Complete Registration**
+```http
+POST /api/users/register/verify-otp
+Content-Type: application/json
+
+{
+  "email": "patient@example.com",
+  "phoneNumber": "+919876543210",
+  "password": "Password123",
+  "firstName": "John",
+  "lastName": "Doe",
+  "dateOfBirth": "1990-01-01",
+  "gender": "Male"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "User registered successfully",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "user": {
     "id": 124,
-    "email": "patient@example.com"
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "patient@example.com",
+    "phoneNumber": "+919876543210",
+    "status": "active"
   }
+}
+```
+
+---
+
+#### **Password Reset — Step 1: Request OTP**
+```http
+POST /api/users/forgot-password
+Content-Type: application/json
+
+{
+  "email": "patient@example.com"
+  // OR
+  "phone": "+919876543210"
+}
+```
+
+#### **Password Reset — Step 2: Verify OTP**
+```http
+POST /api/users/verify-reset-otp
+Content-Type: application/json
+
+{
+  "email": "patient@example.com",
+  "otp": "123456",
+  "userType": "user"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "OTP verified successfully",
+  "resetToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+#### **Password Reset — Step 3: Set New Password**
+```http
+POST /api/users/reset-password
+Content-Type: application/json
+
+{
+  "resetToken": "<token from step 2>",
+  "newPassword": "NewPassword123"
 }
 ```
 
 #### **Logout**
 ```http
-POST /api/logout
+POST /api/auth/logout
 Authorization: Bearer {token}
 ```
 
@@ -412,7 +615,7 @@ Content-Type: application/json
     "appointmentTime": "10:00",
     "consultationType": "online",
     "status": "confirmed",
-    "meetingLink": "https://app.mediqzy.com/video/abc123"
+    "meetingLink": "https://mediqzy.com/video/abc123"
   }
 }
 ```
@@ -444,7 +647,7 @@ Authorization: Bearer {token}
       "appointmentTime": "10:00",
       "consultationType": "online",
       "status": "confirmed",
-      "meetingLink": "https://app.mediqzy.com/video/abc123"
+      "meetingLink": "https://mediqzy.com/video/abc123"
     }
   ]
 }
@@ -492,7 +695,7 @@ Authorization: Bearer {token}
           "frequency": "Once daily"
         }
       ],
-      "fileUrl": "https://app.mediqzy.com/records/prescription_789.pdf"
+      "fileUrl": "https://mediqzy.com/records/prescription_789.pdf"
     }
   ]
 }
@@ -522,53 +725,138 @@ Content-Type: multipart/form-data
 import API from './api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// ─── Password Login ───────────────────────────────────────────────────────────
 export const loginPatient = async (email, password) => {
   try {
-    const response = await API.post('/login', { email, password });
-    
+    const response = await API.post('/auth/login', { email, password });
     if (response.data.success && response.data.token) {
-      // Store token and user data
       await AsyncStorage.setItem('authToken', response.data.token);
       await AsyncStorage.setItem('userData', JSON.stringify(response.data.user));
-      
-      return { 
-        success: true, 
-        user: response.data.user 
-      };
+      return { success: true, user: response.data.user };
     }
-    
-    return { 
-      success: false, 
-      message: response.data.message || 'Login failed' 
-    };
+    return { success: false, message: response.data.message || 'Login failed' };
   } catch (error) {
-    console.error('Login error:', error);
-    return { 
-      success: false, 
-      message: error.response?.data?.message || 'Network error. Please try again.' 
-    };
+    return { success: false, message: error.response?.data?.message || 'Network error.' };
   }
 };
 
-export const registerPatient = async (userData) => {
+// ─── OTP Login ────────────────────────────────────────────────────────────────
+export const sendLoginOTP = async (identifier) => {
+  // identifier can be email or phoneNumber
+  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
   try {
-    const response = await API.post('/register', userData);
+    const response = await API.post('/auth/send-otp', {
+      [isEmail ? 'email' : 'phoneNumber']: identifier,
+    });
     return response.data;
   } catch (error) {
-    return { 
-      success: false, 
-      message: error.response?.data?.message || 'Registration failed' 
-    };
+    return { success: false, message: error.response?.data?.message || 'Failed to send OTP' };
   }
 };
 
+export const verifyLoginOTP = async (identifier, otp) => {
+  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+  try {
+    const response = await API.post('/auth/verify-otp', {
+      [isEmail ? 'email' : 'phoneNumber']: identifier,
+      otp,  // always use 'otp' field, not 'code'
+    });
+
+    if (response.data.requiresRegistration) {
+      // New user — OTP is verified but they need to complete signup
+      return { success: true, requiresRegistration: true, identifier };
+    }
+
+    if (response.data.success && response.data.token) {
+      await AsyncStorage.setItem('authToken', response.data.token);
+      await AsyncStorage.setItem('userData', JSON.stringify(response.data.user));
+      return { success: true, user: response.data.user };
+    }
+
+    return { success: false, message: response.data.message || 'OTP verification failed' };
+  } catch (error) {
+    return { success: false, message: error.response?.data?.message || 'Failed to verify OTP' };
+  }
+};
+
+// ─── New User Registration ────────────────────────────────────────────────────
+export const sendRegistrationOTPs = async (email, phoneNumber, firstName) => {
+  try {
+    const response = await API.post('/users/register/send-otp', { email, phoneNumber, firstName });
+    return response.data;
+  } catch (error) {
+    return { success: false, message: error.response?.data?.message || 'Failed to send OTP' };
+  }
+};
+
+export const verifyEmailOTP = async (email, phoneNumber, otp) => {
+  try {
+    const response = await API.post('/users/register/verify-email-otp', { email, phoneNumber, otp });
+    return response.data;
+  } catch (error) {
+    return { success: false, message: error.response?.data?.message || 'Invalid email OTP' };
+  }
+};
+
+export const verifyWhatsAppOTP = async (email, phoneNumber, otp) => {
+  try {
+    const response = await API.post('/users/register/verify-whatsapp-otp', { email, phoneNumber, otp });
+    return response.data;
+  } catch (error) {
+    return { success: false, message: error.response?.data?.message || 'Invalid WhatsApp OTP' };
+  }
+};
+
+export const completeRegistration = async (userData) => {
+  // userData: { email, phoneNumber, password, firstName, lastName, dateOfBirth, gender }
+  try {
+    const response = await API.post('/users/register/verify-otp', userData);
+    if (response.data.success && response.data.token) {
+      await AsyncStorage.setItem('authToken', response.data.token);
+      await AsyncStorage.setItem('userData', JSON.stringify(response.data.user));
+      return { success: true, user: response.data.user };
+    }
+    return { success: false, message: response.data.message || 'Registration failed' };
+  } catch (error) {
+    return { success: false, message: error.response?.data?.message || 'Registration failed' };
+  }
+};
+
+// ─── Password Reset ───────────────────────────────────────────────────────────
+export const requestPasswordReset = async (email) => {
+  try {
+    const response = await API.post('/users/forgot-password', { email, userType: 'user' });
+    return response.data;
+  } catch (error) {
+    return { success: false, message: error.response?.data?.message || 'Failed to send OTP' };
+  }
+};
+
+export const verifyResetOTP = async (email, otp) => {
+  try {
+    const response = await API.post('/users/verify-reset-otp', { email, otp, userType: 'user' });
+    return response.data; // contains resetToken
+  } catch (error) {
+    return { success: false, message: error.response?.data?.message || 'Invalid OTP' };
+  }
+};
+
+export const resetPassword = async (resetToken, newPassword) => {
+  try {
+    const response = await API.post('/users/reset-password', { resetToken, newPassword });
+    return response.data;
+  } catch (error) {
+    return { success: false, message: error.response?.data?.message || 'Failed to reset password' };
+  }
+};
+
+// ─── Session ──────────────────────────────────────────────────────────────────
 export const logout = async () => {
   try {
-    await API.post('/logout');
+    await API.post('/auth/logout');
   } catch (error) {
-    console.log('Logout API error:', error);
+    // Ignore logout API errors
   } finally {
-    // Always clear local storage
     await AsyncStorage.removeItem('authToken');
     await AsyncStorage.removeItem('userData');
   }
@@ -579,7 +867,6 @@ export const getCurrentUser = async () => {
     const userData = await AsyncStorage.getItem('userData');
     return userData ? JSON.parse(userData) : null;
   } catch (error) {
-    console.error('Get current user error:', error);
     return null;
   }
 };
@@ -1079,8 +1366,8 @@ describe('Authentication', () => {
 ## Support & Resources
 
 ### API Documentation
-- Base URL: `https://app.mediqzy.com/api`
-- Swagger Docs: `https://app.mediqzy.com/api-docs` (Coming Soon)
+- Base URL: `https://mediqzy.com/api`
+- Swagger Docs: `https://mediqzy.com/api-docs` (Coming Soon)
 
 ### Contact
 - Email: support@mediczy.com
