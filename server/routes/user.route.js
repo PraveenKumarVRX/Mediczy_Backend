@@ -722,6 +722,70 @@ router.post(
         deliveryMethod = 'whatsapp';
       }
 
+      // SIGNUP PATH: if user not found but both email + phone provided → new user signup
+      const incomingPhone = req.body?.phoneNumber || req.body?.phone;
+      if (!user && isEmail && incomingPhone) {
+        const normalizedPhone = String(incomingPhone).replace(/[^0-9]/g, '').slice(-10);
+        // Check phone not already taken by another account
+        const phoneExists = await userModel.findOne({
+          where: sequelizeWhere(
+            fn("regexp_replace", col("phoneNumber"), "[^0-9]", "", "g"),
+            normalizedPhone
+          ),
+        });
+        if (phoneExists) {
+          return res.status(409).json({ success: false, message: 'Phone number already registered' });
+        }
+
+        // Generate and send a real signup OTP via email
+        const OTP_signup = await import('../models/otp.model.intelligent.js');
+        const signupOtp = await OTP_signup.default.generate({
+          email: identifier,
+          purpose: 'signup_email_otp',
+          expiryMinutes: 10
+        });
+
+        try {
+          await signupVerificationService.sendOTPViaEmail({
+            email: identifier,
+            firstName: req.body?.firstName || 'User'
+          }, signupOtp.code);
+          console.log(`📧 Signup OTP sent via email to new user: ${identifier}`);
+        } catch (emailErr) {
+          console.warn('⚠️  Direct email failed for signup OTP, trying n8n:', emailErr.message);
+          try {
+            const n8nResult = await n8nOTPService.sendEmailOTP({
+              email: identifier,
+              otp: signupOtp.code,
+              name: req.body?.firstName || 'User',
+              purpose: 'signup_email_otp',
+              expiryMinutes: 10
+            });
+            if (!n8nResult.success) throw new Error(n8nResult.error || 'n8n delivery failed');
+            console.log(`📧 Signup OTP sent via n8n to new user: ${identifier}`);
+          } catch (n8nErr) {
+            console.error('⚠️  Signup OTP all delivery methods failed:', n8nErr.message);
+            return res.status(502).json({ success: false, message: 'Failed to send OTP email. Please try again.' });
+          }
+        }
+
+        const responseData = {
+          otpId: signupOtp.id,
+          expiresAt: signupOtp.expiresAt,
+          expiresIn: '10 minutes',
+          deliveryMethod: 'email',
+          sentTo: identifier.replace(/(.{2})(.*)(@.*)/, '$1****$3'),
+          isNewUser: true
+        };
+        if (includeOtp) responseData.otp = signupOtp.code;
+
+        return res.status(200).json({
+          success: true,
+          message: 'OTP sent to your email. Please verify to complete registration.',
+          data: responseData
+        });
+      }
+
       // SECURITY: Always return same response structure whether user exists or not
       // This prevents user enumeration attacks
       if (!user || user.status === 'inactive' || user.status === 'blocked') {
