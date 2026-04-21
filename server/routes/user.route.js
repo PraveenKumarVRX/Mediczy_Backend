@@ -24,6 +24,7 @@ import { authLimiter } from "../middleware/rateLimiter.middleware.js";
 import intelligentDb from "../utils/intelligentDbClient.js";
 import OTP from "../models/otp.model.intelligent.js";
 import { cache } from "../db/redis.js";
+import postgresSequelize from "../db/postgres-sequelize.js";
 import {
   buildProfileKeyPrefix,
   buildPublicFileUrl,
@@ -373,6 +374,7 @@ router.post(
       }
 
       // Create user with verified email and phone
+      // Activate under default broker (Mayden, ID=2) and corporate tenant (My SmartHealth, ID=7)
       const newUser = await userModel.create({
         email,
         phoneNumber,
@@ -383,10 +385,23 @@ router.post(
         gender,
         emailVerified: true,
         phoneVerified: true,
-        status: 'active'
+        status: 'active',
+        organization_id: 7,
+        organization_type: 'individual',
+        tenant_id: 7
       });
 
-      console.log('✅ New user registered with OTP verification:', newUser.id);
+      // Mark as verified and link to Mayden broker (fields not in Sequelize model)
+      try {
+        await postgresSequelize.query(
+          `UPDATE users SET "isVerified" = true, aggregator_id = 2, aggregator_type = 'broker' WHERE id = :id`,
+          { replacements: { id: newUser.id }, type: postgresSequelize.QueryTypes.UPDATE }
+        );
+      } catch (activationErr) {
+        console.error('⚠️  Post-registration activation update failed:', activationErr.message);
+      }
+
+      console.log('✅ New user registered and activated under Mayden/My SmartHealth:', newUser.id);
 
       try {
         await cache.del(verificationKey);

@@ -1945,28 +1945,47 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
         let temporaryPassword = null;
         
         if (existingUser) {
-          // User exists, just create association
+          // User exists — activate and link to corporate's aggregator/tenant
           userId = existingUser.id;
+          // Resolve corporate's aggregator and tenant for activation of existing user
+          const corpAggregatorId = corporate.dataValues?.aggregator_id ?? corporate.aggregator_id ?? null;
+          const corpAggregatorType = corporate.dataValues?.aggregator_type ?? corporate.aggregator_type ?? null;
+          const corpTenantId = corporate.dataValues?.tenant_id ?? corporate.tenant_id ?? null;
+          await postgresSequelize.query(
+            `UPDATE users SET "isVerified" = true, "isCorporate" = true,
+              aggregator_id = COALESCE(aggregator_id, :aggregatorId),
+              aggregator_type = COALESCE(aggregator_type, :aggregatorType),
+              tenant_id = COALESCE(tenant_id, :tenantId)
+             WHERE id = :userId`,
+            { replacements: { userId, aggregatorId: corpAggregatorId, aggregatorType: corpAggregatorType, tenantId: corpTenantId }, type: postgresSequelize.QueryTypes.UPDATE }
+          );
         } else {
           // Generate a secure temporary password
           temporaryPassword = welcomeEmailService.generateSecurePassword();
           const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
           
+          // Resolve corporate's aggregator and tenant for activation
+          const corpAggregatorId = corporate.dataValues?.aggregator_id ?? corporate.aggregator_id ?? null;
+          const corpAggregatorType = corporate.dataValues?.aggregator_type ?? corporate.aggregator_type ?? null;
+          const corpTenantId = corporate.dataValues?.tenant_id ?? corporate.tenant_id ?? null;
+
           const [userResult] = await postgresSequelize.query(`
             INSERT INTO users (
               email, password, "firstName", "lastName", role, status,
-              "isCorporate", "isAdmin", "isTeam", 
+              "isCorporate", "isAdmin", "isTeam", "isVerified",
               "dateOfBirth", "phoneNumber", gender,
               address_city, address_state, "address_zipCode",
               department_name, employee_id,
+              aggregator_id, aggregator_type, tenant_id,
               "createdAt", "updatedAt"
             )
             VALUES (
               :email, :password, :firstName, :lastName, 'patient', 'active',
-              true, false, false,
+              true, false, false, true,
               :dob, :phoneNumber, :gender,
               :addressCity, :addressState, :addressZip,
               :deptName, :empId,
+              :aggregatorId, :aggregatorType, :tenantId,
               NOW(), NOW()
             )
             RETURNING id
@@ -1984,6 +2003,9 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
               addressZip: pinCode || null,
               deptName: department || null,
               empId: employeeId || null,
+              aggregatorId: corpAggregatorId,
+              aggregatorType: corpAggregatorType,
+              tenantId: corpTenantId,
             },
             type: postgresSequelize.QueryTypes.INSERT
           });
