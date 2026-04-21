@@ -511,6 +511,7 @@ const Register = () => {
 
               <Form {...corpForm}>
                 <form onSubmit={corpForm.handleSubmit(onCorpSubmit)} className="space-y-3">
+                  {!otpStep && (<>
                   {/* Name: pre-filled from record OR ask if not available */}
                   {(employeeInfo.firstName && employeeInfo.lastName) ? (
                     <div className="rounded-md bg-muted px-3 py-2 text-sm">
@@ -595,16 +596,20 @@ const Register = () => {
                     )}
                   />
 
-                  <Button type="submit" className="w-full" disabled={otpSending || otpStep}>
+                  <Button type="submit" className="w-full" disabled={otpSending}>
                     {otpSending ? (
                       <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Sending OTP...</span>
                     ) : (
                       "Send OTP"
                     )}
                   </Button>
+                  </>)}
 
                   {otpStep && (
                     <div className="space-y-4 rounded-lg border p-4">
+                      <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-sm text-blue-800">
+                        OTP codes sent to <strong>{signupData?.email}</strong> and <strong>{signupData?.phoneNumber}</strong>. Enter them below.
+                      </div>
                       <div className="space-y-2">
                         <FormLabel>Email OTP</FormLabel>
                         <OTPInput value={emailOtp} onChange={setEmailOtp} length={6} />
@@ -613,10 +618,10 @@ const Register = () => {
                         </Button>
                       </div>
                       <div className="space-y-2">
-                        <FormLabel>WhatsApp OTP <span className="text-muted-foreground text-xs">(optional)</span></FormLabel>
+                        <FormLabel>Phone OTP <span className="text-muted-foreground text-xs">(optional)</span></FormLabel>
                         <OTPInput value={whatsappOtp} onChange={setWhatsappOtp} length={6} />
                         <Button type="button" className="w-full" variant={whatsappVerified ? "secondary" : "outline"} onClick={handleVerifyWhatsappOtp} disabled={verifyingWhatsapp || whatsappVerified}>
-                          {whatsappVerified ? "WhatsApp Verified ✓" : verifyingWhatsapp ? "Verifying..." : "Verify WhatsApp OTP"}
+                          {whatsappVerified ? "Phone Verified ✓" : verifyingWhatsapp ? "Verifying..." : "Verify Phone OTP"}
                         </Button>
                       </div>
                       <Button type="button" className="w-full" onClick={handleCompleteRegistration} disabled={!emailVerified || registering}>
@@ -647,6 +652,7 @@ const Register = () => {
 
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+                  {!otpStep && (<>
                   <div className="grid grid-cols-2 gap-3">
                     <FormField
                       control={form.control}
@@ -769,16 +775,20 @@ const Register = () => {
                     />
                   </div>
 
-                  <Button type="submit" className="w-full" disabled={otpSending || otpStep}>
+                  <Button type="submit" className="w-full" disabled={otpSending}>
                     {otpSending ? (
                       <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Sending OTP...</span>
                     ) : (
                       "Send OTP"
                     )}
                   </Button>
+                  </>)}
 
                   {otpStep && (
                     <div className="space-y-4 rounded-lg border p-4">
+                      <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-sm text-blue-800">
+                        OTP codes sent to <strong>{signupData?.email}</strong> and <strong>{signupData?.phoneNumber}</strong>. Enter them below.
+                      </div>
                       <div className="space-y-2">
                         <FormLabel>Email OTP</FormLabel>
                         <OTPInput value={emailOtp} onChange={setEmailOtp} length={6} />
@@ -787,10 +797,10 @@ const Register = () => {
                         </Button>
                       </div>
                       <div className="space-y-2">
-                        <FormLabel>WhatsApp OTP <span className="text-muted-foreground text-xs">(optional)</span></FormLabel>
+                        <FormLabel>Phone OTP <span className="text-muted-foreground text-xs">(optional)</span></FormLabel>
                         <OTPInput value={whatsappOtp} onChange={setWhatsappOtp} length={6} />
                         <Button type="button" className="w-full" variant={whatsappVerified ? "secondary" : "outline"} onClick={handleVerifyWhatsappOtp} disabled={verifyingWhatsapp || whatsappVerified}>
-                          {whatsappVerified ? "WhatsApp Verified ✓" : verifyingWhatsapp ? "Verifying..." : "Verify WhatsApp OTP"}
+                          {whatsappVerified ? "Phone Verified ✓" : verifyingWhatsapp ? "Verifying..." : "Verify Phone OTP"}
                         </Button>
                       </div>
                       <Button type="button" className="w-full" onClick={handleCompleteRegistration} disabled={!emailVerified || registering}>
