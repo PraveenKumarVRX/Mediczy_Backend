@@ -87,6 +87,61 @@ router.post('/orders/create', authUser, async (req, res) => {
 });
 
 /**
+ * POST /api/billing/orders
+ * Place a new medicine (pharmacy) order from patient dashboard.
+ * Accepts: { orderType, items[], deliveryAddress, prescriptionRequired }
+ */
+router.post('/orders', authUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { orderType = 'medicine', items, deliveryAddress, prescriptionRequired = false, notes } = req.body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: 'items must be a non-empty array' });
+    }
+    if (!deliveryAddress || !String(deliveryAddress).trim()) {
+      return res.status(400).json({ success: false, message: 'deliveryAddress is required' });
+    }
+
+    const subtotal = items.reduce((sum, item) => {
+      const qty = Math.max(1, parseInt(item.quantity) || 1);
+      const price = parseFloat(item.price) || 0;
+      return sum + price * qty;
+    }, 0);
+
+    const orderNumber = paymentGateway.generateOrderReceipt('ORD');
+
+    const order = await Order.create({
+      orderNumber,
+      userId,
+      orderType: 'medicine',
+      status: 'pending',
+      subtotal: parseFloat(subtotal.toFixed(2)),
+      tax: 0,
+      discount: 0,
+      total: parseFloat(subtotal.toFixed(2)),
+      currency: 'INR',
+      shippingAddress: { address: String(deliveryAddress).trim() },
+      metadata: {
+        items,
+        deliveryAddress: String(deliveryAddress).trim(),
+        prescriptionRequired: !!prescriptionRequired,
+      },
+      notes: notes || null,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Order placed successfully',
+      data: { order: { id: order.id, orderNumber: order.orderNumber, status: order.status, total: order.total } },
+    });
+  } catch (error) {
+    console.error('Place pharmacy order error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to place order', error: error.message });
+  }
+});
+
+/**
  * GET /api/billing/orders
  * Get user's order history
  */
