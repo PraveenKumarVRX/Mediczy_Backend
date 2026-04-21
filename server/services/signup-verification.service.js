@@ -285,9 +285,14 @@ class SignupVerificationService {
       const mailOptions = {
         from: `"${fromName || 'Mediqzy'}" <${fromEmail}>`,
         to: email,
-        subject: '✉️ Verify Your Email - Mediqzy Registration',
+        subject: `${otpCode} is your Mediqzy verification code`,
         html: htmlContent,
-        text: `Hello ${firstName},\n\nYour Mediqzy registration OTP is: ${otpCode}\n\nThis OTP is valid for 10 minutes.\n\nBest regards,\nMediqzy Team`
+        text: `Hello ${firstName},\n\nYour Mediqzy registration OTP is: ${otpCode}\n\nThis OTP is valid for 10 minutes. Do not share this code.\n\nIf you didn't request this, please ignore this email.\n\nBest regards,\nMediqzy Team`,
+        headers: {
+          'X-Mailer': 'Mediqzy',
+          'X-Priority': '1',
+          'Precedence': 'transactional'
+        }
       };
 
       await transporter.sendMail(mailOptions);

@@ -191,11 +191,11 @@ const Register = () => {
 
   const handleCompleteRegistration = async () => {
     if (!signupData) return;
-    if (!emailVerified || !whatsappVerified) {
+    if (!emailVerified) {
       toast({
         variant: "destructive",
-        title: "Verification required",
-        description: "Please verify both email and WhatsApp OTPs.",
+        title: "Email verification required",
+        description: "Please verify your email OTP to continue.",
       });
       return;
     }
@@ -471,23 +471,23 @@ const Register = () => {
                     </Button>
                   </div>
                   <div className="space-y-2">
-                    <FormLabel>WhatsApp OTP</FormLabel>
+                    <FormLabel>WhatsApp OTP <span className="text-muted-foreground text-xs">(optional)</span></FormLabel>
                     <OTPInput value={whatsappOtp} onChange={setWhatsappOtp} length={6} />
                     <Button
                       type="button"
                       className="w-full"
-                      variant={whatsappVerified ? "secondary" : "default"}
+                      variant={whatsappVerified ? "secondary" : "outline"}
                       onClick={handleVerifyWhatsappOtp}
                       disabled={verifyingWhatsapp || whatsappVerified}
                     >
-                      {whatsappVerified ? "WhatsApp Verified" : verifyingWhatsapp ? "Verifying..." : "Verify WhatsApp OTP"}
+                      {whatsappVerified ? "WhatsApp Verified ✓" : verifyingWhatsapp ? "Verifying..." : "Verify WhatsApp OTP"}
                     </Button>
                   </div>
                   <Button
                     type="button"
                     className="w-full"
                     onClick={handleCompleteRegistration}
-                    disabled={!emailVerified || !whatsappVerified || registering}
+                    disabled={!emailVerified || registering}
                   >
                     {registering ? "Creating account..." : "Complete Registration"}
                   </Button>

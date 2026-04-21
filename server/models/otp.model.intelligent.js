@@ -18,8 +18,22 @@ class OTP {
    * @param {number} data.expiryMinutes - Expiry time in minutes (default: 10)
    * @returns {Promise<Object>} OTP object with code
    */
+  /**
+   * Normalize phone to last 10 digits for consistent Redis key lookup.
+   * e.g., "+919615933444" or "919615933444" → "9615933444"
+   */
+  static _normalizePhone(phone) {
+    if (!phone) return null;
+    const digits = String(phone).replace(/\D/g, '');
+    return digits.length > 10 ? digits.slice(-10) : digits;
+  }
+
   static async generate({ phone, email, purpose = 'login', expiryMinutes = 10, userId = null }) {
     try {
+      // Normalize phone to 10-digit format for consistent key lookup
+      const normalizedPhone = OTP._normalizePhone(phone);
+      phone = normalizedPhone || phone;
+
       // Generate 6-digit OTP
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
       
@@ -93,6 +107,9 @@ class OTP {
    */
   static async verify({ phone, email, code, purpose = 'login' }) {
     try {
+      // Normalize phone for consistent lookup (match how generate() stores it)
+      if (phone) phone = OTP._normalizePhone(phone) || phone;
+
       // Query for OTP
       const query = {
         code,
