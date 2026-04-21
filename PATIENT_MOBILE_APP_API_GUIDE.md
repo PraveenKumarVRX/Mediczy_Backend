@@ -1,6 +1,6 @@
 # Mediczy — Patient Mobile App API Guide
 
-> **Version:** 2.1 | **Last Updated:** April 19, 2026
+> **Version:** 2.2 | **Last Updated:** April 21, 2026
 
 - **Base URL:** `https://app.mediqzy.com/api`
 - **Auth:** `Authorization: Bearer <jwt-token>` (JWT, expires 7 days)
@@ -109,13 +109,108 @@ Body: { "phoneNumber": "9884089921", "otp": "123456" }
 ```
 
 ### 1.4 Registration
-```
-POST /api/users/register/send-otp
-Body: { "email": "new@example.com", "phoneNumber": "9876543210" }
 
-POST /api/users/register/verify-otp
-Body: { "email": "new@example.com", "otp": "123456", "firstName": "John", "lastName": "Doe", "password": "SecurePass123", "dateOfBirth": "1990-01-01", "gender": "Male" }
+Registration supports two member types: **Individual** (auto-enrolled in Free Basic plan) and **Corporate** (linked to employer via pre-loaded employee roster).
+
+#### Step 1 — Fetch available corporates (Corporate path only)
 ```
+GET /api/users/register/corporates  (Public)
+```
+**Response:**
+```json
+{
+  "success": true,
+  "corporates": [
+    { "id": 1, "name": "TCS Limited" },
+    { "id": 2, "name": "Mediqzy Health Solutions" }
+  ]
+}
+```
+
+#### Step 2 — Validate employee ID (Corporate path only)
+```
+POST /api/users/register/validate-employee  (Public)
+Body: { "corporateId": 1, "employeeId": "EMP-001" }
+```
+**Response (200 — verified):**
+```json
+{
+  "success": true,
+  "message": "Employee verified",
+  "employee": {
+    "dbId": 4,
+    "employeeId": "EMP-001",
+    "department": "Engineering",
+    "designation": "Software Engineer",
+    "corporateName": "TCS Limited",
+    "firstName": null,
+    "lastName": null
+  }
+}
+```
+**Error codes:** `404` employee not found · `409` employee ID already registered (use login)
+
+#### Step 3 — Send OTP
+```
+POST /api/users/register/send-otp  (Public)
+Body: { "email": "new@example.com", "phoneNumber": "+919876543210", "firstName": "John" }
+```
+> OTP sent to email (required) and WhatsApp (optional). In dev/test mode, OTPs are returned in the response body under `data.emailOtp` and `data.whatsappOtp`.
+
+#### Step 4 — Verify email OTP
+```
+POST /api/users/register/verify-email-otp  (Public)
+Body: { "email": "new@example.com", "phoneNumber": "+919876543210", "code": "123456" }
+```
+
+#### Step 5 — Verify WhatsApp OTP (optional)
+```
+POST /api/users/register/verify-whatsapp-otp  (Public)
+Body: { "email": "new@example.com", "phoneNumber": "+919876543210", "code": "654321" }
+```
+
+#### Step 6 — Complete registration
+```
+POST /api/users/register/verify-otp  (Public)
+```
+**Body — Individual:**
+```json
+{
+  "email": "new@example.com",
+  "phoneNumber": "+919876543210",
+  "password": "SecurePass123",
+  "firstName": "John",
+  "lastName": "Doe",
+  "dateOfBirth": "1990-01-01",
+  "gender": "Male",
+  "memberType": "individual"
+}
+```
+**Body — Corporate:**
+```json
+{
+  "email": "john@company.com",
+  "phoneNumber": "+919876543210",
+  "password": "SecurePass123",
+  "firstName": "John",
+  "lastName": "Doe",
+  "memberType": "corporate",
+  "corporateId": 1,
+  "employeeDbId": 4
+}
+```
+> `dateOfBirth` and `gender` are optional for corporate members.
+
+**Response (201):**
+```json
+{
+  "success": true,
+  "message": "Registration successful",
+  "user": { "id": 6165, "email": "new@example.com", "firstName": "John" }
+}
+```
+> **Individual** → Free Basic plan (`plan_id=1`) auto-activated on registration.  
+> **Corporate** → `isCorporate=true`, linked to employer via `user_associations`, `corporate_employees.userId` updated.
 
 ### 1.5 Password Reset
 ```
@@ -771,11 +866,301 @@ POST   /api/health-diary/log-symptom        🔐  Log symptom
 
 ## 20. Health Assessment
 
+> Base path: `/api/health-assessment` · Alias: `/api/hra`
+
+All endpoints require authentication (`🔐`) unless noted.
+
+### 20.1 Save / Submit Assessment
 ```
-GET  /api/health-assessment       🔐  Get my assessments
-POST /api/health-assessment/save  🔐  Save assessment
-     Body: { "responses": { "smoking": false, "exercise": "moderate", "diet": "balanced", "sleep_hours": 7, "stress_level": "low" } }
+POST /api/health-assessment/save  🔐
 ```
+**Body:**
+```json
+{
+  "age": 35,
+  "gender": "male",
+  "height": 175,
+  "weight": 82,
+  "waist": 88,
+  "hip": 96,
+  "bmi": 26.8,
+  "whr": 0.92,
+  "smoking": "never",
+  "alcohol": "occasionally",
+  "exercise_frequency": "moderate",
+  "hypertension": "no",
+  "diabetes": "no",
+  "heart_disease": "no",
+  "cholesterol": "no",
+  "mental_health": "normal",
+  "family_heart_disease": "no",
+  "family_diabetes": "yes",
+  "family_cancer": "no",
+  "stress_level": 4,
+  "sleep_hours": 7,
+  "diet_quality": "good",
+  "responses": {}
+}
+```
+> Required: `age`, `gender`, `height`, `weight`. All others default gracefully.
+
+**Field Reference:**
+
+| Field | Type | Values |
+|---|---|---|
+| `smoking` | string | `never` \| `former` \| `current` |
+| `alcohol` | string | `none` \| `occasionally` \| `weekly` \| `daily` |
+| `exercise_frequency` | string | `sedentary` \| `light` \| `moderate` \| `active` |
+| `hypertension` / `diabetes` / `heart_disease` / `cholesterol` | string | `yes` \| `no` |
+| `mental_health` | string | `normal` \| `stressed` \| `anxious` \| `depressed` |
+| `family_heart_disease` / `family_diabetes` / `family_cancer` | string | `yes` \| `no` |
+| `diet_quality` | string | `poor` \| `fair` \| `good` \| `excellent` |
+| `stress_level` | number | 1–10 |
+| `sleep_hours` | number | hours per night |
+
+**Response (201):**
+```json
+{
+  "success": true,
+  "assessment": {
+    "id": 42,
+    "userId": 19,
+    "assessedAt": "2026-04-21T10:30:00.000Z",
+    "measurements": { "age": 35, "height": 175, "weight": 82, "bmi": 26.8, "waist": 88, "hip": 96, "whr": 0.92 },
+    "lifestyle": { "smoking": "never", "alcohol": "occasionally", "exercise_frequency": "moderate", "sleep_hours": 7, "diet_quality": "good" },
+    "medical": { "hypertension": "no", "diabetes": "no", "heart_disease": "no", "cholesterol": "no", "mental_health": "normal" },
+    "family_history": { "heart_disease": "no", "diabetes": "yes", "cancer": "no" }
+  },
+  "riskAssessment": {
+    "score": 24,
+    "maxScore": 100,
+    "riskLevel": "MILD",
+    "riskFactors": ["Family History - Diabetes"],
+    "recommendations": ["Maintain current health habits", "Annual health checkup"]
+  }
+}
+```
+
+**Risk Levels (user-facing assessment):**
+| Level | Score Range | Description |
+|---|---|---|
+| `LOW` | 0–14 | Healthy profile |
+| `MILD` | 15–29 | Low-grade risk factors |
+| `MODERATE` | 30–49 | Lifestyle modification recommended |
+| `HIGH` | 50–69 | Clinical consultation advised |
+| `VERY_HIGH` | 70–100 | Immediate medical review |
+
+---
+
+### 20.2 Get Latest Assessment
+```
+GET /api/health-assessment         🔐
+GET /api/health-assessment/latest  🔐  (alias)
+```
+**Response (200):**
+```json
+{
+  "success": true,
+  "assessment": {
+    "id": 42,
+    "userId": 19,
+    "assessedAt": "2026-04-21T10:30:00.000Z",
+    "measurements": { "age": 35, "height": 175, "weight": 82, "bmi": 26.8, "waist": 88, "hip": 96, "whr": 0.92 },
+    "riskAssessment": { "score": 24, "riskLevel": "MILD", "riskFactors": ["Family History - Diabetes"] }
+  }
+}
+```
+> Returns `404` if no assessment exists for the user.
+
+---
+
+### 20.3 Get Assessment History
+```
+GET /api/health-assessment/history  🔐
+```
+Returns all assessments with period-based groupings (daily, weekly, monthly, quarterly, half-yearly, annual). Annual period is calculated from the user's birthday.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "total": 6,
+  "assessments": [
+    {
+      "id": 42,
+      "score": 24,
+      "riskLevel": "MILD",
+      "assessedAt": "2026-04-21T10:30:00.000Z",
+      "bmi": 26.8,
+      "whr": 0.92,
+      "periods": { "daily": true, "weekly": true, "monthly": true, "quarterly": true, "halfYearly": true, "annual": true }
+    }
+  ],
+  "periodSummaries": {
+    "daily":     { "count": 1, "avgScore": 24, "latestScore": 24, "latestLevel": "MILD", "trend": "stable" },
+    "weekly":    { "count": 2, "avgScore": 26, "latestScore": 24, "latestLevel": "MILD", "trend": "improving" },
+    "monthly":   { "count": 3, "avgScore": 27, "latestScore": 24, "latestLevel": "MILD", "trend": "improving" },
+    "quarterly": { "count": 5, "avgScore": 28, "latestScore": 24, "latestLevel": "MILD", "trend": "stable" },
+    "halfYearly":{ "count": 5, "avgScore": 28, "latestScore": 24, "latestLevel": "MILD", "trend": "stable" },
+    "annual":    { "count": 6, "avgScore": 29, "latestScore": 24, "latestLevel": "MILD", "trend": "improving" }
+  },
+  "dailyCycle": { "start": "2026-04-20T15:30:00.000Z", "end": "2026-04-21T15:30:00.000Z", "label": "9 PM – 9 PM IST" },
+  "birthday": {
+    "date": "1990-03-15T00:00:00.000Z",
+    "nextBirthday": "2027-03-15T00:00:00.000Z",
+    "daysUntilBirthday": 328,
+    "annualPeriodStart": "2026-03-15T00:00:00.000Z",
+    "annualPeriodEnd": "2027-03-15T00:00:00.000Z",
+    "monthlyMonitoring": [
+      { "month": 1, "label": "Mar 26", "isCurrent": false, "count": 2, "avgScore": 30 }
+    ]
+  }
+}
+```
+
+---
+
+### 20.4 Admin — Health Risk Assessment (Bayesian Scoring Model)
+
+> These endpoints use the **admin HRA schema** — a structured multi-section questionnaire (Demographics, Lifestyle, Physical Indicators, Medical History, Family History, Mental Health, Preventive Screening, Environmental). Max theoretical score: **300**. Results include Bayesian inference for probabilistic disease risk.
+
+> **Base:** `/api/admin/health-risk/...` · Requires admin role + auth.
+
+#### Get member's HRA history
+```
+GET /api/admin/health-risk/members/:memberId  🔐 (admin)
+Query: ?limit=12
+```
+**Response:**
+```json
+{
+  "success": true,
+  "memberId": "19",
+  "total": 3,
+  "history": [
+    {
+      "id": 7,
+      "date": "2026-04-21T10:00:00.000Z",
+      "score": 82,
+      "band": "Moderate Risk",
+      "completionPct": 95,
+      "createdBy": "Admin User",
+      "notes": null,
+      "bayesianInference": { "cardiovascular": { "probability": 0.24 } }
+    }
+  ],
+  "latestAssessment": { "..." : "..." },
+  "meta": {
+    "maxScore": 300,
+    "totalQuestions": 40,
+    "bands": [
+      { "label": "Low Risk",      "min": 0,   "max": 50  },
+      { "label": "Moderate Risk", "min": 51,  "max": 100 },
+      { "label": "High Risk",     "min": 101, "max": 150 },
+      { "label": "Severe Risk",   "min": 151, "max": 999 }
+    ]
+  }
+}
+```
+
+#### Create HRA assessment for a member
+```
+POST /api/admin/health-risk/members/:memberId  🔐 (admin)
+```
+**Body:**
+```json
+{
+  "memberName": "John Doe",
+  "memberSegment": "corporate",
+  "responses": {
+    "age": "40_49",
+    "gender": "male",
+    "smoking": "never",
+    "alcohol": "occasional",
+    "food": "balanced",
+    "activity": "150_mod",
+    "sleep": "7_8",
+    "stress": "moderate",
+    "bmi": "overweight",
+    "whr": "elevated",
+    "bp": "pre",
+    "hx_diabetes": "none",
+    "hx_hypertension": "controlled",
+    "fh_diabetes": "yes",
+    "fh_heart": "no"
+  },
+  "notes": "Annual review",
+  "flags": []
+}
+```
+> Each `responses` key maps to a question ID from the HRA schema. Values are the selected option `id` (not the label).
+
+**Response (201):**
+```json
+{
+  "success": true,
+  "assessment": {
+    "id": 8,
+    "memberId": "19",
+    "totalScore": 68,
+    "riskBandLabel": "Moderate Risk",
+    "riskBandColor": "text-amber-500",
+    "completionPct": 87,
+    "sectionBreakdown": [
+      { "sectionId": "demographics", "score": 4, "maxScore": 14 },
+      { "sectionId": "lifestyle",    "score": 9, "maxScore": 50 }
+    ],
+    "bayesianInference": {
+      "cardiovascular": { "probability": 0.22 },
+      "diabetes":       { "probability": 0.31 },
+      "evidence": [ "bmi_overweight", "whr_elevated" ],
+      "generatedAt": "2026-04-21T10:00:00.000Z"
+    }
+  },
+  "meta": { "maxScore": 300, "totalQuestions": 40 }
+}
+```
+
+#### Run Bayesian inference standalone
+```
+POST /api/admin/health-risk/inference  🔐 (admin)
+```
+**Body:**
+```json
+{
+  "responses": { "bmi": "obese", "hx_diabetes": "uncontrolled", "smoking": "heavy_gte10" },
+  "context": { "memberId": "19", "note": "ad-hoc inference" }
+}
+```
+**Response:**
+```json
+{
+  "success": true,
+  "inference": {
+    "cardiovascular": { "probability": 0.61 },
+    "diabetes": { "probability": 0.78 },
+    "evidence": [ "bmi_obese", "diabetes_uncontrolled", "smoking_heavy" ],
+    "generatedAt": "2026-04-21T10:05:00.000Z"
+  },
+  "context": { "nodesReceived": 3, "generatedAt": "2026-04-21T10:05:00.000Z" }
+}
+```
+
+---
+
+### 20.5 HRA Question Schema Reference
+
+The admin HRA uses structured sections. Each question accepts the option `id` as the response value.
+
+| Section | Questions |
+|---|---|
+| `demographics` | `age` (18_29 · 30_39 · 40_49 · 50_59 · 60_69 · 70_79 · 80_plus), `gender` (male · female · other) |
+| `lifestyle` | `smoking`, `alcohol`, `food`, `activity`, `sleep`, `snoring`, `stress`, `hydration` |
+| `physical` | `bmi`, `whr`, `neck`, `body_fat`, `bp`, `resting_hr`, `spo2` |
+| `medical` | `hx_hypertension`, `hx_diabetes`, `hx_cholesterol`, `hx_heart`, `hx_respiratory`, `hx_kidney`, `hx_liver`, `hx_cancer` |
+| `family` | `fh_diabetes`, `fh_hypertension`, `fh_heart`, `fh_cancer`, `fh_kidney`, `fh_respiratory` |
+
+> All option IDs and scores are defined in `server/config/health-risk.schema.js`.
 
 ---
 

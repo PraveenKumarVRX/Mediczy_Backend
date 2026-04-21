@@ -517,7 +517,7 @@ router.post(
         }
       }
 
-      // Individual path: assign Free Basic (trial) plan
+      // Individual path: assign Free Basic (trial) plan + link to My SmartHealth corporate
       if (!isCorporate) {
         try {
           await postgresSequelize.query(
@@ -527,6 +527,17 @@ router.post(
           );
         } catch (planErr) {
           console.error('⚠️  Trial plan assignment failed (non-blocking):', planErr.message);
+        }
+        // Link individual user to My SmartHealth corporate (id=4) as 'member'
+        try {
+          await postgresSequelize.query(
+            `INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
+             VALUES (:userId, 'corporate', 4, 'member', true, 'active', NOW(), NOW(), NOW())
+             ON CONFLICT ("userId", "entityType", "entityId", role) WHERE "entityType" = 'corporate' DO UPDATE SET status = 'active', "updatedAt" = NOW()`,
+            { replacements: { userId: newUser.id } }
+          );
+        } catch (assocErr) {
+          console.error('⚠️  My SmartHealth association failed (non-blocking):', assocErr.message);
         }
       }
 
