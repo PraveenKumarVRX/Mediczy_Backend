@@ -26,8 +26,30 @@ export async function status() {
   return response.data;
 }
 
+export async function update(collection, id, payload) {
+  try {
+    const url = buildUrl('/update');
+    const body = { collection, id, payload };
+    const response = await axios.post(url, body, { timeout: 5000 });
+    return response.data;
+  } catch {
+    // update endpoint may not exist — no-op silently
+    return { success: false, reason: 'update_not_supported' };
+  }
+}
+
+export async function search(collection, { filter = {}, limit = 100 } = {}) {
+  try {
+    return await query(collection, filter);
+  } catch {
+    return [];
+  }
+}
+
 export default {
   ingest,
   query,
-  status
+  status,
+  update,
+  search
 };

@@ -301,7 +301,7 @@ class SignupVerificationService {
 
   /**
    * Send OTP via WhatsApp using Twilio
-   * Falls back to Email if Twilio is not configured
+   * Retries up to 2 times. Falls back to Email and sends admin alert on failure.
    */
   async sendOTPViaWhatsApp(account, otpCode) {
     // If Twilio is not configured, fallback to email
@@ -310,36 +310,106 @@ class SignupVerificationService {
       return await this.sendOTPViaEmail(account, otpCode);
     }
 
-    try {
-      const phoneNumber = account.phoneNumber;
-      // Format phone number for WhatsApp
-      let formattedPhone = phoneNumber.toString().replace(/[^0-9]/g, '');
-      if (!formattedPhone.startsWith('91') && formattedPhone.length === 10) {
-        formattedPhone = '91' + formattedPhone;
+    const phoneNumber = account.phoneNumber;
+    let formattedPhone = phoneNumber.toString().replace(/[^0-9]/g, '');
+    if (!formattedPhone.startsWith('91') && formattedPhone.length === 10) {
+      formattedPhone = '91' + formattedPhone;
+    }
+
+    const whatsappFrom = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+918098998998';
+    const whatsappTo = `whatsapp:+${formattedPhone}`;
+    const templateSid = process.env.TWILIO_OTP_TEMPLATE_SID || 'HX33ae0014bd63fad4404789d2373b6174';
+
+    // Non-retriable Twilio error codes
+    const NON_RETRIABLE = new Set([63024, 63016, 21211, 21614, 21612, 21610, 21408]);
+    const maxRetries = 2;
+    let lastError = null;
+    let attempt = 0;
+
+    while (attempt <= maxRetries) {
+      attempt++;
+      try {
+        const message = await this.twilioClient.messages.create({
+          from: whatsappFrom,
+          to: whatsappTo,
+          contentSid: templateSid,
+          contentVariables: JSON.stringify({ '1': otpCode })
+        });
+
+        console.log(`📱 ✅ Signup WhatsApp OTP sent (attempt ${attempt}): SID=${message.sid} Status=${message.status}`);
+        return; // success
+
+      } catch (error) {
+        lastError = error;
+        const code = error.code || error.status;
+        console.error(`❌ Signup WhatsApp OTP attempt ${attempt} failed:`, error.message);
+
+        if (code && NON_RETRIABLE.has(Number(code))) {
+          console.warn(`⚠️  Non-retriable Twilio error ${code} — skipping retries`);
+          break;
+        }
+
+        if (attempt <= maxRetries) {
+          const delay = attempt === 1 ? 1000 : 3000;
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
       }
+    }
 
-      const whatsappFrom = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+918098998998';
-      const whatsappTo = `whatsapp:+${formattedPhone}`;
+    // All attempts failed — send admin alert asynchronously
+    const maskedPhone = `+${formattedPhone}`.replace(/(\+\d{2})\d{6}(\d{4})/, '$1******$2');
+    this._sendWhatsAppFailureAlert({ maskedPhone, purpose: 'signup', error: lastError?.message || 'Unknown error', attempts: attempt })
+      .catch(() => {});
 
-      // Use the OTP verification template
-      const templateSid = process.env.TWILIO_OTP_TEMPLATE_SID || 'HX33ae0014bd63fad4404789d2373b6174';
+    console.warn('⚠️  WhatsApp delivery failed after retries - falling back to Email OTP');
+    return await this.sendOTPViaEmail(account, otpCode);
+  }
 
-      const message = await this.twilioClient.messages.create({
-        from: whatsappFrom,
-        to: whatsappTo,
-        contentSid: templateSid,
-        contentVariables: JSON.stringify({
-          '1': otpCode
-        })
+  /**
+   * Send admin alert when WhatsApp OTP delivery fails
+   */
+  async _sendWhatsAppFailureAlert({ maskedPhone, purpose, error, attempts }) {
+    try {
+      const nodemailer = (await import('nodemailer')).default;
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || 'smtp-relay.brevo.com',
+        port: parseInt(process.env.SMTP_PORT) || 587,
+        secure: false,
+        auth: {
+          user: (process.env.SMTP_USER || '').trim(),
+          pass: (process.env.SMTP_PASSWORD || process.env.SMTP_PASS || '').trim()
+        },
+        tls: { rejectUnauthorized: false }
       });
 
-      console.log(`📱 ✅ Signup WhatsApp OTP sent to ${whatsappTo}, SID: ${message.sid}, Status: ${message.status}`);
-      
-    } catch (error) {
-      console.error('❌ Signup WhatsApp OTP error:', error);
-      console.warn('⚠️  WhatsApp delivery failed - falling back to Email OTP');
-      // Fallback to email if Twilio fails
-      return await this.sendOTPViaEmail(account, otpCode);
+      const alertEmail = process.env.OTP_FAILURE_ALERT_EMAIL || 'sk@mysmarthealth.in';
+      const now = new Date().toISOString();
+
+      await transporter.sendMail({
+        from: `"Mediczy System Alert" <${process.env.SMTP_USER || 'noreply@mysmarthealth.in'}>`,
+        to: alertEmail,
+        subject: `🚨 WhatsApp OTP Delivery Failed — ${purpose} (${now.slice(0, 10)})`,
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;border:1px solid #e0e0e0;border-radius:8px;">
+            <h2 style="color:#d32f2f;margin-top:0;">⚠️ WhatsApp OTP Delivery Failure</h2>
+            <table style="width:100%;border-collapse:collapse;font-size:14px;">
+              <tr><td style="padding:8px;color:#666;width:40%;">Time (UTC)</td><td style="padding:8px;font-weight:bold;">${now}</td></tr>
+              <tr style="background:#f9f9f9;"><td style="padding:8px;color:#666;">Phone (masked)</td><td style="padding:8px;font-weight:bold;">${maskedPhone}</td></tr>
+              <tr><td style="padding:8px;color:#666;">Purpose</td><td style="padding:8px;font-weight:bold;">${purpose}</td></tr>
+              <tr style="background:#f9f9f9;"><td style="padding:8px;color:#666;">Attempts made</td><td style="padding:8px;font-weight:bold;">${attempts}</td></tr>
+              <tr><td style="padding:8px;color:#666;">Error</td><td style="padding:8px;color:#d32f2f;font-weight:bold;">${error}</td></tr>
+            </table>
+            <p style="margin-top:16px;color:#555;">User has been automatically switched to <strong>Email OTP</strong> as fallback.</p>
+            <hr style="margin:20px 0;border:none;border-top:1px solid #eee;">
+            <p style="color:#888;font-size:12px;margin:0;">Automated alert from Mediczy signup OTP system. Check Twilio dashboard for details.</p>
+          </div>
+        `,
+        text: `WhatsApp OTP Failure\n\nTime: ${now}\nPhone: ${maskedPhone}\nPurpose: ${purpose}\nAttempts: ${attempts}\nError: ${error}\n\nUser was switched to Email OTP fallback.`
+      });
+
+      console.log(`📧 Signup WhatsApp OTP failure alert sent to ${alertEmail}`);
+    } catch (alertErr) {
+      console.error('❌ Failed to send signup OTP failure alert:', alertErr.message);
     }
   }
 }
