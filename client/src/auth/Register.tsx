@@ -105,7 +105,10 @@ const Register = () => {
   // ── Corporate state ──
   const [corporates, setCorporates] = useState<Corporate[]>([]);
   const [corporatesLoading, setCorporatesLoading] = useState(false);
+  const [corporateSearch, setCorporateSearch] = useState("");
+  const [showCorporateList, setShowCorporateList] = useState(false);
   const [selectedCorporateId, setSelectedCorporateId] = useState<string>("");
+  const [selectedCorporateName, setSelectedCorporateName] = useState("");
   const [employeeIdInput, setEmployeeIdInput] = useState("");
   const [validating, setValidating] = useState(false);
   const [employeeInfo, setEmployeeInfo] = useState<EmployeeInfo | null>(null);
@@ -144,19 +147,30 @@ const Register = () => {
     defaultValues: { email: "", password: "", phoneNumber: "" },
   });
 
-  // Fetch corporates when corporate type selected
+  // Search corporates on typeahead (min 3 chars)
   useEffect(() => {
-    if (memberType === "corporate" && corporates.length === 0) {
-      setCorporatesLoading(true);
+    if (memberType !== "corporate" || corporateSearch.length < 3) {
+      setCorporates([]);
+      setShowCorporateList(false);
+      return;
+    }
+    setCorporatesLoading(true);
+    setShowCorporateList(true);
+    const timer = setTimeout(() => {
       api
         .get("/users/register/corporates", { skipAuth: true } as any)
-        .then((res) => setCorporates(res.data.corporates || []))
+        .then((res) => {
+          const all: Corporate[] = res.data.corporates || [];
+          const q = corporateSearch.toLowerCase();
+          setCorporates(all.filter((c) => c.name.toLowerCase().includes(q)));
+        })
         .catch(() =>
-          toast({ variant: "destructive", title: "Error", description: "Could not load company list." })
+          toast({ variant: "destructive", title: "Error", description: "Could not search company list." })
         )
         .finally(() => setCorporatesLoading(false));
-    }
-  }, [memberType]);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [corporateSearch, memberType]);
 
   // Handle OAuth2 Signup
   const handleOAuthSignup = (provider: 'google' | 'facebook') => {
@@ -400,22 +414,50 @@ const Register = () => {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">Select Your Company</label>
-                {corporatesLoading ? (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Loading companies...
+                <label className="text-sm font-medium">Your Company</label>
+                <div className="relative">
+                  <Input
+                    placeholder="Type at least 3 characters to search..."
+                    value={selectedCorporateId ? selectedCorporateName : corporateSearch}
+                    onChange={(e) => {
+                      if (selectedCorporateId) {
+                        // Clear selection if user starts typing again
+                        setSelectedCorporateId("");
+                        setSelectedCorporateName("");
+                      }
+                      setCorporateSearch(e.target.value);
+                    }}
+                    autoComplete="off"
+                  />
+                  {corporatesLoading && (
+                    <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
+                  {selectedCorporateId && (
+                    <CheckCircle2 className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-green-600" />
+                  )}
+                </div>
+                {showCorporateList && !selectedCorporateId && (
+                  <div className="border rounded-md bg-background shadow-md max-h-48 overflow-y-auto">
+                    {corporates.length === 0 && !corporatesLoading ? (
+                      <p className="px-3 py-2 text-sm text-muted-foreground">No companies found</p>
+                    ) : (
+                      corporates.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors"
+                          onClick={() => {
+                            setSelectedCorporateId(String(c.id));
+                            setSelectedCorporateName(c.name);
+                            setCorporateSearch("");
+                            setShowCorporateList(false);
+                          }}
+                        >
+                          {c.name}
+                        </button>
+                      ))
+                    )}
                   </div>
-                ) : (
-                  <Select value={selectedCorporateId} onValueChange={setSelectedCorporateId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose your company" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {corporates.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                 )}
               </div>
 
