@@ -52,6 +52,82 @@ const buildSignupVerificationKey = (email, phoneNumber) => {
  *     description: Send separate OTPs to email and WhatsApp for verification before registration
  *     tags: [Users]
  */
+/**
+ * @route   GET /api/users/register/corporates
+ * @desc    Public list of active corporates for signup dropdown
+ * @access  Public
+ */
+router.get("/register/corporates", async (req, res) => {
+  try {
+    const corporates = await postgresSequelize.query(
+      `SELECT id, "companyName" AS name FROM corporates WHERE status = 'Active' ORDER BY "companyName"`,
+      { type: postgresSequelize.QueryTypes.SELECT }
+    );
+    return res.json({ success: true, corporates });
+  } catch (error) {
+    console.error("Failed to fetch corporates for signup:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch corporates" });
+  }
+});
+
+/**
+ * @route   POST /api/users/register/validate-employee
+ * @desc    Validate an employee ID against a corporate's pre-approved roster
+ * @access  Public
+ */
+router.post(
+  "/register/validate-employee",
+  [
+    body("corporateId").isInt({ min: 1 }).withMessage("Corporate ID required"),
+    body("employeeId").notEmpty().trim().withMessage("Employee ID required"),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+    const { corporateId, employeeId } = req.body;
+    try {
+      // Check corporate_employees roster (pre-loaded by admin)
+      const [emp] = await postgresSequelize.query(
+        `SELECT ce.id, ce."employeeId", ce.department, ce.designation, ce."userId", ce.metadata,
+                c."companyName"
+         FROM corporate_employees ce
+         JOIN corporates c ON c.id = ce.corporate_id
+         WHERE ce.corporate_id = :corporateId AND ce."employeeId" = :employeeId AND ce."isActive" = true
+         LIMIT 1`,
+        {
+          replacements: { corporateId: parseInt(corporateId), employeeId: String(employeeId).trim() },
+          type: postgresSequelize.QueryTypes.SELECT,
+        }
+      );
+      if (!emp) {
+        return res.status(404).json({ success: false, message: "Employee ID not found for this company. Please contact your HR." });
+      }
+      if (emp.userId) {
+        return res.status(409).json({ success: false, message: "This employee ID is already registered. Please log in instead." });
+      }
+      const meta = emp.metadata || {};
+      return res.json({
+        success: true,
+        message: "Employee verified",
+        employee: {
+          dbId: emp.id,
+          employeeId: emp.employeeId,
+          department: emp.department || meta.department || null,
+          designation: emp.designation || meta.designation || null,
+          corporateName: emp.companyName,
+          firstName: meta.firstName || null,
+          lastName: meta.lastName || null,
+        },
+      });
+    } catch (error) {
+      console.error("Employee validation error:", error);
+      return res.status(500).json({ success: false, message: "Validation failed" });
+    }
+  }
+);
+
 router.post(
   "/register/send-otp",
   [
@@ -340,10 +416,10 @@ router.post(
     body("email").isEmail().withMessage("Must be a valid email"),
     body("phoneNumber").isMobilePhone().withMessage("Must be a valid mobile phone number"),
     body("password").isLength({ min: 4 }).withMessage("Password must be at least 4 characters long"),
-    body("firstName").isLength({ min: 3, max: 20 }).withMessage("First name must be between 3 to 20 characters"),
-    body("lastName").isLength({ min: 3, max: 20 }).withMessage("Last name must be between 3 to 20 characters"),
-    body("dateOfBirth").isISO8601().withMessage("Must be a valid date in YYYY-MM-DD format"),
-    body("gender").isIn(["Male", "Female", "Other"]).withMessage("Gender must be either Male, Female, or Other"),
+    body("firstName").isLength({ min: 2, max: 20 }).withMessage("First name must be between 2 to 20 characters"),
+    body("lastName").isLength({ min: 2, max: 20 }).withMessage("Last name must be between 2 to 20 characters"),
+    body("dateOfBirth").optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage("Must be a valid date in YYYY-MM-DD format"),
+    body("gender").optional({ nullable: true, checkFalsy: true }).isIn(["Male", "Female", "Other"]).withMessage("Gender must be either Male, Female, or Other"),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -351,7 +427,8 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { email, phoneNumber, password, firstName, lastName, dateOfBirth, gender } = req.body;
+    const { email, phoneNumber, password, firstName, lastName, dateOfBirth, gender, memberType, corporateId, employeeDbId } = req.body;
+    const isCorporate = memberType === 'corporate';
 
     try {
       const verificationKey = buildSignupVerificationKey(email, phoneNumber);
@@ -373,8 +450,20 @@ router.post(
         });
       }
 
-      // Create user with verified email and phone
-      // Activate under default broker (Mayden, ID=2) and corporate tenant (My SmartHealth, ID=7)
+      // For corporate path: fetch corporate record to inherit aggregator/tenant
+      let corporateRecord = null;
+      if (isCorporate && corporateId) {
+        const [corp] = await postgresSequelize.query(
+          `SELECT id, "companyName", aggregator_id, aggregator_type, tenant_id FROM corporates WHERE id = :id AND status = 'Active' LIMIT 1`,
+          { replacements: { id: parseInt(corporateId) }, type: postgresSequelize.QueryTypes.SELECT }
+        );
+        if (!corp) {
+          return res.status(400).json({ success: false, message: 'Invalid corporate selected' });
+        }
+        corporateRecord = corp;
+      }
+
+      // Create user
       const newUser = await userModel.create({
         email,
         phoneNumber,
@@ -386,22 +475,62 @@ router.post(
         emailVerified: true,
         phoneVerified: true,
         status: 'active',
-        organization_id: 7,
-        organization_type: 'individual',
-        tenant_id: 7
+        organization_id: isCorporate ? (corporateRecord?.id ?? 7) : 7,
+        organization_type: isCorporate ? 'corporate' : 'individual',
+        tenant_id: isCorporate ? (corporateRecord?.tenant_id ?? 7) : 7
       });
 
-      // Mark as verified and link to Mayden broker (fields not in Sequelize model)
+      // Mark as verified and set aggregator/tenant/isCorporate
       try {
+        const aggId   = isCorporate ? (corporateRecord?.aggregator_id   ?? 2) : 2;
+        const aggType = isCorporate ? (corporateRecord?.aggregator_type  ?? 'broker') : 'broker';
         await postgresSequelize.query(
-          `UPDATE users SET "isVerified" = true, aggregator_id = 2, aggregator_type = 'broker' WHERE id = :id`,
-          { replacements: { id: newUser.id }, type: postgresSequelize.QueryTypes.UPDATE }
+          `UPDATE users SET "isVerified" = true, "isCorporate" = :isCorporate,
+            aggregator_id = :aggId, aggregator_type = :aggType
+           WHERE id = :id`,
+          {
+            replacements: { id: newUser.id, isCorporate: isCorporate, aggId, aggType },
+            type: postgresSequelize.QueryTypes.UPDATE
+          }
         );
       } catch (activationErr) {
         console.error('⚠️  Post-registration activation update failed:', activationErr.message);
       }
 
-      console.log('✅ New user registered and activated under Mayden/My SmartHealth:', newUser.id);
+      // Corporate-specific: link to corporate via user_associations + update employee record
+      if (isCorporate && corporateRecord) {
+        try {
+          await postgresSequelize.query(
+            `INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
+             VALUES (:userId, 'corporate', :corporateId, 'employee', false, 'active', NOW(), NOW(), NOW())
+             ON CONFLICT ("userId", "entityType", "entityId", role) WHERE "entityType" = 'corporate' DO UPDATE SET status = 'active', "updatedAt" = NOW()`,
+            { replacements: { userId: newUser.id, corporateId: corporateRecord.id } }
+          );
+          if (employeeDbId) {
+            await postgresSequelize.query(
+              `UPDATE corporate_employees SET "userId" = :userId, "updatedAt" = NOW() WHERE id = :empDbId AND "userId" IS NULL`,
+              { replacements: { userId: newUser.id, empDbId: parseInt(employeeDbId) }, type: postgresSequelize.QueryTypes.UPDATE }
+            );
+          }
+        } catch (linkErr) {
+          console.error('⚠️  Corporate linking failed (non-blocking):', linkErr.message);
+        }
+      }
+
+      // Individual path: assign Free Basic (trial) plan
+      if (!isCorporate) {
+        try {
+          await postgresSequelize.query(
+            `INSERT INTO user_subscriptions (user_id, plan_id, status, start_date, auto_renew, billing_cycle, price, currency, created_at, updated_at)
+             VALUES (:userId, 1, 'ACTIVE', NOW(), false, 'MONTHLY', 0, 'INR', NOW(), NOW())`,
+            { replacements: { userId: newUser.id } }
+          );
+        } catch (planErr) {
+          console.error('⚠️  Trial plan assignment failed (non-blocking):', planErr.message);
+        }
+      }
+
+      console.log(`✅ New ${isCorporate ? 'corporate' : 'individual'} user registered:`, newUser.id);
 
       try {
         await cache.del(verificationKey);
