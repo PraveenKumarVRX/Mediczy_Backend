@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import RecordingControls from "@/components/consultation/RecordingControls";
 import TranscriptionViewer from "@/components/consultation/TranscriptionViewer";
 import OfflineScribePanel from "@/components/OfflineScribePanel";
+import { AIScribeConsultation } from "@/components/AIScribeConsultation";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -860,14 +861,14 @@ const DoctorVideoConsultation = () => {
             </CardContent>
           </Card>
 
-          {/* Offline AI Scribe Panel - Collapsible */}
+          {/* AI Scribe Panel - Collapsible */}
           {showOfflineScribe && (
             <Card className="border-indigo-200 dark:border-indigo-800">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <CardTitle className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400">
-                    <Wifi className="h-5 w-5" />
-                    Offline AI Scribe
+                    <Mic className="h-5 w-5" />
+                    AI Medical Scribe
                   </CardTitle>
                   <Button 
                     variant="ghost" 
@@ -878,29 +879,49 @@ const DoctorVideoConsultation = () => {
                   </Button>
                 </div>
                 <CardDescription className="dark:text-slate-400">
-                  CPU-only, fully offline • Hindi, Tamil, Telugu, English
+                  Record consultation → AI generates prescription → doctor reviews → saves to EHR
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <OfflineScribePanel
-                  compact
-                  defaultLanguage="hi"
-                  defaultDocumentType="prescription"
-                  patientContext={currentConsultation ? {
-                    name: currentConsultation.patient,
-                    patient_id: currentConsultation.patientId,
-                  } : undefined}
-                  onPrescriptionGenerated={(prescription) => {
-                    // Navigate to prescriptions with the data
-                    toast({
-                      title: "✅ Prescription Generated",
-                      description: "Navigate to Prescriptions to review and save.",
-                    });
-                    // Store in session for prescriptions page to pick up
-                    sessionStorage.setItem('offlineScribePrescription', JSON.stringify(prescription));
-                    navigate('/doctor/prescriptions');
-                  }}
-                />
+                <Tabs defaultValue="online">
+                  <TabsList className="mb-4">
+                    <TabsTrigger value="online">🎤 AI Scribe (Online)</TabsTrigger>
+                    <TabsTrigger value="offline">📴 Offline Scribe</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="online">
+                    <AIScribeConsultation
+                      appointmentId={currentConsultation?.id}
+                      currentFormData={undefined}
+                      onPrescriptionGenerated={(prescription) => {
+                        toast({
+                          title: "✅ Prescription Generated",
+                          description: "Opening Prescriptions to review and save.",
+                        });
+                        localStorage.setItem('importedPrescription', JSON.stringify(prescription));
+                        navigate('/doctor/prescriptions');
+                      }}
+                    />
+                  </TabsContent>
+                  <TabsContent value="offline">
+                    <OfflineScribePanel
+                      compact
+                      defaultLanguage="hi"
+                      defaultDocumentType="prescription"
+                      patientContext={currentConsultation ? {
+                        name: currentConsultation.patient,
+                        patient_id: currentConsultation.patientId,
+                      } : undefined}
+                      onPrescriptionGenerated={(prescription) => {
+                        toast({
+                          title: "✅ Prescription Generated",
+                          description: "Opening Prescriptions to review and save.",
+                        });
+                        localStorage.setItem('importedPrescription', JSON.stringify(prescription));
+                        navigate('/doctor/prescriptions');
+                      }}
+                    />
+                  </TabsContent>
+                </Tabs>
               </CardContent>
             </Card>
           )}

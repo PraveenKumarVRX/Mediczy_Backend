@@ -34,7 +34,6 @@ import api from "@/utils/api";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
 import AIScribe from "@/components/AIScribe";
 import OfflineScribePanel from "@/components/OfflineScribePanel";
-import ConsultationRecorder from "@/components/ConsultationRecorder";
 import {
   Dialog,
   DialogContent,
@@ -174,7 +173,6 @@ const DoctorPrescriptions = () => {
   const [formData, setFormData] = useState<NewPrescription>({ ...emptyPrescription });
   const [showScribe, setShowScribe] = useState(false);
   const [currentScribeField, setCurrentScribeField] = useState<string>("diagnosis");
-  const [showConsultationRecorder, setShowConsultationRecorder] = useState(false);
 
   const getErrorMessage = (error: any, fallback: string) => {
     return (
@@ -185,38 +183,52 @@ const DoctorPrescriptions = () => {
     );
   };
 
-  // Check for imported prescription from AI recording
+  // Check for imported prescription from AI recording or offline scribe
   useEffect(() => {
     const importedData = localStorage.getItem('importedPrescription');
     if (importedData) {
       try {
         const prescriptionData = JSON.parse(importedData);
-        
-        // Map AI prescription data to form format
+
+        // Normalize: OfflineScribePanel returns { diagnosis, medications, instructions, labTests, ... }
+        // TranscriptionViewer returns { chiefComplaints: [], followUpInstructions, followUpDate, ... }
+        const chiefRaw = prescriptionData.chiefComplaints;
+        const chiefStr = Array.isArray(chiefRaw)
+          ? chiefRaw.join(', ')
+          : (typeof chiefRaw === 'string' ? chiefRaw : '');
+
+        const instrRaw = prescriptionData.instructions || prescriptionData.followUpInstructions;
+        const instrArr = Array.isArray(instrRaw)
+          ? instrRaw.filter(Boolean)
+          : (instrRaw ? [instrRaw] : ['']);
+
+        const labRaw = prescriptionData.labTests || prescriptionData.lab_tests || [];
+        const labArr = Array.isArray(labRaw)
+          ? labRaw.map((t: any) => (typeof t === 'string' ? t : t.testName || t.name || t))
+          : [];
+
         const mappedFormData: NewPrescription = {
           ...emptyPrescription,
-          chiefComplaints: prescriptionData.chiefComplaints?.join(', ') || '',
+          chiefComplaints: chiefStr,
           diagnosis: prescriptionData.diagnosis || '',
           medications: prescriptionData.medications?.map((med: any) => ({
             name: med.name || '',
-            composition: '',
+            composition: med.composition || '',
             dosage: med.dosage || '',
             frequency: med.frequency || '',
             duration: med.duration || '',
-            quantity: '',
+            quantity: med.quantity || '',
             instructions: med.instructions || ''
           })) || [{ ...emptyMedication }],
-          labTests: prescriptionData.labTests || [],
-          instructions: prescriptionData.followUpInstructions 
-            ? [prescriptionData.followUpInstructions]
-            : [''],
-          followUpDate: prescriptionData.followUpDate || '',
+          labTests: labArr,
+          instructions: instrArr.length ? instrArr : [''],
+          followUpDate: prescriptionData.followUpDate || prescriptionData.follow_up_date || '',
         };
-        
+
         setFormData(mappedFormData);
         setCreateDialogOpen(true);
         localStorage.removeItem('importedPrescription');
-        
+
         toast({
           title: "✨ AI Prescription Imported!",
           description: "Review and edit the AI-generated prescription before saving",
@@ -615,14 +627,6 @@ const DoctorPrescriptions = () => {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button 
-              onClick={() => setShowConsultationRecorder(true)} 
-              variant="outline"
-              className="flex items-center gap-2 border-purple-500 text-purple-600 hover:bg-purple-50"
-            >
-              <Mic className="h-4 w-4" />
-              AI Consultation Recorder
-            </Button>
             <Button onClick={() => { resetForm(); setCreateDialogOpen(true); }} className="flex items-center gap-2">
               <Plus className="h-4 w-4" />
               New Prescription
@@ -1564,26 +1568,6 @@ const DoctorPrescriptions = () => {
           </DialogContent>
         </Dialog>
 
-        {/* AI Consultation Recorder Dialog */}
-        <Dialog open={showConsultationRecorder} onOpenChange={setShowConsultationRecorder}>
-          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader className="sr-only">
-              <DialogTitle>AI Consultation Recorder</DialogTitle>
-              <DialogDescription>Record patient-doctor consultation and auto-generate prescription</DialogDescription>
-            </DialogHeader>
-            <ConsultationRecorder
-              onPrescriptionSaved={(prescriptionId) => {
-                toast({
-                  title: "✅ Prescription Created",
-                  description: `Prescription ${prescriptionId} saved successfully`,
-                });
-                queryClient.invalidateQueries({ queryKey: ["doctorPrescriptions"] });
-                setShowConsultationRecorder(false);
-              }}
-              onClose={() => setShowConsultationRecorder(false)}
-            />
-          </DialogContent>
-        </Dialog>
       </div>
     </MainLayout>
   );
