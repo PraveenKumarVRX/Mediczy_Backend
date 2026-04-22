@@ -409,25 +409,23 @@ export const createAppointment = async (req, res) => {
       console.error('Failed to publish to Kafka:', kafkaError);
     }
 
-    // Trigger n8n workflow for multi-channel notifications (async)
-    try {
-      await n8nService.appointmentBooked({
-        id: appointment.id,
-        userId: appointment.userId,
-        patientName: appointment.patientName,
-        patientEmail: appointment.patientEmail,
-        patientPhone: appointment.patientPhone,
-        doctorId: appointment.doctorId,
-        doctorName: appointment.doctorName,
-        appointmentDate: appointment.appointmentDate,
-        appointmentTime: appointment.appointmentTime,
-        consultationType: appointment.consultationType,
-        consultationFee: Number(appointment.paymentAmount || consultationFee || 0),
-        status: appointment.status
-      });
-    } catch (n8nError) {
+    // Trigger n8n workflow for multi-channel notifications (fire-and-forget, never blocks booking)
+    n8nService.appointmentBooked({
+      id: appointment.id,
+      userId: appointment.userId,
+      patientName: appointment.patientName,
+      patientEmail: appointment.patientEmail,
+      patientPhone: appointment.patientPhone,
+      doctorId: appointment.doctorId,
+      doctorName: appointment.doctorName,
+      appointmentDate: appointment.appointmentDate,
+      appointmentTime: appointment.appointmentTime,
+      consultationType: appointment.consultationType,
+      consultationFee: Number(appointment.paymentAmount || consultationFee || 0),
+      status: appointment.status
+    }).catch((n8nError) => {
       console.error('Failed to trigger n8n workflow:', n8nError);
-    }
+    });
 
     // Send comprehensive notification to doctor (NEW - Multi-channel)
     try {
