@@ -225,10 +225,13 @@ router.post('/login', authLimiter, [
       const corporates = await postgresSequelize.query(`
         SELECT DISTINCT c.id, c."companyName", c.industry, c.status
         FROM corporates c
-        JOIN user_associations ua ON ua."entityId" = c.id
-        WHERE ua."userId" = :userId
+        LEFT JOIN user_associations ua
+          ON ua."entityId" = c.id
+          AND ua."userId" = :userId
           AND ua."entityType" = 'corporate'
           AND ua.status = 'active'
+        WHERE ua.id IS NOT NULL
+           OR c."assignedTo" = :userId
         ORDER BY c."companyName" ASC
         LIMIT 50
       `, {

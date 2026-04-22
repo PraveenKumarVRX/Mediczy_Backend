@@ -385,7 +385,7 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
           LEFT JOIN corporate_team_assignments cta
             ON cta.corporate_id = c.id
             AND cta.team_member_id = :userId
-          WHERE (ua.id IS NOT NULL OR cta.id IS NOT NULL)
+          WHERE (ua.id IS NOT NULL OR cta.id IS NOT NULL OR c."assignedTo" = :userId)
           ORDER BY c."companyName" ASC
         `, {
           replacements: { userId },
