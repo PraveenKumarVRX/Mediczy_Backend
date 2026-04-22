@@ -1076,18 +1076,25 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
     }
 
     // When prescription is issued, create EHR record, send patient notifications
+    let ehrCreatedFlag = false;
     if (status === 'issued' && previousStatus !== 'issued' && prescription.patientId) {
+      let ehrRecordId = null;
       try {
-        // Create EHR record
+        // Create medical record entry
         const ehrRecord = await EHRRecord.createFromPrescription(prescription);
-        console.log(`✅ EHR record created for prescription ${prescription.prescriptionId}`);
-
-        // Create health diary entries
-        await HealthDiary.createFromPrescription(prescription, ehrRecord.id);
-        console.log(`✅ Health diary entries created for patient ${prescription.patientId}`);
+        ehrRecordId = ehrRecord.id;
+        ehrCreatedFlag = true;
+        console.log(`✅ Medical record created for prescription ${prescription.prescriptionId} (id=${ehrRecordId})`);
       } catch (ehrError) {
-        console.error('EHR/Diary creation error:', ehrError.message);
-        // Don't fail the request, just log the error
+        console.error('EHR/medical record creation error:', ehrError.message);
+      }
+
+      // Health diary creation runs independently — doesn't need EHR to succeed
+      try {
+        await HealthDiary.createFromPrescription(prescription, ehrRecordId);
+        console.log(`✅ Health diary entries created for patient ${prescription.patientId}`);
+      } catch (diaryError) {
+        console.error('Health diary creation error:', diaryError.message);
       }
     }
 
@@ -1125,7 +1132,7 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
       prescriptionId: prescription.prescriptionId,
       status,
       pdfUrl,
-      ehrCreated: status === 'issued' && previousStatus !== 'issued'
+      ehrCreated: ehrCreatedFlag
     });
   } catch (error) {
     console.error('Update prescription status error:', error);
@@ -1170,17 +1177,19 @@ router.post('/:id/issue', authDoctor, async (req, res) => {
 
     // When prescription is issued, create EHR record and health diary entries
     if (prescription.patientId) {
+      let ehrRecordId = null;
       try {
-        // Create EHR record
         const ehrRecord = await EHRRecord.createFromPrescription(prescription);
-        console.log(`✅ EHR record created for prescription ${prescription.prescriptionId}`);
-
-        // Create health diary entries
-        await HealthDiary.createFromPrescription(prescription, ehrRecord.id);
-        console.log(`✅ Health diary entries created for patient ${prescription.patientId}`);
+        ehrRecordId = ehrRecord.id;
+        console.log(`✅ Medical record created for prescription ${prescription.prescriptionId} (id=${ehrRecordId})`);
       } catch (ehrError) {
-        console.error('EHR/Diary creation error:', ehrError.message);
-        // Don't fail the request, just log the error
+        console.error('Medical record creation error:', ehrError.message);
+      }
+      try {
+        await HealthDiary.createFromPrescription(prescription, ehrRecordId);
+        console.log(`✅ Health diary entries created for patient ${prescription.patientId}`);
+      } catch (diaryError) {
+        console.error('Health diary creation error:', diaryError.message);
       }
     }
 

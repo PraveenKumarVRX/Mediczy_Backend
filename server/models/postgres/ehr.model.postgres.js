@@ -112,40 +112,40 @@ const EHRRecord = sequelize.define('EHRRecord', {
     defaultValue: DataTypes.NOW
   }
 }, {
-  tableName: 'ehr_records',
+  tableName: 'patient_medical_records',
   timestamps: true,
   underscored: false,
   indexes: [
     {
       fields: ['patientId', 'recordType', 'recordDate'],
-      name: 'ehr_patient_type_date_idx'
+      name: 'pmr_patient_type_date_idx'
     },
     {
       fields: ['sourceId', 'sourceType'],
-      name: 'ehr_source_idx'
+      name: 'pmr_source_idx'
     },
     {
       fields: ['doctorId'],
-      name: 'ehr_doctor_idx'
+      name: 'pmr_doctor_idx'
     },
     {
       fields: ['status', 'confidential'],
-      name: 'ehr_status_confidential_idx'
+      name: 'pmr_status_confidential_idx'
     },
     {
       using: 'gin',
       fields: ['details'],
-      name: 'ehr_details_gin_idx'
+      name: 'pmr_details_gin_idx'
     },
     {
       using: 'gin',
       fields: ['tags'],
-      name: 'ehr_tags_gin_idx'
+      name: 'pmr_tags_gin_idx'
     },
     {
       using: 'gin',
       fields: ['searchVector'],
-      name: 'ehr_search_vector_idx'
+      name: 'pmr_search_vector_idx'
     }
   ]
 });
