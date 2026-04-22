@@ -43,8 +43,8 @@ async function resolveCorporate(identifier) {
   const isNumeric = /^\d+$/.test(String(identifier));
   const [corp] = await postgresSequelize.query(
     isNumeric
-      ? `SELECT id, unique_id AS "uniqueId", "companyName", status FROM corporates WHERE id = :id LIMIT 1`
-      : `SELECT id, unique_id AS "uniqueId", "companyName", status FROM corporates WHERE unique_id = :uid LIMIT 1`,
+      ? `SELECT id, unique_id AS "uniqueId", "companyName", status, owned_by_tenant_id FROM corporates WHERE id = :id LIMIT 1`
+      : `SELECT id, unique_id AS "uniqueId", "companyName", status, owned_by_tenant_id FROM corporates WHERE unique_id = :uid LIMIT 1`,
     {
       replacements: isNumeric ? { id: parseInt(identifier, 10) } : { uid: String(identifier).toUpperCase() },
       type: QueryTypes.SELECT
@@ -90,8 +90,12 @@ async function teamUserHasCorporateAccess(userId, corporateId) {
  */
 export const requireCorporateAccess = async (req, res, next) => {
   try {
-    const userType   = req.userType;          // set by ringFencingMiddleware
-    const user       = req.user;              // decoded JWT payload
+    // Resolve userType from ringFencingMiddleware, JWT claims, or isTeam/isAdmin flags
+    const user = req.user;
+    const userType =
+      req.userType ||
+      req.user?.userType ||
+      (user?.isAdmin ? 'admin' : user?.isTeam ? 'team' : null);
 
     // ------------------------------------------------------------------
     // 1. Determine the requested corporate identifier from multiple sources
@@ -146,6 +150,7 @@ export const requireCorporateAccess = async (req, res, next) => {
     }
 
     // Team user → must have an active association with the corporate
+    // AND the corporate must be within the team user's tenant scope
     else if (userType === 'team') {
       const userId  = user.id || user.userId;
       const isAdmin = user.isAdmin === true || user.role === 'admin';
@@ -161,6 +166,32 @@ export const requireCorporateAccess = async (req, res, next) => {
             message: 'Access denied – you are not assigned to this corporate',
             code: 'CORPORATE_ACCESS_DENIED'
           });
+        }
+
+        // Tenant hierarchy check: if the corporate has an owner tenant,
+        // verify the requesting user's tenant is in scope
+        const userTenantId = user.tenant_id || user.tenantId || null;
+        if (corp.owned_by_tenant_id && userTenantId) {
+          const [scopeRow] = await postgresSequelize.query(
+            `SELECT 1 WHERE :corpTenant = ANY(get_tenant_scope(:userTenant))`,
+            {
+              replacements: {
+                corpTenant: corp.owned_by_tenant_id,
+                userTenant: userTenantId
+              },
+              type: QueryTypes.SELECT
+            }
+          );
+          if (!scopeRow) {
+            console.warn(
+              `[CorporateTenant] Team user ${userId} (tenant ${userTenantId}) attempted cross-tenant access to corp ${corp.id} owned by tenant ${corp.owned_by_tenant_id}`
+            );
+            return res.status(403).json({
+              success: false,
+              message: 'Access denied – corporate is outside your tenant scope',
+              code: 'CROSS_TENANT_DENIED'
+            });
+          }
         }
       }
     }

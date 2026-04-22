@@ -252,7 +252,7 @@ router.post('/login', authLimiter, [
       userType: 'team',
       isTeam: true,
       isAdmin: user.isAdmin || false,
-      tenantId: metadata.tenantId || user.organizationId || null,
+      tenantId: metadata.tenantId || user.tenant_id || user.tenantId || user.organizationId || null,
       assignedCorporates: assignedCorporates.map(c => c.id)
     };
 
@@ -352,7 +352,7 @@ router.post('/auth/refresh', async (req, res) => {
       userType: 'team',
       isTeam: true,
       isAdmin: user.isAdmin || false,
-      tenantId: metadata.tenantId || user.organizationId || null
+      tenantId: metadata.tenantId || user.tenant_id || user.tenantId || user.organizationId || null
     };
 
     const { accessToken, refreshToken: newRefreshToken } = await issueTokenPair(payload, ip);

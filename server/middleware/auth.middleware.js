@@ -232,6 +232,8 @@ export const authUser = async (req, res, next) => {
         lastName: decoded.lastName || "User",
         isAdmin: decoded.isAdmin || false,
         isTeam: decoded.isTeam || false,
+        tenantId: decoded.tenantId || null,
+        tenant_id: decoded.tenantId || null,
       };
       req.userRole = decoded.isTeam ? "team" : (decoded.isAdmin ? "admin" : decoded.role);
       return next();
@@ -458,7 +460,9 @@ export const authUser = async (req, res, next) => {
         user.dataValues?._id ||
         decoded.id,
       isTeam: user.isTeam || decoded.isTeam,
-      isAdmin: user.isAdmin || decoded.isAdmin
+      isAdmin: user.isAdmin || decoded.isAdmin,
+      tenantId: decoded.tenantId || user.tenantId || user.tenant_id || user.dataValues?.tenant_id || null,
+      tenant_id: decoded.tenantId || user.tenant_id || user.dataValues?.tenant_id || null
     };
     req.userRole = decoded.role || user?.role || (user?.isAdmin ? "admin" : (user?.isTeam ? "team" : "user"));
     const tenantBinding = bindTenantContext(req, resolveTenantFromEntity(user));
