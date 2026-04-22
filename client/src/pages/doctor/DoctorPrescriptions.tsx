@@ -306,11 +306,16 @@ const DoctorPrescriptions = () => {
       const response = await api.patch(`/prescriptions/${id}/status`, { status: "issued" });
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      const pdfUrl = data?.pdfUrl;
       toast({
-        title: "Prescription Issued",
-        description: "Prescription has been issued to the patient.",
+        title: "✅ Prescription Issued",
+        description: "Prescription has been issued. Patient notified via WhatsApp & email.",
       });
+      // Open PDF in new tab so doctor can verify/print
+      if (pdfUrl) {
+        setTimeout(() => window.open(pdfUrl, "_blank"), 300);
+      }
       // Invalidate both prescriptions and appointments to refresh patient list
       queryClient.invalidateQueries({ queryKey: ["doctorPrescriptions"] });
       queryClient.invalidateQueries({ queryKey: ["doctorAppointmentsForPrescription"] });
@@ -1531,16 +1536,29 @@ const DoctorPrescriptions = () => {
                 <Download className="h-4 w-4 mr-2" />
                 Download PDF
               </Button>
+              {selectedPrescription?.status === "issued" || selectedPrescription?.status === "active" ? (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const phone = (selectedPrescription as any)?.patientPhone || "";
+                    api.get(`/prescriptions/${selectedPrescription!.id}/share/whatsapp`)
+                      .then(r => { if (r.data?.whatsappUrl) window.open(r.data.whatsappUrl, "_blank"); })
+                      .catch(() => {});
+                  }}
+                >
+                  <Send className="h-4 w-4 mr-2" />
+                  Share via WhatsApp
+                </Button>
+              ) : null}
               {selectedPrescription?.status === "draft" && (
-                <>
-                  <Button
-                    onClick={() => handleIssuePrescription(selectedPrescription.id)}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    <Send className="h-4 w-4 mr-2" />
-                    Issue Prescription
-                  </Button>
-                </>
+                <Button
+                  onClick={() => handleIssuePrescription(selectedPrescription.id)}
+                  className="bg-green-600 hover:bg-green-700"
+                  disabled={issuePrescriptionMutation.isPending}
+                >
+                  <Send className="h-4 w-4 mr-2" />
+                  {issuePrescriptionMutation.isPending ? "Issuing..." : "Issue & Notify Patient"}
+                </Button>
               )}
             </DialogFooter>
           </DialogContent>

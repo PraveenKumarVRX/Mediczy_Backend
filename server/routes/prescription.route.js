@@ -9,12 +9,14 @@ import { body, validationResult, param } from 'express-validator';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import nodemailer from 'nodemailer';
 import { Prescription, Appointment, User, Doctor } from '../models/index.js';
 import { EHRRecord, HealthDiary } from '../models/index.js';
 import { authUser, authDoctor } from '../middleware/auth.middleware.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import AuditLog from '../models/auditLog.model.intelligent.js';
 import n8nService from '../services/n8n.service.js';
+import whatsappProductionService from '../services/whatsapp-production.service.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -113,6 +115,112 @@ const renderPrescriptionHTML = (prescription) => {
   template = template.replace(/\{\{#instructions\}\}[\s\S]*?\{\{\/instructions\}\}/g, instructionsHTML);
 
   return template;
+};
+
+/**
+ * Notify patient that their prescription is ready.
+ * Sends a WhatsApp message and an email (both fire-and-forget).
+ * Returns the prescription PDF URL so it can be included in the API response.
+ *
+ * @param {object} prescription - Sequelize Prescription instance
+ * @param {object|null} patient  - Sequelize User instance (may be null for walk-in patients)
+ */
+const notifyPatientPrescriptionReady = async (prescription, patient) => {
+  const baseUrl = process.env.FRONTEND_URL || 'https://app.mediqzy.com';
+
+  // Build a 30-day JWT so the patient can open the PDF without logging in
+  const { default: jwt } = await import('jsonwebtoken');
+  const shareToken = jwt.sign(
+    { id: prescription.patientId, role: 'user' },
+    JWT_CONFIG.SECRET,
+    { expiresIn: '30d' }
+  );
+
+  const pdfUrl = `${baseUrl}/api/prescriptions/${prescription.prescriptionId}/pdf?token=${shareToken}`;
+  const viewUrl = `${baseUrl}/my-prescriptions`;
+
+  const patientEmail = patient?.email;
+  const patientPhone = prescription.patientPhone || patient?.phoneNumber || patient?.phone;
+  const patientName = prescription.patientName || 'Patient';
+  const doctorName = prescription.doctorName || 'your doctor';
+  const medications = prescription.medications?.length
+    ? prescription.medications.map(m => m.name).join(', ')
+    : 'as prescribed';
+  const followUpDate = prescription.followUpDate
+    ? new Date(prescription.followUpDate).toLocaleDateString('en-IN')
+    : 'as advised';
+
+  // 1. WhatsApp (fire-and-forget)
+  if (patientPhone) {
+    Promise.resolve().then(async () => {
+      try {
+        await whatsappProductionService.sendPrescriptionReady({
+          to: `+91${patientPhone.replace(/[^0-9]/g, '').replace(/^91/, '')}`,
+          patientName,
+          doctorName,
+          prescriptionUrl: pdfUrl,
+          medications,
+          followUpDate
+        });
+        console.log(`✅ Prescription WhatsApp sent to ${patientPhone}`);
+      } catch (err) {
+        console.error('Prescription WhatsApp notification failed:', err.message);
+      }
+    });
+  }
+
+  // 2. Email (fire-and-forget)
+  if (patientEmail) {
+    Promise.resolve().then(async () => {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST || 'smtp.gmail.com',
+          port: parseInt(process.env.SMTP_PORT || '587'),
+          secure: process.env.SMTP_PORT === '465',
+          auth: {
+            user: process.env.SMTP_USER || process.env.EMAIL_FROM || 'noreply@mediczy.com',
+            pass: process.env.SMTP_PASS || process.env.SMTP_PASSWORD || ''
+          },
+          tls: { rejectUnauthorized: false }
+        });
+
+        const html = `
+          <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+            <div style="background:#1a73e8;padding:20px;border-radius:8px 8px 0 0;">
+              <h1 style="color:#fff;margin:0;font-size:22px;">🏥 Your Prescription is Ready</h1>
+            </div>
+            <div style="background:#f9f9f9;padding:24px;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;">
+              <p style="font-size:16px;">Dear <strong>${patientName}</strong>,</p>
+              <p>Your prescription from <strong>Dr. ${doctorName}</strong> is ready.</p>
+              <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+                <tr><td style="padding:8px;border-bottom:1px solid #eee;color:#555;width:140px;">Prescription ID</td><td style="padding:8px;border-bottom:1px solid #eee;font-weight:bold;">${prescription.prescriptionId}</td></tr>
+                <tr><td style="padding:8px;border-bottom:1px solid #eee;color:#555;">Diagnosis</td><td style="padding:8px;border-bottom:1px solid #eee;">${prescription.diagnosis || 'As discussed'}</td></tr>
+                <tr><td style="padding:8px;border-bottom:1px solid #eee;color:#555;">Medications</td><td style="padding:8px;border-bottom:1px solid #eee;">${medications}</td></tr>
+                <tr><td style="padding:8px;color:#555;">Follow-up</td><td style="padding:8px;">${followUpDate}</td></tr>
+              </table>
+              <div style="text-align:center;margin:24px 0;">
+                <a href="${pdfUrl}" style="background:#1a73e8;color:#fff;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;margin-right:12px;">📥 Download PDF</a>
+                <a href="${viewUrl}" style="background:#34a853;color:#fff;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;">📱 View Online</a>
+              </div>
+              <p style="font-size:13px;color:#888;margin-top:20px;">Please follow the prescribed medications and instructions carefully. Contact your doctor if symptoms worsen.</p>
+            </div>
+          </div>`;
+
+        await transporter.sendMail({
+          from: `"Mediczy Healthcare" <${process.env.SMTP_USER || process.env.EMAIL_FROM || 'noreply@mediczy.com'}>`,
+          to: patientEmail,
+          subject: `Your Prescription from Dr. ${doctorName} is Ready – ${prescription.prescriptionId}`,
+          html,
+          text: `Your prescription from Dr. ${doctorName} is ready.\n\nPrescription ID: ${prescription.prescriptionId}\nDiagnosis: ${prescription.diagnosis}\nMedications: ${medications}\nFollow-up: ${followUpDate}\n\nDownload PDF: ${pdfUrl}\nView Online: ${viewUrl}`
+        });
+        console.log(`✅ Prescription email sent to ${patientEmail}`);
+      } catch (err) {
+        console.error('Prescription email notification failed:', err.message);
+      }
+    });
+  }
+
+  return pdfUrl;
 };
 
 /**
@@ -244,6 +352,14 @@ router.post('/from-appointment/:appointmentId', authDoctor, [
       { where: { id: appointmentId } }
     );
 
+    // Notify patient (WhatsApp + email, fire-and-forget)
+    let notifyPdfUrl = null;
+    try {
+      notifyPdfUrl = await notifyPatientPrescriptionReady(prescription, patient || null);
+    } catch (notifyErr) {
+      console.error('Prescription notification error (non-fatal):', notifyErr.message);
+    }
+
     res.status(201).json({
       success: true,
       message: `Prescription created successfully for ${consultationType} consultation`,
@@ -257,7 +373,7 @@ router.post('/from-appointment/:appointmentId', authDoctor, [
         status: prescription.status,
         createdAt: prescription.createdAt,
         expiresAt: prescription.expiresAt,
-        pdfUrl: `https://app.mediqzy.com/api/prescriptions/${prescription.prescriptionId}/pdf`,
+        pdfUrl: notifyPdfUrl || `https://app.mediqzy.com/api/prescriptions/${prescription.prescriptionId}/pdf`,
         shareUrl: `https://app.mediqzy.com/api/prescriptions/${prescription.prescriptionId}/share/whatsapp`
       }
     });
@@ -544,8 +660,9 @@ router.get('/patient', authUser, async (req, res) => {
   try {
     const patientId = req.user.id;
 
+    // Only return prescriptions that are visible to the patient (not drafts)
     const prescriptions = await Prescription.findAll({
-      where: { patientId },
+      where: { patientId, status: ['issued', 'active', 'dispensed', 'expired'] },
       order: [['createdAt', 'DESC']]
     });
 
@@ -661,7 +778,7 @@ router.get('/my/all', authUser, async (req, res) => {
     const patientId = req.user.id;
 
     const prescriptions = await Prescription.findAll({
-      where: { patientId },
+      where: { patientId, status: ['issued', 'active', 'dispensed', 'expired'] },
       order: [['createdAt', 'DESC']]
     });
 
@@ -958,7 +1075,7 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
       console.error('Audit log creation failed:', auditError);
     }
 
-    // When prescription is issued, create EHR record and health diary entries
+    // When prescription is issued, create EHR record, send patient notifications
     if (status === 'issued' && previousStatus !== 'issued' && prescription.patientId) {
       try {
         // Create EHR record
@@ -974,13 +1091,14 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
       }
     }
 
+    // Notify patient on issue (WhatsApp + email, fire-and-forget)
+    let pdfUrl = null;
     if (status === 'issued' && previousStatus !== 'issued') {
       try {
-        const patient = prescription.patientId
-          ? await User.findByPk(prescription.patientId)
-          : null;
+        const patient = prescription.patientId ? await User.findByPk(prescription.patientId) : null;
+        pdfUrl = await notifyPatientPrescriptionReady(prescription, patient);
 
-        // fire-and-forget — never blocks the status update response
+        // Also trigger n8n workflow (fire-and-forget)
         n8nService.prescriptionIssued({
           id: prescription.prescriptionId || prescription.id,
           patientId: prescription.patientId,
@@ -1006,6 +1124,7 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
       message: 'Prescription status updated',
       prescriptionId: prescription.prescriptionId,
       status,
+      pdfUrl,
       ehrCreated: status === 'issued' && previousStatus !== 'issued'
     });
   } catch (error) {
