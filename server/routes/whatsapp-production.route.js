@@ -1179,51 +1179,44 @@ router.post('/webhook', (req, res, next) => {
         userId: userContext.user?.id
       });
       
-      try {
-        // Trigger n8n workflow for appointment booking
-        const n8nResult = await n8nService.trigger('whatsapp-appointment-booking', {
-          userId: userContext.user?.id,
-          patientName: userContext.user?.name,
-          patientPhone: phoneNumber,
-          patientEmail: userContext.user?.email,
-          specialistType: specialistType,
-          bookingType,
-          source: 'whatsapp',
-          timestamp: new Date().toISOString()
-        });
-        
-        // Send confirmation message
-        const specialistNames = {
-          'general_physician': 'General Physician',
-          'gastroenterologist': 'Gastroenterologist',
-          'cardiologist': 'Cardiologist',
-          'dermatologist': 'Dermatologist',
-          'pediatrician': 'Pediatrician',
-          'orthopedic': 'Orthopedic Specialist',
-          'ophthalmologist': 'Ophthalmologist',
-          'ent': 'ENT Specialist',
-          'neurologist': 'Neurologist',
-          'gynecologist': 'Gynecologist'
-        };
-        
-        const apptBody = `📅 *Appointment Booking Request*\n\n${
+      // Trigger n8n workflow for appointment booking (fire-and-forget — never blocks WhatsApp reply)
+      n8nService.trigger('whatsapp-appointment-booking', {
+        userId: userContext.user?.id,
+        patientName: userContext.user?.name,
+        patientPhone: phoneNumber,
+        patientEmail: userContext.user?.email,
+        specialistType: specialistType,
+        bookingType,
+        source: 'whatsapp',
+        timestamp: new Date().toISOString()
+      }).catch((error) => {
+        logger.error('Appointment booking n8n error:', error.message);
+      });
+
+      // Respond immediately — don't wait for n8n
+      const specialistNames = {
+        'general_physician': 'General Physician',
+        'gastroenterologist': 'Gastroenterologist',
+        'cardiologist': 'Cardiologist',
+        'dermatologist': 'Dermatologist',
+        'pediatrician': 'Pediatrician',
+        'orthopedic': 'Orthopedic Specialist',
+        'ophthalmologist': 'Ophthalmologist',
+        'ent': 'ENT Specialist',
+        'neurologist': 'Neurologist',
+        'gynecologist': 'Gynecologist'
+      };
+
+      const apptBody = `📅 *Appointment Booking Request*\n\n${
 bookingType === 'health_checkup'
   ? "I'm processing your request for a health checkup at the nearest available lab."
   : `I'm processing your request to see a ${specialistNames[specialistType] || 'Doctor'}.`
 }\n\n${
-n8nResult.success
-  ? (bookingType === 'health_checkup'
-    ? `✅ Our team will contact you shortly to confirm your health checkup slot.\n\n📱 You'll receive a confirmation message with:\n• Lab name & location\n• Date & time options\n• Package/fee details`
-    : `✅ Our team will contact you shortly to confirm your appointment slot.\n\n📱 You'll receive a confirmation message with:\n• Doctor's name\n• Date & time options\n• Consultation fee`)
-  : (bookingType === 'health_checkup'
-    ? `🔄 I'm connecting you with our checkup booking team. They'll call you within 15 minutes to schedule your lab visit.`
-    : `🔄 I'm connecting you with our booking team. They'll call you within 15 minutes to schedule your appointment.`)
+bookingType === 'health_checkup'
+  ? `✅ Our team will contact you shortly to confirm your health checkup slot.\n\n📱 You'll receive a confirmation message with:\n• Lab name & location\n• Date & time options\n• Package/fee details`
+  : `✅ Our team will contact you shortly to confirm your appointment slot.\n\n📱 You'll receive a confirmation message with:\n• Doctor's name\n• Date & time options\n• Consultation fee`
 }\n\nIs there anything else I can help you with? 💙`;
-        return res.type('text/xml').status(200).send(twimlReply(apptBody));
-      } catch (error) {
-        logger.error('Appointment booking error:', error.message);
-        // Continue to AI processing if n8n fails
-      }
+      return res.type('text/xml').status(200).send(twimlReply(apptBody));
     }
 
     // 4. SERVICE REQUEST AUTO-TICKET

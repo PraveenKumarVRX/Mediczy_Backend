@@ -70,7 +70,8 @@ export const uploadReport = asyncHandler(async (req, res) => {
       patientPhone = patient?.phoneNumber || patient?.phone;
     }
 
-    await n8nService.healthReportReady({
+    // fire-and-forget — never blocks the upload response
+    n8nService.healthReportReady({
       reportId: booking?.report_id || null,
       bookingId: booking?.booking_id || bookingId,
       patientId: booking?.user_id,
@@ -80,6 +81,8 @@ export const uploadReport = asyncHandler(async (req, res) => {
       reportUrl: booking?.report_url || reportUrl,
       tests: booking?.tests,
       source: 'labs-v1'
+    }).catch((n8nError) => {
+      console.error('Failed to trigger n8n health report workflow:', n8nError);
     });
   } catch (n8nError) {
     console.error('Failed to trigger n8n health report workflow:', n8nError);

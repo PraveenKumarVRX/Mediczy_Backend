@@ -980,7 +980,8 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
           ? await User.findByPk(prescription.patientId)
           : null;
 
-        await n8nService.prescriptionIssued({
+        // fire-and-forget — never blocks the status update response
+        n8nService.prescriptionIssued({
           id: prescription.prescriptionId || prescription.id,
           patientId: prescription.patientId,
           patientName: prescription.patientName,
@@ -992,6 +993,8 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
             : prescription.medicines,
           instructions: prescription.advice || prescription.adviceList,
           pharmacyPreference: prescription.pharmacyPreference
+        }).catch((n8nError) => {
+          console.error('Failed to trigger n8n prescription workflow:', n8nError);
         });
       } catch (n8nError) {
         console.error('Failed to trigger n8n prescription workflow:', n8nError);
@@ -1067,7 +1070,8 @@ router.post('/:id/issue', authDoctor, async (req, res) => {
         ? await User.findByPk(prescription.patientId)
         : null;
 
-      await n8nService.prescriptionIssued({
+      // fire-and-forget — never blocks the issue response
+      n8nService.prescriptionIssued({
         id: prescription.prescriptionId || prescription.id,
         patientId: prescription.patientId,
         patientName: prescription.patientName,
@@ -1079,6 +1083,8 @@ router.post('/:id/issue', authDoctor, async (req, res) => {
           : prescription.medicines,
         instructions: prescription.advice || prescription.adviceList,
         pharmacyPreference: prescription.pharmacyPreference
+      }).catch((n8nError) => {
+        console.error('Failed to trigger n8n prescription workflow:', n8nError);
       });
     } catch (n8nError) {
       console.error('Failed to trigger n8n prescription workflow:', n8nError);

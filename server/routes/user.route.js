@@ -567,18 +567,16 @@ router.post(
       // Audit the successful login after registration
       await auditLoginAttempt(req, newUser.id, newUser.email, true);
 
-      // Trigger n8n workflow for user registration (best-effort)
-      try {
-        await n8nService.userRegistered({
-          id: newUser.id,
-          name: `${newUser.firstName} ${newUser.lastName}`.trim(),
-          email: newUser.email,
-          phone: newUser.phoneNumber,
-          userType: 'patient'
-        });
-      } catch (n8nError) {
+      // Trigger n8n workflow for user registration (fire-and-forget, never blocks registration response)
+      n8nService.userRegistered({
+        id: newUser.id,
+        name: `${newUser.firstName} ${newUser.lastName}`.trim(),
+        email: newUser.email,
+        phone: newUser.phoneNumber,
+        userType: 'patient'
+      }).catch((n8nError) => {
         console.error('Failed to trigger n8n user registration workflow:', n8nError);
-      }
+      });
 
       // Mirror patient profile into intelligent DB
       (async () => {

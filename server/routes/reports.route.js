@@ -129,25 +129,23 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
       type: reportType
     });
 
-    // Notify via n8n (best-effort)
-    try {
-      await n8nService.healthReportReady({
-        reportId: savedReport.id,
-        patientId: userId,
-        patientName: req.user?.name || `${req.user?.firstName || ''} ${req.user?.lastName || ''}`.trim(),
-        patientEmail: req.user?.email,
-        patientPhone: req.user?.phoneNumber || req.user?.phone,
-        reportUrl: savedReport.fileUrl,
-        tests: {
-          reportType,
-          testName,
-          labName
-        },
-        source: 'reports'
-      });
-    } catch (n8nError) {
+    // Notify via n8n (fire-and-forget — never blocks the upload response)
+    n8nService.healthReportReady({
+      reportId: savedReport.id,
+      patientId: userId,
+      patientName: req.user?.name || `${req.user?.firstName || ''} ${req.user?.lastName || ''}`.trim(),
+      patientEmail: req.user?.email,
+      patientPhone: req.user?.phoneNumber || req.user?.phone,
+      reportUrl: savedReport.fileUrl,
+      tests: {
+        reportType,
+        testName,
+        labName
+      },
+      source: 'reports'
+    }).catch((n8nError) => {
       console.error('Failed to trigger n8n report workflow:', n8nError);
-    }
+    });
 
     // Log to Health Diary as event (non-blocking)
     const diaryEntryType = reportType === 'imaging' ? 'imaging' : 'lab_result';

@@ -284,9 +284,9 @@ class NotificationAutomationService {
         channels: effectiveChannels
       });
 
-      // 5. Trigger n8n workflow for external integrations
+      // 5. Trigger n8n workflow for external integrations (fire-and-forget)
       if (this.n8nEnabled && n8nWorkflow) {
-        await n8nService.trigger(n8nWorkflow, {
+        n8nService.trigger(n8nWorkflow, {
           notification,
           userId,
           userType,
@@ -294,6 +294,8 @@ class NotificationAutomationService {
           data,
           channels: effectiveChannels,
           timestamp: new Date().toISOString()
+        }).catch((n8nError) => {
+          console.error('Failed to trigger n8n notification workflow:', n8nError);
         });
       }
 

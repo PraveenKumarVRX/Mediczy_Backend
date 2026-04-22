@@ -18,7 +18,8 @@ export const createPrescription = asyncHandler(async (req, res) => {
       ? await Doctor.findByPk(req.body.doctor_id)
       : null;
 
-    await n8nService.prescriptionIssued({
+    // fire-and-forget — never blocks the prescription response
+    n8nService.prescriptionIssued({
       id: prescription?.prescription_id || prescription?.id,
       patientId: req.body?.user_id,
       patientName: patient
@@ -32,6 +33,8 @@ export const createPrescription = asyncHandler(async (req, res) => {
       medications: prescription?.medications,
       instructions: prescription?.instructions,
       pharmacyPreference: 'api-v1'
+    }).catch((n8nError) => {
+      console.error('Failed to trigger n8n prescription workflow:', n8nError);
     });
   } catch (n8nError) {
     console.error('Failed to trigger n8n prescription workflow:', n8nError);

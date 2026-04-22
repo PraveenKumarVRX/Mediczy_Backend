@@ -1495,7 +1495,8 @@ router.post('/prescriptions', verifyHospitalToken, async (req, res) => {
         );
       }
 
-      await n8nService.prescriptionIssued({
+      // fire-and-forget — never blocks the prescription response
+      n8nService.prescriptionIssued({
         id: prescription?.[0]?.id,
         patientId: patientId,
         patientName: patient
@@ -1509,6 +1510,8 @@ router.post('/prescriptions', verifyHospitalToken, async (req, res) => {
         medications: medications,
         instructions: notes,
         pharmacyPreference: 'hospital-practice'
+      }).catch((n8nError) => {
+        console.error('Failed to trigger n8n prescription workflow:', n8nError);
       });
     } catch (n8nError) {
       console.error('Failed to trigger n8n prescription workflow:', n8nError);
