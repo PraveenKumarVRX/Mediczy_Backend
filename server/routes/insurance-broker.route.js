@@ -7,6 +7,8 @@ import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
+import { attachTenantScope } from '../middleware/tenantScope.middleware.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 import {
   createUploadMiddleware, registerLimiter,
   uploadDocuments, uploadIdCard, sendAdminLeadEmail, addOtpRoutes,
@@ -122,13 +124,16 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 
     // Generate JWT token
+    const userType = broker.businessType === 'aggregator' ? 'aggregator' : 'broker';
     const token = jwt.sign(
       {
         id: broker.id,
         email: broker.email,
-        role: 'broker',
-        userType: 'broker',
-        brokerId: broker.id
+        role: userType,
+        userType,
+        brokerId: broker.id,
+        tenant_id: broker.tenantId || null,
+        businessType: broker.businessType
       },
       JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
@@ -151,7 +156,9 @@ router.post('/login', authLimiter, async (req, res) => {
         status: broker.status,
         isVerified: broker.isVerified,
         commissionPercentage: broker.commissionPercentage,
-        activePoliciesCount: broker.activePoliciesCount
+        activePoliciesCount: broker.activePoliciesCount,
+        tenant_id: broker.tenantId || null,
+        userType
       },
       broker: {
         id: broker.id,
@@ -164,7 +171,9 @@ router.post('/login', authLimiter, async (req, res) => {
         status: broker.status,
         isVerified: broker.isVerified,
         commissionPercentage: broker.commissionPercentage,
-        activePoliciesCount: broker.activePoliciesCount
+        activePoliciesCount: broker.activePoliciesCount,
+        tenant_id: broker.tenantId || null,
+        userType
       }
     });
   } catch (error) {
@@ -452,25 +461,53 @@ router.get('/corporates-list', authUser, requireRole('broker'), async (req, res)
  * List corporates (alias)
  * GET /api/insurance-broker/corporates
  */
-router.get('/corporates', authUser, requireRole('broker'), async (req, res) => {
+router.get('/corporates', authUser, requireRole('broker'), attachTenantScope, async (req, res) => {
   try {
     const { status, page = 1, limit = 20 } = req.query;
-    const whereClause = { onboardedBy: 'broker', onboardedById: req.user.id };
-    if (status) whereClause.status = status;
+    const brokerId = req.user.brokerId || req.user.id;
+    const scope    = req.tenantScope;
 
+    // Scope-aware query: aggregator sees all brokers' corporates under it;
+    // plain broker only sees its own onboarded corporates.
     const offset = (page - 1) * limit;
-    const { count, rows: corporates } = await Corporate.findAndCountAll({
-      where: whereClause,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
-      order: [['createdAt', 'DESC']]
+    let query = `
+      SELECT c.*, COUNT(*) OVER() AS total_count
+      FROM corporates c
+      WHERE (
+        c."onboarded_by_id" = :brokerId
+    `;
+
+    const replacements = { brokerId, limit: parseInt(limit), offset: parseInt(offset) };
+
+    if (scope?.accessibleIds?.length > 0) {
+      query += ` OR c.owned_by_tenant_id = ANY(:scopeIds)
+                 OR c.tenant_id          = ANY(:scopeIds)`;
+      replacements.scopeIds = scope.accessibleIds;
+    }
+
+    if (status) {
+      query += ` ) AND c.status = :status`;
+      replacements.status = status;
+    } else {
+      query += ` )`;
+    }
+
+    query += ` ORDER BY c."createdAt" DESC LIMIT :limit OFFSET :offset`;
+
+    const rows = await postgresSequelize.query(query, {
+      replacements,
+      type: postgresSequelize.QueryTypes.SELECT
     });
+
+    const total = rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
+    // strip total_count from rows
+    const corporates = rows.map(({ total_count, ...r }) => r);
 
     res.json({
       success: true,
-      total: count,
+      total,
       page: parseInt(page),
-      totalPages: Math.ceil(count / limit),
+      totalPages: Math.ceil(total / limit),
       corporates
     });
   } catch (error) {

@@ -55,26 +55,36 @@ class AggregatorService {
    * Get all corporates under an aggregator
    */
   async getAggregatorCorporates(aggregatorId, options = {}) {
-    const { limit = 50, offset = 0, status = 'all' } = options;
+    const { limit = 50, offset = 0, status = 'all', accessibleTenantIds = null } = options;
 
     try {
+      // Build scope filter: prefer tenant-hierarchy scope when available,
+      // fall back to legacy aggregator_id for backwards compatibility.
+      const scopeClause = accessibleTenantIds && accessibleTenantIds.length > 0
+        ? `(c.owned_by_tenant_id = ANY(ARRAY[${accessibleTenantIds.map(Number).join(',')}])
+           OR c.tenant_id = ANY(ARRAY[${accessibleTenantIds.map(Number).join(',')}])
+           OR c.aggregator_id = $1)`
+        : `c.aggregator_id = $1`;
+
       let query = `
         SELECT 
           c.id,
-          c.companyName as name,
+          c."companyName" as name,
           c.email,
-          c.phoneNumber as phone,
+          c."phoneNumber" as phone,
           c.industry,
-          c.employeeCount,
-          c.packageType,
-          c.packageAmount,
+          c."employeeCount",
+          c."packageType",
+          c."packageAmount",
           c.status,
-          c.createdAt,
+          c."createdAt",
           c.onboarded_by,
+          c.owned_by_tenant_id,
+          c.tenant_id,
           (SELECT COUNT(*) FROM users WHERE corporate_id = c.id) as employees_count,
-          (SELECT COUNT(*) FROM corporate_employees WHERE corporate_id = c.id AND isActive = true) as active_employees
+          (SELECT COUNT(*) FROM corporate_employees WHERE corporate_id = c.id AND "isActive" = true) as active_employees
         FROM corporates c
-        WHERE c.aggregator_id = $1
+        WHERE ${scopeClause}
       `;
 
       const params = [aggregatorId];

@@ -194,7 +194,8 @@ const buildHospitalTokenPayload = ({ hospital, tenant, user }) => {
       userType: 'hospital',
       hospital_id: hospital.id,
       hospitalId: hospital.id,
-      hospitalName: hospital.hospitalName || hospital.name
+      hospitalName: hospital.hospitalName || hospital.name,
+      tenant_id: hospital.tenantId || null
     };
   }
 

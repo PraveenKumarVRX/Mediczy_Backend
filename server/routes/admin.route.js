@@ -3,6 +3,7 @@ import { body } from 'express-validator';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { requireCorporateAccess } from '../middleware/corporateTenant.js';
+import { attachTenantScope, scopeFilter } from '../middleware/tenantScope.middleware.js';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import userModel, { generateAuthTokenForUser } from '../models/user.model.intelligent.js';
@@ -363,19 +364,31 @@ router.get('/pharmacies', authUser, requireRole('admin'), listPharmacies);
  * Get Corporates - Filters by user associations for team users
  * Admin users see all corporates, team users see only assigned corporates
  */
-router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, res) => {
+router.get('/corporates', authUser, requireRole(['admin', 'team']), attachTenantScope, async (req, res) => {
   try {
     const userId = req.user.id;
     const isTeam = req.user.isTeam;
     const isAdmin = req.user.isAdmin;
+    const scope   = req.tenantScope;   // set by attachTenantScope
     
     let corporates;
     
     if (isTeam && !isAdmin) {
-      // Team users: Get assigned corporates from both old and new systems
-      // Old system: user_associations table
-      // New system: corporate_team_assignments table
+      // Team users: Get assigned corporates respecting tenant hierarchy scope
       try {
+        // Build scope condition from tenant hierarchy (aggregator sees all its brokers' corporates)
+        let scopeCondition = '';
+        let scopeReplacements = { userId };
+
+        if (scope?.accessibleIds?.length > 0) {
+          // Hierarchical access: any corporate whose owned_by_tenant_id is in scope
+          scopeCondition = `
+            OR c.owned_by_tenant_id = ANY(:scopeIds)
+            OR c.tenant_id = ANY(:scopeIds)
+          `;
+          scopeReplacements.scopeIds = scope.accessibleIds;
+        }
+
         const assignedResult = await postgresSequelize.query(`
           SELECT DISTINCT c.* FROM corporates c
           LEFT JOIN user_associations ua 
@@ -385,17 +398,18 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
           LEFT JOIN corporate_team_assignments cta
             ON cta.corporate_id = c.id
             AND cta.team_member_id = :userId
-          WHERE (ua.id IS NOT NULL OR cta.id IS NOT NULL OR c."assignedTo" = :userId)
+          WHERE (ua.id IS NOT NULL OR cta.id IS NOT NULL OR c."assignedTo" = :userId
+            ${scopeCondition})
           ORDER BY c."companyName" ASC
         `, {
-          replacements: { userId },
+          replacements: scopeReplacements,
           type: postgresSequelize.QueryTypes.SELECT
         });
         
         const assigned = Array.isArray(assignedResult) ? assignedResult : [assignedResult].filter(Boolean);
         corporates = assigned;
         
-        console.log(`[Corporates] Team user ${req.user.email} - Found ${corporates.length} assigned corporates`);
+        console.log(`[Corporates] Team user ${req.user.email} scope=${scope?.mode} - Found ${corporates.length} corporates`);
       } catch (teamQueryError) {
         console.error('[Corporates] Team corporates query error:', teamQueryError.message);
         corporates = [];

@@ -114,6 +114,12 @@ const Hospital = sequelize.define('Hospital', {
   metadata: {
     type: DataTypes.JSONB,
     defaultValue: {}
+  },
+  tenantId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'tenant_id',
+    comment: 'Link to tenants table — hospital is a tenant'
   }
 }, {
   tableName: 'hospitals',

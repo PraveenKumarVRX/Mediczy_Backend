@@ -137,6 +137,12 @@ const InsuranceBroker = sequelize.define('InsuranceBroker', {
   metadata: {
     type: DataTypes.JSONB,
     defaultValue: {}
+  },
+  tenantId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'tenant_id',
+    comment: 'Link to tenants table — broker/aggregator is a tenant'
   }
 }, {
   tableName: 'insurance_brokers',

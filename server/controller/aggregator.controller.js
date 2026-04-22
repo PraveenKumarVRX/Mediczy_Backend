@@ -67,12 +67,16 @@ class AggregatorController {
         });
       }
 
+      // Pass tenant-hierarchy scope from middleware (if available)
+      const accessibleTenantIds = req.tenantScope?.accessibleIds ?? null;
+
       const corporates = await AggregatorService.getAggregatorCorporates(
         aggregatorId,
         {
           limit: parseInt(limit),
           offset: parseInt(offset),
           status,
+          accessibleTenantIds,
         }
       );
 

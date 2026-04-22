@@ -9,6 +9,7 @@ import express from 'express';
 import { body, param, query } from 'express-validator';
 import AggregatorController from '../controller/aggregator.controller.js';
 import { authUser } from '../middleware/auth.middleware.js';
+import { attachTenantScope } from '../middleware/tenantScope.middleware.js';
 
 const router = express.Router();
 
@@ -36,6 +37,7 @@ router.get(
 router.get(
   '/corporates',
   authUser,
+  attachTenantScope,
   [
     query('limit').optional().isInt({ min: 1, max: 100 }),
     query('offset').optional().isInt({ min: 0 }),
