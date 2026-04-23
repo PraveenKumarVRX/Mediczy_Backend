@@ -29,6 +29,7 @@ import { scanOnly } from '../services/minio-upload.service.js';
 import multiAgentOrchestrator from '../services/ai-brain/multi-agent-orchestrator.js';
 import { resolveIdentity } from '../services/ai-brain/agent-permission-engine.js';
 import { getAllAgents } from '../services/ai-brain/agent-registry.js';
+import { getRoutingStats, updateThreshold } from '../services/ai-brain/cognitive-router.js';
 
 const router = Router();
 
@@ -513,6 +514,45 @@ router.get('/agents/history', requireAuth, async (req, res) => {
     const limit   = Math.min(parseInt(req.query.limit || '20'), 100);
     const history = await multiAgentOrchestrator.getRunHistory(req.user.id, limit);
     res.json({ history });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /agents/routing-stats
+ * Cognitive router efficiency stats — tier distribution, SLM utilisation, cost reduction estimate.
+ * Admin-only.
+ */
+router.get('/agents/routing-stats', requireAuth, async (req, res) => {
+  try {
+    const days  = Math.min(parseInt(req.query.days || '7'), 90);
+    const stats = await getRoutingStats(days);
+    res.json({ stats });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * PATCH /agents/routing-threshold
+ * Dynamically adjust a cognitive routing threshold.
+ * Body: { key: string, value: number }
+ * Admin-only.
+ */
+router.patch('/agents/routing-threshold', requireAuth, async (req, res) => {
+  try {
+    const { key, value } = req.body || {};
+    const allowedKeys = ['reflex_min_score', 'deep_min_score', 'slm_success_floor', 'standard_success_floor'];
+    if (!allowedKeys.includes(key)) {
+      return res.status(400).json({ error: `Unknown threshold key. Allowed: ${allowedKeys.join(', ')}` });
+    }
+    const num = parseFloat(value);
+    if (isNaN(num) || num < 0) {
+      return res.status(400).json({ error: 'value must be a non-negative number' });
+    }
+    await updateThreshold(key, num);
+    res.json({ ok: true, key, value: num });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

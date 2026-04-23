@@ -39,6 +39,7 @@ import {
   validateAgentAccess,
   getAgentToolDefs,
 } from './agent-registry.js';
+import cognitiveRouter, { TIERS } from './cognitive-router.js';
 
 const MAX_AGENT_ITERATIONS = 8;
 
@@ -119,12 +120,21 @@ async function ensureDb() {
 async function planTasks(message, identity, conversationContext = []) {
   const msg = message.toLowerCase();
 
+  // ── Cognitive tier classification (CPU-only, zero LLM calls) ─────────────
+  const cogResult = await cognitiveRouter.classify(message, {
+    userId:              identity.userId,
+    conversationHistory: conversationContext,
+  });
+  console.log(`[MultiAgent] CognitiveTier=${cogResult.tier} provider=${cogResult.preferredProvider} category=${cogResult.category}`);
+
   // ── Emergency override — always highest priority ───────────────────────────
   if (_isEmergency(msg) && hasCapability(identity, CAPS.INVOKE_EMERGENCY_AGENT)) {
     return {
       intent: 'emergency',
       isMultiAgent: false,
       tasks: [{ id: 't1', agentId: 'emergency', description: message, dependsOn: [], priority: 100 }],
+      cognitiveTier: TIERS.DEEP,   // emergency always uses highest-reasoning tier
+      cognitiveDecisionId: cogResult.decisionId,
     };
   }
 
@@ -134,13 +144,19 @@ async function planTasks(message, identity, conversationContext = []) {
     return {
       intent: singleAgent,
       isMultiAgent: false,
+      cognitiveTier: cogResult.tier,
+      cognitiveDecisionId: cogResult.decisionId,
       tasks: [{ id: 't1', agentId: singleAgent, description: message, dependsOn: [] }],
     };
   }
 
   // ── LLM-based multi-step planner ──────────────────────────────────────────
   try {
-    return await _llmPlanTasks(message, identity, conversationContext);
+    const multiPlan = await _llmPlanTasks(message, identity, conversationContext);
+    // Attach cognitive tier to LLM-planned multi-agent tasks too
+    multiPlan.cognitiveTier      = multiPlan.cognitiveTier      || cogResult.tier;
+    multiPlan.cognitiveDecisionId = multiPlan.cognitiveDecisionId || cogResult.decisionId;
+    return multiPlan;
   } catch (err) {
     console.warn('[MultiAgent] LLM planner failed, fallback:', err.message);
     // Fallback: use most capable available agent
@@ -148,6 +164,8 @@ async function planTasks(message, identity, conversationContext = []) {
     return {
       intent: 'general',
       isMultiAgent: false,
+      cognitiveTier: cogResult.tier,
+      cognitiveDecisionId: cogResult.decisionId,
       tasks: [{ id: 't1', agentId: fallback, description: message, dependsOn: [] }],
     };
   }
@@ -251,7 +269,7 @@ Respond with ONLY valid JSON like:
 /**
  * Execute a single agent task with full agentic loop + tool sandboxing.
  */
-async function runAgent(task, identity, conversationMessages, ragContext = '') {
+async function runAgent(task, identity, conversationMessages, ragContext = '', opts = {}) {
   const agent = getAgent(task.agentId);
   if (!agent) throw new Error(`Agent '${task.agentId}' not found`);
 
@@ -269,7 +287,26 @@ async function runAgent(task, identity, conversationMessages, ragContext = '') {
     { role: 'user', content: task.description },
   ];
 
-  const tierModel = _tierToProvider(agent.llmTier);
+  // ── Cognitive tier overrides agent role-based tier when available ─────────
+  // HAIS rule: cognitive router's per-query tier takes precedence over static
+  // role-based tier, EXCEPT tools require STANDARD+ (SLM has no function calling).
+  const hasCognitiveTier = !!opts.cognitiveTier;
+  const hasTools = permittedTools.length > 0;
+  let tierModel;
+  let cognitiveTier;
+  let cognitiveDecisionId = opts.cognitiveDecisionId;
+
+  if (hasCognitiveTier && !hasTools) {
+    // Route via cognitive tier (HAIS path)
+    cognitiveTier = opts.cognitiveTier;
+    tierModel = null;  // llm-provider.js reads cognitiveTier itself
+    console.log(`[RunAgent:${task.agentId}] HAIS tier=${cognitiveTier}`);
+  } else {
+    // Fall back to role-based provider for agents with tools or no tier hint
+    tierModel = _tierToProvider(agent.llmTier);
+    cognitiveTier = null;
+  }
+
   const agentStart = Date.now();
   let totalTokens = 0;
   let finalContent = null;
@@ -285,6 +322,7 @@ async function runAgent(task, identity, conversationMessages, ragContext = '') {
       maxTokens: agent.maxTokens,
       skipCache: true,
       ...(tierModel ? { forceProvider: tierModel } : {}),
+      ...(cognitiveTier ? { cognitiveTier, cognitiveDecisionId } : {}),
     };
 
     const result = await llmProvider.chat(llmParams);
@@ -370,7 +408,10 @@ async function executeGraph(plan, identity, conversationMessages) {
 
     // Execute ready tasks in parallel
     const waveResults = await Promise.allSettled(
-      ready.map(task => runAgent(task, identity, conversationMessages, ragContext))
+      ready.map(task => runAgent(task, identity, conversationMessages, ragContext, {
+        cognitiveTier:      plan.cognitiveTier,
+        cognitiveDecisionId: plan.cognitiveDecisionId,
+      }))
     );
 
     for (let i = 0; i < ready.length; i++) {
@@ -476,10 +517,14 @@ export async function process({ message, req, conversationId, contextMessages = 
       err.status = 403;
       throw err;
     }
+    // Still classify for self-optimization tracking even with forceAgent
+    const cog = await cognitiveRouter.classify(message, { userId: identity.userId }).catch(() => ({}));
     plan = {
       intent: forceAgent,
       isMultiAgent: false,
       tasks: [{ id: 't1', agentId: forceAgent, description: message, dependsOn: [] }],
+      cognitiveTier: cog.tier,
+      cognitiveDecisionId: cog.decisionId,
     };
   } else {
     plan = await planTasks(message, identity, contextMessages);

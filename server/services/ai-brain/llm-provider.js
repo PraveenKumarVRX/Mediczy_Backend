@@ -15,6 +15,7 @@ import OpenAI from 'openai';
 import Groq from 'groq-sdk';
 import pool from '../../db/pgPool.js';
 import semanticCache from './semantic-cache.service.js';
+import cognitiveRouter, { TIERS, TIER_PROVIDERS } from './cognitive-router.js';
 
 // ─── Provider Clients (lazy-init) ───────────────────────────
 
@@ -238,6 +239,8 @@ async function chat({
   responseFormat = null,
   forceProvider = null,
   skipCache = false,       // set true for agentic/tool-calling flows
+  cognitiveTier = null,    // 'reflex' | 'standard' | 'deep' — from CognitiveRouter.classify()
+  cognitiveDecisionId = null,  // for outcome recording
 }) {
   const dbConfig = await getModelConfig();
   const temp = temperature ?? dbConfig?.temperature ?? 0.4;
@@ -271,8 +274,29 @@ async function chat({
     const forced = PROVIDERS.find(p => p.name === forceProvider);
     if (!forced) throw new Error(`Unknown provider: ${forceProvider}`);
     providersToTry = [forced];
+  } else if (cognitiveTier && !tools) {
+    // ── HAIS: Tier-first routing ─────────────────────────────────────────
+    // Move the tier's preferred provider to the front; keep others as fallback.
+    // REFLEX → local-slm first, then cascade up.
+    // STANDARD → groq first, then openai, then isha.
+    // DEEP → isha first, then groq, then openai.
+    // Tool-calling is never sent to the SLM (no function-calling support).
+    const preferredName = TIER_PROVIDERS[cognitiveTier];
+    const preferred = PROVIDERS.find(p => p.name === preferredName);
+    const rest = PROVIDERS.filter(p => p.name !== preferredName)
+      .sort((a, b) => {
+        // REFLEX fallback order: groq → openai (skip re-trying SLM)
+        // STANDARD fallback order: openai → isha
+        // DEEP fallback order: groq → openai
+        if (cognitiveTier === TIERS.REFLEX)    return a.priority - b.priority;
+        if (cognitiveTier === TIERS.STANDARD)  return a.priority - b.priority;
+        if (cognitiveTier === TIERS.DEEP)      return a.priority - b.priority;
+        return a.priority - b.priority;
+      });
+    providersToTry = preferred ? [preferred, ...rest] : [...PROVIDERS];
+    console.log(`[LLM] CognitiveTier=${cognitiveTier} → preferred=${preferredName}, cascade=[${providersToTry.map(p => p.name).join('→')}]`);
   } else {
-    providersToTry = [...PROVIDERS]; // All 3 in cascade order
+    providersToTry = [...PROVIDERS]; // All in cascade order
   }
 
   const cascade = [];       // Track which providers were attempted
@@ -384,6 +408,17 @@ async function chat({
       provider: result.provider,
       model: result.model,
       tokensUsed: result.usage.totalTokens,
+    }).catch(() => {});
+  }
+
+  // ── Record cognitive routing outcome (self-optimisation) ─────────────────
+  if (cognitiveDecisionId) {
+    cognitiveRouter.recordOutcome(cognitiveDecisionId, {
+      success: true,
+      tierActual: cognitiveTier || 'unknown',
+      providerUsed: result.provider,
+      tokensUsed: result.usage.totalTokens,
+      latencyMs: result.latencyMs,
     }).catch(() => {});
   }
   // ────────────────────────────────────────────────────────────────────────
