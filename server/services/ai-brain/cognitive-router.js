@@ -90,7 +90,11 @@ const SIGNALS = {
   // ─── DEEP signals ────────────────────────────────────────────────────────
   deepPatterns: [
     // Clinical reasoning
-    { re: /\b(differential diagnosis|ddx|treatment plan|clinical decision|prognosis|complication|contraindication|evidence.?based|clinical guideline|protocol for|management of)\b/i, weight: 40 },
+    { re: /\b(differential diagnosis|ddx|treatment plan|clinical decision|prognosis|complication|contraindications?|evidence.?based|clinical guideline|protocol for|management of|management protocol|treatment protocol)\b/i, weight: 40 },
+    // Acute critical events / cardiology emergencies
+    { re: /\b(STEMI|NSTEMI|acute MI|myocardial infarction|septic shock|anaphylaxis|stroke protocol|cardiac arrest|critical care)\b/i, weight: 40 },
+    // Drug management complexity
+    { re: /\b(drug interaction|drug.?drug|dose adjustment|dosage adjustment|drug regimen|polypharmacy|renal dosing|hepatic dosing)\b/i, weight: 35 },
     // Multi-step planning
     { re: /\b(step.?by.?step|comprehensive|detailed plan|full analysis|break down|multi.?step|complex case|overall assessment)\b/i, weight: 35 },
     // Ambiguity / uncertainty
@@ -121,7 +125,7 @@ const SIGNALS = {
 // ─── Tier Thresholds (dynamic — loaded from DB, with in-memory defaults) ─────
 
 const DEFAULT_THRESHOLDS = {
-  reflex_min_score:   50,   // minimum weighted score for REFLEX
+  reflex_min_score:   30,   // minimum weighted score for REFLEX (was 50 — too high for short factual Qs)
   deep_min_score:     60,   // minimum weighted score for DEEP
   slm_success_floor:  0.70, // if SLM success rate < this → upgrade REFLEX → STANDARD
   standard_success_floor: 0.75,
@@ -189,7 +193,7 @@ async function ensureDb() {
     await pool.query(`
       INSERT INTO ai_routing_thresholds (key, value, description)
       VALUES
-        ('reflex_min_score',      50,   'Min score to route to REFLEX tier'),
+        ('reflex_min_score',      30,   'Min score to route to REFLEX tier'),
         ('deep_min_score',        60,   'Min score to route to DEEP tier'),
         ('slm_success_floor',     0.70, 'Min SLM success rate before upgrading REFLEX → STANDARD'),
         ('standard_success_floor', 0.75, 'Min standard success rate before upgrading STANDARD → DEEP')

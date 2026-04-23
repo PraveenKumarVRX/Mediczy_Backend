@@ -195,10 +195,16 @@ async function getModelConfig(name = 'isha-primary') {
  * Call a single provider's chat completion API.
  */
 async function callProvider(provider, params) {
+  // Cap max_tokens for models with lower context limits
+  let cappedParams = params;
+  if (provider.name === 'openai' && params.max_tokens > 4096) {
+    cappedParams = { ...params, max_tokens: 4096 };
+  }
+
   // Merge any provider-specific extra body params (e.g. agent_type for iSHA)
   const finalParams = provider.extraBody
-    ? { ...params, ...provider.extraBody }
-    : params;
+    ? { ...cappedParams, ...provider.extraBody }
+    : cappedParams;
 
   // Local offline SLM (Indic-Gemma via offline scribe FastAPI)
   if (provider.useLocalSLM) {

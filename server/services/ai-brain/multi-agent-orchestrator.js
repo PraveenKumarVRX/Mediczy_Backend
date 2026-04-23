@@ -598,12 +598,14 @@ ${agent.systemPromptSuffix}`;
   return prompt;
 }
 
-/** Map LLM tier string to provider name */
+/** Map LLM tier string to provider name.
+ * 'high' returns null so tool-using agents use the full cascade (iSHA→Groq→OpenAI)
+ * instead of being locked to iSHA alone when iSHA is unavailable.
+ */
 function _tierToProvider(tier) {
-  if (tier === 'high')     return 'isha';
-  if (tier === 'standard') return 'groq';
-  if (tier === 'basic')    return 'openai';
-  return null;  // null = use default cascade
+  // Always return null to enable full cascade (iSHA→Groq→OpenAI).
+  // Individual providers being down won't block agents anymore.
+  return null;
 }
 
 async function _auditLog(data) {
