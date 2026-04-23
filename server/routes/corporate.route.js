@@ -10,6 +10,7 @@ import {
   getCorporateAppointments
 } from '../controller/corporate.controller.js';
 import { UserPlan, MembershipPlan } from '../models/postgres/membershipPlan.model.postgres.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 const router = express.Router();
 
@@ -74,6 +75,97 @@ let corporateEmployees = [
     joiningDate: '2021-08-20',
     healthStatus: 'moderate',
     lastCheckup: '2025-10-10',
+    insurancePlan: 'Standard Plan',
+  },
+  {
+    id: 'EMP004',
+    employeeId: 'EMP004',
+    name: 'Neha Sharma',
+    email: 'neha.sharma@company.com',
+    phone: '+91 98765 43213',
+    department: 'Finance',
+    designation: 'Financial Analyst',
+    joiningDate: '2020-11-01',
+    healthStatus: 'good',
+    lastCheckup: '2025-11-20',
+    insurancePlan: 'Premium Plan',
+  },
+  {
+    id: 'EMP005',
+    employeeId: 'EMP005',
+    name: 'Arjun Mehta',
+    email: 'arjun.mehta@company.com',
+    phone: '+91 98765 43214',
+    department: 'Marketing',
+    designation: 'Marketing Manager',
+    joiningDate: '2018-07-15',
+    healthStatus: 'excellent',
+    lastCheckup: '2025-12-05',
+    insurancePlan: 'Premium Plan',
+  },
+  {
+    id: 'EMP006',
+    employeeId: 'EMP006',
+    name: 'Riya Patel',
+    email: 'riya.patel@company.com',
+    phone: '+91 98765 43215',
+    department: 'Engineering',
+    designation: 'Product Designer',
+    joiningDate: '2022-01-10',
+    healthStatus: 'good',
+    lastCheckup: '2025-10-25',
+    insurancePlan: 'Standard Plan',
+  },
+  {
+    id: 'EMP007',
+    employeeId: 'EMP007',
+    name: 'Karan Verma',
+    email: 'karan.verma@company.com',
+    phone: '+91 98765 43216',
+    department: 'Operations',
+    designation: 'Operations Lead',
+    joiningDate: '2019-09-20',
+    healthStatus: 'moderate',
+    lastCheckup: '2025-09-15',
+    insurancePlan: 'Standard Plan',
+  },
+  {
+    id: 'EMP008',
+    employeeId: 'EMP008',
+    name: 'Sneha Kulkarni',
+    email: 'sneha.kulkarni@company.com',
+    phone: '+91 98765 43217',
+    department: 'Finance',
+    designation: 'Accountant',
+    joiningDate: '2021-04-05',
+    healthStatus: 'excellent',
+    lastCheckup: '2025-11-30',
+    insurancePlan: 'Premium Plan',
+  },
+  {
+    id: 'EMP009',
+    employeeId: 'EMP009',
+    name: 'Vikram Singh',
+    email: 'vikram.singh@company.com',
+    phone: '+91 98765 43218',
+    department: 'Sales',
+    designation: 'Sales Manager',
+    joiningDate: '2017-12-01',
+    healthStatus: 'good',
+    lastCheckup: '2025-10-18',
+    insurancePlan: 'Premium Plan',
+  },
+  {
+    id: 'EMP010',
+    employeeId: 'EMP010',
+    name: 'Divya Nair',
+    email: 'divya.nair@company.com',
+    phone: '+91 98765 43219',
+    department: 'Human Resources',
+    designation: 'HR Executive',
+    joiningDate: '2022-06-15',
+    healthStatus: 'good',
+    lastCheckup: '2025-11-10',
     insurancePlan: 'Standard Plan',
   },
 ];
@@ -864,8 +956,54 @@ router.post('/notifications/read-all', authUser, requireRole('corporate'), async
 router.get('/employees', authUser, requireRole('corporate'), async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   const department = String(req.query.department || '').trim();
+  const corporateId = req.user?.corporateId;
 
-  let employees = [...corporateEmployees];
+  let employees = [];
+
+  // Query real employees from DB if we have a corporate ID
+  if (corporateId) {
+    try {
+      const [rows] = await postgresSequelize.query(
+        `SELECT
+           ce.id,
+           ce."employeeId",
+           ce.department,
+           ce.designation,
+           ce."joiningDate",
+           ce."isActive",
+           u."firstName",
+           u."lastName",
+           u.email,
+           u."phoneNumber"
+         FROM corporate_employees ce
+         LEFT JOIN users u ON u.id = ce."userId"
+         WHERE ce.corporate_id = :corporateId AND ce."isActive" = true
+         ORDER BY ce."createdAt" DESC`,
+        { replacements: { corporateId } }
+      );
+      employees = rows.map((r) => ({
+        id: r.employeeId,
+        employeeId: r.employeeId,
+        name: [r.firstName, r.lastName].filter(Boolean).join(' ') || r.email || r.employeeId,
+        email: r.email || '',
+        phone: r.phoneNumber || '',
+        department: r.department || 'General',
+        designation: r.designation || '',
+        joiningDate: r.joiningDate ? r.joiningDate.toString().slice(0, 10) : '',
+        healthStatus: 'good',
+        lastCheckup: '',
+        insurancePlan: 'Standard Plan',
+      }));
+    } catch (dbErr) {
+      console.error('[corporate] GET /employees DB error:', dbErr.message);
+    }
+  }
+
+  // Fall back to demo data for new/demo corporates with no registered employees
+  if (employees.length === 0) {
+    employees = [...corporateEmployees];
+  }
+
   if (department && department !== 'all') {
     employees = employees.filter((e) => e.department === department);
   }
@@ -879,135 +1017,139 @@ router.get('/employees', authUser, requireRole('corporate'), async (req, res) =>
 });
 
 router.post('/employees', authUser, requireRole('corporate'), async (req, res) => {
-  const {
-    employeeId,
-    name,
-    email,
-    phone,
-    department,
-    designation,
-    joiningDate,
-    healthStatus,
-    lastCheckup,
-    insurancePlan,
-  } = req.body || {};
+  const corporateId = req.user?.corporateId;
+  if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
+  const { employeeId, name, email, phone, department, designation, joiningDate } = req.body || {};
 
   if (!name || !email || !department) {
     return res.status(400).json({ success: false, message: 'name, email, and department are required' });
   }
 
-  const generatedEmployeeId = employeeId || `EMP${String(Date.now()).slice(-5)}`;
-  const created = {
-    id: generatedEmployeeId,
-    employeeId: generatedEmployeeId,
-    name,
-    email,
-    phone: phone || '',
-    department,
-    designation: designation || '',
-    joiningDate: joiningDate || new Date().toISOString().slice(0, 10),
-    healthStatus: healthStatus || 'good',
-    lastCheckup: lastCheckup || new Date().toISOString().slice(0, 10),
-    insurancePlan: insurancePlan || 'Standard Plan',
-  };
+  try {
+    const generatedEmployeeId = employeeId || `EMP${String(Date.now()).slice(-5)}`;
 
-  corporateEmployees = [created, ...corporateEmployees];
-  return res.status(201).json({ success: true, data: { employee: created } });
+    // Create user record
+    const bcrypt = (await import('bcrypt')).default;
+    const tempPassword = await bcrypt.hash(`${generatedEmployeeId}@${corporateId}`, 10);
+    const [userResult] = await postgresSequelize.query(
+      `INSERT INTO users ("firstName", "lastName", email, "phoneNumber", password, role, organization_id, organization_type, status, "createdAt", "updatedAt")
+       VALUES (:firstName, :lastName, :email, :phone, :password, 'user', :corporateId, 'corporate', 'active', NOW(), NOW())
+       ON CONFLICT (email) DO UPDATE SET organization_id=:corporateId, organization_type='corporate', "updatedAt"=NOW()
+       RETURNING id`,
+      { replacements: { firstName: name.split(' ')[0], lastName: name.split(' ').slice(1).join(' ') || '', email, phone: phone || '0000000000', password: tempPassword, corporateId } }
+    );
+    const userId = userResult[0]?.id;
+
+    // Create corporate_employees record
+    await postgresSequelize.query(
+      `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", department, designation, "joiningDate", "isActive", "createdAt", "updatedAt")
+       VALUES (:corporateId, :userId, :employeeId, :department, :designation, :joiningDate, true, NOW(), NOW())
+       ON CONFLICT (corporate_id, "employeeId") DO UPDATE SET department=:department, designation=:designation, "isActive"=true, "updatedAt"=NOW()`,
+      { replacements: { corporateId, userId, employeeId: generatedEmployeeId, department, designation: designation || '', joiningDate: joiningDate || new Date().toISOString().slice(0, 10) } }
+    );
+
+    const created = { id: generatedEmployeeId, employeeId: generatedEmployeeId, name, email, phone: phone || '', department, designation: designation || '', joiningDate: joiningDate || new Date().toISOString().slice(0, 10), healthStatus: 'good', lastCheckup: '', insurancePlan: 'Standard Plan' };
+    return res.status(201).json({ success: true, data: { employee: created } });
+  } catch (err) {
+    console.error('[corporate] POST /employees error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to create employee' });
+  }
 });
 
 router.put('/employees/:id', authUser, requireRole('corporate'), async (req, res) => {
+  const corporateId = req.user?.corporateId;
   const { id } = req.params;
-  const idx = corporateEmployees.findIndex((e) => e.id === id || e.employeeId === id);
-  if (idx === -1) return res.status(404).json({ success: false, message: 'Employee not found' });
-  corporateEmployees[idx] = { ...corporateEmployees[idx], ...(req.body || {}) };
-  return res.json({ success: true, data: { employee: corporateEmployees[idx] } });
+  const { department, designation, joiningDate } = req.body || {};
+
+  try {
+    const [rows] = await postgresSequelize.query(
+      `UPDATE corporate_employees SET department=COALESCE(:department, department), designation=COALESCE(:designation, designation), "joiningDate"=COALESCE(:joiningDate, "joiningDate"), "updatedAt"=NOW()
+       WHERE corporate_id=:corporateId AND "employeeId"=:id RETURNING *`,
+      { replacements: { corporateId, id, department: department || null, designation: designation || null, joiningDate: joiningDate || null } }
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Employee not found' });
+    return res.json({ success: true, data: { employee: { ...rows[0], ...(req.body || {}) } } });
+  } catch (err) {
+    console.error('[corporate] PUT /employees error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to update employee' });
+  }
 });
 
 router.delete('/employees/:id', authUser, requireRole('corporate'), async (req, res) => {
+  const corporateId = req.user?.corporateId;
   const { id } = req.params;
-  const before = corporateEmployees.length;
-  corporateEmployees = corporateEmployees.filter((e) => e.id !== id && e.employeeId !== id);
-  if (corporateEmployees.length === before) return res.status(404).json({ success: false, message: 'Employee not found' });
-  return res.json({ success: true });
+
+  try {
+    const [rows] = await postgresSequelize.query(
+      `UPDATE corporate_employees SET "isActive"=false, "updatedAt"=NOW() WHERE corporate_id=:corporateId AND "employeeId"=:id RETURNING id`,
+      { replacements: { corporateId, id } }
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Employee not found' });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[corporate] DELETE /employees error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to delete employee' });
+  }
 });
 
-// Bulk upload employees from CSV/Excel
+// Bulk upload employees from CSV/Excel — persists to DB
 router.post('/employees/bulk-upload', authUser, requireRole('corporate'), async (req, res) => {
-  try {
-    const { employees: employeeList } = req.body;
-    
-    if (!Array.isArray(employeeList) || employeeList.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'employees array is required and must not be empty' 
-      });
+  const corporateId = req.user?.corporateId;
+  if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
+  const { employees: employeeList } = req.body;
+  if (!Array.isArray(employeeList) || employeeList.length === 0) {
+    return res.status(400).json({ success: false, message: 'employees array is required and must not be empty' });
+  }
+
+  const successfulUploads = [];
+  const errors = [];
+  const bcrypt = (await import('bcrypt')).default;
+
+  for (let index = 0; index < employeeList.length; index++) {
+    const emp = employeeList[index];
+    if (!emp.name || !emp.email || !emp.department) {
+      errors.push({ row: index + 1, employee: emp, error: 'Missing required fields: name, email, and department are required' });
+      continue;
     }
 
-    const successfulUploads = [];
-    const errors = [];
-
-    employeeList.forEach((emp, index) => {
-      // Validate required fields
-      if (!emp.name || !emp.email || !emp.department) {
-        errors.push({
-          row: index + 1,
-          employee: emp,
-          error: 'Missing required fields: name, email, and department are required'
-        });
-        return;
-      }
-
-      // Check for duplicate email
-      const existingEmployee = corporateEmployees.find(e => e.email === emp.email);
-      if (existingEmployee) {
-        errors.push({
-          row: index + 1,
-          employee: emp,
-          error: `Email already exists: ${emp.email}`
-        });
-        return;
-      }
-
-      // Create employee
+    try {
       const generatedEmployeeId = emp.employeeId || `EMP${String(Date.now() + index).slice(-5)}`;
-      const created = {
-        id: generatedEmployeeId,
-        employeeId: generatedEmployeeId,
-        name: emp.name,
-        email: emp.email,
-        phone: emp.phone || '',
-        department: emp.department,
-        designation: emp.designation || '',
-        joiningDate: emp.joiningDate || new Date().toISOString().slice(0, 10),
-        healthStatus: emp.healthStatus || 'good',
-        lastCheckup: emp.lastCheckup || new Date().toISOString().slice(0, 10),
-        insurancePlan: emp.insurancePlan || 'Standard Plan',
-      };
+      const tempPassword = await bcrypt.hash(`${generatedEmployeeId}@${corporateId}`, 10);
 
-      corporateEmployees = [created, ...corporateEmployees];
-      successfulUploads.push(created);
-    });
+      // Upsert user record
+      const [userResult] = await postgresSequelize.query(
+        `INSERT INTO users ("firstName", "lastName", email, "phoneNumber", password, role, organization_id, organization_type, status, "createdAt", "updatedAt")
+         VALUES (:firstName, :lastName, :email, :phone, :password, 'user', :corporateId, 'corporate', 'active', NOW(), NOW())
+         ON CONFLICT (email) DO UPDATE SET organization_id=:corporateId, organization_type='corporate', "updatedAt"=NOW()
+         RETURNING id`,
+        { replacements: { firstName: emp.name.split(' ')[0], lastName: emp.name.split(' ').slice(1).join(' ') || '', email: emp.email, phone: emp.phone || '0000000000', password: tempPassword, corporateId } }
+      );
+      const userId = userResult[0]?.id;
 
-    return res.status(201).json({ 
-      success: true, 
-      data: { 
-        employees: successfulUploads,
-        summary: {
-          total: employeeList.length,
-          successful: successfulUploads.length,
-          failed: errors.length
-        },
-        errors: errors.length > 0 ? errors : undefined
-      } 
-    });
-  } catch (error) {
-    console.error('Bulk upload error:', error);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Failed to process bulk upload',
-      error: error.message 
-    });
+      // Upsert corporate_employees record
+      await postgresSequelize.query(
+        `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", department, designation, "joiningDate", "isActive", "createdAt", "updatedAt")
+         VALUES (:corporateId, :userId, :employeeId, :department, :designation, :joiningDate, true, NOW(), NOW())
+         ON CONFLICT (corporate_id, "employeeId") DO UPDATE SET department=:department, designation=:designation, "isActive"=true, "updatedAt"=NOW()`,
+        { replacements: { corporateId, userId, employeeId: generatedEmployeeId, department: emp.department, designation: emp.designation || '', joiningDate: emp.joiningDate || new Date().toISOString().slice(0, 10) } }
+      );
+
+      successfulUploads.push({ employeeId: generatedEmployeeId, name: emp.name, email: emp.email });
+    } catch (rowErr) {
+      errors.push({ row: index + 1, employee: emp, error: rowErr.message });
+    }
   }
+
+  return res.status(201).json({
+    success: true,
+    data: {
+      summary: { total: employeeList.length, successful: successfulUploads.length, failed: errors.length },
+      employees: successfulUploads,
+      errors: errors.length > 0 ? errors : undefined,
+    },
+  });
 });
 
 // Download employee template CSV
