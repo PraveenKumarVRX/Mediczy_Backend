@@ -26,6 +26,9 @@ import llmProvider from '../services/ai-brain/llm-provider.js';
 import ragPipeline from '../services/ai-brain/rag-pipeline.js';
 import { listTools } from '../services/ai-brain/tools/loader.js';
 import { scanOnly } from '../services/minio-upload.service.js';
+import multiAgentOrchestrator from '../services/ai-brain/multi-agent-orchestrator.js';
+import { resolveIdentity } from '../services/ai-brain/agent-permission-engine.js';
+import { getAllAgents } from '../services/ai-brain/agent-registry.js';
 
 const router = Router();
 
@@ -406,6 +409,110 @@ router.get('/providers', async (req, res) => {
       'SELECT id, name, provider, model_name, api_base_url, is_active, config FROM ai_model_configs ORDER BY id'
     );
     res.json({ providers, dbConfigs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MULTI-AGENT ROUTES
+// POST   /agents/process        — Route request through role-based agent system
+// GET    /agents/available      — List agents this caller can invoke
+// GET    /agents/all            — Full agent registry (admin only)
+// GET    /agents/history        — Caller's agent run history
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /agents/process
+ * Main multi-agent entry point. Resolves identity, plans tasks, routes agents.
+ *
+ * Body: { message, conversationId?, contextMessages?, forceAgent? }
+ * forceAgent: bypass planner and use a specific agent (still permission-checked)
+ */
+router.post('/agents/process', async (req, res) => {
+  try {
+    const { message, conversationId, contextMessages, forceAgent } = req.body;
+
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+    if (message.length > 10000) {
+      return res.status(400).json({ error: 'message too long (max 10000 chars)' });
+    }
+
+    const result = await multiAgentOrchestrator.process({
+      message: message.trim(),
+      req,
+      conversationId: conversationId ? parseInt(conversationId) : null,
+      contextMessages: Array.isArray(contextMessages) ? contextMessages : [],
+      forceAgent: forceAgent || null,
+    });
+
+    res.json({
+      success:    true,
+      response:   result.response,
+      agentsUsed: result.agentsUsed,
+      taskPlan:   result.taskPlan,
+      identity:   result.identity,
+      meta: {
+        totalTokens: result.totalTokens,
+        latencyMs:   result.latencyMs,
+        isMultiAgent: result.taskPlan?.isMultiAgent,
+      },
+    });
+  } catch (err) {
+    const status = err.status || 500;
+    res.status(status).json({ success: false, error: err.message, code: err.code });
+  }
+});
+
+/**
+ * GET /agents/available
+ * Returns the agents this caller can invoke, based on their role.
+ */
+router.get('/agents/available', async (req, res) => {
+  try {
+    const identity = await resolveIdentity(req);
+    const agents   = multiAgentOrchestrator.listAvailableAgents(identity);
+    res.json({ role: identity.role, agentCount: agents.length, agents });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /agents/all
+ * Full agent registry — available to all, shows capability requirements.
+ */
+router.get('/agents/all', async (req, res) => {
+  try {
+    const identity = await resolveIdentity(req);
+    const all = getAllAgents().map(a => ({
+      id:                  a.id,
+      name:                a.name,
+      icon:                a.icon,
+      description:         a.description,
+      requiredCapability:  a.requiredCapability,
+      llmTier:             a.llmTier,
+      maxTokens:           a.maxTokens,
+      toolCount:           a.allowedTools.length,
+      accessible:          identity.capabilities.includes(a.requiredCapability),
+    }));
+    res.json({ agents: all, callerRole: identity.role });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /agents/history
+ * Agent run history for the authenticated user.
+ */
+router.get('/agents/history', requireAuth, async (req, res) => {
+  try {
+    const limit   = Math.min(parseInt(req.query.limit || '20'), 100);
+    const history = await multiAgentOrchestrator.getRunHistory(req.user.id, limit);
+    res.json({ history });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
