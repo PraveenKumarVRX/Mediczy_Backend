@@ -78,12 +78,15 @@ class SelfLearningPipeline {
       // Stage 3: Generate learning insights  
       const insights = await this.generateInsights(db, patterns);
 
-      // Stage 4: Update quality metrics
+      // Stage 4: Apply approved insights to system prompts
+      const applied = await this.applyInsights(db);
+
+      // Stage 5: Update quality metrics
       await this.updateQualityMetrics(db);
 
       const elapsed = Date.now() - startTime;
-      console.log(`✅ [SelfLearn] Pipeline complete: ${scored} scored, ${patterns.length} patterns, ${insights} insights in ${elapsed}ms`);
-      tick('ai_self_learning', { scored, patterns: patterns.length, insights, elapsedMs: elapsed });
+      console.log(`✅ [SelfLearn] Pipeline complete: ${scored} scored, ${patterns.length} patterns, ${insights} insights, ${applied} applied in ${elapsed}ms`);
+      tick('ai_self_learning', { scored, patterns: patterns.length, insights, applied, elapsedMs: elapsed });
 
     } catch (error) {
       tickError('ai_self_learning', error.message);
@@ -362,6 +365,95 @@ class SelfLearningPipeline {
     }
 
     return insightsCreated;
+  }
+
+  /**
+   * Stage 4A: Apply approved insights to system prompts.
+   *
+   * Strategy:
+   *  - Read insights with status='approved' and confidence > 0.7
+   *  - For each: fetch the current brain-system-prompt template
+   *  - INSERT a new version with the improved_pattern appended as a guidance bullet
+   *  - Mark insight as 'applied'
+   *  - Max 3 applications per pipeline run (avoid prompt bloat)
+   */
+  async applyInsights(db) {
+    const MAX_PER_RUN = 3;
+    const CONFIDENCE_THRESHOLD = 0.7;
+    let applied = 0;
+
+    try {
+      const { rows: insights } = await db.query(`
+        SELECT insight_id, description, improved_pattern, confidence_score, category
+          FROM sib_learning_insights
+         WHERE status = 'approved'
+           AND confidence_score >= $1
+           AND applied_at IS NULL
+         ORDER BY impact_score DESC, confidence_score DESC
+         LIMIT $2
+      `, [CONFIDENCE_THRESHOLD, MAX_PER_RUN]);
+
+      if (insights.length === 0) return 0;
+
+      // Get current active prompt template
+      const { rows: templates } = await db.query(`
+        SELECT id, name, template, version
+          FROM ai_prompt_templates
+         WHERE name = 'brain-system-prompt'
+           AND is_active = true
+         ORDER BY version DESC
+         LIMIT 1
+      `);
+
+      if (templates.length === 0) {
+        console.warn('[SelfLearn] No active brain-system-prompt template found — skipping apply');
+        return 0;
+      }
+
+      const current = templates[0];
+
+      for (const insight of insights) {
+        try {
+          if (!insight.improved_pattern) continue;
+
+          // Build patch: append guidance bullet at end of template
+          const guidanceLine = `\n\n[AUTO-LEARNING ${new Date().toISOString().split('T')[0]}] ${insight.category?.toUpperCase() || 'GENERAL'}: ${insight.improved_pattern.trim()}`;
+
+          // Avoid duplicate guidance (idempotency check)
+          if (current.template.includes(insight.improved_pattern.substring(0, 60))) {
+            await db.query(`UPDATE sib_learning_insights SET status='applied', applied_at=NOW() WHERE insight_id=$1`, [insight.insight_id]);
+            applied++;
+            continue;
+          }
+
+          const newTemplate = current.template + guidanceLine;
+          const newVersion = (current.version || 1) + 1;
+
+          // Deactivate old, insert new version
+          await db.query('BEGIN');
+          await db.query(`UPDATE ai_prompt_templates SET is_active = false WHERE name = 'brain-system-prompt' AND is_active = true`);
+          await db.query(`
+            INSERT INTO ai_prompt_templates (name, template, version, is_active, created_at, updated_at)
+            VALUES ('brain-system-prompt', $1, $2, true, NOW(), NOW())
+          `, [newTemplate, newVersion]);
+          await db.query(`UPDATE sib_learning_insights SET status='applied', applied_at=NOW() WHERE insight_id=$1`, [insight.insight_id]);
+          await db.query('COMMIT');
+
+          console.log(`[SelfLearn] Applied insight (id=${insight.insight_id}, category=${insight.category}, version=${current.version}→${newVersion})`);
+          // Update current template for next iteration in this run
+          current.template = newTemplate;
+          current.version = newVersion;
+          applied++;
+        } catch (err) {
+          await db.query('ROLLBACK').catch(() => {});
+          console.error('[SelfLearn] applyInsights single error:', err.message);
+        }
+      }
+    } catch (err) {
+      console.error('[SelfLearn] applyInsights error:', err.message);
+    }
+
+    return applied;
   }
 
   /**

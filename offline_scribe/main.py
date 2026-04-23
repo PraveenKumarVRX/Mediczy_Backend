@@ -658,6 +658,97 @@ async def full_pipeline(
 
 
 # =============================================================================
+# OFFLINE SLM CHAT FALLBACK
+# Allows main SIB server to use local Indic-Gemma as final fallback when
+# all cloud providers (iSHA / Groq / OpenAI) are unavailable.
+# =============================================================================
+
+class ChatMessage(BaseModel):
+    role: str = Field(..., description="'user' or 'assistant' or 'system'")
+    content: str
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage] = Field(..., description="OpenAI-compatible messages array")
+    max_tokens: int = Field(512, ge=32, le=1024, description="Max tokens to generate")
+    temperature: float = Field(0.5, ge=0.0, le=1.0)
+
+class ChatResponse(BaseModel):
+    id: str
+    object: str = "chat.completion"
+    content: str
+    model: str = "indic-gemma-2b-navarasa"
+    finish_reason: str = "stop"
+    usage: Dict[str, int]
+
+@app.post("/api/chat", response_model=ChatResponse)
+async def offline_chat(request: ChatRequest):
+    """
+    Offline SLM chat endpoint (OpenAI-compatible subset).
+    Uses the local Indic-Gemma-2B model for last-resort fallback when
+    cloud AI providers are unreachable.
+
+    Limitations:
+    - 2B parameter model; answers short questions best
+    - No tool calling
+    - Responds in English / Hinglish
+    """
+    start = time.time()
+
+    try:
+        llm = get_llm_engine()
+
+        # Build a plain text prompt from messages
+        prompt_parts = []
+        system_text = ""
+        for msg in request.messages:
+            if msg.role == "system":
+                system_text = msg.content.strip()
+            elif msg.role == "user":
+                prompt_parts.append(f"<start_of_turn>user\n{msg.content.strip()}<end_of_turn>")
+            elif msg.role == "assistant":
+                prompt_parts.append(f"<start_of_turn>model\n{msg.content.strip()}<end_of_turn>")
+
+        if system_text:
+            prompt_parts.insert(0, f"<start_of_turn>user\nContext: {system_text}<end_of_turn>")
+
+        prompt_parts.append("<start_of_turn>model\n")
+        prompt = "\n".join(prompt_parts)
+
+        # Generate
+        raw = llm.llm.create_completion(
+            prompt=prompt,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature,
+            stop=["<end_of_turn>", "<start_of_turn>user", "\n\n\n", "###"],
+            repeat_penalty=1.35,
+            echo=False,
+        )
+
+        content = raw["choices"][0]["text"].strip()
+        tokens_in  = raw.get("usage", {}).get("prompt_tokens", 0)
+        tokens_out = raw.get("usage", {}).get("completion_tokens", 0)
+
+        latency_ms = int((time.time() - start) * 1000)
+        logger.info(f"[offline-chat] Generated {tokens_out} tokens in {latency_ms}ms")
+
+        audit.log("offline_chat", {
+            "prompt_length": len(prompt),
+            "tokens_out": tokens_out,
+            "latency_ms": latency_ms,
+        })
+
+        return ChatResponse(
+            id=f"slm-{int(time.time())}",
+            content=content,
+            usage={"prompt_tokens": tokens_in, "completion_tokens": tokens_out, "total_tokens": tokens_in + tokens_out},
+        )
+
+    except Exception as e:
+        logger.error(f"[offline-chat] Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Local SLM error: {str(e)}")
+
+
+# =============================================================================
 # STARTUP/SHUTDOWN
 # =============================================================================
 

@@ -278,6 +278,106 @@ async function buildContext(query, options = {}) {
   return `=== KNOWLEDGE BASE CONTEXT ===\n${contextParts.join('\n\n')}`;
 }
 
+// ─── Agentic Retrieval ──────────────────────────────────────
+
+/**
+ * Agentic RAG: dynamically decide WHICH retrieval sources to hit
+ * based on query classification, then retrieve from those sources only.
+ *
+ * Intent routing:
+ *   drug_info     → knowledge_base (medical encyclopedia) + CIMS
+ *   symptoms      → knowledge_base (clinical) + sib_embeddings (EHR history)
+ *   lab_results   → sib_embeddings (patient records) only
+ *   procedures    → knowledge_base (clinical guidelines)
+ *   general_chat  → skip RAG entirely (save latency)
+ *
+ * @param {string} query
+ * @param {Object} [options] - same as search() options plus {skipIfGeneral: bool}
+ * @returns {{ context: string, sources: string[], plan: string, retrieved: number }}
+ */
+async function agenticRetrieve(query, options = {}) {
+  const { skipIfGeneral = true } = options;
+  const queryLower = query.toLowerCase();
+
+  // ─── Step 1: classify retrieval intent ───────────────────────────────────
+  const plan = classifyRetrievalIntent(queryLower);
+
+  if (plan.type === 'general_chat' && skipIfGeneral) {
+    return { context: '', sources: [], plan: plan.type, retrieved: 0 };
+  }
+
+  // ─── Step 2: build targeted search options ────────────────────────────────
+  const searchOptions = {
+    ...options,
+    topK: plan.topK,
+    minScore: plan.minScore,
+    category: plan.category || options.category || null,
+  };
+
+  // ─── Step 3: run retrieval from relevant sources in parallel ──────────────
+  const retrievalTasks = [];
+
+  if (plan.sources.includes('knowledge_base')) {
+    retrievalTasks.push(
+      search(query, { ...searchOptions }).then(r => r.filter(x => x.source === 'knowledge_base'))
+    );
+  }
+  if (plan.sources.includes('ehr')) {
+    retrievalTasks.push(
+      search(query, { ...searchOptions }).then(r => r.filter(x => x.source === 'sib_embeddings'))
+    );
+  }
+
+  const resultArrays = await Promise.all(retrievalTasks);
+  const allResults = resultArrays.flat()
+    .sort((a, b) => b.score - a.score)
+    .slice(0, plan.topK);
+
+  if (allResults.length === 0) {
+    return { context: '', sources: plan.sources, plan: plan.type, retrieved: 0 };
+  }
+
+  const contextParts = allResults.map((r, i) =>
+    `[${plan.type.toUpperCase()} Source ${i + 1}: ${r.documentTitle || r.source} (score: ${r.score})]:\n${r.content}`
+  );
+
+  return {
+    context: `=== RETRIEVED KNOWLEDGE (${plan.type}) ===\n${contextParts.join('\n\n')}`,
+    sources: [...new Set(allResults.map(r => r.source))],
+    plan: plan.type,
+    retrieved: allResults.length,
+  };
+}
+
+/**
+ * Classify what kind of retrieval is needed for a query.
+ * Runs on CPU (regex/keyword — no LLM call needed).
+ */
+function classifyRetrievalIntent(queryLower) {
+  // Drug / medication
+  if (/\b(medicine|drug|tablet|capsule|dose|dosage|side effect|contraindic|interaction|mg|ml)\b/.test(queryLower)) {
+    return { type: 'drug_info', sources: ['knowledge_base'], topK: 6, minScore: 0.35, category: null };
+  }
+  // Lab / investigation
+  if (/\b(test|report|result|lab|blood|urine|cbc|rbs|hba1c|creatinine|ecg|x.?ray|cxr|mri|ct scan|biopsy)\b/.test(queryLower)) {
+    return { type: 'lab_results', sources: ['ehr'], topK: 5, minScore: 0.30, category: null };
+  }
+  // Symptoms / differential diagnosis
+  if (/\b(symptom|pain|fever|cough|breath|nausea|vomit|headache|dizziness|chest|abdomen|swelling|rash|bleed)\b/.test(queryLower)) {
+    return { type: 'symptoms', sources: ['knowledge_base', 'ehr'], topK: 8, minScore: 0.32, category: 'clinical' };
+  }
+  // Procedure / surgery
+  if (/\b(procedure|surgery|operation|protocol|guideline|treatment|therapy|manage)\b/.test(queryLower)) {
+    return { type: 'procedure', sources: ['knowledge_base'], topK: 6, minScore: 0.35, category: 'clinical' };
+  }
+  // Insurance / TPA
+  if (/\b(insurance|tpa|claim|cashless|preauth|policy|coverage|premium)\b/.test(queryLower)) {
+    return { type: 'insurance', sources: ['knowledge_base'], topK: 4, minScore: 0.30, category: 'insurance' };
+  }
+  // General / conversational — skip expensive retrieval
+  return { type: 'general_chat', sources: [], topK: 0, minScore: 1.0, category: null };
+}
+
 /**
  * Get knowledge base statistics.
  */
@@ -311,5 +411,7 @@ export default {
   processDocument,
   search,
   buildContext,
+  agenticRetrieve,
   getStats
 };
+

@@ -14,6 +14,7 @@
 import OpenAI from 'openai';
 import Groq from 'groq-sdk';
 import pool from '../../db/pgPool.js';
+import semanticCache from './semantic-cache.service.js';
 
 // ─── Provider Clients (lazy-init) ───────────────────────────
 
@@ -79,6 +80,61 @@ function getOpenAIClient() {
   return _clients.openai;
 }
 
+/**
+ * Call local offline SLM (Indic-Gemma-2B via offline scribe FastAPI).
+ * Translates OpenAI-compatible params → offline_scribe ChatRequest format.
+ * Returns an OpenAI-compatible response object for seamless cascade.
+ */
+async function callLocalSLM(provider, params) {
+  const url = `${provider.baseUrl}/api/chat`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60_000); // longer — CPU inference
+
+  try {
+    const body = {
+      messages: params.messages.map(m => ({ role: m.role, content: String(m.content || '') })),
+      max_tokens: Math.min(params.max_tokens || 512, 1024),
+      temperature: params.temperature || 0.5,
+    };
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`local-slm ${res.status}: ${errText.substring(0, 200)}`);
+    }
+
+    const data = await res.json();
+
+    // Convert offline scribe response to OpenAI-compatible format
+    return {
+      id: data.id || `slm-${Date.now()}`,
+      object: 'chat.completion',
+      choices: [{
+        index: 0,
+        message: { role: 'assistant', content: data.content || '' },
+        finish_reason: data.finish_reason || 'stop',
+      }],
+      model: data.model || provider.model,
+      usage: {
+        prompt_tokens: data.usage?.prompt_tokens || 0,
+        completion_tokens: data.usage?.completion_tokens || 0,
+        total_tokens: data.usage?.total_tokens || 0,
+      },
+    };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') throw new Error('local-slm request timed out (60s)');
+    throw err;
+  }
+}
+
 // ─── Provider Definitions ───────────────────────────────────
 
 const PROVIDERS = [
@@ -106,6 +162,15 @@ const PROVIDERS = [
     getClient: getOpenAIClient,
     priority: 3,
   },
+  {
+    name: 'local-slm',
+    label: 'Local Indic-Gemma-2B (offline fallback)',
+    model: 'indic-gemma-2b-navarasa',
+    useFetch: false,
+    useLocalSLM: true,             // Flag: route to offline scribe /api/chat
+    baseUrl: process.env.OFFLINE_SCRIBE_URL || 'http://localhost:8006',
+    priority: 4,                   // Only used when all cloud providers fail
+  },
 ];
 
 /**
@@ -132,6 +197,11 @@ async function callProvider(provider, params) {
   const finalParams = provider.extraBody
     ? { ...params, ...provider.extraBody }
     : params;
+
+  // Local offline SLM (Indic-Gemma via offline scribe FastAPI)
+  if (provider.useLocalSLM) {
+    return callLocalSLM(provider, finalParams);
+  }
 
   // iSHA uses direct fetch (no Authorization header)
   if (provider.useFetch) {
@@ -167,10 +237,33 @@ async function chat({
   conversationId = null,
   responseFormat = null,
   forceProvider = null,
+  skipCache = false,       // set true for agentic/tool-calling flows
 }) {
   const dbConfig = await getModelConfig();
   const temp = temperature ?? dbConfig?.temperature ?? 0.4;
   const maxTok = maxTokens || dbConfig?.max_tokens || 4096;
+
+  // ── Semantic cache check (before any LLM call) ──────────────────────────
+  // Only cache simple user→assistant exchanges with no tools
+  const userMessage = messages.filter(m => m.role === 'user').slice(-1)[0]?.content;
+  const isCacheable = !skipCache && !tools && !responseFormat && userMessage && typeof userMessage === 'string';
+
+  if (isCacheable) {
+    const hit = await semanticCache.lookup(userMessage);
+    if (hit) {
+      return {
+        content: hit.response,
+        toolCalls: [],
+        finishReason: 'stop',
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        model: hit.model || 'cached',
+        provider: `cache:${hit.cacheHit}`,
+        latencyMs: 0,
+        cascade: [{ provider: 'semantic-cache', status: 'hit', similarity: hit.similarity }],
+      };
+    }
+  }
+  // ────────────────────────────────────────────────────────────────────────
 
   // Determine which providers to try
   let providersToTry;
@@ -284,6 +377,16 @@ async function chat({
   } catch (logErr) {
     console.error('[LLM] Failed to log request:', logErr.message);
   }
+
+  // ── Store successful response in semantic cache ──────────────────────────
+  if (isCacheable && result.content && result.usage.totalTokens > 0) {
+    semanticCache.store(userMessage, result.content, {
+      provider: result.provider,
+      model: result.model,
+      tokensUsed: result.usage.totalTokens,
+    }).catch(() => {});
+  }
+  // ────────────────────────────────────────────────────────────────────────
 
   return result;
 }

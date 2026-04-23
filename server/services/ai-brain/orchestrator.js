@@ -187,16 +187,21 @@ async function think({ message, userId, userType = 'patient', conversationId = n
   // 3. Build system prompt
   const systemPrompt = await buildSystemPrompt(userId, userType, convId);
 
-  // 4. Try RAG context for the query
+  // 4. Agentic RAG: decide which sources to hit based on query intent
   let ragContext = '';
+  let ragPlan = 'skipped';
   try {
-    ragContext = await ragPipeline.buildContext(message, {
+    const ragResult = await ragPipeline.agenticRetrieve(message, {
       userId,
       conversationId: convId,
-      topK: 5
     });
+    ragContext = ragResult.context;
+    ragPlan = ragResult.plan;
+    if (ragResult.retrieved > 0) {
+      console.log(`[Brain] Agentic RAG: plan=${ragPlan}, retrieved=${ragResult.retrieved}, sources=${ragResult.sources.join(',')}`);
+    }
   } catch (ragErr) {
-    console.error('[Brain] RAG context error:', ragErr.message);
+    console.error('[Brain] Agentic RAG error:', ragErr.message);
   }
 
   // 5. Build messages array
@@ -235,7 +240,8 @@ async function think({ message, userId, userType = 'patient', conversationId = n
       messages,
       tools: tools.length > 0 ? tools : null,
       toolChoice: 'auto',
-      conversationId: convId
+      conversationId: convId,
+      skipCache: true,  // agentic loops must not be served from cache
     });
 
     totalTokens += llmResult.usage.totalTokens;
