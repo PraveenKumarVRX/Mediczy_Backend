@@ -997,6 +997,50 @@ router.get('/employees', authUser, requireRole('corporate'), async (req, res) =>
     } catch (dbErr) {
       console.error('[corporate] GET /employees DB error:', dbErr.message);
     }
+
+    // If no records in corporate_employees, fall back to user_associations (uploaded via team/admin portal)
+    if (employees.length === 0) {
+      try {
+        const [rows] = await postgresSequelize.query(
+          `SELECT
+             u.id,
+             u."firstName",
+             u."lastName",
+             u.email,
+             u."phoneNumber",
+             u.department_name,
+             ua.metadata,
+             ua."startDate",
+             ua.status
+           FROM users u
+           JOIN user_associations ua ON u.id = ua."userId"
+           WHERE ua."entityId" = :corporateId
+             AND ua."entityType" = 'corporate'
+             AND ua.role = 'employee'
+             AND ua.status = 'active'
+           ORDER BY u."firstName"`,
+          { replacements: { corporateId } }
+        );
+        employees = rows.map((r) => {
+          const meta = typeof r.metadata === 'string' ? JSON.parse(r.metadata || '{}') : (r.metadata || {});
+          return {
+            id: meta.employeeId || String(r.id),
+            employeeId: meta.employeeId || String(r.id),
+            name: [r.firstName, r.lastName].filter(Boolean).join(' ') || r.email,
+            email: r.email || '',
+            phone: r.phoneNumber || '',
+            department: meta.department || r.department_name || 'Not Assigned',
+            designation: meta.designation || 'Not Assigned',
+            joiningDate: r.startDate ? r.startDate.toString().slice(0, 10) : '',
+            healthStatus: 'Not Assessed',
+            lastCheckup: '',
+            insurancePlan: '',
+          };
+        });
+      } catch (uaErr) {
+        console.error('[corporate] GET /employees user_associations fallback error:', uaErr.message);
+      }
+    }
   }
 
   // Only fall back to demo data when there is no real corporate context
