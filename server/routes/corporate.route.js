@@ -999,8 +999,8 @@ router.get('/employees', authUser, requireRole('corporate'), async (req, res) =>
     }
   }
 
-  // Fall back to demo data for new/demo corporates with no registered employees
-  if (employees.length === 0) {
+  // Only fall back to demo data when there is no real corporate context
+  if (employees.length === 0 && !corporateId) {
     employees = [...corporateEmployees];
   }
 
