@@ -30,6 +30,8 @@ import multiAgentOrchestrator from '../services/ai-brain/multi-agent-orchestrato
 import { resolveIdentity } from '../services/ai-brain/agent-permission-engine.js';
 import { getAllAgents } from '../services/ai-brain/agent-registry.js';
 import { getRoutingStats, updateThreshold } from '../services/ai-brain/cognitive-router.js';
+import { getTelemetryStats } from '../services/ai-brain/evaluation-engine.js';
+import { getWeightStats, resetWeightsToDefault } from '../services/ai-brain/scoring-model.js';
 
 const router = Router();
 
@@ -553,6 +555,44 @@ router.patch('/agents/routing-threshold', requireAuth, async (req, res) => {
     }
     await updateThreshold(key, num);
     res.json({ ok: true, key, value: num });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Telemetry Stats ───────────────────────────────────────────────────────────
+// GET /agents/telemetry?days=7  — hourly breakdown by route/tier for dashboards
+router.get('/agents/telemetry', requireAuth, async (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days) || 7, 90);
+    const stats = await getTelemetryStats(days);
+    res.json({ ok: true, days, stats });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Routing Weight Stats ──────────────────────────────────────────────────────
+// GET /agents/routing-weights  — current learnable weights + update counts
+router.get('/agents/routing-weights', requireAuth, async (req, res) => {
+  try {
+    const weights = await getWeightStats();
+    res.json({ ok: true, weights });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /agents/routing-weights/reset  — admin-only: reset to hardcoded priors
+router.post('/agents/routing-weights/reset', requireAuth, async (req, res) => {
+  try {
+    const role = req.user?.role || req.user?.userType;
+    const adminRoles = ['admin', 'superadmin', 'platform_admin', 'system'];
+    if (!adminRoles.includes(role)) {
+      return res.status(403).json({ error: 'Admin role required to reset routing weights' });
+    }
+    await resetWeightsToDefault();
+    res.json({ ok: true, message: 'Routing weights reset to default priors' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

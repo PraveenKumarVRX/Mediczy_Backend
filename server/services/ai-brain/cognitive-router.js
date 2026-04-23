@@ -46,6 +46,8 @@
  */
 
 import pool from '../../db/pgPool.js';
+import featureExtractor from './feature-extractor.js';
+import scoringModel from './scoring-model.js';
 
 // ─── Tier Constants ───────────────────────────────────────────────────────────
 
@@ -257,6 +259,28 @@ export async function classify(message, opts = {}) {
     signals.push('deep:long_conv(+15)');
   }
 
+  // ── Secondary signal: scoring model (learnable weights) ──────────────────
+  // Extract feature vector and run the learned scoring model as a tiebreaker.
+  // If the scoring model strongly disagrees with the regex tier, blend it in.
+  let scoringModelTier = null;
+  let features = null;
+  try {
+    features = featureExtractor.extract(msg, { role: opts.role });
+    const routeScores = await scoringModel.score(features);
+    // Map scoring model recommendation to tier
+    const routeToTier = { slm: TIERS.REFLEX, llm: TIERS.STANDARD, agent: TIERS.STANDARD, dag: TIERS.DEEP };
+    scoringModelTier = routeToTier[routeScores.recommended] || TIERS.STANDARD;
+    // If model is highly confident (>0.4 confidence gap) AND regex has low confidence, defer to model
+    const regexConfidence = Math.max(scoreReflex, scoreDeep);
+    if (routeScores.confidence > 0.40 && regexConfidence < 40) {
+      const blendSignal = `scoring_model:${routeScores.recommended}(conf=${routeScores.confidence.toFixed(2)})`;
+      signals.push(blendSignal);
+      // Adjust scores to push toward model recommendation
+      if (scoringModelTier === TIERS.REFLEX)  scoreReflex += 20;
+      if (scoringModelTier === TIERS.DEEP)     scoreDeep   += 25;
+    }
+  } catch { /* scoring model is advisory — never block routing */ }
+
   // ── Decision: DEEP > STANDARD > REFLEX ────────────────────────────────────
   //    DEEP wins if its score ≥ threshold AND it beats reflex
   //    REFLEX wins if its score ≥ threshold AND deep score is low
@@ -304,7 +328,7 @@ export async function classify(message, opts = {}) {
     scoreDeep,
   }).catch(() => {});
 
-  console.log(`[CogRouter] tier=${tier} category=${category} reflex=${scoreReflex} deep=${scoreDeep} msg="${msg.substring(0, 60)}..."`);
+  console.log(`[CogRouter] tier=${tier} category=${category} reflex=${scoreReflex} deep=${scoreDeep} scoringModel=${scoringModelTier} msg="${msg.substring(0, 60)}..."`);
 
   return {
     tier,
@@ -314,6 +338,7 @@ export async function classify(message, opts = {}) {
     category,
     signals,
     decisionId,
+    features,  // feature vector for telemetry + weight updates
   };
 }
 

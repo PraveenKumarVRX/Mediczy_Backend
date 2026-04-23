@@ -18,6 +18,7 @@
 import cron from 'node-cron';
 import pool from '../db/pgPool.js';
 import llmProvider from './ai-brain/llm-provider.js';
+import { triggerOptimization } from './ai-brain/evaluation-engine.js';
 import { v4 as uuidv4 } from 'uuid';
 import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
 
@@ -84,9 +85,17 @@ class SelfLearningPipeline {
       // Stage 5: Update quality metrics
       await this.updateQualityMetrics(db);
 
+      // Stage 6: Route optimization — evolve scoring weights + tier thresholds
+      // This is the self-improving AI OS layer: routing model learns from telemetry
+      const optimizationResult = await triggerOptimization().catch(err => {
+        console.warn('[SelfLearn] Optimization stage error:', err.message);
+        return { changes: [], error: err.message };
+      });
+      const optimizationChanges = optimizationResult.changes?.length || 0;
+
       const elapsed = Date.now() - startTime;
-      console.log(`✅ [SelfLearn] Pipeline complete: ${scored} scored, ${patterns.length} patterns, ${insights} insights, ${applied} applied in ${elapsed}ms`);
-      tick('ai_self_learning', { scored, patterns: patterns.length, insights, applied, elapsedMs: elapsed });
+      console.log(`✅ [SelfLearn] Pipeline complete: ${scored} scored, ${patterns.length} patterns, ${insights} insights, ${applied} applied, ${optimizationChanges} routing optimizations in ${elapsed}ms`);
+      tick('ai_self_learning', { scored, patterns: patterns.length, insights, applied, routingChanges: optimizationChanges, elapsedMs: elapsed });
 
     } catch (error) {
       tickError('ai_self_learning', error.message);

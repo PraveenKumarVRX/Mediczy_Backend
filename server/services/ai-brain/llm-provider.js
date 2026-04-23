@@ -16,6 +16,7 @@ import Groq from 'groq-sdk';
 import pool from '../../db/pgPool.js';
 import semanticCache from './semantic-cache.service.js';
 import cognitiveRouter, { TIERS, TIER_PROVIDERS } from './cognitive-router.js';
+import { recordTelemetry } from './evaluation-engine.js';
 
 // ─── Provider Clients (lazy-init) ───────────────────────────
 
@@ -411,16 +412,18 @@ async function chat({
     }).catch(() => {});
   }
 
-  // ── Record cognitive routing outcome (self-optimisation) ─────────────────
-  if (cognitiveDecisionId) {
-    cognitiveRouter.recordOutcome(cognitiveDecisionId, {
-      success: true,
-      tierActual: cognitiveTier || 'unknown',
-      providerUsed: result.provider,
-      tokensUsed: result.usage.totalTokens,
-      latencyMs: result.latencyMs,
-    }).catch(() => {});
-  }
+  // ── Record telemetry + self-optimisation (evaluation engine) ────────────
+  // recordTelemetry handles: outcome scoring, weight updates, cognitive route outcome
+  recordTelemetry({
+    routeUsed:          tools ? 'agent' : 'llm',
+    cognitiveTier:      cognitiveTier || 'standard',
+    providerUsed:       result.provider,
+    tokensUsed:         result.usage.totalTokens,
+    latencyMs:          result.latencyMs,
+    result,
+    cognitiveDecisionId,
+    features:           null,  // features available via orchestrator path
+  }).catch(() => {});
   // ────────────────────────────────────────────────────────────────────────
 
   return result;

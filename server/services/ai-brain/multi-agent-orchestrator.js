@@ -40,6 +40,7 @@ import {
   getAgentToolDefs,
 } from './agent-registry.js';
 import cognitiveRouter, { TIERS } from './cognitive-router.js';
+import { recordTelemetry } from './evaluation-engine.js';
 
 const MAX_AGENT_ITERATIONS = 8;
 
@@ -555,6 +556,22 @@ export async function process({ message, req, conversationId, contextMessages = 
     latencyMs,
     conversationId,
   }).catch(err => console.error('[MultiAgent] Audit log error:', err.message));
+
+  // 7. Evaluation telemetry (feeds self-optimizing weight updates)
+  recordTelemetry({
+    sessionId:          conversationId?.toString(),
+    userId:             identity.userId,
+    role:               identity.role,
+    features:           plan.features || {},   // from cognitiveRouter.classify() → classify() returns features
+    routeUsed:          plan.isMultiAgent ? 'dag' : 'agent',
+    cognitiveTier:      plan.cognitiveTier,
+    providerUsed:       agentResults[0]?.provider || 'agent',
+    agentsUsed:         [...new Set(agentResults.map(r => r.agentId))],
+    tokensUsed:         totalTokens,
+    latencyMs,
+    result:             { response: finalResponse, latencyMs },
+    cognitiveDecisionId: plan.cognitiveDecisionId,
+  }).catch(() => {});
 
   return {
     response:    finalResponse,
