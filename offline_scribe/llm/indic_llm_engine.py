@@ -128,7 +128,7 @@ class IndicLLMEngine:
         max_tokens = max_tokens or GENERATION_CONFIG["max_tokens"]
         temperature = temperature or GENERATION_CONFIG["temperature"]
         # Common stop sequences for instruction-tuned models
-        stop_sequences = stop_sequences or ["\n\n\n", "###", "```\n\n", "Medical Consultation"]
+        stop_sequences = stop_sequences or ["\n\n\n", "###", "<end_of_turn>", "<start_of_turn>user", "<start_of_turn>model"]
         
         # Build prompt - use completion-style for this model
         # If no system prompt, just use the raw prompt (completion-style)
@@ -181,25 +181,37 @@ class IndicLLMEngine:
         
         IMPORTANT: LLM only formats - does NOT add medications.
         """
-        # Use a simpler, more direct completion-style prompt
-        # that works better with conversational models
-        prompt = f"""Medical Consultation Notes:
-{transcript}
+        # Gemma instruct format with one-shot example so 2B model learns the pattern
+        prompt = f"""<start_of_turn>user
+You are a medical documentation assistant. Extract prescription details from doctor's notes. Fill in ONLY what is mentioned. Do not use placeholders.
 
-Based on the above, here is the prescription:
+EXAMPLE:
+TRANSCRIPT: 45F, cough 5 days, fever 100F. BP 120/80. Azithromycin 500mg OD 5 days, Dolo 650 TDS. Rest and fluids. Review 5 days.
+DIAGNOSIS: Acute respiratory tract infection
+MEDICINES:
+1. Azithromycin | 500mg | Once daily | 5 days
+2. Dolo (Paracetamol) | 650mg | Three times daily | 5 days
+ADVICE:
+- Rest
+- Adequate fluids
+FOLLOW-UP: 5 days
 
+NOW EXTRACT:
+TRANSCRIPT: {transcript}<end_of_turn>
+<start_of_turn>model
 DIAGNOSIS: """
 
         result = self.generate(
             prompt=prompt,
-            system_prompt=None,  # Skip system prompt for completion-style
-            max_tokens=512,
-            temperature=0.1,  # Very deterministic
+            system_prompt=None,
+            max_tokens=400,
+            temperature=0.1,
         )
         
         if result["success"]:
-            # Parse the generated text into structured format
-            structured = self._parse_prescription(result["text"])
+            # Prepend the prompt-primed prefix so the parser can find DIAGNOSIS:
+            parse_text = "DIAGNOSIS: " + result["text"]
+            structured = self._parse_prescription(parse_text)
             result["structured"] = structured
         
         return result
@@ -222,43 +234,27 @@ RULES:
 3. Be factual and precise
 4. Use standard medical terminology"""
 
-        user_prompt = f"""Convert this consultation transcript into structured OPD notes.
+        user_prompt = f"""<start_of_turn>user
+You are a medical documentation assistant for Indian hospitals. Convert consultation transcript into structured OPD notes. Fill in only what is mentioned.
 
-TRANSCRIPT:
-{transcript}
+EXAMPLE:
+TRANSCRIPT: 28M, headache 2 days, no fever. BP 130/80, pulse 76. Tension headache. Tab Combiflam BD 3 days. Review if worsens.
+CHIEF COMPLAINT: Headache for 2 days
+HISTORY: No fever, no vomiting mentioned
+VITALS: BP: 130/80 mmHg, Pulse: 76/min
+EXAMINATION: Not documented
+DIAGNOSIS: Tension headache
+PLAN: Tab Combiflam BD for 3 days
+FOLLOW-UP: Review if condition worsens
 
-OUTPUT FORMAT:
-```
-CHIEF COMPLAINT:
-[Main symptoms and duration]
-
-HISTORY OF PRESENT ILLNESS:
-[Detailed history from transcript]
-
-PAST HISTORY:
-[Previous medical history if mentioned]
-
-EXAMINATION:
-[Physical examination findings if mentioned]
-
-VITALS:
-[Vital signs if mentioned]
-
-PROVISIONAL DIAGNOSIS:
-[Diagnosis if mentioned by doctor]
-
-PLAN:
-[Treatment plan as stated]
-
-FOLLOW-UP:
-[Follow-up advice]
-```
-
-IMPORTANT: Only include information explicitly mentioned in the transcript."""
+NOW EXTRACT:
+TRANSCRIPT: {transcript}<end_of_turn>
+<start_of_turn>model
+CHIEF COMPLAINT:"""
 
         result = self.generate(
             prompt=user_prompt,
-            system_prompt=system_prompt,
+            system_prompt=None,
             max_tokens=768,
             temperature=0.1,
         )
@@ -269,74 +265,29 @@ IMPORTANT: Only include information explicitly mentioned in the transcript."""
         """
         Format transcript into discharge summary.
         """
-        system_prompt = """You are a medical documentation assistant for Indian hospitals.
+        user_prompt = f"""<start_of_turn>user
+You are a medical documentation assistant. Convert this discharge dictation into a structured discharge summary. Fill in only what is mentioned.
 
-YOUR ROLE:
-- Format the discharge information into a clean summary
-- DO NOT add any medical information not mentioned
-- DO NOT make any clinical decisions
-- Output in English only
-
-RULES:
-1. Extract ONLY information from the transcript/notes
-2. If information is missing, mark as "Not documented"
-3. Be factual and precise
-4. Use standard medical format"""
-
-        user_prompt = f"""Create a discharge summary from this information.
-
-TRANSCRIPT/NOTES:
-{transcript}
-
-OUTPUT FORMAT:
-```
-DISCHARGE SUMMARY
-
-PATIENT DETAILS:
-[Extract from transcript]
-
-ADMISSION DATE:
-[If mentioned]
-
-DISCHARGE DATE:
-[If mentioned]
-
-CHIEF COMPLAINT:
-[Presenting complaints]
-
-HOSPITAL COURSE:
-[Summary of treatment during admission]
-
-INVESTIGATIONS:
-[Tests done if mentioned]
-
-DIAGNOSIS:
-[Final diagnosis]
-
-TREATMENT GIVEN:
-[Medications and procedures]
-
-CONDITION AT DISCHARGE:
-[Patient condition]
-
+EXAMPLE:
+TRANSCRIPT: 55M admitted 5 days with pneumonia. Fever resolved day 3. CXR showed right lobe consolidation. Given IV Augmentin 5 days, changed to oral. SpO2 98% on room air at discharge. Continue Tab Augmentin 625mg BD 5 days, Tab Dolo 650 SOS. Avoid cold exposure. Follow up 1 week.
+ADMISSION DIAGNOSIS: Pneumonia, right lobe
+HOSPITAL COURSE: Fever resolved on day 3. Treated with IV Augmentin for 5 days then switched to oral. SpO2 improved to 98% on room air.
+INVESTIGATIONS: CXR - right lobe consolidation
+CONDITION AT DISCHARGE: Stable, afebrile, SpO2 98%
 DISCHARGE MEDICATIONS:
-1. [Drug] | [Dose] | [Frequency] | [Duration]
+1. Augmentin (Amoxicillin-Clavulanate) | 625mg | Twice daily | 5 days
+2. Dolo (Paracetamol) | 650mg | As needed | -
+ADVICE: Avoid cold exposure
+FOLLOW-UP: 1 week
 
-ADVICE ON DISCHARGE:
-- [Advice points]
-
-FOLLOW-UP:
-[Follow-up schedule]
-
-EMERGENCY INSTRUCTIONS:
-[Warning signs to watch for]
-```
-
-IMPORTANT: Only include information explicitly mentioned."""
+NOW EXTRACT:
+TRANSCRIPT: {transcript}<end_of_turn>
+<start_of_turn>model
+ADMISSION DIAGNOSIS: """
 
         result = self.generate(
             prompt=user_prompt,
-            system_prompt=system_prompt,
+            system_prompt=None,
             max_tokens=1024,
             temperature=0.1,
         )
@@ -359,38 +310,24 @@ RULES:
 2. Use SOAP format if appropriate
 3. Be concise and factual"""
 
-        user_prompt = f"""Convert this IPD round dictation into progress notes.
+        user_prompt = f"""<start_of_turn>user
+You are a medical documentation assistant. Convert this IPD round dictation into SOAP progress notes. Fill in only what is mentioned.
 
-TRANSCRIPT:
-{transcript}
+EXAMPLE:
+TRANSCRIPT: Patient better today. Fever settled. BP 120/80, pulse 80, temp 98.6F, SpO2 98%. Continue current medicines. Check CBC tomorrow.
+SUBJECTIVE: Patient reports improvement, fever has settled
+OBJECTIVE: Vitals: BP 120/80 mmHg, Pulse 80/min, Temp 98.6°F, SpO2 98%
+ASSESSMENT: Improving
+PLAN: Continue current medications, CBC tomorrow
 
-OUTPUT FORMAT:
-```
-IPD PROGRESS NOTE
-
-DATE/TIME:
-[Current]
-
-SUBJECTIVE:
-[Patient complaints today]
-
-OBJECTIVE:
-- Vitals: [if mentioned]
-- General: [examination findings]
-- Systemic: [system-wise findings]
-
-ASSESSMENT:
-[Current status/diagnosis]
-
-PLAN:
-[Today's plan - investigations, medications, procedures]
-```
-
-IMPORTANT: Only include information from the transcript."""
+NOW EXTRACT:
+TRANSCRIPT: {transcript}<end_of_turn>
+<start_of_turn>model
+SUBJECTIVE:"""
 
         result = self.generate(
             prompt=user_prompt,
-            system_prompt=system_prompt,
+            system_prompt=None,
             max_tokens=512,
             temperature=0.1,
         )
@@ -407,13 +344,15 @@ IMPORTANT: Only include information from the transcript."""
         }
         
         try:
-            # Extract diagnosis
-            diag_match = re.search(r"DIAGNOSIS:\s*\n?(.*?)(?=\n\n|MEDICINES|$)", text, re.DOTALL | re.IGNORECASE)
+            # Extract diagnosis — strip leading bullet/dash noise (e.g. "- Viral fever")
+            diag_match = re.search(r"DIAGNOSIS:\s*\n?(.*?)(?=\nMEDICINES|\nMEDICATION|\Z)", text, re.DOTALL | re.IGNORECASE)
             if diag_match:
-                structured["diagnosis"] = diag_match.group(1).strip()
+                diag = diag_match.group(1).strip()
+                diag = re.sub(r"^[-•\*]\s*", "", diag).strip()
+                structured["diagnosis"] = diag
             
             # Extract medications
-            med_section = re.search(r"MEDICINES?:\s*\n?(.*?)(?=\n\n|ADVICE|FOLLOW|$)", text, re.DOTALL | re.IGNORECASE)
+            med_section = re.search(r"MEDICINES?[^:]*:\s*\n?(.*?)(?=\nADVICE|\nFOLLOW[- ]?UP:|\Z)", text, re.DOTALL | re.IGNORECASE)
             if med_section:
                 med_lines = med_section.group(1).strip().split("\n")
                 for line in med_lines:
@@ -430,20 +369,30 @@ IMPORTANT: Only include information from the transcript."""
                                 "duration": parts[3] if len(parts) > 3 else "",
                             })
             
-            # Extract advice
-            advice_match = re.search(r"ADVICE:\s*\n?(.*?)(?=\n\n|FOLLOW|$)", text, re.DOTALL | re.IGNORECASE)
+            # Extract advice — use \nFOLLOW-UP: as boundary to avoid cutting "Follow up" sentences
+            advice_match = re.search(r"ADVICE[^:]*:\s*\n?(.*?)(?=\nFOLLOW[- ]?UP:|\Z)", text, re.DOTALL | re.IGNORECASE)
+            advice_lines_raw = []
             if advice_match:
-                advice_lines = advice_match.group(1).strip().split("\n")
-                for line in advice_lines:
+                advice_lines_raw = advice_match.group(1).strip().split("\n")
+                for line in advice_lines_raw:
                     line = line.strip()
                     if line:
-                        line = re.sub(r"^[-•]\s*", "", line)
-                        structured["advice"].append(line)
+                        cleaned = re.sub(r"^[-•\*\d\.]\s*", "", line).strip()
+                        # If a line looks like a follow-up instruction, defer it
+                        if re.match(r"^follow.?up", cleaned, re.IGNORECASE):
+                            if not structured["follow_up"]:
+                                structured["follow_up"] = cleaned
+                        else:
+                            structured["advice"].append(cleaned)
             
             # Extract follow-up
-            followup_match = re.search(r"FOLLOW[- ]?UP:\s*\n?(.*?)$", text, re.DOTALL | re.IGNORECASE)
+            followup_match = re.search(r"FOLLOW[- ]?UP[^:]*:\s*\n?(.*?)$", text, re.DOTALL | re.IGNORECASE)
             if followup_match:
-                structured["follow_up"] = followup_match.group(1).strip()
+                followup = followup_match.group(1).strip()
+                # Strip trailing noise like "END OF SCRIPT", "NOTE:", etc.
+                followup = re.split(r'\n\s*(?:END|NOTE|DISCLAIMER|IMPORTANT|\*{3})', followup, flags=re.IGNORECASE)[0].strip()
+                if followup:
+                    structured["follow_up"] = followup
             
         except Exception as e:
             logger.error(f"Error parsing prescription: {e}")

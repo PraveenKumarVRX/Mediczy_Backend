@@ -48,7 +48,7 @@ GENERATION_CONFIG = {
     "temperature": 0.1,         # Low = deterministic, factual
     "top_p": 0.9,               # Nucleus sampling
     "top_k": 40,                # Top-K sampling
-    "repeat_penalty": 1.1,      # Prevent repetition
+    "repeat_penalty": 1.35,     # Prevent repetition loops (increased from 1.1)
     "max_tokens": 1024,         # Max output tokens
 }
 

@@ -429,10 +429,10 @@ class MedicalTextNormalizer:
             r"one\s*(?:twenty|20)\s*over\s*(?:eighty|80)": "BP: 120/80 mmHg",
             r"one\s*(?:forty|40)\s*over\s*(?:ninety|90)": "BP: 140/90 mmHg",
             
-            # Temperature
+            # Temperature - only match valid temp ranges (95-108°F) to avoid "fever 3 days" false match
             r"temp(?:erature)?\s*(\d+\.?\d*)\s*(?:degree|deg|°)?(?:\s*f)?": r"Temperature: \1°F",
-            r"fever\s*(\d+\.?\d*)": r"Temperature: \1°F",
-            r"bukhar\s*(\d+\.?\d*)": r"Temperature: \1°F",
+            r"fever\s*((?:9[5-9]|10[0-8])\.\d+|(?:9[5-9]|10[0-8]))(?:\s*(?:degree|deg|°))?(?:\s*f)?": r"Temperature: \1°F",
+            r"bukhar\s*((?:9[5-9]|10[0-8])\.\d+|(?:9[5-9]|10[0-8]))(?:\s*(?:degree|deg|°))?(?:\s*f)?": r"Temperature: \1°F",
             
             # Pulse
             r"pulse\s*(\d+)": r"Pulse: \1/min",
