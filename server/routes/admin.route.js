@@ -383,8 +383,8 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), attachTenant
         if (scope?.accessibleIds?.length > 0) {
           // Hierarchical access: any corporate whose owned_by_tenant_id is in scope
           scopeCondition = `
-            OR c.owned_by_tenant_id = ANY(:scopeIds)
-            OR c.tenant_id = ANY(:scopeIds)
+            OR c.owned_by_tenant_id IN (:scopeIds)
+            OR c.tenant_id IN (:scopeIds)
           `;
           scopeReplacements.scopeIds = scope.accessibleIds;
         }
