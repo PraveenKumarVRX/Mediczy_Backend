@@ -1106,6 +1106,78 @@ router.get('/employees', authUser, requireRole('corporate'), async (req, res) =>
   return res.json({ success: true, data: { employees } });
 });
 
+// Health Risk Assessment employees endpoint
+router.get('/health-risk/employees', authUser, requireRole('corporate'), async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  try {
+    let employees = [];
+    if (corporateId) {
+      const [rows] = await postgresSequelize.query(
+        `SELECT
+           ce."employeeId",
+           ce.department,
+           ce.designation,
+           u.id AS user_id,
+           u."firstName",
+           u."lastName",
+           u.email,
+           hrs.overall_score,
+           hrs.risk_level,
+           hrs.risk_factors,
+           hrs.recommendations,
+           hrs.created_at AS assessment_date,
+           hrs.valid_until
+         FROM corporate_employees ce
+         LEFT JOIN users u ON u.id = ce."userId"
+         LEFT JOIN ai_health_risk_scores hrs ON hrs.patient_id = u.id
+         WHERE ce.corporate_id = :corporateId AND ce."isActive" = true
+         ORDER BY ce."createdAt" DESC`,
+        { replacements: { corporateId } }
+      );
+      const now = new Date();
+      employees = rows.map((r) => {
+        const riskLevel = r.risk_level || 'low';
+        const riskScore = r.overall_score != null ? Math.round(r.overall_score * 10) : 30;
+        const healthScore = 100 - riskScore;
+        const assessmentDate = r.assessment_date ? r.assessment_date.toString().slice(0, 10) : null;
+        const validUntil = r.valid_until ? new Date(r.valid_until) : null;
+        let completionStatus = 'pending';
+        if (assessmentDate) {
+          completionStatus = validUntil && validUntil < now ? 'overdue' : 'completed';
+        }
+        const nextDue = validUntil
+          ? validUntil.toISOString().slice(0, 10)
+          : new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const riskFactors = Array.isArray(r.risk_factors) ? r.risk_factors : [];
+        const recommendations = Array.isArray(r.recommendations) ? r.recommendations : [];
+        return {
+          id: r.employeeId,
+          employeeId: r.employeeId,
+          name: [r.firstName, r.lastName].filter(Boolean).join(' ') || r.email || r.employeeId,
+          email: r.email || '',
+          department: r.department || 'General',
+          designation: r.designation || '',
+          age: 0,
+          gender: 'unknown',
+          riskScore,
+          riskLevel,
+          healthScore,
+          lastAssessmentDate: assessmentDate || '',
+          nextAssessmentDue: nextDue,
+          completionStatus,
+          riskFactors,
+          recommendations,
+          trendDirection: 'stable',
+        };
+      });
+    }
+    return res.json({ success: true, data: { employees } });
+  } catch (err) {
+    console.error('[corporate] GET /health-risk/employees error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch employee health risk data' });
+  }
+});
+
 router.post('/employees', authUser, requireRole('corporate'), async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
