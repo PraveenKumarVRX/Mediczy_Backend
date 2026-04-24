@@ -145,11 +145,11 @@ const CorporateAppointments: React.FC = () => {
       case 'completed':
         return 'bg-green-100 text-green-800';
       case 'cancelled':
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-slate-800 text-slate-200';
       case 'no-show':
         return 'bg-red-100 text-red-800';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-slate-800 text-slate-200';
     }
   };
 
@@ -454,7 +454,7 @@ const CorporateAppointments: React.FC = () => {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Cancelled</CardTitle>
-            <XCircle className="h-4 w-4 text-gray-600" />
+            <XCircle className="h-4 w-4 text-slate-400" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.cancelled}</div>
@@ -532,30 +532,30 @@ const CorporateAppointments: React.FC = () => {
                       </div>
                       
                       <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div className="flex items-center gap-2 text-gray-600">
+                        <div className="flex items-center gap-2 text-slate-400">
                           <Users className="h-4 w-4" />
                           <span><strong>Type:</strong> {appointment.appointmentType}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-gray-600">
+                        <div className="flex items-center gap-2 text-slate-400">
                           <Calendar className="h-4 w-4" />
                           <span><strong>Date:</strong> {new Date(appointment.date).toLocaleDateString()}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-gray-600">
+                        <div className="flex items-center gap-2 text-slate-400">
                           <Clock className="h-4 w-4" />
                           <span><strong>Time:</strong> {appointment.time}</span>
                         </div>
-                        <div className="flex items-center gap-2 text-gray-600">
+                        <div className="flex items-center gap-2 text-slate-400">
                           <MapPin className="h-4 w-4" />
                           <span><strong>Facility:</strong> {appointment.facility}</span>
                         </div>
                       </div>
 
-                      <div className="text-sm text-gray-600">
+                      <div className="text-sm text-slate-400">
                         <strong>Doctor:</strong> {appointment.doctorName}
                       </div>
 
                       {appointment.notes && (
-                        <div className="text-sm text-gray-500 italic">
+                        <div className="text-sm text-slate-400 italic">
                           <strong>Notes:</strong> {appointment.notes}
                         </div>
                       )}
@@ -580,7 +580,7 @@ const CorporateAppointments: React.FC = () => {
           </div>
 
           {filteredAppointments.length === 0 && (
-            <div className="text-center py-12 text-gray-500">
+            <div className="text-center py-12 text-slate-400">
               <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No appointments found matching your criteria</p>
             </div>
@@ -598,14 +598,14 @@ const CorporateAppointments: React.FC = () => {
             </DialogHeader>
             {selectedAppointment && (
               <div className="space-y-3 text-sm">
-                <div className="flex justify-between"><span className="text-gray-600">Employee</span><span className="font-semibold">{selectedAppointment.employeeName} ({selectedAppointment.employeeId})</span></div>
-                <div className="flex justify-between"><span className="text-gray-600">Department</span><span className="font-semibold">{selectedAppointment.department}</span></div>
-                <div className="flex justify-between"><span className="text-gray-600">Type</span><span className="font-semibold">{selectedAppointment.appointmentType}</span></div>
-                <div className="flex justify-between"><span className="text-gray-600">Doctor</span><span className="font-semibold">{selectedAppointment.doctorName}</span></div>
-                <div className="flex justify-between"><span className="text-gray-600">Facility</span><span className="font-semibold">{selectedAppointment.facility}</span></div>
-                <div className="flex justify-between"><span className="text-gray-600">Date & Time</span><span className="font-semibold">{new Date(selectedAppointment.date).toLocaleDateString()} at {selectedAppointment.time}</span></div>
-                <div className="flex justify-between"><span className="text-gray-600">Status</span><span className="font-semibold capitalize">{selectedAppointment.status.replace('-', ' ')}</span></div>
-                {selectedAppointment.notes && <p className="text-gray-600">Notes: <span className="font-semibold">{selectedAppointment.notes}</span></p>}
+                <div className="flex justify-between"><span className="text-slate-400">Employee</span><span className="font-semibold">{selectedAppointment.employeeName} ({selectedAppointment.employeeId})</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Department</span><span className="font-semibold">{selectedAppointment.department}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Type</span><span className="font-semibold">{selectedAppointment.appointmentType}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Doctor</span><span className="font-semibold">{selectedAppointment.doctorName}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Facility</span><span className="font-semibold">{selectedAppointment.facility}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Date & Time</span><span className="font-semibold">{new Date(selectedAppointment.date).toLocaleDateString()} at {selectedAppointment.time}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Status</span><span className="font-semibold capitalize">{selectedAppointment.status.replace('-', ' ')}</span></div>
+                {selectedAppointment.notes && <p className="text-slate-400">Notes: <span className="font-semibold">{selectedAppointment.notes}</span></p>}
               </div>
             )}
             <DialogFooter>

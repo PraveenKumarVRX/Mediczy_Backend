@@ -228,7 +228,7 @@ const generateLeaderboard = (challengeId: string): LeaderboardEntry[] => {
 const MedalIcon: React.FC<{ type: 'gold' | 'silver' | 'bronze'; size?: 'sm' | 'lg' }> = ({ type, size = 'sm' }) => {
   const colors = {
     gold: 'from-yellow-400 to-yellow-600 text-yellow-900',
-    silver: 'from-gray-300 to-gray-500 text-gray-800',
+    silver: 'from-gray-300 to-gray-500 text-slate-200',
     bronze: 'from-amber-600 to-amber-800 text-amber-100'
   };
   const sizeClass = size === 'lg' ? 'w-16 h-16' : 'w-8 h-8';
@@ -720,7 +720,7 @@ const CorporateGamification: React.FC = () => {
                       <Card key={medal} className={cn(
                         'border-2',
                         medal === 'gold' ? 'border-yellow-400 bg-gradient-to-br from-yellow-50 to-amber-50 dark:from-yellow-900/20 dark:to-amber-900/20' :
-                        medal === 'silver' ? 'border-gray-400 bg-gradient-to-br from-gray-50 to-slate-50 dark:from-gray-900/20 dark:to-slate-900/20' :
+                        medal === 'silver' ? 'border-slate-500 bg-gradient-to-br from-gray-50 to-slate-50 dark:from-gray-900/20 dark:to-slate-900/20' :
                         'border-amber-600 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20'
                       )}>
                         <CardContent className="p-6 text-center">
@@ -774,7 +774,7 @@ const CorporateGamification: React.FC = () => {
                         <div className="flex items-start gap-3 p-3 bg-gradient-to-br from-gray-50 to-slate-50 dark:from-gray-900/20 dark:to-slate-900/20 rounded-lg">
                           <MedalIcon type="silver" />
                           <div>
-                            <p className="text-xs font-medium text-gray-700 dark:text-gray-400">Silver Prize</p>
+                            <p className="text-xs font-medium text-slate-300 dark:text-slate-500">Silver Prize</p>
                             <p className="text-sm text-slate-700 dark:text-slate-300">{challenge.rewards.silver}</p>
                           </div>
                         </div>
@@ -967,7 +967,7 @@ const CorporateGamification: React.FC = () => {
               <div className="flex items-end justify-center gap-4 py-6">
                 {/* Silver - 2nd Place */}
                 <div className="text-center">
-                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-gray-200 to-gray-400 mx-auto mb-2 flex items-center justify-center text-2xl font-bold text-gray-700">
+                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-gray-200 to-gray-400 mx-auto mb-2 flex items-center justify-center text-2xl font-bold text-slate-300">
                     {leaderboard[1]?.name.split(' ').map(n => n[0]).join('')}
                   </div>
                   <MedalIcon type="silver" />
@@ -1095,7 +1095,7 @@ const CorporateGamification: React.FC = () => {
                   <Card key={medal} className={cn(
                     'border-2',
                     medal === 'gold' ? 'border-yellow-400 bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-900/20 dark:to-amber-900/20' :
-                    medal === 'silver' ? 'border-gray-400 bg-gradient-to-r from-gray-50 to-slate-50 dark:from-gray-900/20 dark:to-slate-900/20' :
+                    medal === 'silver' ? 'border-slate-500 bg-gradient-to-r from-gray-50 to-slate-50 dark:from-gray-900/20 dark:to-slate-900/20' :
                     'border-amber-600 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20'
                   )}>
                     <CardContent className="p-4">

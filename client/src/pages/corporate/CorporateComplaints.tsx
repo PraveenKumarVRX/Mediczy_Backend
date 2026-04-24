@@ -103,9 +103,9 @@ const CorporateComplaints: React.FC = () => {
       case 'medium':
         return 'bg-yellow-100 text-yellow-800 border-yellow-300';
       case 'low':
-        return 'bg-gray-100 text-gray-800 border-gray-300';
+        return 'bg-slate-800 text-slate-200 border-slate-600';
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-300';
+        return 'bg-slate-800 text-slate-200 border-slate-600';
     }
   };
 
@@ -118,9 +118,9 @@ const CorporateComplaints: React.FC = () => {
       case 'resolved':
         return 'bg-green-100 text-green-800';
       case 'closed':
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-slate-800 text-slate-200';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-slate-800 text-slate-200';
     }
   };
 
@@ -399,36 +399,36 @@ const CorporateComplaints: React.FC = () => {
 
                   <div className="space-y-1">
                     <div className="text-lg font-semibold">{selectedComplaint.subject}</div>
-                    <div className="text-sm text-gray-600">Category: {selectedComplaint.category}</div>
+                    <div className="text-sm text-slate-400">Category: {selectedComplaint.category}</div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                     <div>
-                      <div className="text-gray-600">Employee</div>
+                      <div className="text-slate-400">Employee</div>
                       <div className="font-semibold">{selectedComplaint.employeeName}</div>
-                      <div className="text-xs text-gray-500">{selectedComplaint.employeeId}</div>
+                      <div className="text-xs text-slate-400">{selectedComplaint.employeeId}</div>
                     </div>
                     <div>
-                      <div className="text-gray-600">Assigned To</div>
+                      <div className="text-slate-400">Assigned To</div>
                       <div className="font-semibold">{selectedComplaint.assignedTo}</div>
                     </div>
                     <div>
-                      <div className="text-gray-600">Submitted</div>
+                      <div className="text-slate-400">Submitted</div>
                       <div className="font-semibold">{new Date(selectedComplaint.submittedDate).toLocaleString()}</div>
                     </div>
                     <div>
-                      <div className="text-gray-600">Last Update</div>
+                      <div className="text-slate-400">Last Update</div>
                       <div className="font-semibold">{new Date(selectedComplaint.lastUpdate).toLocaleString()}</div>
                     </div>
                   </div>
 
                   <div className="text-sm">
                     <div className="font-semibold mb-1">Description</div>
-                    <div className="text-gray-700 whitespace-pre-wrap">{selectedComplaint.description}</div>
+                    <div className="text-slate-300 whitespace-pre-wrap">{selectedComplaint.description}</div>
                   </div>
                 </div>
               ) : (
-                <div className="text-sm text-gray-500">No complaint selected.</div>
+                <div className="text-sm text-slate-400">No complaint selected.</div>
               )}
 
               <DialogFooter>
@@ -499,7 +499,7 @@ const CorporateComplaints: React.FC = () => {
 
           <div className="space-y-4">
             {isLoading && (
-              <div className="text-sm text-gray-500">Loading complaints…</div>
+              <div className="text-sm text-slate-400">Loading complaints…</div>
             )}
             {filteredComplaints.map((complaint) => (
               <Card key={complaint.id} className={`border-l-4 ${
@@ -527,29 +527,29 @@ const CorporateComplaints: React.FC = () => {
 
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                         <div>
-                          <p className="text-gray-600">Employee</p>
+                          <p className="text-slate-400">Employee</p>
                           <p className="font-semibold">{complaint.employeeName}</p>
-                          <p className="text-xs text-gray-500">{complaint.employeeId}</p>
+                          <p className="text-xs text-slate-400">{complaint.employeeId}</p>
                         </div>
                         <div>
-                          <p className="text-gray-600">Category</p>
+                          <p className="text-slate-400">Category</p>
                           <p className="font-semibold">{complaint.category}</p>
                         </div>
                         <div>
-                          <p className="text-gray-600">Assigned To</p>
+                          <p className="text-slate-400">Assigned To</p>
                           <p className="font-semibold">{complaint.assignedTo}</p>
                         </div>
                         <div>
-                          <p className="text-gray-600">Submitted</p>
+                          <p className="text-slate-400">Submitted</p>
                           <p className="font-semibold">{new Date(complaint.submittedDate).toLocaleDateString()}</p>
                         </div>
                       </div>
 
-                      <div className="text-sm text-gray-600">
+                      <div className="text-sm text-slate-400">
                         <strong>Description:</strong> {complaint.description}
                       </div>
 
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-slate-400">
                         Last updated: {new Date(complaint.lastUpdate).toLocaleDateString()}
                       </div>
                     </div>
@@ -572,7 +572,7 @@ const CorporateComplaints: React.FC = () => {
           </div>
 
           {filteredComplaints.length === 0 && (
-            <div className="text-center py-12 text-gray-500">
+            <div className="text-center py-12 text-slate-400">
               <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No complaints found matching your criteria</p>
             </div>

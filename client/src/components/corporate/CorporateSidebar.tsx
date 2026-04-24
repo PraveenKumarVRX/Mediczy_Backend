@@ -44,8 +44,8 @@ const mainNavItems: SidebarItem[] = [
   { icon: CalendarCheck, label: "Appointments", href: "/corporate/appointments" },
   { icon: CalendarDays, label: "Wellness Calendar", href: "/corporate/wellness-calendar" },
   { icon: HeartPulse, label: "Health Analysis", href: "/corporate/health-analysis" },
-  { icon: ShieldAlert, label: "Health Risk Assessment", href: "/corporate/health-risk-assessment" },
-  { icon: Trophy, label: "Challenges & Leaderboards", href: "/corporate/gamification" },
+  { icon: ShieldAlert, label: "Risk Assessment", href: "/corporate/health-risk-assessment" },
+  { icon: Trophy, label: "Challenges", href: "/corporate/gamification" },
   { icon: Building2, label: "Departments", href: "/corporate/departments" },
 ];
 
@@ -68,23 +68,19 @@ const CorporateSidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const [corporateName, setCorporateName] = useState<string>('');
 
-  // Load corporate name from stored data
   useEffect(() => {
     try {
       const corporateDataStr = localStorage.getItem('corporateData');
       if (corporateDataStr) {
         const corporateData = JSON.parse(corporateDataStr);
-        if (corporateData?.name) {
-          setCorporateName(corporateData.name);
-        }
+        if (corporateData?.name) setCorporateName(corporateData.name);
       }
     } catch (e) {
-      console.error('Error loading corporate data:', e);
+      // ignore
     }
   }, []);
 
   const handleLogout = () => {
-    // Clear all auth-related storage
     localStorage.removeItem("token");
     localStorage.removeItem("userType");
     localStorage.removeItem("corporateToken");
@@ -93,40 +89,43 @@ const CorporateSidebar = () => {
     localStorage.removeItem("refreshToken");
     sessionStorage.clear();
     window.dispatchEvent(new CustomEvent('authChange'));
-    // Force navigation to login page
     window.location.href = "/corporate/login";
   };
 
   const NavItem = ({ item }: { item: SidebarItem }) => {
     const isActive = location.pathname === item.href;
-    
+
     return (
       <Link
         to={item.href}
         className={cn(
           "group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
           isActive
-            ? "bg-gradient-to-r from-emerald-500/20 to-emerald-600/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 shadow-sm"
-            : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white",
-          collapsed && "justify-center px-2"
+            ? "bg-gradient-to-r from-emerald-500/15 to-emerald-400/5 text-emerald-400 border border-emerald-500/25 shadow-sm shadow-emerald-500/10"
+            : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200",
+          collapsed && "justify-center px-2.5"
         )}
       >
-        <item.icon className={cn(
-          "w-5 h-5 flex-shrink-0 transition-colors",
-          isActive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 group-hover:text-emerald-500 dark:group-hover:text-emerald-400"
-        )} />
+        <item.icon
+          className={cn(
+            "w-4 h-4 flex-shrink-0 transition-colors",
+            isActive
+              ? "text-emerald-400"
+              : "text-slate-500 group-hover:text-slate-300"
+          )}
+        />
         {!collapsed && (
           <>
-            <span className="flex-1">{item.label}</span>
+            <span className="flex-1 truncate">{item.label}</span>
             {item.badge && (
-              <span className={cn(
-                "px-2 py-0.5 text-xs font-bold rounded-full",
-                isActive ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-300" : "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
-              )}>
+              <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-400">
                 {item.badge}
               </span>
             )}
           </>
+        )}
+        {isActive && !collapsed && (
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
         )}
       </Link>
     );
@@ -135,40 +134,51 @@ const CorporateSidebar = () => {
   return (
     <aside
       className={cn(
-        "fixed left-0 top-0 z-40 h-screen bg-white dark:bg-gradient-to-b dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 border-r border-slate-200 dark:border-slate-700/50 flex flex-col transition-all duration-300 shadow-sm dark:shadow-xl",
+        "fixed left-0 top-0 z-40 h-screen flex flex-col transition-all duration-300",
+        "bg-slate-950 border-r border-slate-800/80",
         collapsed ? "w-16" : "w-64"
       )}
     >
+      {/* Subtle top accent line */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-500/50 to-transparent" />
+
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700/50">
-        {!collapsed && (
+      <div className="flex items-center justify-between p-4 border-b border-slate-800/80">
+        {!collapsed ? (
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/20">
-              <HeartPulse className="w-5 h-5 text-white" />
+              <HeartPulse className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">Mediqzy</h1>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider">Corporate Portal</p>
+              <h1 className="text-sm font-bold text-white tracking-tight">Mediqzy</h1>
+              <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-widest">Corporate Portal</p>
             </div>
           </div>
-        )}
-        {collapsed && (
-          <div className="p-2 mx-auto rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/20">
-            <HeartPulse className="w-5 h-5 text-white" />
+        ) : (
+          <div className="mx-auto p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/20">
+            <HeartPulse className="w-4 h-4 text-white" />
           </div>
         )}
       </div>
 
+      {/* Company badge */}
+      {!collapsed && corporateName && (
+        <div className="mx-3 mt-3 px-3 py-2 rounded-xl bg-slate-800/50 border border-slate-700/40">
+          <p className="text-[10px] text-slate-600 uppercase tracking-wider font-bold">Organization</p>
+          <p className="text-xs font-semibold text-slate-200 mt-0.5 truncate">{corporateName}</p>
+        </div>
+      )}
+
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
+      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-5">
         {/* Main */}
         <div>
           {!collapsed && (
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+            <p className="px-3 mb-2 text-[10px] font-bold text-slate-600 uppercase tracking-widest">
               Main Menu
             </p>
           )}
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             {mainNavItems.map((item) => (
               <NavItem key={item.href} item={item} />
             ))}
@@ -178,11 +188,11 @@ const CorporateSidebar = () => {
         {/* Management */}
         <div>
           {!collapsed && (
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+            <p className="px-3 mb-2 text-[10px] font-bold text-slate-600 uppercase tracking-widest">
               Management
             </p>
           )}
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             {managementItems.map((item) => (
               <NavItem key={item.href} item={item} />
             ))}
@@ -192,11 +202,11 @@ const CorporateSidebar = () => {
         {/* System */}
         <div>
           {!collapsed && (
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+            <p className="px-3 mb-2 text-[10px] font-bold text-slate-600 uppercase tracking-widest">
               System
             </p>
           )}
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             {systemItems.map((item) => (
               <NavItem key={item.href} item={item} />
             ))}
@@ -205,15 +215,14 @@ const CorporateSidebar = () => {
       </nav>
 
       {/* Footer */}
-      <div className="p-3 border-t border-slate-200 dark:border-slate-700/50 space-y-2">
-        {/* Collapse Toggle */}
+      <div className="p-3 border-t border-slate-800/80 space-y-1">
         <Button
           variant="ghost"
           size="sm"
           onClick={() => setCollapsed(!collapsed)}
           className={cn(
-            "w-full justify-center text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60",
-            !collapsed && "justify-start"
+            "w-full text-slate-500 hover:text-slate-300 hover:bg-slate-800/60 rounded-xl text-xs",
+            collapsed ? "justify-center" : "justify-start"
           )}
         >
           {collapsed ? (
@@ -221,23 +230,22 @@ const CorporateSidebar = () => {
           ) : (
             <>
               <ChevronLeft className="w-4 h-4 mr-2" />
-              <span>Collapse</span>
+              Collapse
             </>
           )}
         </Button>
 
-        {/* Logout */}
         <Button
           variant="ghost"
           size="sm"
           onClick={handleLogout}
           className={cn(
-            "w-full text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20",
+            "w-full text-red-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl text-xs",
             collapsed ? "justify-center" : "justify-start"
           )}
         >
           <LogOut className="w-4 h-4" />
-          {!collapsed && <span className="ml-2">Logout</span>}
+          {!collapsed && <span className="ml-2">Sign out</span>}
         </Button>
       </div>
     </aside>

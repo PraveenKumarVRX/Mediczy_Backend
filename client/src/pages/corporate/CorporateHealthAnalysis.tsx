@@ -121,7 +121,7 @@ const CorporateHealthAnalysis: React.FC = () => {
       case 'down':
         return <TrendingDown className="h-4 w-4 text-red-600" />;
       default:
-        return <Activity className="h-4 w-4 text-gray-600" />;
+        return <Activity className="h-4 w-4 text-slate-400" />;
     }
   };
 
@@ -314,7 +314,7 @@ const CorporateHealthAnalysis: React.FC = () => {
                     <h3 className="font-semibold text-lg">{metric.category}</h3>
                     <div className="flex items-center gap-2">
                       {getTrendIcon(metric.trend)}
-                      <span className={metric.trend === 'up' ? 'text-green-600' : metric.trend === 'down' ? 'text-red-600' : 'text-gray-600'}>
+                      <span className={metric.trend === 'up' ? 'text-green-600' : metric.trend === 'down' ? 'text-red-600' : 'text-slate-400'}>
                         {metric.change > 0 ? '+' : ''}{metric.change}%
                       </span>
                     </div>
@@ -323,12 +323,12 @@ const CorporateHealthAnalysis: React.FC = () => {
                   <div className="space-y-4">
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm text-gray-600">Health Score</span>
+                        <span className="text-sm text-slate-400">Health Score</span>
                         <span className={`text-2xl font-bold ${getScoreColor(metric.score)}`}>
                           {metric.score}%
                         </span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="w-full bg-slate-700 rounded-full h-2">
                         <div 
                           className={`h-2 rounded-full transition-all ${getProgressColor(metric.score)}`}
                           style={{ width: `${metric.score}%` }}
@@ -338,11 +338,11 @@ const CorporateHealthAnalysis: React.FC = () => {
 
                     <div className="grid grid-cols-2 gap-4 pt-2 text-sm">
                       <div>
-                        <p className="text-gray-600">Total Employees</p>
+                        <p className="text-slate-400">Total Employees</p>
                         <p className="font-semibold">{metric.totalEmployees}</p>
                       </div>
                       <div>
-                        <p className="text-gray-600">At Risk</p>
+                        <p className="text-slate-400">At Risk</p>
                         <p className="font-semibold text-red-600">{metric.atRisk}</p>
                       </div>
                     </div>
@@ -368,7 +368,7 @@ const CorporateHealthAnalysis: React.FC = () => {
                   <div className="flex items-start justify-between mb-4">
                     <div>
                       <h3 className="font-semibold text-lg">{dept.department}</h3>
-                      <p className="text-sm text-gray-600">{dept.totalEmployees} employees</p>
+                      <p className="text-sm text-slate-400">{dept.totalEmployees} employees</p>
                     </div>
                     <Badge variant={dept.atRiskCount > 15 ? 'destructive' : dept.atRiskCount > 8 ? 'default' : 'secondary'}>
                       {dept.atRiskCount} at risk
@@ -377,14 +377,14 @@ const CorporateHealthAnalysis: React.FC = () => {
 
                   <div className="grid grid-cols-3 gap-4">
                     <div>
-                      <p className="text-sm text-gray-600 mb-2">Health Score</p>
+                      <p className="text-sm text-slate-400 mb-2">Health Score</p>
                       <div className="flex items-baseline gap-2">
                         <span className={`text-2xl font-bold ${getScoreColor(dept.healthScore)}`}>
                           {dept.healthScore}
                         </span>
-                        <span className="text-sm text-gray-500">/ 100</span>
+                        <span className="text-sm text-slate-400">/ 100</span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
+                      <div className="w-full bg-slate-700 rounded-full h-1.5 mt-2">
                         <div 
                           className={`h-1.5 rounded-full ${getProgressColor(dept.healthScore)}`}
                           style={{ width: `${dept.healthScore}%` }}
@@ -393,12 +393,12 @@ const CorporateHealthAnalysis: React.FC = () => {
                     </div>
 
                     <div>
-                      <p className="text-sm text-gray-600 mb-2">Checkup Completion</p>
+                      <p className="text-sm text-slate-400 mb-2">Checkup Completion</p>
                       <div className="flex items-baseline gap-2">
                         <span className="text-2xl font-bold">{dept.checkupCompletion}</span>
-                        <span className="text-sm text-gray-500">%</span>
+                        <span className="text-sm text-slate-400">%</span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
+                      <div className="w-full bg-slate-700 rounded-full h-1.5 mt-2">
                         <div 
                           className="h-1.5 rounded-full bg-blue-600"
                           style={{ width: `${dept.checkupCompletion}%` }}
@@ -407,7 +407,7 @@ const CorporateHealthAnalysis: React.FC = () => {
                     </div>
 
                     <div>
-                      <p className="text-sm text-gray-600 mb-2">Risk Distribution</p>
+                      <p className="text-sm text-slate-400 mb-2">Risk Distribution</p>
                       <div className="flex gap-1 mt-2">
                         <div 
                           className="h-8 bg-red-500 rounded-l"
@@ -441,8 +441,8 @@ const CorporateHealthAnalysis: React.FC = () => {
           <CardDescription>Historical health metrics over time</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="h-[300px] flex items-center justify-center bg-gray-50 rounded-lg">
-            <div className="text-center text-gray-500">
+          <div className="h-[300px] flex items-center justify-center bg-slate-800/40 rounded-lg">
+            <div className="text-center text-slate-400">
               <Brain className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>Interactive trend charts will be displayed here</p>
               <p className="text-sm mt-2">Showing health metrics over {timeRange}</p>

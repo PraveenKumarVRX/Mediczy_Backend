@@ -329,29 +329,32 @@ router.get('/dashboard', authUser, requireRole('broker'), async (req, res) => {
   try {
     const broker = await InsuranceBroker.findByPk(req.user.id);
 
-    const totalPolicies = await InsurancePolicy.count({
-      where: { brokerId: req.user.id }
-    });
-
-    const activePolicies = await InsurancePolicy.count({
-      where: { brokerId: req.user.id, status: 'active' }
-    });
-
-    const pendingPolicies = await InsurancePolicy.count({
-      where: { brokerId: req.user.id, status: 'pending' }
-    });
+    const [totalPolicies, activePolicies, pendingPolicies, corporatesResult] = await Promise.all([
+      InsurancePolicy.count({ where: { brokerId: req.user.id } }),
+      InsurancePolicy.count({ where: { brokerId: req.user.id, status: 'active' } }),
+      InsurancePolicy.count({ where: { brokerId: req.user.id, status: 'pending' } }),
+      postgresSequelize.query(
+        `SELECT id, "companyName", "contactPerson", email, status FROM corporates
+         WHERE aggregator_id = :brokerId AND aggregator_type = 'broker'
+         ORDER BY "companyName"`,
+        { replacements: { brokerId: req.user.id }, type: postgresSequelize.QueryTypes.SELECT }
+      )
+    ]);
 
     res.json({
       success: true,
       dashboard: {
         brokerName: broker.brokerName,
+        contactPersonName: broker.contactPersonName,
         totalPolicies,
         activePolicies,
         pendingPolicies,
         totalPremiumFacilitated: broker.totalPremiumFacilitated,
         commissionPercentage: broker.commissionPercentage,
         isVerified: broker.isVerified,
-        licenseValidityDate: broker.licenseValidityDate
+        licenseValidityDate: broker.licenseValidityDate,
+        linkedCorporates: corporatesResult,
+        linkedCorporatesCount: corporatesResult.length
       }
     });
   } catch (error) {
@@ -475,6 +478,7 @@ router.get('/corporates', authUser, requireRole('broker'), attachTenantScope, as
       FROM corporates c
       WHERE (
         c."onboarded_by_id" = :brokerId
+        OR (c.aggregator_id = :brokerId AND c.aggregator_type = 'broker')
     `;
 
     const replacements = { brokerId, limit: parseInt(limit), offset: parseInt(offset) };

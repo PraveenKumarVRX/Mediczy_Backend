@@ -556,3 +556,41 @@
 .metric-trend-negative {
   @apply text-destructive text-sm font-medium;
 }
+
+/* ─── Corporate Portal: Premium Dark Theme ────────────────────────────────── */
+/* Override CSS variables for all elements inside the corporate portal */
+.dark .rounded-lg.border.bg-card {
+  background: hsl(222 47% 7%) !important;
+  border-color: hsl(217 33% 13%) !important;
+}
+
+/* Elegant card hover glow for corporate portal */
+.dark [class*="hover:shadow-emerald"] {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+/* Ensure dialog overlays are dark */
+.dark [role="dialog"] {
+  background: hsl(222 47% 8%);
+  border-color: hsl(217 33% 15%);
+}
+
+/* Table rows in dark mode */
+.dark table tbody tr:hover {
+  background: rgba(148, 163, 184, 0.04);
+}
+
+/* Smooth scrollbar for sidebar */
+.dark ::-webkit-scrollbar {
+  width: 4px;
+}
+.dark ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: hsl(217 33% 20%);
+  border-radius: 99px;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: hsl(217 33% 28%);
+}

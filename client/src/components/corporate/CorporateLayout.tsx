@@ -2,9 +2,8 @@ import { ReactNode, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getUserType } from "@/hooks/auth";
 import CorporateSidebar from "./CorporateSidebar";
-import { Bell, HeartPulse, User, ChevronDown, Sun, Moon } from "lucide-react";
+import { Bell, HeartPulse, User, ChevronDown, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,15 +21,14 @@ interface CorporateLayoutProps {
 
 const CorporateLayout = ({ children, title, subtitle }: CorporateLayoutProps) => {
   const navigate = useNavigate();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [corporateName, setCorporateName] = useState<string>('');
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('theme') === 'dark' || 
-        document.documentElement.classList.contains('dark');
-    }
-    return false;
-  });
+  const [adminName, setAdminName] = useState<string>('HR Admin');
+
+  // Force dark mode for the corporate portal — rich dark theme
+  useEffect(() => {
+    document.documentElement.classList.add('dark');
+    localStorage.setItem('theme', 'dark');
+  }, []);
 
   // Load corporate name from stored data
   useEffect(() => {
@@ -38,38 +36,21 @@ const CorporateLayout = ({ children, title, subtitle }: CorporateLayoutProps) =>
       const corporateDataStr = localStorage.getItem('corporateData');
       if (corporateDataStr) {
         const corporateData = JSON.parse(corporateDataStr);
-        if (corporateData?.name) {
-          setCorporateName(corporateData.name);
-        }
+        if (corporateData?.name) setCorporateName(corporateData.name);
+        if (corporateData?.contactPerson) setAdminName(corporateData.contactPerson);
       }
     } catch (e) {
-      console.error('Error loading corporate data:', e);
+      // ignore
     }
   }, []);
 
   useEffect(() => {
     const type = getUserType();
     const corporateToken = localStorage.getItem("corporateToken");
-    
-    // Allow access if either userType is corporate OR corporateToken exists
     if (type !== "corporate" && !corporateToken) {
       navigate("/corporate/login");
     }
   }, [navigate]);
-
-  useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
-  }, [darkMode]);
-
-  const toggleDarkMode = () => {
-    setDarkMode(!darkMode);
-  };
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -82,92 +63,109 @@ const CorporateLayout = ({ children, title, subtitle }: CorporateLayoutProps) =>
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50/80 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      {/* Ambient glow effects */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 -left-40 w-80 h-80 bg-blue-500/4 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 right-1/3 w-64 h-64 bg-violet-500/3 rounded-full blur-3xl" />
+      </div>
+
       {/* Sidebar */}
       <CorporateSidebar />
 
       {/* Main Content Area */}
-      <div className="ml-64 transition-all duration-300">
-        {/* Top Header */}
-        <header className="sticky top-0 z-30 h-16 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-700/50 shadow-sm flex items-center justify-between px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-primary font-semibold">
-              <div className="p-1.5 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-sm">
+      <div className="ml-64 transition-all duration-300 relative">
+        {/* Top Header — frosted glass */}
+        <header className="sticky top-0 z-30 h-16 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800/80 flex items-center justify-between px-6 shadow-xl shadow-slate-950/50">
+          <div className="flex items-center gap-4">
+            {/* Brand pill */}
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-md shadow-emerald-500/25">
                 <HeartPulse className="h-4 w-4 text-white" />
               </div>
-              <span className="text-sm text-slate-800 dark:text-white">{corporateName || 'Mediqzy'}</span>
-              <span className="text-[10px] uppercase font-semibold bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-2.5 py-1 rounded-full tracking-wider">Corporate</span>
+              <span className="text-sm font-semibold text-white">{corporateName || 'Mediqzy'}</span>
+              <span className="text-[10px] uppercase font-bold bg-gradient-to-r from-emerald-500 to-emerald-400 text-white px-2.5 py-0.5 rounded-full tracking-widest">
+                Corporate
+              </span>
             </div>
+
             {title && (
-              <div className="pl-3 border-l border-slate-200 dark:border-slate-700">
-                <h1 className="text-lg font-semibold text-slate-900 dark:text-white">{title}</h1>
-                {subtitle && <p className="text-xs text-slate-500 dark:text-slate-400">{subtitle}</p>}
+              <div className="pl-4 border-l border-slate-700/60">
+                <h1 className="text-sm font-semibold text-slate-100">{title}</h1>
+                {subtitle && <p className="text-xs text-slate-500 leading-tight">{subtitle}</p>}
               </div>
             )}
           </div>
 
           <div className="flex items-center gap-2">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={toggleDarkMode}
-              className="hover:bg-slate-100 dark:hover:bg-slate-800"
-            >
-              {darkMode ? (
-                <Sun className="w-5 h-5 text-yellow-500" />
-              ) : (
-                <Moon className="w-5 h-5 text-slate-600" />
-              )}
-            </Button>
+            {/* Search */}
+            <div className="relative hidden md:block">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+              <input
+                placeholder="Quick search…"
+                className="h-9 w-48 pl-9 pr-3 text-sm bg-slate-800/60 border border-slate-700/60 rounded-xl text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500/50 focus:bg-slate-800 transition-all"
+              />
+            </div>
 
+            {/* Notifications */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="relative text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800">
-                  <Bell className="w-5 h-5" />
-                  <span className="absolute -top-1 -right-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-destructive text-[10px] text-white px-1">
-                    3
-                  </span>
+                <Button variant="ghost" size="icon" className="relative text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl">
+                  <Bell className="w-4.5 h-4.5" />
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-slate-900" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-72 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-                <DropdownMenuLabel className="text-xs text-muted-foreground">Notifications</DropdownMenuLabel>
-                <DropdownMenuSeparator className="bg-slate-200 dark:bg-slate-700" />
-                <DropdownMenuItem className="flex flex-col items-start gap-0.5 hover:bg-slate-100 dark:hover:bg-slate-700">
-                  <span className="text-sm font-medium text-slate-800 dark:text-white">New claim filed</span>
-                  <span className="text-xs text-muted-foreground">5m ago</span>
+              <DropdownMenuContent align="end" className="w-80 bg-slate-900 border-slate-800 shadow-2xl shadow-slate-950/60">
+                <DropdownMenuLabel className="text-slate-300 font-semibold px-4 py-3 border-b border-slate-800">
+                  Notifications
+                  <span className="ml-2 text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">3 new</span>
+                </DropdownMenuLabel>
+                <DropdownMenuItem className="flex flex-col items-start gap-0.5 px-4 py-3 hover:bg-slate-800/60 cursor-pointer">
+                  <span className="text-sm font-medium text-slate-200">New claim filed</span>
+                  <span className="text-xs text-slate-500">5 minutes ago</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem className="flex flex-col items-start gap-0.5 hover:bg-slate-100 dark:hover:bg-slate-700">
-                  <span className="text-sm font-medium text-slate-800 dark:text-white">Policy approval pending</span>
-                  <span className="text-xs text-muted-foreground">Today</span>
+                <DropdownMenuItem className="flex flex-col items-start gap-0.5 px-4 py-3 hover:bg-slate-800/60 cursor-pointer">
+                  <span className="text-sm font-medium text-slate-200">Policy approval pending</span>
+                  <span className="text-xs text-slate-500">2 hours ago</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem className="flex flex-col items-start gap-0.5 px-4 py-3 hover:bg-slate-800/60 cursor-pointer">
+                  <span className="text-sm font-medium text-slate-200">Health report ready</span>
+                  <span className="text-xs text-slate-500">Today, 9:00 AM</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
+            {/* User menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="flex items-center gap-2 border border-slate-200 dark:border-slate-700 rounded-full px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">
-                  <div className="w-8 h-8 bg-emerald-100 dark:bg-emerald-900/50 rounded-full flex items-center justify-center">
-                    <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <Button variant="ghost" className="flex items-center gap-2.5 bg-slate-800/60 border border-slate-700/60 hover:border-slate-600 hover:bg-slate-800 rounded-xl px-3 py-2 h-auto transition-all">
+                  <div className="w-7 h-7 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg flex items-center justify-center shadow-sm">
+                    <User className="w-3.5 h-3.5 text-white" />
                   </div>
                   <div className="hidden md:block text-left">
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">HR Admin</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Corporate</p>
+                    <p className="text-xs font-semibold text-slate-200 leading-none">{adminName}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Corporate Admin</p>
                   </div>
-                  <ChevronDown className="w-4 h-4 text-slate-400" />
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-                <DropdownMenuLabel className="text-slate-800 dark:text-white">My Account</DropdownMenuLabel>
-                <DropdownMenuSeparator className="bg-slate-200 dark:bg-slate-700" />
-                <DropdownMenuItem onClick={() => navigate("/corporate/settings")} className="text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">
-                  Settings
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate("/corporate/support")} className="text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700">
-                  Help & Support
-                </DropdownMenuItem>
-                <DropdownMenuSeparator className="bg-slate-200 dark:bg-slate-700" />
-                <DropdownMenuItem onClick={handleLogout} className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
-                  Logout
+              <DropdownMenuContent align="end" className="w-56 bg-slate-900 border-slate-800 shadow-2xl shadow-slate-950/60">
+                <DropdownMenuLabel className="text-slate-300 px-4 py-3 border-b border-slate-800">
+                  <p className="font-semibold text-sm text-slate-100">{adminName}</p>
+                  <p className="text-xs text-slate-500">Corporate Administrator</p>
+                </DropdownMenuLabel>
+                <div className="py-1">
+                  <DropdownMenuItem onClick={() => navigate("/corporate/settings")} className="text-slate-300 hover:text-white hover:bg-slate-800/60 px-4 py-2.5 cursor-pointer">
+                    Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate("/corporate/support")} className="text-slate-300 hover:text-white hover:bg-slate-800/60 px-4 py-2.5 cursor-pointer">
+                    Help & Support
+                  </DropdownMenuItem>
+                </div>
+                <DropdownMenuSeparator className="bg-slate-800" />
+                <DropdownMenuItem onClick={handleLogout} className="text-red-400 hover:text-red-300 hover:bg-red-900/20 px-4 py-2.5 cursor-pointer">
+                  Sign out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -175,7 +173,7 @@ const CorporateLayout = ({ children, title, subtitle }: CorporateLayoutProps) =>
         </header>
 
         {/* Page Content */}
-        <main className="p-6">
+        <main className="p-6 min-h-[calc(100vh-4rem)]">
           {children}
         </main>
       </div>

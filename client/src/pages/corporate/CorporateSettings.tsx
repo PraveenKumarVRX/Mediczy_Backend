@@ -105,7 +105,7 @@ const CorporateSettings: React.FC = () => {
       case 'overdue':
         return 'bg-red-100 text-red-800';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-slate-800 text-slate-200';
     }
   };
 
@@ -118,7 +118,7 @@ const CorporateSettings: React.FC = () => {
           description="Configure your organization's health platform settings and preferences"
           gradient="from-gray-600 to-gray-800"
           actions={
-            <Button size="sm" onClick={handleSaveSettings} className="bg-white text-gray-700 hover:bg-white/90 shadow-lg">
+            <Button size="sm" onClick={handleSaveSettings} className="bg-white text-slate-900 hover:bg-white/90 shadow-lg font-semibold">
               <Save className="h-4 w-4 mr-2" />
               Save Changes
             </Button>
@@ -250,14 +250,14 @@ const CorporateSettings: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Mandatory Health Checkups</Label>
-                  <p className="text-sm text-gray-500">Require employees to complete annual checkups</p>
+                  <p className="text-sm text-slate-400">Require employees to complete annual checkups</p>
                 </div>
                 <Switch defaultChecked />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Mental Health Support</Label>
-                  <p className="text-sm text-gray-500">Enable mental health counseling benefits</p>
+                  <p className="text-sm text-slate-400">Enable mental health counseling benefits</p>
                 </div>
                 <Switch defaultChecked />
               </div>
@@ -276,42 +276,42 @@ const CorporateSettings: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Email Notifications</Label>
-                  <p className="text-sm text-gray-500">Receive email updates about health programs</p>
+                  <p className="text-sm text-slate-400">Receive email updates about health programs</p>
                 </div>
                 <Switch defaultChecked />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>SMS Notifications</Label>
-                  <p className="text-sm text-gray-500">Get text messages for urgent health alerts</p>
+                  <p className="text-sm text-slate-400">Get text messages for urgent health alerts</p>
                 </div>
                 <Switch />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Health Risk Alerts</Label>
-                  <p className="text-sm text-gray-500">Notify about employees at health risk</p>
+                  <p className="text-sm text-slate-400">Notify about employees at health risk</p>
                 </div>
                 <Switch defaultChecked />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Claim Status Updates</Label>
-                  <p className="text-sm text-gray-500">Updates on insurance claim processing</p>
+                  <p className="text-sm text-slate-400">Updates on insurance claim processing</p>
                 </div>
                 <Switch defaultChecked />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Weekly Health Reports</Label>
-                  <p className="text-sm text-gray-500">Receive weekly health analytics summary</p>
+                  <p className="text-sm text-slate-400">Receive weekly health analytics summary</p>
                 </div>
                 <Switch defaultChecked />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Appointment Reminders</Label>
-                  <p className="text-sm text-gray-500">Send reminders for upcoming appointments</p>
+                  <p className="text-sm text-slate-400">Send reminders for upcoming appointments</p>
                 </div>
                 <Switch defaultChecked />
               </div>
@@ -330,14 +330,14 @@ const CorporateSettings: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Two-Factor Authentication</Label>
-                  <p className="text-sm text-gray-500">Require 2FA for admin accounts</p>
+                  <p className="text-sm text-slate-400">Require 2FA for admin accounts</p>
                 </div>
                 <Switch defaultChecked />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>SSO (Single Sign-On)</Label>
-                  <p className="text-sm text-gray-500">Enable SSO for employee logins</p>
+                  <p className="text-sm text-slate-400">Enable SSO for employee logins</p>
                 </div>
                 <Switch />
               </div>
@@ -348,14 +348,14 @@ const CorporateSettings: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>IP Whitelisting</Label>
-                  <p className="text-sm text-gray-500">Restrict access to specific IP addresses</p>
+                  <p className="text-sm text-slate-400">Restrict access to specific IP addresses</p>
                 </div>
                 <Switch />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Data Encryption</Label>
-                  <p className="text-sm text-gray-500">Encrypt sensitive health data at rest</p>
+                  <p className="text-sm text-slate-400">Encrypt sensitive health data at rest</p>
                 </div>
                 <Switch defaultChecked />
               </div>
@@ -371,14 +371,14 @@ const CorporateSettings: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>HIPAA Compliance Mode</Label>
-                  <p className="text-sm text-gray-500">Enable HIPAA-compliant data handling</p>
+                  <p className="text-sm text-slate-400">Enable HIPAA-compliant data handling</p>
                 </div>
                 <Switch defaultChecked />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Audit Logging</Label>
-                  <p className="text-sm text-gray-500">Track all data access and modifications</p>
+                  <p className="text-sm text-slate-400">Track all data access and modifications</p>
                 </div>
                 <Switch defaultChecked />
               </div>
@@ -400,10 +400,10 @@ const CorporateSettings: React.FC = () => {
             <CardContent className="space-y-4">
               <div className="grid gap-2">
                 <Label>Current Plan</Label>
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                <div className="flex items-center justify-between p-4 bg-slate-800/40 rounded-lg">
                   <div>
                     <p className="font-semibold">Enterprise Plan</p>
-                    <p className="text-sm text-gray-600">Up to 500 employees</p>
+                    <p className="text-sm text-slate-400">Up to 500 employees</p>
                   </div>
                   <Button variant="outline">Upgrade Plan</Button>
                 </div>
@@ -414,12 +414,12 @@ const CorporateSettings: React.FC = () => {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="paymentMethod">Payment Method</Label>
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                <div className="flex items-center justify-between p-4 bg-slate-800/40 rounded-lg">
                   <div className="flex items-center gap-3">
-                    <CreditCard className="h-5 w-5 text-gray-600" />
+                    <CreditCard className="h-5 w-5 text-slate-400" />
                     <div>
                       <p className="font-semibold">Visa ending in 4242</p>
-                      <p className="text-sm text-gray-600">Expires 12/2025</p>
+                      <p className="text-sm text-slate-400">Expires 12/2025</p>
                     </div>
                   </div>
                   <Button variant="outline">Update</Button>
@@ -451,10 +451,10 @@ const CorporateSettings: React.FC = () => {
               </DialogHeader>
 
               <div className="space-y-3">
-                {billingLoading && <div className="text-sm text-gray-500">Loading invoices…</div>}
+                {billingLoading && <div className="text-sm text-slate-400">Loading invoices…</div>}
 
                 {!billingLoading && invoices.length === 0 && (
-                  <div className="text-sm text-gray-500">No invoices found.</div>
+                  <div className="text-sm text-slate-400">No invoices found.</div>
                 )}
 
                 {invoices.map((inv) => (
@@ -464,10 +464,10 @@ const CorporateSettings: React.FC = () => {
                         <div className="font-semibold">{inv.id}</div>
                         <Badge className={getInvoiceStatusColor(inv.status)}>{String(inv.status).toUpperCase()}</Badge>
                       </div>
-                      <div className="text-sm text-gray-600">
+                      <div className="text-sm text-slate-400">
                         {inv.plan} • {inv.period} • {new Date(inv.date).toLocaleDateString()}
                       </div>
-                      <div className="text-sm text-gray-700">
+                      <div className="text-sm text-slate-300">
                         Amount: {inv.currency} {Number(inv.amount).toLocaleString()}
                       </div>
                     </div>
@@ -503,7 +503,7 @@ const CorporateSettings: React.FC = () => {
                   <Globe className="h-8 w-8 text-blue-600" />
                   <div>
                     <p className="font-semibold">HR Management System</p>
-                    <p className="text-sm text-gray-600">Sync employee data automatically</p>
+                    <p className="text-sm text-slate-400">Sync employee data automatically</p>
                   </div>
                 </div>
                 <Switch defaultChecked />
@@ -513,7 +513,7 @@ const CorporateSettings: React.FC = () => {
                   <Globe className="h-8 w-8 text-green-600" />
                   <div>
                     <p className="font-semibold">Insurance Provider API</p>
-                    <p className="text-sm text-gray-600">Real-time claim status updates</p>
+                    <p className="text-sm text-slate-400">Real-time claim status updates</p>
                   </div>
                 </div>
                 <Switch defaultChecked />
@@ -523,7 +523,7 @@ const CorporateSettings: React.FC = () => {
                   <Globe className="h-8 w-8 text-purple-600" />
                   <div>
                     <p className="font-semibold">Telemedicine Platform</p>
-                    <p className="text-sm text-gray-600">Enable virtual consultations</p>
+                    <p className="text-sm text-slate-400">Enable virtual consultations</p>
                   </div>
                 </div>
                 <Switch />
@@ -533,7 +533,7 @@ const CorporateSettings: React.FC = () => {
                   <Globe className="h-8 w-8 text-orange-600" />
                   <div>
                     <p className="font-semibold">Wearable Devices</p>
-                    <p className="text-sm text-gray-600">Sync fitness tracker data</p>
+                    <p className="text-sm text-slate-400">Sync fitness tracker data</p>
                   </div>
                 </div>
                 <Switch />
@@ -543,7 +543,7 @@ const CorporateSettings: React.FC = () => {
                   <Globe className="h-8 w-8 text-red-600" />
                   <div>
                     <p className="font-semibold">Calendar Integration</p>
-                    <p className="text-sm text-gray-600">Sync appointments with calendars</p>
+                    <p className="text-sm text-slate-400">Sync appointments with calendars</p>
                   </div>
                 </div>
                 <Switch defaultChecked />

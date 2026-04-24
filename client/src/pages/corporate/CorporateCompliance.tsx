@@ -27,7 +27,7 @@ const CorporateCompliance: React.FC = () => {
             <CardDescription>Current compliance monitoring and certifications</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-center py-12 text-gray-500">
+            <div className="text-center py-12 text-slate-400">
               <Shield className="h-16 w-16 mx-auto mb-4 opacity-50" />
               <p className="text-lg font-semibold mb-2">Compliance Dashboard</p>
               <p>Full compliance management features coming soon</p>

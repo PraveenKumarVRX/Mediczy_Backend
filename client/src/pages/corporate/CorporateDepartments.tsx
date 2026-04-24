@@ -348,23 +348,23 @@ const CorporateDepartments: React.FC = () => {
             <div className="space-y-3 text-sm">
               <div>
                 <div className="font-semibold text-base">{selectedDepartment.name}</div>
-                <div className="text-gray-600">{selectedDepartment.description}</div>
+                <div className="text-slate-400">{selectedDepartment.description}</div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <div className="text-gray-600">Manager</div>
+                  <div className="text-slate-400">Manager</div>
                   <div className="font-medium">{selectedDepartment.manager}</div>
                 </div>
                 <div>
-                  <div className="text-gray-600">Employees</div>
+                  <div className="text-slate-400">Employees</div>
                   <div className="font-medium">{selectedDepartment.employeeCount}</div>
                 </div>
                 <div>
-                  <div className="text-gray-600">Location</div>
+                  <div className="text-slate-400">Location</div>
                   <div className="font-medium">{selectedDepartment.location}</div>
                 </div>
                 <div>
-                  <div className="text-gray-600">Budget</div>
+                  <div className="text-slate-400">Budget</div>
                   <div className="font-medium">{selectedDepartment.budget}</div>
                 </div>
               </div>
@@ -451,28 +451,28 @@ const CorporateDepartments: React.FC = () => {
                         <Building2 className="h-5 w-5 text-blue-600" />
                         <div>
                           <h3 className="font-semibold text-lg">{dept.name}</h3>
-                          <p className="text-sm text-gray-600">{dept.description}</p>
+                          <p className="text-sm text-slate-400">{dept.description}</p>
                         </div>
                       </div>
 
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div>
-                          <p className="text-sm text-gray-600">Manager</p>
+                          <p className="text-sm text-slate-400">Manager</p>
                           <p className="font-semibold">{dept.manager}</p>
                         </div>
                         <div>
-                          <p className="text-sm text-gray-600">Employees</p>
+                          <p className="text-sm text-slate-400">Employees</p>
                           <p className="font-semibold flex items-center gap-1">
                             <Users className="h-4 w-4" />
                             {dept.employeeCount}
                           </p>
                         </div>
                         <div>
-                          <p className="text-sm text-gray-600">Location</p>
+                          <p className="text-sm text-slate-400">Location</p>
                           <p className="font-semibold">{dept.location}</p>
                         </div>
                         <div>
-                          <p className="text-sm text-gray-600">Health Budget</p>
+                          <p className="text-sm text-slate-400">Health Budget</p>
                           <p className="font-semibold">{dept.budget}</p>
                         </div>
                       </div>
@@ -480,12 +480,12 @@ const CorporateDepartments: React.FC = () => {
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <div className="flex items-center justify-between mb-2">
-                            <p className="text-sm text-gray-600">Health Score</p>
+                            <p className="text-sm text-slate-400">Health Score</p>
                             <span className={`font-bold ${getScoreColor(dept.healthScore)}`}>
                               {dept.healthScore}%
                             </span>
                           </div>
-                          <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div className="w-full bg-slate-700 rounded-full h-2">
                             <div
                               className={`h-2 rounded-full ${
                                 dept.healthScore >= 80 ? 'bg-green-600' :
@@ -498,10 +498,10 @@ const CorporateDepartments: React.FC = () => {
                         </div>
                         <div>
                           <div className="flex items-center justify-between mb-2">
-                            <p className="text-sm text-gray-600">Checkup Completion</p>
+                            <p className="text-sm text-slate-400">Checkup Completion</p>
                             <span className="font-bold">{dept.checkupCompletion}%</span>
                           </div>
-                          <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div className="w-full bg-slate-700 rounded-full h-2">
                             <div
                               className="h-2 rounded-full bg-blue-600"
                               style={{ width: `${dept.checkupCompletion}%` }}
@@ -529,11 +529,11 @@ const CorporateDepartments: React.FC = () => {
           </div>
 
           {isLoading && departments.length === 0 && (
-            <div className="text-sm text-gray-600 mt-4">Loading departments…</div>
+            <div className="text-sm text-slate-400 mt-4">Loading departments…</div>
           )}
 
           {filteredDepartments.length === 0 && (
-            <div className="text-center py-12 text-gray-500">
+            <div className="text-center py-12 text-slate-400">
               <Building2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No departments found matching your search</p>
             </div>

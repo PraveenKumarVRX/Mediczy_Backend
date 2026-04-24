@@ -185,12 +185,12 @@ const CorporatePageHeader: React.FC<CorporatePageHeaderProps> = ({
         <div className="flex flex-col sm:flex-row gap-3">
           {showSearch && (
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <Input
                 placeholder={searchPlaceholder}
                 value={searchValue}
                 onChange={(e) => onSearchChange?.(e.target.value)}
-                className="pl-10 bg-white border-gray-200 focus:border-blue-300 focus:ring-blue-200"
+                className="pl-10 bg-slate-800/60 border-slate-700/60 text-slate-200 placeholder:text-slate-500 focus:border-emerald-500/50 focus:bg-slate-800 rounded-xl"
               />
             </div>
           )}
@@ -198,7 +198,7 @@ const CorporatePageHeader: React.FC<CorporatePageHeaderProps> = ({
             <Button 
               variant="outline" 
               onClick={onFilter}
-              className="border-gray-200 hover:bg-gray-50"
+              className="border-slate-700/60 bg-slate-800/60 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl"
             >
               <Filter className="w-4 h-4 mr-2" />
               Filters

@@ -1,0 +1,46 @@
+                                            Table "public.crm_rfqs"
+        Column        |           Type           | Collation | Nullable |               Default                
+----------------------+--------------------------+-----------+----------+--------------------------------------
+ id                   | bigint                   |           | not null | nextval('crm_rfqs_id_seq'::regclass)
+ rfq_number           | character varying(50)    |           | not null | 
+ status               | character varying(30)    |           | not null | 'received'::character varying
+ broker_name          | character varying(255)   |           |          | 
+ broker_company       | character varying(255)   |           |          | 
+ broker_email         | character varying(255)   |           |          | 
+ broker_phone         | character varying(50)    |           |          | 
+ insured_name         | character varying(500)   |           | not null | 
+ insured_address      | text                     |           |          | 
+ policy_type          | character varying(100)   |           |          | 'Group Mediclaim'::character varying
+ product_type         | character varying(100)   |           |          | 'OPD'::character varying
+ existing_insurer     | character varying(255)   |           |          | 
+ existing_tpa         | character varying(255)   |           |          | 
+ policy_start         | date                     |           |          | 
+ policy_end           | date                     |           |          | 
+ premium_paid         | character varying(255)   |           |          | 
+ lives_at_inception   | jsonb                    |           |          | '{}'::jsonb
+ lives_at_renewal     | jsonb                    |           |          | '{}'::jsonb
+ coverage_scope       | jsonb                    |           |          | '{}'::jsonb
+ special_conditions   | jsonb                    |           |          | '[]'::jsonb
+ exclusions           | text                     |           |          | 
+ terms_and_conditions | text                     |           |          | 
+ notes                | text                     |           |          | 
+ member_count         | integer                  |           |          | 0
+ sum_insured_slabs    | jsonb                    |           |          | '[]'::jsonb
+ deal_id              | bigint                   |           |          | 
+ lead_id              | bigint                   |           |          | 
+ assigned_to          | integer                  |           |          | 
+ created_by           | integer                  |           | not null | 
+ created_at           | timestamp with time zone |           | not null | now()
+ updated_at           | timestamp with time zone |           | not null | now()
+Indexes:
+    "crm_rfqs_pkey" PRIMARY KEY, btree (id)
+    "crm_rfqs_rfq_number_key" UNIQUE CONSTRAINT, btree (rfq_number)
+    "idx_rfqs_insured" btree (insured_name)
+    "idx_rfqs_number" btree (rfq_number)
+    "idx_rfqs_status" btree (status)
+Referenced by:
+    TABLE "crm_corporate_health_plans" CONSTRAINT "crm_corporate_health_plans_rfq_id_fkey" FOREIGN KEY (rfq_id) REFERENCES crm_rfqs(id) ON DELETE SET NULL
+    TABLE "crm_quotes" CONSTRAINT "crm_quotes_rfq_id_fkey" FOREIGN KEY (rfq_id) REFERENCES crm_rfqs(id) ON DELETE CASCADE
+    TABLE "crm_rfq_claims" CONSTRAINT "crm_rfq_claims_rfq_id_fkey" FOREIGN KEY (rfq_id) REFERENCES crm_rfqs(id) ON DELETE CASCADE
+    TABLE "crm_rfq_members" CONSTRAINT "crm_rfq_members_rfq_id_fkey" FOREIGN KEY (rfq_id) REFERENCES crm_rfqs(id) ON DELETE CASCADE
+

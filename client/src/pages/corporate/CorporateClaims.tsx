@@ -104,7 +104,7 @@ const CorporateClaims: React.FC = () => {
       case 'rejected':
         return 'bg-red-100 text-red-800';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-slate-800 text-slate-200';
     }
   };
 
@@ -319,7 +319,7 @@ const CorporateClaims: React.FC = () => {
               <div className="grid gap-2">
                 <Label htmlFor="documents">Upload Documents</Label>
                 <Input id="documents" type="file" multiple />
-                <p className="text-xs text-gray-500">Upload receipts, prescriptions, and medical reports</p>
+                <p className="text-xs text-slate-400">Upload receipts, prescriptions, and medical reports</p>
               </div>
             </div>
             <DialogFooter>
@@ -342,7 +342,7 @@ const CorporateClaims: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="font-semibold text-base">{selectedClaim.employeeName}</div>
-                  <div className="text-gray-600">{selectedClaim.employeeId} • {selectedClaim.id}</div>
+                  <div className="text-slate-400">{selectedClaim.employeeId} • {selectedClaim.id}</div>
                 </div>
                 <Badge className={getStatusColor(selectedClaim.status)}>
                   <div className="flex items-center gap-1">
@@ -353,24 +353,24 @@ const CorporateClaims: React.FC = () => {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <div className="text-gray-600">Type</div>
+                  <div className="text-slate-400">Type</div>
                   <div className="font-medium">{selectedClaim.claimType}</div>
                 </div>
                 <div>
-                  <div className="text-gray-600">Amount</div>
+                  <div className="text-slate-400">Amount</div>
                   <div className="font-medium">{selectedClaim.amount}</div>
                 </div>
                 <div>
-                  <div className="text-gray-600">Provider</div>
+                  <div className="text-slate-400">Provider</div>
                   <div className="font-medium">{selectedClaim.provider}</div>
                 </div>
                 <div>
-                  <div className="text-gray-600">Service Date</div>
+                  <div className="text-slate-400">Service Date</div>
                   <div className="font-medium">{new Date(selectedClaim.serviceDate).toLocaleDateString()}</div>
                 </div>
               </div>
               <div>
-                <div className="text-gray-600">Description</div>
+                <div className="text-slate-400">Description</div>
                 <div className="font-medium">{selectedClaim.description}</div>
               </div>
               <div className="flex gap-2">
@@ -503,39 +503,39 @@ const CorporateClaims: React.FC = () => {
 
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                         <div>
-                          <p className="text-gray-600">Claim ID</p>
+                          <p className="text-slate-400">Claim ID</p>
                           <p className="font-semibold">{claim.id}</p>
                         </div>
                         <div>
-                          <p className="text-gray-600">Type</p>
+                          <p className="text-slate-400">Type</p>
                           <p className="font-semibold">{claim.claimType}</p>
                         </div>
                         <div>
-                          <p className="text-gray-600">Amount</p>
+                          <p className="text-slate-400">Amount</p>
                           <p className="font-semibold text-green-600">{claim.amount}</p>
                         </div>
                         <div>
-                          <p className="text-gray-600">Service Date</p>
+                          <p className="text-slate-400">Service Date</p>
                           <p className="font-semibold">{new Date(claim.serviceDate).toLocaleDateString()}</p>
                         </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
-                          <p className="text-gray-600">Provider</p>
+                          <p className="text-slate-400">Provider</p>
                           <p className="font-semibold">{claim.provider}</p>
                         </div>
                         <div>
-                          <p className="text-gray-600">Submitted</p>
+                          <p className="text-slate-400">Submitted</p>
                           <p className="font-semibold">{new Date(claim.submittedDate).toLocaleDateString()}</p>
                         </div>
                       </div>
 
-                      <div className="text-sm text-gray-600">
+                      <div className="text-sm text-slate-400">
                         <strong>Description:</strong> {claim.description}
                       </div>
 
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <div className="flex items-center gap-2 text-sm text-slate-400">
                         <FileText className="h-4 w-4" />
                         <span>{claim.documents} document(s) attached</span>
                       </div>
@@ -564,11 +564,11 @@ const CorporateClaims: React.FC = () => {
           </div>
 
           {isLoading && claims.length === 0 && (
-            <div className="text-sm text-gray-600 mt-4">Loading claims…</div>
+            <div className="text-sm text-slate-400 mt-4">Loading claims…</div>
           )}
 
           {filteredClaims.length === 0 && (
-            <div className="text-center py-12 text-gray-500">
+            <div className="text-center py-12 text-slate-400">
               <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No claims found matching your criteria</p>
             </div>

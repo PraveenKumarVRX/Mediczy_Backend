@@ -423,42 +423,42 @@ const CorporateEmployees: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="font-semibold">{selectedEmployee.name}</div>
-                  <div className="text-gray-600">{selectedEmployee.designation}</div>
+                  <div className="text-slate-400">{selectedEmployee.designation}</div>
                 </div>
                 <Badge className={getHealthStatusColor(selectedEmployee.healthStatus)}>{selectedEmployee.healthStatus}</Badge>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <div className="text-gray-600">Employee ID</div>
+                  <div className="text-slate-400">Employee ID</div>
                   <div className="font-medium">{selectedEmployee.employeeId}</div>
                 </div>
                 <div>
-                  <div className="text-gray-600">Department</div>
+                  <div className="text-slate-400">Department</div>
                   <div className="font-medium">{selectedEmployee.department}</div>
                 </div>
                 <div>
-                  <div className="text-gray-600">Email</div>
+                  <div className="text-slate-400">Email</div>
                   <div className="font-medium">{selectedEmployee.email}</div>
                 </div>
                 <div>
-                  <div className="text-gray-600">Phone</div>
+                  <div className="text-slate-400">Phone</div>
                   <div className="font-medium">{selectedEmployee.phone}</div>
                 </div>
                 <div>
-                  <div className="text-gray-600">Joining Date</div>
+                  <div className="text-slate-400">Joining Date</div>
                   <div className="font-medium">
                     {selectedEmployee.joiningDate ? new Date(selectedEmployee.joiningDate).toLocaleDateString() : '—'}
                   </div>
                 </div>
                 <div>
-                  <div className="text-gray-600">Last Checkup</div>
+                  <div className="text-slate-400">Last Checkup</div>
                   <div className="font-medium">
                     {selectedEmployee.lastCheckup ? new Date(selectedEmployee.lastCheckup).toLocaleDateString() : '—'}
                   </div>
                 </div>
               </div>
               <div>
-                <div className="text-gray-600">Insurance Plan</div>
+                <div className="text-slate-400">Insurance Plan</div>
                 <div className="font-medium">{selectedEmployee.insurancePlan}</div>
               </div>
             </div>
@@ -505,7 +505,7 @@ const CorporateEmployees: React.FC = () => {
       {/* Search and Filter */}
       <div className="flex gap-4 mb-6">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+          <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
           <Input
             placeholder="Search employees..."
             value={searchTerm}
@@ -547,12 +547,12 @@ const CorporateEmployees: React.FC = () => {
               </thead>
               <tbody>
                 {filteredEmployees.map((emp) => (
-                  <tr key={emp.id} className="border-b hover:bg-gray-50">
+                  <tr key={emp.id} className="border-b hover:bg-slate-800/40">
                     <td className="p-3 font-medium">{emp.employeeId}</td>
                     <td className="p-3">
                       <div>
                         <p className="font-medium">{emp.name}</p>
-                        <p className="text-sm text-gray-600">{emp.designation}</p>
+                        <p className="text-sm text-slate-400">{emp.designation}</p>
                       </div>
                     </td>
                     <td className="p-3">{emp.department}</td>
@@ -586,7 +586,7 @@ const CorporateEmployees: React.FC = () => {
             </table>
           </div>
           {isLoading && employees.length === 0 && (
-            <div className="text-sm text-gray-600 mt-4">Loading employees…</div>
+            <div className="text-sm text-slate-400 mt-4">Loading employees…</div>
           )}
         </CardContent>
       </Card>
@@ -608,7 +608,7 @@ const CorporateEmployees: React.FC = () => {
                 <FileSpreadsheet className="h-5 w-5 text-blue-600 mt-0.5" />
                 <div className="flex-1">
                   <h4 className="font-semibold text-sm mb-1">Step 1: Download Template</h4>
-                  <p className="text-sm text-gray-600 mb-2">
+                  <p className="text-sm text-slate-400 mb-2">
                     Download the CSV template with the required format and fill in employee details.
                   </p>
                   <Button onClick={downloadTemplate} variant="outline" size="sm">
@@ -620,12 +620,12 @@ const CorporateEmployees: React.FC = () => {
             </div>
 
             {/* File Upload Section */}
-            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <div className="bg-slate-800/40 p-4 rounded-lg border border-slate-700">
               <div className="flex items-start gap-3">
-                <Upload className="h-5 w-5 text-gray-600 mt-0.5" />
+                <Upload className="h-5 w-5 text-slate-400 mt-0.5" />
                 <div className="flex-1">
                   <h4 className="font-semibold text-sm mb-1">Step 2: Upload File</h4>
-                  <p className="text-sm text-gray-600 mb-3">
+                  <p className="text-sm text-slate-400 mb-3">
                     Select the completed CSV file to upload employee data.
                   </p>
                   <Input
@@ -646,7 +646,7 @@ const CorporateEmployees: React.FC = () => {
 
             {/* Upload Results */}
             {uploadResults && (
-              <div className="bg-white p-4 rounded-lg border">
+              <div className="bg-slate-900 p-4 rounded-lg border">
                 <h4 className="font-semibold text-sm mb-3">Upload Results</h4>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between p-2 bg-green-50 rounded border border-green-200">
@@ -684,7 +684,7 @@ const CorporateEmployees: React.FC = () => {
             )}
 
             {/* Instructions */}
-            <div className="text-xs text-gray-600 space-y-1">
+            <div className="text-xs text-slate-400 space-y-1">
               <p className="font-semibold">Required Fields:</p>
               <ul className="list-disc list-inside ml-2 space-y-0.5">
                 <li>name, email, department</li>

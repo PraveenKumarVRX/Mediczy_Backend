@@ -240,14 +240,14 @@ const CorporateHelp: React.FC = () => {
               >
                 <CardContent className="pt-6">
                   <div className="flex items-start gap-4">
-                    <div className="p-3 bg-gray-50 rounded-lg">
+                    <div className="p-3 bg-slate-800/40 rounded-lg">
                       {resource.icon}
                     </div>
                     <div className="flex-1">
                       <h3 className="font-semibold mb-1">{resource.title}</h3>
-                      <p className="text-sm text-gray-600">{resource.description}</p>
+                      <p className="text-sm text-slate-400">{resource.description}</p>
                     </div>
-                    <ChevronRight className="h-5 w-5 text-gray-400" />
+                    <ChevronRight className="h-5 w-5 text-slate-500" />
                   </div>
                 </CardContent>
               </Card>
@@ -270,7 +270,7 @@ const CorporateHelp: React.FC = () => {
               </div>
               <div>
                 <h3 className="font-semibold mb-1">Set Up Your Organization</h3>
-                <p className="text-sm text-gray-600">Configure company details, departments, and health program settings in the Settings section.</p>
+                <p className="text-sm text-slate-400">Configure company details, departments, and health program settings in the Settings section.</p>
               </div>
             </div>
             <div className="flex items-start gap-4 p-4 bg-green-50 rounded-lg">
@@ -279,7 +279,7 @@ const CorporateHelp: React.FC = () => {
               </div>
               <div>
                 <h3 className="font-semibold mb-1">Add Employees</h3>
-                <p className="text-sm text-gray-600">Import or manually add employee information to enroll them in your health program.</p>
+                <p className="text-sm text-slate-400">Import or manually add employee information to enroll them in your health program.</p>
               </div>
             </div>
             <div className="flex items-start gap-4 p-4 bg-purple-50 rounded-lg">
@@ -288,7 +288,7 @@ const CorporateHelp: React.FC = () => {
               </div>
               <div>
                 <h3 className="font-semibold mb-1">Schedule Health Checkups</h3>
-                <p className="text-sm text-gray-600">Use the Appointments section to schedule checkups and wellness visits for your team.</p>
+                <p className="text-sm text-slate-400">Use the Appointments section to schedule checkups and wellness visits for your team.</p>
               </div>
             </div>
             <div className="flex items-start gap-4 p-4 bg-orange-50 rounded-lg">
@@ -297,7 +297,7 @@ const CorporateHelp: React.FC = () => {
               </div>
               <div>
                 <h3 className="font-semibold mb-1">Monitor Health Metrics</h3>
-                <p className="text-sm text-gray-600">Track employee health trends and analytics through the Health Analysis dashboard.</p>
+                <p className="text-sm text-slate-400">Track employee health trends and analytics through the Health Analysis dashboard.</p>
               </div>
             </div>
           </div>
@@ -322,7 +322,7 @@ const CorporateHelp: React.FC = () => {
                     </div>
                   </AccordionTrigger>
                   <AccordionContent>
-                    <div className="pl-8 text-gray-600">
+                    <div className="pl-8 text-slate-400">
                       {faq.answer}
                     </div>
                   </AccordionContent>
@@ -330,7 +330,7 @@ const CorporateHelp: React.FC = () => {
               ))}
             </Accordion>
           ) : (
-            <div className="text-center py-12 text-gray-500">
+            <div className="text-center py-12 text-slate-400">
               <HelpCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No FAQs found matching your search</p>
             </div>
@@ -347,7 +347,7 @@ const CorporateHelp: React.FC = () => {
             </div>
             <div className="flex-1">
               <h3 className="font-semibold text-lg mb-2">Still need help?</h3>
-              <p className="text-gray-700 mb-4">
+              <p className="text-slate-300 mb-4">
                 Our support team is available 24/7 to assist you with any questions or issues.
               </p>
               <div className="flex gap-3">

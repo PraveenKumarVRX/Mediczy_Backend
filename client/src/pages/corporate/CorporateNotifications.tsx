@@ -86,7 +86,7 @@ const CorporateNotifications: React.FC = () => {
       claim_status: 'bg-orange-100 text-orange-800',
       wellness: 'bg-teal-100 text-teal-800'
     };
-    return colors[type] || 'bg-gray-100 text-gray-800';
+    return colors[type] || 'bg-slate-800 text-slate-200';
   };
 
   const getPriorityBadge = (priority: string) => {
@@ -176,7 +176,7 @@ const CorporateNotifications: React.FC = () => {
         {/* Search and Filter */}
         <div className="flex gap-4 mb-6">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
             <Input
               placeholder="Search notifications..."
               value={searchTerm}
@@ -191,9 +191,9 @@ const CorporateNotifications: React.FC = () => {
         </div>
 
         {showFilters && (
-          <div className="flex flex-wrap items-center gap-3 mb-6 p-4 border rounded-lg bg-gray-50">
+          <div className="flex flex-wrap items-center gap-3 mb-6 p-4 border rounded-lg bg-slate-800/40">
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600">Priority:</span>
+              <span className="text-sm text-slate-400">Priority:</span>
               {(['all','high','medium','low'] as const).map((p) => (
                 <Button
                   key={p}
@@ -296,7 +296,7 @@ const CorporateNotifications: React.FC = () => {
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1 text-sm text-gray-600">
+                  <div className="flex items-center gap-1 text-sm text-slate-400">
                     <Calendar className="h-4 w-4" />
                     {notification.timestamp.toLocaleString()}
                   </div>

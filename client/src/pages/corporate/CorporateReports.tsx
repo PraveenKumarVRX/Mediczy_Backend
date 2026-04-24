@@ -105,9 +105,9 @@ const CorporateReports: React.FC = () => {
       case 'generating':
         return 'bg-blue-100 text-blue-800';
       case 'scheduled':
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-slate-800 text-slate-200';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-slate-800 text-slate-200';
     }
   };
 
@@ -120,7 +120,7 @@ const CorporateReports: React.FC = () => {
       case 'CSV':
         return 'bg-blue-100 text-blue-800';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-slate-800 text-slate-200';
     }
   };
 
@@ -202,7 +202,7 @@ const CorporateReports: React.FC = () => {
             { label: 'Generating', value: stats.generating },
           ]}
           actions={
-            <Button size="sm" onClick={() => handleGenerate('Custom Report')} disabled={isGenerating} className="bg-white text-violet-700 hover:bg-white/90 shadow-lg">
+            <Button size="sm" onClick={() => handleGenerate('Custom Report')} disabled={isGenerating} className="bg-slate-900 text-violet-700 hover:bg-white/90 shadow-lg">
               <FileBarChart className="h-4 w-4 mr-2" />
               Generate Report
             </Button>
@@ -218,22 +218,22 @@ const CorporateReports: React.FC = () => {
             {previewReport && (
               <div className="space-y-3 text-sm">
                 <div className="font-semibold text-base">{previewReport.title}</div>
-                <div className="text-gray-600">{previewReport.description}</div>
+                <div className="text-slate-400">{previewReport.description}</div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <div className="text-gray-600">Category</div>
+                    <div className="text-slate-400">Category</div>
                     <div className="font-medium">{previewReport.category}</div>
                   </div>
                   <div>
-                    <div className="text-gray-600">Period</div>
+                    <div className="text-slate-400">Period</div>
                     <div className="font-medium">{previewReport.period}</div>
                   </div>
                 <div>
-                  <div className="text-gray-600">Generated</div>
+                  <div className="text-slate-400">Generated</div>
                   <div className="font-medium">{previewReport.generatedDate}</div>
                 </div>
                 <div>
-                  <div className="text-gray-600">Format</div>
+                  <div className="text-slate-400">Format</div>
                   <div className="font-medium">{previewReport.format}</div>
                 </div>
               </div>
@@ -395,7 +395,7 @@ const CorporateReports: React.FC = () => {
                           <FileText className="h-5 w-5 text-blue-600" />
                           <h3 className="font-semibold text-lg">{report.title}</h3>
                         </div>
-                        <p className="text-sm text-gray-600">{report.description}</p>
+                        <p className="text-sm text-slate-400">{report.description}</p>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-3">
@@ -409,15 +409,15 @@ const CorporateReports: React.FC = () => {
 
                       <div className="grid grid-cols-3 gap-4 text-sm">
                         <div>
-                          <p className="text-gray-600">Period</p>
+                          <p className="text-slate-400">Period</p>
                           <p className="font-semibold">{report.period}</p>
                         </div>
                         <div>
-                          <p className="text-gray-600">Generated</p>
+                          <p className="text-slate-400">Generated</p>
                           <p className="font-semibold">{report.generatedDate}</p>
                         </div>
                         <div>
-                          <p className="text-gray-600">File Size</p>
+                          <p className="text-slate-400">File Size</p>
                           <p className="font-semibold">{report.size}</p>
                         </div>
                       </div>
@@ -456,14 +456,14 @@ const CorporateReports: React.FC = () => {
           </div>
 
           {filteredReports.length === 0 && (
-            <div className="text-center py-12 text-gray-500">
+            <div className="text-center py-12 text-slate-400">
               <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No reports found matching your criteria</p>
             </div>
           )}
 
           {isLoading && reports.length === 0 && (
-            <div className="text-sm text-gray-600 mt-4">Loading reports…</div>
+            <div className="text-sm text-slate-400 mt-4">Loading reports…</div>
           )}
         </CardContent>
       </Card>

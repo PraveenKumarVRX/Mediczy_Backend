@@ -74,7 +74,7 @@ const CorporateSupport: React.FC = () => {
         <HelpCircle className="h-8 w-8 text-blue-600" />
         <div>
           <h1 className="text-3xl font-bold">Support Center</h1>
-          <p className="text-gray-500 mt-1">Get help from our dedicated support team</p>
+          <p className="text-slate-400 mt-1">Get help from our dedicated support team</p>
         </div>
       </div>
 
@@ -87,7 +87,7 @@ const CorporateSupport: React.FC = () => {
               </div>
               <div>
                 <h3 className="font-semibold text-lg mb-2">Live Chat</h3>
-                <p className="text-sm text-gray-600 mb-4">Chat with our support team in real-time</p>
+                <p className="text-sm text-slate-400 mb-4">Chat with our support team in real-time</p>
                 <Button onClick={() => setTicketOpen(true)}>Start Chat</Button>
               </div>
             </div>
@@ -102,7 +102,7 @@ const CorporateSupport: React.FC = () => {
               </div>
               <div>
                 <h3 className="font-semibold text-lg mb-2">Phone Support</h3>
-                <p className="text-sm text-gray-600 mb-4">Call us at +1 (800) 123-4567</p>
+                <p className="text-sm text-slate-400 mb-4">Call us at +1 (800) 123-4567</p>
                 <Button asChild variant="outline">
                   <a href="tel:+18001234567">Call Now</a>
                 </Button>
@@ -119,7 +119,7 @@ const CorporateSupport: React.FC = () => {
               </div>
               <div>
                 <h3 className="font-semibold text-lg mb-2">Email Support</h3>
-                <p className="text-sm text-gray-600 mb-4">Send us an email anytime</p>
+                <p className="text-sm text-slate-400 mb-4">Send us an email anytime</p>
                 <Button asChild variant="outline">
                   <a href="mailto:support@mediczy.com">Send Email</a>
                 </Button>
@@ -196,7 +196,7 @@ const CorporateSupport: React.FC = () => {
             <Clock className="h-6 w-6 text-blue-600 mt-1" />
             <div>
               <h3 className="font-semibold mb-2">24/7 Support Available</h3>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-slate-400">
                 Our support team is available around the clock to assist you with any questions or issues.
               </p>
             </div>

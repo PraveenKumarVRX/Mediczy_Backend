@@ -273,7 +273,7 @@ const CorporateRiskMonitor: React.FC = () => {
       case 'medium':
         return 'bg-yellow-100 text-yellow-800 border-yellow-300';
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-300';
+        return 'bg-slate-800 text-slate-200 border-slate-600';
     }
   };
 
@@ -284,7 +284,7 @@ const CorporateRiskMonitor: React.FC = () => {
       case 'decreasing':
         return <TrendingUp className="h-4 w-4 text-green-600 transform rotate-180" />;
       default:
-        return <Activity className="h-4 w-4 text-gray-600" />;
+        return <Activity className="h-4 w-4 text-slate-400" />;
     }
   };
 
@@ -327,7 +327,7 @@ const CorporateRiskMonitor: React.FC = () => {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Alerts Enabled</Label>
-                <p className="text-sm text-gray-500">Turn risk alerts on/off</p>
+                <p className="text-sm text-slate-400">Turn risk alerts on/off</p>
               </div>
               <Switch
                 checked={alertsConfig.enabled}
@@ -338,7 +338,7 @@ const CorporateRiskMonitor: React.FC = () => {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Email Notifications</Label>
-                <p className="text-sm text-gray-500">Send alerts to corporate email</p>
+                <p className="text-sm text-slate-400">Send alerts to corporate email</p>
               </div>
               <Switch
                 checked={alertsConfig.notifyEmail}
@@ -349,7 +349,7 @@ const CorporateRiskMonitor: React.FC = () => {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>SMS Notifications</Label>
-                <p className="text-sm text-gray-500">Send alerts via SMS</p>
+                <p className="text-sm text-slate-400">Send alerts via SMS</p>
               </div>
               <Switch
                 checked={alertsConfig.notifySms}
@@ -478,7 +478,7 @@ const CorporateRiskMonitor: React.FC = () => {
                   </div>
                   <div className="flex items-baseline gap-2 mb-2">
                     <span className="text-3xl font-bold">{category.count}</span>
-                    <span className="text-sm text-gray-500">employees</span>
+                    <span className="text-sm text-slate-400">employees</span>
                   </div>
                   <Badge className={getRiskColor(category.severity)}>
                     {category.severity.toUpperCase()} SEVERITY
@@ -538,7 +538,7 @@ const CorporateRiskMonitor: React.FC = () => {
                       </Badge>
                     </div>
                     <div className="text-right">
-                      <div className="text-sm text-gray-600 mb-1">Health Score</div>
+                      <div className="text-sm text-slate-400 mb-1">Health Score</div>
                       <div className={`text-2xl font-bold ${
                         employee.healthScore < 50 ? 'text-red-600' :
                         employee.healthScore < 70 ? 'text-orange-600' :
@@ -551,7 +551,7 @@ const CorporateRiskMonitor: React.FC = () => {
 
                   <div className="space-y-3">
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-700 mb-2">Risk Factors:</h4>
+                      <h4 className="text-sm font-semibold text-slate-300 mb-2">Risk Factors:</h4>
                       <div className="flex flex-wrap gap-2">
                         {employee.riskFactors.map((factor, idx) => (
                           <Badge key={idx} variant="outline" className="text-xs">
@@ -564,14 +564,14 @@ const CorporateRiskMonitor: React.FC = () => {
 
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
-                        <p className="text-gray-600">Last Checkup</p>
+                        <p className="text-slate-400">Last Checkup</p>
                         <p className="font-semibold flex items-center gap-1">
                           <Calendar className="h-3 w-3" />
                           {new Date(employee.lastCheckup).toLocaleDateString()}
                         </p>
                       </div>
                       <div>
-                        <p className="text-gray-600">Next Action</p>
+                        <p className="text-slate-400">Next Action</p>
                         <p className="font-semibold">{employee.nextAction}</p>
                       </div>
                     </div>
@@ -588,7 +588,7 @@ const CorporateRiskMonitor: React.FC = () => {
           </div>
 
           {filteredEmployees.length === 0 && (
-            <div className="text-center py-12 text-gray-500">
+            <div className="text-center py-12 text-slate-400">
               <Heart className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No employees found matching your criteria</p>
             </div>
