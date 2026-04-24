@@ -544,7 +544,7 @@ export const getCorporateEmployeesHealth = async (req, res) => {
 export const getCorporateAppointments = async (req, res) => {
   try {
     const { Appointment, Doctor, User } = await import('../models/index.js');
-    const corporateTenantId = req.user?.organization_id || req.user?.tenant_id;
+    const corporateTenantId = req.user?.organization_id || req.user?.tenant_id || req.user?.corporateId;
 
     if (!corporateTenantId) {
       return res.status(403).json({

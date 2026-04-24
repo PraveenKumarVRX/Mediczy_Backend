@@ -150,13 +150,21 @@ const CorporateDashboard = () => {
   const [appointmentTypeFilter, setAppointmentTypeFilter] = useState('all');
   const [currentTime, setCurrentTime] = useState(new Date());
   
-  // Corporate profile - could be fetched from API
-  const corporateProfile = {
-    companyName: "TechCorp Industries",
-    logo: null,
-    adminName: "Corporate Admin",
-    plan: "Enterprise Wellness",
-  };
+  // Corporate profile — read from summary API or fall back to localStorage (set on login)
+  const [corporateProfile, setCorporateProfile] = useState(() => {
+    try {
+      const stored = localStorage.getItem('corporateData');
+      const parsed = stored ? JSON.parse(stored) : null;
+      return {
+        companyName: parsed?.companyName || "Corporate Portal",
+        logo: parsed?.logo || null,
+        adminName: parsed?.contactPerson || "Admin",
+        plan: parsed?.packageType || "Standard",
+      };
+    } catch {
+      return { companyName: "Corporate Portal", logo: null, adminName: "Admin", plan: "Standard" };
+    }
+  });
   
   // Time-based greeting like DoctorDashboard
   const getGreeting = () => {
@@ -223,6 +231,17 @@ const CorporateDashboard = () => {
       setHealthAnalytics(healthRes.data?.data || generateSampleHealthAnalytics());
       setEmployees(employeesRes.data?.data?.employees || generateSampleEmployees());
       setAppointments(appointmentsRes.data?.data?.appointments || generateSampleAppointments());
+
+      // Update corporate profile from summary API response
+      const cp = summaryRes.data?.data?.corporateProfile;
+      if (cp) {
+        setCorporateProfile(prev => ({
+          ...prev,
+          companyName: cp.organization || prev.companyName,
+          adminName: cp.contactPerson || prev.adminName,
+          plan: cp.packageType || prev.plan,
+        }));
+      }
     } catch (err: any) {
       console.error("Failed to load corporate dashboard", err);
       setError("Unable to load dashboard data. Showing sample data.");

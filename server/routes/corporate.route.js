@@ -461,6 +461,52 @@ router.get('/dashboard/health-analytics', authUser, requireRole('corporate'), ge
 router.get('/dashboard/employees-health', authUser, requireRole('corporate'), getCorporateEmployeesHealth);
 router.get('/dashboard/appointments', authUser, requireRole('corporate'), getCorporateAppointments);
 
+// Corporate profile — must be defined before the aggregator router (also mounted at /api/corporate)
+// intercepts /profile via its /:id route which only works for aggregator users.
+router.get('/profile', authUser, requireRole('corporate'), async (req, res) => {
+  try {
+    const corporateId = req.user?.corporateId || req.user?.id;
+    const [rows] = await postgresSequelize.query(
+      `SELECT id, uid, "companyName", "contactPerson", email, "phoneNumber", "alternatePhone",
+              industry, "employeeCount", "gstNumber", "panNumber", address, "packageType",
+              "packageStartDate", "packageEndDate", "packageAmount", services,
+              status, unique_id AS "uniqueId", "createdAt", "updatedAt"
+       FROM corporates WHERE id = :corporateId LIMIT 1`,
+      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    if (!rows) {
+      return res.status(404).json({ success: false, message: 'Corporate profile not found' });
+    }
+    return res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error('Corporate profile fetch error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch corporate profile' });
+  }
+});
+
+router.put('/profile', authUser, requireRole('corporate'), async (req, res) => {
+  try {
+    const corporateId = req.user?.corporateId || req.user?.id;
+    const allowed = ['contactPerson', 'phoneNumber', 'alternatePhone', 'industry', 'address', 'gstNumber', 'panNumber'];
+    const updates = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ success: false, message: 'No valid fields to update' });
+    }
+    const setClauses = Object.keys(updates).map(k => `"${k}" = :${k}`).join(', ');
+    await postgresSequelize.query(
+      `UPDATE corporates SET ${setClauses}, "updatedAt" = NOW() WHERE id = :corporateId`,
+      { replacements: { ...updates, corporateId } }
+    );
+    return res.json({ success: true, message: 'Profile updated successfully' });
+  } catch (error) {
+    console.error('Corporate profile update error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to update profile' });
+  }
+});
+
 // Mock corporate plans data - replace with database queries in production
 const corporatePlans = [
   {
@@ -1628,6 +1674,24 @@ const generateWellnessActivities = () => {
 if (wellnessActivities.length === 0) {
   wellnessActivities = generateWellnessActivities();
 }
+
+// Base wellness-calendar route — redirect to activities summary so the aggregator
+// router's /:id catch-all doesn't intercept it and crash with a type-cast error.
+router.get('/wellness-calendar', authUser, requireRole('corporate'), async (req, res) => {
+  try {
+    res.json({
+      success: true,
+      data: {
+        activities: wellnessActivities,
+        themes: WELLNESS_THEMES,
+        total: wellnessActivities.length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching wellness calendar:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch wellness calendar' });
+  }
+});
 
 // Get wellness calendar activities
 router.get('/wellness-calendar/activities', authUser, async (req, res) => {
