@@ -368,7 +368,7 @@ const CorporateGamification: React.FC = () => {
 
   return (
     <CorporateLayout title="Wellness Challenges & Leaderboards">
-      <div className="space-y-6">
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-6 space-y-6">
         <CorporatePageHeader
           icon={Trophy}
           title="Wellness Challenges & Gamification"
@@ -638,7 +638,7 @@ const CorporateGamification: React.FC = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-6">
+                <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-6 space-y-6">
                   {challenges.map(challenge => (
                     <div key={challenge.id} className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg">
                       <div className="flex items-center justify-between mb-4">

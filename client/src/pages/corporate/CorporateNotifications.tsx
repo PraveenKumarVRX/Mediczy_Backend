@@ -79,23 +79,23 @@ const CorporateNotifications: React.FC = () => {
 
   const getTypeColor = (type: string) => {
     const colors: Record<string, string> = {
-      announcement: 'bg-blue-100 text-blue-800',
-      health_alert: 'bg-red-100 text-red-800',
-      policy_update: 'bg-purple-100 text-purple-800',
-      appointment_reminder: 'bg-green-100 text-green-800',
-      claim_status: 'bg-orange-100 text-orange-800',
-      wellness: 'bg-teal-100 text-teal-800'
+      announcement: 'bg-blue-500/20 text-blue-400 border-0',
+      health_alert: 'bg-red-500/20 text-red-400 border-0',
+      policy_update: 'bg-purple-500/20 text-purple-400 border-0',
+      appointment_reminder: 'bg-emerald-500/20 text-emerald-400 border-0',
+      claim_status: 'bg-orange-500/20 text-orange-400 border-0',
+      wellness: 'bg-teal-500/20 text-teal-400 border-0'
     };
-    return colors[type] || 'bg-slate-800 text-slate-200';
+    return colors[type] || 'bg-slate-700 text-slate-300 border-0';
   };
 
   const getPriorityBadge = (priority: string) => {
     const colors: Record<string, string> = {
-      high: 'bg-red-100 text-red-800',
-      medium: 'bg-yellow-100 text-yellow-800',
-      low: 'bg-blue-100 text-blue-800'
+      high: 'bg-red-500/20 text-red-400 border-0',
+      medium: 'bg-amber-500/20 text-amber-400 border-0',
+      low: 'bg-blue-500/20 text-blue-400 border-0'
     };
-    return <Badge className={colors[priority]}>{priority.toUpperCase()}</Badge>;
+    return <Badge className={colors[priority] || 'bg-slate-700 text-slate-300 border-0'}>{priority.toUpperCase()}</Badge>;
   };
 
   const handleMarkAsRead = async (id: string) => {
@@ -146,7 +146,7 @@ const CorporateNotifications: React.FC = () => {
 
   return (
     <CorporateLayout title="Notifications">
-      <div className="space-y-6">
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-6 space-y-6">
         <CorporatePageHeader
           icon={BellRing}
           title="Corporate Notifications"
@@ -181,146 +181,146 @@ const CorporateNotifications: React.FC = () => {
               placeholder="Search notifications..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
+              className="pl-10 bg-slate-800 border-white/10 text-white placeholder:text-slate-500 focus:border-violet-500"
             />
           </div>
-          <Button variant="outline" onClick={() => setShowFilters((v) => !v)}>
+          <Button variant="outline" onClick={() => setShowFilters((v) => !v)}
+            className="border-white/10 text-slate-300 hover:bg-white/10 hover:text-white">
             <Filter className="mr-2 h-4 w-4" />
             Filters
           </Button>
         </div>
 
         {showFilters && (
-          <div className="flex flex-wrap items-center gap-3 mb-6 p-4 border rounded-lg bg-slate-800/40">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3 mb-6 p-4 border border-white/10 rounded-xl bg-slate-800/40">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm text-slate-400">Priority:</span>
               {(['all','high','medium','low'] as const).map((p) => (
-                <Button
+                <button
                   key={p}
-                  size="sm"
-                  variant={priorityFilter === p ? 'default' : 'outline'}
                   onClick={() => setPriorityFilter(p)}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
+                    priorityFilter === p
+                      ? 'bg-violet-600 text-white'
+                      : 'bg-slate-700/50 text-slate-400 hover:text-white border border-white/10'
+                  }`}
                 >
                   {p === 'all' ? 'All' : p.toUpperCase()}
-                </Button>
+                </button>
               ))}
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant={showUnreadOnly ? 'default' : 'outline'}
+              <button
                 onClick={() => setShowUnreadOnly((v) => !v)}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
+                  showUnreadOnly
+                    ? 'bg-violet-600 text-white'
+                    : 'bg-slate-700/50 text-slate-400 hover:text-white border border-white/10'
+                }`}
               >
                 Unread only
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => { setPriorityFilter('all'); setShowUnreadOnly(false); }}>
-                Reset filters
-              </Button>
+              </button>
+              <button
+                onClick={() => { setPriorityFilter('all'); setShowUnreadOnly(false); }}
+                className="px-3 py-1 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-300 transition-all"
+              >
+                Reset
+              </button>
             </div>
           </div>
         )}
 
         {/* Type Filter */}
-        <div className="flex gap-2 mb-6 overflow-x-auto">
-          <Button
-            variant={filter === 'all' ? 'default' : 'outline'}
-            onClick={() => setFilter('all')}
-            size="sm"
-          >
-            All
-          </Button>
-          <Button
-            variant={filter === 'announcement' ? 'default' : 'outline'}
-            onClick={() => setFilter('announcement')}
-            size="sm"
-          >
-            Announcements
-          </Button>
-          <Button
-            variant={filter === 'health_alert' ? 'default' : 'outline'}
-            onClick={() => setFilter('health_alert')}
-            size="sm"
-          >
-            Health Alerts
-          </Button>
-          <Button
-            variant={filter === 'policy_update' ? 'default' : 'outline'}
-            onClick={() => setFilter('policy_update')}
-            size="sm"
-          >
-            Policy Updates
-          </Button>
-          <Button
-            variant={filter === 'wellness' ? 'default' : 'outline'}
-            onClick={() => setFilter('wellness')}
-            size="sm"
-          >
-            Wellness
-          </Button>
-          <Button
-            variant={filter === 'claim_status' ? 'default' : 'outline'}
-            onClick={() => setFilter('claim_status')}
-            size="sm"
-          >
-            Claims
-          </Button>
+        <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
+          {([
+            { key: 'all', label: 'All' },
+            { key: 'announcement', label: 'Announcements' },
+            { key: 'health_alert', label: 'Health Alerts' },
+            { key: 'policy_update', label: 'Policy Updates' },
+            { key: 'wellness', label: 'Wellness' },
+            { key: 'claim_status', label: 'Claims' },
+          ] as const).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setFilter(key)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                filter === key
+                  ? 'bg-violet-600 text-white'
+                  : 'bg-slate-800/50 text-slate-400 hover:text-white border border-white/10'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         {/* Notifications List */}
-        <div className="space-y-4">
-          {filteredNotifications.map((notification) => (
-            <Card
-              key={notification.id}
-              className={`${!notification.isRead ? 'border-l-4 border-blue-500 bg-blue-50' : ''}`}
-            >
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <CardTitle className="text-lg">{notification.title}</CardTitle>
+        <div className="space-y-3">
+          {filteredNotifications.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+              <Bell className="h-12 w-12 mb-3 text-slate-700" />
+              <p className="text-sm font-medium text-slate-400">No notifications found</p>
+              <p className="text-xs text-slate-600 mt-1">Adjust filters or check back later</p>
+            </div>
+          ) : (
+            filteredNotifications.map((notification) => (
+              <Card
+                key={notification.id}
+                className={`!p-0 border border-white/[0.06] transition-all hover:border-white/[0.12] ${
+                  !notification.isRead
+                    ? 'bg-blue-500/5 border-l-4 !border-l-blue-500'
+                    : 'bg-slate-900/50'
+                }`}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <CardTitle className="text-sm font-semibold text-white">{notification.title}</CardTitle>
+                        {!notification.isRead && (
+                          <Badge className="bg-blue-500/20 text-blue-400 border-0 text-[10px]">NEW</Badge>
+                        )}
+                      </div>
+                      <CardDescription className="text-xs text-slate-400 leading-relaxed">
+                        {notification.message}
+                      </CardDescription>
+                    </div>
+                    <div className="flex flex-col gap-1.5 items-end flex-shrink-0">
+                      <Badge className={getTypeColor(notification.type)}>
+                        {notification.type.replace('_', ' ')}
+                      </Badge>
+                      {getPriorityBadge(notification.priority)}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                      <Calendar className="h-3.5 w-3.5" />
+                      {notification.timestamp.toLocaleString()}
+                    </div>
+                    <div className="flex gap-2">
+                      {notification.actionUrl && (
+                        <Button variant="outline" size="sm"
+                          className="border-white/10 text-slate-400 hover:text-white hover:bg-white/10 h-7 text-xs"
+                          onClick={() => window.open(notification.actionUrl, '_blank', 'noopener,noreferrer')}>
+                          View Details
+                        </Button>
+                      )}
                       {!notification.isRead && (
-                        <Badge className="bg-blue-600 text-white">NEW</Badge>
+                        <Button variant="outline" size="sm"
+                          className="border-white/10 text-slate-400 hover:text-white hover:bg-white/10 h-7 text-xs"
+                          onClick={() => handleMarkAsRead(notification.id)}>
+                          <CheckCircle className="mr-1.5 h-3.5 w-3.5" />
+                          Mark as Read
+                        </Button>
                       )}
                     </div>
-                    <CardDescription className="text-base">
-                      {notification.message}
-                    </CardDescription>
                   </div>
-                  <div className="flex flex-col gap-2 items-end">
-                    <Badge className={getTypeColor(notification.type)}>
-                      {notification.type.replace('_', ' ')}
-                    </Badge>
-                    {getPriorityBadge(notification.priority)}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1 text-sm text-slate-400">
-                    <Calendar className="h-4 w-4" />
-                    {notification.timestamp.toLocaleString()}
-                  </div>
-                  <div className="flex gap-2">
-                    {notification.actionUrl && (
-                      <Button variant="outline" size="sm" onClick={() => window.open(notification.actionUrl, '_blank', 'noopener,noreferrer')}>
-                        View Details
-                      </Button>
-                    )}
-                    {!notification.isRead && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleMarkAsRead(notification.id)}
-                      >
-                        <CheckCircle className="mr-2 h-4 w-4" />
-                        Mark as Read
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            ))
+          )}
         </div>
       </div>
     </CorporateLayout>

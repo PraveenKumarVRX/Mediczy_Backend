@@ -141,15 +141,15 @@ const CorporateAppointments: React.FC = () => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'scheduled':
-        return 'bg-blue-100 text-blue-800';
+        return 'bg-blue-500/15 text-blue-400';
       case 'completed':
-        return 'bg-green-100 text-green-800';
+        return 'bg-emerald-500/15 text-emerald-400';
       case 'cancelled':
-        return 'bg-slate-800 text-slate-200';
+        return 'bg-slate-700/50 text-slate-400';
       case 'no-show':
-        return 'bg-red-100 text-red-800';
+        return 'bg-red-500/15 text-red-400';
       default:
-        return 'bg-slate-800 text-slate-200';
+        return 'bg-slate-700/50 text-slate-400';
     }
   };
 
@@ -303,7 +303,7 @@ const CorporateAppointments: React.FC = () => {
 
   return (
     <CorporateLayout title="Corporate Appointments">
-      <div className="space-y-6">
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-6 space-y-6">
         <CorporatePageHeader
           icon={CalendarCheck}
           title="Corporate Appointments"

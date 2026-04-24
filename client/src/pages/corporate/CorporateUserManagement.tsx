@@ -45,10 +45,10 @@ interface UserRecord {
 }
 
 const statusColors: Record<string, string> = {
-  active: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  inactive: 'bg-red-100 text-red-700 border-red-200',
-  invited: 'bg-amber-100 text-amber-700 border-amber-200',
-  not_invited: 'bg-slate-100 text-slate-600 border-slate-200',
+  active: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+  inactive: 'bg-red-500/15 text-red-400 border-red-500/30',
+  invited: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  not_invited: 'bg-slate-700/50 text-slate-400 border-slate-600/50',
 };
 
 const statusLabels: Record<string, string> = {
@@ -188,7 +188,7 @@ const CorporateUserManagement = () => {
 
   return (
     <CorporateLayout title="User Management" subtitle="Manage employee app accounts and portal access">
-      <div className="space-y-6">
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-6 space-y-6">
         <CorporatePageHeader
           icon={Shield}
           title="User Management"
@@ -205,18 +205,18 @@ const CorporateUserManagement = () => {
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: 'Total Users', value: statCounts.total, icon: Users, color: 'text-violet-600', bg: 'bg-violet-50 dark:bg-violet-900/20' },
-            { label: 'Active', value: statCounts.active, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
-            { label: 'Invite Sent', value: statCounts.invited, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-900/20' },
-            { label: 'Not Invited', value: statCounts.notInvited, icon: XCircle, color: 'text-slate-500', bg: 'bg-slate-50 dark:bg-slate-800/50' },
+            { label: 'Total Users', value: statCounts.total, icon: Users, color: 'text-violet-400', bg: 'bg-violet-500/15' },
+            { label: 'Active', value: statCounts.active, icon: CheckCircle, color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
+            { label: 'Invite Sent', value: statCounts.invited, icon: Clock, color: 'text-amber-400', bg: 'bg-amber-500/15' },
+            { label: 'Not Invited', value: statCounts.notInvited, icon: XCircle, color: 'text-slate-400', bg: 'bg-slate-700/50' },
           ].map((stat) => (
-            <Card key={stat.label} className="border-slate-200 dark:border-slate-700/50">
+            <Card key={stat.label} className="!p-0 bg-slate-900/50 border-white/[0.06]">
               <CardContent className="p-4 flex items-center gap-3">
                 <div className={`p-2.5 rounded-xl ${stat.bg}`}>
                   <stat.icon className={`w-5 h-5 ${stat.color}`} />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-slate-900 dark:text-white">{stat.value}</p>
+                  <p className="text-2xl font-bold text-white">{stat.value}</p>
                   <p className="text-xs text-slate-500">{stat.label}</p>
                 </div>
               </CardContent>
@@ -225,16 +225,16 @@ const CorporateUserManagement = () => {
         </div>
 
         {/* Filters */}
-        <Card className="border-slate-200 dark:border-slate-700/50">
+        <Card className="!p-0 bg-slate-900/50 border-white/[0.06]">
           <CardContent className="p-4">
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <Input
                   placeholder="Search by name, email, employee ID..."
                   value={search}
                   onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                  className="pl-9"
+                  className="pl-9 bg-slate-800/60 border-white/10 text-white placeholder:text-slate-500 focus:border-violet-500"
                 />
               </div>
               <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v); setPage(1); }}>
@@ -269,9 +269,9 @@ const CorporateUserManagement = () => {
         </Card>
 
         {/* Table */}
-        <Card className="border-slate-200 dark:border-slate-700/50">
+        <Card className="!p-0 bg-slate-900/50 border-white/[0.06]">
           <CardHeader className="pb-0">
-            <CardTitle className="text-base font-semibold">
+            <CardTitle className="text-base font-semibold text-white">
               {filtered.length} user{filtered.length !== 1 ? 's' : ''} found
             </CardTitle>
           </CardHeader>
@@ -289,7 +289,7 @@ const CorporateUserManagement = () => {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                    <tr className="border-b border-white/[0.06] bg-slate-800/30">
                       <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Department</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Contact</th>
@@ -299,20 +299,20 @@ const CorporateUserManagement = () => {
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {paginated.map((user) => (
-                      <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                      <tr key={user.id} className="hover:bg-slate-800/30 transition-colors border-b border-white/[0.04]">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-violet-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
                               {user.name.charAt(0).toUpperCase()}
                             </div>
                             <div>
-                              <p className="font-medium text-slate-900 dark:text-white">{user.name}</p>
+                              <p className="font-medium text-white">{user.name}</p>
                               <p className="text-xs text-slate-500">{user.employeeId}</p>
                             </div>
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <p className="text-slate-700 dark:text-slate-300">{user.department}</p>
+                          <p className="text-slate-300">{user.department}</p>
                           <p className="text-xs text-slate-500">{user.designation}</p>
                         </td>
                         <td className="px-4 py-3">
@@ -339,7 +339,7 @@ const CorporateUserManagement = () => {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className="h-7 text-xs gap-1 text-violet-600 border-violet-200 hover:bg-violet-50"
+                                className="h-7 text-xs gap-1 text-violet-400 border-violet-500/30 hover:bg-violet-500/10 bg-transparent"
                                 onClick={() => handleSendInvite(user)}
                               >
                                 <Send className="w-3 h-3" /> Invite
@@ -356,7 +356,7 @@ const CorporateUserManagement = () => {
                             <Button
                               size="sm"
                               variant="outline"
-                              className={`h-7 text-xs gap-1 ${user.appStatus === 'active' ? 'text-red-600 border-red-200 hover:bg-red-50' : 'text-emerald-600 border-emerald-200 hover:bg-emerald-50'}`}
+                              className={`h-7 text-xs gap-1 bg-transparent ${user.appStatus === 'active' ? 'text-red-400 border-red-500/30 hover:bg-red-500/10' : 'text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10'}`}
                               onClick={() => handleToggleStatus(user)}
                             >
                               {user.appStatus === 'active' ? <UserX className="w-3 h-3" /> : <UserCheck className="w-3 h-3" />}
@@ -376,7 +376,7 @@ const CorporateUserManagement = () => {
         {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-slate-400">
               Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
             </p>
             <div className="flex gap-2">

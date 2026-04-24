@@ -97,12 +97,12 @@ const CorporateEmployees: React.FC = () => {
 
   const getHealthStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      excellent: 'bg-green-100 text-green-800',
-      good: 'bg-blue-100 text-blue-800',
-      moderate: 'bg-yellow-100 text-yellow-800',
-      poor: 'bg-red-100 text-red-800'
+      excellent: 'bg-emerald-500/15 text-emerald-400',
+      good: 'bg-blue-500/15 text-blue-400',
+      moderate: 'bg-amber-500/15 text-amber-400',
+      poor: 'bg-red-500/15 text-red-400'
     };
-    return colors[status];
+    return colors[status] || 'bg-slate-700/50 text-slate-400';
   };
 
   const filteredEmployees = useMemo(() => {
@@ -289,7 +289,7 @@ const CorporateEmployees: React.FC = () => {
 
   return (
     <CorporateLayout title="Employee Management">
-      <div className="space-y-6">
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-6 space-y-6">
         <CorporatePageHeader
           icon={Users}
           title="Employee Management"
@@ -383,7 +383,7 @@ const CorporateEmployees: React.FC = () => {
                 <Input id="designation" value={form.designation} onChange={(e) => setForm((p) => ({ ...p, designation: e.target.value }))} />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="insurancePlan">Insurance Plan</Label>
+                <Label htmlFor="insurancePlan">Wellness Plan</Label>
                 <Input id="insurancePlan" value={form.insurancePlan} onChange={(e) => setForm((p) => ({ ...p, insurancePlan: e.target.value }))} />
               </div>
             </div>
@@ -458,7 +458,7 @@ const CorporateEmployees: React.FC = () => {
                 </div>
               </div>
               <div>
-                <div className="text-slate-400">Insurance Plan</div>
+                <div className="text-slate-400">Wellness Plan</div>
                 <div className="font-medium">{selectedEmployee.insurancePlan}</div>
               </div>
             </div>
@@ -468,36 +468,36 @@ const CorporateEmployees: React.FC = () => {
 
       {/* Stats */}
       <div className="grid md:grid-cols-4 gap-4 mb-6">
-        <Card>
+        <Card className="!p-0 bg-slate-900/50 border-white/[0.06]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Total Employees</CardTitle>
+            <CardTitle className="text-sm text-slate-400">Total Employees</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold">{employees.length}</p>
+            <p className="text-3xl font-bold text-white">{employees.length}</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="!p-0 bg-slate-900/50 border-white/[0.06]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Active Plans</CardTitle>
+            <CardTitle className="text-sm text-slate-400">Active Plans</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-green-600">{employees.length}</p>
+            <p className="text-3xl font-bold text-emerald-400">{employees.length}</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="!p-0 bg-slate-900/50 border-white/[0.06]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Pending Checkups</CardTitle>
+            <CardTitle className="text-sm text-slate-400">Pending Checkups</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-orange-600">5</p>
+            <p className="text-3xl font-bold text-amber-400">5</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="!p-0 bg-slate-900/50 border-white/[0.06]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Departments</CardTitle>
+            <CardTitle className="text-sm text-slate-400">Departments</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-blue-600">{departments.length}</p>
+            <p className="text-3xl font-bold text-blue-400">{departments.length}</p>
           </CardContent>
         </Card>
       </div>
@@ -510,11 +510,11 @@ const CorporateEmployees: React.FC = () => {
             placeholder="Search employees..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
+            className="pl-10 bg-slate-800/60 border-white/10 text-white placeholder:text-slate-500"
           />
         </div>
         <select
-          className="flex h-10 rounded-md border border-input bg-background px-3 py-2"
+          className="flex h-10 rounded-md border border-white/10 bg-slate-800/60 text-slate-300 px-3 py-2"
           value={selectedDept}
           onChange={(e) => setSelectedDept(e.target.value)}
         >
@@ -526,43 +526,43 @@ const CorporateEmployees: React.FC = () => {
       </div>
 
       {/* Employees Table */}
-      <Card>
+      <Card className="!p-0 bg-slate-900/50 border-white/[0.06]">
         <CardHeader>
-          <CardTitle>Employee List</CardTitle>
-          <CardDescription>View and manage all corporate employees</CardDescription>
+          <CardTitle className="text-white">Employee List</CardTitle>
+          <CardDescription className="text-slate-400">View and manage all corporate employees</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b">
-                  <th className="text-left p-3 font-semibold">Employee ID</th>
-                  <th className="text-left p-3 font-semibold">Name</th>
-                  <th className="text-left p-3 font-semibold">Department</th>
-                  <th className="text-left p-3 font-semibold">Contact</th>
-                  <th className="text-left p-3 font-semibold">Health Status</th>
-                  <th className="text-left p-3 font-semibold">Last Checkup</th>
-                  <th className="text-left p-3 font-semibold">Actions</th>
+                <tr className="border-b border-white/[0.06] bg-slate-800/30">
+                  <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Employee ID</th>
+                  <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Name</th>
+                  <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Department</th>
+                  <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Contact</th>
+                  <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Health Status</th>
+                  <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Last Checkup</th>
+                  <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredEmployees.map((emp) => (
-                  <tr key={emp.id} className="border-b hover:bg-slate-800/40">
-                    <td className="p-3 font-medium">{emp.employeeId}</td>
+                  <tr key={emp.id} className="border-b border-white/[0.04] hover:bg-slate-800/30 transition-colors">
+                    <td className="p-3 font-medium text-slate-300">{emp.employeeId}</td>
                     <td className="p-3">
                       <div>
-                        <p className="font-medium">{emp.name}</p>
-                        <p className="text-sm text-slate-400">{emp.designation}</p>
+                        <p className="font-medium text-white">{emp.name}</p>
+                        <p className="text-sm text-slate-500">{emp.designation}</p>
                       </div>
                     </td>
-                    <td className="p-3">{emp.department}</td>
+                    <td className="p-3 text-slate-300">{emp.department}</td>
                     <td className="p-3">
                       <div className="text-sm">
-                        <div className="flex items-center gap-1 mb-1">
+                        <div className="flex items-center gap-1 mb-1 text-slate-400">
                           <Mail className="h-3 w-3" />
                           {emp.email}
                         </div>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 text-slate-500">
                           <Phone className="h-3 w-3" />
                           {emp.phone}
                         </div>
@@ -573,11 +573,15 @@ const CorporateEmployees: React.FC = () => {
                         {emp.healthStatus}
                       </Badge>
                     </td>
-                    <td className="p-3">{emp.lastCheckup ? new Date(emp.lastCheckup).toLocaleDateString() : '—'}</td>
+                    <td className="p-3 text-slate-400">{emp.lastCheckup ? new Date(emp.lastCheckup).toLocaleDateString() : '—'}</td>
                     <td className="p-3">
                       <div className="flex gap-2">
-                        <Button variant="outline" size="sm" onClick={() => openView(emp)}>View</Button>
-                        <Button variant="outline" size="sm" onClick={() => openEdit(emp)}>Edit</Button>
+                        <Button variant="outline" size="sm"
+                          className="border-white/10 text-slate-400 hover:text-white hover:bg-white/10 h-7 text-xs"
+                          onClick={() => openView(emp)}>View</Button>
+                        <Button variant="outline" size="sm"
+                          className="border-white/10 text-slate-400 hover:text-white hover:bg-white/10 h-7 text-xs"
+                          onClick={() => openEdit(emp)}>Edit</Button>
                       </div>
                     </td>
                   </tr>
@@ -603,15 +607,16 @@ const CorporateEmployees: React.FC = () => {
 
           <div className="space-y-4">
             {/* Download Template Section */}
-            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+            <div className="bg-blue-500/10 p-4 rounded-lg border border-blue-500/20">
               <div className="flex items-start gap-3">
-                <FileSpreadsheet className="h-5 w-5 text-blue-600 mt-0.5" />
+                <FileSpreadsheet className="h-5 w-5 text-blue-400 mt-0.5" />
                 <div className="flex-1">
-                  <h4 className="font-semibold text-sm mb-1">Step 1: Download Template</h4>
+                  <h4 className="font-semibold text-sm mb-1 text-white">Step 1: Download Template</h4>
                   <p className="text-sm text-slate-400 mb-2">
                     Download the CSV template with the required format and fill in employee details.
                   </p>
-                  <Button onClick={downloadTemplate} variant="outline" size="sm">
+                  <Button onClick={downloadTemplate} variant="outline" size="sm"
+                    className="border-white/10 text-slate-300 hover:bg-white/10">
                     <Download className="mr-2 h-4 w-4" />
                     Download Template
                   </Button>
@@ -649,31 +654,30 @@ const CorporateEmployees: React.FC = () => {
               <div className="bg-slate-900 p-4 rounded-lg border">
                 <h4 className="font-semibold text-sm mb-3">Upload Results</h4>
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between p-2 bg-green-50 rounded border border-green-200">
+                  <div className="flex items-center justify-between p-2 bg-emerald-500/10 rounded border border-emerald-500/20">
                     <div className="flex items-center gap-2">
-                      <CheckCircle className="h-5 w-5 text-green-600" />
-                      <span className="text-sm font-medium">Successful</span>
+                      <CheckCircle className="h-5 w-5 text-emerald-400" />
+                      <span className="text-sm font-medium text-emerald-400">Successful</span>
                     </div>
-                    <span className="text-lg font-bold text-green-600">{uploadResults.successful}</span>
+                    <span className="text-lg font-bold text-emerald-400">{uploadResults.successful}</span>
                   </div>
                   {uploadResults.failed > 0 && (
-                    <div className="flex items-center justify-between p-2 bg-red-50 rounded border border-red-200">
+                    <div className="flex items-center justify-between p-2 bg-red-500/10 rounded border border-red-500/20">
                       <div className="flex items-center gap-2">
-                        <XCircle className="h-5 w-5 text-red-600" />
-                        <span className="text-sm font-medium">Failed</span>
+                        <XCircle className="h-5 w-5 text-red-400" />
+                        <span className="text-sm font-medium text-red-400">Failed</span>
                       </div>
-                      <span className="text-lg font-bold text-red-600">{uploadResults.failed}</span>
+                      <span className="text-lg font-bold text-red-400">{uploadResults.failed}</span>
                     </div>
                   )}
                 </div>
 
-                {/* Error Details */}
-                {uploadResults.errors && uploadResults.errors.length > 0 && (
+                  {uploadResults.errors && uploadResults.errors.length > 0 && (
                   <div className="mt-3 max-h-40 overflow-y-auto">
-                    <p className="text-sm font-medium mb-2">Error Details:</p>
+                    <p className="text-sm font-medium mb-2 text-slate-300">Error Details:</p>
                     <div className="space-y-1">
                       {uploadResults.errors.map((error: any, index: number) => (
-                        <div key={index} className="text-xs bg-red-50 p-2 rounded border border-red-200">
+                        <div key={index} className="text-xs bg-red-500/10 p-2 rounded border border-red-500/20 text-red-400">
                           <span className="font-medium">Row {error.row}:</span> {error.error}
                         </div>
                       ))}
@@ -691,7 +695,7 @@ const CorporateEmployees: React.FC = () => {
               </ul>
               <p className="font-semibold mt-2">Optional Fields:</p>
               <ul className="list-disc list-inside ml-2 space-y-0.5">
-                <li>employeeId, phone, designation, joiningDate, healthStatus, lastCheckup, insurancePlan</li>
+                <li>employeeId, phone, designation, joiningDate, healthStatus, lastCheckup, wellnessPlan</li>
               </ul>
             </div>
           </div>

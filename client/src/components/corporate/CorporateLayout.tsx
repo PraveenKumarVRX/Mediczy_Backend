@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getUserType } from "@/hooks/auth";
 import CorporateSidebar from "./CorporateSidebar";
+import { useTheme } from "@/utils/theme.provider";
 import { Bell, HeartPulse, User, ChevronDown, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,13 +22,13 @@ interface CorporateLayoutProps {
 
 const CorporateLayout = ({ children, title, subtitle }: CorporateLayoutProps) => {
   const navigate = useNavigate();
+  const { setTheme } = useTheme();
   const [corporateName, setCorporateName] = useState<string>('');
   const [adminName, setAdminName] = useState<string>('HR Admin');
 
-  // Force dark mode for the corporate portal — rich dark theme
+  // Force dark mode for the corporate portal — use ThemeProvider so it wins the race
   useEffect(() => {
-    document.documentElement.classList.add('dark');
-    localStorage.setItem('theme', 'dark');
+    setTheme('dark');
   }, []);
 
   // Load corporate name from stored data

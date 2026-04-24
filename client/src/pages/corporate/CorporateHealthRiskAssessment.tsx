@@ -321,7 +321,7 @@ const CorporateHealthRiskAssessment: React.FC = () => {
 
   return (
     <CorporateLayout title="Health Risk Assessment">
-      <div className="space-y-6">
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-6 space-y-6">
         <CorporatePageHeader
           icon={ShieldAlert}
           title="Employee Health Risk Assessment"
@@ -659,7 +659,7 @@ const CorporateHealthRiskAssessment: React.FC = () => {
               </DialogDescription>
             </DialogHeader>
             {selectedEmployee && (
-              <div className="space-y-6">
+              <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-6 space-y-6">
                 <div className="flex items-center gap-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
                   <div className="w-16 h-16 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white text-xl font-bold">
                     {selectedEmployee.name.split(' ').map(n => n[0]).join('')}

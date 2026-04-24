@@ -350,25 +350,40 @@ export default function CorporateCommandCenter() {
                   <Bell className="h-4 w-4 text-red-400" /> Priority Actions
                 </h3>
                 <div className="space-y-2">
-                  {[
-                    { icon: AlertTriangle, color: 'text-red-400', bg: 'bg-red-500/10', title: '12 employees with critical health risk', desc: 'Require immediate intervention', action: 'Review' },
-                    { icon: TrendingUp, color: 'text-amber-400', bg: 'bg-amber-500/10', title: 'Musculoskeletal claims up 23%', desc: 'Recommend ergonomic assessment program', action: 'Plan' },
-                    { icon: Users, color: 'text-blue-400', bg: 'bg-blue-500/10', title: '158 employees overdue for health checkup', desc: 'Send reminders to encourage screening', action: 'Notify' },
-                    { icon: Heart, color: 'text-emerald-400', bg: 'bg-emerald-500/10', title: 'Wellness program completion at 78%', desc: 'On track for quarterly target of 80%', action: 'Track' },
-                  ].map((alert, i) => (
-                    <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/30 border border-white/[0.04] hover:border-white/[0.08] transition-all">
-                      <div className={`w-8 h-8 rounded-lg ${alert.bg} flex items-center justify-center flex-shrink-0`}>
-                        <alert.icon className={`h-4 w-4 ${alert.color}`} />
+                  {kpis.criticalAlerts > 0 && (
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/30 border border-white/[0.04] hover:border-white/[0.08] transition-all">
+                      <div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center flex-shrink-0">
+                        <AlertTriangle className="h-4 w-4 text-red-400" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-white truncate">{alert.title}</p>
-                        <p className="text-[10px] text-slate-500">{alert.desc}</p>
+                        <p className="text-xs font-medium text-white truncate">{kpis.criticalAlerts} employees with critical health risk</p>
+                        <p className="text-[10px] text-slate-500">Require immediate intervention</p>
                       </div>
                       <Button size="sm" variant="outline" className="border-white/10 text-xs h-7 px-2.5 rounded-lg text-slate-400 flex-shrink-0">
-                        {alert.action}
+                        Review
                       </Button>
                     </div>
-                  ))}
+                  )}
+                  {kpis.highRiskEmployees > 0 && (
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/30 border border-white/[0.04] hover:border-white/[0.08] transition-all">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                        <AlertTriangle className="h-4 w-4 text-amber-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-white truncate">{kpis.highRiskEmployees} employees in high/critical risk band</p>
+                        <p className="text-[10px] text-slate-500">Schedule health interventions</p>
+                      </div>
+                      <Button size="sm" variant="outline" className="border-white/10 text-xs h-7 px-2.5 rounded-lg text-slate-400 flex-shrink-0">
+                        Plan
+                      </Button>
+                    </div>
+                  )}
+                  {kpis.criticalAlerts === 0 && kpis.highRiskEmployees === 0 && (
+                    <div className="flex flex-col items-center justify-center py-8 text-slate-500">
+                      <CheckCircle className="h-8 w-8 mb-2 text-emerald-500/40" />
+                      <p className="text-xs">No priority actions at this time</p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -380,10 +395,10 @@ export default function CorporateCommandCenter() {
           <motion.div key="claims" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
               {[
-                { label: 'Total Claims', value: '1,290', trend: -8.2, icon: FileText, color: 'text-blue-400', bg: 'bg-blue-500/10' },
-                { label: 'Avg Claim/Employee', value: kpis.avgClaimPerEmployee != null ? fmt(kpis.avgClaimPerEmployee) : '—', trend: -3.1, icon: IndianRupee, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-                { label: 'Cashless Ratio', value: '68%', trend: 5.4, icon: CheckCircle, color: 'text-violet-400', bg: 'bg-violet-500/10' },
-                { label: 'Claim Rejection', value: '4.2%', trend: -1.8, icon: XCircle, color: 'text-amber-400', bg: 'bg-amber-500/10' },
+                { label: 'Total Claims', value: '—', trend: 0 as number, icon: FileText, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+                { label: 'Avg Claim/Employee', value: kpis.avgClaimPerEmployee != null ? fmt(kpis.avgClaimPerEmployee) : '—', trend: 0 as number, icon: IndianRupee, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+                { label: 'Cashless Ratio', value: '—', trend: 0 as number, icon: CheckCircle, color: 'text-violet-400', bg: 'bg-violet-500/10' },
+                { label: 'Claim Rejection', value: '—', trend: 0 as number, icon: XCircle, color: 'text-amber-400', bg: 'bg-amber-500/10' },
               ].map((s, i) => (
                 <Card key={i} className="!p-3 border-white/[0.06] bg-slate-900/50">
                   <div className={`w-7 h-7 rounded-lg ${s.bg} flex items-center justify-center mb-2`}>
@@ -392,9 +407,7 @@ export default function CorporateCommandCenter() {
                   <p className="text-lg font-bold text-white">{s.value}</p>
                   <div className="flex items-center justify-between">
                     <p className="text-[9px] text-slate-500">{s.label}</p>
-                    <span className={`text-[9px] font-medium ${s.trend < 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                      {pct(s.trend)}
-                    </span>
+                    <span className="text-[9px] font-medium text-slate-600">No data</span>
                   </div>
                 </Card>
               ))}
@@ -431,28 +444,10 @@ export default function CorporateCommandCenter() {
                   <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
                     <Brain className="h-4 w-4 text-violet-400" /> AI Cost Prediction
                   </h3>
-                  <div className="space-y-4">
-                    <div className="bg-violet-600/5 border border-violet-500/20 rounded-xl p-4">
-                      <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Projected Annual Claims (FY 2026-27)</p>
-                      <p className="text-2xl font-bold text-white">{fmt(34200000)}</p>
-                      <p className="text-xs text-emerald-400 flex items-center gap-1 mt-1">
-                        <ArrowDown className="h-3 w-3" /> 8.2% lower than current year
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <h4 className="text-xs font-medium text-slate-400">Key Factors</h4>
-                      {[
-                        { factor: 'Wellness programs reducing high-risk pool', impact: '-₹4.2L', positive: true },
-                        { factor: 'Age-related claim increase (35+ cohort)', impact: '+₹2.1L', positive: false },
-                        { factor: 'Mental health program reducing stress claims', impact: '-₹1.8L', positive: true },
-                        { factor: 'Medical inflation (7.5% YoY)', impact: '+₹1.9L', positive: false },
-                      ].map((f, i) => (
-                        <div key={i} className="flex items-center justify-between py-1.5">
-                          <span className="text-[11px] text-slate-300 flex-1">{f.factor}</span>
-                          <span className={`text-xs font-semibold ${f.positive ? 'text-emerald-400' : 'text-red-400'}`}>{f.impact}</span>
-                        </div>
-                      ))}
-                    </div>
+                  <div className="flex flex-col items-center justify-center py-10 text-slate-500">
+                    <Brain className="h-10 w-10 mb-3 text-violet-500/30" />
+                    <p className="text-xs font-medium text-slate-400">AI Cost Prediction unavailable</p>
+                    <p className="text-[10px] text-slate-600 mt-1 text-center max-w-48">Connect claims data to unlock AI-powered cost forecasting</p>
                   </div>
                 </CardContent>
               </Card>
@@ -473,12 +468,12 @@ export default function CorporateCommandCenter() {
                   </div>
                   <div className="flex-1 h-0.5 bg-slate-800 rounded-full" />
                   <div className="text-center flex-shrink-0">
-                    <p className="text-lg font-bold text-white">{fmt(1095000)}</p>
+                    <p className="text-lg font-bold text-white">—</p>
                     <p className="text-[10px] text-slate-500">Invested</p>
                   </div>
                   <div className="flex-1 h-0.5 bg-emerald-500/30 rounded-full" />
                   <div className="text-center flex-shrink-0">
-                    <p className="text-lg font-bold text-emerald-400">{fmt(3504000)}</p>
+                    <p className="text-lg font-bold text-emerald-400">—</p>
                     <p className="text-[10px] text-slate-500">Claims Saved</p>
                   </div>
                 </CardContent>

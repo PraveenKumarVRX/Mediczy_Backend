@@ -2176,7 +2176,7 @@ const TeamCorporateManagement = () => {
                     <div>
                       <CardTitle>Corporate Plans</CardTitle>
                       <CardDescription>
-                        Manage health and insurance plans for {selectedCorporate.companyName}
+                        Manage health and wellness plans for {selectedCorporate.companyName}
                       </CardDescription>
                     </div>
                       <Button onClick={() => setShowCreatePlanDialog(true)}>

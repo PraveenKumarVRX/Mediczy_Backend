@@ -111,7 +111,7 @@ const CorporateSettings: React.FC = () => {
 
   return (
     <CorporateLayout title="Settings">
-      <div className="space-y-6">
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-6 space-y-6">
         <CorporatePageHeader
           icon={Cog}
           title="Corporate Settings"

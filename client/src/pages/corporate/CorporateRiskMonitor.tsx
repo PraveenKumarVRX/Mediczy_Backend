@@ -267,13 +267,13 @@ const CorporateRiskMonitor: React.FC = () => {
   const getRiskColor = (level: string) => {
     switch (level) {
       case 'critical':
-        return 'bg-red-100 text-red-800 border-red-300';
+        return 'bg-red-500/15 text-red-400 border-red-500/30';
       case 'high':
-        return 'bg-orange-100 text-orange-800 border-orange-300';
+        return 'bg-orange-500/15 text-orange-400 border-orange-500/30';
       case 'medium':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+        return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
       default:
-        return 'bg-slate-800 text-slate-200 border-slate-600';
+        return 'bg-slate-700/50 text-slate-300 border-slate-600/50';
     }
   };
 
@@ -290,7 +290,7 @@ const CorporateRiskMonitor: React.FC = () => {
 
   return (
     <CorporateLayout title="Risk Monitor">
-      <div className="space-y-6">
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-6 space-y-6">
         <CorporatePageHeader
           icon={AlertTriangle}
           title="Health Risk Monitor"
@@ -416,68 +416,68 @@ const CorporateRiskMonitor: React.FC = () => {
 
       {/* Risk Statistics */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className="border-red-200 bg-red-50">
+        <Card className="!p-0 bg-red-500/10 border-red-500/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Critical Risk</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <CardTitle className="text-sm font-medium text-slate-300">Critical Risk</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-red-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{stats.criticalRisk}</div>
-            <p className="text-xs text-red-600">Immediate attention required</p>
+            <div className="text-2xl font-bold text-red-400">{stats.criticalRisk}</div>
+            <p className="text-xs text-red-400/70">Immediate attention required</p>
           </CardContent>
         </Card>
 
-        <Card className="border-orange-200 bg-orange-50">
+        <Card className="!p-0 bg-orange-500/10 border-orange-500/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">High Risk</CardTitle>
-            <Shield className="h-4 w-4 text-orange-600" />
+            <CardTitle className="text-sm font-medium text-slate-300">High Risk</CardTitle>
+            <Shield className="h-4 w-4 text-orange-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-600">{stats.highRisk}</div>
-            <p className="text-xs text-orange-600">Close monitoring needed</p>
+            <div className="text-2xl font-bold text-orange-400">{stats.highRisk}</div>
+            <p className="text-xs text-orange-400/70">Close monitoring needed</p>
           </CardContent>
         </Card>
 
-        <Card className="border-yellow-200 bg-yellow-50">
+        <Card className="!p-0 bg-amber-500/10 border-amber-500/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Medium Risk</CardTitle>
-            <Activity className="h-4 w-4 text-yellow-600" />
+            <CardTitle className="text-sm font-medium text-slate-300">Medium Risk</CardTitle>
+            <Activity className="h-4 w-4 text-amber-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{stats.mediumRisk}</div>
-            <p className="text-xs text-yellow-600">Preventive care recommended</p>
+            <div className="text-2xl font-bold text-amber-400">{stats.mediumRisk}</div>
+            <p className="text-xs text-amber-400/70">Preventive care recommended</p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="!p-0 bg-slate-900/50 border-white/[0.06]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Monitored</CardTitle>
-            <Users className="h-4 w-4 text-blue-600" />
+            <CardTitle className="text-sm font-medium text-slate-300">Total Monitored</CardTitle>
+            <Users className="h-4 w-4 text-blue-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalMonitored}</div>
-            <p className="text-xs text-muted-foreground">Active monitoring</p>
+            <div className="text-2xl font-bold text-white">{stats.totalMonitored}</div>
+            <p className="text-xs text-slate-500">Active monitoring</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Risk Categories */}
-      <Card>
+      <Card className="!p-0 bg-slate-900/50 border-white/[0.06]">
         <CardHeader>
-          <CardTitle>Risk Categories Overview</CardTitle>
-          <CardDescription>Distribution of health risks across your organization</CardDescription>
+          <CardTitle className="text-white">Risk Categories Overview</CardTitle>
+          <CardDescription className="text-slate-400">Distribution of health risks across your organization</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {riskCategories.map((category) => (
-              <Card key={category.name}>
+              <Card key={category.name} className="!p-0 bg-slate-800/50 border-white/[0.06]">
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-semibold">{category.name}</h3>
+                    <h3 className="font-semibold text-white">{category.name}</h3>
                     {getTrendIcon(category.trend)}
                   </div>
                   <div className="flex items-baseline gap-2 mb-2">
-                    <span className="text-3xl font-bold">{category.count}</span>
+                    <span className="text-3xl font-bold text-white">{category.count}</span>
                     <span className="text-sm text-slate-400">employees</span>
                   </div>
                   <Badge className={getRiskColor(category.severity)}>
@@ -491,10 +491,10 @@ const CorporateRiskMonitor: React.FC = () => {
       </Card>
 
       {/* At-Risk Employees */}
-      <Card>
+      <Card className="!p-0 bg-slate-900/50 border-white/[0.06]">
         <CardHeader>
-          <CardTitle>At-Risk Employees</CardTitle>
-          <CardDescription>Employees requiring health interventions</CardDescription>
+          <CardTitle className="text-white">At-Risk Employees</CardTitle>
+          <CardDescription className="text-slate-400">Employees requiring health interventions</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex gap-4 mb-6">
@@ -502,10 +502,10 @@ const CorporateRiskMonitor: React.FC = () => {
               placeholder="Search by name, ID, or department..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="flex-1"
+              className="flex-1 bg-slate-800/60 border-white/10 text-white placeholder:text-slate-500"
             />
             <Select value={riskFilter} onValueChange={setRiskFilter}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-[180px] bg-slate-800/60 border-white/10 text-slate-300">
                 <Filter className="h-4 w-4 mr-2" />
                 <SelectValue placeholder="Filter by risk" />
               </SelectTrigger>
@@ -520,18 +520,18 @@ const CorporateRiskMonitor: React.FC = () => {
 
           <div className="space-y-4">
             {filteredEmployees.map((employee) => (
-              <Card key={employee.id} className={`border-l-4 ${
+              <Card key={employee.id} className={`!p-0 bg-slate-800/50 border-l-4 border-white/[0.04] ${
                 employee.riskLevel === 'critical' ? 'border-l-red-500' :
                 employee.riskLevel === 'high' ? 'border-l-orange-500' :
-                'border-l-yellow-500'
+                'border-l-amber-500'
               }`}>
                 <CardContent className="pt-6">
                   <div className="flex items-start justify-between mb-4">
                     <div>
                       <div className="flex items-center gap-3 mb-2">
-                        <h3 className="font-semibold text-lg">{employee.name}</h3>
-                        <Badge variant="outline">{employee.employeeId}</Badge>
-                        <Badge variant="secondary">{employee.department}</Badge>
+                        <h3 className="font-semibold text-lg text-white">{employee.name}</h3>
+                        <Badge className="bg-slate-700/50 text-slate-300 border-slate-600/50 border">{employee.employeeId}</Badge>
+                        <Badge className="bg-slate-700/50 text-slate-300 border-slate-600/50 border">{employee.department}</Badge>
                       </div>
                       <Badge className={getRiskColor(employee.riskLevel)}>
                         {employee.riskLevel.toUpperCase()} RISK
@@ -540,9 +540,9 @@ const CorporateRiskMonitor: React.FC = () => {
                     <div className="text-right">
                       <div className="text-sm text-slate-400 mb-1">Health Score</div>
                       <div className={`text-2xl font-bold ${
-                        employee.healthScore < 50 ? 'text-red-600' :
-                        employee.healthScore < 70 ? 'text-orange-600' :
-                        'text-yellow-600'
+                        employee.healthScore < 50 ? 'text-red-400' :
+                        employee.healthScore < 70 ? 'text-orange-400' :
+                        'text-amber-400'
                       }`}>
                         {employee.healthScore}
                       </div>

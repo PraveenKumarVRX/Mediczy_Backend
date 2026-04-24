@@ -94,17 +94,17 @@ const CorporateClaims: React.FC = () => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'approved':
-        return 'bg-green-100 text-green-800';
+        return 'bg-emerald-500/15 text-emerald-400';
       case 'paid':
-        return 'bg-blue-100 text-blue-800';
+        return 'bg-blue-500/15 text-blue-400';
       case 'processing':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'bg-amber-500/15 text-amber-400';
       case 'pending':
-        return 'bg-orange-100 text-orange-800';
+        return 'bg-orange-500/15 text-orange-400';
       case 'rejected':
-        return 'bg-red-100 text-red-800';
+        return 'bg-red-500/15 text-red-400';
       default:
-        return 'bg-slate-800 text-slate-200';
+        return 'bg-slate-700/50 text-slate-400';
     }
   };
 
@@ -214,7 +214,7 @@ const CorporateClaims: React.FC = () => {
 
   return (
     <CorporateLayout title="Claims Management">
-      <div className="space-y-6">
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-6 space-y-6">
         <CorporatePageHeader
           icon={Receipt}
           title="Insurance Claims Management"
