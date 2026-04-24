@@ -74,7 +74,10 @@ const CorporateLogin = () => {
                 id: data.corporate.id,
                 email: data.corporate.email,
                 name: data.corporate.companyName,
-                type: data.corporate.planType,
+                companyName: data.corporate.companyName,
+                contactPerson: data.corporate.contactPerson,
+                type: data.corporate.packageType,
+                packageType: data.corporate.packageType,
               })
             );
           }

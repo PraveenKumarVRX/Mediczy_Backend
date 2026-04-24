@@ -150,16 +150,17 @@ const CorporateDashboard = () => {
   const [appointmentTypeFilter, setAppointmentTypeFilter] = useState('all');
   const [currentTime, setCurrentTime] = useState(new Date());
   
-  // Corporate profile — read from summary API or fall back to localStorage (set on login)
+  // Corporate profile — read from summary API or fall back to localStorage (set on login).
+  // Login stores: { name, email, id, type } — 'name' is companyName.
   const [corporateProfile, setCorporateProfile] = useState(() => {
     try {
       const stored = localStorage.getItem('corporateData');
       const parsed = stored ? JSON.parse(stored) : null;
       return {
-        companyName: parsed?.companyName || "Corporate Portal",
+        companyName: parsed?.name || parsed?.companyName || "Corporate Portal",
         logo: parsed?.logo || null,
         adminName: parsed?.contactPerson || "Admin",
-        plan: parsed?.packageType || "Standard",
+        plan: parsed?.type || parsed?.packageType || "Standard",
       };
     } catch {
       return { companyName: "Corporate Portal", logo: null, adminName: "Admin", plan: "Standard" };
