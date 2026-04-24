@@ -40,7 +40,9 @@ import {
   Zap,
   Star,
   ChevronRight,
-  Briefcase
+  Briefcase,
+  UserCog,
+  CalendarHeart,
 } from "lucide-react";
 import { getUserType } from "@/hooks/auth";
 import api from "@/utils/api";
@@ -619,6 +621,24 @@ const CorporateDashboard = () => {
       iconColor: "text-success",
       link: "/corporate/employees",
       pattern: "radial-gradient(circle at 0% 0%, hsl(var(--success) / 0.05) 0%, transparent 50%)",
+    },
+    {
+      title: "User Management",
+      description: "Manage app accounts and access",
+      icon: UserCog,
+      color: "bg-gradient-to-br from-violet-500/10 to-purple-500/10 border-violet-500/20",
+      iconColor: "text-violet-600",
+      link: "/corporate/user-management",
+      pattern: "radial-gradient(circle at 0% 0%, rgba(139, 92, 246, 0.05) 0%, transparent 50%)",
+    },
+    {
+      title: "Health Calendar",
+      description: "Schedule health checkups and events",
+      icon: CalendarHeart,
+      color: "bg-gradient-to-br from-teal-500/10 to-cyan-500/10 border-teal-500/20",
+      iconColor: "text-teal-600",
+      link: "/corporate/health-calendar",
+      pattern: "radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.05) 0%, transparent 50%)",
     },
     {
       title: "Appointments",

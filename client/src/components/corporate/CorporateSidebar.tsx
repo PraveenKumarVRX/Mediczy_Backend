@@ -20,6 +20,8 @@ import {
   Trophy,
   CalendarDays,
   Gauge,
+  UserCog,
+  CalendarHeart,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
@@ -37,6 +39,8 @@ const mainNavItems: SidebarItem[] = [
   { icon: Gauge, label: "Command Center", href: "/corporate/command-center" },
   { icon: Bell, label: "Notifications", href: "/corporate/notifications", badge: 3 },
   { icon: Users, label: "Employees", href: "/corporate/employees" },
+  { icon: UserCog, label: "User Management", href: "/corporate/user-management" },
+  { icon: CalendarHeart, label: "Health Calendar", href: "/corporate/health-calendar" },
   { icon: CalendarCheck, label: "Appointments", href: "/corporate/appointments" },
   { icon: CalendarDays, label: "Wellness Calendar", href: "/corporate/wellness-calendar" },
   { icon: HeartPulse, label: "Health Analysis", href: "/corporate/health-analysis" },
