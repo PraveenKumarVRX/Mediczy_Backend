@@ -126,7 +126,7 @@ export const corporateLogin = async (req, res) => {
 export const getCorporateSummary = async (req, res) => {
   try {
     const corporateUser = req.user?.get ? req.user.get({ plain: true }) : req.user;
-    const corporateId = corporateUser?.corporateId;
+    const corporateId = corporateUser?.corporateId || corporateUser?.organization_id;
     const corporateRecord = corporateId ? await Corporate.findByPk(corporateId) : null;
 
     
@@ -203,7 +203,7 @@ export const getCorporateSummary = async (req, res) => {
 export const getCorporateHealthAnalytics = async (req, res) => {
   try {
     const corporateUser = req.user?.get ? req.user.get({ plain: true }) : req.user;
-    const corporateId = corporateUser?.corporateId;
+    const corporateId = corporateUser?.corporateId || corporateUser?.organization_id;
 
     
 
@@ -302,7 +302,7 @@ export const getCorporateHealthAnalytics = async (req, res) => {
 export const getCorporateEmployeesHealth = async (req, res) => {
   try {
     const corporateUser = req.user?.get ? req.user.get({ plain: true }) : req.user;
-    const corporateId = corporateUser?.corporateId;
+    const corporateId = corporateUser?.corporateId || corporateUser?.organization_id;
     if (!corporateId) {
       return res.status(403).json({ success: false, message: 'Corporate context required' });
     }

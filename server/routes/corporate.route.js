@@ -1002,7 +1002,7 @@ router.post('/notifications/read-all', authUser, requireRole('corporate'), async
 router.get('/employees', authUser, requireRole('corporate'), async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   const department = String(req.query.department || '').trim();
-  const corporateId = req.user?.corporateId;
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
 
   let employees = [];
 
@@ -1107,7 +1107,7 @@ router.get('/employees', authUser, requireRole('corporate'), async (req, res) =>
 });
 
 router.post('/employees', authUser, requireRole('corporate'), async (req, res) => {
-  const corporateId = req.user?.corporateId;
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
 
   const { employeeId, name, email, phone, department, designation, joiningDate } = req.body || {};
@@ -1148,7 +1148,7 @@ router.post('/employees', authUser, requireRole('corporate'), async (req, res) =
 });
 
 router.put('/employees/:id', authUser, requireRole('corporate'), async (req, res) => {
-  const corporateId = req.user?.corporateId;
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
   const { department, designation, joiningDate } = req.body || {};
 
@@ -1167,7 +1167,7 @@ router.put('/employees/:id', authUser, requireRole('corporate'), async (req, res
 });
 
 router.delete('/employees/:id', authUser, requireRole('corporate'), async (req, res) => {
-  const corporateId = req.user?.corporateId;
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
 
   try {
@@ -1185,7 +1185,7 @@ router.delete('/employees/:id', authUser, requireRole('corporate'), async (req, 
 
 // Bulk upload employees from CSV/Excel — persists to DB
 router.post('/employees/bulk-upload', authUser, requireRole('corporate'), async (req, res) => {
-  const corporateId = req.user?.corporateId;
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
 
   const { employees: employeeList } = req.body;
@@ -1694,12 +1694,27 @@ router.get('/wellness-calendar', authUser, requireRole('corporate'), async (req,
 });
 
 // Get wellness calendar activities
-router.get('/wellness-calendar/activities', authUser, async (req, res) => {
+router.get('/wellness-calendar/activities', authUser, requireRole('corporate'), async (req, res) => {
   try {
+    const corporateId = req.user?.corporateId || req.user?.organization_id;
+    const rows = await postgresSequelize.query(
+      `SELECT id, title, description, event_type AS type,
+              TO_CHAR(event_date, 'YYYY-MM-DD') AS date,
+              TO_CHAR(event_time, 'HH24:MI') AS "startTime",
+              TO_CHAR(end_time, 'HH24:MI') AS "endTime",
+              location, organizer AS speaker,
+              max_participants AS capacity,
+              registered_count AS registered,
+              status, color
+       FROM corporate_wellness_events
+       WHERE corporate_id = :corporateId
+       ORDER BY event_date ASC`,
+      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
     res.json({
       success: true,
       data: {
-        activities: wellnessActivities,
+        activities: rows,
         themes: WELLNESS_THEMES
       }
     });
@@ -2118,7 +2133,7 @@ router.get('/employees/:id', authUser, requireRole('corporate'), async (req, res
 // ---------------------------------------------------------------------------
 router.get('/health-calendar/events', authUser, requireRole('corporate'), async (req, res) => {
   try {
-    const corporateId = req.user?.corporateId;
+    const corporateId = req.user?.corporateId || req.user?.organization_id;
     const rows = await postgresSequelize.query(
       `SELECT id, title, description, event_type AS type, TO_CHAR(event_date, 'YYYY-MM-DD') AS date,
               TO_CHAR(event_time, 'HH12:MI AM') AS time, location, max_participants AS participants,
@@ -2137,7 +2152,7 @@ router.get('/health-calendar/events', authUser, requireRole('corporate'), async 
 
 router.post('/health-calendar/events', authUser, requireRole('corporate'), async (req, res) => {
   try {
-    const corporateId = req.user?.corporateId;
+    const corporateId = req.user?.corporateId || req.user?.organization_id;
     const { title, description, type, date, time, location, participants, notes } = req.body;
     if (!title || !date || !type) {
       return res.status(400).json({ success: false, message: 'title, date, and type are required' });

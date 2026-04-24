@@ -308,7 +308,7 @@ const CorporateWellnessCalendar: React.FC = () => {
       setLoading(true);
       const [activitiesRes, empRes] = await Promise.all([
         api.get('/corporate/wellness-calendar/activities').catch(() => ({ data: null })),
-        api.get('/corporate/dashboard/employees').catch(() => ({ data: null })),
+        api.get('/corporate/dashboard/employees-health').catch(() => ({ data: null })),
       ]);
       setActivities(activitiesRes.data?.data?.activities || []);
       const empData = empRes.data?.data?.employees || [];
