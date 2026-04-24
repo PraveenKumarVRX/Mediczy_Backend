@@ -66,6 +66,9 @@ const EVENT_COLORS: Record<EventType, { bg: string; text: string; dot: string; b
   workshop:     { bg: 'bg-teal-50 dark:bg-teal-900/20',    text: 'text-teal-700 dark:text-teal-400',    dot: 'bg-teal-500',    badge: 'bg-teal-100 text-teal-700' },
 };
 
+const DEFAULT_EVENT_COLOR = { bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-600 dark:text-slate-400', dot: 'bg-slate-400', badge: 'bg-slate-100 text-slate-600' };
+const getEventColor = (type: string) => EVENT_COLORS[type as EventType] ?? DEFAULT_EVENT_COLOR;
+
 const EVENT_ICONS: Record<EventType, React.ElementType> = {
   checkup:      Stethoscope,
   screening:    Eye,
@@ -296,7 +299,7 @@ const CorporateHealthCalendar = () => {
                           {dayEvts.slice(0, 2).map((evt) => (
                             <div
                               key={evt.id}
-                              className={cn('text-[10px] px-1.5 py-0.5 rounded truncate font-medium', EVENT_COLORS[evt.type].badge)}
+                              className={cn('text-[10px] px-1.5 py-0.5 rounded truncate font-medium', getEventColor(evt.type).badge)}
                               onClick={(e) => { e.stopPropagation(); setSelectedEvent(evt); }}
                             >
                               {evt.title}
@@ -322,8 +325,8 @@ const CorporateHealthCalendar = () => {
                     ) : (
                       <div className="space-y-2">
                         {getDayEvents(selectedDay).map((evt) => {
-                          const Icon = EVENT_ICONS[evt.type];
-                          const colors = EVENT_COLORS[evt.type];
+                          const Icon = EVENT_ICONS[evt.type as EventType] ?? Activity;
+                          const colors = getEventColor(evt.type);
                           return (
                             <div key={evt.id} className={cn('p-3 rounded-lg border flex items-start gap-3', colors.bg)}>
                               <div className={cn('p-1.5 rounded-lg', colors.badge)}>
@@ -362,8 +365,8 @@ const CorporateHealthCalendar = () => {
                   <p className="text-sm text-slate-500 text-center py-4">No upcoming events</p>
                 ) : (
                   upcomingEvents.map((evt) => {
-                    const Icon = EVENT_ICONS[evt.type];
-                    const colors = EVENT_COLORS[evt.type];
+                    const Icon = EVENT_ICONS[evt.type as EventType] ?? Activity;
+                    const colors = getEventColor(evt.type);
                     return (
                       <div
                         key={evt.id}
@@ -417,11 +420,11 @@ const CorporateHealthCalendar = () => {
           <DialogContent>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                {React.createElement(EVENT_ICONS[selectedEvent.type], { className: `w-5 h-5 ${EVENT_COLORS[selectedEvent.type].text}` })}
+                {React.createElement(EVENT_ICONS[selectedEvent.type as EventType] ?? Activity, { className: `w-5 h-5 ${getEventColor(selectedEvent.type).text}` })}
                 {selectedEvent.title}
               </DialogTitle>
               <DialogDescription>
-                <span className={cn('inline-flex px-2 py-0.5 rounded-full text-xs font-medium', EVENT_COLORS[selectedEvent.type].badge)}>
+                <span className={cn('inline-flex px-2 py-0.5 rounded-full text-xs font-medium', getEventColor(selectedEvent.type).badge)}>
                   {EVENT_TYPE_LABELS[selectedEvent.type]}
                 </span>
               </DialogDescription>
