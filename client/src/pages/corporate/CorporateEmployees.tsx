@@ -293,7 +293,7 @@ const CorporateEmployees: React.FC = () => {
         <CorporatePageHeader
           icon={Users}
           title="Employee Management"
-          description="Manage employee health profiles, insurance enrollments, and health status monitoring"
+          description="Manage employee health profiles, wellness enrollments, and health status monitoring"
           gradient="from-teal-500 to-teal-700"
           badge={`${employees.length} Employees`}
           showSearch={true}
@@ -322,7 +322,7 @@ const CorporateEmployees: React.FC = () => {
 
         {/* Add/Edit Dialog */}
         <Dialog open={isUpsertDialogOpen} onOpenChange={setIsUpsertDialogOpen}>
-          <DialogContent className="sm:max-w-[600px]">
+          <DialogContent className="sm:max-w-[600px] bg-white dark:bg-slate-900 dark:border-slate-700">
             <DialogHeader>
               <DialogTitle>{editingEmployeeId ? 'Edit Employee' : 'Add Employee'}</DialogTitle>
               <DialogDescription>Enter employee details to manage corporate enrollment.</DialogDescription>
@@ -413,7 +413,7 @@ const CorporateEmployees: React.FC = () => {
 
       {/* View Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-        <DialogContent className="sm:max-w-[520px]">
+        <DialogContent className="sm:max-w-[520px] bg-white dark:bg-slate-900 dark:border-slate-700">
           <DialogHeader>
             <DialogTitle>Employee Profile</DialogTitle>
             <DialogDescription>Basic employee and plan information.</DialogDescription>
@@ -597,7 +597,7 @@ const CorporateEmployees: React.FC = () => {
 
       {/* Bulk Upload Dialog */}
       <Dialog open={isBulkUploadOpen} onOpenChange={closeBulkUpload}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[600px] bg-white dark:bg-slate-900 dark:border-slate-700">
           <DialogHeader>
             <DialogTitle>Bulk Upload Employees</DialogTitle>
             <DialogDescription>
