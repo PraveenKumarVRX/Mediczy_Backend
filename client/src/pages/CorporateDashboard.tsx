@@ -571,7 +571,7 @@ const CorporateDashboard = () => {
                   <div className="flex items-baseline gap-1">
                     <span className="text-2xl font-bold text-slate-800 dark:text-white">{healthAnalytics.monitoredEmployees}</span>
                   </div>
-                  <p className="text-xs text-emerald-500 mt-1">{((healthAnalytics.monitoredEmployees / healthAnalytics.totalEmployees) * 100).toFixed(0)}% Coverage</p>
+                  <p className="text-xs text-emerald-500 mt-1">{healthAnalytics.totalEmployees > 0 ? ((healthAnalytics.monitoredEmployees / healthAnalytics.totalEmployees) * 100).toFixed(0) : '0'}% Coverage</p>
                 </div>
               </CardContent>
             </Card>
@@ -653,8 +653,8 @@ const CorporateDashboard = () => {
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-1">Avg Risk Score</p>
                   <div className="flex items-baseline gap-1">
-                    <span className={`text-2xl font-bold ${getRiskScoreColor(healthAnalytics.averageRiskScore)}`}>
-                      {healthAnalytics.averageRiskScore.toFixed(1)}
+                    <span className={`text-2xl font-bold ${getRiskScoreColor(healthAnalytics.averageRiskScore ?? 0)}`}>
+                      {healthAnalytics.averageRiskScore != null ? healthAnalytics.averageRiskScore.toFixed(1) : '—'}
                     </span>
                   </div>
                   <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Company avg</p>
@@ -1180,8 +1180,8 @@ const CorporateDashboard = () => {
                   </div>
                   <div className="text-right">
                     <p className="text-sm text-slate-500 dark:text-slate-400">Avg Risk Score</p>
-                    <p className={`text-2xl font-bold ${getRiskScoreColor(dept.avgRiskScore)}`}>
-                      {dept.avgRiskScore.toFixed(1)}
+                    <p className={`text-2xl font-bold ${getRiskScoreColor(dept.avgRiskScore ?? 0)}`}>
+                      {dept.avgRiskScore != null ? dept.avgRiskScore.toFixed(1) : '—'}
                     </p>
                   </div>
                 </div>
