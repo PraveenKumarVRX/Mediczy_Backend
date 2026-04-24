@@ -2113,4 +2113,50 @@ router.get('/employees/:id', authUser, requireRole('corporate'), async (req, res
   }
 });
 
+// ---------------------------------------------------------------------------
+// Health Calendar Routes
+// ---------------------------------------------------------------------------
+router.get('/health-calendar/events', authUser, requireRole('corporate'), async (req, res) => {
+  try {
+    const corporateId = req.user?.corporateId;
+    const rows = await postgresSequelize.query(
+      `SELECT id, title, description, event_type AS type, TO_CHAR(event_date, 'YYYY-MM-DD') AS date,
+              TO_CHAR(event_time, 'HH12:MI AM') AS time, location, max_participants AS participants,
+              registered_count AS "registeredCount", status, organizer, notify_employees AS "notifyEmployees"
+       FROM corporate_wellness_events
+       WHERE corporate_id = :corporateId
+       ORDER BY event_date ASC`,
+      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    res.json({ success: true, data: { events: rows } });
+  } catch (error) {
+    console.error('Error fetching health calendar events:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch health calendar events' });
+  }
+});
+
+router.post('/health-calendar/events', authUser, requireRole('corporate'), async (req, res) => {
+  try {
+    const corporateId = req.user?.corporateId;
+    const { title, description, type, date, time, location, participants, notes } = req.body;
+    if (!title || !date || !type) {
+      return res.status(400).json({ success: false, message: 'title, date, and type are required' });
+    }
+    const [result] = await postgresSequelize.query(
+      `INSERT INTO corporate_wellness_events (corporate_id, title, description, event_type, event_date, event_time, location, max_participants, created_by)
+       VALUES (:corporateId, :title, :description, :type, :date, :time, :location, :participants, :createdBy)
+       RETURNING id, title, event_type AS type, TO_CHAR(event_date, 'YYYY-MM-DD') AS date,
+                 TO_CHAR(event_time, 'HH12:MI AM') AS time, location, max_participants AS participants, status`,
+      {
+        replacements: { corporateId, title, description: description || null, type, date, time: time || null, location: location || null, participants: participants || null, createdBy: req.user?.id },
+        type: postgresSequelize.QueryTypes.INSERT
+      }
+    );
+    res.json({ success: true, data: { event: result } });
+  } catch (error) {
+    console.error('Error creating health calendar event:', error);
+    res.status(500).json({ success: false, message: 'Failed to create health calendar event' });
+  }
+});
+
 export default router;

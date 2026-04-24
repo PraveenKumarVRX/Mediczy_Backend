@@ -108,123 +108,6 @@ const challengeTypes = [
   { value: 'custom', label: 'Custom Challenge', icon: Target, unit: 'points', defaultTarget: 100, color: 'from-slate-500 to-slate-600' },
 ];
 
-const sampleChallenges: Challenge[] = [
-  {
-    id: '1',
-    title: 'New Year Step Challenge',
-    description: 'Walk 10,000 steps daily for the entire month. Track your steps and compete with colleagues!',
-    type: 'steps',
-    target: 300000,
-    unit: 'steps',
-    startDate: '2025-01-01',
-    endDate: '2025-01-31',
-    status: 'active',
-    participants: 127,
-    totalEmployees: 200,
-    rewards: {
-      gold: 'Fitness Smartwatch + ₹5,000 Amazon Voucher',
-      silver: 'Wireless Earbuds + ₹3,000 Amazon Voucher',
-      bronze: 'Fitness Band + ₹2,000 Amazon Voucher'
-    },
-    icon: Footprints,
-    color: 'from-blue-500 to-blue-600'
-  },
-  {
-    id: '2',
-    title: 'Mindfulness Marathon',
-    description: 'Practice 10 minutes of meditation daily. Use any mindfulness app and log your sessions.',
-    type: 'mindfulness',
-    target: 300,
-    unit: 'minutes',
-    startDate: '2025-01-15',
-    endDate: '2025-02-15',
-    status: 'active',
-    participants: 89,
-    totalEmployees: 200,
-    rewards: {
-      gold: 'Spa Voucher Worth ₹10,000',
-      silver: 'Meditation App Annual Subscription',
-      bronze: 'Aromatherapy Kit'
-    },
-    icon: Brain,
-    color: 'from-pink-500 to-pink-600'
-  },
-  {
-    id: '3',
-    title: 'Hydration Heroes',
-    description: 'Drink 8 glasses of water daily. Stay hydrated and energized throughout the workday!',
-    type: 'hydration',
-    target: 240,
-    unit: 'glasses',
-    startDate: '2025-01-01',
-    endDate: '2025-01-31',
-    status: 'completed',
-    participants: 156,
-    totalEmployees: 200,
-    rewards: {
-      gold: 'Premium Water Bottle Set + ₹3,000 Voucher',
-      silver: 'Smart Water Bottle',
-      bronze: 'Fruit Infuser Bottle'
-    },
-    icon: Droplets,
-    color: 'from-cyan-500 to-cyan-600'
-  },
-  {
-    id: '4',
-    title: 'February Fitness Frenzy',
-    description: 'Complete 150 minutes of workout per week. Any form of exercise counts!',
-    type: 'workout',
-    target: 600,
-    unit: 'minutes',
-    startDate: '2025-02-01',
-    endDate: '2025-02-28',
-    status: 'draft',
-    participants: 0,
-    totalEmployees: 200,
-    rewards: {
-      gold: 'Gym Membership (1 Year) + Sports Gear',
-      silver: 'Gym Membership (6 Months)',
-      bronze: 'Gym Membership (3 Months)'
-    },
-    icon: Dumbbell,
-    color: 'from-orange-500 to-orange-600'
-  }
-];
-
-const generateLeaderboard = (challengeId: string): LeaderboardEntry[] => {
-  const names = [
-    'Priya Sharma', 'Rahul Verma', 'Anita Gupta', 'Vikram Singh', 'Neha Patel',
-    'Amit Kumar', 'Kavita Joshi', 'Rajesh Nair', 'Deepika Mehta', 'Suresh Reddy',
-    'Pooja Agarwal', 'Arjun Malhotra', 'Sneha Iyer', 'Karthik Rao', 'Divya Pillai',
-    'Manish Tiwari', 'Ritu Saxena', 'Sanjay Pandey', 'Meera Krishnan', 'Varun Kapoor'
-  ];
-  const departments = ['Engineering', 'Marketing', 'Sales', 'Finance', 'Operations', 'HR', 'Product', 'Design'];
-  const badges = ['🔥 On Fire', '⚡ Speed Demon', '💪 Consistent', '🌟 Rising Star', '🏃 Marathon Runner', '🧘 Zen Master'];
-
-  return names.map((name, i) => {
-    const score = Math.floor(Math.random() * 50000) + 200000;
-    const target = 300000;
-    return {
-      rank: i + 1,
-      oddsLast: ['up', 'down', 'same'][Math.floor(Math.random() * 3)] as 'up' | 'down' | 'same',
-      oddsAmount: Math.floor(Math.random() * 3) + 1,
-      employeeId: `EMP${String(i + 1).padStart(4, '0')}`,
-      name,
-      department: departments[i % departments.length],
-      score,
-      target,
-      progress: Math.min(100, Math.round((score / target) * 100)),
-      streak: Math.floor(Math.random() * 20) + 1,
-      badges: badges.slice(0, Math.floor(Math.random() * 3) + 1),
-      medal: i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : undefined
-    };
-  }).sort((a, b) => b.score - a.score).map((entry, i) => ({
-    ...entry,
-    rank: i + 1,
-    medal: i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : undefined
-  }));
-};
-
 const MedalIcon: React.FC<{ type: 'gold' | 'silver' | 'bronze'; size?: 'sm' | 'lg' }> = ({ type, size = 'sm' }) => {
   const colors = {
     gold: 'from-yellow-400 to-yellow-600 text-yellow-900',
@@ -313,10 +196,10 @@ const CorporateGamification: React.FC = () => {
       const list = ((data as any)?.data?.challenges || []) as any[];
       setChallenges(list.map(normalizeChallenge));
     } catch (error: any) {
-      setChallenges(sampleChallenges);
+      setChallenges([]);
       toast({
         title: 'Failed to load challenges',
-        description: error?.response?.data?.message || 'Showing sample challenges.',
+        description: error?.response?.data?.message || 'Unable to load challenges.',
         variant: 'destructive'
       });
     } finally {
@@ -328,16 +211,28 @@ const CorporateGamification: React.FC = () => {
     loadChallenges();
   }, []);
 
-  const handleViewLeaderboard = (challenge: Challenge) => {
+  const handleViewLeaderboard = async (challenge: Challenge) => {
     setSelectedChallenge(challenge);
-    setLeaderboard(generateLeaderboard(challenge.id));
     setViewLeaderboardOpen(true);
+    try {
+      const { data } = await api.get(`/corporate/gamification/challenges/${challenge.id}/leaderboard`).catch(() => ({ data: null }));
+      const entries = (data as any)?.data?.leaderboard || [];
+      setLeaderboard(entries);
+    } catch {
+      setLeaderboard([]);
+    }
   };
 
-  const handleDeclareWinners = (challenge: Challenge) => {
+  const handleDeclareWinners = async (challenge: Challenge) => {
     setSelectedChallenge(challenge);
-    setLeaderboard(generateLeaderboard(challenge.id));
     setDeclareWinnersOpen(true);
+    try {
+      const { data } = await api.get(`/corporate/gamification/challenges/${challenge.id}/leaderboard`).catch(() => ({ data: null }));
+      const entries = (data as any)?.data?.leaderboard || [];
+      setLeaderboard(entries);
+    } catch {
+      setLeaderboard([]);
+    }
   };
 
   const handleCreateChallenge = async () => {
@@ -714,8 +609,7 @@ const CorporateGamification: React.FC = () => {
               </CardHeader>
               <CardContent>
                 <div className="grid gap-4 md:grid-cols-3">
-                  {['gold', 'silver', 'bronze'].map((medal, index) => {
-                    const entry = generateLeaderboard('all')[index];
+                  {(['gold', 'silver', 'bronze'] as const).map((medal, index) => {
                     return (
                       <Card key={medal} className={cn(
                         'border-2',
@@ -724,18 +618,8 @@ const CorporateGamification: React.FC = () => {
                         'border-amber-600 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20'
                       )}>
                         <CardContent className="p-6 text-center">
-                          <MedalIcon type={medal as 'gold' | 'silver' | 'bronze'} size="lg" />
-                          <h3 className="text-xl font-bold mt-4 text-slate-900 dark:text-white">{entry.name}</h3>
-                          <p className="text-sm text-slate-500 dark:text-slate-400">{entry.department}</p>
-                          <div className="mt-3 flex items-center justify-center gap-2">
-                            <Flame className="h-4 w-4 text-orange-500" />
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{entry.streak} day streak</span>
-                          </div>
-                          <div className="flex flex-wrap justify-center gap-1 mt-2">
-                            {entry.badges.slice(0, 2).map((badge, i) => (
-                              <span key={i} className="text-xs">{badge}</span>
-                            ))}
-                          </div>
+                          <MedalIcon type={medal} size="lg" />
+                          <p className="text-sm text-slate-500 dark:text-slate-400 mt-4">No data yet</p>
                         </CardContent>
                       </Card>
                     );

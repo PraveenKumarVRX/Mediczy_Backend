@@ -53,70 +53,93 @@ export default function CorporateCommandCenter() {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<'month' | 'quarter' | 'year'>('quarter');
 
-  // ─── Mock Data (replace with API) ────────────────────────────────────────
-  const kpis = {
-    totalEmployees: 1247,
-    activeParticipants: 1089,
-    participationRate: 87.3,
-    participationTrend: 3.2,
-    avgHealthScore: 74,
-    healthScoreTrend: 2.1,
-    totalClaimsCost: 28500000,
-    claimsTrend: -4.8,
-    absenteeismRate: 3.2,
-    absenteeismTrend: -1.4,
-    wellnessROI: 3.2,
-    roiTrend: 0.8,
-    avgClaimPerEmployee: 22853,
-    highRiskEmployees: 89,
-    criticalAlerts: 12,
-  };
+  // ─── Live Data State ──────────────────────────────────────────────────────
+  const [kpis, setKpis] = useState({
+    totalEmployees: 0,
+    activeParticipants: 0,
+    participationRate: 0,
+    participationTrend: 0,
+    avgHealthScore: null as number | null,
+    healthScoreTrend: 0,
+    totalClaimsCost: 0,
+    claimsTrend: 0,
+    absenteeismRate: null as number | null,
+    absenteeismTrend: 0,
+    wellnessROI: null as number | null,
+    roiTrend: 0,
+    avgClaimPerEmployee: null as number | null,
+    highRiskEmployees: 0,
+    criticalAlerts: 0,
+  });
+  const [riskDistribution, setRiskDistribution] = useState<Array<{ name: string; value: number; pct: number; color: string }>>([]);
+  const [claimsTrend, setClaimsTrend] = useState<Array<{ month: string; claims: number; members: number }>>([]);
+  const [departmentHealth, setDepartmentHealth] = useState<Array<{ dept: string; employees: number; healthScore: number | null; claimsCost: number; participation: number | null; absenteeism: number | null }>>([]);
+  const [topConditions, setTopConditions] = useState<Array<{ condition: string; claims: number; cost: number; pct: number }>>([]);
+  const [wellnessPrograms, setWellnessPrograms] = useState<Array<{ name: string; participants: number; completion: number; impact: string; cost: number; roi: number }>>([]);
 
-  const riskDistribution = [
-    { name: 'Low Risk', value: 628, pct: 50.3, color: RISK_COLORS.low },
-    { name: 'Medium Risk', value: 387, pct: 31.0, color: RISK_COLORS.medium },
-    { name: 'High Risk', value: 143, pct: 11.5, color: RISK_COLORS.high },
-    { name: 'Critical', value: 89, pct: 7.1, color: RISK_COLORS.critical },
-  ];
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const [summaryRes, analyticsRes] = await Promise.all([
+          api.get('/corporate/dashboard/summary').catch(() => ({ data: null })),
+          api.get('/corporate/dashboard/health-analytics').catch(() => ({ data: null })),
+        ]);
 
-  const claimsTrend = [
-    { month: 'Oct', claims: 2800000, members: 156 },
-    { month: 'Nov', claims: 3200000, members: 178 },
-    { month: 'Dec', claims: 4100000, members: 210 },
-    { month: 'Jan', claims: 3600000, members: 192 },
-    { month: 'Feb', claims: 3100000, members: 168 },
-    { month: 'Mar', claims: 2900000, members: 152 },
-  ];
+        const summary = summaryRes.data?.data;
+        const analytics = analyticsRes.data?.data;
 
-  const departmentHealth = [
-    { dept: 'Engineering', employees: 310, healthScore: 78, claimsCost: 6200000, participation: 92, absenteeism: 2.1 },
-    { dept: 'Sales', employees: 245, healthScore: 71, claimsCost: 5800000, participation: 85, absenteeism: 3.8 },
-    { dept: 'Marketing', employees: 120, healthScore: 76, claimsCost: 2400000, participation: 88, absenteeism: 2.9 },
-    { dept: 'Operations', employees: 280, healthScore: 68, claimsCost: 7200000, participation: 82, absenteeism: 4.5 },
-    { dept: 'Finance', employees: 98, healthScore: 80, claimsCost: 1800000, participation: 91, absenteeism: 2.0 },
-    { dept: 'HR', employees: 67, healthScore: 82, claimsCost: 1100000, participation: 95, absenteeism: 1.8 },
-    { dept: 'R&D', employees: 85, healthScore: 75, claimsCost: 2200000, participation: 89, absenteeism: 3.0 },
-    { dept: 'Support', employees: 42, healthScore: 72, claimsCost: 1800000, participation: 79, absenteeism: 4.2 },
-  ];
+        if (analytics) {
+          const rd = analytics.riskDistribution || {};
+          const total = analytics.totalEmployees || 0;
+          const rdArr = [
+            { name: 'Low Risk', value: rd.low || 0, pct: total ? Math.round((rd.low || 0) / total * 100 * 10) / 10 : 0, color: RISK_COLORS.low },
+            { name: 'Medium Risk', value: rd.medium || 0, pct: total ? Math.round((rd.medium || 0) / total * 100 * 10) / 10 : 0, color: RISK_COLORS.medium },
+            { name: 'High Risk', value: rd.high || 0, pct: total ? Math.round((rd.high || 0) / total * 100 * 10) / 10 : 0, color: RISK_COLORS.high },
+            { name: 'Critical', value: rd.critical || 0, pct: total ? Math.round((rd.critical || 0) / total * 100 * 10) / 10 : 0, color: RISK_COLORS.critical },
+          ];
+          setRiskDistribution(rdArr.filter(r => r.value > 0));
 
-  const topConditions = [
-    { condition: 'Musculoskeletal', claims: 312, cost: 8500000, pct: 29.8 },
-    { condition: 'Cardiovascular', claims: 89, cost: 6200000, pct: 21.8 },
-    { condition: 'Diabetes', claims: 156, cost: 4800000, pct: 16.8 },
-    { condition: 'Mental Health', claims: 78, cost: 2100000, pct: 7.4 },
-    { condition: 'Respiratory', claims: 245, cost: 3200000, pct: 11.2 },
-    { condition: 'Other', claims: 410, cost: 3700000, pct: 13.0 },
-  ];
+          const deptRisks = analytics.departmentRisks || [];
+          setDepartmentHealth(deptRisks.map((d: any) => ({
+            dept: d.department,
+            employees: d.totalEmployees,
+            healthScore: null,
+            claimsCost: 0,
+            participation: null,
+            absenteeism: null,
+          })));
 
-  const wellnessPrograms = [
-    { name: 'Step Challenge', participants: 567, completion: 78, impact: '+5.2 avg health score', cost: 250000, roi: 4.1 },
-    { name: 'Mental Wellness', participants: 234, completion: 65, impact: '-18% stress claims', cost: 180000, roi: 3.8 },
-    { name: 'Health Screening', participants: 891, completion: 92, impact: '23 early detections', cost: 450000, roi: 5.2 },
-    { name: 'Nutrition Program', participants: 189, completion: 54, impact: '-2.3 avg BMI', cost: 120000, roi: 2.9 },
-    { name: 'Yoga & Meditation', participants: 312, completion: 71, impact: '-12% absenteeism', cost: 95000, roi: 3.5 },
-  ];
+          const conditions = analytics.commonConditions || [];
+          setTopConditions(conditions.map((c: any) => ({
+            condition: c.condition,
+            claims: c.count,
+            cost: 0,
+            pct: c.percentage || 0,
+          })));
 
-  useEffect(() => { setTimeout(() => setLoading(false), 500); }, []);
+          setKpis(prev => ({
+            ...prev,
+            totalEmployees: analytics.totalEmployees || 0,
+            highRiskEmployees: (rd.high || 0) + (rd.critical || 0),
+            criticalAlerts: rd.critical || 0,
+          }));
+        }
+
+        if (summary) {
+          setKpis(prev => ({
+            ...prev,
+            totalEmployees: summary.KPIs?.activeEmployees || prev.totalEmployees,
+          }));
+        }
+      } catch (e) {
+        console.error('Command center load error', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
 
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
@@ -155,7 +178,7 @@ export default function CorporateCommandCenter() {
         </div>
         <div className="flex-1">
           <p className="text-sm text-white font-medium">AI Insight</p>
-          <p className="text-xs text-slate-400">Operations department shows 35% higher claims cost per employee. Recommend targeted musculoskeletal wellness program — projected to save ₹18L annually.</p>
+          <p className="text-xs text-slate-400">Connect employee health data to unlock AI-driven risk insights and actionable wellness recommendations.</p>
         </div>
         <Button size="sm" className="bg-violet-600 hover:bg-violet-500 border-0 rounded-xl text-xs flex-shrink-0">
           View Details
@@ -165,10 +188,10 @@ export default function CorporateCommandCenter() {
       {/* ─── KPI Hero Cards ──────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {[
-          { label: 'Employee Health Score', value: kpis.avgHealthScore.toString(), unit: '/100', trend: kpis.healthScoreTrend, icon: Heart, gradient: 'from-emerald-600/20 to-emerald-800/5', border: 'border-emerald-500/20', iconColor: 'text-emerald-400' },
-          { label: 'Total Claims Cost', value: fmt(kpis.totalClaimsCost), unit: '', trend: kpis.claimsTrend, icon: IndianRupee, gradient: 'from-blue-600/20 to-blue-800/5', border: 'border-blue-500/20', iconColor: 'text-blue-400' },
-          { label: 'Participation Rate', value: `${kpis.participationRate}`, unit: '%', trend: kpis.participationTrend, icon: Users, gradient: 'from-violet-600/20 to-violet-800/5', border: 'border-violet-500/20', iconColor: 'text-violet-400' },
-          { label: 'Wellness ROI', value: `${kpis.wellnessROI}`, unit: 'x', trend: kpis.roiTrend, icon: TrendingUp, gradient: 'from-amber-600/20 to-amber-800/5', border: 'border-amber-500/20', iconColor: 'text-amber-400' },
+          { label: 'Employee Health Score', value: kpis.avgHealthScore != null ? kpis.avgHealthScore.toString() : '—', unit: '/100', trend: kpis.healthScoreTrend, icon: Heart, gradient: 'from-emerald-600/20 to-emerald-800/5', border: 'border-emerald-500/20', iconColor: 'text-emerald-400' },
+          { label: 'Total Claims Cost', value: kpis.totalClaimsCost > 0 ? fmt(kpis.totalClaimsCost) : '—', unit: '', trend: kpis.claimsTrend, icon: IndianRupee, gradient: 'from-blue-600/20 to-blue-800/5', border: 'border-blue-500/20', iconColor: 'text-blue-400' },
+          { label: 'Participation Rate', value: kpis.participationRate > 0 ? `${kpis.participationRate}` : '—', unit: kpis.participationRate > 0 ? '%' : '', trend: kpis.participationTrend, icon: Users, gradient: 'from-violet-600/20 to-violet-800/5', border: 'border-violet-500/20', iconColor: 'text-violet-400' },
+          { label: 'Wellness ROI', value: kpis.wellnessROI != null ? `${kpis.wellnessROI}` : '—', unit: kpis.wellnessROI != null ? 'x' : '', trend: kpis.roiTrend, icon: TrendingUp, gradient: 'from-amber-600/20 to-amber-800/5', border: 'border-amber-500/20', iconColor: 'text-amber-400' },
         ].map((kpi, i) => {
           const Icon = kpi.icon;
           return (
@@ -358,7 +381,7 @@ export default function CorporateCommandCenter() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
               {[
                 { label: 'Total Claims', value: '1,290', trend: -8.2, icon: FileText, color: 'text-blue-400', bg: 'bg-blue-500/10' },
-                { label: 'Avg Claim/Employee', value: fmt(kpis.avgClaimPerEmployee), trend: -3.1, icon: IndianRupee, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+                { label: 'Avg Claim/Employee', value: kpis.avgClaimPerEmployee != null ? fmt(kpis.avgClaimPerEmployee) : '—', trend: -3.1, icon: IndianRupee, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
                 { label: 'Cashless Ratio', value: '68%', trend: 5.4, icon: CheckCircle, color: 'text-violet-400', bg: 'bg-violet-500/10' },
                 { label: 'Claim Rejection', value: '4.2%', trend: -1.8, icon: XCircle, color: 'text-amber-400', bg: 'bg-amber-500/10' },
               ].map((s, i) => (
@@ -445,7 +468,7 @@ export default function CorporateCommandCenter() {
               <Card className="!p-0 border-white/[0.06] bg-gradient-to-br from-emerald-600/10 to-emerald-800/5 border-emerald-500/20">
                 <CardContent className="p-5 flex items-center gap-6">
                   <div className="text-center flex-shrink-0">
-                    <p className="text-3xl font-bold text-emerald-400">{kpis.wellnessROI}x</p>
+                    <p className="text-3xl font-bold text-emerald-400">{kpis.wellnessROI != null ? `${kpis.wellnessROI}x` : '—'}</p>
                     <p className="text-[10px] text-slate-500 uppercase">Wellness ROI</p>
                   </div>
                   <div className="flex-1 h-0.5 bg-slate-800 rounded-full" />
@@ -506,7 +529,7 @@ export default function CorporateCommandCenter() {
         {tab === 'departments' && (
           <motion.div key="departments" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div className="space-y-3">
-              {departmentHealth.sort((a, b) => b.healthScore - a.healthScore).map((dept, i) => (
+              {departmentHealth.sort((a, b) => (b.healthScore ?? 0) - (a.healthScore ?? 0)).map((dept, i) => (
                 <motion.div key={i} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}>
                   <Card className="!p-0 border-white/[0.06] bg-slate-900/50 hover:border-white/[0.12] transition-all">
@@ -519,8 +542,8 @@ export default function CorporateCommandCenter() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between mb-1">
                             <h4 className="text-sm font-semibold text-white">{dept.dept}</h4>
-                            <span className={`text-sm font-bold ${dept.healthScore >= 75 ? 'text-emerald-400' : dept.healthScore >= 65 ? 'text-amber-400' : 'text-red-400'}`}>
-                              {dept.healthScore}
+                            <span className={`text-sm font-bold ${(dept.healthScore ?? 0) >= 75 ? 'text-emerald-400' : (dept.healthScore ?? 0) >= 65 ? 'text-amber-400' : 'text-red-400'}`}>
+                              {dept.healthScore ?? '—'}
                             </span>
                           </div>
                           <div className="grid grid-cols-4 gap-4 mt-2">
@@ -530,15 +553,15 @@ export default function CorporateCommandCenter() {
                             </div>
                             <div>
                               <p className="text-[8px] text-slate-500 uppercase">Claims</p>
-                              <p className="text-xs font-semibold text-white">{fmt(dept.claimsCost)}</p>
+                              <p className="text-xs font-semibold text-white">{dept.claimsCost > 0 ? fmt(dept.claimsCost) : '—'}</p>
                             </div>
                             <div>
                               <p className="text-[8px] text-slate-500 uppercase">Engagement</p>
-                              <p className="text-xs font-semibold text-white">{dept.participation}%</p>
+                              <p className="text-xs font-semibold text-white">{dept.participation != null ? `${dept.participation}%` : '—'}</p>
                             </div>
                             <div>
                               <p className="text-[8px] text-slate-500 uppercase">Absent</p>
-                              <p className={`text-xs font-semibold ${dept.absenteeism > 3.5 ? 'text-red-400' : 'text-white'}`}>{dept.absenteeism}%</p>
+                              <p className={`text-xs font-semibold ${(dept.absenteeism ?? 0) > 3.5 ? 'text-red-400' : 'text-white'}`}>{dept.absenteeism != null ? `${dept.absenteeism}%` : '—'}</p>
                             </div>
                           </div>
                         </div>

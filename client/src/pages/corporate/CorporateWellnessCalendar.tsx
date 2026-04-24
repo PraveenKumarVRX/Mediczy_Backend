@@ -119,22 +119,6 @@ const DEPARTMENTS = ['Engineering', 'Marketing', 'Sales', 'Finance', 'Operations
 const LOCATIONS = ['Mumbai HQ', 'Bangalore Office', 'Delhi Office', 'Chennai Office', 'Hyderabad Office', 'Pune Office'];
 const FACILITIES = ['Main Building', 'Annex Building', 'Tower A', 'Tower B', 'Remote/WFH'];
 
-const generateSampleEmployees = (): Participant[] => {
-  const names = [
-    'Priya Sharma', 'Rahul Verma', 'Anita Gupta', 'Vikram Singh', 'Neha Patel',
-    'Amit Kumar', 'Kavita Joshi', 'Rajesh Nair', 'Deepika Mehta', 'Suresh Reddy',
-    'Pooja Agarwal', 'Arjun Malhotra', 'Sneha Iyer', 'Karthik Rao', 'Divya Pillai'
-  ];
-  return names.map((name, i) => ({
-    id: `emp-${i + 1}`,
-    name,
-    email: `${name.toLowerCase().replace(' ', '.')}@company.com`,
-    department: DEPARTMENTS[i % DEPARTMENTS.length],
-    location: LOCATIONS[i % LOCATIONS.length],
-    facility: FACILITIES[i % FACILITIES.length]
-  }));
-};
-
 const WELLNESS_THEMES: WellnessTheme[] = [
   { month: 0, name: 'New Year Wellness Kickoff', description: 'Start the year with health goals and resolutions', color: 'from-blue-500 to-blue-600', icon: Sparkles },
   { month: 1, name: 'Heart Health Month', description: 'Focus on cardiovascular wellness and heart-healthy habits', color: 'from-red-500 to-rose-600', icon: Heart },
@@ -161,69 +145,6 @@ const ACTIVITY_TYPES = [
 ];
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
-const generateSampleActivities = (): WellnessActivity[] => {
-  const activities: WellnessActivity[] = [];
-  const currentYear = new Date().getFullYear();
-  
-  const sampleActivities = [
-    { title: 'New Year Health Goals Workshop', type: 'workshop' as ActivityType, month: 0, day: 5 },
-    { title: 'BMI & Body Composition Check', type: 'screening' as ActivityType, month: 0, day: 15 },
-    { title: 'Cardiac Health Awareness Talk', type: 'talk' as ActivityType, month: 1, day: 8 },
-    { title: 'Heart Health Screening Camp', type: 'health-camp' as ActivityType, month: 1, day: 14 },
-    { title: 'CPR & First Aid Demo', type: 'demonstration' as ActivityType, month: 1, day: 20 },
-    { title: 'Healthy Cooking Webinar', type: 'webinar' as ActivityType, month: 2, day: 10 },
-    { title: 'Nutrition Counseling Sessions', type: 'talk' as ActivityType, month: 2, day: 18 },
-    { title: 'Calorie Counting Challenge', type: 'challenge' as ActivityType, month: 2, day: 1 },
-    { title: 'Stress Management Workshop', type: 'workshop' as ActivityType, month: 3, day: 7 },
-    { title: 'Meditation & Mindfulness Session', type: 'demonstration' as ActivityType, month: 3, day: 15 },
-    { title: 'Mental Health Webinar', type: 'webinar' as ActivityType, month: 3, day: 22 },
-    { title: 'Office Fitness Challenge', type: 'challenge' as ActivityType, month: 4, day: 1 },
-    { title: 'Yoga & Stretching Demo', type: 'demonstration' as ActivityType, month: 4, day: 12 },
-    { title: 'Gym Orientation Sessions', type: 'workshop' as ActivityType, month: 4, day: 20 },
-    { title: 'Eye Checkup Camp', type: 'health-camp' as ActivityType, month: 5, day: 10 },
-    { title: 'Digital Eye Strain Prevention Talk', type: 'talk' as ActivityType, month: 5, day: 18 },
-    { title: 'Hydration Challenge', type: 'challenge' as ActivityType, month: 6, day: 1 },
-    { title: 'Detox Diet Webinar', type: 'webinar' as ActivityType, month: 6, day: 15 },
-    { title: 'Annual Health Checkup Camp', type: 'health-camp' as ActivityType, month: 7, day: 5 },
-    { title: 'Vaccination Drive', type: 'health-camp' as ActivityType, month: 7, day: 20 },
-    { title: 'Diabetes Risk Assessment', type: 'screening' as ActivityType, month: 8, day: 10 },
-    { title: 'Blood Sugar Management Talk', type: 'talk' as ActivityType, month: 8, day: 18 },
-    { title: 'Breast Cancer Awareness Session', type: 'talk' as ActivityType, month: 9, day: 8 },
-    { title: 'Self-Examination Workshop', type: 'workshop' as ActivityType, month: 9, day: 15 },
-    { title: 'Mammography Screening Camp', type: 'health-camp' as ActivityType, month: 9, day: 22 },
-    { title: 'Prostate Health Screening', type: 'screening' as ActivityType, month: 10, day: 10 },
-    { title: 'Men\'s Health Talk', type: 'talk' as ActivityType, month: 10, day: 18 },
-    { title: 'Sleep Hygiene Webinar', type: 'webinar' as ActivityType, month: 11, day: 5 },
-    { title: 'Year-End Wellness Review', type: 'workshop' as ActivityType, month: 11, day: 20 },
-  ];
-
-  sampleActivities.forEach((act, index) => {
-    const theme = WELLNESS_THEMES[act.month];
-    activities.push({
-      id: `act-${index + 1}`,
-      title: act.title,
-      description: `Join us for ${act.title.toLowerCase()} as part of our ${theme.name} initiative.`,
-      type: act.type,
-      date: `${currentYear}-${String(act.month + 1).padStart(2, '0')}-${String(act.day).padStart(2, '0')}`,
-      startTime: '10:00',
-      endTime: '12:00',
-      location: act.type === 'webinar' ? 'Online (Zoom)' : 'Conference Room A',
-      speaker: ['Dr. Priya Sharma', 'Dr. Rajesh Kumar', 'Wellness Coach Anita', 'Dr. Vikram Singh'][index % 4],
-      capacity: act.type === 'webinar' ? 500 : act.type === 'health-camp' ? 200 : 50,
-      registered: Math.floor(Math.random() * 40) + 10,
-      status: new Date(`${currentYear}-${String(act.month + 1).padStart(2, '0')}-${String(act.day).padStart(2, '0')}`) < new Date() ? 'completed' : 'scheduled',
-      theme: theme.name,
-      participantSelection: 'all',
-      invitesSent: index < 10,
-      invitesSentDate: index < 10 ? '2025-01-01' : undefined,
-      totalInvited: index < 10 ? 200 : 0,
-      reminders: { enabled: true, fifteenDays: true, threeDays: true, oneDayBefore: true }
-    });
-  });
-
-  return activities;
-};
 
 // Generate ICS calendar file
 const generateICSFile = (activity: WellnessActivity): string => {
@@ -300,7 +221,7 @@ const CorporateWellnessCalendar: React.FC = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [activities, setActivities] = useState<WellnessActivity[]>([]);
-  const [employees] = useState<Participant[]>(generateSampleEmployees());
+  const [employees, setEmployees] = useState<Participant[]>([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('monthly');
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -385,12 +306,22 @@ const CorporateWellnessCalendar: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      // Try to fetch from API
-      const res = await api.get('/corporate/wellness-calendar/activities').catch(() => ({ data: null }));
-      const data = res.data?.data?.activities || generateSampleActivities();
-      setActivities(data);
+      const [activitiesRes, empRes] = await Promise.all([
+        api.get('/corporate/wellness-calendar/activities').catch(() => ({ data: null })),
+        api.get('/corporate/dashboard/employees').catch(() => ({ data: null })),
+      ]);
+      setActivities(activitiesRes.data?.data?.activities || []);
+      const empData = empRes.data?.data?.employees || [];
+      setEmployees(empData.map((e: any) => ({
+        id: String(e.id),
+        name: e.name,
+        email: e.email || '',
+        department: e.department || '',
+        location: e.location || '',
+        facility: e.facility || '',
+      })));
     } catch (error) {
-      setActivities(generateSampleActivities());
+      setActivities([]);
     } finally {
       setLoading(false);
     }

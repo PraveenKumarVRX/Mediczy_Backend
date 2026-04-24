@@ -84,19 +84,18 @@ const EVENT_TYPE_LABELS: Record<EventType, string> = {
   workshop:     'Workshop',
 };
 
-const SAMPLE_EVENTS: HealthEvent[] = [
-  { id: '1', title: 'Annual Health Checkup Drive', date: format(new Date(), 'yyyy-MM-dd'), time: '09:00 AM', type: 'checkup', department: 'All Departments', location: 'Conference Hall A', participants: 120, status: 'upcoming', notes: 'Mandatory annual checkup for all employees' },
-  { id: '2', title: 'Blood Pressure Screening', date: format(addMonths(new Date(), 0), 'yyyy-MM') + '-' + String(new Date().getDate() + 2).padStart(2, '0'), time: '10:00 AM', type: 'screening', department: 'Operations', location: 'Medical Room', participants: 45, status: 'upcoming' },
-  { id: '3', title: 'Flu Vaccination Camp', date: format(addMonths(new Date(), 0), 'yyyy-MM') + '-' + String(new Date().getDate() + 5).padStart(2, '0'), time: '11:00 AM', type: 'vaccination', department: 'All Departments', location: 'HR Office', participants: 200, status: 'upcoming' },
-  { id: '4', title: 'Stress Management Workshop', date: format(addMonths(new Date(), 0), 'yyyy-MM') + '-' + String(new Date().getDate() + 8).padStart(2, '0'), time: '02:00 PM', type: 'workshop', department: 'IT & Tech', location: 'Training Room 2', participants: 30, status: 'upcoming' },
-  { id: '5', title: 'Eye Checkup Camp', date: format(addMonths(new Date(), 0), 'yyyy-MM') + '-' + String(Math.min(new Date().getDate() + 12, 28)).padStart(2, '0'), time: '09:30 AM', type: 'camp', department: 'Finance', location: 'Cafeteria', participants: 60, status: 'upcoming' },
-];
-
 const CorporateHealthCalendar = () => {
   const { toast } = useToast();
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [events, setEvents] = useState<HealthEvent[]>(SAMPLE_EVENTS);
-  const [loading, setLoading] = useState(false);
+  const [events, setEvents] = useState<HealthEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/corporate/health-calendar/events')
+      .then(res => setEvents(res.data?.data?.events || []))
+      .catch(() => setEvents([]))
+      .finally(() => setLoading(false));
+  }, []);
   const [filterType, setFilterType] = useState<string>('all');
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<HealthEvent | null>(null);
@@ -144,16 +143,23 @@ const CorporateHealthCalendar = () => {
     }
     setActionLoading(true);
     try {
-      const created: HealthEvent = {
+      const res = await api.post('/corporate/health-calendar/events', {
+        title: newEvent.title,
+        date: newEvent.date,
+        time: newEvent.time,
+        type: newEvent.type,
+        location: newEvent.location,
+        participants: newEvent.participants,
+        notes: newEvent.notes,
+      });
+      const created: HealthEvent = res.data?.data?.event || {
         id: `evt-${Date.now()}`,
         title: newEvent.title!,
         date: newEvent.date!,
         time: newEvent.time,
         type: newEvent.type as EventType,
-        department: newEvent.department,
         location: newEvent.location,
         participants: newEvent.participants,
-        notes: newEvent.notes,
         status: 'upcoming',
       };
       setEvents((prev) => [...prev, created]);
