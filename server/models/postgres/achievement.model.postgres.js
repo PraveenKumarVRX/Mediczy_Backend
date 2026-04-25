@@ -146,4 +146,8 @@ const UserAchievement = sequelize.define('UserAchievement', {
   ]
 });
 
+// Associations
+UserAchievement.belongsTo(Achievement, { foreignKey: 'achievementId', as: 'achievement' });
+Achievement.hasMany(UserAchievement, { foreignKey: 'achievementId', as: 'userAchievements' });
+
 export { Achievement, UserAchievement };
