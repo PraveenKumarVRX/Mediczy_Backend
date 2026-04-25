@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import api from '@/utils/api';
+import { loadRazorpayScript } from '@/utils/razorpay';
 
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
 const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
@@ -1060,14 +1061,10 @@ const LabTests = () => {
                               setIsBooking(false);
                               return;
                             }
-                            
+
+                            // Step 1: Book all tests in cart
                             let hasError = false;
-                            // Book all tests in cart
                             for (const item of cart) {
-                              // Build request body
-                              // Note: We don't send hospitalId because selectedLab.id is from the 'labs' table,
-                              // but hospitalId references the 'hospitals' table (different entity)
-                              // The lab information is already captured in the notes field
                               const requestBody = {
                                 testType: mapTestToType(item.test.category),
                                 testName: item.test.name,
@@ -1075,44 +1072,120 @@ const LabTests = () => {
                                 notes: `${collectionType === 'home' ? '[Home Collection] ' : `[Lab: ${selectedLab?.name}] `}${bookingForm.notes}`,
                                 urgency: 'routine'
                               };
-                              
-                              // Do NOT add hospitalId here - labs table is separate from hospitals table
-                              // If we need to track the lab, we should add a separate labId field to the schema
-                              
                               const response = await api.post('/lab-tests', requestBody);
-                              
                               if (!response.data?.success) {
-                                const errorData = response.data;
-                                console.error('Booking error:', errorData);
                                 toast({ 
                                   title: 'Booking failed', 
-                                  description: errorData.message || 'Failed to book test', 
+                                  description: response.data?.message || 'Failed to book test', 
                                   variant: 'destructive' 
                                 });
                                 hasError = true;
                                 break;
                               }
                             }
-                            
-                            if (!hasError) {
+                            if (hasError) return;
+
+                            const totalAmount = getCartTotal();
+
+                            // Step 2: Create a billing order for payment
+                            let orderId: string | null = null;
+                            try {
+                              const orderRes = await api.post('/billing/orders/create', {
+                                orderType: 'lab_test',
+                                subtotal: totalAmount,
+                                tax: 0,
+                                discount: 0,
+                                currency: 'INR',
+                                notes: `Lab tests: ${cart.map(i => i.test.name).join(', ')}`
+                              });
+                              if (orderRes.data?.success && orderRes.data?.data?.order?.id) {
+                                orderId = orderRes.data.data.order.id;
+                              }
+                            } catch (orderErr) {
+                              console.error('Order creation failed:', orderErr);
+                            }
+
+                            // Step 3: Initiate Razorpay payment if order was created
+                            if (orderId && totalAmount > 0) {
+                              const scriptLoaded = await loadRazorpayScript();
+                              if (!scriptLoaded) {
+                                toast({ title: 'Payment gateway unavailable', description: 'Could not load Razorpay. Please try again.', variant: 'destructive' });
+                                return;
+                              }
+
+                              const payRes = await api.post('/billing/payments/razorpay/create', {
+                                orderId,
+                                amount: totalAmount,
+                                currency: 'INR'
+                              });
+
+                              if (!payRes.data?.success) {
+                                toast({ title: 'Payment initiation failed', description: payRes.data?.message || 'Could not start payment', variant: 'destructive' });
+                                return;
+                              }
+
+                              const { orderId: razorpayOrderId, amount, currency, key } = payRes.data.data;
+                              const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+
+                              await new Promise<void>((resolve, reject) => {
+                                const options = {
+                                  key,
+                                  amount,
+                                  currency,
+                                  name: 'Mediczy',
+                                  description: `Lab Tests - ${cart.length} test(s)`,
+                                  order_id: razorpayOrderId,
+                                  prefill: {
+                                    name: userData.name || userData.firstName || '',
+                                    email: userData.email || localStorage.getItem('userEmail') || '',
+                                    contact: userData.phone || userData.phoneNumber || localStorage.getItem('userPhone') || ''
+                                  },
+                                  theme: { color: '#14b8a6' },
+                                  handler: async function (response: any) {
+                                    try {
+                                      await api.post('/billing/payments/razorpay/verify', {
+                                        orderId,
+                                        razorpayOrderId: response.razorpay_order_id,
+                                        razorpayPaymentId: response.razorpay_payment_id,
+                                        razorpaySignature: response.razorpay_signature
+                                      });
+                                      toast({ title: 'Payment Successful! 🎉', description: `${cart.length} test(s) booked and payment confirmed.` });
+                                      resolve();
+                                    } catch {
+                                      toast({ title: 'Payment verification failed', description: 'Please contact support with your payment ID.', variant: 'destructive' });
+                                      resolve();
+                                    }
+                                  },
+                                  modal: {
+                                    ondismiss: () => {
+                                      toast({ title: 'Payment cancelled', description: 'Your tests are booked but payment was not completed.' });
+                                      resolve();
+                                    }
+                                  }
+                                };
+                                const rzp = new window.Razorpay(options);
+                                rzp.open();
+                              });
+                            } else {
+                              // Free or order creation failed – just confirm booking
                               toast({
                                 title: 'Booking Successful! 🎉',
                                 description: `${cart.length} test(s) booked for ${new Date(bookingForm.appointmentDate).toLocaleDateString()}`
                               });
-                              
-                              // Reset everything
-                              setCart([]);
-                              setCollectionType('');
-                              setSelectedLab(null);
-                              setLabSearchQuery('');
-                              setBookingForm({ testName: '', appointmentDate: '', testType: 'blood_test', notes: '', labId: '' });
-                              setShowBookDialog(false);
-                              fetchMyLabTests();
-                              clearCartAPI();
                             }
-                          } catch (error) {
-                            console.error('Booking error:', error);
-                            toast({ title: 'Booking failed', description: error.message || 'Please try again', variant: 'destructive' });
+
+                            // Reset everything after booking (+payment)
+                            setCart([]);
+                            setCollectionType('');
+                            setSelectedLab(null);
+                            setLabSearchQuery('');
+                            setBookingForm({ testName: '', appointmentDate: '', testType: 'blood_test', notes: '', labId: '' });
+                            setShowBookDialog(false);
+                            fetchMyLabTests();
+                            clearCartAPI();
+                          } catch (error: any) {
+                            console.error('Checkout error:', error);
+                            toast({ title: 'Checkout failed', description: error.message || 'Please try again', variant: 'destructive' });
                           } finally {
                             setIsBooking(false);
                           }

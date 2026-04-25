@@ -707,8 +707,8 @@ const CorporateDashboard = () => {
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             {quickActions.slice(6).map((action, index) => (
               <Link key={index} to={action.link} className="group">
-                <Card className="h-full bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-emerald-200 dark:hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10 transition-all duration-300 overflow-hidden">
-                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: action.pattern }} />
+                <Card className="relative h-full bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-emerald-200 dark:hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10 transition-all duration-300 overflow-hidden">
+                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" style={{ background: action.pattern }} />
                   <CardContent className="p-5 relative flex items-center gap-4">
                     <div className={cn("p-3 rounded-xl transition-all duration-300", action.color, "group-hover:scale-110 group-hover:rotate-3")}>
                       <action.icon className={cn("w-6 h-6", action.iconColor)} />
