@@ -1,6 +1,6 @@
 # Mediczy — Patient Mobile App API Guide
 
-> **Version:** 2.3 | **Last Updated:** April 25, 2026
+> **Version:** 2.4 | **Last Updated:** April 25, 2026
 
 - **Base URL:** `https://app.mediqzy.com/api`
 - **Auth:** `Authorization: Bearer <jwt-token>` (JWT, expires 7 days)
@@ -410,10 +410,12 @@ Body: {
 
 ### 6.2 List Appointments
 ```
-GET /api/appointments           🔐  All appointments
-GET /api/appointments/my-appointments  🔐  My appointments (alias)
-GET /api/appointments/:id       🔐  Appointment detail
+GET /api/appointments                🔐  All appointments
+GET /api/appointments/my-appointments 🔐  My appointments (alias)
+GET /api/appointments/upcoming        🔐  Upcoming appointments only (status ≠ cancelled/completed, date ≥ today)
+GET /api/appointments/:id            🔐  Appointment detail
 ```
+> `GET /api/appointments/upcoming` is a named alias for `GET /api/appointments?upcoming=true`. Returns the same response shape as the list endpoint filtered to future non-cancelled appointments.
 
 ### 6.3 Manage Appointments
 ```
@@ -1246,7 +1248,39 @@ Body: multipart/form-data { "file": <binary>, "reportType": "blood_test" }
 → AI-powered analysis with key findings, risk flags, and recommendations
 ```
 
-### 16.7 Session & Conversation Management
+### 16.7 Health Summary
+```
+GET /api/medical-ai/health-summary  🔐
+```
+Returns the user's profile snapshot including BMI, chronic conditions, allergies, medications, family history, and upcoming appointment count. Used as the context card in the Dr. iSHA screen.
+
+**Response:**
+```json
+{
+  "success": true,
+  "healthSummary": {
+    "profile": {
+      "name": "John Doe",
+      "age": 35,
+      "gender": "Male",
+      "bloodType": "O+",
+      "weight": 72,
+      "height": 170,
+      "bmi": 24.9
+    },
+    "conditions": {
+      "chronicConditions": ["Hypertension"],
+      "allergies": ["Penicillin"],
+      "medications": ["Amlodipine 5mg"],
+      "familyHistory": ["Diabetes"]
+    },
+    "upcomingAppointments": 2,
+    "generatedAt": "2026-04-25T10:00:00.000Z"
+  }
+}
+```
+
+### 16.8 Session & Conversation Management
 ```
 GET    /api/medical-ai/session/:sessionId      🔐  Restore conversation history
 DELETE /api/medical-ai/session/:sessionId      🔐  Clear session memory
@@ -1256,7 +1290,7 @@ POST   /api/medical-ai/intent-escalation       🔐  Detect if message needs liv
 POST   /api/medical-ai/feedback                🔐  Body: { "conversationId": "...", "thumbs": "up", "rating": 5 }
 ```
 
-### 16.8 AI Health Chat (`/api/ai-health`) — PHI-Safe Rule-Based
+### 16.9 AI Health Chat (`/api/ai-health`) — PHI-Safe Rule-Based
 
 A lightweight, schema-validated alternative to the SIB backend. PHI-redacted before responding. Audits every request to `ai_request_audit`.
 
@@ -1287,7 +1321,7 @@ Body: { "message": "I have chest pain", "symptoms": "chest pain, shortness of br
 ```
 > High-risk terms that trigger `highRisk: true`: chest pain, shortness of breath, stroke, unconscious, heart attack, severe bleeding, seizure, paralysis, sudden vision loss, suicidal, overdose.
 
-### 16.9 Dr. iSHA Rule-Based Consult
+### 16.10 Dr. iSHA Rule-Based Consult
 ```
 POST /api/ai-health/dr-isha/consult  🔐
 Body: { "message": "I feel dizzy after standing up", "symptoms": "dizziness", "medicalHistory": "Hypertension" }
@@ -1305,7 +1339,7 @@ Body: { "message": "I feel dizzy after standing up", "symptoms": "dizziness", "m
   }
 ```
 
-### 16.10 AI Utilities
+### 16.11 AI Utilities
 ```
 POST /api/ai/working-medical-consult      🔐  Full medical consultation (legacy)
 POST /api/ai/appointment-conversation     🔐  Booking conversation AI
@@ -1442,7 +1476,35 @@ POST   /api/health-diary/log-symptom        🔐  Log symptom
 
 All endpoints require authentication (`🔐`) unless noted.
 
-### 20.1 Save / Submit Assessment
+### 20.1 Questionnaire Schema
+```
+GET /api/health-assessment/questions  🔐
+```
+Returns the full question schema for building the health assessment form on the mobile app. Sections: `measurements` (age, gender, height, weight, waist, hip), `lifestyle` (smoking, alcohol, exercise_frequency, diet_quality, sleep_hours, stress_level), `medical_history` (hypertension, diabetes, heart_disease, cholesterol, mental_health), `family_history` (family_heart_disease, family_diabetes, family_cancer).
+
+**Response:**
+```json
+{
+  "success": true,
+  "version": "1.0",
+  "sections": [
+    {
+      "id": "measurements",
+      "title": "Body Measurements",
+      "fields": [
+        { "id": "age",    "label": "Age",    "type": "number", "unit": "years", "required": true },
+        { "id": "gender", "label": "Gender", "type": "select", "options": ["male", "female", "other"], "required": true },
+        { "id": "height", "label": "Height", "type": "number", "unit": "cm", "required": true },
+        { "id": "weight", "label": "Weight", "type": "number", "unit": "kg", "required": true }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+### 20.2 Save / Submit Assessment
 ```
 POST /api/health-assessment/save  🔐
 ```
@@ -1524,10 +1586,11 @@ POST /api/health-assessment/save  🔐
 
 ---
 
-### 20.2 Get Latest Assessment
+### 20.3 Get Latest Assessment
 ```
 GET /api/health-assessment         🔐
 GET /api/health-assessment/latest  🔐  (alias)
+GET /api/health-assessment/my      🔐  (alias — mobile-friendly, returns 200 + null when none)
 ```
 **Response (200):**
 ```json
@@ -1542,11 +1605,12 @@ GET /api/health-assessment/latest  🔐  (alias)
   }
 }
 ```
-> Returns `404` if no assessment exists for the user.
+> `GET /api/health-assessment` and `/latest` return `404` if no assessment exists.  
+> `GET /api/health-assessment/my` always returns `200` — if no assessment exists, returns `{ success: true, assessment: null, hasAssessment: false, message: "..." }`. Prefer `/my` in mobile screens to avoid error-handling for first-time users.
 
 ---
 
-### 20.3 Get Assessment History
+### 20.4 Get Assessment History
 ```
 GET /api/health-assessment/history  🔐
 ```
@@ -1592,7 +1656,7 @@ Returns all assessments with period-based groupings (daily, weekly, monthly, qua
 
 ---
 
-### 20.4 Admin — Health Risk Assessment (Bayesian Scoring Model)
+### 20.5 Admin — Health Risk Assessment (Bayesian Scoring Model)
 
 > These endpoints use the **admin HRA schema** — a structured multi-section questionnaire (Demographics, Lifestyle, Physical Indicators, Medical History, Family History, Mental Health, Preventive Screening, Environmental). Max theoretical score: **300**. Results include Bayesian inference for probabilistic disease risk.
 
@@ -1720,7 +1784,7 @@ POST /api/admin/health-risk/inference  🔐 (admin)
 
 ---
 
-### 20.5 HRA Question Schema Reference
+### 20.6 HRA Question Schema Reference
 
 The admin HRA uses structured sections. Each question accepts the option `id` as the response value.
 
@@ -1993,6 +2057,8 @@ POST /api/tts/speak          (Public)  Text-to-speech
 GET  /api/tts/voices          (Public)  Available voices
 GET  /api/tts/status          (Public)  TTS service status
 ```
+> `GET /api/tts/voices` always returns `200`. When ElevenLabs is not configured, it returns a static list of 5 voices with `"configured": false` instead of a 503 error.
+
 > Alternative TTS via AI route:
 ```
 POST /api/ai/text-to-speech  🔐
@@ -2652,11 +2718,14 @@ socket.on("authenticated", (data) => {
 | `GET /api/prescriptions/my/all` | All prescriptions | ✅ 200 |
 | `GET /api/health-diary` | Health diary | ✅ 200 |
 | `GET /api/medical-ai/health-summary` | Health summary | ✅ 200 |
+| `GET /api/health-assessment/questions` | Assessment questionnaire schema | ✅ 200 |
+| `GET /api/health-assessment/my` | Latest assessment (200 + null if none) | ✅ 200 |
 
 ### Appointments & Consultations
 | Endpoint | Method | Status |
 |---|---|---|
 | `GET /api/appointments` | List appointments | ✅ 200 |
+| `GET /api/appointments/upcoming` | Upcoming appointments | ✅ 200 |
 | `GET /api/doctors/search` | Search doctors | ✅ 200 |
 | `GET /api/medical-ai/triage-doctors` | Triage doctors | ✅ 200 |
 
@@ -2708,8 +2777,6 @@ socket.on("authenticated", (data) => {
 | Endpoint | Status | Note |
 |---|---|---|
 | `GET /api/billing/orders` | ⚠️ 500 | DB migration pending |
-| `GET /api/tts/voices` | ⚠️ 503 | ElevenLabs service dependency |
-| `GET /api/appointments/upcoming` | ⚠️ 500 | Query needs fix |
 
 ---
 
@@ -2761,6 +2828,7 @@ socket.on("authenticated", (data) => {
 
 | Date | Version | Changes |
 |---|---|---|
+| Apr 25, 2026 | 2.4 | **Bug fixes & new endpoints:** §6 Added `GET /api/appointments/upcoming` named alias; §16 Added `GET /api/medical-ai/health-summary` (profile, BMI, conditions, upcoming count) as new §16.7, renumbered §16.7–16.10 → §16.8–16.11; §20 Added `GET /api/health-assessment/questions` (questionnaire schema) as new §20.1, added `GET /api/health-assessment/my` alias (200+null-safe) to §20.3, renumbered §20.2–20.5; §25 `GET /api/tts/voices` now returns static fallback list instead of 503 when ElevenLabs not configured; §41 Known Issues — removed two resolved entries (`/tts/voices`, `/appointments/upcoming`); **Mobile app fix:** `AI.drIsha` in `Utils/api.js` corrected to call `/medical-ai/consult` (real SIB backend) instead of static `/ai-health/dr-isha/consult`; `toReadableReply` in `AIAssistantScreen.js` updated to handle `chat_answer` field and `drIshaResponse` nested structure |
 | Apr 25, 2026 | 2.3 | §12 Wallet — 3-step HC purchase flow, appointment payment (calculate/can-pay/pay/refund), earn activities table; §13 Payments restructured — `/api/billing/payments/razorpay` + Stripe routes, state machine; §14 Billing — `POST /api/billing/orders` pharmacy, `GET stats`, full response shapes; §16 AI Doctor — expanded consult body/response, language list, emergency triage response, SOS notified-contacts response, instant triage call billing response, PHI-safe chat detail, Dr. iSHA rule-based consult, high-risk term list; §18 AI Intelligence — route prefix corrected to `/api/ai-intelligence/...` (was `/api/v3/`), drug interaction body fixed, triage body expanded, risk score, learning/quality endpoints added; §21 Health Intelligence — reminder types fixed (medication/checkup/lifestyle/diet/activity/vitals/lab_test), action body corrected; §22 Diet Plan — full body/response with macronutrients, meal plan, BMR/TDEE calculation |
 | Apr 19, 2026 | 2.1 | §3 Family member insurance CRUD (`/api/family-members/:id/insurances`); §9 Medical Reports `familyMemberId` upload + filter; §26 Insurance restructured with correct user policy path (`/api/users/my-insurances`) |
 | Apr 2026 | 2.0 | §32 AI DeepTech Layer (HIS, Clinical NLP, Pre-auth, Context Bridge, Federated Learning); §33 EHR; §34 FHIR R4; §35 Pharmacy Orders; §36 Activity Tracker; §37 Offline AI Scribe; §38 Omnichannel Messaging; 30 new path prefixes ring-fenced for patient role |
