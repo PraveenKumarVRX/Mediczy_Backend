@@ -179,6 +179,18 @@ router.get(
 );
 
 /**
+ * @route   GET /api/appointments/upcoming
+ * @desc    Alias for GET /?upcoming=true — returns only upcoming appointments
+ * @access  Private (User)
+ */
+router.get(
+  '/upcoming',
+  authUser,
+  (req, _res, next) => { req.query.upcoming = 'true'; next(); },
+  getUserAppointments
+);
+
+/**
  * @route   GET /api/appointments/:id
  * @desc    Get appointment by ID
  * @access  Private (User/Doctor)

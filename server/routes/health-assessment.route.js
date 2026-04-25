@@ -6,8 +6,105 @@ import { User } from '../models/user.model.intelligent.js';
 const router = express.Router();
 
 /**
- * Calculate risk score based on assessment responses
+ * @route   GET /api/health-assessment/questions
+ * @desc    Returns the standard health risk assessment questionnaire structure
+ * @access  Private
  */
+router.get('/questions', authUser, (req, res) => {
+  res.json({
+    success: true,
+    version: '1.0',
+    sections: [
+      {
+        id: 'measurements',
+        title: 'Body Measurements',
+        fields: [
+          { id: 'age',    label: 'Age',    type: 'number', unit: 'years', required: true },
+          { id: 'gender', label: 'Gender', type: 'select', options: ['male', 'female', 'other'], required: true },
+          { id: 'height', label: 'Height', type: 'number', unit: 'cm',    required: true },
+          { id: 'weight', label: 'Weight', type: 'number', unit: 'kg',    required: true },
+          { id: 'waist',  label: 'Waist Circumference', type: 'number', unit: 'cm', required: false },
+          { id: 'hip',    label: 'Hip Circumference',   type: 'number', unit: 'cm', required: false }
+        ]
+      },
+      {
+        id: 'lifestyle',
+        title: 'Lifestyle',
+        fields: [
+          { id: 'smoking',           label: 'Smoking Status',      type: 'select', options: ['never', 'former', 'current'] },
+          { id: 'alcohol',           label: 'Alcohol Consumption', type: 'select', options: ['none', 'occasionally', 'weekly', 'daily'] },
+          { id: 'exercise_frequency',label: 'Exercise Frequency',  type: 'select', options: ['sedentary', 'light', 'moderate', 'active'] },
+          { id: 'diet_quality',      label: 'Diet Quality',        type: 'select', options: ['poor', 'fair', 'good', 'excellent'] },
+          { id: 'sleep_hours',       label: 'Average Sleep Hours', type: 'number', unit: 'hrs/night' },
+          { id: 'stress_level',      label: 'Stress Level (1-10)', type: 'number', min: 1, max: 10 }
+        ]
+      },
+      {
+        id: 'medical_history',
+        title: 'Medical History',
+        fields: [
+          { id: 'hypertension',   label: 'High Blood Pressure',   type: 'select', options: ['yes', 'no'] },
+          { id: 'diabetes',       label: 'Diabetes',               type: 'select', options: ['yes', 'no'] },
+          { id: 'heart_disease',  label: 'Heart Disease',          type: 'select', options: ['yes', 'no'] },
+          { id: 'cholesterol',    label: 'High Cholesterol',       type: 'select', options: ['yes', 'no'] },
+          { id: 'mental_health',  label: 'Mental Health Status',   type: 'select', options: ['normal', 'stressed', 'anxious', 'depressed'] }
+        ]
+      },
+      {
+        id: 'family_history',
+        title: 'Family History',
+        fields: [
+          { id: 'family_heart_disease', label: 'Family Heart Disease', type: 'select', options: ['yes', 'no'] },
+          { id: 'family_diabetes',      label: 'Family Diabetes',      type: 'select', options: ['yes', 'no'] },
+          { id: 'family_cancer',        label: 'Family Cancer',        type: 'select', options: ['yes', 'no'] }
+        ]
+      }
+    ]
+  });
+});
+
+/**
+ * @route   GET /api/health-assessment/my
+ * @desc    Alias for GET /latest — returns the user's most recent health assessment
+ * @access  Private
+ */
+router.get('/my', authUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const assessment = await UserHealthAssessment.findOne({
+      where: { userId },
+      order: [['assessed_at', 'DESC']]
+    }).catch(() => null);
+
+    if (!assessment) {
+      return res.json({ success: true, assessment: null, hasAssessment: false, message: 'No health assessment found. Complete your first assessment to get started.' });
+    }
+
+    res.json({
+      success: true,
+      assessment: {
+        id: assessment.id,
+        userId,
+        assessedAt: assessment.assessedAt,
+        measurements: {
+          age: assessment.age, height: assessment.height,
+          weight: assessment.weight, bmi: assessment.bmi,
+          waist: assessment.waist, hip: assessment.hip, whr: assessment.whr
+        },
+        riskAssessment: {
+          score: assessment.riskScore,
+          riskLevel: assessment.riskLevel,
+          riskFactors: assessment.riskFactors
+        }
+      }
+    });
+  } catch (error) {
+    console.error('❌ Health assessment /my error:', error);
+    res.status(500).json({ success: false, message: 'Failed to retrieve health assessment', error: error.message });
+  }
+});
+
+
 const calculateHealthRiskScore = (assessment) => {
   let score = 0;
   let riskFactors = [];

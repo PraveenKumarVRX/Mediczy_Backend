@@ -1851,4 +1851,265 @@ Patient's question: ${query}`;
   }
 });
 
+/**
+ * POST /api/medical-ai/diet-plan
+ * Dr. iSHA Bespoke Diet Recommendation
+ * Uses the user's full health profile (conditions, allergies, family history,
+ * medications, lifestyle) to generate a deeply personalised AI diet plan.
+ */
+router.post('/diet-plan', authUser, async (req, res) => {
+  try {
+    const {
+      goal = 'maintenance',
+      weight,
+      height,
+      age,
+      gender,
+      bmi,
+      dailyCalories,
+      dietaryPreference = 'balanced',
+      cuisineRegion = 'north_indian',
+      language = 'en'
+    } = req.body;
+
+    // Pull full profile from DB for deep personalisation
+    const userRecord = await User.findByPk(req.user.id, {
+      attributes: [
+        'firstName', 'lastName', 'gender', 'dateOfBirth', 'weight', 'height',
+        'bloodType', 'allergies', 'medications', 'chronicConditions',
+        'medicalHistory', 'familyHistory', 'personalHistory'
+      ]
+    });
+
+    if (!userRecord) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const u = userRecord.toJSON();
+
+    // ── Build rich health profile string ──────────────────────────────────
+    const profileParts = [];
+
+    if (u.allergies?.length)         profileParts.push(`Food Allergies / Intolerances: ${u.allergies.join(', ')}`);
+    if (u.medications?.length)       profileParts.push(`Current Medications: ${u.medications.join(', ')}`);
+    if (u.chronicConditions?.length) profileParts.push(`Chronic Health Conditions: ${u.chronicConditions.join(', ')}`);
+    if (u.bloodType)                 profileParts.push(`Blood Group: ${u.bloodType}`);
+
+    // Family history
+    const fh = u.familyHistory || {};
+    const fhFlags = [];
+    if (fh.diabetes)     fhFlags.push('Diabetes');
+    if (fh.hypertension) fhFlags.push('Hypertension');
+    if (fh.heartDisease) fhFlags.push('Heart Disease');
+    if (fh.cancer)       fhFlags.push('Cancer');
+    if (fh.stroke)       fhFlags.push('Stroke');
+    if (fh.asthma)       fhFlags.push('Asthma');
+    if (fh.thyroid)      fhFlags.push('Thyroid disorder');
+    if (fh.mentalHealth) fhFlags.push('Mental Health condition');
+    if (fh.kidney)       fhFlags.push('Kidney disease');
+    if (fh.details)      fhFlags.push(fh.details);
+    if (fhFlags.length)  profileParts.push(`Family Medical History: ${fhFlags.join(', ')}`);
+
+    // Lifestyle
+    const ph = u.personalHistory || {};
+    const lifestyle = [];
+    if (ph.smoking && ph.smoking !== 'never')    lifestyle.push(`Smoking: ${ph.smoking}`);
+    if (ph.alcohol && ph.alcohol !== 'never')    lifestyle.push(`Alcohol: ${ph.alcohol}`);
+    if (ph.exercise)                             lifestyle.push(`Exercise: ${ph.exercise}`);
+    if (ph.sleep)                                lifestyle.push(`Sleep: ${ph.sleep}`);
+    if (ph.stressLevel && ph.stressLevel !== 'low') lifestyle.push(`Stress level: ${ph.stressLevel}`);
+    if (ph.occupation)                           lifestyle.push(`Occupation: ${ph.occupation}`);
+    if (lifestyle.length)                        profileParts.push(`Lifestyle: ${lifestyle.join(', ')}`);
+
+    const goalLabels = {
+      weight_loss: 'Weight Loss', weight_gain: 'Weight Gain', maintenance: 'Weight Maintenance'
+    };
+
+    const prompt = `You are Dr. iSHA, an expert AI nutritionist and lifestyle physician at MySmart Health.
+
+A patient needs a deeply personalised, bespoke dietary recommendation. Use ALL of their health data below to craft specific, actionable advice.
+
+PATIENT HEALTH PROFILE:
+- Name: ${u.firstName || 'Patient'}
+- Age: ${age || 'unknown'} years | Gender: ${gender || u.gender || 'unknown'}
+- Weight: ${weight || u.weight || 'unknown'} kg | Height: ${height || u.height || 'unknown'} cm | BMI: ${bmi || 'unknown'}
+- Health Goal: ${goalLabels[goal] || goal}
+- Daily Calorie Target: ${dailyCalories || 'to be determined'} kcal
+- Dietary Preference: ${dietaryPreference} | Cuisine Region: ${cuisineRegion.replace(/_/g, ' ')}
+${profileParts.length > 0 ? '\n' + profileParts.join('\n') : '\nNo additional health conditions on record.'}
+
+Please provide:
+
+1. **Dr. iSHA's Clinical Assessment** (2-3 sentences on the patient's health picture and dietary priorities)
+
+2. **Condition-Specific Dietary Rules** (based on their conditions, medications, and family history — list key foods to AVOID and why)
+
+3. **Priority Foods to Include** (specific to their conditions and cuisine preference — 8-10 items with brief reason)
+
+4. **Weekly Meal Rhythm Guidance** (how to structure their week — e.g. intermittent fasting, meal timing, portion sizing for their specific profile)
+
+5. **Supplement Considerations** (based on conditions and medications — note any deficiencies to watch for)
+
+6. **Lifestyle & Dietary Caution Flags** (any specific warnings based on medication interactions, family history risk factors)
+
+Keep advice practical, specific, and rooted in clinical nutrition principles. Be warm and encouraging as Dr. iSHA always is.`;
+
+    // ── Call Dr. iSHA (SIB) ───────────────────────────────────────────────
+    const sessionId = `diet_plan_${req.user.id}_${Date.now()}`;
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), 40000);
+
+    let sibResponse;
+    try {
+      sibResponse = await fetch(`${SIB_URL}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          patient_id: sessionId,
+          message: prompt,
+          language,
+          patient_data: {
+            userId: req.user.id,
+            channel: 'diet_plan',
+            healthProfile: {
+              allergies:         u.allergies,
+              medications:       u.medications,
+              chronicConditions: u.chronicConditions,
+              familyHistory:     u.familyHistory,
+              personalHistory:   u.personalHistory
+            }
+          }
+        })
+      });
+    } catch (fetchError) {
+      clearTimeout(timeoutHandle);
+      if (fetchError.name === 'AbortError') {
+        return res.status(504).json({ success: false, error: 'Dr. iSHA is taking too long. Please try again.' });
+      }
+      throw fetchError;
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
+
+    if (!sibResponse.ok) {
+      const errText = await sibResponse.text().catch(() => '');
+      return res.status(503).json({ success: false, error: 'Dr. iSHA service unavailable', details: errText });
+    }
+
+    const sibData = await sibResponse.json();
+    const recommendation = sibData.response || sibData.chat_answer || sibData.message || sibData.text || sibData.answer || '';
+
+    if (!recommendation) {
+      return res.status(502).json({ success: false, error: 'Empty response from Dr. iSHA' });
+    }
+
+    // ── Build structured response ──────────────────────────────────────────
+    const hasConditions = u.chronicConditions?.length > 0 || fhFlags.length > 0 || u.allergies?.length > 0;
+
+    res.json({
+      success: true,
+      recommendation,
+      healthProfile: {
+        hasConditions,
+        chronicConditions: u.chronicConditions || [],
+        allergies:         u.allergies || [],
+        medications:       u.medications || [],
+        familyRiskFlags:   fhFlags,
+        lifestyle: {
+          exercise:    ph.exercise || null,
+          stressLevel: ph.stressLevel || null,
+          sleep:       ph.sleep || null
+        }
+      },
+      meta: {
+        model:     sibData.model || 'Dr. iSHA (SIB)',
+        goal,
+        bmi,
+        dailyCalories,
+        generatedAt: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('[Dr. iSHA Diet Plan] ❌ Error:', error);
+    res.status(500).json({ success: false, error: 'Dr. iSHA diet recommendation failed. Please try again.' });
+  }
+});
+
+/**
+ * GET /api/medical-ai/health-summary
+ * Returns a patient health summary aggregated from profile, appointments, and assessment data.
+ */
+router.get('/health-summary', authUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const user = await User.findByPk(userId, {
+      attributes: [
+        'id', 'firstName', 'lastName', 'gender', 'dateOfBirth',
+        'weight', 'height', 'bloodType',
+        'allergies', 'medications', 'chronicConditions',
+        'medicalHistory', 'familyHistory'
+      ]
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const u = user.toJSON ? user.toJSON() : user;
+
+    // Compute age
+    let age = null;
+    if (u.dateOfBirth) {
+      const dob = new Date(u.dateOfBirth);
+      age = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+    }
+
+    // Compute BMI
+    let bmi = null;
+    if (u.weight && u.height) {
+      const hm = u.height / 100;
+      bmi = parseFloat((u.weight / (hm * hm)).toFixed(1));
+    }
+
+    // Upcoming appointment count
+    let upcomingAppointments = 0;
+    try {
+      const { Op } = await import('sequelize');
+      upcomingAppointments = await Appointment.count({
+        where: { patientId: userId, appointmentDate: { [Op.gte]: new Date() }, status: { [Op.notIn]: ['cancelled', 'completed'] } }
+      });
+    } catch (_) { /* non-critical */ }
+
+    res.json({
+      success: true,
+      healthSummary: {
+        profile: {
+          name: [u.firstName, u.lastName].filter(Boolean).join(' ') || 'Patient',
+          age,
+          gender: u.gender || null,
+          bloodType: u.bloodType || null,
+          weight: u.weight || null,
+          height: u.height || null,
+          bmi
+        },
+        conditions: {
+          chronicConditions: u.chronicConditions || [],
+          allergies: u.allergies || [],
+          medications: u.medications || [],
+          familyHistory: u.familyHistory || []
+        },
+        upcomingAppointments,
+        generatedAt: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('[Health Summary] ❌ Error:', error);
+    res.status(500).json({ success: false, error: 'Failed to generate health summary.' });
+  }
+});
+
 export default router;
+

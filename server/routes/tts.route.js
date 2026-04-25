@@ -136,7 +136,19 @@ router.post('/speak', async (req, res) => {
 router.get('/voices', async (req, res) => {
   try {
     if (!ELEVENLABS_API_KEY) {
-      return res.status(503).json({ success: false, message: 'TTS service not configured' });
+      // Return a static set of common voices so the app degrades gracefully
+      return res.json({
+        success: true,
+        configured: false,
+        voices: [
+          { voice_id: 'pjcYQlDFKMbcOUp6F5GD', name: 'Dr. iSHA', category: 'premade', description: 'Default Dr. iSHA voice', preview_url: null },
+          { voice_id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel',   category: 'premade', description: 'Calm and professional', preview_url: null },
+          { voice_id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi',     category: 'premade', description: 'Confident and clear',   preview_url: null },
+          { voice_id: 'EXAVITQu4vr4xnSDxMaL', name: 'Bella',    category: 'premade', description: 'Warm and friendly',     preview_url: null },
+          { voice_id: 'ErXwobaYiN019PkySvjV', name: 'Antoni',   category: 'premade', description: 'Smooth and natural',    preview_url: null }
+        ],
+        note: 'TTS service not configured — showing default voice list. Configure ELEVENLABS_API_KEY to enable live synthesis.'
+      });
     }
 
     // Add timeout for voices request (10s is sufficient for list)

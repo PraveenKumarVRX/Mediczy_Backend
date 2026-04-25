@@ -16,7 +16,9 @@ import {
   Droplets,
   Loader2,
   User,
+  FileDown,
 } from "lucide-react";
+import { generateMonthlyDietPDF } from "@/utils/dietPdfGenerator";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -428,6 +430,40 @@ const Diet = () => {
   const [savedMeals, setSavedMeals] = useState<SavedMeal[]>([]);
   const [backendPlan, setBackendPlan] = useState<any>(null);
   const [backendLoading, setBackendLoading] = useState(false);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [drIshaRec, setDrIshaRec] = useState<{recommendation: string; healthProfile: any} | null>(null);
+  const [drIshaLoading, setDrIshaLoading] = useState(false);
+
+  // Download 1-month diet plan as branded PDF
+  const handleDownloadPDF = async () => {
+    if (!bmi || !tdee) return;
+    setPdfGenerating(true);
+    try {
+      const activePlan = personalizedPlan || dietPlans[selectedPlan];
+      await generateMonthlyDietPDF({
+        userName:          currentUser?.name || currentUser?.email?.split('@')[0] || 'Health Enthusiast',
+        goal:              selectedPlan as 'weight_loss' | 'weight_gain' | 'maintenance',
+        bmi:               bmi!,
+        bmiCategory:       getBMICategory(parseFloat(bmi!)),
+        dailyCalories:     activePlan.dailyCalories,
+        macros:            backendPlan?.macronutrients ? {
+          protein: backendPlan.macronutrients.protein.grams,
+          carbs:   backendPlan.macronutrients.carbs.grams,
+          fats:    backendPlan.macronutrients.fats.grams,
+        } : undefined,
+        hydration:         backendPlan?.hydration?.daily,
+        tips:              activePlan.tips,
+        cuisineRegion,
+        dietaryPreference,
+        meals:             activePlan.meals,
+        backendMealPlan:   backendPlan?.mealPlan,
+        drIshaRecommendation: drIshaRec?.recommendation,
+        conditionsConsidered: drIshaRec?.healthProfile,
+      });
+    } finally {
+      setPdfGenerating(false);
+    }
+  };
 
   // Auto-populate from user profile
   useEffect(() => {
@@ -609,6 +645,37 @@ const Diet = () => {
     }
   };
 
+  // Fetch Dr. iSHA bespoke diet recommendation from health profile
+  const fetchDrIshaRec = async (goal: string) => {
+    const heightInCm = getHeightInCm();
+    const weightNum = parseFloat(weight);
+    const ageNum = parseFloat(age);
+    if (!weightNum || !heightInCm || !ageNum) return;
+    if (!currentUser) return;
+
+    setDrIshaLoading(true);
+    try {
+      const { data } = await api.post('/medical-ai/diet-plan', {
+        goal,
+        weight: weightNum,
+        height: heightInCm,
+        age: ageNum,
+        gender,
+        bmi,
+        dailyCalories: (personalizedPlan || dietPlans[goal])?.dailyCalories,
+        dietaryPreference,
+        cuisineRegion,
+      });
+      if (data.success) {
+        setDrIshaRec({ recommendation: data.recommendation, healthProfile: data.healthProfile });
+      }
+    } catch (err) {
+      console.error('Dr. iSHA diet fetch failed:', err);
+    } finally {
+      setDrIshaLoading(false);
+    }
+  };
+
   useEffect(() => {
     const hasWeight = Boolean(weight);
     const hasHeight = heightUnit === "cm" ? Boolean(height) : Boolean(feet || inches);
@@ -618,6 +685,7 @@ const Diet = () => {
 
     handlePlanChange(selectedPlan as "weight_loss" | "weight_gain" | "maintenance");
     fetchBackendDiet(selectedPlan);
+    fetchDrIshaRec(selectedPlan);
   }, [weight, height, feet, inches, heightUnit, age, gender, activityLevel, selectedPlan, dietaryPreference, cuisineRegion]);
 
   const bmi = calculateBMI();
@@ -680,6 +748,20 @@ const Diet = () => {
               <Calculator className="h-5 w-5 text-teal-600 dark:text-teal-400" />
               Calorie Calculator
             </Button>
+            {bmi && tdee && (
+              <Button
+                onClick={handleDownloadPDF}
+                disabled={pdfGenerating}
+                className="flex items-center gap-2 bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-md hover:shadow-teal-500/30 transition-all"
+              >
+                {pdfGenerating ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <FileDown className="h-5 w-5" />
+                )}
+                {pdfGenerating ? 'Generating…' : 'Download 1-Month Plan'}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -1038,6 +1120,56 @@ const Diet = () => {
               </div>
             </div>
           </Card>
+
+          {/* Dr. iSHA Personalised Recommendations */}
+          {(drIshaLoading || drIshaRec) && (
+            <Card className="md:col-span-2 p-6 shadow-lg bg-white dark:bg-slate-800/50 border-teal-200 dark:border-teal-700/50">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                  AI
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-800 dark:text-white">Dr. iSHA Personalised Recommendations</h2>
+                  <p className="text-xs text-teal-600 dark:text-teal-400">MySmart Health · AI Nutritionist · Based on your full health profile</p>
+                </div>
+              </div>
+
+              {drIshaLoading ? (
+                <div className="flex items-center gap-3 py-8 justify-center text-slate-500 dark:text-slate-400">
+                  <Loader2 className="h-6 w-6 animate-spin text-teal-500" />
+                  <span>Dr. iSHA is analysing your health profile…</span>
+                </div>
+              ) : drIshaRec && (
+                <>
+                  {/* Condition badges */}
+                  {drIshaRec.healthProfile?.hasConditions && (
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {drIshaRec.healthProfile.chronicConditions?.map((c: string) => (
+                        <Badge key={c} className="bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-700/50">{c}</Badge>
+                      ))}
+                      {drIshaRec.healthProfile.allergies?.map((a: string) => (
+                        <Badge key={a} className="bg-red-50 text-red-700 border border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-700/50">Allergy: {a}</Badge>
+                      ))}
+                      {drIshaRec.healthProfile.familyRiskFlags?.map((f: string) => (
+                        <Badge key={f} className="bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-700/50">Family: {f}</Badge>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Recommendation text */}
+                  <div className="bg-teal-50 dark:bg-teal-900/20 rounded-lg p-4 border border-teal-100 dark:border-teal-800/50">
+                    <div className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
+                      {drIshaRec.recommendation}
+                    </div>
+                  </div>
+
+                  <p className="mt-3 text-xs text-slate-400 dark:text-slate-500">
+                    This advice is generated by Dr. iSHA AI and is for informational purposes only. Consult your physician before making dietary changes.
+                  </p>
+                </>
+              )}
+            </Card>
+          )}
         </div>
       </div>
     // </MainLayout>

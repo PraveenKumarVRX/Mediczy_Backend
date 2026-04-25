@@ -9,6 +9,7 @@ const router = express.Router();
 const TENANT_ID_PREFIX = 'tenant-';
 const privilegedRoles = new Set(['admin', 'super_admin', 'system_admin']);
 const allowTenantFallback = process.env.ALLOW_TENANT_FALLBACK === 'true';
+const allowLegacyLocationFallback = process.env.ALLOW_LEGACY_LOCATION_FALLBACK === 'true';
 
 const canUseTenantOverride = (req) =>
   allowTenantFallback && (privilegedRoles.has(req.userRole) || req.user?.isAdmin);
