@@ -2593,18 +2593,58 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
       }
     }
 
-    // Doctors can initiate calls at any time on the appointment day.
-    // (The stored appointmentTime is in IST while the server runs UTC, so a
-    //  strict ±15-min UTC window incorrectly blocks valid IST-time calls.)
-    // A light guardrail: block only if the appointment date itself has not
-    // yet arrived (i.e., tomorrow or later) — same-day and past calls are allowed.
-    const appointmentDateStr = String(appointment.appointmentDate).slice(0, 10); // "YYYY-MM-DD"
-    const nowDateStr = new Date().toISOString().slice(0, 10);
-    if (appointmentDateStr > nowDateStr) {
+    // Enforce call initiation timing: doctor can initiate only within
+    // 15 minutes before appointment start (or anytime after start).
+    // appointmentDate + appointmentTime are stored in IST.
+    const appointmentDateStr = String(appointment.appointmentDate || '').slice(0, 10); // YYYY-MM-DD
+    const appointmentTimeStr = String(appointment.appointmentTime || '00:00:00');
+
+    const dateParts = appointmentDateStr.split('-').map(Number);
+    const timeRawParts = appointmentTimeStr.split(':');
+    const hour = Number(timeRawParts[0]);
+    const minute = Number(timeRawParts[1]);
+    const second = timeRawParts.length > 2 ? Number(timeRawParts[2]) : 0;
+
+    const isValidDate = (
+      dateParts.length === 3
+      && Number.isFinite(dateParts[0])
+      && Number.isFinite(dateParts[1])
+      && Number.isFinite(dateParts[2])
+    );
+    const isValidTime = (
+      Number.isFinite(hour)
+      && Number.isFinite(minute)
+      && Number.isFinite(second)
+      && hour >= 0 && hour <= 23
+      && minute >= 0 && minute <= 59
+      && second >= 0 && second <= 59
+    );
+
+    if (!isValidDate || !isValidTime) {
       return res.status(400).json({
         success: false,
-        message: 'You can only initiate the call on the day of the appointment.',
-        appointmentDate: appointmentDateStr
+        message: 'Invalid appointment date/time. Unable to initiate call.',
+        appointmentDate: appointmentDateStr,
+        appointmentTime: appointmentTimeStr
+      });
+    }
+
+    const [year, month, day] = dateParts;
+
+    // Convert IST appointment datetime to UTC by subtracting +05:30.
+    const appointmentStartUTC = new Date(
+      Date.UTC(year, month - 1, day, hour, minute, second) - (5 * 60 + 30) * 60 * 1000
+    );
+    const nowUTC = new Date();
+    const minutesUntilStart = (appointmentStartUTC.getTime() - nowUTC.getTime()) / (1000 * 60);
+
+    if (minutesUntilStart > 15) {
+      return res.status(400).json({
+        success: false,
+        message: 'Call can be initiated only 15 minutes before appointment time.',
+        appointmentDate: appointmentDateStr,
+        appointmentTime: appointmentTimeStr,
+        minutesUntilStart: Math.ceil(minutesUntilStart)
       });
     }
 
