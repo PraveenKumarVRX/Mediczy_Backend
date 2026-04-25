@@ -344,6 +344,227 @@ async function runFKTests(client) {
   }
 }
 
+// ─── Lab Catalog & Auto-Price Smoke Tests ─────────────────────────────────────
+async function runLabCatalogTests() {
+  console.log('\n── SECTION 5: Lab Catalog & Auto-Price Smoke Tests ─────────────');
+
+  const userToken = jwt.sign(
+    { id: 19, email: 'user@mediczy.com', role: 'user' },
+    JWT_SECRET,
+    { expiresIn: '5m' }
+  );
+
+  // 5a. Catalog is publicly accessible (no token)
+  try {
+    const r = await httpGet('/api/lab-tests/catalog');
+    if (r.status === 200 && r.body.success && Array.isArray(r.body.data)) {
+      pass('LAB', 'GET /api/lab-tests/catalog (no auth) → 200');
+    } else {
+      fail('LAB', 'GET /api/lab-tests/catalog (no auth)', `Got ${r.status}: ${JSON.stringify(r.body).slice(0,120)}`);
+    }
+  } catch (e) { fail('LAB', 'GET /api/lab-tests/catalog (no auth)', e.message); }
+
+  // 5b. Catalog returns all 116 seeded tests
+  try {
+    const r = await httpGet('/api/lab-tests/catalog?limit=200');
+    const total = r.body?.pagination?.total;
+    if (r.status === 200 && total >= 100) {
+      pass('LAB', `Catalog total count = ${total} (≥ 100 expected)`);
+    } else {
+      fail('LAB', 'Catalog count ≥ 100', `Got total=${total}, status=${r.status}`);
+    }
+  } catch (e) { fail('LAB', 'Catalog count check', e.message); }
+
+  // 5c. Catalog returns categories array for filter UI
+  try {
+    const r = await httpGet('/api/lab-tests/catalog?limit=1');
+    const cats = r.body?.categories;
+    if (r.status === 200 && Array.isArray(cats) && cats.length >= 5) {
+      pass('LAB', `Catalog categories list returned (${cats.length} categories)`);
+    } else {
+      fail('LAB', 'Catalog categories array', `categories=${JSON.stringify(cats)}`);
+    }
+  } catch (e) { fail('LAB', 'Catalog categories array', e.message); }
+
+  // 5d. Catalog search by name keyword (q=CBC)
+  try {
+    const r = await httpGet('/api/lab-tests/catalog?q=CBC');
+    const hit = r.body?.data?.find(t => t.test_id === 'CBC-001');
+    if (r.status === 200 && hit) {
+      pass(`LAB`, `Catalog search q=CBC → found CBC-001 @ ₹${hit.price}`);
+    } else {
+      fail('LAB', 'Catalog search q=CBC', `data=${JSON.stringify(r.body?.data?.map(t=>t.test_id))}`);
+    }
+  } catch (e) { fail('LAB', 'Catalog search q=CBC', e.message); }
+
+  // 5e. Catalog search by partial name (q=thyroid)
+  try {
+    const r = await httpGet('/api/lab-tests/catalog?q=thyroid');
+    const count = r.body?.data?.length || 0;
+    if (r.status === 200 && count >= 4) {
+      pass('LAB', `Catalog search q=thyroid → ${count} results (≥ 4 expected)`);
+    } else {
+      fail('LAB', 'Catalog search q=thyroid', `Got ${count} results`);
+    }
+  } catch (e) { fail('LAB', 'Catalog search q=thyroid', e.message); }
+
+  // 5f. Catalog filter by category
+  try {
+    const r = await httpGet('/api/lab-tests/catalog?category=Radiology&limit=50');
+    const allRadiology = r.body?.data?.every(t => t.category === 'Radiology');
+    const count = r.body?.data?.length || 0;
+    if (r.status === 200 && count >= 5 && allRadiology) {
+      pass('LAB', `Catalog category=Radiology → ${count} results, all correctly categorised`);
+    } else {
+      fail('LAB', 'Catalog filter by category=Radiology', `count=${count}, allRadiology=${allRadiology}`);
+    }
+  } catch (e) { fail('LAB', 'Catalog filter by category=Radiology', e.message); }
+
+  // 5g. Catalog pagination works
+  try {
+    const page1 = await httpGet('/api/lab-tests/catalog?limit=5&offset=0');
+    const page2 = await httpGet('/api/lab-tests/catalog?limit=5&offset=5');
+    const ids1 = page1.body?.data?.map(t => t.test_id) || [];
+    const ids2 = page2.body?.data?.map(t => t.test_id) || [];
+    const overlap = ids1.filter(id => ids2.includes(id));
+    if (page1.status === 200 && page2.status === 200 && overlap.length === 0 && ids1.length === 5) {
+      pass('LAB', 'Catalog pagination — page1 and page2 have no overlapping test_ids');
+    } else {
+      fail('LAB', 'Catalog pagination', `overlap=${overlap}, page1=${ids1.length}, page2=${ids2.length}`);
+    }
+  } catch (e) { fail('LAB', 'Catalog pagination', e.message); }
+
+  // 5h. Catalog returns price fields with correct types
+  try {
+    const r = await httpGet('/api/lab-tests/catalog?q=CBC&limit=1');
+    const t = r.body?.data?.[0];
+    const hasFields = t && t.price !== undefined && t.home_collection_charge !== undefined &&
+                      t.sample_type !== undefined && t.turnaround_time_hours !== undefined;
+    if (r.status === 200 && hasFields) {
+      pass('LAB', `Catalog response shape OK — price:${t.price}, home_charge:${t.home_collection_charge}, sample:${t.sample_type}, TAT:${t.turnaround_time_hours}h`);
+    } else {
+      fail('LAB', 'Catalog response shape (price, home_charge, sample_type, TAT)', JSON.stringify(t).slice(0,150));
+    }
+  } catch (e) { fail('LAB', 'Catalog response shape check', e.message); }
+
+  // 5i. Catalog: unknown search term returns empty data, not 500
+  try {
+    const r = await httpGet('/api/lab-tests/catalog?q=xyzunknowntestname99');
+    if (r.status === 200 && r.body.success && Array.isArray(r.body.data) && r.body.data.length === 0) {
+      pass('LAB', 'Catalog unknown search → 200 empty array (not 500)');
+    } else {
+      fail('LAB', 'Catalog unknown search term', `status=${r.status}, count=${r.body?.data?.length}`);
+    }
+  } catch (e) { fail('LAB', 'Catalog unknown search term', e.message); }
+
+  // 5j. Booking without price → auto-fills from catalog (CBC → ₹299)
+  let autoBookingId;
+  try {
+    const r = await httpPost('/api/lab-tests',
+      { testType: 'blood_test', testName: 'Complete Blood Count (CBC)', appointmentDate: '2026-06-01', urgency: 'routine' },
+      userToken
+    );
+    const d = r.body?.data;
+    const priceOk = d && parseFloat(d.price) === 299.00;
+    const totalOk = d && parseFloat(d.total_amount) === 299.00;
+    const srcOk   = d?.metadata?.priceSource === 'catalog';
+    const tidOk   = d?.metadata?.catalogTestId === 'CBC-001';
+    if (r.status === 201 && priceOk && totalOk && srcOk && tidOk) {
+      pass('LAB', `Booking auto-price → price=₹${d.price}, total=₹${d.total_amount}, source=catalog, catalogTestId=CBC-001`);
+      autoBookingId = d.id;
+    } else {
+      fail('LAB', 'Booking auto-price lookup',
+        `status=${r.status} price=${d?.price} total=${d?.total_amount} priceSource=${d?.metadata?.priceSource} catalogTestId=${d?.metadata?.catalogTestId}`);
+    }
+  } catch (e) { fail('LAB', 'Booking auto-price lookup', e.message); }
+
+  // 5k. Booking with explicit price → explicit price wins (no override)
+  try {
+    const r = await httpPost('/api/lab-tests',
+      { testType: 'blood_test', testName: 'Complete Blood Count (CBC)', appointmentDate: '2026-06-01', urgency: 'routine', price: 250 },
+      userToken
+    );
+    const d = r.body?.data;
+    if (r.status === 201 && d && parseFloat(d.price) === 250.00) {
+      pass('LAB', 'Booking explicit price=₹250 → catalog auto-fill NOT applied (explicit wins)');
+    } else {
+      fail('LAB', 'Booking explicit price takes precedence', `status=${r.status}, price=${d?.price}`);
+    }
+  } catch (e) { fail('LAB', 'Booking explicit price takes precedence', e.message); }
+
+  // 5l. Booking with unknown testName → price stays null (graceful, no crash)
+  try {
+    const r = await httpPost('/api/lab-tests',
+      { testType: 'other', testName: 'SomeObscureTestNotInCatalog123', appointmentDate: '2026-06-01' },
+      userToken
+    );
+    const d = r.body?.data;
+    if (r.status === 201 && (d?.price === null || d?.price === undefined)) {
+      pass('LAB', 'Booking unknown testName → price=null gracefully (no crash)');
+    } else {
+      fail('LAB', 'Booking unknown testName graceful null price', `status=${r.status}, price=${d?.price}`);
+    }
+  } catch (e) { fail('LAB', 'Booking unknown testName graceful null price', e.message); }
+
+  // 5m. Booking without auth → 401
+  try {
+    const r = await httpPost('/api/lab-tests',
+      { testType: 'blood_test', testName: 'CBC', appointmentDate: '2026-06-01' },
+      null
+    );
+    if (r.status === 401) {
+      pass('LAB', 'POST /api/lab-tests without auth → 401 (correctly protected)');
+    } else {
+      fail('LAB', 'POST /api/lab-tests auth enforcement', `Expected 401, got ${r.status}`);
+    }
+  } catch (e) { fail('LAB', 'POST /api/lab-tests auth enforcement', e.message); }
+
+  // 5n. Booking missing required fields → 400
+  try {
+    const r = await httpPost('/api/lab-tests', { testName: 'CBC' }, userToken);
+    if (r.status === 400) {
+      pass('LAB', 'POST /api/lab-tests missing required fields → 400 validation error');
+    } else {
+      fail('LAB', 'POST /api/lab-tests field validation', `Expected 400, got ${r.status}`);
+    }
+  } catch (e) { fail('LAB', 'POST /api/lab-tests field validation', e.message); }
+
+  // 5o. DB: api_lab_tests has ≥ 100 active rows
+  // (run as standalone DB check using httpGet catalog with high limit)
+  try {
+    const r = await httpGet('/api/lab-tests/catalog?limit=200');
+    const total = r.body?.pagination?.total ?? 0;
+    const minPrice = Math.min(...(r.body?.data?.map(t => parseFloat(t.price)) || [9999]));
+    const maxPrice = Math.max(...(r.body?.data?.map(t => parseFloat(t.price)) || [0]));
+    if (total >= 100 && minPrice >= 70 && maxPrice <= 15000) {
+      pass('LAB', `DB api_lab_tests: ${total} active rows, price range ₹${minPrice}–₹${maxPrice} (within market range)`);
+    } else {
+      fail('LAB', 'DB api_lab_tests price range sanity', `total=${total}, min=₹${minPrice}, max=₹${maxPrice}`);
+    }
+  } catch (e) { fail('LAB', 'DB api_lab_tests price range sanity', e.message); }
+
+  // 5p. Specific key tests present with correct prices
+  const pricePairs = [
+    { q: 'CBC', id: 'CBC-001',      expectedPrice: 299 },
+    { q: 'HbA1c',  id: 'GLU-004',  expectedPrice: 449 },
+    { q: 'TSH',     id: 'THY-001', expectedPrice: 299 },
+    { q: 'Troponin', id: 'CAR-001', expectedPrice: 1299 },
+    { q: 'MRI Brain', id: 'MRI-001', expectedPrice: 5500 },
+    { q: 'ECG',     id: 'ECG-001', expectedPrice: 299 },
+  ];
+  for (const { q, id, expectedPrice } of pricePairs) {
+    try {
+      const r = await httpGet(`/api/lab-tests/catalog?q=${encodeURIComponent(q)}`);
+      const hit = r.body?.data?.find(t => t.test_id === id);
+      if (r.status === 200 && hit && parseFloat(hit.price) === expectedPrice) {
+        pass('LAB', `Market rate: ${id} "${hit.name}" = ₹${hit.price} ✓`);
+      } else {
+        fail('LAB', `Market rate: ${id} @ ₹${expectedPrice}`, `found=${hit ? `₹${hit.price}` : 'NOT FOUND'}`);
+      }
+    } catch (e) { fail('LAB', `Market rate check ${id}`, e.message); }
+  }
+}
+
 // ─── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   console.log('╔══════════════════════════════════════════════════════════════════╗');
@@ -371,6 +592,7 @@ async function main() {
   }
 
   await runApiTests();
+  await runLabCatalogTests();
 
   // ─── Summary ─────────────────────────────────────────────────────────────
   console.log('\n╔══════════════════════════════════════════════════════════════════╗');

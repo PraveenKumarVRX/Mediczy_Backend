@@ -1,6 +1,6 @@
 # Mediczy — Patient Mobile App API Guide
 
-> **Version:** 2.2 | **Last Updated:** April 21, 2026
+> **Version:** 2.3 | **Last Updated:** April 25, 2026
 
 - **Base URL:** `https://app.mediqzy.com/api`
 - **Auth:** `Authorization: Bearer <jwt-token>` (JWT, expires 7 days)
@@ -576,16 +576,67 @@ GET /api/labs/:labId/tests           (Public)  Lab test menu
 GET /api/labs/equipment/types        (Public)  Equipment types
 ```
 
-### 10.2 Book Lab Tests
+### 10.2 Lab Test Catalog (Browse & Search)
+```
+GET /api/lab-tests/catalog           (Public)  Browse test catalog with prices
+```
+**Query params:**
+
+| Param | Type | Description |
+|---|---|---|
+| `q` | string | Partial name / code search (e.g. `CBC`, `thyroid`, `MRI`) |
+| `category` | string | Exact category filter (e.g. `Haematology`, `Radiology`) |
+| `limit` | int | Max results (default 50, max 200) |
+| `offset` | int | Pagination offset (default 0) |
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "test_id": "CBC-001",
+      "name": "Complete Blood Count (CBC)",
+      "description": "Routine blood cell analysis — RBC, WBC, platelets, haemoglobin, haematocrit",
+      "category": "Haematology",
+      "test_code": "CBC",
+      "sample_type": "EDTA Blood",
+      "turnaround_time_hours": 6,
+      "price": "299.00",
+      "home_collection_charge": "50.00",
+      "currency": "INR"
+    }
+  ],
+  "pagination": { "total": 116, "limit": 50, "offset": 0 },
+  "categories": ["Biochemistry", "Cardiology", "Endocrinology", "Haematology", "Health Packages", "Immunology", "Microbiology", "Oncology", "Radiology"]
+}
+```
+
+> **Tip:** When booking via `POST /api/lab-tests`, omit `price` — the server auto-looks up the price from the catalog using `testName`.
+
+### 10.3 Book Lab Tests
 ```
 POST /api/labs/book                  🔐  Book lab test
-POST /api/lab-tests                  🔐  Create lab test order
+POST /api/lab-tests                  🔐  Create lab test order (price auto-filled from catalog)
 GET  /api/lab-tests                  🔐  List my lab tests
 GET  /api/lab-tests/:id              🔐  Lab test detail
 POST /api/lab-tests/:id/confirm      🔐  Confirm booking
 POST /api/lab-tests/:id/cancel       🔐  Cancel booking
 PUT  /api/lab-tests/:id              🔐  Update lab test
 ```
+
+**`POST /api/lab-tests` body:**
+```json
+{
+  "testType": "blood_test",
+  "testName": "Complete Blood Count (CBC)",
+  "appointmentDate": "2026-05-01",
+  "appointmentTime": "09:00",
+  "urgency": "routine",
+  "requiresFasting": false
+}
+```
+> `price` is **optional** — if omitted, the server matches `testName` against the catalog and fills it automatically.
 
 ---
 
@@ -607,182 +658,661 @@ POST   /api/cart/sync             🔐  Sync cart (merge offline/online)
 
 ### 12.1 Balance & History
 ```
-GET /api/wallet              🔐  Wallet details (balance, tier)
-GET /api/wallet/balance      🔐  HC coin balance
-GET /api/wallet/transactions 🔐  Transaction history
-GET /api/wallet/rewards      🔐  Rewards catalog
+GET /api/wallet                          🔐  Full wallet summary (balance, streak, tier, recent transactions)
+GET /api/wallet/balance                  🔐  HC coin balance only → { success, balance }
+GET /api/wallet/transactions?limit&offset 🔐  Paginated transaction history
+GET /api/wallet/rewards                  🔐  Packages (HEALTH_COINS_PRICING) + rewards config
 ```
 
 ### 12.2 Earn HC Coins
-```
-POST /api/wallet/earn/daily-login      🔐  Daily login bonus
-POST /api/wallet/earn/steps            🔐  Step count reward
-     Body: { "steps": 10000, "date": "2026-03-15" }
-POST /api/wallet/earn/health-assessment 🔐  Complete assessment bonus
-POST /api/wallet/earn/vital-signs      🔐  Vitals logging bonus
-POST /api/wallet/earn/activity         🔐  General activity reward
-     Body: { "activityType": "meditation", "duration": 30 }
+
+| Activity | Endpoint | Notes |
+|---|---|---|
+| Daily login | `POST /api/wallet/earn/daily-login` | Streak bonus applied automatically |
+| Step count | `POST /api/wallet/earn/steps` | Body: `{ "steps": 10000 }` |
+| Health assessment | `POST /api/wallet/earn/health-assessment` | After completing §20 assessment |
+| Log vital signs | `POST /api/wallet/earn/vital-signs` | Body: `{ "vitalData": { ... } }` |
+| Any activity | `POST /api/wallet/earn/activity` | Body: `{ "activityType": "meditation", "value": 30 }` |
+
+**Daily login response:**
+```json
+{ "success": true, "coinsEarned": 10, "bonusCoins": 5, "streak": 7, "newBalance": 250 }
 ```
 
-### 12.3 Spend & Payments
+### 12.3 Spend HC Coins
 ```
-POST /api/wallet/spend              🔐  Spend HC coins
-POST /api/wallet/validate-coupon    🔐  Validate coupon code
-POST /api/wallet/create-order       🔐  Create Razorpay order
-POST /api/wallet/verify-payment     🔐  Verify Razorpay payment
-POST /api/wallet/redeem-free-coupon 🔐  Redeem free coupon
-POST /api/wallet/purchase           🔐  Purchase with wallet
+POST /api/wallet/spend  🔐
+Body: {
+  "amount": 50,
+  "activityType": "APPOINTMENT_PAYMENT",
+  "description": "Consultation with Dr. Sharma",
+  "referenceType": "appointment",
+  "referenceId": "123",
+  "metadata": {}
+}
 ```
+
+### 12.4 Purchase HC Coins (3-Step Flow)
+
+#### Step 1 — Validate coupon (optional)
+```
+POST /api/wallet/validate-coupon  🔐
+Body: { "code": "WELCOME50", "packageId": 1 }
+→ { "coupon": { "type": "discount", "value": 50, "discount": 50, "bonusHC": 0, "finalPrice": 99 } }
+```
+
+#### Step 2a — Create Razorpay order (paid)
+```
+POST /api/wallet/create-order  🔐
+Body: { "packageId": 1, "couponCode": "WELCOME50" }
+→ {
+    "order": { "orderId": "order_xxx", "amount": 99, "amountInPaise": 9900, "currency": "INR", "key": "rzp_live_xxx" },
+    "coupon": { "finalAmount": 99 }
+  }
+```
+> Open Razorpay modal using `order.key`, `order.amountInPaise`, `order.orderId`.
+
+#### Step 2b — Free coupon shortcut (no payment)
+```
+POST /api/wallet/redeem-free-coupon  🔐
+Body: { "packageId": 1, "couponCode": "FREEHC100" }
+→ { "success": true, "totalCoins": 100, "newBalance": 350 }
+```
+
+#### Step 3 — Verify payment (Razorpay callback)
+```
+POST /api/wallet/verify-payment  🔐
+Body: {
+  "razorpay_order_id": "order_xxx",
+  "razorpay_payment_id": "pay_xxx",
+  "razorpay_signature": "abc123...",
+  "packageId": 1,
+  "couponCode": "WELCOME50"
+}
+→ { "success": true, "totalCoins": 100, "newBalance": 350 }
+```
+> Server verifies HMAC-SHA256 signature before crediting coins. CouponUsage is recorded to prevent reuse.
+
+### 12.5 Appointment Payment with HC
+
+```
+GET  /api/wallet/appointment/calculate/:consultationFee  🔐
+     → { "canPay": true, "hcRequired": 50, "currentBalance": 250, "bonusPercent": 10 }
+
+POST /api/wallet/appointment/can-pay  🔐
+     Body: { "consultationFee": 500 }
+     → same shape as calculate
+
+POST /api/wallet/appointment/pay  🔐
+     Body: { "appointmentId": 123, "consultationFee": 500, "doctorName": "Dr. Sharma" }
+     → { "hcPaid": 50, "consultationFeeINR": 500, "bonusPercent": 10, "newBalance": 200, "transactionId": "txn_xxx" }
+
+POST /api/wallet/appointment/refund  🔐
+     Body: { "appointmentId": 123, "hcAmount": 50, "doctorName": "Dr. Sharma" }
+     → HC refunded on appointment cancellation
+```
+> Conversion: `₹500 consultation = 50 HC` (10:1 ratio). Emergency triage via instant call costs 50 HC.
 
 ---
 
-## 13. Payments (Razorpay)
+## 13. Payments (Razorpay / Stripe)
 
+There are two payment gateway route groups depending on context:
+
+### 13.1 Generic Gateway — `/api/payments` (plans, general use)
 ```
-POST /api/payments/order           🔐  Create payment order
-     Body: { "amount": 500, "purpose": "appointment", "referenceId": "apt_123" }
-POST /api/payments/verify          🔐  Verify payment
-     Body: { "razorpay_payment_id": "...", "razorpay_order_id": "...", "razorpay_signature": "..." }
-GET  /api/payments/transactions    🔐  List transactions
-GET  /api/payments/transactions/:id 🔐  Transaction detail
-POST /api/payments/refund          🔐  Request refund
-GET  /api/payments/config          (Public)  Gateway config (Razorpay key)
+GET  /api/payments/config                (Public)  Razorpay key + currency
+     → { "keyId": "rzp_live_xxx", "currency": "INR" }
+
+POST /api/payments/order             🔐  Create Razorpay order
+     Body: { "amount": 500, "currency": "INR", "clientType": "user", "clientId": "19",
+             "clientName": "John Doe", "description": "Membership plan" }
+     → { "order": { "id": "order_xxx", "amount": 50000, "currency": "INR" },
+         "transaction": { "description": "..." }, "gatewayConfig": { "keyId": "...", "name": "Mediczy" } }
+
+POST /api/payments/verify            🔐  Verify Razorpay payment
+     Body: { "razorpay_order_id": "...", "razorpay_payment_id": "...", "razorpay_signature": "..." }
+
+GET  /api/payments/transactions      🔐  ?status&clientType&startDate&endDate&limit&offset
+GET  /api/payments/transactions/:id  🔐  Single transaction
+POST /api/payments/refund            🔐  Body: { "transactionId": "...", "amount": 500, "reason": "..." }
+POST /api/payments/webhook               Razorpay webhook (no auth)
+```
+
+### 13.2 Billing Gateway — `/api/billing/payments` (orders, lab tests, pharmacy)
+
+#### Razorpay
+```
+POST /api/billing/payments/razorpay/create  🔐
+     Body: { "orderId": "ord_123", "amount": 500, "currency": "INR" }
+     → { "orderId": "order_xxx", "amount": 500, "currency": "INR", "key": "rzp_live_xxx" }
+
+POST /api/billing/payments/razorpay/verify  🔐
+     Body: { "orderId": "ord_123", "razorpayOrderId": "order_xxx",
+             "razorpayPaymentId": "pay_xxx", "razorpaySignature": "abc..." }
+     [Verifies HMAC-SHA256, updates Order → "completed", creates Transaction record]
+     → { "success": true, "data": { "payment": { ... } } }
+```
+
+#### Stripe (international)
+```
+POST /api/billing/payments/stripe/create  🔐
+     Body: { "orderId": "ord_123", "amount": 500, "currency": "usd" }
+     → { "clientSecret": "pi_xxx_secret_yyy", "paymentIntentId": "pi_xxx", "amount": 500, "currency": "usd" }
+```
+> Use `clientSecret` with `stripe.confirmCardPayment()` on the client. No server-side verify step needed for Stripe — PaymentIntent status is checked via webhook.
+
+### 13.3 Signature Verification (both gateways)
+HMAC-SHA256 of `razorpay_order_id + "|" + razorpay_payment_id` signed with `RAZORPAY_KEY_SECRET`. Always verified server-side before any order is marked complete or coins are credited.
+
+### 13.4 Order Payment State Machine
+```
+Order:       pending → completed   (on Razorpay/Stripe verify)
+Payment:     initiated → success
+Transaction: created on verify     (type: credit, linked to Order)
+Invoice:     generated on demand   POST /api/billing/invoices/generate
 ```
 
 ---
 
 ## 14. Billing & Invoices
 
+### 14.1 Create Orders
+
 ```
-POST /api/billing/orders/create              🔐  Create order
-GET  /api/billing/orders                     🔐  List orders
-GET  /api/billing/orders/:orderId            🔐  Order detail
-GET  /api/billing/orders/:orderId/detailed   🔐  Detailed order
-POST /api/billing/orders/:orderId/reorder    🔐  Reorder
-GET  /api/billing/orders/pharmacy/history    🔐  Pharmacy history
-POST /api/billing/invoices/generate          🔐  Generate invoice
-GET  /api/billing/invoices                   🔐  List invoices
-GET  /api/billing/invoices/:invoiceId        🔐  Get invoice
-GET  /api/billing/invoices/:invoiceId/download 🔐  Download PDF
-GET  /api/billing/transactions               🔐  Transaction list
+POST /api/billing/orders/create  🔐  Generic order (lab_test, appointment, subscription, etc.)
+     Body: {
+       "orderType": "lab_test",     // "lab_test" | "medicine" | "appointment" | "plan" | ...
+       "itemId": 5,
+       "subtotal": 800,
+       "tax": 0,
+       "discount": 0,
+       "currency": "INR",
+       "billingAddress": { ... },
+       "notes": "Urgent"
+     }
+     → { "success": true, "data": { "order": { "id": "ord_123", "orderNumber": "ORD-2026-001", "status": "pending", "total": 800 } } }
+
+POST /api/billing/orders  🔐  Pharmacy order (shortcut — creates order + line items)
+     Body: {
+       "orderType": "medicine",
+       "items": [{ "medicineId": "MED-001", "name": "Paracetamol 500mg", "quantity": 2, "price": 45 }],
+       "deliveryAddress": { "line1": "...", "city": "Mumbai", "pincode": "400001" }
+     }
+     → { "data": { "order": { "id": "ord_124", "orderNumber": "ORD-2026-002" } } }
+```
+
+### 14.2 Read Orders
+```
+GET  /api/billing/orders                     🔐  ?status&page&limit
+GET  /api/billing/orders/:orderId            🔐  Basic order detail
+GET  /api/billing/orders/:orderId/detailed   🔐  Full: items, payments, timeline, tracking, invoice, addresses
+POST /api/billing/orders/:orderId/reorder    🔐  Duplicate a previous pharmacy order
+GET  /api/billing/orders/pharmacy/history    🔐
+     → { "orders": [], "stats": { "totalOrders", "activeOrders", "deliveredOrders", "totalSpent" } }
+GET  /api/billing/orders/pharmacy/medicine-search?q=paracetamol&limit=10  🔐  Medicine catalog search
+```
+
+### 14.3 Invoices
+```
+POST /api/billing/invoices/generate  🔐
+     Body: { "orderId": "ord_123", "lineItems": [], "notes": "Thank you" }
+     → { "invoice": { "id": "inv_xxx", "invoiceNumber": "INV-2026-001", "pdfUrl": "...", "status": "sent" } }
+
+GET  /api/billing/invoices                      🔐  ?status&page&limit
+GET  /api/billing/invoices/:invoiceId           🔐  Invoice with linked order
+GET  /api/billing/invoices/:invoiceId/download  🔐  PDF file stream (download)
+```
+
+### 14.4 Transactions & Stats
+```
+GET  /api/billing/transactions  🔐  ?type&status&page&limit  Full payment audit trail
+GET  /api/billing/stats         🔐
+     → { "totalSpent": 4500, "orderCounts": [{ "status": "completed", "count": 12 }],
+         "recentPayments": [], "pendingInvoices": 2 }
 ```
 
 ---
 
 ## 15. Membership Plans
 
+Two route groups serve membership:
+- `/api/membership` — subscribe, upgrade, usage tracking (`membership.route.js`)
+- `/api/membership-plans` — enroll by slug, referrals, card image (`membership-plans.route.js`)
+
 ### 15.1 Browse Plans
 ```
-GET /api/membership/plans                                (Public)  List plans
-GET /api/membership-plans/plans                          (Public)  List plans (v2)
-GET /api/membership-plans/plans/:slug                    (Public)  Plan detail
+GET /api/membership/plans         (Public)  ?type=individual|family|corporate|...
+GET /api/membership-plans/plans   (Public)  Same — v2 route via membershipService
+GET /api/membership-plans/plans/:slug  (Public)  Single plan detail by slug
+```
+**Response shape (`/api/membership/plans`):**
+```json
+{
+  "plans": [{
+    "id": 3,
+    "name": "Silver Plus",
+    "description": "...",
+    "tier": 2,
+    "tierName": "Silver Plus",
+    "type": "individual",
+    "planType": "primary",
+    "price": "999.00",
+    "discountedPrice": "799.00",
+    "durationMonths": 1,
+    "features": ["Unlimited teleconsult", "₹2000 pharmacy benefit"],
+    "benefits": { ... },
+    "limitations": { ... },
+    "isActive": true,
+    "sortOrder": 2
+  }]
+}
 ```
 
-### 15.2 Subscribe
+### 15.2 My Subscription
+
 ```
-GET  /api/membership/my/current                          🔐  Current subscription
-POST /api/membership/subscribe/:planId                   🔐  Subscribe
-POST /api/membership/upgrade/:newPlanId                  🔐  Upgrade
-GET  /api/membership/upgrade-options                     🔐  Upgrade options
-GET  /api/membership/addons                              🔐  Available add-ons
-GET  /api/membership/my/all                              🔐  All memberships
-GET  /api/membership/my/usage                            🔐  Usage statistics
-POST /api/membership/usage/teleconsult                   🔐  Use teleconsult benefit
-POST /api/membership/usage/benefit                       🔐  Use benefit
+GET /api/membership/my/current   🔐
+```
+**Response:**
+```json
+{
+  "userPlan": {
+    "id": 42,
+    "userId": 19,
+    "membershipPlanId": 3,
+    "status": "active",
+    "startDate": "2026-04-01",
+    "endDate": "2026-05-01",
+    "paidAmount": "799.00",
+    "paymentMethod": "razorpay",
+    "appliedLimits": {
+      "benefitLimits": {
+        "pharmacyLimitINR": 2000,
+        "homeCareLimitINR": 1000,
+        "ambulanceLimitINR": 500
+      },
+      "teleConsultLimits": { "allSpecialties": 10 },
+      "healthCheckPackage": null,
+      "priceINR": 799
+    },
+    "usage": {
+      "benefitINR": { "pharmacyINR": 350, "homeCareINR": 0, "ambulanceINR": 0 },
+      "teleConsult": { "General Physician": 2 }
+    }
+  },
+  "plan": { "id": 3, "name": "Silver Plus", ... }
+}
 ```
 
-### 15.3 Referrals
 ```
-POST /api/membership-plans/validate-referral              (Public)  Validate referral
-GET  /api/membership-plans/referral                       🔐  My referral info
-POST /api/membership-plans/generate-referral              🔐  Generate code
-POST /api/membership-plans/check-feature                  🔐  Check feature access
+GET /api/membership-plans/subscription  🔐   (alternative — uses UserPlan model directly)
+GET /api/membership/my/all              🔐   Primary plan + all active add-ons
+     → { "primaryPlan": {...}, "addonPlans": [...], "totalActive": 2 }
+GET /api/membership/my/usage            🔐
+     → { "active": {...}, "remaining": { "pharmacyLimitINR": 1650, "homeCareLimitINR": 1000, "ambulanceLimitINR": 500 } }
+```
+
+### 15.3 Subscribe (new primary plan)
+
+```
+POST /api/membership/subscribe/:planId  🔐
+```
+> Creates a `UserPlan` immediately (no payment verification — call `POST /api/membership/payment-order` first then upgrade to pass payment ID).  
+> Returns `{ userPlan }`.
+
+### 15.4 Subscribe via Slug (with referral & billing cycle)
+
+```
+POST /api/membership-plans/enroll  🔐
+Body: {
+  "planSlug": "silver-plus",
+  "billingCycle": "MONTHLY",    // "MONTHLY" | "ANNUAL"
+  "referralCode": "REF-ABC123", // optional
+  "paymentId": "pay_xxx",       // optional — Razorpay payment id
+  "paymentMethod": "razorpay"
+}
+→ { "success": true, "message": "Successfully enrolled", "data": { "subscription": {...} } }
+```
+
+### 15.5 Plan Upgrade (prorated pricing)
+
+#### Step 1 — Get upgrade options
+```
+GET /api/membership/upgrade-options  🔐
+→ {
+    "hasActivePlan": true,
+    "currentPlan": { "id": 3, "name": "Silver Plus", "tier": 2, "endDate": "...", "remainingDays": 18, "proratedRefund": 463 },
+    "upgradeOptions": [{
+      "id": 5, "name": "Gold", "tier": 4,
+      "originalPrice": 1999, "proratedRefund": 463, "amountDue": 1536,
+      "features": [...], "durationMonths": 1
+    }]
+  }
+```
+
+#### Step 2 — Create Razorpay order for amount due
+```
+POST /api/membership/payment-order  🔐
+Body: { "amount": 1536, "planId": 5, "planName": "Gold" }
+→ { "success": true, "order": { "id": "order_xxx", "amount": 153600, "currency": "INR" },
+    "gatewayConfig": { "key": "rzp_live_xxx", "name": "Mediczy" } }
+```
+
+#### Step 3 — Confirm upgrade with payment
+```
+POST /api/membership/upgrade/:newPlanId  🔐
+Body: { "razorpay_payment_id": "pay_xxx", "razorpay_order_id": "order_xxx", "razorpay_signature": "abc..." }
+→ {
+    "success": true,
+    "previousPlan": { "id": 3, "name": "Silver Plus", "tier": 2, "proratedRefund": 463 },
+    "newPlan": { "id": 5, "name": "Gold", "tier": 4, "amountDue": 1536 },
+    "userPlan": { ... }
+  }
+```
+> Upgrade via slug (legacy service): `POST /api/membership-plans/upgrade` with `{ planSlug, billingCycle, paymentId, paymentMethod }`.
+
+### 15.6 Add-on Plans
+```
+GET  /api/membership/addons  🔐
+     → { "addons": [{ ..., "isSubscribed": false }], "activeAddons": [] }
+
+POST /api/membership/subscribe/:addonPlanId  🔐   (same endpoint — detects planType = 'addon')
+```
+
+### 15.7 Cancel Subscription
+```
+POST /api/membership-plans/cancel  🔐
+Body: { "reason": "Too expensive" }
+→ { "success": true, "message": "Subscription cancelled successfully" }
+```
+
+### 15.8 Usage Recording
+```
+POST /api/membership/usage/teleconsult  🔐
+Body: { "specialty": "Cardiology", "count": 1 }
+→ { "success": true, "usage": { "teleConsult": { "Cardiology": 1 } } }
+
+POST /api/membership/usage/benefit  🔐
+Body: { "type": "pharmacyINR", "amount": 250 }
+     type: "pharmacyINR" | "homeCareINR" | "ambulanceINR"
+→ { "success": true, "usage": { "benefitINR": { "pharmacyINR": 600, "homeCareINR": 0, "ambulanceINR": 0 } } }
+```
+> Call `POST /usage/teleconsult` after every teleconsult. Call `POST /usage/benefit` when a covered benefit (pharmacy delivery, home care, ambulance) is reimbursed.
+
+### 15.9 Feature Gate
+```
+POST /api/membership-plans/check-feature  🔐
+Body: { "feature": "ai_consult" }
+→ { "success": true, "data": { "hasAccess": true, "usageRemaining": 8, "limit": 10 } }
+```
+
+### 15.10 Referrals
+```
+POST /api/membership-plans/validate-referral  (Public)
+Body: { "code": "REF-ABC123" }
+→ { "data": { "valid": true, "discount": 100, "bonusCoins": 50, "planId": 3 } }
+
+GET  /api/membership-plans/referral           🔐
+     → { "referralCode": "REF-XYZ789", "totalReferrals": 5, "bonusCoinsEarned": 250, "referrals": [...] }
+
+POST /api/membership-plans/generate-referral  🔐
+Body: { "planId": 3 }     // optional — ties code to specific plan
+→ { "data": { "referralCode": { "code": "REF-XYZ789", "discount": 100, ... } } }
+```
+
+### 15.11 Membership Card (Server-Rendered PNG)
+
+The server renders a dynamic membership card via Puppeteer (tier gradient, QR code, member ID).
+
+```
+GET /api/membership-plans/card-image  🔐
+    ?scale=2          // 1 | 2 | 3  (default: 2, 2× = 960×560px)
+    ?format=png       // "png" | "jpeg"
+→   PNG/JPEG binary stream (Content-Type: image/png)
+    Cache-Control: private, max-age=300
+    Filename: mediqzy-card-MED-000019.png
+```
+
+**Usage in React Native:**
+```jsx
+import { Image } from 'react-native';
+import { BASE } from '../../Utils/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Build authenticated URL — headers not supported in RN <Image/> src
+// Option A: Use Membership.cardImageUrl() for display in a WebView
+// Option B: Download to local file with fetch() + Authorization header
+const token = await AsyncStorage.getItem('authToken');
+const cardUrl = `${BASE}/membership-plans/card-image?scale=2&format=png`;
+
+// With react-native-fast-image (supports headers):
+<FastImage source={{ uri: cardUrl, headers: { Authorization: `Bearer ${token}` } }} />
+```
+
+**Card design by tier:**
+| Tier | Gradient |
+|---|---|
+| free | Grey slate |
+| basic | Blue |
+| premium | Purple → Pink → Red |
+| enterprise | Gold → Orange → Red |
+| corporate | Green → Teal → Cyan |
+
+> QR code data: `{ memberId, name, email, tier, ts }` — use for scan-to-verify at partner clinics.
+
+### 15.12 Corporate Self-Enroll
+```
+POST /api/membership-plans/corporate/self-enroll  🔐
+Body: {
+  "corporateName": "Reliance Industries",
+  "employeeId": "EMP-4512",
+  "officialEmail": "john.doe@reliance.com"
+}
+→ { "success": true, "message": "Corporate plan mapped successfully.", "data": { "subscription": {...} } }
 ```
 
 ---
 
 ## 16. AI Medical Features
 
-### 16.1 AI Consultation (Dr. iSHA)
+### 16.1 AI Consultation (Dr. iSHA) — Primary
 ```
-POST /api/medical-ai/consult 🔐
+POST /api/medical-ai/consult  🔐
 Body: {
-  "message": "I have a headache and fever for 2 days",
-  "sessionId": null,          // null for new session, pass for follow-up
-  "language": "en"
+  "query": "I have a headache and fever for 2 days",
+  "sessionId": null,             // null → new session; pass existing id for follow-up
+  "language": "en",              // "en" | "hi" | "ta" | "te" | "kn" | "ml" | "bn" | "mr"
+  "userContext": {
+    "emergencyMode": false       // true → 15s timeout, no DB context loaded
+  }
 }
 ```
 **Response:**
 ```json
 {
   "success": true,
-  "response": "Based on your symptoms...",
-  "sessionId": "sess_abc123",
-  "suggestions": ["Take paracetamol", "Rest well"],
+  "response": "Based on your symptoms of headache and fever...",
+  "sessionId": "mediczy_19",
+  "suggestions": ["Rest adequately", "Stay hydrated"],
   "urgencyLevel": "low",
   "shouldConsultDoctor": false,
-  "specialtySuggestion": "General Medicine"
+  "specialtySuggestion": "General Medicine",
+  "provider": "sib-fastapi",
+  "processingTime": 1240
 }
 ```
+> Full user medical context (prescriptions, vitals, appointments) is automatically loaded and sent to the SIB AI engine. Sessions persist in memory enabling multi-turn conversation.
 
 ### 16.2 Symptom Analysis
 ```
-POST /api/medical-ai/analyze-symptoms 🔐
-Body: { "symptoms": ["headache", "fever", "nausea"], "duration": "2 days", "severity": "moderate" }
+POST /api/medical-ai/analyze-symptoms  🔐
+Body: {
+  "symptoms": ["headache", "fever", "nausea"],
+  "description": "Throbbing pain behind the eyes",
+  "severity": "moderate",           // "mild" | "moderate" | "severe"
+  "duration": "2 days",
+  "language": "en"
+}
 ```
+**Response:** Same shape as `/consult` plus `{ symptoms, description, severity, duration }` echoed back.
 
 ### 16.3 Emergency Triage
 ```
-POST /api/medical-ai/emergency-triage 🔐
-Body: { "symptoms": "chest pain and difficulty breathing", "age": 35, "gender": "Male" }
-→ Returns urgency level + nearest hospital + recommended action
+POST /api/medical-ai/emergency-triage  🔐
+Body: { "symptoms": "chest pain and difficulty breathing", "description": "sharp pain radiating to arm", "language": "en" }
 ```
+**Response:**
+```json
+{
+  "success": true,
+  "urgencyLevel": "CRITICAL",
+  "response": "Based on symptoms...",
+  "requiresImmediateAttention": true,
+  "callAmbulance": true,
+  "recommendedActions": ["Seek immediate medical attention", "Do not drive yourself"],
+  "triageId": "triage_1714046400000_19"
+}
+```
+> Urgency levels: `CRITICAL` | `HIGH` | `MODERATE` | `LOW`. Defaults to `HIGH` if ambiguous (safety-first).
 
 ### 16.4 Emergency SOS
 ```
-POST /api/medical-ai/emergency-sos 🔐
-Body: { "reason": "Heart attack symptoms", "urgencyLevel": "critical", "location": { "lat": 19.076, "lng": 72.877 }, "contacts": [] }
-→ Alerts emergency contacts, nearby doctors, and ambulance services
+POST /api/medical-ai/emergency-sos  🔐
+Body: {
+  "reason": "Heart attack symptoms",
+  "urgencyLevel": "critical",
+  "location": { "lat": 19.076, "lng": 72.877 },
+  "visionAnalysis": { "distressLevel": "high", "consciousnessLevel": "alert", "respiratoryPattern": "labored" },
+  "contacts": [{ "name": "Jane Doe", "email": "jane@example.com", "type": "family" }]
+}
+```
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Emergency SOS sent to 3 contact(s)",
+  "notifiedContacts": [
+    { "type": "doctor", "name": "Dr. Sharma", "method": "push" },
+    { "type": "doctor", "name": "Dr. Sharma", "method": "email" },
+    { "type": "family", "name": "Jane Doe", "method": "email" }
+  ],
+  "timestamp": "2026-04-25T10:00:00.000Z"
+}
+```
+> Notifies: assigned doctor (push + email) → organization HR (if corporate) → family contacts provided. Google Maps location link embedded in email.
+
+### 16.5 Instant Emergency Video Call with Doctor
+```
+GET  /api/medical-ai/triage-doctors  🔐
+     → { "count": 3, "doctors": [{ "id", "name", "specialization", "consultationFee", "isOnline": true }] }
+
+POST /api/medical-ai/instant-triage-call  🔐 (auth optional — emergency)
+Body: {
+  "doctorId": 70,                // optional — auto-assigns if not specified
+  "symptoms": "chest pain",
+  "urgencyLevel": "HIGH",
+  "triageId": "triage_xxx",
+  "paymentMethod": "hc"          // "hc" for HC coins, omit for credit (pay later)
+}
+```
+**Response:**
+```json
+{
+  "success": true,
+  "doctor": { "id": 70, "name": "Dr. Sharma", "specialization": "Cardiology" },
+  "videoCall": {
+    "roomId": "triage_abc123_1714046400000",
+    "patientJoinUrl": "https://video.mediqzy.com/rooms/triage_abc123...",
+    "livekit": { "patient": { "token": "eyJ...", "serverUrl": "wss://..." } }
+  },
+  "billing": {
+    "paymentType": "credit",
+    "consultationFee": 500,
+    "creditUsed": true,
+    "healthCoinsUsed": 0,
+    "creditsRemaining": 0,
+    "pendingAmount": 500,
+    "message": "This emergency consultation is on credit - pay later."
+  }
+}
+```
+> Registered users get 1 free emergency consultation on credit. Guests limited to 5 anonymous calls/day by IP. Paying with HC: 50 HC = ₹500 consultation.
+
+### 16.6 AI Report Analysis
+```
+POST /api/medical-ai/analyze-report  🔐
+Body: multipart/form-data { "file": <binary>, "reportType": "blood_test" }
+→ AI-powered analysis with key findings, risk flags, and recommendations
 ```
 
-### 16.5 AI Report Analysis
+### 16.7 Session & Conversation Management
 ```
-POST /api/medical-ai/analyze-report 🔐
-Body: multipart/form-data { file, reportType }
-```
-
-### 16.6 Session Management
-```
-GET    /api/medical-ai/session/:sessionId    🔐  Get session
-DELETE /api/medical-ai/session/:sessionId    🔐  Delete session
-POST   /api/medical-ai/conversation-history  🔐  Get history
-POST   /api/medical-ai/feedback              🔐  Submit feedback
+GET    /api/medical-ai/session/:sessionId      🔐  Restore conversation history
+DELETE /api/medical-ai/session/:sessionId      🔐  Clear session memory
+POST   /api/medical-ai/conversation-history   🔐  Body: { "sessionId": "..." }
+POST   /api/medical-ai/intent-escalation       🔐  Detect if message needs live doctor
+       Body: { "sessionId": "...", "message": "I feel worse" }
+POST   /api/medical-ai/feedback                🔐  Body: { "conversationId": "...", "thumbs": "up", "rating": 5 }
 ```
 
-### 16.7 AI-Assisted Booking
+### 16.8 AI Health Chat (`/api/ai-health`) — PHI-Safe Rule-Based
+
+A lightweight, schema-validated alternative to the SIB backend. PHI-redacted before responding. Audits every request to `ai_request_audit`.
+
 ```
-GET  /api/medical-ai/doctors                     🔐  List doctors
-GET  /api/medical-ai/doctors/:doctorId/slots      🔐  Doctor slots
-POST /api/medical-ai/book-appointment             🔐  Book via AI
-GET  /api/medical-ai/my-appointments              🔐  AI-booked appointments
-GET  /api/medical-ai/triage-doctors               🔐  Triage-recommended doctors
+POST /api/ai-health/chat  🔐
+Body: { "message": "I have chest pain", "symptoms": "chest pain, shortness of breath", "sessionId": null }
+```
+**Response (high-risk example):**
+```json
+{
+  "success": true,
+  "message": "I understand you mentioned: \"chest pain\". Based on this, here's my assessment:",
+  "analysis": {
+    "severity": "high",
+    "possibleConditions": ["Cardiac event", "Angina", "Pulmonary embolism"],
+    "recommendations": ["Seek immediate medical attention"],
+    "urgency": "URGENT: Please seek immediate medical attention."
+  },
+  "suggestedActions": [
+    { "action": "See a Doctor NOW", "type": "urgent", "url": "/consultation-booking?urgency=emergency" },
+    { "action": "Book Consultation", "type": "primary", "url": "/consultation-booking" }
+  ],
+  "highRisk": true,
+  "auditId": "550e8400-e29b-41d4-a716-446655440000",
+  "bookingCta": { "url": "/consultation-booking?urgency=emergency", "label": "Book Emergency Consultation" },
+  "disclaimer": "This is an AI-generated response and should not replace professional medical advice."
+}
+```
+> High-risk terms that trigger `highRisk: true`: chest pain, shortness of breath, stroke, unconscious, heart attack, severe bleeding, seizure, paralysis, sudden vision loss, suicidal, overdose.
+
+### 16.9 Dr. iSHA Rule-Based Consult
+```
+POST /api/ai-health/dr-isha/consult  🔐
+Body: { "message": "I feel dizzy after standing up", "symptoms": "dizziness", "medicalHistory": "Hypertension" }
+→ {
+    "drIshaResponse": {
+      "greeting": "Hello! I'm Dr. ISHA, your AI health assistant.",
+      "analysis": "Based on your input...",
+      "insights": ["Monitor condition closely", "Consider symptom diary"],
+      "recommendations": [
+        { "title": "Immediate Care", "steps": ["Rest", "Hydrate", "Monitor temperature"] },
+        { "title": "When to See a Doctor", "steps": ["If symptoms worsen", "Fever above 101°F"] }
+      ],
+      "nextSteps": ["Track symptoms daily", "Book a consultation if needed"]
+    }
+  }
 ```
 
-### 16.8 AI Health Chat
+### 16.10 AI Utilities
 ```
-POST /api/ai-health/chat                 🔐  General health chat
-POST /api/ai-health/dr-isha/consult      🔐  Dr. iSHA consultation
-POST /api/ai-health/diet/generate        🔐  Generate diet plan
-```
-
-### 16.9 AI Utilities
-```
-POST /api/ai/working-medical-consult      🔐  Medical consultation
+POST /api/ai/working-medical-consult      🔐  Full medical consultation (legacy)
 POST /api/ai/appointment-conversation     🔐  Booking conversation AI
-POST /api/ai/translate                    🔐  Text translation
-POST /api/ai/text-to-speech              🔐  TTS conversion
-GET  /api/ai/voices                       🔐  Available voices
-POST /api/ai/feedback                     🔐  AI feedback
+POST /api/ai/translate                    🔐  Body: { "text": "...", "targetLanguage": "hi" }
+POST /api/ai/text-to-speech              🔐  Body: { "text": "...", "voice": "alloy" }
+GET  /api/ai/voices                       🔐  Available TTS voices
+POST /api/ai/feedback                     🔐  AI feedback submission
 POST /api/ai/analyze-image               (Public)  Image analysis
 ```
 
@@ -809,39 +1339,81 @@ GET    /api/v3/ai-brain/health                     🔐  AI system health
 
 ## 18. AI Intelligence (Drug/Insurance/Triage)
 
+> **Base path:** `/api/ai-intelligence`  
+> All endpoints require `Authorization: Bearer <token>`.
+
 ### 18.1 Drug Interactions
 ```
-POST /api/v3/ai-intelligence/drug-interactions/check 🔐
-Body: { "medications": ["Aspirin", "Warfarin", "Ibuprofen"] }
+POST /api/ai-intelligence/drug-interactions/check  🔐
+Body: { "medications": ["Aspirin", "Warfarin", "Ibuprofen"], "useLLM": true }
+→ { "interactions": [{ "pair": [...], "severity": "major", "description": "..." }], "recommendations": [] }
 
-POST /api/v3/ai-intelligence/drug-interactions/quick-check 🔐
-Body: { "drug1": "Aspirin", "drug2": "Warfarin" }
+POST /api/ai-intelligence/drug-interactions/quick-check  🔐
+Body: { "medications": ["Aspirin", "Warfarin"] }
+→ Database-only check — sub-10ms, no LLM call
 ```
 
 ### 18.2 Insurance AI
 ```
-POST /api/v3/ai-intelligence/insurance/query     🔐  Insurance Q&A
-POST /api/v3/ai-intelligence/insurance/pre-auth  🔐  Pre-auth check
-POST /api/v3/ai-intelligence/insurance/coverage   🔐  Coverage analysis
+POST /api/ai-intelligence/insurance/query     🔐
+Body: { "query": "Is my knee replacement covered?", "insuranceType": "health" }
+
+POST /api/ai-intelligence/insurance/pre-auth  🔐
+Body: { "treatmentType": "hospitalization", "estimatedCost": 75000, "procedureCode": "Z51.11" }
+
+POST /api/ai-intelligence/insurance/coverage  🔐
+Body: { "treatmentType": "MRI scan", "estimatedCost": 5000, "insuranceProvider": "Star Health" }
+
+GET  /api/ai-intelligence/insurance/health    (Public)  GPU model status
 ```
 
-### 18.3 AI Triage
+### 18.3 AI Triage (ESI 5-Level)
 ```
-POST /api/v3/ai-intelligence/triage/assess       🔐  Triage assessment
-GET  /api/v3/ai-intelligence/risk-score/me       🔐  My health risk score
+POST /api/ai-intelligence/triage/assess  🔐
+Body: {
+  "symptoms": "severe chest pain radiating to left arm",
+  "vitals": { "heartRate": 112, "bp": "160/100", "spo2": 94 },
+  "painScale": 8,
+  "age": 52,
+  "gender": "male"
+}
+→ { "esiLevel": 1, "disposition": "immediate", "interventions": ["ECG", "IV access", "O2"] }
 ```
 
-### 18.4 Smart Notifications
+### 18.4 Health Risk Scores
 ```
-GET   /api/v3/ai-intelligence/notifications/smart              🔐  AI smart notifications
-PATCH /api/v3/ai-intelligence/notifications/smart/:id/read     🔐  Mark read
+GET  /api/ai-intelligence/risk-score/me              🔐
+     → { "score": { "overall": 0.34, "cardiovascular": 0.22, "diabetes": 0.18, ... } }
+
+GET  /api/ai-intelligence/risk-score/:patientId      🔐  (doctors only)
 ```
 
-### 18.5 Health Insights
+### 18.5 Smart Notifications
 ```
-GET   /api/v3/ai-intelligence/insights/patient/:patientId      🔐  Patient insights
-PATCH /api/v3/ai-intelligence/insights/:id/action              🔐  Act on insight
-POST  /api/v3/ai-intelligence/feedback                         🔐  Submit feedback
+GET   /api/ai-intelligence/notifications/smart        🔐  ?limit&status
+      → { "notifications": [{ "id", "message", "category", "priority", "status", "createdAt" }] }
+
+PATCH /api/ai-intelligence/notifications/smart/:id/read  🔐  Mark as read
+```
+
+### 18.6 Clinical Insights
+```
+GET   /api/ai-intelligence/insights/patient/:patientId  🔐
+      → { "insights": [{ "id", "type", "severity", "message", "actionRequired" }] }
+
+GET   /api/ai-intelligence/insights/system              🔐  System-level insights (admin/doctor)
+
+PATCH /api/ai-intelligence/insights/:id/action          🔐  Mark insight as actioned
+
+POST  /api/ai-intelligence/feedback                     🔐
+      Body: { "conversationId": "...", "thumbs": "up", "rating": 5, "comment": "..." }
+```
+
+### 18.7 Self-Learning Quality Metrics
+```
+GET  /api/ai-intelligence/learning/insights  🔐  Recent learning insights from sib_learning_insights
+GET  /api/ai-intelligence/learning/quality   🔐
+     → { "metrics": { "avg_relevance": 0.87, "avg_accuracy": 0.91, "thumbs_up": 142, "avg_rating": 4.2 } }
 ```
 
 ---
@@ -1166,12 +1738,56 @@ The admin HRA uses structured sections. Each question accepts the option `id` as
 
 ## 21. Health Intelligence Dashboard
 
+Powered by `healthReminderService` — reads the user's medical history, vitals, appointments, and lab tests to generate personalized, prioritized reminders. Reminders have a `priority` score (0–10); values ≥ 8 are considered high-priority.
+
+### 21.1 Full Dashboard
 ```
-GET  /api/health-intelligence                    🔐  Dashboard overview
-GET  /api/health-intelligence/reminders/:type    🔐  Reminders by type
-     type: "medication" | "appointment" | "exercise" | "checkup"
-POST /api/health-intelligence/action             🔐  Take action on recommendation
-     Body: { "recommendationId": "rec_123", "action": "completed" }
+GET /api/health-intelligence  🔐
+```
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "user_id": 19,
+    "generated_at": "2026-04-25T10:00:00.000Z",
+    "summary": {
+      "total_reminders": 7,
+      "high_priority": 2,
+      "actionable": 5
+    },
+    "categories": {
+      "medication": [{ "id": "rem_001", "message": "Take Metformin 500mg", "priority": 9, "actionable": true }],
+      "checkups":   [{ "id": "rem_002", "message": "Annual blood sugar test due", "priority": 8, "actionable": true }],
+      "lifestyle":  [],
+      "diet":       [{ "id": "rem_003", "message": "Reduce sodium intake", "priority": 6, "actionable": true }],
+      "activity":   [],
+      "vitals":     [{ "id": "rem_004", "message": "Log today's blood pressure", "priority": 7, "actionable": true }],
+      "lab_tests":  []
+    },
+    "all_reminders": [ ... ]
+  }
+}
+```
+
+### 21.2 Reminders by Type
+```
+GET /api/health-intelligence/reminders/:type  🔐
+```
+> Valid `type` values: `medication` | `checkup` | `lifestyle` | `diet` | `activity` | `vitals` | `lab_test`
+```json
+{ "type": "medication", "count": 2, "reminders": [...] }
+```
+
+### 21.3 Take Action on Reminder
+```
+POST /api/health-intelligence/action  🔐
+Body: {
+  "reminder_id": "rem_001",
+  "action_type": "completed",       // "completed" | "dismissed" | "snoozed"
+  "action_data": { "note": "Taken with breakfast" }
+}
+→ { "success": true, "message": "Action completed for reminder rem_001", "timestamp": "..." }
 ```
 
 ---
@@ -1229,9 +1845,70 @@ GET /api/health/summary       🔐  Health summary
 ```
 
 ### 22.6 Diet Plan
+
+Two routes — identical logic, alias for backward compatibility:
 ```
-POST /api/diet/generate       🔐  Generate AI diet plan
-     Body: { "goal": "weight_loss", "restrictions": ["vegetarian"], "allergies": ["nuts"] }
+POST /api/diet/generate          🔐
+POST /api/ai-health/diet/generate 🔐
+```
+**Body:**
+```json
+{
+  "age": 30,
+  "weight": 72,
+  "height": 170,
+  "gender": "female",
+  "goal": "weight_loss",
+  "activityLevel": "moderate",
+  "dietaryPreference": "vegetarian",
+  "cuisineRegion": "north_indian",
+  "dietaryRestrictions": "lactose intolerant"
+}
+```
+> `goal`: `weight_loss` | `weight_gain` | `muscle_gain` | `maintenance`  
+> `activityLevel`: `sedentary` | `light` | `moderate` | `active` | `very_active`  
+> `dietaryPreference`: `vegetarian` | `vegan` | `non_vegetarian` | `eggetarian`  
+> `cuisineRegion`: `north_indian` | `south_indian` | `continental` (and others)
+
+**Response:**
+```json
+{
+  "success": true,
+  "plan": {
+    "personalInfo": {
+      "bmi": 24.9,
+      "bmiCategory": "Normal weight",
+      "activityLevel": "moderate",
+      "goal": "weight_loss"
+    },
+    "calories": {
+      "bmr": 1508,
+      "tdee": 2337,
+      "target": 1837,
+      "description": "500 calorie deficit for gradual weight loss (~0.5kg/week)"
+    },
+    "macronutrients": {
+      "protein": { "grams": 115, "calories": 460, "percentage": 25 },
+      "carbs":   { "grams": 206, "calories": 824, "percentage": 45 },
+      "fats":    { "grams": 61,  "calories": 553, "percentage": 30 }
+    },
+    "mealPlan": {
+      "breakfast":        [{ "item": "Oatmeal with berries", "calories": 300, "protein": "10g", "carbs": "45g", "fats": "8g" }],
+      "midMorningSnack":  [{ "item": "Apple with almond butter", "calories": 150 }],
+      "lunch":            [{ "item": "Dal + brown rice + sabzi", "calories": 450 }],
+      "afternoonSnack":   [{ "item": "Greek yogurt", "calories": 120 }],
+      "dinner":           [{ "item": "Paneer tikka + roti + salad", "calories": 500 }],
+      "eveningSnack":     [{ "item": "Herbal tea", "calories": 0 }]
+    },
+    "hydration": {
+      "daily": "2.5 liters",
+      "recommendation": "Drink water regularly, especially before meals"
+    },
+    "tips": ["Eat smaller meals every 3-4 hours", "Avoid processed sugar"],
+    "dietaryPreference": "vegetarian",
+    "cuisineRegion": "north_indian"
+  }
+}
 ```
 
 ---
@@ -2084,6 +2761,7 @@ socket.on("authenticated", (data) => {
 
 | Date | Version | Changes |
 |---|---|---|
+| Apr 25, 2026 | 2.3 | §12 Wallet — 3-step HC purchase flow, appointment payment (calculate/can-pay/pay/refund), earn activities table; §13 Payments restructured — `/api/billing/payments/razorpay` + Stripe routes, state machine; §14 Billing — `POST /api/billing/orders` pharmacy, `GET stats`, full response shapes; §16 AI Doctor — expanded consult body/response, language list, emergency triage response, SOS notified-contacts response, instant triage call billing response, PHI-safe chat detail, Dr. iSHA rule-based consult, high-risk term list; §18 AI Intelligence — route prefix corrected to `/api/ai-intelligence/...` (was `/api/v3/`), drug interaction body fixed, triage body expanded, risk score, learning/quality endpoints added; §21 Health Intelligence — reminder types fixed (medication/checkup/lifestyle/diet/activity/vitals/lab_test), action body corrected; §22 Diet Plan — full body/response with macronutrients, meal plan, BMR/TDEE calculation |
 | Apr 19, 2026 | 2.1 | §3 Family member insurance CRUD (`/api/family-members/:id/insurances`); §9 Medical Reports `familyMemberId` upload + filter; §26 Insurance restructured with correct user policy path (`/api/users/my-insurances`) |
 | Apr 2026 | 2.0 | §32 AI DeepTech Layer (HIS, Clinical NLP, Pre-auth, Context Bridge, Federated Learning); §33 EHR; §34 FHIR R4; §35 Pharmacy Orders; §36 Activity Tracker; §37 Offline AI Scribe; §38 Omnichannel Messaging; 30 new path prefixes ring-fenced for patient role |
 | Mar 2026 | 1.0 | Initial release — 400+ patient-accessible endpoints across 55+ route files |
