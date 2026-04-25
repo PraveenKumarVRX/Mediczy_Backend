@@ -59,6 +59,8 @@ export const TASK_DEFINITIONS = [
   { key: 'data_retention_daily',  name: 'Data Retention — Daily',                schedule: 'Daily 2 AM',       category: 'compliance', scheduleDesc: '0 2 * * *' },
   { key: 'data_retention_weekly', name: 'Data Retention — Weekly',               schedule: 'Weekly Sun 3 AM',  category: 'compliance', scheduleDesc: '0 3 * * 0' },
   { key: 'data_retention_monthly',name: 'Data Retention — Monthly',              schedule: '1st of month 4 AM',category: 'compliance', scheduleDesc: '0 4 1 * *' },
+  // Pharmacy
+  { key: 'drug_price_sync',       name: 'Drug Price Sync (NPPA/Jan Aushadhi)',   schedule: 'Daily 2:30 AM',    category: 'pharmacy',   scheduleDesc: '30 2 * * *' },
 ];
 
 // Key lookup map

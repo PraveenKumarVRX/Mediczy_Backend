@@ -104,16 +104,56 @@ router.post('/', authUser, async (req, res) => {
     const {
       items,
       delivery_type,
-      delivery_address = null,
-      delivery_date    = null,
+      delivery_address   = null,
+      delivery_date      = null,
       delivery_time_slot = null,
       prescription_note  = null,
-      subtotal           = 0,
       delivery_charge    = 0,
       discount           = 0,
-      total_amount       = 0,
       customer_notes     = null
     } = req.body;
+
+    // ── Enrich each item with MRP from pharmacy_medicines DB ──────────────
+    const enrichedItems = await Promise.all(items.map(async (item) => {
+      const name = item.medicine_name || item.name || '';
+      const result = await sharedPool.query(
+        `SELECT id, name, brand_name, generic_name, strength, form, mrp, unit_price, pack_size, manufacturer
+         FROM pharmacy_medicines
+         WHERE name ILIKE $1 OR brand_name ILIKE $1 OR generic_name ILIKE $1
+         ORDER BY
+           CASE WHEN LOWER(name) = LOWER($2) THEN 0
+                WHEN LOWER(brand_name) = LOWER($2) THEN 1
+                ELSE 2 END,
+           mrp ASC LIMIT 1`,
+        [`%${name}%`, name]
+      );
+      const dbMed = result.rows[0] || null;
+      const unitMrp = dbMed
+        ? parseFloat(dbMed.mrp || dbMed.unit_price || 0)
+        : parseFloat(item.unit_price || item.mrp || item.price || 0);
+      const qty = parseFloat(item.quantity) || 1;
+      return {
+        medicine_name:  dbMed?.name || name,
+        brand_name:     dbMed?.brand_name || item.brand_name || null,
+        generic_name:   dbMed?.generic_name || item.generic_name || null,
+        strength:       dbMed?.strength || item.strength || null,
+        form:           dbMed?.form || item.form || null,
+        manufacturer:   dbMed?.manufacturer || item.manufacturer || null,
+        pack_size:      dbMed?.pack_size || item.pack_size || null,
+        medicine_id:    dbMed?.id || null,
+        quantity:       qty,
+        unit_price:     unitMrp,
+        line_total:     parseFloat((unitMrp * qty).toFixed(2)),
+      };
+    }));
+
+    // ── Auto-calculate subtotal from enriched items ───────────────────────
+    const subtotal = parseFloat(
+      enrichedItems.reduce((sum, i) => sum + i.line_total, 0).toFixed(2)
+    );
+    const deliveryChargeVal = parseFloat(delivery_charge) || 0;
+    const discountVal       = parseFloat(discount) || 0;
+    const totalAmount       = parseFloat((subtotal + deliveryChargeVal - discountVal).toFixed(2));
 
     const result = await sharedPool.query(
       `INSERT INTO patient_pharmacy_orders
@@ -124,16 +164,16 @@ router.post('/', authUser, async (req, res) => {
        RETURNING *`,
       [
         userId,
-        JSON.stringify(items),
+        JSON.stringify(enrichedItems),
         delivery_type,
         delivery_address ? JSON.stringify(delivery_address) : null,
         delivery_date || null,
         delivery_time_slot || null,
         prescription_note || null,
-        parseFloat(subtotal) || 0,
-        parseFloat(delivery_charge) || 0,
-        parseFloat(discount) || 0,
-        parseFloat(total_amount) || 0,
+        subtotal,
+        deliveryChargeVal,
+        discountVal,
+        totalAmount,
         customer_notes || null
       ]
     );

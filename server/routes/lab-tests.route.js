@@ -8,8 +8,82 @@ import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import { LabTest } from '../models/index.js';
 import { Op } from 'sequelize';
+import pool from '../db/pgPool.js';
 
 const router = express.Router();
+
+/**
+ * GET /api/lab-tests/catalog
+ * Browse the lab test catalog with optional search & filter.
+ * Public — no auth required.
+ *
+ * Query params:
+ *   q          (string)  — partial name / code search
+ *   category   (string)  — exact category filter
+ *   test_type  (string)  — maps to test code prefix (e.g. blood_test, radiology)
+ *   limit      (int)     — default 50, max 200
+ *   offset     (int)     — default 0
+ */
+router.get('/catalog', async (req, res) => {
+  try {
+    const { q = '', category = '', limit = 50, offset = 0 } = req.query;
+    const safeLimit  = Math.min(parseInt(limit)  || 50,  200);
+    const safeOffset = Math.max(parseInt(offset) || 0,   0);
+
+    const conditions = ["status = 'active'"];
+    const values = [];
+
+    if (q.trim()) {
+      values.push(`%${q.trim()}%`);
+      conditions.push(`(name ILIKE $${values.length} OR test_code ILIKE $${values.length} OR description ILIKE $${values.length})`);
+    }
+
+    if (category.trim()) {
+      values.push(category.trim());
+      conditions.push(`LOWER(category) = LOWER($${values.length})`);
+    }
+
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    values.push(safeLimit, safeOffset);
+    const dataQ = `
+      SELECT test_id, name, description, category, test_code,
+             sample_type, turnaround_time_hours, price,
+             home_collection_charge, currency
+      FROM api_lab_tests
+      ${where}
+      ORDER BY category, name
+      LIMIT $${values.length - 1} OFFSET $${values.length}`;
+
+    // Count (reuse same conditions without limit/offset)
+    const countValues = values.slice(0, values.length - 2);
+    const countQ = `SELECT COUNT(*) FROM api_lab_tests ${where}`;
+
+    const [{ rows }, { rows: countRows }] = await Promise.all([
+      pool.query(dataQ, values),
+      pool.query(countQ, countValues),
+    ]);
+
+    // Build category list for filter UI
+    const catRows = await pool.query(
+      `SELECT DISTINCT category FROM api_lab_tests WHERE status = 'active' ORDER BY category`
+    );
+
+    return res.json({
+      success: true,
+      data: rows,
+      pagination: {
+        total: parseInt(countRows[0].count),
+        limit: safeLimit,
+        offset: safeOffset,
+      },
+      categories: catRows.rows.map(r => r.category),
+    });
+  } catch (err) {
+    console.error('❌ Lab catalog error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch lab catalog' });
+  }
+});
 
 /**
  * POST /api/lab-tests
@@ -28,7 +102,11 @@ router.post('/', authUser, async (req, res) => {
       urgency = 'routine',
       notes = '',
       requiresFasting = false,
-      fastingHours = null
+      fastingHours = null,
+      price = null,
+      currency = 'INR',
+      discount = 0,
+      total_amount = null
     } = req.body;
 
     const userId = req.user.id;
@@ -68,6 +146,23 @@ router.post('/', authUser, async (req, res) => {
     // Create lab test booking in database
     console.log('🔄 Creating lab test with data:', { userId, testType, testName, appointmentDate, hospitalId, organizationId });
     
+    // Auto-lookup price from catalog if not provided and testName is given
+    let resolvedPrice = price !== null && price !== undefined ? parseFloat(price) : null;
+    let catalogTestId = null;
+    if (resolvedPrice === null && testName) {
+      const catalogRow = await pool.query(
+        `SELECT test_id, price FROM api_lab_tests
+         WHERE status = 'active' AND (name ILIKE $1 OR test_code ILIKE $1)
+         ORDER BY CASE WHEN LOWER(name) = LOWER($2) THEN 0 ELSE 1 END LIMIT 1`,
+        [`%${testName.trim()}%`, testName.trim()]
+      );
+      if (catalogRow.rows.length) {
+        resolvedPrice = parseFloat(catalogRow.rows[0].price);
+        catalogTestId = catalogRow.rows[0].test_id;
+        console.log(`💊 Auto-priced "${testName}" from catalog: ₹${resolvedPrice} (${catalogTestId})`);
+      }
+    }
+
     // Prepare lab test data
     const labTestData = {
       userId,
@@ -80,12 +175,19 @@ router.post('/', authUser, async (req, res) => {
       notes: notes || null,
       requiresFasting: requiresFasting || false,
       fastingHours: fastingHours || null,
+      price: resolvedPrice,
+      currency: currency || 'INR',
+      discount: discount !== null && discount !== undefined ? parseFloat(discount) : 0,
+      total_amount: total_amount !== null && total_amount !== undefined
+        ? parseFloat(total_amount)
+        : (resolvedPrice !== null ? resolvedPrice - parseFloat(discount || 0) : null),
       status: 'pending_confirmation',
       confirmationStatus: 'pending',
       resultStatus: 'pending',
       metadata: {
         createdFrom: 'patient_portal',
-        browser: req.get('user-agent')
+        browser: req.get('user-agent'),
+        ...(catalogTestId ? { catalogTestId, priceSource: 'catalog' } : {})
       }
     };
     

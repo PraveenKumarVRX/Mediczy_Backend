@@ -1230,6 +1230,7 @@ import adminClinicsRouter from './routes/admin/clinics.routes.js';
 import adminPharmaciesRouter from './routes/admin/pharmacies.routes.js';
 import adminDoctorsRouter from './routes/admin/doctors.routes.js';
 import adminAppointmentsRouter from './routes/admin/appointments.routes.js';
+import drugPriceSyncRouter from './routes/admin/drug-price-sync.route.js';
 
 app.use('/api/admin/hospitals', adminHospitalsRouter); // Admin hospital CRUD operations
 app.use('/api/admin/labs', adminLabsRouter); // Admin lab CRUD operations
@@ -1238,6 +1239,7 @@ app.use('/api/admin/pharmacies', adminPharmaciesRouter); // Admin pharmacy CRUD 
 app.use('/api/admin/doctors', adminDoctorsRouter); // Admin doctor CRUD operations
 app.use('/api/admin/appointments', adminAppointmentsRouter); // Admin appointment oversight
 app.use('/api/admin/aggregators', aggregatorRouter); // Admin broker/aggregator CRUD operations
+app.use('/api/admin/drug-price-sync', drugPriceSyncRouter); // Drug price sync — NPPA, Jan Aushadhi, manual upload
 
 // Clinic Portal Routes
 import clinicAuthRouter from './routes/clinic/auth.routes.js';
@@ -1385,5 +1387,9 @@ app.use(domainResolver);
 // ============== PHASE 3: Proactive Alerts Cron ==============
 import proactiveAlertsCron from './services/ai-proactive-alerts-cron.service.js';
 proactiveAlertsCron.start();
+
+// ============== Pharmacy: Drug Price Sync ==============
+import drugPriceSyncService from './services/drug-price-sync.service.js';
+drugPriceSyncService.start();
 
 export default app;

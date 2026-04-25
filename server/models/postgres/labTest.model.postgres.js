@@ -231,6 +231,33 @@ const LabTest = sequelize.define('LabTest', {
     comment: 'Who initiated cancellation'
   },
 
+  // Pricing
+  price: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+    comment: 'Base price of the test (INR)'
+  },
+
+  currency: {
+    type: DataTypes.STRING(3),
+    allowNull: false,
+    defaultValue: 'INR',
+    comment: 'Currency code'
+  },
+
+  discount: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    defaultValue: 0,
+    comment: 'Discount applied (INR)'
+  },
+
+  total_amount: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+    comment: 'Final amount after discount (INR)'
+  },
+
   // Additional Metadata
   metadata: {
     type: DataTypes.JSONB,

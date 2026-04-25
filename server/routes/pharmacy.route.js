@@ -8,6 +8,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { Pharmacy } from '../models/index.js';
+import sharedPool from '../db/pgPool.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import {
@@ -50,37 +51,66 @@ router.use('/analytics', analyticsRouter);
 
 /**
  * GET /api/pharmacy/medicines
- * Public medicine search from master database (no pharmacy auth required)
+ * Public medicine search from pharmacy_medicines DB table (4,877 drugs with MRP)
  */
 router.get('/medicines', async (req, res) => {
   try {
-    const { search, category, page = 1, limit = 50 } = req.query;
-    // Import master medicines from inventory module
-    const { MASTER_MEDICINES } = await import('./pharmacy/inventory.routes.js');
-    let results = MASTER_MEDICINES || [];
+    const { search, category, form, schedule } = req.query;
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+    const offset = (page - 1) * limit;
+
+    const conditions = [];
+    const params = [];
+    let idx = 1;
 
     if (search) {
-      const q = search.toLowerCase();
-      results = results.filter(m =>
-        m.name.toLowerCase().includes(q) ||
-        m.genericName.toLowerCase().includes(q) ||
-        m.category.toLowerCase().includes(q) ||
-        m.manufacturer.toLowerCase().includes(q)
-      );
+      conditions.push(`(name ILIKE $${idx} OR brand_name ILIKE $${idx} OR generic_name ILIKE $${idx} OR composition ILIKE $${idx} OR manufacturer ILIKE $${idx})`);
+      params.push(`%${search}%`);
+      idx++;
     }
     if (category) {
-      results = results.filter(m => m.category.toLowerCase() === category.toLowerCase());
+      conditions.push(`category ILIKE $${idx}`);
+      params.push(`%${category}%`);
+      idx++;
+    }
+    if (form) {
+      conditions.push(`form ILIKE $${idx}`);
+      params.push(`%${form}%`);
+      idx++;
+    }
+    if (schedule) {
+      conditions.push(`schedule ILIKE $${idx}`);
+      params.push(`%${schedule}%`);
+      idx++;
     }
 
-    const offset = (parseInt(page) - 1) * parseInt(limit);
-    const paged = results.slice(offset, offset + parseInt(limit));
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const [rowsResult, countResult] = await Promise.all([
+      sharedPool.query(
+        `SELECT id, name, brand_name, generic_name, strength, form, category,
+                sub_category, manufacturer, composition, mrp, unit_price, pack_size,
+                schedule, indication, side_effects, dosage, storage, cims_id
+         FROM pharmacy_medicines ${where}
+         ORDER BY name ASC LIMIT $${idx} OFFSET $${idx + 1}`,
+        [...params, limit, offset]
+      ),
+      sharedPool.query(
+        `SELECT COUNT(*) FROM pharmacy_medicines ${where}`,
+        params
+      )
+    ]);
+
+    const total = parseInt(countResult.rows[0].count, 10);
 
     res.json({
       success: true,
-      medicines: paged,
-      total: results.length,
-      page: parseInt(page),
-      limit: parseInt(limit)
+      medicines: rowsResult.rows,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit)
     });
   } catch (error) {
     console.error('[Pharmacy] Medicine search error:', error.message);

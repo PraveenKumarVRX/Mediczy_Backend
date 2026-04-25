@@ -1,27 +1,17 @@
 {
   "ai_health_risk": {
-    "lastRun": "2026-04-17T06:00:01.636Z",
+    "lastRun": "2026-04-25T19:00:57.372Z",
     "lastStatus": "success",
-    "runCount": 202,
+    "runCount": 203,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
       "created": 0,
-      "updated": 13,
-      "patients": 13,
-      "elapsedMs": 1591
+      "updated": 22,
+      "patients": 22,
+      "elapsedMs": 4415
     },
     "recentLogs": [
-      {
-        "ts": "2026-04-14T06:00:01.206Z",
-        "status": "success",
-        "details": {
-          "created": 0,
-          "updated": 13,
-          "patients": 13,
-          "elapsedMs": 1147
-        }
-      },
       {
         "ts": "2026-04-14T11:50:32.150Z",
         "status": "success",
@@ -311,28 +301,30 @@
           "patients": 13,
           "elapsedMs": 1591
         }
+      },
+      {
+        "ts": "2026-04-25T19:00:57.372Z",
+        "status": "success",
+        "details": {
+          "created": 0,
+          "updated": 22,
+          "patients": 22,
+          "elapsedMs": 4415
+        }
       }
     ]
   },
   "ai_smart_notif": {
-    "lastRun": "2026-04-17T04:15:00.050Z",
+    "lastRun": "2026-04-25T19:01:22.978Z",
     "lastStatus": "success",
-    "runCount": 357,
+    "runCount": 358,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
       "total": 0,
-      "elapsedMs": 31
+      "elapsedMs": 12
     },
     "recentLogs": [
-      {
-        "ts": "2026-04-15T10:15:00.043Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 16
-        }
-      },
       {
         "ts": "2026-04-15T12:15:00.048Z",
         "status": "success",
@@ -564,32 +556,32 @@
           "total": 0,
           "elapsedMs": 31
         }
+      },
+      {
+        "ts": "2026-04-25T19:01:22.978Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 12
+        }
       }
     ]
   },
   "ai_self_learning": {
-    "lastRun": "2026-04-17T04:30:00.064Z",
+    "lastRun": "2026-04-25T19:01:52.996Z",
     "lastStatus": "success",
-    "runCount": 236,
+    "runCount": 237,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
       "scored": 0,
       "patterns": 0,
       "insights": 0,
-      "elapsedMs": 32
+      "applied": 0,
+      "routingChanges": 1,
+      "elapsedMs": 10
     },
     "recentLogs": [
-      {
-        "ts": "2026-04-14T16:30:00.086Z",
-        "status": "success",
-        "details": {
-          "scored": 0,
-          "patterns": 0,
-          "insights": 0,
-          "elapsedMs": 33
-        }
-      },
       {
         "ts": "2026-04-14T16:37:52.398Z",
         "status": "success",
@@ -879,6 +871,18 @@
           "insights": 0,
           "elapsedMs": 32
         }
+      },
+      {
+        "ts": "2026-04-25T19:01:52.996Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "applied": 0,
+          "routingChanges": 1,
+          "elapsedMs": 10
+        }
       }
     ]
   },
@@ -1167,23 +1171,13 @@
     ]
   },
   "device_heartbeat": {
-    "lastRun": "2026-04-17T06:00:00.097Z",
+    "lastRun": "2026-04-25T19:10:00.037Z",
     "lastStatus": "success",
-    "runCount": 5586,
+    "runCount": 5588,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {},
     "recentLogs": [
-      {
-        "ts": "2026-04-17T03:35:00.033Z",
-        "status": "success",
-        "details": {}
-      },
-      {
-        "ts": "2026-04-17T03:40:00.021Z",
-        "status": "success",
-        "details": {}
-      },
       {
         "ts": "2026-04-17T03:45:00.024Z",
         "status": "success",
@@ -1321,6 +1315,16 @@
       },
       {
         "ts": "2026-04-17T06:00:00.097Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-25T19:05:00.058Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-25T19:10:00.037Z",
         "status": "success",
         "details": {}
       }
@@ -1802,24 +1806,16 @@
     ]
   },
   "ai_clinical_insights": {
-    "lastRun": "2026-04-17T00:00:00.228Z",
+    "lastRun": "2026-04-25T19:02:52.996Z",
     "lastStatus": "success",
-    "runCount": 167,
+    "runCount": 168,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
       "total": 0,
-      "elapsedMs": 109
+      "elapsedMs": 23
     },
     "recentLogs": [
-      {
-        "ts": "2026-04-13T17:59:45.853Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 26
-        }
-      },
       {
         "ts": "2026-04-13T18:42:53.090Z",
         "status": "success",
@@ -2051,89 +2047,27 @@
           "total": 0,
           "elapsedMs": 109
         }
+      },
+      {
+        "ts": "2026-04-25T19:02:52.996Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 23
+        }
       }
     ]
   },
   "appt_notification": {
-    "lastRun": "2026-04-17T06:03:00.018Z",
+    "lastRun": "2026-04-25T19:10:00.042Z",
     "lastStatus": "success",
-    "runCount": 27865,
+    "runCount": 27875,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
-      "checked": 2
+      "checked": 0
     },
     "recentLogs": [
-      {
-        "ts": "2026-04-17T05:34:00.026Z",
-        "status": "success",
-        "details": {
-          "checked": 2
-        }
-      },
-      {
-        "ts": "2026-04-17T05:35:00.025Z",
-        "status": "success",
-        "details": {
-          "checked": 2
-        }
-      },
-      {
-        "ts": "2026-04-17T05:36:00.027Z",
-        "status": "success",
-        "details": {
-          "checked": 2
-        }
-      },
-      {
-        "ts": "2026-04-17T05:37:00.012Z",
-        "status": "success",
-        "details": {
-          "checked": 2
-        }
-      },
-      {
-        "ts": "2026-04-17T05:38:00.016Z",
-        "status": "success",
-        "details": {
-          "checked": 2
-        }
-      },
-      {
-        "ts": "2026-04-17T05:39:00.012Z",
-        "status": "success",
-        "details": {
-          "checked": 2
-        }
-      },
-      {
-        "ts": "2026-04-17T05:40:00.022Z",
-        "status": "success",
-        "details": {
-          "checked": 2
-        }
-      },
-      {
-        "ts": "2026-04-17T05:41:00.034Z",
-        "status": "success",
-        "details": {
-          "checked": 2
-        }
-      },
-      {
-        "ts": "2026-04-17T05:42:00.021Z",
-        "status": "success",
-        "details": {
-          "checked": 2
-        }
-      },
-      {
-        "ts": "2026-04-17T05:43:00.026Z",
-        "status": "success",
-        "details": {
-          "checked": 2
-        }
-      },
       {
         "ts": "2026-04-17T05:44:00.014Z",
         "status": "success",
@@ -2272,6 +2206,76 @@
         "status": "success",
         "details": {
           "checked": 2
+        }
+      },
+      {
+        "ts": "2026-04-25T19:01:00.029Z",
+        "status": "success",
+        "details": {
+          "checked": 0
+        }
+      },
+      {
+        "ts": "2026-04-25T19:02:00.030Z",
+        "status": "success",
+        "details": {
+          "checked": 0
+        }
+      },
+      {
+        "ts": "2026-04-25T19:03:00.017Z",
+        "status": "success",
+        "details": {
+          "checked": 0
+        }
+      },
+      {
+        "ts": "2026-04-25T19:04:00.022Z",
+        "status": "success",
+        "details": {
+          "checked": 0
+        }
+      },
+      {
+        "ts": "2026-04-25T19:05:00.051Z",
+        "status": "success",
+        "details": {
+          "checked": 0
+        }
+      },
+      {
+        "ts": "2026-04-25T19:06:00.020Z",
+        "status": "success",
+        "details": {
+          "checked": 0
+        }
+      },
+      {
+        "ts": "2026-04-25T19:07:00.028Z",
+        "status": "success",
+        "details": {
+          "checked": 0
+        }
+      },
+      {
+        "ts": "2026-04-25T19:08:00.045Z",
+        "status": "success",
+        "details": {
+          "checked": 0
+        }
+      },
+      {
+        "ts": "2026-04-25T19:09:00.028Z",
+        "status": "success",
+        "details": {
+          "checked": 0
+        }
+      },
+      {
+        "ts": "2026-04-25T19:10:00.042Z",
+        "status": "success",
+        "details": {
+          "checked": 0
         }
       }
     ]
@@ -4489,6 +4493,29 @@
         "ts": "2026-04-12T03:00:00.055Z",
         "status": "success",
         "details": {}
+      }
+    ]
+  },
+  "ai_his_score": {
+    "lastRun": "2026-04-25T19:03:53.146Z",
+    "lastStatus": "success",
+    "runCount": 1,
+    "errorCount": 0,
+    "lastError": null,
+    "lastDetails": {
+      "computed": 22,
+      "total": 22,
+      "elapsedMs": 156
+    },
+    "recentLogs": [
+      {
+        "ts": "2026-04-25T19:03:53.146Z",
+        "status": "success",
+        "details": {
+          "computed": 22,
+          "total": 22,
+          "elapsedMs": 156
+        }
       }
     ]
   }

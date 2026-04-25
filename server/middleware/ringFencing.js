@@ -667,6 +667,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/notifications/send-internal', // n8n internal workflow notification endpoint (token-auth at route level)
   '/api/webhooks/n8n-callback/', // n8n workflow callbacks (server-to-server, token-auth at route level)
   '/api/pharmacy/medicines', // Public medicine search from master database
+  '/api/lab-tests/catalog',  // Public lab test catalog — browse tests and prices without login
   '/health', // Public health check
 ];
 
