@@ -164,7 +164,22 @@ export default function CorporateCommandCenter() {
               </button>
             ))}
           </div>
-          <Button variant="outline" size="sm" className="border-white/10 text-slate-400 rounded-xl gap-1">
+          <Button variant="outline" size="sm" className="border-white/10 text-slate-400 rounded-xl gap-1"
+            onClick={() => {
+              const rows = [
+                { Metric: 'Total Employees', Value: kpis.totalEmployees },
+                { Metric: 'Avg Health Score', Value: kpis.avgHealthScore ?? 'N/A' },
+                { Metric: 'Total Claims Cost', Value: kpis.totalClaimsCost },
+                { Metric: 'Participation Rate', Value: kpis.participationRate },
+                { Metric: 'Wellness ROI', Value: kpis.wellnessROI ?? 'N/A' },
+              ];
+              const csv = ['Metric,Value', ...rows.map(r => `${r.Metric},${r.Value}`)].join('\n');
+              const blob = new Blob([csv], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url; a.download = `command-center-${new Date().toISOString().slice(0,10)}.csv`;
+              document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+            }}>
             <Download className="h-3.5 w-3.5" /> Export
           </Button>
         </div>
@@ -180,7 +195,8 @@ export default function CorporateCommandCenter() {
           <p className="text-sm text-white font-medium">AI Insight</p>
           <p className="text-xs text-slate-400">Connect employee health data to unlock AI-driven risk insights and actionable wellness recommendations.</p>
         </div>
-        <Button size="sm" className="bg-violet-600 hover:bg-violet-500 border-0 rounded-xl text-xs flex-shrink-0">
+        <Button size="sm" className="bg-violet-600 hover:bg-violet-500 border-0 rounded-xl text-xs flex-shrink-0"
+          onClick={() => navigate('/corporate/health-analysis')}>
           View Details
         </Button>
       </motion.div>

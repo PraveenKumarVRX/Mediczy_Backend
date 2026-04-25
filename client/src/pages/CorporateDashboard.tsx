@@ -42,7 +42,6 @@ import {
   ChevronRight,
   Briefcase,
   UserCog,
-  CalendarHeart,
 } from "lucide-react";
 import { getUserType } from "@/hooks/auth";
 import api from "@/utils/api";
@@ -54,6 +53,7 @@ interface EmployeeHealth {
   id: string;
   employeeId: string;
   name: string;
+  businessUnit: string;
   department: string;
   designation: string;
   age: number;
@@ -339,6 +339,35 @@ const CorporateDashboard = () => {
     critical: '#6b7280'
   };
 
+  // Placeholder ghost data shown before real assessments come in
+  const PLACEHOLDER_RISK = [
+    { name: 'Low Risk',    value: 4, fill: '#334155' },
+    { name: 'Medium Risk', value: 3, fill: '#475569' },
+    { name: 'High Risk',   value: 2, fill: '#64748b' },
+    { name: 'Critical',    value: 1, fill: '#94a3b8' },
+  ];
+  const PLACEHOLDER_CONDITIONS = [
+    { condition: '—', count: 12 }, { condition: '—', count: 8 },
+    { condition: '—', count: 15 }, { condition: '—', count: 6 },
+    { condition: '—', count: 10 }, { condition: '—', count: 4 },
+  ];
+  const PLACEHOLDER_TRENDS = [
+    { month: 'Month 1', healthyCount: 16, atRiskCount: 5 },
+    { month: 'Month 2', healthyCount: 19, atRiskCount: 6 },
+    { month: 'Month 3', healthyCount: 14, atRiskCount: 4 },
+    { month: 'Month 4', healthyCount: 21, atRiskCount: 7 },
+    { month: 'Month 5', healthyCount: 17, atRiskCount: 5 },
+    { month: 'Month 6', healthyCount: 23, atRiskCount: 8 },
+  ];
+
+  const hasRiskData = healthAnalytics &&
+    ((healthAnalytics.riskDistribution?.low ?? 0) +
+     (healthAnalytics.riskDistribution?.medium ?? 0) +
+     (healthAnalytics.riskDistribution?.high ?? 0) +
+     (healthAnalytics.riskDistribution?.critical ?? 0)) > 0;
+  const hasConditionsData = (healthAnalytics?.commonConditions?.length ?? 0) > 0;
+  const hasTrendData     = (healthAnalytics?.trendData?.length ?? 0) > 0;
+
   // Quick actions for corporate modules
   const quickActions = [
     {
@@ -369,15 +398,6 @@ const CorporateDashboard = () => {
       pattern: "radial-gradient(circle at 0% 0%, rgba(139, 92, 246, 0.05) 0%, transparent 50%)",
     },
     {
-      title: "Health Calendar",
-      description: "Schedule health checkups and events",
-      icon: CalendarHeart,
-      color: "bg-gradient-to-br from-teal-500/10 to-cyan-500/10 border-teal-500/20",
-      iconColor: "text-teal-600",
-      link: "/corporate/health-calendar",
-      pattern: "radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.05) 0%, transparent 50%)",
-    },
-    {
       title: "Appointments",
       description: "Schedule and manage health appointments",
       icon: Calendar,
@@ -405,12 +425,12 @@ const CorporateDashboard = () => {
       pattern: "radial-gradient(circle at 50% 50%, hsl(var(--warning) / 0.05) 0%, transparent 50%)",
     },
     {
-      title: "Departments",
-      description: "Manage organizational departments",
+      title: "Org Structure",
+      description: "Manage departments & business units",
       icon: Building2,
       color: "info-gradient border-info/20",
       iconColor: "text-info",
-      link: "/corporate/departments",
+      link: "/corporate/org-structure",
       pattern: "radial-gradient(circle at 100% 50%, rgba(99, 102, 241, 0.05) 0%, transparent 50%)",
     },
     {
@@ -755,69 +775,187 @@ const CorporateDashboard = () => {
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-6">
-            {/* Charts Row */}
-            {healthAnalytics && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Risk Distribution */}
-                <Card className="p-6 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
-                  <h3 className="text-lg font-semibold mb-4 text-slate-800 dark:text-white">Risk Distribution</h3>
-                  <ResponsiveContainer width="100%" height={300}>
+            {/* Charts Row — always visible; shows ghost placeholder until real data arrives */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+              {/* Risk Distribution */}
+              <Card className="p-6 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+                <h3 className="text-lg font-semibold mb-1 text-slate-800 dark:text-white">Risk Distribution</h3>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mb-4">Employee health risk breakdown across all tiers</p>
+
+                {/* Risk tier legend cards */}
+                {(() => {
+                  const total = hasRiskData
+                    ? (healthAnalytics!.riskDistribution.low + healthAnalytics!.riskDistribution.medium +
+                       healthAnalytics!.riskDistribution.high + healthAnalytics!.riskDistribution.critical) || 1
+                    : 1;
+                  const tiers = [
+                    {
+                      key: 'low', label: 'Low Risk', color: COLORS.low,
+                      bg: 'bg-emerald-50 dark:bg-emerald-900/20', border: 'border-emerald-200 dark:border-emerald-700',
+                      text: 'text-emerald-700 dark:text-emerald-300', bar: 'bg-emerald-500',
+                      desc: 'Healthy, no immediate concern',
+                      icon: '🟢',
+                      value: hasRiskData ? healthAnalytics!.riskDistribution.low : null,
+                    },
+                    {
+                      key: 'medium', label: 'Medium Risk', color: COLORS.medium,
+                      bg: 'bg-amber-50 dark:bg-amber-900/20', border: 'border-amber-200 dark:border-amber-700',
+                      text: 'text-amber-700 dark:text-amber-300', bar: 'bg-amber-500',
+                      desc: 'Needs monitoring & preventive care',
+                      icon: '🟡',
+                      value: hasRiskData ? healthAnalytics!.riskDistribution.medium : null,
+                    },
+                    {
+                      key: 'high', label: 'High Risk', color: COLORS.high,
+                      bg: 'bg-red-50 dark:bg-red-900/20', border: 'border-red-200 dark:border-red-700',
+                      text: 'text-red-700 dark:text-red-300', bar: 'bg-red-500',
+                      desc: 'Requires prompt medical attention',
+                      icon: '🔴',
+                      value: hasRiskData ? healthAnalytics!.riskDistribution.high : null,
+                    },
+                    {
+                      key: 'critical', label: 'Critical', color: COLORS.critical,
+                      bg: 'bg-slate-100 dark:bg-slate-700/40', border: 'border-slate-300 dark:border-slate-600',
+                      text: 'text-slate-700 dark:text-slate-300', bar: 'bg-slate-500',
+                      desc: 'Urgent intervention needed',
+                      icon: '⚫',
+                      value: hasRiskData ? healthAnalytics!.riskDistribution.critical : null,
+                    },
+                  ];
+                  return (
+                    <div className="space-y-2 mb-4">
+                      {tiers.map((t) => {
+                        const pct = t.value !== null ? Math.round((t.value / total) * 100) : null;
+                        return (
+                          <div key={t.key} className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${t.bg} ${t.border}`}>
+                            <span className="text-base leading-none">{t.icon}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between mb-0.5">
+                                <span className={`text-xs font-semibold ${t.text}`}>{t.label}</span>
+                                <span className={`text-xs font-bold ${t.text}`}>
+                                  {pct !== null ? `${t.value} (${pct}%)` : '—'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-400 dark:text-slate-500 truncate">{t.desc}</p>
+                              <div className="mt-1 h-1.5 w-full bg-white/60 dark:bg-slate-700/60 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-500 ${t.bar}`}
+                                  style={{ width: pct !== null ? `${pct}%` : '0%', opacity: pct !== null ? 1 : 0 }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+                {/* Donut chart */}
+                <div className="relative">
+                  <ResponsiveContainer width="100%" height={220}>
                     <RechartsPieChart>
                       <Pie
-                        data={[
-                          { name: 'Low Risk', value: healthAnalytics.riskDistribution.low, fill: COLORS.low },
-                          { name: 'Medium Risk', value: healthAnalytics.riskDistribution.medium, fill: COLORS.medium },
-                          { name: 'High Risk', value: healthAnalytics.riskDistribution.high, fill: COLORS.high },
-                          { name: 'Critical', value: healthAnalytics.riskDistribution.critical, fill: COLORS.critical }
-                        ]}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                        outerRadius={80}
+                        data={
+                          hasRiskData
+                            ? [
+                                { name: 'Low Risk',    value: healthAnalytics!.riskDistribution.low,      fill: COLORS.low },
+                                { name: 'Medium Risk', value: healthAnalytics!.riskDistribution.medium,   fill: COLORS.medium },
+                                { name: 'High Risk',   value: healthAnalytics!.riskDistribution.high,     fill: COLORS.high },
+                                { name: 'Critical',    value: healthAnalytics!.riskDistribution.critical, fill: COLORS.critical },
+                              ]
+                            : PLACEHOLDER_RISK
+                        }
+                        cx="50%" cy="50%"
+                        innerRadius={55} outerRadius={90}
+                        paddingAngle={hasRiskData ? 3 : 1}
                         dataKey="value"
+                        stroke="none"
+                        label={hasRiskData ? ({ name, percent }) => `${(percent * 100).toFixed(0)}%` : undefined}
+                        labelLine={hasRiskData}
                       >
-                        {[COLORS.low, COLORS.medium, COLORS.high, COLORS.critical].map((color, index) => (
-                          <Cell key={`cell-${index}`} fill={color} />
+                        {(hasRiskData
+                          ? [COLORS.low, COLORS.medium, COLORS.high, COLORS.critical]
+                          : PLACEHOLDER_RISK.map(d => d.fill)
+                        ).map((color, index) => (
+                          <Cell key={`cell-${index}`} fill={color} opacity={hasRiskData ? 1 : 0.45} />
                         ))}
                       </Pie>
-                      <Tooltip />
-                      <Legend />
+                      {hasRiskData && <Tooltip formatter={(value: any, name: any) => [`${value} employees`, name]} />}
                     </RechartsPieChart>
                   </ResponsiveContainer>
-                </Card>
+                  {!hasRiskData && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 dark:bg-slate-800/60 backdrop-blur-[2px] rounded-lg gap-1">
+                      <PieChart className="w-7 h-7 text-slate-400" />
+                      <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">No assessments yet</p>
+                      <p className="text-xs text-slate-400 text-center px-8">Chart will populate once employees complete health assessments</p>
+                    </div>
+                  )}
+                </div>
+              </Card>
 
-                {/* Common Health Conditions */}
-                <Card className="p-6 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
-                  <h3 className="text-lg font-semibold mb-4 text-slate-800 dark:text-white">Common Health Conditions</h3>
+              {/* Common Health Conditions */}
+              <Card className="p-6 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+                <h3 className="text-lg font-semibold mb-4 text-slate-800 dark:text-white">Common Health Conditions</h3>
+                <div className="relative">
                   <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={healthAnalytics.commonConditions}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="condition" angle={-45} textAnchor="end" height={100} />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="count" fill="#10b981" />
+                    <BarChart data={hasConditionsData ? healthAnalytics!.commonConditions : PLACEHOLDER_CONDITIONS}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={hasConditionsData ? undefined : '#e2e8f030'} />
+                      <XAxis dataKey="condition" angle={-45} textAnchor="end" height={100}
+                        tick={{ fill: hasConditionsData ? undefined : '#64748b' }} />
+                      <YAxis tick={{ fill: hasConditionsData ? undefined : '#64748b' }} />
+                      {hasConditionsData && <Tooltip />}
+                      <Bar dataKey="count" fill={hasConditionsData ? '#10b981' : '#475569'}
+                        opacity={hasConditionsData ? 1 : 0.5} radius={[3, 3, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
-                </Card>
+                  {!hasConditionsData && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 dark:bg-slate-800/60 backdrop-blur-[2px] rounded-lg gap-2">
+                      <BarChart3 className="w-8 h-8 text-slate-400" />
+                      <p className="text-sm font-semibold text-slate-600 dark:text-slate-300 text-center">No conditions data yet</p>
+                      <p className="text-xs text-slate-400 dark:text-slate-500 text-center px-6">
+                        Common health conditions will surface after employee health records are collected
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </Card>
 
-                {/* Health Trend */}
-                <Card className="p-6 lg:col-span-2 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
-                  <h3 className="text-lg font-semibold mb-4 text-slate-800 dark:text-white">Health Risk Trends (Last 6 Months)</h3>
+              {/* Health Risk Trends */}
+              <Card className="p-6 lg:col-span-2 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+                <h3 className="text-lg font-semibold mb-4 text-slate-800 dark:text-white">Health Risk Trends (Last 6 Months)</h3>
+                <div className="relative">
                   <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={healthAnalytics.trendData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="month" />
-                      <YAxis />
-                      <Tooltip />
-                      <Legend />
-                      <Bar dataKey="healthyCount" fill="#10b981" name="Healthy" />
-                      <Bar dataKey="atRiskCount" fill="#f59e0b" name="At Risk" />
+                    <BarChart data={hasTrendData ? healthAnalytics!.trendData : PLACEHOLDER_TRENDS}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={hasTrendData ? undefined : '#e2e8f030'} />
+                      <XAxis dataKey="month" tick={{ fill: hasTrendData ? undefined : '#64748b' }} />
+                      <YAxis tick={{ fill: hasTrendData ? undefined : '#64748b' }} />
+                      {hasTrendData && <Tooltip />}
+                      <Legend
+                        formatter={(value) =>
+                          hasTrendData ? value : <span className="text-slate-400 dark:text-slate-600">{value}</span>
+                        }
+                      />
+                      <Bar dataKey="healthyCount" fill={hasTrendData ? '#10b981' : '#334155'}
+                        opacity={hasTrendData ? 1 : 0.5} name="Healthy" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="atRiskCount"  fill={hasTrendData ? '#f59e0b' : '#475569'}
+                        opacity={hasTrendData ? 1 : 0.5} name="At Risk"  radius={[3, 3, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
-                </Card>
-              </div>
-            )}
+                  {!hasTrendData && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 dark:bg-slate-800/60 backdrop-blur-[2px] rounded-lg gap-2">
+                      <TrendingUp className="w-8 h-8 text-slate-400" />
+                      <p className="text-sm font-semibold text-slate-600 dark:text-slate-300 text-center">Trends not available yet</p>
+                      <p className="text-xs text-slate-400 dark:text-slate-500 text-center px-6">
+                        Monthly risk trends will build up as health assessments are recorded over time
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </Card>
+
+            </div>
           </TabsContent>
 
           {/* Employees Tab */}
@@ -892,6 +1030,10 @@ const CorporateDashboard = () => {
                         <div>
                           <p className="text-slate-500 dark:text-slate-400">Employee ID</p>
                           <p className="font-medium text-slate-800 dark:text-white">{employee.employeeId}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 dark:text-slate-400">Business Unit</p>
+                          <p className="font-medium text-slate-800 dark:text-white">{employee.businessUnit || '—'}</p>
                         </div>
                         <div>
                           <p className="text-slate-500 dark:text-slate-400">Department</p>

@@ -115,6 +115,7 @@ const CorporateNotifications: React.FC = () => {
     try {
       await api.post('/corporate/notifications/read-all');
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      toast({ title: 'All notifications marked as read' });
     } catch (error: any) {
       toast({
         title: 'Failed to mark all as read',
@@ -122,6 +123,19 @@ const CorporateNotifications: React.FC = () => {
         variant: 'destructive',
       });
     }
+  };
+
+  const formatRelativeTime = (date: Date): string => {
+    const now = Date.now();
+    const diff = now - date.getTime();
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days < 7) return `${days}d ago`;
+    return date.toLocaleDateString();
   };
 
   const filteredNotifications = useMemo(() => {
@@ -167,7 +181,7 @@ const CorporateNotifications: React.FC = () => {
             { label: 'This Week', value: thisWeekCount },
           ]}
           actions={
-            <Button variant="outline" size="sm" onClick={handleMarkAllAsRead} disabled={isLoading || notifications.length === 0} className="bg-white/10 hover:bg-white/20 text-white border-white/20">
+              <Button variant="outline" size="sm" onClick={handleMarkAllAsRead} disabled={isLoading || unreadCount === 0} className="bg-white/10 hover:bg-white/20 text-white border-white/20">
               Mark All Read
             </Button>
           }
@@ -295,9 +309,9 @@ const CorporateNotifications: React.FC = () => {
                 </CardHeader>
                 <CardContent className="pt-0">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                    <div className="flex items-center gap-1.5 text-xs text-slate-500" title={notification.timestamp.toLocaleString()}>
                       <Calendar className="h-3.5 w-3.5" />
-                      {notification.timestamp.toLocaleString()}
+                      {formatRelativeTime(notification.timestamp)}
                     </div>
                     <div className="flex gap-2">
                       {notification.actionUrl && (

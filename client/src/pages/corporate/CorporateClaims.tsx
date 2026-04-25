@@ -129,6 +129,7 @@ const CorporateClaims: React.FC = () => {
     serviceDate: '',
     description: ''
   });
+  const [claimFiles, setClaimFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmitClaim = async () => {
@@ -142,13 +143,15 @@ const CorporateClaims: React.FC = () => {
     }
     try {
       setIsSubmitting(true);
-      await api.post('/corporate/claims', {
-        type: claimForm.claimType,
-        amount: claimForm.amount,
-        provider: claimForm.provider,
-        serviceDate: claimForm.serviceDate,
-        description: claimForm.description,
-        documents: []
+      const formData = new FormData();
+      formData.append('type', claimForm.claimType);
+      formData.append('amount', claimForm.amount);
+      formData.append('provider', claimForm.provider);
+      formData.append('serviceDate', claimForm.serviceDate);
+      formData.append('description', claimForm.description);
+      claimFiles.forEach((file) => formData.append('documents', file));
+      await api.post('/corporate/claims', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
       toast({
         title: "Claim Submitted",
@@ -156,6 +159,7 @@ const CorporateClaims: React.FC = () => {
       });
       setIsSubmitDialogOpen(false);
       setClaimForm({ claimType: '', amount: '', provider: '', serviceDate: '', description: '' });
+      setClaimFiles([]);
       loadClaims();
     } catch (error: any) {
       toast({
@@ -318,8 +322,17 @@ const CorporateClaims: React.FC = () => {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="documents">Upload Documents</Label>
-                <Input id="documents" type="file" multiple />
-                <p className="text-xs text-slate-400">Upload receipts, prescriptions, and medical reports</p>
+                <Input
+                  id="documents"
+                  type="file"
+                  multiple
+                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                  onChange={(e) => setClaimFiles(Array.from(e.target.files ?? []))}
+                />
+                {claimFiles.length > 0 && (
+                  <p className="text-xs text-emerald-400">{claimFiles.length} file(s) selected</p>
+                )}
+                <p className="text-xs text-slate-400">Upload receipts, prescriptions, and medical reports (PDF, JPG, PNG)</p>
               </div>
             </div>
             <DialogFooter>

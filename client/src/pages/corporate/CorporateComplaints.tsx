@@ -94,7 +94,7 @@ const CorporateComplaints: React.FC = () => {
     });
   }, [complaints, searchQuery, statusFilter]);
 
-  const getPriorityColor = (priority: string) => {
+  const getStatusColor = (status: string) => {
     switch (priority) {
       case 'urgent':
         return 'bg-red-100 text-red-800 border-red-300';
@@ -109,7 +109,24 @@ const CorporateComplaints: React.FC = () => {
     }
   };
 
-  const getStatusColor = (status: string) => {
+  // SLA: days since complaint was submitted
+  const getSLAInfo = (submittedDate: string, status: string) => {
+    if (status === 'resolved' || status === 'closed') return null;
+    const days = Math.floor((Date.now() - new Date(submittedDate).getTime()) / 86400000);
+    if (days >= 7) return { label: `${days}d — Overdue`, color: 'bg-red-500/20 text-red-400' };
+    if (days >= 3) return { label: `${days}d — At Risk`, color: 'bg-amber-500/20 text-amber-400' };
+    return { label: `${days}d — On Track`, color: 'bg-emerald-500/20 text-emerald-400' };
+  };
+
+  // Valid status machine transitions
+  const VALID_TRANSITIONS: Record<string, Complaint['status'][]> = {
+    'open': ['in-progress'],
+    'in-progress': ['resolved', 'closed'],
+    'resolved': ['closed'],
+    'closed': [],
+  };
+
+  const getPriorityColor = (priority: string) => {
     switch (status) {
       case 'open':
         return 'bg-blue-100 text-blue-800';
@@ -450,14 +467,17 @@ const CorporateComplaints: React.FC = () => {
                 <div className="grid gap-2">
                   <Label htmlFor="status">Status</Label>
                   <Select value={updateStatus} onValueChange={(v) => setUpdateStatus(v as Complaint['status'])}>
-                    <SelectTrigger id="status">
-                      <SelectValue placeholder="Select status" />
-                    </SelectTrigger>
+                    <SelectTrigger id="status"><SelectValue placeholder="Select status" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="open">Open</SelectItem>
-                      <SelectItem value="in-progress">In Progress</SelectItem>
-                      <SelectItem value="resolved">Resolved</SelectItem>
-                      <SelectItem value="closed">Closed</SelectItem>
+                      {selectedComplaint && VALID_TRANSITIONS[selectedComplaint.status]?.length === 0 ? (
+                        <SelectItem value={selectedComplaint.status} disabled>
+                          No further transitions available
+                        </SelectItem>
+                      ) : (
+                        selectedComplaint && VALID_TRANSITIONS[selectedComplaint.status]?.map(s => (
+                          <SelectItem key={s} value={s}>{s.replace('-', ' ').replace(/\b\w/g, c => c.toUpperCase())}</SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -523,6 +543,10 @@ const CorporateComplaints: React.FC = () => {
                         <Badge className={getPriorityColor(complaint.priority)}>
                           {complaint.priority.toUpperCase()}
                         </Badge>
+                        {(() => {
+                          const sla = getSLAInfo(complaint.submittedDate, complaint.status);
+                          return sla ? <Badge className={`${sla.color} text-[10px]`}>{sla.label}</Badge> : null;
+                        })()}
                       </div>
 
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">

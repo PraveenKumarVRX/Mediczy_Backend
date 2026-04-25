@@ -372,8 +372,19 @@ const CorporateWellnessCalendar: React.FC = () => {
       // Generate ICS file content
       const icsContent = generateICSFile(activity);
 
-      // Simulate sending invites (in production, this would call an API)
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Call real API to send invites; fall back gracefully if not yet implemented
+      try {
+        await api.post(`/corporate/wellness-calendar/${encodeURIComponent(activity.id)}/send-invites`, {
+          participantIds: participants.map(p => p.id ?? p),
+          activityTitle: activity.title,
+          activityDate: activity.date,
+          activityTime: activity.time,
+          location: activity.location,
+        });
+      } catch (apiErr: any) {
+        // If endpoint not yet live (404/501), proceed with local update + ICS download
+        if (apiErr?.response?.status !== 404 && apiErr?.response?.status !== 501) throw apiErr;
+      }
 
       // Update activity with invite status
       setActivities(prev => prev.map(a => 

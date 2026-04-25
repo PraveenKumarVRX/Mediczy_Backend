@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Calendar, Clock, MapPin, Search, Filter, Plus, CheckCircle, XCircle, AlertCircle, Users, RefreshCw, CalendarCheck, Eye, Edit2, Ban, RotateCcw } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Calendar, Clock, MapPin, Search, Filter, CheckCircle, XCircle, AlertCircle, Users, RefreshCw, CalendarCheck, RotateCcw, Stethoscope, Building2, FlaskConical, Microscope, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -12,7 +12,6 @@ import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
 import CorporateLayout from '@/components/corporate/CorporateLayout';
 import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
-import CorporateStatusBadge from '@/components/corporate/CorporateStatusBadge';
 
 interface Appointment {
   id: string;
@@ -32,13 +31,49 @@ interface EmployeeOption {
   id: string;
   name: string;
   department: string;
+  businessUnit?: string;
+  location?: string;
 }
 
 const sampleEmployees: EmployeeOption[] = [
-  { id: 'EMP001', name: 'John Smith', department: 'Engineering' },
-  { id: 'EMP002', name: 'Emily Davis', department: 'Marketing' },
-  { id: 'EMP003', name: 'Robert Wilson', department: 'Finance' },
+  { id: 'EMP001', name: 'John Smith',    department: 'Engineering', businessUnit: 'Digital Business',   location: 'Mumbai' },
+  { id: 'EMP002', name: 'Emily Davis',   department: 'Marketing',   businessUnit: 'North Region',        location: 'Delhi' },
+  { id: 'EMP003', name: 'Robert Wilson', department: 'Finance',     businessUnit: 'Corporate Services',  location: 'Bengaluru' },
+  { id: 'EMP004', name: 'Maria Garcia',  department: 'HR',          businessUnit: 'Corporate Services',  location: 'Mumbai' },
+  { id: 'EMP005', name: 'David Lee',     department: 'Operations',  businessUnit: 'South Region',        location: 'Chennai' },
 ];
+
+// ── Appointment type catalogue ────────────────────────────────────────────
+type ProviderApiType = 'doctor' | 'hospital' | 'lab' | 'clinic';
+
+interface ProviderResult {
+  id: string;
+  name: string;
+  sub: string;      // speciality / sub-type
+  city: string;
+  providerType: ProviderApiType;
+}
+
+const APPOINTMENT_TYPES: { value: string; label: string; apiType: ProviderApiType; clinicHint?: string }[] = [
+  { value: 'Doctor Consultation',           label: 'Doctor Consultation',           apiType: 'doctor' },
+  { value: 'Doctor Tele Consultation',      label: 'Doctor Tele Consultation',      apiType: 'doctor' },
+  { value: 'Pre Employment Health Check Up',label: 'Pre Employment Health Check Up',apiType: 'hospital' },
+  { value: 'Annual Health Checkup',         label: 'Annual Health Checkup',         apiType: 'hospital' },
+  { value: 'Dental Checkup',               label: 'Dental Checkup',               apiType: 'clinic', clinicHint: 'dental' },
+  { value: 'Eye Examination',              label: 'Eye Examination',              apiType: 'clinic', clinicHint: 'polyclinic' },
+  { value: 'Mental Health Consultation',   label: 'Mental Health Consultation',   apiType: 'clinic', clinicHint: 'polyclinic' },
+  { value: 'Vaccination',                  label: 'Vaccination',                  apiType: 'clinic' },
+  { value: 'Physiotherapy',               label: 'Physiotherapy',               apiType: 'clinic', clinicHint: 'polyclinic' },
+  { value: 'Specialist Referral',          label: 'Specialist Referral',          apiType: 'doctor' },
+  { value: 'Blood Test',                   label: 'Blood Test / Lab Work',        apiType: 'lab' },
+];
+
+const PROVIDER_META: Record<ProviderApiType, { label: string; color: string; Icon: React.ElementType }> = {
+  doctor:   { label: 'Doctor',   color: 'text-blue-400 bg-blue-500/15',       Icon: Stethoscope },
+  hospital: { label: 'Hospital', color: 'text-emerald-400 bg-emerald-500/15', Icon: Building2 },
+  lab:      { label: 'Lab',      color: 'text-amber-400 bg-amber-500/15',     Icon: FlaskConical },
+  clinic:   { label: 'Clinic',   color: 'text-rose-400 bg-rose-500/15',       Icon: Microscope },
+};
 
 const sampleAppointments: Appointment[] = [
   {
@@ -118,6 +153,17 @@ const CorporateAppointments: React.FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [employeeOptions, setEmployeeOptions] = useState<EmployeeOption[]>(sampleEmployees);
   const [isLoading, setIsLoading] = useState(false);
+  // Reschedule modal state
+  const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
+  const [reschedulingAppt, setReschedulingAppt] = useState<Appointment | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rescheduleTime, setRescheduleTime] = useState('');
+  // Cancel confirmation state
+  const [isCancelOpen, setIsCancelOpen] = useState(false);
+  const [cancellingAppt, setCancellingAppt] = useState<Appointment | null>(null);
+  // Complete confirmation state
+  const [isCompleteOpen, setIsCompleteOpen] = useState(false);
+  const [completingAppt, setCompletingAppt] = useState<Appointment | null>(null);
 
   const stats = {
     totalScheduled: appointments.filter(a => a.status === 'scheduled').length,
@@ -168,10 +214,25 @@ const CorporateAppointments: React.FC = () => {
     }
   };
 
+  // Employee picker filters
+  const [empSearch, setEmpSearch]         = useState('');
+  const [empBUFilter, setEmpBUFilter]     = useState('all');
+  const [empDeptFilter, setEmpDeptFilter] = useState('all');
+  const [empCityFilter, setEmpCityFilter] = useState('all');
+
+  // Facility / provider picker filters
+  const [facSearch, setFacSearch]         = useState('');
+
+  // Live provider results fetched from the DB
+  const [providerResults, setProviderResults] = useState<ProviderResult[]>([]);
+  const [providerLoading, setProviderLoading] = useState(false);
+
   const [appointmentForm, setAppointmentForm] = useState({
     employeeId: '',
     employeeName: '',
     department: '',
+    businessUnit: '',
+    location: '',
     appointmentType: '',
     doctorName: '',
     facility: '',
@@ -180,6 +241,39 @@ const CorporateAppointments: React.FC = () => {
     notes: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Fetch providers from masterdata API whenever appointment type or search changes
+  const loadProviders = useCallback(async (apptType: string, search: string) => {
+    const meta = APPOINTMENT_TYPES.find(t => t.value === apptType);
+    if (!meta) { setProviderResults([]); return; }
+    setProviderLoading(true);
+    try {
+      const params: Record<string, string> = { limit: '25', search };
+      if (meta.apiType === 'clinic' && meta.clinicHint) params.type = meta.clinicHint;
+      const { data } = await api.get(`/masterdata/${meta.apiType}s`, { params });
+      const rows: any[] = data?.data || [];
+      setProviderResults(rows.map(r => ({
+        id: String(r.id),
+        name: r.name || '',
+        sub: r.specialty || r.specialties?.[0] || r.sub_type || r.classification || '',
+        city: r.city || '',
+        providerType: meta.apiType,
+      })));
+    } catch {
+      setProviderResults([]);
+    } finally {
+      setProviderLoading(false);
+    }
+  }, []);
+
+  // Debounced provider search trigger
+  useEffect(() => {
+    if (!appointmentForm.appointmentType) { setProviderResults([]); return; }
+    const timer = setTimeout(() => {
+      loadProviders(appointmentForm.appointmentType, facSearch);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [appointmentForm.appointmentType, facSearch, loadProviders]);
 
   const loadAppointments = async () => {
     try {
@@ -207,7 +301,9 @@ const CorporateAppointments: React.FC = () => {
         .map((emp) => ({
           id: emp.employeeId || emp.id,
           name: emp.name,
-          department: emp.department || 'General'
+          department: emp.department || 'General',
+          businessUnit: emp.businessUnit || emp.business_unit || '',
+          location: emp.location || emp.city || '',
         }))
         .filter((emp) => emp.id && emp.name);
       setEmployeeOptions(mapped.length ? mapped : sampleEmployees);
@@ -226,8 +322,10 @@ const CorporateAppointments: React.FC = () => {
     setAppointmentForm((prev) => ({
       ...prev,
       employeeId,
-      employeeName: selected?.name || prev.employeeName,
-      department: selected?.department || prev.department
+      employeeName: selected?.name || '',
+      department: selected?.department || '',
+      businessUnit: selected?.businessUnit || '',
+      location: selected?.location || '',
     }));
   };
 
@@ -255,9 +353,11 @@ const CorporateAppointments: React.FC = () => {
       });
       setIsScheduleDialogOpen(false);
       setAppointmentForm({
-        employeeId: '', employeeName: '', department: '', appointmentType: '',
-        doctorName: '', facility: '', date: '', time: '', notes: ''
+        employeeId: '', employeeName: '', department: '', businessUnit: '', location: '',
+        appointmentType: '', doctorName: '', facility: '', date: '', time: '', notes: ''
       });
+      setEmpSearch(''); setEmpBUFilter('all'); setEmpDeptFilter('all'); setEmpCityFilter('all');
+      setFacSearch('');
     } catch (error: any) {
       toast({
         title: "Scheduling failed",
@@ -275,25 +375,47 @@ const CorporateAppointments: React.FC = () => {
   };
 
   const handleCancel = (appointment: Appointment) => {
-    if (!window.confirm(`Cancel appointment ${appointment.id} for ${appointment.employeeName}?`)) return;
-    setAppointments((prev) => prev.map((a) => a.id === appointment.id ? { ...a, status: 'cancelled', notes: 'Cancelled by admin' } : a));
-    toast({ title: 'Appointment cancelled', description: `${appointment.employeeName}'s appointment was cancelled.` });
+    setCancellingAppt(appointment);
+    setIsCancelOpen(true);
+  };
+
+  const confirmCancel = () => {
+    if (!cancellingAppt) return;
+    setAppointments((prev) => prev.map((a) => a.id === cancellingAppt.id ? { ...a, status: 'cancelled', notes: 'Cancelled by admin' } : a));
+    toast({ title: 'Appointment cancelled', description: `${cancellingAppt.employeeName}'s appointment was cancelled.` });
+    setIsCancelOpen(false);
+    setCancellingAppt(null);
   };
 
   const handleReschedule = (appointment: Appointment) => {
-    const newDate = window.prompt('Enter new date (YYYY-MM-DD)', appointment.date);
-    const newTime = window.prompt('Enter new time (e.g., 09:30 AM)', appointment.time);
-    if (!newDate || !newTime) {
-      toast({ title: 'Reschedule cancelled', description: 'No changes were made.' });
+    setReschedulingAppt(appointment);
+    setRescheduleDate(appointment.date);
+    setRescheduleTime(appointment.time);
+    setIsRescheduleOpen(true);
+  };
+
+  const confirmReschedule = () => {
+    if (!reschedulingAppt || !rescheduleDate || !rescheduleTime) {
+      toast({ title: 'Missing fields', description: 'Please provide both date and time.', variant: 'destructive' });
       return;
     }
-    setAppointments((prev) => prev.map((a) => a.id === appointment.id ? { ...a, date: newDate, time: newTime, status: 'scheduled' } : a));
-    toast({ title: 'Appointment rescheduled', description: `${appointment.employeeName} moved to ${newDate} at ${newTime}.` });
+    setAppointments((prev) => prev.map((a) => a.id === reschedulingAppt.id ? { ...a, date: rescheduleDate, time: rescheduleTime, status: 'scheduled' } : a));
+    toast({ title: 'Appointment rescheduled', description: `${reschedulingAppt.employeeName} moved to ${rescheduleDate} at ${rescheduleTime}.` });
+    setIsRescheduleOpen(false);
+    setReschedulingAppt(null);
   };
 
   const handleMarkCompleted = (appointment: Appointment) => {
-    setAppointments((prev) => prev.map((a) => a.id === appointment.id ? { ...a, status: 'completed' } : a));
-    toast({ title: 'Marked as completed', description: `${appointment.employeeName}'s appointment marked completed.` });
+    setCompletingAppt(appointment);
+    setIsCompleteOpen(true);
+  };
+
+  const confirmComplete = () => {
+    if (!completingAppt) return;
+    setAppointments((prev) => prev.map((a) => a.id === completingAppt.id ? { ...a, status: 'completed' } : a));
+    toast({ title: 'Marked as completed', description: `${completingAppt.employeeName}'s appointment marked completed.` });
+    setIsCompleteOpen(false);
+    setCompletingAppt(null);
   };
 
   const handleRefresh = () => {
@@ -329,100 +451,264 @@ const CorporateAppointments: React.FC = () => {
         />
 
         {/* Schedule Dialog */}
-        <Dialog open={isScheduleDialogOpen} onOpenChange={setIsScheduleDialogOpen}>
-          <DialogContent className="sm:max-w-[525px]">
+        <Dialog open={isScheduleDialogOpen} onOpenChange={(open) => {
+          setIsScheduleDialogOpen(open);
+          if (!open) {
+            setAppointmentForm({ employeeId: '', employeeName: '', department: '', businessUnit: '', location: '', appointmentType: '', doctorName: '', facility: '', date: '', time: '', notes: '' });
+            setEmpSearch(''); setEmpBUFilter('all'); setEmpDeptFilter('all'); setEmpCityFilter('all');
+            setFacSearch('');
+          }
+        }}>
+          <DialogContent className="sm:max-w-[680px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Schedule New Appointment</DialogTitle>
-              <DialogDescription>
-                Schedule a health appointment for an employee
-              </DialogDescription>
+              <DialogDescription>Schedule a health appointment for an employee</DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="employee">Employee</Label>
-                <Select value={appointmentForm.employeeId} onValueChange={handleEmployeeSelect}>
-                  <SelectTrigger id="employee">
-                    <SelectValue placeholder="Select employee" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {employeeOptions.map((emp) => (
-                      <SelectItem key={emp.id} value={emp.id}>
-                        {emp.name} - {emp.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+
+            <div className="space-y-5 py-2">
+              {/* ── Employee Picker ── */}
+              <div className="space-y-3">
+                <Label className="text-sm font-semibold text-white">Employee</Label>
+
+                {/* Filter row */}
+                <div className="grid grid-cols-3 gap-2">
+                  <Select value={empBUFilter} onValueChange={setEmpBUFilter}>
+                    <SelectTrigger className="h-8 text-xs bg-slate-800/60 border-white/10">
+                      <SelectValue placeholder="Business Unit" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Business Units</SelectItem>
+                      {[...new Set(employeeOptions.map(e => e.businessUnit).filter(Boolean))].sort().map(bu => (
+                        <SelectItem key={bu} value={bu!}>{bu}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={empDeptFilter} onValueChange={setEmpDeptFilter}>
+                    <SelectTrigger className="h-8 text-xs bg-slate-800/60 border-white/10">
+                      <SelectValue placeholder="Department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Departments</SelectItem>
+                      {[...new Set(employeeOptions
+                        .filter(e => empBUFilter === 'all' || e.businessUnit === empBUFilter)
+                        .map(e => e.department).filter(Boolean))].sort().map(d => (
+                        <SelectItem key={d} value={d}>{d}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={empCityFilter} onValueChange={setEmpCityFilter}>
+                    <SelectTrigger className="h-8 text-xs bg-slate-800/60 border-white/10">
+                      <SelectValue placeholder="City / Location" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Cities</SelectItem>
+                      {[...new Set(employeeOptions
+                        .filter(e => empBUFilter === 'all' || e.businessUnit === empBUFilter)
+                        .filter(e => empDeptFilter === 'all' || e.department === empDeptFilter)
+                        .map(e => e.location).filter(Boolean))].sort().map(c => (
+                        <SelectItem key={c} value={c!}>{c}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Search box */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+                  <Input
+                    placeholder="Search by name or employee ID…"
+                    value={empSearch}
+                    onChange={e => setEmpSearch(e.target.value)}
+                    className="pl-9 h-9 bg-slate-800/60 border-white/10 text-white placeholder:text-slate-500"
+                  />
+                </div>
+
+                {/* Employee list */}
+                {(() => {
+                  const filtered = employeeOptions.filter(e => {
+                    const matchBU   = empBUFilter   === 'all' || e.businessUnit === empBUFilter;
+                    const matchDept = empDeptFilter === 'all' || e.department   === empDeptFilter;
+                    const matchCity = empCityFilter === 'all' || e.location     === empCityFilter;
+                    const matchText = !empSearch ||
+                      e.name.toLowerCase().includes(empSearch.toLowerCase()) ||
+                      e.id.toLowerCase().includes(empSearch.toLowerCase());
+                    return matchBU && matchDept && matchCity && matchText;
+                  });
+                  return (
+                    <div className="border border-white/10 rounded-xl overflow-hidden">
+                      {filtered.length === 0 ? (
+                        <div className="py-8 text-center text-sm text-slate-500">No employees match your filters</div>
+                      ) : (
+                        <div className="max-h-44 overflow-y-auto divide-y divide-white/[0.05]">
+                          {filtered.map(emp => (
+                            <button
+                              key={emp.id}
+                              type="button"
+                              onClick={() => handleEmployeeSelect(emp.id)}
+                              className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-all hover:bg-white/5 ${
+                                appointmentForm.employeeId === emp.id ? 'bg-purple-600/20 border-l-2 border-l-purple-500' : ''
+                              }`}
+                            >
+                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500/30 to-violet-600/20 flex items-center justify-center flex-shrink-0 text-xs font-bold text-purple-300">
+                                {emp.name.charAt(0)}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium text-white truncate">{emp.name}</div>
+                                <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5 flex-wrap">
+                                  <span>{emp.id}</span>
+                                  {emp.department && <><span className="text-slate-700">·</span><span>{emp.department}</span></>}
+                                  {emp.businessUnit && <><span className="text-slate-700">·</span><span className="text-violet-400">{emp.businessUnit}</span></>}
+                                  {emp.location && <><span className="text-slate-700">·</span><MapPin className="h-3 w-3 inline" /><span>{emp.location}</span></>}
+                                </div>
+                              </div>
+                              {appointmentForm.employeeId === emp.id && (
+                                <CheckCircle className="h-4 w-4 text-purple-400 flex-shrink-0" />
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="px-4 py-1.5 bg-slate-800/40 text-xs text-slate-600 border-t border-white/[0.04]">
+                        {filtered.length} employee{filtered.length !== 1 ? 's' : ''} shown
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Selected employee chip */}
+                {appointmentForm.employeeId && (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-purple-500/10 border border-purple-500/30 rounded-lg text-sm">
+                    <CheckCircle className="h-4 w-4 text-purple-400 flex-shrink-0" />
+                    <span className="text-white font-medium">{appointmentForm.employeeName}</span>
+                    <span className="text-slate-400">·</span>
+                    <span className="text-slate-400">{appointmentForm.employeeId}</span>
+                    {appointmentForm.department && <><span className="text-slate-600">·</span><span className="text-slate-400">{appointmentForm.department}</span></>}
+                    <button type="button" onClick={() => setAppointmentForm(p => ({ ...p, employeeId: '', employeeName: '', department: '', businessUnit: '', location: '' }))}
+                      className="ml-auto text-slate-500 hover:text-slate-300 text-xs">✕</button>
+                  </div>
+                )}
               </div>
+
+              {/* Appointment Type */}
               <div className="grid gap-2">
                 <Label htmlFor="type">Appointment Type</Label>
                 <Select
                   value={appointmentForm.appointmentType}
-                  onValueChange={(value) => setAppointmentForm((prev) => ({ ...prev, appointmentType: value }))}
+                  onValueChange={v => {
+                    setAppointmentForm(p => ({ ...p, appointmentType: v, facility: '' }));
+                    setFacSearch('');
+                  }}
                 >
-                  <SelectTrigger id="type">
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
+                  <SelectTrigger id="type"><SelectValue placeholder="Select type" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Annual Health Checkup">Annual Health Checkup</SelectItem>
-                    <SelectItem value="Dental Checkup">Dental Checkup</SelectItem>
-                    <SelectItem value="Eye Examination">Eye Examination</SelectItem>
-                    <SelectItem value="Mental Health Consultation">Mental Health Consultation</SelectItem>
-                    <SelectItem value="Vaccination">Vaccination</SelectItem>
+                    {APPOINTMENT_TYPES.map(t => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="facility">Facility</Label>
-                <Select
-                  value={appointmentForm.facility}
-                  onValueChange={(value) => setAppointmentForm((prev) => ({ ...prev, facility: value }))}
-                >
-                  <SelectTrigger id="facility">
-                    <SelectValue placeholder="Select facility" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="City Medical Center">City Medical Center</SelectItem>
-                    <SelectItem value="Dental Care Plus">Dental Care Plus</SelectItem>
-                    <SelectItem value="Vision Care Clinic">Vision Care Clinic</SelectItem>
-                    <SelectItem value="Wellness Counseling Center">Wellness Counseling Center</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+
+              {/* Facility / Provider Picker */}
+              {(() => {
+                const apptMeta = APPOINTMENT_TYPES.find(t => t.value === appointmentForm.appointmentType);
+                const selectedProvider = providerResults.find(p => p.name === appointmentForm.facility)
+                  ?? (appointmentForm.facility ? { id: 'sel', name: appointmentForm.facility, sub: '', city: '', providerType: (apptMeta?.apiType ?? 'hospital') as ProviderApiType } : null);
+
+                return (
+                  <div className="grid gap-2">
+                    <Label>
+                      {apptMeta
+                        ? ({ doctor: 'Doctor / Specialist', hospital: 'Hospital / Diagnostic Center', lab: 'Lab / Diagnostic Center', clinic: 'Clinic' } as Record<string, string>)[apptMeta.apiType]
+                        : 'Facility / Provider'}
+                    </Label>
+
+                    {/* Selected chip */}
+                    {selectedProvider && (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-blue-500/10 border border-blue-500/30 text-sm">
+                        {(() => { const meta = PROVIDER_META[selectedProvider.providerType]; return <meta.Icon className={`h-3.5 w-3.5 ${meta.color.split(' ')[0]}`} />; })()}
+                        <span className="flex-1 text-blue-100">{selectedProvider.name}</span>
+                        {selectedProvider.city && <span className="text-xs text-slate-400">{selectedProvider.city}</span>}
+                        <button type="button" className="ml-1 text-slate-400 hover:text-slate-200"
+                          onClick={() => setAppointmentForm(p => ({ ...p, facility: '' }))}>✕</button>
+                      </div>
+                    )}
+
+                    {!appointmentForm.appointmentType ? (
+                      <p className="text-xs text-slate-500 italic px-1">Select an appointment type first</p>
+                    ) : (
+                      <>
+                        {/* Search box */}
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                          <Input
+                            placeholder="Search by name or speciality…"
+                            value={facSearch}
+                            onChange={e => setFacSearch(e.target.value)}
+                            className="pl-8 h-8 text-xs"
+                          />
+                        </div>
+
+                        {/* Provider list */}
+                        <div className="max-h-40 overflow-y-auto rounded-md border border-slate-700 divide-y divide-slate-800">
+                          {providerLoading ? (
+                            <div className="flex items-center justify-center gap-2 py-4 text-xs text-slate-400">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading providers…
+                            </div>
+                          ) : providerResults.length === 0 ? (
+                            <p className="text-xs text-slate-500 text-center py-3">No providers found</p>
+                          ) : providerResults.map(prov => {
+                            const meta = PROVIDER_META[prov.providerType];
+                            const isSelected = appointmentForm.facility === prov.name;
+                            return (
+                              <button
+                                key={prov.id}
+                                type="button"
+                                className={`w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-slate-800 transition-colors ${isSelected ? 'bg-blue-900/30' : ''}`}
+                                onClick={() => setAppointmentForm(p => ({ ...p, facility: prov.name }))}
+                              >
+                                <span className={`flex-shrink-0 flex items-center justify-center h-7 w-7 rounded-full ${meta.color}`}>
+                                  <meta.Icon className="h-3.5 w-3.5" />
+                                </span>
+                                <span className="flex-1 min-w-0">
+                                  <span className="block text-xs font-medium text-slate-100 truncate">{prov.name}</span>
+                                  {prov.sub && <span className="block text-[11px] text-slate-400 truncate">{prov.sub}{prov.city ? ` · ${prov.city}` : ''}</span>}
+                                  {!prov.sub && prov.city && <span className="block text-[11px] text-slate-400">{prov.city}</span>}
+                                </span>
+                                <span className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full ${meta.color}`}>{meta.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Date + Time */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="date">Date</Label>
-                  <Input
-                    id="date"
-                    type="date"
-                    value={appointmentForm.date}
-                    onChange={(e) => setAppointmentForm((prev) => ({ ...prev, date: e.target.value }))}
-                  />
+                  <Input id="date" type="date" value={appointmentForm.date} onChange={e => setAppointmentForm(p => ({ ...p, date: e.target.value }))} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="time">Time</Label>
-                  <Input
-                    id="time"
-                    type="time"
-                    value={appointmentForm.time}
-                    onChange={(e) => setAppointmentForm((prev) => ({ ...prev, time: e.target.value }))}
-                  />
+                  <Input id="time" type="time" value={appointmentForm.time} onChange={e => setAppointmentForm(p => ({ ...p, time: e.target.value }))} />
                 </div>
               </div>
+
+              {/* Notes */}
               <div className="grid gap-2">
                 <Label htmlFor="notes">Notes (Optional)</Label>
-                <Textarea
-                  id="notes"
-                  placeholder="Add any relevant notes..."
-                  value={appointmentForm.notes}
-                  onChange={(e) => setAppointmentForm((prev) => ({ ...prev, notes: e.target.value }))}
-                />
+                <Textarea id="notes" placeholder="Add any relevant notes…" value={appointmentForm.notes} onChange={e => setAppointmentForm(p => ({ ...p, notes: e.target.value }))} />
               </div>
             </div>
+
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsScheduleDialogOpen(false)}>
-                Cancel
+              <Button variant="outline" onClick={() => setIsScheduleDialogOpen(false)}>Cancel</Button>
+              <Button onClick={handleScheduleAppointment} disabled={isSubmitting}>
+                {isSubmitting ? 'Scheduling…' : 'Schedule Appointment'}
               </Button>
-              <Button onClick={handleScheduleAppointment}>Schedule Appointment</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -564,13 +850,19 @@ const CorporateAppointments: React.FC = () => {
                     <div className="flex gap-2">
                       {appointment.status === 'scheduled' && (
                         <>
-                          <Button variant="outline" size="sm" onClick={() => handleReschedule(appointment)}>Reschedule</Button>
-                          <Button variant="outline" size="sm" onClick={() => handleCancel(appointment)}>Cancel</Button>
+                          <Button variant="outline" size="sm" onClick={() => handleReschedule(appointment)}>
+                            <RotateCcw className="h-3 w-3 mr-1" />Reschedule
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => handleCancel(appointment)}>
+                            <XCircle className="h-3 w-3 mr-1" />Cancel
+                          </Button>
                         </>
                       )}
                       <Button variant="outline" size="sm" onClick={() => handleViewDetails(appointment)}>View Details</Button>
-                      {appointment.status !== 'completed' && (
-                        <Button size="sm" onClick={() => handleMarkCompleted(appointment)}>Mark Completed</Button>
+                      {appointment.status === 'scheduled' && (
+                        <Button size="sm" onClick={() => handleMarkCompleted(appointment)}>
+                          <CheckCircle className="h-3 w-3 mr-1" />Complete
+                        </Button>
                       )}
                     </div>
                   </div>
@@ -613,6 +905,65 @@ const CorporateAppointments: React.FC = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Reschedule Modal */}
+        <Dialog open={isRescheduleOpen} onOpenChange={setIsRescheduleOpen}>
+          <DialogContent className="sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle>Reschedule Appointment</DialogTitle>
+              <DialogDescription>
+                {reschedulingAppt ? `Rescheduling appointment for ${reschedulingAppt.employeeName}` : ''}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label>New Date</Label>
+                <Input type="date" value={rescheduleDate} min={new Date().toISOString().split('T')[0]} onChange={(e) => setRescheduleDate(e.target.value)} />
+              </div>
+              <div className="grid gap-2">
+                <Label>New Time</Label>
+                <Input type="time" value={rescheduleTime} onChange={(e) => setRescheduleTime(e.target.value)} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsRescheduleOpen(false)}>Cancel</Button>
+              <Button onClick={confirmReschedule} disabled={!rescheduleDate || !rescheduleTime}>Confirm Reschedule</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Cancel Confirmation Modal */}
+        <Dialog open={isCancelOpen} onOpenChange={setIsCancelOpen}>
+          <DialogContent className="sm:max-w-[380px]">
+            <DialogHeader>
+              <DialogTitle>Cancel Appointment</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to cancel the appointment for <strong>{cancellingAppt?.employeeName}</strong> on {cancellingAppt ? new Date(cancellingAppt.date).toLocaleDateString() : ''}? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsCancelOpen(false)}>Keep Appointment</Button>
+              <Button variant="destructive" onClick={confirmCancel}>Yes, Cancel It</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Complete Confirmation Modal */}
+        <Dialog open={isCompleteOpen} onOpenChange={setIsCompleteOpen}>
+          <DialogContent className="sm:max-w-[380px]">
+            <DialogHeader>
+              <DialogTitle>Mark as Completed</DialogTitle>
+              <DialogDescription>
+                Confirm that <strong>{completingAppt?.employeeName}</strong>'s appointment has been completed successfully.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsCompleteOpen(false)}>Cancel</Button>
+              <Button onClick={confirmComplete}>Confirm Completed</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
       </div>
     </CorporateLayout>
   );

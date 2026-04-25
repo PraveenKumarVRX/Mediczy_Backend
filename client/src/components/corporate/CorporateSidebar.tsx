@@ -21,7 +21,6 @@ import {
   CalendarDays,
   Gauge,
   UserCog,
-  CalendarHeart,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
@@ -40,13 +39,12 @@ const mainNavItems: SidebarItem[] = [
   { icon: Bell, label: "Notifications", href: "/corporate/notifications", badge: 3 },
   { icon: Users, label: "Employees", href: "/corporate/employees" },
   { icon: UserCog, label: "User Management", href: "/corporate/user-management" },
-  { icon: CalendarHeart, label: "Health Calendar", href: "/corporate/health-calendar" },
   { icon: CalendarCheck, label: "Appointments", href: "/corporate/appointments" },
   { icon: CalendarDays, label: "Wellness Calendar", href: "/corporate/wellness-calendar" },
   { icon: HeartPulse, label: "Health Analysis", href: "/corporate/health-analysis" },
   { icon: ShieldAlert, label: "Risk Assessment", href: "/corporate/health-risk-assessment" },
   { icon: Trophy, label: "Challenges", href: "/corporate/gamification" },
-  { icon: Building2, label: "Departments", href: "/corporate/departments" },
+  { icon: Building2, label: "Org Structure", href: "/corporate/org-structure" },
 ];
 
 const managementItems: SidebarItem[] = [

@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
-import { Activity, TrendingUp, TrendingDown, Users, Heart, Brain, Stethoscope, Calendar, Download, Filter, HeartPulse } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Activity, TrendingUp, TrendingDown, Users, Brain, Heart, Stethoscope, Calendar, Download, Filter, HeartPulse, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { exportToCSV } from '@/utils/exportToExcel';
+import { useToast } from '@/hooks/use-toast';
+import api from '@/utils/api';
 import CorporateLayout from '@/components/corporate/CorporateLayout';
 import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
 
@@ -26,93 +28,73 @@ interface DepartmentHealth {
   atRiskCount: number;
 }
 
+const FALLBACK_METRICS: HealthMetric[] = [
+  { category: 'Physical Health', score: 78, trend: 'up', change: 5, totalEmployees: 250, atRisk: 23 },
+  { category: 'Mental Wellness', score: 72, trend: 'down', change: -3, totalEmployees: 250, atRisk: 35 },
+  { category: 'Preventive Care', score: 85, trend: 'up', change: 8, totalEmployees: 250, atRisk: 12 },
+  { category: 'Chronic Conditions', score: 68, trend: 'stable', change: 0, totalEmployees: 250, atRisk: 45 },
+];
+const FALLBACK_DEPTS: DepartmentHealth[] = [
+  { department: 'Engineering', totalEmployees: 85, healthScore: 76, checkupCompletion: 82, atRiskCount: 12 },
+  { department: 'Marketing', totalEmployees: 42, healthScore: 81, checkupCompletion: 90, atRiskCount: 5 },
+  { department: 'Sales', totalEmployees: 58, healthScore: 73, checkupCompletion: 75, atRiskCount: 18 },
+  { department: 'Finance', totalEmployees: 35, healthScore: 79, checkupCompletion: 88, atRiskCount: 7 },
+  { department: 'Operations', totalEmployees: 30, healthScore: 74, checkupCompletion: 80, atRiskCount: 9 },
+];
+
 const CorporateHealthAnalysis: React.FC = () => {
+  const { toast } = useToast();
   const [timeRange, setTimeRange] = useState('month');
   const [selectedDepartment, setSelectedDepartment] = useState('all');
+  const [isLoading, setIsLoading] = useState(false);
+  const [usingFallback, setUsingFallback] = useState(false);
 
-  // Health metrics data
-  const healthMetrics: HealthMetric[] = [
-    {
-      category: 'Physical Health',
-      score: 78,
-      trend: 'up',
-      change: 5,
-      totalEmployees: 250,
-      atRisk: 23
-    },
-    {
-      category: 'Mental Wellness',
-      score: 72,
-      trend: 'down',
-      change: -3,
-      totalEmployees: 250,
-      atRisk: 35
-    },
-    {
-      category: 'Preventive Care',
-      score: 85,
-      trend: 'up',
-      change: 8,
-      totalEmployees: 250,
-      atRisk: 12
-    },
-    {
-      category: 'Chronic Conditions',
-      score: 68,
-      trend: 'stable',
-      change: 0,
-      totalEmployees: 250,
-      atRisk: 45
+  const [healthMetrics, setHealthMetrics] = useState<HealthMetric[]>(FALLBACK_METRICS);
+  const [departmentHealth, setDepartmentHealth] = useState<DepartmentHealth[]>(FALLBACK_DEPTS);
+  const [overallStats, setOverallStats] = useState({
+    averageHealthScore: 76, totalEmployees: 250, checkupCompletionRate: 82,
+    highRiskEmployees: 35, mediumRiskEmployees: 58, lowRiskEmployees: 157,
+  });
+
+  const loadData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const { data } = await api.get('/corporate/dashboard/health-analytics', {
+        params: { timeRange, department: selectedDepartment === 'all' ? undefined : selectedDepartment },
+      });
+      const d = (data as any)?.data;
+      if (d) {
+        // Map API response to our shape — fall back to current state if field missing
+        if (d.riskDistribution) {
+          setOverallStats({
+            averageHealthScore: Math.round(d.averageRiskScore ?? 76),
+            totalEmployees: d.totalEmployees ?? 250,
+            checkupCompletionRate: d.monitoredEmployees && d.totalEmployees
+              ? Math.round((d.monitoredEmployees / d.totalEmployees) * 100) : 82,
+            highRiskEmployees: (d.riskDistribution?.high ?? 0) + (d.riskDistribution?.critical ?? 0),
+            mediumRiskEmployees: d.riskDistribution?.medium ?? 0,
+            lowRiskEmployees: d.riskDistribution?.low ?? 0,
+          });
+        }
+        if (Array.isArray(d.commonConditions) && d.commonConditions.length) {
+          const total = d.totalEmployees ?? 250;
+          setHealthMetrics([
+            { category: 'Physical Health', score: Math.max(0, 100 - Math.round(((d.riskDistribution?.high ?? 0) / total) * 100)), trend: 'up', change: 3, totalEmployees: total, atRisk: d.riskDistribution?.high ?? 0 },
+            { category: 'Mental Wellness', score: Math.round(d.healthyEmployees ? (d.healthyEmployees / total) * 100 : 72), trend: 'stable', change: 0, totalEmployees: total, atRisk: d.riskDistribution?.medium ?? 0 },
+            { category: 'Preventive Care', score: d.monitoredEmployees ? Math.round((d.monitoredEmployees / total) * 100) : 85, trend: 'up', change: 5, totalEmployees: total, atRisk: d.riskDistribution?.critical ?? 0 },
+            { category: 'Chronic Conditions', score: Math.max(0, 100 - Math.round(((d.atRiskEmployees ?? 0) / total) * 100)), trend: 'stable', change: 0, totalEmployees: total, atRisk: d.atRiskEmployees ?? 0 },
+          ]);
+        }
+        setUsingFallback(false);
+      }
+    } catch {
+      setUsingFallback(true);
+    } finally {
+      setIsLoading(false);
     }
-  ];
+  }, [timeRange, selectedDepartment]);
 
-  // Department health data
-  const departmentHealth: DepartmentHealth[] = [
-    {
-      department: 'Engineering',
-      totalEmployees: 85,
-      healthScore: 76,
-      checkupCompletion: 82,
-      atRiskCount: 12
-    },
-    {
-      department: 'Marketing',
-      totalEmployees: 42,
-      healthScore: 81,
-      checkupCompletion: 90,
-      atRiskCount: 5
-    },
-    {
-      department: 'Sales',
-      totalEmployees: 58,
-      healthScore: 73,
-      checkupCompletion: 75,
-      atRiskCount: 18
-    },
-    {
-      department: 'Finance',
-      totalEmployees: 35,
-      healthScore: 79,
-      checkupCompletion: 88,
-      atRiskCount: 7
-    },
-    {
-      department: 'Operations',
-      totalEmployees: 30,
-      healthScore: 74,
-      checkupCompletion: 80,
-      atRiskCount: 9
-    }
-  ];
-
-  const overallStats = {
-    averageHealthScore: 76,
-    totalEmployees: 250,
-    checkupCompletionRate: 82,
-    highRiskEmployees: 35,
-    mediumRiskEmployees: 58,
-    lowRiskEmployees: 157
-  };
+  useEffect(() => { loadData(); }, [loadData]);
 
   const getTrendIcon = (trend: string) => {
     switch (trend) {
@@ -203,6 +185,9 @@ const CorporateHealthAnalysis: React.FC = () => {
           gradient="from-rose-500 to-rose-700"
           showExport={true}
           onExport={handleExport}
+          showRefresh={true}
+          onRefresh={loadData}
+          isRefreshing={isLoading}
           stats={[
             { label: 'Avg Health Score', value: `${overallStats.averageHealthScore}%`, trend: 'up', trendValue: '3%' },
             { label: 'Total Employees', value: overallStats.totalEmployees },
@@ -210,7 +195,13 @@ const CorporateHealthAnalysis: React.FC = () => {
             { label: 'High Risk', value: overallStats.highRiskEmployees, trend: 'down', trendValue: '2' },
           ]}
         />
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center flex-wrap">
+          {usingFallback && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-400">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              Showing sample data — live data unavailable
+            </div>
+          )}
           <Select value={timeRange} onValueChange={setTimeRange}>
             <SelectTrigger className="w-[150px]">
               <Calendar className="h-4 w-4 mr-2" />

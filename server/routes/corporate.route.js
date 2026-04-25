@@ -1013,6 +1013,7 @@ router.get('/employees', authUser, requireRole('corporate'), async (req, res) =>
         `SELECT
            ce.id,
            ce."employeeId",
+           ce.business_unit,
            ce.department,
            ce.designation,
            ce."joiningDate",
@@ -1033,6 +1034,7 @@ router.get('/employees', authUser, requireRole('corporate'), async (req, res) =>
         name: [r.firstName, r.lastName].filter(Boolean).join(' ') || r.email || r.employeeId,
         email: r.email || '',
         phone: r.phoneNumber || '',
+        businessUnit: r.business_unit || '',
         department: r.department || 'General',
         designation: r.designation || '',
         joiningDate: r.joiningDate ? r.joiningDate.toString().slice(0, 10) : '',
@@ -1182,7 +1184,7 @@ router.post('/employees', authUser, requireRole('corporate'), async (req, res) =
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
 
-  const { employeeId, name, email, phone, department, designation, joiningDate } = req.body || {};
+  const { employeeId, name, email, phone, businessUnit, department, designation, joiningDate } = req.body || {};
 
   if (!name || !email || !department) {
     return res.status(400).json({ success: false, message: 'name, email, and department are required' });
@@ -1205,13 +1207,13 @@ router.post('/employees', authUser, requireRole('corporate'), async (req, res) =
 
     // Create corporate_employees record
     await postgresSequelize.query(
-      `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", department, designation, "joiningDate", "isActive", "createdAt", "updatedAt")
-       VALUES (:corporateId, :userId, :employeeId, :department, :designation, :joiningDate, true, NOW(), NOW())
-       ON CONFLICT (corporate_id, "employeeId") DO UPDATE SET department=:department, designation=:designation, "isActive"=true, "updatedAt"=NOW()`,
-      { replacements: { corporateId, userId, employeeId: generatedEmployeeId, department, designation: designation || '', joiningDate: joiningDate || new Date().toISOString().slice(0, 10) } }
+      `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", business_unit, department, designation, "joiningDate", "isActive", "createdAt", "updatedAt")
+       VALUES (:corporateId, :userId, :employeeId, :businessUnit, :department, :designation, :joiningDate, true, NOW(), NOW())
+       ON CONFLICT (corporate_id, "employeeId") DO UPDATE SET business_unit=:businessUnit, department=:department, designation=:designation, "isActive"=true, "updatedAt"=NOW()`,
+      { replacements: { corporateId, userId, employeeId: generatedEmployeeId, businessUnit: businessUnit || null, department, designation: designation || '', joiningDate: joiningDate || new Date().toISOString().slice(0, 10) } }
     );
 
-    const created = { id: generatedEmployeeId, employeeId: generatedEmployeeId, name, email, phone: phone || '', department, designation: designation || '', joiningDate: joiningDate || new Date().toISOString().slice(0, 10), healthStatus: 'good', lastCheckup: '', insurancePlan: 'Standard Plan' };
+    const created = { id: generatedEmployeeId, employeeId: generatedEmployeeId, name, email, phone: phone || '', businessUnit: businessUnit || '', department, designation: designation || '', joiningDate: joiningDate || new Date().toISOString().slice(0, 10), healthStatus: 'good', lastCheckup: '', insurancePlan: 'Standard Plan' };
     return res.status(201).json({ success: true, data: { employee: created } });
   } catch (err) {
     console.error('[corporate] POST /employees error:', err.message);
@@ -1222,16 +1224,16 @@ router.post('/employees', authUser, requireRole('corporate'), async (req, res) =
 router.put('/employees/:id', authUser, requireRole('corporate'), async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
-  const { department, designation, joiningDate } = req.body || {};
+  const { businessUnit, department, designation, joiningDate } = req.body || {};
 
   try {
     const [rows] = await postgresSequelize.query(
-      `UPDATE corporate_employees SET department=COALESCE(:department, department), designation=COALESCE(:designation, designation), "joiningDate"=COALESCE(:joiningDate, "joiningDate"), "updatedAt"=NOW()
+      `UPDATE corporate_employees SET business_unit=COALESCE(:businessUnit, business_unit), department=COALESCE(:department, department), designation=COALESCE(:designation, designation), "joiningDate"=COALESCE(:joiningDate, "joiningDate"), "updatedAt"=NOW()
        WHERE corporate_id=:corporateId AND "employeeId"=:id RETURNING *`,
-      { replacements: { corporateId, id, department: department || null, designation: designation || null, joiningDate: joiningDate || null } }
+      { replacements: { corporateId, id, businessUnit: businessUnit || null, department: department || null, designation: designation || null, joiningDate: joiningDate || null } }
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Employee not found' });
-    return res.json({ success: true, data: { employee: { ...rows[0], ...(req.body || {}) } } });
+    return res.json({ success: true, data: { employee: { ...rows[0], businessUnit: rows[0].business_unit || businessUnit || '', ...(req.body || {}) } } });
   } catch (err) {
     console.error('[corporate] PUT /employees error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to update employee' });
@@ -1292,10 +1294,10 @@ router.post('/employees/bulk-upload', authUser, requireRole('corporate'), async 
 
       // Upsert corporate_employees record
       await postgresSequelize.query(
-        `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", department, designation, "joiningDate", "isActive", "createdAt", "updatedAt")
-         VALUES (:corporateId, :userId, :employeeId, :department, :designation, :joiningDate, true, NOW(), NOW())
-         ON CONFLICT (corporate_id, "employeeId") DO UPDATE SET department=:department, designation=:designation, "isActive"=true, "updatedAt"=NOW()`,
-        { replacements: { corporateId, userId, employeeId: generatedEmployeeId, department: emp.department, designation: emp.designation || '', joiningDate: emp.joiningDate || new Date().toISOString().slice(0, 10) } }
+        `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", business_unit, department, designation, "joiningDate", "isActive", "createdAt", "updatedAt")
+         VALUES (:corporateId, :userId, :employeeId, :businessUnit, :department, :designation, :joiningDate, true, NOW(), NOW())
+         ON CONFLICT (corporate_id, "employeeId") DO UPDATE SET business_unit=:businessUnit, department=:department, designation=:designation, "isActive"=true, "updatedAt"=NOW()`,
+        { replacements: { corporateId, userId, employeeId: generatedEmployeeId, businessUnit: emp.businessUnit || emp.business_unit || null, department: emp.department, designation: emp.designation || '', joiningDate: emp.joiningDate || new Date().toISOString().slice(0, 10) } }
       );
 
       successfulUploads.push({ employeeId: generatedEmployeeId, name: emp.name, email: emp.email });
@@ -1316,13 +1318,64 @@ router.post('/employees/bulk-upload', authUser, requireRole('corporate'), async 
 
 // Download employee template CSV
 router.get('/employees/download-template', authUser, requireRole('corporate'), async (req, res) => {
-  const csvHeader = 'employeeId,name,email,phone,department,designation,joiningDate,healthStatus,lastCheckup,insurancePlan\n';
-  const csvSample = 'EMP001,John Doe,john.doe@company.com,+1234567890,Engineering,Software Engineer,2024-01-15,good,2024-12-01,Standard Plan\n';
+  const csvHeader = 'employeeId,name,email,phone,businessUnit,department,designation,joiningDate,healthStatus,lastCheckup,insurancePlan\n';
+  const csvSample = 'EMP001,John Doe,john.doe@company.com,+1234567890,Technology BU,Engineering,Software Engineer,2024-01-15,good,2024-12-01,Standard Plan\n';
   const csvTemplate = csvHeader + csvSample;
   
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename="employee_template.csv"');
   res.send(csvTemplate);
+});
+
+// ---------------------------------------------------------------------------
+// Corporate portal: Business Units (in-memory store)
+// ---------------------------------------------------------------------------
+let corporateBusinessUnits = [
+  { id: 'BU001', name: 'North Region', head: 'James Carter', employeeCount: 120, healthScore: 78, checkupCompletion: 85, budget: '$200,000', region: 'North', description: 'North region operations and sales' },
+  { id: 'BU002', name: 'South Region', head: 'Priya Sharma', employeeCount: 95, healthScore: 82, checkupCompletion: 88, budget: '$175,000', region: 'South', description: 'South region client management' },
+  { id: 'BU003', name: 'Digital Business', head: 'Chen Wei', employeeCount: 68, healthScore: 80, checkupCompletion: 91, budget: '$150,000', region: 'Global', description: 'Digital products and e-commerce' },
+  { id: 'BU004', name: 'Corporate Services', head: 'Nina Patel', employeeCount: 45, healthScore: 75, checkupCompletion: 83, budget: '$100,000', region: 'HQ', description: 'Shared services and support functions' },
+];
+
+router.get('/business-units', authUser, requireRole('corporate'), async (req, res) => {
+  const q = String(req.query.q || '').trim().toLowerCase();
+  let units = [...corporateBusinessUnits];
+  if (q) units = units.filter((u) => [u.name, u.head, u.region].some((f) => String(f || '').toLowerCase().includes(q)));
+  return res.json({ success: true, data: { businessUnits: units } });
+});
+
+router.post('/business-units', authUser, requireRole('corporate'), async (req, res) => {
+  const { name, head, employeeCount, healthScore, checkupCompletion, budget, region, description } = req.body || {};
+  if (!name) return res.status(400).json({ success: false, message: 'name is required' });
+  const created = {
+    id: `BU${String(Date.now()).slice(-6)}`,
+    name,
+    head: head || 'Unassigned',
+    employeeCount: Number.isFinite(Number(employeeCount)) ? Number(employeeCount) : 0,
+    healthScore: Number.isFinite(Number(healthScore)) ? Number(healthScore) : 75,
+    checkupCompletion: Number.isFinite(Number(checkupCompletion)) ? Number(checkupCompletion) : 80,
+    budget: budget || '$0',
+    region: region || '',
+    description: description || '',
+  };
+  corporateBusinessUnits = [created, ...corporateBusinessUnits];
+  return res.status(201).json({ success: true, data: { businessUnit: created } });
+});
+
+router.put('/business-units/:id', authUser, requireRole('corporate'), async (req, res) => {
+  const { id } = req.params;
+  const idx = corporateBusinessUnits.findIndex((u) => u.id === id);
+  if (idx === -1) return res.status(404).json({ success: false, message: 'Business unit not found' });
+  corporateBusinessUnits[idx] = { ...corporateBusinessUnits[idx], ...(req.body || {}) };
+  return res.json({ success: true, data: { businessUnit: corporateBusinessUnits[idx] } });
+});
+
+router.delete('/business-units/:id', authUser, requireRole('corporate'), async (req, res) => {
+  const { id } = req.params;
+  const before = corporateBusinessUnits.length;
+  corporateBusinessUnits = corporateBusinessUnits.filter((u) => u.id !== id);
+  if (corporateBusinessUnits.length === before) return res.status(404).json({ success: false, message: 'Business unit not found' });
+  return res.json({ success: true });
 });
 
 // ---------------------------------------------------------------------------

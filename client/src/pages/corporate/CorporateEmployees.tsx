@@ -19,6 +19,7 @@ interface Employee {
   name: string;
   email: string;
   phone: string;
+  businessUnit: string;
   department: string;
   designation: string;
   joiningDate: string;
@@ -32,6 +33,7 @@ type EmployeeFormState = {
   name: string;
   email: string;
   phone: string;
+  businessUnit: string;
   department: string;
   designation: string;
   joiningDate: string;
@@ -45,6 +47,7 @@ const emptyEmployeeForm = (): EmployeeFormState => ({
   name: '',
   email: '',
   phone: '',
+  businessUnit: '',
   department: '',
   designation: '',
   joiningDate: '',
@@ -131,6 +134,7 @@ const CorporateEmployees: React.FC = () => {
       name: emp.name,
       email: emp.email,
       phone: emp.phone,
+      businessUnit: emp.businessUnit || '',
       department: emp.department,
       designation: emp.designation,
       joiningDate: emp.joiningDate,
@@ -372,16 +376,23 @@ const CorporateEmployees: React.FC = () => {
                 <Input id="phone" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="department">Department</Label>
-                <Input id="department" value={form.department} onChange={(e) => setForm((p) => ({ ...p, department: e.target.value }))} />
+                <Label htmlFor="businessUnit">Business Unit</Label>
+                <Input id="businessUnit" value={form.businessUnit} onChange={(e) => setForm((p) => ({ ...p, businessUnit: e.target.value }))} placeholder="e.g., Technology BU" />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
+                <Label htmlFor="department">Department</Label>
+                <Input id="department" value={form.department} onChange={(e) => setForm((p) => ({ ...p, department: e.target.value }))} />
+              </div>
+              <div className="grid gap-2">
                 <Label htmlFor="designation">Designation</Label>
                 <Input id="designation" value={form.designation} onChange={(e) => setForm((p) => ({ ...p, designation: e.target.value }))} />
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="insurancePlan">Wellness Plan</Label>
                 <Input id="insurancePlan" value={form.insurancePlan} onChange={(e) => setForm((p) => ({ ...p, insurancePlan: e.target.value }))} />
@@ -431,6 +442,10 @@ const CorporateEmployees: React.FC = () => {
                 <div>
                   <div className="text-slate-400">Employee ID</div>
                   <div className="font-medium">{selectedEmployee.employeeId}</div>
+                </div>
+                <div>
+                  <div className="text-slate-400">Business Unit</div>
+                  <div className="font-medium">{selectedEmployee.businessUnit || '—'}</div>
                 </div>
                 <div>
                   <div className="text-slate-400">Department</div>
@@ -538,6 +553,7 @@ const CorporateEmployees: React.FC = () => {
                 <tr className="border-b border-white/[0.06] bg-slate-800/30">
                   <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Employee ID</th>
                   <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Name</th>
+                  <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Business Unit</th>
                   <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Department</th>
                   <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Contact</th>
                   <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Health Status</th>
@@ -555,6 +571,7 @@ const CorporateEmployees: React.FC = () => {
                         <p className="text-sm text-slate-500">{emp.designation}</p>
                       </div>
                     </td>
+                    <td className="p-3 text-slate-300">{emp.businessUnit || '—'}</td>
                     <td className="p-3 text-slate-300">{emp.department}</td>
                     <td className="p-3">
                       <div className="text-sm">
@@ -695,7 +712,7 @@ const CorporateEmployees: React.FC = () => {
               </ul>
               <p className="font-semibold mt-2">Optional Fields:</p>
               <ul className="list-disc list-inside ml-2 space-y-0.5">
-                <li>employeeId, phone, designation, joiningDate, healthStatus, lastCheckup, wellnessPlan</li>
+                <li>employeeId, phone, businessUnit, designation, joiningDate, healthStatus, lastCheckup, wellnessPlan</li>
               </ul>
             </div>
           </div>

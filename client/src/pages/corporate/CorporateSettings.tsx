@@ -28,26 +28,73 @@ interface Invoice {
 const CorporateSettings: React.FC = () => {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('general');
-
   const [billingOpen, setBillingOpen] = useState(false);
   const [billingLoading, setBillingLoading] = useState(false);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Controlled general form
+  const [general, setGeneral] = useState({
+    companyName: 'TechCorp Industries',
+    industry: 'technology',
+    employeeCount: '250',
+    timezone: 'est',
+    address: '123 Business St, Suite 100, New York, NY 10001',
+    phone: '+1 (555) 123-4567',
+    email: 'hr@techcorp.com',
+    fiscalYear: 'january',
+    checkupFrequency: 'yearly',
+    mandatoryCheckups: true,
+    mentalHealthSupport: true,
+  });
+
+  // Controlled notification form
+  const [notifs, setNotifs] = useState({
+    emailNotifications: true,
+    smsNotifications: false,
+    healthRiskAlerts: true,
+    claimStatusUpdates: true,
+    weeklyReports: true,
+    appointmentReminders: true,
+  });
+
+  // Controlled security form
+  const [security, setSecurity] = useState({
+    twoFactor: true,
+    sso: false,
+    sessionTimeout: '30',
+    ipWhitelisting: false,
+    dataEncryption: true,
+    hipaaMode: true,
+    auditLogging: true,
+    dataRetention: '7',
+  });
+
+  // Controlled billing/integration
+  const [billing, setBilling] = useState({ billingEmail: 'billing@techcorp.com', billingCycle: 'annual' });
+  const [integrations, setIntegrations] = useState({ hrms: true, insuranceApi: true, telemedicine: false, wearables: false, calendar: true });
+
+  const validateAndSave = () => {
+    const empCount = parseInt(general.employeeCount, 10);
+    if (isNaN(empCount) || empCount < 0) {
+      toast({ title: 'Invalid employee count', description: 'Must be 0 or more.', variant: 'destructive' });
+      return;
+    }
+    const timeout = parseInt(security.sessionTimeout, 10);
+    if (isNaN(timeout) || timeout < 5 || timeout > 480) {
+      toast({ title: 'Invalid session timeout', description: 'Must be between 5 and 480 minutes.', variant: 'destructive' });
+      return;
+    }
+    handleSaveSettings();
+  };
+
   const handleSaveSettings = async () => {
     try {
       setIsSaving(true);
-      await api.put('/corporate/settings', {});
-      toast({
-        title: "Settings Saved",
-        description: "Your settings have been updated successfully."
-      });
+      await api.put('/corporate/settings', { general, notifs, security, billing, integrations });
+      toast({ title: 'Settings Saved', description: 'Your settings have been updated successfully.' });
     } catch (error: any) {
-      toast({
-        title: "Failed to save settings",
-        description: error?.response?.data?.message || "Please try again.",
-        variant: "destructive"
-      });
+      toast({ title: 'Failed to save settings', description: error?.response?.data?.message || 'Please try again.', variant: 'destructive' });
     } finally {
       setIsSaving(false);
     }
@@ -118,7 +165,7 @@ const CorporateSettings: React.FC = () => {
           description="Configure your organization's health platform settings and preferences"
           gradient="from-gray-600 to-gray-800"
           actions={
-            <Button size="sm" onClick={handleSaveSettings} className="bg-white text-slate-900 hover:bg-white/90 shadow-lg font-semibold">
+            <Button size="sm" onClick={validateAndSave} disabled={isSaving} className="bg-white text-slate-900 hover:bg-white/90 shadow-lg font-semibold">
               <Save className="h-4 w-4 mr-2" />
               Save Changes
             </Button>
@@ -159,14 +206,12 @@ const CorporateSettings: React.FC = () => {
             <CardContent className="space-y-4">
               <div className="grid gap-2">
                 <Label htmlFor="companyName">Company Name</Label>
-                <Input id="companyName" defaultValue="TechCorp Industries" />
+                <Input id="companyName" value={general.companyName} onChange={e => setGeneral(p => ({ ...p, companyName: e.target.value }))} />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="industry">Industry</Label>
-                <Select defaultValue="technology">
-                  <SelectTrigger id="industry">
-                    <SelectValue />
-                  </SelectTrigger>
+                <Select value={general.industry} onValueChange={v => setGeneral(p => ({ ...p, industry: v }))}>
+                  <SelectTrigger id="industry"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="technology">Technology</SelectItem>
                     <SelectItem value="healthcare">Healthcare</SelectItem>
@@ -180,14 +225,12 @@ const CorporateSettings: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="employeeCount">Number of Employees</Label>
-                  <Input id="employeeCount" type="number" defaultValue="250" />
+                  <Input id="employeeCount" type="number" min="0" step="1" value={general.employeeCount} onChange={e => setGeneral(p => ({ ...p, employeeCount: e.target.value }))} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="timezone">Time Zone</Label>
-                  <Select defaultValue="est">
-                    <SelectTrigger id="timezone">
-                      <SelectValue />
-                    </SelectTrigger>
+                  <Select value={general.timezone} onValueChange={v => setGeneral(p => ({ ...p, timezone: v }))}>
+                    <SelectTrigger id="timezone"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="pst">Pacific (PST)</SelectItem>
                       <SelectItem value="mst">Mountain (MST)</SelectItem>
@@ -199,16 +242,16 @@ const CorporateSettings: React.FC = () => {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="address">Company Address</Label>
-                <Textarea id="address" defaultValue="123 Business St, Suite 100, New York, NY 10001" rows={3} />
+                <Textarea id="address" value={general.address} rows={3} onChange={e => setGeneral(p => ({ ...p, address: e.target.value }))} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="phone">Phone Number</Label>
-                  <Input id="phone" type="tel" defaultValue="+1 (555) 123-4567" />
+                  <Input id="phone" type="tel" value={general.phone} onChange={e => setGeneral(p => ({ ...p, phone: e.target.value }))} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="email">Contact Email</Label>
-                  <Input id="email" type="email" defaultValue="hr@techcorp.com" />
+                  <Input id="email" type="email" value={general.email} onChange={e => setGeneral(p => ({ ...p, email: e.target.value }))} />
                 </div>
               </div>
             </CardContent>
@@ -222,10 +265,8 @@ const CorporateSettings: React.FC = () => {
             <CardContent className="space-y-4">
               <div className="grid gap-2">
                 <Label htmlFor="fiscalYear">Fiscal Year Start</Label>
-                <Select defaultValue="january">
-                  <SelectTrigger id="fiscalYear">
-                    <SelectValue />
-                  </SelectTrigger>
+                <Select value={general.fiscalYear} onValueChange={v => setGeneral(p => ({ ...p, fiscalYear: v }))}>
+                  <SelectTrigger id="fiscalYear"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="january">January</SelectItem>
                     <SelectItem value="april">April</SelectItem>
@@ -236,10 +277,8 @@ const CorporateSettings: React.FC = () => {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="checkupFrequency">Annual Checkup Frequency</Label>
-                <Select defaultValue="yearly">
-                  <SelectTrigger id="checkupFrequency">
-                    <SelectValue />
-                  </SelectTrigger>
+                <Select value={general.checkupFrequency} onValueChange={v => setGeneral(p => ({ ...p, checkupFrequency: v }))}>
+                  <SelectTrigger id="checkupFrequency"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="quarterly">Quarterly</SelectItem>
                     <SelectItem value="biannual">Bi-annual</SelectItem>
@@ -252,14 +291,14 @@ const CorporateSettings: React.FC = () => {
                   <Label>Mandatory Health Checkups</Label>
                   <p className="text-sm text-slate-400">Require employees to complete annual checkups</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={general.mandatoryCheckups} onCheckedChange={v => setGeneral(p => ({ ...p, mandatoryCheckups: v }))} />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Mental Health Support</Label>
                   <p className="text-sm text-slate-400">Enable mental health counseling benefits</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={general.mentalHealthSupport} onCheckedChange={v => setGeneral(p => ({ ...p, mentalHealthSupport: v }))} />
               </div>
             </CardContent>
           </Card>
@@ -278,42 +317,42 @@ const CorporateSettings: React.FC = () => {
                   <Label>Email Notifications</Label>
                   <p className="text-sm text-slate-400">Receive email updates about health programs</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={notifs.emailNotifications} onCheckedChange={v => setNotifs(p => ({ ...p, emailNotifications: v }))} />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>SMS Notifications</Label>
                   <p className="text-sm text-slate-400">Get text messages for urgent health alerts</p>
                 </div>
-                <Switch />
+                <Switch checked={notifs.smsNotifications} onCheckedChange={v => setNotifs(p => ({ ...p, smsNotifications: v }))} />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Health Risk Alerts</Label>
                   <p className="text-sm text-slate-400">Notify about employees at health risk</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={notifs.healthRiskAlerts} onCheckedChange={v => setNotifs(p => ({ ...p, healthRiskAlerts: v }))} />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Claim Status Updates</Label>
                   <p className="text-sm text-slate-400">Updates on insurance claim processing</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={notifs.claimStatusUpdates} onCheckedChange={v => setNotifs(p => ({ ...p, claimStatusUpdates: v }))} />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Weekly Health Reports</Label>
                   <p className="text-sm text-slate-400">Receive weekly health analytics summary</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={notifs.weeklyReports} onCheckedChange={v => setNotifs(p => ({ ...p, weeklyReports: v }))} />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Appointment Reminders</Label>
                   <p className="text-sm text-slate-400">Send reminders for upcoming appointments</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={notifs.appointmentReminders} onCheckedChange={v => setNotifs(p => ({ ...p, appointmentReminders: v }))} />
               </div>
             </CardContent>
           </Card>
@@ -332,32 +371,33 @@ const CorporateSettings: React.FC = () => {
                   <Label>Two-Factor Authentication</Label>
                   <p className="text-sm text-slate-400">Require 2FA for admin accounts</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={security.twoFactor} onCheckedChange={v => setSecurity(p => ({ ...p, twoFactor: v }))} />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>SSO (Single Sign-On)</Label>
                   <p className="text-sm text-slate-400">Enable SSO for employee logins</p>
                 </div>
-                <Switch />
+                <Switch checked={security.sso} onCheckedChange={v => setSecurity(p => ({ ...p, sso: v }))} />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="sessionTimeout">Session Timeout (minutes)</Label>
-                <Input id="sessionTimeout" type="number" defaultValue="30" />
+                <Input id="sessionTimeout" type="number" min="5" max="480" value={security.sessionTimeout} onChange={e => setSecurity(p => ({ ...p, sessionTimeout: e.target.value }))} />
+                <p className="text-xs text-slate-400">Between 5 and 480 minutes</p>
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>IP Whitelisting</Label>
                   <p className="text-sm text-slate-400">Restrict access to specific IP addresses</p>
                 </div>
-                <Switch />
+                <Switch checked={security.ipWhitelisting} onCheckedChange={v => setSecurity(p => ({ ...p, ipWhitelisting: v }))} />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Data Encryption</Label>
                   <p className="text-sm text-slate-400">Encrypt sensitive health data at rest</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={security.dataEncryption} onCheckedChange={v => setSecurity(p => ({ ...p, dataEncryption: v }))} />
               </div>
             </CardContent>
           </Card>
@@ -373,18 +413,18 @@ const CorporateSettings: React.FC = () => {
                   <Label>HIPAA Compliance Mode</Label>
                   <p className="text-sm text-slate-400">Enable HIPAA-compliant data handling</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={security.hipaaMode} onCheckedChange={v => setSecurity(p => ({ ...p, hipaaMode: v }))} />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Audit Logging</Label>
                   <p className="text-sm text-slate-400">Track all data access and modifications</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={security.auditLogging} onCheckedChange={v => setSecurity(p => ({ ...p, auditLogging: v }))} />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="dataRetention">Data Retention Period (years)</Label>
-                <Input id="dataRetention" type="number" defaultValue="7" />
+                <Input id="dataRetention" type="number" min="1" max="30" value={security.dataRetention} onChange={e => setSecurity(p => ({ ...p, dataRetention: e.target.value }))} />
               </div>
             </CardContent>
           </Card>
@@ -410,7 +450,7 @@ const CorporateSettings: React.FC = () => {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="billingEmail">Billing Email</Label>
-                <Input id="billingEmail" type="email" defaultValue="billing@techcorp.com" />
+                <Input id="billingEmail" type="email" value={billing.billingEmail} onChange={e => setBilling(p => ({ ...p, billingEmail: e.target.value }))} />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="paymentMethod">Payment Method</Label>
@@ -427,7 +467,7 @@ const CorporateSettings: React.FC = () => {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="billingCycle">Billing Cycle</Label>
-                <Select defaultValue="annual">
+                <Select value={billing.billingCycle} onValueChange={v => setBilling(p => ({ ...p, billingCycle: v }))}>
                   <SelectTrigger id="billingCycle">
                     <SelectValue />
                   </SelectTrigger>
@@ -501,52 +541,37 @@ const CorporateSettings: React.FC = () => {
               <div className="flex items-center justify-between p-4 border rounded-lg">
                 <div className="flex items-center gap-3">
                   <Globe className="h-8 w-8 text-blue-600" />
-                  <div>
-                    <p className="font-semibold">HR Management System</p>
-                    <p className="text-sm text-slate-400">Sync employee data automatically</p>
-                  </div>
+                  <div><p className="font-semibold">HR Management System</p><p className="text-sm text-slate-400">Sync employee data automatically</p></div>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={integrations.hrms} onCheckedChange={v => setIntegrations(p => ({ ...p, hrms: v }))} />
               </div>
               <div className="flex items-center justify-between p-4 border rounded-lg">
                 <div className="flex items-center gap-3">
                   <Globe className="h-8 w-8 text-green-600" />
-                  <div>
-                    <p className="font-semibold">Insurance Provider API</p>
-                    <p className="text-sm text-slate-400">Real-time claim status updates</p>
-                  </div>
+                  <div><p className="font-semibold">Insurance Provider API</p><p className="text-sm text-slate-400">Real-time claim status updates</p></div>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={integrations.insuranceApi} onCheckedChange={v => setIntegrations(p => ({ ...p, insuranceApi: v }))} />
               </div>
               <div className="flex items-center justify-between p-4 border rounded-lg">
                 <div className="flex items-center gap-3">
                   <Globe className="h-8 w-8 text-purple-600" />
-                  <div>
-                    <p className="font-semibold">Telemedicine Platform</p>
-                    <p className="text-sm text-slate-400">Enable virtual consultations</p>
-                  </div>
+                  <div><p className="font-semibold">Telemedicine Platform</p><p className="text-sm text-slate-400">Enable virtual consultations</p></div>
                 </div>
-                <Switch />
+                <Switch checked={integrations.telemedicine} onCheckedChange={v => setIntegrations(p => ({ ...p, telemedicine: v }))} />
               </div>
               <div className="flex items-center justify-between p-4 border rounded-lg">
                 <div className="flex items-center gap-3">
                   <Globe className="h-8 w-8 text-orange-600" />
-                  <div>
-                    <p className="font-semibold">Wearable Devices</p>
-                    <p className="text-sm text-slate-400">Sync fitness tracker data</p>
-                  </div>
+                  <div><p className="font-semibold">Wearable Devices</p><p className="text-sm text-slate-400">Sync fitness tracker data</p></div>
                 </div>
-                <Switch />
+                <Switch checked={integrations.wearables} onCheckedChange={v => setIntegrations(p => ({ ...p, wearables: v }))} />
               </div>
               <div className="flex items-center justify-between p-4 border rounded-lg">
                 <div className="flex items-center gap-3">
                   <Globe className="h-8 w-8 text-red-600" />
-                  <div>
-                    <p className="font-semibold">Calendar Integration</p>
-                    <p className="text-sm text-slate-400">Sync appointments with calendars</p>
-                  </div>
+                  <div><p className="font-semibold">Calendar Integration</p><p className="text-sm text-slate-400">Sync appointments with calendars</p></div>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={integrations.calendar} onCheckedChange={v => setIntegrations(p => ({ ...p, calendar: v }))} />
               </div>
             </CardContent>
           </Card>

@@ -469,7 +469,7 @@ const CorporateCompliance           = lazy(() => import("@/pages/corporate/Corpo
 const CorporateSupport              = lazy(() => import("@/pages/corporate/CorporateSupport"));
 const CorporateCommandCenter        = lazy(() => import("@/pages/corporate/CorporateCommandCenter"));
 const CorporateUserManagement       = lazy(() => import("@/pages/corporate/CorporateUserManagement"));
-const CorporateHealthCalendar       = lazy(() => import("@/pages/corporate/CorporateHealthCalendar"));
+const CorporateOrgStructure         = lazy(() => import("@/pages/corporate/CorporateOrgStructure"));
 
 // ─── TPA ─────────────────────────────────────────────────────────────────────
 const TpaLogin               = lazy(() => import("@/pages/tpa/TpaLogin"));
@@ -1058,7 +1058,7 @@ const AppRoutes = () => {
         <Route path="/corporate/support"                 element={<CorporateSupport />} />
         <Route path="/corporate/command-center"            element={<CorporateCommandCenter />} />
         <Route path="/corporate/user-management"            element={<CorporateUserManagement />} />
-        <Route path="/corporate/health-calendar"            element={<CorporateHealthCalendar />} />
+        <Route path="/corporate/org-structure"               element={<CorporateOrgStructure />} />
 
         {/* ── TPA ─────────────────────────────────────────────────────── */}
         <Route path="/tpa/login"          element={<TpaLogin />} />
