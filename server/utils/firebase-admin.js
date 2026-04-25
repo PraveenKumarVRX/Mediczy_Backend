@@ -390,6 +390,20 @@ const sendCallDataOnlyMessage = async (token, data = {}) => {
       android: {
         priority: 'high',    // wakes the device even in Doze mode
         ttl: 30 * 1000,      // 30-second TTL — discard if device offline > 30 s
+        // Include a notification payload so the OS shows a visible heads-up /
+        // lock-screen notification even when the app is killed or in standby.
+        // Without this, data-only messages are silently dropped if the app
+        // has not registered a setBackgroundMessageHandler.
+        notification: {
+          title: stringData.title || '📞 Incoming Video Call',
+          body: stringData.body || 'Your doctor has started the video consultation. Tap to join.',
+          channelId: stringData.channelId || 'mediczy_incoming_call',
+          sound: 'default',
+          defaultSound: true,
+          vibrateTimingsMillis: [0, 500, 500, 500],
+          visibility: 'PUBLIC',
+          priority: 'high',
+        },
       },
       apns: {
         headers: {
@@ -398,6 +412,10 @@ const sendCallDataOnlyMessage = async (token, data = {}) => {
         },
         payload: {
           aps: {
+            alert: {
+              title: stringData.title || '📞 Incoming Video Call',
+              body: stringData.body || 'Your doctor has started the video consultation. Tap to join.',
+            },
             badge: 1,
             sound: 'call_ringtone.caf',
             category: 'INCOMING_CALL',
