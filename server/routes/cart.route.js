@@ -24,7 +24,7 @@ router.get('/', authUser, async (req, res) => {
       success: true,
       cart: cart.items,
       total: cart.items.reduce((sum, item) => {
-        const price = parseInt(item.test?.price?.replace(/[₹,]/g, '')) || 0;
+        const price = parseInt(item.test?.price?.toString().replace(/[^0-9]/g, '')) || 0;
         return sum + price * (item.quantity || 1);
       }, 0),
       itemCount: cart.items.length,
@@ -40,7 +40,10 @@ router.get('/', authUser, async (req, res) => {
 router.post('/add', authUser, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { test, quantity = 1 } = req.body;
+    const { quantity = 1 } = req.body;
+    
+    // Accept both { test: {...}, quantity } and the item object directly
+    const test = req.body.test || (req.body.id ? req.body : null);
     
     if (!test || !test.id) {
       return res.status(400).json({ success: false, message: 'Test item is required' });
@@ -68,7 +71,7 @@ router.post('/add', authUser, async (req, res) => {
       cart: cart.items,
       itemCount: cart.items.length,
       total: cart.items.reduce((sum, item) => {
-        const price = parseInt(item.test?.price?.replace(/[₹,]/g, '')) || 0;
+        const price = parseInt(item.test?.price?.toString().replace(/[^0-9]/g, '')) || 0;
         return sum + price * (item.quantity || 1);
       }, 0)
     });
@@ -96,7 +99,7 @@ router.delete('/remove/:testId', authUser, async (req, res) => {
       cart: cart.items,
       itemCount: cart.items.length,
       total: cart.items.reduce((sum, item) => {
-        const price = parseInt(item.test?.price?.replace(/[₹,]/g, '')) || 0;
+        const price = parseInt(item.test?.price?.toString().replace(/[^0-9]/g, '')) || 0;
         return sum + price * (item.quantity || 1);
       }, 0)
     });
@@ -132,7 +135,7 @@ router.put('/update/:testId', authUser, async (req, res) => {
       cart: cart.items,
       itemCount: cart.items.length,
       total: cart.items.reduce((sum, item) => {
-        const price = parseInt(item.test?.price?.replace(/[₹,]/g, '')) || 0;
+        const price = parseInt(item.test?.price?.toString().replace(/[^0-9]/g, '')) || 0;
         return sum + price * (item.quantity || 1);
       }, 0)
     });
@@ -181,7 +184,7 @@ router.post('/sync', authUser, async (req, res) => {
       cart: cart.items,
       itemCount: cart.items.length,
       total: cart.items.reduce((sum, item) => {
-        const price = parseInt(item.test?.price?.replace(/[₹,]/g, '')) || 0;
+        const price = parseInt(item.test?.price?.toString().replace(/[^0-9]/g, '')) || 0;
         return sum + price * (item.quantity || 1);
       }, 0)
     });

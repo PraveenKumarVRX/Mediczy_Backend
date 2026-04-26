@@ -825,9 +825,8 @@ router.get('/:labId/tests', async (req, res) => {
     const { labId } = req.params;
     const { serviceType } = req.query;
 
-    // TODO: Fetch from database
-    // For now return sample tests
-    const tests = {
+    // Fallback sample tests used when lab has no real catalog
+    const fallbackTests = {
       checkup: [
         { id: 1, name: 'Complete Blood Count (CBC)', price: 500, duration: '2 hours' },
         { id: 2, name: 'Lipid Profile', price: 800, duration: '4 hours' },
@@ -842,7 +841,48 @@ router.get('/:labId/tests', async (req, res) => {
       ]
     };
 
-    const availableTests = serviceType ? tests[serviceType] || [] : [...tests.checkup, ...tests.diagnostic];
+    // Try to use real testCatalog data from the database
+    const lab = await Lab.findByPk(labId, { attributes: ['id', 'testCatalog'] });
+    let availableTests = null;
+
+    if (lab && lab.testCatalog && typeof lab.testCatalog === 'object' && !Array.isArray(lab.testCatalog)) {
+      const catalog = lab.testCatalog;
+      // Flatten all categories into a single array, ensuring every test has a price
+      const allTests = Object.values(catalog)
+        .filter(Array.isArray)
+        .flat()
+        .filter(t => t && t.name)
+        .map((t, idx) => ({
+          id: t.code || `${labId}-${idx + 1}`,
+          name: t.name,
+          price: (t.price && !isNaN(Number(t.price))) ? Number(t.price) : null,
+          duration: t.duration || 'Contact lab'
+        }));
+
+      if (allTests.length > 0) {
+        // Only use real data if at least some tests have prices
+        const withPrice = allTests.filter(t => t.price !== null);
+        if (withPrice.length > 0) {
+          // Ensure all tests have a price (null → 0 to show as "Contact for pricing")
+          availableTests = serviceType
+            ? allTests.filter(t =>
+                (serviceType === 'checkup'
+                  ? ['CBC', 'blood', 'sugar', 'thyroid', 'urine'].some(k => t.name.toLowerCase().includes(k))
+                  : ['x-ray', 'ultrasound', 'ecg', 'mri', 'scan', 'imaging'].some(k => t.name.toLowerCase().includes(k))
+                )
+              )
+            : allTests;
+          if (availableTests.length === 0) availableTests = allTests; // fallback to all if filter produces nothing
+        }
+      }
+    }
+
+    // Fall back to hardcoded tests if no real catalog
+    if (!availableTests) {
+      availableTests = serviceType
+        ? fallbackTests[serviceType] || []
+        : [...fallbackTests.checkup, ...fallbackTests.diagnostic];
+    }
 
     res.json({
       success: true,
