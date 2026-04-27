@@ -140,6 +140,7 @@ import sibChatbotsRouter from './routes/sib-chatbots.route.js';
 import { ringFencingMiddleware } from './middleware/ringFencing.js';
 import publicReportRouter from './routes/public-report.route.js';
 import onlineConsultationRouter from './routes/online-consultation.route.js';
+import myupcharRouter from './routes/myupchar.route.js';
 import notificationRouter from './routes/notification.route.js';
 import embeddingsRouter from './routes/embeddings.route.js';
 import cdssKnowledgeRouter from './routes/cdss-knowledge.route.js';
@@ -1100,6 +1101,7 @@ app.use("/api/sib", sibControlRouter); // SIB Control Layer - AI decision manage
 app.use("/api/sib-chatbots", sibChatbotsRouter); // SIB Chatbots - Admin dashboard AI chatbots (Health, Appointment, Emergency)
 app.use("/api/health", healthRouter); // Unified health metrics endpoint
 app.use("/api/consultation", onlineConsultationRouter); // Online consultation booking flow
+app.use("/api/myupchar", myupcharRouter); // myUpchar Live Consult API proxy
 app.use("/api/consultation-recordings", consultationRecordingRouter); // Consultation recording and AI transcription
 app.use("/api/billing", billingRouter); // Billing, orders, invoices, and payments
 app.use("/api/notifications", notificationRouter); // In-app notification management

@@ -603,7 +603,7 @@ class NotificationService {
       _logChannelActivity(
         `WhatsApp failed — ${title}`,
         'whatsapp',
-        `Failed to ${formattedPhone || phone} | Error: ${error.message}`,
+        `Failed | Error: ${error.message}`,
         { userId },
         false
       );

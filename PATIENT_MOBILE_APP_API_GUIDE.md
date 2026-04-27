@@ -1,6 +1,6 @@
 # Mediczy — Patient Mobile App API Guide
 
-> **Version:** 2.4 | **Last Updated:** April 25, 2026
+> **Version:** 2.5 | **Last Updated:** April 26, 2026
 
 - **Base URL:** `https://app.mediqzy.com/api`
 - **Auth:** `Authorization: Bearer <jwt-token>` (JWT, expires 7 days)
@@ -644,15 +644,107 @@ PUT  /api/lab-tests/:id              🔐  Update lab test
 
 ## 11. Cart (Lab Tests)
 
+### 11.1 Endpoint Overview
+
 ```
 GET    /api/cart                  🔐  Get cart
-POST   /api/cart/add              🔐  Add item
-       Body: { "testId": 1, "labId": 5, "quantity": 1 }
-DELETE /api/cart/remove/:testId   🔐  Remove item
-PUT    /api/cart/update/:testId   🔐  Update item
-DELETE /api/cart/clear            🔐  Clear cart
-POST   /api/cart/sync             🔐  Sync cart (merge offline/online)
+POST   /api/cart/add              🔐  Add item to cart
+DELETE /api/cart/remove/:testId   🔐  Remove item by test ID
+PUT    /api/cart/update/:testId   🔐  Update item quantity
+DELETE /api/cart/clear            🔐  Clear entire cart
+POST   /api/cart/sync             🔐  Bulk sync (replace cart with local state)
 ```
+
+### 11.2 Add Item — `POST /api/cart/add` ⭐
+
+**Request Body:**
+```json
+{
+  "test": {
+    "id": "urine-routine",
+    "name": "Urine Routine & Microscopy",
+    "price": 200,
+    "duration": "Same day report"
+  },
+  "quantity": 1
+}
+```
+
+> **Critical:** The test object **must** be nested under the `"test"` key. Sending flat fields (e.g. `{ "testId": 1, "labId": 5 }`) returns `400 Bad Request`.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Item added to cart",
+  "cart": [
+    { "test": { "id": "urine-routine", "name": "Urine Routine & Microscopy", "price": 200 }, "quantity": 1 }
+  ],
+  "itemCount": 1,
+  "total": 200
+}
+```
+
+**Response (400 — missing test wrapper):**
+```json
+{ "success": false, "message": "Test item is required" }
+```
+
+### 11.3 Price Format
+
+`price` in the `test` object accepts any of these formats — the backend strips non-numeric characters:
+
+| Format | Example | Parsed as |
+|--------|---------|-----------|
+| Plain integer | `200` | `200` |
+| ₹ prefix string | `"₹200"` | `200` |
+| Rs. prefix string | `"Rs. 200"` | `200` |
+| Range string | `"₹220 - ₹330"` | `220` (first number) |
+
+### 11.4 Get Cart — `GET /api/cart`
+
+**Response:**
+```json
+{
+  "success": true,
+  "cart": [
+    { "test": { "id": "cbc", "name": "CBC", "price": 500 }, "quantity": 1 }
+  ],
+  "total": 500,
+  "itemCount": 1,
+  "updatedAt": "2026-04-26T06:00:00.000Z"
+}
+```
+
+### 11.5 Remove Item — `DELETE /api/cart/remove/:testId`
+
+`:testId` = the value of `test.id` used when adding.
+
+### 11.6 Update Quantity — `PUT /api/cart/update/:testId`
+
+```json
+{ "quantity": 2 }
+```
+
+### 11.7 Sync Cart — `POST /api/cart/sync`
+
+Replaces the server cart entirely with the provided items array:
+
+```json
+{
+  "items": [
+    { "test": { "id": "cbc", "name": "CBC", "price": 500 }, "quantity": 1 },
+    { "test": { "id": "urine-routine", "name": "Urine Routine", "price": 200 }, "quantity": 1 }
+  ]
+}
+```
+
+### 11.8 Mobile Integration Notes
+
+- **CartContext** (`app/context/CartContext.js`) manages local cart state and fire-and-forgets a server sync on every `addToCart()` call.
+- `addToCart(test, labInfo)` sends: `{ test: { id, name, price, duration }, quantity: 1 }` to `POST /cart/add`.
+- Subtotal is computed locally: `price.toString().match(/\d+/)?.[0]` extracts the first numeric value to handle range prices like `"₹220 - ₹330"`.
+- Server uses in-memory store (Map); a Redis/DB replacement is planned for production scale.
 
 ---
 

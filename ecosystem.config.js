@@ -15,8 +15,25 @@
  */
 
 const path = require('path');
+const fs = require('fs');
 
 const ROOT_DIR = process.env.MEDICZY_HOME || __dirname;
+
+// Load .env so PM2 always picks up the latest values regardless of how it was invoked
+const envFile = path.join(ROOT_DIR, '.env');
+if (fs.existsSync(envFile)) {
+  fs.readFileSync(envFile, 'utf8')
+    .split('\n')
+    .forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return;
+      const idx = trimmed.indexOf('=');
+      if (idx === -1) return;
+      const key = trimmed.slice(0, idx).trim();
+      const val = trimmed.slice(idx + 1).trim();
+      if (key && !(key in process.env)) process.env[key] = val; // don't override shell env
+    });
+}
 const SERVER_DIR = path.join(ROOT_DIR, 'server');
 const SCRIPTS_DIR = path.join(ROOT_DIR, 'scripts');
 const AI_ENGINE_DIR = path.join(ROOT_DIR, 'ai-engine', 'doctor_bot');
@@ -33,11 +50,22 @@ module.exports = {
       exec_mode: 'cluster',
       node_args: '--max-old-space-size=1536',  // Limit heap to 1.5GB (LaBSE embeddings need headroom)
       env: {
+        // Explicit overrides; everything else comes from .env loaded above
         NODE_ENV: 'production',
         PORT: 8888,
         SIB_URL: 'http://localhost:8001',
-        POSTGRES_POOL_MAX: '25',  // Per instance (2 instances = 50 total)
-        POSTGRES_POOL_MIN: '5'
+        POSTGRES_POOL_MAX: process.env.POSTGRES_POOL_MAX || '25',
+        POSTGRES_POOL_MIN: process.env.POSTGRES_POOL_MIN || '5',
+        POSTGRES_HOST: process.env.POSTGRES_HOST || '127.0.0.1',
+        POSTGRES_PORT: process.env.POSTGRES_PORT || '5432',
+        POSTGRES_DATABASE: process.env.POSTGRES_DATABASE,
+        POSTGRES_USER: process.env.POSTGRES_USER,
+        POSTGRES_PASSWORD: process.env.POSTGRES_PASSWORD,
+        POSTGRES_SSL: process.env.POSTGRES_SSL || 'false',
+        REDIS_HOST: process.env.REDIS_HOST || 'localhost',
+        REDIS_PORT: process.env.REDIS_PORT || '6379',
+        REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
+        REDIS_PASSWORD: process.env.REDIS_PASSWORD || '',
       },
       error_file: path.join(LOGS_DIR, 'server-error.log'),
       out_file: path.join(LOGS_DIR, 'server-out.log'),

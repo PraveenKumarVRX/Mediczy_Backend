@@ -761,20 +761,40 @@ export const getAvailableDoctors = async (req, res) => {
       where: query,
       attributes: [
         'id',
+        'prefix',
         'firstName',
         'lastName',
         'specialization',
+        'qualification',
         'experience',
         'phoneNumber',
+        'email',
         'isOnline',
-        'qualification',
-        'reviews',
+        'isVerified',
+        'status',
+        'profileImage',
+        'languages',
         'rating',
         'totalReviews',
         'consultationFees',
-        'availableSlots'
+        'onlineConsultationFee',
+        'inPersonConsultationFee',
+        'clinicAddress',
+        'clinicAddress_json',
+        'weeklySchedule',
+        'availableSlots',
+        'reviews',
+        'servicesOffered',
+        'totalAppointments',
+        'feeStructure',
+        'slotDuration',
+        'registrationNumber'
       ],
-      order: [['experience', 'DESC']] // Sort by experience (most experienced first)
+      order: [
+        ['isOnline', 'DESC'],
+        ['rating', 'DESC'],
+        ['experience', 'DESC']
+      ]
     });
 
     res.status(200).json({

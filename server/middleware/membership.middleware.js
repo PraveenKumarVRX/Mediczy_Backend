@@ -89,11 +89,13 @@ export const validateMembership = async (req, res, next) => {
       });
     }
 
-    // Check if membership is expired
-    const endDate = new Date(activePlan.endDate);
+    // Treat endDate as inclusive through the end of that day.
+    // Otherwise plans get marked expired right after midnight on the end date.
+    const endOfDay = new Date(activePlan.endDate);
+    endOfDay.setHours(23, 59, 59, 999);
     const now = new Date();
     
-    if (endDate < now) {
+    if (endOfDay < now) {
       console.warn(`⚠️ User ${userId} membership plan expired on ${activePlan.endDate}`);
       
       // Update plan status to expired
@@ -141,7 +143,7 @@ export const validateMembership = async (req, res, next) => {
       startDate: activePlan.startDate,
       endDate: activePlan.endDate,
       autoRenew: activePlan.autoRenew,
-      daysRemaining: Math.ceil((endDate - now) / (1000 * 60 * 60 * 24))
+      daysRemaining: Math.ceil((endOfDay - now) / (1000 * 60 * 60 * 24))
     };
 
     console.log(`✅ User ${userId} has valid membership - Plan ID: ${activePlan.membershipPlanId}, Days remaining: ${req.userMembership.daysRemaining}`);

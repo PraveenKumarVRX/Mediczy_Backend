@@ -37,7 +37,10 @@ class WhatsAppProductionService {
       healthReport: process.env.WHATSAPP_TEMPLATE_HEALTH_REPORT,
       prescription: process.env.WHATSAPP_TEMPLATE_PRESCRIPTION,
       otp: process.env.WHATSAPP_TEMPLATE_OTP,
-      checkupReminder: process.env.WHATSAPP_TEMPLATE_CHECKUP_REMINDER
+      checkupReminder: process.env.WHATSAPP_TEMPLATE_CHECKUP_REMINDER,
+      membershipRenewalReminder: process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_RENEWAL_REMINDER,
+      membershipRenewalPayment: process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_RENEWAL_PAYMENT,
+      membershipPlanActivated: process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_PLAN_ACTIVATED
     };
   }
 
@@ -187,6 +190,81 @@ class WhatsAppProductionService {
   }
 
   /**
+   * Send membership renewal reminder with payment CTA button.
+   * Uses template mediczy_membership_renewal_reminder.
+   * Falls back to session message if template not yet approved.
+   * Variables: 1=name 2=planName 3=expiryDate 4=daysRemaining 5=rzpLinkSuffix
+   */
+  async sendMembershipRenewalReminder({ to, name, planName, expiryDate, daysRemaining, renewalUrl }) {
+    if (!this.twilioConfigured) throw new Error('Twilio WhatsApp is not configured');
+
+    const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };
+
+    if (this.templates.membershipRenewalReminder) {
+      messageParams.contentSid = this.templates.membershipRenewalReminder;
+      messageParams.contentVariables = JSON.stringify({
+        '1': name, '2': planName, '3': expiryDate, '4': String(daysRemaining), '5': renewalUrl || ''
+      });
+    } else {
+      messageParams.body =
+        `*Your SmartHealth Membership Expires in ${daysRemaining} Days*\n\n` +
+        `Dear ${name},\n\nYour *${planName}* plan expires on *${expiryDate}*.\n\n` +
+        `Renew now: ${renewalUrl}\n\n_Team SmartHealth_`;
+    }
+
+    return await this.client.messages.create(messageParams);
+  }
+
+  /**
+   * Send standalone payment link message with Pay Now CTA button.
+   * Uses template mediczy_membership_renewal_payment.
+   * Variables: 1=name 2=planName 3=amount(string) 4=rzpLinkSuffix
+   */
+  async sendMembershipPaymentLink({ to, name, planName, amount, renewalUrl }) {
+    if (!this.twilioConfigured) throw new Error('Twilio WhatsApp is not configured');
+
+    const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };
+
+    if (this.templates.membershipRenewalPayment) {
+      messageParams.contentSid = this.templates.membershipRenewalPayment;
+      messageParams.contentVariables = JSON.stringify({
+        '1': name, '2': planName, '3': String(amount), '4': renewalUrl || ''
+      });
+    } else {
+      messageParams.body =
+        `Hi ${name},\n\nYour *${planName}* plan renewal of *Rs.${amount}* is ready.\n\n` +
+        `Complete payment here: ${renewalUrl}\n\n_Team SmartHealth_`;
+    }
+
+    return await this.client.messages.create(messageParams);
+  }
+
+  /**
+   * Send plan activation confirmation after successful renewal/payment.
+   * Uses template mediczy_plan_activation_confirmation.
+   * Variables: 1=name 2=planName 3=startDate 4=endDate
+   */
+  async sendMembershipPlanActivated({ to, name, planName, startDate, endDate }) {
+    if (!this.twilioConfigured) throw new Error('Twilio WhatsApp is not configured');
+
+    const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };
+
+    if (this.templates.membershipPlanActivated) {
+      messageParams.contentSid = this.templates.membershipPlanActivated;
+      messageParams.contentVariables = JSON.stringify({
+        '1': name, '2': planName, '3': startDate, '4': endDate
+      });
+    } else {
+      messageParams.body =
+        `✅ *Membership Activated!*\n\nDear ${name},\n\nYour *${planName}* plan is now active!\n\n` +
+        `📅 Valid From: *${startDate}*\n📅 Valid Till: *${endDate}*\n\n` +
+        `Enjoy all your health benefits.\n\n_Team SmartHealth_`;
+    }
+
+    return await this.client.messages.create(messageParams);
+  }
+
+  /**
    * Send session message (within 24hr window of user message)
    * Use this for replies to user-initiated conversations
    */
@@ -274,7 +352,10 @@ class WhatsAppProductionService {
       healthReport: !!this.templates.healthReport,
       prescription: !!this.templates.prescription,
       otp: !!this.templates.otp,
-      checkupReminder: !!this.templates.checkupReminder
+      checkupReminder: !!this.templates.checkupReminder,
+      membershipRenewalReminder: !!this.templates.membershipRenewalReminder,
+      membershipRenewalPayment: !!this.templates.membershipRenewalPayment,
+      membershipPlanActivated: !!this.templates.membershipPlanActivated
     };
   }
 }

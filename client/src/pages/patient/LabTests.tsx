@@ -261,7 +261,7 @@ const LabTests = () => {
 
   const getCartTotal = () => {
     return cart.reduce((total, item) => {
-      const price = parseInt(item.test.price.replace(/[₹,]/g, '')) || 0;
+      const price = parseInt(String(item.test?.price ?? '0').replace(/[₹,]/g, '')) || 0;
       return total + price * item.quantity;
     }, 0);
   };

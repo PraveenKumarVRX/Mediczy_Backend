@@ -4,6 +4,7 @@ import { Op } from 'sequelize';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { MembershipPlan, UserPlan } from '../models/postgres/membershipPlan.model.postgres.js';
 import paymentService from '../services/payment.service.js';
+import whatsappProductionService from '../services/whatsapp-production.service.js';
 
 const router = express.Router();
 
@@ -207,6 +208,24 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
       }
     });
 
+    // Send WhatsApp plan activation confirmation
+    try {
+      const phone = req.user.phoneNumber || req.user.phone;
+      if (phone) {
+        let formattedPhone = String(phone).replace(/[^0-9+]/g, '');
+        if (!formattedPhone.startsWith('+')) formattedPhone = '+91' + formattedPhone;
+        whatsappProductionService.sendMembershipPlanActivated({
+          to: formattedPhone,
+          name: req.user.firstName || 'Member',
+          planName: plan.name,
+          startDate: userPlan.startDate,
+          endDate: userPlan.endDate
+        }).catch(e => console.error('WA plan activation notification failed:', e.message));
+      }
+    } catch (waErr) {
+      console.error('WA plan activation notification error:', waErr.message);
+    }
+
     res.status(201).json({ userPlan });
   } catch(e){
     console.error(e);
@@ -370,7 +389,25 @@ router.post('/upgrade/:newPlanId', authUser, [ param('newPlanId').isInt() ], asy
         usage: { benefitINR: { pharmacyINR: 0, homeCareINR: 0, ambulanceINR: 0 }, teleConsult: {} }
       }
     });
-    
+
+    // Send WhatsApp plan activation confirmation on upgrade
+    try {
+      const phone = req.user.phoneNumber || req.user.phone;
+      if (phone) {
+        let formattedPhone = String(phone).replace(/[^0-9+]/g, '');
+        if (!formattedPhone.startsWith('+')) formattedPhone = '+91' + formattedPhone;
+        whatsappProductionService.sendMembershipPlanActivated({
+          to: formattedPhone,
+          name: req.user.firstName || 'Member',
+          planName: newPlan.name,
+          startDate: newUserPlan.startDate,
+          endDate: newUserPlan.endDate
+        }).catch(e => console.error('WA upgrade activation notification failed:', e.message));
+      }
+    } catch (waErr) {
+      console.error('WA upgrade activation notification error:', waErr.message);
+    }
+
     res.json({
       success: true,
       message: 'Plan upgraded successfully',
