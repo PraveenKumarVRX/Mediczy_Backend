@@ -31,6 +31,7 @@ import api from '@/utils/api';
 import { getToken } from '@/hooks/auth';
 import { useAuth } from '@/auth/AuthProvider';
 import MainLayout from '@/components/layout/MainLayout';
+import aiHealthServices from '@/services/aiHealthServices';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface Challenge {
@@ -92,18 +93,99 @@ export default function WellnessRewards() {
   const [tab, setTab] = useState<'challenges' | 'leaderboard' | 'rewards' | 'badges'>('challenges');
   const [challengeFilter, setChallengeFilter] = useState<'all' | 'daily' | 'weekly' | 'monthly'>('all');
   const [loading, setLoading] = useState(true);
+  const [walletLoading, setWalletLoading] = useState(true);
+  const [dailyClaiming, setDailyClaiming] = useState(false);
+  const [dailyClaimed, setDailyClaimed] = useState(false);
+  const [aiChallenges, setAiChallenges] = useState<{ title: string; description: string; reward: number; category: string }[]>([]);
+  const [loadingAI, setLoadingAI] = useState(false);
 
   // ─── State ──────────────────────────────────────────────────────────────
-  const [userData] = useState({
-    coins: 2450,
-    xp: 2180,
-    level: 3,
-    streak: 12,
-    longestStreak: 28,
-    totalChallenges: 47,
-    rankInCompany: 23,
-    totalEmployees: 450,
+  const [userData, setUserData] = useState({
+    coins: 0,
+    xp: 0,
+    level: 1,
+    streak: 0,
+    longestStreak: 0,
+    totalChallenges: 0,
+    rankInCompany: 0,
+    totalEmployees: 0,
   });
+
+  // Load wallet data from backend
+  useEffect(() => {
+    const loadWallet = async () => {
+      setWalletLoading(true);
+      try {
+        const res = await api.get('/wallet');
+        if (res?.data?.success) {
+          const d = res.data.data;
+          setUserData(prev => ({
+            ...prev,
+            coins: Math.round(d.balance ?? 0),
+            streak: d.streakDays ?? d.streak ?? 0,
+            // derive level from coins (every 1000 coins = 1 level, max 6)
+            level: Math.min(6, Math.floor((d.balance ?? 0) / 1000) + 1),
+            // XP mirrors coins for display purposes
+            xp: Math.round(d.totalEarned ?? d.balance ?? 0),
+          }));
+          // If today's daily login was already claimed, mark it
+          if (d.todayActivity) setDailyClaimed(true);
+        }
+      } catch {
+        // silent — show demo values already in state
+      } finally {
+        setWalletLoading(false);
+        setLoading(false);
+      }
+    };
+    loadWallet();
+  }, []);
+
+  // Load AI-personalized challenges after wallet data is ready
+  useEffect(() => {
+    if (loading) return;
+    const loadAIChallenges = async () => {
+      setLoadingAI(true);
+      try {
+        let riskContext = 'general wellness';
+        try {
+          const riskRes = await aiHealthServices.getMyRiskScore();
+          if (riskRes?.score?.risk_factors?.length) {
+            riskContext = riskRes.score.risk_factors.slice(0, 3).join(', ');
+          }
+        } catch { /* use generic context */ }
+
+        const brainRes = await aiHealthServices.thinkWithBrain({
+          query: `Based on health risks: ${riskContext}, suggest 3 personalized daily wellness challenges with coin rewards. Respond ONLY in JSON array: [{"title":"...","description":"...","reward":25,"category":"fitness|sleep|water|mindfulness|nutrition"},...]`,
+          type: 'wellness_coaching',
+        });
+        if (brainRes?.response) {
+          const match = brainRes.response.match(/\[[\s\S]*\]/);
+          if (match) {
+            const parsed = JSON.parse(match[0]);
+            if (Array.isArray(parsed)) {
+              setAiChallenges(parsed.slice(0, 3));
+            }
+          }
+        }
+      } catch { /* silent — static challenges still shown */ }
+      setLoadingAI(false);
+    };
+    loadAIChallenges();
+  }, [loading]);
+
+  const claimDailyLogin = async () => {
+    if (dailyClaimed || dailyClaiming) return;
+    setDailyClaiming(true);
+    try {
+      const res = await api.post('/wallet/earn/daily-login');
+      if (res?.data?.success) {
+        setUserData(prev => ({ ...prev, coins: Math.round(res.data.newBalance ?? prev.coins + 1), streak: res.data.streak ?? prev.streak }));
+        setDailyClaimed(true);
+      }
+    } catch { /* silent */ }
+    setDailyClaiming(false);
+  };
 
   const currentLevel = levels.find(l => l.level === userData.level) || levels[0];
   const nextLevel = levels.find(l => l.level === userData.level + 1);
@@ -221,6 +303,25 @@ export default function WellnessRewards() {
               </motion.div>
             ))}
           </div>
+
+          {/* Daily Login Reward */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
+            className="flex items-center justify-between bg-slate-800/50 border border-white/[0.06] rounded-xl px-4 py-3 mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-amber-500/15 flex items-center justify-center">
+                <Flame className="h-4 w-4 text-amber-400" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-white">Daily Login Reward</p>
+                <p className="text-[10px] text-slate-500">+1 Health Coin • Streak {userData.streak} days</p>
+              </div>
+            </div>
+            <Button size="sm" disabled={dailyClaimed || dailyClaiming}
+              onClick={claimDailyLogin}
+              className={`rounded-lg text-xs border-0 ${dailyClaimed ? 'bg-emerald-600/20 text-emerald-400' : 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'}`}>
+              {dailyClaimed ? '✓ Claimed' : dailyClaiming ? '...' : 'Claim'}
+            </Button>
+          </motion.div>
         </div>
       </div>
 
@@ -247,6 +348,42 @@ export default function WellnessRewards() {
           {/* ─── Challenges Tab ───────────────────────────────────────────── */}
           {tab === 'challenges' && (
             <motion.div key="challenges" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
+              {/* AI Recommended Challenges */}
+              {(loadingAI || aiChallenges.length > 0) && (
+                <div className="mb-5">
+                  <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-violet-400" /> AI Recommended for You
+                  </h3>
+                  {loadingAI ? (
+                    <div className="flex items-center gap-2 p-4 rounded-xl bg-violet-500/5 border border-violet-500/20">
+                      <Brain className="h-4 w-4 text-violet-400 animate-pulse shrink-0" />
+                      <p className="text-xs text-slate-400">Generating personalized challenges…</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {aiChallenges.map((ch, i) => (
+                        <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
+                          <Card className="!p-0 border-violet-500/20 bg-violet-500/5">
+                            <CardContent className="p-3 flex items-start gap-3">
+                              <div className="w-8 h-8 rounded-lg bg-violet-500/15 flex items-center justify-center shrink-0">
+                                <Sparkles className="h-4 w-4 text-violet-400" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <h4 className="text-sm font-semibold text-white truncate">{ch.title}</h4>
+                                <p className="text-[11px] text-slate-400">{ch.description}</p>
+                              </div>
+                              <span className="text-[10px] text-amber-400 font-semibold shrink-0 flex items-center gap-0.5">
+                                <CircleDollarSign className="h-3 w-3" />{ch.reward}
+                              </span>
+                            </CardContent>
+                          </Card>
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Filter */}
               <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
                 {(['all', 'daily', 'weekly', 'monthly'] as const).map(f => (

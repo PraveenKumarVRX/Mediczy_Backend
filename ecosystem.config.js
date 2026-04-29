@@ -50,7 +50,11 @@ module.exports = {
       exec_mode: 'cluster',
       node_args: '--max-old-space-size=1536',  // Limit heap to 1.5GB (LaBSE embeddings need headroom)
       env: {
-        // Explicit overrides; everything else comes from .env loaded above
+        // Spread ALL vars from .env first, then apply explicit overrides below.
+        // This ensures secrets (RAZORPAY, TWILIO, JWT, etc.) are always present
+        // without maintaining a brittle allowlist here.
+        ...process.env,
+        // Explicit overrides
         NODE_ENV: 'production',
         PORT: 8888,
         SIB_URL: 'http://localhost:8001',
@@ -58,14 +62,6 @@ module.exports = {
         POSTGRES_POOL_MIN: process.env.POSTGRES_POOL_MIN || '5',
         POSTGRES_HOST: process.env.POSTGRES_HOST || '127.0.0.1',
         POSTGRES_PORT: process.env.POSTGRES_PORT || '5432',
-        POSTGRES_DATABASE: process.env.POSTGRES_DATABASE,
-        POSTGRES_USER: process.env.POSTGRES_USER,
-        POSTGRES_PASSWORD: process.env.POSTGRES_PASSWORD,
-        POSTGRES_SSL: process.env.POSTGRES_SSL || 'false',
-        REDIS_HOST: process.env.REDIS_HOST || 'localhost',
-        REDIS_PORT: process.env.REDIS_PORT || '6379',
-        REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
-        REDIS_PASSWORD: process.env.REDIS_PASSWORD || '',
       },
       error_file: path.join(LOGS_DIR, 'server-error.log'),
       out_file: path.join(LOGS_DIR, 'server-out.log'),

@@ -134,11 +134,21 @@ const Login = () => {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (token) {
-      navigate('/', { replace: true });
+    if (!token) {
+      setIsCheckingAuth(false);
       return;
     }
-    setIsCheckingAuth(false);
+    // Validate the token is still accepted by the server before redirecting.
+    // If it's stale/invalid, clear it and show the login form.
+    api.get('/users/profile', { skipAuth: false } as any)
+      .then(() => {
+        navigate('/', { replace: true });
+      })
+      .catch(() => {
+        // Token rejected — clear all auth state and stay on login page
+        clearAuthTokens();
+        setIsCheckingAuth(false);
+      });
   }, [navigate]);
 
   const form = useForm<z.infer<typeof formSchema>>({

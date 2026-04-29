@@ -36,7 +36,10 @@ import {
   Wallet,
   Building2,
   Shield,
-  Briefcase
+  Briefcase,
+  Mic,
+  Calculator,
+  Sparkles
 } from "lucide-react";
 import { BRAND } from "@/config/brand";
 import { memo, useEffect, useState, useRef } from "react";
@@ -96,6 +99,9 @@ const doctorNavItems: NavItem[] = [
     ]
   },
   { icon: BrainCircuit, label: "AI Doctor Assist", path: "/doctor/assist", category: "Clinical Tools", highlight: true },
+  { icon: Sparkles, label: "iSHA Assistant", path: "/doctor/assistant", category: "Clinical Tools", highlight: true },
+  { icon: Mic, label: "Voice Scribe", path: "/doctor/voice-scribe", category: "Clinical Tools", highlight: true },
+  { icon: Calculator, label: "Medical Calculators", path: "/doctor/calculators", category: "Clinical Tools" },
   
   // Communication
   { icon: MessageSquare, label: "Patient Chat", path: "/doctor/chat", category: "Communication" },
@@ -584,6 +590,14 @@ const MainLayoutdoctor = ({ children }) => {
         </div>
         <div className="container mx-auto p-6 pb-20 md:pb-6 bg-slate-50 dark:bg-slate-950 min-h-[calc(100vh-4rem)]">{children}</div>
       </main>
+      {/* Floating iSHA Assistant button */}
+      <Link
+        to="/doctor/assistant"
+        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-200 group"
+        title="iSHA Assistant"
+      >
+        <Sparkles className="h-6 w-6 text-white group-hover:scale-110 transition-transform" />
+      </Link>
       <VoiceNavigation />
       <OfflineIndicator />
       <ChatApplet />

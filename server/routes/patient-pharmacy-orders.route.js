@@ -1,25 +1,42 @@
 /**
  * Patient Pharmacy Orders Route
- * Allows logged-in patients to place, view, and cancel pharmacy orders.
+ * Allows logged-in patients to place, view, track, and cancel pharmacy orders.
  *
  * Endpoints:
- *   GET    /api/pharmacy-orders           – list the current user's orders
- *   POST   /api/pharmacy-orders           – place a new order
- *   GET    /api/pharmacy-orders/:orderId  – get one order
- *   POST   /api/pharmacy-orders/:orderId/cancel – cancel a pending order
+ *   GET    /api/pharmacy-orders                       – list orders (paginated)
+ *   POST   /api/pharmacy-orders                       – place a new order (multipart: items + optional prescription file)
+ *   GET    /api/pharmacy-orders/:orderId              – get order details
+ *   GET    /api/pharmacy-orders/:orderId/tracking     – get status timeline
+ *   PUT    /api/pharmacy-orders/:orderId/status       – update status (internal/admin)
+ *   POST   /api/pharmacy-orders/:orderId/cancel       – patient cancels a pending order
  */
 
 import express from 'express';
+import multer from 'multer';
 import { authUser } from '../middleware/auth.middleware.js';
 import sharedPool from '../db/pgPool.js';
+import { uploadToMinio } from '../services/minio-upload.service.js';
 
 const router = express.Router();
+
+/* ── multer for prescription file upload (memory, 10 MB max) ─────────────── */
+
+const prescriptionUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+    if (allowed.includes(file.mimetype)) return cb(null, true);
+    cb(new Error(`File type not allowed: ${file.mimetype}`));
+  },
+});
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
 
 const VALID_DELIVERY_TYPES = ['home_delivery', 'store_pickup'];
 const VALID_STATUSES       = ['pending', 'confirmed', 'processing', 'out_for_delivery', 'delivered', 'cancelled'];
 
+/** Returns an error string or null */
 function validateOrderBody(body) {
   const { items, delivery_type } = body;
 
@@ -45,6 +62,25 @@ function validateOrderBody(body) {
   }
 
   return null;
+}
+
+/** Build a status event object */
+function statusEvent(status, note = '') {
+  return { status, timestamp: new Date().toISOString(), note };
+}
+
+/** Append a new status event to status_history in DB and return updated row */
+async function appendStatusEvent(orderId, status, note = '') {
+  const result = await sharedPool.query(
+    `UPDATE patient_pharmacy_orders
+        SET status          = $1,
+            status_history  = status_history || $2::jsonb,
+            updated_at      = NOW()
+      WHERE order_id = $3
+      RETURNING *`,
+    [status, JSON.stringify(statusEvent(status, note)), orderId]
+  );
+  return result.rows[0] || null;
 }
 
 /* ── GET /api/pharmacy-orders ─────────────────────────────────────────────── */
@@ -92,17 +128,26 @@ router.get('/', authUser, async (req, res) => {
 });
 
 /* ── POST /api/pharmacy-orders ────────────────────────────────────────────── */
+/* Accepts multipart/form-data with optional `prescription` file field.
+   The `items` field must be a JSON string when sending multipart. */
 
-router.post('/', authUser, async (req, res) => {
+router.post('/', authUser, prescriptionUpload.single('prescription'), async (req, res) => {
   try {
     const userId = req.user.id;
-    const error  = validateOrderBody(req.body);
+
+    // items may arrive as a JSON string (multipart) or a parsed array (JSON body)
+    let items = req.body.items;
+    if (typeof items === 'string') {
+      try { items = JSON.parse(items); } catch { items = []; }
+    }
+
+    const bodyForValidation = { ...req.body, items };
+    const error = validateOrderBody(bodyForValidation);
     if (error) {
       return res.status(400).json({ success: false, message: error });
     }
 
     const {
-      items,
       delivery_type,
       delivery_address   = null,
       delivery_date      = null,
@@ -110,10 +155,27 @@ router.post('/', authUser, async (req, res) => {
       prescription_note  = null,
       delivery_charge    = 0,
       discount           = 0,
-      customer_notes     = null
+      customer_notes     = null,
     } = req.body;
 
-    // ── Enrich each item with MRP from pharmacy_medicines DB ──────────────
+    // ── Upload prescription file to MinIO if provided ─────────────────────
+    let prescriptionFileUrl = null;
+    if (req.file) {
+      try {
+        const uploadResult = await uploadToMinio({
+          buffer:       req.file.buffer,
+          originalName: req.file.originalname,
+          mimeType:     req.file.mimetype,
+          keyPrefix:    `uploads/prescriptions/${userId}`,
+        });
+        prescriptionFileUrl = uploadResult.url;
+      } catch (uploadErr) {
+        console.error('[pharmacy-orders] prescription upload failed:', uploadErr.message);
+        // Non-fatal — order proceeds without prescription URL
+      }
+    }
+
+    // ── Enrich items with MRP from pharmacy_medicines DB ──────────────────
     const enrichedItems = await Promise.all(items.map(async (item) => {
       const name = item.medicine_name || item.name || '';
       const result = await sharedPool.query(
@@ -127,61 +189,64 @@ router.post('/', authUser, async (req, res) => {
            mrp ASC LIMIT 1`,
         [`%${name}%`, name]
       );
-      const dbMed = result.rows[0] || null;
-      const unitMrp = dbMed
+      const dbMed    = result.rows[0] || null;
+      const unitMrp  = dbMed
         ? parseFloat(dbMed.mrp || dbMed.unit_price || 0)
         : parseFloat(item.unit_price || item.mrp || item.price || 0);
       const qty = parseFloat(item.quantity) || 1;
       return {
-        medicine_name:  dbMed?.name || name,
-        brand_name:     dbMed?.brand_name || item.brand_name || null,
-        generic_name:   dbMed?.generic_name || item.generic_name || null,
-        strength:       dbMed?.strength || item.strength || null,
-        form:           dbMed?.form || item.form || null,
-        manufacturer:   dbMed?.manufacturer || item.manufacturer || null,
-        pack_size:      dbMed?.pack_size || item.pack_size || null,
-        medicine_id:    dbMed?.id || null,
-        quantity:       qty,
-        unit_price:     unitMrp,
-        line_total:     parseFloat((unitMrp * qty).toFixed(2)),
+        medicine_name: dbMed?.name || name,
+        brand_name:    dbMed?.brand_name  || item.brand_name  || null,
+        generic_name:  dbMed?.generic_name|| item.generic_name|| null,
+        strength:      dbMed?.strength    || item.strength    || null,
+        form:          dbMed?.form        || item.form        || null,
+        manufacturer:  dbMed?.manufacturer|| item.manufacturer|| null,
+        pack_size:     dbMed?.pack_size   || item.pack_size   || null,
+        medicine_id:   dbMed?.id          || null,
+        quantity:      qty,
+        unit_price:    unitMrp,
+        line_total:    parseFloat((unitMrp * qty).toFixed(2)),
       };
     }));
 
-    // ── Auto-calculate subtotal from enriched items ───────────────────────
-    const subtotal = parseFloat(
-      enrichedItems.reduce((sum, i) => sum + i.line_total, 0).toFixed(2)
-    );
+    // ── Calculate totals ───────────────────────────────────────────────────
+    const subtotal          = parseFloat(enrichedItems.reduce((s, i) => s + i.line_total, 0).toFixed(2));
     const deliveryChargeVal = parseFloat(delivery_charge) || 0;
     const discountVal       = parseFloat(discount) || 0;
     const totalAmount       = parseFloat((subtotal + deliveryChargeVal - discountVal).toFixed(2));
 
+    const initialHistory = JSON.stringify([statusEvent('pending', 'Order placed')]);
+
     const result = await sharedPool.query(
       `INSERT INTO patient_pharmacy_orders
          (user_id, items, delivery_type, delivery_address, delivery_date,
-          delivery_time_slot, prescription_note, subtotal, delivery_charge,
-          discount, total_amount, customer_notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          delivery_time_slot, prescription_note, prescription_file_url,
+          subtotal, delivery_charge, discount, total_amount,
+          customer_notes, status_history)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        RETURNING *`,
       [
         userId,
         JSON.stringify(enrichedItems),
         delivery_type,
         delivery_address ? JSON.stringify(delivery_address) : null,
-        delivery_date || null,
+        delivery_date      || null,
         delivery_time_slot || null,
-        prescription_note || null,
+        prescription_note  || null,
+        prescriptionFileUrl,
         subtotal,
         deliveryChargeVal,
         discountVal,
         totalAmount,
-        customer_notes || null
+        customer_notes     || null,
+        initialHistory,
       ]
     );
 
     return res.status(201).json({
       success: true,
       message: 'Order placed successfully',
-      data: result.rows[0]
+      data: result.rows[0],
     });
   } catch (err) {
     console.error('[patient-pharmacy-orders] POST create error:', err);
@@ -216,6 +281,169 @@ router.get('/:orderId', authUser, async (req, res) => {
   }
 });
 
+/* ── GET /api/pharmacy-orders/:orderId/tracking ───────────────────────────── */
+/* Returns the full status timeline, estimated delivery, and tracking number. */
+
+router.get('/:orderId/tracking', authUser, async (req, res) => {
+  try {
+    const userId  = req.user.id;
+    const orderId = parseInt(req.params.orderId, 10);
+
+    if (!orderId || isNaN(orderId)) {
+      return res.status(400).json({ success: false, message: 'Invalid order ID' });
+    }
+
+    const result = await sharedPool.query(
+      `SELECT order_id, status, status_history, tracking_number,
+              estimated_delivery, delivery_type, delivery_address,
+              created_at, updated_at, delivered_at, cancelled_at
+         FROM patient_pharmacy_orders
+        WHERE order_id = $1 AND user_id = $2`,
+      [orderId, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    const order = result.rows[0];
+
+    // ── Build canonical timeline, ensuring all terminal statuses are present ─
+    const history  = Array.isArray(order.status_history) ? order.status_history : [];
+    const allSteps = ['pending', 'confirmed', 'processing', 'out_for_delivery', 'delivered'];
+
+    // For cancelled orders, include up-to-cancel + cancelled step
+    const isCancelled = order.status === 'cancelled';
+    const steps = isCancelled
+      ? [...allSteps.slice(0, allSteps.indexOf(history.find(h => !['pending','confirmed'].includes(h.status))?.status || 'confirmed') + 1), 'cancelled']
+      : allSteps;
+
+    const timeline = steps.map(step => {
+      const event = history.find(h => h.status === step);
+      const isReached = history.some(h => h.status === step) ||
+        (VALID_STATUSES.indexOf(order.status) >= VALID_STATUSES.indexOf(step) && !isCancelled);
+      return {
+        status:    step,
+        label:     stepLabel(step),
+        reached:   !!event || isReached,
+        active:    order.status === step,
+        timestamp: event?.timestamp || null,
+        note:      event?.note      || null,
+      };
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        order_id:          order.order_id,
+        current_status:    order.status,
+        tracking_number:   order.tracking_number || null,
+        estimated_delivery:order.estimated_delivery || null,
+        delivered_at:      order.delivered_at || null,
+        cancelled_at:      order.cancelled_at || null,
+        delivery_type:     order.delivery_type,
+        delivery_address:  order.delivery_address,
+        timeline,
+      },
+    });
+  } catch (err) {
+    console.error('[patient-pharmacy-orders] GET tracking error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to retrieve tracking info' });
+  }
+});
+
+function stepLabel(step) {
+  const labels = {
+    pending:          'Order Placed',
+    confirmed:        'Order Confirmed',
+    processing:       'Being Prepared',
+    out_for_delivery: 'Out for Delivery',
+    delivered:        'Delivered',
+    cancelled:        'Cancelled',
+  };
+  return labels[step] || step;
+}
+
+/* ── PUT /api/pharmacy-orders/:orderId/status ─────────────────────────────── */
+/* Internal/admin use: update order status and optionally set tracking info.
+   Patients cannot call this — it requires authUser + role check. */
+
+router.put('/:orderId/status', authUser, async (req, res) => {
+  try {
+    // Only allow pharmacy staff / admin
+    const role = req.user.role || req.user.userType;
+    if (!['admin', 'super_admin', 'pharmacy', 'pharmacy_staff'].includes(role)) {
+      return res.status(403).json({ success: false, message: 'Insufficient permissions' });
+    }
+
+    const orderId = parseInt(req.params.orderId, 10);
+    if (!orderId || isNaN(orderId)) {
+      return res.status(400).json({ success: false, message: 'Invalid order ID' });
+    }
+
+    const { status, note = '', tracking_number, estimated_delivery } = req.body;
+    if (!status || !VALID_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: `status must be one of: ${VALID_STATUSES.join(', ')}` });
+    }
+
+    // Fetch current state
+    const fetchResult = await sharedPool.query(
+      'SELECT order_id, status FROM patient_pharmacy_orders WHERE order_id = $1',
+      [orderId]
+    );
+    if (fetchResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    const current = fetchResult.rows[0];
+    if (current.status === 'cancelled') {
+      return res.status(409).json({ success: false, message: 'Cannot update a cancelled order' });
+    }
+
+    // Build extra update fields
+    const extraUpdates = [];
+    const extraParams  = [];
+    let paramIdx = 3;
+
+    if (tracking_number) {
+      extraUpdates.push(`tracking_number = $${paramIdx++}`);
+      extraParams.push(tracking_number);
+    }
+    if (estimated_delivery) {
+      extraUpdates.push(`estimated_delivery = $${paramIdx++}`);
+      extraParams.push(estimated_delivery);
+    }
+    if (status === 'delivered') {
+      extraUpdates.push(`delivered_at = NOW()`);
+    }
+    if (status === 'cancelled') {
+      extraUpdates.push(`cancelled_at = NOW()`);
+    }
+
+    const extraSql = extraUpdates.length ? ', ' + extraUpdates.join(', ') : '';
+
+    const result = await sharedPool.query(
+      `UPDATE patient_pharmacy_orders
+          SET status         = $1,
+              status_history = status_history || $2::jsonb,
+              updated_at     = NOW()
+              ${extraSql}
+        WHERE order_id = $${paramIdx}
+        RETURNING *`,
+      [status, JSON.stringify(statusEvent(status, note)), ...extraParams, orderId]
+    );
+
+    return res.json({
+      success: true,
+      message: `Order status updated to '${status}'`,
+      data: result.rows[0],
+    });
+  } catch (err) {
+    console.error('[patient-pharmacy-orders] PUT status error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to update order status' });
+  }
+});
+
 /* ── POST /api/pharmacy-orders/:orderId/cancel ────────────────────────────── */
 
 router.post('/:orderId/cancel', authUser, async (req, res) => {
@@ -227,7 +455,6 @@ router.post('/:orderId/cancel', authUser, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid order ID' });
     }
 
-    // Fetch first to check ownership and current status
     const fetchResult = await sharedPool.query(
       'SELECT order_id, status FROM patient_pharmacy_orders WHERE order_id = $1 AND user_id = $2',
       [orderId, userId]
@@ -241,22 +468,26 @@ router.post('/:orderId/cancel', authUser, async (req, res) => {
     if (!['pending', 'confirmed'].includes(order.status)) {
       return res.status(409).json({
         success: false,
-        message: `Cannot cancel an order with status '${order.status}'`
+        message: `Cannot cancel an order with status '${order.status}'`,
       });
     }
 
+    const reason = req.body.reason || 'Cancelled by patient';
     const result = await sharedPool.query(
       `UPDATE patient_pharmacy_orders
-          SET status = 'cancelled', cancelled_at = NOW()
-        WHERE order_id = $1 AND user_id = $2
+          SET status         = 'cancelled',
+              cancelled_at   = NOW(),
+              status_history = status_history || $1::jsonb,
+              updated_at     = NOW()
+        WHERE order_id = $2 AND user_id = $3
         RETURNING *`,
-      [orderId, userId]
+      [JSON.stringify(statusEvent('cancelled', reason)), orderId, userId]
     );
 
     return res.json({
       success: true,
       message: 'Order cancelled successfully',
-      data: result.rows[0]
+      data: result.rows[0],
     });
   } catch (err) {
     console.error('[patient-pharmacy-orders] POST cancel error:', err);

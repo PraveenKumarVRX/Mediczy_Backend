@@ -43,6 +43,7 @@ import aiVisionRouter from "./routes/ai-vision.route.js";
 import aiScribeRouter from "./routes/ai-scribe.route.js";
 import scribeRouter from "./routes/scribe.js";
 import offlineScribeRouter from "./routes/offline-scribe.route.js";
+import voiceAssistantRouter from "./routes/voice-assistant.route.js";
 import localAiNodeRouter from "./routes/local-ai-node.route.js";
 import recordingRouter from "./routes/recording.route.js";
 import uploadRouter from "./routes/upload.route.js";
@@ -1196,6 +1197,7 @@ app.use('/api/corporate', aggregatorRouter); // Self-service corporate endpoints
 app.use('/api/scribe', scribeRouter); // AI Scribe - Public API entrypoint
 app.use('/api/hospital/scribe', scribeRouter); // AI Scribe - Hospital dashboard entrypoint
 app.use('/api/offline-scribe', offlineScribeRouter); // Offline AI Scribe - CPU-only, Indian languages
+app.use('/api/voice-assistant', voiceAssistantRouter); // Doctor Voice Assistant - Siri-style AI agent
 app.use('/api/ai-nodes', localAiNodeRouter); // Cloud Mother - Local AI Node management for hospital multi-tenancy
 app.use('/api', hospitalRouter); // Hospital directory and SPN network
 app.use('/api/hospital/practice', hospitalPracticeRouter); // Hospital practice management (appointments, patients, staff, resources)

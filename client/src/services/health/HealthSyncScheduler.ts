@@ -7,9 +7,16 @@
 
 import api from '@/utils/api';
 import { veepooService, VeepooService } from '../ble/VeepooService';
+import { fireBolttService } from '../ble/FireBolttService';
 
-// Sync interval in milliseconds (30 minutes)
-const SYNC_INTERVAL = 30 * 60 * 1000;
+// Sync interval in milliseconds (default 30 minutes, user-configurable)
+const DEFAULT_SYNC_INTERVAL = 30 * 60 * 1000;
+const SYNC_INTERVAL_KEY = 'healthSyncInterval';
+
+function getSyncInterval(): number {
+  const stored = parseInt(localStorage.getItem(SYNC_INTERVAL_KEY) || '0', 10);
+  return stored > 0 ? stored : DEFAULT_SYNC_INTERVAL;
+}
 
 // Storage keys
 const LAST_SYNC_KEY = 'lastHealthSync';
@@ -38,6 +45,7 @@ class HealthSyncScheduler {
   private syncInterval: NodeJS.Timeout | null = null;
   private measurementInterval: NodeJS.Timeout | null = null;
   private isRunning = false;
+  private _isMeasuring = false;
   private pendingReadings: HealthReading[] = [];
 
   private constructor() {
@@ -79,33 +87,37 @@ class HealthSyncScheduler {
   /**
    * Start the sync scheduler
    */
-  start(): void {
+  start(intervalMs?: number): void {
+    const interval = intervalMs ?? getSyncInterval();
     if (this.isRunning) {
-      console.log('Health sync scheduler already running');
-      return;
+      // Only restart if a different interval was explicitly requested
+      if (!intervalMs || getSyncInterval() === interval) return;
+      this.stop();
     }
 
-    console.log('🔄 Starting health sync scheduler (30 min interval)');
+    if (intervalMs) localStorage.setItem(SYNC_INTERVAL_KEY, String(intervalMs));
+
+    console.log(`🔄 Starting health sync scheduler (${Math.round(interval / 60000)} min interval)`);
     this.isRunning = true;
     localStorage.setItem(SYNC_ENABLED_KEY, 'true');
 
     // Run initial sync
     this.performSync();
 
-    // Schedule periodic sync every 30 minutes
+    // Schedule periodic sync
     this.syncInterval = setInterval(() => {
       this.performSync();
-    }, SYNC_INTERVAL);
+    }, interval);
 
-    // Schedule periodic measurements every 30 minutes
+    // Schedule periodic measurements (same cadence)
     this.measurementInterval = setInterval(() => {
       this.triggerDeviceMeasurements();
-    }, SYNC_INTERVAL);
+    }, interval);
 
-    // Also trigger initial measurement
+    // Trigger initial measurement after 5s (devices need time to be ready)
     setTimeout(() => {
       this.triggerDeviceMeasurements();
-    }, 5000); // Wait 5 seconds for devices to be ready
+    }, 5000);
   }
 
   /**
@@ -149,14 +161,39 @@ class HealthSyncScheduler {
    * Trigger measurements on connected devices
    */
   async triggerDeviceMeasurements(): Promise<void> {
+    if (this._isMeasuring) {
+      console.log('📊 Measurement already in progress, skipping concurrent call');
+      return;
+    }
+    this._isMeasuring = true;
     console.log('📊 Triggering device measurements...');
 
     const devices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
-    
-    for (const device of devices) {
-      if (device.isVeepooDevice) {
-        await this.measureVeepooDevice(device);
+    try {
+      for (const device of devices) {
+        if (device.isVeepooDevice) {
+          // Auto-reconnect before measuring (handles page refresh / lost BLE link)
+          if (!veepooService.getConnectionStatus()) {
+            console.log(`🔄 Auto-reconnecting to ${device.name}...`);
+            const ok = await veepooService.reconnect();
+            if (!ok) {
+              console.warn(`⚠️ Could not reconnect to ${device.name} – skipping measurement`);
+              continue;
+            }
+          }
+          await this.measureVeepooDevice(device);
+        } else if (device.isFireBolttDevice) {
+          // FireBoltt uses syncAll() which needs the GATT server to be live.
+          // If the service has lost its internal server reference, skip gracefully.
+          try {
+            await this.measureFireBolttDevice(device);
+          } catch (err) {
+            console.warn(`⚠️ [FireBoltt] Skipping ${device.name}: device not connected`);
+          }
+        }
       }
+    } finally {
+      this._isMeasuring = false;
     }
   }
 
@@ -207,16 +244,161 @@ class HealthSyncScheduler {
           deviceId: device.id,
           deviceName: device.name
         });
-      }
+      },
+      onBloodGlucoseData: (data) => {
+        this.addReading({
+          type: 'blood_glucose',
+          value: data.glucose,
+          unit: 'mmol/L',
+          timestamp: data.timestamp.toISOString(),
+          deviceId: device.id,
+          deviceName: device.name
+        });
+      },
+      onStepHistoryData: (data) => {
+        this.addReading({
+          type: 'steps',
+          value: data.steps,
+          unit: 'steps',
+          timestamp: data.timestamp.toISOString(),
+          deviceId: device.id,
+          deviceName: device.name
+        });
+        if (data.calories > 0) {
+          this.addReading({
+            type: 'calories',
+            value: data.calories,
+            unit: 'kcal',
+            timestamp: data.timestamp.toISOString(),
+            deviceId: device.id,
+            deviceName: device.name
+          });
+        }
+        if (data.activeMinutes > 0) {
+          this.addReading({
+            type: 'active_minutes',
+            value: data.activeMinutes,
+            unit: 'min',
+            timestamp: data.timestamp.toISOString(),
+            deviceId: device.id,
+            deviceName: device.name
+          });
+        }
+      },
+      onSleepHistoryData: (data) => {
+        this.addReading({
+          type: 'sleep',
+          value: parseFloat((data.totalMinutes / 60).toFixed(2)),
+          unit: 'hrs',
+          timestamp: data.timestamp.toISOString(),
+          deviceId: device.id,
+          deviceName: device.name
+        });
+      },
+      onHrvData: (data) => {
+        this.addReading({
+          type: 'hrv',
+          value: data.hrv,
+          unit: 'ms',
+          timestamp: data.timestamp.toISOString(),
+          deviceId: device.id,
+          deviceName: device.name
+        });
+      },
+      onEcgData: (data) => {
+        // Encode rhythm as a numeric: 0=normal,1=afib,2=irregular,3=unknown
+        const rhythmCode: Record<string, number> = { normal: 0, afib: 1, irregular: 2, unknown: 3 };
+        this.addReading({
+          type: 'ecg',
+          value: rhythmCode[data.rhythm] ?? 3,
+          unit: 'rhythm',
+          timestamp: data.timestamp.toISOString(),
+          deviceId: device.id,
+          deviceName: device.name,
+          metadata: { rhythm: data.rhythm, sampleRate: data.sampleRate, durationMs: data.durationMs }
+        });
+      },
+      onUricAcidData: (data) => {
+        this.addReading({
+          type: 'uric_acid',
+          value: data.uricAcid,
+          unit: 'μmol/L',
+          timestamp: data.timestamp.toISOString(),
+          deviceId: device.id,
+          deviceName: device.name
+        });
+      },
+      onCholesterolData: (data) => {
+        this.addReading({
+          type: 'cholesterol',
+          value: data.total,
+          unit: 'mmol/L',
+          timestamp: data.timestamp.toISOString(),
+          deviceId: device.id,
+          deviceName: device.name,
+          metadata: { hdl: data.hdl, ldl: data.ldl }
+        });
+        if (data.hdl > 0) this.addReading({
+          type: 'cholesterol_hdl', value: data.hdl, unit: 'mmol/L',
+          timestamp: data.timestamp.toISOString(), deviceId: device.id, deviceName: device.name
+        });
+        if (data.ldl > 0) this.addReading({
+          type: 'cholesterol_ldl', value: data.ldl, unit: 'mmol/L',
+          timestamp: data.timestamp.toISOString(), deviceId: device.id, deviceName: device.name
+        });
+      },
+      onGymActivityData: (data) => {
+        this.addReading({
+          type: 'gym_workout',
+          value: data.durationMinutes,
+          unit: 'min',
+          timestamp: data.timestamp.toISOString(),
+          deviceId: device.id,
+          deviceName: device.name,
+          metadata: { workoutType: data.workoutType, calories: data.calories, avgHR: data.avgHeartRate, maxHR: data.maxHeartRate, steps: data.steps }
+        });
+        if (data.calories > 0) this.addReading({
+          type: 'calories', value: data.calories, unit: 'kcal',
+          timestamp: data.timestamp.toISOString(), deviceId: device.id, deviceName: device.name
+        });
+      },
+      onOutdoorActivityData: (data) => {
+        this.addReading({
+          type: 'outdoor_activity',
+          value: parseFloat((data.distanceMeters / 1000).toFixed(3)),
+          unit: 'km',
+          timestamp: data.timestamp.toISOString(),
+          deviceId: device.id,
+          deviceName: device.name,
+          metadata: {
+            activityType: data.activityType,
+            durationMinutes: data.durationMinutes,
+            calories: data.calories,
+            avgHeartRate: data.avgHeartRate,
+            avgPaceSecPerKm: data.avgPaceSecPerKm,
+            routePoints: data.route.length,
+            route: data.route.slice(0, 200) // cap to 200 GPS points to avoid huge payloads
+          }
+        });
+      },
     });
+
+    // Helper: abort if GATT dropped mid-sequence
+    const assertConnected = () => {
+      if (!veepooService.getConnectionStatus()) {
+        throw new Error('GATT connection lost during measurement sequence');
+      }
+    };
 
     // Try to connect and measure
     try {
       // Start measurements
       await veepooService.startHeartRateMeasurement();
+      assertConnected();
       
       // Wait for measurement (typically 30 seconds)
       await new Promise(resolve => setTimeout(resolve, 30000));
+      assertConnected();
       
       await veepooService.stopHeartRateMeasurement();
 
@@ -238,6 +420,43 @@ class HealthSyncScheduler {
         console.log('SpO2 measurement not available');
       }
 
+      // Blood glucose measurement (continuous monitor or on-demand, 30s)
+      try {
+        await veepooService.startBloodGlucoseMeasurement();
+        await new Promise(resolve => setTimeout(resolve, 30000));
+        await veepooService.stopBloodGlucoseMeasurement();
+      } catch (e) {
+        console.log('Blood glucose measurement not available on this model');
+      }
+
+      // History reads — device responds asynchronously via notify characteristic
+      try { await veepooService.readStepHistory(); } catch (e) { /* optional */ }
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      try { await veepooService.readSleepHistory(); } catch (e) { /* optional */ }
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      try { await veepooService.readHrvData(); } catch (e) { /* optional */ }
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      try { await veepooService.readECGHistory(); } catch (e) { /* optional */ }
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      try { await veepooService.readGymHistory(); } catch (e) { /* optional */ }
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      try { await veepooService.readOutdoorHistory(); } catch (e) { /* optional */ }
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // Uric acid measurement (~30s)
+      try {
+        await veepooService.startUricAcidMeasurement();
+        await new Promise(resolve => setTimeout(resolve, 30000));
+        await veepooService.stopUricAcidMeasurement();
+      } catch (e) { console.log('Uric acid not available on this model'); }
+
+      // Cholesterol measurement (~30s)
+      try {
+        await veepooService.startCholesterolMeasurement();
+        await new Promise(resolve => setTimeout(resolve, 30000));
+        await veepooService.stopCholesterolMeasurement();
+      } catch (e) { console.log('Cholesterol not available on this model'); }
+
       console.log(`✅ Measurements complete for ${device.name}`);
     } catch (error) {
       console.error(`❌ Failed to measure from ${device.name}:`, error);
@@ -245,6 +464,57 @@ class HealthSyncScheduler {
       
       // DO NOT generate simulated data for health metrics - this is dangerous
       // Health data must always be real measurements from devices
+      throw error;
+    }
+  }
+
+  /**
+   * Measure health data from Fire-Boltt (Jieli) device
+   * Reads HR, SpO2, and Steps sequentially to avoid GATT concurrency errors.
+   */
+  private async measureFireBolttDevice(device: any): Promise<void> {
+    console.log(`⌚ [FireBoltt] Measuring from ${device.name}...`);
+
+    try {
+      const data = await fireBolttService.syncAll();
+
+      if (data.heartRate) {
+        this.addReading({
+          type: 'heart_rate',
+          value: data.heartRate,
+          unit: 'bpm',
+          timestamp: data.timestamp.toISOString(),
+          deviceId: device.id,
+          deviceName: device.name
+        });
+      }
+
+      if (data.spo2) {
+        this.addReading({
+          type: 'spo2',
+          value: data.spo2,
+          unit: '%',
+          timestamp: data.timestamp.toISOString(),
+          deviceId: device.id,
+          deviceName: device.name
+        });
+      }
+
+      if (data.steps) {
+        this.addReading({
+          type: 'steps',
+          value: data.steps,
+          unit: 'steps',
+          timestamp: data.timestamp.toISOString(),
+          deviceId: device.id,
+          deviceName: device.name
+        });
+      }
+
+      console.log(`✅ [FireBoltt] Measurements complete for ${device.name}`);
+    } catch (error) {
+      console.error(`❌ [FireBoltt] Failed to measure from ${device.name}:`, error);
+      console.error('⚠️  Device must be actively connected via Bluetooth to sync data');
       throw error;
     }
   }
@@ -346,7 +616,8 @@ class HealthSyncScheduler {
   getStatus(): SyncStatus {
     const lastSyncStr = localStorage.getItem(LAST_SYNC_KEY);
     const lastSync = lastSyncStr ? new Date(lastSyncStr) : null;
-    const nextSync = lastSync ? new Date(lastSync.getTime() + SYNC_INTERVAL) : null;
+    const interval = getSyncInterval();
+    const nextSync = lastSync ? new Date(lastSync.getTime() + interval) : null;
     const devices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
 
     return {
@@ -366,8 +637,23 @@ class HealthSyncScheduler {
     if (!lastSyncStr) return 0;
     
     const lastSync = new Date(lastSyncStr);
-    const nextSync = lastSync.getTime() + SYNC_INTERVAL;
+    const nextSync = lastSync.getTime() + getSyncInterval();
     return Math.max(0, nextSync - Date.now());
+  }
+
+  /** Change the auto-sync interval (restarts scheduler if running) */
+  setIntervalMinutes(minutes: number): void {
+    const ms = minutes * 60 * 1000;
+    if (this.isRunning) {
+      this.start(ms);
+    } else {
+      localStorage.setItem(SYNC_INTERVAL_KEY, String(ms));
+    }
+  }
+
+  /** Get current interval in minutes */
+  getIntervalMinutes(): number {
+    return Math.round(getSyncInterval() / 60000);
   }
 
   /**

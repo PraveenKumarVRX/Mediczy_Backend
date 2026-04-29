@@ -658,6 +658,13 @@ router.post('/payments/razorpay/create', authUser, async (req, res) => {
     const userId = req.user.id;
     const { orderId, amount, currency } = req.body;
 
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        message: 'orderId is required. Call /billing/orders/create first to get an orderId.'
+      });
+    }
+
     // Verify order belongs to user
     const order = await Order.findOne({
       where: { id: orderId, userId }

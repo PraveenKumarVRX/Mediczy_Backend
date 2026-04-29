@@ -9,12 +9,21 @@ export const PLAN_TYPES = {
 };
 
 export const PLAN_SLUGS = {
-  // Personal plans
-  BASIC_FREE: 'basic-free',
+  // Personal plans — SmartHealth annual structure
+  SMART_BASIC: 'smart-basic',
   SILVER: 'silver',
+  SILVER_INSURANCE: 'silver-insurance',
+  SILVER_PRO: 'silver-pro',
   GOLD: 'gold',
+  GOLD_INSURANCE: 'gold-insurance',
+  GOLD_PRO: 'gold-pro',
   PLATINUM: 'platinum',
+  PLATINUM_INSURANCE: 'platinum-insurance',
+  PLATINUM_PRO: 'platinum-pro',
   DIAMOND: 'diamond',
+  DIAMOND_INSURANCE: 'diamond-insurance',
+  DIAMOND_PRO: 'diamond-pro',
+  VITALTRACK: 'vitaltrack',
   // Corporate plans
   CORPORATE_BASIC: 'corporate-basic',
   CORPORATE_BASIC_PLUS: 'corporate-basic-plus',

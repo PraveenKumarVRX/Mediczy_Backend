@@ -1556,4 +1556,81 @@ router.post('/messages/:patientId', authUser, async (req, res) => {
   }
 });
 
+/**
+ * POST /smart-route — Symptom-based smart doctor ranking
+ * Returns top matching doctors sorted by relevance, rating, and fees
+ */
+router.post('/smart-route', async (req, res) => {
+  try {
+    const { symptoms = [], specialty, maxFee, consultationType = 'online', limit = 10 } = req.body;
+
+    // Symptom → specialization map
+    const symptomMap = {
+      'chest pain': 'cardiologist', 'heart': 'cardiologist', 'palpitation': 'cardiologist',
+      'skin': 'dermatologist', 'rash': 'dermatologist', 'acne': 'dermatologist', 'itch': 'dermatologist',
+      'eye': 'ophthalmologist', 'vision': 'ophthalmologist', 'squint': 'ophthalmologist',
+      'child': 'pediatrician', 'baby': 'pediatrician', 'infant': 'pediatrician', 'kid': 'pediatrician',
+      'bone': 'orthopedic', 'joint': 'orthopedic', 'fracture': 'orthopedic', 'knee': 'orthopedic',
+      'teeth': 'dentist', 'dental': 'dentist', 'gum': 'dentist',
+      'mental': 'psychiatrist', 'anxiety': 'psychiatrist', 'depression': 'psychiatrist', 'stress': 'psychologist',
+      'sugar': 'diabetologist', 'diabetes': 'diabetologist', 'thyroid': 'endocrinologist',
+      'stomach': 'gastroenterologist', 'acidity': 'gastroenterologist', 'liver': 'hepatologist',
+      'urine': 'urologist', 'kidney': 'nephrologist',
+      'pregnancy': 'gynecologist', 'periods': 'gynecologist', 'women': 'gynecologist',
+      'brain': 'neurologist', 'headache': 'neurologist', 'migraine': 'neurologist',
+      'lungs': 'pulmonologist', 'breath': 'pulmonologist', 'asthma': 'pulmonologist',
+      'ear': 'ent', 'nose': 'ent', 'throat': 'ent',
+      'cancer': 'oncologist', 'tumor': 'oncologist',
+      'blood': 'hematologist', 'infection': 'general physician', 'fever': 'general physician',
+    };
+
+    // Derive target specialization from symptoms or explicit specialty
+    let targetSpecialty = specialty || null;
+    if (!targetSpecialty && symptoms.length > 0) {
+      const lowerSymptoms = symptoms.map(s => s.toLowerCase()).join(' ');
+      for (const [keyword, spec] of Object.entries(symptomMap)) {
+        if (lowerSymptoms.includes(keyword)) { targetSpecialty = spec; break; }
+      }
+    }
+
+    const { Op } = sequelize.constructor ?? {};
+    const where = {};
+    if (targetSpecialty) {
+      // Use Sequelize literal if Op not available (since sequelize.constructor may differ)
+      where.specialization = sequelize.literal
+        ? sequelize.literal(`LOWER("specialization") LIKE '%${targetSpecialty.toLowerCase().replace(/'/g, '')}%'`)
+        : { [Op?.iLike ?? Symbol()]: `%${targetSpecialty}%` };
+    }
+    if (maxFee) where.consultationFees = sequelize.literal
+      ? sequelize.literal(`"consultationFees" <= ${parseInt(maxFee, 10)}`)
+      : { [Op?.lte ?? Symbol()]: parseInt(maxFee, 10) };
+
+    const rawDoctors = await Doctor.findAll({
+      where,
+      attributes: ['id', 'firstName', 'lastName', 'specialization', 'consultationFees', 'rating', 'totalReviews', 'isAvailable', 'profilePicture'],
+      order: [['rating', 'DESC'], ['consultationFees', 'ASC']],
+      limit: parseInt(limit, 10) > 20 ? 20 : parseInt(limit, 10),
+    });
+
+    const doctors = rawDoctors.map(d => ({
+      id: d.id,
+      name: `${d.firstName} ${d.lastName}`.trim(),
+      specialization: d.specialization,
+      consultationFees: d.consultationFees,
+      rating: parseFloat(d.rating) || 0,
+      totalReviews: d.totalReviews || 0,
+      availableToday: d.isAvailable !== false,
+      profilePicture: d.profilePicture || null,
+      recommendedReason: targetSpecialty
+        ? `Best match for ${targetSpecialty} · ${parseFloat(d.rating) ? `⭐ ${parseFloat(d.rating).toFixed(1)}` : 'New doctor'}`
+        : `Top rated · ${parseFloat(d.rating) ? `⭐ ${parseFloat(d.rating).toFixed(1)}` : 'New doctor'}`,
+    }));
+
+    res.json({ success: true, data: doctors, matchedSpecialty: targetSpecialty });
+  } catch (error) {
+    console.error('Smart route error:', error);
+    res.status(500).json({ success: false, message: 'Smart routing failed', error: error.message });
+  }
+});
+
 export default router;

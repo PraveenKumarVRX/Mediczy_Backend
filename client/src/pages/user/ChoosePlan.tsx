@@ -10,8 +10,9 @@ import { useAuth } from "@/auth/AuthProvider";
 import api from "@/utils/api";
 import { openRazorpayCheckout } from "@/utils/razorpay";
 import {
-  HeartPulse, Shield, Star, Crown, Gem, CheckCircle2, Loader2,
-  User, Building2, ArrowRight, ChevronRight, Sparkles, BadgeCheck,
+  HeartPulse, Shield, Crown, Gem, CheckCircle2, Loader2,
+  User, Building2, ArrowRight, ChevronRight, Sparkles, BadgeCheck, Zap, Star,
+  ShieldCheck,
 } from "lucide-react";
 
 // ── Animations ───────────────────────────────────────────────────────────────
@@ -30,50 +31,81 @@ const TIERS: Record<number, {
   badge: string;
   popular?: boolean;
 }> = {
-  1: { label: "Basic",    Icon: Shield, gradient: "from-slate-600 to-slate-800",    ring: "#64748b", badge: "bg-slate-100 text-slate-700 border-slate-300" },
-  2: { label: "Silver",   Icon: Star,   gradient: "from-sky-500 to-blue-600",       ring: "#0ea5e9", badge: "bg-sky-50 text-sky-700 border-sky-300" },
-  3: { label: "Gold",     Icon: Crown,  gradient: "from-amber-500 to-yellow-600",   ring: "#f59e0b", badge: "bg-amber-50 text-amber-700 border-amber-300", popular: true },
-  4: { label: "Platinum", Icon: Gem,    gradient: "from-purple-600 to-violet-700",  ring: "#7c3aed", badge: "bg-purple-50 text-purple-700 border-purple-300" },
+  0: { label: "Smart Basic", Icon: Zap,    gradient: "from-slate-500 to-slate-700",    ring: "#64748b", badge: "bg-slate-100 text-slate-700 border-slate-300" },
+  1: { label: "Silver",      Icon: Shield, gradient: "from-sky-400 to-blue-600",       ring: "#0ea5e9", badge: "bg-sky-50 text-sky-700 border-sky-300" },
+  2: { label: "Gold",        Icon: Star,   gradient: "from-amber-500 to-yellow-600",   ring: "#f59e0b", badge: "bg-amber-50 text-amber-700 border-amber-300", popular: true },
+  3: { label: "Platinum",    Icon: Crown,  gradient: "from-purple-600 to-violet-700",  ring: "#7c3aed", badge: "bg-purple-50 text-purple-700 border-purple-300" },
+  4: { label: "Diamond",     Icon: Gem,    gradient: "from-rose-500 to-pink-700",      ring: "#e11d48", badge: "bg-rose-50 text-rose-700 border-rose-300" },
 };
 
-// ── Static plan definitions (amounts synced with Razorpay) ──────────────────
+type PlanVariant = 'base' | 'plus' | 'pro';
+
+// ── Static plan definitions ──────────────────────────────────────────────────
+// base = healthcare only | plus = + insurance | pro = + insurance + VitalTrack (bundled)
 const STATIC_PLANS = [
   {
-    tier: 1, slug: "basic", name: "Basic Plan", price: 0, features: [
-      "2 Online consultations / month",
-      "Emergency consult access",
-      "Health record storage",
-      "Basic wellness tips",
+    tier: 0, slug: "smart-basic", name: "Smart Basic", price: 0, billingLabel: "3 months free",
+    plusSlug: null as string | null, plusPrice: null as number | null,
+    proSlug: null as string | null,  proPrice: null as number | null,
+    members: "Self",
+    features: [
+      "6 GP teleconsultations/year",
+      "3 emergency consultations",
+      "HRA & AI health assistant",
+      "Pharmacy discounts: 10–15%",
+      "Lab discounts: 15–20%",
     ],
   },
   {
-    tier: 2, slug: "silver", name: "Silver Plan", price: 99, features: [
-      "5 Online consultations / month",
-      "1 Physical consult / month",
-      "₹500 pharmacy benefit",
-      "Lab test discounts",
-      "24×7 helpline",
+    tier: 1, slug: "silver", name: "Silver", price: 1499, billingLabel: "/year",
+    plusSlug: "silver-insurance" as string | null, plusPrice: 3699 as number | null,
+    proSlug: "silver-pro" as string | null,        proPrice: 11999 as number | null,
+    members: "Self",
+    features: [
+      "10 GP teleconsultations/year",
+      "2 specialist consultations/year",
+      "1 annual health checkup",
+      "OPD network discounts: 20–30%",
+      "1 mental health session/year",
     ],
   },
   {
-    tier: 3, slug: "gold", name: "Gold Plan", price: 250, features: [
-      "10 Online consultations / month",
-      "2 Physical consults / month",
-      "₹2,000 pharmacy benefit",
-      "₹3,000 home care benefit",
-      "₹5,000 ambulance cover",
-      "Annual health checkup",
+    tier: 2, slug: "gold", name: "Gold", price: 2999, billingLabel: "/year",
+    plusSlug: "gold-insurance" as string | null, plusPrice: 7998 as number | null,
+    proSlug: "gold-pro" as string | null,        proPrice: 15999 as number | null,
+    members: "Couple",
+    features: [
+      "12 GP teleconsultations/year (1/month cap)",
+      "4 specialist consultations/year",
+      "₹2,000 OPD subsidy (network only)",
+      "2–3 mental health sessions/year",
+      "2 annual health checkups",
     ],
   },
   {
-    tier: 4, slug: "platinum", name: "Platinum Plan", price: 600, features: [
-      "Unlimited Online consultations",
-      "5 Physical consults / month",
-      "₹5,000 pharmacy benefit",
-      "₹10,000 home care benefit",
-      "₹15,000 ambulance cover",
-      "Comprehensive health checkup",
-      "Dental coverage",
+    tier: 3, slug: "platinum", name: "Platinum", price: 5999, billingLabel: "/year",
+    plusSlug: "platinum-insurance" as string | null, plusPrice: 14998 as number | null,
+    proSlug: "platinum-pro" as string | null,        proPrice: 22999 as number | null,
+    members: "Family (4)",
+    features: [
+      "18 GP teleconsultations/year",
+      "6 specialist consultations/year",
+      "₹4,000 OPD subsidy (network only)",
+      "4 mental health sessions/year",
+      "4 annual health checkups",
+    ],
+  },
+  {
+    tier: 4, slug: "diamond", name: "Diamond", price: 9999, billingLabel: "/year",
+    plusSlug: "diamond-insurance" as string | null, plusPrice: 24998 as number | null,
+    proSlug: "diamond-pro" as string | null,        proPrice: 32999 as number | null,
+    members: "Family (6)",
+    features: [
+      "24 GP teleconsultations/year",
+      "8 specialist consultations/year",
+      "₹7,000 OPD subsidy (network only)",
+      "Mental health: unlimited (fair usage)",
+      "Dedicated care manager",
     ],
   },
 ];
@@ -81,9 +113,23 @@ const STATIC_PLANS = [
 // ── Plan card ─────────────────────────────────────────────────────────────────
 function PlanCard({
   plan, onSelect, loading,
-}: { plan: typeof STATIC_PLANS[0]; onSelect: (p: typeof STATIC_PLANS[0]) => void; loading: boolean }) {
+}: { plan: typeof STATIC_PLANS[0]; onSelect: (p: typeof STATIC_PLANS[0], variant: PlanVariant) => void; loading: boolean }) {
   const cfg = TIERS[plan.tier];
   const Icon = cfg.Icon;
+  const hasPlus = !!plan.plusSlug;
+  const hasPro  = !!plan.proSlug;
+  const [variant, setVariant] = useState<PlanVariant>('base');
+
+  const displayPrice =
+    variant === 'pro'  && plan.proPrice  ? plan.proPrice  :
+    variant === 'plus' && plan.plusPrice ? plan.plusPrice  :
+    plan.price;
+
+  const variantLabel =
+    variant === 'pro'  ? `${plan.name} Pro`  :
+    variant === 'plus' ? `${plan.name}+`     :
+    plan.name;
+
   return (
     <motion.div
       variants={fadeUp}
@@ -110,19 +156,58 @@ function PlanCard({
           <Icon className="w-5 h-5" />
         </div>
         <h3 className="text-xl font-bold">{plan.name}</h3>
-        <div className="mt-2 flex items-end gap-1">
+        <p className="text-white/60 text-xs mb-2">{plan.members}</p>
+        <div className="flex items-end gap-1">
           {plan.price === 0 ? (
             <span className="text-3xl font-black">Free</span>
           ) : (
             <>
-              <span className="text-3xl font-black">₹{plan.price}</span>
-              <span className="text-white/60 text-sm mb-1">/month</span>
+              <span className="text-sm font-semibold mt-2">₹</span>
+              <span className="text-3xl font-black">{displayPrice.toLocaleString("en-IN")}</span>
+              <span className="text-white/60 text-sm mb-1">{plan.billingLabel}</span>
             </>
           )}
         </div>
+        {withInsurance && (
+          <div className="mt-1 text-xs text-white/80 flex items-center gap-1">
+            <ShieldCheck className="w-3 h-3" /> Includes insurance cover
+          </div>
+        )}
       </div>
       {/* Body */}
       <div className="p-5 bg-white dark:bg-gray-900">
+        {/* Insurance toggle */}
+        {(hasPlus || hasPro) && (
+          <div className="flex rounded-full bg-gray-100 dark:bg-gray-800 p-0.5 mb-4 text-xs font-medium">
+            {(['base', 'plus', 'pro'] as PlanVariant[]).map(v => {
+              const available = v === 'base' || (v === 'plus' && hasPlus) || (v === 'pro' && hasPro);
+              if (!available) return null;
+              return (
+                <button
+                  key={v}
+                  onClick={() => setVariant(v)}
+                  className={`flex-1 py-1 rounded-full capitalize transition-all ${
+                    variant === v
+                      ? `bg-gradient-to-r ${cfg.gradient} text-white shadow`
+                      : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200'
+                  }`}
+                >
+                  {v === 'plus' ? 'Plus' : v === 'pro' ? 'Pro' : 'Base'}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {variant === 'plus' && (
+          <p className="text-xs text-blue-600 dark:text-blue-400 mb-3 font-medium">
+            Includes Health &amp; Accident Insurance
+          </p>
+        )}
+        {variant === 'pro' && (
+          <p className="text-xs text-violet-600 dark:text-violet-400 mb-3 font-medium">
+            Insurance + VitalTrack monitoring bundle
+          </p>
+        )}
         <ul className="space-y-2.5 mb-5">
           {plan.features.map((f, i) => (
             <li key={i} className="flex items-start gap-2.5 text-sm text-gray-700 dark:text-gray-300">
@@ -130,9 +215,21 @@ function PlanCard({
               {f}
             </li>
           ))}
+          {(variant === 'plus' || variant === 'pro') && (
+            <li className="flex items-start gap-2.5 text-sm text-blue-700 dark:text-blue-300 font-medium">
+              <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
+              Health &amp; Accident Insurance included
+            </li>
+          )}
+          {variant === 'pro' && (
+            <li className="flex items-start gap-2.5 text-sm text-violet-700 dark:text-violet-300 font-medium">
+              <HeartPulse className="w-4 h-4 shrink-0 mt-0.5 text-violet-500" />
+              VitalTrack monitoring included
+            </li>
+          )}
         </ul>
         <Button
-          onClick={() => onSelect(plan)}
+          onClick={() => onSelect(plan, variant)}
           disabled={loading}
           className={`w-full bg-gradient-to-r ${cfg.gradient} text-white border-0 hover:opacity-90 font-semibold`}
         >
@@ -141,7 +238,7 @@ function PlanCard({
           ) : (
             <ChevronRight className="w-4 h-4 mr-2" />
           )}
-          {plan.price === 0 ? "Start Free" : `Get ${cfg.label}`}
+          {plan.price === 0 ? "Start Free" : `Get ${variantLabel}`}
         </Button>
       </div>
     </motion.div>
@@ -166,12 +263,25 @@ function IndividualTab() {
     staleTime: 60_000,
   });
 
-  const handleSelect = async (plan: typeof STATIC_PLANS[0]) => {
-    setLoadingSlug(plan.slug);
+  const handleSelect = async (plan: typeof STATIC_PLANS[0], variant: PlanVariant) => {
+    // Determine the effective slug based on variant
+    const effectiveSlug =
+      variant === 'pro'  && plan.proSlug  ? plan.proSlug  :
+      variant === 'plus' && plan.plusSlug ? plan.plusSlug :
+      plan.slug;
+    const effectivePrice =
+      variant === 'pro'  && plan.proPrice  ? plan.proPrice  :
+      variant === 'plus' && plan.plusPrice ? plan.plusPrice :
+      plan.price;
+    const effectiveName =
+      variant === 'pro'  ? `${plan.name} Pro`  :
+      variant === 'plus' ? `${plan.name}+`     :
+      plan.name;
+    setLoadingSlug(effectiveSlug);
 
     try {
       // Find plan ID from server list
-      const serverPlan = serverPlans?.find(p => p.slug === plan.slug || p.tier === plan.tier);
+      const serverPlan = serverPlans?.find(p => p.slug === effectiveSlug);
       const planId = serverPlan?.id;
 
       if (!planId) {
@@ -180,21 +290,21 @@ function IndividualTab() {
         return;
       }
 
-      // Free / Basic plan — subscribe directly, no payment
-      if (plan.price === 0) {
+      // Free / Smart Basic plan — subscribe directly, no payment
+      if (effectivePrice === 0) {
         await api.post(`/membership/subscribe/${planId}`);
         await qc.invalidateQueries({ queryKey: ["myPlan"] });
         await qc.invalidateQueries({ queryKey: ["user-plan"] });
-        toast({ title: "Plan activated!", description: `You're now on ${plan.name}. Welcome!` });
+        toast({ title: "Plan activated!", description: `You're now on ${effectiveName}. Welcome!` });
         navigate("/", { replace: true });
         return;
       }
 
       // Create Razorpay order
       const { data: orderData } = await api.post("/membership/payment-order", {
-        amount: plan.price,
+        amount: effectivePrice,
         planId,
-        planName: plan.name,
+        planName: effectiveName,
       });
 
       await openRazorpayCheckout(orderData, {
@@ -212,7 +322,7 @@ function IndividualTab() {
             });
             await qc.invalidateQueries({ queryKey: ["myPlan"] });
             await qc.invalidateQueries({ queryKey: ["user-plan"] });
-            toast({ title: "Payment successful!", description: `You're now on ${plan.name}. Welcome!` });
+            toast({ title: "Payment successful!", description: `You're now on ${effectiveName}. Welcome!` });
             navigate("/", { replace: true });
           } catch (e: any) {
             toast({ title: "Activation failed after payment", description: e?.response?.data?.message ?? e.message, variant: "destructive" });
@@ -236,13 +346,13 @@ function IndividualTab() {
 
   return (
     <motion.div variants={stagger} initial="hidden" animate="show"
-      className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mt-6">
+      className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-5 mt-6">
       {STATIC_PLANS.map(plan => (
         <PlanCard
           key={plan.slug}
           plan={plan}
           onSelect={handleSelect}
-          loading={loadingSlug === plan.slug}
+          loading={loadingSlug === plan.slug || loadingSlug === plan.plusSlug || loadingSlug === plan.proSlug}
         />
       ))}
     </motion.div>

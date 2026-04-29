@@ -29,16 +29,23 @@ const TIERS: Record<number, {
   label: string; Icon: React.FC<{ className?: string }>;
   gradient: string; ring: string; badge: string; accent: string; track: string;
 }> = {
-  0: { label: "Basic",        Icon: Zap,    gradient: "from-gray-500 to-gray-700",              ring: "#6b7280", badge: "bg-gray-100 text-gray-700 border-gray-300",       accent: "text-gray-600",   track: "#f3f4f6" },
-  1: { label: "Silver",       Icon: Shield, gradient: "from-slate-400 to-slate-600",            ring: "#94a3b8", badge: "bg-slate-100 text-slate-700 border-slate-300",   accent: "text-slate-600",  track: "#e2e8f0" },
-  2: { label: "Silver Plus",  Icon: Shield, gradient: "from-slate-300 via-blue-300 to-slate-500",ring: "#64748b", badge: "bg-blue-50 text-blue-700 border-blue-300",         accent: "text-blue-600",   track: "#dbeafe" },
-  3: { label: "Silver Elite", Icon: Shield, gradient: "from-slate-400 via-indigo-300 to-slate-600",ring: "#4f46e5", badge: "bg-indigo-50 text-indigo-700 border-indigo-300",accent: "text-indigo-600", track: "#e0e7ff" },
-  4: { label: "Gold",         Icon: Star,   gradient: "from-amber-500 to-yellow-600",           ring: "#f59e0b", badge: "bg-amber-50 text-amber-700 border-amber-300",    accent: "text-amber-600",  track: "#fef3c7" },
-  5: { label: "Platinum",     Icon: Crown,  gradient: "from-sky-500 to-blue-600",               ring: "#0ea5e9", badge: "bg-sky-50 text-sky-700 border-sky-300",            accent: "text-sky-600",    track: "#e0f2fe" },
-  6: { label: "Diamond",      Icon: Gem,    gradient: "from-purple-600 to-violet-700",          ring: "#7c3aed", badge: "bg-purple-50 text-purple-700 border-purple-300",  accent: "text-purple-600", track: "#ede9fe" },
+  0:  { label: "Smart Basic",          Icon: Zap,       gradient: "from-gray-500 to-gray-700",                   ring: "#6b7280", badge: "bg-gray-100 text-gray-700 border-gray-300",          accent: "text-gray-600",   track: "#f3f4f6" },
+  1:  { label: "Silver",               Icon: Shield,    gradient: "from-sky-400 to-blue-600",                    ring: "#0ea5e9", badge: "bg-sky-50 text-sky-700 border-sky-300",               accent: "text-sky-600",    track: "#e0f2fe" },
+  2:  { label: "Silver+",              Icon: Shield,    gradient: "from-sky-500 via-blue-400 to-indigo-500",     ring: "#3b82f6", badge: "bg-blue-50 text-blue-700 border-blue-300",             accent: "text-blue-600",   track: "#dbeafe" },
+  3:  { label: "Silver Pro",           Icon: Shield,    gradient: "from-indigo-500 to-violet-600",               ring: "#6366f1", badge: "bg-indigo-50 text-indigo-700 border-indigo-300",       accent: "text-indigo-600", track: "#e0e7ff" },
+  4:  { label: "Gold",                 Icon: Star,      gradient: "from-amber-500 to-yellow-600",                ring: "#f59e0b", badge: "bg-amber-50 text-amber-700 border-amber-300",          accent: "text-amber-600",  track: "#fef3c7" },
+  5:  { label: "Gold+",                Icon: Star,      gradient: "from-amber-600 via-orange-400 to-amber-700",  ring: "#d97706", badge: "bg-orange-50 text-orange-700 border-orange-300",       accent: "text-orange-600", track: "#ffedd5" },
+  6:  { label: "Gold Pro",             Icon: Star,      gradient: "from-orange-600 to-amber-800",                ring: "#b45309", badge: "bg-yellow-50 text-yellow-800 border-yellow-400",       accent: "text-yellow-700", track: "#fef9c3" },
+  7:  { label: "Platinum",             Icon: Crown,     gradient: "from-purple-600 to-violet-700",               ring: "#7c3aed", badge: "bg-purple-50 text-purple-700 border-purple-300",       accent: "text-purple-600", track: "#ede9fe" },
+  8:  { label: "Platinum+",            Icon: Crown,     gradient: "from-purple-700 via-violet-500 to-indigo-700",ring: "#6d28d9", badge: "bg-violet-50 text-violet-700 border-violet-300",       accent: "text-violet-600", track: "#ddd6fe" },
+  9:  { label: "Platinum Pro",         Icon: Crown,     gradient: "from-violet-700 to-purple-900",               ring: "#5b21b6", badge: "bg-purple-100 text-purple-900 border-purple-400",     accent: "text-purple-700", track: "#d8b4fe" },
+  10: { label: "Diamond",              Icon: Gem,       gradient: "from-rose-500 to-pink-700",                   ring: "#e11d48", badge: "bg-rose-50 text-rose-700 border-rose-300",             accent: "text-rose-600",   track: "#ffe4e6" },
+  11: { label: "Diamond+",             Icon: Gem,       gradient: "from-rose-600 via-pink-500 to-fuchsia-700",   ring: "#be185d", badge: "bg-pink-50 text-pink-700 border-pink-300",             accent: "text-pink-600",   track: "#fce7f3" },
+  12: { label: "Diamond Pro",          Icon: Gem,       gradient: "from-fuchsia-700 to-purple-900",              ring: "#7e22ce", badge: "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-300",   accent: "text-fuchsia-700",track: "#fae8ff" },
+  20: { label: "VitalTrack",           Icon: HeartPulse,gradient: "from-cyan-500 to-teal-600",                   ring: "#0891b2", badge: "bg-cyan-50 text-cyan-700 border-cyan-300",             accent: "text-cyan-600",   track: "#cffafe" },
 };
 
-const TIER_LIST = [0, 1, 2, 3, 4, 5, 6];
+const TIER_LIST = [0, 1, 4, 7, 10];
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface BenefitLimits { pharmacyLimitINR?: number; homeCareLimitINR?: number; ambulanceLimitINR?: number }
@@ -289,7 +296,7 @@ function ConfirmUpgradeModal({ plan, onConfirm, onCancel, isLoading }: {
         <div className={`p-5 bg-gradient-to-br ${cfg.gradient} text-white`}>
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-white/15"><Icon className="w-5 h-5" /></div>
-            <div><h3 className="font-bold text-lg">Upgrade to {plan.name}</h3><p className="text-white/70 text-xs">{plan.tierName} Plan · {plan.durationMonths || 1} month</p></div>
+            <div><h3 className="font-bold text-lg">Upgrade to {plan.name}</h3><p className="text-white/70 text-xs">{plan.tierName} Plan · {plan.durationMonths === 12 ? "Annual" : plan.durationMonths === 3 ? "3-month trial" : `${plan.durationMonths || 1} month`}</p></div>
           </div>
         </div>
         <div className="p-5 space-y-4">

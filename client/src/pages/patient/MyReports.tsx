@@ -433,7 +433,20 @@ const MyReports = () => {
                       variant="outline"
                       size="sm"
                       className="flex-1"
-                      onClick={() => window.open(report.fileUrl, '_blank')}
+                      onClick={() => {
+                        // Open via secure decryption endpoint so encrypted MinIO reports render correctly
+                        const token = localStorage.getItem('token');
+                        // Open in new tab — uses secure decrypt endpoint for encrypted MinIO reports
+                        api.get(`/reports/download/${report.id}`, { responseType: 'blob' }).then(res => {
+                          const blob = res.data;
+                          const objectUrl = URL.createObjectURL(blob);
+                          window.open(objectUrl, '_blank');
+                          setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+                        }).catch(() => {
+                          // Fallback to direct URL for non-encrypted reports
+                          if (report.fileUrl) window.open(report.fileUrl, '_blank');
+                        });
+                      }}
                     >
                       <Eye className="h-3 w-3 mr-1" />
                       View
@@ -443,10 +456,23 @@ const MyReports = () => {
                       size="sm"
                       className="flex-1"
                       onClick={() => {
-                        const link = document.createElement('a');
-                        link.href = report.fileUrl;
-                        link.download = report.fileName;
-                        link.click();
+                        api.get(`/reports/download/${report.id}`, { responseType: 'blob' }).then(res => {
+                          const blob = res.data;
+                          const objectUrl = URL.createObjectURL(blob);
+                          const link = document.createElement('a');
+                          link.href = objectUrl;
+                          link.download = report.fileName;
+                          link.click();
+                          setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+                        }).catch(() => {
+                          // Fallback for legacy unencrypted reports
+                          if (report.fileUrl) {
+                            const link = document.createElement('a');
+                            link.href = report.fileUrl;
+                            link.download = report.fileName;
+                            link.click();
+                          }
+                        });
                       }}
                     >
                       <Download className="h-3 w-3 mr-1" />

@@ -77,7 +77,8 @@ router.post('/', authUser, async (req, res) => {
       await postgresSequelize.query(
         `INSERT INTO user_devices (user_id, device_id, device_name, device_type, is_active, created_at, updated_at)
          VALUES ($1, $2, $3, $4, TRUE, NOW(), NOW())
-         ON CONFLICT (user_id, device_id) DO UPDATE SET 
+         ON CONFLICT (device_id) DO UPDATE SET 
+           user_id = $1,
            device_name = EXCLUDED.device_name,
            device_type = EXCLUDED.device_type,
            is_active = TRUE,

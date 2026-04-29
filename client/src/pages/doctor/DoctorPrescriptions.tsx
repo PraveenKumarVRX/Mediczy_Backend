@@ -791,6 +791,38 @@ const DoctorPrescriptions = () => {
                           <Button variant="ghost" size="icon" onClick={() => handleDownloadPDF(rx.id)} title="Download PDF">
                             <Download className="h-4 w-4" />
                           </Button>
+                          {(rx.status === "issued" || rx.status === "active") && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Send via WhatsApp"
+                              className="text-green-600 hover:text-green-700"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const phone = (rx as any)?.patientPhone || (rx as any)?.patient?.phone || '';
+                                if (!phone) {
+                                  toast({ title: 'No phone', description: 'Patient phone not on record.', variant: 'destructive' });
+                                  return;
+                                }
+                                try {
+                                  const medications = ((rx as any)?.medicines || (rx as any)?.medications || [])
+                                    .map((m: any) => m?.name || m?.medicine || '').filter(Boolean);
+                                  await api.post('/whatsapp-production/send/prescription', {
+                                    to: phone,
+                                    patientName: (rx as any)?.patientName || 'Patient',
+                                    doctorName: (rx as any)?.doctorName || 'Doctor',
+                                    prescriptionUrl: (rx as any)?.pdfUrl || `${window.location.origin}/prescriptions/${rx.id}`,
+                                    medications,
+                                  });
+                                  toast({ title: '✅ Sent!', description: 'Prescription sent via WhatsApp.' });
+                                } catch {
+                                  toast({ title: 'Failed', description: 'Could not send WhatsApp message.', variant: 'destructive' });
+                                }
+                              }}
+                            >
+                              <Send className="h-4 w-4" />
+                            </Button>
+                          )}
                           {rx.status === "draft" && (
                             <Button
                               variant="ghost"
@@ -1543,11 +1575,29 @@ const DoctorPrescriptions = () => {
               {selectedPrescription?.status === "issued" || selectedPrescription?.status === "active" ? (
                 <Button
                   variant="outline"
-                  onClick={() => {
-                    const phone = (selectedPrescription as any)?.patientPhone || "";
-                    api.get(`/prescriptions/${selectedPrescription!.id}/share/whatsapp`)
-                      .then(r => { if (r.data?.whatsappUrl) window.open(r.data.whatsappUrl, "_blank"); })
-                      .catch(() => {});
+                  onClick={async () => {
+                    const rx = selectedPrescription as any;
+                    const phone = rx?.patientPhone || rx?.patient?.phone || rx?.patient?.mobile || '';
+                    if (!phone) {
+                      toast({ title: 'No phone number', description: 'Patient phone number is not on record.', variant: 'destructive' });
+                      return;
+                    }
+                    try {
+                      const medications = (rx?.medicines || rx?.medications || []).map(
+                        (m: any) => m?.name || m?.medicine || m?.drug || ''
+                      ).filter(Boolean);
+                      await api.post('/whatsapp-production/send/prescription', {
+                        to: phone,
+                        patientName: rx?.patientName || rx?.patient?.name || 'Patient',
+                        doctorName: rx?.doctorName || 'Doctor',
+                        prescriptionUrl: rx?.pdfUrl || `${window.location.origin}/prescriptions/${rx?.id}`,
+                        medications,
+                        followUpDate: rx?.followUpDate,
+                      });
+                      toast({ title: '✅ Sent!', description: 'Prescription sent via WhatsApp.' });
+                    } catch {
+                      toast({ title: 'Failed', description: 'Could not send WhatsApp message.', variant: 'destructive' });
+                    }
                   }}
                 >
                   <Send className="h-4 w-4 mr-2" />

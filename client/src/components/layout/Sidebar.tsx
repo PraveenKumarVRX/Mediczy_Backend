@@ -85,6 +85,7 @@ const sidebarItems: SidebarItem[] = [
   { icon: CalendarDays, label: "Wellness Calendar", path: "/wellness-calendar", category: "Health" },
   { icon: Apple, label: "Diet Plans", path: "/diet", category: "Health" },
   { icon: Bot, label: "AI Doctor", path: "/ai-doctor", category: "Health" },
+  { icon: Watch, label: "Watch Analytics", path: "/patient/watch-analytics", category: "Health" },
   
   // Appointments & Consultations
   { icon: CalendarCheck, label: "My Appointments", path: "/appointments", category: "Appointments" },

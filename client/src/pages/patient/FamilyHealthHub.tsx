@@ -25,12 +25,13 @@ import {
   AlertCircle, Phone, Plus, ChevronRight, Stethoscope, Brain,
   Baby, UserPlus, HeartPulse, Thermometer, Droplets, Moon, Footprints,
   Bell, FileText, TrendingUp, Star, MapPin, Video, MessageSquare,
-  Sparkles, Crown, Award, Syringe, Dna, Eye, Bone, Zap
+  Sparkles, Crown, Award, Syringe, Dna, Eye, Bone, Zap, Loader2
 } from 'lucide-react';
 import api from '@/utils/api';
-import { getToken } from '@/hooks/auth';
 import { useAuth } from '@/auth/AuthProvider';
+import { useToast } from '@/hooks/use-toast';
 import MainLayout from '@/components/layout/MainLayout';
+import aiHealthServices from '@/services/aiHealthServices';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface FamilyMember {
@@ -66,22 +67,113 @@ export default function FamilyHealthHub() {
   const [showAddMember, setShowAddMember] = useState(false);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [addForm, setAddForm] = useState({ firstName: '', lastName: '', relationship: 'spouse', dateOfBirth: '', gender: 'male', bloodGroup: '' });
+  const [adding, setAdding] = useState(false);
+  const [aiInsights, setAiInsights] = useState<Record<string, { summary: string; tips: string[] } | null>>({});
+  const [loadingInsight, setLoadingInsight] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     loadFamilyData();
   }, []);
 
+  const fetchAIInsight = async (member: FamilyMember) => {
+    if (aiInsights[member.id] || loadingInsight === member.id) return;
+    setLoadingInsight(member.id);
+    try {
+      const conditions = member.conditions.length > 0 ? member.conditions.join(', ') : 'none known';
+      const allergies = member.allergies.length > 0 ? member.allergies.join(', ') : 'none';
+      const result = await aiHealthServices.thinkWithBrain({
+        query: `Give a brief health assessment for ${member.name}, ${member.age} years old, ${member.gender === 'F' ? 'female' : 'male'}. Conditions: ${conditions}. Allergies: ${allergies}. Health score: ${member.healthScore}/100. Provide: 1) A 1-sentence health summary. 2) Exactly 3 short, actionable wellness tips. Respond in JSON: {"summary":"...","tips":["...","...","..."]}`,
+        type: 'health_analysis',
+      });
+      if (result?.response) {
+        try {
+          const jsonMatch = result.response.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (parsed.summary && Array.isArray(parsed.tips)) {
+              setAiInsights(prev => ({ ...prev, [member.id]: { summary: parsed.summary, tips: parsed.tips.slice(0, 3) } }));
+              return;
+            }
+          }
+        } catch { /* fall through */ }
+        // Plain text fallback
+        setAiInsights(prev => ({ ...prev, [member.id]: { summary: result.response.slice(0, 120), tips: [] } }));
+      }
+    } catch {
+      setAiInsights(prev => ({ ...prev, [member.id]: null }));
+    } finally {
+      setLoadingInsight(null);
+    }
+  };
+
+  // Map a backend FamilyMember record to the UI shape
+  const mapMember = (m: any): FamilyMember => {
+    const dob = m.dateOfBirth ? new Date(m.dateOfBirth) : null;
+    const age = dob ? Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 3600 * 1000)) : 0;
+    const name = [m.firstName, m.lastName].filter(Boolean).join(' ') || 'Family Member';
+    const genderChar = (m.gender || '').toLowerCase().startsWith('f') ? 'F' : 'M';
+    const avatarMap: Record<string, string> = {
+      spouse: genderChar === 'F' ? '👩' : '👨',
+      father: '👴', mother: '👵', son: '👦', daughter: '👧',
+      brother: '👦', sister: '👧', grandfather: '👴', grandmother: '👵',
+      guardian: '🧑', other: '🧑',
+    };
+    return {
+      id: String(m.id),
+      name,
+      relation: m.relationship ? (m.relationship.charAt(0).toUpperCase() + m.relationship.slice(1)) : 'Family',
+      age,
+      gender: genderChar,
+      avatar: avatarMap[m.relationship?.toLowerCase()] || '🧑',
+      healthScore: 80,
+      healthTrend: 'stable',
+      bloodGroup: m.bloodGroup || undefined,
+      allergies: m.allergies || [],
+      conditions: m.medicalConditions || [],
+      medications: [],
+      upcomingAppointments: [],
+      vitals: [],
+      lastCheckup: undefined,
+      vaccinations: [],
+      insuranceCovered: false,
+    };
+  };
+
+  // Add current user as "Self" entry
+  const selfEntry = (): FamilyMember => ({
+    id: 'self',
+    name: currentUser ? `${currentUser.firstName ?? ''} ${currentUser.lastName ?? ''}`.trim() || 'You' : 'You',
+    relation: 'Self',
+    age: currentUser?.dateOfBirth ? Math.floor((Date.now() - new Date(currentUser.dateOfBirth).getTime()) / (365.25 * 24 * 3600 * 1000)) : 0,
+    gender: (currentUser?.gender || 'M')[0].toUpperCase(),
+    avatar: '👤',
+    healthScore: 80,
+    healthTrend: 'stable',
+    bloodGroup: currentUser?.bloodGroup,
+    allergies: [],
+    conditions: [],
+    medications: [],
+    upcomingAppointments: [],
+    vitals: [],
+    vaccinations: [],
+    insuranceCovered: true,
+  });
+
   const loadFamilyData = async () => {
     setLoading(true);
     try {
-      const token = getToken();
-      if (token) {
-        const res = await api.get('/family/members').catch(() => null);
-        if (res?.data?.members) { setMembers(res.data.members); setLoading(false); return; }
+      const res = await api.get('/family-members');
+      if (res?.data?.success && Array.isArray(res.data.data)) {
+        setMembers([selfEntry(), ...res.data.data.map(mapMember)]);
+        setLoading(false);
+        return;
       }
-    } catch { /* */ }
-
-    // Demo data
+    } catch {
+      // fall through to demo data
+    }
+    // Demo fallback
     setMembers([
       {
         id: '1', name: currentUser?.firstName || 'You', relation: 'Self', age: 32, gender: 'M',
@@ -250,7 +342,7 @@ export default function FamilyHealthHub() {
           {members.map((member, i) => (
             <motion.div key={member.id} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: i * 0.1 }}
-              onClick={() => setSelectedMember(member)}
+              onClick={() => { setSelectedMember(member); fetchAIInsight(member); }}
               className="flex-shrink-0 w-[140px] snap-start cursor-pointer group">
               <Card className="!p-0 overflow-hidden border-white/[0.06] hover:border-white/[0.15] bg-slate-900/50 transition-all">
                 <CardContent className="p-4 text-center">
@@ -484,6 +576,40 @@ export default function FamilyHealthHub() {
                 </div>
               )}
 
+              {/* AI Health Insight */}
+              <div className="mb-4">
+                <h4 className="text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-violet-400" /> AI Health Insight
+                </h4>
+                {loadingInsight === selectedMember.id ? (
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-violet-500/5 border border-violet-500/20">
+                    <Loader2 className="h-4 w-4 text-violet-400 animate-spin shrink-0" />
+                    <p className="text-xs text-slate-400">Generating AI health insight…</p>
+                  </div>
+                ) : aiInsights[selectedMember.id] ? (
+                  <div className="p-3 rounded-xl bg-violet-500/5 border border-violet-500/20 space-y-2">
+                    <p className="text-sm text-slate-300 leading-relaxed">{aiInsights[selectedMember.id]!.summary}</p>
+                    {aiInsights[selectedMember.id]!.tips.length > 0 && (
+                      <ul className="space-y-1.5 pt-1">
+                        {aiInsights[selectedMember.id]!.tips.map((tip, i) => (
+                          <li key={i} className="flex items-start gap-2">
+                            <Zap className="h-3 w-3 text-violet-400 mt-0.5 shrink-0" />
+                            <span className="text-xs text-slate-400">{tip}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => fetchAIInsight(selectedMember)}
+                    className="w-full flex items-center justify-center gap-2 p-3 rounded-xl bg-violet-500/5 border border-dashed border-violet-500/30 text-violet-400 text-xs hover:bg-violet-500/10 transition-colors"
+                  >
+                    <Brain className="h-4 w-4" /> Get AI Health Analysis
+                  </button>
+                )}
+              </div>
+
               {/* Actions */}
               <div className="flex gap-2 pt-2">
                 <Button className="flex-1 bg-blue-600 hover:bg-blue-500 border-0 rounded-xl gap-1" onClick={() => { setSelectedMember(null); navigate('/doctors'); }}>
@@ -505,25 +631,71 @@ export default function FamilyHealthHub() {
             <DialogTitle className="text-white">Add Family Member</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <Input placeholder="Full Name" className="bg-slate-800/50 border-white/[0.08] text-white rounded-xl" />
             <div className="grid grid-cols-2 gap-3">
-              <select className="px-3 py-2.5 rounded-xl bg-slate-800/50 border border-white/[0.08] text-sm text-slate-300 outline-none">
-                <option>Spouse</option>
-                <option>Child</option>
-                <option>Parent</option>
-                <option>Parent-in-Law</option>
-              </select>
-              <Input type="number" placeholder="Age" className="bg-slate-800/50 border-white/[0.08] text-white rounded-xl" />
+              <Input placeholder="First Name" value={addForm.firstName}
+                onChange={e => setAddForm(f => ({ ...f, firstName: e.target.value }))}
+                className="bg-slate-800/50 border-white/[0.08] text-white rounded-xl" />
+              <Input placeholder="Last Name" value={addForm.lastName}
+                onChange={e => setAddForm(f => ({ ...f, lastName: e.target.value }))}
+                className="bg-slate-800/50 border-white/[0.08] text-white rounded-xl" />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <select className="px-3 py-2.5 rounded-xl bg-slate-800/50 border border-white/[0.08] text-sm text-slate-300 outline-none">
-                <option>Male</option>
-                <option>Female</option>
+              <select value={addForm.relationship}
+                onChange={e => setAddForm(f => ({ ...f, relationship: e.target.value }))}
+                className="px-3 py-2.5 rounded-xl bg-slate-800/50 border border-white/[0.08] text-sm text-slate-300 outline-none">
+                <option value="spouse">Spouse</option>
+                <option value="son">Son</option>
+                <option value="daughter">Daughter</option>
+                <option value="father">Father</option>
+                <option value="mother">Mother</option>
+                <option value="grandfather">Grandfather</option>
+                <option value="grandmother">Grandmother</option>
+                <option value="other">Other</option>
               </select>
-              <Input placeholder="Blood Group" className="bg-slate-800/50 border-white/[0.08] text-white rounded-xl" />
+              <select value={addForm.gender}
+                onChange={e => setAddForm(f => ({ ...f, gender: e.target.value }))}
+                className="px-3 py-2.5 rounded-xl bg-slate-800/50 border border-white/[0.08] text-sm text-slate-300 outline-none">
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
             </div>
-            <Button className="w-full bg-gradient-to-r from-violet-600 to-pink-600 hover:from-violet-500 hover:to-pink-500 border-0 rounded-xl">
-              <UserPlus className="h-4 w-4 mr-2" /> Add Member
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] text-slate-500 mb-1 block">Date of Birth</label>
+                <Input type="date" value={addForm.dateOfBirth}
+                  onChange={e => setAddForm(f => ({ ...f, dateOfBirth: e.target.value }))}
+                  className="bg-slate-800/50 border-white/[0.08] text-white rounded-xl" />
+              </div>
+              <Input placeholder="Blood Group" value={addForm.bloodGroup}
+                onChange={e => setAddForm(f => ({ ...f, bloodGroup: e.target.value }))}
+                className="bg-slate-800/50 border-white/[0.08] text-white rounded-xl" />
+            </div>
+            <Button disabled={adding || !addForm.firstName}
+              className="w-full bg-gradient-to-r from-violet-600 to-pink-600 hover:from-violet-500 hover:to-pink-500 border-0 rounded-xl"
+              onClick={async () => {
+                setAdding(true);
+                try {
+                  await api.post('/family-members', {
+                    firstName: addForm.firstName,
+                    lastName: addForm.lastName || '',
+                    relationship: addForm.relationship,
+                    dateOfBirth: addForm.dateOfBirth || undefined,
+                    gender: addForm.gender,
+                    bloodGroup: addForm.bloodGroup || undefined,
+                  });
+                  toast({ title: 'Member added!', description: `${addForm.firstName} has been added to your family.` });
+                  setShowAddMember(false);
+                  setAddForm({ firstName: '', lastName: '', relationship: 'spouse', dateOfBirth: '', gender: 'male', bloodGroup: '' });
+                  loadFamilyData();
+                } catch (e: any) {
+                  toast({ title: 'Failed to add member', description: e?.response?.data?.message ?? e.message, variant: 'destructive' });
+                } finally {
+                  setAdding(false);
+                }
+              }}>
+              {adding ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <UserPlus className="h-4 w-4 mr-2" />}
+              Add Member
             </Button>
           </div>
         </DialogContent>

@@ -48,13 +48,14 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { X, Loader2, WifiOff, CheckCircle, Smartphone } from "lucide-react";
+import { X, Loader2, WifiOff, CheckCircle, Smartphone, Users, Trophy } from "lucide-react";
 import MainLayout from "@/components/layout/MainLayout";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import api from "@/utils/api";
 import { getToken } from "@/hooks/auth";
-import { VeepooService, VEEPOO_SERVICE_UUID, VEEPOO_WRITE_UUID, VEEPOO_NOTIFY_UUID } from "@/services/ble/VeepooService";
+import veepooService, { VeepooService, VEEPOO_SERVICE_UUID, VEEPOO_WRITE_UUID, VEEPOO_NOTIFY_UUID } from "@/services/ble/VeepooService";
+import fireBolttService, { FireBolttService, FIREBOLTT_SERVICE_UUID } from "@/services/ble/FireBolttService";
 import { healthSyncScheduler } from "@/services/health/HealthSyncScheduler";
 import { motion } from "framer-motion";
 
@@ -410,6 +411,76 @@ const Index = () => {
     const updatedDevices = connectedDevices.filter(d => d.id !== deviceId);
     localStorage.setItem('connectedDevices', JSON.stringify(updatedDevices));
     setConnectedDevices(updatedDevices);
+    // Clean up Fire-Boltt service if active
+    fireBolttService.disconnect();
+  };
+
+  const syncDevice = async (deviceId: string) => {
+    const deviceInfo = connectedDevices.find(d => d.id === deviceId);
+    // Update device status to 'syncing' in UI
+    setConnectedDevices(prev =>
+      prev.map(d => d.id === deviceId ? { ...d, status: 'syncing' } : d)
+    );
+    try {
+      // Fire-Boltt / Jieli protocol
+      if (deviceInfo?.isFireBolttDevice) {
+        const data = await fireBolttService.syncAll();
+        if (data.heartRate || data.steps || data.spo2) {
+          const updatedAt = new Date().toISOString();
+          setConnectedDevices(prev =>
+            prev.map(d => d.id === deviceId ? {
+              ...d,
+              status: 'connected',
+              battery: data.battery ?? d.battery,
+              lastSync: updatedAt,
+            } : d)
+          );
+          const stored = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
+          localStorage.setItem('connectedDevices', JSON.stringify(
+            stored.map((d: any) => d.id === deviceId ? { ...d, lastSync: updatedAt } : d)
+          ));
+          console.log('[Sync] Fire-Boltt data:', data);
+          return;
+        }
+      }
+
+      // Veepoo / HBand protocol
+      if (deviceInfo?.isVeepooDevice) {
+        // Try to (re)connect silently if not currently connected
+        if (!veepooService.getConnectionStatus()) {
+          console.log('[Sync] Veepoo not connected, attempting auto-reconnect...');
+          const reconnected = await veepooService.reconnect();
+          if (!reconnected) {
+            console.warn('[Sync] Could not reconnect to Veepoo device. User must re-pair.');
+            // Don't fall through to healthSyncScheduler — it will also fail and throw
+            return;
+          }
+        }
+        await veepooService.startHeartRateMeasurement();
+        const updatedAt = new Date().toISOString();
+        setConnectedDevices(prev =>
+          prev.map(d => d.id === deviceId ? { ...d, status: 'connected', lastSync: updatedAt } : d)
+        );
+        const stored = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
+        localStorage.setItem('connectedDevices', JSON.stringify(
+          stored.map((d: any) => d.id === deviceId ? { ...d, lastSync: updatedAt } : d)
+        ));
+        console.log('[Sync] Veepoo measurement started');
+        return;
+      }
+
+      // Fallback: healthSyncScheduler (standard GATT / generic non-Veepoo, non-FireBoltt devices)
+      if (!deviceInfo?.isVeepooDevice && !deviceInfo?.isFireBolttDevice && window.healthSyncScheduler) {
+        await window.healthSyncScheduler.triggerDeviceMeasurements();
+        await window.healthSyncScheduler.performSync();
+      }
+    } catch (e) {
+      console.error('[Sync] Error syncing device:', e);
+    } finally {
+      setConnectedDevices(prev =>
+        prev.map(d => d.id === deviceId ? { ...d, status: 'connected' } : d)
+      );
+    }
   };
 
   // Handle URL action parameters (e.g., ?action=pair-device)
@@ -829,6 +900,38 @@ const Index = () => {
       setPairingStep('scanning');
       
       try {
+        // --- Reconnect already-permitted device silently (no picker) ---
+        // getDevices() returns devices the user already granted access to in a previous session.
+        // If we find a known device, connect to it directly without showing the picker again.
+        const storedDevices: any[] = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
+        if ('getDevices' in navigator.bluetooth && storedDevices.length > 0) {
+          try {
+            const permittedDevices = await (navigator.bluetooth as any).getDevices();
+            const knownPermitted = permittedDevices.find((d: BluetoothDevice) =>
+              storedDevices.some((s: any) => s.id === d.id || s.name === d.name)
+            );
+            if (knownPermitted) {
+              console.log('[BLE] Reconnecting to already-permitted device:', knownPermitted.name);
+              // Inject the remembered device directly into the pairing flow
+              const deviceName = knownPermitted.name || 'Paired Device';
+              setDiscoveredDevices([{
+                id: knownPermitted.id,
+                name: deviceName,
+                type: 'smartwatch',
+                icon: '⌚',
+                signal: 80,
+                device: knownPermitted,
+                alreadyPaired: true,
+              }]);
+              setPairingStep('found');
+              return;
+            }
+          } catch (e) {
+            // getDevices() not supported or no permissions yet — fall through to picker
+            console.log('[BLE] getDevices() not available, showing picker');
+          }
+        }
+
         // This will open the browser's native Bluetooth device picker
         // Use standard GATT service UUIDs - short form (16-bit) UUIDs work better
         // Also include Veepoo/HBand service UUIDs for VE30 and similar devices
@@ -837,6 +940,8 @@ const Index = () => {
           optionalServices: [
             // Veepoo/HBand Service UUIDs (for VE30, etc.)
             VEEPOO_SERVICE_UUID,
+            // Fire-Boltt / Jieli chip UUIDs
+            FIREBOLTT_SERVICE_UUID,
             // Standard 16-bit GATT Service UUIDs
             0x180D, // Heart Rate
             0x180F, // Battery Service
@@ -1006,18 +1111,29 @@ const Index = () => {
         const detectedDataTypes: string[] = [];
         let batteryLevel = 75;
         let isVeepooDevice = false;
+        let isFireBolttDevice = false;
 
         try {
           const services = await server.getPrimaryServices();
           setPairingProgress(50);
-          
+
+          // Pre-scan all service UUIDs before processing — ensures device-type
+          // flags are correct regardless of the order the BT stack returns services.
+          // (VE35PRO exposes both ae00 and fee7; ae00 must win over fee7.)
+          const serviceUUIDs = services.map(s => s.uuid.toLowerCase());
+          isVeepooDevice = serviceUUIDs.some(u => u.includes('ae00') || u === VEEPOO_SERVICE_UUID.toLowerCase());
+          const mightBeFireBoltt = serviceUUIDs.some(u => u === FIREBOLTT_SERVICE_UUID.toLowerCase() || u.includes('fee7'));
+          // Only treat as Fire-Boltt when ae00 is NOT present
+          isFireBolttDevice = mightBeFireBoltt && !isVeepooDevice;
+
+          if (isVeepooDevice) console.log('Veepoo device detected!');
+          if (isFireBolttDevice) console.log('Fire-Boltt (Jieli) device detected!');
+
           for (const service of services) {
             const serviceUUID = service.uuid.toLowerCase();
             
-            // Check for Veepoo/HBand service (VE30, etc.)
-            if (serviceUUID.includes('ae00') || serviceUUID === VEEPOO_SERVICE_UUID.toLowerCase()) {
-              isVeepooDevice = true;
-              console.log('Veepoo device detected!');
+            // Veepoo/HBand service — connect proprietary channel
+            if (isVeepooDevice && (serviceUUID.includes('ae00') || serviceUUID === VEEPOO_SERVICE_UUID.toLowerCase())) {
               // Veepoo devices support all these features via proprietary protocol
               detectedDataTypes.push('Heart Rate');
               detectedDataTypes.push('Blood Pressure');
@@ -1026,15 +1142,39 @@ const Index = () => {
               detectedDataTypes.push('Calories');
               detectedDataTypes.push('Sleep');
               detectedDataTypes.push('HRV');
-              
-              // Try to connect to Veepoo write/notify characteristics
+
+              // Attach the VeepooService singleton to the existing GATT server so
+              // healthSyncScheduler can call startHeartRateMeasurement() immediately.
               try {
-                const writeChar = await service.getCharacteristic(VEEPOO_WRITE_UUID);
-                const notifyChar = await service.getCharacteristic(VEEPOO_NOTIFY_UUID);
-                console.log('Veepoo characteristics found - device supports direct data sync');
-                detectedDataTypes.push('Temperature');
+                const ok = await veepooService.connectWithServer(device, server);
+                if (ok) {
+                  console.log('Veepoo characteristics found - device supports direct data sync');
+                  detectedDataTypes.push('Temperature');
+                  // Sync phone time to watch so timestamps are correct
+                  veepooService.syncTime().catch(e => console.warn('Veepoo syncTime failed:', e));
+                }
               } catch (e) {
                 console.log('Veepoo characteristics not fully accessible');
+              }
+            }
+
+            // Fire-Boltt / Jieli chip service — connect write-trigger channel
+            if (isFireBolttDevice && (serviceUUID === FIREBOLTT_SERVICE_UUID.toLowerCase() || serviceUUID.includes('fee7'))) {
+              detectedDataTypes.push('Heart Rate');
+              detectedDataTypes.push('Blood Oxygen');
+              detectedDataTypes.push('Steps');
+              detectedDataTypes.push('Calories');
+
+              // Connect the Fire-Boltt service so it can accept write-trigger commands
+              try {
+                const connected = await fireBolttService.connect(server);
+                if (connected) {
+                  console.log('Fire-Boltt service ready - will use write-trigger protocol for data sync');
+                  // Sync phone time to watch so timestamps are correct
+                  fireBolttService.syncTime().catch(e => console.warn('FireBoltt syncTime failed:', e));
+                }
+              } catch (e) {
+                console.log('Fire-Boltt service connection failed:', e);
               }
             }
             
@@ -1132,6 +1272,9 @@ const Index = () => {
         if (isVeepooDevice && finalDataTypes.length === 0) {
           finalDataTypes.push('Heart Rate', 'Blood Pressure', 'Steps', 'Sleep');
           console.log('Veepoo device - using known capabilities');
+        } else if (isFireBolttDevice && finalDataTypes.length === 0) {
+          finalDataTypes.push('Heart Rate', 'Blood Oxygen', 'Steps', 'Calories');
+          console.log('Fire-Boltt device - using known capabilities');
         } else if (finalDataTypes.length === 0) {
           console.log('No GATT services detected. Device may require companion app for data sync.');
         }
@@ -1140,6 +1283,7 @@ const Index = () => {
           ...selectedDeviceData,
           battery: batteryLevel,
           isVeepooDevice,
+          isFireBolttDevice,
           dataTypes: finalDataTypes
         });
         setPairingStep('success');
@@ -1177,6 +1321,7 @@ const Index = () => {
       battery: deviceData.battery || null,
       dataTypes: deviceData.dataTypes || [], // Only show detected services
       isVeepooDevice: deviceData.isVeepooDevice || false,
+      isFireBolttDevice: deviceData.isFireBolttDevice || false,
       connectedAt: new Date().toISOString(),
       lastSync: new Date().toISOString(),
     };
@@ -1191,6 +1336,9 @@ const Index = () => {
     try {
       const token = localStorage.getItem('token');
       if (token) {
+        const authHeaders = { headers: { Authorization: `Bearer ${token}` } };
+
+        // Primary registration via /wearables
         await api.post('/wearables', {
           deviceId: newDevice.id,
           name: newDevice.name,
@@ -1200,19 +1348,31 @@ const Index = () => {
           status: 'active',
           batteryLevel: newDevice.battery,
           lastSync: new Date().toISOString()
-        }, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        }, authHeaders);
+
+        // Belt-and-suspenders: also register in user_devices via /health-data/devices/register
+        // This ensures validateDeviceOwnership() in ble-sync will pass
+        try {
+          await api.post('/health-data/devices/register', {
+            deviceId: newDevice.id,
+            deviceName: newDevice.name,
+            deviceType: newDevice.type
+          }, authHeaders);
+        } catch (regErr) {
+          console.warn('Secondary device registration warning (non-fatal):', regErr);
+        }
+
         console.log('✅ Device saved to backend:', newDevice.name);
 
-        // Trigger initial health data sync for the new device
-        // Import is already available at the top of the file
+        // Upload any buffered readings from the previous session.
+        // Do NOT call triggerDeviceMeasurements() here — running the full
+        // measurement sequence immediately after pairing stresses the GATT
+        // connection and causes it to drop before the user can interact.
+        // Measurements will start on the scheduler's 30-minute interval.
         if (window.healthSyncScheduler) {
           setTimeout(async () => {
-            console.log('🔄 Triggering initial health data sync...');
-            await window.healthSyncScheduler.triggerDeviceMeasurements();
             await window.healthSyncScheduler.performSync();
-          }, 2000); // Wait 2 seconds for device to be ready
+          }, 2000);
         }
       }
     } catch (error) {
@@ -2042,8 +2202,8 @@ const Index = () => {
                             {device.lastSync ? `Synced ${new Date(device.lastSync).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}` : 'Ready to sync'}
                           </p>
                         </div>
-                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-400 hover:text-teal-400 hover:bg-teal-500/10" title="Sync Now">
-                          <RefreshCw className="w-4 h-4" />
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-400 hover:text-teal-400 hover:bg-teal-500/10" title="Sync Now" onClick={() => syncDevice(device.id)}>
+                          <RefreshCw className={`w-4 h-4 ${device.status === 'syncing' ? 'animate-spin' : ''}`} />
                         </Button>
                         <Button 
                           size="sm" 
@@ -2292,7 +2452,7 @@ const Index = () => {
                 <h3 className="font-bold text-lg">AI-Powered Health Tools</h3>
                 <Badge variant="outline" className="text-[10px] border-white/30 text-white bg-white/10 ml-auto">NEW</Badge>
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-4 gap-2">
                 <Link to="/report-scanner" className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-white/10 hover:bg-white/20 transition-all active:scale-95 backdrop-blur-sm">
                   <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
                     <FileText className="h-5 w-5" />
@@ -2310,6 +2470,32 @@ const Index = () => {
                     <Sparkles className="h-5 w-5" />
                   </div>
                   <span className="text-[11px] font-semibold text-center leading-tight">AI Health</span>
+                </Link>
+                <Link to="/family-hub" className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-white/10 hover:bg-white/20 transition-all active:scale-95 backdrop-blur-sm">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                    <Users className="h-5 w-5" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-center leading-tight">Family Hub</span>
+                </Link>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <Link to="/wellness-rewards" className="flex items-center gap-3 p-3 rounded-xl bg-white/10 hover:bg-white/20 transition-all active:scale-95 backdrop-blur-sm">
+                  <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                    <Trophy className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[12px] font-semibold">Health Rewards</p>
+                    <p className="text-[10px] text-white/70">Earn coins &amp; redeem</p>
+                  </div>
+                </Link>
+                <Link to="/smart-opd" className="flex items-center gap-3 p-3 rounded-xl bg-white/10 hover:bg-white/20 transition-all active:scale-95 backdrop-blur-sm">
+                  <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                    <Stethoscope className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-[12px] font-semibold">Smart OPD</p>
+                    <p className="text-[10px] text-white/70">Best doctor for you</p>
+                  </div>
                 </Link>
               </div>
             </div>

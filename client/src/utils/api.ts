@@ -224,6 +224,24 @@ api.interceptors.response.use(
       }
     }
 
+    // Regular user 401 — clear stale token and redirect to login
+    if (
+      error.response?.status === 401 &&
+      typeof window !== "undefined" &&
+      (getUserType() === "user" || getUserType() === "individual" || !getUserType())
+    ) {
+      const hadToken = window.localStorage.getItem("token");
+      if (hadToken) {
+        window.localStorage.removeItem("token");
+        window.localStorage.removeItem("userId");
+        window.localStorage.removeItem("userData");
+        window.localStorage.removeItem("userType");
+        if (!window.location.pathname.startsWith("/login")) {
+          window.location.href = "/login";
+        }
+      }
+    }
+
     return Promise.reject(error);
   }
 );

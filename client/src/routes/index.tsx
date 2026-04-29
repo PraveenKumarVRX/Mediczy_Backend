@@ -97,9 +97,11 @@ const EmployeeWellnessCalendar = lazy(() => import("@/pages/patient/EmployeeWell
 const AIReportScanner       = lazy(() => import("@/pages/patient/AIReportScanner"));
 const AISymptomTriage       = lazy(() => import("@/pages/patient/AISymptomTriage"));
 const SmartHealthDashboard  = lazy(() => import("@/pages/patient/SmartHealthDashboard"));
+const WatchAnalytics        = lazy(() => import("@/pages/patient/WatchAnalytics"));
 const SmartBenefitsHub      = lazy(() => import("@/pages/patient/SmartBenefitsHub"));
 const FamilyHealthHub       = lazy(() => import("@/pages/patient/FamilyHealthHub"));
 const WellnessRewards       = lazy(() => import("@/pages/patient/WellnessRewards"));
+const SmartOPD              = lazy(() => import("@/pages/patient/SmartOPD"));
 const ClaimsExpress         = lazy(() => import("@/pages/patient/ClaimsExpress"));
 
 // ─── Billing ─────────────────────────────────────────────────────────────────
@@ -135,6 +137,9 @@ const DoctorSpecialtyTemplates = lazy(() => import("@/pages/doctor/DoctorSpecial
 const DoctorServices           = lazy(() => import("@/pages/doctor/DoctorServices"));
 const DoctorBilling            = lazy(() => import("@/pages/doctor/DoctorBilling"));
 const PatientEMR               = lazy(() => import("@/pages/doctor/PatientEMR"));
+const DoctorVoiceScribe        = lazy(() => import("@/pages/doctor/DoctorVoiceScribe"));
+const DoctorCalculators        = lazy(() => import("@/pages/doctor/DoctorCalculators"));
+const DoctorVoiceAssistant     = lazy(() => import("@/pages/doctor/DoctorVoiceAssistant"));
 
 // ─── Admin ───────────────────────────────────────────────────────────────────
 const AdminLogin               = lazy(() => import("@/pages/admin/AdminLogin"));
@@ -755,6 +760,9 @@ const AppRoutes = () => {
         <Route path="/doctor/services"            element={<DoctorServices />} />
         <Route path="/doctor/billing"             element={<DoctorBilling />} />
         <Route path="/doctor/health-records"      element={<PatientEMR />} />
+        <Route path="/doctor/voice-scribe"        element={<DoctorVoiceScribe />} />
+        <Route path="/doctor/calculators"         element={<DoctorCalculators />} />
+        <Route path="/doctor/assistant"           element={<DoctorVoiceAssistant />} />
 
         {/* ── Hospital ────────────────────────────────────────────────── */}
         <Route path="/hospital/register"                   element={<HospitalRegister />} />
@@ -1343,6 +1351,7 @@ const AppRoutes = () => {
         <Route path="/patient/my-reports"         element={<MainLayout><MyReports /></MainLayout>} />
         <Route path="/patient/pharmacy"           element={<MainLayout><Pharmacy /></MainLayout>} />
         <Route path="/patient/vital-reports"      element={<MainLayout><VitalReports /></MainLayout>} />
+        <Route path="/patient/watch-analytics"    element={<MainLayout><WatchAnalytics /></MainLayout>} />
         <Route path="/patient/documents"          element={<MainLayout><UploadedDocuments /></MainLayout>} />
         <Route path="/patient/network-hospitals"  element={<MainLayout><NetworkHospitals /></MainLayout>} />
         <Route path="/patient/network-clinics"   element={<MainLayout><NetworkClinics /></MainLayout>} />
@@ -1362,6 +1371,7 @@ const AppRoutes = () => {
         <Route path="/benefits"               element={<SmartBenefitsHub />} />
         <Route path="/family-hub"             element={<FamilyHealthHub />} />
         <Route path="/wellness-rewards"       element={<WellnessRewards />} />
+        <Route path="/smart-opd"              element={<SmartOPD />} />
         <Route path="/claims-express"         element={<ClaimsExpress />} />
 
         {/* ── Billing ─────────────────────────────────────────────────── */}

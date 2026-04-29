@@ -58,10 +58,45 @@ router.post('/ble-sync', auth, async (req, res) => {
         continue;
       }
 
+      // Handle compound blood_pressure value {systolic, diastolic}
+      if (type === 'blood_pressure' && value && typeof value === 'object') {
+        const bpRecords = [
+          { dataType: 'blood_pressure_systolic', numValue: parseFloat(value.systolic) },
+          { dataType: 'blood_pressure_diastolic', numValue: parseFloat(value.diastolic) }
+        ];
+        for (const bp of bpRecords) {
+          if (isNaN(bp.numValue)) continue;
+          const bpRecord = {
+            userId,
+            dataType: bp.dataType,
+            value: bp.numValue,
+            unit: unit || 'mmHg',
+            source: 'ble',
+            deviceId: deviceId || 'unknown',
+            recordedAt: new Date(timestamp),
+            metadata: metadata || {},
+            verified: isValidDevice,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          };
+          if (HealthData) {
+            try { await HealthData.create(bpRecord); processedReadings.push(bpRecord); }
+            catch (dbError) { console.error('Error storing BP record:', dbError); }
+          }
+        }
+        continue;
+      }
+
+      const parsedValue = parseFloat(value);
+      if (isNaN(parsedValue)) {
+        console.warn(`Skipping reading with NaN value: type=${type}, value=${JSON.stringify(value)}`);
+        continue;
+      }
+
       const healthRecord = {
         userId,
         dataType: type,
-        value: parseFloat(value),
+        value: parsedValue,
         unit: unit || getDefaultUnit(type),
         source: 'ble',
         deviceId: deviceId || 'unknown',
