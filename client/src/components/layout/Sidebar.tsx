@@ -230,6 +230,7 @@ export function Sidebar() {
     { icon: Pill, label: 'Medications', path: '/nurse/medications' },
     { icon: FileText, label: 'Notes', path: '/nurse/notes' },
     { icon: Calendar, label: 'Appointments', path: '/nurse/appointments' },
+    { icon: MessageSquare, label: 'Messages', path: '/nurse/chat' },
     { icon: UserCircle, label: 'Register Patient', path: '/nurse/register-patient' },
   ];
 

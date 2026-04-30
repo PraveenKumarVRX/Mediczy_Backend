@@ -205,6 +205,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/emr',  // EMR folder (own record)
       '/api/fhir',  // FHIR R4 interoperability endpoints
       '/api/fcm',  // FCM push notification token registration
+      '/api/voice-assistant',  // iSHA Voice Assistant agent
       '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'doctorId'

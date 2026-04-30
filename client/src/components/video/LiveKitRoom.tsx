@@ -26,6 +26,8 @@ interface LiveKitRoomProps {
   onError?: (error: Error) => void;
   /** Override which controls are shown. Defaults to { screenShare: false } for medical calls */
   controls?: ControlBarControls;
+  /** When true, starts with camera OFF (audio-only call) */
+  audioOnly?: boolean;
 }
 
 /**
@@ -106,6 +108,7 @@ export default function LiveKitRoom({
   onDisconnect,
   onError,
   controls,
+  audioOnly = false,
 }: LiveKitRoomProps) {
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
@@ -160,7 +163,7 @@ export default function LiveKitRoom({
         serverUrl={serverUrl}
         token={token}
         connect={true}
-        video={true}
+        video={!audioOnly}
         audio={true}
         onConnected={handleConnected}
         onDisconnected={handleDisconnect}

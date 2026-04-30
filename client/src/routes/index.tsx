@@ -140,6 +140,7 @@ const PatientEMR               = lazy(() => import("@/pages/doctor/PatientEMR"))
 const DoctorVoiceScribe        = lazy(() => import("@/pages/doctor/DoctorVoiceScribe"));
 const DoctorCalculators        = lazy(() => import("@/pages/doctor/DoctorCalculators"));
 const DoctorVoiceAssistant     = lazy(() => import("@/pages/doctor/DoctorVoiceAssistant"));
+const DoctorMessaging          = lazy(() => import("@/pages/doctor/DoctorMessaging"));
 
 // ─── Admin ───────────────────────────────────────────────────────────────────
 const AdminLogin               = lazy(() => import("@/pages/admin/AdminLogin"));
@@ -270,6 +271,7 @@ const NurseVitals          = lazy(() => import("@/pages/nurse/NurseVitals"));
 const NurseMedications     = lazy(() => import("@/pages/nurse/NurseMedications"));
 const NurseNotes           = lazy(() => import("@/pages/nurse/NurseNotes"));
 const NurseAppointments    = lazy(() => import("@/pages/nurse/NurseAppointments"));
+const NurseChat            = lazy(() => import("@/pages/nurse/NurseChat"));
 
 // ─── Assistant ───────────────────────────────────────────────────────────────
 const AssistantLogin           = lazy(() => import("@/pages/assistant/AssistantLogin"));
@@ -763,6 +765,7 @@ const AppRoutes = () => {
         <Route path="/doctor/voice-scribe"        element={<DoctorVoiceScribe />} />
         <Route path="/doctor/calculators"         element={<DoctorCalculators />} />
         <Route path="/doctor/assistant"           element={<DoctorVoiceAssistant />} />
+        <Route path="/doctor/messages"            element={<DoctorMessaging />} />
 
         {/* ── Hospital ────────────────────────────────────────────────── */}
         <Route path="/hospital/register"                   element={<HospitalRegister />} />
@@ -915,6 +918,7 @@ const AppRoutes = () => {
         <Route path="/nurse/notes"             element={<MainLayout><NurseNotes /></MainLayout>} />
         <Route path="/nurse/appointments"      element={<MainLayout><NurseAppointments /></MainLayout>} />
         <Route path="/nurse/register-patient"  element={<MainLayout><NurseRegisterPatient /></MainLayout>} />
+        <Route path="/nurse/chat"              element={<NurseChat />} />
 
         {/* ── Assistant ───────────────────────────────────────────────── */}
         <Route path="/assistant/login"             element={<AssistantLogin />} />

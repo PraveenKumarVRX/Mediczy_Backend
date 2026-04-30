@@ -167,6 +167,112 @@ const ASSISTANT_TOOLS = [
         required: ['query']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_appointments',
+      description: 'List/show/query appointments for the doctor. Use ONLY for viewing/listing — e.g. "show my appointments", "today\'s appointments", "upcoming", "pending", "completed". Do NOT use for booking, cancelling, or rescheduling appointments.',
+
+      parameters: {
+        type: 'object',
+        properties: {
+          filter: {
+            type: 'string',
+            enum: ['today', 'upcoming', 'pending', 'completed', 'all'],
+            description: 'Filter appointments by time or status. Default: today'
+          },
+          limit: { type: 'number', description: 'Max number to return. Default 10.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_patient_health',
+      description: 'Get health summary, latest vitals, recent health readings, and last prescription for a patient. Use for "patient health update", "vitals of", "health status of".',
+      parameters: {
+        type: 'object',
+        properties: {
+          patient_name: { type: 'string', description: 'Patient name to look up' },
+          patient_id: { type: 'string', description: 'Patient ID or user ID if known' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'book_appointment',
+      description: 'Book a new appointment for a patient with this doctor. Use when doctor says "book", "schedule", "create appointment", "fix appointment for".',
+      parameters: {
+        type: 'object',
+        properties: {
+          patient_name: { type: 'string', description: 'Patient full name' },
+          patient_phone: { type: 'string', description: 'Patient phone number' },
+          date: { type: 'string', description: 'Date in YYYY-MM-DD format' },
+          time: { type: 'string', description: 'Time in HH:MM format (24hr)' },
+          reason: { type: 'string', description: 'Reason for appointment / chief complaint' },
+          type: {
+            type: 'string',
+            enum: ['in-person', 'video', 'phone'],
+            description: 'Consultation type. Default: in-person'
+          }
+        },
+        required: ['patient_name', 'date', 'time']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'cancel_appointment',
+      description: 'Cancel an existing appointment. Use when doctor says "cancel appointment for", "cancel the booking".',
+      parameters: {
+        type: 'object',
+        properties: {
+          appointment_id: { type: 'string', description: 'Appointment ID if known' },
+          patient_name: { type: 'string', description: 'Patient name to find the appointment' },
+          reason: { type: 'string', description: 'Reason for cancellation' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'reschedule_appointment',
+      description: 'Reschedule/move an existing appointment to a NEW date and/or time. Triggers: "reschedule", "move appointment to", "shift appointment", "change appointment to [date]", "change time for". Always prefer this over list_appointments when a new date or time is mentioned.',
+
+      parameters: {
+        type: 'object',
+        properties: {
+          appointment_id: { type: 'string', description: 'Appointment ID if known' },
+          patient_name: { type: 'string', description: 'Patient name to find the appointment' },
+          new_date: { type: 'string', description: 'New date in YYYY-MM-DD format' },
+          new_time: { type: 'string', description: 'New time in HH:MM format (24hr)' }
+        },
+        required: ['new_date', 'new_time']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_doctor_briefing',
+      description: 'Get a briefing of important updates for the doctor: urgent/unread notifications, pending appointment requests, new messages from nurses or hospital team, upcoming appointments in the next 2 hours. Use when doctor says "any updates?", "what\'s new?", "any messages?", "any emergencies?", "briefing", "what did I miss?", "any alerts?".',
+      parameters: {
+        type: 'object',
+        properties: {
+          priority: {
+            type: 'string',
+            enum: ['all', 'urgent', 'high'],
+            description: 'Filter by priority. Default: all'
+          }
+        }
+      }
+    }
   }
 ];
 
@@ -175,36 +281,63 @@ const ASSISTANT_TOOLS = [
 function buildSystemPrompt(context = {}) {
   const { currentPatient, currentScreen, doctorName } = context;
   const patientInfo = currentPatient
-    ? `Current patient: ${currentPatient.name || currentPatient.firstName || 'Unknown'}, Age: ${currentPatient.age || 'N/A'}, ID: ${currentPatient.id || currentPatient._id || 'N/A'}`
-    : 'No patient currently selected.';
+    ? `Active patient: ${currentPatient.name || currentPatient.firstName || 'Unknown'}, Age: ${currentPatient.age || 'N/A'}, ID: ${currentPatient.id || currentPatient._id || 'N/A'}.`
+    : '';
 
-  return `You are iSHA Assistant, a smart voice assistant for doctors in a clinical app called SmartHealth.
-You help doctors navigate the app, find information, and answer medical questions quickly.
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  const dateStr = now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-Current context:
-- Doctor: ${doctorName || 'Doctor'}
-- Active screen: ${currentScreen || 'dashboard'}
-- ${patientInfo}
+  return `You are iSHA — a fast, decisive AI assistant for Dr. ${doctorName || 'Doctor'} in the SmartHealth platform. Today: ${dateStr}, ${timeStr}. Screen: ${currentScreen || 'dashboard'}. ${patientInfo}
 
-You have access to tools for:
-1. Navigating app screens (appointments, prescriptions, patients, ER dashboard, etc.)
-2. Searching patients
-3. Getting today's schedule summary
-4. Adding clinical notes for the current patient
-5. Scheduling follow-ups
-6. Answering drug information questions
-7. Checking drug interactions
-8. Answering medical/clinical questions
+CORE BEHAVIOR:
+- Respond directly to the task. No greetings, no self-introduction, no "Good afternoon Doctor" on every message.
+- Only identify yourself as iSHA if the doctor explicitly asks who you are.
+- Act immediately. Never ask "are you sure?" for read operations. For writes (book/cancel), act and confirm.
+- Be concise: 1-2 sentences max. Bullet list only for multiple items.
+- Resolve pronouns from history: "his appointment", "that drug", "the same patient" etc.
+- Always use the most specific tool available. Never answer appointment queries from memory.
+- CRITICAL: "reschedule" → ALWAYS reschedule_appointment, never list_appointments. If any new date/time is mentioned with a patient name, it is reschedule or book, NOT list.
 
-Rules:
-- Always call a tool — NEVER just respond with text unless the query is pure greeting/small-talk
-- For app navigation commands like "show appointments", "open patients" → use navigate_to
-- For medical knowledge questions → use medical_query or get_drug_info
-- For drug interaction checks → use check_drug_interactions
-- Keep responses concise and clinical — doctors are busy
-- For critical actions (prescriptions, notes), confirm before executing
-- Add a disclaimer for medical advice: "For reference only. Verify with clinical judgment."
-- If the input is a greeting or unclear, respond directly without a tool call`;
+TOOL ROUTING (strict):
+| User says | Tool |
+|---|---|
+| "my appointments / today / pending / upcoming" | list_appointments |
+| "book / schedule / fix appointment for X on DATE at TIME" | book_appointment |
+| "cancel appointment for X" | cancel_appointment |
+| "reschedule / move / shift / change appointment for X to DATE TIME" | reschedule_appointment (NOT list_appointments) |
+| "health / vitals / status of X" | get_patient_health |
+| "today's summary / overview / how many patients" | get_today_summary |
+| "search patient X" | search_patient |
+| "open / go to / show [screen]" | navigate_to |
+| "any updates / messages / alerts / emergencies / what's new / briefing" | get_doctor_briefing |
+| drug dosage / indication / side effects | get_drug_info |
+| drug interaction check | check_drug_interactions |
+| any clinical/medical question | medical_query |
+
+RESPONSE FORMAT:
+- Appointment lists: one line per appointment → "HH:MM — Patient Name (status): reason"
+- Health summaries: Patient name, then key vitals inline, then conditions
+- Actions completed: "[Action] done. [1 sentence confirmation]."
+- Medical answers: lead with the answer, end with "Verify with clinical judgment."
+- Greetings/who-are-you: briefly state you are iSHA and name 1-2 key capabilities. One sentence only.
+- All other responses: no greeting, no sign-off, no filler — answer the task directly.`;
+}
+
+// ─── TTS text helper — convert long formatted text to short spoken version ────
+function toSpokenText(text, maxSentences = 3) {
+  if (!text) return '';
+  // Strip bullet chars and action badge prefix lines
+  const cleaned = text
+    .replace(/^[•\-]\s*/gm, '')
+    .replace(/\n{2,}/g, '\n')
+    .trim();
+  // Split on sentence boundaries
+  const sentences = cleaned
+    .split(/(?<=[.!?])\s+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+  return sentences.slice(0, maxSentences).join(' ');
 }
 
 // ─── Execute server-side tools ─────────────────────────────────────────────
@@ -243,6 +376,293 @@ async function executeAddClinicalNote(doctorId, patientId, note, category = 'obs
   } catch (err) {
     logger.warn('[VoiceAssistant] add_clinical_note DB error', { error: err.message });
     return { success: false, error: err.message };
+  }
+}
+
+async function executeListAppointments(doctorId, filter = 'today', limit = 10) {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    let whereClause = `a."doctorId" = $1`;
+    const params = [doctorId];
+
+    if (filter === 'today') {
+      whereClause += ` AND DATE(a."appointmentDate") = $2`;
+      params.push(today);
+    } else if (filter === 'upcoming') {
+      // Upcoming = not yet cancelled or completed, ordered by date
+      whereClause += ` AND a.status NOT IN ('cancelled', 'completed')`;
+    } else if (filter === 'pending') {
+      whereClause += ` AND a.status IN ('pending', 'confirmed', 'scheduled')`;
+    } else if (filter === 'completed') {
+      whereClause += ` AND a.status = 'completed' AND DATE(a."appointmentDate") = $2`;
+      params.push(today);
+    } else {
+      // 'all' — last 30 days
+      const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+      whereClause += ` AND DATE(a."appointmentDate") >= $2`;
+      params.push(monthAgo);
+    }
+
+    params.push(limit);
+    const limitParam = `$${params.length}`;
+
+    const result = await pool.query(`
+      SELECT
+        a.id, a."appointmentId", a."appointmentDate", a."appointmentTime",
+        a.status, a.type, a."consultationType",
+        COALESCE(a."patientName", u."firstName" || ' ' || u."lastName") AS "patientName",
+        a.reason, a.symptoms, a.notes, a."paymentStatus", a."cancellationReason"
+      FROM appointments a
+      LEFT JOIN users u ON a."userId" = u.id
+      WHERE ${whereClause}
+      ORDER BY a."appointmentDate" ASC, a."appointmentTime" ASC
+      LIMIT ${limitParam}
+    `, params);
+
+    return result.rows;
+  } catch (err) {
+    logger.warn('[VoiceAssistant] list_appointments error', { error: err.message });
+    return null;
+  }
+}
+
+async function executeGetPatientHealth(doctorId, patientName, patientId) {
+  try {
+    // Find user from appointments (doctor must have seen this patient)
+    let userId = patientId;
+    if (!userId && patientName) {
+      const nameResult = await pool.query(`
+        SELECT a."userId", COALESCE(a."patientName", u."firstName" || ' ' || u."lastName") AS "patientName"
+        FROM appointments a
+        LEFT JOIN users u ON a."userId" = u.id
+        WHERE a."doctorId" = $1 AND (
+          LOWER(COALESCE(a."patientName", u."firstName" || ' ' || u."lastName")) ILIKE $2
+        )
+        LIMIT 1
+      `, [doctorId, `%${patientName}%`]);
+      if (nameResult.rows[0]) userId = nameResult.rows[0].userId;
+    }
+
+    const summary = {};
+
+    // Patient record — allergies, conditions, medications, last visit
+    if (userId) {
+      const pRow = await pool.query(`
+        SELECT p.*, u."firstName", u."lastName", u."dateOfBirth", u."gender", u."phoneNumber"
+        FROM patients p
+        JOIN users u ON p."userId" = u.id
+        WHERE p."userId" = $1
+        LIMIT 1
+      `, [userId]);
+      if (pRow.rows[0]) {
+        const p = pRow.rows[0];
+        summary.patient = {
+          name: `${p.firstName} ${p.lastName}`,
+          dob: p.dateOfBirth,
+          gender: p.gender,
+          phone: p.phoneNumber,
+          bloodGroup: p.bloodGroup,
+          height: p.height,
+          weight: p.weight,
+          allergies: p.allergies,
+          chronicConditions: p.chronicConditions,
+          currentMedications: p.currentMedications,
+          lastVisitDate: p.lastVisitDate,
+          totalVisits: p.totalVisits,
+        };
+      }
+
+      // Latest health readings (vitals)
+      const readings = await pool.query(`
+        SELECT reading_type, value, unit, recorded_at
+        FROM health_readings
+        WHERE user_id = $1
+        ORDER BY recorded_at DESC
+        LIMIT 20
+      `, [userId]);
+      if (readings.rows.length) {
+        // Group by type, take latest per type
+        const vitalsMap = {};
+        readings.rows.forEach(r => {
+          if (!vitalsMap[r.reading_type]) vitalsMap[r.reading_type] = r;
+        });
+        summary.vitals = Object.values(vitalsMap);
+      }
+
+      // Latest prescription (diagnosis + medications)
+      const rx = await pool.query(`
+        SELECT p.diagnosis, p.medications, p.vitals, p."chiefComplaints", p."createdAt"
+        FROM prescriptions p
+        JOIN appointments a ON p."appointmentId" = a."appointmentId"
+        WHERE p."doctorId" = $1 AND p."userId" = (SELECT id FROM users WHERE id = $2 LIMIT 1)
+           OR p."doctorId" = $1 AND a."userId" = $2
+        ORDER BY p."createdAt" DESC
+        LIMIT 1
+      `, [doctorId, userId]);
+      if (rx.rows[0]) summary.lastPrescription = rx.rows[0];
+    }
+
+    return Object.keys(summary).length ? summary : null;
+  } catch (err) {
+    logger.warn('[VoiceAssistant] get_patient_health error', { error: err.message });
+    return null;
+  }
+}
+
+async function executeBookAppointment(doctorId, doctorName, patientName, patientPhone, date, time, reason, type = 'in-person') {
+  try {
+    const apptId = `APPT-${Date.now()}`;
+    const datetime = new Date(`${date}T${time}:00`);
+
+    // Find userId from users table if patient exists
+    let userId = null;
+    let resolvedPatientName = patientName;
+    if (patientPhone) {
+      const uRow = await pool.query(`SELECT id, "firstName", "lastName" FROM users WHERE "phoneNumber" = $1 LIMIT 1`, [patientPhone]);
+      if (uRow.rows[0]) {
+        userId = uRow.rows[0].id;
+        resolvedPatientName = `${uRow.rows[0].firstName} ${uRow.rows[0].lastName}`;
+      }
+    }
+
+    await pool.query(`
+      INSERT INTO appointments
+        ("appointmentId", "doctorId", "userId", "patientName", "doctorName",
+         "appointmentDate", "appointmentTime", "appointmentDateTime",
+         reason, status, type, "consultationType", "createdAt", "updatedAt")
+      VALUES
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'confirmed', $10, $10, NOW(), NOW())
+    `, [apptId, doctorId, userId, resolvedPatientName, doctorName, date, time, datetime, reason || 'Consultation', type]);
+
+    return { success: true, appointmentId: apptId, patientName: resolvedPatientName, date, time };
+  } catch (err) {
+    logger.warn('[VoiceAssistant] book_appointment error', { error: err.message });
+    return { success: false, error: err.message };
+  }
+}
+
+async function executeCancelAppointment(doctorId, appointmentId, patientName, reason) {
+  try {
+    let where = `"doctorId" = $1`;
+    const params = [doctorId];
+
+    if (appointmentId) {
+      params.push(String(appointmentId));
+      where += ` AND ("appointmentId" = $${params.length} OR id::text = $${params.length})`;
+    } else if (patientName) {
+      params.push(`%${patientName}%`);
+      where += ` AND "patientName" ILIKE $${params.length} AND status NOT IN ('cancelled', 'completed')`;
+    } else {
+      return { success: false, error: 'Please provide appointment ID or patient name.' };
+    }
+
+    params.push(reason || 'Cancelled by doctor');
+    params.push(doctorId);
+    const result = await pool.query(`
+      UPDATE appointments
+      SET status = 'cancelled', "cancellationReason" = $${params.length - 1},
+          "cancelledAt" = NOW(), "updatedAt" = NOW()
+      WHERE ${where} AND status NOT IN ('cancelled', 'completed')
+      RETURNING "appointmentId", "patientName", "appointmentDate", "appointmentTime"
+    `, params.slice(0, -1));
+
+    if (result.rows.length === 0) return { success: false, error: 'No matching active appointment found.' };
+    return { success: true, cancelled: result.rows };
+  } catch (err) {
+    logger.warn('[VoiceAssistant] cancel_appointment error', { error: err.message });
+    return { success: false, error: err.message };
+  }
+}
+
+async function executeRescheduleAppointment(doctorId, appointmentId, patientName, newDate, newTime) {
+  try {
+    let where = `"doctorId" = $1`;
+    const params = [doctorId];
+
+    if (appointmentId) {
+      params.push(String(appointmentId));
+      where += ` AND ("appointmentId" = $${params.length} OR id::text = $${params.length})`;
+    } else if (patientName) {
+      params.push(`%${patientName}%`);
+      where += ` AND "patientName" ILIKE $${params.length} AND status NOT IN ('cancelled', 'completed')`;
+    } else {
+      return { success: false, error: 'Please provide appointment ID or patient name.' };
+    }
+
+    const newDatetime = new Date(`${newDate}T${newTime}:00`);
+    params.push(newDate, newTime, newDatetime);
+    const result = await pool.query(`
+      UPDATE appointments
+      SET "appointmentDate" = $${params.length - 2},
+          "appointmentTime" = $${params.length - 1},
+          "appointmentDateTime" = $${params.length},
+          status = 'confirmed', "updatedAt" = NOW()
+      WHERE ${where} AND status NOT IN ('cancelled', 'completed')
+      RETURNING "appointmentId", "patientName", "appointmentDate", "appointmentTime"
+    `, params);
+
+    if (result.rows.length === 0) return { success: false, error: 'No matching active appointment found.' };
+    return { success: true, rescheduled: result.rows[0], newDate, newTime };
+  } catch (err) {
+    logger.warn('[VoiceAssistant] reschedule_appointment error', { error: err.message });
+    return { success: false, error: err.message };
+  }
+}
+
+async function executeGetDoctorBriefing(doctorId, priority = 'all') {
+  try {
+    const priorityFilter = priority === 'urgent'
+      ? `AND priority = 'urgent'`
+      : priority === 'high'
+      ? `AND priority IN ('urgent','high')`
+      : '';
+
+    // 1. Unread notifications (last 48h) filtered by priority
+    const notifResult = await pool.query(`
+      SELECT id, type, priority, title, LEFT(message, 150) AS message, "createdAt"
+      FROM notifications
+      WHERE "userId" = $1
+        AND "userType" = 'doctor'
+        AND "isRead" = false
+        AND "createdAt" >= NOW() - INTERVAL '48 hours'
+        ${priorityFilter}
+      ORDER BY
+        CASE priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 ELSE 3 END,
+        "createdAt" DESC
+      LIMIT 10
+    `, [doctorId]);
+
+    // 2. Pending appointment requests (not yet accepted/rejected)
+    const pendingReqResult = await pool.query(`
+      SELECT "patientName", "appointmentDate", "appointmentTime", reason
+      FROM appointments
+      WHERE "doctorId" = $1
+        AND status = 'pending'
+        AND "appointmentDate" >= CURRENT_DATE
+      ORDER BY "appointmentDate", "appointmentTime"
+      LIMIT 5
+    `, [doctorId]);
+
+    // 3. Upcoming appointments in next 2 hours
+    const upcomingResult = await pool.query(`
+      SELECT "patientName", "appointmentDate", "appointmentTime", status, reason
+      FROM appointments
+      WHERE "doctorId" = $1
+        AND DATE("appointmentDate") = CURRENT_DATE
+        AND "appointmentTime"::time BETWEEN NOW()::time AND (NOW() + INTERVAL '2 hours')::time
+        AND status NOT IN ('cancelled','completed')
+      ORDER BY "appointmentTime"
+      LIMIT 3
+    `, [doctorId]);
+
+    return {
+      unreadNotifications: notifResult.rows,
+      pendingRequests: pendingReqResult.rows,
+      upcomingSoon: upcomingResult.rows,
+    };
+  } catch (err) {
+    logger.warn('[VoiceAssistant] get_doctor_briefing error', { error: err.message });
+    return { unreadNotifications: [], pendingRequests: [], upcomingSoon: [] };
   }
 }
 
@@ -303,7 +723,7 @@ router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req,
 // ─── POST /agent — Text → Intent + Action/Answer ─────────────────────────────
 
 router.post('/agent', authUser, requireDoctor, async (req, res) => {
-  const { text, context = {} } = req.body;
+  const { text, context = {}, history = [] } = req.body;
   if (!text || typeof text !== 'string' || !text.trim()) {
     return res.status(400).json({ error: 'text is required' });
   }
@@ -313,11 +733,20 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
   const systemPrompt = buildSystemPrompt(enrichedContext);
   const currentPatientId = context.currentPatient?.id || context.currentPatient?._id;
 
+  // Build conversation messages with history for continuity (last 10 turns)
+  const historyMessages = Array.isArray(history)
+    ? history.slice(-10).map(m => ({
+        role: m.role === 'user' ? 'user' : 'assistant',
+        content: String(m.text || '').slice(0, 500),
+      }))
+    : [];
+
   try {
     // ── Step 1: Call LLM agent with tool definitions ──────────────────────
     const agentResp = await llmProvider.chat({
       messages: [
         { role: 'system', content: systemPrompt },
+        ...historyMessages,
         { role: 'user', content: text.trim() }
       ],
       tools: ASSISTANT_TOOLS,
@@ -486,6 +915,162 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
       });
     }
 
+    // list_appointments — execute server-side
+    if (toolName === 'list_appointments') {
+      const filter = args.filter || 'today';
+      const limit = args.limit || 10;
+      const rows = await executeListAppointments(doctorId, filter, limit);
+      if (!rows || rows.length === 0) {
+        const msg = filter === 'today'
+          ? 'You have no appointments scheduled for today.'
+          : `No ${filter} appointments found.`;
+        return res.json({ intent: 'action', action: 'list_appointments', parameters: args, response: msg, speak: msg, data: [], requiresConfirmation: false });
+      }
+      const lines = rows.map(a => {
+        const time = a.appointmentTime ? String(a.appointmentTime).slice(0, 5) : '';
+        const status = a.status || '';
+        const name = a.patientName || 'Unknown';
+        const reason = a.reason || a.symptoms || '';
+        return `• ${time} — ${name} (${status})${reason ? ': ' + reason : ''}`;
+      });
+      const heading = filter === 'today'
+        ? `You have ${rows.length} appointment${rows.length !== 1 ? 's' : ''} today:`
+        : `${rows.length} ${filter} appointment${rows.length !== 1 ? 's' : ''}:`;
+      const msg = `${heading}\n${lines.join('\n')}`;
+      // Spoken version — concise summary
+      const firstFew = rows.slice(0, 3).map(a =>
+        `${String(a.appointmentTime || '').slice(0, 5)} ${a.patientName || 'unknown'}`
+      ).join(', ');
+      const speak = rows.length <= 3
+        ? `${heading.replace(':', '.')} ${firstFew}.`
+        : `${heading.replace(':', '.')} First: ${firstFew}${rows.length > 3 ? `, and ${rows.length - 3} more.` : '.'}`;
+      return res.json({ intent: 'action', action: 'list_appointments', parameters: args, response: msg, speak, data: rows, requiresConfirmation: false });
+    }
+
+    // get_patient_health — execute server-side
+    if (toolName === 'get_patient_health') {
+      const data = await executeGetPatientHealth(doctorId, args.patient_name, args.patient_id);
+      if (!data) {
+        const name = args.patient_name || args.patient_id || 'that patient';
+        const msg = `No health records found for ${name}. They may not have visited you yet.`;
+        return res.json({ intent: 'action', action: 'get_patient_health', parameters: args, response: msg, speak: msg, requiresConfirmation: false });
+      }
+      const parts = [];
+      if (data.patient) {
+        const p = data.patient;
+        parts.push(`Patient: ${p.name}${p.gender ? ', ' + p.gender : ''}${p.bloodGroup ? ', Blood: ' + p.bloodGroup : ''}`);
+        if (p.weight || p.height) parts.push(`Weight: ${p.weight || '?'} kg, Height: ${p.height || '?'} cm`);
+        if (p.chronicConditions) parts.push(`Conditions: ${Array.isArray(p.chronicConditions) ? p.chronicConditions.join(', ') : p.chronicConditions}`);
+        if (p.allergies) parts.push(`Allergies: ${Array.isArray(p.allergies) ? p.allergies.join(', ') : p.allergies}`);
+        if (p.currentMedications) parts.push(`Current Medications: ${Array.isArray(p.currentMedications) ? p.currentMedications.join(', ') : p.currentMedications}`);
+        if (p.lastVisitDate) parts.push(`Last Visit: ${new Date(p.lastVisitDate).toLocaleDateString('en-IN')}`);
+      }
+      if (data.vitals && data.vitals.length) {
+        const vLines = data.vitals.slice(0, 6).map(v => `${v.reading_type}: ${v.value} ${v.unit || ''}`);
+        parts.push(`Latest Vitals: ${vLines.join(', ')}`);
+      }
+      if (data.lastPrescription) {
+        const rx = data.lastPrescription;
+        if (rx.diagnosis) parts.push(`Last Diagnosis: ${Array.isArray(rx.diagnosis) ? rx.diagnosis.join(', ') : rx.diagnosis}`);
+      }
+      const msg = parts.join('\n') || 'Health summary retrieved.';
+      return res.json({ intent: 'action', action: 'get_patient_health', parameters: args, response: msg, speak: msg, data, requiresConfirmation: false });
+    }
+
+    // book_appointment — execute server-side
+    if (toolName === 'book_appointment') {
+      if (!args.date || !args.time || !args.patient_name) {
+        const msg = 'To book an appointment I need the patient name, date, and time. Please provide these details.';
+        return res.json({ intent: 'action', action: 'book_appointment', parameters: args, response: msg, speak: msg, requiresConfirmation: false });
+      }
+      const doctorDisplayName = enrichedContext.doctorName || 'Doctor';
+      const result = await executeBookAppointment(doctorId, doctorDisplayName, args.patient_name, args.patient_phone, args.date, args.time, args.reason, args.type);
+      const msg = result.success
+        ? `Appointment booked for ${result.patientName} on ${result.date} at ${result.time}. ID: ${result.appointmentId}.`
+        : `Could not book appointment: ${result.error}`;
+      return res.json({ intent: 'action', action: 'book_appointment', parameters: args, response: msg, speak: msg, data: result, requiresConfirmation: false });
+    }
+
+    // cancel_appointment — execute server-side
+    if (toolName === 'cancel_appointment') {
+      const result = await executeCancelAppointment(doctorId, args.appointment_id, args.patient_name, args.reason);
+      let msg;
+      if (result.success) {
+        const c = result.cancelled[0];
+        msg = `Appointment for ${c.patientName} on ${new Date(c.appointmentDate).toLocaleDateString('en-IN')} at ${c.appointmentTime} has been cancelled.`;
+      } else {
+        msg = `Could not cancel appointment: ${result.error}`;
+      }
+      return res.json({ intent: 'action', action: 'cancel_appointment', parameters: args, response: msg, speak: msg, data: result, requiresConfirmation: false });
+    }
+
+    // reschedule_appointment — execute server-side
+    if (toolName === 'reschedule_appointment') {
+      if (!args.new_date || !args.new_time) {
+        const msg = 'Please provide the new date and time for rescheduling.';
+        return res.json({ intent: 'action', action: 'reschedule_appointment', parameters: args, response: msg, speak: msg, requiresConfirmation: false });
+      }
+      const result = await executeRescheduleAppointment(doctorId, args.appointment_id, args.patient_name, args.new_date, args.new_time);
+      let msg;
+      if (result.success) {
+        const r = result.rescheduled;
+        msg = `Appointment for ${r.patientName} has been rescheduled to ${result.newDate} at ${result.newTime}.`;
+      } else {
+        msg = `Could not reschedule: ${result.error}`;
+      }
+      return res.json({ intent: 'action', action: 'reschedule_appointment', parameters: args, response: msg, speak: msg, data: result, requiresConfirmation: false });
+    }
+
+    // get_doctor_briefing — execute server-side
+    if (toolName === 'get_doctor_briefing') {
+      const briefing = await executeGetDoctorBriefing(doctorId, args.priority || 'all');
+      const { unreadNotifications, pendingRequests, upcomingSoon } = briefing;
+
+      const hasUrgent = unreadNotifications.some(n => n.priority === 'urgent');
+      const parts = [];
+
+      if (upcomingSoon.length > 0) {
+        parts.push(`⏰ **Upcoming in 2 hours:** ${upcomingSoon.map(a => `${a.appointmentTime} — ${a.patientName}`).join(', ')}`);
+      }
+      if (pendingRequests.length > 0) {
+        parts.push(`📋 **${pendingRequests.length} pending appointment request${pendingRequests.length > 1 ? 's' : ''}:** ${pendingRequests.map(a => `${a.patientName} on ${a.appointmentDate}`).join(', ')}`);
+      }
+      if (unreadNotifications.length > 0) {
+        const urgentItems = unreadNotifications.filter(n => n.priority === 'urgent');
+        const highItems   = unreadNotifications.filter(n => n.priority === 'high');
+        const normalItems = unreadNotifications.filter(n => !['urgent','high'].includes(n.priority));
+
+        if (urgentItems.length > 0) {
+          parts.push(`🚨 **URGENT (${urgentItems.length}):** ${urgentItems.map(n => n.title).join(' | ')}`);
+        }
+        if (highItems.length > 0) {
+          parts.push(`🔴 **High priority (${highItems.length}):** ${highItems.map(n => n.title).join(' | ')}`);
+        }
+        if (normalItems.length > 0) {
+          parts.push(`📬 **${normalItems.length} unread notification${normalItems.length > 1 ? 's' : ''}`);
+        }
+      }
+
+      if (parts.length === 0) {
+        const msg = 'No new updates or alerts at the moment.';
+        return res.json({ intent: 'action', action: 'get_doctor_briefing', parameters: args, response: msg, speak: msg, data: briefing, requiresConfirmation: false });
+      }
+
+      const fullText = parts.join('\n');
+      // Spoken version — strip emoji/markdown, keep only urgent/critical items
+      const spokenParts = [];
+      if (upcomingSoon.length > 0)   spokenParts.push(`You have ${upcomingSoon.length} appointment${upcomingSoon.length > 1 ? 's' : ''} coming up in the next 2 hours.`);
+      if (pendingRequests.length > 0) spokenParts.push(`${pendingRequests.length} pending appointment request${pendingRequests.length > 1 ? 's' : ''} awaiting your confirmation.`);
+      const urgentNotifs = unreadNotifications.filter(n => n.priority === 'urgent');
+      const highNotifs   = unreadNotifications.filter(n => n.priority === 'high');
+      if (urgentNotifs.length > 0)   spokenParts.push(`Urgent alert: ${urgentNotifs[0].title}.`);
+      else if (highNotifs.length > 0) spokenParts.push(`${highNotifs.length} high-priority notification${highNotifs.length > 1 ? 's' : ''}.`);
+      else if (unreadNotifications.length > 0) spokenParts.push(`${unreadNotifications.length} unread notifications.`);
+      const spokenText = spokenParts.join(' ');
+
+      return res.json({ intent: 'action', action: 'get_doctor_briefing', parameters: args, response: fullText, speak: spokenText, data: briefing, requiresConfirmation: false });
+    }
+
     // Unknown tool — fallback
     return res.json({
       intent: 'action',
@@ -502,6 +1087,74 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
       error: err.message,
       response: 'Sorry, I encountered an error. Please try again.',
     });
+  }
+});
+
+// ─── GET /briefing — Proactive update poll (frontend polling) ─────────────────
+
+router.get('/briefing', authUser, requireDoctor, async (req, res) => {
+  const doctorId = req.user?.id;
+  if (!doctorId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    // Fetch urgent & high priority unread notifications (last 24h only for polling)
+    const notifResult = await pool.query(`
+      SELECT id, type, priority, title, LEFT(message, 200) AS message, "createdAt"
+      FROM notifications
+      WHERE "userId" = $1
+        AND "userType" = 'doctor'
+        AND "isRead" = false
+        AND priority IN ('urgent','high')
+        AND "createdAt" >= NOW() - INTERVAL '24 hours'
+      ORDER BY CASE priority WHEN 'urgent' THEN 1 ELSE 2 END, "createdAt" DESC
+      LIMIT 5
+    `, [doctorId]);
+
+    // Pending appointment requests
+    const pendingResult = await pool.query(`
+      SELECT "patientName", "appointmentDate", "appointmentTime", reason
+      FROM appointments
+      WHERE "doctorId" = $1 AND status = 'pending' AND "appointmentDate" >= CURRENT_DATE
+      ORDER BY "appointmentDate", "appointmentTime"
+      LIMIT 3
+    `, [doctorId]);
+
+    // Appointments starting in next 30 min
+    const imminentResult = await pool.query(`
+      SELECT "patientName", "appointmentTime", status
+      FROM appointments
+      WHERE "doctorId" = $1
+        AND DATE("appointmentDate") = CURRENT_DATE
+        AND "appointmentTime"::time BETWEEN NOW()::time AND (NOW() + INTERVAL '30 minutes')::time
+        AND status NOT IN ('cancelled','completed')
+      ORDER BY "appointmentTime"
+      LIMIT 2
+    `, [doctorId]);
+
+    const urgentNotifs  = notifResult.rows.filter(n => n.priority === 'urgent');
+    const highNotifs    = notifResult.rows.filter(n => n.priority === 'high');
+    const hasUrgent     = urgentNotifs.length > 0;
+    const hasUpdates    = notifResult.rows.length > 0 || pendingResult.rows.length > 0 || imminentResult.rows.length > 0;
+
+    // Compose spoken alert text
+    const spokenParts = [];
+    if (urgentNotifs.length > 0)   spokenParts.push(`Urgent: ${urgentNotifs[0].title}.`);
+    if (highNotifs.length > 0)     spokenParts.push(`${highNotifs.length} high-priority alert${highNotifs.length > 1 ? 's' : ''}.`);
+    if (pendingResult.rows.length > 0) spokenParts.push(`${pendingResult.rows.length} appointment request${pendingResult.rows.length > 1 ? 's' : ''} pending.`);
+    if (imminentResult.rows.length > 0) spokenParts.push(`${imminentResult.rows[0].patientName} starts in under 30 minutes.`);
+
+    return res.json({
+      hasUpdates,
+      hasUrgent,
+      speakText: spokenParts.join(' '),
+      urgent: urgentNotifs,
+      high: highNotifs,
+      pendingRequests: pendingResult.rows,
+      imminent: imminentResult.rows,
+    });
+  } catch (err) {
+    logger.error('[VoiceAssistant] Briefing poll error', { error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 

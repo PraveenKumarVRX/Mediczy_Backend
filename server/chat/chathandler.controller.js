@@ -79,6 +79,9 @@ export function setupSocketIO(server) {
         if (userType === 'doctor') {
           socket.join(`doctor-${userId}`);
           console.log(`👨‍⚕️ Doctor ${userId} joined notification room`);
+        } else if (userType === 'nurse') {
+          socket.join(`nurse-${userId}`);
+          console.log(`👩‍⚕️ Nurse ${userId} joined notification room`);
         } else {
           socket.join(`user-${userId}`);
           console.log(`👤 User ${userId} joined notification room`);
@@ -383,12 +386,65 @@ export function setupSocketIO(server) {
     socket.on("video-leave", (data) => {
       const { channel } = data;
       console.log(`Video: User leaving channel ${channel}`);
-      
-      // Leave the socket room
       socket.leave(channel);
-      
-      // Notify others in the channel about user leaving
       socket.to(channel).emit("video-user-left", { channel, userId: socket.id });
+    });
+
+    // ── Team Call Signaling ──────────────────────────────────────────────────
+    // Doctor starts a team call — notify only the explicitly selected participants
+    socket.on("team_call_start", async (data) => {
+      try {
+        const { doctorId, doctorName, roomName, callType, participants } = data;
+        if (!doctorId || !roomName || !Array.isArray(participants) || participants.length === 0) return;
+
+        const payload = { doctorId, doctorName, roomName, callType };
+        for (const p of participants) {
+          const { id, memberType } = p;
+          if (memberType === 'nurse') {
+            io.to(`nurse-${id}`).emit('incoming_team_call', payload);
+          } else if (memberType === 'assistant') {
+            io.to(`assistant-${id}`).emit('incoming_team_call', payload);
+          } else if (memberType === 'doctor') {
+            io.to(`doctor-${id}`).emit('incoming_team_call', payload);
+          }
+          // 'team' (platform staff) rooms can be added when they have a socket login
+        }
+        console.log(`📞 Team call started by doctor ${doctorId} — notified ${participants.length} selected members`);
+      } catch (err) {
+        console.error('team_call_start error:', err.message);
+      }
+    });
+
+    // Doctor ends the team call — notify everyone to dismiss their call UI
+    socket.on("team_call_end", (data) => {
+      const { doctorId } = data || {};
+      if (!doctorId) return;
+      // Broadcast to all nurse rooms — client filters by doctorId
+      io.emit('team_call_ended', { doctorId });
+      console.log(`📵 Team call ended by doctor ${doctorId}`);
+    });
+
+    // Member declines incoming call — notify the caller (doctor)
+    socket.on("team_call_decline", (data) => {
+      const { doctorId, memberName, memberId, memberType } = data || {};
+      if (!doctorId) return;
+      io.to(`doctor-${doctorId}`).emit('team_call_status', {
+        status: 'declined',
+        memberName: memberName || 'Team member',
+        memberId,
+        memberType,
+      });
+      console.log(`📵 ${memberName} declined call from doctor ${doctorId}`);
+    });
+
+    // Member is already in another call — notify caller
+    socket.on("team_call_busy", (data) => {
+      const { doctorId, memberName } = data || {};
+      if (!doctorId) return;
+      io.to(`doctor-${doctorId}`).emit('team_call_status', {
+        status: 'busy',
+        memberName: memberName || 'Team member',
+      });
     });
   });
 

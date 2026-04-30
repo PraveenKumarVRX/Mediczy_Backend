@@ -479,20 +479,18 @@ router.get("/dashboard/stats", authDoctor, async (req, res) => {
       col: 'userId'
     });
 
-    // Get consultations this month
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-
+    // Get all-time completed consultations
     const totalConsultations = await Appointment.count({
       where: {
         doctorId,
         status: 'completed',
-        appointmentDate: { [Op.gte]: startOfMonth }
       }
     });
 
     // Get last month's stats for comparison
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
     const startOfLastMonth = new Date(startOfMonth);
     startOfLastMonth.setMonth(startOfLastMonth.getMonth() - 1);
     const endOfLastMonth = new Date(startOfMonth);

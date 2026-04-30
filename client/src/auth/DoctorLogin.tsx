@@ -19,8 +19,6 @@ import {
   Eye,
   EyeOff,
   HeartPulse,
-  Chrome,
-  Facebook,
   CheckCircle2,
   Shield,
   Sparkles,
@@ -42,15 +40,8 @@ import {
 import "../index.css";
 import { MediqzyLogo3D } from "@/components/ui/MediqzyLogo3D";
 import { useLogin, clearAuthTokens } from "@/hooks/auth";
+import api from "@/utils/api";
 import { initializeFirebaseMessaging } from "@/lib/firebase-config";
-
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.VITE_API_URL
-    ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, "")
-    : typeof window !== "undefined"
-    ? window.location.origin
-    : "");
 
 const formSchema = z.object({
   email: z
@@ -114,7 +105,18 @@ const DoctorLogin = () => {
       return;
     }
     if (token) {
-      navigate("/doctor/dashboard");
+      // Validate token is still accepted by the server before auto-redirecting
+      api.get('/doctors/profile')
+        .then(() => {
+          navigate("/doctor/dashboard", { replace: true });
+        })
+        .catch(() => {
+          // Token rejected (expired/invalid) — clear and show login form
+          localStorage.removeItem("doctorToken");
+          localStorage.removeItem("token");
+          localStorage.removeItem("userType");
+          setIsCheckingAuth(false);
+        });
       return;
     }
     setIsCheckingAuth(false);
@@ -132,10 +134,6 @@ const DoctorLogin = () => {
   const IdentifierIcon = identifierType === "phone" ? Phone : Mail;
 
   const loginMutation = useLogin();
-
-  const handleOAuthLogin = (provider: "google" | "facebook") => {
-    window.location.href = `${API_BASE_URL}/api/auth/doctor/${provider}`;
-  };
 
   const onSubmit = (values: { email: string; password: string }) => {
     loginMutation.mutate(
@@ -497,40 +495,8 @@ const DoctorLogin = () => {
             </Form>
           </motion.div>
 
-          {/* OAuth divider */}
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t border-slate-100" />
-            </div>
-            <div className="relative flex justify-center">
-              <span className="bg-white px-3 text-xs text-slate-400 uppercase tracking-wider">
-                or continue with
-              </span>
-            </div>
-          </div>
-
-          {/* OAuth buttons */}
-          <div className="grid grid-cols-2 gap-3 mb-7">
-            <button
-              type="button"
-              onClick={() => handleOAuthLogin("google")}
-              className="h-11 flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-sm font-medium text-slate-700 transition-all duration-150 group"
-            >
-              <Chrome className="h-4 w-4 text-slate-500 group-hover:text-slate-700" />
-              Google
-            </button>
-            <button
-              type="button"
-              onClick={() => handleOAuthLogin("facebook")}
-              className="h-11 flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white hover:bg-blue-50 hover:border-blue-200 text-sm font-medium text-slate-700 transition-all duration-150 group"
-            >
-              <Facebook className="h-4 w-4 text-blue-600" />
-              Facebook
-            </button>
-          </div>
-
           {/* Footer links */}
-          <div className="space-y-3 text-center">
+          <div className="mt-7 space-y-3 text-center">
             <p className="text-sm text-slate-500">
               New to {BRAND.name}?{" "}
               <Link

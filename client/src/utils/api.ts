@@ -224,6 +224,23 @@ api.interceptors.response.use(
       }
     }
 
+    // Doctor 401 — clear stale token and redirect to doctor login
+    if (
+      error.response?.status === 401 &&
+      typeof window !== "undefined" &&
+      getUserType() === "doctor"
+    ) {
+      const hadToken = window.localStorage.getItem("doctorToken");
+      if (hadToken) {
+        window.localStorage.removeItem("doctorToken");
+        window.localStorage.removeItem("token");
+        window.localStorage.removeItem("userType");
+        if (!window.location.pathname.startsWith("/doctor/login")) {
+          window.location.href = "/doctor/login";
+        }
+      }
+    }
+
     // Regular user 401 — clear stale token and redirect to login
     if (
       error.response?.status === 401 &&

@@ -59,7 +59,6 @@ import { useLogout } from "@/hooks/auth";
 import { useAuth } from "@/auth/AuthProvider";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import VoiceNavigation from '../VoiceNavigation';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import ChatApplet from '@/components/chat/ChatApplet';
 
@@ -104,7 +103,7 @@ const doctorNavItems: NavItem[] = [
   { icon: Calculator, label: "Medical Calculators", path: "/doctor/calculators", category: "Clinical Tools" },
   
   // Communication
-  { icon: MessageSquare, label: "Patient Chat", path: "/doctor/chat", category: "Communication" },
+  { icon: MessageSquare, label: "Messages", path: "/doctor/messages", category: "Communication" },
   { icon: Video, label: "Video Consultation", path: "/doctor/video", category: "Communication" },
   { icon: Phone, label: "Contact", path: "/doctor/contact", category: "Communication" },
   
@@ -593,12 +592,11 @@ const MainLayoutdoctor = ({ children }) => {
       {/* Floating iSHA Assistant button */}
       <Link
         to="/doctor/assistant"
-        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-200 group"
+        className="fixed bottom-6 right-6 z-50 w-16 h-16 rounded-full overflow-hidden shadow-xl hover:shadow-2xl hover:shadow-blue-500/50 transition-all duration-200 hover:scale-110 ring-2 ring-blue-400/60 hover:ring-blue-300"
         title="iSHA Assistant"
       >
-        <Sparkles className="h-6 w-6 text-white group-hover:scale-110 transition-transform" />
+        <img src="/isha.png" alt="iSHA" className="w-full h-full object-cover"/>
       </Link>
-      <VoiceNavigation />
       <OfflineIndicator />
       <ChatApplet />
     </div>

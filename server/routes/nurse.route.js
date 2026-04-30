@@ -1,6 +1,7 @@
 import express from 'express';
 import { body } from 'express-validator';
 import Nurse from '../models/nurse.model.intelligent.js';
+import { buildLiveKitJoinData } from '../utils/videoProvider.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import Medication from '../models/medication.model.intelligent.js';
@@ -11,6 +12,7 @@ import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import userModel from '../models/user.model.intelligent.js';
 import { Op } from 'sequelize';
+import pool from '../db/pgPool.js';
 
 const router = express.Router();
 
@@ -644,4 +646,150 @@ router.post('/book', async (req, res) => {
   }
 });
 
+// ── GET /api/nurse/chat/call-token?roomName=xxx ─────────────────────────────
+// Generates a LiveKit token for a nurse to join an internal team call room.
+router.get('/chat/call-token', authNurse, async (req, res) => {
+  try {
+    const { roomName } = req.query;
+    if (!roomName || typeof roomName !== 'string') {
+      return res.status(400).json({ success: false, message: 'roomName is required' });
+    }
+    const nurseId = parseInt(req.nurse.id, 10);
+    const { rows } = await pool.query(
+      'SELECT "firstName", "lastName", email FROM nurses WHERE id = $1',
+      [nurseId]
+    );
+    const nurse = rows[0];
+    const displayName = nurse
+      ? `${nurse.firstName || ''} ${nurse.lastName || ''}`.trim() || nurse.email
+      : 'Nurse';
+    const livekitData = await buildLiveKitJoinData({
+      meetingId: roomName,
+      identity: `nurse-${nurseId}`,
+      name: displayName,
+    });
+    return res.json({
+      success: true,
+      serverUrl: livekitData.serverUrl,
+      token: livekitData.token,
+      roomName,
+    });
+  } catch (err) {
+    console.error('nurse call-token error', err);
+    return res.status(500).json({ success: false, message: 'Failed to generate token' });
+  }
+});
+
 export default router;
+
+// ─── Nurse Chat (Nurse ↔ Doctor) ───────────────────────────────────────────
+
+// GET /api/nurse/chat/contacts/doctors — list all doctors nurse can message
+router.get('/chat/contacts/doctors', authNurse, async (req, res) => {
+  const nurseId = parseInt(req.nurse.id, 10);
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        d.id,
+        d."firstName" || ' ' || d."lastName" AS name,
+        d."profileImage" AS avatar,
+        d.email,
+        d.specialization,
+        (
+          SELECT content FROM chat_messages
+          WHERE "conversationId" = 'nurse_' || $1::text || '_doctor_' || d.id
+          ORDER BY "createdAt" DESC LIMIT 1
+        ) AS "lastMessage",
+        (
+          SELECT "createdAt" FROM chat_messages
+          WHERE "conversationId" = 'nurse_' || $1::text || '_doctor_' || d.id
+          ORDER BY "createdAt" DESC LIMIT 1
+        ) AS "lastMessageAt",
+        (
+          SELECT COUNT(*) FROM chat_messages
+          WHERE "conversationId" = 'nurse_' || $1::text || '_doctor_' || d.id
+            AND "recipientId" = $1::integer AND "recipientType" = 'nurse'
+            AND status != 'read'
+        )::int AS "unreadCount"
+      FROM doctors d
+      ORDER BY "lastMessageAt" DESC NULLS LAST, name
+      LIMIT 100
+    `, [nurseId]);
+    res.json({ success: true, contacts: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/nurse/chat/messages/:conversationId
+router.get('/chat/messages/:conversationId', authNurse, async (req, res) => {
+  const nurseId = parseInt(req.nurse.id, 10);
+  const { conversationId } = req.params;
+  const limit = Math.min(parseInt(req.query.limit || '50', 10), 200);
+  const before = req.query.before;
+
+  if (!conversationId.startsWith(`nurse_${nurseId}_doctor_`)) {
+    return res.status(403).json({ error: 'Access denied to this conversation' });
+  }
+
+  try {
+    const params = [conversationId, nurseId, limit];
+    const beforeClause = before ? `AND m."createdAt" < $4` : '';
+    if (before) params.push(before);
+
+    const { rows } = await pool.query(`
+      SELECT
+        m.id, m."conversationId", m."senderId", m."senderType",
+        m."recipientId", m."recipientType", m.content, m."messageType",
+        m.attachments, m.status, m."createdAt"
+      FROM chat_messages m
+      WHERE m."conversationId" = $1
+        AND (m."senderId" = $2 OR m."recipientId" = $2)
+        ${beforeClause}
+      ORDER BY m."createdAt" DESC
+      LIMIT $3
+    `, params);
+
+    // Mark as read
+    await pool.query(`
+      UPDATE chat_messages
+      SET status = 'read', "readAt" = NOW()
+      WHERE "conversationId" = $1
+        AND "recipientId" = $2 AND "recipientType" = 'nurse'
+        AND status != 'read'
+    `, [conversationId, nurseId]);
+
+    res.json({ success: true, messages: rows.reverse() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/nurse/chat/messages
+router.post('/chat/messages', authNurse, async (req, res) => {
+  const nurseId = parseInt(req.nurse.id, 10);
+  const { conversationId, recipientId, content, messageType = 'text' } = req.body;
+
+  if (!conversationId || !recipientId || !content?.trim()) {
+    return res.status(400).json({ error: 'conversationId, recipientId, content are required' });
+  }
+
+  const expectedConvId = `nurse_${nurseId}_doctor_${recipientId}`;
+  if (conversationId !== expectedConvId) {
+    return res.status(403).json({ error: 'Invalid conversationId' });
+  }
+
+  try {
+    const { rows } = await pool.query(`
+      INSERT INTO chat_messages
+        ("conversationId", "senderId", "senderType", "recipientId", "recipientType",
+         content, "messageType", status, "createdAt", "updatedAt")
+      VALUES ($1, $2, 'nurse', $3, 'doctor', $4, $5, 'sent', NOW(), NOW())
+      RETURNING *
+    `, [conversationId, nurseId, recipientId, content.trim(), messageType]);
+
+    res.json({ success: true, message: rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});

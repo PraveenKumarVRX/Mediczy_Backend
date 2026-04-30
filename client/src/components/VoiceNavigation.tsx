@@ -1152,7 +1152,7 @@ const VoiceNavigation: React.FC = () => {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50">
+    <div className="fixed bottom-24 right-6 z-50">
       {isOpen && (
         <Card className="mb-4 p-4 w-[400px] bg-[#1A2333]/95 backdrop-blur-lg border-none shadow-lg relative animate-slide-up">
           <div className="absolute inset-0 bg-gradient-to-b from-[#00FFF3]/5 to-transparent rounded-lg pointer-events-none"></div>

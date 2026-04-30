@@ -403,10 +403,10 @@ const DoctorDashboard = () => {
       bgColor: "bg-red-500/10",
     },
     {
-      title: "Chat",
-      description: "Message patients",
+      title: "Messages",
+      description: "Patients & Nurses",
       icon: MessageSquare,
-      link: "/doctor/chat",
+      link: "/doctor/messages",
       badge: null,
       color: "text-indigo-500",
       bgColor: "bg-indigo-500/10",
@@ -988,8 +988,8 @@ const DoctorDashboard = () => {
             {/* Stats pills */}
             <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
               {[
-                { label: "Total Patients",    value: stats?.totalPatients || 124,  trend: `+${stats?.patientGrowth || 12}%`,      up: true  },
-                { label: "Consultations",     value: stats?.totalConsultations || 48, trend: `+${stats?.consultationGrowth || 8}%`, up: true  },
+                { label: "Total Patients",    value: stats?.totalPatients ?? 0,       trend: `+${stats?.patientGrowth || 0}%`,       up: true  },
+                { label: "Consultations",     value: stats?.totalConsultations ?? 0,  trend: stats?.consultationGrowth !== undefined ? `${stats.consultationGrowth >= 0 ? '+' : ''}${stats.consultationGrowth}%` : '—', up: (stats?.consultationGrowth ?? 0) >= 0 },
                 { label: "Avg. Rating",       value: `${stats?.rating || 4.8} ★`,  trend: `+${stats?.ratingGrowth || 0.2}`,       up: true  },
                 { label: "Pending",           value: stats?.pendingAppointments || 3, trend: "review",                               up: false },
                 { label: "Revenue (Month)",   value: `₹${((stats?.revenue || 24500)/1000).toFixed(1)}K`, trend: "+15%",             up: true  },

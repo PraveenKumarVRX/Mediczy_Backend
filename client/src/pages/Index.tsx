@@ -1892,6 +1892,36 @@ const Index = () => {
           </CardContent>
         </Card>
 
+        {/* Quick Actions */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {quickActions.map((action, index) => (
+            <Link 
+              key={index} 
+              to={action.link}
+              className="group"
+            >
+              <Card className="h-full transition-all duration-300 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:shadow-xl hover:shadow-slate-200/50 dark:hover:shadow-teal-500/10 hover:border-teal-200 dark:hover:border-teal-500/50 relative overflow-hidden hover:-translate-y-1">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-teal-500/5 dark:from-teal-500/10 to-transparent rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity" />
+                <CardContent className="p-5 relative flex flex-col h-full">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="p-2.5 rounded-xl bg-gradient-to-br from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-800 group-hover:from-teal-50 group-hover:to-teal-100/50 dark:group-hover:from-teal-900/30 dark:group-hover:to-teal-800/20 transition-colors">
+                      <action.icon className="w-6 h-6 text-slate-600 dark:text-slate-400 group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors" />
+                    </div>
+                    {action.badge && (
+                      <Badge variant="outline" className="text-xs bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 border-teal-200 dark:border-teal-700">
+                        {action.badge}
+                      </Badge>
+                    )}
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-1">{action.title}</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-3 flex-1">{action.description}</p>
+                  <ArrowRight className="w-4 h-4 text-teal-500 mt-auto transition-transform group-hover:translate-x-2" />
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+        </div>
+
         {/* Smart Devices Sync Section */}
         <Card className="bg-gradient-to-br from-slate-800 via-slate-900 to-slate-800 border-slate-700/50 overflow-hidden">
           <CardContent className="p-6">
@@ -2272,36 +2302,6 @@ const Index = () => {
             </div>
           </CardContent>
         </Card>
-
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {quickActions.map((action, index) => (
-            <Link 
-              key={index} 
-              to={action.link}
-              className="group"
-            >
-              <Card className="h-full transition-all duration-300 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:shadow-xl hover:shadow-slate-200/50 dark:hover:shadow-teal-500/10 hover:border-teal-200 dark:hover:border-teal-500/50 relative overflow-hidden hover:-translate-y-1">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-teal-500/5 dark:from-teal-500/10 to-transparent rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity" />
-                <CardContent className="p-5 relative flex flex-col h-full">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="p-2.5 rounded-xl bg-gradient-to-br from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-800 group-hover:from-teal-50 group-hover:to-teal-100/50 dark:group-hover:from-teal-900/30 dark:group-hover:to-teal-800/20 transition-colors">
-                      <action.icon className="w-6 h-6 text-slate-600 dark:text-slate-400 group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors" />
-                    </div>
-                    {action.badge && (
-                      <Badge variant="outline" className="text-xs bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 border-teal-200 dark:border-teal-700">
-                        {action.badge}
-                      </Badge>
-                    )}
-                  </div>
-                  <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-1">{action.title}</h3>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-3 flex-1">{action.description}</p>
-                  <ArrowRight className="w-4 h-4 text-teal-500 mt-auto transition-transform group-hover:translate-x-2" />
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
-        </div>
 
         {/* Essentials: Wallet, Payments, HRA, Membership, Diary */}
         <div className="space-y-3">

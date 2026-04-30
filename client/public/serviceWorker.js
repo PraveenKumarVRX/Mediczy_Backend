@@ -1,5 +1,5 @@
 // Service Worker for Mediczy Healthcare Platform
-const CACHE_NAME = 'mediczy-v17'; // v17: force cache clear — WhatsApp Inbox + RC Omnichannel routes
+const CACHE_NAME = 'mediczy-v18'; // v18: force cache clear — fix quick actions + AI Doctor z-index
 const ESSENTIAL_URLS = [
   '/'
 ];
