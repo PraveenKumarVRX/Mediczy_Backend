@@ -14,8 +14,10 @@ class MedicalAIService {
     this.MAX_CONVERSATIONS = 500; // Limit to prevent memory leak
     this.CONVERSATION_TTL = 2 * 60 * 60 * 1000; // 2 hours
     
-    // Check SIB health on startup
-    this.checkSibHealth();
+    // Check SIB health on startup — retry once after 8 s to handle PM2 boot race
+    this.checkSibHealth().then(ok => {
+      if (!ok) setTimeout(() => this.checkSibHealth(), 8000);
+    });
     
     // Cleanup old conversations every 30 minutes
     setInterval(() => {

@@ -3,6 +3,8 @@ import { body } from 'express-validator';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { requireCorporateAccess } from '../middleware/corporateTenant.js';
+import { listBlockedIPs, blockIP, unblockIP, getIPStats } from '../middleware/credentialStuffingGuard.js';
+import { getThreatEvents, getThreatStats, lookupIP } from '../middleware/ipThreatIntelligence.js';
 import { attachTenantScope, scopeFilter } from '../middleware/tenantScope.middleware.js';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
@@ -2059,6 +2061,21 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
           }
         });
 
+        // Sync employeeId and employee_id to corporate_employees and users tables
+        if (employeeId) {
+          await postgresSequelize.query(
+            `UPDATE users SET employee_id = :employeeId, "updatedAt" = NOW() WHERE id = :userId AND (employee_id IS NULL OR employee_id = '')`,
+            { replacements: { employeeId, userId }, type: postgresSequelize.QueryTypes.UPDATE }
+          );
+          await postgresSequelize.query(
+            `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", department, designation, "isActive", "createdAt", "updatedAt")
+             VALUES (:corporateId, :userId, :employeeId, :department, :designation, true, NOW(), NOW())
+             ON CONFLICT (corporate_id, "employeeId") DO UPDATE SET
+               "userId" = :userId, department = :department, designation = :designation, "isActive" = true, "updatedAt" = NOW()`,
+            { replacements: { corporateId, userId, employeeId, department: department || 'General', designation: designation || '' }, type: postgresSequelize.QueryTypes.INSERT }
+          );
+        }
+
         // Send welcome email with credentials for newly created users (non-blocking)
         if (isNewUser && temporaryPassword) {
           welcomeEmailService.sendCorporateEmployeeWelcomeEmail({
@@ -2212,6 +2229,15 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
          AND "entityType" = 'corporate' AND role = 'employee'`,
       { replacements: assocReplacements, type: postgresSequelize.QueryTypes.UPDATE }
     );
+
+    // Sync employeeId to corporate_employees table as well
+    if (employeeId !== undefined) {
+      await postgresSequelize.query(
+        `UPDATE corporate_employees SET "employeeId" = :employeeId, "updatedAt" = NOW()
+         WHERE "userId" = :userId AND corporate_id = :corpId`,
+        { replacements: { employeeId, userId: numericUserId, corpId: numericCorporateId }, type: postgresSequelize.QueryTypes.UPDATE }
+      );
+    }
 
     // Update / assign health plan if packageId provided
     if (packageId) {
@@ -4871,6 +4897,327 @@ router.get('/automation/jobs/:key/logs', authUser, requireRole('admin'), async (
  */
 router.post('/automation/jobs/:key/trigger', authUser, requireRole('admin'), async (req, res) => {
   return res.status(501).json({ success: false, message: 'Manual trigger not yet implemented for this task' });
+});
+
+/**
+ * GET /api/admin/activity-logs
+ * Returns recent activity logs from audit_logs table with filtering support.
+ */
+router.get('/activity-logs', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const {
+      limit = 500,
+      page = 1,
+      search,
+      from,
+      to,
+    } = req.query;
+
+    const limitNum = Math.min(parseInt(limit) || 500, 1000);
+    const pageNum = Math.max(parseInt(page) || 1, 1);
+    const offset = (pageNum - 1) * limitNum;
+
+    const conditions = [];
+    const replacements = {};
+
+    if (search) {
+      conditions.push(`(user_email ILIKE :search OR endpoint ILIKE :search OR action ILIKE :search)`);
+      replacements.search = `%${search}%`;
+    }
+    if (from) {
+      conditions.push(`created_at >= :from`);
+      replacements.from = new Date(from).toISOString();
+    }
+    if (to) {
+      conditions.push(`created_at <= :to`);
+      replacements.to = new Date(`${to}T23:59:59`).toISOString();
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const sql = `
+      SELECT
+        id, user_id, user_type, user_email, action, resource_type, resource_id,
+        method, endpoint, status, status_code, error_message, ip_address, user_agent,
+        created_at, timestamp
+      FROM audit_logs
+      ${whereClause}
+      ORDER BY created_at DESC
+      LIMIT :limit OFFSET :offset
+    `;
+    replacements.limit = limitNum;
+    replacements.offset = offset;
+
+    const rows = await postgresSequelize.query(sql, {
+      replacements,
+      type: postgresSequelize.QueryTypes.SELECT,
+    });
+
+    const logs = rows.map(row => {
+      const actionRaw = (row.action || '').toUpperCase();
+      let actionMapped = 'view';
+      if (actionRaw === 'CREATE') actionMapped = 'create';
+      else if (actionRaw === 'UPDATE' || actionRaw === 'PATCH') actionMapped = 'update';
+      else if (actionRaw === 'DELETE') actionMapped = 'delete';
+      else if (actionRaw.startsWith('LOGIN')) actionMapped = 'login';
+      else if (actionRaw === 'LOGOUT') actionMapped = 'logout';
+      else if (actionRaw === 'READ' || actionRaw === 'GET') actionMapped = 'view';
+      else if (actionRaw === 'EXPORT') actionMapped = 'export';
+      else if (actionRaw === 'IMPORT') actionMapped = 'import';
+
+      let resultMapped = 'info';
+      if (row.status_code) {
+        if (row.status_code >= 200 && row.status_code < 300) resultMapped = 'success';
+        else if (row.status_code >= 400) resultMapped = 'failure';
+      } else if (row.status) {
+        const s = row.status.toUpperCase();
+        if (s === 'SUCCESS' || s === 'COMPLETED') resultMapped = 'success';
+        else if (s === 'FAILED' || s === 'ERROR') resultMapped = 'failure';
+        else if (s === 'WARNING') resultMapped = 'warning';
+      }
+      if (actionRaw === 'LOGIN_FAILED') resultMapped = 'failure';
+
+      const userTypeLower = (row.user_type || 'system').toLowerCase();
+      const validTypes = ['user', 'doctor', 'admin', 'system'];
+      const userTypeMapped = validTypes.includes(userTypeLower) ? userTypeLower : 'system';
+
+      const resource = (row.resource_type || 'system').toLowerCase();
+      const activity = `${actionMapped.charAt(0).toUpperCase() + actionMapped.slice(1)} ${resource}`.trim();
+      let details = row.error_message || `${row.method || ''} ${row.endpoint || ''}`.trim();
+      if (!details) details = `${row.action || 'Unknown'} on ${resource}`;
+
+      return {
+        id: row.id,
+        timestamp: row.created_at || row.timestamp,
+        userId: row.user_id || row.user_email,
+        userType: userTypeMapped,
+        activity,
+        action: actionMapped,
+        resource,
+        resourceId: row.resource_id,
+        result: resultMapped,
+        details,
+        ipAddress: row.ip_address,
+        userAgent: row.user_agent,
+        metadata: {
+          method: row.method,
+          endpoint: row.endpoint,
+          statusCode: row.status_code,
+          userEmail: row.user_email,
+        },
+      };
+    });
+
+    return res.json({ success: true, logs });
+  } catch (err) {
+    console.error('[Admin] activity-logs error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch activity logs' });
+  }
+});
+
+/**
+ * GET /api/admin/activity/export
+ * Export activity logs as CSV.
+ */
+router.get('/activity/export', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const { search, from, to } = req.query;
+
+    const conditions = [];
+    const replacements = {};
+
+    if (search) {
+      conditions.push(`(user_email ILIKE :search OR endpoint ILIKE :search OR action ILIKE :search)`);
+      replacements.search = `%${search}%`;
+    }
+    if (from) {
+      conditions.push(`created_at >= :from`);
+      replacements.from = new Date(from).toISOString();
+    }
+    if (to) {
+      conditions.push(`created_at <= :to`);
+      replacements.to = new Date(`${to}T23:59:59`).toISOString();
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    replacements.limit = 5000;
+
+    const rows = await postgresSequelize.query(
+      `SELECT id, user_email, user_type, action, resource_type, method, endpoint, status_code, ip_address, created_at, error_message
+       FROM audit_logs ${whereClause} ORDER BY created_at DESC LIMIT :limit`,
+      { replacements, type: postgresSequelize.QueryTypes.SELECT }
+    );
+
+    const csvHeader = 'Timestamp,User Email,User Type,Action,Resource,Method,Endpoint,Status Code,IP Address,Details\n';
+    const csvRows = rows.map(r =>
+      [
+        r.created_at,
+        r.user_email || '',
+        r.user_type || '',
+        r.action || '',
+        r.resource_type || '',
+        r.method || '',
+        r.endpoint || '',
+        r.status_code || '',
+        r.ip_address || '',
+        `"${(r.error_message || '').replace(/"/g, '""')}"`,
+      ].join(',')
+    );
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="activity-logs-${new Date().toISOString().split('T')[0]}.csv"`);
+    return res.send(csvHeader + csvRows.join('\n'));
+  } catch (err) {
+    console.error('[Admin] activity/export error:', err);
+    return res.status(500).json({ success: false, message: 'Export failed' });
+  }
+});
+
+
+// ═══════════════════════════════════════════════════════════
+// THREAT INTELLIGENCE — IP origin tracking & intrusion data
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * GET /api/admin/security/threats
+ * Paginated threat event log — all enriched intrusion attempts
+ * Query params: page, limit, threatType, action (blocked|allowed), country (2-letter code), ip
+ */
+router.get('/security/threats', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const { page = 1, limit = 50, threatType, action, country, ip } = req.query;
+    const safeLimit = Math.min(parseInt(limit) || 50, 200);
+    const result = await getThreatEvents({
+      page: parseInt(page) || 1,
+      limit: safeLimit,
+      threatType,
+      action,
+      country,
+      ip,
+    });
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('[Admin Threats] getThreatEvents error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch threat events' });
+  }
+});
+
+/**
+ * GET /api/admin/security/threats/stats
+ * Aggregated stats: by threat type, by blocked country, by action
+ */
+router.get('/security/threats/stats', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const stats = await getThreatStats();
+    return res.json({ success: true, data: stats });
+  } catch (err) {
+    console.error('[Admin Threats] getThreatStats error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch threat stats' });
+  }
+});
+
+/**
+ * GET /api/admin/security/threats/lookup/:ip
+ * On-demand IP intelligence — fresh lookup (bypasses cache)
+ * Returns: country, city, ISP, org, ASN, proxy/VPN/Tor/hosting flags
+ */
+router.get('/security/threats/lookup/:ip', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const ip = req.params.ip;
+    if (!/^[\d.:a-fA-F]+$/.test(ip)) {
+      return res.status(400).json({ success: false, message: 'Invalid IP address format' });
+    }
+    const intel = await lookupIP(ip);
+    return res.json({ success: true, data: intel });
+  } catch (err) {
+    console.error('[Admin Threats] lookupIP error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to lookup IP' });
+  }
+});
+
+
+/**
+ * GET /api/admin/security/blocked-ips
+ * List all currently blocked IPs (auto-blocked or manually blocked)
+ */
+router.get('/security/blocked-ips', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const blocked = await listBlockedIPs();
+    return res.json({ success: true, total: blocked.length, data: blocked });
+  } catch (err) {
+    console.error('[Admin Security] listBlockedIPs error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to list blocked IPs' });
+  }
+});
+
+/**
+ * GET /api/admin/security/ip-stats/:ip
+ * Get failure counters for a specific IP
+ */
+router.get('/security/ip-stats/:ip', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const ip = req.params.ip;
+    // Basic IP format validation
+    if (!/^[\d.:a-fA-F]+$/.test(ip)) {
+      return res.status(400).json({ success: false, message: 'Invalid IP address format' });
+    }
+    const stats = await getIPStats(ip);
+    return res.json({ success: true, ip, stats });
+  } catch (err) {
+    console.error('[Admin Security] getIPStats error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to get IP stats' });
+  }
+});
+
+/**
+ * POST /api/admin/security/block-ip
+ * Manually block an IP address
+ * Body: { ip, durationHours, reason }
+ */
+router.post(
+  '/security/block-ip',
+  authUser,
+  requireRole('admin'),
+  [
+    body('ip').notEmpty().withMessage('IP address is required')
+      .matches(/^[\d.:a-fA-F]+$/).withMessage('Invalid IP address format'),
+    body('durationHours').optional().isInt({ min: 1, max: 720 }).withMessage('Duration must be 1–720 hours'),
+    body('reason').optional().isString().isLength({ max: 200 }),
+  ],
+  async (req, res) => {
+    try {
+      const { ip, durationHours = 24, reason = 'manual block by admin' } = req.body;
+      await blockIP(ip, durationHours * 3600, reason);
+      console.log(`[Admin Security] IP ${ip} manually blocked for ${durationHours}h by admin`);
+      return res.json({
+        success: true,
+        message: `IP ${ip} has been blocked for ${durationHours} hour(s)`,
+        ip,
+        durationHours,
+      });
+    } catch (err) {
+      console.error('[Admin Security] blockIP error:', err);
+      return res.status(500).json({ success: false, message: 'Failed to block IP' });
+    }
+  }
+);
+
+/**
+ * DELETE /api/admin/security/blocked-ips/:ip
+ * Unblock an IP address
+ */
+router.delete('/security/blocked-ips/:ip', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const ip = req.params.ip;
+    if (!/^[\d.:a-fA-F]+$/.test(ip)) {
+      return res.status(400).json({ success: false, message: 'Invalid IP address format' });
+    }
+    await unblockIP(ip);
+    return res.json({ success: true, message: `IP ${ip} has been unblocked` });
+  } catch (err) {
+    console.error('[Admin Security] unblockIP error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to unblock IP' });
+  }
 });
 
 export default router;

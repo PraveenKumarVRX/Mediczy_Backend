@@ -195,7 +195,7 @@ const PaymentModel = sequelize.define('Payment', {
     defaultValue: 'INR'
   },
   gateway: {
-    type: DataTypes.ENUM('razorpay', 'stripe', 'paytm', 'phonepe', 'manual'),
+    type: DataTypes.ENUM('razorpay', 'paytm', 'phonepe', 'manual'),
     allowNull: false
   },
   gatewayOrderId: {

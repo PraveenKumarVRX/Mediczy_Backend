@@ -688,8 +688,26 @@ router.get('/my-benefits', authUser, async (req, res) => {
         // Continue - corporate users might not have database records in dev/testing
       }
     }
-    
-    const planPayload = normalizePlanPayload(activePlan?.plan?.toJSON(), activePlan?.toJSON(), req.user);
+
+    // Resolve real company name from corporates table (JWT doesn't carry it)
+    let resolvedCompanyName = req.user?.corporateName || req.user?.companyName;
+    if (!resolvedCompanyName) {
+      const corporateId = req.user?.corporateId || req.user?.id;
+      if (corporateId) {
+        try {
+          const [corpRow] = await postgresSequelize.query(
+            `SELECT "companyName" FROM corporates WHERE id = :corporateId LIMIT 1`,
+            { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+          );
+          if (corpRow?.companyName) resolvedCompanyName = corpRow.companyName;
+        } catch (e) {
+          // ignore — fallback to default below
+        }
+      }
+    }
+
+    const userContext = { ...req.user, corporateName: resolvedCompanyName, companyName: resolvedCompanyName };
+    const planPayload = normalizePlanPayload(activePlan?.plan?.toJSON(), activePlan?.toJSON(), userContext);
     const usage = buildUsageSnapshot(activePlan?.toJSON());
 
     res.json({

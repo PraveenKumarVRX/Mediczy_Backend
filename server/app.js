@@ -3,6 +3,8 @@ import dotenv from "dotenv";
 dotenv.config();
 import cors from "cors";
 import helmet from "helmet";
+import { credentialStuffingGuard } from './middleware/credentialStuffingGuard.js';
+import { ipThreatGate } from './middleware/ipThreatIntelligence.js';
 import crypto from 'crypto';
 import hpp from "hpp";
 import rateLimit from "express-rate-limit";
@@ -45,6 +47,7 @@ import scribeRouter from "./routes/scribe.js";
 import offlineScribeRouter from "./routes/offline-scribe.route.js";
 import voiceAssistantRouter from "./routes/voice-assistant.route.js";
 import doctorChatRouter from "./routes/doctor-chat.route.js";
+import doctorImagingRouter from "./routes/doctor-imaging.route.js";
 import localAiNodeRouter from "./routes/local-ai-node.route.js";
 import recordingRouter from "./routes/recording.route.js";
 import uploadRouter from "./routes/upload.route.js";
@@ -415,7 +418,7 @@ app.use(passport.initialize());
 
 // Create upload directories for doctor media
 import fs from 'fs';
-const uploadDirs = ['./uploads', './uploads/doctors', './uploads/temp', './uploads/chat'];
+const uploadDirs = ['./uploads', './uploads/doctors', './uploads/temp', './uploads/chat', './uploads/imaging'];
 uploadDirs.forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -615,6 +618,22 @@ const aiImageLimiter = rateLimit({
 });
 
 app.use('/api/', globalLimiter);
+
+// ── IP Threat Intelligence Gate — blocks VPN/proxy/Tor/malicious IPs on all login endpoints
+const loginThreatGate = ipThreatGate({ proxy: true, tor: true, hosting: false });
+app.use('/api/users/login',     loginThreatGate);
+app.use('/api/doctors/login',   loginThreatGate);
+app.use('/api/nurse/login',     loginThreatGate);
+app.use('/api/assistant/login', loginThreatGate);
+app.use('/api/admin/login',     loginThreatGate);
+
+// ── Credential Stuffing Guard — tracks failures across windows, auto-blocks persistent attackers
+app.use('/api/users/login', credentialStuffingGuard);
+app.use('/api/doctors/login', credentialStuffingGuard);
+app.use('/api/nurse/login', credentialStuffingGuard);
+app.use('/api/assistant/login', credentialStuffingGuard);
+app.use('/api/admin/login', credentialStuffingGuard);
+
 app.use('/api/users/login', authLimiter);
 app.use('/api/users/register', authLimiter);
 app.use('/api/doctors/login', authLimiter);
@@ -684,6 +703,8 @@ app.use((req, res, next) => {
     '/api/homecare/register',
     '/api/corporate/register',
     '/api/doctor/chat/upload',
+    '/api/doctors/imaging/upload',
+    '/api/lab/ris/upload',
   ];
   if (multerPaths.some(p => req.path === p || req.path.startsWith(p + '/'))) {
     return next();
@@ -1201,6 +1222,9 @@ app.use('/api/hospital/scribe', scribeRouter); // AI Scribe - Hospital dashboard
 app.use('/api/offline-scribe', offlineScribeRouter); // Offline AI Scribe - CPU-only, Indian languages
 app.use('/api/voice-assistant', voiceAssistantRouter); // Doctor Voice Assistant - Siri-style AI agent
 app.use('/api/doctor/chat', doctorChatRouter); // Doctor ↔ Patient / Doctor ↔ Nurse messaging
+app.use('/api/doctors/imaging', doctorImagingRouter); // Medical imaging (CT, MRI, USG, Echo, Cathlab, X-Ray)
+import doctorRisReferredRouter from './routes/doctor-ris-referred.route.js';
+app.use('/api/doctors/ris-referred', doctorRisReferredRouter); // Lab-referred RIS studies (read-only for doctor)
 app.use('/api/ai-nodes', localAiNodeRouter); // Cloud Mother - Local AI Node management for hospital multi-tenancy
 app.use('/api', hospitalRouter); // Hospital directory and SPN network
 app.use('/api/hospital/practice', hospitalPracticeRouter); // Hospital practice management (appointments, patients, staff, resources)
@@ -1328,8 +1352,10 @@ app.use('/api/hospital', hospitalAuthAliasRouter); // Hospital authentication (l
 
 // Lab Service Routes
 import labAuthRouter from './routes/lab/auth.routes.js';
+import labRisImagingRouter from './routes/lab/ris-imaging.route.js';
 
 app.use('/api/lab', labAuthRouter); // Lab authentication (login, logout, verify)
+app.use('/api/lab/ris', labRisImagingRouter); // Lab RIS — PACS/DICOM imaging
 
 // Pharmacy Service Routes
 // NOTE: Pharmacy routes already registered at line 616 with pharmacyRouter

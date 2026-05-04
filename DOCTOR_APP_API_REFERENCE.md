@@ -19,7 +19,7 @@
 5. [Online Consultation Flow](#5-online-consultation-flow)
 6. [Video Calling](#6-video-calling)
 7. [Prescriptions](#7-prescriptions)
-8. [Patients](#8-patients)
+8. [Patients](#8-patients) *(updated: update, vitals, history)*
 9. [Messaging / Chat (REST)](#9-messaging--chat-rest)
 10. [Notifications & FCM](#10-notifications--fcm)
 11. [Call Notifications](#11-call-notifications)
@@ -31,8 +31,8 @@
 17. [Wallet / Health Coins](#17-wallet--health-coins)
 18. [Webinars](#18-webinars)
 19. [Document Templates & Invoices](#19-document-templates--invoices)
-20. [Triage / Emergency](#20-triage--emergency)
-21. [Health Monitoring](#21-health-monitoring)
+20. [Triage / Emergency](#20-triage--emergency) *(updated: AI image analysis)*
+21. [Health Monitoring](#21-health-monitoring) *(updated: vital trends)*
 22. [Doctor Services (Second Opinion / Home Visits)](#22-doctor-services)
 23. [Attached Pharmacies & Labs](#23-attached-pharmacies--labs)
 24. [File Uploads](#24-file-uploads)
@@ -40,6 +40,7 @@
 26. [OTP](#26-otp)
 27. [Socket.IO Real-time Events](#27-socketio-real-time-events)
 28. [Auth Middleware Reference](#28-auth-middleware-reference)
+29. [Lab Imaging (RIS-Referred)](#29-lab-imaging-ris-referred) *(new)*
 
 ---
 
@@ -350,7 +351,8 @@
 |---|---|
 | **Method + URL** | `GET /api/doctors/availability/dashboard` |
 | **Auth** | `authUser + role:doctor` |
-| **Response** | `{ success: true, dashboard: { weeklySchedule, nextAvailable, totalSlots, bookedSlots, availableSlots } }` |
+| **Response** | `{ success: true, dashboard: { weeklyAvailability: { monday: { isAvailable, slots: [{ startTime, endTime, consultationType, slotDuration, maxPatients }] }, ... }, statistics: { availableDays, totalSlots, consultationTypes } } }` |
+| **Notes** | **Mobile SetTimeSlots screen uses this to load the weekly schedule.** Access: `res.data.dashboard.weeklyAvailability` |
 
 ### 3.10 Bulk Update Availability
 
@@ -358,8 +360,9 @@
 |---|---|
 | **Method + URL** | `POST /api/doctors/availability/bulk-update` |
 | **Auth** | `authUser + role:doctor` |
-| **Request Body** | `{ weeklySchedule: { monday: {...}, ... } }` |
-| **Response** | `{ success: true }` |
+| **Request Body** | `{ monday: { isAvailable: bool, slots: [{ startTime, endTime, consultationType, slotDuration?, maxPatients? }] }, tuesday: {...}, ... }` |
+| **Response** | `{ success: true, message: "Weekly availability updated successfully" }` |
+| **Notes** | **Mobile SetTimeSlots screen uses this to save the full weekly schedule.** All 7 days should be included. `consultationType` values: `online` · `walkIn` · `both`. |
 
 ### 3.11 Quick Setup Availability
 
@@ -1023,6 +1026,58 @@
 | **Auth** | `authDoctor` |
 | **Response** | `{ success: true, patients: [...] }` |
 | **Notes** | Derives patient list from appointment history. |
+
+### 8.4 Get Patient Details
+
+| | |
+|---|---|
+| **Method + URL** | `GET /api/doctors/patients/:patientId` |
+| **Auth** | `authDoctor` |
+| **Response** | `{ success: true, patient: { id, firstName, lastName, email, phoneNumber, dateOfBirth, gender, bloodGroup, allergies, chronicConditions, totalVisits, lastVisitDate } }` |
+
+### 8.5 Get Patient Medical History
+
+| | |
+|---|---|
+| **Method + URL** | `GET /api/doctors/patients/:patientId/history` |
+| **Auth** | `authDoctor` |
+| **Response** | `{ success: true, history: [{ condition, onset, status, notes, icd10Code, createdAt }] }` |
+
+### 8.6 Update Patient Profile
+
+> **New — verified May 2026**
+
+| | |
+|---|---|
+| **Method + URL** | `PUT /api/doctors/my-patients/:patientId` |
+| **Auth** | `authDoctor` |
+| **Request Body** | `{ firstName, lastName, phone, email, age, gender, bloodGroup, city, allergies }` — all optional |
+| **Response** | `{ success: true, patient: { id, firstName, lastName, phoneNumber, email } }` |
+| **Notes** | Partial update. `phone` in body maps to `phoneNumber` column in DB. Returns 404 if patient not found. |
+
+### 8.7 Record Patient Vitals
+
+> **New — verified May 2026**
+
+| | |
+|---|---|
+| **Method + URL** | `POST /api/doctors/my-patients/:patientId/vitals` |
+| **Auth** | `authDoctor` |
+| **Request Body** | `{ bp, heartRate, temperature, spo2, weight, height, bmi, notes }` |
+| **Response** | `{ success: true, message: "Vitals recorded successfully", vitals: { patientId, bp, heartRate, ... } }` |
+| **Notes** | Graceful fallback if `patient_vitals` table doesn't exist (returns 200 with `tableNotReady: true`). |
+
+### 8.8 Add Medical History Entry
+
+> **New — verified May 2026**
+
+| | |
+|---|---|
+| **Method + URL** | `POST /api/doctors/my-patients/:patientId/history` |
+| **Auth** | `authDoctor` |
+| **Request Body** | `{ condition, onset, status, notes, icd10Code }` |
+| **Response** | `{ success: true, message: "History entry added successfully", entry: { patientId, condition, ... } }` |
+| **Notes** | Graceful fallback if `patient_medical_history` table doesn't exist. |
 
 ---
 
@@ -1991,6 +2046,19 @@
 | **Request Body** | `{ caseId, reason }` |
 | **Response** | `{ success: true }` |
 
+### 20.7 AI Analyze Triage Image
+
+> **New — verified May 2026**
+
+| | |
+|---|---|
+| **Method + URL** | `POST /api/doctors/triage/:caseId/analyze-image` |
+| **Auth** | `authDoctor` |
+| **Content-Type** | `multipart/form-data` |
+| **Request Body** | `image` (file, optional — JPEG/PNG, max 10 MB) |
+| **Response** | `{ success: true, analysis: { severity: "low"|"moderate"|"high"|"critical", diagnosis, recommendations: [...], urgency: "routine"|"semi-urgent"|"urgent"|"immediate", confidence: 0–1 } }` |
+| **Notes** | If no image is attached, AI generates assessment from the stored symptom description. Used in the mobile EmergencyTriage screen "Analyze Photo" and "Camera" buttons. |
+
 ---
 
 ## 21. Health Monitoring
@@ -2001,7 +2069,17 @@
 |---|---|
 | **Method + URL** | `GET /api/doctors/health-monitoring/patients` |
 | **Auth** | `authDoctor` |
-| **Response** | `{ success: true, patients: [{ id, name, vitals, alerts, lastUpdated }] }` |
+| **Response** | `{ success: true, patients: [{ id, name, vitals: { bp, heartRate, spo2, temperature, recordedAt }, alertLevel: "normal"|"warning"|"critical", alerts: [...], lastUpdated }] }` |
+
+### 21.2 Patient Vital Trends
+
+| | |
+|---|---|
+| **Method + URL** | `GET /api/doctors/health-monitoring/patients/:patientId/trends` |
+| **Auth** | `authDoctor` |
+| **Query Params** | `?metric=bp\|heartRate\|spo2&days=7\|14\|30` |
+| **Response** | `{ success: true, trends: { metric, days, data: [{ date, value, timestamp }], stats: { min, max, avg } } }` |
+| **Notes** | Used in the RemoteMonitoring screen for LineChart rendering. |
 
 ---
 
@@ -2285,6 +2363,59 @@
 ### `authUserOptional`
 - Same as `authUser` but doesn't reject if no token
 - Sets `req.user = null` if no token present
+
+---
+
+## 29. Lab Imaging (RIS-Referred)
+
+> **New — verified May 2026** · Used by the **ImagingScreen** in the doctor mobile app.
+
+### 29.1 List Referred Imaging Studies
+
+| | |
+|---|---|
+| **Method + URL** | `GET /api/doctors/ris-referred` |
+| **Auth** | `authDoctor` |
+| **Query Params** | `?modality=CT\|MRI\|USG\|ECHO\|XRAY\|PET` · `?status=pending\|reported\|reviewed` · `?patientId=&page=1&limit=20` |
+| **Response** | `{ success: true, studies: [{ id, patientName, patientId, modality, bodyPart, description, reportStatus, reportText, reportedAt, referredAt, fileId, accessionNumber }], pagination: {...} }` |
+
+### 29.2 Get Study Detail
+
+| | |
+|---|---|
+| **Method + URL** | `GET /api/doctors/ris-referred/:studyId` |
+| **Auth** | `authDoctor` |
+| **Response** | `{ success: true, study: { id, patientName, modality, reportText, fileId, ... } }` |
+
+### 29.3 Get Study File / Report
+
+| | |
+|---|---|
+| **Method + URL** | `GET /api/doctors/ris-referred/file/:fileId` |
+| **Auth** | `authDoctor` |
+| **Response** | File download or redirect to signed S3 URL (DICOM viewer or PDF report) |
+| **Notes** | Mobile app opens via `Linking.openURL(url)`. URL constructed client-side: `${BASE_URL}/api/doctors/ris-referred/file/${fileId}` |
+
+**Mobile app API (`api.js`):**
+
+```javascript
+export const DoctorImaging = {
+  list:       (params) => api.get('/doctors/ris-referred', { params }),
+  getById:    (id)     => api.get(`/doctors/ris-referred/${id}`),
+  getFileUrl: (id)     => `${BASE_URL}/doctors/ris-referred/file/${id}`,
+};
+```
+
+**Modality color scheme:**
+
+| Modality | Color |
+|---|---|
+| CT | `#3B82F6` |
+| MRI | `#8B5CF6` |
+| USG | `#10B981` |
+| ECHO | `#F59E0B` |
+| XRAY | `#6B7280` |
+| PET | `#EF4444` |
 
 ---
 

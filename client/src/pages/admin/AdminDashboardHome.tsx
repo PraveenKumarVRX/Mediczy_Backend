@@ -760,6 +760,16 @@ const AdminDashboardHome = () => {
                 </div>
                 <span className="text-sm font-medium relative">Manage Corporates</span>
               </button>
+              <button
+                onClick={() => window.location.href = '/admin/activity-log'}
+                className="group/action flex flex-col items-center gap-3 rounded-xl p-6 hover:bg-gradient-to-br from-teal-500/10 to-cyan-500/10 border border-teal-500/20 hover:border-teal-500/30 transition-all duration-300 relative overflow-hidden"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-teal-500/5 to-transparent opacity-0 group-hover/action:opacity-100 transition-opacity duration-300" />
+                <div className="p-3 rounded-xl bg-gradient-to-br from-teal-500/10 to-cyan-500/10 border border-teal-500/20 relative transform transition-transform duration-300 group-hover/action:scale-110 group-hover/action:rotate-3">
+                  <Activity className="h-8 w-8 text-teal-500" />
+                </div>
+                <span className="text-sm font-medium relative">Activity Log</span>
+              </button>
             </div>
           </CardContent>
         </Card>

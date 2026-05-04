@@ -17,7 +17,7 @@
 6. [Availability & Schedule](#6-availability--schedule)
 7. [Doctor Settings & Configuration](#7-doctor-settings--configuration)
 8. [Prescriptions](#8-prescriptions)
-9. [Patient Management](#9-patient-management)
+9. [Patient Management](#9-patient-management) *(updated: vitals, history, update)*
 10. [Video Consultations (LiveKit)](#10-video-consultations-livekit)
 11. [Chat (REST + Socket.IO)](#11-chat-rest--socketio)
 12. [Notifications & FCM](#12-notifications--fcm)
@@ -26,7 +26,7 @@
 15. [Clinical Workflow](#15-clinical-workflow)
 16. [Revenue & Earnings](#16-revenue--earnings)
 17. [Templates & Invoices](#17-templates--invoices)
-18. [Triage & Queue Management](#18-triage--queue-management)
+18. [Triage & Queue Management](#18-triage--queue-management) *(updated: AI image analysis)*
 19. [File Uploads](#19-file-uploads)
 20. [Attached Pharmacies & Labs](#20-attached-pharmacies--labs)
 21. [Alerts & Messages](#21-alerts--messages)
@@ -35,6 +35,8 @@
 24. [Rate Limits](#24-rate-limits)
 25. [WebSocket Events Reference](#25-websocket-events-reference)
 26. [Enums & Constants](#26-enums--constants)
+27. [Remote Health Monitoring](#27-remote-health-monitoring) *(new)*
+28. [Lab Imaging (RIS-Referred)](#28-lab-imaging-ris-referred) *(new)*
 - [Appendix A: Typical Integration Flows](#appendix-a-typical-integration-flows)
 - [Appendix B: Mobile App Specific Notes](#appendix-b-mobile-app-specific-notes)
 - [Appendix C: Test Credentials](#appendix-c-test-credentials-development--staging)
@@ -45,6 +47,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **2.1** | 2026-05-01 | Section 9 expanded with patient update, vitals & history routes; Section 18 expanded with AI triage image analysis; Sections 6.7–6.8 added for mobile SetTimeSlots weekly schedule flow; New Section 27 (Remote Health Monitoring); New Section 28 (Lab Imaging / RIS-Referred); Appendix A flows A.6–A.9 added; Appendix B mobile notes updated; Base URL corrected to `https://app.mediqzy.com/api`; all endpoints smoke-tested and verified |
 | **2.0** | 2026-04-09 | Section 21 (Alerts) rewritten with full DB-backed notification API detail; Section 12 updated with alert polling guidance; Appendix C (test credentials) added; Base URL corrected to `https://api.mediqzy.com`; valid `consultationType` values clarified |
 | 1.0 | 2026-03-10 | Initial release |
 
@@ -830,6 +833,90 @@ DELETE /api/doctors/:doctorId/availability/:scheduleId
 Authorization: Bearer <token>
 ```
 
+### 6.7 Mobile: Get Weekly Schedule (SetTimeSlots screen)
+
+> Used by the **SetTimeSlots** screen in the doctor mobile app to load the current weekly schedule on open.
+
+```
+GET /api/doctors/availability/dashboard
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "dashboard": {
+    "weeklyAvailability": {
+      "monday":    { "isAvailable": true,  "slots": [{ "startTime": "09:00", "endTime": "17:00", "consultationType": "online", "slotDuration": 30, "maxPatients": 1 }] },
+      "tuesday":   { "isAvailable": true,  "slots": [...] },
+      "wednesday": { "isAvailable": false, "slots": [] },
+      "thursday":  { "isAvailable": true,  "slots": [...] },
+      "friday":    { "isAvailable": true,  "slots": [...] },
+      "saturday":  { "isAvailable": false, "slots": [] },
+      "sunday":    { "isAvailable": false, "slots": [] }
+    },
+    "statistics": {
+      "availableDays": 4,
+      "totalSlots": 4,
+      "consultationTypes": { "online": true, "walkIn": true, "homeVisit": false }
+    }
+  }
+}
+```
+
+**Mobile app access path:** `res.data.dashboard.weeklyAvailability`
+
+### 6.8 Mobile: Save Weekly Schedule (SetTimeSlots screen)
+
+> Used by the **SetTimeSlots** screen in the doctor mobile app to save the full weekly schedule in one call.
+
+```
+POST /api/doctors/availability/bulk-update
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body:**
+
+```json
+{
+  "monday":    { "isAvailable": true,  "slots": [{ "startTime": "09:00", "endTime": "17:00", "consultationType": "online",  "slotDuration": 30, "maxPatients": 1 }] },
+  "tuesday":   { "isAvailable": true,  "slots": [{ "startTime": "09:00", "endTime": "17:00", "consultationType": "walkIn", "slotDuration": 20, "maxPatients": 2 }] },
+  "wednesday": { "isAvailable": false, "slots": [] },
+  "thursday":  { "isAvailable": true,  "slots": [{ "startTime": "10:00", "endTime": "16:00", "consultationType": "online",  "slotDuration": 30, "maxPatients": 1 }] },
+  "friday":    { "isAvailable": true,  "slots": [{ "startTime": "09:00", "endTime": "14:00", "consultationType": "online",  "slotDuration": 30, "maxPatients": 1 }] },
+  "saturday":  { "isAvailable": false, "slots": [] },
+  "sunday":    { "isAvailable": false, "slots": [] }
+}
+```
+
+| Slot Field | Type | Required | Notes |
+|---|---|---|---|
+| `startTime` | string | ✅ | `HH:MM` 24-hour format |
+| `endTime` | string | ✅ | `HH:MM`, must be after `startTime` |
+| `consultationType` | string | ✅ | `online` · `walkIn` · `both` |
+| `slotDuration` | integer | ❌ | Minutes: 15, 20, 30, 45, 60 |
+| `maxPatients` | integer | ❌ | Max concurrent patients per slot (1–10) |
+
+**Response (200):**
+
+```json
+{ "success": true, "message": "Weekly availability updated successfully" }
+```
+
+**Mobile app integration (api.js):**
+
+```javascript
+// Load schedule
+const res = await TimeSlots.list(); // → GET /doctors/availability/dashboard
+const weekly = res?.data?.dashboard?.weeklyAvailability;
+
+// Save schedule — build the payload per day:
+await TimeSlots.create(payload); // → POST /doctors/availability/bulk-update
+```
+
 ---
 
 ## 7. Doctor Settings & Configuration
@@ -1280,6 +1367,180 @@ Create a patient account on behalf of a walk-in patient.
 ```
 GET /api/prescriptions/patient/:patientId
 Authorization: Bearer <token>
+```
+
+### 9.5 Get Patient Details
+
+```
+GET /api/doctors/patients/:patientId
+Authorization: Bearer <token>
+```
+
+Returns full patient profile (demographics, allergies, blood group, etc.).
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "patient": {
+    "id": 42,
+    "firstName": "Jane",
+    "lastName": "Doe",
+    "email": "jane@example.com",
+    "phoneNumber": "+919876543210",
+    "dateOfBirth": "1990-05-15",
+    "gender": "Female",
+    "bloodGroup": "O+",
+    "allergies": ["Penicillin"],
+    "chronicConditions": ["Type 2 Diabetes"],
+    "totalVisits": 7,
+    "lastVisitDate": "2026-04-01T10:00:00.000Z"
+  }
+}
+```
+
+### 9.6 Get Patient Medical History
+
+```
+GET /api/doctors/patients/:patientId/history
+Authorization: Bearer <token>
+```
+
+Returns diagnoses, conditions, past consultations and history entries.
+
+### 9.7 Update Patient Profile
+
+> **New — verified May 2026**
+
+```
+PUT /api/doctors/my-patients/:patientId
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+Update editable fields on a patient account. All fields are optional (partial update supported).
+
+```json
+{
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "phone": "+919876543210",
+  "email": "jane@example.com",
+  "age": 35,
+  "gender": "Female",
+  "bloodGroup": "O+",
+  "city": "Mumbai",
+  "allergies": ["Penicillin", "Sulfa"]
+}
+```
+
+> **Note:** `phone` in the request body is stored as `phoneNumber` in the DB (`users` table).
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "patient": { "id": 42, "firstName": "Jane", "lastName": "Doe", "phoneNumber": "+919876543210", "email": "jane@example.com" }
+}
+```
+
+**Error Cases:**
+- `404` — Patient ID not found in `users` table
+
+### 9.8 Record Patient Vitals
+
+> **New — verified May 2026**
+
+```
+POST /api/doctors/my-patients/:patientId/vitals
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+Record a new vitals snapshot for the patient.
+
+```json
+{
+  "bp": "120/80",
+  "heartRate": 72,
+  "temperature": 98.6,
+  "spo2": 98,
+  "weight": 70,
+  "height": 170,
+  "bmi": 24.2,
+  "notes": "Post-consultation check"
+}
+```
+
+| Field | Type | Unit | Notes |
+|---|---|---|---|
+| `bp` | string | mmHg | Format: `"systolic/diastolic"` |
+| `heartRate` | integer | bpm | |
+| `temperature` | float | °F | |
+| `spo2` | integer | % | Oxygen saturation |
+| `weight` | float | kg | |
+| `height` | float | cm | |
+| `bmi` | float | kg/m² | Can be calculated client-side |
+| `notes` | string | — | Optional doctor notes |
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "message": "Vitals recorded successfully",
+  "vitals": { "patientId": 42, "bp": "120/80", "heartRate": 72, ... }
+}
+```
+
+> **Note:** If the `patient_vitals` table doesn't exist yet (graceful fallback), the endpoint still returns 200 with a warning flag `{ "tableNotReady": true }`.
+
+### 9.9 Add Medical History Entry
+
+> **New — verified May 2026**
+
+```
+POST /api/doctors/my-patients/:patientId/history
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+Add a clinical history entry for the patient.
+
+```json
+{
+  "condition": "Hypertension",
+  "onset": "2020-01-01",
+  "status": "ongoing",
+  "notes": "Managed with Amlodipine 5mg daily",
+  "icd10Code": "I10"
+}
+```
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "message": "History entry added successfully",
+  "entry": { "patientId": 42, "condition": "Hypertension", ... }
+}
+```
+
+**Mobile App API (`api.js`):**
+
+```javascript
+export const Patients = {
+  list:           (params) => api.get('/doctors/my-patients', { params }),
+  create:         (data)   => api.post('/doctors/my-patients/create', data),
+  update:         (id, d)  => api.put(`/doctors/my-patients/${id}`, d),
+  getDetails:     (id)     => api.get(`/doctors/patients/${id}`),
+  getMedicalHistory:(id)   => api.get(`/doctors/patients/${id}/history`),
+  recordVitals:   (id, d)  => api.post(`/doctors/my-patients/${id}/vitals`, d),
+  addHistory:     (id, d)  => api.post(`/doctors/my-patients/${id}/history`, d),
+};
 ```
 
 ---
@@ -2418,6 +2679,85 @@ Authorization: Bearer <token>
 
 Get current queue state.
 
+### 18.7 AI Image Analysis (Emergency Triage)
+
+> **New — verified May 2026**
+
+Analyze a patient-submitted photo (wound, rash, injury, etc.) using AI vision to generate a structured triage assessment.
+
+```
+POST /api/doctors/triage/:caseId/analyze-image
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `image` | file | ❌ | Photo of wound/symptom (JPEG/PNG, max 10 MB) |
+
+> If no image is provided the endpoint returns a text-only AI assessment based on the case's stored symptom description.
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "analysis": {
+    "severity": "moderate",
+    "diagnosis": "Possible second-degree burn with erythema and blistering",
+    "recommendations": [
+      "Clean with saline solution",
+      "Apply silver sulfadiazine cream",
+      "Do not rupture blisters",
+      "Follow up in 48 hours or sooner if signs of infection develop"
+    ],
+    "urgency": "semi-urgent",
+    "referral": "Dermatology or burns unit if area exceeds 1% BSA",
+    "confidence": 0.82
+  }
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `severity` | string | `low` · `moderate` · `high` · `critical` |
+| `urgency` | string | `routine` · `semi-urgent` · `urgent` · `immediate` |
+| `confidence` | float | AI confidence score 0–1 |
+
+**Mobile App Integration (EmergencyTriage.js):**
+
+```javascript
+// From gallery
+const handleAIAnalyze = async (caseId, useCamera = false) => {
+  const result = useCamera
+    ? await launchCamera({ mediaType: 'photo', quality: 0.8 })
+    : await launchImageLibrary({ mediaType: 'photo', quality: 0.8 });
+  
+  if (!result.assets?.[0]) return;
+  
+  const form = new FormData();
+  form.append('image', {
+    uri: result.assets[0].uri,
+    type: result.assets[0].type || 'image/jpeg',
+    name: result.assets[0].fileName || 'triage.jpg',
+  });
+  
+  const res = await Triage.analyzeImage(caseId, form);
+  setAiAnalysis(res.data.analysis);
+};
+```
+
+**Mobile app API method:**
+
+```javascript
+export const Triage = {
+  getCases:     ()        => api.get('/doctors/triage/cases'),
+  analyzeImage: (id, form) => api.post(`/doctors/triage/${id}/analyze-image`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+};
+```
+
 ---
 
 ## 19. File Uploads
@@ -3025,6 +3365,206 @@ After connecting, the doctor is automatically placed in room `doctor-{userId}`.
 
 ---
 
+## 27. Remote Health Monitoring
+
+The Remote Health Monitoring module lets a doctor track patients enrolled in continuous vital monitoring programs (IoT devices, wearables, or manual submissions).
+
+### 27.1 Get Monitored Patients
+
+```
+GET /api/doctors/health-monitoring/patients
+Authorization: Bearer <token>
+```
+
+Returns patients assigned to the doctor's monitoring panel with latest vitals and alert status.
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "patients": [
+    {
+      "id": 42,
+      "name": "Jane Doe",
+      "age": 35,
+      "condition": "Hypertension",
+      "vitals": {
+        "bp": "138/88",
+        "heartRate": 82,
+        "spo2": 97,
+        "temperature": 98.4,
+        "recordedAt": "2026-05-01T08:00:00.000Z"
+      },
+      "alertLevel": "warning",
+      "alerts": [
+        { "type": "bp_high", "value": "138/88", "threshold": "130/80", "timestamp": "2026-05-01T08:00:00.000Z" }
+      ],
+      "lastUpdated": "2026-05-01T08:00:00.000Z",
+      "enrolledSince": "2026-01-15T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+| `alertLevel` | Meaning |
+|---|---|
+| `normal` | All vitals within range |
+| `warning` | One or more vitals slightly out of range |
+| `critical` | Immediate attention required |
+
+### 27.2 Get Patient Vital Trends
+
+```
+GET /api/doctors/health-monitoring/patients/:patientId/trends
+Authorization: Bearer <token>
+```
+
+**Query Params:** `?metric=bp|heartRate|spo2&days=7|14|30`
+
+Returns time-series data for charting vital trends (used in the **RemoteMonitoring** screen with `LineChart`).
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "trends": {
+    "metric": "heartRate",
+    "days": 7,
+    "data": [
+      { "date": "2026-04-25", "value": 78, "timestamp": "2026-04-25T08:00:00.000Z" },
+      { "date": "2026-04-26", "value": 80, "timestamp": "2026-04-26T08:15:00.000Z" }
+    ],
+    "stats": { "min": 70, "max": 88, "avg": 79 }
+  }
+}
+```
+
+**Mobile App API (`api.js`):**
+
+```javascript
+export const HealthMonitoring = {
+  getPatients:  ()            => api.get('/doctors/health-monitoring/patients'),
+  getTrends:    (id, params)  => api.get(`/doctors/health-monitoring/patients/${id}/trends`, { params }),
+};
+```
+
+---
+
+## 28. Lab Imaging (RIS-Referred)
+
+Doctors can view radiology imaging studies that have been referred via the RIS (Radiology Information System). This is a **read-only** view — studies are created by the lab/radiology team.
+
+### 28.1 List Referred Imaging Studies
+
+```
+GET /api/doctors/ris-referred
+Authorization: Bearer <token>
+```
+
+Returns imaging studies referred to or associated with this doctor's patients.
+
+**Query Params:**
+
+| Param | Type | Description |
+|---|---|---|
+| `modality` | string | Filter: `CT` · `MRI` · `USG` · `ECHO` · `XRAY` · `PET` |
+| `status` | string | `pending` · `reported` · `reviewed` |
+| `patientId` | integer | Filter by patient |
+| `page` | integer | Default: 1 |
+| `limit` | integer | Default: 20 |
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "studies": [
+    {
+      "id": 101,
+      "patientName": "Jane Doe",
+      "patientId": 42,
+      "modality": "CT",
+      "bodyPart": "Chest",
+      "description": "CT Chest with contrast — rule out PE",
+      "reportStatus": "reported",
+      "reportText": "No evidence of pulmonary embolism. Mild bilateral pleural effusion.",
+      "reportedAt": "2026-04-30T14:30:00.000Z",
+      "referredAt": "2026-04-29T10:00:00.000Z",
+      "fileId": 55,
+      "accessionNumber": "RIS-2026-101"
+    }
+  ],
+  "pagination": { "total": 12, "page": 1, "limit": 20, "pages": 1 }
+}
+```
+
+### 28.2 Get Study Detail
+
+```
+GET /api/doctors/ris-referred/:studyId
+Authorization: Bearer <token>
+```
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "study": { "id": 101, "patientName": "Jane Doe", "modality": "CT", "reportText": "...", "fileId": 55, ... }
+}
+```
+
+### 28.3 Get Study File (DICOM / PDF Report)
+
+```
+GET /api/doctors/ris-referred/file/:fileId
+Authorization: Bearer <token>
+```
+
+Returns the study file (DICOM viewer link or PDF report). In the mobile app, this URL is opened via `Linking.openURL()` for external viewer or download.
+
+**Response:** File download or redirect to signed S3 URL.
+
+**Mobile App Integration (ImagingScreen.js):**
+
+```javascript
+import { Linking } from 'react-native';
+
+// List studies
+const res = await DoctorImaging.list({ modality: selectedModality });
+setStudies(res.data.studies);
+
+// Open/download report
+const fileUrl = DoctorImaging.getFileUrl(study.fileId);
+await Linking.openURL(fileUrl);
+```
+
+**Mobile App API (`api.js`):**
+
+```javascript
+export const DoctorImaging = {
+  list:       (params) => api.get('/doctors/ris-referred', { params }),
+  getById:    (id)     => api.get(`/doctors/ris-referred/${id}`),
+  getFileUrl: (id)     => `${BASE_URL}/doctors/ris-referred/file/${id}`,
+};
+```
+
+**Modality Color Codes (ImagingScreen UI):**
+
+| Modality | Color |
+|---|---|
+| CT | `#3B82F6` (blue) |
+| MRI | `#8B5CF6` (purple) |
+| USG | `#10B981` (green) |
+| ECHO | `#F59E0B` (amber) |
+| XRAY | `#6B7280` (gray) |
+| PET | `#EF4444` (red) |
+| Other | `#64748B` (slate) |
+
+---
+
 ## Appendix A: Typical Integration Flows
 
 ### A.1 Doctor Login → Dashboard
@@ -3074,7 +3614,7 @@ After connecting, the doctor is automatically placed in room `doctor-{userId}`.
 4. POST /api/prescriptions/:id/issue     → Finalize
 ```
 
-### A.5 Schedule Management
+### A.5 Schedule Management (Web / Doctor Settings)
 
 ```
 1. GET  /api/doctor-settings/appointment-config  → Load current config
@@ -3082,6 +3622,50 @@ After connecting, the doctor is automatically placed in room `doctor-{userId}`.
 3. PUT  /api/doctor-settings/weekly-schedule/monday → Set Monday hours
 4. PUT  /api/doctor-settings/off-days → Set off days
 5. POST /api/doctors/:id/availability/bulk → Bulk set weekly schedule
+```
+
+### A.6 Mobile: Weekly Schedule Setup (SetTimeSlots screen)
+
+```
+1. GET  /api/doctors/availability/dashboard       → Load weekly schedule on screen open
+   Response: { dashboard: { weeklyAvailability: { monday: { isAvailable, slots }, ... } } }
+2. (Doctor edits days, times, slot duration, consultation type)
+3. POST /api/doctors/availability/bulk-update     → Save on tap "Save Schedule"
+   Body: { monday: { isAvailable: true, slots: [{startTime, endTime, consultationType, slotDuration, maxPatients}] }, ... }
+```
+
+### A.7 Walk-in Patient Registration & Vitals
+
+```
+1. POST /api/doctors/my-patients/create           → Create walk-in patient account
+   Body: { firstName, lastName, phoneNumber, email, dateOfBirth, gender }
+2. GET  /api/doctors/my-patients                  → Confirm patient appears in list
+3. POST /api/doctors/my-patients/:id/vitals       → Record initial vitals
+   Body: { bp, heartRate, temperature, spo2, weight, height }
+4. POST /api/doctors/my-patients/:id/history      → Add presenting condition
+   Body: { condition, onset, status, notes }
+5. POST /api/prescriptions                        → Issue prescription if needed
+```
+
+### A.8 Emergency Triage with AI Image Analysis
+
+```
+1. GET  /api/doctors/triage/cases                 → Poll triage queue (refresh every 30s)
+2. (Doctor sees new case, opens detail modal)
+3. POST /api/doctors/triage/:caseId/analyze-image → Submit patient photo for AI analysis
+   Content-Type: multipart/form-data; field: image (JPEG/PNG)
+   Response: { analysis: { severity, diagnosis, recommendations, urgency, confidence } }
+4. POST /api/doctors/triage/cases/:caseId/respond → Doctor responds with action
+   Body: { action: "prescribe"|"admit"|"refer"|"self_care", details }
+```
+
+### A.9 Lab Imaging Review (ImagingScreen)
+
+```
+1. GET  /api/doctors/ris-referred                 → List imaging studies (on screen mount)
+   Params: ?modality=CT|MRI|USG|ECHO|XRAY (optional filter)
+2. GET  /api/doctors/ris-referred/:studyId        → Load study detail on tap
+3. GET  /api/doctors/ris-referred/file/:fileId    → Open/download report (via Linking.openURL)
 ```
 
 ---
@@ -3113,6 +3697,34 @@ Store the JWT token securely:
 - Server URL: `wss://video.mediqzy.com`
 - Get room token from API, then connect via LiveKit SDK
 - Handle incoming call notifications via FCM + Socket.IO `video-call-invitation` event
+
+### Imaging Studies (ImagingScreen)
+
+- Lists RIS-referred studies: `GET /api/doctors/ris-referred`
+- Filter chips (CT/MRI/USG/ECHO/XRAY) pass `?modality=` query param
+- Open DICOM/PDF: `Linking.openURL(DoctorImaging.getFileUrl(study.fileId))`
+- Accessible via Sidebar → **Lab Imaging**
+
+### Emergency Triage
+
+- **EmergencyTriage** screen polls `GET /api/doctors/triage/cases` for new cases
+- "Analyze Photo" / "Camera" buttons → `POST /api/doctors/triage/:id/analyze-image`
+- Photo picker: `react-native-image-picker` (gallery) or camera
+- AI result displays: severity badge, diagnosis text, recommendations list
+
+### Patient Management
+
+- **PatientsList** screen: `GET /api/doctors/my-patients` (search + pagination)
+- **PatientDetails** screen: `GET /api/doctors/patients/:id` + `GET /api/doctors/patients/:id/history`
+- Record vitals inline: `POST /api/doctors/my-patients/:id/vitals`
+- Edit patient demographics: `PUT /api/doctors/my-patients/:id`
+- Add history entry: `POST /api/doctors/my-patients/:id/history`
+
+### SetTimeSlots (Weekly Schedule)
+
+- On screen open: `GET /api/doctors/availability/dashboard` → `res.data.dashboard.weeklyAvailability`
+- On save: `POST /api/doctors/availability/bulk-update` with full day-keyed payload
+- Supports online/walkIn mode toggle, slot duration (15/20/30/45/60 min), max patients (1–10)
 
 ### Offline Support
 

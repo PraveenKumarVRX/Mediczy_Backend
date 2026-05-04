@@ -1,5 +1,4 @@
 import Razorpay from 'razorpay';
-import Stripe from 'stripe';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -26,7 +25,6 @@ console.log('🔑 Razorpay env in service', {
 
 // Initialize payment gateways
 let razorpayInstance = null;
-let stripeInstance = null;
 
 // Initialize Razorpay
 const resolvedRazorpayKeyId = process.env.RAZORPAY_KEY_ID || (dotenvResult.parsed && dotenvResult.parsed.RAZORPAY_KEY_ID);
@@ -50,16 +48,6 @@ if (resolvedRazorpayKeyId && resolvedRazorpaySecret) {
     `(key_id=${mask(resolvedRazorpayKeyId)}, secret=${mask(resolvedRazorpaySecret)})`,
     `envPath=${envPath}`
   );
-}
-
-// Initialize Stripe
-if (process.env.STRIPE_SECRET_KEY) {
-  stripeInstance = new Stripe(process.env.STRIPE_SECRET_KEY, {
-    apiVersion: '2023-10-16'
-  });
-  console.log('✅ Stripe initialized');
-} else {
-  console.warn('⚠️ Stripe credentials not configured');
 }
 
 /**
@@ -207,90 +195,6 @@ class PaymentGatewayService {
   }
 
   // ============================================================================
-  // STRIPE METHODS
-  // ============================================================================
-
-  /**
-   * Create Stripe payment intent
-   */
-  async createStripePaymentIntent(orderData) {
-    if (!stripeInstance) {
-      throw new Error('Stripe not configured');
-    }
-
-    try {
-      const paymentIntent = await stripeInstance.paymentIntents.create({
-        amount: Math.round(orderData.amount * 100), // Amount in cents
-        currency: orderData.currency || 'inr',
-        metadata: orderData.metadata || {},
-        description: orderData.description
-      });
-
-      return {
-        success: true,
-        gateway: 'stripe',
-        clientSecret: paymentIntent.client_secret,
-        paymentIntentId: paymentIntent.id,
-        amount: paymentIntent.amount / 100,
-        currency: paymentIntent.currency,
-        status: paymentIntent.status
-      };
-    } catch (error) {
-      console.error('Stripe payment intent error:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Confirm Stripe payment
-   */
-  async confirmStripePayment(paymentIntentId) {
-    if (!stripeInstance) {
-      throw new Error('Stripe not configured');
-    }
-
-    try {
-      const paymentIntent = await stripeInstance.paymentIntents.retrieve(paymentIntentId);
-      return {
-        success: true,
-        status: paymentIntent.status,
-        amount: paymentIntent.amount / 100,
-        currency: paymentIntent.currency
-      };
-    } catch (error) {
-      console.error('Stripe payment confirmation error:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Create Stripe refund
-   */
-  async createStripeRefund(paymentIntentId, amount = null) {
-    if (!stripeInstance) {
-      throw new Error('Stripe not configured');
-    }
-
-    try {
-      const refund = await stripeInstance.refunds.create({
-        payment_intent: paymentIntentId,
-        amount: amount ? Math.round(amount * 100) : undefined
-      });
-
-      return {
-        success: true,
-        refundId: refund.id,
-        amount: refund.amount / 100,
-        currency: refund.currency,
-        status: refund.status
-      };
-    } catch (error) {
-      console.error('Stripe refund error:', error);
-      throw error;
-    }
-  }
-
-  // ============================================================================
   // WEBHOOK VERIFICATION
   // ============================================================================
 
@@ -308,27 +212,6 @@ class PaymentGatewayService {
       .digest('hex');
 
     return expectedSignature === signature;
-  }
-
-  /**
-   * Verify Stripe webhook signature
-   */
-  verifyStripeWebhook(body, signature) {
-    if (!stripeInstance || !process.env.STRIPE_WEBHOOK_SECRET) {
-      throw new Error('Stripe webhook secret not configured');
-    }
-
-    try {
-      const event = stripeInstance.webhooks.constructEvent(
-        body,
-        signature,
-        process.env.STRIPE_WEBHOOK_SECRET
-      );
-      return event;
-    } catch (error) {
-      console.error('Stripe webhook verification error:', error);
-      throw error;
-    }
   }
 
   // ============================================================================

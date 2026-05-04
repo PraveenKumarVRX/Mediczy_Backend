@@ -94,14 +94,22 @@ async function callSibChat(message, options = {}) {
   return response.json();
 }
 
-// Initialize SIB health check on startup
-checkSibHealth().then(healthy => {
+// Initialize SIB health check on startup — retry once after 8 s to handle PM2 boot race
+(async () => {
+  const healthy = await checkSibHealth();
   if (healthy) {
     console.log('✅ SIB FastAPI is available (SOLE AI SOURCE)');
   } else {
-    console.warn('⚠️ SIB FastAPI not available at startup - will retry on requests');
+    setTimeout(async () => {
+      const retry = await checkSibHealth();
+      if (retry) {
+        console.log('✅ SIB FastAPI available (connected on retry)');
+      } else {
+        console.warn('⚠️ SIB FastAPI not available at startup - will retry on requests');
+      }
+    }, 8000);
   }
-});
+})();
 
 // Per-route limiter to protect expensive AI calls
 const aiRouteLimiter = rateLimit({

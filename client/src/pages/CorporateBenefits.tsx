@@ -448,7 +448,7 @@ const CorporateBenefits = () => {
         <div className="flex items-center justify-center min-h-screen">
           <div className="text-center">
             <div className="w-16 h-16 border-4 border-t-blue-600 border-gray-300 rounded-full animate-spin mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading your benefits...</p>
+            <p className="mt-4 text-slate-400">Loading your benefits...</p>
           </div>
         </div>
       </CorporateLayout>
@@ -457,8 +457,7 @@ const CorporateBenefits = () => {
 
   return (
     <CorporateLayout>
-      <div className="min-h-screen bg-gray-50/50">
-        <div className="container mx-auto p-6">
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-6 space-y-6">
           <CorporatePageHeader
             icon={Gift}
             title="Corporate Benefits"
@@ -468,13 +467,13 @@ const CorporateBenefits = () => {
             stats={[
               { label: 'Plan Type', value: corporatePlan?.planType || 'Premium' },
               { label: 'Sum Insured', value: `₹${(corporatePlan?.coverage.sumInsured || 500000).toLocaleString()}` },
-              { label: 'OPD Used', value: `₹${planUsage.opdUsed.toLocaleString()}/${planUsage.opdLimit.toLocaleString()}` },
+              { label: 'OPD Used', value: planUsage ? `${planUsage.opdUsed}/${planUsage.opdLimit}` : '0/10' },
               { label: 'Valid Till', value: corporatePlan?.validTo ? new Date(corporatePlan.validTo).toLocaleDateString() : 'Dec 2024' },
             ]}
           />
 
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3 lg:w-auto lg:inline-grid">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6 max-w-7xl mx-auto">
+            <TabsList className="grid w-full grid-cols-3 lg:w-auto lg:inline-grid bg-slate-800/60 border border-slate-700/60">
               <TabsTrigger value="benefits">
                 <Shield className="w-4 h-4 mr-2" />
                 My Benefits
@@ -494,66 +493,82 @@ const CorporateBenefits = () => {
               {corporatePlan && (
                 <>
                   {/* Plan Overview Card */}
-                  <Card className="border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-white">
-                    <CardHeader>
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <CardTitle className="text-2xl">{corporatePlan.planName}</CardTitle>
-                          <p className="text-sm text-gray-600 mt-1">
-                            Valid: {new Date(corporatePlan.validFrom).toLocaleDateString()} - {new Date(corporatePlan.validTo).toLocaleDateString()}
-                          </p>
+                  <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600/20 via-slate-900 to-slate-950 border border-emerald-500/25 shadow-xl shadow-slate-950/40">
+                    {/* Ambient glow */}
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+                    <div className="relative p-6">
+                      {/* Header row */}
+                      <div className="flex items-start justify-between mb-6">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/30">
+                            <Shield className="w-5 h-5 text-white" />
+                          </div>
+                          <div>
+                            <h2 className="text-xl font-bold text-white">{corporatePlan.planName}</h2>
+                            <p className="text-sm text-slate-400 mt-0.5">
+                              Valid: {new Date(corporatePlan.validFrom).toLocaleDateString()} — {new Date(corporatePlan.validTo).toLocaleDateString()}
+                            </p>
+                          </div>
                         </div>
-                        <Badge className="bg-blue-500 text-white px-4 py-1">
+                        <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-3 py-1 font-semibold">
                           {corporatePlan.planType}
                         </Badge>
                       </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="text-center p-4 bg-white rounded-lg border border-blue-200">
-                          <p className="text-sm text-gray-600">Sum Insured</p>
-                          <p className="text-2xl font-bold text-blue-600">₹{((corporatePlan.coverage?.sumInsured ?? 500000) / 100000).toFixed(1)}L</p>
+                      {/* Stats grid */}
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="text-center p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
+                          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Sum Insured</p>
+                          <p className="text-2xl font-bold text-emerald-400">₹{((corporatePlan.coverage?.sumInsured ?? 500000) / 100000).toFixed(1)}L</p>
                         </div>
-                        <div className="text-center p-4 bg-white rounded-lg border border-blue-200">
-                          <p className="text-sm text-gray-600">Room Rent</p>
-                          <p className="text-2xl font-bold text-blue-600">₹{(corporatePlan.coverage?.roomRentLimit ?? 5000).toLocaleString()}/day</p>
+                        <div className="text-center p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
+                          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Room Rent</p>
+                          <p className="text-2xl font-bold text-emerald-400">₹{(corporatePlan.coverage?.roomRentLimit ?? 5000).toLocaleString()}<span className="text-sm text-slate-400">/day</span></p>
                         </div>
-                        <div className="text-center p-4 bg-white rounded-lg border border-blue-200">
-                          <p className="text-sm text-gray-600">Pre-Hospitalization</p>
-                          <p className="text-2xl font-bold text-blue-600">{corporatePlan.coverage?.preHospitalizationDays ?? 60} days</p>
+                        <div className="text-center p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
+                          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Pre-Hospitalization</p>
+                          <p className="text-2xl font-bold text-emerald-400">{corporatePlan.coverage?.preHospitalizationDays ?? 60}<span className="text-sm text-slate-400"> days</span></p>
                         </div>
-                        <div className="text-center p-4 bg-white rounded-lg border border-blue-200">
-                          <p className="text-sm text-gray-600">Post-Hospitalization</p>
-                          <p className="text-2xl font-bold text-blue-600">{corporatePlan.coverage?.postHospitalizationDays ?? 90} days</p>
+                        <div className="text-center p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
+                          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Post-Hospitalization</p>
+                          <p className="text-2xl font-bold text-emerald-400">{corporatePlan.coverage?.postHospitalizationDays ?? 90}<span className="text-sm text-slate-400"> days</span></p>
                         </div>
                       </div>
-                  </CardContent>
-                </Card>
+                    </div>
+                  </div>
 
                   {planUsage && (
-                    <Card>
+                    <Card className="bg-slate-900/50 border-slate-700/50">
                       <CardHeader>
-                        <CardTitle>Benefit Utilization</CardTitle>
+                        <CardTitle className="text-slate-100">Benefit Utilization</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div className="p-4 bg-white rounded-lg border border-gray-200">
-                            <p className="text-sm text-gray-600">OPD Visits</p>
-                            <p className="text-2xl font-bold text-blue-600">
-                              {planUsage.opdUsed}/{planUsage.opdLimit}
+                          <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
+                            <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">OPD Visits</p>
+                            <p className="text-2xl font-bold text-white">
+                              {planUsage.opdUsed}<span className="text-slate-400 font-normal">/{planUsage.opdLimit}</span>
                             </p>
+                            <div className="mt-2 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                              <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${planUsage.opdLimit ? Math.min(100, (planUsage.opdUsed / planUsage.opdLimit) * 100) : 0}%` }} />
+                            </div>
                           </div>
-                          <div className="p-4 bg-white rounded-lg border border-gray-200">
-                            <p className="text-sm text-gray-600">Diagnostics</p>
-                            <p className="text-2xl font-bold text-blue-600">
-                              {planUsage.diagnosticsUsed}/{planUsage.diagnosticsLimit}
+                          <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
+                            <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Diagnostics</p>
+                            <p className="text-2xl font-bold text-white">
+                              {planUsage.diagnosticsUsed}<span className="text-slate-400 font-normal">/{planUsage.diagnosticsLimit}</span>
                             </p>
+                            <div className="mt-2 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                              <div className="h-full bg-blue-400 rounded-full" style={{ width: `${planUsage.diagnosticsLimit ? Math.min(100, (planUsage.diagnosticsUsed / planUsage.diagnosticsLimit) * 100) : 0}%` }} />
+                            </div>
                           </div>
-                          <div className="p-4 bg-white rounded-lg border border-gray-200">
-                            <p className="text-sm text-gray-600">Claims (₹)</p>
-                            <p className="text-2xl font-bold text-blue-600">
-                              {planUsage.amountUsed.toLocaleString()} / {planUsage.amountLimit.toLocaleString()}
+                          <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
+                            <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Claims (₹)</p>
+                            <p className="text-2xl font-bold text-white">
+                              ₹{planUsage.amountUsed.toLocaleString()}<span className="text-slate-400 font-normal text-sm"> / ₹{planUsage.amountLimit.toLocaleString()}</span>
                             </p>
+                            <div className="mt-2 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                              <div className="h-full bg-amber-400 rounded-full" style={{ width: `${planUsage.amountLimit ? Math.min(100, (planUsage.amountUsed / planUsage.amountLimit) * 100) : 0}%` }} />
+                            </div>
                           </div>
                         </div>
                       </CardContent>
@@ -561,18 +576,18 @@ const CorporateBenefits = () => {
                   )}
 
                   {/* Features */}
-                  <Card>
+                  <Card className="bg-slate-900/50 border-slate-700/50">
                     <CardHeader>
-                      <CardTitle>Coverage Features</CardTitle>
+                      <CardTitle className="text-slate-100">Coverage Features</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                         {Object.entries(corporatePlan.features || {}).map(([key, enabled]) => {
                           const Icon = getFeatureIcon(key);
                           return enabled ? (
-                            <div key={key} className="flex items-center gap-2 p-3 bg-green-50 rounded-lg border border-green-200">
-                              <Icon className="w-5 h-5 text-green-600" />
-                              <span className="text-sm font-medium text-gray-700">{getFeatureLabel(key)}</span>
+                            <div key={key} className="flex items-center gap-2 p-3 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+                              <Icon className="w-5 h-5 text-emerald-400" />
+                              <span className="text-sm font-medium text-emerald-300">{getFeatureLabel(key)}</span>
                             </div>
                           ) : null;
                         })}
@@ -581,23 +596,23 @@ const CorporateBenefits = () => {
                   </Card>
 
                   {/* Benefits List */}
-                  <Card>
+                  <Card className="bg-slate-900/50 border-slate-700/50">
                     <CardHeader>
-                      <CardTitle>Benefit Details</CardTitle>
+                      <CardTitle className="text-slate-100">Benefit Details</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-4">
                         {(corporatePlan.benefits || []).map((benefit, idx) => (
-                          <div key={idx} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                          <div key={idx} className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
                             <div className="flex justify-between items-start">
                               <div className="flex-1">
-                                <h3 className="font-semibold text-gray-900">{benefit.category}</h3>
-                                <p className="text-sm text-gray-600 mt-1">{benefit.description}</p>
+                                <h3 className="font-semibold text-slate-100">{benefit.category}</h3>
+                                <p className="text-sm text-slate-400 mt-1">{benefit.description}</p>
                               </div>
                               <div className="text-right ml-4">
-                                <p className="font-bold text-blue-600">{benefit.coverage}</p>
+                                <p className="font-bold text-blue-400">{benefit.coverage}</p>
                                 {benefit.limit && (
-                                  <p className="text-xs text-gray-500 mt-1">{benefit.limit}</p>
+                                  <p className="text-xs text-slate-500 mt-1">{benefit.limit}</p>
                                 )}
                               </div>
                             </div>
@@ -613,23 +628,23 @@ const CorporateBenefits = () => {
             {/* Health Checkups Tab */}
             <TabsContent value="checkups" className="space-y-4">
               {/* Filters */}
-              <Card className="p-4">
+              <Card className="p-4 bg-slate-900/50 border-slate-700/50">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                     <input
                       type="text"
                       placeholder="Search health checkups..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full pl-10 pr-4 py-2 bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-200 placeholder:text-slate-500 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                     />
                   </div>
 
                   <select
                     value={categoryFilter}
                     onChange={(e) => setCategoryFilter(e.target.value)}
-                    className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="px-4 py-2 bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-200 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                   >
                     <option value="all">All Categories</option>
                     <option value="Basic">Basic</option>
@@ -643,14 +658,14 @@ const CorporateBenefits = () => {
               {/* Checkups Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {filteredCheckups.map(checkup => (
-                  <Card key={checkup.id} className="hover:shadow-lg transition-shadow">
+                  <Card key={checkup.id} className="bg-slate-900/50 border-slate-700/50 hover:border-slate-600/60 hover:shadow-lg hover:shadow-slate-950/50 transition-all">
                     <CardHeader>
                       <div className="flex justify-between items-start">
                         <div>
-                          <CardTitle className="text-xl">{checkup.name}</CardTitle>
-                          <p className="text-sm text-gray-600 mt-1">{checkup.description}</p>
+                          <CardTitle className="text-xl text-slate-100">{checkup.name}</CardTitle>
+                          <p className="text-sm text-slate-400 mt-1">{checkup.description}</p>
                         </div>
-                        <Badge className="bg-purple-500/10 text-purple-700 border-purple-500/20 border">
+                        <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 border">
                           {checkup.category}
                         </Badge>
                       </div>
@@ -658,29 +673,29 @@ const CorporateBenefits = () => {
                     <CardContent className="space-y-4">
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div className="flex items-center gap-2">
-                          <Clock className="w-4 h-4 text-gray-500" />
-                          <span>{checkup.duration}</span>
+                          <Clock className="w-4 h-4 text-slate-500" />
+                          <span className="text-slate-300">{checkup.duration}</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <TestTube className="w-4 h-4 text-gray-500" />
-                          <span>{checkup.tests.length} tests</span>
+                          <TestTube className="w-4 h-4 text-slate-500" />
+                          <span className="text-slate-300">{checkup.tests.length} tests</span>
                         </div>
                         {checkup.ageGroup && (
                           <div className="flex items-center gap-2">
-                            <User className="w-4 h-4 text-gray-500" />
-                            <span>{checkup.ageGroup}</span>
+                            <User className="w-4 h-4 text-slate-500" />
+                            <span className="text-slate-300">{checkup.ageGroup}</span>
                           </div>
                         )}
                         {checkup.fasting && (
                           <div className="flex items-center gap-2">
-                            <AlertCircle className="w-4 h-4 text-orange-500" />
-                            <span className="text-orange-600">Fasting required</span>
+                            <AlertCircle className="w-4 h-4 text-orange-400" />
+                            <span className="text-orange-400">Fasting required</span>
                           </div>
                         )}
                       </div>
 
-                      <div className="bg-gray-50 p-3 rounded-lg">
-                        <p className="text-xs text-gray-600 mb-2">Tests Included:</p>
+                      <div className="bg-slate-800/50 p-3 rounded-lg">
+                        <p className="text-xs text-slate-400 mb-2">Tests Included:</p>
                         <div className="flex flex-wrap gap-1">
                           {checkup.tests.slice(0, 6).map((test, idx) => (
                             <Badge key={idx} variant="outline" className="text-xs">
@@ -699,15 +714,15 @@ const CorporateBenefits = () => {
                         <div>
                           {checkup.discountedPrice ? (
                             <div>
-                              <p className="text-sm text-gray-500 line-through">₹{checkup.price}</p>
-                              <p className="text-2xl font-bold text-green-600 flex items-center">
+                              <p className="text-sm text-slate-500 line-through">₹{checkup.price}</p>
+                              <p className="text-2xl font-bold text-emerald-400 flex items-center">
                                 <IndianRupee className="w-5 h-5" />
                                 {checkup.discountedPrice}
                               </p>
-                              <p className="text-xs text-green-600">Corporate benefit applied</p>
+                              <p className="text-xs text-emerald-500">Corporate benefit applied</p>
                             </div>
                           ) : (
-                            <p className="text-2xl font-bold text-gray-900 flex items-center">
+                            <p className="text-2xl font-bold text-slate-100 flex items-center">
                               <IndianRupee className="w-5 h-5" />
                               {checkup.price}
                             </p>
@@ -729,26 +744,26 @@ const CorporateBenefits = () => {
               {myAppointments.length > 0 ? (
                 <div className="grid grid-cols-1 gap-4">
                   {myAppointments.map(appointment => (
-                    <Card key={appointment.id} className="hover:shadow-lg transition-shadow">
+                    <Card key={appointment.id} className="bg-slate-900/50 border-slate-700/50 hover:border-slate-600/60 hover:shadow-lg transition-all">
                       <CardContent className="p-6">
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-3">
                               <Badge className={
-                                appointment.status === 'scheduled' ? 'bg-blue-500/10 text-blue-700 border-blue-500/20 border' :
-                                appointment.status === 'completed' ? 'bg-green-500/10 text-green-700 border-green-500/20 border' :
-                                'bg-gray-500/10 text-gray-700 border-gray-500/20 border'
+                                appointment.status === 'scheduled' ? 'bg-blue-500/20 text-blue-300 border-blue-500/30 border' :
+                                appointment.status === 'completed' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 border' :
+                                'bg-slate-700/60 text-slate-300 border-slate-600/50 border'
                               }>
                                 {(appointment.status || 'scheduled').toUpperCase()}
                               </Badge>
-                              <span className="text-sm text-gray-600">#{appointment.appointmentId}</span>
+                              <span className="text-sm text-slate-400">#{appointment.appointmentId}</span>
                             </div>
 
-                            <h3 className="text-xl font-semibold mb-2">{appointment.checkupName}</h3>
+                            <h3 className="text-xl font-semibold text-slate-100 mb-2">{appointment.checkupName}</h3>
 
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                               <div>
-                                <p className="text-gray-600">Date & Time</p>
+                                <p className="text-slate-400">Date & Time</p>
                                 <p className="font-medium flex items-center gap-1">
                                   <Calendar className="w-4 h-4" />
                                   {new Date(appointment.date).toLocaleDateString()}
@@ -760,9 +775,9 @@ const CorporateBenefits = () => {
                               </div>
 
                               <div>
-                                <p className="text-gray-600">Hospital</p>
-                                <p className="font-medium">{appointment.hospital}</p>
-                                <p className="text-xs text-gray-500 flex items-center gap-1">
+                                <p className="text-slate-400">Hospital</p>
+                                <p className="font-medium text-slate-200">{appointment.hospital}</p>
+                                <p className="text-xs text-slate-500 flex items-center gap-1">
                                   <MapPin className="w-3 h-3" />
                                   {appointment.location}
                                 </p>
@@ -770,7 +785,7 @@ const CorporateBenefits = () => {
 
                               {appointment.doctor && (
                                 <div>
-                                  <p className="text-gray-600">Doctor</p>
+                                  <p className="text-slate-400">Doctor</p>
                                   <p className="font-medium flex items-center gap-1">
                                     <Stethoscope className="w-4 h-4" />
                                     {appointment.doctor}
@@ -781,11 +796,11 @@ const CorporateBenefits = () => {
 
                             <div className="flex items-center justify-between mt-4 pt-4 border-t">
                               <div>
-                                <p className="text-sm text-gray-600">Claim Amount</p>
-                                <p className="text-lg font-bold text-green-600">₹{appointment.claimAmount.toLocaleString()}</p>
+                                <p className="text-sm text-slate-400">Claim Amount</p>
+                                <p className="text-lg font-bold text-emerald-400">₹{appointment.claimAmount.toLocaleString()}</p>
                               </div>
                               <div className="text-right">
-                                <p className="text-xs text-gray-600">Booked on</p>
+                                <p className="text-xs text-slate-400">Booked on</p>
                                 <p className="text-sm font-medium">{new Date(appointment.bookedOn).toLocaleDateString()}</p>
                               </div>
                             </div>
@@ -796,9 +811,9 @@ const CorporateBenefits = () => {
                   ))}
                 </div>
               ) : (
-                <Card className="p-8 text-center">
-                  <CalendarCheck className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                  <p className="text-gray-600">No appointments booked yet</p>
+                <Card className="p-8 text-center bg-slate-900/50 border-slate-700/50">
+                  <CalendarCheck className="w-12 h-12 text-slate-500 mx-auto mb-2" />
+                  <p className="text-slate-400">No appointments booked yet</p>
                   <Button className="mt-4" onClick={() => setActiveTab('checkups')}>
                     <Plus className="w-4 h-4 mr-2" />
                     Book Health Checkup
@@ -807,26 +822,25 @@ const CorporateBenefits = () => {
               )}
             </TabsContent>
           </Tabs>
-        </div>
       </div>
 
       {/* Booking Dialog */}
       <Dialog open={bookingDialog} onOpenChange={setBookingDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl bg-slate-900 border-slate-700">
           <DialogHeader>
             <DialogTitle>Book Health Checkup</DialogTitle>
           </DialogHeader>
           {selectedCheckup && (
             <div className="space-y-4">
-              <div className="p-4 bg-blue-50 rounded-lg">
-                <h3 className="font-semibold text-lg">{selectedCheckup.name}</h3>
-                <p className="text-sm text-gray-600 mt-1">{selectedCheckup.description}</p>
+              <div className="p-4 bg-slate-800/60 rounded-lg border border-slate-700/50">
+                <h3 className="font-semibold text-lg text-slate-100">{selectedCheckup.name}</h3>
+                <p className="text-sm text-slate-400 mt-1">{selectedCheckup.description}</p>
                 <div className="flex items-center gap-4 mt-3">
-                  <Badge className="bg-purple-500/10 text-purple-700 border-purple-500/20 border">
+                  <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 border">
                     {selectedCheckup.category}
                   </Badge>
-                  <span className="text-sm">Duration: {selectedCheckup.duration}</span>
-                  <span className="text-sm font-bold text-green-600">
+                  <span className="text-sm text-slate-300">Duration: {selectedCheckup.duration}</span>
+                  <span className="text-sm font-bold text-emerald-400">
                     ₹{selectedCheckup.discountedPrice || selectedCheckup.price}
                   </span>
                 </div>
@@ -834,22 +848,22 @@ const CorporateBenefits = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Preferred Date</label>
+                  <label className="block text-sm font-medium mb-2 text-slate-200">Preferred Date</label>
                   <input
                     type="date"
                     value={bookingDetails.preferredDate}
                     onChange={(e) => setBookingDetails({...bookingDetails, preferredDate: e.target.value})}
                     min={new Date().toISOString().split('T')[0]}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-200 focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Preferred Time</label>
+                  <label className="block text-sm font-medium mb-2 text-slate-200">Preferred Time</label>
                   <select
                     value={bookingDetails.preferredTime}
                     onChange={(e) => setBookingDetails({...bookingDetails, preferredTime: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-200 focus:ring-2 focus:ring-emerald-500"
                   >
                     <option value="">Select time</option>
                     <option value="8:00 AM">8:00 AM</option>
@@ -863,11 +877,11 @@ const CorporateBenefits = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Hospital</label>
+                  <label className="block text-sm font-medium mb-2 text-slate-200">Hospital</label>
                   <select
                     value={bookingDetails.hospital}
                     onChange={(e) => setBookingDetails({...bookingDetails, hospital: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-200 focus:ring-2 focus:ring-emerald-500"
                   >
                     <option value="">Select hospital</option>
                     <option value="Apollo Hospital">Apollo Hospital</option>
@@ -879,34 +893,34 @@ const CorporateBenefits = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Location</label>
+                  <label className="block text-sm font-medium mb-2 text-slate-200">Location</label>
                   <input
                     type="text"
                     value={bookingDetails.location}
                     onChange={(e) => setBookingDetails({...bookingDetails, location: e.target.value})}
                     placeholder="Enter location/area"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-200 placeholder:text-slate-500 focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Special Instructions (Optional)</label>
+                <label className="block text-sm font-medium mb-2 text-slate-200">Special Instructions (Optional)</label>
                 <textarea
                   value={bookingDetails.specialInstructions}
                   onChange={(e) => setBookingDetails({...bookingDetails, specialInstructions: e.target.value})}
                   placeholder="Any specific requirements or medical conditions to note..."
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-200 placeholder:text-slate-500 focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
 
               {selectedCheckup.fasting && (
-                <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg flex items-start gap-2">
-                  <AlertCircle className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
+                <div className="p-3 bg-orange-500/10 border border-orange-500/30 rounded-lg flex items-start gap-2">
+                  <AlertCircle className="w-5 h-5 text-orange-400 flex-shrink-0 mt-0.5" />
                   <div className="text-sm">
-                    <p className="font-medium text-orange-800">Fasting Required</p>
-                    <p className="text-orange-700">Please ensure 8-12 hours of fasting before the checkup</p>
+                    <p className="font-medium text-orange-300">Fasting Required</p>
+                    <p className="text-orange-400">Please ensure 8-12 hours of fasting before the checkup</p>
                   </div>
                 </div>
               )}

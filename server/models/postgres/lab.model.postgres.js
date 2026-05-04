@@ -127,6 +127,14 @@ const Lab = postgresSequelize.define('Lab', {
     type: DataTypes.BOOLEAN,
     defaultValue: false
   },
+  department: {
+    type: DataTypes.STRING(20),
+    defaultValue: 'pathology',
+    validate: {
+      isIn: [['pathology', 'radiology', 'sonology', 'combined']]
+    },
+    comment: 'Lab department type: pathology | radiology | sonology | combined'
+  },
   // Metadata
   metadata: {
     type: DataTypes.JSONB,
@@ -197,7 +205,8 @@ Lab.prototype.generateAuthToken = function() {
     email: this.email,
     role: 'lab',
     labName: this.name,
-    isVerified: this.isVerified
+    isVerified: this.isVerified,
+    department: this.department || 'pathology'
   };
   
   return jwt.sign(payload, JWT_CONFIG.SECRET, {

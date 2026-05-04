@@ -115,6 +115,7 @@ const ContactUs      = lazy(() => import("@/pages/ContactUs"));
 
 // ─── Doctor ──────────────────────────────────────────────────────────────────
 const DoctorDashboard          = lazy(() => import("@/pages/doctor/DoctorDashboard"));
+const DoctorImaging            = lazy(() => import("@/pages/doctor/DoctorImaging"));
 const DoctorMobileHome         = lazy(() => import("@/pages/doctor/DoctorMobileHome"));
 const DoctorAppointments       = lazy(() => import("@/pages/doctor/DoctorAppointments"));
 const DoctorAppointmentSettings = lazy(() => import("@/pages/doctor/DoctorAppointmentSettings"));
@@ -347,6 +348,7 @@ const ClinicSupportPage       = lazyNamed(_ClinicModulePages, "ClinicSupportPage
 const LabLogin     = lazy(() => import("@/pages/lab/LabLogin"));
 const LabRegister  = lazy(() => import("@/pages/lab/LabRegister"));
 const LabDashboard = lazy(() => import("@/pages/lab/LabDashboard"));
+const LabRIS       = lazy(() => import("@/pages/lab/LabRIS"));
 
 const _LabModulePages = () => import("@/pages/lab/LabModulePages");
 const LabOrdersPage        = lazyNamed(_LabModulePages, "LabOrdersPage");
@@ -766,6 +768,7 @@ const AppRoutes = () => {
         <Route path="/doctor/calculators"         element={<DoctorCalculators />} />
         <Route path="/doctor/assistant"           element={<DoctorVoiceAssistant />} />
         <Route path="/doctor/messages"            element={<DoctorMessaging />} />
+        <Route path="/doctor/imaging"             element={<DoctorImaging />} />
 
         {/* ── Hospital ────────────────────────────────────────────────── */}
         <Route path="/hospital/register"                   element={<HospitalRegister />} />
@@ -827,6 +830,7 @@ const AppRoutes = () => {
         <Route path="/lab/register"        element={<LabRegister />} />
         <Route path="/lab/dashboard"       element={<LabDashboard />} />
         <Route path="/lab/test-catalog"    element={<LabDashboard />} />
+        <Route path="/lab/ris"             element={<LabRIS />} />
         <Route path="/lab/orders"          element={<LabOrdersPage />} />
         <Route path="/lab/orders/new"      element={<LabOrdersPage />} />
         <Route path="/lab/patients"        element={<LabPatientsPage />} />

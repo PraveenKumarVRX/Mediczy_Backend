@@ -15,7 +15,7 @@ import {
   MapPin, AlertTriangle, TrendingDown, Receipt, Star, ChevronRight,
   Zap, Sparkles, FlaskConical, Heart, Brain, Droplets, Baby, 
   Pill, Bone, Shield, Stethoscope, BookOpen, ShoppingCart, Info,
-  ChevronDown, Check
+  ChevronDown, Check, ScanLine, Waves, Upload, Image, Monitor
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -544,58 +544,93 @@ const LabDashboard = () => {
     return renderDashboardContent();
   };
 
-  const renderDashboardContent = () => (
+  const renderDashboardContent = () => {
+    const dept = labData?.department || 'pathology';
+    const getDeptConfig = (d: string) => {
+      switch (d) {
+        case 'radiology': return { label: 'Radiology', icon: ScanLine,    gradient: 'from-indigo-500 to-blue-600',  glow: 'shadow-indigo-500/30', accent: 'bg-indigo-500', ring: 'from-indigo-500/20 to-transparent', portal: 'Radiology Information System' };
+        case 'sonology':  return { label: 'Sonology',  icon: Waves,       gradient: 'from-teal-500 to-cyan-600',    glow: 'shadow-teal-500/30',   accent: 'bg-teal-500',  ring: 'from-teal-500/20 to-transparent',  portal: 'Sonology Management Portal' };
+        case 'combined':  return { label: 'Combined',  icon: Activity,    gradient: 'from-purple-500 to-pink-600',  glow: 'shadow-purple-500/30', accent: 'bg-purple-500',ring: 'from-purple-500/20 to-transparent',portal: 'Combined Diagnostics Portal' };
+        default:          return { label: 'Pathology', icon: FlaskConical, gradient: 'from-emerald-500 to-teal-600', glow: 'shadow-emerald-500/30',accent: 'bg-emerald-500',ring: 'from-emerald-500/20 to-transparent',portal: 'Laboratory Management Portal' };
+      }
+    };
+    const deptCfg  = getDeptConfig(dept);
+    const DeptIcon = deptCfg.icon;
+    const isRadiology = dept === 'radiology' || dept === 'combined';
+    const isSonology  = dept === 'sonology'  || dept === 'combined';
+    const isPathology = dept === 'pathology' || dept === 'combined';
+
+    return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      {/* Hero Banner - matching doctor dashboard design */}
+      {/* Hero Banner */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
         {/* Background Pattern */}
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L2c+PC9zdmc+')] opacity-30" />
-        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-emerald-500/20 to-transparent rounded-full blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-teal-400/10 to-transparent rounded-full blur-2xl" />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br to-transparent rounded-full blur-3xl opacity-40" style={{backgroundImage: `linear-gradient(to bottom right, ${dept === 'radiology' ? '#6366f1' : dept === 'sonology' ? '#14b8a6' : dept === 'combined' ? '#a855f7' : '#10b981'}, transparent)`}} />
+        <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr to-transparent rounded-full blur-2xl opacity-20" />
         
         <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-start gap-4">
             <Avatar className="h-16 w-16 border-2 border-white/20 shadow-xl">
-              <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white text-xl">
+              <AvatarFallback className={cn("bg-gradient-to-br text-white text-xl", deptCfg.gradient)}>
                 {labData?.name?.[0] || 'L'}
               </AvatarFallback>
             </Avatar>
             <div>
               <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/30">
-                  <FlaskConical className="w-5 h-5" />
+                <div className={cn("p-2 rounded-xl bg-gradient-to-br shadow-lg", deptCfg.gradient, deptCfg.glow)}>
+                  <DeptIcon className="w-5 h-5" />
                 </div>
                 <Badge className="bg-white/10 text-white/90 border-white/20 font-medium">
                   {currentTime.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                </Badge>
+                <Badge className="bg-white/20 text-white border-white/30 font-semibold uppercase tracking-wide text-xs">
+                  {deptCfg.label}
                 </Badge>
               </div>
               <h1 className="text-2xl md:text-3xl font-bold mb-1">
                 {getGreeting()}, {labData?.name || 'Lab Admin'}!
               </h1>
               <p className="text-slate-300 text-sm md:text-base flex items-center gap-2">
-                <span>Laboratory Management Portal</span>
+                <span>{deptCfg.portal}</span>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                 <span className="flex items-center gap-1">
                   <Activity className="w-4 h-4 text-emerald-400" />
-                  {displayStats[0].value} tests today
+                  {displayStats[0].value} studies today
                 </span>
               </p>
             </div>
           </div>
           
-          <div className="flex gap-3">
-            <Link to="/lab/orders">
-              <Button variant="outline" className="bg-white/10 hover:bg-white/20 text-white border-white/20 hover:border-white/30">
-                <ClipboardList className="w-4 h-4 mr-2" />
-                Test Orders
-              </Button>
-            </Link>
-            <Link to="/lab/samples">
-              <Button className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/30 border-0">
-                <TestTube className="w-4 h-4 mr-2" />
-                Start Collection
-              </Button>
-            </Link>
+          <div className="flex gap-3 flex-wrap">
+            {isRadiology && (
+              <Link to="/lab/imaging">
+                <Button className={cn("bg-gradient-to-r text-white shadow-lg border-0", deptCfg.gradient)}>
+                  <ScanLine className="w-4 h-4 mr-2" />RIS Worklist
+                </Button>
+              </Link>
+            )}
+            {isSonology && (
+              <Link to="/lab/sonology">
+                <Button className={cn("bg-gradient-to-r text-white shadow-lg border-0", deptCfg.gradient)}>
+                  <Waves className="w-4 h-4 mr-2" />Sonology
+                </Button>
+              </Link>
+            )}
+            {isPathology && (
+              <>
+                <Link to="/lab/orders">
+                  <Button variant="outline" className="bg-white/10 hover:bg-white/20 text-white border-white/20 hover:border-white/30">
+                    <ClipboardList className="w-4 h-4 mr-2" />Test Orders
+                  </Button>
+                </Link>
+                <Link to="/lab/samples">
+                  <Button className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/30 border-0">
+                    <TestTube className="w-4 h-4 mr-2" />Start Collection
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -634,7 +669,60 @@ const LabDashboard = () => {
         ))}
       </div>
 
-      {/* Quick Actions - matching doctor dashboard design */}
+      {/* Department-specific panel */}
+      {isRadiology && (
+        <div>
+          <h2 className="text-xl font-semibold text-slate-800 dark:text-white flex items-center gap-2 mb-4">
+            <ScanLine className="w-5 h-5 text-indigo-500" />
+            Radiology Worklist
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[{title:'CT Scan Orders', icon:Monitor, link:'/lab/imaging', bg:'bg-indigo-500/10', ic:'text-indigo-500', desc:'Computed Tomography'},
+              {title:'MRI Studies', icon:Brain, link:'/lab/imaging', bg:'bg-purple-500/10', ic:'text-purple-500', desc:'Magnetic Resonance'},
+              {title:'X-Ray Queue', icon:ScanLine, link:'/lab/imaging', bg:'bg-blue-500/10', ic:'text-blue-500', desc:'Plain Radiography'},
+              {title:'Upload Images', icon:Upload, link:'/lab/imaging', bg:'bg-teal-500/10', ic:'text-teal-500', desc:'DICOM / JPEG / PDF'},
+            ].map((a, i) => (
+              <Link key={i} to={a.link} className="group">
+                <Card className="h-full bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-indigo-200 dark:hover:border-indigo-500/50 hover:shadow-lg transition-all">
+                  <CardContent className="p-4">
+                    <div className={cn('p-3 rounded-xl w-fit mb-3 transition-all group-hover:scale-110', a.bg)}><a.icon className={cn('w-6 h-6', a.ic)} /></div>
+                    <h3 className="font-semibold text-slate-800 dark:text-white mb-1 text-sm">{a.title}</h3>
+                    <p className="text-xs text-slate-500">{a.desc}</p>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {isSonology && (
+        <div>
+          <h2 className="text-xl font-semibold text-slate-800 dark:text-white flex items-center gap-2 mb-4">
+            <Waves className="w-5 h-5 text-teal-500" />
+            Sonology Worklist
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[{title:'USG Abdomen', icon:Waves, link:'/lab/sonology', bg:'bg-teal-500/10', ic:'text-teal-500', desc:'Abdominal Ultrasound'},
+              {title:'Echo Studies', icon:Heart, link:'/lab/sonology', bg:'bg-rose-500/10', ic:'text-rose-500', desc:'Echocardiography'},
+              {title:'Obstetric USG', icon:Baby, link:'/lab/sonology', bg:'bg-pink-500/10', ic:'text-pink-500', desc:'OB/GYN Ultrasound'},
+              {title:'Upload Study', icon:Image, link:'/lab/sonology', bg:'bg-cyan-500/10', ic:'text-cyan-500', desc:'Images & Reports'},
+            ].map((a, i) => (
+              <Link key={i} to={a.link} className="group">
+                <Card className="h-full bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-teal-200 dark:hover:border-teal-500/50 hover:shadow-lg transition-all">
+                  <CardContent className="p-4">
+                    <div className={cn('p-3 rounded-xl w-fit mb-3 transition-all group-hover:scale-110', a.bg)}><a.icon className={cn('w-6 h-6', a.ic)} /></div>
+                    <h3 className="font-semibold text-slate-800 dark:text-white mb-1 text-sm">{a.title}</h3>
+                    <p className="text-xs text-slate-500">{a.desc}</p>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Quick Actions */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-slate-800 dark:text-white flex items-center gap-2">
@@ -1570,6 +1658,7 @@ const LabDashboard = () => {
       </Dialog>
     </div>
   );
+  };
 
   const renderOrdersContent = () => (
     <div className="space-y-6">

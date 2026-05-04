@@ -145,7 +145,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
     services: false,
     finance: false,
     communication: false,
-    system: false,
+    system: true,
   });
 
   // Persist collapsed state

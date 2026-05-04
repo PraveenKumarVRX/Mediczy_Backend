@@ -41,7 +41,8 @@ import {
   Siren,
   LayoutGrid,
   ClipboardList,
-  Wallet
+  Wallet,
+  ScanLine
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -438,6 +439,15 @@ const DoctorDashboard = () => {
       color: "text-violet-500",
       bgColor: "bg-violet-500/10",
     },
+    {
+      title: "Medical Imaging",
+      description: "CT, MRI, USG, Echo, X-Ray",
+      icon: ScanLine,
+      link: "/doctor/imaging",
+      badge: null,
+      color: "text-teal-500",
+      bgColor: "bg-teal-500/10",
+    },
   ];
 
   // Derived values
@@ -463,6 +473,7 @@ const DoctorDashboard = () => {
     { label: "Health Mon.",   icon: HeartPulse,    link: "/doctor/health-monitoring", bgColor: "bg-red-500/10",   iconColor: "text-red-500" },
     { label: "Analytics",     icon: BarChart3,     link: "/doctor/analytics",      bgColor: "bg-cyan-500/10",      iconColor: "text-cyan-600 dark:text-cyan-400" },
     { label: "Billing",       icon: Wallet,        link: "/doctor/billing",        bgColor: "bg-emerald-500/10",   iconColor: "text-emerald-600 dark:text-emerald-400" },
+    { label: "Imaging",      icon: ScanLine,      link: "/doctor/imaging",        bgColor: "bg-violet-500/10",    iconColor: "text-violet-600 dark:text-violet-400" },
   ];
 
   return (

@@ -52,6 +52,7 @@ const LabLogin = () => {
         email: labProfile.email,
         name: labProfile.name || labProfile.labName,
         license: labProfile.licenseNumber,
+        department: labProfile.department || 'pathology',
       }));
       if (labProfile.id) {
         localStorage.setItem('userId', String(labProfile.id));

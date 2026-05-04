@@ -112,7 +112,22 @@ router.post('/bulk-update', authUser, [
       }
     }
 
-    await doctorModel.updateAvailability(req.user.id, req.body);
+    const doctor = await doctorModel.findByPk(req.user.id);
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    // Merge incoming days with existing weeklyAvailability
+    const existing = (doctor.dataValues || doctor).weeklyAvailability || {};
+    const updated = { ...existing };
+    const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+    for (const day of DAYS) {
+      if (req.body[day] !== undefined) {
+        updated[day] = req.body[day];
+      }
+    }
+
+    await doctorModel.update(req.user.id, { weeklyAvailability: updated });
     
     res.json({
       success: true,
@@ -180,7 +195,7 @@ router.post('/quick-setup', authUser, [
       };
     });
 
-    await doctorModel.updateAvailability(req.user.id, weeklyAvailability);
+    await doctorModel.update(req.user.id, { weeklyAvailability });
     
     res.json({
       success: true,
@@ -288,7 +303,7 @@ router.delete('/slots', authUser, async (req, res) => {
       sunday: { slots: [], isAvailable: false }
     };
 
-    await doctorModel.updateAvailability(req.user.id, emptyAvailability);
+    await doctorModel.update(req.user.id, { weeklyAvailability: emptyAvailability });
     
     res.json({
       success: true,
