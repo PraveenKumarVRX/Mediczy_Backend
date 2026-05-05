@@ -80,9 +80,13 @@ export const auditMiddleware = async (req, res, next) => {
       try {
         const isPHI = isPHIEndpoint(req.path);
         const isPII = isPIIEndpoint(req.path);
-        
+
+        // Skip /login paths — controllers call auditLoginAttempt() explicitly,
+        // so logging here would create a duplicate entry with wrong action/email.
+        if (req.path.includes('/login')) return;
+
         // Only log if it's PHI, PII, or auth-related
-        if (isPHI || isPII || req.path.includes('/login') || req.path.includes('/register')) {
+        if (isPHI || isPII || req.path.includes('/register')) {
           await AuditLog.logEvent({
             userId: req.user?.id || null,
             userType: req.user?.role || 'system',

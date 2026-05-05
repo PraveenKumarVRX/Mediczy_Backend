@@ -812,10 +812,10 @@ router.post('/payment/initiate/:appointmentId', authUser, async (req, res) => {
       });
     }
 
-    if (appointment.status !== 'accepted') {
+    if (!['accepted', 'scheduled', 'confirmed'].includes(appointment.status)) {
       return res.status(400).json({
         success: false,
-        message: `Cannot pay for appointment with status: ${appointment.status}. Doctor must accept first.`
+        message: `Cannot pay for appointment with status: ${appointment.status}.`
       });
     }
 
@@ -827,7 +827,7 @@ router.post('/payment/initiate/:appointmentId', authUser, async (req, res) => {
     }
 
     // Create Razorpay order
-    const amount = parseFloat(appointment.consultationFee) * 100; // Convert to paise
+    const amount = parseFloat(appointment.paymentAmount || appointment.consultationFee || 0) * 100; // Convert to paise
     const receipt = `apt_${appointmentId}_${Date.now()}`;
 
     try {
@@ -945,9 +945,17 @@ router.post('/payment/verify/:appointmentId', authUser, [
       });
     }
 
-    // Generate meeting link for video consultation
-    const meetingInfo = createMeetingInfo({ appointmentId: appointment.id });
-    const { meetingId, meetingLink, meetingDetails } = meetingInfo;
+    // Generate meeting link only for video/online consultations
+    var isOnlineConsult = ['online', 'video', 'audio', 'chat'].includes(appointment.consultationType);
+    var meetingId = null;
+    var meetingLink = null;
+    var meetingDetails = null;
+    if (isOnlineConsult) {
+      var meetingInfo = createMeetingInfo({ appointmentId: appointment.id });
+      meetingId = meetingInfo.meetingId;
+      meetingLink = meetingInfo.meetingLink;
+      meetingDetails = meetingInfo.meetingDetails;
+    }
 
     // Update appointment as confirmed with payment
     await appointment.update({
@@ -955,10 +963,10 @@ router.post('/payment/verify/:appointmentId', authUser, [
       paymentStatus: 'paid',
       paymentMethod: 'razorpay',
       transactionId: razorpay_payment_id,
-      meetingId,
-      meetingLink,
-      meetingDetails,
-      notes: 'Payment received. Video consultation enabled.'
+      ...(meetingId && { meetingId }),
+      ...(meetingLink && { meetingLink }),
+      ...(meetingDetails && { meetingDetails }),
+      notes: isOnlineConsult ? 'Payment received. Video consultation enabled.' : 'Payment received. In-person appointment confirmed.'
     });
 
     // Get doctor info for notifications

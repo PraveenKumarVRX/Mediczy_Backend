@@ -206,6 +206,19 @@ export const enrichIP = async (ip) => {
   let intel = null;
   try { intel = await queryIPAPI(ip); } catch { /* API unavailable */ }
 
+  // If ip-api.com failed entirely (null result), cache a short-lived unknown entry
+  // (5 min) so we don't hammer the API on every subsequent request for this IP.
+  if (!intel) {
+    const unknownResult = {
+      ip, country: 'Unknown', countryCode: '??', city: 'Unknown', region: 'Unknown',
+      isp: 'Unknown', org: 'Unknown', asn: 'Unknown',
+      isProxy: false, isHosting: false, isTor: false, isVPN: false,
+      threatType: 'unknown', abuseScore: 0, fromCache: false,
+    };
+    try { await r.set(cacheKey, JSON.stringify(unknownResult), 'EX', 300); } catch {}
+    return unknownResult;
+  }
+
   // 4. Check Tor list
   let isTor = false;
   try { isTor = !!(await r.sismember(TOR_KEY, ip)); } catch {}

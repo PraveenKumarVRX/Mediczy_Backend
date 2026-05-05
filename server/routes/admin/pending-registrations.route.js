@@ -14,6 +14,7 @@ import HomecareProvider from '../../models/postgres/homecare.model.postgres.js';
 import Corporate from '../../models/postgres/corporate.model.postgres.js';
 import User from '../../models/postgres/user.model.postgres.js';
 import { Pharmacy } from '../../models/index.js';
+import Doctor from '../../models/postgres/doctor.model.postgres.js';
 
 const router = express.Router();
 
@@ -94,7 +95,7 @@ const buildApprovalEmail = (email, name, entityType, tempPassword) => {
 
       <hr style="border:none;border-top:1.5px solid #e2e8f0;margin:0 0 28px;">
       <p style="color:#94a3b8;font-size:13px;line-height:1.8;margin:0;">
-        Need help? Contact us at <a href="mailto:support@mediczy.com" style="color:${color};font-weight:600;">support@mediczy.com</a>
+        Need help? Contact us at <a href="mailto:support@mediqzy.com" style="color:${color};font-weight:600;">support@mediqzy.com</a>
       </p>
     </td></tr>
 
@@ -132,7 +133,7 @@ const buildRejectionEmail = (email, name, entityType, reason) => {
       </div>` : ''}
       <p style="color:#475569;line-height:1.8;font-size:14px;margin:0 0 32px;">
         If you believe this was in error or wish to reapply with updated information, please contact our support team at
-        <a href="mailto:support@mediczy.com" style="color:#0d9488;font-weight:600;">support@mediczy.com</a>.
+        <a href="mailto:support@mediqzy.com" style="color:#0d9488;font-weight:600;">support@mediqzy.com</a>.
       </p>
     </td></tr>
     <tr><td style="background:#f8fafc;padding:24px 48px;text-align:center;border-top:1.5px solid #e2e8f0;">
@@ -166,30 +167,66 @@ const sendEmail = async (to, subject, html, text) => {
   }
 };
 
+const buildDoctorActivationEmail = (doctorName, email) => {
+  const loginUrl = `${process.env.FRONTEND_URL || 'https://app.mediqzy.com'}/doctor/login`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f0f4f8;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#f0f4f8">
+<tr><td align="center" style="padding:48px 20px;">
+  <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:24px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.10);">
+    <tr><td style="background:linear-gradient(135deg,#059669 0%,#0d9488 100%);padding:52px 48px;text-align:center;">
+      <div style="width:80px;height:80px;background:rgba(255,255,255,0.2);border-radius:50%;margin:0 auto 24px;line-height:80px;font-size:40px;">✅</div>
+      <h1 style="margin:0;color:#fff;font-size:28px;font-weight:800;">Account Activated!</h1>
+      <p style="margin:12px 0 0;color:rgba(255,255,255,0.85);font-size:15px;">Your Mediczy doctor account is now live</p>
+    </td></tr>
+    <tr><td style="padding:48px 48px 32px;">
+      <p style="font-size:17px;color:#0f172a;font-weight:600;margin:0 0 16px">Hello, ${doctorName}!</p>
+      <p style="color:#475569;line-height:1.8;font-size:15px;margin:0 0 32px">
+        Congratulations! Our team has reviewed and verified your registration documents.
+        Your Mediczy doctor account is now <strong style="color:#059669">fully active</strong>.
+        You can log in using the email and password you created during registration.
+      </p>
+      <div style="text-align:center;margin-bottom:32px">
+        <a href="${loginUrl}" style="background:linear-gradient(135deg,#059669,#0d9488);color:#fff;text-decoration:none;padding:14px 40px;border-radius:12px;font-weight:700;font-size:15px;display:inline-block">
+          Login to Your Dashboard →
+        </a>
+      </div>
+      <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:12px;padding:18px 22px">
+        <p style="margin:0;font-size:13px;color:#166534">📧 Login Email: <strong>${email}</strong></p>
+        <p style="margin:6px 0 0;font-size:13px;color:#166534">🔐 Use the password you created during registration.</p>
+      </div>
+    </td></tr>
+    <tr><td style="padding:16px 40px;border-top:1px solid #e2e8f0;text-align:center">
+      <p style="margin:0;font-size:11px;color:#94a3b8">Mediczy · Mayden SmartHealth Pvt Ltd · support@mediqzy.com</p>
+    </td></tr>
+  </table>
+</td></tr></table></body></html>`;
+};
+
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 /**
  * GET /api/admin/pending-registrations
  * List all pending registrations across all entity types
  */
-router.get('/', authUser, requireRole('system_admin'), async (req, res) => {
+router.get('/', authUser, requireRole('admin'), async (req, res) => {
   try {
-    const [clinics, labs, homecareProv, pharmacies, corpUsers] = await Promise.all([
+    const [clinics, labs, homecareProv, pharmacies, corpUsers, pendingDoctors] = await Promise.all([
       Hospital.findAll({
         where: { status: 'pending' },
         attributes: ['id', 'hospitalName', 'email', 'phoneNumber', 'city', 'state', 'createdAt', 'metadata', 'isVerified'],
         order: [['createdAt', 'DESC']]
-      }),
+      }).catch(() => []),
       Lab.findAll({
         where: { status: 'pending' },
         attributes: ['id', 'name', 'email', 'phoneNumber', 'licenseNumber', 'labType', 'createdAt', 'metadata', 'isVerified'],
         order: [['createdAt', 'DESC']]
-      }),
+      }).catch(() => []),
       HomecareProvider.findAll({
         where: { status: 'pending' },
         attributes: ['id', 'name', 'email', 'phone', 'providerType', 'registrationNumber', 'createdAt', 'metadata', 'isVerified'],
         order: [['createdAt', 'DESC']]
-      }),
+      }).catch(() => []),
       Pharmacy.findAll({
         where: { status: 'pending' },
         attributes: ['id', 'name', 'email', 'phoneNumber', 'licenseNumber', 'pharmacyType', 'createdAt', 'metadata', 'isVerified'],
@@ -198,6 +235,11 @@ router.get('/', authUser, requireRole('system_admin'), async (req, res) => {
       User.findAll({
         where: { role: 'corporate_admin', status: 'pending' },
         attributes: ['id', 'email', 'phone', 'createdAt', 'organization_id'],
+        order: [['createdAt', 'DESC']]
+      }).catch(() => []),
+      Doctor.findAll({
+        where: { isVerified: false, status: 'pending' },
+        attributes: ['id', 'prefix', 'firstName', 'lastName', 'email', 'phoneNumber', 'specialization', 'experience', 'qualifications', 'documents', 'createdAt'],
         order: [['createdAt', 'DESC']]
       }).catch(() => [])
     ]);
@@ -230,12 +272,24 @@ router.get('/', authUser, requireRole('system_admin'), async (req, res) => {
       return { ...json, entityType: type };
     });
 
+    const doctorList = pendingDoctors.map(d => {
+      const json = d.toJSON();
+      return {
+        ...json,
+        entityType: 'doctor',
+        name: `${json.prefix || ''} ${json.firstName} ${json.lastName}`.trim(),
+        phone: json.phoneNumber,
+        submittedAt: json.createdAt,
+      };
+    });
+
     const all = [
       ...toList(clinics, 'clinic'),
       ...toList(labs, 'lab'),
       ...toList(homecareProv, 'homecare'),
       ...toList(pharmacies, 'pharmacy'),
-      ...corpWithDetails
+      ...corpWithDetails,
+      ...doctorList
     ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     res.json({ success: true, total: all.length, registrations: all });
@@ -249,7 +303,7 @@ router.get('/', authUser, requireRole('system_admin'), async (req, res) => {
  * POST /api/admin/pending-registrations/approve
  * Approve a pending registration and send credentials email
  */
-router.post('/approve', authUser, requireRole('system_admin'), async (req, res) => {
+router.post('/approve', authUser, requireRole('admin'), async (req, res) => {
   try {
     const { entityType, id, adminNote } = req.body;
     if (!entityType || !id) {
@@ -310,6 +364,25 @@ router.post('/approve', authUser, requireRole('system_admin'), async (req, res) 
         });
       }
 
+    } else if (entityType === 'doctor') {
+      const entity = await Doctor.findOne({ where: { id, isVerified: false, status: 'pending' } });
+      if (!entity) return res.status(404).json({ success: false, message: 'Pending doctor not found' });
+      entityName = `${entity.prefix || ''} ${entity.firstName} ${entity.lastName}`.trim();
+      entityEmail = entity.email;
+      await entity.update({
+        isVerified: true,
+        status: 'active',
+        documentVerified: true,
+      });
+      // Send activation email — doctor already has their own password
+      await sendEmail(
+        entityEmail,
+        `✅ Your Mediczy Doctor Account is Now Active — Welcome, ${entityName}!`,
+        buildDoctorActivationEmail(entityName, entityEmail),
+        `Hello ${entityName},\n\nCongratulations! Your Mediczy doctor account is now active.\n\nLogin at: ${process.env.FRONTEND_URL || 'https://app.mediqzy.com'}/doctor/login\nUse the email and password you created during registration.\n\nMediczy Team`
+      );
+      return res.json({ success: true, message: 'Doctor account activated', emailSent: true, entityName, entityEmail });
+
     } else {
       return res.status(400).json({ success: false, message: `Unknown entity type: ${entityType}` });
     }
@@ -334,7 +407,7 @@ router.post('/approve', authUser, requireRole('system_admin'), async (req, res) 
  * POST /api/admin/pending-registrations/reject
  * Reject a pending registration
  */
-router.post('/reject', authUser, requireRole('system_admin'), async (req, res) => {
+router.post('/reject', authUser, requireRole('admin'), async (req, res) => {
   try {
     const { entityType, id, reason } = req.body;
     if (!entityType || !id) {
@@ -375,6 +448,13 @@ router.post('/reject', authUser, requireRole('system_admin'), async (req, res) =
       entityName = corp?.companyName || u.email;
       await u.update({ status: 'rejected' });
       if (corp) await corp.update({ status: 'Rejected' });
+
+    } else if (entityType === 'doctor') {
+      const e = await Doctor.findByPk(id);
+      if (!e) return res.status(404).json({ success: false, message: 'Not found' });
+      entityName = `${e.prefix || ''} ${e.firstName} ${e.lastName}`.trim();
+      entityEmail = e.email;
+      await e.update({ status: 'inactive', isVerified: false });
     }
 
     const html = buildRejectionEmail(entityEmail, entityName, entityType, reason);
@@ -383,7 +463,7 @@ router.post('/reject', authUser, requireRole('system_admin'), async (req, res) =
       entityEmail,
       `Update on Your ${label} Registration with Mediczy`,
       html,
-      `Hello ${entityName},\n\nYour ${label} registration could not be approved.\n\n${reason ? `Reason: ${reason}\n\n` : ''}Contact support@mediczy.com for assistance.\n\nMediczy Team`
+      `Hello ${entityName},\n\nYour ${label} registration could not be approved.\n\n${reason ? `Reason: ${reason}\n\n` : ''}Contact support@mediqzy.com for assistance.\n\nMediczy Team`
     );
 
     res.json({ success: true, message: `${entityType} registration rejected`, emailSent });

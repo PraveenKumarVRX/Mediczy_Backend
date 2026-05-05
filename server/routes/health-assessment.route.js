@@ -94,7 +94,8 @@ router.get('/my', authUser, async (req, res) => {
         riskAssessment: {
           score: assessment.riskScore,
           riskLevel: assessment.riskLevel,
-          riskFactors: assessment.riskFactors
+          riskFactors: assessment.riskFactors,
+          recommendations: generateRecommendations(assessment.riskLevel, assessment.riskFactors || [])
         }
       }
     });

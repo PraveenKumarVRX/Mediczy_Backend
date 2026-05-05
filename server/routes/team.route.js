@@ -1727,7 +1727,7 @@ router.patch('/registered-doctors/:id/activate', authTeam, async (req, res) => {
     // Send activation email to doctor
     try {
       await _teamMailer().sendMail({
-        from: `"Mediczy Team" <${process.env.SMTP_USER || 'support@mediczy.com'}>`,
+        from: `"Mediczy Team" <${process.env.SMTP_USER || 'support@mediqzy.com'}>`,
         to: doctor.email,
         subject: `✅ Your Mediczy Doctor Account is Active — Welcome, ${doctorName}!`,
         html: `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
@@ -1758,7 +1758,7 @@ router.patch('/registered-doctors/:id/activate', authTeam, async (req, res) => {
     </div>
   </td></tr>
   <tr><td style="padding:16px 40px;border-top:1px solid #e2e8f0;text-align:center">
-    <p style="margin:0;font-size:11px;color:#94a3b8">Mediczy · Mayden SmartHealth Pvt Ltd · support@mediczy.com</p>
+    <p style="margin:0;font-size:11px;color:#94a3b8">Mediczy · Mayden SmartHealth Pvt Ltd · support@mediqzy.com</p>
   </td></tr>
 </table></td></tr></table></body></html>`,
       });
@@ -1780,7 +1780,7 @@ router.patch('/registered-doctors/:id/reject', authTeam, async (req, res) => {
     const doctorName = `${doctor.prefix || ''} ${doctor.firstName} ${doctor.lastName}`.trim();
     try {
       await _teamMailer().sendMail({
-        from: `"Mediczy Team" <${process.env.SMTP_USER || 'support@mediczy.com'}>`,
+        from: `"Mediczy Team" <${process.env.SMTP_USER || 'support@mediqzy.com'}>`,
         to: doctor.email,
         subject: `Mediczy Doctor Registration — Update Required`,
         html: `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
@@ -1801,11 +1801,11 @@ router.patch('/registered-doctors/:id/reject', authTeam, async (req, res) => {
       <p style="margin:6px 0 0;font-size:13px;color:#dc2626">${reason}</p>
     </div>
     <p style="color:#475569;font-size:14px;line-height:1.7">
-      Please contact <a href="mailto:support@mediczy.com" style="color:#1d4ed8">support@mediczy.com</a> for assistance or to re-submit your application.
+      Please contact <a href="mailto:support@mediqzy.com" style="color:#1d4ed8">support@mediqzy.com</a> for assistance or to re-submit your application.
     </p>
   </td></tr>
   <tr><td style="padding:16px 40px;border-top:1px solid #e2e8f0;text-align:center">
-    <p style="margin:0;font-size:11px;color:#94a3b8">Mediczy · Mayden SmartHealth Pvt Ltd · support@mediczy.com</p>
+    <p style="margin:0;font-size:11px;color:#94a3b8">Mediczy · Mayden SmartHealth Pvt Ltd · support@mediqzy.com</p>
   </td></tr>
 </table></td></tr></table></body></html>`,
       });

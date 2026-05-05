@@ -52,6 +52,7 @@ import localAiNodeRouter from "./routes/local-ai-node.route.js";
 import recordingRouter from "./routes/recording.route.js";
 import uploadRouter from "./routes/upload.route.js";
 import healthAssessmentRouter from "./routes/health-assessment.route.js";
+import healthScoreRouter from "./routes/health-score.route.js";
 import reportAnalysisRouter from "./routes/report-analysis.route.js";
 import dietRouter from "./routes/diet.route.js";
 import ayushmanRouter from "./routes/ayushman.route.js";
@@ -1078,6 +1079,7 @@ app.use("/api/reports", uploadRouter); // Medical report upload
 app.use("/api/health-assessment", healthAssessmentRouter); // Health risk assessment
 app.use("/api/hra", authUser, healthAssessmentRouter); // HRA alias for /api/health-assessment
 app.use("/api/reports", reportAnalysisRouter); // Report analysis
+app.use("/api/health-score", healthScoreRouter); // Daily composite health score + logging
 
 // Doctor routes - all mounted under /api/doctors for consistency
 app.use("/api/doctors", doctorRoutes); // Core: login, register, profile, appointments
@@ -1420,6 +1422,10 @@ app.use(domainResolver);
 // ============== PHASE 3: Proactive Alerts Cron ==============
 import proactiveAlertsCron from './services/ai-proactive-alerts-cron.service.js';
 proactiveAlertsCron.start();
+
+// ============== Daily Health Score Cron (09:00 AM) ==============
+import dailyHealthScoreService from './services/daily-health-score.service.js';
+dailyHealthScoreService.start();
 
 // ============== Pharmacy: Drug Price Sync ==============
 import drugPriceSyncService from './services/drug-price-sync.service.js';

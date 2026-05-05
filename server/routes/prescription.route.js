@@ -32,7 +32,7 @@ const renderPrescriptionHTML = (prescription) => {
     '{{clinicName}}': prescription.clinicName || prescription.clinicDetails?.name || 'Mediczy Healthcare',
     '{{clinicAddress}}': prescription.clinicAddress || prescription.clinicDetails?.address || 'Virtual Consultation Platform',
     '{{clinicPhone}}': prescription.clinicPhone || prescription.clinicDetails?.phone || '+91-XXX-XXX-XXXX',
-    '{{clinicEmail}}': prescription.clinicEmail || prescription.clinicDetails?.email || 'support@mediczy.com',
+    '{{clinicEmail}}': prescription.clinicEmail || prescription.clinicDetails?.email || 'support@mediqzy.com',
     '{{clinicWebsite}}': 'www.mediczy.com',
     '{{patientName}}': prescription.patientName || 'N/A',
     '{{patientAge}}': prescription.patientAge || 'N/A',

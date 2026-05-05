@@ -96,6 +96,7 @@ interface Doctor {
     city: string;
     state: string;
   };
+  phoneNumber?: string;
   services: string[];
   verified: boolean;
 }
@@ -306,6 +307,7 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
         doctor?.nextAvailableSlot || (doctor?.isOnline ? "Available now" : "Slots update hourly"),
     },
     clinic: clinicInfo,
+    phoneNumber: doctor?.phoneNumber || "",
     services,
     verified: Boolean(doctor?.isVerified),
   } as Doctor;
@@ -822,10 +824,24 @@ const DoctorListBooking = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 mb-4 text-sm text-gray-500 dark:text-gray-400">
+              <div className="flex items-center gap-2 mb-3 text-sm text-gray-500 dark:text-gray-400">
                 <Languages className="h-4 w-4" />
                 <span>Speaks: {doctor.languages.join(", ")}</span>
               </div>
+
+              {doctor.phoneNumber && (
+                <div className="flex items-center gap-2 mb-3 text-sm">
+                  <Phone className="h-4 w-4 text-green-500" />
+                  <a
+                    href={`tel:${doctor.phoneNumber}`}
+                    className="text-green-700 dark:text-green-400 font-medium hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {doctor.phoneNumber}
+                  </a>
+                  <span className="text-slate-400 text-xs">(Hospital reception)</span>
+                </div>
+              )}
 
               <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-700">
                 <div className="flex gap-6">
@@ -1484,12 +1500,35 @@ const DoctorListBooking = () => {
                         <div className="text-sm text-gray-500 dark:text-gray-400">
                           {doctorSlots?.slots?.inPerson?.[0]?.location?.name || selectedDoctor?.clinic.name}
                         </div>
+                        {selectedDoctor?.phoneNumber && (
+                          <a
+                            href={`tel:${selectedDoctor.phoneNumber}`}
+                            className="flex items-center gap-1 mt-1 text-sm text-green-600 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Phone className="h-3.5 w-3.5" />
+                            {selectedDoctor.phoneNumber}
+                          </a>
+                        )}
                       </div>
                       <div className="ml-auto text-lg font-bold text-green-600">
                         ₹{doctorSlots?.slots?.inPerson?.[0]?.location?.fee || selectedDoctor?.consultationFee.inPerson}
                       </div>
                     </Label>
                   </div>
+
+                  {consultationType === "inPerson" && selectedDoctor?.phoneNumber && (
+                    <div className="flex items-start gap-3 p-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                      <Phone className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-sm font-semibold text-green-800 dark:text-green-300">Book directly with the hospital</p>
+                        <p className="text-sm text-green-700 dark:text-green-400 mt-0.5">
+                          Call <a href={`tel:${selectedDoctor.phoneNumber}`} className="font-bold underline">{selectedDoctor.phoneNumber}</a> to confirm your in-person appointment slot with {selectedDoctor.clinic.name}.
+                        </p>
+                        <p className="text-xs text-green-600 dark:text-green-500 mt-1">You can also proceed below to register the appointment in the app.</p>
+                      </div>
+                    </div>
+                  )}
                 </RadioGroup>
               </div>
 

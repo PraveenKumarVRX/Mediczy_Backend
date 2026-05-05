@@ -330,7 +330,7 @@ async function sendDoctorConfirmationEmail(doctor, docs) {
     </div>
 
     <p style="margin:0;font-size:13px;color:#64748b">
-      Questions? Reply to this email or write to us at <a href="mailto:support@mediczy.com" style="color:#1d4ed8">support@mediczy.com</a>.
+      Questions? Reply to this email or write to us at <a href="mailto:support@mediqzy.com" style="color:#1d4ed8">support@mediqzy.com</a>.
     </p>
   </td></tr>
   <!-- Footer -->
@@ -346,7 +346,7 @@ async function sendDoctorConfirmationEmail(doctor, docs) {
   }
 }
 
-// ─── Send registration notification to support@mediczy.com ───────────────────
+// ─── Send registration notification to support@mediqzy.com ───────────────────
 async function sendDoctorRegistrationAlert(doctor, docs) {
   try {
     const transporter = getDoctorMailTransporter();
@@ -378,7 +378,7 @@ async function sendDoctorRegistrationAlert(doctor, docs) {
 
     await transporter.sendMail({
       from: `"Mediczy Registrations" <${process.env.SMTP_USER || 'noreply@mediczy.com'}>`,
-      to: 'support@mediczy.com',
+      to: 'support@mediqzy.com',
       subject: `🩺 New Doctor Registration — ${doctorName} | Pending Verification`,
       attachments,
       html: `
@@ -425,12 +425,12 @@ async function sendDoctorRegistrationAlert(doctor, docs) {
     </div>
   </td></tr>
   <tr><td style="padding:16px 40px;border-top:1px solid #e2e8f0;text-align:center">
-    <p style="margin:0;font-size:11px;color:#94a3b8">Mediczy · Mayden SmartHealth Pvt Ltd · support@mediczy.com</p>
+    <p style="margin:0;font-size:11px;color:#94a3b8">Mediczy · Mayden SmartHealth Pvt Ltd · support@mediqzy.com</p>
   </td></tr>
 </table></td></tr></table>
 </body></html>`,
     });
-    console.log(`[DoctorReg] Registration alert sent to support@mediczy.com for ${doctorName}`);
+    console.log(`[DoctorReg] Registration alert sent to support@mediqzy.com for ${doctorName}`);
   } catch (mailErr) {
     console.warn('[DoctorReg] Registration alert email failed (non-critical):', mailErr.message);
   }

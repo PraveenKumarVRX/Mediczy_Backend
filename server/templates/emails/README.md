@@ -324,5 +324,5 @@ npm install nodemailer
 ## Support
 
 For issues or questions:
-- Email: support@mediczy.com
+- Email: support@mediqzy.com
 - Documentation: [Internal Wiki Link]

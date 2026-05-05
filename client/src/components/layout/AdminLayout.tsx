@@ -56,7 +56,8 @@ import {
   BrainCircuit,
   Globe,
   Radio,
-  Cpu
+  Cpu,
+  ClipboardList
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -288,6 +289,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
         { icon: HeartPulse, label: 'Health Risk', path: '/admin/health-risk', color: 'text-rose-500', bg: 'bg-rose-500/10', highlight: true },
         { icon: Users, label: 'Team', path: '/admin/team', color: 'text-purple-500', bg: 'bg-purple-500/10' },
         { icon: Stethoscope, label: 'Doctors', path: '/admin/doctors', color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+        { icon: ClipboardList, label: 'Pending Registrations', path: '/admin/pending-registrations', color: 'text-amber-500', bg: 'bg-amber-500/10', highlight: true },
         { icon: Calendar, label: 'Appointments', path: '/admin/appointments', color: 'text-orange-500', bg: 'bg-orange-500/10' },
       ]
     },

@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import api from "@/utils/api";
 import {
-  Building2, FlaskConical, Pill, Heart, Briefcase,
+  Building2, FlaskConical, Pill, Heart, Briefcase, Stethoscope,
   CheckCircle2, XCircle, Clock, FileText, Mail,
   Phone, MapPin, RefreshCw, AlertCircle,
 } from "lucide-react";
@@ -19,6 +19,7 @@ const ENTITY_META: Record<string, { label: string; color: string; bg: string; ic
   pharmacy:  { label: "Pharmacy",  color: "text-emerald-700",bg: "bg-emerald-50 border-emerald-200", icon: Pill },
   homecare:  { label: "Homecare",  color: "text-pink-700",   bg: "bg-pink-50 border-pink-200",   icon: Heart },
   corporate: { label: "Corporate", color: "text-violet-700", bg: "bg-violet-50 border-violet-200", icon: Briefcase },
+  doctor:    { label: "Doctor",    color: "text-indigo-700", bg: "bg-indigo-50 border-indigo-200", icon: Stethoscope },
 };
 
 interface Registration {
@@ -31,6 +32,8 @@ interface Registration {
   state?: string;
   registrationDocs?: number;
   submittedAt?: string;
+  specialization?: string;
+  experience?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -48,7 +51,7 @@ export default function PendingRegistrations() {
     setLoading(true); setError("");
     try {
       const { data } = await api.get("/admin/pending-registrations");
-      setRegistrations(data.data || []);
+      setRegistrations(data.registrations || []);
     } catch (e: any) {
       setError(e.response?.data?.message || "Failed to load pending registrations");
     } finally { setLoading(false); }
@@ -89,7 +92,7 @@ export default function PendingRegistrations() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-extrabold text-slate-800">Pending Registrations</h1>
-            <p className="text-slate-500 text-sm mt-1">Review and activate new provider accounts</p>
+            <p className="text-slate-500 text-sm mt-1">Review and activate new provider &amp; doctor accounts</p>
           </div>
           <Button variant="outline" onClick={fetchPending} disabled={loading} className="gap-2">
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Refresh
@@ -166,6 +169,12 @@ export default function PendingRegistrations() {
                           <span>{reg.registrationDocs > 0 ? `${reg.registrationDocs} document(s) uploaded` : "No documents uploaded"}</span>
                         </div>
                       )}
+                      {reg.specialization && (
+                        <div className="flex items-center gap-2 text-sm text-slate-500">
+                          <Stethoscope className="w-3.5 h-3.5 shrink-0" />
+                          <span>{reg.specialization}{reg.experience !== undefined ? ` · ${reg.experience} yrs exp` : ""}</span>
+                        </div>
+                      )}
                     </div>
 
                     <p className="text-xs text-slate-400 mb-4">Submitted: {formatDate(reg.submittedAt)}</p>
@@ -213,7 +222,10 @@ export default function PendingRegistrations() {
               {modal === "approve" ? (
                 <>
                   <p className="text-sm text-slate-600 mb-2">
-                    A temporary password will be generated and emailed to <strong>{selected.email}</strong>. The account will become active immediately.
+                    {selected.entityType === "doctor"
+                      ? <>The account will be activated and an email will be sent to <strong>{selected.email}</strong>. The doctor will use their existing password to log in.</>
+                      : <>A temporary password will be generated and emailed to <strong>{selected.email}</strong>. The account will become active immediately.</>
+                    }
                   </p>
                   <Textarea
                     placeholder="Optional admin note to include in email..."
