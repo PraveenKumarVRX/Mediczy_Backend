@@ -658,6 +658,83 @@ router.get("/analytics", authDoctor, async (req, res) => {
 });
 
 /**
+ * @route   POST /api/doctors/fetch-social-avatar
+ * @desc    Server-side fetch of a social media page's profile picture (og:image)
+ * @access  Private (Doctor only)
+ */
+router.post("/fetch-social-avatar", authDoctor, async (req, res) => {
+  try {
+    const { url, platform } = req.body;
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ success: false, message: 'URL is required' });
+    }
+
+    // Validate URL is a known social media domain
+    let parsedUrl;
+    try { parsedUrl = new URL(url); } catch {
+      return res.status(400).json({ success: false, message: 'Invalid URL' });
+    }
+    const hostname = parsedUrl.hostname.replace(/^www\./, '');
+    const allowed = ['facebook.com', 'instagram.com', 'youtube.com', 'youtu.be'];
+    if (!allowed.includes(hostname)) {
+      return res.status(400).json({ success: false, message: 'Only Facebook, Instagram and YouTube URLs are allowed' });
+    }
+
+    let imageUrl = null;
+
+    // Facebook public page picture via Graph API (no auth needed for public pages)
+    if (hostname === 'facebook.com' && platform === 'facebook') {
+      // Extract page slug from URL path
+      const slug = parsedUrl.pathname.replace(/\//g, '').split('?')[0];
+      if (slug) {
+        imageUrl = `https://graph.facebook.com/${encodeURIComponent(slug)}/picture?type=large&redirect=false`;
+        // Resolve the Graph API to get the actual image URL
+        const graphResp = await fetch(imageUrl, { signal: AbortSignal.timeout(5000) });
+        if (graphResp.ok) {
+          const graphJson = await graphResp.json().catch(() => null);
+          if (graphJson?.data?.url) {
+            imageUrl = graphJson.data.url;
+          }
+        }
+      }
+    }
+
+    // YouTube channel avatar via OG image
+    if ((hostname === 'youtube.com' || hostname === 'youtu.be') && platform === 'youtube') {
+      const resp = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)' },
+        signal: AbortSignal.timeout(8000),
+      });
+      const html = await resp.text();
+      const ogMatch = html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i)
+        || html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:image"/i);
+      if (ogMatch?.[1]) imageUrl = ogMatch[1].replace(/&amp;/g, '&');
+    }
+
+    // Instagram public profile og:image
+    if (hostname === 'instagram.com' && platform === 'instagram') {
+      const resp = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)' },
+        signal: AbortSignal.timeout(8000),
+      });
+      const html = await resp.text();
+      const ogMatch = html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/i)
+        || html.match(/<meta[^>]+content="([^"]+)"[^>]+property="og:image"/i);
+      if (ogMatch?.[1]) imageUrl = ogMatch[1].replace(/&amp;/g, '&');
+    }
+
+    if (!imageUrl) {
+      return res.status(404).json({ success: false, message: 'Could not extract profile image from this page. Try uploading manually.' });
+    }
+
+    res.json({ success: true, imageUrl });
+  } catch (error) {
+    console.error('fetch-social-avatar error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to fetch social profile image' });
+  }
+});
+
+/**
  * @route   GET /api/doctors/settings
  * @desc    Get doctor settings
  * @access  Private (Doctor only)
@@ -683,7 +760,9 @@ router.get("/settings", authDoctor, async (req, res) => {
           specialization: doctor.specialization,
           experience: doctor.experience,
           qualifications: doctor.qualifications,
-          bio: doctor.bio
+          bio: doctor.bio,
+          profileImage: doctor.profileImage,
+          socialLinks: doctor.socialLinks || {}
         },
         practice: {
           consultationFee: doctor.consultationFee,
@@ -754,6 +833,26 @@ router.put("/settings", authDoctor, async (req, res) => {
       if (profile.bio !== undefined) {
         doctor.bio = profile.bio;
         updatedFields.push('bio');
+      }
+
+      // Profile image (URL or base64, max 2MB guard)
+      if (profile.profileImage !== undefined) {
+        const img = profile.profileImage;
+        if (typeof img === 'string' && img.length < 2 * 1024 * 1024) {
+          doctor.profileImage = img || null;
+          updatedFields.push('profileImage');
+        }
+      }
+
+      // Social media links
+      if (profile.socialLinks !== undefined) {
+        const sl = profile.socialLinks || {};
+        doctor.socialLinks = {
+          facebook: (typeof sl.facebook === 'string' ? sl.facebook.trim() : '') || '',
+          instagram: (typeof sl.instagram === 'string' ? sl.instagram.trim() : '') || '',
+          youtube: (typeof sl.youtube === 'string' ? sl.youtube.trim() : '') || '',
+        };
+        updatedFields.push('socialLinks');
       }
 
       // Handle qualifications - can be string or array

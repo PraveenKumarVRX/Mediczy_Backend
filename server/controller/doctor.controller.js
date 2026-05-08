@@ -793,7 +793,8 @@ export const getAvailableDoctors = async (req, res) => {
         'totalAppointments',
         'feeStructure',
         'slotDuration',
-        'registrationNumber'
+        'registrationNumber',
+        'socialLinks'
       ],
       order: [
         ['isOnline', 'DESC'],

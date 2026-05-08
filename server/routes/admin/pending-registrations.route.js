@@ -274,12 +274,16 @@ router.get('/', authUser, requireRole('admin'), async (req, res) => {
 
     const doctorList = pendingDoctors.map(d => {
       const json = d.toJSON();
+      const docKeys = ['idProof', 'addressProof', 'medicalDegree', 'councilCertificate'];
+      const docsObj = json.documents || {};
+      const registrationDocs = docKeys.filter(k => docsObj[k]?.data).length;
       return {
         ...json,
         entityType: 'doctor',
         name: `${json.prefix || ''} ${json.firstName} ${json.lastName}`.trim(),
         phone: json.phoneNumber,
         submittedAt: json.createdAt,
+        registrationDocs,
       };
     });
 
@@ -365,14 +369,30 @@ router.post('/approve', authUser, requireRole('admin'), async (req, res) => {
       }
 
     } else if (entityType === 'doctor') {
+      const { adminSignature, adminSignName } = req.body;
+      if (!adminSignature) {
+        return res.status(400).json({
+          success: false,
+          message: 'Admin countersignature is required to activate a doctor account. Please draw your signature in the approval form.',
+        });
+      }
       const entity = await Doctor.findOne({ where: { id, isVerified: false, status: 'pending' } });
       if (!entity) return res.status(404).json({ success: false, message: 'Pending doctor not found' });
       entityName = `${entity.prefix || ''} ${entity.firstName} ${entity.lastName}`.trim();
       entityEmail = entity.email;
+      const existingDocs = entity.documents || {};
       await entity.update({
         isVerified: true,
         status: 'active',
         documentVerified: true,
+        documents: {
+          ...existingDocs,
+          mouCountersign: {
+            data: adminSignature,
+            signedBy: adminSignName || req.user?.email || 'admin',
+            signedAt: new Date().toISOString(),
+          },
+        },
       });
       // Send activation email — doctor already has their own password
       await sendEmail(

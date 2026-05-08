@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Settings, User, Bell, Shield, Clock, Loader2, Save, CheckCircle, FileSignature, Stamp, Upload, X, RefreshCw, Building2, Plus, Trash2 } from "lucide-react";
+import { Settings, User, Bell, Shield, Clock, Loader2, Save, CheckCircle, FileSignature, Stamp, Upload, X, RefreshCw, Building2, Plus, Trash2, Share2, Youtube, Instagram, Facebook } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import api from "@/utils/api";
 import { useToast } from "@/hooks/use-toast";
@@ -27,8 +27,11 @@ const DoctorSettings = () => {
     specialization: '',
     experience: 0,
     qualifications: '',
-    bio: ''
+    bio: '',
+    profileImage: '' as string | undefined,
+    socialLinks: { facebook: '', instagram: '', youtube: '' } as { facebook: string; instagram: string; youtube: string }
   });
+  const [socialImportLoading, setSocialImportLoading] = useState<string | null>(null);
 
   const [practice, setPractice] = useState({
     consultationFee: 500,
@@ -126,14 +129,19 @@ const DoctorSettings = () => {
   useEffect(() => {
     const doctorWithExtra = currentDoctor as any; // Extended properties may exist on runtime
     if (settings) {
-      setProfile(settings.profile || {});
+      setProfile(prev => ({
+        ...prev,
+        ...(settings.profile || {}),
+        socialLinks: settings.profile?.socialLinks || { facebook: '', instagram: '', youtube: '' }
+      }));
       setPractice(prev => ({
         ...prev,
         ...(settings.practice || {})
       }));
       setNotifications(settings.notifications || {});
     } else if (currentDoctor) {
-      setProfile({
+      setProfile(prev => ({
+        ...prev,
         firstName: currentDoctor.firstName || '',
         lastName: currentDoctor.lastName || '',
         email: currentDoctor.email || '',
@@ -141,8 +149,10 @@ const DoctorSettings = () => {
         specialization: currentDoctor.specialization || '',
         experience: currentDoctor.experience || 0,
         qualifications: doctorWithExtra?.qualifications || '',
-        bio: doctorWithExtra?.bio || ''
-      });
+        bio: doctorWithExtra?.bio || '',
+        profileImage: (currentDoctor as any).profileImage || '',
+        socialLinks: (currentDoctor as any).socialLinks || { facebook: '', instagram: '', youtube: '' }
+      }));
     }
   }, [settings, currentDoctor]);
 
@@ -203,6 +213,32 @@ const DoctorSettings = () => {
       });
     }
   });
+
+  const handleImportSocialAvatar = async (platform: 'facebook' | 'instagram' | 'youtube') => {
+    const url = profile.socialLinks?.[platform];
+    if (!url?.trim()) {
+      toast({ variant: 'destructive', title: 'Enter a URL first', description: `Paste your ${platform} page URL above, then click Import.` });
+      return;
+    }
+    setSocialImportLoading(platform);
+    try {
+      const resp = await api.post('/doctors/fetch-social-avatar', { url: url.trim(), platform });
+      const imageUrl: string = resp.data?.imageUrl;
+      if (imageUrl) {
+        setProfile(prev => ({ ...prev, profileImage: imageUrl }));
+        // Save the profile image immediately
+        await api.put('/doctors/settings', { profile: { profileImage: imageUrl } });
+        queryClient.invalidateQueries({ queryKey: ['doctor-settings'] });
+        toast({ title: 'Photo imported!', description: `Profile picture updated from ${platform}.` });
+      } else {
+        toast({ variant: 'destructive', title: 'No image found', description: 'Could not find a profile picture on that page.' });
+      }
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Import failed', description: err.response?.data?.message || 'Could not fetch profile image from that URL.' });
+    } finally {
+      setSocialImportLoading(null);
+    }
+  };
 
   const handleSaveProfile = () => {
     updateSettings.mutate({ profile });
@@ -475,6 +511,115 @@ const DoctorSettings = () => {
                     placeholder="Tell patients about yourself..."
                     rows={4}
                   />
+                </div>
+
+                {/* Social Media Links */}
+                <div className="space-y-4 rounded-xl border border-slate-200 dark:border-slate-700 p-4 bg-slate-50 dark:bg-slate-800/50">
+                  <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 font-semibold">
+                    <Share2 className="h-4 w-4" />
+                    Social Media &amp; Profile Photo Import
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Add your social media page links. Use &ldquo;Import Photo&rdquo; to pull your profile picture directly from that page.
+                  </p>
+
+                  {/* Facebook */}
+                  <div className="space-y-1.5">
+                    <Label className="flex items-center gap-1.5 text-[#1877F2]">
+                      <Facebook className="h-4 w-4" /> Facebook Page URL
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={profile.socialLinks?.facebook || ''}
+                        onChange={(e) => setProfile({ ...profile, socialLinks: { ...(profile.socialLinks || {}), facebook: e.target.value, instagram: profile.socialLinks?.instagram || '', youtube: profile.socialLinks?.youtube || '' } })}
+                        placeholder="https://facebook.com/yourpage"
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={socialImportLoading === 'facebook'}
+                        onClick={() => handleImportSocialAvatar('facebook')}
+                        className="shrink-0 border-[#1877F2] text-[#1877F2] hover:bg-blue-50"
+                      >
+                        {socialImportLoading === 'facebook' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                        <span className="ml-1 hidden sm:inline">Import Photo</span>
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Instagram */}
+                  <div className="space-y-1.5">
+                    <Label className="flex items-center gap-1.5 text-[#E1306C]">
+                      <Instagram className="h-4 w-4" /> Instagram Page URL
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={profile.socialLinks?.instagram || ''}
+                        onChange={(e) => setProfile({ ...profile, socialLinks: { ...(profile.socialLinks || {}), facebook: profile.socialLinks?.facebook || '', instagram: e.target.value, youtube: profile.socialLinks?.youtube || '' } })}
+                        placeholder="https://instagram.com/yourhandle"
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={socialImportLoading === 'instagram'}
+                        onClick={() => handleImportSocialAvatar('instagram')}
+                        className="shrink-0 border-[#E1306C] text-[#E1306C] hover:bg-pink-50"
+                      >
+                        {socialImportLoading === 'instagram' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                        <span className="ml-1 hidden sm:inline">Import Photo</span>
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* YouTube */}
+                  <div className="space-y-1.5">
+                    <Label className="flex items-center gap-1.5 text-[#FF0000]">
+                      <Youtube className="h-4 w-4" /> YouTube Channel URL
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={profile.socialLinks?.youtube || ''}
+                        onChange={(e) => setProfile({ ...profile, socialLinks: { ...(profile.socialLinks || {}), facebook: profile.socialLinks?.facebook || '', instagram: profile.socialLinks?.instagram || '', youtube: e.target.value } })}
+                        placeholder="https://youtube.com/@yourchannel"
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={socialImportLoading === 'youtube'}
+                        onClick={() => handleImportSocialAvatar('youtube')}
+                        className="shrink-0 border-[#FF0000] text-[#FF0000] hover:bg-red-50"
+                      >
+                        {socialImportLoading === 'youtube' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                        <span className="ml-1 hidden sm:inline">Import Photo</span>
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Preview of imported photo */}
+                  {profile.profileImage && (
+                    <div className="flex items-center gap-3 mt-2 p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700">
+                      <img
+                        src={profile.profileImage}
+                        alt="Profile"
+                        className="h-14 w-14 rounded-full object-cover border-2 border-slate-200"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                      <div>
+                        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Current profile photo</p>
+                        <button
+                          type="button"
+                          className="text-xs text-red-500 hover:underline mt-0.5"
+                          onClick={() => setProfile(prev => ({ ...prev, profileImage: '' }))}
+                        >Remove</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <Button onClick={handleSaveProfile} disabled={updateSettings.isPending}>

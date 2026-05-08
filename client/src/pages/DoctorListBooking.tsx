@@ -33,7 +33,10 @@ import {
   Loader2,
   Coins,
   Wallet,
-  Building2
+  Building2,
+  Youtube,
+  Instagram,
+  Facebook
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -102,6 +105,7 @@ interface Doctor {
   verified: boolean;
   supportsOnline: boolean;
   supportsInPerson: boolean;
+  socialLinks?: { facebook?: string; instagram?: string; youtube?: string };
 }
 
 const specializations = [
@@ -320,6 +324,7 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
     verified: Boolean(doctor?.isVerified),
     supportsOnline,
     supportsInPerson,
+    socialLinks: doctor?.socialLinks || {},
   } as Doctor;
 };
 
@@ -862,6 +867,51 @@ const DoctorListBooking = () => {
                     {doctor.phoneNumber}
                   </a>
                   <span className="text-slate-400 text-xs">(Hospital reception)</span>
+                </div>
+              )}
+
+              {/* Social links */}
+              {(doctor.socialLinks?.facebook || doctor.socialLinks?.instagram || doctor.socialLinks?.youtube) && (
+                <div className="flex items-center gap-2 mb-3">
+                  {doctor.socialLinks.facebook && (
+                    <a
+                      href={doctor.socialLinks.facebook}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      title="Facebook Page"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#1877F2]/10 text-[#1877F2] text-xs font-medium hover:bg-[#1877F2]/20 transition-colors"
+                    >
+                      <Facebook className="h-3.5 w-3.5" />
+                      Follow
+                    </a>
+                  )}
+                  {doctor.socialLinks.instagram && (
+                    <a
+                      href={doctor.socialLinks.instagram}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      title="Instagram Page"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#E1306C]/10 text-[#E1306C] text-xs font-medium hover:bg-[#E1306C]/20 transition-colors"
+                    >
+                      <Instagram className="h-3.5 w-3.5" />
+                      Follow
+                    </a>
+                  )}
+                  {doctor.socialLinks.youtube && (
+                    <a
+                      href={`${doctor.socialLinks.youtube}?sub_confirmation=1`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      title="YouTube Channel — click to subscribe"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#FF0000]/10 text-[#FF0000] text-xs font-medium hover:bg-[#FF0000]/20 transition-colors"
+                    >
+                      <Youtube className="h-3.5 w-3.5" />
+                      Subscribe
+                    </a>
+                  )}
                 </div>
               )}
 

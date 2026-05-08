@@ -453,6 +453,14 @@ const Doctor = sequelize.define('Doctor', {
   emergencyAvailableTo: { type: DataTypes.TIME, allowNull: true, field: 'emergency_available_to' },
   affiliatedOrganizations: { type: DataTypes.JSONB, allowNull: true, defaultValue: [], field: 'affiliated_organizations' },
 
+  // Social Media Links
+  socialLinks: {
+    type: DataTypes.JSONB,
+    defaultValue: {},
+    field: 'social_links',
+    comment: 'Social media links: { facebook, instagram, youtube }'
+  },
+
   // Full-Text Search
   search_vector: {
     type: DataTypes.TSVECTOR,
