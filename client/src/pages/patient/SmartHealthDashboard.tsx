@@ -7,7 +7,7 @@ import {
   ArrowLeft, Brain, Activity, Heart, TrendingUp, TrendingDown,
   AlertCircle, CheckCircle, Sparkles, RefreshCw, Shield, Clock,
   ChevronRight, Pill, Apple, Dumbbell, Moon, Zap, AlertTriangle,
-  Bell, FileText, Scan, Stethoscope
+  Bell, FileText, Scan, Stethoscope, Star, ShieldAlert
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
@@ -16,7 +16,9 @@ import aiHealthServices, {
   HealthRiskScore,
   SmartNotification,
   ClinicalInsight,
-  HealthIntelligenceData
+  HealthIntelligenceData,
+  HealthAppreciation,
+  HealthHazard,
 } from '@/services/aiHealthServices';
 
 const riskColors: Record<string, { text: string; bg: string; ring: string }> = {
@@ -393,7 +395,18 @@ const SmartHealthDashboard: React.FC = () => {
             {intelligence ? (
               <>
                 {/* Summary Cards */}
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
+                  {intelligence.summary.overall_score !== undefined && (
+                    <Card className="col-span-2 border-teal-200 bg-teal-50/30 dark:border-teal-800 dark:bg-teal-900/10">
+                      <CardContent className="p-3 flex items-center gap-3">
+                        <Heart className="h-8 w-8 text-teal-600 shrink-0" />
+                        <div>
+                          <p className="text-3xl font-bold text-teal-600">{intelligence.summary.overall_score}<span className="text-sm font-normal text-muted-foreground">/100</span></p>
+                          <p className="text-xs text-muted-foreground">Daily Health Score</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
                   <Card className="border-slate-200/50 dark:border-slate-700/50">
                     <CardContent className="p-3 text-center">
                       <p className="text-2xl font-bold text-teal-600">{intelligence.summary.total_reminders}</p>
@@ -406,13 +419,60 @@ const SmartHealthDashboard: React.FC = () => {
                       <p className="text-xs text-muted-foreground">High Priority</p>
                     </CardContent>
                   </Card>
-                  <Card className="border-slate-200/50 dark:border-slate-700/50">
-                    <CardContent className="p-3 text-center">
-                      <p className="text-2xl font-bold text-blue-600">{intelligence.summary.actionable}</p>
-                      <p className="text-xs text-muted-foreground">Actionable</p>
-                    </CardContent>
-                  </Card>
                 </div>
+
+                {/* Appreciations */}
+                {intelligence.appreciations && intelligence.appreciations.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-semibold flex items-center gap-2 text-green-700 dark:text-green-400">
+                      <Star className="h-4 w-4" />
+                      What You're Doing Well
+                    </h3>
+                    {intelligence.appreciations.map((item: HealthAppreciation, i: number) => (
+                      <Card key={i} className="border-green-200 bg-green-50/40 dark:border-green-800 dark:bg-green-900/10">
+                        <CardContent className="p-3 flex items-start gap-2">
+                          <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold">{item.title}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">{item.message}</p>
+                            <span className="inline-block mt-1 text-xs text-green-600 border border-green-300 rounded-full px-2 py-0.5 capitalize">{item.domain}</span>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+
+                {/* Hazards */}
+                {intelligence.hazards && intelligence.hazards.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-semibold flex items-center gap-2 text-orange-700 dark:text-orange-400">
+                      <ShieldAlert className="h-4 w-4" />
+                      Health Hazard Predictions
+                    </h3>
+                    {intelligence.hazards.map((item: HealthHazard, i: number) => {
+                      const urgencyBg = item.urgency === 'high'
+                        ? 'border-red-300 bg-red-50/40 dark:border-red-800 dark:bg-red-900/10'
+                        : item.urgency === 'medium'
+                        ? 'border-orange-300 bg-orange-50/40 dark:border-orange-800 dark:bg-orange-900/10'
+                        : 'border-yellow-300 bg-yellow-50/40 dark:border-yellow-800 dark:bg-yellow-900/10';
+                      const badgeColor = item.urgency === 'high' ? 'bg-red-500' : item.urgency === 'medium' ? 'bg-orange-500' : 'bg-yellow-500';
+                      return (
+                        <Card key={i} className={`border ${urgencyBg}`}>
+                          <CardContent className="p-3">
+                            <div className="flex items-center gap-2 mb-1">
+                              <AlertTriangle className="h-4 w-4 text-orange-600 shrink-0" />
+                              <p className="text-sm font-semibold flex-1">{item.title}</p>
+                              <span className={`text-xs text-white rounded-full px-2 py-0.5 ${badgeColor}`}>{item.urgency}</span>
+                            </div>
+                            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{item.prediction}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 italic">{item.recommendation}</p>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {/* Category Breakdown */}
                 {Object.entries(intelligence.categories).map(([category, items]) => {

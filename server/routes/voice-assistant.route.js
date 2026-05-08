@@ -114,7 +114,7 @@ const ASSISTANT_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          days: { type: 'number', description: 'Number of days from today, e.g. 7 for one week. Must be an integer.' },
+          days: { type: 'integer', description: 'Number of days from today, e.g. 7 for one week.' },
           reason: { type: 'string', description: 'Reason for follow-up' }
         },
         required: ['days']
@@ -180,10 +180,8 @@ const ASSISTANT_TOOLS = [
         properties: {
           filter: {
             type: 'string',
-            enum: ['today', 'upcoming', 'pending', 'completed', 'all'],
-            description: 'Filter appointments by time or status. Default: today'
-          },
-          limit: { type: 'number', description: 'Max number to return. Default 10.' }
+            description: 'Filter appointments by time or status. One of: today, upcoming, pending, completed, all. Default: today'
+          }
         }
       }
     }
@@ -815,31 +813,129 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
       }))
     : [];
 
+  // ── iSHA JSON intent prompt — sent to iSHA instead of function-calling ─────
+  const ishaIntentPrompt = `You are iSHA, an AI medical assistant for Dr. ${enrichedContext.doctorName || 'Doctor'} on the SmartHealth platform.
+Today: ${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.${enrichedContext.currentPatient ? `\nActive patient: ${enrichedContext.currentPatient.name || 'Unknown'}.` : ''}
+
+You MUST respond ONLY with a valid JSON object — no extra text, no markdown fences. Format:
+{"action":"<action>","parameters":{},"response":"<spoken reply>"}
+
+Available actions and their parameters:
+- "list_appointments"       → {"filter":"today|upcoming|pending|completed|all"}
+- "get_today_summary"       → {}
+- "book_appointment"        → {"patient_name":"","date":"YYYY-MM-DD","time":"HH:MM","reason":"","patient_phone":""}
+- "cancel_appointment"      → {"patient_name":"","appointment_id":"","reason":""}
+- "reschedule_appointment"  → {"patient_name":"","appointment_id":"","new_date":"YYYY-MM-DD","new_time":"HH:MM"}
+- "schedule_followup"       → {"days":7,"reason":""}
+- "search_patient"          → {"query":"name/phone/ID"}
+- "get_patient_health"      → {"patient_name":"","patient_id":""}
+- "navigate_to"             → {"screen":"appointments|patients|dashboard|prescriptions|billing|analytics|health-records|queue|staff|ai-assist|voice-scribe|calculators|templates|monitoring|er-dashboard|icu-dashboard"}
+- "add_clinical_note"       → {"note":"","category":"general|soap|assessment"}
+- "get_drug_info"           → {"drug":"","question":""}
+- "check_drug_interactions" → {"drugs":["drug1","drug2"]}
+- "get_doctor_briefing"     → {}
+- "medical_query"           → {"query":"the clinical question"}
+- "general"                 → {}
+
+Rules:
+- "reschedule" → always reschedule_appointment
+- drug/medication questions → medical_query or get_drug_info
+- greetings/who are you → general
+- For medical_query: write the full clinical answer in "response"
+- For all other actions: write a 1-sentence spoken confirmation in "response"`;
+
   try {
-    // ── Step 1: Call LLM agent with tool definitions ──────────────────────
-    // Force Groq for voice assistant — iSHA (BiMediX2) does not return OpenAI-style
-    // JSON tool_calls; it embeds tool calls as plain text, causing all actions to
-    // fall through as unresolved. Groq llama-4-scout returns proper structured tool calls.
-    const agentResp = await llmProvider.chat({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...historyMessages,
-        { role: 'user', content: text.trim() }
-      ],
-      tools: ASSISTANT_TOOLS,
-      toolChoice: 'auto',
-      maxTokens: 800,
-      temperature: 0.1,
-      skipCache: true,
-      forceProvider: 'groq',
-    });
+    // ── Step 1: Call iSHA with JSON intent prompt (primary LLM) ──────────
+    let toolName = null;
+    let args = {};
+    let directContent = null;
+    let ishaOk = false;
+
+    try {
+      const ishaResp = await llmProvider.chat({
+        messages: [
+          { role: 'system', content: ishaIntentPrompt },
+          ...historyMessages,
+          { role: 'user', content: text.trim() }
+        ],
+        maxTokens: 600,
+        temperature: 0.1,
+        skipCache: true,
+        forceProvider: 'isha',
+      });
+
+      const raw = (ishaResp.content || '').trim();
+      // Strip markdown code fences if present
+      let jsonStr = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+      // Extract JSON object if iSHA wrapped it in text
+      if (!jsonStr.startsWith('{')) {
+        const match = jsonStr.match(/\{[\s\S]*\}/);
+        if (match) jsonStr = match[0];
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonStr);
+      } catch (parseErr) {
+        // iSHA returned plain conversational text — use it directly as a general answer
+        const err = new Error(parseErr.message + ' (iSHA non-JSON)');
+        err._rawContent = raw;
+        err.message = `Unexpected token: not valid JSON. Raw: ${raw.slice(0, 80)}`;
+        throw err;
+      }
+
+      toolName = parsed.action || 'general';
+      args = parsed.parameters || {};
+      directContent = parsed.response || null;
+      ishaOk = true;
+    } catch (ishaErr) {
+      logger.warn('[VoiceAssistant] iSHA failed, falling back to Groq', { error: ishaErr.message });
+
+      // If iSHA returned plain conversational text, use it directly — no need to call Groq
+      if (ishaErr._rawContent && !ishaErr._rawContent.includes('{')) {
+        toolName = 'general';
+        directContent = ishaErr._rawContent;
+        // skip Groq fallback entirely
+      } else {
+        try {
+          const agentResp = await llmProvider.chat({
+            messages: [
+              { role: 'system', content: systemPrompt },
+              ...historyMessages,
+              { role: 'user', content: text.trim() }
+            ],
+            tools: ASSISTANT_TOOLS,
+            toolChoice: 'auto',
+            maxTokens: 800,
+            temperature: 0.1,
+            skipCache: true,
+            forceProvider: 'groq',
+          });
+          const toolCalls = agentResp.toolCalls || [];
+          directContent = agentResp.content;
+          if (!toolCalls.length) {
+            toolName = 'general';
+          } else {
+            const call = toolCalls[0];
+            toolName = call.function?.name || call.name;
+            try {
+              args = typeof call.function?.arguments === 'string'
+                ? JSON.parse(call.function.arguments)
+                : (call.function?.arguments || call.arguments || {});
+            } catch { /* keep empty */ }
+          }
+        } catch (groqErr) {
+          // Both LLMs failed — return a graceful general response
+          logger.error('[VoiceAssistant] Both iSHA and Groq failed', { error: groqErr.message });
+          toolName = 'general';
+          directContent = "I'm having trouble processing that right now. Please try again.";
+        }
+      }
+    }
 
     // ── Step 2: Parse response ─────────────────────────────────────────────
-    const toolCalls = agentResp.toolCalls || [];
-    const directContent = agentResp.content;
 
-    // No tool call — direct answer (greeting, small talk, etc.)
-    if (!toolCalls.length) {
+    // No action / general — direct answer
+    if (!toolName || toolName === 'general') {
       return res.json({
         intent: 'general',
         action: null,
@@ -850,20 +946,11 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
       });
     }
 
-    const call = toolCalls[0];
-    const toolName = call.function?.name || call.name;
-    let args = {};
-    try {
-      args = typeof call.function?.arguments === 'string'
-        ? JSON.parse(call.function.arguments)
-        : (call.function?.arguments || call.arguments || {});
-    } catch { /* keep empty */ }
-
     // ── Step 3: Execute or relay ───────────────────────────────────────────
 
-    // medical_query — answer directly
+    // medical_query — iSHA already answered in directContent; fall back to answerMedicalQuery
     if (toolName === 'medical_query') {
-      const answer = await answerMedicalQuery(args.query || text, args.context || '');
+      const answer = directContent || await answerMedicalQuery(args.query || text, args.context || '');
       return res.json({
         intent: 'medical_query',
         action: null,
@@ -874,10 +961,10 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
       });
     }
 
-    // get_drug_info — answer directly
+    // get_drug_info — iSHA may have answered directly; fall back to answerMedicalQuery
     if (toolName === 'get_drug_info') {
       const q = `${args.question ? args.question + ' for ' : 'Complete information about '}${args.drug}`;
-      const answer = await answerMedicalQuery(q, '', `Focus on: dosage, indications, side effects, contraindications.`);
+      const answer = directContent || await answerMedicalQuery(q, '', `Focus on: dosage, indications, side effects, contraindications.`);
       return res.json({
         intent: 'medical_query',
         action: 'get_drug_info',
@@ -888,11 +975,11 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
       });
     }
 
-    // check_drug_interactions — answer directly
+    // check_drug_interactions — iSHA may have answered directly; fall back to answerMedicalQuery
     if (toolName === 'check_drug_interactions') {
       const drugs = (args.drugs || []).join(', ');
       const q = `What are the clinically significant interactions between: ${drugs}?`;
-      const answer = await answerMedicalQuery(q, '', 'Be specific about severity levels (major/moderate/minor).');
+      const answer = directContent || await answerMedicalQuery(q, '', 'Be specific about severity levels (major/moderate/minor).');
       return res.json({
         intent: 'medical_query',
         action: 'check_drug_interactions',
@@ -995,8 +1082,17 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
 
     // list_appointments — execute server-side
     if (toolName === 'list_appointments') {
-      const filter = args.filter || 'today';
-      const limit = args.limit || 10;
+      // Normalize filter — LLM sometimes uses non-enum values like "confirmed", "scheduled", "booked"
+      const VALID_FILTERS = ['today', 'upcoming', 'pending', 'completed', 'all'];
+      let rawFilter = (args.filter || 'today').toLowerCase();
+      if (!VALID_FILTERS.includes(rawFilter)) {
+        // Map common synonyms
+        if (['confirmed', 'scheduled', 'booked', 'upcoming'].includes(rawFilter)) rawFilter = 'upcoming';
+        else if (['done', 'finished', 'past'].includes(rawFilter)) rawFilter = 'completed';
+        else rawFilter = 'today';
+      }
+      const filter = rawFilter;
+      const limit = args.limit ? (parseInt(args.limit, 10) || 10) : 10;
       const rows = await executeListAppointments(doctorId, filter, limit);
       if (!rows || rows.length === 0) {
         const msg = filter === 'today'

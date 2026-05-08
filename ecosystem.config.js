@@ -30,8 +30,10 @@ if (fs.existsSync(envFile)) {
       const idx = trimmed.indexOf('=');
       if (idx === -1) return;
       const key = trimmed.slice(0, idx).trim();
-      const val = trimmed.slice(idx + 1).trim();
-      if (key && !(key in process.env)) process.env[key] = val; // don't override shell env
+      const raw = trimmed.slice(idx + 1).trim();
+      // Strip surrounding matching quotes (dotenv-style: "value" or 'value' -> value)
+      const val = raw.replace(/^(['"])(.*)\1$/, '$2');
+      if (key) process.env[key] = val; // .env file is source of truth; always override cached values
     });
 }
 const SERVER_DIR = path.join(ROOT_DIR, 'server');

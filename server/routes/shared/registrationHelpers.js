@@ -168,7 +168,7 @@ export async function sendAdminLeadEmail({ entityLabel, name, email, phone, city
     const extraTableRows = extraRows.map((r, i) => `<tr${i % 2 === 0 ? '' : ' style="background:#f1f5f9"'}><td style="padding:10px ${i % 2 === 0 ? '0' : '8px'};color:#64748b;font-weight:600;width:160px">${r[0]}</td><td style="padding:10px ${i % 2 === 0 ? '0' : '8px'};color:#0f172a">${r[1]}</td></tr>`).join('');
 
     await transporter.sendMail({
-      from: `"Mediczy Leads" <${process.env.SMTP_USER || 'support@mediqzy.com'}>`,
+      from: `"Mediczy Leads" <${process.env.SMTP_FROM || process.env.SMTP_USER || 'support@mediqzy.com'}>`,
       to: 'info@mysmarthealth.in',
       subject: `🏥 New ${entityLabel} Lead: ${name} — ${city || 'India'}`,
       html: `
@@ -227,7 +227,7 @@ export function addOtpRoutes(router, entityLabel, accentColor = '#0d9488') {
         auth: { user: (process.env.SMTP_USER || '').trim(), pass: (process.env.SMTP_PASSWORD || process.env.SMTP_PASS || '').trim() },
       });
       await transporter.sendMail({
-        from: `"Mediczy" <${process.env.SMTP_USER || 'noreply@mediczy.com'}>`,
+        from: process.env.EMAIL_FROM || `"Mediczy" <${process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@mediqzy.com'}>`,
         to: email,
         subject: `${otp.code} — Your Mediczy Email Verification OTP`,
         html: `

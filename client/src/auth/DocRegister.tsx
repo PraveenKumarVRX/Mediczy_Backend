@@ -63,8 +63,8 @@ const formSchema = z.object({
     .regex(/[0-9]/, "Must contain a number"),
   phoneNumber: z.string().min(7, "Enter a valid phone number"),
   prefix: z.enum(["Dr","Mr","Ms","Mrs","Prof"]),
-  firstName: z.string().min(2, "At least 2 characters").max(30),
-  lastName: z.string().min(2, "At least 2 characters").max(30),
+  firstName: z.string().min(3, "At least 3 characters").max(30),
+  lastName: z.string().min(3, "At least 3 characters").max(30),
   specialization: z.enum(SPECIALIZATIONS as unknown as [string, ...string[]]),
   experience: z.preprocess(Number, z.number().min(0)),
   hospitalClinicName: z.string().optional(),
@@ -80,6 +80,8 @@ const formSchema = z.object({
   medicalCouncilName: z.string().optional(),
   medicalCouncilRegistrationNumber: z.string().optional(),
   registrationNumber: z.string().optional(),
+  onlineConsultationFee: z.preprocess(Number, z.number().min(0, 'Enter a valid fee')),
+  inPersonConsultationFee: z.preprocess(Number, z.number().min(0, 'Enter a valid fee')),
 });
 type FormValues = z.infer<typeof formSchema>;
 
@@ -90,12 +92,12 @@ const STEPS = [
   { id: 3, icon: MapPin,      title: "Practice",    desc: "Clinic / hospital address" },
   { id: 4, icon: Stethoscope, title: "Credentials", desc: "Qualifications & council" },
   { id: 5, icon: FileText,    title: "Documents",   desc: "Upload verification docs" },
-  { id: 6, icon: FileCheck2,  title: "Agreement",   desc: "Review & sign" },
+  { id: 6, icon: FileCheck2,  title: "MOU",   desc: "Review & sign" },
 ];
 
 const STEP_FIELDS: Record<number, Array<keyof FormValues>> = {
   1: ["email", "password", "phoneNumber"],
-  2: ["prefix", "firstName", "lastName", "specialization", "experience"],
+  2: ["prefix", "firstName", "lastName", "specialization", "experience", "onlineConsultationFee", "inPersonConsultationFee"],
   3: [],
   4: [],
 };
@@ -227,7 +229,7 @@ function SignaturePad({ canvasRef, isEmpty, setIsEmpty }: {
 }
 
 // ─── DocFiles ─────────────────────────────────────────────────────────────────
-interface DocFiles { idProof: File | null; addressProof: File | null; medicalDegree: File | null; councilCertificate: File | null; }
+interface DocFiles { idProof: File | null; addressProof: File | null; medicalDegree: File | null; councilCertificate: File | null; signatureImage: File | null; sealImage: File | null; }
 
 // ─── OtpRow ───────────────────────────────────────────────────────────────────
 function OtpRow({ otp, setOtp, onSend, onVerify, label }: {
@@ -292,12 +294,14 @@ const DocRegister = () => {
   const navigate = useNavigate();
   const docRegister = useDocRegister();
 
+  const DRAFT_KEY = "docregister_draft_v1";
+
   const [step, setStep] = useState(1);
   const [direction, setDirection] = useState(1);
   const [showPw, setShowPw] = useState(false);
   const [emailOtp, setEmailOtp] = useState<OtpState>(initOtp());
   const [phoneOtp, setPhoneOtp] = useState<OtpState>(initOtp());
-  const [docFiles, setDocFiles] = useState<DocFiles>({ idProof: null, addressProof: null, medicalDegree: null, councilCertificate: null });
+  const [docFiles, setDocFiles] = useState<DocFiles>({ idProof: null, addressProof: null, medicalDegree: null, councilCertificate: null, signatureImage: null, sealImage: null });
   const [agreed, setAgreed] = useState({ accuracy: false, terms: false, ethics: false });
   const [sigEmpty, setSigEmpty] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -326,11 +330,45 @@ const DocRegister = () => {
       practiceState: "", practiceZipCode: "",
       qualifications: [""], ugQualifications: [""], pgQualifications: [""],
       medicalCouncilName: "", medicalCouncilRegistrationNumber: "", registrationNumber: "",
+      onlineConsultationFee: 0, inPersonConsultationFee: 0,
     },
   });
 
   const pwValue = form.watch("password");
   const pwStrength = getStrength(pwValue || "");
+
+  // ─── Draft save / restore ─────────────────────────────────────────────────
+  const saveDraft = useCallback(() => {
+    try {
+      const draft = {
+        step,
+        formValues: form.getValues(),
+        qualifications,
+        ugQuals,
+        pgQuals,
+        emailVerified: emailOtp.verified,
+        phoneVerified: phoneOtp.verified,
+      };
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    } catch { /* non-fatal */ }
+  }, [step, form, qualifications, ugQuals, pgQuals, emailOtp.verified, phoneOtp.verified, DRAFT_KEY]);
+
+  // Restore draft on first mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const draft = JSON.parse(raw);
+      if (draft.formValues) form.reset(draft.formValues);
+      if (draft.qualifications?.length) setQualifications(draft.qualifications);
+      if (draft.ugQuals?.length) setUgQuals(draft.ugQuals);
+      if (draft.pgQuals?.length) setPgQuals(draft.pgQuals);
+      if (draft.step) { setStep(draft.step); }
+      if (draft.emailVerified) setEmailOtp(o => ({ ...o, verified: true }));
+      if (draft.phoneVerified) setPhoneOtp(o => ({ ...o, verified: true }));
+    } catch { /* non-fatal */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Countdown timers
   useEffect(() => {
@@ -504,6 +542,8 @@ const DocRegister = () => {
           return;
         }
       }
+      // Save draft when advancing
+      saveDraft();
     }
     setDirection(dir);
     setStep(s => s + dir);
@@ -550,7 +590,7 @@ const DocRegister = () => {
     doc.text('MAYDEN SMARTHEALTH PVT LTD', L, 9);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
-    doc.text('403 D-Block, IIT Madras Research Park, Tharamani, Chennai – 600113, Tamil Nadu, India', L, 15);
+    doc.text('403, D-Block, 4th Floor, IITM Research Park, Tharamani, Chennai – 600114, Tamil Nadu, India', L, 15);
     doc.setFontSize(7);
     doc.text(`CIN: U85110TN2023PTC000000  |  GST: 33AAAAA0000A1Z5`, R, 15, { align: 'right' });
 
@@ -558,7 +598,7 @@ const DocRegister = () => {
     doc.setTextColor(30, 41, 59);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
-    doc.text('PRACTITIONER ENGAGEMENT AGREEMENT', W / 2, y, { align: 'center' });
+    doc.text('MEMORANDUM OF UNDERSTANDING (MOU)', W / 2, y, { align: 'center' });
     y += 5;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
@@ -581,20 +621,21 @@ const DocRegister = () => {
     // Company box
     doc.setFillColor(239, 246, 255);
     doc.setDrawColor(191, 219, 254);
-    doc.roundedRect(L, y, bw, 32, 2, 2, 'FD');
+    doc.roundedRect(L, y, bw, 42, 2, 2, 'FD');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(59, 130, 246);
     doc.text('SERVICE PROVIDER', L + 3, y + 6);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(15, 23, 42);
     doc.text('Mayden SmartHealth Pvt Ltd', L + 3, y + 12);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(71, 85, 105);
-    const ca = doc.splitTextToSize('403 D-Block, IIT Madras Research Park, Tharamani,\nChennai – 600113, Tamil Nadu, India', bw - 6);
-    doc.text(ca, L + 3, y + 18);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(71, 85, 105);
+    doc.text('Brand: My SmartHealth  |  Rep.: Dr. Shiva Kumar, CEO', L + 3, y + 18);
+    const ca = doc.splitTextToSize('403, D-Block, 4th Floor, IITM Research Park, Tharamani, Chennai – 600114, Tamil Nadu, India', bw - 6);
+    doc.text(ca, L + 3, y + 24);
 
     // Doctor box
     const bx = L + bw + 6;
     doc.setFillColor(240, 253, 244);
     doc.setDrawColor(167, 243, 208);
-    doc.roundedRect(bx, y, bw, 32, 2, 2, 'FD');
+    doc.roundedRect(bx, y, bw, 42, 2, 2, 'FD');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(16, 185, 129);
     doc.text('PRACTITIONER', bx + 3, y + 6);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(15, 23, 42);
@@ -603,13 +644,16 @@ const DocRegister = () => {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(71, 85, 105);
     const da = doc.splitTextToSize(doctorAddr, bw - 6);
     doc.text(da, bx + 3, y + 18);
-    y += 38;
+    y += 48;
 
     // Doctor credentials row
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(71, 85, 105);
+    doc.text(`Clinic/Hospital: ${values.hospitalClinicName || '—'}`, L, y); y += 4.5;
+    doc.text(`Phone: ${values.phoneNumber || '—'}   Email: ${values.email || '—'}`, L, y); y += 4.5;
     doc.text(`Qualifications: ${quals}`, L, y); y += 4.5;
     doc.text(`Medical Council: ${council}   Registration No.: ${regNo}`, L, y); y += 4.5;
-    doc.text(`Specialization: ${values.specialization || '—'}   Experience: ${values.experience || '—'} years`, L, y); y += 7;
+    doc.text(`Specialization: ${values.specialization || '—'}   Experience: ${values.experience || '—'} years`, L, y); y += 4.5;
+    doc.text(`Declared Fees — Online: \u20b9${values.onlineConsultationFee ?? '—'}   In-Person: \u20b9${values.inPersonConsultationFee ?? '—'}  (locked 1 year)`, L, y); y += 7;
 
     // Documents submitted box
     doc.setFillColor(254, 252, 232); doc.setDrawColor(253, 224, 71);
@@ -622,29 +666,69 @@ const DocRegister = () => {
 
     doc.setDrawColor(203, 213, 225); doc.line(L, y, R, y); y += 6;
 
+    // Preamble
+    doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); doc.setTextColor(71, 85, 105);
+    const preambleLines = doc.splitTextToSize(
+      `This Memorandum of Understanding ("Agreement") is made on ${today}, by and between Mayden SmartHealth Pvt Ltd, a company incorporated under the Companies Act, 2013, operating the technology platform under the brand "My SmartHealth" that facilitates remote medical consultations, represented by Dr. Shiva Kumar (CEO) (hereinafter referred to as "the Company"); and ${doctorName}, Reg. No.: ${regNo} (hereinafter referred to as "the Physician"). Collectively referred to as the "Parties."`,
+      TW - 5);
+    doc.text(preambleLines, L, y); y += preambleLines.length * 4.2 + 5;
+
     // Terms heading
     doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(30, 41, 59);
     doc.text('TERMS AND CONDITIONS', L, y); y += 6;
 
     const clauses = [
-      { n: '1', title: 'Scope of Engagement',
-        body: `The Company grants the Practitioner a non-exclusive, non-transferable licence to use the Mediqzy digital platform ("Platform") to provide medical consultation, appointment management, prescription issuance, and related healthcare services to patients registered on the Platform, subject to the terms herein.` },
-      { n: '2', title: 'Verification of Documents',
-        body: `The Practitioner confirms that the identity and address documents submitted — ID Proof: "${docFiles.idProof?.name || '—'}" and Address Proof: "${docFiles.addressProof?.name || '—'}" — are genuine, current, and accurately represent the Practitioner's identity and residential or practice address. Any misrepresentation shall constitute a material breach of this Agreement.` },
-      { n: '3', title: 'Professional Standards',
-        body: `The Practitioner agrees to maintain valid medical licensure throughout the term of this Agreement, uphold the Indian Medical Council (Professional Conduct, Etiquette and Ethics) Regulations 2002, and comply with all applicable laws including the Telemedicine Practice Guidelines issued by the Board of Governors of the National Medical Commission.` },
-      { n: '4', title: 'Data Privacy and Confidentiality',
-        body: `All patient data accessed through the Platform is governed by the Digital Personal Data Protection Act, 2023 and the Company's Privacy Policy. The Practitioner shall not disclose patient information to any third party without explicit consent and shall implement reasonable measures to prevent unauthorised access.` },
-      { n: '5', title: 'Clinical Responsibility',
-        body: `The Practitioner retains full clinical and professional responsibility for all diagnoses, treatment recommendations, and prescriptions provided via the Platform. The Company is a technology intermediary only and does not accept liability for clinical outcomes or decisions.` },
-      { n: '6', title: 'Platform Fees and Revenue',
-        body: `The Company shall charge a platform service fee as set out in the Fee Schedule accessible in the Practitioner's dashboard. The Fee Schedule may be revised with 30 days' prior written notice. All fees are exclusive of applicable taxes including GST.` },
-      { n: '7', title: 'Intellectual Property',
-        body: `The Practitioner grants the Company a limited, royalty-free licence to display the Practitioner's name, qualifications, photograph, and practice details on the Platform solely for the purpose of patient-facing listings and appointment booking.` },
-      { n: '8', title: 'Term and Termination',
-        body: `This Agreement shall commence on the date of digital acceptance and continue until terminated. Either Party may terminate by giving 30 days' written notice. The Company reserves the right to suspend or terminate immediately in cases of professional misconduct, regulatory action, fraudulent documentation, or material breach.` },
-      { n: '9', title: 'Governing Law and Dispute Resolution',
-        body: `This Agreement shall be governed by and construed in accordance with the laws of India. Any dispute arising out of or in connection with this Agreement shall be finally resolved by arbitration under the Arbitration and Conciliation Act, 1996, with Chennai, Tamil Nadu as the seat of arbitration.` },
+      { n: '1', title: 'Scope of Services',
+        body: `The Physician (which includes individual doctors, doctors with clinics, and doctors working in or owning hospitals) agrees to provide the following services:
+1.1 Types of Consultations: Virtual (online) and in-person medical consultations for corporate employees through the SmartHealth platform and at designated premises, covering: general health issues; chronic disease management; mental wellness support; preventive care; and emergency advisory (non-critical cases).
+1.2 Follow-up & Documentation: Conduct follow-up reviews and document patient progress on the platform. Two follow-up reviews shall be conducted free of charge.
+1.3 Availability: Be available during agreed consultation hours and ensure timely communication with patients.
+1.4 Guidelines: Provide medical guidance aligned with applicable Indian Medical Council (IMC) regulations.
+1.5 Registration: Must be registered with the MCI or respective State Medical Council with a valid registration number, to be provided to the Company at signing.
+1.6 Information Disclosure: Provide all information related to qualifications, experience, and place of business with documentary evidence, as requested by the Company.` },
+      { n: '2', title: 'Ethics and Integrity',
+        body: `2.1 Conduct consultations with the highest standards of ethics and integrity.
+2.2 Patient safety shall be of paramount importance during all consultations and medical advice.
+2.3 Follow all applicable professional codes of conduct and medical ethics guidelines.
+2.4 Act ethically while referring patients to specialists, hospitals, or other healthcare providers.
+2.5 Prescribe diagnostic tests and medications only when medically necessary and in line with established medical guidelines and best practices.
+2.6 Adhere to the Prevention of Sexual Harassment (POSH) Act, 2013 while consulting female patients, ensuring all interactions are conducted with dignity and respect.` },
+      { n: '3', title: 'Technology and Connectivity',
+        body: `3.1 The Physician shall be responsible for having up-to-date electronic devices and maintaining optimal internet connectivity to conduct teleconsultations without interruptions.
+3.2 In case of a call drop or connectivity issue, the Physician shall reconnect with the patient at the earliest and complete the consultation.
+3.3 The Company will implement a patient review system where patients can rate the consultation and provide feedback for quality monitoring and service improvement.` },
+      { n: '4', title: 'Prescription Compliance',
+        body: `All prescriptions issued by the Physician shall strictly comply with prevailing guidelines, including but not limited to:
+4.1 Schedule H – Prescription drugs
+4.2 Schedule H1 – Restricted antibiotics
+4.3 Schedule X – Narcotic and psychotropic substances
+4.4 Schedule G – Caution drugs (to be taken under medical supervision)
+4.5 Schedule J – Diseases and conditions that cannot be claimed to be treated
+4.6 Schedule K – Exempted drugs from certain regulatory requirements
+4.7 Schedule M – Good Manufacturing Practices (GMP) for pharmaceuticals` },
+      { n: '5', title: "Dos and Don'ts",
+        body: `5.1 Dos:\n• Conduct consultations professionally, adhering to the highest medical standards.\n• Ensure timely follow-up with patients for continuity of care.\n• Provide accurate and complete information regarding health conditions and treatment options.\n• Maintain patient confidentiality and comply with data protection laws.\n• Prescribe medications and tests only when medically necessary and in line with regulatory guidelines.\n• Reconnect promptly in case of a call drop or technical issue.\n• Keep patient records updated and accurate.\n5.2 Don'ts:\n• Do not disclose patient information to third parties without consent.\n• Do not prescribe medications or tests for non-medical reasons or under external influence.\n• Do not refuse consultation without valid reasons.\n• Do not engage in unethical practices, including accepting commissions for referrals.\n• Do not mislead patients with false information or unproven treatments.\n• Do not over-prescribe medications or tests to generate additional fees.\n• Do not engage in any behavior that could be construed as harassment or misconduct.` },
+      { n: '6', title: 'Payment Terms',
+        body: `The Physician's declared consultation fees are:\nOnline Consultation: \u20b9${values.onlineConsultationFee ?? '\u2014'}\nIn-Person Consultation: \u20b9${values.inPersonConsultationFee ?? '\u2014'}\nThese rates are locked for one year from the effective date of this MOU and shall not be revised without mutual written consent.\n\n6.1 The payment structure will vary depending on the Physician's specialization and experience and will be mutually agreed upon in writing.\n6.2 Payment is due within 30 days of receiving the invoice.\n6.3 Payments are subject to applicable taxes and deductions as per Indian tax laws.\n6.4 In case of any dispute regarding payment, the Company shall have the right to review and withhold the disputed amount until resolution.\n6.5 No payment will be made in the following cases: no-show by the Physician; incomplete consultation; or poor patient feedback regarding the consultation.` },
+      { n: '7', title: 'Duration and Termination',
+        body: `7.1 Term: This Agreement shall be effective for one year from the date of digital acceptance unless terminated earlier.
+7.2 Renewal: The Agreement may be renewed upon mutual agreement of both Parties at the end of the term.
+7.3 Termination with Notice: The Company reserves the right to terminate this Agreement at any time, without assigning any reason.
+7.4 Immediate Termination: The Company reserves the right to terminate immediately upon: breach of contract by the Physician; professional misconduct or malpractice; regulatory action or legal issues affecting the Physician's practice; violation of confidentiality or data protection obligations; or any act or omission that harms the reputation of the Company.` },
+      { n: '8', title: 'Confidentiality and Data Protection',
+        body: `8.1 The Physician shall maintain strict confidentiality regarding patient information, medical records, and Company data.
+8.2 The Physician shall not disclose any patient data or Company-related information to any third party without prior written consent, except as required by law.
+8.3 Patient data shall not be misused or shared with any third party for financial or pecuniary gains.
+8.4 The Physician shall not reach out to patients for any marketing or promotional purposes.` },
+      { n: '9', title: 'Indemnity and Liability',
+        body: `The Physician shall indemnify and hold harmless the Company from any claims, liabilities, or damages arising from:
+9.1 Professional misconduct or negligence.
+9.2 Violation of medical guidelines or statutory obligations.
+9.3 Data breaches due to the Physician's negligence.
+9.4 Incorrect medical advice or misdiagnosis.` },
+      { n: '10', title: 'Arbitration and Governing Law',
+        body: `All disputes arising out of or in connection with this Agreement shall be referred to arbitration under the Arbitration and Conciliation Act, 1996. The place of arbitration shall be Chennai, Tamil Nadu, and proceedings shall be conducted in English.
+The above terms are agreeable to both parties and have been signed in the presence of the undersigned witnesses.` },
     ];
 
     for (const clause of clauses) {
@@ -691,9 +775,20 @@ const DocRegister = () => {
     doc.text(`Date: ${today}`, sb2 + 3, y + 43);
     y += 53;
 
+    // Witnesses
+    if (y > 238) { doc.addPage(); y = 20; } else { y += 4; }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(30, 41, 59);
+    doc.text('Witnesses:', L, y); y += 5;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(71, 85, 105);
+    doc.line(L, y + 5, L + 55, y + 5);
+    doc.text('1. ___________________________', L, y + 9);
+    doc.line(L + 95, y + 5, L + 150, y + 5);
+    doc.text('2. ___________________________', L + 95, y + 9);
+    y += 18;
+
     // Footer
     doc.setFont('helvetica', 'italic'); doc.setFontSize(6.5); doc.setTextColor(148, 163, 184);
-    doc.text(`This agreement was digitally accepted by ${doctorName} on ${today} via the Mediqzy Doctor Registration Portal.`, W / 2, y, { align: 'center' });
+    doc.text(`This MOU was digitally accepted by ${doctorName} on ${today} via the SmartHealth Doctor Registration Portal.`, W / 2, y, { align: 'center' });
     y += 4;
     doc.text(`Agreement ID: ${agreementIdRef.current}   |   CIN: U85110TN2023PTC000000`, W / 2, y, { align: 'center' });
 
@@ -706,7 +801,7 @@ const DocRegister = () => {
       const link = document.createElement('a');
       link.href = uri;
       const values = form.getValues();
-      link.download = `Mediqzy_Agreement_${values.firstName}_${values.lastName}_${new Date().toISOString().slice(0,10)}.pdf`;
+      link.download = `MSH_MOU_${values.firstName}_${values.lastName}_${new Date().toISOString().slice(0,10)}.pdf`;
       link.click();
     } catch (e) {
       toast({ variant: 'destructive', title: 'PDF generation failed', description: 'Please try again.' });
@@ -730,6 +825,8 @@ const DocRegister = () => {
       if (docFiles.addressProof)      docs.addressProof      = { name: docFiles.addressProof.name,      type: docFiles.addressProof.type,      data: await readBase64(docFiles.addressProof) };
       if (docFiles.medicalDegree)     docs.medicalDegree     = { name: docFiles.medicalDegree.name,     type: docFiles.medicalDegree.type,     data: await readBase64(docFiles.medicalDegree) };
       if (docFiles.councilCertificate)docs.councilCertificate= { name: docFiles.councilCertificate.name,type: docFiles.councilCertificate.type,data: await readBase64(docFiles.councilCertificate) };
+      if (docFiles.signatureImage)    docs.signatureImage    = { name: docFiles.signatureImage.name,    type: docFiles.signatureImage.type,    data: await readBase64(docFiles.signatureImage) };
+      if (docFiles.sealImage)         docs.sealImage         = { name: docFiles.sealImage.name,         type: docFiles.sealImage.type,         data: await readBase64(docFiles.sealImage) };
       // Generate signed agreement PDF
       let agreementPdf: string | undefined;
       try { agreementPdf = await generateAgreementPDFDoc(); } catch { /* non-fatal */ }
@@ -758,6 +855,8 @@ const DocRegister = () => {
       docRegister.mutate(payload as any, {
         onSuccess: async (data: any) => {
           // No token issued — account needs manual activation
+          // Clear saved draft on successful submission
+          try { localStorage.removeItem(DRAFT_KEY); } catch { /* non-fatal */ }
           setSubmittedEmail(form.getValues('email'));
           setRegistrationSubmitted(true);
           toast({ title: "Application submitted!", description: "Our team will review your documents and activate your account." });
@@ -1084,6 +1183,32 @@ const DocRegister = () => {
                             <FormMessage className="text-xs" />
                           </FormItem>
                         )} />
+
+                        <div className="p-3 rounded-xl bg-amber-50 border border-amber-100">
+                          <p className="text-xs text-amber-700 font-medium flex items-center gap-1.5"><AlertCircle className="h-3.5 w-3.5 shrink-0" /> Consultation fees declared here will be locked for 1 year from your registration date and will appear in your MoU.</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <FormField control={form.control} name="onlineConsultationFee" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-sm font-medium text-slate-700">Online Consultation Fee (₹)</FormLabel>
+                              <FormControl>
+                                <Input {...field} type="number" min="0" placeholder="e.g. 500"
+                                  className="h-11 border-slate-200 bg-slate-50 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                              </FormControl>
+                              <FormMessage className="text-xs" />
+                            </FormItem>
+                          )} />
+                          <FormField control={form.control} name="inPersonConsultationFee" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-sm font-medium text-slate-700">In-Person Consultation Fee (₹)</FormLabel>
+                              <FormControl>
+                                <Input {...field} type="number" min="0" placeholder="e.g. 800"
+                                  className="h-11 border-slate-200 bg-slate-50 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                              </FormControl>
+                              <FormMessage className="text-xs" />
+                            </FormItem>
+                          )} />
+                        </div>
                       </div>
                     )}
 
@@ -1301,6 +1426,10 @@ const DocRegister = () => {
                             file={docFiles.medicalDegree} onFile={(f) => setDocFiles(d => ({ ...d, medicalDegree: f }))} />
                           <UploadZone label="Medical Council Registration Certificate" hint="Issued by state / national medical council · PDF, JPG, PNG" accept=".pdf,.jpg,.jpeg,.png"
                             file={docFiles.councilCertificate} onFile={(f) => setDocFiles(d => ({ ...d, councilCertificate: f }))} />
+                          <UploadZone label="Signature Image" hint="Clear scan or photo of your handwritten signature · JPG, PNG" accept=".jpg,.jpeg,.png"
+                            file={docFiles.signatureImage} onFile={(f) => setDocFiles(d => ({ ...d, signatureImage: f }))} />
+                          <UploadZone label="Seal / Stamp Image" hint="Doctor's official seal or rubber stamp · JPG, PNG" accept=".jpg,.jpeg,.png"
+                            file={docFiles.sealImage} onFile={(f) => setDocFiles(d => ({ ...d, sealImage: f }))} />
                         </div>
                         <div className="flex items-center gap-2 pt-1 flex-wrap">
                           {[
@@ -1308,6 +1437,8 @@ const DocRegister = () => {
                             { label: "Address", done: !!docFiles.addressProof, req: false },
                             { label: "Degree", done: !!docFiles.medicalDegree, req: true },
                             { label: "Council Cert", done: !!docFiles.councilCertificate, req: false },
+                            { label: "Signature", done: !!docFiles.signatureImage, req: false },
+                            { label: "Seal", done: !!docFiles.sealImage, req: false },
                           ].map(({ label, done, req }) => (
                             <span key={label} className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-full ${done ? "bg-emerald-100 text-emerald-700" : req ? "bg-rose-50 text-rose-500" : "bg-slate-100 text-slate-500"}`}>
                               {done ? <Check className="h-2.5 w-2.5" /> : req ? <AlertCircle className="h-2.5 w-2.5" /> : null}
@@ -1336,7 +1467,7 @@ const DocRegister = () => {
                               style={{ background: 'linear-gradient(90deg, #1d4ed8, #0284c7)' }}>
                               <div className="flex items-center gap-2">
                                 <FileCheck2 className="h-4 w-4 text-white" />
-                                <span className="text-sm font-bold text-white">Practitioner Engagement Agreement</span>
+                                <span className="text-sm font-bold text-white">Memorandum of Understanding (MOU)</span>
                                 <span className="text-[10px] text-blue-200 border border-blue-300 rounded px-1.5 py-0.5">v1.0</span>
                               </div>
                               <button type="button" onClick={downloadAgreement}
@@ -1350,24 +1481,30 @@ const DocRegister = () => {
                               {/* Company letterhead strip */}
                               <div className="px-5 py-3 bg-slate-50 border-b border-slate-100">
                                 <p className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Mayden SmartHealth Pvt Ltd</p>
-                                <p className="text-[10px] text-slate-500">403 D-Block, IIT Madras Research Park, Tharamani, Chennai – 600113, Tamil Nadu, India</p>
+                                <p className="text-[10px] text-slate-500">403, D-Block, 4th Floor, IITM Research Park, Tharamani, Chennai – 600114, Tamil Nadu, India</p>
                               </div>
 
                               <div className="px-5 py-4 space-y-4 text-xs text-slate-700 leading-relaxed">
                                 {/* Title */}
                                 <div className="text-center space-y-1">
-                                  <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wide">Practitioner Engagement Agreement</h3>
+                                  <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wide">Memorandum of Understanding (MOU)</h3>
                                   <p className="text-slate-500">Agreement Date: {today} &nbsp;|&nbsp; ID: {agreementIdRef.current}</p>
                                 </div>
+
+                                {/* Preamble */}
+                                <p className="text-[11px] text-slate-600 leading-relaxed italic border-l-2 border-slate-200 pl-3">
+                                  This MOU is made on {today} by and between <strong>Mayden SmartHealth Pvt Ltd</strong>, operating under the brand <strong>"My SmartHealth"</strong>, represented by <strong>Dr. Shiva Kumar (CEO)</strong> (hereinafter "the Company"); and <strong>{doctorName}</strong> (hereinafter "the Physician"). Collectively referred to as the "Parties."
+                                </p>
 
                                 {/* Parties */}
                                 <div className="grid grid-cols-2 gap-3">
                                   <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 space-y-0.5">
                                     <p className="text-[10px] font-bold text-blue-600 uppercase">Service Provider</p>
                                     <p className="font-bold text-slate-800 text-xs">Mayden SmartHealth Pvt Ltd</p>
-                                    <p className="text-slate-500 text-[10px]">403 D-Block, IIT Madras Research Park</p>
-                                    <p className="text-slate-500 text-[10px]">Tharamani, Chennai – 600113</p>
-                                    <p className="text-slate-500 text-[10px]">Tamil Nadu, India</p>
+                                    <p className="text-slate-500 text-[10px] italic">Brand: My SmartHealth</p>
+                                    <p className="text-slate-500 text-[10px]">Rep.: Dr. Shiva Kumar, CEO</p>
+                                    <p className="text-slate-500 text-[10px]">403, D-Block, 4th Floor, IITM Research Park</p>
+                                    <p className="text-slate-500 text-[10px]">Tharamani, Chennai – 600114</p>
                                   </div>
                                   <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 space-y-0.5">
                                     <p className="text-[10px] font-bold text-emerald-600 uppercase">Practitioner</p>
@@ -1375,6 +1512,11 @@ const DocRegister = () => {
                                     <p className="text-slate-500 text-[10px]">{doctorAddr}</p>
                                     {quals !== '—' && <p className="text-slate-500 text-[10px]">{quals}</p>}
                                     {regNo !== 'Pending' && <p className="text-slate-500 text-[10px]">Reg. No.: {regNo}</p>}
+                                    {v.hospitalClinicName && <p className="text-slate-500 text-[10px]">{v.hospitalClinicName}</p>}
+                                    {v.phoneNumber && <p className="text-slate-500 text-[10px]">Ph: {v.phoneNumber}</p>}
+                                    {v.email && <p className="text-slate-500 text-[10px]">{v.email}</p>}
+                                    {(v.onlineConsultationFee > 0) && <p className="text-slate-500 text-[10px]">Online Fee: ₹{v.onlineConsultationFee} (locked 1 yr)</p>}
+                                    {(v.inPersonConsultationFee > 0) && <p className="text-slate-500 text-[10px]">In-Person Fee: ₹{v.inPersonConsultationFee} (locked 1 yr)</p>}
                                   </div>
                                 </div>
 
@@ -1395,19 +1537,24 @@ const DocRegister = () => {
 
                                 {/* Clauses */}
                                 {[
-                                  { n: '1', title: 'Scope of Engagement', body: `The Company grants the Practitioner a non-exclusive, non-transferable licence to use the Mediqzy digital platform to provide medical consultation, appointment management, prescription issuance, and related healthcare services to patients registered on the Platform.` },
-                                  { n: '2', title: 'Verification of Documents', body: `The Practitioner, ${doctorName}, confirms that the documents submitted — ID Proof: "${docFiles.idProof?.name || '—'}" and Address Proof: "${docFiles.addressProof?.name || '—'}" — are genuine, current, and accurately represent the Practitioner's identity and practice address. Misrepresentation constitutes a material breach.` },
-                                  { n: '3', title: 'Professional Standards', body: `The Practitioner agrees to maintain valid medical licensure, uphold the IMC (Conduct, Etiquette and Ethics) Regulations 2002, and comply with the Telemedicine Practice Guidelines issued by the Board of Governors of the NMC.` },
-                                  { n: '4', title: 'Data Privacy and Confidentiality', body: `Patient data is governed by the Digital Personal Data Protection Act, 2023 and the Company's Privacy Policy. The Practitioner shall not disclose patient information to any third party without explicit consent.` },
-                                  { n: '5', title: 'Clinical Responsibility', body: `The Practitioner retains full clinical responsibility for all diagnoses, prescriptions, and treatment recommendations. The Company is a technology intermediary and does not accept liability for clinical outcomes.` },
-                                  { n: '6', title: 'Platform Fees', body: `The Company shall charge a platform service fee per the Fee Schedule in the Practitioner's dashboard. Fees may be revised with 30 days' prior notice. All fees are exclusive of GST.` },
-                                  { n: '7', title: 'Intellectual Property', body: `The Practitioner grants the Company a limited, royalty-free licence to display the Practitioner's name, qualifications, and practice details on the Platform for patient-facing listings.` },
-                                  { n: '8', title: 'Term and Termination', body: `This Agreement commences on digital acceptance. Either party may terminate with 30 days' written notice. The Company may suspend accounts immediately for misconduct, fraudulent documentation, or material breach.` },
-                                  { n: '9', title: 'Governing Law and Dispute Resolution', body: `This Agreement is governed by the laws of India. Disputes shall be resolved by arbitration under the Arbitration and Conciliation Act, 1996, with Chennai, Tamil Nadu as the seat of arbitration.` },
+                                  { n: '1', title: 'Scope of Services', body: `The Physician (which includes individual doctors, doctors with clinics, and doctors working in or owning hospitals) agrees to provide the following services:\n1.1 Types of Consultations: Virtual (online) and in-person consultations for corporate employees through the SmartHealth platform, covering: general health issues; chronic disease management; mental wellness support; preventive care; and emergency advisory (non-critical cases).\n1.2 Follow-up & Documentation: Conduct follow-up reviews and document patient progress. Two follow-up reviews shall be conducted free of charge.\n1.3 Availability: Be available during agreed consultation hours and ensure timely patient communication.\n1.4 Guidelines: Provide medical guidance aligned with applicable IMC regulations.\n1.5 Registration: Must be registered with the MCI or respective State Medical Council with a valid registration number.\n1.6 Information Disclosure: Provide all information related to qualifications, experience, and place of business with documentary evidence as requested.` },
+                                  { n: '2', title: 'Ethics and Integrity', body: `2.1 Conduct consultations with the highest standards of ethics and integrity.\n2.2 Patient safety shall be of paramount importance during all consultations.\n2.3 Follow all applicable professional codes of conduct and medical ethics guidelines.\n2.4 Act ethically while referring patients to specialists or other healthcare providers.\n2.5 Prescribe tests and medications only when medically necessary and in line with established guidelines.\n2.6 Adhere to the Prevention of Sexual Harassment (POSH) Act, 2013 while consulting female patients.` },
+                                  { n: '3', title: 'Technology and Connectivity', body: `3.1 The Physician shall be responsible for having up-to-date electronic devices and maintaining optimal internet connectivity for teleconsultations.\n3.2 In case of a call drop or connectivity issue, the Physician shall reconnect with the patient at the earliest and complete the consultation.\n3.3 The Company will implement a patient review system for quality monitoring and service improvement.` },
+                                  { n: '4', title: 'Prescription Compliance', body: `All prescriptions shall strictly comply with prevailing guidelines including:\n4.1 Schedule H – Prescription drugs\n4.2 Schedule H1 – Restricted antibiotics\n4.3 Schedule X – Narcotic and psychotropic substances\n4.4 Schedule G – Caution drugs (to be taken under medical supervision)\n4.5 Schedule J – Diseases/conditions that cannot be claimed to be treated\n4.6 Schedule K – Exempted drugs from certain regulatory requirements\n4.7 Schedule M – Good Manufacturing Practices (GMP) for pharmaceuticals` },
+                                  { n: '5', title: "Dos and Don'ts", body: `5.1 Dos:\n• Conduct consultations professionally.\n• Ensure timely follow-up with patients for continuity of care.\n• Provide accurate and complete information regarding health conditions.\n• Maintain patient confidentiality and comply with data protection laws.\n• Prescribe medications and tests only when medically necessary.\n• Reconnect promptly in case of a call drop or technical issue.\n• Keep patient records updated and accurate.\n5.2 Don'ts:\n• Do not disclose patient information to third parties without consent.\n• Do not prescribe under external influence or for non-medical reasons.\n• Do not refuse consultation without valid reasons.\n• Do not engage in unethical practices, including accepting commissions for referrals.\n• Do not mislead patients with false information or unproven treatments.\n• Do not over-prescribe medications or tests.\n• Do not engage in any behavior that could be construed as harassment or misconduct.` },
+                                  { n: '6', title: 'Payment Terms', body: `The Physician's declared consultation fees are:\nOnline Consultation: ₹${v.onlineConsultationFee ?? '—'}\nIn-Person Consultation: ₹${v.inPersonConsultationFee ?? '—'}\nThese rates are locked for one year from the effective date of this MOU and shall not be revised without mutual written consent.\n\n6.1 The payment structure will vary depending on the Physician's specialization and experience and will be mutually agreed upon in writing.\n6.2 Payment is due within 30 days of receiving the invoice.\n6.3 Payments are subject to applicable taxes and deductions as per Indian tax laws.\n6.4 In case of any dispute, the Company shall have the right to review and withhold the disputed amount until resolution.\n6.5 No payment will be made in the following cases: no-show by the Physician; incomplete consultation; or poor patient feedback.` },
+                                  { n: '7', title: 'Duration and Termination', body: `7.1 Term: This Agreement shall be effective for one year from the date of digital acceptance unless terminated earlier.\n7.2 Renewal: The Agreement may be renewed upon mutual agreement at the end of the term.\n7.3 Termination with Notice: The Company reserves the right to terminate at any time without assigning any reason.\n7.4 Immediate Termination: The Company may terminate immediately upon: breach of contract; professional misconduct or malpractice; regulatory action affecting the Physician's practice; violation of confidentiality obligations; or any act harming the reputation of the Company.` },
+                                  { n: '8', title: 'Confidentiality and Data Protection', body: `8.1 The Physician shall maintain strict confidentiality regarding patient information, medical records, and Company data.\n8.2 The Physician shall not disclose any patient data or Company information to any third party without prior written consent, except as required by law.\n8.3 Patient data shall not be misused or shared for financial or pecuniary gains.\n8.4 The Physician shall not reach out to patients for any marketing or promotional purposes.` },
+                                  { n: '9', title: 'Indemnity and Liability', body: `The Physician shall indemnify and hold harmless the Company from any claims, liabilities, or damages arising from:\n9.1 Professional misconduct or negligence.\n9.2 Violation of medical guidelines or statutory obligations.\n9.3 Data breaches due to the Physician's negligence.\n9.4 Incorrect medical advice or misdiagnosis.` },
+                                  { n: '10', title: 'Arbitration and Governing Law', body: `All disputes arising out of or in connection with this Agreement shall be referred to arbitration under the Arbitration and Conciliation Act, 1996. The place of arbitration shall be Chennai, Tamil Nadu, and proceedings shall be conducted in English.\nThe above terms are agreeable to both parties and have been signed in the presence of the undersigned witnesses.` },
                                 ].map(({ n, title, body }) => (
                                   <div key={n} className="space-y-1">
                                     <p className="font-bold text-slate-800">{n}. {title}</p>
-                                    <p className="text-slate-600 leading-relaxed pl-3">{body}</p>
+                                    <div className="pl-3 space-y-0.5">
+                                      {body.split('\n').map((line, i) => (
+                                        <p key={i} className="text-slate-600 leading-relaxed">{line}</p>
+                                      ))}
+                                    </div>
                                   </div>
                                 ))}
 
@@ -1415,6 +1562,7 @@ const DocRegister = () => {
                                 <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
                                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-1">
                                     <p className="text-[10px] font-bold text-slate-500 uppercase">For Mayden SmartHealth Pvt Ltd</p>
+                                    <p className="text-[9px] text-slate-400">Dr. Shiva Kumar, CEO</p>
                                     <div className="h-8 border-b border-dashed border-slate-300" />
                                     <p className="text-[10px] text-slate-500">Authorised Signatory</p>
                                     <p className="text-[10px] text-slate-400">Date: {today}</p>
@@ -1432,6 +1580,20 @@ const DocRegister = () => {
                                     <p className="text-[10px] text-slate-400">Date: {today}</p>
                                   </div>
                                 </div>
+                                {/* Witnesses */}
+                                <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 mt-2">
+                                  <p className="text-[10px] font-bold text-slate-500 uppercase mb-2">Witnesses</p>
+                                  <div className="grid grid-cols-2 gap-6">
+                                    <div>
+                                      <div className="border-b border-dashed border-slate-300 h-6 mb-1" />
+                                      <p className="text-[10px] text-slate-400">1. ________________________</p>
+                                    </div>
+                                    <div>
+                                      <div className="border-b border-dashed border-slate-300 h-6 mb-1" />
+                                      <p className="text-[10px] text-slate-400">2. ________________________</p>
+                                    </div>
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -1440,7 +1602,7 @@ const DocRegister = () => {
                           <div className="space-y-3">
                             {[
                               { key: "accuracy", label: `I, ${doctorName}, confirm that all information and documents submitted are genuine, accurate, and complete.` },
-                              { key: "terms",    label: "I have read, understood, and agree to the Practitioner Engagement Agreement between Mayden SmartHealth Pvt Ltd and myself." },
+                              { key: "terms",    label: "I have read, understood, and agree to the Memorandum of Understanding between Mayden SmartHealth Pvt Ltd and myself." },
                               { key: "ethics",   label: "I agree to abide by the platform's code of medical ethics and all applicable professional conduct guidelines." },
                             ].map(({ key, label }) => (
                               <label key={key} className="flex items-start gap-3 cursor-pointer group">
@@ -1475,12 +1637,13 @@ const DocRegister = () => {
           <div className="px-8 py-5 border-t border-slate-100 flex items-center justify-between gap-3">
             <div>
               {step === 1 ? (
-                <Link to="/doctor-login" className="text-sm text-slate-500 hover:text-slate-700 font-medium transition-colors">
-                  Already have an account?
+                <Link to="/doctor-login"
+                  className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700 font-medium transition-colors">
+                  <ArrowLeft className="h-4 w-4" /> Back to Login
                 </Link>
               ) : (
                 <button type="button" onClick={() => go(-1)}
-                  className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700 font-medium transition-colors">
+                  className="flex items-center gap-2 h-11 px-5 rounded-xl border border-slate-200 bg-white text-slate-600 text-sm font-semibold hover:bg-slate-50 hover:border-slate-300 transition-all">
                   <ArrowLeft className="h-4 w-4" /> Back
                 </button>
               )}
@@ -1491,7 +1654,7 @@ const DocRegister = () => {
               {step < 6 ? (
                 <button type="button" onClick={() => go(1)}
                   className="flex items-center gap-2 h-11 px-6 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold hover:opacity-90 shadow-md shadow-blue-500/20 transition-all group">
-                  Continue <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
+                  Save &amp; Continue <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
                 </button>
               ) : (
                 <button type="button" onClick={handleSubmit} disabled={isSubmitting || docRegister.isPending}

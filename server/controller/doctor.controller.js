@@ -272,7 +272,7 @@ async function sendDoctorConfirmationEmail(doctor, docs) {
       try {
         const base64 = docs.agreement.pdf.replace(/^data:application\/pdf;base64,/, '');
         attachments.push({
-          filename: `Mediqzy_Agreement_${doctorName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.pdf`,
+          filename: `SmartHealth_Agreement_${doctorName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.pdf`,
           content: Buffer.from(base64, 'base64'),
           contentType: 'application/pdf',
         });
@@ -280,9 +280,9 @@ async function sendDoctorConfirmationEmail(doctor, docs) {
     }
 
     await transporter.sendMail({
-      from: `"Mediqzy" <${process.env.SMTP_USER || 'noreply@mediczy.com'}>`,
+      from: `"SmartHealth" <${process.env.SMTP_USER || 'noreply@mediczy.com'}>`,
       to: doctor.email,
-      subject: `✅ Application Received — Your Signed Agreement | Mediqzy`,
+      subject: `✅ Application Received — Account Pending Activation | SmartHealth`,
       attachments,
       html: `
 <!DOCTYPE html><html><head><meta charset="utf-8"></head>
@@ -299,7 +299,7 @@ async function sendDoctorConfirmationEmail(doctor, docs) {
   <tr><td style="padding:36px 40px;">
     <p style="margin:0 0 20px;font-size:15px;color:#0f172a;line-height:1.7">
       Dear <strong>${doctorName}</strong>,<br><br>
-      Thank you for registering on <strong>Mediqzy</strong>. We have received your application and all submitted documents. Our team will verify your credentials and activate your account within <strong>1–2 business days</strong>.
+      Thank you for applying to join <strong>SmartHealth</strong>. We have received your application and all submitted documents. Your account is currently <strong>pending activation</strong> — our team will review and verify your credentials.
     </p>
 
     <!-- Agreement box -->
@@ -324,18 +324,23 @@ async function sendDoctorConfirmationEmail(doctor, docs) {
       <p style="margin:0 0 10px;font-size:14px;font-weight:700;color:#15803d">⏳ What happens next?</p>
       <ul style="margin:0;padding-left:18px;font-size:13px;color:#166534;line-height:1.9">
         <li>Our team will verify your ID proof, address proof, and medical credentials.</li>
-        <li>You will receive an <strong>activation email</strong> once your account is approved.</li>
+        <li>Once verification is successful, your account will be activated.</li>
+        <li>You will receive a separate email with your <strong>login credentials</strong> as soon as your account is activated.</li>
         <li>Activation typically takes <strong>1–2 business days</strong>.</li>
       </ul>
     </div>
 
+    <div style="background:#fefce8;border:1.5px solid #fde68a;border-radius:12px;padding:16px 22px;margin-bottom:24px">
+      <p style="margin:0;font-size:13px;color:#92400e">⚠️ <strong>Please do not attempt to log in until you receive your activation email.</strong> Your account is not yet active.</p>
+    </div>
+
     <p style="margin:0;font-size:13px;color:#64748b">
-      Questions? Reply to this email or write to us at <a href="mailto:support@mediqzy.com" style="color:#1d4ed8">support@mediqzy.com</a>.
+      Questions? Write to us at <a href="mailto:support@mediqzy.com" style="color:#1d4ed8">support@mediqzy.com</a>.
     </p>
   </td></tr>
   <!-- Footer -->
   <tr><td style="padding:16px 40px;border-top:1px solid #e2e8f0;text-align:center">
-    <p style="margin:0;font-size:11px;color:#94a3b8">Mediqzy · Mayden SmartHealth Pvt Ltd · Chennai, Tamil Nadu, India</p>
+    <p style="margin:0;font-size:11px;color:#94a3b8">Team SmartHealth · Mayden SmartHealth Pvt Ltd · Chennai, Tamil Nadu, India</p>
   </td></tr>
 </table></td></tr></table>
 </body></html>`,

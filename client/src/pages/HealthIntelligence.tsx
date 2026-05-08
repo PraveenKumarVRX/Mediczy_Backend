@@ -15,7 +15,12 @@ import {
   AlertCircle,
   CheckCircle,
   Clock,
-  ChevronRight
+  ChevronRight,
+  Star,
+  ShieldAlert,
+  Sparkles,
+  AlertTriangle,
+  Monitor
 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import api from '@/lib/api';
@@ -34,6 +39,20 @@ interface HealthReminder {
   timestamp: string;
 }
 
+interface HealthAppreciation {
+  title: string;
+  message: string;
+  domain: string;
+}
+
+interface HealthHazard {
+  title: string;
+  prediction: string;
+  recommendation: string;
+  urgency: 'low' | 'medium' | 'high';
+  domain: string;
+}
+
 interface HealthIntelligence {
   user_id: number;
   generated_at: string;
@@ -41,7 +60,10 @@ interface HealthIntelligence {
     total_reminders: number;
     high_priority: number;
     actionable: number;
+    overall_score?: number;
   };
+  appreciations: HealthAppreciation[];
+  hazards: HealthHazard[];
   categories: {
     medication: HealthReminder[];
     checkups: HealthReminder[];
@@ -57,7 +79,7 @@ interface HealthIntelligence {
 const HealthIntelligenceDashboard: React.FC = () => {
   const [intelligence, setIntelligence] = useState<HealthIntelligence | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('ai_narrative');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -162,7 +184,22 @@ const HealthIntelligenceDashboard: React.FC = () => {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {intelligence.summary.overall_score !== undefined && (
+          <Card className="border-teal-200 bg-teal-50/30 dark:border-teal-800 dark:bg-teal-900/10">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-1">
+                <Heart className="h-4 w-4 text-teal-600" />
+                Daily Health Score
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-teal-600">{intelligence.summary.overall_score}</div>
+              <p className="text-xs text-muted-foreground mt-1">Out of 100 today</p>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium">Total Insights</CardTitle>
@@ -196,7 +233,11 @@ const HealthIntelligenceDashboard: React.FC = () => {
 
       {/* Main Content */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid grid-cols-4 lg:grid-cols-8 w-full">
+        <TabsList className="grid grid-cols-4 lg:grid-cols-9 w-full">
+          <TabsTrigger value="ai_narrative">
+            <Sparkles className="h-4 w-4 mr-2" />
+            AI Narrative
+          </TabsTrigger>
           <TabsTrigger value="overview">
             <TrendingUp className="h-4 w-4 mr-2" />
             Overview
@@ -226,9 +267,93 @@ const HealthIntelligenceDashboard: React.FC = () => {
             Lifestyle
           </TabsTrigger>
           <TabsTrigger value="lab_tests">
+            <Monitor className="h-4 w-4 mr-2" />
             Lab Tests
           </TabsTrigger>
         </TabsList>
+
+        {/* AI Narrative Tab */}
+        <TabsContent value="ai_narrative" className="space-y-6">
+          {/* Appreciations */}
+          {intelligence.appreciations && intelligence.appreciations.length > 0 ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Star className="h-5 w-5 text-green-600" />
+                <h2 className="text-lg font-semibold text-green-700 dark:text-green-400">What You're Doing Well</h2>
+              </div>
+              {intelligence.appreciations.map((item, i) => (
+                <Card key={i} className="border-green-200 bg-green-50/40 dark:border-green-800 dark:bg-green-900/10">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      {item.title}
+                      <span className="ml-auto text-xs font-normal text-green-600 border border-green-300 rounded-full px-2 py-0.5 capitalize">{item.domain}</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-slate-600 dark:text-slate-300">{item.message}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Card className="border-green-200 bg-green-50/40 dark:border-green-800 dark:bg-green-900/10">
+              <CardContent className="pt-6 text-center text-muted-foreground">
+                <Star className="h-10 w-10 mx-auto mb-2 text-green-400" />
+                <p>Log more health data to unlock personalized appreciations from Dr. iSHA.</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Hazards */}
+          {intelligence.hazards && intelligence.hazards.length > 0 ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="h-5 w-5 text-orange-600" />
+                <h2 className="text-lg font-semibold text-orange-700 dark:text-orange-400">Health Hazard Predictions</h2>
+              </div>
+              {intelligence.hazards.map((item, i) => {
+                const urgencyColor = item.urgency === 'high'
+                  ? 'border-red-300 bg-red-50/40 dark:border-red-800 dark:bg-red-900/10'
+                  : item.urgency === 'medium'
+                  ? 'border-orange-300 bg-orange-50/40 dark:border-orange-800 dark:bg-orange-900/10'
+                  : 'border-yellow-300 bg-yellow-50/40 dark:border-yellow-800 dark:bg-yellow-900/10';
+                const urgencyBadge = item.urgency === 'high' ? 'bg-red-500' : item.urgency === 'medium' ? 'bg-orange-500' : 'bg-yellow-500';
+                return (
+                  <Card key={i} className={`border ${urgencyColor}`}>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <AlertTriangle className="h-4 w-4 text-orange-600" />
+                          {item.title}
+                        </CardTitle>
+                        <div className="flex gap-1 shrink-0">
+                          <span className={`text-xs font-semibold text-white rounded-full px-2 py-0.5 ${urgencyBadge}`}>{item.urgency.toUpperCase()}</span>
+                          <span className="text-xs font-normal text-slate-500 border border-slate-300 rounded-full px-2 py-0.5 capitalize">{item.domain}</span>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <p className="text-sm text-slate-700 dark:text-slate-300">
+                        <span className="font-medium">Prediction:</span> {item.prediction}
+                      </p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">
+                        <span className="font-medium">Recommendation:</span> {item.recommendation}
+                      </p>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          ) : (
+            <Card className="border-orange-200 bg-orange-50/40 dark:border-orange-800 dark:bg-orange-900/10">
+              <CardContent className="pt-6 text-center text-muted-foreground">
+                <ShieldAlert className="h-10 w-10 mx-auto mb-2 text-orange-400" />
+                <p>No hazard predictions at this time. Keep up the healthy habits!</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-4">

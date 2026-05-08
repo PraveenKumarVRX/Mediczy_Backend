@@ -335,14 +335,17 @@ export const useLogout = () => {
 const registerDoctor = async (userData) => {
   const formattedData = {
     ...userData,
-    qualifications: userData.qualifications.filter((q) => q.trim() !== ""),
+    qualifications: (userData.qualifications || []).filter((q) => typeof q === 'string' && q.trim() !== ""),
     experience: parseInt(userData.experience, 10),
   };
-  console.log(formattedData, "ahhah");
   const { data } = await api.post(`/doctors/register`, formattedData);
-  const doctorId = data.doctor?.id || data.doctor?.doctor_id;
-  setAuthData(data.token, "doctor", doctorId);
-
+  // Only set auth data if a token was issued (immediate activation).
+  // For pending-activation accounts, no token is returned — skip setAuthData
+  // to avoid corrupting auth state and triggering an unintended logout.
+  if (data.token) {
+    const doctorId = data.doctor?.id || data.doctor?.doctor_id;
+    setAuthData(data.token, "doctor", doctorId);
+  }
   return data;
 };
 
@@ -351,8 +354,6 @@ export const useDocRegister = () => {
   return useMutation<any>({
     mutationFn: registerDoctor,
     onSuccess: (data) => {
-      console.log(data, "success");
-
       queryClient.setQueryData(["currentDoctor"], data.doctor);
     },
   });

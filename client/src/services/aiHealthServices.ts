@@ -94,6 +94,20 @@ export interface DrugInteractionResult {
   recommendations: string[];
 }
 
+export interface HealthAppreciation {
+  title: string;
+  message: string;
+  domain: string;
+}
+
+export interface HealthHazard {
+  title: string;
+  prediction: string;
+  recommendation: string;
+  urgency: 'low' | 'medium' | 'high';
+  domain: string;
+}
+
 export interface HealthIntelligenceData {
   user_id: number;
   generated_at: string;
@@ -101,7 +115,10 @@ export interface HealthIntelligenceData {
     total_reminders: number;
     high_priority: number;
     actionable: number;
+    overall_score?: number;
   };
+  appreciations: HealthAppreciation[];
+  hazards: HealthHazard[];
   categories: {
     medication: any[];
     checkups: any[];

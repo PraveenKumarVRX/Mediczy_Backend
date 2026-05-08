@@ -263,6 +263,9 @@ const USER_TYPE_PERMISSIONS = {
       '/api/v3/ai-deeptech',  // Deep Tech AI layer (HIS, NLP, Preauth, FL, Agent Context)
       '/api/ehr',  // Electronic Health Records
       '/api/fhir',  // FHIR R4 interoperability endpoints
+      '/api/hypergrid',  // HyperGrid interoperability & IoT layer
+      '/api/cdss',  // Clinical Decision Support System
+      '/api/compliance',  // HIPAA/DPDP compliance dashboard
       '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'adminId'

@@ -128,6 +128,58 @@ router.post(
   }
 );
 
+/**
+ * @route   POST /api/users/register/check-availability
+ * @desc    Check if email and phone are available before starting OTP flow
+ * @access  Public
+ */
+router.post(
+  "/register/check-availability",
+  [
+    body("email").isEmail().withMessage("Must be a valid email"),
+    body("phoneNumber").isMobilePhone().withMessage("Must be a valid mobile phone number"),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const email = normalizeEmail(req.body.email);
+    const phoneNumber = normalizePhone(req.body.phoneNumber);
+
+    try {
+      const existingEmail = await userModel.findOne({ where: { email } });
+      if (existingEmail) {
+        return res.status(409).json({
+          success: false,
+          field: "email",
+          message: "Email already registered. Please sign in instead.",
+        });
+      }
+
+      // Match on last 10 digits to handle +91, +91-, 10-digit, etc.
+      const last10 = phoneNumber.replace(/[^0-9]/g, '').slice(-10);
+      const [phoneRows] = await postgresSequelize.query(
+        `SELECT id FROM users WHERE RIGHT(REGEXP_REPLACE("phoneNumber", '[^0-9]', '', 'g'), 10) = :last10 LIMIT 1`,
+        { replacements: { last10 }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+      if (phoneRows) {
+        return res.status(409).json({
+          success: false,
+          field: "phoneNumber",
+          message: "Mobile number already registered. Please sign in instead.",
+        });
+      }
+
+      return res.json({ success: true, message: "Available" });
+    } catch (error) {
+      console.error("Availability check error:", error);
+      return res.status(500).json({ success: false, message: "Check failed. Please try again." });
+    }
+  }
+);
+
 router.post(
   "/register/send-otp",
   [
@@ -155,11 +207,16 @@ router.post(
         });
       }
 
-      // Check if phone already exists
-      const existingPhone = await userModel.findOne({ where: { phoneNumber } });
-      if (existingPhone) {
+      // Check if phone already exists (match on last 10 digits to handle +91, +91-, 10-digit formats)
+      const last10 = String(phoneNumber).replace(/[^0-9]/g, '').slice(-10);
+      const [existingPhoneRow] = await postgresSequelize.query(
+        `SELECT id FROM users WHERE RIGHT(REGEXP_REPLACE("phoneNumber", '[^0-9]', '', 'g'), 10) = :last10 LIMIT 1`,
+        { replacements: { last10 }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+      if (existingPhoneRow) {
         return res.status(409).json({ 
           success: false,
+          field: "phoneNumber",
           message: "Phone number already registered" 
         });
       }

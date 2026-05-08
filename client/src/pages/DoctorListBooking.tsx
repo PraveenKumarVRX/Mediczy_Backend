@@ -32,7 +32,8 @@ import {
   Sparkles,
   Loader2,
   Coins,
-  Wallet
+  Wallet,
+  Building2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -99,6 +100,8 @@ interface Doctor {
   phoneNumber?: string;
   services: string[];
   verified: boolean;
+  supportsOnline: boolean;
+  supportsInPerson: boolean;
 }
 
 const specializations = [
@@ -285,6 +288,11 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
   const fallbackId = doctor?.id || doctor?.unique_id || `temp-${Math.random().toString(36).slice(2)}`;
   const hasLiveId = Boolean(doctor?.id || doctor?.unique_id);
 
+  const rawOnlineFee = doctor?.onlineConsultationFee ?? doctor?.consultationFee ?? null;
+  const rawInPersonFee = doctor?.inPersonConsultationFee ?? null;
+  const supportsOnline = rawOnlineFee != null || Boolean(doctor?.isOnline);
+  const supportsInPerson = rawInPersonFee != null || Boolean(doctor?.clinicAddress);
+
   return {
     _id: String(fallbackId),
     isLive: hasLiveId,
@@ -310,6 +318,8 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
     phoneNumber: doctor?.phoneNumber || "",
     services,
     verified: Boolean(doctor?.isVerified),
+    supportsOnline,
+    supportsInPerson,
   } as Doctor;
 };
 
@@ -352,6 +362,8 @@ const normalizeMasterDoctor = (doc: any): Doctor => {
     },
     services: toArray(doc?.services, ["Consultation"]),
     verified: Boolean(doc?.isVerified ?? true),
+    supportsOnline: true,
+    supportsInPerson: Boolean(doc?.clinic_name || doc?.address),
   };
 };
 
@@ -373,6 +385,7 @@ const DoctorListBooking = () => {
   const [symptoms, setSymptoms] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [viewMode, setViewMode] = useState<"all" | "categories">("all");
+  const [consultationTypeFilter, setConsultationTypeFilter] = useState<"all" | "online" | "inPerson">("all");
   const [doctorSlots, setDoctorSlots] = useState<any>(null);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [userType, setUserType] = useState<string | null>(() => getUserType());
@@ -408,7 +421,7 @@ const DoctorListBooking = () => {
 
   useEffect(() => {
     filterDoctors();
-  }, [doctors, searchTerm, selectedSpecialization, selectedLocation, sortBy]);
+  }, [doctors, searchTerm, selectedSpecialization, selectedLocation, sortBy, consultationTypeFilter]);
 
   const categorizedDoctors = useMemo(() => {
     const categories = specializations.map((spec) => {
@@ -545,6 +558,12 @@ const DoctorListBooking = () => {
       );
     }
 
+    if (consultationTypeFilter === "online") {
+      filtered = filtered.filter(doctor => doctor.supportsOnline !== false);
+    } else if (consultationTypeFilter === "inPerson") {
+      filtered = filtered.filter(doctor => doctor.supportsInPerson || !!doctor.clinic?.address);
+    }
+
     if (selectedLocation) {
       const loc = selectedLocation.toLowerCase();
       filtered = filtered.filter(doctor => {
@@ -629,6 +648,9 @@ const DoctorListBooking = () => {
     setShowBookingModal(true);
     setDoctorSlots(null); // Reset slots when opening modal
     setSelectedTime(""); // Clear time selection
+    // Pre-select consultation type based on active filter
+    if (consultationTypeFilter === "online") setConsultationType("online");
+    else if (consultationTypeFilter === "inPerson") setConsultationType("inPerson");
     
     // Smart date initialization: Try to find first available date
     const smartDate = await findNextAvailableDate(doctor._id);
@@ -844,21 +866,25 @@ const DoctorListBooking = () => {
               )}
 
               <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-700">
-                <div className="flex gap-6">
-                  <div>
-                    <div className="flex items-center gap-1.5 text-teal-600 dark:text-teal-400">
-                      <Video className="h-4 w-4" />
-                      <span className="text-sm font-medium">Video</span>
+                <div className="flex items-center gap-6">
+                  {consultationTypeFilter !== "inPerson" && (
+                    <div>
+                      <div className="flex items-center gap-1.5 text-teal-600 dark:text-teal-400">
+                        <Video className="h-4 w-4" />
+                        <span className="text-sm font-medium">Video</span>
+                      </div>
+                      <div className="text-lg font-bold text-slate-900 dark:text-white">₹{doctor.consultationFee.online}</div>
                     </div>
-                    <div className="text-lg font-bold text-slate-900 dark:text-white">₹{doctor.consultationFee.online}</div>
-                  </div>
-                  <div className="border-l border-slate-200 dark:border-slate-700 pl-6">
-                    <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
-                      <User className="h-4 w-4" />
-                      <span className="text-sm font-medium">Clinic</span>
+                  )}
+                  {consultationTypeFilter !== "online" && (
+                    <div className={consultationTypeFilter === "all" ? "border-l border-slate-200 dark:border-slate-700 pl-6" : ""}>
+                      <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
+                        <Building2 className="h-4 w-4" />
+                        <span className="text-sm font-medium">Clinic</span>
+                      </div>
+                      <div className="text-lg font-bold text-slate-900 dark:text-white">₹{doctor.consultationFee.inPerson}</div>
                     </div>
-                    <div className="text-lg font-bold text-slate-900 dark:text-white">₹{doctor.consultationFee.inPerson}</div>
-                  </div>
+                  )}
                 </div>
                 
                 {userType === "doctor" ? (
@@ -866,15 +892,32 @@ const DoctorListBooking = () => {
                     Doctor accounts cannot book from the patient view. Please sign in as a patient to book.
                   </div>
                 ) : (
-                  <Button 
-                    onClick={() => handleBookAppointment(doctor)}
-                    disabled={!doctor.isLive}
-                    className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg hover:shadow-xl transition-all rounded-full px-6"
-                    title={doctor.isLive ? "" : "This profile is not yet available for booking."}
-                  >
-                    {doctor.isLive ? "Book Now" : "Unavailable"}
-                    <ArrowRight className="h-4 w-4 ml-2" />
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {consultationTypeFilter === "inPerson" && doctor.phoneNumber && (
+                      <a
+                        href={`tel:${doctor.phoneNumber}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex items-center gap-2 px-4 py-2 rounded-full bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-700 text-sm font-medium hover:bg-green-100 dark:hover:bg-green-900/50 transition-all"
+                      >
+                        <Phone className="h-4 w-4" />
+                        Call Clinic
+                      </a>
+                    )}
+                    <Button 
+                      onClick={() => handleBookAppointment(doctor)}
+                      disabled={!doctor.isLive}
+                      className={cn(
+                        "text-white shadow-lg hover:shadow-xl transition-all rounded-full px-6",
+                        consultationTypeFilter === "inPerson"
+                          ? "bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700"
+                          : "bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700"
+                      )}
+                      title={doctor.isLive ? "" : "This profile is not yet available for booking."}
+                    >
+                      {!doctor.isLive ? "Unavailable" : consultationTypeFilter === "online" ? "Book Video" : consultationTypeFilter === "inPerson" ? "Book Visit" : "Book Now"}
+                      <ArrowRight className="h-4 w-4 ml-2" />
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>
@@ -1140,6 +1183,63 @@ const DoctorListBooking = () => {
               Doctor accounts cannot book appointments from the patient view. Please sign in as a patient to book.
             </div>
           )}
+          {/* Consultation Type Toggle */}
+          <div className="mb-6">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-sm font-semibold text-slate-600 dark:text-slate-400 shrink-0">Consultation type:</span>
+              <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full p-1 shadow-sm">
+                <button
+                  onClick={() => setConsultationTypeFilter("all")}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all",
+                    consultationTypeFilter === "all"
+                      ? "bg-gradient-to-r from-teal-500 to-teal-600 text-white shadow"
+                      : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                  )}
+                >
+                  <Stethoscope className="h-4 w-4" />
+                  All Doctors
+                </button>
+                <button
+                  onClick={() => setConsultationTypeFilter("online")}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all",
+                    consultationTypeFilter === "online"
+                      ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow"
+                      : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                  )}
+                >
+                  <Video className="h-4 w-4" />
+                  Online Consultation
+                </button>
+                <button
+                  onClick={() => setConsultationTypeFilter("inPerson")}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all",
+                    consultationTypeFilter === "inPerson"
+                      ? "bg-gradient-to-r from-green-500 to-green-600 text-white shadow"
+                      : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                  )}
+                >
+                  <Building2 className="h-4 w-4" />
+                  Clinic Visit
+                </button>
+              </div>
+              {consultationTypeFilter !== "all" && (
+                <div className={cn(
+                  "flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm",
+                  consultationTypeFilter === "online" ? "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300" : "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
+                )}>
+                  {consultationTypeFilter === "online" ? (
+                    <><Video className="h-3.5 w-3.5" /> Showing online-capable doctors — fee shown is the video rate</>
+                  ) : (
+                    <><Building2 className="h-3.5 w-3.5" /> Showing clinic doctors — fee shown is the in-person rate</>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Quick Specialty Filters */}
           <div className="mb-6">
             <ScrollArea className="w-full whitespace-nowrap">

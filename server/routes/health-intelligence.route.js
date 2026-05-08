@@ -69,12 +69,21 @@ async function getScoreInsights(userId) {
 
     // 1. Try precomputed score for today first (fast path)
     const [row] = await postgresSequelize.query(
-      `SELECT score, domains FROM daily_health_scores WHERE user_id = :userId AND score_date = :today LIMIT 1`,
+      `SELECT composite_score, activity_score, nutrition_score, sleep_score, vitals_score, medication_score, hydration_score, mental_score
+       FROM daily_health_scores WHERE user_id = :userId AND score_date = :today LIMIT 1`,
       { replacements: { userId, today }, type: QueryTypes.SELECT }
     );
 
     if (row) {
-      domains = typeof row.domains === 'string' ? JSON.parse(row.domains) : row.domains;
+      domains = {
+        activity:   row.activity_score,
+        nutrition:  row.nutrition_score,
+        sleep:      row.sleep_score,
+        vitals:     row.vitals_score,
+        medication: row.medication_score,
+        hydration:  row.hydration_score,
+        mental:     row.mental_score,
+      };
     } else {
       // 2. Recompute on demand if no precomputed score exists yet
       const enriched = await enrichLogDataFromDiary(userId, today);
@@ -228,16 +237,25 @@ router.get('/', authUser, async (req, res) => {
     let domains = null, overallScore = null;
     try {
       const [scoreRow] = await postgresSequelize.query(
-        `SELECT score, domains FROM daily_health_scores WHERE user_id = :userId AND score_date = :today LIMIT 1`,
+        `SELECT composite_score, activity_score, nutrition_score, sleep_score, vitals_score, medication_score, hydration_score, mental_score
+         FROM daily_health_scores WHERE user_id = :userId AND score_date = :today LIMIT 1`,
         { replacements: { userId, today }, type: QueryTypes.SELECT }
       );
       if (scoreRow) {
-        overallScore = scoreRow.score;
-        domains = typeof scoreRow.domains === 'string' ? JSON.parse(scoreRow.domains) : scoreRow.domains;
+        overallScore = scoreRow.composite_score;
+        domains = {
+          activity:   scoreRow.activity_score,
+          nutrition:  scoreRow.nutrition_score,
+          sleep:      scoreRow.sleep_score,
+          vitals:     scoreRow.vitals_score,
+          medication: scoreRow.medication_score,
+          hydration:  scoreRow.hydration_score,
+          mental:     scoreRow.mental_score,
+        };
       } else {
         const enriched = await enrichLogDataFromDiary(userId, today);
         const result   = computeDailyScore(enriched, {}, today);
-        overallScore   = result.score;
+        overallScore   = result.composite_score ?? result.score ?? null;
         domains        = result.domains;
       }
     } catch (_) { /* non-fatal */ }

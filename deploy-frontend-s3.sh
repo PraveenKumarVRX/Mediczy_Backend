@@ -35,9 +35,17 @@ echo -e "${YELLOW}☁️  Step 2/4: Uploading to S3...${NC}"
 aws s3 sync "$BUILD_DIR" "$S3_BUCKET" \
   --cache-control "public,max-age=31536000,immutable" \
   --exclude "*.html" \
+  --exclude "*.mjs" \
   --exclude "serviceWorker.js" \
   --exclude "service-worker.js" \
   --exclude "firebase-messaging-sw.js"
+
+# Upload .mjs files with correct MIME type (S3 defaults to application/octet-stream for .mjs)
+aws s3 sync "$BUILD_DIR" "$S3_BUCKET" \
+  --cache-control "public,max-age=31536000,immutable" \
+  --content-type "application/javascript" \
+  --exclude "*" \
+  --include "*.mjs"
 
 # Upload HTML and service workers with no-cache
 aws s3 sync "$BUILD_DIR" "$S3_BUCKET" \
@@ -63,8 +71,11 @@ if aws cloudfront create-invalidation \
   echo -e "${YELLOW}🧹 Waiting 60s before cleaning old S3 assets...${NC}"
   sleep 60
   echo -e "${YELLOW}🧹 Cleaning up old S3 assets (post-invalidation)...${NC}"
-  aws s3 sync "$BUILD_DIR" "$S3_BUCKET" --delete --cache-control "public,max-age=31536000,immutable" --exclude "*.html" --exclude "serviceWorker.js" --exclude "service-worker.js" > /dev/null 2>&1
-  echo -e "${GREEN}✅ Old assets cleaned up${NC}"
+  if aws s3 sync "$BUILD_DIR" "$S3_BUCKET" --delete --cache-control "public,max-age=31536000,immutable" --exclude "*.html" --exclude "serviceWorker.js" --exclude "service-worker.js"; then
+    echo -e "${GREEN}✅ Old assets cleaned up${NC}"
+  else
+    echo -e "${RED}❌ Old asset cleanup failed — S3 may still have stale chunks${NC}"
+  fi
 else
   echo -e "${YELLOW}⚠️  CloudFront invalidation skipped (no permissions)${NC}"
   echo -e "${YELLOW}   Old assets kept in S3 to avoid white screen during cache TTL${NC}"

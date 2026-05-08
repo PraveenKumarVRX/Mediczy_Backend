@@ -10,9 +10,10 @@ import {
   PlusCircle, Download, Search, Filter, Clock, UserPlus,
   ShieldCheck, Gift, FileText, TrendingUp, ClipboardCheck,
   Building2, Phone, Mail, MapPin, CheckCircle2, AlertCircle,
-  XCircle, MoreHorizontal, Edit, Eye, CalendarCheck,
+  XCircle, MoreHorizontal, Edit, Eye, CalendarCheck, Activity,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { exportToExcel } from '@/utils/exportToExcel';
 
 // ─── Shared Nav (exported for Dashboard) ───────────────────────────────────
 export const hrNavSections: DeptNavSection[] = [
@@ -817,15 +818,37 @@ export const HRAppraisalsPage = () => (
 // ═══════════════════════════════════════════════════════════════════════════════
 // 13. HR REPORTS
 // ═══════════════════════════════════════════════════════════════════════════════
-const reportTypes = [
-  { name: 'Headcount Report',     icon: Users,       desc: 'Total staff by dept, type, and grade' },
-  { name: 'Attendance Summary',   icon: CalendarCheck,desc: 'Monthly presence/absence/late analysis' },
-  { name: 'Leave Utilization',    icon: CalendarOff, desc: 'Leave availed vs entitlement by type' },
-  { name: 'Payroll Summary',      icon: Wallet,       desc: 'Gross, deductions, net disbursable' },
-  { name: 'Turnover Report',      icon: TrendingUp,   desc: 'Attrition rate, exits, new hires' },
-  { name: 'Training Completion',  icon: GraduationCap,desc: 'Program-wise completion rates' },
-  { name: 'PF & ESI Remittance',  icon: ShieldCheck,  desc: 'Monthly challan & compliance status' },
-  { name: 'Performance Summary',  icon: Star,         desc: 'Ratings distribution and top performers' },
+
+// Sample employee health data (replace with API call when endpoint is available)
+const employeeHealthData = [
+  { 'Employee ID': 'EMP001', 'Name': 'Dr. Kavita Joshi',   'Department': 'Cardiology',   'Role': 'Consultant',    'Overall Health Score': 82, 'Blood Pressure (mmHg)': '118/76', 'Heart Rate (bpm)': 72, 'SpO2 (%)': 98, 'Temperature (°F)': 98.4, 'Sleep Hours': 7.5, 'Sleep Quality': 'Good',    'Steps': 8200,  'Calories Burned': 480, 'Active Minutes': 45, 'Mood Score (1-10)': 8, 'Water Intake (ml)': 2200, 'Calories (diet)': 1950, 'Screen Time (hrs)': 5.0, 'BMI': 22.4, 'Allergies': 'None', 'Chronic Conditions': 'None',    'Last Updated': '2026-05-05' },
+  { 'Employee ID': 'EMP002', 'Name': 'Sanjay Kumar',        'Department': 'Nursing',      'Role': 'Staff Nurse',   'Overall Health Score': 74, 'Blood Pressure (mmHg)': '124/82', 'Heart Rate (bpm)': 78, 'SpO2 (%)': 97, 'Temperature (°F)': 98.6, 'Sleep Hours': 6.0, 'Sleep Quality': 'Fair',    'Steps': 10500, 'Calories Burned': 560, 'Active Minutes': 60, 'Mood Score (1-10)': 7, 'Water Intake (ml)': 1800, 'Calories (diet)': 2100, 'Screen Time (hrs)': 3.5, 'BMI': 24.1, 'Allergies': 'Dust', 'Chronic Conditions': 'None',    'Last Updated': '2026-05-05' },
+  { 'Employee ID': 'EMP003', 'Name': 'Pooja Verma',         'Department': 'Accounts',     'Role': 'Billing Exec',  'Overall Health Score': 68, 'Blood Pressure (mmHg)': '130/85', 'Heart Rate (bpm)': 82, 'SpO2 (%)': 96, 'Temperature (°F)': 98.8, 'Sleep Hours': 5.5, 'Sleep Quality': 'Poor',    'Steps': 4200,  'Calories Burned': 280, 'Active Minutes': 20, 'Mood Score (1-10)': 6, 'Water Intake (ml)': 1400, 'Calories (diet)': 2300, 'Screen Time (hrs)': 8.0, 'BMI': 26.8, 'Allergies': 'None', 'Chronic Conditions': 'Hypertension', 'Last Updated': '2026-05-05' },
+  { 'Employee ID': 'EMP004', 'Name': 'Mohammed Iqbal',      'Department': 'Housekeeping', 'Role': 'Ward Attender', 'Overall Health Score': 79, 'Blood Pressure (mmHg)': '120/78', 'Heart Rate (bpm)': 74, 'SpO2 (%)': 98, 'Temperature (°F)': 98.2, 'Sleep Hours': 7.0, 'Sleep Quality': 'Good',    'Steps': 12000, 'Calories Burned': 620, 'Active Minutes': 90, 'Mood Score (1-10)': 7, 'Water Intake (ml)': 2500, 'Calories (diet)': 2200, 'Screen Time (hrs)': 2.0, 'BMI': 23.5, 'Allergies': 'None', 'Chronic Conditions': 'None',    'Last Updated': '2026-05-05' },
+  { 'Employee ID': 'EMP005', 'Name': 'Dr. Ramesh Pillai',   'Department': 'Orthopaedics', 'Role': 'Consultant',    'Overall Health Score': 71, 'Blood Pressure (mmHg)': '128/84', 'Heart Rate (bpm)': 80, 'SpO2 (%)': 97, 'Temperature (°F)': 98.5, 'Sleep Hours': 6.5, 'Sleep Quality': 'Fair',    'Steps': 6500,  'Calories Burned': 390, 'Active Minutes': 30, 'Mood Score (1-10)': 7, 'Water Intake (ml)': 1900, 'Calories (diet)': 2050, 'Screen Time (hrs)': 6.5, 'BMI': 27.2, 'Allergies': 'Pollen', 'Chronic Conditions': 'Diabetes (Type 2)', 'Last Updated': '2026-05-05' },
+  { 'Employee ID': 'EMP006', 'Name': 'Sunita Rao',          'Department': 'OT',           'Role': 'OT Technician', 'Overall Health Score': 85, 'Blood Pressure (mmHg)': '116/74', 'Heart Rate (bpm)': 68, 'SpO2 (%)': 99, 'Temperature (°F)': 97.9, 'Sleep Hours': 8.0, 'Sleep Quality': 'Excellent', 'Steps': 9000,  'Calories Burned': 510, 'Active Minutes': 55, 'Mood Score (1-10)': 9, 'Water Intake (ml)': 2400, 'Calories (diet)': 1800, 'Screen Time (hrs)': 2.5, 'BMI': 21.8, 'Allergies': 'None', 'Chronic Conditions': 'None',    'Last Updated': '2026-05-05' },
+  { 'Employee ID': 'EMP007', 'Name': 'Arun Sharma',         'Department': 'Radiology',    'Role': 'Radiographer',  'Overall Health Score': 63, 'Blood Pressure (mmHg)': '136/90', 'Heart Rate (bpm)': 88, 'SpO2 (%)': 96, 'Temperature (°F)': 99.1, 'Sleep Hours': 5.0, 'Sleep Quality': 'Poor',    'Steps': 3800,  'Calories Burned': 240, 'Active Minutes': 15, 'Mood Score (1-10)': 5, 'Water Intake (ml)': 1200, 'Calories (diet)': 2600, 'Screen Time (hrs)': 9.5, 'BMI': 29.3, 'Allergies': 'Shellfish', 'Chronic Conditions': 'Obesity, Hypertension', 'Last Updated': '2026-05-04' },
+  { 'Employee ID': 'EMP008', 'Name': 'Meena Nair',          'Department': 'Pharmacy',     'Role': 'Pharmacist',    'Overall Health Score': 88, 'Blood Pressure (mmHg)': '112/72', 'Heart Rate (bpm)': 65, 'SpO2 (%)': 99, 'Temperature (°F)': 98.1, 'Sleep Hours': 8.5, 'Sleep Quality': 'Excellent', 'Steps': 7800,  'Calories Burned': 440, 'Active Minutes': 40, 'Mood Score (1-10)': 9, 'Water Intake (ml)': 2600, 'Calories (diet)': 1750, 'Screen Time (hrs)': 3.0, 'BMI': 20.9, 'Allergies': 'None', 'Chronic Conditions': 'None',    'Last Updated': '2026-05-05' },
+];
+
+const reportTypes: { name: string; icon: LucideIcon; desc: string; onGenerate?: () => void }[] = [
+  { name: 'Headcount Report',       icon: Users,        desc: 'Total staff by dept, type, and grade' },
+  { name: 'Attendance Summary',     icon: CalendarCheck,desc: 'Monthly presence/absence/late analysis' },
+  { name: 'Leave Utilization',      icon: CalendarOff,  desc: 'Leave availed vs entitlement by type' },
+  { name: 'Payroll Summary',        icon: Wallet,        desc: 'Gross, deductions, net disbursable' },
+  { name: 'Turnover Report',        icon: TrendingUp,    desc: 'Attrition rate, exits, new hires' },
+  { name: 'Training Completion',    icon: GraduationCap, desc: 'Program-wise completion rates' },
+  { name: 'PF & ESI Remittance',    icon: ShieldCheck,   desc: 'Monthly challan & compliance status' },
+  { name: 'Performance Summary',    icon: Star,          desc: 'Ratings distribution and top performers' },
+  {
+    name: 'Employee Health Report',
+    icon: Activity,
+    desc: 'All health parameters: vitals, sleep, activity, mood, diet & more',
+    onGenerate: () => exportToExcel(employeeHealthData, {
+      filename: 'Employee_Health_Report',
+      sheetName: 'Health Parameters',
+    }),
+  },
 ];
 
 export const HRReportsPage = () => (
@@ -845,8 +868,12 @@ export const HRReportsPage = () => (
             </div>
             <p className="font-semibold text-sm">{r.name}</p>
             <p className="text-xs text-muted-foreground mt-1">{r.desc}</p>
-            <Button variant="ghost" size="sm" className="mt-3 text-teal-600 p-0 h-auto text-xs gap-1">
-              <Download className="h-3 w-3" />Generate →
+            <Button
+              variant="ghost" size="sm"
+              className="mt-3 text-teal-600 p-0 h-auto text-xs gap-1"
+              onClick={r.onGenerate}
+            >
+              <Download className="h-3 w-3" />{r.onGenerate ? 'Download Excel →' : 'Generate →'}
             </Button>
           </CardContent>
         </Card>

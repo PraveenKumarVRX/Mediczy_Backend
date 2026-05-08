@@ -220,7 +220,15 @@ const Register = () => {
       setWhatsappVerified(false);
       toast({ title: "OTP sent", description: "Check your email and WhatsApp for the OTP codes." });
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error?.response?.data?.message || "Failed to send OTP" });
+      const msg = error?.response?.data?.message || "Failed to send OTP";
+      const field = error?.response?.data?.field;
+      if (error?.response?.status === 409 && field === 'email') {
+        form.setError('email', { message: msg });
+      } else if (error?.response?.status === 409 && field === 'phoneNumber') {
+        form.setError('phoneNumber', { message: msg });
+      } else {
+        toast({ variant: "destructive", title: "Error", description: msg });
+      }
     } finally {
       setOtpSending(false);
     }
@@ -248,7 +256,15 @@ const Register = () => {
       setWhatsappVerified(false);
       toast({ title: "OTP sent", description: "Check your email and WhatsApp for the OTP codes." });
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error?.response?.data?.message || "Failed to send OTP" });
+      const msg = error?.response?.data?.message || "Failed to send OTP";
+      const field = error?.response?.data?.field;
+      if (error?.response?.status === 409 && field === 'email') {
+        corpForm.setError('email', { message: msg });
+      } else if (error?.response?.status === 409 && field === 'phoneNumber') {
+        corpForm.setError('phoneNumber', { message: msg });
+      } else {
+        toast({ variant: "destructive", title: "Error", description: msg });
+      }
     } finally {
       setOtpSending(false);
     }

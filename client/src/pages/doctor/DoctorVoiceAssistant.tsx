@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { MicVAD } from "@ricky0123/vad-web";
-import { Room, LocalAudioTrack, Track } from "livekit-client";
+import { Room } from "livekit-client";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
 import SiriOrb, { OrbState } from "@/components/SiriOrb";
 import { Button } from "@/components/ui/button";
@@ -105,6 +105,10 @@ const isWakePhrase = (t: string) =>
   t.includes("hi isha")  || t.includes("hi esha")  || t.includes("hay isha")  ||
   t.includes("hey eesha") || /\bisha\b/.test(t);
 
+/** Strip the wake phrase from a transcript and return the command (if any) */
+const extractCommand = (t: string): string =>
+  t.replace(/\b(hey|hi|hay)\s+(isha|esha|yesha|eesha)\b[,\s]*/i, '').trim();
+
 export default function DoctorVoiceAssistant() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -138,11 +142,9 @@ export default function DoctorVoiceAssistant() {
   const speakAbortRef    = useRef<AbortController | null>(null);
   const messagesEndRef   = useRef<HTMLDivElement>(null);
   const inputRef         = useRef<HTMLInputElement>(null);
-  // LiveKit + AudioContext for TTS playback
+  // LiveKit room (future WebRTC use) + simple Audio element for TTS
   const livekitRoomRef   = useRef<Room | null>(null);
-  const audioCtxRef      = useRef<AudioContext | null>(null);
-  const audioSourceRef   = useRef<AudioBufferSourceNode | null>(null);
-  const livekitTtsTrack  = useRef<LocalAudioTrack | null>(null);
+  const audioElRef       = useRef<HTMLAudioElement | null>(null);
   // Stable refs so VAD async callbacks always see latest values
   const isAwokenRef      = useRef(false);
   const isSpeakingRef    = useRef(false);
@@ -158,7 +160,7 @@ export default function DoctorVoiceAssistant() {
   useEffect(() => { isProcessingRef.current = isProcessing; }, [isProcessing]);
   useEffect(() => { messagesRef.current     = messages;     }, [messages]);
 
-  // ── LiveKit room: connect on mount for TTS audio routing ──────────────────
+  // ── LiveKit room: connect on mount for future WebRTC audio routing ──────────
   useEffect(() => {
     let room: Room | null = null;
     const connect = async () => {
@@ -167,7 +169,6 @@ export default function DoctorVoiceAssistant() {
         room = new Room();
         await room.connect(data.url, data.token);
         livekitRoomRef.current = room;
-        audioCtxRef.current = new AudioContext();
         console.info('[iSHA] LiveKit room connected:', data.roomName);
       } catch (err) {
         console.warn('[iSHA] LiveKit connect skipped:', (err as Error).message);
@@ -175,30 +176,18 @@ export default function DoctorVoiceAssistant() {
     };
     connect();
     return () => {
-      if (livekitTtsTrack.current) {
-        room?.localParticipant.unpublishTrack(livekitTtsTrack.current).catch(() => {});
-        livekitTtsTrack.current.stop();
-        livekitTtsTrack.current = null;
-      }
       room?.disconnect();
       livekitRoomRef.current = null;
-      audioCtxRef.current?.close();
-      audioCtxRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── ElevenLabs streaming TTS → AudioContext + LiveKit audio track ───────────
+  // ── ElevenLabs TTS → HTMLAudioElement playback ──────────────────────────────
   const stopSpeaking = useCallback(() => {
-    // Stop AudioContext source
-    try { audioSourceRef.current?.stop(); } catch { /* already stopped */ }
-    audioSourceRef.current = null;
-    // Unpublish LiveKit TTS track
-    if (livekitTtsTrack.current) {
-      livekitRoomRef.current?.localParticipant
-        .unpublishTrack(livekitTtsTrack.current).catch(() => {});
-      livekitTtsTrack.current.stop();
-      livekitTtsTrack.current = null;
+    if (audioElRef.current) {
+      audioElRef.current.pause();
+      audioElRef.current.src = '';
+      audioElRef.current = null;
     }
     window.speechSynthesis?.cancel();
     setIsSpeaking(false);
@@ -206,7 +195,7 @@ export default function DoctorVoiceAssistant() {
 
   const speak = useCallback(async (text: string) => {
     const resumeVAD = () => {
-      vadRef.current?.start().catch(() => { /* ignore if already started */ });
+      vadRef.current?.start().catch(() => {});
     };
 
     if (!ttsEnabled) { resumeVAD(); return; }
@@ -220,6 +209,31 @@ export default function DoctorVoiceAssistant() {
     // Pause VAD while speaking so we don't transcribe our own output
     vadRef.current?.pause();
 
+    // Safety: resume VAD after 20s if audio never plays (silent failure)
+    let safetyTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      safetyTimer = null;
+      setIsSpeaking(false);
+      resumeVAD();
+    }, 20_000);
+    const clearSafety = () => {
+      if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer = null; }
+    };
+
+    const tryBrowserTTS = () => {
+      const synth = window.speechSynthesis;
+      if (!synth) { setIsSpeaking(false); resumeVAD(); return; }
+      synth.cancel();
+      const utter = new SpeechSynthesisUtterance(clean);
+      utter.rate = 1.05;
+      const voices = synth.getVoices();
+      const preferred = voices.find(v => v.lang === "en-IN") || voices.find(v => v.lang.startsWith("en")) || voices[0];
+      if (preferred) utter.voice = preferred;
+      utter.onstart = () => setIsSpeaking(true);
+      utter.onend   = () => { clearSafety(); setIsSpeaking(false); resumeVAD(); };
+      utter.onerror = () => { clearSafety(); setIsSpeaking(false); resumeVAD(); };
+      synth.speak(utter);
+    };
+
     try {
       const resp = await fetch("/api/tts/stream", {
         method: "POST",
@@ -227,86 +241,39 @@ export default function DoctorVoiceAssistant() {
         body: JSON.stringify({ text: clean, model: "eleven_turbo_v2_5" }),
         signal: abortCtrl.signal,
       });
-      if (!resp.ok) throw new Error("TTS API error");
-      if (abortCtrl.signal.aborted) return;
+      if (!resp.ok) throw new Error(`TTS ${resp.status}`);
+      if (abortCtrl.signal.aborted) { clearSafety(); resumeVAD(); return; }
       const blob = await resp.blob();
-      if (abortCtrl.signal.aborted) { resumeVAD(); return; }
+      if (abortCtrl.signal.aborted) { clearSafety(); resumeVAD(); return; }
 
-      // ── AudioContext + LiveKit playback ──────────────────────────────────
-      // Ensure AudioContext is active (Chrome requires resume after user gesture)
-      let audioCtx = audioCtxRef.current;
-      if (!audioCtx || audioCtx.state === 'closed') {
-        audioCtx = new AudioContext();
-        audioCtxRef.current = audioCtx;
-      }
-      if (audioCtx.state === 'suspended') await audioCtx.resume();
+      const url = URL.createObjectURL(blob);
+      const el = new Audio(url);
+      audioElRef.current = el;
 
-      const arrayBuffer = await blob.arrayBuffer();
-      if (abortCtrl.signal.aborted) { resumeVAD(); return; }
-
-      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-      if (abortCtrl.signal.aborted) { resumeVAD(); return; }
-
-      // MediaStreamDestination: routes audio into LiveKit for WebRTC processing
-      const dest   = audioCtx.createMediaStreamDestination();
-      const source = audioCtx.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(dest);                   // → LiveKit track (echo reference for AEC)
-      source.connect(audioCtx.destination);   // → local speakers (immediate playback)
-      audioSourceRef.current = source;
-
-      // Publish TTS audio to LiveKit room so server agents can subscribe later
-      const room = livekitRoomRef.current;
-      if (room?.state === 'connected') {
-        try {
-          const mediaTrack = dest.stream.getAudioTracks()[0];
-          const lkTrack = new LocalAudioTrack(mediaTrack, undefined, false);
-          livekitTtsTrack.current = lkTrack;
-          await room.localParticipant.publishTrack(lkTrack, {
-            source: Track.Source.Unknown,
-            name: 'isha-tts',
-          });
-        } catch (e) {
-          console.warn('[iSHA] LiveKit TTS publish failed:', (e as Error).message);
-        }
-      }
-
-      setIsSpeaking(true);
-      source.onended = () => {
+      el.onended = () => {
+        URL.revokeObjectURL(url);
+        audioElRef.current = null;
+        clearSafety();
         setIsSpeaking(false);
-        // Unpublish TTS track when audio finishes
-        if (livekitTtsTrack.current) {
-          room?.localParticipant.unpublishTrack(livekitTtsTrack.current).catch(() => {});
-          livekitTtsTrack.current.stop();
-          livekitTtsTrack.current = null;
-        }
-        audioSourceRef.current = null;
         resumeVAD();
       };
-      source.start();
+      el.onerror = () => {
+        URL.revokeObjectURL(url);
+        audioElRef.current = null;
+        clearSafety();
+        setIsSpeaking(false);
+        // ElevenLabs audio failed to decode — try browser TTS
+        tryBrowserTTS();
+      };
+
+      await el.play();
+      setIsSpeaking(true);
 
     } catch (err: unknown) {
-      if ((err as Error)?.name === "AbortError") return;
-      // Fallback to browser TTS
-      const synth = window.speechSynthesis;
-      if (!synth) { resumeVAD(); return; }
-      synth.cancel();
-      const utter = new SpeechSynthesisUtterance(clean);
-      utter.rate = 1.05;
-      const getVoices = (): Promise<SpeechSynthesisVoice[]> =>
-        new Promise(resolve => {
-          const v = synth.getVoices();
-          if (v.length) return resolve(v);
-          synth.onvoiceschanged = () => resolve(synth.getVoices());
-        });
-      const voices = await getVoices();
-      if (abortCtrl.signal.aborted) { resumeVAD(); return; }
-      const preferred = voices.find(v => v.lang === "en-IN") || voices.find(v => v.lang.startsWith("en")) || voices[0];
-      if (preferred) utter.voice = preferred;
-      utter.onstart = () => setIsSpeaking(true);
-      utter.onend   = () => { setIsSpeaking(false); resumeVAD(); };
-      utter.onerror = () => { setIsSpeaking(false); resumeVAD(); };
-      synth.speak(utter);
+      clearSafety();
+      if ((err as Error)?.name === "AbortError") { resumeVAD(); return; }
+      // ElevenLabs fetch failed or play() was blocked — fallback to browser TTS
+      tryBrowserTTS();
     }
   }, [ttsEnabled, stopSpeaking]);
 
@@ -328,8 +295,9 @@ export default function DoctorVoiceAssistant() {
     };
 
     MicVAD.new({
-      workletURL: '/vad.worklet.bundle.min.js',
-      modelURL:   '/silero_vad_v5.onnx',
+      baseAssetPath:   '/',
+      onnxWASMBasePath: '/',
+      model:           'legacy',
       ortConfig:  (ort) => { ort.env.wasm.wasmPaths = '/'; },
       positiveSpeechThreshold: 0.75,
       negativeSpeechThreshold: 0.55,
@@ -356,16 +324,25 @@ export default function DoctorVoiceAssistant() {
           if (isWakePhrase(t)) {
             isAwokenRef.current = true;
             setIsAwoken(true);
-            let wakeMsg = `Yes, Dr. ${doctorFirstName}?`;
-            try {
-              const br = await api.get('/voice-assistant/briefing');
-              if (br.data?.hasUrgent && br.data?.speakText)
-                wakeMsg = `Dr. ${doctorFirstName}, ${br.data.speakText}`;
-            } catch { /* silent */ }
-            speakRef.current?.(wakeMsg);
             // Reset awoken state after 60s of no further interaction
             if (awokenTimerRef.current) clearTimeout(awokenTimerRef.current);
             awokenTimerRef.current = setTimeout(() => { isAwokenRef.current = false; setIsAwoken(false); }, 60_000);
+
+            // Extract command embedded in wake phrase (e.g. "Hey iSHA show appointments")
+            const inlineCommand = extractCommand(t);
+            if (inlineCommand.length > 3) {
+              // User said "Hey iSHA, do something" — process the command immediately
+              sendToAgentRef.current?.(inlineCommand);
+            } else {
+              // Pure wake phrase — greet with briefing
+              let wakeMsg = `Yes, Dr. ${doctorFirstName}?`;
+              try {
+                const br = await api.get('/voice-assistant/briefing');
+                if (br.data?.hasUrgent && br.data?.speakText)
+                  wakeMsg = `Dr. ${doctorFirstName}, ${br.data.speakText}`;
+              } catch { /* silent */ }
+              speakRef.current?.(wakeMsg);
+            }
           }
         } else {
           // Active mode — send to agent
