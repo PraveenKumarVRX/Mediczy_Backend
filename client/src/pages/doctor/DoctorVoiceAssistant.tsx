@@ -116,10 +116,11 @@ export default function DoctorVoiceAssistant() {
   const messagesEndRef    = useRef<HTMLDivElement>(null);
   const inputRef          = useRef<HTMLInputElement>(null);
   // Refs that mirror state for use inside async callbacks (avoids stale closure)
-  const handsFreeRef      = useRef(false);
-  const isListeningRef    = useRef(false);
-  const startListeningRef = useRef<(() => void) | null>(null);
-  const messagesRef       = useRef<Message[]>([]);
+  const handsFreeRef        = useRef(false);
+  const isListeningRef      = useRef(false);
+  const startListeningRef   = useRef<(() => void) | null>(null);
+  const messagesRef         = useRef<Message[]>([]);
+  const postWakePendingRef  = useRef(false); // trigger startListening after next TTS ends
 
   // ── Keep callback refs in sync with state ──────────────────────────────
   useEffect(() => { handsFreeRef.current = handsFreeMode; }, [handsFreeMode]);
@@ -146,6 +147,12 @@ export default function DoctorVoiceAssistant() {
   const speak = useCallback(async (text: string) => {
     // Helper: after speaking ends, auto-listen in hands-free mode
     const autoListenAfter = (delay = 700) => {
+      if (postWakePendingRef.current) {
+        // Wake word fired — always start listening after TTS ends, regardless of hands-free mode
+        postWakePendingRef.current = false;
+        setTimeout(() => startListeningRef.current?.(), delay);
+        return;
+      }
       if (handsFreeRef.current && !isListeningRef.current) {
         setTimeout(() => startListeningRef.current?.(), delay);
       }
@@ -227,7 +234,13 @@ export default function DoctorVoiceAssistant() {
       rec.onresult = (e: SpeechRecognitionEvent) => {
         for (let i = e.resultIndex; i < e.results.length; i++) {
           const t = e.results[i][0].transcript.toLowerCase().trim();
-          if (t.includes("hey isha") || t.includes("hey isha") || t.includes("hey iша") || t.includes("hey esha")) {
+          // Match "Hey iSHA" and common speech-recognition variants
+          const isWakeWord =
+            t.includes("hey isha") || t.includes("hey esha") || t.includes("hey yesha") ||
+            t.includes("hi isha")  || t.includes("hi esha")  || t.includes("hay isha") ||
+            t.includes("hey eesha") || t.includes("hey ishaa") || t.includes("hey isha") ||
+            /\bisha\b/.test(t);   // "isha" alone (partial pickup)
+          if (isWakeWord) {
             rec.stop();
             wakeRecRef.current = null;
             setIsAwoken(true);
@@ -241,25 +254,11 @@ export default function DoctorVoiceAssistant() {
                   wakeResponse = `Anhaan, Dr. ${doctorFirstName}. ${briefResp.data.speakText}`;
                 }
               } catch { /* silent */ }
+              // Flag so speak()'s onended handler calls startListening() when TTS finishes
+              postWakePendingRef.current = true;
               speak(wakeResponse);
             };
             void doWake();
-            setTimeout(() => {
-              if (recognitionRef.current) return;
-              const cmd = new SpeechRecognitionAPI!();
-              cmd.continuous     = false;
-              cmd.interimResults = false;
-              cmd.lang           = "en-IN";
-              cmd.onresult = (ev: SpeechRecognitionEvent) => {
-                const transcript = ev.results[0]?.[0]?.transcript;
-                if (transcript) sendToAgent(transcript);
-              };
-              cmd.onerror = () => setIsListening(false);
-              cmd.onend   = () => { setIsListening(false); setIsAwoken(false); };
-              recognitionRef.current = cmd;
-              cmd.start();
-              setIsListening(true);
-            }, 1800);
             break;
           }
         }
