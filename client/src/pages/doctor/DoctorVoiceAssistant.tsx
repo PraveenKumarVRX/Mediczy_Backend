@@ -356,11 +356,11 @@ export default function DoctorVoiceAssistant() {
           if (isWakePhrase(t)) {
             isAwokenRef.current = true;
             setIsAwoken(true);
-            let wakeMsg = `Anhaan, Dr. ${doctorFirstName}?`;
+            let wakeMsg = `Yes, Dr. ${doctorFirstName}?`;
             try {
               const br = await api.get('/voice-assistant/briefing');
               if (br.data?.hasUrgent && br.data?.speakText)
-                wakeMsg = `Anhaan, Dr. ${doctorFirstName}. ${br.data.speakText}`;
+                wakeMsg = `Dr. ${doctorFirstName}, ${br.data.speakText}`;
             } catch { /* silent */ }
             speakRef.current?.(wakeMsg);
             // Reset awoken state after 60s of no further interaction
