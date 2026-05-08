@@ -130,6 +130,57 @@ router.post('/speak', async (req, res) => {
 });
 
 /**
+ * POST /api/tts/stream
+ * Streaming TTS — pipes ElevenLabs audio chunks directly to client.
+ * Client receives audio/mpeg stream starting in ~300ms (before full generation).
+ */
+router.post('/stream', async (req, res) => {
+  const { text, voiceId, model = 'eleven_turbo_v2_5' } = req.body;
+
+  if (!text) return res.status(400).json({ error: 'Text is required' });
+  if (!ELEVENLABS_API_KEY) return res.status(503).json({ error: 'TTS not configured', fallback: true });
+
+  const cleanText = text
+    .replace(/[🚨⚠️🏥🩺📞✅❌💊🔴🟡🟢📹💬🎤📸📍👁️🧠❤️🫁🏃👤📊🧍😣💪🗣️]/g, '')
+    .replace(/\*\*/g, '').replace(/#{1,6}\s/g, '').replace(/•/g, '').replace(/---/g, '')
+    .trim().substring(0, 5000);
+
+  if (!cleanText) return res.status(400).json({ error: 'No speakable text' });
+
+  try {
+    const elResp = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId || DEFAULT_VOICE_ID}/stream`,
+      {
+        method: 'POST',
+        headers: {
+          'Accept': 'audio/mpeg',
+          'Content-Type': 'application/json',
+          'xi-api-key': ELEVENLABS_API_KEY,
+        },
+        body: JSON.stringify({
+          text: cleanText,
+          model_id: model,
+          voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.3, use_speaker_boost: true },
+        }),
+      }
+    );
+
+    if (!elResp.ok) {
+      const err = await elResp.text();
+      return res.status(elResp.status).json({ error: err.slice(0, 200), fallback: true });
+    }
+
+    res.set({ 'Content-Type': 'audio/mpeg', 'Transfer-Encoding': 'chunked', 'Cache-Control': 'no-cache' });
+    elResp.body.pipe(res);
+    elResp.body.on('error', () => res.end());
+
+  } catch (err) {
+    console.error('❌ TTS stream error:', err.message);
+    if (!res.headersSent) res.status(500).json({ error: err.message, fallback: true });
+  }
+});
+
+/**
  * GET /api/tts/voices
  * Get available Eleven Labs voices
  */

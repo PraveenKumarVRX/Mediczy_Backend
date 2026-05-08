@@ -23,6 +23,7 @@ import express from 'express';
 import multer from 'multer';
 import fetch from 'node-fetch';
 import FormData from 'form-data';
+import { AccessToken } from 'livekit-server-sdk';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 import logger from '../config/logger.js';
@@ -681,18 +682,51 @@ ${context ? `Patient context: ${context}` : ''}${extra}`
 }
 
 // ─── POST /stt — Audio → Text ─────────────────────────────────────────────────
+// Pipeline: VAD audio buffer → Groq Whisper (primary, ~300ms) → local Whisper fallback
 
 router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No audio file provided' });
 
   const language = req.body.language || 'en';
+  const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
+  // ── Primary: Groq Whisper (whisper-large-v3-turbo, ~300ms) ──────────────────
+  if (GROQ_API_KEY) {
+    try {
+      const groqForm = new FormData();
+      groqForm.append('file', req.file.buffer, {
+        filename: req.file.originalname || 'audio.wav',
+        contentType: req.file.mimetype || 'audio/wav',
+      });
+      groqForm.append('model', 'whisper-large-v3-turbo');
+      groqForm.append('language', language);
+      groqForm.append('response_format', 'json');
+
+      const groqResp = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { ...groqForm.getHeaders(), 'Authorization': `Bearer ${GROQ_API_KEY}` },
+        body: groqForm,
+        timeout: 10000,
+      });
+
+      if (groqResp.ok) {
+        const data = await groqResp.json();
+        const text = (data.text || '').trim();
+        logger.info(`[STT] Groq Whisper: "${text.slice(0, 80)}"`);
+        return res.json({ text, language, provider: 'groq-whisper' });
+      }
+      logger.warn('[STT] Groq Whisper failed, falling back to local', { status: groqResp.status });
+    } catch (err) {
+      logger.warn('[STT] Groq Whisper error, falling back to local', { error: err.message });
+    }
+  }
+
+  // ── Fallback: local Whisper (offline scribe, port 8006) ─────────────────────
   try {
-    // Proxy to offline scribe Python service for Whisper transcription
     const form = new FormData();
     form.append('audio', req.file.buffer, {
-      filename: req.file.originalname || 'recording.webm',
-      contentType: req.file.mimetype || 'audio/webm',
+      filename: req.file.originalname || 'recording.wav',
+      contentType: req.file.mimetype || 'audio/wav',
     });
     form.append('language', language);
 
@@ -713,9 +747,49 @@ router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req,
       text: data.transcription || data.text || '',
       language: data.detected_language || language,
       duration: data.duration_seconds || null,
+      provider: 'local-whisper',
     });
   } catch (err) {
     logger.error('[VoiceAssistant] STT error', { error: err.message });
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /livekit-token — Issue short-lived token for iSHA audio room ────────
+// The frontend joins room "isha-assistant-<doctorId>" (subscribe + publish)
+// so TTS audio published by backend can be played by the same participant,
+// and microphone audio from future upgrades can be bridged.
+
+router.get('/livekit-token', authUser, requireDoctor, async (req, res) => {
+  try {
+    const apiKey    = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
+    const wsUrl     = process.env.LIVEKIT_URL;
+
+    if (!apiKey || !apiSecret || !wsUrl) {
+      return res.status(503).json({ error: 'LiveKit not configured' });
+    }
+
+    const doctorId = req.user?.id || req.user?.userId || 'unknown';
+    const roomName = `isha-assistant-${doctorId}`;
+    const identity = `doctor-${doctorId}`;
+
+    const token = new AccessToken(apiKey, apiSecret, {
+      identity,
+      name: 'iSHA Assistant',
+      ttl: 3600, // 1 hour
+    });
+    token.addGrant({
+      roomJoin: true,
+      room: roomName,
+      canPublish: true,
+      canSubscribe: true,
+    });
+
+    const jwt = await token.toJwt();
+    return res.json({ token: jwt, url: wsUrl, roomName });
+  } catch (err) {
+    logger.error('[VoiceAssistant] LiveKit token error', { error: err.message });
     return res.status(500).json({ error: err.message });
   }
 });
