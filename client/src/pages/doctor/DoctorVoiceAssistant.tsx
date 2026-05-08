@@ -354,6 +354,11 @@ export default function DoctorVoiceAssistant() {
   // ── Send to agent ──────────────────────────────────────────────────────────
   const sendToAgent = useCallback(async (text: string) => {
     if (!text.trim()) return;
+    // Filter out noise: too short, filler words, or garbled (no spaces in >6 char string)
+    const t = text.trim();
+    const FILLER = /^(um+|uh+|hmm+|okay|ok|yeah|yep|nope|ah+|oh+|er+|hm+|\.\.\.)$/i;
+    const isGarbled = t.length > 6 && !t.includes(' ') && !/^[a-z]+$/i.test(t);
+    if (t.length < 3 || FILLER.test(t) || isGarbled) return;
 
     // Unlock browser audio context on first user-initiated call
     if (!audioUnlockedRef.current) {
@@ -442,6 +447,11 @@ export default function DoctorVoiceAssistant() {
     wakeRecRef.current?.stop();
     wakeRecRef.current = null;
     setWakeListening(false);
+
+    // Request mic with noise suppression constraints for clinic environments
+    void navigator.mediaDevices.getUserMedia({
+      audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true, channelCount: 1 },
+    }).catch(() => { /* proceed without constraints if denied */ });
 
     const rec = new SpeechRecognitionAPI!();
     rec.continuous = false;

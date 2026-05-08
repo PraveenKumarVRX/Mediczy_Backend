@@ -23,21 +23,54 @@ import { recordTelemetry } from './evaluation-engine.js';
 const _clients = {};
 
 /**
- * Direct fetch for iSHA — avoids OpenAI SDK which always sends Authorization header.
- * The GPU gateway rejects any Authorization header (even dummy) via JWT middleware.
- * With ALLOW_INSECURE_DEV=true and NO auth header, the gateway skips auth entirely.
+ * Direct fetch for iSHA — uses JWT auto-login (same pattern as SIB retrieval_llm.py).
+ * Credentials: ISHA_AUTH_USERNAME / ISHA_AUTH_PASSWORD (default: admin/admin123).
+ * Token is cached in-memory and auto-refreshed 5 min before expiry.
  */
+let _ishaToken = null;
+let _ishaTokenExp = 0;
+
+async function getIshaToken() {
+  const now = Date.now() / 1000;
+  if (_ishaToken && now < _ishaTokenExp - 300) return _ishaToken;
+
+  const baseURL = process.env.ISHA_AI_URL || 'https://ai.isha.buzz';
+  const username = process.env.ISHA_AUTH_USERNAME || 'admin';
+  const password = process.env.ISHA_AUTH_PASSWORD || 'admin123';
+
+  const res = await fetch(`${baseURL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+    signal: AbortSignal.timeout(8000),
+  });
+
+  if (!res.ok) throw new Error(`iSHA login failed: ${res.status}`);
+  const { access_token } = await res.json();
+
+  // Decode JWT expiry without a library
+  try {
+    const payload = JSON.parse(Buffer.from(access_token.split('.')[1], 'base64').toString());
+    _ishaTokenExp = payload.exp || (now + 3600);
+  } catch {
+    _ishaTokenExp = now + 3600;
+  }
+  _ishaToken = access_token;
+  console.log('[LLM] iSHA token refreshed');
+  return _ishaToken;
+}
+
 async function callIsha(params) {
   const baseURL = process.env.ISHA_AI_URL || 'https://ai.isha.buzz';
   const url = `${baseURL}/v1/chat/completions`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30_000);
 
-  const apiKey = process.env.ISHA_LLM_API_KEY;
-  const headers = { 'Content-Type': 'application/json' };
-  if (apiKey && apiKey !== 'no-key-required') {
-    headers['Authorization'] = `Bearer ${apiKey}`;
-  }
+  const token = await getIshaToken();
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+  };
 
   try {
     const res = await fetch(url, {
@@ -49,6 +82,8 @@ async function callIsha(params) {
     clearTimeout(timeoutId);
 
     if (!res.ok) {
+      // If 401, clear cached token so next call re-authenticates
+      if (res.status === 401) { _ishaToken = null; _ishaTokenExp = 0; }
       const body = await res.text().catch(() => '');
       throw new Error(`iSHA ${res.status}: ${body.substring(0, 200)}`);
     }
@@ -152,8 +187,8 @@ const PROVIDERS = [
   },
   {
     name: 'groq',
-    label: 'Groq (Llama 3.3 70B)',
-    model: 'llama-3.3-70b-versatile',
+    label: 'Groq (Llama 4 Scout 17B)',
+    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
     getClient: getGroqClient,
     priority: 2,
   },
@@ -289,8 +324,8 @@ async function chat({
     // DEEP → isha first, then groq, then openai.
     // Tool-calling is never sent to the SLM (no function-calling support).
     const preferredName = TIER_PROVIDERS[cognitiveTier];
-    const preferred = PROVIDERS.find(p => p.name === preferredName);
-    const rest = PROVIDERS.filter(p => p.name !== preferredName)
+    const preferred = PROVIDERS.find(p => p.name === preferredName && !p.disabled);
+    const rest = PROVIDERS.filter(p => p.name !== preferredName && !p.disabled)
       .sort((a, b) => {
         // REFLEX fallback order: groq → openai (skip re-trying SLM)
         // STANDARD fallback order: openai → isha
@@ -300,10 +335,10 @@ async function chat({
         if (cognitiveTier === TIERS.DEEP)      return a.priority - b.priority;
         return a.priority - b.priority;
       });
-    providersToTry = preferred ? [preferred, ...rest] : [...PROVIDERS];
+    providersToTry = preferred ? [preferred, ...rest] : PROVIDERS.filter(p => !p.disabled);
     console.log(`[LLM] CognitiveTier=${cognitiveTier} → preferred=${preferredName}, cascade=[${providersToTry.map(p => p.name).join('→')}]`);
   } else {
-    providersToTry = [...PROVIDERS]; // All in cascade order
+    providersToTry = PROVIDERS.filter(p => !p.disabled); // All enabled in cascade order
   }
 
   const cascade = [];       // Track which providers were attempted

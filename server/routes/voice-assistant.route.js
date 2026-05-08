@@ -113,7 +113,7 @@ const ASSISTANT_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          days: { type: 'number', description: 'Number of days from today' },
+          days: { type: 'number', description: 'Number of days from today, e.g. 7 for one week. Must be an integer.' },
           reason: { type: 'string', description: 'Reason for follow-up' }
         },
         required: ['days']
@@ -743,6 +743,9 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
 
   try {
     // ── Step 1: Call LLM agent with tool definitions ──────────────────────
+    // Force Groq for voice assistant — iSHA (BiMediX2) does not return OpenAI-style
+    // JSON tool_calls; it embeds tool calls as plain text, causing all actions to
+    // fall through as unresolved. Groq llama-4-scout returns proper structured tool calls.
     const agentResp = await llmProvider.chat({
       messages: [
         { role: 'system', content: systemPrompt },
@@ -754,6 +757,7 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
       maxTokens: 800,
       temperature: 0.1,
       skipCache: true,
+      forceProvider: 'groq',
     });
 
     // ── Step 2: Parse response ─────────────────────────────────────────────
@@ -864,7 +868,7 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
 
     // schedule_followup — return to client for UI confirmation
     if (toolName === 'schedule_followup') {
-      const days = args.days || 7;
+      const days = parseInt(args.days, 10) || 7;  // coerce string to int (Groq may pass string)
       const followUpDate = new Date();
       followUpDate.setDate(followUpDate.getDate() + days);
       const dateStr = followUpDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
