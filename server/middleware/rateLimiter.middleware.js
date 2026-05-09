@@ -25,10 +25,12 @@ const initRedisStore = () => {
     // Use simple connection without password (Redis has no password set)
     const redisHost = process.env.REDIS_HOST || 'localhost';
     const redisPort = parseInt(process.env.REDIS_PORT) || 6379;
-    
+    const redisPassword = process.env.REDIS_PASSWORD || undefined;
+
     redisClient = new Redis({
       host: redisHost,
       port: redisPort,
+      password: redisPassword,
       maxRetriesPerRequest: 3,
       retryStrategy: (times) => Math.min(times * 50, 2000),
       lazyConnect: false,
