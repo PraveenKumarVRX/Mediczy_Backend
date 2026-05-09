@@ -1,6 +1,6 @@
 # Mediqzy — Doctor Mobile App API Integration Guide
 
-> **Version:** 2.2 · **Last Updated:** 2026-05-09  
+> **Version:** 2.3 · **Last Updated:** 2026-05-10  
 > **Base URL (Production):** `https://api.mediqzy.com`  
 > **WebSocket URL:** `https://app.mediqzy.com` (path: `/socket.io`)  
 > **LiveKit URL:** `wss://video.mediqzy.com`
@@ -47,6 +47,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **2.3** | 2026-05-10 | Section 11 rewritten with correct doctor chat endpoints (`/api/doctor/chat/*`); Section 13 AI Scribe paths corrected to `/api/ai/scribe/generate-prescription`, `/api/ai/scribe/autocomplete`, `/api/ai/scribe/scribe`, `/api/ai/scribe/reference/:type`; Section 15 clinical notes path corrected from `soap-notes` to `notes`, sub-endpoints added; Appendix A.3 flow corrected; backend `revenue-insights.route.js` ESM require() bug fixed; `GET /api/doctors/patients` address column bug fixed |
 | **2.2** | 2026-05-09 | Section 2.1 updated with social media link fields (`socialMedia` object) in registration payload; Section 3.1/3.2 updated with `socialLinks` field in profile response/update; Section 12 expanded with Firebase dual-app architecture, SenderId mismatch root cause, `mismatched-credential` auto-deactivation, and FCM token hygiene guidance; Appendix B FCM section rewritten with sender ID table and dual-SA setup instructions |
 | **2.1** | 2026-05-01 | Section 9 expanded with patient update, vitals & history routes; Section 18 expanded with AI triage image analysis; Sections 6.7–6.8 added for mobile SetTimeSlots weekly schedule flow; New Section 27 (Remote Health Monitoring); New Section 28 (Lab Imaging / RIS-Referred); Appendix A flows A.6–A.9 added; Appendix B mobile notes updated; Base URL corrected to `https://app.mediqzy.com/api`; all endpoints smoke-tested and verified |
 | **2.0** | 2026-04-09 | Section 21 (Alerts) rewritten with full DB-backed notification API detail; Section 12 updated with alert polling guidance; Appendix C (test credentials) added; Base URL corrected to `https://api.mediqzy.com`; valid `consultationType` values clarified |
@@ -1839,85 +1840,40 @@ apt-{appointmentId}-{hash}
 
 ## 11. Chat (REST + Socket.IO)
 
-### REST Endpoints
+The platform has two chat systems:
+- **Doctor↔Patient/Team Chat** (`/api/doctor/chat/*`) — structured messaging between doctors, patients, and nurses. Use this for the doctor mobile app.
+- **CRM/Channel Chat** (`/api/chat/rooms/*`) — team/channel chat used by admin and CRM flows.
 
-#### 11.1 Create Chat Room
+### Doctor Chat Endpoints (use for mobile app)
+
+#### 11.1 Get Conversation List
 
 ```
-POST /api/chat/rooms
+GET /api/doctor/chat/messages
+Authorization: Bearer <token>
+```
+
+Returns all conversations (latest message per contact).
+
+#### 11.2 Get Messages for a Conversation
+
+```
+GET /api/doctor/chat/messages/:conversationId
+Authorization: Bearer <token>
+```
+
+Returns paginated messages for a specific conversation.
+
+#### 11.3 Send a Message
+
+```
+POST /api/doctor/chat/messages
 Authorization: Bearer <token>
 ```
 
 ```json
 {
-  "id": "room-doctor-1-patient-19",
-  "type": "user_team",
-  "participants": [1, 19],
-  "title": "Dr. Smith - Patient Consultation",
-  "description": "Follow-up chat"
-}
-```
-
-**Room types:** `user_team`, `team_internal`, `whatsapp_customer`, `channel`
-
-#### 11.2 Get Chat Rooms
-
-```
-GET /api/chat/rooms
-Authorization: Bearer <token>
-```
-
-Returns all rooms the user is a participant of.
-
-#### 11.3 Get Messages (Paginated)
-
-```
-GET /api/chat/rooms/:roomId/messages?limit=50&offset=0
-Authorization: Bearer <token>
-```
-
-| Param | Type | Default | Max |
-|-------|------|---------|-----|
-| `limit` | integer | 50 | 100 |
-| `offset` | integer | 0 | — |
-
-**Response (200):**
-
-```json
-{
-  "success": true,
-  "messages": [
-    {
-      "id": "msg_170900_abc123",
-      "roomId": "room-doctor-1-patient-19",
-      "userId": 1,
-      "userName": "Dr. John Smith",
-      "userRole": "doctor",
-      "message": "How are you feeling today?",
-      "type": "text",
-      "timestamp": "2026-03-10T12:00:00.000Z",
-      "edited": false,
-      "reactions": []
-    }
-  ],
-  "pagination": {
-    "total": 100,
-    "limit": 50,
-    "offset": 0,
-    "hasMore": true
-  }
-}
-```
-
-#### 11.4 Send Message
-
-```
-POST /api/chat/rooms/:roomId/messages
-Authorization: Bearer <token>
-```
-
-```json
-{
+  "recipientId": 19,
   "message": "Please take the prescribed medication regularly",
   "type": "text"
 }
@@ -1925,15 +1881,48 @@ Authorization: Bearer <token>
 
 | Field | Type | Validation |
 |-------|------|------------|
+| `recipientId` | integer | Required — patient/nurse user ID |
 | `message` | string | 1–1000 characters, required |
 | `type` | string | `text` (default), `image`, `file` |
 
 > **Note:** Messages are passed through a **profanity filter**. HIGH/CRITICAL severity blocks the message (402). LOW/MEDIUM replaces offensive text with sanitized version.
 
-#### 11.5 Upload Chat File
+#### 11.4 Get Patient Contacts
 
 ```
-POST /api/chat/upload
+GET /api/doctor/chat/contacts/patients
+Authorization: Bearer <token>
+```
+
+Returns list of patients the doctor has had appointments with (for chat contact list).
+
+#### 11.5 Get Nurse Contacts
+
+```
+GET /api/doctor/chat/contacts/nurses
+Authorization: Bearer <token>
+```
+
+#### 11.6 Get Team Contacts
+
+```
+GET /api/doctor/chat/contacts/team
+Authorization: Bearer <token>
+```
+
+Returns combined patient + nurse contacts.
+
+#### 11.7 Mark Conversation as Read
+
+```
+PATCH /api/doctor/chat/read/:conversationId
+Authorization: Bearer <token>
+```
+
+#### 11.8 Upload Chat File
+
+```
+POST /api/doctor/chat/upload
 Authorization: Bearer <token>
 Content-Type: multipart/form-data
 ```
@@ -1945,17 +1934,17 @@ Form field: `file` (max 10 MB)
 ```json
 {
   "success": true,
-  "fileUrl": "/api/chat/files/170900_abc123_report.pdf",
+  "fileUrl": "/api/doctor/chat/files/170900_abc123_report.pdf",
   "fileName": "report.pdf",
   "fileSize": 1048576,
   "fileMimeType": "application/pdf"
 }
 ```
 
-#### 11.6 Download Chat File
+#### 11.9 Download Chat File
 
 ```
-GET /api/chat/files/:fileName
+GET /api/doctor/chat/files/:fileName
 Authorization: Bearer <token>
 ```
 
@@ -2151,7 +2140,7 @@ See [Section 21: Alerts & Messages](#21-alerts--messages) for full endpoint docu
 ### 13.1 Generate Prescription from Notes
 
 ```
-POST /api/ai/generate-prescription
+POST /api/ai/scribe/generate-prescription
 Authorization: Bearer <token>
 ```
 
@@ -2239,7 +2228,7 @@ Generates a structured prescription from consultation notes using AI.
 ### 13.2 AI Scribe (Field-Level)
 
 ```
-POST /api/ai/scribe
+POST /api/ai/scribe/scribe
 Authorization: Bearer <token>
 ```
 
@@ -2273,7 +2262,7 @@ Process text for a specific prescription field.
 ### 13.3 Autocomplete
 
 ```
-GET /api/ai/autocomplete?q=para&limit=8&type=drug
+GET /api/ai/scribe/autocomplete?q=para&limit=8&type=drug
 Authorization: Bearer <token>
 ```
 
@@ -2312,7 +2301,7 @@ Authorization: Bearer <token>
 ### 13.4 Reference Data
 
 ```
-GET /api/ai/reference/:type
+GET /api/ai/scribe/reference/:type
 Authorization: Bearer <token>
 ```
 
@@ -2513,10 +2502,10 @@ Process multiple dictations at once (max 10).
 
 ## 15. Clinical Workflow
 
-### 15.1 SOAP Notes
+### 15.1 Clinical Notes (SOAP)
 
 ```
-POST /api/doctor/clinical-workflow/soap-notes
+POST /api/doctor/clinical-workflow/notes
 Authorization: Bearer <token>
 ```
 
@@ -2529,6 +2518,28 @@ Authorization: Bearer <token>
   "assessment": "Hypertension Grade 1, rule out IHD",
   "plan": "Start Amlodipine 5mg OD, ECG, 2D Echo, follow up in 1 week"
 }
+```
+
+### 15.1.1 Generate AI Summary for Note
+
+```
+POST /api/doctor/clinical-workflow/notes/:id/generate-summary
+Authorization: Bearer <token>
+```
+
+### 15.1.2 Sign a Clinical Note
+
+```
+POST /api/doctor/clinical-workflow/notes/:id/sign
+Authorization: Bearer <token>
+```
+
+### 15.1.3 Get Notes for Patient
+
+```
+GET /api/doctor/clinical-workflow/notes/patient/:patientId
+Authorization: Bearer <token>
+```
 ```
 
 ### 15.2 ICD-10 Code Search
@@ -3642,7 +3653,7 @@ export const DoctorImaging = {
 
 ```
 1. (During/after consultation, doctor dictates notes)
-2. POST /api/ai/generate-prescription   → AI generates structured Rx from notes
+2. POST /api/ai/scribe/generate-prescription   → AI generates structured Rx from notes
    ↳ Set saveToDatabase: true to auto-save as draft
 3. PUT  /api/prescriptions/:id          → Doctor reviews and edits
 4. POST /api/prescriptions/:id/issue    → Finalize

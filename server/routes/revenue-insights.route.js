@@ -1,5 +1,6 @@
 import express from 'express';
 const router = express.Router();
+import { Op, fn, col } from 'sequelize';
 import RevenueInsight from '../models/revenue-insight.model.js';
 import { authDoctor } from '../middleware/doctor.middleware.js';
 
@@ -7,7 +8,6 @@ import { authDoctor } from '../middleware/doctor.middleware.js';
 router.get('/', authDoctor, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    const { Op } = require('sequelize');
     const where = { doctorId: req.doctor.id };
     
     if (startDate && endDate) {
@@ -39,7 +39,6 @@ router.post('/', authDoctor, async (req, res) => {
 // Get revenue summary
 router.get('/summary', authDoctor, async (req, res) => {
   try {
-    const { Op, fn, col } = require('sequelize');
     const today = new Date();
     const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     

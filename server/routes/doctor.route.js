@@ -969,7 +969,7 @@ router.get("/patients", authDoctor, async (req, res) => {
       include: [{
         model: User,
         as: 'patient',
-        attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'gender', 'dateOfBirth', 'address', 'profileImage']
+        attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'gender', 'dateOfBirth', 'profileImage']
       }],
       order: [['createdAt', 'DESC']]
     });
@@ -1008,7 +1008,6 @@ router.get("/patients", authDoctor, async (req, res) => {
         phoneNumber: p.phoneNumber,
         gender: p.gender,
         dateOfBirth: p.dateOfBirth,
-        address: p.address,
         profileImage: p.profileImage
       }))
     });
