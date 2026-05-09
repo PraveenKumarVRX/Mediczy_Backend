@@ -1195,34 +1195,8 @@ The above terms are agreeable to both parties and have been signed in the presen
                           </FormItem>
                         )} />
 
-                        <div className="p-3 rounded-xl bg-amber-50 border border-amber-100">
-                          <p className="text-xs text-amber-700 font-medium flex items-center gap-1.5"><AlertCircle className="h-3.5 w-3.5 shrink-0" /> Consultation fees declared here will be locked for 1 year from your registration date and will appear in your MoU.</p>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <FormField control={form.control} name="onlineConsultationFee" render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-sm font-medium text-slate-700">Online Consultation Fee (₹)</FormLabel>
-                              <FormControl>
-                                <Input {...field} type="number" min="0" placeholder="e.g. 500"
-                                  className="h-11 border-slate-200 bg-slate-50 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
-                              </FormControl>
-                              <FormMessage className="text-xs" />
-                            </FormItem>
-                          )} />
-                          <FormField control={form.control} name="inPersonConsultationFee" render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-sm font-medium text-slate-700">In-Person Consultation Fee (₹)</FormLabel>
-                              <FormControl>
-                                <Input {...field} type="number" min="0" placeholder="e.g. 800"
-                                  className="h-11 border-slate-200 bg-slate-50 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
-                              </FormControl>
-                              <FormMessage className="text-xs" />
-                            </FormItem>
-                          )} />
-                        </div>
-
                         {/* Social Media Pages */}
-                        <div className="mt-2 pt-4 border-t border-slate-100">
+                        <div className="pt-3 border-t border-slate-100">
                           <div className="flex items-center gap-2 mb-1">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
                             <p className="text-sm font-semibold text-slate-700">Social Media Pages <span className="text-xs font-normal text-slate-400">(optional)</span></p>
@@ -1230,7 +1204,7 @@ The above terms are agreeable to both parties and have been signed in the presen
                           <p className="text-xs text-slate-500 mb-3 leading-relaxed">
                             Add your professional pages — your profile picture, bio and videos will be displayed to patients in their health feed.
                           </p>
-                          <div className="space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
                             <FormField control={form.control} name="smFacebook" render={({ field }) => (
                               <FormItem>
                                 <FormControl>
@@ -1272,6 +1246,32 @@ The above terms are agreeable to both parties and have been signed in the presen
                               </FormItem>
                             )} />
                           </div>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-amber-50 border border-amber-100">
+                          <p className="text-xs text-amber-700 font-medium flex items-center gap-1.5"><AlertCircle className="h-3.5 w-3.5 shrink-0" /> Consultation fees declared here will be locked for 1 year from your registration date and will appear in your MoU.</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <FormField control={form.control} name="onlineConsultationFee" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-sm font-medium text-slate-700">Online Consultation Fee (₹)</FormLabel>
+                              <FormControl>
+                                <Input {...field} type="number" min="0" placeholder="e.g. 500"
+                                  className="h-11 border-slate-200 bg-slate-50 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                              </FormControl>
+                              <FormMessage className="text-xs" />
+                            </FormItem>
+                          )} />
+                          <FormField control={form.control} name="inPersonConsultationFee" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="text-sm font-medium text-slate-700">In-Person Consultation Fee (₹)</FormLabel>
+                              <FormControl>
+                                <Input {...field} type="number" min="0" placeholder="e.g. 800"
+                                  className="h-11 border-slate-200 bg-slate-50 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                              </FormControl>
+                              <FormMessage className="text-xs" />
+                            </FormItem>
+                          )} />
                         </div>
                       </div>
                     )}

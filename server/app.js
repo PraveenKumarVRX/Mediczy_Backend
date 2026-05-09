@@ -3,6 +3,11 @@ import dotenv from "dotenv";
 dotenv.config();
 import cors from "cors";
 import helmet from "helmet";
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
+import path from 'path';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import { credentialStuffingGuard } from './middleware/credentialStuffingGuard.js';
 import { ipThreatGate } from './middleware/ipThreatIntelligence.js';
 import crypto from 'crypto';
@@ -675,6 +680,16 @@ app.use(compression({
 // 5. Body Parsers and File Upload
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+
+// Serve downloadable app binaries (APKs, etc.)
+app.use('/api/downloads', express.static(path.join(__dirname, 'public/downloads'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.apk')) {
+      res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+      res.setHeader('Content-Disposition', 'attachment');
+    }
+  }
+}));
 const globalFileUploadMiddleware = fileUpload({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max file size
   abortOnLimit: true,

@@ -96,3 +96,4 @@ dump.rdb
 tmp_*
 ql*
 cron-registry.json
+server/public/downloads/*.apk
