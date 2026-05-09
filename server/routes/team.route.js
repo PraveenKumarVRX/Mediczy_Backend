@@ -1722,14 +1722,14 @@ router.patch('/registered-doctors/:id/activate', authTeam, async (req, res) => {
   try {
     const doctor = await doctorModel.findByPk(req.params.id);
     if (!doctor) return res.status(404).json({ success: false, message: 'Doctor not found' });
-    await doctor.update({ isVerified: true, documentVerified: true });
+    await doctor.update({ isVerified: true, documentVerified: true, status: 'active' });
     const doctorName = `${doctor.prefix || ''} ${doctor.firstName} ${doctor.lastName}`.trim();
     // Send activation email to doctor
     try {
       await _teamMailer().sendMail({
-        from: `"Mediczy Team" <${process.env.SMTP_USER || 'support@mediqzy.com'}>`,
+        from: `"SmartHealth Team" <${process.env.SMTP_FROM || 'noreply@mediqzy.com'}>`,
         to: doctor.email,
-        subject: `✅ Your Mediczy Doctor Account is Active — Welcome, ${doctorName}!`,
+        subject: `✅ Your SmartHealth Doctor Account is Active — Welcome, ${doctorName}!`,
         html: `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:#f0f4f8;font-family:'Segoe UI',Arial,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#f0f4f8"><tr><td align="center" style="padding:40px 20px;">
@@ -1737,13 +1737,13 @@ router.patch('/registered-doctors/:id/activate', authTeam, async (req, res) => {
   <tr><td style="background:linear-gradient(135deg,#059669,#0d9488);padding:40px;text-align:center;">
     <div style="width:72px;height:72px;background:rgba(255,255,255,0.2);border-radius:50%;margin:0 auto 20px;line-height:72px;font-size:36px;">✅</div>
     <h1 style="margin:0;color:#fff;font-size:24px;font-weight:800;">Account Activated!</h1>
-    <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">Your Mediczy doctor account is now live</p>
+    <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">Your SmartHealth doctor account is now live</p>
   </td></tr>
   <tr><td style="padding:36px 40px;">
     <p style="font-size:16px;color:#0f172a;font-weight:600;margin:0 0 12px">Hello, ${doctorName}!</p>
     <p style="color:#475569;line-height:1.8;font-size:14px;margin:0 0 28px">
       Congratulations! Our team has reviewed and verified your registration documents.
-      Your Mediczy doctor account is now <strong style="color:#059669">fully active</strong>.
+      Your SmartHealth doctor account is now <strong style="color:#059669">fully active</strong>.
       You can now log in and start seeing patients.
     </p>
     <div style="text-align:center;margin-bottom:28px">
@@ -1758,7 +1758,7 @@ router.patch('/registered-doctors/:id/activate', authTeam, async (req, res) => {
     </div>
   </td></tr>
   <tr><td style="padding:16px 40px;border-top:1px solid #e2e8f0;text-align:center">
-    <p style="margin:0;font-size:11px;color:#94a3b8">Mediczy · Mayden SmartHealth Pvt Ltd · support@mediqzy.com</p>
+    <p style="margin:0;font-size:11px;color:#94a3b8">SmartHealth · Mayden SmartHealth Pvt Ltd · support@mediqzy.com</p>
   </td></tr>
 </table></td></tr></table></body></html>`,
       });
@@ -1780,9 +1780,9 @@ router.patch('/registered-doctors/:id/reject', authTeam, async (req, res) => {
     const doctorName = `${doctor.prefix || ''} ${doctor.firstName} ${doctor.lastName}`.trim();
     try {
       await _teamMailer().sendMail({
-        from: `"Mediczy Team" <${process.env.SMTP_USER || 'support@mediqzy.com'}>`,
+        from: `"SmartHealth Team" <${process.env.SMTP_FROM || 'noreply@mediqzy.com'}>`,
         to: doctor.email,
-        subject: `Mediczy Doctor Registration — Update Required`,
+        subject: `SmartHealth Doctor Registration — Update Required`,
         html: `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:#f0f4f8;font-family:'Segoe UI',Arial,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#f0f4f8"><tr><td align="center" style="padding:40px 20px;">
