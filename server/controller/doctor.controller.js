@@ -280,7 +280,7 @@ async function sendDoctorConfirmationEmail(doctor, docs) {
     }
 
     await transporter.sendMail({
-      from: `"SmartHealth" <${process.env.SMTP_USER || 'noreply@mediczy.com'}>`,
+      from: `"SmartHealth" <${process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@mediqzy.com'}>`,
       to: doctor.email,
       subject: `✅ Application Received — Account Pending Activation | SmartHealth`,
       attachments,
@@ -382,7 +382,7 @@ async function sendDoctorRegistrationAlert(doctor, docs) {
     }
 
     await transporter.sendMail({
-      from: `"Mediczy Registrations" <${process.env.SMTP_USER || 'noreply@mediczy.com'}>`,
+      from: `"SmartHealth Registrations" <${process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@mediqzy.com'}>`,
       to: 'support@mediqzy.com',
       subject: `🩺 New Doctor Registration — ${doctorName} | Pending Verification`,
       attachments,
