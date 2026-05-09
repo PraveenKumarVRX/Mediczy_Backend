@@ -469,7 +469,10 @@ export async function registerDoctor(req, res) {
 
     // Create doctor (password will be hashed automatically by beforeCreate hook)
     // isVerified defaults to false — manual activation required
-    const newDoctor = await doctorModel.create({ ...req.body, isVerified: false });
+    // Map socialMedia → socialLinks (frontend key vs model field)
+    const { socialMedia, ...restBody } = req.body;
+    const socialLinks = socialMedia || restBody.socialLinks || {};
+    const newDoctor = await doctorModel.create({ ...restBody, socialLinks, isVerified: false });
 
     // Send registration alert to support (fire-and-forget)
     const docsPayload = req.body.documents || {};
