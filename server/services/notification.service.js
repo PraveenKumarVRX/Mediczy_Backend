@@ -421,7 +421,12 @@ class NotificationService {
       );
 
       // Auto-deactivate stale tokens (FCM returns NotRegistered when app uninstalled / token refreshed)
-      const staleErrorCodes = ['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'];
+      // Also deactivate mismatched-credential tokens (FCM token belongs to a different Firebase project)
+      const staleErrorCodes = [
+        'messaging/registration-token-not-registered',
+        'messaging/invalid-registration-token',
+        'messaging/mismatched-credential',
+      ];
       await Promise.all(
         results.map(async (result, i) => {
           if (result.status === 'rejected') {

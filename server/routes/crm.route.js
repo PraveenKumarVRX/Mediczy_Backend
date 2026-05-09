@@ -317,8 +317,8 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
         discount_pct    NUMERIC(5,2) DEFAULT 0,
         coverage_details JSONB DEFAULT '{}'::jsonb,
         slab_pricing    JSONB DEFAULT '[]'::jsonb,
-        terms           TEXT,,
-        sent_at         TIMESTAMPTZ
+        terms           TEXT,
+        sent_at         TIMESTAMPTZ,
         notes           TEXT,
         created_by      INTEGER NOT NULL,
         created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),

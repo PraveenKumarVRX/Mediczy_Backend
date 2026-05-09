@@ -7,15 +7,30 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Initialize Firebase Admin SDK only if credentials are properly configured
-let messaging = null;
+let messaging = null;          // patient app  (mysmarthealth-b5695)
+let doctorMessaging = null;    // doctor app   (doctorapp-6c768)
 let isFirebaseInitialized = false;
 
-// Locate service account JSON file
+// ── Service-account file locators ─────────────────────────────────────────────
 const findServiceAccountFile = () => {
   const candidates = [
     process.env.GOOGLE_APPLICATION_CREDENTIALS,
     resolve(__dirname, '../../config/firebase-service-account.json'),
     resolve(__dirname, '../config/firebase-service-account.json'),
+  ].filter(Boolean);
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+  return null;
+};
+
+// Optional separate service account for the doctor app project (doctorapp-6c768).
+// Drop firebase-service-account-doctor.json next to the patient one to enable it.
+const findDoctorServiceAccountFile = () => {
+  const candidates = [
+    process.env.GOOGLE_APPLICATION_CREDENTIALS_DOCTOR,
+    resolve(__dirname, '../../config/firebase-service-account-doctor.json'),
+    resolve(__dirname, '../config/firebase-service-account-doctor.json'),
   ].filter(Boolean);
   for (const p of candidates) {
     if (existsSync(p)) return p;
@@ -35,7 +50,7 @@ const shouldInitializeFirebase = () => {
 // Initialize Firebase if credentials are available
 if (shouldInitializeFirebase()) {
   try {
-    // Try environment variables first (FIREBASE_PROJECT_ID + FIREBASE_PRIVATE_KEY + FIREBASE_CLIENT_EMAIL)
+    // ── Patient / default Firebase app ───────────────────────────────────────
     if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
       const serviceAccount = {
         type: "service_account",
@@ -49,7 +64,6 @@ if (shouldInitializeFirebase()) {
         projectId: process.env.FIREBASE_PROJECT_ID,
       });
     } else {
-      // Try service account JSON file
       const saFile = findServiceAccountFile();
       if (saFile) {
         const serviceAccount = JSON.parse(readFileSync(saFile, 'utf8'));
@@ -57,9 +71,8 @@ if (shouldInitializeFirebase()) {
           credential: admin.credential.cert(serviceAccount),
           projectId: serviceAccount.project_id,
         });
-        console.log(`Firebase initialized from service account file: ${saFile}`);
+        console.log(`Firebase (patient) initialized from: ${saFile}`);
       } else {
-        // Last resort: default credentials
         admin.initializeApp({
           projectId: process.env.FIREBASE_PROJECT_ID || 'mediczy-notifications',
         });
@@ -69,6 +82,30 @@ if (shouldInitializeFirebase()) {
     messaging = admin.messaging();
     isFirebaseInitialized = true;
     console.log('Firebase Admin SDK initialized successfully');
+
+    // ── Doctor Firebase app (separate project) ───────────────────────────────
+    const doctorSaFile = findDoctorServiceAccountFile();
+    if (doctorSaFile) {
+      try {
+        const dsa = JSON.parse(readFileSync(doctorSaFile, 'utf8'));
+        const doctorApp = admin.initializeApp(
+          { credential: admin.credential.cert(dsa), projectId: dsa.project_id },
+          'doctor-app'
+        );
+        doctorMessaging = doctorApp.messaging();
+        console.log(`Firebase (doctor) initialized from: ${doctorSaFile} [project: ${dsa.project_id}]`);
+      } catch (dErr) {
+        console.warn('Firebase doctor app init failed:', dErr.message);
+      }
+    } else {
+      console.warn(
+        '[Firebase] Doctor-app service account not found.\n' +
+        '  Doctor push notifications will use the patient project, which may cause\n' +
+        '  "SenderId mismatch" errors for the MSH_D_App (project: doctorapp-6c768).\n' +
+        '  To fix: download the service account for doctorapp-6c768 from Firebase Console\n' +
+        '  and save it as: config/firebase-service-account-doctor.json'
+      );
+    }
   } catch (error) {
     console.warn('Firebase Admin SDK initialization failed:', error.message);
     console.warn('Push notifications will be disabled. Please configure Firebase credentials to enable.');
@@ -76,6 +113,16 @@ if (shouldInitializeFirebase()) {
 } else {
   console.warn('Firebase credentials not found. Push notifications will be disabled.');
   console.warn('To enable push notifications, configure Firebase environment variables or GOOGLE_APPLICATION_CREDENTIALS.');
+}
+
+/**
+ * Pick the correct Firebase Messaging instance for the given recipient.
+ * Falls back to the default (patient) instance when the doctor instance is absent.
+ * @param {'doctor'|'patient'|string} [userType]
+ */
+function getMessaging(userType) {
+  if (userType === 'doctor' && doctorMessaging) return doctorMessaging;
+  return messaging;
 }
 
 // FCM notification types
@@ -91,12 +138,14 @@ const FCM_NOTIFICATION_TYPES = {
  * @param {string} token - FCM token of the recipient
  * @param {object} notification - Notification data
  * @param {object} data - Additional data to send with notification
+ * @param {string} [userType] - 'doctor' or 'patient' — selects the correct Firebase app
  */
-const sendPushNotification = async (token, notification, data = {}) => {
+const sendPushNotification = async (token, notification, data = {}, userType) => {
   if (!isFirebaseInitialized || !messaging) {
     console.warn('Firebase not initialized. Cannot send push notification.');
     return Promise.resolve(null);
   }
+  const fcm = getMessaging(userType);
 
   try {
     // FCM requires ALL data values to be strings — coerce everything
@@ -163,11 +212,18 @@ const sendPushNotification = async (token, notification, data = {}) => {
       }
     };
 
-    const response = await messaging.send(message);
+    const response = await fcm.send(message);
     console.log('Successfully sent push notification:', response);
     return response;
   } catch (error) {
-    console.error('Error sending push notification:', error);
+    const errCode = error?.errorInfo?.code || error?.code || '';
+    // Mismatched-credential = FCM token belongs to a different Firebase project.
+    // Treat the same as a stale token so callers can deactivate it.
+    if (errCode.includes('mismatched-credential') || errCode.includes('invalid-registration-token') || errCode.includes('registration-token-not-registered')) {
+      console.warn(`[FCM] Stale/mismatched token detected (${errCode}). Token should be deactivated.`);
+    } else {
+      console.error('Error sending push notification:', error);
+    }
     throw error;
   }
 };
