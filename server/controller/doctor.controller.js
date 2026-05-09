@@ -472,6 +472,9 @@ export async function registerDoctor(req, res) {
     // Map socialMedia → socialLinks (frontend key vs model field)
     const { socialMedia, ...restBody } = req.body;
     const socialLinks = socialMedia || restBody.socialLinks || {};
+    // Coerce empty-string optional unique fields to null so PostgreSQL unique constraints
+    // don't block subsequent registrations (empty string ≠ NULL in Postgres UNIQUE index).
+    if (restBody.registrationNumber === '') restBody.registrationNumber = null;
     const newDoctor = await doctorModel.create({ ...restBody, socialLinks, isVerified: false });
 
     // Send registration alert to support (fire-and-forget)
