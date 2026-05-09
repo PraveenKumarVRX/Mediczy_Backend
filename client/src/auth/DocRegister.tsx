@@ -82,6 +82,10 @@ const formSchema = z.object({
   registrationNumber: z.string().optional(),
   onlineConsultationFee: z.preprocess(Number, z.number().min(0, 'Enter a valid fee')),
   inPersonConsultationFee: z.preprocess(Number, z.number().min(0, 'Enter a valid fee')),
+  smFacebook:  z.string().optional(),
+  smInstagram: z.string().optional(),
+  smLinkedin:  z.string().optional(),
+  smYoutube:   z.string().optional(),
 });
 type FormValues = z.infer<typeof formSchema>;
 
@@ -844,11 +848,18 @@ The above terms are agreeable to both parties and have been signed in the presen
       docs.verifications = { emailVerified: true, phoneVerified: true };
 
       const values = form.getValues();
+      const { smFacebook, smInstagram, smLinkedin, smYoutube, ...coreValues } = values;
       const payload = {
-        ...values,
+        ...coreValues,
         qualifications: qualifications.filter(Boolean),
         ugQualifications: ugQuals.filter(Boolean),
         pgQualifications: pgQuals.filter(Boolean),
+        socialMedia: {
+          facebook:  smFacebook?.trim()  || null,
+          instagram: smInstagram?.trim() || null,
+          linkedin:  smLinkedin?.trim()  || null,
+          youtube:   smYoutube?.trim()   || null,
+        },
         documents: docs,
       };
 
@@ -1208,6 +1219,59 @@ The above terms are agreeable to both parties and have been signed in the presen
                               <FormMessage className="text-xs" />
                             </FormItem>
                           )} />
+                        </div>
+
+                        {/* Social Media Pages */}
+                        <div className="mt-2 pt-4 border-t border-slate-100">
+                          <div className="flex items-center gap-2 mb-1">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
+                            <p className="text-sm font-semibold text-slate-700">Social Media Pages <span className="text-xs font-normal text-slate-400">(optional)</span></p>
+                          </div>
+                          <p className="text-xs text-slate-500 mb-3 leading-relaxed">
+                            Add your professional pages — your profile picture, bio and videos will be displayed to patients in their health feed.
+                          </p>
+                          <div className="space-y-3">
+                            <FormField control={form.control} name="smFacebook" render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <div className="flex items-center gap-2 h-11 border border-slate-200 bg-slate-50 rounded-xl px-3 focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#1877F2"><path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.41c0-3.025 1.791-4.697 4.533-4.697 1.312 0 2.686.235 2.686.235v2.97h-1.513c-1.491 0-1.956.93-1.956 1.884v2.25h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/></svg>
+                                    <input {...field} placeholder="facebook.com/your-page" className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 outline-none" />
+                                  </div>
+                                </FormControl>
+                              </FormItem>
+                            )} />
+                            <FormField control={form.control} name="smInstagram" render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <div className="flex items-center gap-2 h-11 border border-slate-200 bg-slate-50 rounded-xl px-3 focus-within:ring-2 focus-within:ring-pink-500/20 focus-within:border-pink-400">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="url(#igGrad)"><defs><linearGradient id="igGrad" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stopColor="#f09433"/><stop offset="25%" stopColor="#e6683c"/><stop offset="50%" stopColor="#dc2743"/><stop offset="75%" stopColor="#cc2366"/><stop offset="100%" stopColor="#bc1888"/></linearGradient></defs><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/></svg>
+                                    <input {...field} placeholder="instagram.com/your-handle" className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 outline-none" />
+                                  </div>
+                                </FormControl>
+                              </FormItem>
+                            )} />
+                            <FormField control={form.control} name="smLinkedin" render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <div className="flex items-center gap-2 h-11 border border-slate-200 bg-slate-50 rounded-xl px-3 focus-within:ring-2 focus-within:ring-blue-600/20 focus-within:border-blue-600">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#0A66C2"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                                    <input {...field} placeholder="linkedin.com/in/your-profile" className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 outline-none" />
+                                  </div>
+                                </FormControl>
+                              </FormItem>
+                            )} />
+                            <FormField control={form.control} name="smYoutube" render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <div className="flex items-center gap-2 h-11 border border-slate-200 bg-slate-50 rounded-xl px-3 focus-within:ring-2 focus-within:ring-red-500/20 focus-within:border-red-500">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="#FF0000"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                                    <input {...field} placeholder="youtube.com/@your-channel" className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 outline-none" />
+                                  </div>
+                                </FormControl>
+                              </FormItem>
+                            )} />
+                          </div>
                         </div>
                       </div>
                     )}
