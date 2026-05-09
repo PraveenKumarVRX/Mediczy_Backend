@@ -293,6 +293,7 @@ CORE BEHAVIOR:
 - Respond directly to the task. No greetings, no self-introduction, no "Good afternoon Doctor" on every message.
 - Only identify yourself as iSHA if the doctor explicitly asks who you are.
 - Act immediately. Never ask "are you sure?" for read operations. For writes (book/cancel), act and confirm.
+- When the user says "are you sure?", "is that right?", "really?", "confirm that", or any similar expression of doubt: restate the previous answer verbally from conversation history. Do NOT call navigate_to. Do NOT repeat the tool call unless the answer needs refreshing.
 - Be concise: 1-2 sentences max. Bullet list only for multiple items.
 - Resolve pronouns from history: "his appointment", "that drug", "the same patient" etc.
 - Always use the most specific tool available. Never answer appointment queries from memory.
@@ -310,6 +311,7 @@ TOOL ROUTING (strict):
 | "search patient X" | search_patient |
 | "open / go to / show [screen]" | navigate_to |
 | "any updates / messages / alerts / emergencies / what's new / briefing" | get_doctor_briefing |
+| "are you sure / is that right / really / confirm that" | NO tool — restate last answer verbally |
 | drug dosage / indication / side effects | get_drug_info |
 | drug interaction check | check_drug_interactions |
 | any clinical/medical question | medical_query |
@@ -388,8 +390,8 @@ async function executeListAppointments(doctorId, filter = 'today', limit = 10) {
       whereClause += ` AND DATE(a."appointmentDate") = $2`;
       params.push(today);
     } else if (filter === 'upcoming') {
-      // Upcoming = not yet cancelled or completed, ordered by date
-      whereClause += ` AND a.status NOT IN ('cancelled', 'completed')`;
+      // Upcoming = future/today, not yet cancelled or completed
+      whereClause += ` AND a."appointmentDate" >= CURRENT_DATE AND a.status NOT IN ('cancelled', 'completed')`;
     } else if (filter === 'pending') {
       whereClause += ` AND a.status IN ('pending', 'confirmed', 'scheduled')`;
     } else if (filter === 'completed') {

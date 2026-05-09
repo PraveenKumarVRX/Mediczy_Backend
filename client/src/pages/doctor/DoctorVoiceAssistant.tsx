@@ -193,18 +193,18 @@ export default function DoctorVoiceAssistant() {
     setIsSpeaking(false);
   }, []);
 
-  const speak = useCallback(async (text: string) => {
+  const speak = useCallback(async (text: string, onEnd?: () => void) => {
     const resumeVAD = () => {
       vadRef.current?.start().catch(() => {});
     };
 
-    if (!ttsEnabled) { resumeVAD(); return; }
+    if (!ttsEnabled) { resumeVAD(); onEnd?.(); return; }
     stopSpeaking();
     speakAbortRef.current?.abort();
     const abortCtrl = new AbortController();
     speakAbortRef.current = abortCtrl;
     const clean = text.replace(/[*_#`•]/g, "").trim().slice(0, 1000);
-    if (!clean) return;
+    if (!clean) { onEnd?.(); return; }
 
     // Pause VAD while speaking so we don't transcribe our own output
     vadRef.current?.pause();
@@ -214,6 +214,7 @@ export default function DoctorVoiceAssistant() {
       safetyTimer = null;
       setIsSpeaking(false);
       resumeVAD();
+      onEnd?.();
     }, 20_000);
     const clearSafety = () => {
       if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer = null; }
@@ -221,7 +222,7 @@ export default function DoctorVoiceAssistant() {
 
     const tryBrowserTTS = () => {
       const synth = window.speechSynthesis;
-      if (!synth) { setIsSpeaking(false); resumeVAD(); return; }
+      if (!synth) { setIsSpeaking(false); resumeVAD(); onEnd?.(); return; }
       synth.cancel();
       const utter = new SpeechSynthesisUtterance(clean);
       utter.rate = 1.05;
@@ -229,8 +230,8 @@ export default function DoctorVoiceAssistant() {
       const preferred = voices.find(v => v.lang === "en-IN") || voices.find(v => v.lang.startsWith("en")) || voices[0];
       if (preferred) utter.voice = preferred;
       utter.onstart = () => setIsSpeaking(true);
-      utter.onend   = () => { clearSafety(); setIsSpeaking(false); resumeVAD(); };
-      utter.onerror = () => { clearSafety(); setIsSpeaking(false); resumeVAD(); };
+      utter.onend   = () => { clearSafety(); setIsSpeaking(false); resumeVAD(); onEnd?.(); };
+      utter.onerror = () => { clearSafety(); setIsSpeaking(false); resumeVAD(); onEnd?.(); };
       synth.speak(utter);
     };
 
@@ -256,6 +257,7 @@ export default function DoctorVoiceAssistant() {
         clearSafety();
         setIsSpeaking(false);
         resumeVAD();
+        onEnd?.();
       };
       el.onerror = () => {
         URL.revokeObjectURL(url);
@@ -410,13 +412,13 @@ export default function DoctorVoiceAssistant() {
       const screen = parameters.screen as string;
       const path = SCREEN_PATHS[screen];
       if (path) {
-        setTimeout(() => navigate(path), 600);
+        navigate(path);
       } else {
         toast({ title: "Navigation", description: `Unknown screen: ${screen}`, variant: "destructive" });
       }
     }
     if (action === "search_patient") {
-      setTimeout(() => navigate(`/doctor/patients?q=${encodeURIComponent(String(parameters.query || ""))}`), 600);
+      navigate(`/doctor/patients?q=${encodeURIComponent(String(parameters.query || ""))}`);
     }
   }, [navigate, toast]);
 
@@ -459,11 +461,15 @@ export default function DoctorVoiceAssistant() {
       };
 
       setMessages(prev => [...prev, assistantMsg]);
-      speak(data.speak || data.response);
 
       if (data.requiresConfirmation) {
+        speak(data.speak || data.response);
         setPendingAction(assistantMsg);
+      } else if (data.action === 'navigate_to' || data.action === 'search_patient') {
+        // Speak first, navigate only after TTS finishes so audio isn't cut off by unmount
+        speak(data.speak || data.response, () => executeAction(data.action, data.parameters));
       } else {
+        speak(data.speak || data.response);
         executeAction(data.action, data.parameters);
       }
     } catch (err: unknown) {
