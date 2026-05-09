@@ -1,6 +1,6 @@
 # Mediqzy — Doctor Mobile App API Integration Guide
 
-> **Version:** 2.0 · **Last Updated:** 2026-04-09  
+> **Version:** 2.2 · **Last Updated:** 2026-05-09  
 > **Base URL (Production):** `https://api.mediqzy.com`  
 > **WebSocket URL:** `https://app.mediqzy.com` (path: `/socket.io`)  
 > **LiveKit URL:** `wss://video.mediqzy.com`
@@ -47,6 +47,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **2.2** | 2026-05-09 | Section 2.1 updated with social media link fields (`socialMedia` object) in registration payload; Section 3.1/3.2 updated with `socialLinks` field in profile response/update; Section 12 expanded with Firebase dual-app architecture, SenderId mismatch root cause, `mismatched-credential` auto-deactivation, and FCM token hygiene guidance; Appendix B FCM section rewritten with sender ID table and dual-SA setup instructions |
 | **2.1** | 2026-05-01 | Section 9 expanded with patient update, vitals & history routes; Section 18 expanded with AI triage image analysis; Sections 6.7–6.8 added for mobile SetTimeSlots weekly schedule flow; New Section 27 (Remote Health Monitoring); New Section 28 (Lab Imaging / RIS-Referred); Appendix A flows A.6–A.9 added; Appendix B mobile notes updated; Base URL corrected to `https://app.mediqzy.com/api`; all endpoints smoke-tested and verified |
 | **2.0** | 2026-04-09 | Section 21 (Alerts) rewritten with full DB-backed notification API detail; Section 12 updated with alert polling guidance; Appendix C (test credentials) added; Base URL corrected to `https://api.mediqzy.com`; valid `consultationType` values clarified |
 | 1.0 | 2026-03-10 | Initial release |
@@ -144,6 +145,13 @@ No authentication required.
 | `specialization` | string | ✅ | Non-empty |
 | `experience` | integer | ❌ | ≥ 0 |
 | `qualifications` | string[] | ❌ | Min 1 item if provided |
+| `socialMedia` | object | ❌ | Social media profile links (see below) |
+| `socialMedia.facebook` | string | ❌ | Facebook profile URL |
+| `socialMedia.instagram` | string | ❌ | Instagram profile URL |
+| `socialMedia.linkedin` | string | ❌ | LinkedIn profile URL |
+| `socialMedia.youtube` | string | ❌ | YouTube channel URL |
+
+> **Backend mapping:** The `socialMedia` object is internally stored as `social_links` (JSONB column) in the `doctors` table. When reading a profile the field is returned as `socialLinks`. Always send the registration payload key as `socialMedia`.
 
 ```json
 {
@@ -154,7 +162,13 @@ No authentication required.
   "phoneNumber": "+919876543210",
   "specialization": "Cardiology",
   "experience": 5,
-  "qualifications": ["MBBS", "MD Cardiology"]
+  "qualifications": ["MBBS", "MD Cardiology"],
+  "socialMedia": {
+    "facebook": "https://facebook.com/dr.smith",
+    "instagram": "https://instagram.com/dr.smith",
+    "linkedin": "https://linkedin.com/in/dr-smith",
+    "youtube": ""
+  }
 }
 ```
 
@@ -313,6 +327,12 @@ Authorization: Bearer <token>
     "city": "Mumbai",
     "state": "Maharashtra",
     "registrationNumber": "MH/2020/12345",
+    "socialLinks": {
+      "facebook": "https://facebook.com/dr.smith",
+      "instagram": "https://instagram.com/dr.smith",
+      "linkedin": "https://linkedin.com/in/dr-smith",
+      "youtube": ""
+    },
     "lastActive": "2026-03-10T12:00:00.000Z",
     "createdAt": "2025-01-15T10:00:00.000Z"
   }
@@ -343,6 +363,7 @@ All fields optional — only send fields you want to update.
 | `city` | string | — |
 | `state` | string | — |
 | `registrationNumber` | string | — |
+| `socialLinks` | object | Keys: `facebook`, `instagram`, `linkedin`, `youtube` (all optional strings) |
 
 ```json
 {
@@ -1946,6 +1967,27 @@ See [Section 25: WebSocket Events Reference](#25-websocket-events-reference) for
 
 ## 12. Notifications & FCM
 
+### Firebase Project Architecture
+
+The SmartHealth platform uses **two separate Firebase projects** — one for each app:
+
+| App | Firebase Project | Sender ID | Service Account on Server |
+|-----|-----------------|-----------|---------------------------|
+| Patient app (`MSH_M_App`) | `mysmarthealth-b5695` | `325629386163` | ✅ `config/firebase-service-account.json` |
+| Doctor app (`MSH_D_App`) | `doctorapp-6c768` | `498597016909` | ⚠️ Pending — `config/firebase-service-account-doctor.json` |
+
+**Current status:** The backend routes doctor push notifications through the patient Firebase project when the doctor SA file is absent. This causes `messaging/mismatched-credential` errors because the FCM token was issued under `doctorapp-6c768` but the backend is using `mysmarthealth-b5695` credentials.
+
+**To fully enable doctor push notifications:**
+1. Download the service account for `doctorapp-6c768` from Firebase Console → Project Settings → Service Accounts.
+2. Save it as `/home/ubuntu/Mediczy/config/firebase-service-account-doctor.json`.
+3. Restart `mediczy-server` — the backend will automatically detect it and use it for `userType: 'doctor'` pushes.
+
+**Token hygiene (auto-deactivation):** The backend now automatically deactivates FCM tokens that respond with any of:
+- `messaging/registration-token-not-registered` (app uninstalled)
+- `messaging/invalid-registration-token` (malformed token)
+- `messaging/mismatched-credential` (token belongs to wrong Firebase project)
+
 ### 12.1 Register FCM Token
 
 ```
@@ -1974,6 +2016,8 @@ Authorization: Bearer <token>
 | `skipValidation` | boolean | ❌ | Skip Firebase token validation |
 
 > **Important:** When registering a new token, old tokens for the same user are automatically deactivated.
+
+> **Doctor app note:** The FCM token you register must be obtained from the `doctorapp-6c768` Firebase project (the `google-services.json` bundled in `MSH_D_App`). Tokens from this project will produce `messaging/mismatched-credential` on the backend until the doctor service account file is provisioned (see architecture table above). Once the SA file is in place, no code changes are needed in the app.
 
 ### 12.2 Remove FCM Token
 
@@ -3690,6 +3734,19 @@ Store the JWT token securely:
 - Register FCM token immediately after login
 - Re-register on app launch (token may change)
 - Handle notification payloads for: appointments, video calls, chat messages, triage
+
+### Firebase Configuration (Doctor App)
+
+The doctor app (`MSH_D_App`) uses Firebase project **`doctorapp-6c768`** with sender ID **`498597016909`**. The `google-services.json` in `android/app/` is already configured correctly.
+
+**Current push delivery status:**
+- Patient push notifications: ✅ fully working (`mysmarthealth-b5695`)
+- Doctor push notifications: ⚠️ blocked until the `doctorapp-6c768` service account is provisioned on the backend (see Section 12)
+
+**What to do when `messaging/mismatched-credential` appears in logs:**
+1. The backend will automatically deactivate the token — no action needed from the app.
+2. On next login / app launch, re-register the FCM token via `POST /api/fcm/register-token`.
+3. Delivery will resume once `config/firebase-service-account-doctor.json` is placed on the server.
 
 ### Video Call Integration
 
