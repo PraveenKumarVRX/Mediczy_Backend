@@ -822,6 +822,10 @@ The above terms are agreeable to both parties and have been signed in the presen
       toast({ variant: "destructive", title: "Signature required", description: "Please sign in the signature box." });
       return;
     }
+    if (qualifications.filter(Boolean).length === 0) {
+      toast({ variant: "destructive", title: "Qualification required", description: "Please add at least one qualification in Step 4 before submitting." });
+      return;
+    }
     setIsSubmitting(true);
     try {
       const docs: Record<string, any> = {};
@@ -873,7 +877,10 @@ The above terms are agreeable to both parties and have been signed in the presen
           toast({ title: "Application submitted!", description: "Our team will review your documents and activate your account." });
         },
         onError: (error: any) => {
-          const msg = error?.response?.data?.[0]?.message || error?.response?.data?.message || "Registration failed. Please try again.";
+          const msg = error?.response?.data?.errors?.[0]?.msg
+            || error?.response?.data?.[0]?.message
+            || error?.response?.data?.message
+            || "Registration failed. Please try again.";
           toast({ variant: "destructive", title: "Registration failed", description: msg });
           setIsSubmitting(false);
         },

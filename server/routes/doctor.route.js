@@ -131,8 +131,8 @@ router.post(
       .withMessage("Experience must be at least 0 years"),
     body("qualifications")
       .optional()
-      .isArray({ min: 1 })
-      .withMessage("At least one qualification is required"),
+      .isArray()
+      .withMessage("Qualifications must be an array"),
   ],
   registerDoctor
 );
