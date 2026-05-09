@@ -1,23 +1,17 @@
-import intelligentDb from '../utils/intelligentDbClient.js';
 import crypto from 'crypto';
-import { cache } from '../db/redis.js';
+import { cache, connectRedis } from '../db/redis.js';
 
 /**
- * OTP Model for Intelligent Database
- * Handles OTP generation, storage, and verification
- * Uses Redis for cross-cluster storage
+ * OTP Model — Redis-backed
+ * All OTPs stored exclusively in Redis with native TTL.
+ * No dependency on intelligent-db. Data survives Redis restarts (AOF/RDB),
+ * and auto-expires without any cron cleanup.
+ *
+ * Key format: otp:{purpose}:{email|phone}:{id}
+ * TTL: set natively — Redis auto-evicts on expiry.
  */
 
 class OTP {
-  /**
-   * Generate and store OTP
-   * @param {Object} data - OTP data
-   * @param {string} data.phone - Phone number
-   * @param {string} data.email - Email address (optional)
-   * @param {string} data.purpose - Purpose (login, registration, password_reset, verification)
-   * @param {number} data.expiryMinutes - Expiry time in minutes (default: 10)
-   * @returns {Promise<Object>} OTP object with code
-   */
   /**
    * Normalize phone to last 10 digits for consistent Redis key lookup.
    * e.g., "+919615933444" or "919615933444" → "9615933444"
@@ -28,21 +22,36 @@ class OTP {
     return digits.length > 10 ? digits.slice(-10) : digits;
   }
 
+  /**
+   * Scan Redis for all OTP keys matching a purpose + identifier.
+   * Returns [{key, data}] for all non-expired entries found.
+   */
+  static async _findRedisKeys(purpose, { email, phone }) {
+    const redis = await connectRedis();
+    let allKeys = [];
+    if (email) allKeys = allKeys.concat(await redis.keys(`otp:${purpose}:${email}:*`));
+    if (phone) allKeys = allKeys.concat(await redis.keys(`otp:${purpose}:${phone}:*`));
+    if (!allKeys.length && (email || phone)) {
+      allKeys = await redis.keys(`otp:${purpose}:${email || phone}:*`);
+    }
+    const keys = [...new Set(allKeys)];
+    const results = [];
+    for (const key of keys) {
+      const data = await cache.get(key);
+      if (data) results.push({ key, data });
+    }
+    return results;
+  }
+
   static async generate({ phone, email, purpose = 'login', expiryMinutes = 10, userId = null }) {
     try {
-      // Normalize phone to 10-digit format for consistent key lookup
       const normalizedPhone = OTP._normalizePhone(phone);
       phone = normalizedPhone || phone;
 
-      // Generate 6-digit OTP
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-      
-      // Calculate expiry time
       const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000);
-      
-      // Generate unique ID
       const id = crypto.randomBytes(16).toString('hex');
-      
+
       const otpData = {
         id,
         phone: phone || null,
@@ -58,241 +67,84 @@ class OTP {
         userId: userId || null
       };
 
-      // Store in Redis (primary - works across clusters)
       const redisKey = `otp:${purpose}:${email || phone}:${id}`;
-      const redisTTL = expiryMinutes * 60; // seconds
-      await cache.set(redisKey, otpData, redisTTL);
+      await cache.set(redisKey, otpData, expiryMinutes * 60);
       console.log(`🔐 OTP stored in Redis: ${redisKey}`);
 
-      // Also try to store in intelligent database (backup)
-      try {
-        await intelligentDb.ingest('otps_v1', otpData);
-      } catch (dbError) {
-        console.warn('⚠️  IntelligentDB unavailable, OTP stored in Redis only:', dbError.message);
-      }
-
-      // Log OTP in development mode for testing
       if (process.env.NODE_ENV !== 'production') {
-        console.log('🔐 Development OTP:', {
-          email: email || 'N/A',
-          phone: phone || 'N/A',
-          code: otpCode,
-          purpose,
-          expiresAt
-        });
+        console.log('🔐 Development OTP:', { email: email || 'N/A', phone: phone || 'N/A', code: otpCode, purpose, expiresAt });
       }
 
-      return {
-        id,
-        code: otpCode,
-        expiresAt,
-        phone,
-        email,
-        purpose
-      };
+      return { id, code: otpCode, expiresAt, phone, email, purpose };
     } catch (error) {
       console.error('Error generating OTP:', error);
       throw new Error('Failed to generate OTP');
     }
   }
 
-  /**
-   * Verify OTP
-   * @param {Object} data - Verification data
-   * @param {string} data.phone - Phone number
-   * @param {string} data.email - Email (optional)
-   * @param {string} data.code - OTP code
-   * @param {string} data.purpose - Purpose
-   * @returns {Promise<Object>} Verification result
-   */
   static async verify({ phone, email, code, purpose = 'login' }) {
     try {
-      // Normalize phone for consistent lookup (match how generate() stores it)
       if (phone) phone = OTP._normalizePhone(phone) || phone;
 
-      // Query for OTP
-      const query = {
-        code,
-        purpose,
-        isVerified: false
-      };
-
-      if (phone) query.phone = phone;
-      if (email) query.email = email;
+      const entries = await OTP._findRedisKeys(purpose, { email, phone });
+      console.log(`🔍 Searching Redis for OTP (purpose=${purpose}), found ${entries.length} keys`);
 
       let otp = null;
-
-      // Search in Redis first (primary store for cluster mode)
-      try {
-        // Try both email and phone patterns to handle key mismatch cases
-        // (e.g. OTP stored with email key but user verifies with phone, or vice versa)
-        const { connectRedis } = await import('../db/redis.js');
-        const redis = await connectRedis();
-
-        let allKeys = [];
-        if (email) {
-          const emailKeys = await redis.keys(`otp:${purpose}:${email}:*`);
-          allKeys = allKeys.concat(emailKeys);
-        }
-        if (phone) {
-          const phoneKeys = await redis.keys(`otp:${purpose}:${phone}:*`);
-          allKeys = allKeys.concat(phoneKeys);
-        }
-        if (allKeys.length === 0) {
-          // Fallback: original single-pattern search
-          const fallbackPattern = `otp:${purpose}:${email || phone}:*`;
-          const fallbackKeys = await redis.keys(fallbackPattern);
-          allKeys = fallbackKeys;
-        }
-        // Deduplicate keys
-        const keys = [...new Set(allKeys)];
-        
-        console.log(`🔍 Searching Redis for OTP (purpose=${purpose}), found ${keys.length} keys`);
-        
-        for (const key of keys) {
-          const storedOtp = await cache.get(key);
-          if (storedOtp && 
-              storedOtp.code === code && 
-              storedOtp.purpose === purpose &&
-              !storedOtp.isVerified &&
-              (phone && storedOtp.phone ? storedOtp.phone === phone : true) &&
-              (email && storedOtp.email ? storedOtp.email === email : true)) {
-            otp = { ...storedOtp, redisKey: key };
-            console.log(`✅ Found matching OTP in Redis: ${key}`);
-            break;
-          }
-        }
-      } catch (redisError) {
-        console.warn('⚠️  Redis search failed, trying IntelligentDB:', redisError.message);
-      }
-
-      // Try to search in intelligent database if not found in Redis
-      if (!otp) {
-        try {
-          const results = await intelligentDb.search('otps_v1', {
-            filter: query,
-            limit: 1
-          });
-          if (results && results.length > 0) {
-            otp = results[0];
-          }
-        } catch (dbError) {
-          console.warn('⚠️  IntelligentDB search failed');
+      for (const { key, data } of entries) {
+        if (
+          data.code === code &&
+          data.purpose === purpose &&
+          !data.isVerified &&
+          (phone && data.phone ? data.phone === phone : true) &&
+          (email && data.email ? data.email === email : true)
+        ) {
+          otp = { ...data, redisKey: key };
+          console.log(`✅ Found matching OTP in Redis: ${key}`);
+          break;
         }
       }
 
       if (!otp) {
-        return {
-          success: false,
-          message: 'Invalid OTP code'
-        };
+        // Increment attempt counter on all matching unverified keys
+        for (const { key, data } of entries) {
+          if (!data.isVerified) {
+            const ttl = Math.max(await (await connectRedis()).ttl(key), 1);
+            await cache.set(key, { ...data, attempts: (data.attempts || 0) + 1, lastAttemptAt: new Date().toISOString() }, ttl);
+          }
+        }
+        return { success: false, message: 'Invalid OTP code' };
       }
 
-      // Check if expired
-      const now = new Date();
-      const expiresAt = new Date(otp.expiresAt);
-      
-      if (now > expiresAt) {
-        return {
-          success: false,
-          message: 'OTP has expired'
-        };
+      if (new Date() > new Date(otp.expiresAt)) {
+        return { success: false, message: 'OTP has expired' };
       }
 
-      // Check max attempts
       if (otp.attempts >= otp.maxAttempts) {
-        return {
-          success: false,
-          message: 'Maximum verification attempts exceeded'
-        };
+        return { success: false, message: 'Maximum verification attempts exceeded' };
       }
 
-      // Mark as verified
-      try {
-        // Update in Redis first
-        if (otp.redisKey) {
-          otp.isVerified = true;
-          otp.verifiedAt = new Date().toISOString();
-          await cache.set(otp.redisKey, otp, 60); // Keep for 1 minute then expire
-          console.log(`✅ OTP marked verified in Redis: ${otp.redisKey}`);
-        }
-        
-        // Also update in intelligent DB
-        await intelligentDb.update('otps_v1', otp.id, {
-          isVerified: true,
-          verifiedAt: new Date().toISOString()
-        });
-      } catch (dbError) {
-        console.warn('⚠️  OTP verification update error:', dbError.message);
-      }
+      // Mark verified — keep key alive for 60 s then Redis auto-deletes
+      await cache.set(otp.redisKey, { ...otp, isVerified: true, verifiedAt: new Date().toISOString() }, 60);
+      console.log(`✅ OTP marked verified in Redis: ${otp.redisKey}`);
 
-      return {
-        success: true,
-        message: 'OTP verified successfully',
-        otpId: otp.id
-      };
+      return { success: true, message: 'OTP verified successfully', otpId: otp.id };
     } catch (error) {
       console.error('Error verifying OTP:', error);
-      
-      // Increment attempt count on error (if OTP exists)
-      try {
-        if (phone || email) {
-          const query = { code, purpose };
-          if (phone) query.phone = phone;
-          if (email) query.email = email;
-          
-          const results = await intelligentDb.search('otps_v1', {
-            filter: query,
-            limit: 1
-          });
-          
-          if (results && results.length > 0) {
-            const otp = results[0];
-            await intelligentDb.update('otps_v1', otp.id, {
-              attempts: (otp.attempts || 0) + 1,
-              lastAttemptAt: new Date().toISOString()
-            });
-          }
-        }
-      } catch (updateError) {
-        console.error('Error updating attempt count:', updateError);
-      }
-
-      return {
-        success: false,
-        message: 'Invalid OTP code'
-      };
+      return { success: false, message: 'Invalid OTP code' };
     }
   }
 
-  /**
-   * Resend OTP (invalidates old one and generates new)
-   * @param {Object} data - Resend data
-   * @param {string} data.phone - Phone number
-   * @param {string} data.email - Email (optional)
-   * @param {string} data.purpose - Purpose
-   * @returns {Promise<Object>} New OTP object
-   */
   static async resend({ phone, email, purpose = 'login' }) {
     try {
-      // Invalidate existing OTPs
-      const query = { purpose, isVerified: false };
-      if (phone) query.phone = phone;
-      if (email) query.email = email;
+      if (phone) phone = OTP._normalizePhone(phone) || phone;
 
-      const existingOtps = await intelligentDb.search('otps_v1', {
-        filter: query
-      });
-
-      // Mark all as expired
-      for (const otp of existingOtps) {
-        await intelligentDb.update('otps_v1', otp.id, {
-          expiresAt: new Date().toISOString() // Set to now (expired)
-        });
+      // Delete all existing unverified OTPs for this identifier + purpose
+      const entries = await OTP._findRedisKeys(purpose, { email, phone });
+      for (const { key, data } of entries) {
+        if (!data.isVerified) await cache.del(key);
       }
 
-      // Generate new OTP
-      return await this.generate({ phone, email, purpose });
+      return await OTP.generate({ phone, email, purpose });
     } catch (error) {
       console.error('Error resending OTP:', error);
       throw new Error('Failed to resend OTP');
@@ -300,48 +152,22 @@ class OTP {
   }
 
   /**
-   * Clean up expired OTPs (should be run periodically)
-   * @returns {Promise<number>} Number of OTPs deleted
+   * No-op — Redis TTL handles expiry automatically.
    */
   static async cleanupExpired() {
-    try {
-      const now = new Date().toISOString();
-      
-      // Search for expired OTPs
-      const expiredOtps = await intelligentDb.search('otps_v1', {
-        filter: {
-          expiresAt: { $lt: now }
-        }
-      });
-
-      // Delete expired OTPs
-      let deletedCount = 0;
-      for (const otp of expiredOtps) {
-        await intelligentDb.delete('otps_v1', otp.id);
-        deletedCount++;
-      }
-
-      console.log(`Cleaned up ${deletedCount} expired OTPs`);
-      return deletedCount;
-    } catch (error) {
-      console.error('Error cleaning up OTPs:', error);
-      return 0;
-    }
+    return 0;
   }
 
   /**
-   * Get OTP statistics
-   * @returns {Promise<Object>} Statistics
+   * Get OTP statistics by scanning Redis keys.
    */
   static async getStats() {
     try {
-      const allOtps = await intelligentDb.search('otps_v1', {
-        limit: 10000
-      });
-
+      const redis = await connectRedis();
+      const keys = await redis.keys('otp:*');
       const now = new Date();
       const stats = {
-        total: allOtps.length,
+        total: keys.length,
         active: 0,
         expired: 0,
         verified: 0,
@@ -349,23 +175,21 @@ class OTP {
         byPurpose: {}
       };
 
-      allOtps.forEach(otp => {
-        // Count by status
+      for (const key of keys) {
+        const otp = await cache.get(key);
+        if (!otp) continue;
         if (otp.isVerified) {
           stats.verified++;
         } else {
           stats.unverified++;
-          const expiresAt = new Date(otp.expiresAt);
-          if (now > expiresAt) {
+          if (new Date() > new Date(otp.expiresAt)) {
             stats.expired++;
           } else {
             stats.active++;
           }
         }
-
-        // Count by purpose
         stats.byPurpose[otp.purpose] = (stats.byPurpose[otp.purpose] || 0) + 1;
-      });
+      }
 
       return stats;
     } catch (error) {
