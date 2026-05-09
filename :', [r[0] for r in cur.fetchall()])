@@ -1,0 +1,12 @@
+  column_name   | is_nullable |           column_default            
+----------------+-------------+-------------------------------------
+ id             | NO          | nextval('doctors_id_seq'::regclass)
+ prefix         | NO          | 'Dr'::enum_doctors_prefix
+ firstName      | NO          | 
+ lastName       | NO          | 
+ email          | NO          | 
+ password       | NO          | 
+ phoneNumber    | NO          | 
+ specialization | NO          | 
+(8 rows)
+

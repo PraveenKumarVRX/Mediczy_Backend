@@ -103,7 +103,7 @@ async function lookup(query) {
   try {
     const cached = await redisClient.get(redisKey);
     if (cached) {
-      const entry = JSON.parse(cached);
+      const entry = cached; // cache.get() already parses JSON
       console.log(`[SemanticCache] Redis exact hit (hash=${hash})`);
       // Async increment hit count
       pool.query(`UPDATE ${CACHE_TABLE} SET hit_count = hit_count + 1 WHERE query_hash = $1`, [hash]).catch(() => {});
@@ -134,7 +134,7 @@ async function lookup(query) {
       // Update hit count async
       pool.query(`UPDATE ${CACHE_TABLE} SET hit_count = hit_count + 1 WHERE id = $1`, [row.id]).catch(() => {});
       // Warm Redis for next identical query
-      redisClient.setex(redisKey, TTL, JSON.stringify({ response: row.response, provider: row.provider, model: row.model })).catch(() => {});
+      redisClient.set(redisKey, { response: row.response, provider: row.provider, model: row.model }, TTL).catch(() => {});
       return { response: row.response, provider: row.provider, model: row.model, hitCount: row.hit_count + 1, cacheHit: 'semantic', similarity: row.similarity };
     }
   } catch (err) {
@@ -175,7 +175,7 @@ async function store(query, response, { provider, model, tokensUsed = 0 } = {}) 
 
     // Also warm Redis
     const redisKey = `sem_cache:${hash}`;
-    await redisClient.setex(redisKey, TTL, JSON.stringify({ response, provider, model }));
+    await redisClient.set(redisKey, { response, provider, model }, TTL);
 
     console.log(`[SemanticCache] Stored (hash=${hash}, tokens=${tokensUsed})`);
   } catch (err) {

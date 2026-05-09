@@ -9,7 +9,7 @@ import {
 } from "../controller/doctor.controller.js";
 import { getDoctorAppointments } from "../controller/appointment.controller.js";
 import { authDoctor } from "../middleware/auth.middleware.js";
-import { authLimiter } from "../middleware/rateLimiter.middleware.js";
+import { authLimiter, otpLimiter } from "../middleware/rateLimiter.middleware.js";
 import { addOtpRoutes } from './shared/registrationHelpers.js';
 import googlePlacesService from '../services/google-places.service.js';
 import { Doctor, Appointment, User } from "../models/index.js";

@@ -20,7 +20,7 @@ import twilioOTPService from "../services/twilio-otp.service.js";
 import n8nService from "../services/n8n.service.js";
 import Consent from "../models/consent.model.intelligent.js";
 import { auditLoginAttempt } from "../middleware/audit.middleware.js";
-import { authLimiter } from "../middleware/rateLimiter.middleware.js";
+import { authLimiter, otpLimiter } from "../middleware/rateLimiter.middleware.js";
 import intelligentDb from "../utils/intelligentDbClient.js";
 import OTP from "../models/otp.model.intelligent.js";
 import { cache } from "../db/redis.js";
@@ -182,6 +182,7 @@ router.post(
 
 router.post(
   "/register/send-otp",
+  otpLimiter,
   [
     body("email").isEmail().withMessage("Must be a valid email"),
     body("phoneNumber")
@@ -878,7 +879,7 @@ router.post(
  */
 router.post(
   "/login/send-otp",
-  authLimiter,
+  otpLimiter,
   [
     body().custom((_, { req }) => {
       const rawIdentifier = req.body?.identifier ?? req.body?.email ?? req.body?.phoneNumber ?? req.body?.phone;

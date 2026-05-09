@@ -122,6 +122,14 @@ const rateLimitConfigs = {
     message: 'Too many login attempts. Please try again in 15 minutes.',
     skipSuccessfulRequests: true
   },
+
+  // OTP generation limit — max 3 OTPs per identifier per 15 minutes
+  otp: {
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 3,
+    message: 'Too many OTP requests. Please wait 15 minutes before requesting another OTP.',
+    skipSuccessfulRequests: false,
+  },
   
   // Standard API limit
   api: {
@@ -190,6 +198,7 @@ export const createRateLimiter = (type = 'api', customConfig = {}) => {
  * Pre-configured rate limiters for common use cases
  */
 export const authLimiter = createRateLimiter('auth');
+export const otpLimiter = createRateLimiter('otp');
 export const apiLimiter = createRateLimiter('api');
 export const mobileLimiter = createRateLimiter('mobile');
 export const uploadLimiter = createRateLimiter('upload');

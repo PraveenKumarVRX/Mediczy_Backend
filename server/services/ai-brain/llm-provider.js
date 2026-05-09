@@ -176,21 +176,21 @@ async function callLocalSLM(provider, params) {
 
 const PROVIDERS = [
   {
+    name: 'groq',
+    label: 'Groq (Llama 4 Scout 17B)',
+    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    getClient: getGroqClient,
+    priority: 1,
+  },
+  {
     name: 'isha',
     label: 'iSHA.buzz (BiMediX2)',
     model: process.env.ISHA_LLM_MODEL || 'bi-medix2',
     getClient: () => ({ available: true }),  // Placeholder — iSHA uses direct fetch
     useFetch: true,                          // Flag: use callIsha() instead of SDK
-    priority: 1,
+    priority: 2,
     // Extra body params for iSHA GPU routing (matches SIB FastAPI)
     extraBody: { agent_type: 'Clinical', model_port: 8080 },
-  },
-  {
-    name: 'groq',
-    label: 'Groq (Llama 4 Scout 17B)',
-    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-    getClient: getGroqClient,
-    priority: 2,
   },
   {
     name: 'openai',
@@ -418,11 +418,22 @@ async function chat({
   // Log to ai_request_logs
   try {
     const db = pool;
+    // Token cost lookup (USD per 1M tokens)
+    const COST_TABLE = {
+      groq:   { input: 0.11, output: 0.34 },
+      openai: { input: 0.50, output: 1.50 },
+      isha:   { input: 0.00, output: 0.00 }, // self-hosted
+    };
+    const costs = COST_TABLE[winningProvider.name] || { input: 0, output: 0 };
+    const costUsd = (
+      (result.usage.inputTokens  * costs.input  / 1_000_000) +
+      (result.usage.outputTokens * costs.output / 1_000_000)
+    );
     await db.query(
       `INSERT INTO ai_request_logs
         (model_config_id, conversation_id, provider, model_name, input_messages, output_text,
-         input_tokens, output_tokens, total_tokens, latency_ms, status, error_message, tool_calls, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+         input_tokens, output_tokens, total_tokens, cost_usd, latency_ms, status, error_message, tool_calls, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
       [
         dbConfig?.id || null,
         conversationId,
@@ -433,6 +444,7 @@ async function chat({
         result.usage.inputTokens,
         result.usage.outputTokens,
         result.usage.totalTokens,
+        costUsd,
         latencyMs,
         cascade.length > 1 ? 'fallback' : 'success',
         cascade.length > 1 ? errorMessage : null,

@@ -50,12 +50,43 @@ router.post('/generate-prescription', authDoctor, async (req, res) => {
       patientPhone,
       vitals,
       language = 'en',
-      saveToDatabase = true
+      saveToDatabase = true,
+      stream = false,
     } = req.body;
+
+    // SSE mode: send progress events as prescription is being generated
+    const useSSE = stream === true || req.headers['accept'] === 'text/event-stream';
+    if (useSSE) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.flushHeaders?.();
+    }
+    const emit = (type, data) => {
+      if (useSSE) res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
+    };
+    const sendFinalResponse = (payload) => {
+      if (useSSE) {
+        res.write(`data: ${JSON.stringify({ type: 'done', ...payload })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      } else {
+        res.json(payload);
+      }
+    };
+    const sendErrorResponse = (status, payload) => {
+      if (useSSE) {
+        res.write(`data: ${JSON.stringify({ type: 'error', ...payload })}\n\n`);
+        res.end();
+      } else {
+        res.status(status).json(payload);
+      }
+    };
 
     // Verify doctor is authenticated
     if (!req.doctor || !req.doctor.id) {
-      return res.status(401).json({
+      return sendErrorResponse(401, {
         success: false,
         message: 'Doctor authentication required. Please login again.',
         code: 'DOCTOR_AUTH_REQUIRED'
@@ -63,7 +94,7 @@ router.post('/generate-prescription', authDoctor, async (req, res) => {
     }
 
     if (!consultationNotes?.trim()) {
-      return res.status(400).json({
+      return sendErrorResponse(400, {
         success: false,
         message: 'Consultation notes are required',
         code: 'NOTES_REQUIRED'
@@ -73,6 +104,7 @@ router.post('/generate-prescription', authDoctor, async (req, res) => {
     // ── Indic Language: translate consultation to English for LLM ───────────
     // The AI prompt is always in English for best extraction quality.
     // If the doctor dictated in Hindi, Tamil, Telugu, etc., we translate first.
+    emit('progress', { message: 'Preparing consultation notes...' });
     const patientLang = (language || 'en').toLowerCase().trim();
     let englishNotes = consultationNotes;
     let englishSessionNotes = sessionNotes;
@@ -149,6 +181,7 @@ IMPORTANT:
 Generate the prescription JSON:`;
 
     // Call AI service with error handling and fallback
+    emit('progress', { message: 'Generating prescription with AI...' });
     let aiResponse;
     let usesFallback = false;
 
@@ -231,6 +264,26 @@ Generate the prescription JSON:`;
         prescriptionContent.instructions = await Promise.all(
           prescriptionContent.instructions.map(i => translateForScribe(i, 'en', patientLang))
         );
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // ── CDSS: Drug Interaction Check ─────────────────────────────────────────
+    emit('progress', { message: 'Checking drug interactions...' });
+    let drugInteractions = null;
+    if (prescriptionContent.medications?.length > 0) {
+      try {
+        const { default: drugInteractionService } = await import('../services/ai-drug-interaction.service.js');
+        drugInteractions = await drugInteractionService.checkInteractions({
+          medications: prescriptionContent.medications,
+          patientId: patientId || null,
+          useLLM: false, // Keep fast — no LLM re-call inside prescription generation
+        });
+        if (drugInteractions?.interactions?.length > 0) {
+          console.log(`[Scribe] Drug interaction check: ${drugInteractions.summary}`);
+        }
+      } catch (diErr) {
+        console.warn('[Scribe] Drug interaction check failed (non-fatal):', diErr.message);
       }
     }
     // ─────────────────────────────────────────────────────────────────────────
@@ -326,9 +379,11 @@ Generate the prescription JSON:`;
       }
     }
 
-    res.json({
+    emit('progress', { message: 'Finalizing prescription...' });
+    sendFinalResponse({
       success: true,
       prescription: prescriptionContent,
+      drugInteractions: drugInteractions || null,
       savedPrescription: savedPrescription ? {
         id: savedPrescription.id,
         prescriptionId: savedPrescription.prescriptionId,
@@ -353,7 +408,7 @@ Generate the prescription JSON:`;
       notes: 'Could not process consultation notes. Please review and edit.'
     };
     
-    res.status(200).json({
+    sendFinalResponse({
       success: true,
       prescription: fallbackData,
       usingFallback: true,

@@ -502,6 +502,41 @@ export async function registerDoctor(req, res) {
       }
     })();
 
+    // Generate semantic embedding for doctor discovery (fire-and-forget)
+    (async () => {
+      try {
+        const sibUrl = process.env.SIB_URL || 'http://localhost:8001';
+        const textToEmbed = [
+          newDoctor.specialization,
+          newDoctor.bio || '',
+          newDoctor.languages ? (Array.isArray(newDoctor.languages) ? newDoctor.languages.join(' ') : newDoctor.languages) : '',
+          `${newDoctor.experience || 0} years experience`,
+        ].filter(Boolean).join('. ');
+        const embedRes = await fetch(`${sibUrl}/embed`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ texts: [textToEmbed] }),
+          signal: AbortSignal.timeout(10000),
+        });
+        if (embedRes.ok) {
+          const { embeddings } = await embedRes.json();
+          const vector = embeddings?.[0];
+          if (vector?.length) {
+            const pool = (await import('../db/pgPool.js')).default;
+            await pool.query(
+              `INSERT INTO sib_embeddings (source_type, source_id, content, embedding, metadata, created_at)
+               VALUES ($1, $2, $3, $4::vector, $5, NOW())
+               ON CONFLICT DO NOTHING`,
+              ['doctor', String(newDoctor.id), textToEmbed, `[${vector.join(',')}]`,
+               JSON.stringify({ specialization: newDoctor.specialization, doctorId: newDoctor.id })]
+            );
+          }
+        }
+      } catch (err) {
+        console.error('[DoctorEmbed] Failed to generate embedding:', err.message);
+      }
+    })();
+
     // Return WITHOUT auth token — account needs manual activation by team
     return res.status(201).json({
       message: "Registration submitted successfully. Your application is under review. You will receive an email once your account is activated.",

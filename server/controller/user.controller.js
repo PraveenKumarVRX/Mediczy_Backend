@@ -180,6 +180,42 @@ export async function registerUser(req, res) {
       }
     })();
 
+    // Generate semantic embedding for patient (fire-and-forget)
+    (async () => {
+      try {
+        const sibUrl = process.env.SIB_URL || 'http://localhost:8001';
+        const textToEmbed = [
+          newUser.gender || '',
+          newUser.dateOfBirth ? `born ${newUser.dateOfBirth}` : '',
+          newUser.membershipType || '',
+        ].filter(Boolean).join('. ');
+        if (textToEmbed.trim()) {
+          const embedRes = await fetch(`${sibUrl}/embed`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ texts: [textToEmbed] }),
+            signal: AbortSignal.timeout(10000),
+          });
+          if (embedRes.ok) {
+            const { embeddings } = await embedRes.json();
+            const vector = embeddings?.[0];
+            if (vector?.length) {
+              const pool = (await import('../db/pgPool.js')).default;
+              await pool.query(
+                `INSERT INTO sib_embeddings (source_type, source_id, content, embedding, metadata, created_at)
+                 VALUES ($1, $2, $3, $4::vector, $5, NOW())
+                 ON CONFLICT DO NOTHING`,
+                ['patient', String(newUser.id), textToEmbed, `[${vector.join(',')}]`,
+                 JSON.stringify({ userId: newUser.id, gender: newUser.gender })]
+              );
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[PatientEmbed] Failed to generate embedding:', err.message);
+      }
+    })();
+
     // Send response with proper JSON format
     return res.status(201).json({
       message: "User registered successfully",

@@ -22,7 +22,7 @@ import { randomBytes } from 'crypto';
 import nodemailer from 'nodemailer';
 import twilio from 'twilio';
 import OTP from '../../models/otp.model.intelligent.js';
-import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
+import { authLimiter, otpLimiter } from '../../middleware/rateLimiter.middleware.js';
 
 // ── Multer ────────────────────────────────────────────────────────────────────
 const ALLOWED_MIMES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -212,7 +212,7 @@ export async function sendAdminLeadEmail({ entityLabel, name, email, phone, city
  */
 export function addOtpRoutes(router, entityLabel, accentColor = '#0d9488') {
   // ─── Send Email OTP ────────────────────────────────────────────────────────
-  router.post('/send-email-otp', authLimiter, async (req, res) => {
+  router.post('/send-email-otp', otpLimiter, async (req, res) => {
     const { email } = req.body;
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ success: false, message: 'Valid email required' });
@@ -268,7 +268,7 @@ export function addOtpRoutes(router, entityLabel, accentColor = '#0d9488') {
   });
 
   // ─── Send Phone OTP via WhatsApp ───────────────────────────────────────────
-  router.post('/send-phone-otp', authLimiter, async (req, res) => {
+  router.post('/send-phone-otp', otpLimiter, async (req, res) => {
     let { phone } = req.body;
     if (!phone) return res.status(400).json({ success: false, message: 'Phone number required' });
     phone = phone.replace(/\s+/g, '');
