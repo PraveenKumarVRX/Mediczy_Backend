@@ -79,9 +79,12 @@ class VideoController {
         }
 
         const canonicalMeetingId = generateCanonicalMeetingId(appointment.id);
+        // Prefer stored meetingId so all token paths return the same room
+        const storedRoomId = appointment.meetingId;
+        const expectedRoomId = storedRoomId || canonicalMeetingId;
         if (
           resolvedRoomId &&
-          resolvedRoomId !== canonicalMeetingId &&
+          resolvedRoomId !== expectedRoomId &&
           !verifyCanonicalMeetingId(appointment.id, resolvedRoomId)
         ) {
           return res.status(403).json({
@@ -89,7 +92,7 @@ class VideoController {
             message: 'Invalid room for appointment'
           });
         }
-        resolvedRoomId = canonicalMeetingId;
+        resolvedRoomId = resolvedRoomId || expectedRoomId;
       }
 
       if (!resolvedRoomId) {
@@ -186,39 +189,48 @@ class VideoController {
           });
         }
 
-        const normalizedTime = String(appointment.appointmentTime || '').slice(0, 5);
-        const appointmentDateTime = new Date(`${appointment.appointmentDate}T${normalizedTime}:00`);
-        if (Number.isNaN(appointmentDateTime.getTime())) {
-          return res.status(400).json({
-            success: false,
-            message: 'Appointment has an invalid schedule. Please contact support.'
-          });
-        }
-        const now = new Date();
-        const windowStart = new Date(appointmentDateTime.getTime() - 15 * 60 * 1000);
-        const windowEnd = new Date(appointmentDateTime.getTime() + 60 * 60 * 1000);
+        // Skip time-window enforcement for active (in-progress) calls —
+        // doctor or patient may re-join after a disconnect.
+        if (normalizedStatus !== 'in-progress') {
+          const normalizedTime = String(appointment.appointmentTime || '').slice(0, 5);
+          const appointmentDateTime = new Date(`${appointment.appointmentDate}T${normalizedTime}:00`);
+          if (Number.isNaN(appointmentDateTime.getTime())) {
+            return res.status(400).json({
+              success: false,
+              message: 'Appointment has an invalid schedule. Please contact support.'
+            });
+          }
+          const now = new Date();
+          const windowStart = new Date(appointmentDateTime.getTime() - 15 * 60 * 1000);
+          const windowEnd = new Date(appointmentDateTime.getTime() + 60 * 60 * 1000);
 
-        if (now < windowStart) {
-          return res.status(400).json({
-            success: false,
-            message: 'Video call will be available 15 minutes before the appointment',
-            appointmentTime: appointmentDateTime.toISOString(),
-            canJoinAt: windowStart.toISOString()
-          });
-        }
+          if (now < windowStart) {
+            return res.status(400).json({
+              success: false,
+              message: 'Video call will be available 15 minutes before the appointment',
+              appointmentTime: appointmentDateTime.toISOString(),
+              canJoinAt: windowStart.toISOString()
+            });
+          }
 
-        if (now > windowEnd) {
-          return res.status(400).json({
-            success: false,
-            message: 'Appointment time has passed',
-            appointmentTime: appointmentDateTime.toISOString()
-          });
+          if (now > windowEnd) {
+            return res.status(400).json({
+              success: false,
+              message: 'Appointment time has passed',
+              appointmentTime: appointmentDateTime.toISOString()
+            });
+          }
         }
 
         const canonicalMeetingId = generateCanonicalMeetingId(appointment.id);
+        // Prefer the stored meetingId (set by initiate-call) so doctor and patient
+        // always land in the same room. Fall back to canonical if not set.
+        const storedMeetingId = appointment.meetingId;
+        const resolvedMeetingId = storedMeetingId || canonicalMeetingId;
+
         if (
           roomId &&
-          roomId !== canonicalMeetingId &&
+          roomId !== resolvedMeetingId &&
           !verifyCanonicalMeetingId(appointment.id, roomId)
         ) {
           return res.status(403).json({
@@ -226,7 +238,7 @@ class VideoController {
             message: 'Invalid room for appointment'
           });
         }
-        meetingId = canonicalMeetingId;
+        meetingId = roomId || resolvedMeetingId;
       }
 
       console.log('🎥 Generating LiveKit token from query params:', {

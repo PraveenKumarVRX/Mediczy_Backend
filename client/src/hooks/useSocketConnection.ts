@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAuth } from '@/auth/AuthProvider';
 import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
@@ -17,30 +17,22 @@ export function useSocketConnection() {
   const socketRef = useRef<Socket | null>(null);
   const isConnectingRef = useRef(false);
 
-  const getUserId = useCallback(() => {
-    // Handle both _id and id fields
-    if (currentDoctor) {
-      return (currentDoctor as unknown as { id?: number; _id?: string }).id || 
-             (currentDoctor as unknown as { id?: number; _id?: string })._id;
-    }
-    if (currentUser) {
-      return (currentUser as unknown as { id?: number; _id?: string }).id || 
-             (currentUser as unknown as { id?: number; _id?: string })._id;
-    }
-    return null;
-  }, [currentDoctor, currentUser]);
+  // Extract primitive values so the effect only re-runs when the actual
+  // user ID changes, not on every object-reference change from the auth context.
+  const userId = String(
+    (currentDoctor as unknown as { id?: number; _id?: string })?.id ||
+    (currentDoctor as unknown as { id?: number; _id?: string })?._id ||
+    (currentUser as unknown as { id?: number; _id?: string })?.id ||
+    (currentUser as unknown as { id?: number; _id?: string })?._id ||
+    ''
+  );
+  const userType = currentDoctor ? 'doctor' : 'patient';
 
   useEffect(() => {
-    // Only connect if we have a user and not already connected/connecting
     if (typeof window === 'undefined') return;
-    if (!currentUser && !currentDoctor) return;
+    if (!userId) return;
     if (isConnectingRef.current) return;
     if (socketRef.current?.connected) return;
-
-    const userId = getUserId();
-    const userType = currentDoctor ? 'doctor' : 'patient';
-
-    if (!userId) return;
 
     isConnectingRef.current = true;
 
@@ -62,12 +54,7 @@ export function useSocketConnection() {
       isConnectingRef.current = false;
 
       // Emit user-connect event to register this connection
-      socket.emit('user-connect', {
-        userId,
-        userType,
-        fcmToken: null // Can be added later for mobile push notifications
-      });
-
+      socket.emit('user-connect', { userId, userType, fcmToken: null });
       console.log(`📡 Socket user-connect emitted: ${userType} ${userId}`);
     });
 
@@ -88,7 +75,7 @@ export function useSocketConnection() {
       });
     }
 
-    // Cleanup on unmount
+    // Cleanup only on actual user change or unmount (not on every re-render)
     return () => {
       if (socketRef.current) {
         console.log('🔌 Disconnecting socket on cleanup');
@@ -98,7 +85,7 @@ export function useSocketConnection() {
         isConnectingRef.current = false;
       }
     };
-  }, [currentUser, currentDoctor, getUserId]);
+  }, [userId, userType]); // Primitive deps only — stable across auth re-renders
 
   return socketRef.current;
 }

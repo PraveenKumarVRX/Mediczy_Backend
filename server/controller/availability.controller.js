@@ -18,12 +18,6 @@ export const getDoctorAvailability = async (req, res) => {
       order: [['dayOfWeek', 'ASC']]
     });
 
-    if (!availability || availability.length === 0) {
-      return res.status(404).json({ 
-        message: 'No availability schedule found for this doctor' 
-      });
-    }
-
     return res.status(200).json({
       count: availability.length,
       availability

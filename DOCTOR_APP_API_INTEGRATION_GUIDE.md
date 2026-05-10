@@ -1,6 +1,6 @@
 # Mediqzy — Doctor Mobile App API Integration Guide
 
-> **Version:** 2.3 · **Last Updated:** 2026-05-10  
+> **Version:** 2.4 · **Last Updated:** 2026-05-09  
 > **Base URL (Production):** `https://api.mediqzy.com`  
 > **WebSocket URL:** `https://app.mediqzy.com` (path: `/socket.io`)  
 > **LiveKit URL:** `wss://video.mediqzy.com`
@@ -47,6 +47,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **2.4** | 2026-05-09 | Section 8.1 `medications` marked as required (was incorrectly optional); `prescriptionNumber` removed from response examples (field does not exist — use `prescriptionId`); `prescriptionId` format corrected to `RX-XXXXXXXX-XXXXX`; Section 8.4 description corrected (route returns all prescriptions, not issued-only); Section 8.14 added for `GET /api/prescriptions/appointment/:appointmentId`; all prescription endpoints smoke-tested and confirmed working |
 | **2.3** | 2026-05-10 | Section 11 rewritten with correct doctor chat endpoints (`/api/doctor/chat/*`); Section 13 AI Scribe paths corrected to `/api/ai/scribe/generate-prescription`, `/api/ai/scribe/autocomplete`, `/api/ai/scribe/scribe`, `/api/ai/scribe/reference/:type`; Section 15 clinical notes path corrected from `soap-notes` to `notes`, sub-endpoints added; Appendix A.3 flow corrected; backend `revenue-insights.route.js` ESM require() bug fixed; `GET /api/doctors/patients` address column bug fixed |
 | **2.2** | 2026-05-09 | Section 2.1 updated with social media link fields (`socialMedia` object) in registration payload; Section 3.1/3.2 updated with `socialLinks` field in profile response/update; Section 12 expanded with Firebase dual-app architecture, SenderId mismatch root cause, `mismatched-credential` auto-deactivation, and FCM token hygiene guidance; Appendix B FCM section rewritten with sender ID table and dual-SA setup instructions |
 | **2.1** | 2026-05-01 | Section 9 expanded with patient update, vitals & history routes; Section 18 expanded with AI triage image analysis; Sections 6.7–6.8 added for mobile SetTimeSlots weekly schedule flow; New Section 27 (Remote Health Monitoring); New Section 28 (Lab Imaging / RIS-Referred); Appendix A flows A.6–A.9 added; Appendix B mobile notes updated; Base URL corrected to `https://app.mediqzy.com/api`; all endpoints smoke-tested and verified |
@@ -1093,7 +1094,7 @@ Authorization: Bearer <token>
 | `patientAge` | integer | ❌ | Patient age |
 | `patientGender` | string | ❌ | Patient gender |
 | `patientPhone` | string | ❌ | Patient phone |
-| `medications` | array | ❌ | See medication schema below |
+| `medications` | array | ✅ | At least one medication required — see schema below |
 | `labTests` | array | ❌ | Array of `{ testName, reason }` or strings |
 | `instructions` | string[] | ❌ | Patient instructions |
 | `vitals` | object | ❌ | `{ bloodPressure, pulse, temperature, weight }` |
@@ -1173,17 +1174,17 @@ Required medication fields: `name`, `dosage`, `frequency`, `duration`.
   "message": "Prescription created successfully",
   "prescription": {
     "id": 42,
-    "prescriptionId": "RX170900A1B2",
-    "prescriptionNumber": "RX-2026-0042",
+    "prescriptionId": "RX-MOYW1RUQ-BMUHD",
     "patientName": "Test User",
     "diagnosis": "Acute bronchitis",
     "medicationsCount": 2,
     "status": "draft",
-    "createdAt": "2026-03-10T12:00:00.000Z",
-    "expiresAt": "2026-04-09T12:00:00.000Z"
+    "createdAt": "2026-03-10T12:00:00.000Z"
   }
 }
 ```
+
+> **Note:** `prescriptionId` is a unique alpha-numeric token (format: `RX-XXXXXXXX-XXXXX`). There is no separate `prescriptionNumber` field.
 
 ### 8.2 Create from Appointment
 
@@ -1210,8 +1211,7 @@ Authorization: Bearer <token>
   "prescriptions": [
     {
       "id": 42,
-      "prescriptionId": "RX170900A1B2",
-      "prescriptionNumber": "RX-2026-0042",
+      "prescriptionId": "RX-MOYW1RUQ-BMUHD",
       "patientName": "Test User",
       "diagnosis": "Acute bronchitis",
       "medications": [ /* medication objects */ ],
@@ -1223,14 +1223,14 @@ Authorization: Bearer <token>
 }
 ```
 
-### 8.4 List Issued Prescriptions
+### 8.4 List All Doctor Prescriptions (Alias, max 100)
 
 ```
 GET /api/prescriptions/doctor/issued
 Authorization: Bearer <token>
 ```
 
-Returns only issued prescriptions (max 100).
+Returns all of the doctor's prescriptions regardless of status, limited to 100 most recent. Despite the route name, **no status filter is applied** — use `GET /api/prescriptions/doctor` for the full unbounded list.
 
 ### 8.5 Get Prescription by ID
 
@@ -1340,6 +1340,24 @@ Authorization: Bearer <token>
 ```
 
 Soft delete — sets status to `cancelled`. Cannot cancel dispensed prescriptions.
+
+### 8.14 Get Prescription by Appointment
+
+```
+GET /api/prescriptions/appointment/:appointmentId
+Authorization: Bearer <token>
+```
+
+Fetch the prescription linked to a specific appointment. Returns `404` if no prescription has been created for that appointment yet.
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "prescription": { /* full prescription object */ }
+}
+```
 
 ---
 
@@ -2066,7 +2084,7 @@ Authorization: Bearer <token>
 ```
 
 ```json
-{ "success": true, "count": 5 }
+{ "success": true, "unreadCount": 5 }
 ```
 
 ### 12.5 Mark as Read
@@ -2728,11 +2746,11 @@ Authorization: Bearer <token>
 ### 18.6 Queue Management
 
 ```
-GET /api/doctor/queue
+GET /api/doctor/queue/my-queue
 Authorization: Bearer <token>
 ```
 
-Get current queue state.
+Get current queue state. Additional queue sub-routes: `POST /add`, `PATCH /:id/call`, `PATCH /:id/start`, `PATCH /:id/complete`, `PATCH /:id/no-show`, `GET /analytics`.
 
 ### 18.7 AI Image Analysis (Emergency Triage)
 

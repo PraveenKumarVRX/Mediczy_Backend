@@ -20,6 +20,7 @@ import { analyzeVideoFrame, initializeVisionAI, cleanupVisionAI, getTriageSummar
 import socketService from '@/services/socket.service';
 import { PurchaseCoinsDialog } from '@/components/wallet/PurchaseCoinsDialog';
 import { SimpleLiveKitRoom } from '@/components/video/LiveKitRoom';
+import { EmergencyVideoCall } from '@/components/video/EmergencyVideoCall';
 
 // Fix Leaflet icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -254,6 +255,9 @@ const Emergency = () => {
   const [showDoctorList, setShowDoctorList] = useState(false);
   const [connectingToDoctor, setConnectingToDoctor] = useState(false);
   const [videoCallInfo, setVideoCallInfo] = useState<{roomId: string, joinUrl: string, doctor: any, appointmentId?: string, livekitToken?: string, livekitServerUrl?: string} | null>(null);
+  const videoCallInfoRef = useRef<typeof videoCallInfo>(null);
+  // Keep ref in sync so socket handlers always read the latest value without causing re-registration
+  useEffect(() => { videoCallInfoRef.current = videoCallInfo; }, [videoCallInfo]);
   
   // AI-Powered Video Call States
   const [showEmbeddedVideoCall, setShowEmbeddedVideoCall] = useState(false);
@@ -275,6 +279,15 @@ const Emergency = () => {
   const [sceneDescription, setSceneDescription] = useState<string>('');
   const visionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Ref always holding the latest AI data so the emit interval closure stays fresh
+  const liveAIDataRef = useRef<{
+    vitalSigns: any;
+    sceneDescription: string;
+    visionAlerts: string[];
+    liveTranscript: string[];
+    aiSuggestions: string[];
+  }>({ vitalSigns: null, sceneDescription: '', visionAlerts: [], liveTranscript: [], aiSuggestions: [] });
   
   // Enhanced SOS Alert States
   const [sosState, setSosState] = useState<SOSAlertState>({
@@ -486,34 +499,50 @@ const Emergency = () => {
     // Listen for call accepted event
     const handleCallAccepted = (data: any) => {
       console.log('✅ Doctor accepted call:', data);
-      
+
       setWaitingForDoctor(false);
-      
+
       toast({
         title: "✅ Doctor Accepted Your Call!",
         description: `${data.doctorName} is joining the video call`,
         duration: 5000,
       });
 
-      // Auto-join the video room using LiveKit SDK (same room as doctor)
-      if (videoCallInfo?.livekitToken && videoCallInfo?.livekitServerUrl) {
-        // Preferred path: use LiveKit SDK component with pre-generated token
+      // The server always sends livekitToken + livekitServerUrl in the accepted event.
+      // Use them to update (or create) the patient's call info so they join the exact same room,
+      // even when the room was generated at accept-time (legacy triage cases with no prior meetingId).
+      if (data.livekitToken && data.livekitServerUrl) {
+        setVideoCallInfo(prev => ({
+          roomId: data.roomId || prev?.roomId || '',
+          joinUrl: data.joinUrl || prev?.joinUrl || '',
+          doctor: prev?.doctor ?? { name: data.doctorName },
+          appointmentId: data.appointmentId ? String(data.appointmentId) : prev?.appointmentId,
+          livekitToken: data.livekitToken,
+          livekitServerUrl: data.livekitServerUrl,
+        }));
         setShowEmbeddedVideoCall(true);
         setTimeout(() => {
           document.getElementById('video-call-section')?.scrollIntoView({ behavior: 'smooth' });
         }, 100);
-      } else if (videoCallInfo?.joinUrl) {
-        // Fallback: iframe or redirect (legacy)
-        if (isLegacyRoomJoinUrl(videoCallInfo.joinUrl)) {
-          const fallbackRoomId = videoCallInfo.roomId || parseLegacyRoomIdFromUrl(videoCallInfo.joinUrl);
-          const inAppUrl = buildInAppVideoUrl(fallbackRoomId, videoCallInfo.appointmentId);
-          window.location.assign(inAppUrl);
-          return;
-        }
+        return;
+      }
+
+      // Patient already has a token from instant-triage-call — just open the call
+      const callInfo = videoCallInfoRef.current;
+      if (callInfo?.livekitToken && callInfo?.livekitServerUrl) {
         setShowEmbeddedVideoCall(true);
         setTimeout(() => {
           document.getElementById('video-call-section')?.scrollIntoView({ behavior: 'smooth' });
         }, 100);
+      } else {
+        // No token at all — show error; patient should retry calling
+        toast({
+          title: "⚠️ Video Setup Error",
+          description: "Could not get video credentials. Please try calling again.",
+          variant: "destructive",
+          duration: 8000,
+        });
+        setWaitingForDoctor(false);
       }
     };
 
@@ -545,7 +574,7 @@ const Emergency = () => {
       socketService.disconnect();
       setIsSocketConnected(false);
     };
-  }, [videoCallInfo]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Attach video stream to video element when video mode is active
   useEffect(() => {
@@ -1077,37 +1106,32 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
       
       if (response.data.success) {
         const lk = response.data.videoCall?.livekit?.patient;
-        setVideoCallInfo({
+        const callInfo = {
           roomId: response.data.videoCall.roomId,
           joinUrl: response.data.videoCall.patientJoinUrl,
           doctor: response.data.doctor,
           appointmentId: response.data.videoCall.appointmentId || response.data.appointment?.id,
           livekitToken: lk?.token,
           livekitServerUrl: lk?.serverUrl || 'wss://video.mediqzy.com'
-        });
+        };
+        setVideoCallInfo(callInfo);
         
         // Set waiting state - doctor will get notification
         setWaitingForDoctor(true);
+        setShowDoctorList(false);
+        
+        // Immediately open the video call room — patient waits inside
+        // (same as WhatsApp — you enter the room, doctor joins when they accept)
+        if (callInfo.livekitToken && callInfo.livekitServerUrl) {
+          setShowEmbeddedVideoCall(true);
+          startAIFeatures();
+        }
         
         toast({
           title: "🔔 Notifying Doctor",
-          description: `Dr. ${response.data.doctor.name} is being notified...`,
+          description: `Entering video room — Dr. ${response.data.doctor.name} is being notified…`,
           duration: 5000,
         });
-        
-        // Add system message to chat
-        const connectMessage: TriageChatMessage = {
-          id: `connect_${Date.now()}`,
-          role: 'system',
-          content: `🔔 **Doctor Notification Sent**\n\nWaiting for **${response.data.doctor.name}** (${response.data.doctor.specialization || 'General Practice'}) to accept your call...\n\nYou will be notified when the doctor joins.`,
-          timestamp: new Date(),
-          type: 'text',
-        };
-        setTriageChatMessages(prev => [...prev, connectMessage]);
-        setShowDoctorList(false);
-        
-        // Auto-open the triage dialog
-        setShowTriageChat(true);
       } else {
         throw new Error(response.data.error || 'Failed to connect');
       }
@@ -1170,6 +1194,11 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
   };
 
   // Start AI features for video consultation
+  // Keep liveAIDataRef in sync with state so the interval closure is never stale
+  useEffect(() => {
+    liveAIDataRef.current = { vitalSigns, sceneDescription, visionAlerts, liveTranscript, aiSuggestions };
+  }, [vitalSigns, sceneDescription, visionAlerts, liveTranscript, aiSuggestions]);
+
   const startAIFeatures = async () => {
     // Initialize Vision AI
     if (visionAIEnabled) {
@@ -1182,6 +1211,26 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
     
     // Start AI scene analysis (simplified version)
     startAISceneAnalysis();
+
+    // Periodically emit patient-side AI analysis to the doctor via socket
+    // so the doctor's scribe panel can show patient vitals & transcript
+    const aiEmitInterval = setInterval(() => {
+      if (!videoCallInfo?.appointmentId) return;
+      const d = liveAIDataRef.current;
+      socketService.emit('patient-ai-update', {
+        doctorId: videoCallInfo?.doctor?.id,
+        appointmentId: videoCallInfo?.appointmentId,
+        vitalSigns: d.vitalSigns,
+        sceneDescription: d.sceneDescription,
+        visionAlerts: d.visionAlerts,
+        liveTranscript: d.liveTranscript.slice(-5),
+        aiSuggestions: d.aiSuggestions.slice(-5),
+        timestamp: Date.now(),
+      });
+    }, 8000);
+
+    // Store interval id for cleanup
+    (window as any).__patientAiEmitInterval = aiEmitInterval;
     
     toast({
       title: "🧠 AI Features Active",
@@ -1681,6 +1730,12 @@ Immediate assistance required!`;
     setLiveTranscript([]);
     setAiSuggestions([]);
     setVitalSigns(null);
+
+    // Stop patient AI emit interval
+    if ((window as any).__patientAiEmitInterval) {
+      clearInterval((window as any).__patientAiEmitInterval);
+      (window as any).__patientAiEmitInterval = null;
+    }
     
     // Stop Vision AI
     stopVisionAI();
@@ -2719,6 +2774,23 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
   return (
     // <Layout>
     <>
+      {/* ── WhatsApp-style emergency video call overlay ── */}
+      {showEmbeddedVideoCall && videoCallInfo?.livekitToken && videoCallInfo?.livekitServerUrl && (
+        <EmergencyVideoCall
+          serverUrl={videoCallInfo.livekitServerUrl}
+          token={videoCallInfo.livekitToken}
+          doctorName={videoCallInfo.doctor?.name ? `Dr. ${videoCallInfo.doctor.name}` : 'Emergency Doctor'}
+          patientName={user?.name || user?.fullName || 'Patient'}
+          waitingForDoctor={waitingForDoctor}
+          symptoms={emergencySymptoms}
+          onEndCall={() => {
+            setShowEmbeddedVideoCall(false);
+            setVideoCallInfo(null);
+            setWaitingForDoctor(false);
+          }}
+        />
+      )}
+
       <div className="mx-auto w-full max-w-6xl space-y-8 px-4 py-8 sm:px-6 lg:px-8 bg-slate-50 dark:bg-slate-900 min-h-screen">
         <header className="space-y-3 text-center lg:text-left">
           <span className="inline-flex items-center justify-center rounded-full bg-red-50 dark:bg-red-900/30 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-red-600 dark:text-red-400">
@@ -2732,7 +2804,7 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
 
         <div className="space-y-8 lg:grid lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:items-start lg:gap-8 lg:space-y-0">
           <section className="space-y-6">
-            {/* Enhanced Emergency Triage with Dr. iSHA - Multi-Modal */}
+            {/* Emergency Doctor Video Call with AI — Primary Action */}
             <Card className="border-teal-200 dark:border-teal-700 bg-gradient-to-br from-teal-50 via-white to-white dark:from-teal-900/20 dark:via-slate-800 dark:to-slate-800 shadow-lg overflow-hidden">
               <CardContent className="p-6">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -2741,13 +2813,13 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
                       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-teal-600 shadow-lg">
                         <Stethoscope className="h-7 w-7 text-white" />
                       </div>
-                      <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-green-500 border-2 border-white dark:border-slate-800 flex items-center justify-center">
-                        <span className="text-[10px] text-white font-bold">AI</span>
+                      <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-green-500 border-2 border-white dark:border-slate-800 flex items-center justify-center animate-pulse">
+                        <span className="h-2 w-2 rounded-full bg-white" />
                       </div>
                     </div>
                     <div>
-                      <h2 className="text-xl font-bold text-slate-800 dark:text-white">Dr. iSHA Emergency Triage</h2>
-                      <p className="text-sm text-slate-600 dark:text-slate-400">AI-powered multi-modal emergency assessment</p>
+                      <h2 className="text-xl font-bold text-slate-800 dark:text-white">Emergency Video Call</h2>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">Instant connection to an online emergency doctor</p>
                     </div>
                   </div>
                   {currentUrgency && (
@@ -2760,293 +2832,101 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
                   )}
                 </div>
 
-                {/* Communication Mode Selector */}
-                <div className="mt-6 grid grid-cols-3 gap-2">
-                  <Button
-                    variant={triageMode === 'text' ? 'default' : 'outline'}
-                    onClick={() => { setTriageMode('text'); startTriageChat(); }}
-                    className={`flex flex-col items-center gap-1 h-auto py-3 ${
-                      triageMode === 'text' 
-                        ? 'bg-teal-600 hover:bg-teal-700 text-white' 
-                        : 'border-teal-200 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-900/30'
-                    }`}
-                  >
-                    <MessageSquare className="h-5 w-5" />
-                    <span className="text-xs font-medium">Chat</span>
-                  </Button>
-                  <Button
-                    variant={triageMode === 'voice' ? 'default' : 'outline'}
-                    onClick={() => { setTriageMode('voice'); startTriageChat(); }}
-                    className={`flex flex-col items-center gap-1 h-auto py-3 ${
-                      triageMode === 'voice' 
-                        ? 'bg-teal-600 hover:bg-teal-700 text-white' 
-                        : 'border-teal-200 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-900/30'
-                    }`}
-                  >
-                    <Mic className="h-5 w-5" />
-                    <span className="text-xs font-medium">Voice</span>
-                  </Button>
-                  <Button
-                    variant={triageMode === 'video' ? 'default' : 'outline'}
-                    onClick={() => { setTriageMode('video'); startTriageChat(); startVideoMode(); }}
-                    className={`flex flex-col items-center gap-1 h-auto py-3 ${
-                      triageMode === 'video' 
-                        ? 'bg-teal-600 hover:bg-teal-700 text-white' 
-                        : 'border-teal-200 dark:border-teal-700 hover:bg-teal-50 dark:hover:bg-teal-900/30'
-                    }`}
-                  >
-                    <Video className="h-5 w-5" />
-                    <span className="text-xs font-medium">Video</span>
-                  </Button>
+                <div className="mt-4 p-3 rounded-lg bg-teal-100/50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-700 text-sm text-teal-800 dark:text-teal-300">
+                  <strong>🩺 How it works:</strong> Tap "Start Emergency Call" — you'll instantly enter a video room and your doctor will be notified. Dr. iSHA AI assistant will be with you during the wait and throughout the call.
                 </div>
 
-                {/* Quick Start Button */}
+                {/* Single prominent CTA */}
                 <Button
-                  onClick={startTriageChat}
-                  className="w-full mt-4 bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white shadow-md h-12"
+                  onClick={() => connectToTriageDoctor()}
+                  disabled={connectingToDoctor}
+                  className="w-full mt-5 bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-700 hover:to-teal-600 text-white shadow-md h-14 text-base font-semibold"
                 >
-                  <Stethoscope className="mr-2 h-5 w-5" />
-                  Start Emergency Consultation with Dr. iSHA
+                  {connectingToDoctor ? (
+                    <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Connecting…</>
+                  ) : (
+                    <><Video className="mr-2 h-5 w-5" /> Start Emergency Call</>
+                  )}
                 </Button>
 
-                {/* Features List */}
+                {/* Features */}
                 <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
                   <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                    <span className="text-teal-500">✓</span> Real-time urgency assessment
+                    <span className="text-teal-500">✓</span> Instant doctor connection
                   </div>
                   <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                    <span className="text-teal-500">✓</span> Voice-enabled (hands-free)
+                    <span className="text-teal-500">✓</span> Dr. iSHA AI in-call
                   </div>
                   <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                    <span className="text-teal-500">✓</span> Visual symptom analysis
+                    <span className="text-teal-500">✓</span> Real-time transcription
                   </div>
                   <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                    <span className="text-teal-500">✓</span> 24/7 AI assistance
+                    <span className="text-teal-500">✓</span> 24/7 availability
                   </div>
                 </div>
 
-                {/* Legacy quick assessment */}
-                {triageResult && !showTriageChat && (
-                  <div className="mt-4 rounded-lg border border-teal-200 dark:border-teal-700 bg-teal-50 dark:bg-teal-900/20 p-4">
-                    <div className="mb-2 flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 text-teal-600 dark:text-teal-400" />
-                      <span className="font-medium text-slate-800 dark:text-white">Assessment Complete</span>
-                    </div>
-                    <p className="text-sm text-slate-600 dark:text-slate-300">
-                      Previous assessment available. Start a new consultation for updated guidance.
-                    </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowTriageDialog(true)}
-                      className="mt-2 border-teal-300 dark:border-teal-600"
-                    >
-                      View Previous Results
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Connect to Online Emergency Doctor - NEW PROMINENT SECTION */}
-            <Card className="border-green-200 dark:border-green-700 bg-gradient-to-br from-green-50 via-emerald-50 to-white dark:from-green-900/20 dark:via-slate-800 dark:to-slate-800 shadow-lg overflow-hidden">
-              <CardContent className="p-6">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="relative">
-                      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-green-500 to-emerald-600 shadow-lg">
-                        <Video className="h-7 w-7 text-white" />
-                      </div>
-                      <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-green-500 border-2 border-white dark:border-slate-800 flex items-center justify-center animate-pulse">
-                        <span className="h-2 w-2 rounded-full bg-white" />
-                      </div>
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-bold text-slate-800 dark:text-white">Connect to Online Doctor</h2>
-                      <p className="text-sm text-slate-600 dark:text-slate-400">Video consultation with emergency physician</p>
-                    </div>
-                  </div>
+                {/* Secondary: pick a specific doctor */}
+                <div className="mt-3 flex items-center justify-between">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={async () => { setShowDoctorList(v => !v); if (!showDoctorList) await fetchTriageDoctors(); }}
+                    disabled={isLoadingDoctors}
+                    className="text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/30 text-xs h-8 px-3"
+                  >
+                    {isLoadingDoctors ? (
+                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Users className="mr-1 h-3.5 w-3.5" />
+                    )}
+                    {showDoctorList ? 'Hide doctor list' : 'Choose a specific doctor'}
+                  </Button>
                   {availableTriageDoctors.length > 0 && (
-                    <Badge className="bg-green-500 text-white px-3 py-1 animate-pulse">
-                      {availableTriageDoctors.length} Doctor(s) Online
+                    <Badge className="bg-green-500 text-white text-[10px]">
+                      {availableTriageDoctors.length} online
                     </Badge>
                   )}
                 </div>
 
-                <div className="mt-4 p-3 rounded-lg bg-green-100/50 dark:bg-green-900/20 border border-green-200 dark:border-green-700">
-                  <p className="text-sm text-green-800 dark:text-green-300">
-                    <strong>🩺 Instant Video Consultation:</strong> Connect directly with an emergency doctor for immediate medical guidance through video call.
-                  </p>
-                </div>
-
-                {/* Doctor Connection Buttons */}
-                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Button
-                    onClick={async () => {
-                      // Close AI chat to show doctors list
-                      setShowTriageChat(false);
-                      await fetchTriageDoctors();
-                    }}
-                    disabled={isLoadingDoctors}
-                    className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-md h-12"
-                  >
-                    {isLoadingDoctors ? (
-                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    ) : (
-                      <Users className="mr-2 h-5 w-5" />
-                    )}
-                    View Available Doctors
-                  </Button>
-                  <Button
-                    onClick={() => connectToTriageDoctor()}
-                    disabled={connectingToDoctor}
-                    variant="outline"
-                    className="w-full border-green-500 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 h-12"
-                  >
-                    {connectingToDoctor ? (
-                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    ) : (
-                      <Video className="mr-2 h-5 w-5" />
-                    )}
-                    Connect Now (Next Available)
-                  </Button>
-                </div>
-
-                {/* Video Call Ready Banner - Shows when connected */}
-                {videoCallInfo && (
-                  <div className="mt-4 p-4 rounded-lg bg-green-100 dark:bg-green-900/30 border-2 border-green-500 animate-pulse">
-                    <div className="flex items-center justify-between flex-wrap gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-green-500 flex items-center justify-center">
-                          <Video className="h-5 w-5 text-white" />
-                        </div>
-                        <div>
-                          {waitingForDoctor ? (
-                            <>
-                              <p className="font-semibold text-green-800 dark:text-green-200">
-                                🔔 Waiting for {videoCallInfo.doctor?.name}
-                              </p>
-                              <p className="text-xs text-green-700 dark:text-green-300 flex items-center gap-1">
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                Doctor is being notified... Please wait
-                              </p>
-                            </>
-                          ) : (
-                            <>
-                              <p className="font-semibold text-green-800 dark:text-green-200">
-                                ✅ Doctor Accepted! Ready to Join
-                              </p>
-                              <p className="text-xs text-green-700 dark:text-green-300">
-                                Click to join • AI transcription enabled
-                              </p>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        {!waitingForDoctor ? (
-                          <>
-                            <Button
-                              onClick={joinVideoCall}
-                              className="bg-green-600 hover:bg-green-700 text-white animate-pulse"
-                            >
-                              <Video className="h-4 w-4 mr-2" />
-                              Join Video Call
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={openVideoInNewTab}
-                              title="Open in new tab"
-                            >
-                              <ExternalLink className="h-4 w-4" />
-                            </Button>
-                          </>
-                        ) : (
-                          <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
-                            <Loader2 className="h-3 w-3 mr-1" />
-                            Pending
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Available Doctors List - Inline Display */}
-                {showDoctorList && availableTriageDoctors.length > 0 && !showTriageChat && (
-                  <div className="mt-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-slate-800 dark:text-white flex items-center gap-2">
-                        <Users className="h-4 w-4 text-green-600" />
-                        Online Emergency Doctors ({availableTriageDoctors.length})
-                      </h4>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setShowDoctorList(false)}
-                        className="h-6 w-6 p-0"
+                {/* Inline doctor picker */}
+                {showDoctorList && availableTriageDoctors.length > 0 && (
+                  <div className="mt-2 max-h-52 overflow-y-auto space-y-2 pr-1">
+                    {availableTriageDoctors.map((doctor) => (
+                      <div
+                        key={doctor.id}
+                        className="flex items-center justify-between bg-white dark:bg-slate-800 rounded-lg p-3 shadow-sm border border-slate-200 dark:border-slate-700"
                       >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
-                      {availableTriageDoctors.map((doctor) => (
-                        <div
-                          key={doctor.id}
-                          className="flex items-center justify-between bg-white dark:bg-slate-800 rounded-lg p-3 shadow-sm border border-slate-200 dark:border-slate-700"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center overflow-hidden">
-                              {doctor.profileImage ? (
-                                <img src={doctor.profileImage} alt={doctor.name} className="h-10 w-10 rounded-full object-cover" />
-                              ) : (
-                                <Stethoscope className="h-5 w-5 text-green-600" />
-                              )}
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium text-slate-800 dark:text-white">{doctor.name}</p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                <span className="text-green-600 font-medium">{doctor.uniqueId}</span> • {doctor.specialization || 'General Practice'} • ⭐ {doctor.rating} • ₹{doctor.consultationFee}
-                              </p>
-                            </div>
-                          </div>
-                          <Button
-                            size="sm"
-                            onClick={() => connectToTriageDoctor(doctor.id)}
-                            disabled={connectingToDoctor}
-                            className="bg-green-600 hover:bg-green-700 text-white"
-                          >
-                            {connectingToDoctor ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
+                        <div className="flex items-center gap-3">
+                          <div className="h-9 w-9 rounded-full bg-teal-100 dark:bg-teal-900 flex items-center justify-center overflow-hidden shrink-0">
+                            {doctor.profileImage ? (
+                              <img src={doctor.profileImage} alt={doctor.name} className="h-9 w-9 rounded-full object-cover" />
                             ) : (
-                              <>
-                                <Video className="h-4 w-4 mr-1" />
-                                Connect
-                              </>
+                              <Stethoscope className="h-4 w-4 text-teal-600" />
                             )}
-                          </Button>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-slate-800 dark:text-white">{doctor.name}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {doctor.specialization || 'General Practice'} • ⭐ {doctor.rating} • ₹{doctor.consultationFee}
+                            </p>
+                          </div>
                         </div>
-                      ))}
-                    </div>
+                        <Button
+                          size="sm"
+                          onClick={() => connectToTriageDoctor(doctor.id)}
+                          disabled={connectingToDoctor}
+                          className="bg-teal-600 hover:bg-teal-700 text-white shrink-0"
+                        >
+                          {connectingToDoctor ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <><Video className="h-3.5 w-3.5 mr-1" /> Call</>
+                          )}
+                        </Button>
+                      </div>
+                    ))}
                   </div>
                 )}
-
-                {/* Features List */}
-                <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                  <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                    <span className="text-green-500">✓</span> Instant video connection
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                    <span className="text-green-500">✓</span> AI-powered transcription
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                    <span className="text-green-500">✓</span> Vision AI symptom analysis
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                    <span className="text-green-500">✓</span> Emergency priority queue
-                  </div>
-                </div>
               </CardContent>
             </Card>
 

@@ -14,7 +14,7 @@ router.get('/my-queue', authDoctor, async (req, res) => {
       },
       order: [
         ['priority', 'DESC'],
-        ['arrivedAt', 'ASC']
+        ['checkInTime', 'ASC']
       ]
     });
     
@@ -57,7 +57,7 @@ router.post('/add', authDoctor, async (req, res) => {
       chiefComplaint,
       estimatedWaitMinutes,
       eta,
-      arrivedAt: new Date()
+      checkInTime: new Date()
     });
     
     res.status(201).json({ success: true, data: entry });
@@ -111,7 +111,7 @@ router.patch('/:id/start', authDoctor, async (req, res) => {
     }
     
     const consultationStartedAt = new Date();
-    const actualWaitMinutes = Math.floor((consultationStartedAt - new Date(entry.arrivedAt)) / 60000);
+    const actualWaitMinutes = Math.floor((consultationStartedAt - new Date(entry.checkInTime)) / 60000);
     
     await entry.update({
       status: 'in_consultation',

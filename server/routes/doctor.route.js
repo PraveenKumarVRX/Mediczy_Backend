@@ -3050,57 +3050,89 @@ router.post("/triage/accept-call", authDoctor, async (req, res) => {
     const { appointmentId } = req.body;
     const doctorId = req.doctor.id;
 
+    if (!appointmentId) {
+      return res.status(400).json({ success: false, message: 'appointmentId is required' });
+    }
+
     const appointment = await Appointment.findByPk(appointmentId);
 
     if (!appointment) {
       return res.status(404).json({ success: false, message: 'Appointment not found' });
     }
 
-    if (appointment.doctorId !== doctorId) {
-      return res.status(403).json({ success: false, message: 'Unauthorized' });
+    // Allow the assigned doctor, OR auto-assign if no doctor is assigned yet
+    if (appointment.doctorId && appointment.doctorId !== doctorId) {
+      return res.status(403).json({ success: false, message: 'This call is assigned to another doctor' });
     }
 
-    // Update appointment status
-    await appointment.update({ status: 'in-progress' });
+    // Update appointment status and assign doctor if not already assigned
+    const updatePayload = { status: 'in-progress' };
+    if (!appointment.doctorId) updatePayload.doctorId = doctorId;
 
-    // Generate LiveKit token for doctor so they join the SAME room the patient is in
     const { buildLiveKitJoinData } = await import('../utils/videoProvider.js');
-    const roomId = appointment.meetingId;
-    let livekitData = null;
-    try {
-      livekitData = await buildLiveKitJoinData({
-        meetingId: roomId,
-        identity: `doctor-${doctorId}`,
-        name: `Dr. ${req.doctor.firstName} ${req.doctor.lastName}`.trim()
-      });
-    } catch (lkErr) {
-      console.warn('LiveKit token generation for accept-call failed:', lkErr.message);
+    let roomId = appointment.meetingId;
+
+    // Always ensure a valid room ID exists before generating tokens.
+    // Triage cases created outside the instant-triage-call flow may have meetingId = null.
+    if (!roomId) {
+      const crypto = await import('crypto');
+      roomId = `triage_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
+      updatePayload.meetingId = roomId;
+      console.log(`🏠 Generated new meetingId for appointment ${appointmentId}: ${roomId}`);
     }
 
-    // Notify patient via hybrid notification (Socket.IO + FCM)
+    await appointment.update(updatePayload);
+
+    // Generate doctor token — hard-fail if LiveKit is unavailable
+    let doctorLivekit = null;
+    let patientLivekit = null;
+    try {
+      const doctorName = `Dr. ${req.doctor.firstName} ${req.doctor.lastName}`.trim();
+      [doctorLivekit, patientLivekit] = await Promise.all([
+        buildLiveKitJoinData({ meetingId: roomId, identity: `doctor-${doctorId}`, name: doctorName }),
+        buildLiveKitJoinData({
+          meetingId: roomId,
+          identity: `user-${appointment.userId || appointment.patientId || 'guest'}`,
+          name: appointment.patientName || 'Patient'
+        })
+      ]);
+    } catch (lkErr) {
+      console.error('LiveKit token generation failed for accept-call:', lkErr.message);
+      return res.status(503).json({
+        success: false,
+        message: 'Video service unavailable. Please retry in a moment.',
+        error: lkErr.message
+      });
+    }
+
+    // Notify patient: include fresh patient token so they can connect to the correct room
+    // (critical when the room was just created and the patient has no prior token)
     const { emitCallAccepted } = await import('../chat/chathandler.controller.js');
     const acceptData = {
       appointmentId: appointment.id,
       doctorName: `Dr. ${req.doctor.firstName} ${req.doctor.lastName}`,
-      roomId: roomId,
+      roomId,
+      joinUrl: patientLivekit.joinUrl,
+      livekitToken: patientLivekit.token,
+      livekitServerUrl: patientLivekit.serverUrl,
       timestamp: new Date().toISOString()
     };
 
     const notificationResult = await emitCallAccepted(appointment.userId, acceptData);
-    console.log(`📲 Hybrid notification sent - Socket: ${notificationResult.socketSent}, FCM: ${notificationResult.fcmSent}`);
+    console.log(`📲 Call accepted — room: ${roomId} | Socket: ${notificationResult.socketSent}, FCM: ${notificationResult.fcmSent}`);
 
     res.json({
       success: true,
       appointment: {
         id: appointment.id,
-        status: appointment.status,
-        roomId: roomId
+        status: 'in-progress',
+        roomId
       },
-      livekit: livekitData ? {
-        serverUrl: livekitData.serverUrl,
-        token: livekitData.token,
-        roomName: livekitData.roomName
-      } : null,
+      livekit: {
+        serverUrl: doctorLivekit.serverUrl,
+        token: doctorLivekit.token,
+        roomName: doctorLivekit.roomName
+      },
       notification: notificationResult
     });
   } catch (error) {
@@ -3846,7 +3878,7 @@ router.get('/my-patients/:patientId/profile', authDoctor, async (req, res) => {
 
     const patient = await User.findOne({
       where: { id: parseInt(patientId) },
-      attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'dateOfBirth', 'gender', 'bloodGroup', 'address', 'createdAt']
+      attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'dateOfBirth', 'gender', 'bloodType', 'address_street', 'address_city', 'address_state', 'address_country', 'createdAt']
     });
 
     if (!patient) {

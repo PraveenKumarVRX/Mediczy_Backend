@@ -395,10 +395,25 @@ export default function VideoCallNotification() {
       return;
     }
     
-    // Navigate to video consultation page with room ID
-    if (currentDoctor) {
+    // For triage calls, call accept-call first to get the LiveKit token
+    if (currentDoctor && notification.appointmentId) {
+      try {
+        const resp = await api.post('/doctors/triage/accept-call', {
+          appointmentId: notification.appointmentId,
+        });
+        const lk = resp.data?.livekit;
+        if (lk?.token && lk?.serverUrl) {
+          navigate(
+            `/doctor/video?room=${notification.roomId}&appointmentId=${notification.appointmentId}&lkToken=${encodeURIComponent(lk.token)}&lkServer=${encodeURIComponent(lk.serverUrl)}`
+          );
+          setNotification(null);
+          return;
+        }
+      } catch (err) {
+        console.error('[VideoCallNotification] accept-call failed, navigating without token', err);
+      }
       navigate(`/doctor/video?room=${notification.roomId}&appointmentId=${notification.appointmentId}`);
-    } else {
+    } else if (notification.roomId) {
       navigate(`/video-consultation?room=${notification.roomId}&appointmentId=${notification.appointmentId}`);
     }
     

@@ -224,6 +224,25 @@ const notifyPatientPrescriptionReady = async (prescription, patient) => {
 };
 
 /**
+ * @route   GET /api/prescriptions
+ * @desc    Alias for GET /api/prescriptions/doctor — returns the doctor's prescription list
+ * @access  Private (Doctor)
+ */
+router.get('/', authDoctor, async (req, res) => {
+  const doctorId = req.doctor?.id || req.doctor?.dataValues?.id || req.doctor?._id;
+  if (!doctorId) return res.status(400).json({ success: false, message: 'Doctor ID not found' });
+  try {
+    const prescriptions = await Prescription.findAll({
+      where: { doctorId: parseInt(doctorId) },
+      order: [['createdAt', 'DESC']]
+    });
+    return res.json({ success: true, count: prescriptions.length, prescriptions: prescriptions.map(p => p.toJSON()) });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch prescriptions', error: error.message });
+  }
+});
+
+/**
  * @route   POST /api/prescriptions/from-appointment/:appointmentId
  * @desc    Create prescription from appointment/consultation (Doctor only)
  * @access  Private (Doctor)
@@ -340,7 +359,7 @@ router.post('/from-appointment/:appointmentId', authDoctor, [
       followUpDate,
       validityDays: validityDays || 30,
       notes: notes || appointment.notes,
-      status: 'active'
+      status: 'draft'
     });
 
     // Update appointment with prescription reference

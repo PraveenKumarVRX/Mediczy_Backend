@@ -446,6 +446,15 @@ export function setupSocketIO(server) {
         memberName: memberName || 'Team member',
       });
     });
+
+    // Patient-side AI analysis relay → forward to the attending doctor's socket room
+    // Payload: { doctorId, appointmentId, vitalSigns, sceneDescription,
+    //            visionAlerts, liveTranscript, aiSuggestions, timestamp }
+    socket.on("patient-ai-update", (data) => {
+      const { doctorId } = data || {};
+      if (!doctorId) return;
+      io.to(`doctor-${doctorId}`).emit('patient-ai-update', data);
+    });
   });
 
   return io;

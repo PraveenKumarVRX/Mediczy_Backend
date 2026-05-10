@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   LiveKitRoom as LKRoom,
   LayoutContextProvider,
@@ -28,6 +28,30 @@ interface LiveKitRoomProps {
   controls?: ControlBarControls;
   /** When true, starts with camera OFF (audio-only call) */
   audioOnly?: boolean;
+}
+
+/**
+ * CameraEnabler — renders inside an LKRoom context and enables the local camera
+ * after a short delay so that audio SDP negotiation completes first, preventing
+ * the "could not createOffer with closed peer connection" race condition.
+ */
+function CameraEnabler({ enabled }: { enabled: boolean }) {
+  const room = useRoomContext();
+  const enabledOnce = useRef(false);
+
+  useEffect(() => {
+    if (!enabled || enabledOnce.current) return;
+    // Give audio ~400 ms to finish its SDP offer/answer cycle first.
+    const timer = setTimeout(() => {
+      enabledOnce.current = true;
+      room.localParticipant.setCameraEnabled(true).catch((err) => {
+        console.warn('CameraEnabler: setCameraEnabled failed', err);
+      });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [room, enabled]);
+
+  return null;
 }
 
 /**
@@ -114,6 +138,26 @@ export default function LiveKitRoom({
   const [retryCount, setRetryCount] = useState(0);
   const MAX_RETRIES = 2;
 
+  // Guard: never attempt LiveKit connection without credentials
+  if (!serverUrl || !token) {
+    return (
+      <div className="flex items-center justify-center h-full bg-slate-900 text-white">
+        <div className="text-center space-y-3">
+          <p className="text-red-400 font-medium">⚠️ Video credentials missing</p>
+          <p className="text-slate-400 text-sm">Cannot connect without a valid token.</p>
+          {onDisconnect && (
+            <button
+              className="mt-2 px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 text-sm text-white"
+              onClick={onDisconnect}
+            >
+              Return
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   const handleDisconnect = useCallback(() => {
     onDisconnect?.();
   }, [onDisconnect]);
@@ -163,7 +207,7 @@ export default function LiveKitRoom({
         serverUrl={serverUrl}
         token={token}
         connect={true}
-        video={!audioOnly}
+        video={false}
         audio={true}
         onConnected={handleConnected}
         onDisconnected={handleDisconnect}
@@ -203,6 +247,8 @@ export default function LiveKitRoom({
             </Button>
           </div>
 
+          {/* Enable camera after audio negotiates to prevent SDP race */}
+          <CameraEnabler enabled={!audioOnly} />
           {/* Main video conference area — no screen share */}
           <MedicalVideoLayout controls={controls} />
           
@@ -330,21 +376,45 @@ export function SimpleLiveKitRoom({
   /** Override which controls are shown. Defaults to { screenShare: false } */
   controls?: ControlBarControls;
 }) {
+  // Guard: never mount LiveKit connection without valid credentials
+  if (!serverUrl || !token) {
+    return (
+      <div className="h-full w-full flex items-center justify-center bg-slate-900 text-white">
+        <div className="text-center space-y-3">
+          <p className="text-red-400 font-medium">⚠️ Video credentials missing</p>
+          <p className="text-slate-400 text-sm">Cannot connect without a valid token.</p>
+          {onDisconnect && (
+            <button
+              className="mt-2 px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 text-sm text-white"
+              onClick={onDisconnect}
+            >
+              Return
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full w-full" data-lk-theme="default">
       <LKRoom
         serverUrl={serverUrl}
         token={token}
         connect={true}
-        video={true}
+        video={false}
         audio={true}
         style={{ height: '100%', width: '100%' }}
         onDisconnected={onDisconnect}
       >
-        <MedicalVideoLayout controls={controls} />
-        <RoomAudioRenderer />
-        {onRemoteVideo && <RemoteVideoCapture onRemoteVideo={onRemoteVideo} />}
-        {onRemoteAudio && <RemoteAudioCapture onRemoteAudio={onRemoteAudio} />}
+        <LayoutContextProvider>
+          {/* Enable camera after audio negotiates to prevent SDP race */}
+          <CameraEnabler enabled={true} />
+          <MedicalVideoLayout controls={controls} />
+          <RoomAudioRenderer />
+          {onRemoteVideo && <RemoteVideoCapture onRemoteVideo={onRemoteVideo} />}
+          {onRemoteAudio && <RemoteAudioCapture onRemoteAudio={onRemoteAudio} />}
+        </LayoutContextProvider>
       </LKRoom>
     </div>
   );

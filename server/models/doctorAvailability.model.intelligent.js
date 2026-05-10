@@ -50,6 +50,25 @@ const DoctorAvailabilityModel = sequelize.define('DoctorAvailability', {
   timestamps: true
 });
 
+// Instance method: generate all time slots for a given date based on startTime/endTime/slotDuration
+DoctorAvailabilityModel.prototype.generateTimeSlots = function(date) {
+  const slots = [];
+  const startParts = (this.startTime || '09:00').split(':').map(Number);
+  const endParts   = (this.endTime   || '17:00').split(':').map(Number);
+  const duration   = this.slotDuration || 30;
+
+  let current = startParts[0] * 60 + startParts[1];
+  const end   = endParts[0]   * 60 + endParts[1];
+
+  while (current + duration <= end) {
+    const h = Math.floor(current / 60).toString().padStart(2, '0');
+    const m = (current % 60).toString().padStart(2, '0');
+    slots.push({ time: `${h}:${m}`, label: `${h}:${m}` });
+    current += duration;
+  }
+  return slots;
+};
+
 const DoctorAvailability = {
   findOne: async (options) => {
     return await DoctorAvailabilityModel.findOne(options);

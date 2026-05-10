@@ -272,6 +272,16 @@ const DoctorTriage = () => {
   // Incoming call state
   const [incomingCall, setIncomingCall] = useState<any | null>(null);
   const [isSocketConnected, setIsSocketConnected] = useState(false);
+
+  // Patient-side AI analysis received via socket
+  const [patientAIData, setPatientAIData] = useState<{
+    vitalSigns?: any;
+    sceneDescription?: string;
+    visionAlerts?: string[];
+    liveTranscript?: string[];
+    aiSuggestions?: string[];
+    timestamp?: number;
+  } | null>(null);
   
   // Refs
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -434,6 +444,12 @@ const DoctorTriage = () => {
 
     socketService.on('triage-call-request', handleTriageCallRequest);
 
+    // Receive patient-side AI analysis during emergency call
+    const handlePatientAIUpdate = (data: any) => {
+      setPatientAIData(data);
+    };
+    socketService.on('patient-ai-update', handlePatientAIUpdate);
+
     // Listen for user status changes
     socketService.on('user-status-change', (data: any) => {
       console.log('👤 User status changed:', data);
@@ -443,6 +459,7 @@ const DoctorTriage = () => {
     return () => {
       console.log('🔌 Disconnecting Socket.IO');
       socketService.off('triage-call-request', handleTriageCallRequest);
+      socketService.off('patient-ai-update', handlePatientAIUpdate);
       socketService.disconnect();
       setIsSocketConnected(false);
     };
@@ -471,67 +488,51 @@ const DoctorTriage = () => {
     }
   };
 
-  // Accept incoming triage call
-  const handleAcceptIncomingCall = async (appointmentId: number) => {
-    try {
-      console.log('✅ Accepting call:', appointmentId);
-      
-      const response = await api.post('/doctors/triage/accept-call', { appointmentId });
-      
-      toast({
-        title: "✅ Call Accepted",
-        description: "Joining video consultation...",
-      });
+  // Shared helper: call accept-call, validate response, enter video — retries on 503
+  const enterVideoCallAfterAccept = async (appointmentId: number, maxRetries = 2) => {
+    let lastError: any = null;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await api.post('/doctors/triage/accept-call', { appointmentId });
+        const lk = response.data.livekit;
 
-      // Close incoming call notification
-      setIncomingCall(null);
+        if (!lk?.token || !lk?.serverUrl) {
+          throw new Error('Video service did not return credentials. Please retry.');
+        }
+        if (!response.data.appointment?.roomId) {
+          throw new Error('No room ID returned from server.');
+        }
 
-      // Get video room ID and pre-generated LiveKit token
-      const roomId = response.data.appointment.roomId;
-      const doctorName = `Dr.${currentDoctor?.firstName || 'Doctor'}`;
-      
-      // Use pre-generated token from accept-call response (same room as patient)
-      if (response.data.livekit?.token && response.data.livekit?.serverUrl) {
-        setCurrentVideoToken(response.data.livekit.token);
-        setCurrentVideoServerUrl(response.data.livekit.serverUrl);
+        console.log(`✅ Joining room: ${response.data.appointment.roomId} (attempt ${attempt})`);
+        setCurrentVideoToken(lk.token);
+        setCurrentVideoServerUrl(lk.serverUrl);
         setIsInVideoCall(true);
         setConnectionStatus('connecting');
         startAIFeatures();
         setTimeout(() => setConnectionStatus('connected'), 3000);
-      } else {
-        // Fallback: fetch token from API (may not work for triage rooms)
-        try {
-          const tokenResponse = await api.get('/video/livekit/token', {
-            params: {
-              roomId: roomId,
-              identity: `doctor-${currentDoctor?.id}`
-            }
-          });
-          
-          const token = tokenResponse.data?.token;
-          const serverUrl = tokenResponse.data?.serverUrl || import.meta.env.VITE_LIVEKIT_URL || 'wss://video.mediqzy.com';
-          const joinUrl = tokenResponse.data?.video?.joinUrl || `${LIVEKIT_BASE_URL}/rooms/${roomId}?access_token=${encodeURIComponent(token)}&name=${encodeURIComponent(doctorName)}`;
-
-          setCurrentVideoToken(token || '');
-          setCurrentVideoServerUrl(serverUrl);
-          setCurrentVideoJoinUrl(joinUrl);
-          setIsInVideoCall(true);
-          setConnectionStatus('connecting');
-          
-          // Start AI features
-          startAIFeatures();
-          
-          setTimeout(() => setConnectionStatus('connected'), 3000);
-        } catch (tokenError) {
-          console.error('Failed to get video token:', tokenError);
-          toast({
-            title: "Error",
-            description: "Failed to get secure video token",
-            variant: "destructive",
-          });
-          return;
+        return; // success
+      } catch (err: any) {
+        lastError = err;
+        const is503 = err.response?.status === 503;
+        if (is503 && attempt < maxRetries) {
+          console.warn(`⚠️ Video service unavailable, retrying (${attempt}/${maxRetries})...`);
+          await new Promise(r => setTimeout(r, 1500 * attempt));
+        } else {
+          break;
         }
       }
+    }
+    throw lastError;
+  };
+
+  // Accept incoming triage call
+  const handleAcceptIncomingCall = async (appointmentId: number) => {
+    try {
+      console.log('✅ Accepting call:', appointmentId);
+      setIncomingCall(null);
+      toast({ title: "✅ Call Accepted", description: "Setting up secure video room…" });
+
+      await enterVideoCallAfterAccept(appointmentId);
     } catch (error: any) {
       console.error('Failed to accept call:', error);
       toast({
@@ -574,68 +575,22 @@ const DoctorTriage = () => {
     setSelectedCase(caseItem);
   };
 
-  // Start video call with AI features
+  // Start video call with AI features (from triage case card)
   const handleStartVideoCall = async (caseItem: TriageCase) => {
+    const appointmentId = caseItem.appointmentId;
+    if (!appointmentId) {
+      toast({ title: "Error", description: "No appointment linked to this case.", variant: "destructive" });
+      return;
+    }
     try {
-      let roomId = caseItem.videoRoomId || `triage-${caseItem.id}-${Date.now()}`;
-      let appointmentId = caseItem.appointmentId;
-
-      if (appointmentId) {
-        const response = await api.post('/doctors/triage/accept-call', {
-          appointmentId: appointmentId
-        });
-        roomId = response.data?.appointment?.roomId || roomId;
-      }
-
-      const doctorName = `Dr.${currentDoctor?.firstName || 'Doctor'}`;
-      
-      try {
-        // Fetch token from API
-        const tokenResponse = await api.get('/video/livekit/token', {
-          params: {
-            roomId: roomId,
-            identity: `doctor-${currentDoctor?.id}`
-          }
-        });
-        
-        const token = tokenResponse.data?.token;
-        const serverUrl = tokenResponse.data?.serverUrl || import.meta.env.VITE_LIVEKIT_URL || 'wss://video.mediqzy.com';
-        const joinUrl = tokenResponse.data?.video?.joinUrl || `${LIVEKIT_BASE_URL}/rooms/${roomId}?access_token=${encodeURIComponent(token)}&name=${encodeURIComponent(doctorName)}`;
-
-        setCurrentVideoToken(token || '');
-        setCurrentVideoServerUrl(serverUrl);
-        setCurrentVideoJoinUrl(joinUrl);
-      } catch (tokenError) {
-        console.error('Failed to get video token:', tokenError);
-        toast({
-          title: 'Error',
-          description: 'Failed to get secure video token',
-          variant: 'destructive',
-        });
-        return;
-      }
-
       setSelectedCase(caseItem);
-      setIsInVideoCall(true);
-      setConnectionStatus('connecting');
-
-      // Start AI features
-      startAIFeatures();
-
-      toast({
-        title: "🎥 Starting Video Consultation",
-        description: "AI features will be enabled automatically"
-      });
-
-      // Mark as connected after a delay
-      setTimeout(() => setConnectionStatus('connected'), 3000);
+      toast({ title: "🎥 Connecting…", description: "Setting up secure video room…" });
+      await enterVideoCallAfterAccept(appointmentId);
+      toast({ title: "🎥 Video Consultation Started", description: "AI features enabled" });
     } catch (error: any) {
       console.error('Failed to start triage call:', error);
-      toast({
-        title: "Error",
-        description: error.response?.data?.message || "Failed to start triage call",
-        variant: "destructive",
-      });
+      const msg = error.response?.data?.message || error.message || 'Failed to start video call';
+      toast({ title: "Video Setup Failed", description: msg, variant: "destructive" });
     }
   };
 
@@ -835,7 +790,19 @@ const DoctorTriage = () => {
         });
       }
     }
-  }, [isAudioAIEnabled]);
+
+    // Auto-start full session recording as soon as remote audio is available
+    if (stream && !isRecording) {
+      const started = startFullCallRecording(stream);
+      if (started) {
+        setIsRecording(true);
+        recordingTimerRef.current = setInterval(() => {
+          setRecordingDuration(getRecordingDuration());
+        }, 1000);
+        console.log('🔴 Session recording started automatically');
+      }
+    }
+  }, [isAudioAIEnabled, isRecording]);
 
   // Audio AI continuous analysis — edge every 1s, cloud every 10s
   const startAudioAIAnalysis = () => {
@@ -1086,7 +1053,7 @@ const DoctorTriage = () => {
   };
 
   // End video call
-  const endVideoCall = () => {
+  const endVideoCall = async () => {
     setIsInVideoCall(false);
     setConnectionStatus('disconnected');
     setCurrentVideoToken('');
@@ -1094,15 +1061,24 @@ const DoctorTriage = () => {
     setCurrentVideoJoinUrl('');
     stopVisionAI();
     stopAudioAI();
-    // Stop recording if active
+    // Auto-save recording if active
     if (isRecording) {
-      stopFullCallRecording();
+      const blob = await stopFullCallRecording();
       if (recordingTimerRef.current) {
         clearInterval(recordingTimerRef.current);
         recordingTimerRef.current = null;
       }
       setIsRecording(false);
       setRecordingDuration(0);
+      if (blob && blob.size > 0) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `session-${selectedCase?.patientName || 'triage'}-${new Date().toISOString().slice(0, 19)}.webm`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast({ title: "🔴 Session Recording Saved", description: `Audio downloaded (${Math.round(blob.size / 1024)} KB)` });
+      }
     }
     if (recognitionRef.current) {
       recognitionRef.current.stop();
@@ -1148,7 +1124,8 @@ const DoctorTriage = () => {
     }
     
     // Include AI notes in the response
-    const fullNotes = `${responseNote}\n\n--- AI Consultation Notes ---\n${consultationNotes}\n\n--- Live Transcript ---\n${liveTranscript.join('\n')}`;
+    const patientAISection = patientAIData ? `\n\n--- Patient-side AI Analysis (Dr. iSHA) ---\nVitals: ${JSON.stringify(patientAIData.vitalSigns || {})}\nScene: ${patientAIData.sceneDescription || ''}\nAlerts: ${(patientAIData.visionAlerts || []).join(', ')}\nTranscript: ${(patientAIData.liveTranscript || []).join(' ')}` : '';
+    const fullNotes = `${responseNote}\n\n--- AI Consultation Notes ---\n${consultationNotes}\n\n--- Live Transcript ---\n${liveTranscript.join('\n')}${patientAISection}`;
     
     respondCaseMutation.mutate({
       caseId: selectedCase.id,
@@ -1278,9 +1255,26 @@ const DoctorTriage = () => {
               onRemoteVideo={handleRemoteVideo}
               onRemoteAudio={handleRemoteAudio}
             />
+          ) : isInVideoCall ? (
+            <div className="h-full w-full flex flex-col items-center justify-center gap-4 text-slate-300">
+              <div className="animate-spin h-8 w-8 border-2 border-cyan-400 border-t-transparent rounded-full" />
+              <p>Connecting to secure video session…</p>
+              <button
+                className="text-sm text-cyan-400 underline hover:text-cyan-300"
+                onClick={() => {
+                  if (selectedCase?.appointmentId) {
+                    enterVideoCallAfterAccept(selectedCase.appointmentId).catch(err => {
+                      toast({ title: "Retry Failed", description: err.message, variant: "destructive" });
+                    });
+                  }
+                }}
+              >
+                Retry connection
+              </button>
+            </div>
           ) : (
             <div className="h-full w-full flex items-center justify-center text-slate-300">
-              Connecting to secure video session...
+              Select a case and start a video call.
             </div>
           )}
           
@@ -1452,6 +1446,9 @@ const DoctorTriage = () => {
               <h4 className="text-white font-semibold flex items-center gap-2">
                 <Brain className="h-4 w-4 text-purple-400" />
                 AI Scribe & Analysis
+                {isRecording && (
+                  <span className="ml-1 text-[10px] text-red-400 animate-pulse font-medium">● REC</span>
+                )}
               </h4>
               <Button
                 size="sm"
@@ -1464,6 +1461,49 @@ const DoctorTriage = () => {
             </div>
             
             <ScrollArea className="flex-1 p-3">
+              {/* Patient-side AI data received via socket */}
+              {patientAIData && (
+                <div className="mb-4 bg-green-900/30 rounded-lg p-3 border border-green-500/30">
+                  <h5 className="text-green-400 text-sm font-semibold mb-2 flex items-center gap-2">
+                    <img src="/isha.png" alt="Dr. iSHA" className="h-4 w-4 rounded-full object-cover" />
+                    Patient AI (Dr. iSHA)
+                    <span className="ml-auto text-[9px] text-green-300/50 animate-pulse">● Live</span>
+                  </h5>
+                  {patientAIData.vitalSigns && (
+                    <div className="mb-2 text-xs space-y-0.5">
+                      <p className="text-green-200/80">❤️ {patientAIData.vitalSigns.pulse}</p>
+                      <p className="text-green-200/80">🫁 {patientAIData.vitalSigns.breathing}</p>
+                      <p className="text-green-200/80">🧠 {patientAIData.vitalSigns.consciousness}</p>
+                    </div>
+                  )}
+                  {patientAIData.sceneDescription && (
+                    <p className="text-green-100/70 text-[11px] mb-2 italic">{patientAIData.sceneDescription}</p>
+                  )}
+                  {patientAIData.visionAlerts && patientAIData.visionAlerts.length > 0 && (
+                    <div className="mb-2 space-y-0.5">
+                      {patientAIData.visionAlerts.map((a, i) => (
+                        <p key={i} className="text-amber-300 text-[11px]">⚠️ {a}</p>
+                      ))}
+                    </div>
+                  )}
+                  {patientAIData.liveTranscript && patientAIData.liveTranscript.length > 0 && (
+                    <div className="mb-2 bg-slate-800/60 rounded p-2">
+                      <p className="text-green-300 text-[10px] font-medium mb-1">🎙 Patient says:</p>
+                      {patientAIData.liveTranscript.map((t, i) => (
+                        <p key={i} className="text-white/70 text-[10px]">{t}</p>
+                      ))}
+                    </div>
+                  )}
+                  {patientAIData.aiSuggestions && patientAIData.aiSuggestions.length > 0 && (
+                    <div className="space-y-0.5">
+                      {patientAIData.aiSuggestions.map((s, i) => (
+                        <p key={i} className="text-teal-300 text-[10px]">{s}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Vital Signs */}
               {vitalSigns && (
                 <div className="mb-4 bg-slate-700/50 rounded-lg p-3">

@@ -140,6 +140,42 @@ router.get('/contacts/nurses', authUser, requireDoctor, async (req, res) => {
   }
 });
 
+// ── GET /api/doctor/chat/messages ─────────────────────────────────────────
+// Returns conversation list: latest message per contact (patients + nurses)
+router.get('/messages', authUser, requireDoctor, async (req, res) => {
+  const doctorId = getDoctorId(req);
+  try {
+    const { rows } = await pool.query(`
+      SELECT DISTINCT ON ("conversationId")
+        m."conversationId",
+        m.content AS "lastMessage",
+        m."createdAt" AS "lastMessageAt",
+        m."senderId",
+        m."senderType",
+        m."recipientId",
+        m."recipientType",
+        (
+          SELECT COUNT(*) FROM chat_messages
+          WHERE "conversationId" = m."conversationId"
+            AND "recipientId" = $1::integer AND "recipientType" = 'doctor'
+            AND status != 'read'
+        )::int AS "unreadCount"
+      FROM chat_messages m
+      WHERE m."conversationId" LIKE '%doctor_' || $1::text || '%'
+         OR m."conversationId" LIKE '%_' || $1::text
+      ORDER BY "conversationId", m."createdAt" DESC
+    `, [doctorId]);
+
+    // Sort combined result by most recent
+    rows.sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt));
+
+    res.json({ success: true, conversations: rows, count: rows.length });
+  } catch (err) {
+    console.error('Chat conversation list error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ── GET /api/doctor/chat/messages/:conversationId ──────────────────────────
 router.get('/messages/:conversationId', authUser, requireDoctor, async (req, res) => {
   const doctorId = getDoctorId(req);

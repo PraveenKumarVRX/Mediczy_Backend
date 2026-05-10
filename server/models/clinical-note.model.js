@@ -14,7 +14,7 @@ const ClinicalNote = sequelize.define('ClinicalNote', {
   },
   appointmentId: {
     type: DataTypes.INTEGER,
-    allowNull: false,
+    allowNull: true,
     references: {
       model: 'appointments',
       key: 'id'

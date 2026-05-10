@@ -456,6 +456,7 @@ export async function registerDoctor(req, res) {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.error('[DoctorReg] Validation failed:', JSON.stringify(errors.array()), '| body keys:', Object.keys(req.body).join(','), '| firstName:', req.body.firstName, '| lastName:', req.body.lastName, '| phone:', req.body.phoneNumber);
       return res.status(400).json({ errors: errors.array() });
     }
 

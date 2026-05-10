@@ -52,6 +52,7 @@ const getRedis = () => {
   if (!redisClient) {
     redisClient = new Redis({
       host: REDIS_HOST, port: REDIS_PORT,
+      password: process.env.REDIS_PASSWORD || undefined,
       lazyConnect: true, enableReadyCheck: false,
       maxRetriesPerRequest: 1,
       retryStrategy: (t) => (t > 2 ? null : t * 100),
