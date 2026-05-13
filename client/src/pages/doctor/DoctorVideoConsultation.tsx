@@ -42,7 +42,8 @@ import {
   Link2,
   Share2,
   AlertCircle,
-  Wifi
+  Wifi,
+  ClipboardList
 } from "lucide-react";
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -52,6 +53,7 @@ import api from '@/utils/api';
 
 // Lazy load LiveKit components
 const LiveKitRoom = lazy(() => import('@/components/video/LiveKitRoom'));
+import PatientInfoPane from '@/components/video/PatientInfoPane';
 
 interface Consultation {
   id: string;
@@ -125,6 +127,7 @@ const DoctorVideoConsultation = () => {
   // UI state
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
+  const [showPatientPane, setShowPatientPane] = useState(false);
   
   // Refs
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -591,12 +594,37 @@ const DoctorVideoConsultation = () => {
             serverUrl={liveKitConnection.serverUrl}
             token={liveKitConnection.token}
             roomName={liveKitConnection.roomName}
-            participantName={currentDoctor?.name || currentDoctor?.firstName || 'Doctor'}
+            participantName={currentDoctor?.firstName || 'Doctor'}
             onDisconnect={handleLiveKitDisconnect}
             onError={handleLiveKitError}
             onMinimize={() => setIsCallMinimized(true)}
           />
         </Suspense>
+
+        {/* Patient info pane — fixed right panel over the video, z above LiveKit (z-50) */}
+        {showPatientPane && currentConsultation?.patientId && (
+          <div className="fixed top-0 right-0 bottom-0 z-[51] w-80 shadow-2xl overflow-hidden">
+            <PatientInfoPane
+              patientId={currentConsultation.patientId}
+              patientName={currentConsultation.patient}
+            />
+          </div>
+        )}
+
+        {/* Toggle button for patient info pane */}
+        <button
+          onClick={() => setShowPatientPane(p => !p)}
+          title={showPatientPane ? 'Hide patient info' : 'Show patient info'}
+          className={`fixed top-4 z-[51] flex items-center gap-2 px-3 py-2 rounded-full text-xs font-medium shadow-lg transition-all ${
+            showPatientPane
+              ? 'right-[336px] bg-teal-600 text-white hover:bg-teal-700'
+              : 'right-16 bg-slate-700/80 text-slate-200 hover:bg-slate-600'
+          } ${!currentConsultation?.patientId ? 'opacity-50 cursor-not-allowed' : ''}`}
+          disabled={!currentConsultation?.patientId}
+        >
+          <ClipboardList className="w-4 h-4" />
+          {showPatientPane ? 'Hide Info' : 'Patient Info'}
+        </button>
       </div>
     );
   }
