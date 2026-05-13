@@ -39,15 +39,13 @@ import {
   Play,
   Link2
 } from "lucide-react";
-import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from '@tanstack/react-query';
 import api from '@/utils/api';
 import { format } from 'date-fns';
-
-// Lazy load LiveKit components
-const LiveKitRoom = lazy(() => import('@/components/video/LiveKitRoom'));
+import { useVideoCall } from "@/context/VideoCallContext";
 
 interface Appointment {
   id: string;
@@ -77,6 +75,7 @@ const VideoConsultation = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
+  const videoCall = useVideoCall();
   
   // Room and meeting state
   const [roomId, setRoomId] = useState(searchParams.get('room') || "");
@@ -346,17 +345,12 @@ const VideoConsultation = () => {
         const tokenResponse = await api.post('/mobile/video/token', { roomName });
         const data = tokenResponse.data?.data || tokenResponse.data;
         if (tokenResponse.data?.success && data?.token && data?.serverUrl) {
-          setLiveKitConnection({
-            serverUrl: data.serverUrl,
-            token: data.token,
-            roomName: data.roomName || roomName,
-          });
+          const conn = { serverUrl: data.serverUrl, token: data.token, roomName: data.roomName || roomName };
+          setLiveKitConnection(conn);
           setIsInCall(true);
           setConnectionStatus('connecting');
-          toast({
-            title: '🎥 Joining Video Call',
-            description: 'Connecting securely to consultation room...',
-          });
+          videoCall.startCall(conn, participantName);
+          toast({ title: '🎥 Joining Video Call', description: 'Connecting securely to consultation room...' });
           return true;
         }
       } catch (mobileTokenError) {
@@ -370,17 +364,12 @@ const VideoConsultation = () => {
         });
         const data = legacyResponse.data || {};
         if (data?.success && data?.token && data?.serverUrl) {
-          setLiveKitConnection({
-            serverUrl: data.serverUrl,
-            token: data.token,
-            roomName: data.roomName || roomName,
-          });
+          const conn = { serverUrl: data.serverUrl, token: data.token, roomName: data.roomName || roomName };
+          setLiveKitConnection(conn);
           setIsInCall(true);
           setConnectionStatus('connecting');
-          toast({
-            title: '🎥 Joining Video Call',
-            description: 'Connecting securely to consultation room...',
-          });
+          videoCall.startCall(conn, participantName);
+          toast({ title: '🎥 Joining Video Call', description: 'Connecting securely to consultation room...' });
           return true;
         }
       } catch (legacyTokenError) {
@@ -423,18 +412,12 @@ const VideoConsultation = () => {
           
           // Use native LiveKit SDK connection
           if (livekitData.serverUrl && livekitData.token) {
-            setLiveKitConnection({
-              serverUrl: livekitData.serverUrl,
-              token: livekitData.token,
-              roomName: livekitData.roomName || videoData.meetingId
-            });
+            const conn = { serverUrl: livekitData.serverUrl, token: livekitData.token, roomName: livekitData.roomName || videoData.meetingId };
+            setLiveKitConnection(conn);
             setIsInCall(true);
             setConnectionStatus('connecting');
-            
-            toast({
-              title: "🎥 Joining Video Call",
-              description: "Connecting to consultation room...",
-            });
+            videoCall.startCall(conn, currentUser?.firstName || 'Patient');
+            toast({ title: "🎥 Joining Video Call", description: "Connecting to consultation room..." });
             return;
           }
           
@@ -647,11 +630,9 @@ const VideoConsultation = () => {
     setIsCallMinimized(false);
     setLiveKitConnection(null);
     setConnectionStatus('disconnected');
-    toast({
-      title: "Call Ended",
-      description: "Your video consultation has ended.",
-    });
-  }, [toast]);
+    videoCall.endCall();
+    toast({ title: "Call Ended", description: "Your video consultation has ended." });
+  }, [toast, videoCall]);
 
   const handleLiveKitError = useCallback((error: Error) => {
     console.error('LiveKit error:', error);
@@ -685,31 +666,8 @@ const VideoConsultation = () => {
     });
   }, [toast, liveKitConnection, appointmentIdFromUrl, currentAppointment, initiateVideoCall]);
 
-  // Active video call UI - Native LiveKit
-  if (isInCall && liveKitConnection && !isCallMinimized) {
-    return (
-      <div ref={containerRef} className="h-screen w-full">
-        <Suspense fallback={
-          <div className="flex items-center justify-center h-screen bg-slate-900">
-            <div className="text-center">
-              <Loader2 className="w-12 h-12 animate-spin text-teal-500 mx-auto mb-4" />
-              <p className="text-white text-lg">Loading video components...</p>
-            </div>
-          </div>
-        }>
-          <LiveKitRoom
-            serverUrl={liveKitConnection.serverUrl}
-            token={liveKitConnection.token}
-            roomName={liveKitConnection.roomName}
-            participantName={currentUser?.firstName || 'Patient'}
-            onDisconnect={handleLiveKitDisconnect}
-            onError={handleLiveKitError}
-            onMinimize={() => setIsCallMinimized(true)}
-          />
-        </Suspense>
-      </div>
-    );
-  }
+  // Active call is now rendered by MainLayout via VideoCallContext (fixed overlay).
+  // Show a minimal in-page banner so the user knows the call is live.
 
   // Fallback UI when LiveKit SDK connection failed
   if (isInCall && currentMeetingUrl) {
@@ -1070,21 +1028,6 @@ const VideoConsultation = () => {
           </Card>
         </div>
       </div>
-
-      {isInCall && liveKitConnection && isCallMinimized && (
-        <Suspense fallback={null}>
-          <LiveKitRoom
-            serverUrl={liveKitConnection.serverUrl}
-            token={liveKitConnection.token}
-            roomName={liveKitConnection.roomName}
-            participantName={currentUser?.firstName || 'Patient'}
-            onDisconnect={handleLiveKitDisconnect}
-            onError={handleLiveKitError}
-            isMinimized
-            onRestore={() => setIsCallMinimized(false)}
-          />
-        </Suspense>
-      )}
 
       {/* Pre-Call Device Check Dialog */}
       <Dialog open={showPreCallCheck} onOpenChange={(open) => {

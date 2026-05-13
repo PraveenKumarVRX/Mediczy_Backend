@@ -35,6 +35,10 @@ import FloatingDrISHA from "@/components/FloatingDrISHA";
 import ChatApplet from "@/components/chat/ChatApplet";
 import GlobalSearch from "@/components/GlobalSearch";
 import aiHealthServices from "@/services/aiHealthServices";
+import { lazy, Suspense } from "react";
+import { useVideoCall } from "@/context/VideoCallContext";
+
+const LiveKitRoom = lazy(() => import("@/components/video/LiveKitRoom"));
 
 interface Notification {
   id: number;
@@ -53,7 +57,8 @@ interface MainLayoutProps {
 const MainLayout = ({ children }: MainLayoutProps) => {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
-  
+  const videoCall = useVideoCall();
+
   // Initialize socket connection for notifications
   useSocketConnection();
   
@@ -381,8 +386,8 @@ const MainLayout = ({ children }: MainLayoutProps) => {
                   )}
                   <DropdownMenuSeparator className="dark:bg-slate-700" />
                   <div className="p-2">
-                    <Link 
-                      to="/notifications" 
+                    <Link
+                      to="/patient/notifications"
                       onClick={() => setNotificationOpen(false)}
                       className="block text-center text-sm text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 font-medium py-2 rounded-lg hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-colors"
                     >
@@ -448,11 +453,28 @@ const MainLayout = ({ children }: MainLayoutProps) => {
 
       {/* Team Chat Communication Module */}
       {isTeamUser && <ChatApplet />}
-      
+
+      {/* Persistent video call overlay — survives page navigation */}
+      {videoCall.liveKitConnection && (
+        <Suspense fallback={null}>
+          <LiveKitRoom
+            serverUrl={videoCall.liveKitConnection.serverUrl}
+            token={videoCall.liveKitConnection.token}
+            roomName={videoCall.liveKitConnection.roomName}
+            participantName={videoCall.participantName}
+            isMinimized={videoCall.isMinimized}
+            onMinimize={videoCall.minimize}
+            onRestore={videoCall.restore}
+            onDisconnect={videoCall.handleDisconnect}
+            onError={videoCall.handleError}
+          />
+        </Suspense>
+      )}
+
       {/* Universal Quick Appointment Booking Modal */}
-      <QuickAppointmentModal 
-        open={showBookingModal} 
-        onOpenChange={setShowBookingModal} 
+      <QuickAppointmentModal
+        open={showBookingModal}
+        onOpenChange={setShowBookingModal}
       />
     </div>
   );

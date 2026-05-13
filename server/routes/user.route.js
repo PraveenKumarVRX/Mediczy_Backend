@@ -94,7 +94,7 @@ router.post(
                 c."companyName"
          FROM corporate_employees ce
          JOIN corporates c ON c.id = ce.corporate_id
-         WHERE ce.corporate_id = :corporateId AND ce."employeeId" = :employeeId AND ce."isActive" = true
+         WHERE ce.corporate_id = :corporateId AND UPPER(ce."employeeId") = UPPER(:employeeId) AND ce."isActive" = true
          LIMIT 1`,
         {
           replacements: { corporateId: parseInt(corporateId), employeeId: String(employeeId).trim() },
@@ -1004,7 +1004,7 @@ router.post(
 
       // SECURITY: Always return same response structure whether user exists or not
       // This prevents user enumeration attacks
-      if (!user || user.status === 'inactive' || user.status === 'blocked') {
+      if (!user || user.status === 'blocked') {
         // Return consistent response structure even if user doesn't exist
         const responseData = {
           otpId: placeholderOtpId,

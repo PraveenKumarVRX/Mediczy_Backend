@@ -379,10 +379,12 @@ export const AuthProvider = ({ children }) => {
       return;
     }
 
-    // Check doctor routes - require doctorToken
+    // Check doctor routes - require an active doctor session. This prevents
+    // other portal sessions, such as lab, from reaching doctor teleconsults
+    // even if a stale doctorToken is still present in localStorage.
     if (isDoctorRoute) {
-      const doctorToken = localStorage.getItem('doctorToken');
-      if (!doctorToken && location.pathname !== '/doctor/login') {
+      const doctorToken = getValidPortalToken('doctorToken');
+      if ((!doctorToken || authState.userType !== "doctor") && location.pathname !== '/doctor/login') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/doctor/login", { replace: true });
         return;

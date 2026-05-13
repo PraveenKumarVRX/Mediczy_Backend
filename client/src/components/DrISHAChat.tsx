@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -44,6 +45,7 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
   showWelcomeCard = true,
   maxHeight = "600px"
 }) => {
+  const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -81,14 +83,13 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
 
   const generateMessageId = () => `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: generateMessageId(),
       role: "user",
-      content: input.trim(),
+      content: text.trim(),
       timestamp: new Date(),
       language
     };
@@ -154,7 +155,7 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
             duration: 5000
           });
           setTimeout(() => {
-            window.location.href = response_data.redirectUrl || '/emergency';
+            navigate(response_data.redirectUrl || '/emergency');
           }, 2000);
         }
         // Handle Appointment Intent
@@ -163,7 +164,7 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
             duration: 3000
           });
           setTimeout(() => {
-            window.location.href = response_data.redirectUrl || '/appointments';
+            navigate(response_data.redirectUrl || '/patient/appointments');
           }, 1500);
         }
         // Handle Doctor Search Intent
@@ -172,20 +173,19 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
             duration: 3000
           });
           setTimeout(() => {
-            window.location.href = response_data.redirectUrl || '/doctors';
+            navigate(response_data.redirectUrl || '/patient/doctors');
           }, 1500);
         }
         // Handle Specialist Referral (Pregnancy, Mental Health, Pediatric)
-        else if (response_data.intentType === 'pregnancy' || 
-                 response_data.intentType === 'mental_health' || 
+        else if (response_data.intentType === 'pregnancy' ||
+                 response_data.intentType === 'mental_health' ||
                  response_data.intentType === 'pediatric') {
           const specialistName = response_data.suggestedSpecialist || 'Specialist';
           toast.info(`Connecting you with a ${specialistName}`, {
             duration: 3000
           });
           setTimeout(() => {
-            const searchPath = `/doctors?specialty=${response_data.specialization || ''}`;
-            window.location.href = searchPath;
+            navigate(`/patient/doctors?specialty=${response_data.specialization || ''}`);
           }, 1500);
         }
 
@@ -224,6 +224,11 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    sendMessage(input);
   };
 
   const startVoiceInput = () => {
@@ -453,10 +458,7 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
             ].map((suggestion) => (
               <button
                 key={suggestion}
-                onClick={() => {
-                  setInput(suggestion);
-                  handleSubmit(new Event('submit') as any);
-                }}
+                onClick={() => sendMessage(suggestion)}
                 className="text-xs px-3 py-1.5 rounded-full border border-primary/30 bg-primary/5 hover:bg-primary/15 text-primary transition-colors duration-200 hover:border-primary/50"
               >
                 {suggestion}

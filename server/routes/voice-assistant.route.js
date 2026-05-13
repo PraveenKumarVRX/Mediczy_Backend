@@ -23,7 +23,7 @@ import express from 'express';
 import multer from 'multer';
 import fetch from 'node-fetch';
 import FormData from 'form-data';
-import { AccessToken } from 'livekit-server-sdk';
+import { AccessToken, AgentDispatchClient } from 'livekit-server-sdk';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 import logger from '../config/logger.js';
@@ -787,6 +787,22 @@ router.get('/livekit-token', authUser, requireDoctor, async (req, res) => {
     });
 
     const jwt = await token.toJwt();
+
+    // Dispatch the Dr Isha agent to the room so it joins automatically.
+    // Fire-and-forget — if dispatch fails (e.g. agent worker not running)
+    // the mobile still gets a valid token and can retry later.
+    try {
+      const httpUrl = wsUrl.replace('wss://', 'https://').replace('ws://', 'http://');
+      const dispatchClient = new AgentDispatchClient(httpUrl, apiKey, apiSecret);
+      await dispatchClient.createDispatch(roomName, 'dr-isha', {
+        metadata: JSON.stringify({ doctorId }),
+      });
+    } catch (dispatchErr) {
+      logger.warn('[VoiceAssistant] Agent dispatch failed (agent may not be running)', {
+        error: dispatchErr.message, roomName,
+      });
+    }
+
     return res.json({ token: jwt, url: wsUrl, roomName });
   } catch (err) {
     logger.error('[VoiceAssistant] LiveKit token error', { error: err.message });

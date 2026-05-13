@@ -481,7 +481,7 @@ export default function QuickAppointmentModal({
                   <SelectTrigger>
                     <SelectValue placeholder="Select Specialty" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" className="z-[9999] max-h-60 overflow-y-auto">
                     <SelectItem value="all">All Specialties</SelectItem>
                     {SPECIALIZATIONS.map((spec) => (
                       <SelectItem key={spec} value={spec}>

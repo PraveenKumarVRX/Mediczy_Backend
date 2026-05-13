@@ -8,6 +8,7 @@ import { GoogleOAuthProvider } from "@react-oauth/google";
 import { AuthProvider } from "./auth/AuthProvider";
 import { SocketProvider } from "@/context/SocketContext";
 import { DebugProvider } from "@/contexts/DebugContext";
+import { VideoCallProvider } from "@/context/VideoCallContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import AppRoutes from "@/routes";
 
@@ -32,7 +33,9 @@ const App = () => (
               <DebugProvider>
                 <AuthProvider>
                   <SocketProvider>
-                    <AppRoutes />
+                    <VideoCallProvider>
+                      <AppRoutes />
+                    </VideoCallProvider>
                   </SocketProvider>
                 </AuthProvider>
               </DebugProvider>

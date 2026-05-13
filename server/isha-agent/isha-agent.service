@@ -1,0 +1,16 @@
+[Unit]
+Description=Dr Isha LiveKit Voice Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Mediczy/server/isha-agent
+ExecStart=/home/ubuntu/Mediczy/.venv/bin/python /home/ubuntu/Mediczy/server/isha-agent/agent.py start
+Restart=on-failure
+RestartSec=5
+Environment=HF_HOME=/home/ubuntu/.cache/huggingface
+
+[Install]
+WantedBy=multi-user.target

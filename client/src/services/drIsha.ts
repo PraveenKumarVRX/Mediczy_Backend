@@ -11,6 +11,11 @@ interface DrIshaResponse {
   language: string;
   provider: string;
   conversationLength?: number;
+  confidence?: number;
+  intentType?: 'emergency' | 'appointment' | 'doctor_search' | 'pregnancy' | 'mental_health' | 'pediatric' | string;
+  redirectUrl?: string;
+  suggestedSpecialist?: string;
+  specialization?: string;
 }
 
 interface SymptomAnalysisOptions {
