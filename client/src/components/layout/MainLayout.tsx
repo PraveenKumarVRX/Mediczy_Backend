@@ -108,6 +108,14 @@ const MainLayout = ({ children }: MainLayoutProps) => {
   const isAssistantRoute = location.pathname.startsWith('/assistant');
   const isAssistantUser = !!assistantToken && isAssistantRoute;
 
+  // Auto-minimize an active video call when the user navigates to a new page
+  // so they can browse freely without the full-screen overlay blocking navigation.
+  useEffect(() => {
+    if (videoCall.liveKitConnection && !videoCall.isMinimized) {
+      videoCall.minimize();
+    }
+  }, [location.pathname]);
+
   const toggleTheme = () => {
     setTheme(theme === "dark" ? "light" : "dark");
   }

@@ -1354,6 +1354,7 @@ const AppRoutes = () => {
         <Route path="/calorie-calculator"    element={<MainLayout><CalorieCalculator /></MainLayout>} />
         <Route path="/emergency"             element={<MainLayout><Emergency /></MainLayout>} />
         <Route path="/video-consultation"    element={<MainLayout><VideoConsultation /></MainLayout>} />
+        <Route path="/notifications"              element={<Navigate to="/patient/notifications" replace />} />
         <Route path="/patient/notifications"      element={<MainLayout><PatientNotifications /></MainLayout>} />
         <Route path="/patient/lab-tests"          element={<MainLayout><LabTests /></MainLayout>} />
         <Route path="/patient/my-reports"         element={<MainLayout><MyReports /></MainLayout>} />

@@ -102,7 +102,47 @@ router.post(
         }
       );
       if (!emp) {
-        return res.status(404).json({ success: false, message: "Employee ID not found for this company. Please contact your HR." });
+        // Fallback: check user_associations where employeeId is stored in metadata
+        // (employees uploaded without a dedicated employeeId column land here only)
+        const [uaEmp] = await postgresSequelize.query(
+          `SELECT ua."userId", ua.metadata,
+                  ua.metadata->>'employeeId'  AS "employeeId",
+                  ua.metadata->>'department'  AS department,
+                  ua.metadata->>'designation' AS designation,
+                  ua.metadata->>'firstName'   AS "firstName",
+                  ua.metadata->>'lastName'    AS "lastName",
+                  c."companyName"
+           FROM user_associations ua
+           JOIN corporates c ON c.id = ua."entityId"
+           WHERE ua."entityType" = 'corporate'
+             AND ua."entityId"   = :corporateId
+             AND ua.status       = 'active'
+             AND UPPER(ua.metadata->>'employeeId') = UPPER(:employeeId)
+           LIMIT 1`,
+          {
+            replacements: { corporateId: parseInt(corporateId), employeeId: String(employeeId).trim() },
+            type: postgresSequelize.QueryTypes.SELECT,
+          }
+        );
+        if (!uaEmp) {
+          return res.status(404).json({ success: false, message: "Employee ID not found for this company. Please contact your HR." });
+        }
+        if (uaEmp.userId) {
+          return res.status(409).json({ success: false, message: "This employee ID is already registered. Please log in instead." });
+        }
+        return res.json({
+          success: true,
+          message: "Employee verified",
+          employee: {
+            dbId: null,
+            employeeId: uaEmp.employeeId || String(employeeId).trim(),
+            department: uaEmp.department || null,
+            designation: uaEmp.designation || null,
+            corporateName: uaEmp.companyName,
+            firstName: uaEmp.firstName || null,
+            lastName: uaEmp.lastName || null,
+          },
+        });
       }
       if (emp.userId) {
         return res.status(409).json({ success: false, message: "This employee ID is already registered. Please log in instead." });

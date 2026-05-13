@@ -238,7 +238,7 @@ class SignupVerificationService {
           pool: false,
           tls: { rejectUnauthorized: false, minVersion: 'TLSv1.2' }
         });
-        fromEmail = (process.env.SMTP_USER || process.env.SMTP_FROM || '').trim();
+        fromEmail = (process.env.SMTP_FROM || process.env.SMTP_USER || '').trim();
         fromName = 'Mediqzy';
       }
 

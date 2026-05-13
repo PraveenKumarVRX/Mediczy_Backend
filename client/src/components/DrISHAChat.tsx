@@ -51,6 +51,7 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [sessionId, setSessionId] = useState<string>("");
 
   useEffect(() => {
@@ -223,6 +224,8 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
       toast.error("Dr. iSHA is temporarily unavailable. Please try again.");
     } finally {
       setIsLoading(false);
+      // Re-focus input so the user can immediately type the next message
+      setTimeout(() => inputRef.current?.focus(), 50);
     }
   };
 
@@ -495,6 +498,7 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
           )}
           
           <Input
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder={isListening ? "Listening..." : placeholder}

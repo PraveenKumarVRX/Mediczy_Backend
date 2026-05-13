@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -120,6 +120,21 @@ function useResendTimer(initial = 30) {
 const Login = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Show a toast when the OAuth server redirects back with ?error=
+  useEffect(() => {
+    const oauthError = searchParams.get('error');
+    if (oauthError) {
+      const provider = oauthError.startsWith('google') ? 'Google' : oauthError.startsWith('facebook') ? 'Facebook' : 'OAuth';
+      toast({
+        variant: 'destructive',
+        title: `${provider} sign-in failed`,
+        description: 'Could not authenticate with the provider. Please try again or use email/password.',
+      });
+    }
+  }, []);
+
   const [showPassword, setShowPassword] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [loginMode, setLoginMode] = useState<LoginMode>("password");
