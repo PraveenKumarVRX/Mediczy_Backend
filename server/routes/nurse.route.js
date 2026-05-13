@@ -13,6 +13,7 @@ import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import userModel from '../models/user.model.intelligent.js';
 import { Op } from 'sequelize';
 import pool from '../db/pgPool.js';
+import { Appointment, Doctor } from '../models/index.js';
 
 const router = express.Router();
 
@@ -578,70 +579,68 @@ router.get('/schedule', authNurse, async (req, res) => {
 });
 
 /**
- * POST /api/nurses/book
- * Book an appointment with a nurse
+ * POST /api/nurse/book
+ * Nurse books a doctor appointment on behalf of a patient.
  */
-router.post('/book', async (req, res) => {
+router.post('/book', authNurse, async (req, res) => {
   try {
     const {
-      nurseId,
-      appointmentDate,
-      appointmentTime,
-      serviceType,
-      symptoms,
-      notes,
+      doctorId,
       patientName,
       patientPhone,
-      patientAddress
-    } = req.body;
-
-    // Validate required fields
-    if (!nurseId || !appointmentDate || !appointmentTime) {
-      return res.status(400).json({
-        success: false,
-        message: 'Nurse ID, appointment date, and time are required'
-      });
-    }
-
-    // Get nurse details
-    const nurse = await Nurse.findByPk(nurseId);
-    if (!nurse) {
-      return res.status(404).json({
-        success: false,
-        message: 'Nurse not found'
-      });
-    }
-
-    // Create appointment record
-    const appointment = {
-      id: `nurse-appt-${Date.now()}`,
-      nurseId,
-      patientName: patientName || 'Patient',
-      patientPhone: patientPhone || '',
       appointmentDate,
       appointmentTime,
-      serviceType: serviceType || 'general',
-      symptoms: symptoms || '',
-      notes: notes || '',
-      patientAddress: patientAddress || {},
+      consultationType = 'in-person',
+      symptoms = [],
+    } = req.body;
+
+    if (!doctorId || !patientName || !patientPhone || !appointmentDate || !appointmentTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'doctorId, patientName, patientPhone, appointmentDate, and appointmentTime are required',
+      });
+    }
+
+    // Resolve doctor name
+    const doctor = await Doctor.findByPk(parseInt(doctorId));
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+    const doctorName = `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim() || doctor.email;
+
+    const appointment = await Appointment.create({
+      doctorId: doctor.id,
+      doctorName,
+      specialization: doctor.specialization || null,
+      patientName: String(patientName).trim(),
+      patientPhone: String(patientPhone).trim(),
+      appointmentDate,
+      appointmentTime,
+      consultationType,
+      symptoms: Array.isArray(symptoms) ? symptoms : (symptoms ? [symptoms] : []),
       status: 'scheduled',
-      bookingTime: new Date().toISOString(),
-      fee: nurse.consultationFee || 500
-    };
+      notes_json: { admin: `Booked by nurse ID ${req.nurse.id}` },
+    });
 
-    // TODO: Store in database once NurseAppointment model is created
-
-    res.json({
+    return res.status(201).json({
       success: true,
       message: 'Appointment booked successfully',
-      appointment
+      appointment: {
+        id: appointment.id,
+        appointmentDate: appointment.appointmentDate,
+        appointmentTime: appointment.appointmentTime,
+        doctorName,
+        patientName: appointment.patientName,
+        consultationType: appointment.consultationType,
+        status: appointment.status,
+      },
     });
   } catch (error) {
     console.error('Nurse booking error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to book appointment',
-      error: error.message
+      error: error.message,
     });
   }
 });

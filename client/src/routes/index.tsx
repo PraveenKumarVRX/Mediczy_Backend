@@ -273,6 +273,8 @@ const NurseMedications     = lazy(() => import("@/pages/nurse/NurseMedications")
 const NurseNotes           = lazy(() => import("@/pages/nurse/NurseNotes"));
 const NurseAppointments    = lazy(() => import("@/pages/nurse/NurseAppointments"));
 const NurseChat            = lazy(() => import("@/pages/nurse/NurseChat"));
+const NurseBookAppointment = lazy(() => import("@/pages/nurse/BookAppointment"));
+const NurseVideoConsultation = lazy(() => import("@/pages/nurse/VideoConsultation"));
 
 // ─── Assistant ───────────────────────────────────────────────────────────────
 const AssistantLogin           = lazy(() => import("@/pages/assistant/AssistantLogin"));
@@ -921,8 +923,10 @@ const AppRoutes = () => {
         <Route path="/nurse/medications"       element={<MainLayout><NurseMedications /></MainLayout>} />
         <Route path="/nurse/notes"             element={<MainLayout><NurseNotes /></MainLayout>} />
         <Route path="/nurse/appointments"      element={<MainLayout><NurseAppointments /></MainLayout>} />
-        <Route path="/nurse/register-patient"  element={<MainLayout><NurseRegisterPatient /></MainLayout>} />
-        <Route path="/nurse/chat"              element={<NurseChat />} />
+        <Route path="/nurse/register-patient"   element={<MainLayout><NurseRegisterPatient /></MainLayout>} />
+        <Route path="/nurse/chat"               element={<NurseChat />} />
+        <Route path="/nurse/book-appointment"   element={<MainLayout><NurseBookAppointment /></MainLayout>} />
+        <Route path="/nurse/video-consultation" element={<NurseVideoConsultation />} />
 
         {/* ── Assistant ───────────────────────────────────────────────── */}
         <Route path="/assistant/login"             element={<AssistantLogin />} />
