@@ -62,7 +62,7 @@ class PrescriptionExpiryService {
 
       const activePrescriptions = await Prescription.findAll({
         where: {
-          status: 'active',
+          status: { [Op.in]: ['issued', 'active'] },
           createdAt: {
             [Op.gte]: sixtyDaysAgo
           }

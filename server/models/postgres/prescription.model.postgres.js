@@ -271,7 +271,7 @@ const Prescription = sequelize.define('Prescription', {
   
   // Status
   status: {
-    type: DataTypes.ENUM('draft', 'issued', 'dispensed', 'cancelled'),
+    type: DataTypes.ENUM('draft', 'issued', 'active', 'dispensed', 'cancelled', 'expired'),
     defaultValue: 'issued'
   },
   
