@@ -15,7 +15,7 @@ import { Track, RoomEvent, ConnectionState } from 'livekit-client';
 // Import LiveKit component styles - order matters!
 import '@livekit/components-styles';
 import { Button } from '@/components/ui/button';
-import { PhoneOff, X, Users, Wifi, WifiOff } from 'lucide-react';
+import { Maximize2, Minimize2, PhoneOff, X, Users, Wifi, WifiOff } from 'lucide-react';
 
 interface LiveKitRoomProps {
   serverUrl: string;
@@ -28,6 +28,10 @@ interface LiveKitRoomProps {
   controls?: ControlBarControls;
   /** When true, starts with camera OFF (audio-only call) */
   audioOnly?: boolean;
+  /** Render the active call as a compact floating window */
+  isMinimized?: boolean;
+  onMinimize?: () => void;
+  onRestore?: () => void;
 }
 
 /**
@@ -133,6 +137,9 @@ export default function LiveKitRoom({
   onError,
   controls,
   audioOnly = false,
+  isMinimized = false,
+  onMinimize,
+  onRestore,
 }: LiveKitRoomProps) {
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
@@ -201,8 +208,16 @@ export default function LiveKitRoom({
     );
   }
 
+  const shellClassName = isMinimized
+    ? 'fixed bottom-4 right-4 z-50 h-[260px] w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-slate-700 bg-slate-900 shadow-2xl'
+    : 'fixed inset-0 bg-slate-900 z-50';
+
+  const roomStyle = isMinimized
+    ? { height: '260px', width: '100%' }
+    : { height: '100vh', width: '100vw' };
+
   return (
-    <div className="fixed inset-0 bg-slate-900 z-50" data-lk-theme="default">
+    <div className={shellClassName} data-lk-theme="default">
       <LKRoom
         serverUrl={serverUrl}
         token={token}
@@ -224,27 +239,52 @@ export default function LiveKitRoom({
             autoGainControl: true,
           },
         }}
-        style={{ height: '100vh', width: '100vw' }}
+        style={roomStyle}
       >
         <LayoutContextProvider>
           {/* Custom header overlay */}
-          <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between p-4 bg-gradient-to-b from-slate-900/80 to-transparent">
-            <div className="flex items-center gap-3">
+          <div className={`absolute top-0 left-0 right-0 z-50 flex items-center justify-between bg-gradient-to-b from-slate-900/80 to-transparent ${isMinimized ? 'p-2' : 'p-4'}`}>
+            <div className="flex min-w-0 items-center gap-2">
               <div className="px-3 py-1.5 rounded-full bg-slate-700/50 text-xs font-medium text-white">
                 {roomName}
               </div>
-              <ConnectionIndicator />
-              <ParticipantsBadge />
+              {!isMinimized && <ConnectionIndicator />}
+              {!isMinimized && <ParticipantsBadge />}
             </div>
-            <Button
-              onClick={handleDisconnect}
-              variant="destructive"
-              size="sm"
-              className="flex items-center gap-2"
-            >
-              <PhoneOff className="w-4 h-4" />
-              End Call
-            </Button>
+            <div className="flex items-center gap-2">
+              {isMinimized ? (
+                <Button
+                  onClick={onRestore}
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 px-2"
+                  title="Restore call"
+                >
+                  <Maximize2 className="w-4 h-4" />
+                </Button>
+              ) : (
+                onMinimize && (
+                  <Button
+                    onClick={onMinimize}
+                    variant="secondary"
+                    size="sm"
+                    className="h-8 px-2"
+                    title="Minimize call"
+                  >
+                    <Minimize2 className="w-4 h-4" />
+                  </Button>
+                )
+              )}
+              <Button
+                onClick={handleDisconnect}
+                variant="destructive"
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                <PhoneOff className="w-4 h-4" />
+                {!isMinimized && 'End Call'}
+              </Button>
+            </div>
           </div>
 
           {/* Enable camera after audio negotiates to prevent SDP race */}

@@ -98,6 +98,7 @@ const DoctorVideoConsultation = () => {
   // Video consultation state
   const [isInCall, setIsInCall] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isCallMinimized, setIsCallMinimized] = useState(false);
   const [currentMeetingUrl, setCurrentMeetingUrl] = useState("");
   const [currentConsultation, setCurrentConsultation] = useState<Consultation | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
@@ -401,6 +402,7 @@ const DoctorVideoConsultation = () => {
   const endVideoCall = useCallback(() => {
     setIsInCall(false);
     setIsFullscreen(false);
+    setIsCallMinimized(false);
     setCurrentMeetingUrl("");
     setCurrentConsultation(null);
     setConnectionStatus('disconnected');
@@ -448,6 +450,7 @@ const DoctorVideoConsultation = () => {
     window.open(url, '_blank', 'width=1200,height=800');
     setIsInCall(false);
     setIsFullscreen(false);
+    setIsCallMinimized(false);
     setCurrentMeetingUrl("");
     setCurrentConsultation(null);
     setConnectionStatus('disconnected');
@@ -533,6 +536,7 @@ const DoctorVideoConsultation = () => {
   // Stable callbacks for LiveKit room to prevent re-render thrashing
   const handleLiveKitDisconnect = useCallback(() => {
     setIsInCall(false);
+    setIsCallMinimized(false);
     setLiveKitConnection(null);
     setConnectionStatus('disconnected');
     toast({
@@ -572,7 +576,7 @@ const DoctorVideoConsultation = () => {
   }, [toast, liveKitConnection, appointmentIdFromUrl, currentConsultation, initiateVideoCall]);
 
   // Active video call UI - Native LiveKit
-  if (isInCall && liveKitConnection) {
+  if (isInCall && liveKitConnection && !isCallMinimized) {
     return (
       <div ref={containerRef} className="h-screen w-full">
         <Suspense fallback={
@@ -590,6 +594,7 @@ const DoctorVideoConsultation = () => {
             participantName={currentDoctor?.name || currentDoctor?.firstName || 'Doctor'}
             onDisconnect={handleLiveKitDisconnect}
             onError={handleLiveKitError}
+            onMinimize={() => setIsCallMinimized(true)}
           />
         </Suspense>
       </div>
@@ -1093,6 +1098,21 @@ const DoctorVideoConsultation = () => {
           </Card>
         </div>
       </div>
+
+      {isInCall && liveKitConnection && isCallMinimized && (
+        <Suspense fallback={null}>
+          <LiveKitRoom
+            serverUrl={liveKitConnection.serverUrl}
+            token={liveKitConnection.token}
+            roomName={liveKitConnection.roomName}
+            participantName={currentDoctor?.name || currentDoctor?.firstName || 'Doctor'}
+            onDisconnect={handleLiveKitDisconnect}
+            onError={handleLiveKitError}
+            isMinimized
+            onRestore={() => setIsCallMinimized(false)}
+          />
+        </Suspense>
+      )}
 
       {/* Pre-Call Device Check Dialog */}
       <Dialog open={showPreCallCheck} onOpenChange={(open) => {
