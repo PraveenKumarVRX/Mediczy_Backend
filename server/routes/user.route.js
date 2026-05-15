@@ -520,6 +520,10 @@ router.post(
     body("lastName").isLength({ min: 2, max: 20 }).withMessage("Last name must be between 2 to 20 characters"),
     body("dateOfBirth").optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage("Must be a valid date in YYYY-MM-DD format"),
     body("gender").optional({ nullable: true, checkFalsy: true }).isIn(["Male", "Female", "Other"]).withMessage("Gender must be either Male, Female, or Other"),
+    body("addressStreet").optional({ nullable: true, checkFalsy: true }).isString().trim().isLength({ max: 255 }),
+    body("addressCity").optional({ nullable: true, checkFalsy: true }).isString().trim().isLength({ max: 120 }),
+    body("addressState").optional({ nullable: true, checkFalsy: true }).isString().trim().isLength({ max: 120 }),
+    body("addressZipCode").optional({ nullable: true, checkFalsy: true }).isString().trim().isLength({ max: 20 }),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -527,7 +531,7 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { email, phoneNumber, password, firstName, lastName, dateOfBirth, gender, memberType, corporateId, employeeDbId, employeeId } = req.body;
+    const { email, phoneNumber, password, firstName, lastName, dateOfBirth, gender, memberType, corporateId, employeeDbId, employeeId, addressStreet, addressCity, addressState, addressZipCode } = req.body;
     const isCorporate = memberType === 'corporate';
 
     try {
@@ -619,10 +623,14 @@ router.post(
         const aggType = isCorporate ? (corporateRecord?.aggregator_type  ?? 'broker') : 'broker';
         await postgresSequelize.query(
           `UPDATE users SET "isVerified" = true, "isCorporate" = :isCorporate,
-            aggregator_id = :aggId, aggregator_type = :aggType
+            aggregator_id = :aggId, aggregator_type = :aggType,
+            address_street = COALESCE(:addressStreet, address_street),
+            address_city = COALESCE(:addressCity, address_city),
+            address_state = COALESCE(:addressState, address_state),
+            "address_zipCode" = COALESCE(:addressZipCode, "address_zipCode")
            WHERE id = :id`,
           {
-            replacements: { id: newUser.id, isCorporate: isCorporate, aggId, aggType },
+            replacements: { id: newUser.id, isCorporate: isCorporate, aggId, aggType, addressStreet: addressStreet || null, addressCity: addressCity || null, addressState: addressState || null, addressZipCode: addressZipCode || null },
             type: postgresSequelize.QueryTypes.UPDATE
           }
         );
@@ -2385,4 +2393,3 @@ router.delete('/my-insurances/:policyId', authUser, async (req, res) => {
 });
 
 export default router;
-

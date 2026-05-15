@@ -55,6 +55,10 @@ interface SignupPayload {
   lastName: string;
   dateOfBirth?: string;
   gender?: string;
+  addressStreet?: string;
+  addressCity?: string;
+  addressState?: string;
+  addressZipCode?: string;
 }
 
 const formSchema = z.object({
@@ -92,6 +96,10 @@ const corpFormSchema = z.object({
       "Must contain uppercase, lowercase and a number"
     ),
   phoneNumber: z.string().regex(/^\+?[1-9]\d{1,14}$/, "Invalid phone number"),
+  addressStreet: z.string().min(3, "Address is required"),
+  addressCity: z.string().min(2, "City is required"),
+  addressState: z.string().min(2, "State is required"),
+  addressZipCode: z.string().min(4, "PIN code is required"),
 });
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -112,6 +120,7 @@ const Register = () => {
   const [employeeIdInput, setEmployeeIdInput] = useState("");
   const [validating, setValidating] = useState(false);
   const [employeeInfo, setEmployeeInfo] = useState<EmployeeInfo | null>(null);
+  const [employeeValidationError, setEmployeeValidationError] = useState("");
 
   // ── OTP / registration state ──
   const [showPassword, setShowPassword] = useState(false);
@@ -144,7 +153,7 @@ const Register = () => {
 
   const corpForm = useForm<z.infer<typeof corpFormSchema>>({
     resolver: zodResolver(corpFormSchema),
-    defaultValues: { email: "", password: "", phoneNumber: "" },
+    defaultValues: { email: "", password: "", phoneNumber: "", addressStreet: "", addressCity: "", addressState: "", addressZipCode: "" },
   });
 
   // Search corporates on typeahead (min 3 chars)
@@ -183,12 +192,13 @@ const Register = () => {
   };
 
   // ── Corporate employee validation ──
-  const handleValidateEmployee = async () => {
+  const handleValidateEmployee = async (silent = false) => {
     if (!selectedCorporateId || !employeeIdInput.trim()) {
       toast({ variant: "destructive", title: "Required", description: "Select your company and enter your Employee ID." });
       return;
     }
     setValidating(true);
+    setEmployeeValidationError("");
     try {
       const { data } = await api.post(
         "/users/register/validate-employee",
@@ -196,13 +206,31 @@ const Register = () => {
         { skipAuth: true } as any
       );
       setEmployeeInfo(data.employee);
-      toast({ title: "Employee verified", description: `Verified as employee of ${data.employee.corporateName}.` });
+      if (!silent) {
+        toast({ title: "Employee verified", description: `Verified as employee of ${data.employee.corporateName}.` });
+      }
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Validation failed", description: error?.response?.data?.message || "Employee ID not found." });
+      setEmployeeInfo(null);
+      setEmployeeValidationError(error?.response?.data?.message || "Employee ID not found.");
+      if (!silent) {
+        toast({ variant: "destructive", title: "Validation failed", description: error?.response?.data?.message || "Employee ID not found." });
+      }
     } finally {
       setValidating(false);
     }
   };
+
+  useEffect(() => {
+    if (memberType !== "corporate" || !selectedCorporateId || employeeIdInput.trim().length < 2) {
+      setEmployeeInfo(null);
+      setEmployeeValidationError("");
+      return;
+    }
+    const timer = setTimeout(() => {
+      handleValidateEmployee(true);
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [memberType, selectedCorporateId, employeeIdInput]);
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setOtpSending(true);
@@ -483,15 +511,28 @@ const Register = () => {
                 <Input
                   placeholder="Enter your employee ID"
                   value={employeeIdInput}
-                  onChange={(e) => setEmployeeIdInput(e.target.value)}
+                  onChange={(e) => {
+                    setEmployeeIdInput(e.target.value);
+                    setEmployeeInfo(null);
+                  }}
                   onKeyDown={(e) => e.key === "Enter" && handleValidateEmployee()}
                 />
+                {validating && <p className="text-xs text-muted-foreground">Validating employee ID...</p>}
+                {!validating && employeeInfo && (
+                  <p className="flex items-center gap-1 text-xs font-medium text-green-600">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Employee ID verified
+                  </p>
+                )}
+                {!validating && employeeValidationError && (
+                  <p className="text-xs font-medium text-destructive">{employeeValidationError}</p>
+                )}
               </div>
 
               <Button
                 type="button"
                 className="w-full"
-                onClick={handleValidateEmployee}
+                onClick={() => handleValidateEmployee()}
                 disabled={validating || !selectedCorporateId || !employeeIdInput.trim()}
               >
                 {validating ? (
@@ -585,6 +626,42 @@ const Register = () => {
                       </FormItem>
                     )}
                   />
+                  <FormField
+                    control={corpForm.control}
+                    name="addressStreet"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Address</FormLabel>
+                        <FormControl>
+                          <Input placeholder="House / street / area" {...field} disabled={otpStep} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <FormField control={corpForm.control} name="addressCity" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>City</FormLabel>
+                        <FormControl><Input {...field} disabled={otpStep} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={corpForm.control} name="addressState" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>State</FormLabel>
+                        <FormControl><Input {...field} disabled={otpStep} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={corpForm.control} name="addressZipCode" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>PIN Code</FormLabel>
+                        <FormControl><Input {...field} disabled={otpStep} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
                   <FormField
                     control={corpForm.control}
                     name="password"

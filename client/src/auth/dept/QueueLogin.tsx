@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import api from "@/utils/api";
 import { useNavigate, Link } from "react-router-dom";
 import { MediqzyLogo3D } from "@/components/ui/MediqzyLogo3D";
-import { Sparkles, Shield, CheckCircle2, Lock, Mail, ArrowRight } from "lucide-react";
+import { Sparkles, Shield, CheckCircle2, Lock, Mail, ArrowRight, QrCode } from "lucide-react";
 
 const formSchema = z.object({
   email: z.string().min(1, "Email is required").email(),
@@ -209,7 +209,7 @@ const QueueLogin = () => {
               Welcome back
             </h1>
             <p className="text-slate-500 text-sm mt-1">
-              Sign in to access your queue dashboard
+              Sign in to manage registration, tokens, and patient flow
             </p>
           </motion.div>
 
@@ -272,6 +272,23 @@ const QueueLogin = () => {
                 </Button>
               </form>
             </Form>
+            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal-100 text-teal-700">
+                  <QrCode className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Patient self-registration kiosk</p>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                    Let walk-in patients register themselves and receive queue tokens instantly.
+                  </p>
+                  <Link to="/queue/kiosk" className="mt-3 inline-flex items-center text-sm font-medium text-teal-700 hover:text-teal-800">
+                    Open kiosk
+                    <ArrowRight className="ml-1.5 h-4 w-4" />
+                  </Link>
+                </div>
+              </div>
+            </div>
           </motion.div>
 
           {/* Footer links */}

@@ -28,7 +28,7 @@ router.post('/login', (req, res, next) => { req.skipAuth = true; next(); }, logi
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
 const aiComplete = async (messages, { maxTokens = 900, temperature = 0.35 } = {}) => {
-  const result = await llmProvider.complete({ messages, maxTokens, temperature });
+  const result = await llmProvider.chat({ messages, maxTokens, temperature });
   return result?.content || result?.text || result?.message || String(result || '');
 };
 

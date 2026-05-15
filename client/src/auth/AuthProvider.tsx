@@ -408,13 +408,14 @@ export const AuthProvider = ({ children }) => {
       '/cssd/login', '/dietary/login', '/finance/login', '/infection-control/login',
       '/mortuary/login', '/procurement/login', '/queue/login'
     ];
+    const deptPublicPaths = ['/queue/kiosk'];
     const isDeptPortalRoute = deptPortalPrefixes.some(p => location.pathname.startsWith(p));
     if (isDeptPortalRoute) {
       // Allow login pages through; for all other dept pages require deptKey token
       const loginPath = deptPortalPrefixes
         .filter(p => location.pathname.startsWith(p))
         .map(p => `${p.slice(0, -1)}/login`)[0];
-      if (!deptLoginPaths.includes(location.pathname)) {
+      if (!deptLoginPaths.includes(location.pathname) && !deptPublicPaths.includes(location.pathname)) {
         const deptKey = loginPath?.replace('/', '').replace('/login', '');
         const deptToken = deptKey ? localStorage.getItem(`${deptKey}Token`) : null;
         if (!deptToken) {

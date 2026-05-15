@@ -555,7 +555,7 @@ const _DepartmentLoginPages = () => import("@/pages/dept/DepartmentLoginPages");
 const AssetLogin            = lazyNamed(_DepartmentLoginPages, "AssetLogin");
 const BiomedicalLogin       = lazy(() => import("@/auth/dept/BiomedicalLogin"));
 const BloodBankLogin        = lazyNamed(_DepartmentLoginPages, "BloodBankLogin");
-const ConsentLogin          = lazyNamed(_DepartmentLoginPages, "ConsentLogin");
+const ConsentLogin          = lazy(() => import("@/auth/dept/ConsentLogin"));
 const CSSDLogin             = lazyNamed(_DepartmentLoginPages, "CSSDLogin");
 const DietaryLogin          = lazy(() => import("@/auth/dept/DietaryLogin"));
 const FinanceLogin          = lazyNamed(_DepartmentLoginPages, "FinanceLogin");
@@ -563,26 +563,29 @@ const InfectionControlLogin = lazyNamed(_DepartmentLoginPages, "InfectionControl
 const MortuaryLogin         = lazyNamed(_DepartmentLoginPages, "MortuaryLogin");
 const ProcurementLogin      = lazyNamed(_DepartmentLoginPages, "ProcurementLogin");
 const QueueLogin            = lazyNamed(_DepartmentLoginPages, "QueueLogin");
+const QueuePortalLogin      = lazy(() => import("@/auth/dept/QueueLogin"));
 const _DeptDashboards        = () => import("@/pages/dept/DepartmentDashboards");
 const _DeptModulePages       = () => import("@/pages/dept/DepartmentModulePages");
+const _QueueExperiencePages  = () => import("@/pages/dept/QueueExperiencePages");
 const _DietaryDashboard      = () => import("@/pages/dept/DietaryDashboardPage");
 const _DietaryModulePages    = () => import("@/pages/dept/DietaryModulePages");
 const _DietaryMonitoring     = () => import("@/pages/dept/DietaryMonitoringPage");
 const _BiomedicalDashboard   = () => import("@/pages/dept/BiomedicalDashboardPage");
 const _BiomedicalModulePages = () => import("@/pages/dept/BiomedicalModulePages");
 const _BiomedicalMonitoring  = () => import("@/pages/dept/BiomedicalMonitoringPage");
+const _ConsentDashboard      = () => import("@/pages/dept/ConsentDashboardPage");
 
 const AssetDashboard             = lazyNamed(_DeptDashboards, "AssetDashboard");
 const BiomedicalDashboard        = lazyNamed(_BiomedicalDashboard, "BiomedicalDashboard");
 const BloodBankDashboard         = lazyNamed(_DeptDashboards, "BloodBankDashboard");
-const ConsentDashboard           = lazyNamed(_DeptDashboards, "ConsentDashboard");
+const ConsentDashboard           = lazyNamed(_ConsentDashboard, "ConsentDashboard");
 const CSSDDashboard              = lazyNamed(_DeptDashboards, "CSSDDashboard");
 const DietaryDashboard           = lazyNamed(_DietaryDashboard, "DietaryDashboard");
 const FinanceDashboard           = lazyNamed(_DeptDashboards, "FinanceDashboard");
 const InfectionControlDashboard  = lazyNamed(_DeptDashboards, "InfectionControlDashboard");
 const MortuaryDashboard          = lazyNamed(_DeptDashboards, "MortuaryDashboard");
 const ProcurementDashboard       = lazyNamed(_DeptDashboards, "ProcurementDashboard");
-const QueueDashboard             = lazyNamed(_DeptDashboards, "QueueDashboard");
+const QueueDashboard             = lazyNamed(_QueueExperiencePages, "QueueDashboardPage");
 
 // Department module pages — Asset
 const AssetInventory    = lazyNamed(_DeptModulePages, "AssetInventory");
@@ -636,10 +639,11 @@ const ProcurementVendors   = lazyNamed(_DeptModulePages, "ProcurementVendors");
 const ProcurementApprovals = lazyNamed(_DeptModulePages, "ProcurementApprovals");
 const ProcurementReports   = lazyNamed(_DeptModulePages, "ProcurementReports");
 // Queue
-const QueueTokens   = lazyNamed(_DeptModulePages, "QueueTokens");
-const QueueCounters = lazyNamed(_DeptModulePages, "QueueCounters");
-const QueueHistory  = lazyNamed(_DeptModulePages, "QueueHistory");
-const QueueReports  = lazyNamed(_DeptModulePages, "QueueReports");
+const QueueTokens   = lazyNamed(_QueueExperiencePages, "QueueTokensPage");
+const QueueCounters = lazyNamed(_QueueExperiencePages, "QueueCountersPage");
+const QueueHistory  = lazyNamed(_QueueExperiencePages, "QueueHistoryPage");
+const QueueReports  = lazyNamed(_QueueExperiencePages, "QueueReportsPage");
+const QueueKiosk    = lazyNamed(_QueueExperiencePages, "QueueKioskPage");
 
 const MRDLogin     = lazy(() => import("@/pages/mrd/MRDLogin"));
 const MRDDashboard = lazy(() => import("@/pages/mrd/MRDDashboard"));
@@ -1268,7 +1272,7 @@ const AppRoutes = () => {
         <Route path="/infection-control/login" element={<InfectionControlLogin />} />
         <Route path="/mortuary/login"          element={<MortuaryLogin />} />
         <Route path="/procurement/login"       element={<ProcurementLogin />} />
-        <Route path="/queue/login"             element={<QueueLogin />} />
+        <Route path="/queue/login"             element={<QueuePortalLogin />} />
         <Route path="/asset/dashboard"             element={<AssetDashboard />} />
         <Route path="/biomedical/dashboard"        element={<BiomedicalDashboard />} />
         <Route path="/blood-bank/dashboard"        element={<BloodBankDashboard />} />
@@ -1338,6 +1342,7 @@ const AppRoutes = () => {
         <Route path="/queue/counters" element={<QueueCounters />} />
         <Route path="/queue/history"  element={<QueueHistory />} />
         <Route path="/queue/reports"  element={<QueueReports />} />
+        <Route path="/queue/kiosk"    element={<QueueKiosk />} />
 
         {/* ── MRD ─────────────────────────────────────────────────────── */}
         <Route path="/mrd/login"          element={<MRDLogin />} />

@@ -10,8 +10,9 @@ import {
   FileSpreadsheet, Building2, Shield, Calendar, Hash, Layers, Save,
   ArrowLeft, Copy, IndianRupee, BrainCircuit, Zap, Activity, Target, Gauge,
   MoreVertical, CheckCircle2, XCircle, ChevronDown, Pencil, SlidersHorizontal,
-  TrendingDown, ClipboardCheck, Phone, Mail, MapPin,
+  TrendingDown, ClipboardCheck, Phone, Mail, MapPin, ShieldCheck,
 } from 'lucide-react';
+import { RFQUnderwritingTab } from './RFQUnderwritingTab';
 import { toast } from 'sonner';
 import api from '@/utils/api';
 import { CRMLayout } from './CRMModulePages';
@@ -726,7 +727,7 @@ export function CRMRFQDetailPage() {
   const [memberTotalPages, setMemberTotalPages] = useState(1);
   const [memberSearch, setMemberSearch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'overview' | 'analytics' | 'members' | 'claims' | 'quotes' | 'ai-quote' | 'intelligence' | 'deep-analytics'>('overview');
+  const [tab, setTab] = useState<'overview' | 'analytics' | 'members' | 'claims' | 'quotes' | 'ai-quote' | 'intelligence' | 'deep-analytics' | 'underwriting'>('overview');
   const fileRef = useRef<HTMLInputElement>(null);
   const claimsFileRef = useRef<HTMLInputElement>(null);
   const reparseFileRef = useRef<HTMLInputElement>(null);
@@ -836,11 +837,24 @@ export function CRMRFQDetailPage() {
     if (claimsFileRef.current) claimsFileRef.current.value = '';
   };
 
-  const generateAIQuote = useCallback(async () => {
+  const generateAIQuote = useCallback(async (params?: { additionalContext?: string; files?: File[] }) => {
     setAiLoading(true);
     setAiQuote(null);
     try {
-      const { data } = await api.post(`/crm/rfqs/${id}/ai-generate-quote`, {}, { headers: authHeaders(), timeout: 30000 });
+      let requestData: any = {};
+      let requestHeaders: any = { ...authHeaders() };
+
+      if (params?.files?.length || params?.additionalContext?.trim()) {
+        const fd = new FormData();
+        if (params.additionalContext?.trim()) fd.append('additionalContext', params.additionalContext);
+        for (const f of (params.files || [])) fd.append('files', f);
+        requestData = fd;
+        // Don't set Content-Type — browser sets multipart boundary automatically
+      }
+
+      const { data } = await api.post(`/crm/rfqs/${id}/ai-generate-quote`, requestData, {
+        headers: requestHeaders, timeout: 60000,
+      });
       if (data.success) setAiQuote(data.data);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'AI quote generation failed');
@@ -968,6 +982,7 @@ export function CRMRFQDetailPage() {
     { key: 'members', label: `Members (${rfq.member_count?.toLocaleString() || 0})`, icon: Users },
     { key: 'claims', label: `Claims${claimsAnalysis ? ` (${claimsAnalysis.summary.total_claims.toLocaleString()})` : ''}`, icon: Activity },
     { key: 'quotes', label: `Quotes (${quotes.length})`, icon: DollarSign },
+    { key: 'underwriting', label: 'Underwriting', icon: ShieldCheck },
     { key: 'intelligence', label: 'AI Intelligence', icon: Zap },
     { key: 'deep-analytics', label: 'Deep Analytics', icon: TrendingUp },
     { key: 'ai-quote', label: 'AI Quote Engine', icon: BrainCircuit },
@@ -1057,6 +1072,7 @@ export function CRMRFQDetailPage() {
       )}
       {tab === 'quotes' && <QuotesTab quotes={quotes} rfqId={rfq.id} onRefresh={fetchRFQ} navigate={navigate} />}
       {tab === 'claims' && <ClaimsExperienceTab analysis={claimsAnalysis} loading={claimsLoading} onUpload={() => claimsFileRef.current?.click()} uploading={claimsUploading} />}
+      {tab === 'underwriting' && <RFQUnderwritingTab rfqId={rfq.id} rfq={rfq} />}
       {tab === 'intelligence' && <IntelligenceTab rfqId={rfq.id} rfq={rfq} intelligence={intelligence} loading={intelligenceLoading} onAnalyze={fetchIntelligence} navigate={navigate} />}
       {tab === 'deep-analytics' && <DeepAnalyticsTab rfqId={rfq.id} rfq={rfq} deepAnalytics={deepAnalytics} loading={deepAnalyticsLoading} onAnalyze={fetchDeepAnalytics} />}
       {tab === 'ai-quote' && <AIQuoteTab rfqId={rfq.id} aiQuote={aiQuote} aiLoading={aiLoading} onGenerate={generateAIQuote} navigate={navigate} claimsAnalysis={claimsAnalysis} />}
@@ -1222,13 +1238,14 @@ function OverviewTab({ rfq, lives, livesRenewal, coverage, conditions, slabs, fi
         {files && files.length > 0 ? (
           <div className="divide-y divide-white/[0.04]">
             {files.map((f: any) => {
+              const category = f.category || 'other';
               const catColors: Record<string, string> = { slip: 'text-cyan-400 bg-cyan-500/10', members: 'text-emerald-400 bg-emerald-500/10', claims: 'text-amber-400 bg-amber-500/10', other: 'text-slate-400 bg-slate-500/10' };
-              const cc = catColors[f.category] || catColors.other;
+              const cc = catColors[category] || catColors.other;
               const sizeKb = f.file_size ? (f.file_size > 1024 * 1024 ? `${(f.file_size / 1024 / 1024).toFixed(1)} MB` : `${Math.round(f.file_size / 1024)} KB`) : '';
               return (
                 <div key={f.id} className="flex items-center justify-between py-2.5">
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase ${cc}`}>{f.category}</span>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase ${cc}`}>{category}</span>
                     <div className="min-w-0">
                       <p className="text-sm text-slate-300 truncate max-w-xs">{f.original_name}</p>
                       <p className="text-[10px] text-slate-600">{new Date(f.uploaded_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}{sizeKb ? ` · ${sizeKb}` : ''}</p>
@@ -2047,6 +2064,24 @@ function IntelligenceTab({ rfqId, rfq, intelligence, loading, onAnalyze }: any) 
   }
 
   const d = intelligence;
+
+  // Guard: intelligence data from older runs may be missing sub-fields
+  if (!d?.win_probability || !d?.rag_analytics) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">
+        <AlertCircle className="h-9 w-9 text-amber-400" />
+        <div>
+          <p className="text-sm font-semibold text-white">Intelligence data is incomplete</p>
+          <p className="text-xs text-slate-500 mt-1">Re-run the analysis to get the full market intelligence report.</p>
+        </div>
+        <Button onClick={onAnalyze}
+          className="bg-gradient-to-r from-cyan-600 to-violet-600 hover:from-cyan-500 hover:to-violet-500 border-0 rounded-xl h-10 px-6 gap-2 text-sm">
+          <Zap className="h-4 w-4" /> Re-run Intelligence
+        </Button>
+      </div>
+    );
+  }
+
   const rag = d.rag_analytics;
   const bm = d.industry_benchmarks;
   const wp = d.win_probability;
@@ -2693,7 +2728,49 @@ function ProposalModal({ markdown, insuredName, onClose, onCopy }: { markdown: s
 function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAnalysis }: any) {
   const [selectedMarginPct, setSelectedMarginPct] = useState(20);
 
-  // Animate reasoning steps appearing one by one
+  // ── Supplemental input state ────────────────────────────────────────────────
+  const [additionalContext, setAdditionalContext] = useState('');
+  const [supplementalFiles, setSupplementalFiles] = useState<File[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const ACCEPTED_TYPES = '.xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.webp,.bmp,.tiff';
+  const MAX_FILE_SIZE_MB = 50;
+
+  const addFiles = (incoming: FileList | File[]) => {
+    const newFiles = Array.from(incoming).filter(f => {
+      if (f.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+        toast.error(`${f.name} exceeds ${MAX_FILE_SIZE_MB}MB limit`);
+        return false;
+      }
+      return true;
+    });
+    setSupplementalFiles(prev => {
+      const existing = new Set(prev.map(f => f.name + f.size));
+      return [...prev, ...newFiles.filter(f => !existing.has(f.name + f.size))];
+    });
+  };
+
+  const removeFile = (idx: number) =>
+    setSupplementalFiles(prev => prev.filter((_, i) => i !== idx));
+
+  const fileIcon = (name: string) => {
+    const ext = name.split('.').pop()?.toLowerCase() || '';
+    if (['xlsx', 'xls', 'csv'].includes(ext)) return '📊';
+    if (ext === 'pdf') return '📄';
+    if (['jpg', 'jpeg', 'png', 'webp', 'bmp', 'tiff'].includes(ext)) return '🖼️';
+    return '📎';
+  };
+
+  const formatBytes = (b: number) =>
+    b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${(b / 1024).toFixed(0)} KB`;
+
+  const handleGenerate = () => {
+    onGenerate({ additionalContext, files: supplementalFiles });
+  };
+
+  // ── Animate reasoning steps ─────────────────────────────────────────────────
+  const [visibleSteps, setVisibleSteps] = useState(0);
   useEffect(() => {
     if (!aiQuote?.reasoning) return;
     setVisibleSteps(0);
@@ -2716,7 +2793,6 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
   const applyToQuoteBuilder = (useMargin?: boolean) => {
     if (!aiQuote?.recommended_quote) return;
     let prefill = { ...aiQuote.recommended_quote };
-    // If margin pricing is available and user chose to apply it, override with margin-adjusted pricing
     if (useMargin && aiQuote?.mediqzy_pricing?.tiers) {
       const tier = aiQuote.mediqzy_pricing.tiers.find((t: any) => t.margin_pct === selectedMarginPct);
       if (tier) {
@@ -2734,55 +2810,166 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
       }
     }
     sessionStorage.setItem('ai_quote_prefill', JSON.stringify(prefill));
-    // Also pass via navigation state as primary channel (sessionStorage is kept as fallback)
     navigate(`/crm/rfqs/${rfqId}/quote/new`, { state: { aiPrefill: prefill } });
   };
 
   if (!aiQuote && !aiLoading) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 space-y-6">
-        <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-violet-600/20 to-cyan-600/20 rounded-full blur-3xl" />
-          <div className="relative bg-gradient-to-br from-violet-500/10 to-cyan-500/10 border border-violet-500/20 rounded-3xl p-8">
-            <BrainCircuit className="h-16 w-16 text-violet-400" />
+      <div className="space-y-5">
+        {/* ── Header ──────────────────────────────────────────────────────── */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="absolute inset-0 bg-gradient-to-r from-violet-600/30 to-cyan-600/30 rounded-xl blur-lg" />
+              <div className="relative bg-gradient-to-br from-violet-500/15 to-cyan-500/15 border border-violet-500/25 rounded-2xl p-3">
+                <BrainCircuit className="h-7 w-7 text-violet-400" />
+              </div>
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">AI Actuarial Quote Engine</h3>
+              <p className="text-xs text-slate-500">Optionally add context or attach files to enrich the AI pricing analysis</p>
+            </div>
+          </div>
+          {/* Claims badge */}
+          <div className={`sm:ml-auto flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium ${claimsAnalysis
+            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+            : 'border-amber-500/30 bg-amber-500/10 text-amber-300'}`}>
+            {claimsAnalysis ? <Check className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+            {claimsAnalysis
+              ? `${claimsAnalysis.summary.total_claims.toLocaleString()} claims — Experience rating`
+              : 'No claims — Benchmark pricing'}
           </div>
         </div>
-        <div className="text-center space-y-2 max-w-lg">
-          <h3 className="text-xl font-bold text-white">AI Actuarial Quote Engine</h3>
-          <p className="text-sm text-slate-400 leading-relaxed">
-            Deep-tech pricing engine that analyzes <span className="text-violet-300">member demographics</span>,{' '}
-            <span className="text-cyan-300">age-banded risk factors</span>,{' '}
-            <span className="text-emerald-300">OPD utilization curves</span>, and{' '}
-            <span className="text-amber-300">claims experience</span> to generate actuarially-priced OPD &amp; Wellness quotes.
-          </p>
-        </div>
-        {/* Claims data status badge */}
-        <div className={`flex items-center gap-2 px-4 py-2 rounded-full border ${claimsAnalysis 
-          ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
-          {claimsAnalysis ? <Check className="h-4 w-4 text-emerald-400" /> : <AlertCircle className="h-4 w-4 text-amber-400" />}
-          <span className={`text-xs font-medium ${claimsAnalysis ? 'text-emerald-300' : 'text-amber-300'}`}>
-            {claimsAnalysis 
-              ? `${claimsAnalysis.summary.total_claims.toLocaleString()} claims loaded — Experience-based pricing will be used`
-              : 'No claims data — Benchmark-based pricing will be used'}
-          </span>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+
+        {/* ── Capabilities grid ───────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {[
             { icon: Activity, label: 'Age-Banded Risk', color: 'text-violet-400' },
             { icon: Target, label: 'OPD Utilization', color: 'text-cyan-400' },
             { icon: TrendingUp, label: 'Claims Experience', color: claimsAnalysis ? 'text-emerald-400' : 'text-slate-600' },
             { icon: Gauge, label: 'IBNR + Margin', color: 'text-amber-400' },
           ].map(({ icon: Icon, label, color }) => (
-            <div key={label} className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3">
-              <Icon className={`h-5 w-5 ${color} mx-auto mb-1.5`} />
+            <div key={label} className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 text-center">
+              <Icon className={`h-4 w-4 ${color} mx-auto mb-1.5`} />
               <p className="text-[10px] text-slate-500 font-medium">{label}</p>
             </div>
           ))}
         </div>
-        <Button onClick={onGenerate}
-          className="bg-gradient-to-r from-violet-600 to-cyan-600 hover:from-violet-500 hover:to-cyan-500 border-0 rounded-xl h-11 px-8 gap-3 text-sm font-semibold shadow-lg shadow-violet-600/25 mt-2">
-          <BrainCircuit className="h-4 w-4" /> Generate AI Quote
-        </Button>
+
+        {/* ── Supplemental inputs panel ────────────────────────────────────── */}
+        <div className="bg-white/[0.02] rounded-2xl border border-white/[0.07] overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-white/[0.06] flex items-center gap-2">
+            <SlidersHorizontal className="h-4 w-4 text-cyan-400" />
+            <span className="text-sm font-semibold text-white">Additional Inputs</span>
+            <span className="text-xs text-slate-500 ml-1">— optional, enriches AI analysis</span>
+          </div>
+
+          <div className="p-5 space-y-5">
+            {/* Free-text notes */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wide">
+                Notes / Context / Special Instructions
+              </label>
+              <textarea
+                value={additionalContext}
+                onChange={e => setAdditionalContext(e.target.value)}
+                rows={4}
+                placeholder={`Add any information that should influence the quote:\n• Specific coverage requirements or exclusions\n• Broker's special pricing request\n• Industry risk notes, hazardous occupation details\n• Renewal context (outgoing insurer, renewal premium)\n• Any special conditions or discounts requested`}
+                className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500/50 resize-none leading-relaxed"
+              />
+              {additionalContext.trim() && (
+                <p className="text-[10px] text-slate-600 mt-1">{additionalContext.trim().length} characters — will be included in the AI prompt</p>
+              )}
+            </div>
+
+            {/* File drop zone */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wide">
+                Supporting Documents
+              </label>
+              <div
+                onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
+                onDragLeave={() => setIsDragOver(false)}
+                onDrop={e => { e.preventDefault(); setIsDragOver(false); addFiles(e.dataTransfer.files); }}
+                onClick={() => fileInputRef.current?.click()}
+                className={`relative flex flex-col items-center justify-center gap-2 px-6 py-8 rounded-xl border-2 border-dashed cursor-pointer transition-all ${
+                  isDragOver
+                    ? 'border-violet-500/60 bg-violet-500/8'
+                    : 'border-white/[0.1] bg-white/[0.02] hover:border-violet-500/30 hover:bg-violet-500/5'
+                }`}>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept={ACCEPTED_TYPES}
+                  className="hidden"
+                  onChange={e => { if (e.target.files) { addFiles(e.target.files); e.target.value = ''; } }}
+                />
+                <Upload className="h-7 w-7 text-slate-600" />
+                <div className="text-center">
+                  <p className="text-sm font-medium text-slate-400">
+                    {isDragOver ? 'Drop files here' : 'Drag & drop or click to upload'}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    Excel (.xlsx, .xls, .csv) · PDF · Images (.jpg, .png, .webp)
+                  </p>
+                  <p className="text-[10px] text-slate-700 mt-1">Up to 10 files · Max {MAX_FILE_SIZE_MB}MB each</p>
+                </div>
+              </div>
+
+              {/* What each file type does */}
+              <div className="flex gap-3 mt-2.5 flex-wrap">
+                {[
+                  { icon: '📊', label: 'Excel/CSV', desc: 'Extracted as structured data rows' },
+                  { icon: '📄', label: 'PDF', desc: 'Text content extracted and parsed' },
+                  { icon: '🖼️', label: 'Images', desc: 'Vision AI reads text & tables' },
+                ].map(t => (
+                  <div key={t.label} className="flex items-center gap-1.5 text-[11px] text-slate-600">
+                    <span>{t.icon}</span>
+                    <span className="font-medium text-slate-500">{t.label}</span>
+                    <span>→ {t.desc}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* File list */}
+            {supplementalFiles.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">{supplementalFiles.length} file{supplementalFiles.length > 1 ? 's' : ''} queued</p>
+                <div className="space-y-1">
+                  {supplementalFiles.map((f, i) => (
+                    <div key={i} className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.07]">
+                      <span className="text-base">{fileIcon(f.name)}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-white truncate">{f.name}</p>
+                        <p className="text-[11px] text-slate-600">{formatBytes(f.size)}</p>
+                      </div>
+                      <button
+                        onClick={() => removeFile(i)}
+                        className="p-1 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Generate button ──────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between">
+          <div className="text-xs text-slate-600">
+            {supplementalFiles.length > 0 || additionalContext.trim()
+              ? `${supplementalFiles.length} file${supplementalFiles.length !== 1 ? 's' : ''}${additionalContext.trim() ? ' + text notes' : ''} will be included`
+              : 'Running with member data only'}
+          </div>
+          <Button onClick={handleGenerate}
+            className="bg-gradient-to-r from-violet-600 to-cyan-600 hover:from-violet-500 hover:to-cyan-500 border-0 rounded-xl h-11 px-8 gap-3 text-sm font-semibold shadow-lg shadow-violet-600/25">
+            <BrainCircuit className="h-4 w-4" /> Generate AI Quote
+          </Button>
+        </div>
       </div>
     );
   }
@@ -2809,6 +2996,24 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
   }
 
   const d = aiQuote;
+
+  // Guard: cached quotes from older formats may be missing sub-fields
+  if (!d?.risk_assessment || !d?.win_probability) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">
+        <AlertCircle className="h-9 w-9 text-amber-400" />
+        <div>
+          <p className="text-sm font-semibold text-white">Quote data is incomplete</p>
+          <p className="text-xs text-slate-500 mt-1">This quote was generated in an older format. Regenerate to get the full analysis.</p>
+        </div>
+        <Button onClick={() => onGenerate()}
+          className="bg-gradient-to-r from-violet-600 to-cyan-600 hover:from-violet-500 hover:to-cyan-500 border-0 rounded-xl h-10 px-6 gap-2 text-sm">
+          <BrainCircuit className="h-4 w-4" /> Regenerate Quote
+        </Button>
+      </div>
+    );
+  }
+
   const riskColor = d.risk_assessment.category === 'HIGH' ? 'text-red-400' : d.risk_assessment.category === 'MODERATE' ? 'text-amber-400' : 'text-emerald-400';
   const riskBg = d.risk_assessment.category === 'HIGH' ? 'from-red-600' : d.risk_assessment.category === 'MODERATE' ? 'from-amber-600' : 'from-emerald-600';
   const impactColors: Record<string, string> = { adverse: 'border-red-500/30 bg-red-500/5', favorable: 'border-emerald-500/30 bg-emerald-500/5', neutral: 'border-slate-500/20 bg-white/[0.02]', result: 'border-violet-500/30 bg-violet-500/5' };
@@ -3444,9 +3649,22 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
         </div>
       )}
 
+      {/* ─── Supplemental inputs used banner ─────────────────── */}
+      {aiQuote?.supplemental_inputs?.files_processed?.length > 0 || aiQuote?.supplemental_inputs?.has_additional_context ? (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-cyan-500/20 bg-cyan-500/5 text-xs text-cyan-400">
+          <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            Enriched with{aiQuote.supplemental_inputs.has_additional_context ? ' manual notes' : ''}
+            {aiQuote.supplemental_inputs.files_processed?.length > 0
+              ? ` + ${aiQuote.supplemental_inputs.files_processed.length} file${aiQuote.supplemental_inputs.files_processed.length > 1 ? 's' : ''}: ${aiQuote.supplemental_inputs.files_processed.map((f: any) => f.name).join(', ')}`
+              : ''}
+          </span>
+        </div>
+      ) : null}
+
       {/* ─── Actions ─────────────────────────────────────────── */}
       <div className="flex items-center justify-between pt-2">
-        <Button onClick={onGenerate} variant="outline"
+        <Button onClick={handleGenerate} variant="outline"
           className="border-white/[0.1] text-slate-400 hover:bg-white/[0.05] rounded-xl h-10 px-5 gap-2">
           <RefreshCw className="h-4 w-4" /> Regenerate
         </Button>

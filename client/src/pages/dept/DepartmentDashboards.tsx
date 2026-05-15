@@ -627,6 +627,7 @@ const queueNav: DeptNavSection[] = [
     items: [
       { icon: Hash,      label: "Tokens",   href: "/queue/tokens" },
       { icon: Layers,    label: "Counters", href: "/queue/counters" },
+      { icon: Users,     label: "Kiosk",    href: "/queue/kiosk" },
       { icon: History,   label: "History",  href: "/queue/history" },
     ],
   },

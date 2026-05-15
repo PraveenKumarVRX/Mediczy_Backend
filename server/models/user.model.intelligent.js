@@ -220,6 +220,42 @@ const User = sequelize.define('User', {
     type: DataTypes.JSONB,
     defaultValue: {},
     comment: 'Lifestyle history (smoking, alcohol, exercise, diet, etc.)'
+  },
+
+  // Google Fit connection
+  googleFitConnected: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    field: 'googleFitConnected',
+    comment: 'Whether user has connected Google Fit'
+  },
+  googleFitLastSync: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'googleFitLastSync',
+    comment: 'Last time Google Fit data was successfully synced'
+  },
+
+  // OAuth Social Login fields
+  googleId: {
+    type: DataTypes.STRING(128),
+    allowNull: true,
+    unique: true,
+    field: 'googleId',
+    comment: 'Google OAuth2 provider ID'
+  },
+  facebookId: {
+    type: DataTypes.STRING(128),
+    allowNull: true,
+    unique: true,
+    field: 'facebookId',
+    comment: 'Facebook OAuth2 provider ID'
+  },
+  oauthProvider: {
+    type: DataTypes.STRING(32),
+    allowNull: true,
+    field: 'oauthProvider',
+    comment: 'Primary OAuth provider used (google, facebook, etc.)'
   }
 }, {
   tableName: 'users',

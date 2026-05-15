@@ -29,10 +29,8 @@ interface Employee {
 }
 
 type EmployeeFormState = {
-  employeeId?: string;
+  employeeId: string;
   name: string;
-  email: string;
-  phone: string;
   businessUnit: string;
   department: string;
   designation: string;
@@ -45,8 +43,6 @@ type EmployeeFormState = {
 const emptyEmployeeForm = (): EmployeeFormState => ({
   employeeId: '',
   name: '',
-  email: '',
-  phone: '',
   businessUnit: '',
   department: '',
   designation: '',
@@ -115,7 +111,7 @@ const CorporateEmployees: React.FC = () => {
         (emp) =>
           emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
           emp.employeeId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          emp.email.toLowerCase().includes(searchTerm.toLowerCase())
+          (emp.email || '').toLowerCase().includes(searchTerm.toLowerCase())
       );
   }, [employees, searchTerm, selectedDept]);
 
@@ -132,8 +128,6 @@ const CorporateEmployees: React.FC = () => {
     setForm({
       employeeId: emp.employeeId,
       name: emp.name,
-      email: emp.email,
-      phone: emp.phone,
       businessUnit: emp.businessUnit || '',
       department: emp.department,
       designation: emp.designation,
@@ -260,6 +254,14 @@ const CorporateEmployees: React.FC = () => {
 
   const handleSubmit = async () => {
     try {
+      if (!form.name.trim() || !form.employeeId.trim()) {
+        toast({
+          title: 'Missing required fields',
+          description: 'Employee name and employee ID are required.',
+          variant: 'destructive',
+        });
+        return;
+      }
       setIsUpserting(true);
       if (editingEmployeeId) {
         const { data } = await api.put(`/corporate/employees/${encodeURIComponent(editingEmployeeId)}`, form);
@@ -335,7 +337,7 @@ const CorporateEmployees: React.FC = () => {
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label htmlFor="employeeId">Employee ID (optional)</Label>
+                <Label htmlFor="employeeId">Employee ID</Label>
                 <Input
                   id="employeeId"
                   value={form.employeeId || ''}
@@ -359,22 +361,14 @@ const CorporateEmployees: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="name">Name</Label>
                 <Input id="name" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} />
-              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="phone">Phone</Label>
-                <Input id="phone" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} />
-              </div>
+            <div className="grid grid-cols-1 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="businessUnit">Business Unit</Label>
                 <Input id="businessUnit" value={form.businessUnit} onChange={(e) => setForm((p) => ({ ...p, businessUnit: e.target.value }))} placeholder="e.g., Technology BU" />

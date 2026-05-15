@@ -1202,36 +1202,35 @@ router.post('/employees', authUser, requireRole('corporate'), async (req, res) =
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
 
-  const { employeeId, name, email, phone, businessUnit, department, designation, joiningDate } = req.body || {};
+  const { employeeId, name, businessUnit, department, designation, joiningDate } = req.body || {};
 
-  if (!name || !email || !department) {
-    return res.status(400).json({ success: false, message: 'name, email, and department are required' });
+  if (!name || !employeeId) {
+    return res.status(400).json({ success: false, message: 'name and employeeId are required' });
   }
 
   try {
-    const generatedEmployeeId = employeeId || `EMP${String(Date.now()).slice(-5)}`;
+    const normalizedEmployeeId = String(employeeId).trim();
+    const [firstName, ...lastNameParts] = String(name).trim().split(/\s+/);
+    const metadata = JSON.stringify({
+      firstName,
+      lastName: lastNameParts.join(' '),
+    });
 
-    // Create user record
-    const bcrypt = (await import('bcrypt')).default;
-    const tempPassword = await bcrypt.hash(`${generatedEmployeeId}@${corporateId}`, 10);
-    const [userResult] = await postgresSequelize.query(
-      `INSERT INTO users ("firstName", "lastName", email, "phoneNumber", password, role, organization_id, organization_type, status, "createdAt", "updatedAt")
-       VALUES (:firstName, :lastName, :email, :phone, :password, 'user', :corporateId, 'corporate', 'active', NOW(), NOW())
-       ON CONFLICT (email) DO UPDATE SET organization_id=:corporateId, organization_type='corporate', "updatedAt"=NOW()
-       RETURNING id`,
-      { replacements: { firstName: name.split(' ')[0], lastName: name.split(' ').slice(1).join(' ') || '', email, phone: phone || '0000000000', password: tempPassword, corporateId } }
-    );
-    const userId = userResult[0]?.id;
-
-    // Create corporate_employees record
     await postgresSequelize.query(
-      `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", business_unit, department, designation, "joiningDate", "isActive", "createdAt", "updatedAt")
-       VALUES (:corporateId, :userId, :employeeId, :businessUnit, :department, :designation, :joiningDate, true, NOW(), NOW())
-       ON CONFLICT (corporate_id, "employeeId") DO UPDATE SET business_unit=:businessUnit, department=:department, designation=:designation, "isActive"=true, "updatedAt"=NOW()`,
-      { replacements: { corporateId, userId, employeeId: generatedEmployeeId, businessUnit: businessUnit || null, department, designation: designation || '', joiningDate: joiningDate || new Date().toISOString().slice(0, 10) } }
+      `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", business_unit, department, designation, "joiningDate", metadata, "isActive", "createdAt", "updatedAt")
+       VALUES (:corporateId, NULL, :employeeId, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())
+       ON CONFLICT (corporate_id, "employeeId") DO UPDATE SET
+         business_unit=:businessUnit,
+         department=:department,
+         designation=:designation,
+         "joiningDate"=:joiningDate,
+         metadata=CAST(:metadata AS JSONB),
+         "isActive"=true,
+         "updatedAt"=NOW()`,
+      { replacements: { corporateId, employeeId: normalizedEmployeeId, businessUnit: businessUnit || null, department: department || null, designation: designation || '', joiningDate: joiningDate || null, metadata } }
     );
 
-    const created = { id: generatedEmployeeId, employeeId: generatedEmployeeId, name, email, phone: phone || '', businessUnit: businessUnit || '', department, designation: designation || '', joiningDate: joiningDate || new Date().toISOString().slice(0, 10), healthStatus: 'good', lastCheckup: '', insurancePlan: 'Standard Plan' };
+    const created = { id: normalizedEmployeeId, employeeId: normalizedEmployeeId, name, email: '', phone: '', businessUnit: businessUnit || '', department: department || '', designation: designation || '', joiningDate: joiningDate || '', healthStatus: 'good', lastCheckup: '', insurancePlan: 'Standard Plan' };
     return res.status(201).json({ success: true, data: { employee: created } });
   } catch (err) {
     console.error('[corporate] POST /employees error:', err.message);
@@ -1287,38 +1286,38 @@ router.post('/employees/bulk-upload', authUser, requireRole('corporate'), async 
 
   const successfulUploads = [];
   const errors = [];
-  const bcrypt = (await import('bcrypt')).default;
 
   for (let index = 0; index < employeeList.length; index++) {
     const emp = employeeList[index];
-    if (!emp.name || !emp.email || !emp.department) {
-      errors.push({ row: index + 1, employee: emp, error: 'Missing required fields: name, email, and department are required' });
+    if (!emp.name || !emp.employeeId) {
+      errors.push({ row: index + 1, employee: emp, error: 'Missing required fields: name and employeeId are required' });
       continue;
     }
 
     try {
-      const generatedEmployeeId = emp.employeeId || `EMP${String(Date.now() + index).slice(-5)}`;
-      const tempPassword = await bcrypt.hash(`${generatedEmployeeId}@${corporateId}`, 10);
-
-      // Upsert user record
-      const [userResult] = await postgresSequelize.query(
-        `INSERT INTO users ("firstName", "lastName", email, "phoneNumber", password, role, organization_id, organization_type, status, "createdAt", "updatedAt")
-         VALUES (:firstName, :lastName, :email, :phone, :password, 'user', :corporateId, 'corporate', 'active', NOW(), NOW())
-         ON CONFLICT (email) DO UPDATE SET organization_id=:corporateId, organization_type='corporate', "updatedAt"=NOW()
-         RETURNING id`,
-        { replacements: { firstName: emp.name.split(' ')[0], lastName: emp.name.split(' ').slice(1).join(' ') || '', email: emp.email, phone: emp.phone || '0000000000', password: tempPassword, corporateId } }
-      );
-      const userId = userResult[0]?.id;
+      const generatedEmployeeId = String(emp.employeeId).trim();
+      const [firstName, ...lastNameParts] = String(emp.name).trim().split(/\s+/);
+      const metadata = JSON.stringify({
+        firstName,
+        lastName: lastNameParts.join(' '),
+      });
 
       // Upsert corporate_employees record
       await postgresSequelize.query(
-        `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", business_unit, department, designation, "joiningDate", "isActive", "createdAt", "updatedAt")
-         VALUES (:corporateId, :userId, :employeeId, :businessUnit, :department, :designation, :joiningDate, true, NOW(), NOW())
-         ON CONFLICT (corporate_id, "employeeId") DO UPDATE SET business_unit=:businessUnit, department=:department, designation=:designation, "isActive"=true, "updatedAt"=NOW()`,
-        { replacements: { corporateId, userId, employeeId: generatedEmployeeId, businessUnit: emp.businessUnit || emp.business_unit || null, department: emp.department, designation: emp.designation || '', joiningDate: emp.joiningDate || new Date().toISOString().slice(0, 10) } }
+        `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", business_unit, department, designation, "joiningDate", metadata, "isActive", "createdAt", "updatedAt")
+         VALUES (:corporateId, NULL, :employeeId, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())
+         ON CONFLICT (corporate_id, "employeeId") DO UPDATE SET
+           business_unit=:businessUnit,
+           department=:department,
+           designation=:designation,
+           "joiningDate"=:joiningDate,
+           metadata=CAST(:metadata AS JSONB),
+           "isActive"=true,
+           "updatedAt"=NOW()`,
+        { replacements: { corporateId, employeeId: generatedEmployeeId, businessUnit: emp.businessUnit || emp.business_unit || null, department: emp.department || null, designation: emp.designation || '', joiningDate: emp.joiningDate || null, metadata } }
       );
 
-      successfulUploads.push({ employeeId: generatedEmployeeId, name: emp.name, email: emp.email });
+      successfulUploads.push({ employeeId: generatedEmployeeId, name: emp.name });
     } catch (rowErr) {
       errors.push({ row: index + 1, employee: emp, error: rowErr.message });
     }
@@ -1336,8 +1335,8 @@ router.post('/employees/bulk-upload', authUser, requireRole('corporate'), async 
 
 // Download employee template CSV
 router.get('/employees/download-template', authUser, requireRole('corporate'), async (req, res) => {
-  const csvHeader = 'employeeId,name,email,phone,businessUnit,department,designation,joiningDate,healthStatus,lastCheckup,insurancePlan\n';
-  const csvSample = 'EMP001,John Doe,john.doe@company.com,+1234567890,Technology BU,Engineering,Software Engineer,2024-01-15,good,2024-12-01,Standard Plan\n';
+  const csvHeader = 'employeeId,name,businessUnit,department,designation,joiningDate\n';
+  const csvSample = 'EMP001,John Doe,Technology BU,Engineering,Software Engineer,2024-01-15\n';
   const csvTemplate = csvHeader + csvSample;
   
   res.setHeader('Content-Type', 'text/csv');

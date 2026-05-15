@@ -330,7 +330,7 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
       CREATE TABLE IF NOT EXISTS crm_rfq_claims (
         id              BIGSERIAL PRIMARY KEY,
         rfq_id          BIGINT NOT NULL REFERENCES crm_rfqs(id) ON DELETE CASCADE,
-        claim_number    VARCHAR(100),
+        claim_number    VARCHAR(200),
         emp_code        VARCHAR(50),
         employee_name   VARCHAR(255),
         relationship    VARCHAR(50),
@@ -341,16 +341,16 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
         service_category VARCHAR(100),
         diagnosis       VARCHAR(500),
         provider_name   VARCHAR(255),
-        provider_type   VARCHAR(50),
+        provider_type   VARCHAR(100),
         claimed_amount  NUMERIC(12,2) DEFAULT 0,
         approved_amount NUMERIC(12,2) DEFAULT 0,
         paid_amount     NUMERIC(12,2) DEFAULT 0,
         icd_code        VARCHAR(20),
         rejection_reason VARCHAR(255),
-        claim_status    VARCHAR(50),
-        policy_year     VARCHAR(20),
+        claim_status    VARCHAR(100),
+        policy_year     VARCHAR(50),
         si_amount       NUMERIC(12,2) DEFAULT 0,
-        band            VARCHAR(20),
+        band            VARCHAR(100),
         created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_rfq_claims_rfq ON crm_rfq_claims(rfq_id);
@@ -1215,7 +1215,9 @@ router.get('/rfqs/:id', authCRM, async (req, res) => {
       sharedPool.query(`SELECT * FROM crm_quotes WHERE rfq_id = $1 ORDER BY created_at DESC`, [req.params.id]),
       sharedPool.query(`SELECT id, category, original_name, file_size, mime_type, uploaded_at FROM crm_rfq_files WHERE rfq_id = $1 ORDER BY uploaded_at DESC`, [req.params.id]),
     ]);
-    return res.status(200).json({ success: true, data: { ...rows[0], quotes: quotes.rows, files: files.rows } });
+    // Ensure every file has a non-null category
+    const safeFiles = files.rows.map(f => ({ ...f, category: f.category || 'other' }));
+    return res.status(200).json({ success: true, data: { ...rows[0], quotes: quotes.rows, files: safeFiles } });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch RFQ' }); }
 });
 
@@ -1296,7 +1298,9 @@ router.get('/rfqs/:id/files', authCRM, async (req, res) => {
       `SELECT id, category, original_name, file_size, mime_type, uploaded_by, uploaded_at FROM crm_rfq_files WHERE rfq_id = $1 ORDER BY uploaded_at DESC`,
       [req.params.id]
     );
-    return res.status(200).json({ success: true, data: rows });
+    // Ensure every file has a non-null category
+    const safeRows = rows.map(f => ({ ...f, category: f.category || 'other' }));
+    return res.status(200).json({ success: true, data: safeRows });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch files' }); }
 });
 
@@ -1703,6 +1707,8 @@ ${sheetText.substring(0, 6000)}`;
     }
 
     const rfq_number = generateRFQNumber();
+    // Always parse premium_paid using stdParseAmount to handle currency-formatted strings
+    const premiumPaidNum = stdParseAmount(parsed.premium_paid);
     const { rows } = await sharedPool.query(
       `INSERT INTO crm_rfqs (rfq_number, insured_name, insured_address, policy_type, product_type,
         existing_insurer, existing_tpa, policy_start, policy_end, premium_paid,
@@ -1719,7 +1725,7 @@ ${sheetText.substring(0, 6000)}`;
         parsed.existing_tpa || null,
         parsed.policy_start || null,
         parsed.policy_end || null,
-        parsed.premium_paid || null,
+        premiumPaidNum,
         JSON.stringify(parsed.lives_at_inception || { employees: 0, dependants: 0, total: 0 }),
         JSON.stringify(parsed.lives_at_renewal || { employees: 0, dependants: 0, total: 0 }),
         JSON.stringify(parsed.coverage_scope || {}),
@@ -2229,10 +2235,112 @@ router.get('/rfqs/:id/member-analytics', authCRM, async (req, res) => {
   } catch (error) { console.error('[CRM Member Analytics]', error.message); return res.status(500).json({ success: false, message: 'Failed to generate analytics' }); }
 });
 
+// ─── Supplemental input parser for AI quote generation ───────────────────────
+// Parses user-uploaded files (Excel, image, PDF) + free-text notes into a
+// single string that gets appended to the LLM actuarial prompt.
+
+async function parseSupplementalInputs(files = [], additionalContext = '') {
+  const llmMod = await import('../services/ai-brain/llm-provider.js');
+  const llmProvider = llmMod.default;
+  const sections = [];
+
+  if (additionalContext?.trim()) {
+    sections.push(`=== ADDITIONAL CONTEXT PROVIDED BY UNDERWRITER ===\n${additionalContext.trim()}`);
+  }
+
+  for (const file of files) {
+    const mime = file.mimetype || '';
+    const name = file.originalname || 'file';
+
+    try {
+      // ── Excel / CSV ──────────────────────────────────────────────────────
+      if (mime.includes('spreadsheet') || mime.includes('excel') || mime.includes('csv')
+        || name.match(/\.(xlsx?|csv)$/i)) {
+        const wb = XLSX.read(file.buffer, { type: 'buffer' });
+        const sheetLines = [];
+        for (const sn of wb.SheetNames.slice(0, 5)) {
+          const json = XLSX.utils.sheet_to_json(wb.Sheets[sn], { defval: '' });
+          if (json.length > 0) {
+            sheetLines.push(`Sheet: ${sn}`);
+            // Emit header + up to 100 rows as pipe-delimited text
+            const headers = Object.keys(json[0]);
+            sheetLines.push(headers.join(' | '));
+            for (const row of json.slice(0, 100)) {
+              sheetLines.push(headers.map(h => String(row[h] ?? '')).join(' | '));
+            }
+            if (json.length > 100) sheetLines.push(`... (${json.length - 100} more rows)`);
+          }
+        }
+        if (sheetLines.length) {
+          sections.push(`=== EXCEL FILE: ${name} ===\n${sheetLines.join('\n')}`);
+        }
+
+      // ── Images ──────────────────────────────────────────────────────────
+      } else if (mime.startsWith('image/')) {
+        const b64 = file.buffer.toString('base64');
+        const visionResult = await llmProvider.vision({
+          base64Image: b64,
+          mimeType: mime,
+          prompt: 'Extract all text, numbers, tables and relevant insurance/underwriting data visible in this image. Return as structured plain text.',
+          maxTokens: 1500,
+        });
+        const extracted = visionResult?.content || visionResult?.text || String(visionResult || '');
+        if (extracted.trim()) {
+          sections.push(`=== IMAGE FILE: ${name} ===\n${extracted.trim()}`);
+        }
+
+      // ── PDF (text extraction via buffer scan for readable text) ──────────
+      } else if (mime === 'application/pdf' || name.match(/\.pdf$/i)) {
+        // Simple approach: extract printable ASCII from the PDF buffer.
+        // Full PDF parsing requires pdfjs-dist; we extract visible text blocks.
+        const raw = file.buffer.toString('latin1');
+        const textBlocks = [];
+        const btRe = /BT([\s\S]*?)ET/g;
+        let m;
+        while ((m = btRe.exec(raw)) !== null) {
+          const content = m[1];
+          const strRe = /\(([^)]{1,300})\)\s*Tj/g;
+          let sm;
+          while ((sm = strRe.exec(content)) !== null) {
+            const t = sm[1].replace(/\\(\d{3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)))
+                             .replace(/\\n/g, ' ').replace(/\\r/g, ' ').trim();
+            if (t.length > 2) textBlocks.push(t);
+          }
+        }
+        const pdfText = textBlocks.join(' ').replace(/\s+/g, ' ').trim();
+        if (pdfText.length > 20) {
+          sections.push(`=== PDF FILE: ${name} ===\n${pdfText.slice(0, 4000)}`);
+        } else {
+          // Fallback: send to vision if text extraction failed
+          const b64 = file.buffer.toString('base64');
+          const visionResult = await llmProvider.vision({
+            base64Image: b64,
+            mimeType: 'application/pdf',
+            prompt: 'Extract all text, numbers and tables from this insurance document. Return as structured plain text.',
+            maxTokens: 1500,
+          }).catch(() => null);
+          const extracted = visionResult?.content || '';
+          if (extracted.trim()) {
+            sections.push(`=== PDF FILE: ${name} ===\n${extracted.trim()}`);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`[AI Quote] Failed to parse supplemental file ${name}:`, e.message);
+      sections.push(`=== FILE: ${name} (parse error — ${e.message}) ===`);
+    }
+  }
+
+  return sections.join('\n\n');
+}
+
 // ─── AI Quote Generation Engine ──────────────────────────────────────────────
 // Deep actuarial pricing model using member demographics, claims experience,
 // OPD utilization curves, and wellness cost benchmarks.
-router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
+// Accepts optional multipart/form-data with:
+//   - additionalContext (text field)
+//   - files[] (Excel, PDF, image — up to 10 files, 50MB each)
+router.post('/rfqs/:id/ai-generate-quote', authCRM, upload.array('files', 10), async (req, res) => {
   try {
     const rfqId = req.params.id;
     const pool = sharedPool;
@@ -2275,6 +2383,20 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
     // Fallback: if emp_code is all null, use self_count (members with relationship=SELF); else estimate from avg family size of 4
     const totalEmployees = parseInt(summary.employees) || parseInt(summary.self_count) || Math.ceil(totalMembers / 4);
     if (totalMembers === 0) return res.status(400).json({ success: false, message: 'No members found — upload member data first' });
+
+    // ── 1b. SUPPLEMENTAL INPUTS (text + files) ──────────────────────────────
+    const additionalContext = req.body?.additionalContext || '';
+    const uploadedFiles = req.files || [];
+    let supplementalContext = '';
+    if (additionalContext.trim() || uploadedFiles.length > 0) {
+      try {
+        supplementalContext = await parseSupplementalInputs(uploadedFiles, additionalContext);
+        console.log(`[AI Quote] Supplemental context parsed: ${uploadedFiles.length} files, ${supplementalContext.length} chars`);
+      } catch (e) {
+        console.warn('[AI Quote] Supplemental input parse failed:', e.message);
+        supplementalContext = additionalContext.trim() ? `=== ADDITIONAL CONTEXT ===\n${additionalContext.trim()}` : '';
+      }
+    }
 
     // ── 1a. DATA QUALITY VALIDATION ─────────────────────────────────────────
     const dataQualityRes = await pool.query(`SELECT
@@ -3068,7 +3190,7 @@ Consider Indian market specifics: medical inflation 12-14%, pharmacy dominance i
 Do NOT include markdown formatting. Return valid JSON only.
 
 Here is the RFQ data to analyze:
-${JSON.stringify(llmPayload, null, 2)}`;
+${JSON.stringify(llmPayload, null, 2)}${supplementalContext ? `\n\n${supplementalContext}` : ''}`;
 
       // Call iSHA iDMS /stream endpoint (DocsGPT SSE format)
       const llmRes = await fetch(ISHA_LLM_URL, {
@@ -3264,6 +3386,13 @@ const aiQuoteResult = {
         // LLM underwriting assessment (from isha-inc.com iSHA Insurance LLM)
         llm_assessment: llmAssessment,
 
+        // Supplemental inputs used in this generation
+        supplemental_inputs: {
+          has_additional_context: !!additionalContext.trim(),
+          files_processed: uploadedFiles.map(f => ({ name: f.originalname, type: f.mimetype, size: f.size })),
+          context_length: supplementalContext.length,
+        },
+
         // Recommended quote parameters (ready to apply to Quote Builder)
         recommended_quote: {
           total_premium: Math.round(loadedOPDPremium),
@@ -3375,6 +3504,7 @@ router.post('/rfqs/:id/upload-claims', authCRM, upload.single('file'), async (re
     if (!rows.length) return res.status(400).json({ success: false, message: 'No claims rows found' });
 
     // Flexible column mapping for claims — supports various insurer/TPA formats
+    const trunc = (v, n) => (v ? v.toString().substring(0, n) : null);
     const colMap = (row) => {
       const keys = Object.keys(row);
       const find = (patterns) => {
@@ -3387,26 +3517,26 @@ router.post('/rfqs/:id/upload-claims', authCRM, upload.single('file'), async (re
       const parseDate = (v) => stdParseDate(v);
       const parseNum = (v) => stdParseAmount(v);
       return {
-        claim_number: find(['claimno', 'claimnumber', 'claimid', 'claimref', 'intimationno', 'claimrefno']) || null,
-        emp_code: (find(['empcode', 'employeecode', 'empid', 'employeeid', 'empno', 'employeeno', 'memberid', 'policyholderid']) || '').toString(),
-        employee_name: find(['employeename', 'empname', 'membername', 'insuredname', 'patientname', 'claimantname']) || null,
-        relationship: find(['relationship', 'relation', 'relationType', 'dependentrelation']) || null,
-        gender: find(['gender', 'sex']) || null,
-        age: parseInt(find(['age', 'ageatclaim', 'claimantage'])) || null,
-        claim_date: parseDate(find(['claimdate', 'dateofclaim', 'treatmentdate', 'servicedate', 'admissiondate', 'incurreddate', 'intimationdate', 'visitdate'])),
-        service_type: find(['servicetype', 'claimtype', 'treatmenttype', 'benefittype', 'service', 'typeofclaim', 'typeofservice', 'category', 'procedure']) || null,
-        service_category: find(['servicecategory', 'category', 'subcategory', 'department', 'speciality', 'specialty']) || null,
-        diagnosis: find(['diagnosis', 'ailment', 'diseasegroup', 'icd', 'icdcode', 'diagnosisname', 'natureofillness']) || null,
-        provider_name: find(['providername', 'hospitalname', 'clinicname', 'networkprovider', 'labname', 'pharmacyname', 'vendor']) || null,
-        provider_type: find(['providertype', 'networktype', 'network', 'cashless', 'reimbursement']) || null,
-        claimed_amount: parseNum(find(['claimedamount', 'claimamount', 'billedamount', 'totalclaim', 'amountclaimed', 'grossclaim', 'incurredamount'])),
+        claim_number:    trunc(find(['claimno', 'claimnumber', 'claimid', 'claimref', 'intimationno', 'claimrefno']), 200),
+        emp_code:        trunc((find(['empcode', 'employeecode', 'empid', 'employeeid', 'empno', 'employeeno', 'memberid', 'policyholderid']) || '').toString(), 50),
+        employee_name:   trunc(find(['employeename', 'empname', 'membername', 'insuredname', 'patientname', 'claimantname']), 255),
+        relationship:    trunc(find(['relationship', 'relation', 'relationType', 'dependentrelation']), 50),
+        gender:          trunc(find(['gender', 'sex']), 10),
+        age:             parseInt(find(['age', 'ageatclaim', 'claimantage'])) || null,
+        claim_date:      parseDate(find(['claimdate', 'dateofclaim', 'treatmentdate', 'servicedate', 'admissiondate', 'incurreddate', 'intimationdate', 'visitdate'])),
+        service_type:    trunc(find(['servicetype', 'claimtype', 'treatmenttype', 'benefittype', 'service', 'typeofclaim', 'typeofservice', 'category', 'procedure']), 100),
+        service_category:trunc(find(['servicecategory', 'category', 'subcategory', 'department', 'speciality', 'specialty']), 100),
+        diagnosis:       trunc(find(['diagnosis', 'ailment', 'diseasegroup', 'icd', 'icdcode', 'diagnosisname', 'natureofillness']), 500),
+        provider_name:   trunc(find(['providername', 'hospitalname', 'clinicname', 'networkprovider', 'labname', 'pharmacyname', 'vendor']), 255),
+        provider_type:   trunc(find(['providertype', 'networktype', 'network', 'cashless', 'reimbursement']), 100),
+        claimed_amount:  parseNum(find(['claimedamount', 'claimamount', 'billedamount', 'totalclaim', 'amountclaimed', 'grossclaim', 'incurredamount'])),
         approved_amount: parseNum(find(['approvedamount', 'settledamount', 'sanctionedamount', 'paidamount', 'netpayable', 'admissibleamount'])),
-        paid_amount: parseNum(find(['paidamount', 'netpaid', 'disbursedamount', 'settledamount', 'amountpaid'])),
-        rejection_reason: find(['rejectionreason', 'reason', 'remarks', 'closurereason', 'denialreason']) || null,
-        claim_status: find(['claimstatus', 'status', 'claimstate']) || null,
-        policy_year: find(['policyyear', 'policyperiod', 'year', 'policyterm']) || null,
-        si_amount: parseNum(find(['suminsured', 'siamount', 'si', 'coveramount'])),
-        band: find(['band', 'grade', 'level', 'category']) || null,
+        paid_amount:     parseNum(find(['paidamount', 'netpaid', 'disbursedamount', 'settledamount', 'amountpaid'])),
+        rejection_reason:trunc(find(['rejectionreason', 'reason', 'remarks', 'closurereason', 'denialreason']), 255),
+        claim_status:    trunc(find(['claimstatus', 'status', 'claimstate']), 100),
+        policy_year:     trunc(find(['policyyear', 'policyperiod', 'year', 'policyterm']), 50),
+        si_amount:       parseNum(find(['suminsured', 'siamount', 'si', 'coveramount'])),
+        band:            trunc(find(['band', 'grade', 'level', 'category']), 100),
       };
     };
 
@@ -3636,15 +3766,13 @@ router.get('/rfqs/:id/claims-analysis', authCRM, async (req, res) => {
         ORDER BY total_claimed DESC LIMIT 20`, [rfqId]),
 
       // 11. Repeat claimant frequency
-      pool.query(`SELECT freq_band, cnt FROM (
-        SELECT 
+      pool.query(`SELECT freq_band, COUNT(*) AS cnt FROM (
+        SELECT
           CASE WHEN cc = 1 THEN '1 claim' WHEN cc <= 3 THEN '2-3 claims'
                WHEN cc <= 5 THEN '4-5 claims' WHEN cc <= 10 THEN '6-10 claims'
-               ELSE '10+ claims' END AS freq_band,
-          COUNT(*) AS cnt
+               ELSE '10+ claims' END AS freq_band
         FROM (SELECT emp_code, COUNT(*) AS cc FROM crm_rfq_claims WHERE rfq_id = $1 GROUP BY emp_code) sub
-        GROUP BY freq_band
-      ) sub2 ORDER BY MIN(cnt) DESC`, [rfqId]),
+      ) sub2 GROUP BY freq_band ORDER BY cnt DESC`, [rfqId]),
 
       // 12. SI utilization rate
       pool.query(`SELECT 

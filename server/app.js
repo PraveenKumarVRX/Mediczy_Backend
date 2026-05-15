@@ -69,6 +69,7 @@ import fcmRouter from './routes/fcm.route.js';
 import callNotificationRouter from './routes/call-notification.route.js';
 import firebaseStatusRouter from './routes/firebase-status.route.js';
 import crmRouter from './routes/crm.route.js';
+import crmUnderwritingRouter from './routes/crm-underwriting.route.js';
 import asyncRouter from './routes/async.route.js';
 import appointmentRouter from './routes/appointment.route.js';
 import reportsRouter from './routes/reports.route.js';
@@ -1221,6 +1222,7 @@ app.use('/api/assistant', assistantRouter);
 app.use('/api/patients', patientRouter); // Patient registration by multiple roles
 app.use('/api', activityLogRoutes); // Activity logging routes
 app.use('/api/crm', crmRouter);
+app.use('/api/crm/underwriting', crmUnderwritingRouter); // RFQ underwriting pipeline
 app.use('/api/crm/emails', crmEmailRouter); // CRM email inbox with SMTP/IMAP settings
 app.use('/api/fcm', fcmRouter);
 app.use('/api/call-notification', callNotificationRouter); // Doctor-to-patient call notifications
