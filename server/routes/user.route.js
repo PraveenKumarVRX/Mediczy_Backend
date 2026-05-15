@@ -513,7 +513,9 @@ router.post(
   [
     body("email").isEmail().withMessage("Must be a valid email"),
     body("phoneNumber").isMobilePhone().withMessage("Must be a valid mobile phone number"),
-    body("password").isLength({ min: 4 }).withMessage("Password must be at least 4 characters long"),
+    body("password")
+      .isLength({ min: 8 }).withMessage("Password must be at least 8 characters long")
+      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage("Password must contain uppercase, lowercase and a number"),
     body("firstName").isLength({ min: 2, max: 20 }).withMessage("First name must be between 2 to 20 characters"),
     body("lastName").isLength({ min: 2, max: 20 }).withMessage("Last name must be between 2 to 20 characters"),
     body("dateOfBirth").optional({ nullable: true, checkFalsy: true }).isISO8601().withMessage("Must be a valid date in YYYY-MM-DD format"),
@@ -525,7 +527,7 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { email, phoneNumber, password, firstName, lastName, dateOfBirth, gender, memberType, corporateId, employeeDbId } = req.body;
+    const { email, phoneNumber, password, firstName, lastName, dateOfBirth, gender, memberType, corporateId, employeeDbId, employeeId } = req.body;
     const isCorporate = memberType === 'corporate';
 
     try {
@@ -542,9 +544,9 @@ router.post(
       // Double-check user doesn't exist (race condition protection)
       const existingUser = await userModel.findOne({ where: { email } });
       if (existingUser) {
-        return res.status(409).json({ 
+        return res.status(409).json({
           success: false,
-          message: "Email already registered" 
+          message: "Email already registered"
         });
       }
 
@@ -559,6 +561,39 @@ router.post(
           return res.status(400).json({ success: false, message: 'Invalid corporate selected' });
         }
         corporateRecord = corp;
+
+        // Re-validate the employee to prevent tampering with employeeDbId between steps
+        if (employeeDbId) {
+          const [recheck] = await postgresSequelize.query(
+            `SELECT id, "userId" FROM corporate_employees
+             WHERE id = :empDbId AND corporate_id = :corporateId AND "isActive" = true LIMIT 1`,
+            { replacements: { empDbId: parseInt(employeeDbId), corporateId: parseInt(corporateId) }, type: postgresSequelize.QueryTypes.SELECT }
+          );
+          if (!recheck) {
+            return res.status(400).json({ success: false, message: 'Employee record not found or no longer active.' });
+          }
+          if (recheck.userId) {
+            return res.status(409).json({ success: false, message: 'This employee ID is already registered. Please log in instead.' });
+          }
+        } else if (employeeId) {
+          // Fallback path: re-check the user_associations metadata row
+          const [uaRecheck] = await postgresSequelize.query(
+            `SELECT "userId" FROM user_associations
+             WHERE "entityType" = 'corporate' AND "entityId" = :corporateId
+               AND status = 'active'
+               AND UPPER(metadata->>'employeeId') = UPPER(:employeeId)
+             LIMIT 1`,
+            { replacements: { corporateId: parseInt(corporateId), employeeId: String(employeeId).trim() }, type: postgresSequelize.QueryTypes.SELECT }
+          );
+          if (!uaRecheck) {
+            return res.status(400).json({ success: false, message: 'Employee ID not found. Please re-validate your employee ID.' });
+          }
+          if (uaRecheck.userId) {
+            return res.status(409).json({ success: false, message: 'This employee ID is already registered. Please log in instead.' });
+          }
+        } else {
+          return res.status(400).json({ success: false, message: 'Employee validation required for corporate registration.' });
+        }
       }
 
       // Create user
@@ -605,9 +640,21 @@ router.post(
             { replacements: { userId: newUser.id, corporateId: corporateRecord.id } }
           );
           if (employeeDbId) {
+            // Primary path: mark corporate_employees row as claimed
             await postgresSequelize.query(
               `UPDATE corporate_employees SET "userId" = :userId, "updatedAt" = NOW() WHERE id = :empDbId AND "userId" IS NULL`,
               { replacements: { userId: newUser.id, empDbId: parseInt(employeeDbId) }, type: postgresSequelize.QueryTypes.UPDATE }
+            );
+          } else if (employeeId) {
+            // Fallback path: mark the original user_associations metadata row as claimed
+            // so the same employee ID cannot be re-registered
+            await postgresSequelize.query(
+              `UPDATE user_associations SET "userId" = :userId, "updatedAt" = NOW()
+               WHERE "entityType" = 'corporate' AND "entityId" = :corporateId
+                 AND status = 'active'
+                 AND UPPER(metadata->>'employeeId') = UPPER(:employeeId)
+                 AND "userId" IS NULL`,
+              { replacements: { userId: newUser.id, corporateId: corporateRecord.id, employeeId: String(employeeId).trim() } }
             );
           }
         } catch (linkErr) {

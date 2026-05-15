@@ -85,7 +85,7 @@ const MainLayout = ({ children }: MainLayoutProps) => {
 
 
   const { currentDoctor, currentUser, userType, isLoading } = useAuth();
-  const logoutFun = useLogout()
+  const logoutFun = useLogout();
   const location = useLocation();
 
   // Check if user is a team member
@@ -179,18 +179,18 @@ const MainLayout = ({ children }: MainLayoutProps) => {
 
     if (userType === "user") {
       return {
-        name: buildName(currentUser?.firstName, currentUser?.lastName, "Mediczy User"),
-        email: currentUser?.email || "user@mediczy.com",
+        name: buildName(currentUser?.firstName, currentUser?.lastName, "SmartHealth User"),
+        email: currentUser?.email || "user@smarthealth.com",
         avatarSrc: currentUser?.profileImage,
-        initials: buildInitials(currentUser?.firstName, currentUser?.lastName, "MU"),
+        initials: buildInitials(currentUser?.firstName, currentUser?.lastName, "SH"),
       };
     }
 
     return {
-      name: buildName(currentDoctor?.firstName, currentDoctor?.lastName, "Mediczy Doctor"),
-      email: currentDoctor?.email || "doctor@mediczy.com",
+      name: buildName(currentDoctor?.firstName, currentDoctor?.lastName, "SmartHealth Doctor"),
+      email: currentDoctor?.email || "doctor@smarthealth.com",
       avatarSrc: currentDoctor?.profileImage,
-      initials: buildInitials(currentDoctor?.firstName, currentDoctor?.lastName, "MD"),
+      initials: buildInitials(currentDoctor?.firstName, currentDoctor?.lastName, "SH"),
     };
   }, [
     isTeamUser,

@@ -3,7 +3,7 @@
 # Comprehensive Login Test Suite for Mediczy
 # Tests all authentication endpoints after JWT_SECRET fixes
 
-API_BASE_DEFAULT="http://localhost:8000"
+API_BASE_DEFAULT="http://localhost:8888"
 API_BASE_INPUT="${1:-}"
 API_BASE_ENV="${API_BASE:-}"
 API_BASE="${API_BASE_INPUT:-${API_BASE_ENV:-$API_BASE_DEFAULT}}"

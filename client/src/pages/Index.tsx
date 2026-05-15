@@ -277,6 +277,12 @@ const Index = () => {
     connectedAt?: string;
     lastSync?: string;
   }>>([]);
+  const supportedDevices = [
+    { name: "Apple Watch", icon: "⌚", brands: "Series 4+" },
+    { name: "Samsung Watch", icon: "⌚", brands: "Galaxy Watch" },
+    { name: "Fitbit", icon: "📱", brands: "Versa, Charge" },
+    { name: "Smart Ring", icon: "💍", brands: "Oura, Circular" },
+  ];
   const onboardingStorageKey = currentUser?.id ? `onboarding:user:${currentUser?.id}` : 'onboarding:user:guest';
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
 
@@ -2278,25 +2284,25 @@ const Index = () => {
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-sm font-medium text-slate-400">Add New Device</h4>
-                <Link to="/patient/devices" className="text-xs text-teal-400 hover:text-teal-300 flex items-center gap-1">
+                <Link to="/patient/devices?tab=devices" className="text-xs text-teal-400 hover:text-teal-300 flex items-center gap-1">
                   View all <ArrowRight className="w-3 h-3" />
                 </Link>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {[
-                  { name: "Apple Watch", icon: "⌚", brands: "Series 4+" },
-                  { name: "Samsung Watch", icon: "⌚", brands: "Galaxy Watch" },
-                  { name: "Fitbit", icon: "📱", brands: "Versa, Charge" },
-                  { name: "Smart Ring", icon: "💍", brands: "Oura, Circular" },
-                ].map((device, idx) => (
-                  <div key={idx} className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/30 border border-dashed border-slate-700/50 hover:border-teal-500/30 hover:bg-slate-800/50 transition-all cursor-pointer group">
+                {supportedDevices.map((device, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={startBluetoothScan}
+                    className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/30 border border-dashed border-slate-700/50 hover:border-teal-500/30 hover:bg-slate-800/50 transition-all cursor-pointer group text-left"
+                  >
                     <span className="text-2xl opacity-60 group-hover:opacity-100 transition-opacity">{device.icon}</span>
                     <div>
                       <p className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors">{device.name}</p>
                       <p className="text-[10px] text-slate-500">{device.brands}</p>
                     </div>
                     <Plus className="w-4 h-4 text-slate-600 group-hover:text-teal-400 ml-auto transition-colors" />
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>

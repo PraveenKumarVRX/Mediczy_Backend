@@ -5,12 +5,13 @@
 
 export const BRAND = {
   // Brand Names
-  name: 'Mediqzy',
-  fullName: 'Mediqzy Healthcare',
-  tagline: 'Your Health, Our Priority',
+  name: 'SmartHealth',
+  fullName: 'SmartHealth Hospital OS',
+  tagline: 'Complete, Paperless, Interoperable, Orchestrated Healthcare',
+  signoff: 'Team SmartHealth',
   
-  // Logo
-  logo: '/logo/Mediqzy_logo.jpeg',
+  // Logo (update asset if needed)
+  logo: '/logo/SmartHealth_logo.png',
   
   // Colors (Tailwind classes)
   colors: {
@@ -20,13 +21,9 @@ export const BRAND = {
     accent: 'teal-500',
     accentLight: 'teal-100',
     accentDark: 'teal-600',
-    
-    // Gradient classes
     gradient: 'from-teal-500 to-teal-600',
     gradientHover: 'from-teal-600 to-teal-700',
     gradientText: 'from-teal-600 to-teal-700',
-    
-    // Badge/Status colors
     success: 'emerald',
     warning: 'amber',
     error: 'red',
@@ -47,20 +44,32 @@ export const BRAND = {
     hospital: 'Hospital Portal',
     corporate: 'Corporate Portal',
     homecare: 'Homecare Portal',
+    asset: 'Asset Management',
+    biomedical: 'Biomedical',
+    bloodBank: 'Blood Bank',
+    consent: 'Consent',
+    cssd: 'CSSD',
+    dietary: 'Dietary',
+    feedback: 'Feedback',
+    finance: 'Finance',
+    infectionControl: 'Infection Control',
+    mortuary: 'Mortuary',
+    procurement: 'Procurement',
+    queue: 'Queue',
   },
   
   // Support info
   support: {
-    email: 'support@mediqzy.com',
+    email: 'support@smarthealth.com',
     phone: '+91 1800-XXX-XXXX',
-    website: 'https://app.mediqzy.com',
+    website: 'https://smarthealth.com',
   },
   
   // Social links
   social: {
-    twitter: 'https://twitter.com/mediqzy',
-    facebook: 'https://facebook.com/mediqzy',
-    linkedin: 'https://linkedin.com/company/mediqzy',
+    twitter: 'https://twitter.com/smarthealth',
+    facebook: 'https://facebook.com/smarthealth',
+    linkedin: 'https://linkedin.com/company/smarthealth',
   },
 };
 

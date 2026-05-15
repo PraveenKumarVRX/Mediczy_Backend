@@ -396,11 +396,17 @@ export const AuthProvider = ({ children }) => {
     // Hospital department portal prefix guards (accounts, mrd, hr, etc.)
     const deptPortalPrefixes = [
       '/accounts/', '/mrd/', '/insurance-desk/', '/hr/',
-      '/it-edp/', '/ot/', '/icu/', '/quality/', '/security/'
+      '/it-edp/', '/ot/', '/icu/', '/quality/', '/security/',
+      '/asset/', '/biomedical/', '/blood-bank/', '/consent/', '/cssd/',
+      '/dietary/', '/finance/', '/infection-control/', '/mortuary/',
+      '/procurement/', '/queue/'
     ];
     const deptLoginPaths = [
       '/accounts/login', '/mrd/login', '/insurance-desk/login', '/hr/login',
-      '/it-edp/login', '/ot/login', '/icu/login', '/quality/login', '/security/login'
+      '/it-edp/login', '/ot/login', '/icu/login', '/quality/login', '/security/login',
+      '/asset/login', '/biomedical/login', '/blood-bank/login', '/consent/login',
+      '/cssd/login', '/dietary/login', '/finance/login', '/infection-control/login',
+      '/mortuary/login', '/procurement/login', '/queue/login'
     ];
     const isDeptPortalRoute = deptPortalPrefixes.some(p => location.pathname.startsWith(p));
     if (isDeptPortalRoute) {

@@ -29,9 +29,17 @@
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
+    "@babel/plugin-transform-modules-commonjs": "^7.28.6",
+    "@babel/preset-env": "^7.29.5",
+    "@babel/preset-react": "^7.28.5",
+    "@babel/preset-typescript": "^7.28.5",
+    "@jest/globals": "^30.4.1",
     "axios": "^1.13.2",
+    "babel-jest": "^30.4.1",
     "colors": "^1.4.0",
     "concurrently": "^9.1.2",
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1",
     "mysql2": "^3.16.2",
     "pg": "^8.18.0"
   },

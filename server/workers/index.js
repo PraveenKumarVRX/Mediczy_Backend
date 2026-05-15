@@ -5,6 +5,20 @@ import { queueJobsTotal, queueJobDuration } from '../config/prometheus.js';
 import emailService from '../services/emailService.js';
 import emailSyncWorker from './email-sync.worker.js';
 
+const isTest = process.env.NODE_ENV === 'test';
+
+const createMockWorker = () => ({
+  on: () => {},
+  close: async () => {},
+  pause: async () => {},
+  resume: async () => {},
+  isPaused: async () => true,
+  getJobCounts: async () => ({}),
+  getJobs: async () => [],
+  remove: async () => {},
+  obliterate: async () => {},
+});
+
 // Kafka-n8n notification worker
 let kafkaN8NWorker = null;
 const initKafkaWorker = async () => {
@@ -22,7 +36,7 @@ const initKafkaWorker = async () => {
 };
 
 // Initialize Kafka worker (non-blocking)
-if (process.env.KAFKA_ENABLED === 'true') {
+if (!isTest && process.env.KAFKA_ENABLED === 'true') {
   initKafkaWorker();
 }
 
@@ -42,10 +56,12 @@ const initEmailSyncWorker = async () => {
 };
 
 // Start email sync worker (non-blocking)
-initEmailSyncWorker();
+if (!isTest) {
+  initEmailSyncWorker();
+}
 
 // Redis connection for workers
-const connection = createRedisConnection();
+const connection = isTest ? null : createRedisConnection();
 
 // Email worker processor
 const processEmailJob = async (job) => {
@@ -166,6 +182,10 @@ const processCleanupJob = async (job) => {
 
 // Create workers
 const createWorker = (queueName, processor) => {
+  if (isTest) {
+    return createMockWorker();
+  }
+
   const worker = new Worker(queueName, async (job) => {
     const start = Date.now();
     

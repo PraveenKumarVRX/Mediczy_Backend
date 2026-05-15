@@ -134,10 +134,21 @@ module.exports = {
       env: {
         GROQ_API_KEY: process.env.GROQ_API_KEY,
         GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+        POSTGRES_HOST: process.env.POSTGRES_HOST || '127.0.0.1',
+        POSTGRES_PORT: process.env.POSTGRES_PORT || '5432',
+        POSTGRES_DATABASE: process.env.POSTGRES_DATABASE || 'mediczy_ai',
+        POSTGRES_DB: process.env.POSTGRES_DATABASE || 'mediczy_ai',
+        POSTGRES_USER: process.env.POSTGRES_USER || 'mediczy_helper',
+        POSTGRES_PASSWORD: process.env.POSTGRES_PASSWORD || 'Mediczy2024Helper',
+        DUCKDB_ENABLED: 'true',
+        DUCKDB_PATH: ':memory:',
+        PGVECTOR_DIMENSION: process.env.PGVECTOR_DIMENSION || '1536',
         SIB_PORT: '8001',
         SIB_HOST: '0.0.0.0',
         PYTHONUNBUFFERED: '1',
-        LOG_LEVEL: 'INFO'
+        LOG_LEVEL: 'INFO',
+        LOGURU_LEVEL: 'WARNING',
+        SIB_LANGGRAPH_ENABLED: 'true'
       },
       error_file: '/home/ubuntu/Mediczy/ai-engine/doctor_bot/logs/sib-error.log',
       out_file: '/home/ubuntu/Mediczy/ai-engine/doctor_bot/logs/sib-out.log',

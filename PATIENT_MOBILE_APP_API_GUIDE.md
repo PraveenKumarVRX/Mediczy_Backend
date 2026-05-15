@@ -1,6 +1,6 @@
 # Mediczy — Patient Mobile App API Guide
 
-> **Version:** 2.5 | **Last Updated:** April 26, 2026
+> **Version:** 2.6 | **Last Updated:** May 14, 2026
 
 - **Base URL:** `https://app.mediqzy.com/api`
 - **Auth:** `Authorization: Bearer <jwt-token>` (JWT, expires 7 days)
@@ -15,6 +15,14 @@
 ## Table of Contents
 
 1. [Authentication](#1-authentication)
+   - 1.1 [Login — Email + Password](#11-login-email--password)
+   - 1.2 [Login — OTP (Email)](#12-login-otp--email)
+   - 1.3 [Login — OTP (WhatsApp)](#13-login-otp--whatsapp)
+   - 1.4 [Registration](#14-registration)
+   - 1.5 [Password Reset](#15-password-reset)
+   - 1.6 [Change Password](#16-change-password-logged-in)
+   - 1.7 [Social Login — Google OAuth](#17-social-login--google-oauth)
+   - 1.8 [Social Login — Facebook OAuth](#18-social-login--facebook-oauth)
 2. [User Profile](#2-user-profile)
 3. [Family Members & Insurance](#3-family-members--insurance)
 4. [Addresses](#4-addresses)
@@ -223,6 +231,254 @@ POST /api/users/reset-password     → Body: { "email": "...", "otp": "123456", 
 ```
 POST /api/users/change-password 🔐
 Body: { "currentPassword": "...", "newPassword": "..." }
+```
+
+---
+
+### 1.7 Social Login — Google OAuth
+
+```
+POST /api/mobile/auth/google  (Public)
+```
+
+Exchange a Google ID token obtained from the native Google Sign-In SDK for a Mediczy JWT. A new patient account is created automatically on first sign-in. If the email already exists, the Google ID is linked to that account.
+
+**Token expiry:** Mediczy access token is valid for **30 days**.
+
+#### Prerequisites — React Native SDK
+```bash
+npm install @react-native-google-signin/google-signin
+```
+
+Configure once at app startup:
+```js
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+
+GoogleSignin.configure({
+  webClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com', // from Google Cloud Console
+  iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com', // iOS only
+  offlineAccess: false,
+});
+```
+
+#### Sign-In Flow
+
+```js
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+
+async function signInWithGoogle() {
+  await GoogleSignin.hasPlayServices();
+  const userInfo = await GoogleSignin.signIn();
+  const { idToken } = userInfo;                // step 1: get idToken from Google
+
+  const res = await fetch('https://app.mediqzy.com/api/mobile/auth/google', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      idToken,
+      deviceId: '<unique-device-id>',           // optional — for push notifications
+      pushToken: '<fcm-token>',                  // optional — for push notifications
+    }),
+  });
+
+  const { data } = await res.json();
+  // Store data.accessToken securely (Keychain / Keystore)
+  // data.isNewUser === true → navigate to profile completion screen
+}
+```
+
+**Request body:**
+```json
+{
+  "idToken": "eyJhbGciOiJSUzI1NiIsImtpZCI6...",
+  "deviceId": "a1b2c3d4-e5f6",
+  "pushToken": "fMSuXxYZ..."
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `idToken` | string | Yes | Google ID token from `GoogleSignin.signIn()` |
+| `deviceId` | string | No | Unique device identifier for push notifications |
+| `pushToken` | string | No | FCM push notification token |
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": 6201,
+      "name": "John Doe",
+      "email": "john@gmail.com",
+      "avatar": "https://lh3.googleusercontent.com/...",
+      "role": "patient"
+    },
+    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIs...",
+    "expiresIn": "30d",
+    "provider": "google",
+    "isNewUser": true
+  }
+}
+```
+
+> Store `accessToken` securely. Use it as `Authorization: Bearer <accessToken>` for all subsequent API calls.  
+> When `isNewUser` is `true`, prompt the user to complete their profile (phone number, date of birth).
+
+**Error responses:**
+
+| HTTP | `error.code` | Cause |
+|------|-------------|-------|
+| 400 | `MISSING_TOKEN` | `idToken` field not provided |
+| 400 | `MISSING_PROFILE` | Google account has no email (email scope not granted) |
+| 401 | `INVALID_TOKEN` | Token expired, malformed, or Google verification failed |
+| 401 | `INVALID_AUDIENCE` | Token issued for a different OAuth client ID |
+
+#### Account Linking Behaviour
+
+| Scenario | Result |
+|----------|--------|
+| First time — email not in system | New patient account created; free trial plan activated |
+| Email already registered (email+password) | Google ID linked to existing account; no duplicate created |
+| Google ID recognised from previous sign-in | Existing session returned |
+
+#### Environment Variables (server)
+```
+GOOGLE_CLIENT_ID=<web-client-id>
+GOOGLE_ANDROID_CLIENT_ID=<android-client-id>
+GOOGLE_IOS_CLIENT_ID=<ios-client-id>
+```
+
+---
+
+### 1.8 Social Login — Facebook OAuth
+
+```
+POST /api/mobile/auth/facebook  (Public)
+```
+
+Exchange a Facebook access token obtained from the native Facebook Login SDK for a Mediczy JWT. A new patient account is created automatically on first login. If the email already exists, the Facebook ID is linked to that account.
+
+**Important:** The Facebook Login dialog **must** request the `email` permission. Users who deny email access will receive a `400 EMAIL_REQUIRED` error.
+
+**Token expiry:** Mediczy access token is valid for **30 days**.
+
+#### Prerequisites — React Native SDK
+```bash
+npm install react-native-fbsdk-next
+```
+
+iOS — `Info.plist`:
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleURLSchemes</key>
+    <array><string>fbYOUR_APP_ID</string></array>
+  </dict>
+</array>
+<key>FacebookAppID</key><string>YOUR_APP_ID</string>
+<key>FacebookClientToken</key><string>YOUR_CLIENT_TOKEN</string>
+<key>FacebookDisplayName</key><string>Mediczy</string>
+```
+
+Android — `strings.xml`:
+```xml
+<string name="facebook_app_id">YOUR_APP_ID</string>
+<string name="fb_login_protocol_scheme">fbYOUR_APP_ID</string>
+<string name="facebook_client_token">YOUR_CLIENT_TOKEN</string>
+```
+
+#### Sign-In Flow
+
+```js
+import { LoginManager, AccessToken } from 'react-native-fbsdk-next';
+
+async function signInWithFacebook() {
+  const result = await LoginManager.logInWithPermissions(['public_profile', 'email']);
+
+  if (result.isCancelled) throw new Error('User cancelled Facebook login');
+
+  const tokenData = await AccessToken.getCurrentAccessToken();
+  const accessToken = tokenData.accessToken.toString();  // step 1: get accessToken from Facebook
+
+  const res = await fetch('https://app.mediqzy.com/api/mobile/auth/facebook', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      accessToken,
+      deviceId: '<unique-device-id>',           // optional — for push notifications
+      pushToken: '<fcm-token>',                  // optional — for push notifications
+    }),
+  });
+
+  const { data } = await res.json();
+  // Store data.accessToken securely (Keychain / Keystore)
+  // data.isNewUser === true → navigate to profile completion screen
+}
+```
+
+**Request body:**
+```json
+{
+  "accessToken": "EAABsbCS4ZCpsBAMZCZBpN...",
+  "deviceId": "a1b2c3d4-e5f6",
+  "pushToken": "fMSuXxYZ..."
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `accessToken` | string | Yes | Facebook access token from `AccessToken.getCurrentAccessToken()` |
+| `deviceId` | string | No | Unique device identifier for push notifications |
+| `pushToken` | string | No | FCM push notification token |
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": 6202,
+      "name": "Jane Doe",
+      "email": "jane@example.com",
+      "avatar": "https://graph.facebook.com/.../picture",
+      "role": "patient"
+    },
+    "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIs...",
+    "expiresIn": "30d",
+    "provider": "facebook",
+    "isNewUser": false
+  }
+}
+```
+
+> Store `accessToken` securely. Use it as `Authorization: Bearer <accessToken>` for all subsequent API calls.  
+> When `isNewUser` is `true`, prompt the user to complete their profile (phone number, date of birth).
+
+**Error responses:**
+
+| HTTP | `error.code` | Cause |
+|------|-------------|-------|
+| 400 | `MISSING_TOKEN` | `accessToken` field not provided |
+| 400 | `EMAIL_REQUIRED` | User did not grant email permission in Facebook dialog |
+| 401 | `INVALID_TOKEN` | Token expired, revoked, or Facebook Graph API call failed |
+
+#### Account Linking Behaviour
+
+| Scenario | Result |
+|----------|--------|
+| First time — email not in system | New patient account created; free trial plan activated |
+| Email already registered (email+password or Google) | Facebook ID linked to existing account; no duplicate created |
+| Facebook ID recognised from previous login | Existing session returned |
+
+#### Environment Variables (server)
+```
+# No server-side Facebook App Secret required — token validation is performed
+# via the Facebook Graph API (/me endpoint) using the client access token.
+# Ensure your Facebook App is configured to allow requests from the server IP.
 ```
 
 ---

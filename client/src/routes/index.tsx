@@ -551,6 +551,96 @@ const AccountsAnalyticsPage          = lazyNamed(_AccountsModulePages, "Accounts
 const AccountsSettingsPage           = lazyNamed(_AccountsModulePages, "AccountsSettingsPage");
 const AccountsSupportPage            = lazyNamed(_AccountsModulePages, "AccountsSupportPage");
 
+const _DepartmentLoginPages = () => import("@/pages/dept/DepartmentLoginPages");
+const AssetLogin            = lazyNamed(_DepartmentLoginPages, "AssetLogin");
+const BiomedicalLogin       = lazy(() => import("@/auth/dept/BiomedicalLogin"));
+const BloodBankLogin        = lazyNamed(_DepartmentLoginPages, "BloodBankLogin");
+const ConsentLogin          = lazyNamed(_DepartmentLoginPages, "ConsentLogin");
+const CSSDLogin             = lazyNamed(_DepartmentLoginPages, "CSSDLogin");
+const DietaryLogin          = lazy(() => import("@/auth/dept/DietaryLogin"));
+const FinanceLogin          = lazyNamed(_DepartmentLoginPages, "FinanceLogin");
+const InfectionControlLogin = lazyNamed(_DepartmentLoginPages, "InfectionControlLogin");
+const MortuaryLogin         = lazyNamed(_DepartmentLoginPages, "MortuaryLogin");
+const ProcurementLogin      = lazyNamed(_DepartmentLoginPages, "ProcurementLogin");
+const QueueLogin            = lazyNamed(_DepartmentLoginPages, "QueueLogin");
+const _DeptDashboards        = () => import("@/pages/dept/DepartmentDashboards");
+const _DeptModulePages       = () => import("@/pages/dept/DepartmentModulePages");
+const _DietaryDashboard      = () => import("@/pages/dept/DietaryDashboardPage");
+const _DietaryModulePages    = () => import("@/pages/dept/DietaryModulePages");
+const _DietaryMonitoring     = () => import("@/pages/dept/DietaryMonitoringPage");
+const _BiomedicalDashboard   = () => import("@/pages/dept/BiomedicalDashboardPage");
+const _BiomedicalModulePages = () => import("@/pages/dept/BiomedicalModulePages");
+const _BiomedicalMonitoring  = () => import("@/pages/dept/BiomedicalMonitoringPage");
+
+const AssetDashboard             = lazyNamed(_DeptDashboards, "AssetDashboard");
+const BiomedicalDashboard        = lazyNamed(_BiomedicalDashboard, "BiomedicalDashboard");
+const BloodBankDashboard         = lazyNamed(_DeptDashboards, "BloodBankDashboard");
+const ConsentDashboard           = lazyNamed(_DeptDashboards, "ConsentDashboard");
+const CSSDDashboard              = lazyNamed(_DeptDashboards, "CSSDDashboard");
+const DietaryDashboard           = lazyNamed(_DietaryDashboard, "DietaryDashboard");
+const FinanceDashboard           = lazyNamed(_DeptDashboards, "FinanceDashboard");
+const InfectionControlDashboard  = lazyNamed(_DeptDashboards, "InfectionControlDashboard");
+const MortuaryDashboard          = lazyNamed(_DeptDashboards, "MortuaryDashboard");
+const ProcurementDashboard       = lazyNamed(_DeptDashboards, "ProcurementDashboard");
+const QueueDashboard             = lazyNamed(_DeptDashboards, "QueueDashboard");
+
+// Department module pages — Asset
+const AssetInventory    = lazyNamed(_DeptModulePages, "AssetInventory");
+const AssetMaintenance  = lazyNamed(_DeptModulePages, "AssetMaintenance");
+const AssetReports      = lazyNamed(_DeptModulePages, "AssetReports");
+// Biomedical — world-class module pages
+const BiomedicalEquipment    = lazyNamed(_BiomedicalModulePages, "BiomedicalEquipment");
+const BiomedicalWorkOrders   = lazyNamed(_BiomedicalModulePages, "BiomedicalWorkOrders");
+const BiomedicalCalibration  = lazyNamed(_BiomedicalModulePages, "BiomedicalCalibration");
+const BiomedicalReports      = lazyNamed(_BiomedicalModulePages, "BiomedicalReports");
+const BiomedicalMonitoring   = lazyNamed(_BiomedicalMonitoring,  "BiomedicalMonitoring");
+// Blood Bank
+const BloodBankInventory    = lazyNamed(_DeptModulePages, "BloodBankInventory");
+const BloodBankRequisitions = lazyNamed(_DeptModulePages, "BloodBankRequisitions");
+const BloodBankDonors       = lazyNamed(_DeptModulePages, "BloodBankDonors");
+const BloodBankReports      = lazyNamed(_DeptModulePages, "BloodBankReports");
+// Consent
+const ConsentPending   = lazyNamed(_DeptModulePages, "ConsentPending");
+const ConsentSigned    = lazyNamed(_DeptModulePages, "ConsentSigned");
+const ConsentTemplates = lazyNamed(_DeptModulePages, "ConsentTemplates");
+const ConsentReports   = lazyNamed(_DeptModulePages, "ConsentReports");
+// CSSD
+const CSSDJobs      = lazyNamed(_DeptModulePages, "CSSDJobs");
+const CSSDEquipment = lazyNamed(_DeptModulePages, "CSSDEquipment");
+const CSSDCycles    = lazyNamed(_DeptModulePages, "CSSDCycles");
+const CSSDReports   = lazyNamed(_DeptModulePages, "CSSDReports");
+// Dietary — world-class module pages
+const DietaryOrders     = lazyNamed(_DietaryModulePages, "DietaryOrders");
+const DietaryPlans      = lazyNamed(_DietaryModulePages, "DietaryPlans");
+const DietaryPatients   = lazyNamed(_DietaryModulePages, "DietaryPatients");
+const DietaryReports    = lazyNamed(_DietaryModulePages, "DietaryReports");
+const DietaryMonitoring = lazyNamed(_DietaryMonitoring, "DietaryMonitoring");
+// Finance
+const FinanceBilling     = lazyNamed(_DeptModulePages, "FinanceBilling");
+const FinanceCollections = lazyNamed(_DeptModulePages, "FinanceCollections");
+const FinanceExpenses    = lazyNamed(_DeptModulePages, "FinanceExpenses");
+const FinanceReports     = lazyNamed(_DeptModulePages, "FinanceReports");
+// Infection Control
+const InfectionControlSurveillance = lazyNamed(_DeptModulePages, "InfectionControlSurveillance");
+const InfectionControlIncidents    = lazyNamed(_DeptModulePages, "InfectionControlIncidents");
+const InfectionControlReports      = lazyNamed(_DeptModulePages, "InfectionControlReports");
+const InfectionControlAlerts       = lazyNamed(_DeptModulePages, "InfectionControlAlerts");
+// Mortuary
+const MortiaryCases    = lazyNamed(_DeptModulePages, "MortiaryCases");
+const MortuaryReleases = lazyNamed(_DeptModulePages, "MortuaryReleases");
+const MortuaryRecords  = lazyNamed(_DeptModulePages, "MortuaryRecords");
+const MortuaryReports  = lazyNamed(_DeptModulePages, "MortuaryReports");
+// Procurement
+const ProcurementOrders    = lazyNamed(_DeptModulePages, "ProcurementOrders");
+const ProcurementVendors   = lazyNamed(_DeptModulePages, "ProcurementVendors");
+const ProcurementApprovals = lazyNamed(_DeptModulePages, "ProcurementApprovals");
+const ProcurementReports   = lazyNamed(_DeptModulePages, "ProcurementReports");
+// Queue
+const QueueTokens   = lazyNamed(_DeptModulePages, "QueueTokens");
+const QueueCounters = lazyNamed(_DeptModulePages, "QueueCounters");
+const QueueHistory  = lazyNamed(_DeptModulePages, "QueueHistory");
+const QueueReports  = lazyNamed(_DeptModulePages, "QueueReports");
+
 const MRDLogin     = lazy(() => import("@/pages/mrd/MRDLogin"));
 const MRDDashboard = lazy(() => import("@/pages/mrd/MRDDashboard"));
 const _MRDModulePages = () => import("@/pages/mrd/MRDModulePages");
@@ -1166,6 +1256,88 @@ const AppRoutes = () => {
         <Route path="/accounts/analytics"           element={<AccountsAnalyticsPage />} />
         <Route path="/accounts/settings"            element={<AccountsSettingsPage />} />
         <Route path="/accounts/support"             element={<AccountsSupportPage />} />
+
+        {/* ── Additional Hospital Department Logins ──────────────────── */}
+        <Route path="/asset/login"             element={<AssetLogin />} />
+        <Route path="/biomedical/login"        element={<BiomedicalLogin />} />
+        <Route path="/blood-bank/login"        element={<BloodBankLogin />} />
+        <Route path="/consent/login"           element={<ConsentLogin />} />
+        <Route path="/cssd/login"              element={<CSSDLogin />} />
+        <Route path="/dietary/login"           element={<DietaryLogin />} />
+        <Route path="/finance/login"           element={<FinanceLogin />} />
+        <Route path="/infection-control/login" element={<InfectionControlLogin />} />
+        <Route path="/mortuary/login"          element={<MortuaryLogin />} />
+        <Route path="/procurement/login"       element={<ProcurementLogin />} />
+        <Route path="/queue/login"             element={<QueueLogin />} />
+        <Route path="/asset/dashboard"             element={<AssetDashboard />} />
+        <Route path="/biomedical/dashboard"        element={<BiomedicalDashboard />} />
+        <Route path="/blood-bank/dashboard"        element={<BloodBankDashboard />} />
+        <Route path="/consent/dashboard"           element={<ConsentDashboard />} />
+        <Route path="/cssd/dashboard"              element={<CSSDDashboard />} />
+        <Route path="/dietary/dashboard"           element={<DietaryDashboard />} />
+        <Route path="/finance/dashboard"           element={<FinanceDashboard />} />
+        <Route path="/infection-control/dashboard" element={<InfectionControlDashboard />} />
+        <Route path="/mortuary/dashboard"          element={<MortuaryDashboard />} />
+        <Route path="/procurement/dashboard"       element={<ProcurementDashboard />} />
+        <Route path="/queue/dashboard"             element={<QueueDashboard />} />
+
+        {/* ── Department sub-module pages ─────────────────────────────── */}
+        {/* Asset */}
+        <Route path="/asset/inventory"   element={<AssetInventory />} />
+        <Route path="/asset/maintenance" element={<AssetMaintenance />} />
+        <Route path="/asset/reports"     element={<AssetReports />} />
+        {/* Biomedical */}
+        <Route path="/biomedical/monitoring"  element={<BiomedicalMonitoring />} />
+        <Route path="/biomedical/equipment"   element={<BiomedicalEquipment />} />
+        <Route path="/biomedical/work-orders" element={<BiomedicalWorkOrders />} />
+        <Route path="/biomedical/calibration" element={<BiomedicalCalibration />} />
+        <Route path="/biomedical/reports"     element={<BiomedicalReports />} />
+        {/* Blood Bank */}
+        <Route path="/blood-bank/inventory"    element={<BloodBankInventory />} />
+        <Route path="/blood-bank/requisitions" element={<BloodBankRequisitions />} />
+        <Route path="/blood-bank/donors"       element={<BloodBankDonors />} />
+        <Route path="/blood-bank/reports"      element={<BloodBankReports />} />
+        {/* Consent */}
+        <Route path="/consent/pending"   element={<ConsentPending />} />
+        <Route path="/consent/signed"    element={<ConsentSigned />} />
+        <Route path="/consent/templates" element={<ConsentTemplates />} />
+        <Route path="/consent/reports"   element={<ConsentReports />} />
+        {/* CSSD */}
+        <Route path="/cssd/jobs"      element={<CSSDJobs />} />
+        <Route path="/cssd/equipment" element={<CSSDEquipment />} />
+        <Route path="/cssd/cycles"    element={<CSSDCycles />} />
+        <Route path="/cssd/reports"   element={<CSSDReports />} />
+        {/* Dietary */}
+        <Route path="/dietary/orders"      element={<DietaryOrders />} />
+        <Route path="/dietary/plans"       element={<DietaryPlans />} />
+        <Route path="/dietary/patients"    element={<DietaryPatients />} />
+        <Route path="/dietary/reports"     element={<DietaryReports />} />
+        <Route path="/dietary/monitoring"  element={<DietaryMonitoring />} />
+        {/* Finance */}
+        <Route path="/finance/billing"     element={<FinanceBilling />} />
+        <Route path="/finance/collections" element={<FinanceCollections />} />
+        <Route path="/finance/expenses"    element={<FinanceExpenses />} />
+        <Route path="/finance/reports"     element={<FinanceReports />} />
+        {/* Infection Control */}
+        <Route path="/infection-control/surveillance" element={<InfectionControlSurveillance />} />
+        <Route path="/infection-control/incidents"    element={<InfectionControlIncidents />} />
+        <Route path="/infection-control/reports"      element={<InfectionControlReports />} />
+        <Route path="/infection-control/alerts"       element={<InfectionControlAlerts />} />
+        {/* Mortuary */}
+        <Route path="/mortuary/cases"    element={<MortiaryCases />} />
+        <Route path="/mortuary/releases" element={<MortuaryReleases />} />
+        <Route path="/mortuary/records"  element={<MortuaryRecords />} />
+        <Route path="/mortuary/reports"  element={<MortuaryReports />} />
+        {/* Procurement */}
+        <Route path="/procurement/orders"    element={<ProcurementOrders />} />
+        <Route path="/procurement/vendors"   element={<ProcurementVendors />} />
+        <Route path="/procurement/approvals" element={<ProcurementApprovals />} />
+        <Route path="/procurement/reports"   element={<ProcurementReports />} />
+        {/* Queue */}
+        <Route path="/queue/tokens"   element={<QueueTokens />} />
+        <Route path="/queue/counters" element={<QueueCounters />} />
+        <Route path="/queue/history"  element={<QueueHistory />} />
+        <Route path="/queue/reports"  element={<QueueReports />} />
 
         {/* ── MRD ─────────────────────────────────────────────────────── */}
         <Route path="/mrd/login"          element={<MRDLogin />} />

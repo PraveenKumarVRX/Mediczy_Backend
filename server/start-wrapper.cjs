@@ -93,9 +93,9 @@ async function main() {
     
     log('Starting Mediczy server...');
     
-    // Import and run the actual server
+    // Import and run the actual ESM server
     process.chdir(SERVER_DIR);
-    require('./index.js');
+    await import('./index.js');
 }
 
 main().catch(err => {

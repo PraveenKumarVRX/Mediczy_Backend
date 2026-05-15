@@ -8,22 +8,23 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-let redisClient = null;
+const isTest = process.env.NODE_ENV === 'test';
+
+export let redisClient = null;
 let isConnected = false;
 
 const REDIS_CONFIG = {
   host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT) || 6379,
+  port: parseInt(process.env.REDIS_PORT, 10) || 6379,
   password: process.env.REDIS_PASSWORD || undefined,
-  db: parseInt(process.env.REDIS_DB) || 0,
+  db: parseInt(process.env.REDIS_DB, 10) || 0,
   retryStrategy: (times) => {
-    // Retry up to 5 times
     if (times > 5) {
-      console.error('❌ Redis: Max retries reached, giving up');
-      return null; // Stop retrying
+      console.error('Redis: Max retries reached, giving up');
+      return null;
     }
     const delay = Math.min(times * 100, 2000);
-    console.log(`⏳ Redis: Retry ${times} in ${delay}ms`);
+    console.log(`Redis: Retry ${times} in ${delay}ms`);
     return delay;
   },
   maxRetriesPerRequest: 3,
@@ -31,52 +32,43 @@ const REDIS_CONFIG = {
   lazyConnect: false,
   connectTimeout: 5000,
   keepAlive: 30000,
-  family: 4, // IPv4
+  family: 4,
 };
 
-/**
- * Connect to Redis
- * @returns {Promise<Redis>} Redis client instance
- */
 export async function connectRedis() {
+  if (isTest) return null;
+
   if (isConnected && redisClient) {
-    console.log("✅ Redis: Using existing connection");
+    console.log('Redis: Using existing connection');
     return redisClient;
   }
 
   try {
     redisClient = new Redis(REDIS_CONFIG);
 
-    // Connection event handlers
     redisClient.on('connect', () => {
-      console.log('✅ Redis: Connecting...');
+      console.log('Redis: Connecting...');
     });
-
     redisClient.on('ready', () => {
       isConnected = true;
-      console.log('✅ Redis: Connected successfully');
+      console.log('Redis: Connected successfully');
     });
-
     redisClient.on('error', (err) => {
-      console.error('❌ Redis: Connection error:', err.message);
+      console.error('Redis: Connection error:', err.message);
       isConnected = false;
     });
-
     redisClient.on('close', () => {
-      console.log('⚠️  Redis: Connection closed');
+      console.log('Redis: Connection closed');
       isConnected = false;
     });
-
     redisClient.on('reconnecting', (delay) => {
-      console.log(`⏳ Redis: Reconnecting in ${delay}ms...`);
+      console.log(`Redis: Reconnecting in ${delay}ms...`);
     });
-
     redisClient.on('end', () => {
-      console.log('⚠️  Redis: Connection ended');
+      console.log('Redis: Connection ended');
       isConnected = false;
     });
 
-    // Wait for connection to be ready
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error('Redis connection timeout'));
@@ -86,7 +78,6 @@ export async function connectRedis() {
         clearTimeout(timeout);
         resolve();
       });
-
       redisClient.once('error', (err) => {
         clearTimeout(timeout);
         reject(err);
@@ -94,28 +85,26 @@ export async function connectRedis() {
     });
 
     return redisClient;
-
   } catch (error) {
-    console.error('❌ Redis: Connection failed:', error.message);
+    console.error('Redis: Connection failed:', error.message);
     isConnected = false;
     throw error;
   }
 }
 
-/**
- * Close Redis connection
- */
 export async function closeRedis() {
+  if (isTest) return null;
+
   try {
     if (redisClient) {
       await redisClient.quit();
       redisClient = null;
       isConnected = false;
-      console.log('✅ Redis: Connection closed');
+      console.log('Redis: Connection closed');
     }
+    return null;
   } catch (err) {
-    console.error('❌ Redis: Error closing connection:', err);
-    // Force disconnect if quit fails
+    console.error('Redis: Error closing connection:', err);
     if (redisClient) {
       redisClient.disconnect();
       redisClient = null;
@@ -124,10 +113,11 @@ export async function closeRedis() {
   }
 }
 
-/**
- * Get Redis connection status
- */
 export function getRedisStatus() {
+  if (isTest) {
+    return { connected: false, status: 'mock', host: 'mock', port: 0, db: 0 };
+  }
+
   return {
     connected: isConnected,
     status: redisClient?.status || 'disconnected',
@@ -137,10 +127,11 @@ export function getRedisStatus() {
   };
 }
 
-/**
- * Test Redis connection
- */
 export async function testRedis() {
+  if (isTest) {
+    return { success: true, message: 'Mock Redis (test mode)' };
+  }
+
   try {
     if (!isConnected) {
       await connectRedis();
@@ -152,21 +143,20 @@ export async function testRedis() {
   }
 }
 
-/**
- * Cache operations with TTL
- */
+const ensureConnected = () => {
+  if (isTest) return false;
+  if (!isConnected || !redisClient) {
+    throw new Error('Redis not connected');
+  }
+  return true;
+};
+
 export const cache = {
-  /**
-   * Set value with optional TTL
-   * @param {string} key - Cache key
-   * @param {any} value - Value to cache
-   * @param {number} ttl - Time to live in seconds
-   */
   async set(key, value, ttl = 3600) {
+    if (isTest) return true;
+
     try {
-      if (!isConnected) {
-        throw new Error('Redis not connected');
-      }
+      ensureConnected();
       const serialized = JSON.stringify(value);
       if (ttl > 0) {
         await redisClient.setex(key, ttl, serialized);
@@ -175,104 +165,81 @@ export const cache = {
       }
       return true;
     } catch (error) {
-      console.error('❌ Redis: Cache set error:', error.message);
+      console.error('Redis: Cache set error:', error.message);
       throw error;
     }
   },
 
-  /**
-   * Get value from cache
-   * @param {string} key - Cache key
-   */
   async get(key) {
+    if (isTest) return null;
+
     try {
-      if (!isConnected) {
-        return null; // Allow reads to fail gracefully
+      if (!isConnected || !redisClient) {
+        return null;
       }
       const value = await redisClient.get(key);
       return value ? JSON.parse(value) : null;
     } catch (error) {
-      console.error('❌ Redis: Cache get error:', error.message);
-      return null; // Graceful fallback for reads
+      console.error('Redis: Cache get error:', error.message);
+      return null;
     }
   },
 
-  /**
-   * Delete key from cache
-   * @param {string} key - Cache key
-   */
   async del(key) {
+    if (isTest) return true;
+
     try {
-      if (!isConnected) {
-        throw new Error('Redis not connected');
-      }
+      ensureConnected();
       await redisClient.del(key);
       return true;
     } catch (error) {
-      console.error('❌ Redis: Cache delete error:', error.message);
+      console.error('Redis: Cache delete error:', error.message);
       throw error;
     }
   },
 
-  /**
-   * Check if key exists
-   * @param {string} key - Cache key
-   */
   async exists(key) {
+    if (isTest) return false;
+
     try {
-      if (!isConnected) {
-        return false; // Graceful fallback for existence checks
+      if (!isConnected || !redisClient) {
+        return false;
       }
       const exists = await redisClient.exists(key);
       return exists === 1;
     } catch (error) {
-      console.error('❌ Redis: Cache exists error:', error.message);
+      console.error('Redis: Cache exists error:', error.message);
       return false;
     }
   },
 
-  /**
-   * Set value with NX (only if doesn't exist) and TTL
-   * Atomic operation at Redis server level - prevents race condition in distributed systems
-   * @param {string} key - Cache key
-   * @param {any} value - Value to cache
-   * @param {number} ttl - Time to live in seconds
-   * @returns {string|null} 'OK' if set, null if key already exists
-   */
   async setNX(key, value, ttl = 3600) {
+    if (isTest) return 'OK';
+
     try {
-      if (!isConnected) {
-        throw new Error('Redis not connected');
-      }
+      ensureConnected();
       const serialized = JSON.stringify(value);
-      // SET key value NX EX ttl - atomic at Redis level
-      // Returns 'OK' if set successfully, null if key already exists
-      const result = await redisClient.set(key, serialized, 'EX', ttl, 'NX');
-      return result; // 'OK' or null
+      return await redisClient.set(key, serialized, 'EX', ttl, 'NX');
     } catch (error) {
-      console.error('❌ Redis: Cache setNX error:', error.message);
+      console.error('Redis: Cache setNX error:', error.message);
       throw error;
     }
   },
 
-  /**
-   * Clear all cache
-   */
   async flush() {
+    if (isTest) return true;
+
     try {
-      if (!isConnected) {
-        throw new Error('Redis not connected');
-      }
+      ensureConnected();
       await redisClient.flushdb();
       return true;
     } catch (error) {
-      console.error('❌ Redis: Cache flush error:', error.message);
+      console.error('Redis: Cache flush error:', error.message);
       throw error;
     }
-  }
+  },
 };
 
-// Graceful shutdown handlers
 process.on('SIGINT', async () => {
   await closeRedis();
   process.exit(0);
@@ -283,5 +250,4 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
-export { redisClient };
 export default redisClient;

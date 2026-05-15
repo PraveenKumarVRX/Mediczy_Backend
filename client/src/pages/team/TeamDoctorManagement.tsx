@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import {
   Search, Eye, CheckCircle2, XCircle, RefreshCw, Stethoscope,
   Clock, User, Mail, Phone, MapPin, FileText, Download, Shield,
-  BookOpen, Award,
+  BookOpen, Award, Trash2,
 } from 'lucide-react';
 import api from '@/utils/api';
 
@@ -35,12 +35,20 @@ interface Doctor {
   practiceZipCode?: string;
   isVerified: boolean;
   accountStatus?: string;
+  status?: string;
+  metadata?: {
+    rejectedAt?: string;
+    rejectionReason?: string;
+  };
   documents?: Record<string, any>;
   createdAt?: string;
 }
 
+const isRejectedDoctor = (doctor: Doctor) =>
+  doctor.accountStatus === 'rejected' || (!doctor.isVerified && doctor.status === 'inactive');
+
 const statusBadge = (doctor: Doctor) => {
-  if (doctor.accountStatus === 'rejected')
+  if (isRejectedDoctor(doctor))
     return <Badge className="bg-red-500/15 text-red-400 border-red-500/30 text-xs">Rejected</Badge>;
   if (doctor.isVerified)
     return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-xs">Active</Badge>;
@@ -61,6 +69,8 @@ const TeamDoctorManagement = () => {
   const [viewOpen, setViewOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Doctor | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('teamToken')}` });
@@ -120,6 +130,21 @@ const TeamDoctorManagement = () => {
     } finally { setActionLoading(false); }
   };
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setActionLoading(true);
+    try {
+      await api.delete(`/team/registered-doctors/${deleteTarget.id}`, { headers: authHeader() });
+      toast({ title: 'Doctor Deleted', description: `${deleteTarget.firstName} ${deleteTarget.lastName} has been removed.` });
+      setDeleteOpen(false);
+      setViewOpen(false);
+      setDeleteTarget(null);
+      fetchDoctors();
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.response?.data?.message || 'Failed to delete doctor', variant: 'destructive' });
+    } finally { setActionLoading(false); }
+  };
+
   const downloadAgreementPDF = (doctor: Doctor) => {
     const pdf = doctor.documents?.agreement?.pdf;
     if (!pdf) { toast({ title: 'No PDF', description: 'Agreement PDF not available for this registration.', variant: 'destructive' }); return; }
@@ -128,8 +153,6 @@ const TeamDoctorManagement = () => {
     link.download = `Agreement_${doctor.firstName}_${doctor.lastName}_${doctor.id}.pdf`;
     link.click();
   };
-
-  const pendingCount = doctors.filter(d => !d.isVerified && d.accountStatus !== 'rejected').length;
 
   return (
     <MainLayout>
@@ -154,7 +177,7 @@ const TeamDoctorManagement = () => {
         <div className="grid grid-cols-3 gap-4">
           {[
             { label: 'Total Registrations', value: total, icon: User, color: 'text-blue-400' },
-            { label: 'Pending Verification', value: doctors.filter(d => !d.isVerified && d.accountStatus !== 'rejected').length, icon: Clock, color: 'text-amber-400' },
+            { label: 'Pending Verification', value: doctors.filter(d => !d.isVerified && !isRejectedDoctor(d)).length, icon: Clock, color: 'text-amber-400' },
             { label: 'Active Doctors', value: doctors.filter(d => d.isVerified).length, icon: CheckCircle2, color: 'text-emerald-400' },
           ].map(({ label, value, icon: Icon, color }) => (
             <Card key={label} className="bg-slate-800/50 border-slate-700">
@@ -187,6 +210,7 @@ const TeamDoctorManagement = () => {
                   <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
                   <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
                 </SelectContent>
               </Select>
               <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">Search</Button>
@@ -231,7 +255,7 @@ const TeamDoctorManagement = () => {
                           className="h-7 px-2 border-slate-600 text-slate-300 hover:text-white">
                           <Eye className="h-3.5 w-3.5" />
                         </Button>
-                        {!doc.isVerified && doc.accountStatus !== 'rejected' && (
+                        {!doc.isVerified && !isRejectedDoctor(doc) && (
                           <>
                             <Button size="sm" onClick={() => handleActivate(doc)} disabled={actionLoading}
                               className="h-7 px-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs">
@@ -249,6 +273,11 @@ const TeamDoctorManagement = () => {
                             <Download className="h-3.5 w-3.5" />
                           </Button>
                         )}
+                        <Button size="sm" variant="outline"
+                          onClick={() => { setDeleteTarget(doc); setDeleteOpen(true); }}
+                          className="h-7 px-2 border-red-700/40 text-red-500 hover:text-red-400 hover:border-red-600/60">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -283,8 +312,8 @@ const TeamDoctorManagement = () => {
           {selected && (
             <div className="space-y-5 text-sm">
               {/* Status banner */}
-              <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold ${selected.isVerified ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25' : selected.accountStatus === 'rejected' ? 'bg-red-500/15 text-red-400 border border-red-500/25' : 'bg-amber-500/15 text-amber-400 border border-amber-500/25'}`}>
-                {selected.isVerified ? <><CheckCircle2 className="h-4 w-4" /> Account Active</> : selected.accountStatus === 'rejected' ? <><XCircle className="h-4 w-4" /> Registration Rejected</> : <><Clock className="h-4 w-4" /> Pending Manual Activation</>}
+              <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold ${selected.isVerified ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25' : isRejectedDoctor(selected) ? 'bg-red-500/15 text-red-400 border border-red-500/25' : 'bg-amber-500/15 text-amber-400 border border-amber-500/25'}`}>
+                {selected.isVerified ? <><CheckCircle2 className="h-4 w-4" /> Account Active</> : isRejectedDoctor(selected) ? <><XCircle className="h-4 w-4" /> Registration Rejected</> : <><Clock className="h-4 w-4" /> Pending Manual Activation</>}
               </div>
 
               {/* Personal */}
@@ -362,7 +391,7 @@ const TeamDoctorManagement = () => {
             </div>
           )}
           <DialogFooter className="flex gap-2 pt-2">
-            {selected && !selected.isVerified && selected.accountStatus !== 'rejected' && (
+            {selected && !selected.isVerified && !isRejectedDoctor(selected) && (
               <>
                 <Button onClick={() => handleActivate(selected)} disabled={actionLoading}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white">
@@ -373,6 +402,13 @@ const TeamDoctorManagement = () => {
                   <XCircle className="h-4 w-4 mr-1.5" /> Reject
                 </Button>
               </>
+            )}
+            {selected && (
+              <Button variant="outline"
+                onClick={() => { setDeleteTarget(selected); setDeleteOpen(true); }}
+                className="border-red-700/40 text-red-500 hover:text-red-400">
+                <Trash2 className="h-4 w-4 mr-1.5" /> Delete
+              </Button>
             )}
             <Button variant="outline" onClick={() => setViewOpen(false)} className="border-slate-700 text-slate-300 ml-auto">
               Close
@@ -400,6 +436,32 @@ const TeamDoctorManagement = () => {
             <Button onClick={handleReject} disabled={actionLoading}
               className="bg-red-600 hover:bg-red-700 text-white">
               {actionLoading ? 'Rejecting…' : 'Send Rejection'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Delete confirmation dialog */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-400">
+              <Trash2 className="h-5 w-5" /> Delete Doctor
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-3 space-y-2">
+            <p className="text-slate-300 text-sm">
+              Are you sure you want to permanently delete{' '}
+              <span className="font-semibold text-white">
+                {deleteTarget?.prefix} {deleteTarget?.firstName} {deleteTarget?.lastName}
+              </span>?
+            </p>
+            <p className="text-slate-500 text-xs">This action cannot be undone. All registration data for this doctor will be removed.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} className="border-slate-700 text-slate-300">Cancel</Button>
+            <Button onClick={handleDelete} disabled={actionLoading}
+              className="bg-red-600 hover:bg-red-700 text-white">
+              {actionLoading ? 'Deleting…' : 'Yes, Delete'}
             </Button>
           </DialogFooter>
         </DialogContent>

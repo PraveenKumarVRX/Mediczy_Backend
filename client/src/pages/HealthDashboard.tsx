@@ -14,6 +14,7 @@ import { drIshaAPI } from "@/services/drIsha";
 import { useState, useEffect } from "react";
 import api from "@/utils/api";
 import { healthSyncScheduler, SyncStatus } from "@/services/health/HealthSyncScheduler";
+import { useSearchParams } from "react-router-dom";
 import { 
   Brain, 
   TrendingUp, 
@@ -97,7 +98,9 @@ interface HealthStats {
 }
 
 const HealthDashboard = () => {
-  const [activeTab, setActiveTab] = useState("overview");
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab") === "devices" ? "devices" : "overview";
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [healthInsights, setHealthInsights] = useState<HealthInsight[]>([]);
   const [healthGoals, setHealthGoals] = useState<HealthGoal[]>([]);
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
@@ -159,7 +162,10 @@ const HealthDashboard = () => {
     try {
       setLoading(true);
       const storedDevices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
-      setDevices(storedDevices);
+      setDevices(storedDevices.map((device: Device) => ({
+        ...device,
+        lastSync: device.lastSync ? new Date(device.lastSync) : null,
+      })));
     } catch (error) {
       console.error('Error loading devices:', error);
     } finally {

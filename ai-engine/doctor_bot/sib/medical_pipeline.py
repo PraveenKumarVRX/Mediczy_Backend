@@ -907,8 +907,8 @@ Thank you for sharing your health concern with me.
                     is_emergency=is_emergency
                 )
             
-            # Fall through to full pipeline if API fails
-            logger.warning("⚠️ Fast path failed, using full pipeline")
+            # Fall through to full pipeline if iSHA is unavailable.
+            logger.info("Fast path unavailable, using full pipeline")
         
         # ═══════════════════════════════════════════════════════════════
         # FULL PIPELINE: NER + Risk + FAISS + LLM
@@ -1023,6 +1023,9 @@ Thank you for sharing your health concern with me.
             if time.time() < getattr(self, '_isha_token_exp', 0) - 300:
                 return self._isha_token
 
+        if time.time() < getattr(self, '_isha_auth_unavailable_until', 0):
+            return None
+
         try:
             resp = requests.post(
                 f"{isha_url}/auth/login",
@@ -1041,8 +1044,11 @@ Thank you for sharing your health concern with me.
                 self._isha_token_exp = payload.get("exp", time.time() + 3600)
                 logger.info("🔑 iSHA token refreshed")
                 return token
+            self._isha_auth_unavailable_until = time.time() + int(os.environ.get("ISHA_AUTH_RETRY_SECONDS", "300"))
+            logger.debug("iSHA token refresh skipped: auth endpoint returned HTTP %s", resp.status_code)
         except Exception as e:
-            logger.warning(f"⚠️ iSHA token refresh failed: {e}")
+            self._isha_auth_unavailable_until = time.time() + int(os.environ.get("ISHA_AUTH_RETRY_SECONDS", "300"))
+            logger.debug("iSHA token refresh failed: %s", e)
         return None
 
     def _call_isha(self, query: str, context: Optional[List[str]], 
@@ -1064,7 +1070,7 @@ Thank you for sharing your health concern with me.
             # Get auth token
             token = self._get_isha_token()
             if not token:
-                logger.warning("⚠️ iSHA token unavailable, skipping")
+                logger.debug("iSHA token unavailable, skipping iSHA backend")
                 return None
             
             # Build system prompt from canonical Dr. iSHA persona

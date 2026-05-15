@@ -129,6 +129,81 @@ const initOtp = (): OtpState => ({
   error: "", timer: 0, sending: false, verifying: false,
 });
 
+const MAX_DOCUMENT_BYTES = 8 * 1024 * 1024;
+const MAX_SOURCE_IMAGE_BYTES = 25 * 1024 * 1024;
+const IMAGE_COMPRESSION_STEPS = [
+  { maxDimension: 1800, quality: 0.78 },
+  { maxDimension: 1400, quality: 0.68 },
+  { maxDimension: 1100, quality: 0.58 },
+];
+
+const formatFileSize = (bytes: number) => {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+};
+
+const isCompressibleImage = (file: File) =>
+  ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(file.type);
+
+const loadImage = (file: File): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Unable to read image'));
+    };
+    img.src = url;
+  });
+
+const canvasToBlob = (canvas: HTMLCanvasElement, quality: number): Promise<Blob> =>
+  new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('Unable to compress image'));
+    }, 'image/jpeg', quality);
+  });
+
+const compressDocumentImage = async (file: File): Promise<File> => {
+  if (!isCompressibleImage(file)) return file;
+  if (file.size > MAX_SOURCE_IMAGE_BYTES) {
+    throw new Error('Image is too large. Please upload an image under 25 MB.');
+  }
+
+  const image = await loadImage(file);
+  let bestFile: File | null = null;
+
+  for (const { maxDimension, quality } of IMAGE_COMPRESSION_STEPS) {
+    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Unable to compress image');
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(image, 0, 0, width, height);
+
+    const blob = await canvasToBlob(canvas, quality);
+    const compressedName = file.name.replace(/\.[^.]+$/, '') + '.jpg';
+    const compressed = new File([blob], compressedName, {
+      type: 'image/jpeg',
+      lastModified: Date.now(),
+    });
+    bestFile = compressed;
+    if (compressed.size <= MAX_DOCUMENT_BYTES) return compressed;
+  }
+
+  return bestFile && bestFile.size < file.size ? bestFile : file;
+};
+
 // ─── UploadZone ───────────────────────────────────────────────────────────────
 interface UploadZoneProps {
   label: string; hint: string; accept: string;
@@ -137,10 +212,23 @@ interface UploadZoneProps {
 function UploadZone({ label, hint, accept, required, file, onFile }: UploadZoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState(false);
+  const [compressing, setCompressing] = useState(false);
 
-  function validateAndSet(f: File) {
-    if (f.size > 8 * 1024 * 1024) { alert("File too large (max 8 MB)"); return; }
-    onFile(f);
+  async function validateAndSet(f: File) {
+    try {
+      setCompressing(true);
+      const prepared = await compressDocumentImage(f);
+      if (prepared.size > MAX_DOCUMENT_BYTES) {
+        alert(`File too large after compression (max ${formatFileSize(MAX_DOCUMENT_BYTES)}). Please upload a smaller or compressed file.`);
+        return;
+      }
+      onFile(prepared);
+    } catch (error: any) {
+      alert(error?.message || 'Could not process this file. Please try a different file.');
+    } finally {
+      setCompressing(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
   }
 
   return (
@@ -154,7 +242,7 @@ function UploadZone({ label, hint, accept, required, file, onFile }: UploadZoneP
           <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-emerald-800 truncate">{file.name}</p>
-            <p className="text-xs text-emerald-600">{(file.size / 1024).toFixed(0)} KB</p>
+            <p className="text-xs text-emerald-600">{formatFileSize(file.size)}</p>
           </div>
           <button type="button" onClick={() => onFile(null)}
             className="p-1 rounded-lg hover:bg-emerald-100 text-emerald-500 hover:text-emerald-700 transition-colors">
@@ -170,7 +258,7 @@ function UploadZone({ label, hint, accept, required, file, onFile }: UploadZoneP
           className={`flex flex-col items-center justify-center gap-2 px-4 py-5 rounded-xl border-2 border-dashed cursor-pointer transition-all ${drag ? "border-blue-400 bg-blue-50" : "border-slate-200 hover:border-blue-300 hover:bg-slate-50"}`}
         >
           <Upload className={`h-5 w-5 ${drag ? "text-blue-500" : "text-slate-400"}`} />
-          <p className="text-sm font-medium text-slate-600">Drop here or <span className="text-blue-600">browse</span></p>
+          <p className="text-sm font-medium text-slate-600">{compressing ? "Processing…" : <>Drop here or <span className="text-blue-600">browse</span></>}</p>
           <p className="text-xs text-slate-400">{hint}</p>
         </div>
       )}
@@ -574,7 +662,7 @@ const DocRegister = () => {
   // ─── Generate Agreement PDF ───────────────────────────────────────────────
   const generateAgreementPDFDoc = async (): Promise<string> => {
     const { default: JsPDF } = await import('jspdf');
-    const doc = new JsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    const doc = new JsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
     const values = form.getValues();
     const doctorName = `${values.prefix || 'Dr.'} ${values.firstName} ${values.lastName}`.trim();
     const doctorAddr = [values.practiceAddress, values.practiceCity, values.practiceState, values.practiceZipCode].filter(Boolean).join(', ') || 'Not provided';

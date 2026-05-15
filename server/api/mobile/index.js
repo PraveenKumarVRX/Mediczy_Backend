@@ -1365,6 +1365,442 @@ router.post('/auth/corporate-login', asyncHandler(async (req, res) => {
   });
 }));
 
+// ============== Social Authentication (Google / Facebook) ==============
+
+import axios from 'axios';
+
+/**
+ * Find or create a user from a social provider (Google / Facebook).
+ * Returns a row shaped to match buildUserResponse expectations plus _isNew flag.
+ */
+async function findOrCreateSocialUser({ db, provider, providerId, email, firstName, lastName, avatarUrl, emailVerified }) {
+  const providerCol = provider === 'google' ? '"googleId"' : '"facebookId"';
+
+  // 1. Look up by provider ID
+  let result = await db.query(
+    `SELECT id, email, "firstName" AS first_name, "lastName" AS last_name,
+            "phoneNumber" AS phone, "profileImage" AS avatar_url,
+            "dateOfBirth" AS date_of_birth, gender, role, status
+     FROM users WHERE ${providerCol} = $1 LIMIT 1`,
+    [String(providerId)]
+  );
+
+  if (result.rows.length > 0) {
+    const row = result.rows[0];
+    // Refresh avatar if we have a newer one
+    if (avatarUrl && !row.avatar_url) {
+      await db.query(`UPDATE users SET "profileImage" = $1, "updatedAt" = NOW() WHERE id = $2`, [avatarUrl, row.id]);
+      row.avatar_url = avatarUrl;
+    }
+    return { ...row, _isNew: false };
+  }
+
+  // 2. Look up by email — link provider ID to existing account
+  result = await db.query(
+    `SELECT id, email, "firstName" AS first_name, "lastName" AS last_name,
+            "phoneNumber" AS phone, "profileImage" AS avatar_url,
+            "dateOfBirth" AS date_of_birth, gender, role, status
+     FROM users WHERE email = $1 LIMIT 1`,
+    [email]
+  );
+
+  if (result.rows.length > 0) {
+    const row = result.rows[0];
+    await db.query(
+      `UPDATE users SET ${providerCol} = $1, "oauthProvider" = $2,
+        "emailVerified" = TRUE,
+        "profileImage" = COALESCE(NULLIF("profileImage", ''), $3),
+        "updatedAt" = NOW()
+       WHERE id = $4`,
+      [String(providerId), provider, avatarUrl || null, row.id]
+    );
+    row.avatar_url = row.avatar_url || avatarUrl;
+    return { ...row, _isNew: false };
+  }
+
+  // 3. Create new user
+  const randomPassword = Math.random().toString(36).slice(-12) + 'Aa1!';
+  const bcrypt = (await import('bcrypt')).default;
+  const hashedPassword = await bcrypt.hash(randomPassword, 10);
+
+  const insertResult = await db.query(
+    `INSERT INTO users (email, password, "firstName", "lastName", ${providerCol}, "oauthProvider",
+       "emailVerified", "phoneVerified", "phoneNumber", "dateOfBirth", gender, status,
+       organization_id, organization_type, tenant_id, "isVerified", "createdAt", "updatedAt")
+     VALUES ($1, $2, $3, $4, $5, $6, $7, false, '', '1990-01-01', 'Other', 'active',
+             7, 'individual', 7, true, NOW(), NOW())
+     RETURNING id, email, "firstName" AS first_name, "lastName" AS last_name,
+               "phoneNumber" AS phone, "profileImage" AS avatar_url,
+               "dateOfBirth" AS date_of_birth, gender, role, status`,
+    [email, hashedPassword, firstName, lastName || '', String(providerId), provider,
+     emailVerified ? true : false]
+  );
+
+  const newRow = insertResult.rows[0];
+
+  if (avatarUrl) {
+    await db.query(`UPDATE users SET "profileImage" = $1, "updatedAt" = NOW() WHERE id = $2`, [avatarUrl, newRow.id]);
+    newRow.avatar_url = avatarUrl;
+  }
+
+  // Assign free trial plan
+  try {
+    await db.query(
+      `INSERT INTO user_subscriptions (user_id, plan_id, status, start_date, auto_renew, billing_cycle, price, currency, created_at, updated_at)
+       VALUES ($1, 1, 'ACTIVE', NOW(), false, 'MONTHLY', 0, 'INR', NOW(), NOW())`,
+      [newRow.id]
+    );
+    await db.query(
+      `INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
+       VALUES ($1, 'corporate', 4, 'member', true, 'active', NOW(), NOW(), NOW())
+       ON CONFLICT DO NOTHING`,
+      [newRow.id]
+    );
+  } catch (_) { /* non-blocking */ }
+
+  return { ...newRow, _isNew: true };
+}
+
+/**
+ * @swagger
+ * /api/mobile/auth/google:
+ *   post:
+ *     summary: Google Sign-In (mobile token exchange)
+ *     description: |
+ *       Exchange a Google ID token obtained from the native Google Sign-In SDK
+ *       for a Mediczy JWT. Creates a new account automatically on first sign-in.
+ *
+ *       **Mobile SDK setup:**
+ *       - Android: `@react-native-google-signin/google-signin`
+ *       - iOS: `@react-native-google-signin/google-signin`
+ *
+ *       **Flow:**
+ *       1. Call `GoogleSignin.signIn()` in the app → get `idToken`
+ *       2. POST that `idToken` to this endpoint
+ *       3. Use the returned `accessToken` for all subsequent API calls
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [idToken]
+ *             properties:
+ *               idToken:
+ *                 type: string
+ *                 description: Google ID token from GoogleSignin.signIn()
+ *                 example: "eyJhbGciOiJSUzI1NiIsImtpZCI6..."
+ *               deviceId:
+ *                 type: string
+ *                 description: Unique device identifier for push notifications
+ *                 example: "a1b2c3d4-e5f6"
+ *               pushToken:
+ *                 type: string
+ *                 description: FCM push notification token
+ *                 example: "fMSuXxYZ..."
+ *     responses:
+ *       200:
+ *         description: Sign-in successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       $ref: '#/components/schemas/User'
+ *                     accessToken:
+ *                       type: string
+ *                       description: Mediczy JWT (30 day expiry)
+ *                     refreshToken:
+ *                       type: string
+ *                     expiresIn:
+ *                       type: string
+ *                       example: "30d"
+ *                     provider:
+ *                       type: string
+ *                       example: "google"
+ *                     isNewUser:
+ *                       type: boolean
+ *                       description: true if account was just created
+ *       400:
+ *         description: Missing or invalid idToken
+ *       401:
+ *         description: Google token verification failed
+ */
+router.post('/auth/google', asyncHandler(async (req, res) => {
+  const { idToken, deviceId, pushToken } = req.body;
+
+  if (!idToken) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'MISSING_TOKEN', message: 'idToken is required' }
+    });
+  }
+
+  // Verify idToken against Google's tokeninfo endpoint
+  let googlePayload;
+  try {
+    const { data } = await axios.get('https://oauth2.googleapis.com/tokeninfo', {
+      params: { id_token: idToken },
+      timeout: 6000
+    });
+    googlePayload = data;
+  } catch (err) {
+    console.warn('Google tokeninfo failed:', err.response?.data || err.message);
+    return res.status(401).json({
+      success: false,
+      error: { code: 'INVALID_TOKEN', message: 'Google token verification failed. Ensure the token is fresh.' }
+    });
+  }
+
+  // Validate audience (accept web, Android, iOS, and mobile web client IDs)
+  const allowedAudiences = [
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_ANDROID_CLIENT_ID,
+    process.env.GOOGLE_IOS_CLIENT_ID,
+    process.env.GOOGLE_MOBILE_WEB_CLIENT_ID
+  ].filter(Boolean);
+
+  if (allowedAudiences.length > 0 && !allowedAudiences.includes(googlePayload.aud)) {
+    return res.status(401).json({
+      success: false,
+      error: { code: 'INVALID_AUDIENCE', message: 'Token was issued for a different application.' }
+    });
+  }
+
+  const { sub: googleId, email, given_name, family_name, name, picture, email_verified } = googlePayload;
+
+  if (!email || !googleId) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'MISSING_PROFILE', message: 'Google account must grant email access.' }
+    });
+  }
+
+  const userRow = await findOrCreateSocialUser({
+    db,
+    provider: 'google',
+    providerId: googleId,
+    email,
+    firstName: given_name || name?.split(' ')[0] || 'User',
+    lastName: family_name || name?.split(' ').slice(1).join(' ') || '',
+    avatarUrl: picture || null,
+    emailVerified: email_verified === 'true' || email_verified === true
+  });
+
+  if (deviceId) {
+    await storeDeviceMetadata(userRow.id, {
+      deviceId,
+      pushToken: pushToken || null,
+      platform: req.mobileClient?.platform || 'unknown',
+      lastActive: new Date().toISOString()
+    });
+  }
+  if (deviceId && pushToken) {
+    await upsertFcmToken({ userId: userRow.id, userType: 'patient', token: pushToken, deviceType: req.mobileClient?.platform });
+  }
+
+  const userResponse = buildUserResponse(userRow);
+  const accessToken = generateToken({
+    id: userRow.id,
+    userId: userRow.id,
+    email: userRow.email,
+    name: userResponse.name,
+    role: userRow.role || 'patient',
+    userType: 'patient'
+  }, 'patient');
+  const refreshToken = generateRefreshToken(userRow.id, 'patient');
+
+  console.log(`✅ Google Sign-In: user ${userRow.id} (${email}) — new=${userRow._isNew}`);
+
+  return res.json({
+    success: true,
+    data: {
+      user: userResponse,
+      accessToken,
+      refreshToken,
+      expiresIn: '30d',
+      provider: 'google',
+      isNewUser: userRow._isNew
+    }
+  });
+}));
+
+/**
+ * @swagger
+ * /api/mobile/auth/facebook:
+ *   post:
+ *     summary: Facebook Login (mobile token exchange)
+ *     description: |
+ *       Exchange a Facebook access token obtained from the native Facebook Login SDK
+ *       for a Mediczy JWT. Creates a new account automatically on first sign-in.
+ *
+ *       **Mobile SDK setup:**
+ *       - React Native: `react-native-fbsdk-next`
+ *
+ *       **Flow:**
+ *       1. Call `LoginManager.logInWithPermissions(['public_profile', 'email'])` → get `accessToken`
+ *       2. POST that `accessToken` to this endpoint
+ *       3. Use the returned Mediczy `accessToken` for all subsequent API calls
+ *
+ *       **Important:** The Facebook Login must request the `email` permission.
+ *       Users who deny email access cannot sign in via Facebook.
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [accessToken]
+ *             properties:
+ *               accessToken:
+ *                 type: string
+ *                 description: Facebook access token from LoginManager
+ *                 example: "EAABsbCS..."
+ *               deviceId:
+ *                 type: string
+ *                 example: "a1b2c3d4-e5f6"
+ *               pushToken:
+ *                 type: string
+ *                 example: "fMSuXxYZ..."
+ *     responses:
+ *       200:
+ *         description: Sign-in successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       $ref: '#/components/schemas/User'
+ *                     accessToken:
+ *                       type: string
+ *                       description: Mediczy JWT (30 day expiry)
+ *                     refreshToken:
+ *                       type: string
+ *                     expiresIn:
+ *                       type: string
+ *                       example: "30d"
+ *                     provider:
+ *                       type: string
+ *                       example: "facebook"
+ *                     isNewUser:
+ *                       type: boolean
+ *                       description: true if account was just created
+ *       400:
+ *         description: Missing token or Facebook account has no email
+ *       401:
+ *         description: Facebook token verification failed
+ */
+router.post('/auth/facebook', asyncHandler(async (req, res) => {
+  const { accessToken: fbToken, deviceId, pushToken } = req.body;
+
+  if (!fbToken) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'MISSING_TOKEN', message: 'accessToken is required' }
+    });
+  }
+
+  // Fetch profile from Facebook Graph API — this implicitly verifies the token
+  let fbProfile;
+  try {
+    const { data } = await axios.get('https://graph.facebook.com/me', {
+      params: {
+        fields: 'id,name,email,first_name,last_name,picture.type(large)',
+        access_token: fbToken
+      },
+      timeout: 6000
+    });
+    fbProfile = data;
+  } catch (err) {
+    console.warn('Facebook Graph API failed:', err.response?.data || err.message);
+    return res.status(401).json({
+      success: false,
+      error: { code: 'INVALID_TOKEN', message: 'Facebook token verification failed. Please sign in again.' }
+    });
+  }
+
+  if (!fbProfile?.id) {
+    return res.status(401).json({
+      success: false,
+      error: { code: 'INVALID_TOKEN', message: 'Could not retrieve Facebook profile.' }
+    });
+  }
+
+  if (!fbProfile.email) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'EMAIL_REQUIRED',
+        message: 'Email permission is required. Please grant email access in your Facebook settings and try again.'
+      }
+    });
+  }
+
+  const userRow = await findOrCreateSocialUser({
+    db,
+    provider: 'facebook',
+    providerId: fbProfile.id,
+    email: fbProfile.email,
+    firstName: fbProfile.first_name || fbProfile.name?.split(' ')[0] || 'User',
+    lastName: fbProfile.last_name || fbProfile.name?.split(' ').slice(1).join(' ') || '',
+    avatarUrl: fbProfile.picture?.data?.url || null,
+    emailVerified: true
+  });
+
+  if (deviceId) {
+    await storeDeviceMetadata(userRow.id, {
+      deviceId,
+      pushToken: pushToken || null,
+      platform: req.mobileClient?.platform || 'unknown',
+      lastActive: new Date().toISOString()
+    });
+  }
+  if (deviceId && pushToken) {
+    await upsertFcmToken({ userId: userRow.id, userType: 'patient', token: pushToken, deviceType: req.mobileClient?.platform });
+  }
+
+  const userResponse = buildUserResponse(userRow);
+  const accessToken = generateToken({
+    id: userRow.id,
+    userId: userRow.id,
+    email: userRow.email,
+    name: userResponse.name,
+    role: userRow.role || 'patient',
+    userType: 'patient'
+  }, 'patient');
+  const refreshToken = generateRefreshToken(userRow.id, 'patient');
+
+  console.log(`✅ Facebook Login: user ${userRow.id} (${fbProfile.email}) — new=${userRow._isNew}`);
+
+  return res.json({
+    success: true,
+    data: {
+      user: userResponse,
+      accessToken,
+      refreshToken,
+      expiresIn: '30d',
+      provider: 'facebook',
+      isNewUser: userRow._isNew
+    }
+  });
+}));
+
 /**
  * GET /api/mobile/corporate/profile
  * Get corporate employee's profile with corporate context

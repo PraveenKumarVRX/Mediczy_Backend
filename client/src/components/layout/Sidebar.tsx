@@ -297,7 +297,9 @@ export function Sidebar() {
 
         {/* Logo */}
         <div className="flex items-center border-b border-slate-700/50 px-5 py-4">
-          <MediqzyLogo3D size="md" interactive theme="light" />
+          {/* Replace with SmartHealth logo if available */}
+          <img src={BRAND.logo} alt="SmartHealth Logo" style={{ height: 38, width: 38, marginRight: 12, borderRadius: 8 }} />
+          <span className="text-lg font-bold text-white tracking-tight">{BRAND.name}</span>
         </div>
 
         {/* Sidebar Links */}

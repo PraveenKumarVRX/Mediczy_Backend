@@ -92,9 +92,16 @@ module.exports = {
         PORT: 8001,
         POSTGRES_HOST: '127.0.0.1',
         POSTGRES_PORT: '5432',
+        POSTGRES_DATABASE: 'mediczy_ai',
         POSTGRES_DB: 'mediczy_ai',
         POSTGRES_USER: 'mediczy_helper',
-        POSTGRES_PASSWORD: 'Mediczy2024Helper'
+        POSTGRES_PASSWORD: 'Mediczy2024Helper',
+        DUCKDB_ENABLED: 'true',
+        DUCKDB_PATH: ':memory:',
+        PGVECTOR_DIMENSION: process.env.PGVECTOR_DIMENSION || '1536',
+        LOG_LEVEL: 'INFO',
+        LOGURU_LEVEL: 'WARNING',
+        SIB_LANGGRAPH_ENABLED: 'true'
       },
       error_file: path.join(LOGS_DIR, 'sib-error.log'),
       out_file: path.join(LOGS_DIR, 'sib-out.log'),

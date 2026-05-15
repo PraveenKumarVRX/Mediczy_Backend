@@ -1679,8 +1679,18 @@ router.get('/registered-doctors', authTeam, async (req, res) => {
   try {
     const { search = '', status = 'all', limit = 50, offset = 0 } = req.query;
     const where = {};
-    if (status === 'pending')  where.isVerified = false;
-    if (status === 'active')   where.isVerified = true;
+    if (status === 'pending') {
+      where.isVerified = false;
+      where.status = 'pending';
+    }
+    if (status === 'active') {
+      where.isVerified = true;
+      where.status = 'active';
+    }
+    if (status === 'rejected') {
+      where.isVerified = false;
+      where.status = 'inactive';
+    }
     if (search) {
       where[Op.or] = [
         { firstName: { [Op.iLike]: `%${search}%` } },
@@ -1722,7 +1732,10 @@ router.patch('/registered-doctors/:id/activate', authTeam, async (req, res) => {
   try {
     const doctor = await doctorModel.findByPk(req.params.id);
     if (!doctor) return res.status(404).json({ success: false, message: 'Doctor not found' });
-    await doctor.update({ isVerified: true, documentVerified: true, status: 'active' });
+    const metadata = { ...(doctor.metadata || {}) };
+    delete metadata.rejectedAt;
+    delete metadata.rejectionReason;
+    await doctor.update({ isVerified: true, documentVerified: true, status: 'active', metadata });
     const doctorName = `${doctor.prefix || ''} ${doctor.firstName} ${doctor.lastName}`.trim();
     // Send activation email to doctor
     try {
@@ -1770,13 +1783,36 @@ router.patch('/registered-doctors/:id/activate', authTeam, async (req, res) => {
   }
 });
 
+// Delete doctor account
+router.delete('/registered-doctors/:id', authTeam, async (req, res) => {
+  try {
+    const doctor = await doctorModel.findByPk(req.params.id);
+    if (!doctor) return res.status(404).json({ success: false, message: 'Doctor not found' });
+    const doctorName = `${doctor.prefix || ''} ${doctor.firstName} ${doctor.lastName}`.trim();
+    await doctor.destroy();
+    return res.json({ success: true, message: `Doctor ${doctorName} deleted successfully` });
+  } catch (err) {
+    console.error('[Team] delete doctor error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to delete doctor' });
+  }
+});
+
 // Reject doctor account
 router.patch('/registered-doctors/:id/reject', authTeam, async (req, res) => {
   try {
     const doctor = await doctorModel.findByPk(req.params.id);
     if (!doctor) return res.status(404).json({ success: false, message: 'Doctor not found' });
     const { reason = 'Your documents could not be verified. Please re-register with valid documents.' } = req.body;
-    await doctor.update({ isVerified: false, documentVerified: false, accountStatus: 'rejected' });
+    await doctor.update({
+      isVerified: false,
+      documentVerified: false,
+      status: 'inactive',
+      metadata: {
+        ...(doctor.metadata || {}),
+        rejectedAt: new Date().toISOString(),
+        rejectionReason: reason,
+      },
+    });
     const doctorName = `${doctor.prefix || ''} ${doctor.firstName} ${doctor.lastName}`.trim();
     try {
       await _teamMailer().sendMail({

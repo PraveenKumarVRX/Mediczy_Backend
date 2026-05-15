@@ -212,7 +212,7 @@ const Register = () => {
         phoneNumber: values.phoneNumber,
         firstName: values.firstName,
       }, { skipAuth: true } as any);
-      setSignupData(values);
+      setSignupData(values as SignupPayload);
       setOtpStep(true);
       setEmailOtp("");
       setWhatsappOtp("");
@@ -248,7 +248,7 @@ const Register = () => {
         phoneNumber: values.phoneNumber,
         firstName,
       }, { skipAuth: true } as any);
-      setSignupData({ ...values, firstName, lastName });
+      setSignupData({ ...values, firstName, lastName } as SignupPayload);
       setOtpStep(true);
       setEmailOtp("");
       setWhatsappOtp("");
@@ -328,7 +328,8 @@ const Register = () => {
           ...signupData,
           memberType: memberType || "individual",
           corporateId: memberType === "corporate" ? parseInt(selectedCorporateId) : undefined,
-          employeeDbId: memberType === "corporate" ? employeeInfo?.dbId : undefined,
+          employeeDbId: memberType === "corporate" ? (employeeInfo?.dbId ?? null) : undefined,
+          employeeId: memberType === "corporate" ? employeeInfo?.employeeId : undefined,
         },
         { skipAuth: true } as any
       );

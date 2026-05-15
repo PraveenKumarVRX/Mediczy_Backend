@@ -1,10 +1,7 @@
+
 import { Queue } from 'bullmq';
 import { createRedisConnection } from './redis-connection.js';
 
-// Redis connection for BullMQ
-const connection = createRedisConnection();
-
-// Queue names
 export const QUEUE_NAMES = {
   EMAIL: 'email-queue',
   NOTIFICATIONS: 'notification-queue',
@@ -14,19 +11,49 @@ export const QUEUE_NAMES = {
   CLEANUP: 'cleanup-queue',
 };
 
-// Create queues
-export const queues = {
-  email: new Queue(QUEUE_NAMES.EMAIL, { connection }),
-  notifications: new Queue(QUEUE_NAMES.NOTIFICATIONS, { connection }),
-  reports: new Queue(QUEUE_NAMES.REPORTS, { connection }),
-  dataExport: new Queue(QUEUE_NAMES.DATA_EXPORT, { connection }),
-  analytics: new Queue(QUEUE_NAMES.ANALYTICS, { connection }),
-  cleanup: new Queue(QUEUE_NAMES.CLEANUP, { connection }),
-};
+const isTest = process.env.NODE_ENV === 'test';
 
-// Note: QueueScheduler is deprecated in BullMQ v4+, delayed jobs work automatically
+let queues;
+let connection = null;
+if (isTest) {
+  // Mock queues for test mode
+  const mockQueue = {
+    add: async () => ({}),
+    close: async () => {},
+    on: () => {},
+    process: () => {},
+    pause: async () => {},
+    resume: async () => {},
+    isPaused: async () => true,
+    getJobCounts: async () => ({}),
+    getJobs: async () => [],
+    remove: async () => {},
+    obliterate: async () => {},
+  };
+  queues = {
+    email: mockQueue,
+    notifications: mockQueue,
+    reports: mockQueue,
+    dataExport: mockQueue,
+    analytics: mockQueue,
+    cleanup: mockQueue,
+  };
+  console.log('✅ BullMQ queues mocked for test mode');
+} else {
+  // Redis connection for BullMQ
+  connection = createRedisConnection();
+  queues = {
+    email: new Queue(QUEUE_NAMES.EMAIL, { connection }),
+    notifications: new Queue(QUEUE_NAMES.NOTIFICATIONS, { connection }),
+    reports: new Queue(QUEUE_NAMES.REPORTS, { connection }),
+    dataExport: new Queue(QUEUE_NAMES.DATA_EXPORT, { connection }),
+    analytics: new Queue(QUEUE_NAMES.ANALYTICS, { connection }),
+    cleanup: new Queue(QUEUE_NAMES.CLEANUP, { connection }),
+  };
+  console.log('✅ BullMQ queues initialized');
+}
 
-console.log('✅ BullMQ queues initialized');
+export { queues };
 
 // Helper function to add job to queue
 export const addJob = async (queueName, jobName, data, options = {}) => {
@@ -108,7 +135,9 @@ const shutdown = async () => {
   await Promise.all(Object.values(queues).map(q => q.close()));
   
   // Close connection
-  await connection.quit();
+  if (connection) {
+    await connection.quit();
+  }
   
   console.log('✅ BullMQ closed');
 };

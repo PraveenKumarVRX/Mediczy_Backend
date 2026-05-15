@@ -164,6 +164,18 @@ import authLoginRouter from './routes/auth.login.route.js';
 import { authUser, requireRole } from './middleware/auth.middleware.js';
 import { requireAppKey } from './middleware/appAuth.middleware.js';
 import communicationRouter from './routes/communication.route.js';
+import assetRouter from './routes/dept/asset.route.js';
+import biomedicalRouter from './routes/dept/biomedical.route.js';
+import bloodBankRouter from './routes/dept/bloodBank.route.js';
+import consentRouter from './routes/dept/consent.route.js';
+import cssdRouter from './routes/dept/cssd.route.js';
+import dietaryRouter from './routes/dept/dietary.route.js';
+import feedbackRouter from './routes/dept/feedback.route.js';
+import financeRouter from './routes/dept/finance.route.js';
+import infectionControlRouter from './routes/dept/infectionControl.route.js';
+import mortuaryRouter from './routes/dept/mortuary.route.js';
+import procurementRouter from './routes/dept/procurement.route.js';
+import deptQueueRouter from './routes/dept/queue.route.js';
 
 // API v1 Routes (Multi-tenant wellness platform API)
 import apiV1Router from './routes/api-v1-index.js';
@@ -678,8 +690,20 @@ app.use(compression({
 }));
 
 // 5. Body Parsers and File Upload
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+// Doctor registration currently sends verification documents as base64 JSON.
+// Keep this aligned with the public registration document size allowance.
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: false, limit: '50mb' }));
+
+app.use((err, req, res, next) => {
+  if (err?.type === 'entity.too.large') {
+    return res.status(413).json({
+      success: false,
+      message: 'Registration documents are too large. Please upload smaller files or compress the PDFs and try again.',
+    });
+  }
+  return next(err);
+});
 
 // Serve downloadable app binaries (APKs, etc.)
 app.use('/api/downloads', express.static(path.join(__dirname, 'public/downloads'), {
@@ -808,6 +832,19 @@ app.get('/razorpay-test', (req, res) => {
 app.use(sessionTimeout);
 // Public signed-token report download (no auth required — handled by JWT verification)
 app.use('/api/public', publicReportRouter);
+// Department login modules must stay before ring-fencing because login is public.
+app.use('/api/asset', assetRouter);
+app.use('/api/biomedical', biomedicalRouter);
+app.use('/api/blood-bank', bloodBankRouter);
+app.use('/api/consent', consentRouter);
+app.use('/api/cssd', cssdRouter);
+app.use('/api/dietary', dietaryRouter);
+app.use('/api/feedback', feedbackRouter);
+app.use('/api/finance', financeRouter);
+app.use('/api/infection-control', infectionControlRouter);
+app.use('/api/mortuary', mortuaryRouter);
+app.use('/api/procurement', procurementRouter);
+app.use('/api/queue', deptQueueRouter);
 // 10. Ring-Fencing Middleware (Prevent cross-user privilege escalation)
 app.use(ringFencingMiddleware);
 
@@ -1160,7 +1197,7 @@ app.use("/api/emergency", authUser, aiIntelligenceRouter); // Emergency alias (t
 app.use("/api/v3/ai-analytics", authUser, aiAnalyticsRouter); // AI analytics dashboard (LLM ops, quality, tools, population health)
 app.use("/api/v3/ai-deeptech", authUser, aiDeepTechRouter); // DeepTech: HIS, Clinical NLP, Pre-auth, Multi-agent Context, Federated Learning
 app.use("/api/diet", dietRouter); // Diet plan shortcut (alias for /api/ai-health/diet)
-app.use("/api/ayushman", ayushmanRouter);
+app.use("/api/ahunground", ayushmanRouter);
 app.use('/api/places', placesRouter);
 
 app.use('/stats', adminStatsRouter); // Admin dashboard statistics (public stats endpoint, outside /api to bypass middleware)
