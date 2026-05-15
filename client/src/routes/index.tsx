@@ -574,10 +574,11 @@ const _BiomedicalDashboard   = () => import("@/pages/dept/BiomedicalDashboardPag
 const _BiomedicalModulePages = () => import("@/pages/dept/BiomedicalModulePages");
 const _BiomedicalMonitoring  = () => import("@/pages/dept/BiomedicalMonitoringPage");
 const _ConsentDashboard      = () => import("@/pages/dept/ConsentDashboardPage");
+const _BloodBankDashboard    = () => import("@/pages/dept/BloodBankDashboardPage");
 
 const AssetDashboard             = lazyNamed(_DeptDashboards, "AssetDashboard");
 const BiomedicalDashboard        = lazyNamed(_BiomedicalDashboard, "BiomedicalDashboard");
-const BloodBankDashboard         = lazyNamed(_DeptDashboards, "BloodBankDashboard");
+const BloodBankDashboard         = lazyNamed(_BloodBankDashboard, "BloodBankDashboard");
 const ConsentDashboard           = lazyNamed(_ConsentDashboard, "ConsentDashboard");
 const CSSDDashboard              = lazyNamed(_DeptDashboards, "CSSDDashboard");
 const DietaryDashboard           = lazyNamed(_DietaryDashboard, "DietaryDashboard");

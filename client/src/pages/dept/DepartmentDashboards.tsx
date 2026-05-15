@@ -273,7 +273,7 @@ const biomedConfig: DeptDashboardConfig = {
 };
 
 // ── Blood Bank ────────────────────────────────────────────────────────────────
-const bloodBankNav: DeptNavSection[] = [
+export const bloodBankNav: DeptNavSection[] = [
   {
     title: "Overview",
     items: [{ icon: LayoutDashboard, label: "Dashboard", href: "/blood-bank/dashboard" }],
@@ -664,7 +664,8 @@ const queueConfig: DeptDashboardConfig = {
 
 export const AssetDashboard = () => <DashboardWrapper config={assetConfig} />;
 export const BiomedicalDashboard = () => <DashboardWrapper config={biomedConfig} />;
-export const BloodBankDashboard = () => <DashboardWrapper config={bloodBankConfig} />;
+// BloodBankDashboard lives in its own dedicated page file for the full experience
+export { BloodBankDashboard } from "./BloodBankDashboardPage";
 export const ConsentDashboard = () => <DashboardWrapper config={consentConfig} />;
 export const CSSDDashboard = () => <DashboardWrapper config={cssdConfig} />;
 export const DietaryDashboard = () => <DashboardWrapper config={dietaryConfig} />;
@@ -676,7 +677,7 @@ export const QueueDashboard = () => <DashboardWrapper config={queueConfig} />;
 
 // Also export nav configs so DepartmentModulePages can re-use them.
 export {
-  assetNav, biomedNav, bloodBankNav, consentNav, cssdNav,
+  assetNav, biomedNav, consentNav, cssdNav,
   dietaryNav, financeNav, infectionControlNav, mortuaryNav,
   procurementNav, queueNav,
 };
