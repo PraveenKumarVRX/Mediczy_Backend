@@ -601,7 +601,8 @@ const BiomedicalMonitoring   = lazyNamed(_BiomedicalMonitoring,  "BiomedicalMoni
 // Blood Bank
 const BloodBankInventory    = lazyNamed(_DeptModulePages, "BloodBankInventory");
 const BloodBankRequisitions = lazyNamed(_DeptModulePages, "BloodBankRequisitions");
-const BloodBankDonors       = lazyNamed(_DeptModulePages, "BloodBankDonors");
+const _BloodBankDonorsPage  = () => import("@/pages/dept/BloodBankDonorsPage");
+const BloodBankDonors       = lazyNamed(_BloodBankDonorsPage, "BloodBankDonorsPage");
 const BloodBankReports      = lazyNamed(_DeptModulePages, "BloodBankReports");
 // Consent
 const ConsentPending   = lazyNamed(_DeptModulePages, "ConsentPending");
