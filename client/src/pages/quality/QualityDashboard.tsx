@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import HospDeptLayout from '@/components/hosp-dept/HospDeptLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
   ShieldCheck, ClipboardList, AlertTriangle, TrendingUp,
-  CheckCircle2, Clock, FileText, Star,
+  CheckCircle2, FileText, Star, Globe,
   Download, PlusCircle, BellRing, BookOpen, Target, MessageSquare, Loader2,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -15,9 +15,10 @@ import { useQualityPortalData } from './useQualityPortalData';
 
 const kpiDecorators: Record<string, { icon: typeof Star; color: string; iconColor: string }> = {
   'NABH Score': { icon: Star, color: 'bg-amber-50 dark:bg-amber-950', iconColor: 'text-amber-600' },
+  'JCI Score':  { icon: Globe, color: 'bg-blue-50 dark:bg-blue-950', iconColor: 'text-blue-600' },
   'Open NCRs': { icon: AlertTriangle, color: 'bg-red-50 dark:bg-red-950', iconColor: 'text-red-600' },
   'Closed NCRs': { icon: CheckCircle2, color: 'bg-teal-50 dark:bg-teal-950', iconColor: 'text-teal-600' },
-  'Patient Experience': { icon: TrendingUp, color: 'bg-blue-50 dark:bg-blue-950', iconColor: 'text-blue-600' },
+  'Patient Experience': { icon: TrendingUp, color: 'bg-indigo-50 dark:bg-indigo-950', iconColor: 'text-indigo-600' },
 };
 
 const severityBadge = (s: string) => {
@@ -36,20 +37,40 @@ const complianceBadge = (s: string) => s === 'Compliant'
   ? <span className="flex items-center gap-1 text-teal-600 text-xs font-medium"><CheckCircle2 className="h-3 w-3" />Compliant</span>
   : <span className="flex items-center gap-1 text-amber-600 text-xs font-medium"><AlertTriangle className="h-3 w-3" />Partial</span>;
 
+const jciComplianceFallback = [
+  { chapter: 'IPSG', title: 'International Patient Safety Goals', owner: 'Patient Safety', score: 85, gap: 6, status: 'Watchlist' },
+  { chapter: 'ACC',  title: 'Access to Care and Continuity', owner: 'Clinical Ops', score: 90, gap: 3, status: 'Compliant' },
+  { chapter: 'COP',  title: 'Care of Patients', owner: 'Nursing', score: 88, gap: 5, status: 'Watchlist' },
+  { chapter: 'ASC',  title: 'Anesthesia and Surgical Care', owner: 'OT Manager', score: 91, gap: 2, status: 'Compliant' },
+  { chapter: 'MMU',  title: 'Medication Management and Use', owner: 'Pharmacy', score: 83, gap: 9, status: 'Action' },
+  { chapter: 'PCI',  title: 'Prevention and Control of Infections', owner: 'Infection Control', score: 94, gap: 2, status: 'Compliant' },
+];
+
+type Framework = 'nabh' | 'jci' | 'both';
+
 export default function QualityDashboard() {
   const navigate = useNavigate();
+  const [framework, setFramework] = useState<Framework>(() => {
+    return (localStorage.getItem('qualityFramework') as Framework) ?? 'both';
+  });
   const { data, loading, error, refresh } = useQualityPortalData();
   const kpis = data?.kpis ?? [];
   const workQueues = data?.workQueues ?? [];
   const nabhChapters = data?.chapters ?? [];
+  const jciChapters = data?.jciChapters ?? jciComplianceFallback;
   const incidents = data?.incidents ?? [];
   const audits = data?.audits ?? [];
   const leadership = data?.leadership ?? [];
 
+  const setAndPersistFramework = (f: Framework) => {
+    setFramework(f);
+    localStorage.setItem('qualityFramework', f);
+  };
+
   return (
-    <HospDeptLayout deptKey="quality" deptName="Quality & NABH" badgeLabel="Quality"
+    <HospDeptLayout deptKey="quality" deptName="Quality & Accreditation" badgeLabel="Quality"
       loginPath="/quality/login" DeptIcon={ShieldCheck} navSections={qualityNavSections}
-      title="Quality Dashboard" subtitle="NABH compliance, audits & incident management">
+      title="Quality Dashboard" subtitle="NABH & JCI compliance, audits & incident management">
 
       {(loading || error) && (
         <Card className="mb-4 border-dashed">
@@ -85,9 +106,22 @@ export default function QualityDashboard() {
         ))}
       </div>
 
-      {/* NABH Chapter Compliance + Incidents */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+      {/* Framework toggle */}
+      <div className="mt-4 flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Accreditation view:</span>
+        {(['nabh', 'jci', 'both'] as const).map((f) => (
+          <Button key={f} size="sm" variant={framework === f ? 'default' : 'outline'}
+            className={`text-xs px-3 ${framework === f ? 'bg-teal-600 hover:bg-teal-700' : ''}`}
+            onClick={() => setAndPersistFramework(f)}>
+            {f === 'both' ? 'Both' : f.toUpperCase()}
+          </Button>
+        ))}
+      </div>
+
+      {/* Chapter Compliance + Incidents */}
+      <div className={`grid grid-cols-1 gap-4 mt-4 ${framework === 'both' ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
         {/* NABH Chapters */}
+        {(framework === 'nabh' || framework === 'both') && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -102,7 +136,7 @@ export default function QualityDashboard() {
                   <span className="font-medium">{c.chapter} <span className="text-muted-foreground">{c.title}</span></span>
                   <div className="flex items-center gap-3">
                     {complianceBadge(c.status)}
-                    <span className="font-semibold text-teal-700">{c.score}%</span>
+                    <span className="font-semibold text-amber-700">{c.score}%</span>
                   </div>
                 </div>
                 <Progress value={c.score} className="h-1.5" />
@@ -110,6 +144,33 @@ export default function QualityDashboard() {
             ))}
           </CardContent>
         </Card>
+        )}
+
+        {/* JCI Chapters */}
+        {(framework === 'jci' || framework === 'both') && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Globe className="h-4 w-4 text-blue-500" />JCI Chapter Compliance
+            </CardTitle>
+            <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => navigate('/quality/jci-standards')}>View Matrix</Button>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {jciChapters.map(c => (
+              <div key={c.chapter} className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium">{c.chapter} <span className="text-muted-foreground">{c.title}</span></span>
+                  <div className="flex items-center gap-3">
+                    {complianceBadge(c.status)}
+                    <span className="font-semibold text-blue-700">{c.score}%</span>
+                  </div>
+                </div>
+                <Progress value={c.score} className="h-1.5" />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+        )}
 
         {/* Recent Incidents */}
         <Card>
@@ -160,11 +221,11 @@ export default function QualityDashboard() {
             {[
               { label: 'Report Incident', icon: AlertTriangle, path: '/quality/incidents' },
               { label: 'Schedule Audit', icon: ClipboardList, path: '/quality/assessments' },
-              { label: 'Update SOP', icon: BookOpen, path: '/quality/sops' },
               { label: 'NABH Matrix', icon: Star, path: '/quality/nabh-standards' },
+              { label: 'JCI Matrix', icon: Globe, path: '/quality/jci-standards' },
               { label: 'Patient Feedback', icon: MessageSquare, path: '/quality/feedback' },
-              { label: 'Leadership Reports', icon: Download, path: '/quality/reports' },
               { label: 'Gap Closure', icon: Target, path: '/quality/accreditation' },
+              { label: 'Leadership Reports', icon: Download, path: '/quality/reports' },
               { label: 'Escalations', icon: BellRing, path: '/quality/support' },
             ].map(a => (
               <Button key={a.label} variant="outline" className="flex-col h-16 gap-1 text-xs" onClick={() => navigate(a.path)}>

@@ -83,6 +83,24 @@ export interface QualityPortalNabhTemplate {
   status: string;
 }
 
+export interface QualityPortalJciChapter {
+  chapter: string;
+  title: string;
+  owner: string;
+  score: number;
+  gap: number;
+  status: string;
+}
+
+export interface QualityPortalJciTemplate {
+  code: string;
+  title: string;
+  version: string;
+  owner: string;
+  format: string;
+  status: string;
+}
+
 export interface QualityPortalFeedback {
   channel: string;
   responses: number;
@@ -116,10 +134,13 @@ export interface QualityPortalData {
   indicators: QualityPortalIndicator[];
   policies: QualityPortalPolicy[];
   nabhTemplates: QualityPortalNabhTemplate[];
+  jciChapters: QualityPortalJciChapter[];
+  jciTemplates: QualityPortalJciTemplate[];
   reports: Array<{ name: string; cadence: string; audience: string; status: string }>;
   feedback: QualityPortalFeedback[];
   settings: QualityPortalSetting[];
   support: QualityPortalSupport[];
+  activeFrameworks: string[];
 }
 
 const getQualityAuthHeaders = () => {

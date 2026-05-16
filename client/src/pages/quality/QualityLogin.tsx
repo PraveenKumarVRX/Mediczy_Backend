@@ -5,8 +5,8 @@ export default function QualityLogin() {
   return (
     <DeptLoginTemplate
       deptKey="quality"
-      title="Quality & NABH"
-      description="Quality Department — NABH Accreditation & Compliance Portal"
+      title="Quality & Accreditation"
+      description="Quality Department — NABH & JCI Accreditation Portal"
       Icon={ShieldCheck}
       dashboardPath="/quality/dashboard"
     />

@@ -90,6 +90,31 @@ const FALLBACK_SUPPORT = [
   { title: 'Escalation Help', text: 'Critical event support for sentinel events, patient safety incidents, and compliance breaches.' },
 ];
 
+const FALLBACK_JCI_CHAPTERS = [
+  { chapter: 'IPSG', title: 'International Patient Safety Goals', owner: 'Patient Safety', score: 85, gap: 6, status: 'Watchlist' },
+  { chapter: 'ACC',  title: 'Access to Care and Continuity of Care', owner: 'Clinical Ops', score: 90, gap: 3, status: 'Compliant' },
+  { chapter: 'PCC',  title: 'Patient and Family Rights', owner: 'Patient Relations', score: 82, gap: 8, status: 'Action' },
+  { chapter: 'AOP',  title: 'Assessment of Patients', owner: 'Nursing', score: 87, gap: 5, status: 'Watchlist' },
+  { chapter: 'COP',  title: 'Care of Patients', owner: 'Nursing', score: 88, gap: 5, status: 'Watchlist' },
+  { chapter: 'ASC',  title: 'Anesthesia and Surgical Care', owner: 'OT Manager', score: 91, gap: 2, status: 'Compliant' },
+  { chapter: 'MMU',  title: 'Medication Management and Use', owner: 'Pharmacy', score: 83, gap: 9, status: 'Action' },
+  { chapter: 'QPS',  title: 'Quality Improvement and Patient Safety', owner: 'Quality', score: 86, gap: 5, status: 'Watchlist' },
+  { chapter: 'PCI',  title: 'Prevention and Control of Infections', owner: 'Infection Control', score: 94, gap: 2, status: 'Compliant' },
+  { chapter: 'GLD',  title: 'Governance, Leadership, and Direction', owner: 'Leadership', score: 89, gap: 4, status: 'Watchlist' },
+  { chapter: 'FMS',  title: 'Facility Management and Safety', owner: 'Admin', score: 80, gap: 11, status: 'Action' },
+  { chapter: 'SQE',  title: 'Staff Qualifications and Education', owner: 'HR', score: 84, gap: 7, status: 'Watchlist' },
+  { chapter: 'MCI',  title: 'Management of Communication and Information', owner: 'IT/EDP', score: 78, gap: 14, status: 'Action' },
+];
+
+const FALLBACK_JCI_TEMPLATES = [
+  { code: 'IPSG-01', title: 'Patient Identification Protocol', version: 'v1.0', owner: 'Patient Safety', format: 'Checklist', status: 'Approved' },
+  { code: 'ACC-02',  title: 'Transfer of Care Summary', version: 'v1.0', owner: 'Clinical Ops', format: 'Form', status: 'Approved' },
+  { code: 'AOP-03',  title: 'Patient Assessment Framework', version: 'v1.0', owner: 'Nursing', format: 'Form', status: 'Draft' },
+  { code: 'COP-04',  title: 'Individualized Care Plan', version: 'v1.0', owner: 'Nursing', format: 'Template', status: 'Approved' },
+  { code: 'QPS-05',  title: 'QI Project Charter', version: 'v1.0', owner: 'Quality', format: 'Audit', status: 'Approved' },
+  { code: 'PCI-06',  title: 'Infection Surveillance Log', version: 'v1.0', owner: 'Infection Control', format: 'Tracer', status: 'Approved' },
+];
+
 const FALLBACK_WORK_QUEUES = [
   { label: 'CAPAs Due This Week', value: '9', detail: '3 overdue, 6 on schedule', tone: 'text-red-600' },
   { label: 'Policies Up For Review', value: '12', detail: '4 high-priority governance docs', tone: 'text-amber-600' },
@@ -352,8 +377,10 @@ const buildQualityKpis = (incidents, feedback) => {
   const openIncidents = incidents.filter((item) => item.status !== 'Closed').length;
   const critical = incidents.filter((item) => item.severity === 'High').length;
   const closed = incidents.filter((item) => item.status === 'Closed').length;
+  const jciAvg = Math.round(FALLBACK_JCI_CHAPTERS.reduce((s, c) => s + c.score, 0) / FALLBACK_JCI_CHAPTERS.length);
   return [
     { label: 'NABH Score', value: '87%', sub: '+2% this quarter' },
+    { label: 'JCI Score', value: `${jciAvg}%`, sub: `Across ${FALLBACK_JCI_CHAPTERS.length} chapters` },
     { label: 'Open NCRs', value: String(openIncidents || 14), sub: `${critical || 4} critical` },
     { label: 'Closed NCRs', value: String(closed || 38), sub: 'This month' },
     { label: 'Patient Experience', value: `${feedback[0]?.nps ?? 71}`, sub: 'Current quality sentiment' },
@@ -384,10 +411,13 @@ const buildPortalData = async (req) => {
     indicators: FALLBACK_INDICATORS,
     policies,
     nabhTemplates: FALLBACK_NABH_TEMPLATES,
+    jciChapters: FALLBACK_JCI_CHAPTERS,
+    jciTemplates: FALLBACK_JCI_TEMPLATES,
     reports: FALLBACK_REPORTS,
     feedback,
     settings: FALLBACK_SETTINGS,
     support: FALLBACK_SUPPORT,
+    activeFrameworks: ['nabh', 'jci'],
   };
 };
 

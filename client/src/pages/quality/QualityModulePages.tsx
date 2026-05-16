@@ -5,10 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   ShieldCheck, Star, ClipboardList, FileText, CheckCircle2,
   AlertTriangle, TrendingUp, MessageSquare, BarChart3, Settings, HelpCircle,
-  PlusCircle, Download, Search, Filter, Clock3, Users,
+  PlusCircle, Download, Search, Filter, Users, Globe,
   BellRing, CalendarDays, Award, BookOpen, Target, ArrowUpRight, Loader2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -24,6 +25,7 @@ export const qualityNavSections: DeptNavSection[] = [
     title: 'Accreditation',
     items: [
       { icon: Star, label: 'NABH Standards', href: '/quality/nabh-standards' },
+      { icon: Globe, label: 'JCI Standards', href: '/quality/jci-standards' },
       { icon: ClipboardList, label: 'Assessments', href: '/quality/assessments' },
       { icon: FileText, label: 'Audit Reports', href: '/quality/audit-reports' },
       { icon: Award, label: 'Accreditation', href: '/quality/accreditation' },
@@ -123,8 +125,41 @@ const settingRows = [
 
 const supportRows = [
   { title: 'NABH Command Desk', text: 'Daily war-room for standards interpretation, gap tracking, and survey readiness.' },
+  { title: 'JCI Survey Operations', text: 'JCI chapter interpretation, measurable element support, and surveyor readiness coaching.' },
   { title: 'Quality Training Library', text: 'Orientation decks, CAPA guides, RCA templates, and mock audit playbooks.' },
   { title: 'Escalation Help', text: 'Critical event support for sentinel events, patient safety incidents, and compliance breaches.' },
+];
+
+const jciComplianceRows = [
+  { chapter: 'IPSG', title: 'International Patient Safety Goals', owner: 'Patient Safety', score: 85, gap: 6, status: 'Watchlist' },
+  { chapter: 'ACC',  title: 'Access to Care and Continuity of Care', owner: 'Clinical Ops', score: 90, gap: 3, status: 'Compliant' },
+  { chapter: 'PCC',  title: 'Patient and Family Rights', owner: 'Patient Relations', score: 82, gap: 8, status: 'Action' },
+  { chapter: 'AOP',  title: 'Assessment of Patients', owner: 'Nursing', score: 87, gap: 5, status: 'Watchlist' },
+  { chapter: 'COP',  title: 'Care of Patients', owner: 'Nursing', score: 88, gap: 5, status: 'Watchlist' },
+  { chapter: 'ASC',  title: 'Anesthesia and Surgical Care', owner: 'OT Manager', score: 91, gap: 2, status: 'Compliant' },
+  { chapter: 'MMU',  title: 'Medication Management and Use', owner: 'Pharmacy', score: 83, gap: 9, status: 'Action' },
+  { chapter: 'QPS',  title: 'Quality Improvement and Patient Safety', owner: 'Quality', score: 86, gap: 5, status: 'Watchlist' },
+  { chapter: 'PCI',  title: 'Prevention and Control of Infections', owner: 'Infection Control', score: 94, gap: 2, status: 'Compliant' },
+  { chapter: 'GLD',  title: 'Governance, Leadership, and Direction', owner: 'Leadership', score: 89, gap: 4, status: 'Watchlist' },
+  { chapter: 'FMS',  title: 'Facility Management and Safety', owner: 'Admin', score: 80, gap: 11, status: 'Action' },
+  { chapter: 'SQE',  title: 'Staff Qualifications and Education', owner: 'HR', score: 84, gap: 7, status: 'Watchlist' },
+  { chapter: 'MCI',  title: 'Management of Communication and Information', owner: 'IT/EDP', score: 78, gap: 14, status: 'Action' },
+];
+
+const jciAccreditationMilestones = [
+  { milestone: 'JCI Self-Assessment Completion', due: '15 May 2026', owner: 'JCI Coordinator', completion: 58 },
+  { milestone: 'IPSG Implementation Audit', due: '30 May 2026', owner: 'Patient Safety Officer', completion: 44 },
+  { milestone: 'Staff Education Plan Sign-off', due: '10 Jun 2026', owner: 'HR + SQE Lead', completion: 31 },
+  { milestone: 'Pre-survey Mock — All Chapters', due: '25 Jun 2026', owner: 'Dept Champions', completion: 14 },
+];
+
+const jciTemplateRows = [
+  { code: 'IPSG-01', title: 'Patient Identification Protocol', version: 'v1.0', owner: 'Patient Safety', format: 'Checklist', status: 'Approved' },
+  { code: 'ACC-02',  title: 'Transfer of Care Summary', version: 'v1.0', owner: 'Clinical Ops', format: 'Form', status: 'Approved' },
+  { code: 'AOP-03',  title: 'Patient Assessment Framework', version: 'v1.0', owner: 'Nursing', format: 'Form', status: 'Draft' },
+  { code: 'COP-04',  title: 'Individualized Care Plan', version: 'v1.0', owner: 'Nursing', format: 'Template', status: 'Approved' },
+  { code: 'QPS-05',  title: 'QI Project Charter', version: 'v1.0', owner: 'Quality', format: 'Audit', status: 'Approved' },
+  { code: 'PCI-06',  title: 'Infection Surveillance Log', version: 'v1.0', owner: 'Infection Control', format: 'Tracer', status: 'Approved' },
 ];
 
 const statusTone: Record<string, string> = {
@@ -159,7 +194,7 @@ const PageShell = ({ title, subtitle, actions, children }: {
 }) => (
   <HospDeptLayout
     deptKey="quality"
-    deptName="Quality & NABH"
+    deptName="Quality & Accreditation"
     badgeLabel="Quality"
     loginPath="/quality/login"
     DeptIcon={ShieldCheck}
@@ -241,6 +276,26 @@ const QualityDataState = ({ loading, error, refresh }: { loading: boolean; error
   );
 };
 
+const ChapterComplianceMatrix = ({ chapters, accentColor = 'text-teal-700' }: { chapters: typeof complianceRows; accentColor?: string }) => (
+  <div className="space-y-4">
+    {chapters.map((row) => (
+      <div key={row.chapter} className="space-y-1.5">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="font-medium">{row.chapter} <span className="text-muted-foreground">{row.title}</span></p>
+            <p className="text-xs text-muted-foreground">Owner: {row.owner} • Gaps open: {row.gap}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <ToneBadge value={row.status} />
+            <span className={`text-sm font-semibold ${accentColor}`}>{row.score}%</span>
+          </div>
+        </div>
+        <Progress value={row.score} className="h-2" />
+      </div>
+    ))}
+  </div>
+);
+
 export const QualityNABHStandardsPage = () => {
   const { data, loading, error, refresh } = useQualityPortalData();
   const chapters = data?.chapters ?? complianceRows;
@@ -259,23 +314,60 @@ export const QualityNABHStandardsPage = () => {
         <StatCard label="Policies Synced" value={String((data?.policies ?? sopRows).length)} sub="Controlled documents" icon={BookOpen} color="text-emerald-600" />
       </div>
       <Card>
-        <CardHeader><CardTitle className="text-base">Standards Compliance Matrix</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          {chapters.map((row) => (
-            <div key={row.chapter} className="space-y-1.5">
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="font-medium">{row.chapter} <span className="text-muted-foreground">{row.title}</span></p>
-                  <p className="text-xs text-muted-foreground">Owner: {row.owner} • Gaps open: {row.gap}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <ToneBadge value={row.status} />
-                  <span className="text-sm font-semibold text-teal-700">{row.score}%</span>
-                </div>
-              </div>
-              <Progress value={row.score} className="h-2" />
-            </div>
-          ))}
+        <CardHeader><CardTitle className="text-base">NABH Standards Compliance Matrix</CardTitle></CardHeader>
+        <CardContent><ChapterComplianceMatrix chapters={chapters} accentColor="text-amber-700" /></CardContent>
+      </Card>
+    </PageShell>
+  );
+};
+
+export const QualityJCIStandardsPage = () => {
+  const { data, loading, error, refresh } = useQualityPortalData();
+  const chapters = data?.jciChapters ?? jciComplianceRows;
+  const templates = data?.jciTemplates ?? jciTemplateRows;
+
+  return (
+    <PageShell
+      title="JCI Standards"
+      subtitle="Joint Commission International chapter readiness, measurable elements, and survey preparation"
+      actions={<><Button variant="outline" size="sm" className="gap-1"><Download className="h-4 w-4" />Export Matrix</Button><Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700"><PlusCircle className="h-4 w-4" />Add Observation</Button></>}
+    >
+      <QualityDataState loading={loading} error={error} refresh={refresh} />
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+        <StatCard label="JCI Score" value={`${Math.round(chapters.reduce((sum, r) => sum + r.score, 0) / Math.max(chapters.length, 1))}%`} sub={`Across ${chapters.length} chapters`} icon={Globe} color="text-blue-600" />
+        <StatCard label="Open Gaps" value={String(chapters.reduce((sum, r) => sum + r.gap, 0))} sub="Measurable elements pending" icon={AlertTriangle} color="text-red-600" />
+        <StatCard label="Chapter Owners" value={String(new Set(chapters.map((r) => r.owner)).size)} sub="Assigned leads" icon={Users} color="text-indigo-600" />
+        <StatCard label="JCI Templates" value={String(templates.length)} sub="Survey-ready documents" icon={FileText} color="text-teal-600" />
+      </div>
+      <div className="grid gap-5 xl:grid-cols-[1.5fr_1fr]">
+        <Card>
+          <CardHeader><CardTitle className="text-base">JCI Chapter Compliance Matrix</CardTitle></CardHeader>
+          <CardContent><ChapterComplianceMatrix chapters={chapters} accentColor="text-blue-700" /></CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-base">JCI Template Pack</CardTitle></CardHeader>
+          <CardContent>
+            <SectionTable
+              headers={['Code', 'Template', 'Version', 'Owner', 'Format']}
+              rows={templates.map((row) => [row.code, row.title, row.version, row.owner, row.format])}
+            />
+          </CardContent>
+        </Card>
+      </div>
+      <Card>
+        <CardHeader><CardTitle className="text-base">IPSG — International Patient Safety Goals</CardTitle></CardHeader>
+        <CardContent>
+          <SectionTable
+            headers={['Goal', 'Description', 'Status']}
+            rows={[
+              ['IPSG.1', 'Identify Patients Correctly', <ToneBadge value="Compliant" />],
+              ['IPSG.2', 'Improve Effective Communication', <ToneBadge value="Watchlist" />],
+              ['IPSG.3', 'Improve Safety of High-Alert Medications', <ToneBadge value="Watchlist" />],
+              ['IPSG.4', 'Ensure Safe Surgery', <ToneBadge value="Compliant" />],
+              ['IPSG.5', 'Reduce Risk of Healthcare-Associated Infections', <ToneBadge value="Compliant" />],
+              ['IPSG.6', 'Reduce Risk of Patient Harm Resulting from Falls', <ToneBadge value="Action" />],
+            ]}
+          />
         </CardContent>
       </Card>
     </PageShell>
@@ -330,53 +422,90 @@ export const QualityAuditReportsPage = () => {
   );
 };
 
+const MilestoneTimeline = ({ milestones, accentColor = 'text-teal-700' }: { milestones: typeof accreditationMilestones; accentColor?: string }) => (
+  <div className="space-y-4">
+    {milestones.map((item) => (
+      <div key={item.milestone} className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-medium">{item.milestone}</p>
+            <p className="text-xs text-muted-foreground">Due {item.due} • {item.owner}</p>
+          </div>
+          <span className={`text-sm font-semibold ${accentColor}`}>{item.completion}%</span>
+        </div>
+        <Progress value={item.completion} className="h-2" />
+      </div>
+    ))}
+  </div>
+);
+
 export const QualityAccreditationPage = () => {
+  const [framework, setFramework] = useState<'nabh' | 'jci' | 'both'>('both');
   const { data, loading, error, refresh } = useQualityPortalData();
-  const milestones = data?.accreditation ?? accreditationMilestones;
+  const nabhMilestones = data?.accreditation ?? accreditationMilestones;
+  const jciMilestones = jciAccreditationMilestones;
 
   return (
   <PageShell
     title="Accreditation"
-    subtitle="Readiness milestones, document control, and survey governance"
+    subtitle="NABH & JCI readiness milestones, document control, and survey governance"
     actions={<><Button variant="outline" size="sm" className="gap-1"><BellRing className="h-4 w-4" />Notify Owners</Button><Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700"><Target className="h-4 w-4" />Update Milestone</Button></>}
   >
     <QualityDataState loading={loading} error={error} refresh={refresh} />
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-      <Card>
-        <CardHeader><CardTitle className="text-base">Accreditation Timeline</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          {milestones.map((item) => (
-            <div key={item.milestone} className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">{item.milestone}</p>
-                  <p className="text-xs text-muted-foreground">Due {item.due} • {item.owner}</p>
-                </div>
-                <span className="text-sm font-semibold">{item.completion}%</span>
-              </div>
-              <Progress value={item.completion} className="h-2" />
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader><CardTitle className="text-base">Readiness Summary</CardTitle></CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          {[
-            ['Document Approval Rate', '91%'],
-            ['Department Mock Completion', '63%'],
-            ['Closure Evidence Uploaded', '74%'],
-            ['Leadership Review Frequency', 'Weekly'],
-            ['Survey Window', 'Q2 FY26'],
-          ].map(([label, value]) => (
-            <div key={label} className="flex justify-between">
-              <span className="text-muted-foreground">{label}</span>
-              <span className="font-semibold">{value}</span>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+
+    {/* Framework toggle */}
+    <div className="flex items-center gap-2">
+      <span className="text-sm text-muted-foreground">View:</span>
+      {(['nabh', 'jci', 'both'] as const).map((f) => (
+        <Button key={f} size="sm" variant={framework === f ? 'default' : 'outline'}
+          className={framework === f ? 'bg-teal-600 hover:bg-teal-700' : ''}
+          onClick={() => setFramework(f)}>
+          {f === 'both' ? 'Both' : f.toUpperCase()}
+        </Button>
+      ))}
     </div>
+
+    <div className={`grid gap-5 ${framework === 'both' ? 'xl:grid-cols-2' : 'xl:grid-cols-[1.2fr_0.8fr]'}`}>
+      {(framework === 'nabh' || framework === 'both') && (
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 pb-3">
+            <Star className="h-4 w-4 text-amber-500" />
+            <CardTitle className="text-base">NABH Timeline</CardTitle>
+          </CardHeader>
+          <CardContent><MilestoneTimeline milestones={nabhMilestones} accentColor="text-amber-700" /></CardContent>
+        </Card>
+      )}
+      {(framework === 'jci' || framework === 'both') && (
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 pb-3">
+            <Globe className="h-4 w-4 text-blue-500" />
+            <CardTitle className="text-base">JCI Timeline</CardTitle>
+          </CardHeader>
+          <CardContent><MilestoneTimeline milestones={jciMilestones} accentColor="text-blue-700" /></CardContent>
+        </Card>
+      )}
+    </div>
+
+    <Card>
+      <CardHeader><CardTitle className="text-base">Readiness Summary</CardTitle></CardHeader>
+      <CardContent className="grid grid-cols-2 xl:grid-cols-4 gap-4 text-sm">
+        {[
+          ['NABH Document Approval', '91%'],
+          ['NABH Mock Completion', '63%'],
+          ['JCI Self-Assessment', '58%'],
+          ['JCI IPSG Audit', '44%'],
+          ['Closure Evidence Uploaded', '74%'],
+          ['JCI Templates Ready', '83%'],
+          ['Leadership Review Frequency', 'Weekly'],
+          ['Survey Window', 'Q2–Q3 FY26'],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-xl border p-3">
+            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className="mt-1 font-semibold">{value}</p>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   </PageShell>
   );
 };
@@ -486,6 +615,7 @@ export const QualitySOPsPage = () => {
   const { data, loading, error, refresh } = useQualityPortalData();
   const policies = data?.policies ?? sopRows;
   const nabhTemplates = data?.nabhTemplates ?? [];
+  const jciTemplates = data?.jciTemplates ?? jciTemplateRows;
 
   return (
   <PageShell
@@ -494,22 +624,37 @@ export const QualitySOPsPage = () => {
     actions={<><Button variant="outline" size="sm" className="gap-1"><Download className="h-4 w-4" />Policy Index</Button><Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700"><PlusCircle className="h-4 w-4" />Add SOP</Button></>}
   >
     <QualityDataState loading={loading} error={error} refresh={refresh} />
+    <Card>
+      <CardHeader><CardTitle className="text-base">Document Control Register</CardTitle></CardHeader>
+      <CardContent>
+        <SectionTable
+          headers={['Document', 'Version', 'Owner', 'Next Review', 'Status']}
+          rows={policies.map((row) => [row.title, row.version, row.owner, row.review, <ToneBadge value={row.status} />])}
+        />
+      </CardContent>
+    </Card>
     <div className="grid gap-5 xl:grid-cols-2">
       <Card>
-        <CardHeader><CardTitle className="text-base">Document Control Register</CardTitle></CardHeader>
-        <CardContent>
-          <SectionTable
-            headers={['Document', 'Version', 'Owner', 'Next Review', 'Status']}
-            rows={policies.map((row) => [row.title, row.version, row.owner, row.review, <ToneBadge value={row.status} />])}
-          />
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader><CardTitle className="text-base">NABH Template Pack</CardTitle></CardHeader>
+        <CardHeader className="flex flex-row items-center gap-2 pb-3">
+          <Star className="h-4 w-4 text-amber-500" />
+          <CardTitle className="text-base">NABH Template Pack</CardTitle>
+        </CardHeader>
         <CardContent>
           <SectionTable
             headers={['Code', 'Template', 'Version', 'Owner', 'Format']}
             rows={nabhTemplates.map((row) => [row.code, row.title, row.version, row.owner, row.format])}
+          />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2 pb-3">
+          <Globe className="h-4 w-4 text-blue-500" />
+          <CardTitle className="text-base">JCI Template Pack</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SectionTable
+            headers={['Code', 'Template', 'Version', 'Owner', 'Format']}
+            rows={jciTemplates.map((row) => [row.code, row.title, row.version, row.owner, row.format])}
           />
         </CardContent>
       </Card>
@@ -600,6 +745,7 @@ export const QualityReportsPage = () => {
 export const QualitySettingsPage = () => {
   const { data, loading, error, refresh } = useQualityPortalData();
   const settings = data?.settings ?? settingRows;
+  const activeFrameworks = data?.activeFrameworks ?? ['nabh', 'jci'];
 
   return (
   <PageShell
@@ -609,6 +755,21 @@ export const QualitySettingsPage = () => {
   >
     <QualityDataState loading={loading} error={error} refresh={refresh} />
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+      <Card className="xl:col-span-3">
+        <CardHeader><CardTitle className="text-base">Active Accreditation Frameworks</CardTitle></CardHeader>
+        <CardContent className="flex flex-wrap gap-3 text-sm">
+          {[
+            { key: 'nabh', label: 'NABH (National Accreditation Board for Hospitals)', icon: Star, color: 'text-amber-600' },
+            { key: 'jci', label: 'JCI (Joint Commission International)', icon: Globe, color: 'text-blue-600' },
+          ].map(({ key, label, icon: Icon, color }) => (
+            <div key={key} className={`flex items-center gap-2 rounded-xl border px-4 py-3 ${activeFrameworks.includes(key) ? 'border-teal-300 bg-teal-50 dark:bg-teal-950' : 'opacity-50'}`}>
+              <Icon className={`h-4 w-4 ${color}`} />
+              <span className="font-medium">{label}</span>
+              {activeFrameworks.includes(key) && <CheckCircle2 className="h-4 w-4 text-teal-600 ml-1" />}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
       {settings.map((row) => (
         <Card key={row.title}>
           <CardHeader><CardTitle className="text-base">{row.title}</CardTitle></CardHeader>
@@ -650,6 +811,7 @@ export const QualitySupportPage = () => {
           {[
             ['Quality Secretariat', 'quality@mediczy.com'],
             ['NABH Coordinator', 'nabh@mediczy.com'],
+            ['JCI Coordinator', 'jci@mediczy.com'],
             ['Patient Safety Escalation', 'safety@mediczy.com'],
           ].map(([name, mail]) => (
             <div key={name} className="rounded-xl border p-4">

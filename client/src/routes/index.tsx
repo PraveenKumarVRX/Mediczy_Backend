@@ -754,6 +754,7 @@ const QualityLogin     = lazy(() => import("@/pages/quality/QualityLogin"));
 const QualityDashboard = lazy(() => import("@/pages/quality/QualityDashboard"));
 const _QualityModulePages = () => import("@/pages/quality/QualityModulePages");
 const QualityNABHStandardsPage = lazyNamed(_QualityModulePages, "QualityNABHStandardsPage");
+const QualityJCIStandardsPage  = lazyNamed(_QualityModulePages, "QualityJCIStandardsPage");
 const QualityAssessmentsPage   = lazyNamed(_QualityModulePages, "QualityAssessmentsPage");
 const QualityAuditReportsPage  = lazyNamed(_QualityModulePages, "QualityAuditReportsPage");
 const QualityAccreditationPage = lazyNamed(_QualityModulePages, "QualityAccreditationPage");
@@ -1449,10 +1450,11 @@ const AppRoutes = () => {
         <Route path="/icu/settings"    element={<ICUSettingsPage />} />
         <Route path="/icu/support"     element={<ICUSupportPage />} />
 
-        {/* ── Quality & NABH ──────────────────────────────────────────── */}
+        {/* ── Quality & Accreditation (NABH + JCI) ────────────────────── */}
         <Route path="/quality/login"          element={<QualityLogin />} />
         <Route path="/quality/dashboard"      element={<QualityDashboard />} />
         <Route path="/quality/nabh-standards" element={<QualityNABHStandardsPage />} />
+        <Route path="/quality/jci-standards"  element={<QualityJCIStandardsPage />} />
         <Route path="/quality/assessments"    element={<QualityAssessmentsPage />} />
         <Route path="/quality/audit-reports"  element={<QualityAuditReportsPage />} />
         <Route path="/quality/accreditation"  element={<QualityAccreditationPage />} />
