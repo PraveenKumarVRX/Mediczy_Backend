@@ -513,9 +513,4 @@ class Ticket {
   }
 }
 
-// Initialize table
-TicketSchema.sync({ alter: false }).catch(err => {
-  console.error('Error syncing tickets table:', err.message);
-});
-
 export default Ticket;
