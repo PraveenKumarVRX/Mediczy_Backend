@@ -74,6 +74,15 @@ export interface QualityPortalPolicy {
   status: string;
 }
 
+export interface QualityPortalNabhTemplate {
+  code: string;
+  title: string;
+  version: string;
+  owner: string;
+  format: string;
+  status: string;
+}
+
 export interface QualityPortalFeedback {
   channel: string;
   responses: number;
@@ -106,6 +115,7 @@ export interface QualityPortalData {
   accreditation: QualityPortalAccreditation[];
   indicators: QualityPortalIndicator[];
   policies: QualityPortalPolicy[];
+  nabhTemplates: QualityPortalNabhTemplate[];
   reports: Array<{ name: string; cadence: string; audience: string; status: string }>;
   feedback: QualityPortalFeedback[];
   settings: QualityPortalSetting[];

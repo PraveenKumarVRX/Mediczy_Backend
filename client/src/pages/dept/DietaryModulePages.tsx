@@ -2,7 +2,7 @@
  * DietaryModulePages — full-featured sub-pages for the Dietary department portal.
  * Diet Orders, Meal Plans, Patient Profiles, Reports — all with rich functional UI.
  */
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import DeptStaffLayout from "@/components/hosp-dept/DeptStaffLayout";
 import { dietaryNav } from "./DepartmentDashboards";
 import { DietaryAIAssistant } from "@/components/dietary/DietaryAIAssistant";
+import api from "@/utils/api";
 import {
   Utensils, Users, AlertTriangle, CalendarDays, ClipboardList,
   CheckCircle2, Clock, Search, Plus, Filter, Download, ArrowRight,
@@ -167,17 +168,55 @@ const dietPieColors = ["#22c55e", "#3b82f6", "#f59e0b", "#8b5cf6", "#ef4444"];
 const DietaryOrdersContent = () => {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [orders, setOrders] = useState<any[]>(ordersData);
   const [selectedOrder, setSelectedOrder] = useState<typeof ordersData[0] | null>(null);
   const [aiKey, setAiKey] = useState(0);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newOrder, setNewOrder] = useState({ patientName: '', patientId: '', ward: '', bed: '', dietType: 'Regular', allergies: '', restrictions: '', calories: '1800', physician: '' });
+  const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('dietaryToken') || ''}` });
+
+  useEffect(() => {
+    api.get('/dietary/orders', { headers: headers() }).then(({ data }) => {
+      if (data.data?.length) {
+        setOrders(data.data.map((o: any) => ({
+          id: o.order_number, patient: o.patient_name, ward: o.ward, bed: o.bed, age: 0,
+          dietType: o.diet_type, status: o.status, priority: o.priority, allergy: o.allergies?.join(', ') || null,
+          calories: o.calories, time: String(o.created_at || '').slice(11, 16), physician: o.physician, restrictions: o.restrictions,
+        })));
+      }
+    }).catch(() => undefined);
+  }, []);
+
+  const createAdmissionOrder = async () => {
+    const response = await api.post('/dietary/orders/from-admission', {
+      patientName: newOrder.patientName,
+      patientId: newOrder.patientId || undefined,
+      ward: newOrder.ward,
+      bed: newOrder.bed,
+      dietType: newOrder.dietType,
+      allergies: newOrder.allergies.split(',').map((item) => item.trim()).filter(Boolean),
+      restrictions: newOrder.restrictions,
+      calories: Number(newOrder.calories),
+      physician: newOrder.physician,
+    }, { headers: headers() });
+    const o = response.data.data;
+    setOrders((prev) => [{
+      id: o.order_number, patient: o.patient_name, ward: o.ward, bed: o.bed, age: 0,
+      dietType: o.diet_type, status: o.status, priority: o.priority, allergy: o.allergies?.join(', ') || null,
+      calories: o.calories, time: String(o.created_at || '').slice(11, 16), physician: o.physician, restrictions: o.restrictions,
+    }, ...prev]);
+    setShowCreate(false);
+    setNewOrder({ patientName: '', patientId: '', ward: '', bed: '', dietType: 'Regular', allergies: '', restrictions: '', calories: '1800', physician: '' });
+  };
 
   const filtered = useMemo(() =>
-    ordersData.filter((o) => {
+    orders.filter((o) => {
       const matchSearch = o.patient.toLowerCase().includes(search.toLowerCase()) ||
         o.id.toLowerCase().includes(search.toLowerCase()) ||
         o.ward.toLowerCase().includes(search.toLowerCase());
       const matchStatus = statusFilter === "all" || o.status === statusFilter;
       return matchSearch && matchStatus;
-    }), [search, statusFilter]);
+    }), [orders, search, statusFilter]);
 
   return (
     <>
@@ -197,7 +236,7 @@ const DietaryOrdersContent = () => {
           >
             <Zap className="h-4 w-4" /> AI Smart Order
           </Button>
-          <Button size="sm" className="gap-2 bg-green-600 hover:bg-green-700 text-white">
+          <Button size="sm" className="gap-2 bg-green-600 hover:bg-green-700 text-white" onClick={() => setShowCreate((value) => !value)}>
             <Plus className="h-4 w-4" /> New Order
           </Button>
           <Button size="sm" variant="outline" className="gap-2">
@@ -205,6 +244,24 @@ const DietaryOrdersContent = () => {
           </Button>
         </div>
       </div>
+
+      {showCreate && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Create Diet Order From Admission</CardTitle></CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-3">
+            <Input placeholder="Patient name" value={newOrder.patientName} onChange={(e) => setNewOrder({ ...newOrder, patientName: e.target.value })} />
+            <Input placeholder="Patient ID" value={newOrder.patientId} onChange={(e) => setNewOrder({ ...newOrder, patientId: e.target.value })} />
+            <Input placeholder="Ward" value={newOrder.ward} onChange={(e) => setNewOrder({ ...newOrder, ward: e.target.value })} />
+            <Input placeholder="Bed" value={newOrder.bed} onChange={(e) => setNewOrder({ ...newOrder, bed: e.target.value })} />
+            <Input placeholder="Diet type" value={newOrder.dietType} onChange={(e) => setNewOrder({ ...newOrder, dietType: e.target.value })} />
+            <Input placeholder="Allergies, comma separated" value={newOrder.allergies} onChange={(e) => setNewOrder({ ...newOrder, allergies: e.target.value })} />
+            <Input placeholder="Restrictions" value={newOrder.restrictions} onChange={(e) => setNewOrder({ ...newOrder, restrictions: e.target.value })} />
+            <Input placeholder="Calories" value={newOrder.calories} onChange={(e) => setNewOrder({ ...newOrder, calories: e.target.value })} />
+            <Input placeholder="Physician" value={newOrder.physician} onChange={(e) => setNewOrder({ ...newOrder, physician: e.target.value })} />
+            <div className="md:col-span-3 flex justify-end gap-2"><Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button><Button onClick={createAdmissionOrder}>Create Order</Button></div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
@@ -230,19 +287,27 @@ const DietaryOrdersContent = () => {
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${statusFilter === s ? "bg-green-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"}`}
             >
               {s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
-              {s !== "all" && ` (${ordersData.filter(o => o.status === s).length})`}
+              {s !== "all" && ` (${orders.filter(o => o.status === s).length})`}
             </button>
           ))}
         </div>
       </div>
 
+      <Card className="border-green-200 bg-green-50/60">
+        <CardContent className="grid gap-3 p-4 md:grid-cols-3">
+          <div><p className="text-xs text-muted-foreground">Inpatient intake</p><p className="font-semibold">Admission-linked orders</p></div>
+          <div><p className="text-xs text-muted-foreground">Allergen safety</p><p className="font-semibold">Allergy flags before meal release</p></div>
+          <div><p className="text-xs text-muted-foreground">Discharge counselling</p><p className="font-semibold">Dietitian handoff output</p></div>
+        </CardContent>
+      </Card>
+
       {/* Stats strip */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label: "Total",     value: ordersData.length,                        color: "text-slate-700 dark:text-slate-200" },
-          { label: "Pending",   value: ordersData.filter(o => o.status === "pending").length,   color: "text-amber-600" },
-          { label: "Preparing", value: ordersData.filter(o => o.status === "preparing").length, color: "text-blue-600" },
-          { label: "Delivered", value: ordersData.filter(o => o.status === "delivered").length, color: "text-green-600" },
+          { label: "Total",     value: orders.length,                        color: "text-slate-700 dark:text-slate-200" },
+          { label: "Pending",   value: orders.filter(o => o.status === "pending").length,   color: "text-amber-600" },
+          { label: "Preparing", value: orders.filter(o => o.status === "preparing").length, color: "text-blue-600" },
+          { label: "Delivered", value: orders.filter(o => o.status === "delivered").length, color: "text-green-600" },
         ].map(({ label, value, color }) => (
           <Card key={label} className="py-3 px-4">
             <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
@@ -751,6 +816,20 @@ const DietaryPatientsContent = () => {
                     ))}
                   </div>
                 </div>
+
+                <Card className="border-green-200 bg-green-50/70">
+                  <CardContent className="p-4">
+                    <p className="text-xs font-semibold text-green-700">Discharge counselling</p>
+                    <p className="mt-1 text-sm text-slate-600">Record dietitian advice and handoff output before discharge.</p>
+                    <Button className="mt-3" size="sm" onClick={async () => {
+                      await api.post('/dietary/counselling', {
+                        patientId: selected.id,
+                        summary: `${selected.dietType} diet counselling completed`,
+                        instructions: selected.conditions.join(', '),
+                      }, { headers: { Authorization: `Bearer ${localStorage.getItem('dietaryToken') || ''}` } });
+                    }}>Save counselling output</Button>
+                  </CardContent>
+                </Card>
 
                 {/* Allergies */}
                 {selected.allergies.length > 0 && (

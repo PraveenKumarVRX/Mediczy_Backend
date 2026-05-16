@@ -27,6 +27,9 @@ const NurseNotes: React.FC = () => {
   const [patients, setPatients] = useState<PatientOption[]>([]);
   const [patientsLoading, setPatientsLoading] = useState(false);
   const [patientsError, setPatientsError] = useState('');
+  const [woundImage, setWoundImage] = useState<File | null>(null);
+  const [woundResult, setWoundResult] = useState<any>(null);
+  const [woundLoading, setWoundLoading] = useState(false);
 
   const loadPatients = async () => {
     setPatientsLoading(true);
@@ -75,6 +78,28 @@ const NurseNotes: React.FC = () => {
       `${patient.firstName || ''} ${patient.lastName || ''}`.trim() ||
       `Patient ${patient.id}`;
     return `${name} (ID: ${patient.id})`;
+  };
+
+  const analyzeWound = async () => {
+    if (!patientId || !woundImage) return;
+    setWoundLoading(true);
+    try {
+      const token = localStorage.getItem('nurseToken');
+      const form = new FormData();
+      form.append('image', woundImage);
+      form.append('sourceType', 'wound');
+      const { data } = await api.post('/ai/vision/analyze', form, { headers: { Authorization: `Bearer ${token}` } });
+      setWoundResult(data.analysis);
+      await api.post('/roadmap-intelligence/wounds', {
+        patientId,
+        woundType: data.analysis.woundType,
+        stage: data.analysis.stage,
+        areaCm2: data.analysis.estimatedAreaCm2,
+        note: data.analysis.assessment,
+      }, { headers: { Authorization: `Bearer ${token}` } });
+    } finally {
+      setWoundLoading(false);
+    }
   };
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -142,6 +167,23 @@ const NurseNotes: React.FC = () => {
             {loading ? <><Activity className="h-4 w-4 mr-2 animate-spin" /> Saving...</> : 'Save Note'}
           </Button>
         </form>
+
+        <div className="mt-6 space-y-3 rounded-lg border p-4">
+          <div>
+            <h3 className="text-sm font-medium">Wound Tracking</h3>
+            <p className="text-xs text-muted-foreground">Capture a wound image for AI-assisted clinician review.</p>
+          </div>
+          <Input type="file" accept="image/*" onChange={(e) => setWoundImage(e.target.files?.[0] || null)} />
+          <Button type="button" variant="outline" disabled={!patientId || !woundImage || woundLoading} onClick={analyzeWound}>
+            {woundLoading ? 'Analyzing...' : 'Analyze Wound'}
+          </Button>
+          {woundResult && (
+            <div className="text-sm space-y-1">
+              <p><strong>{woundResult.woundType || 'Wound'}</strong> · {woundResult.stage || 'Stage indeterminate'}</p>
+              <p className="text-muted-foreground">{woundResult.assessment}</p>
+            </div>
+          )}
+        </div>
 
         {history.length > 0 && (
           <div className="mt-6">

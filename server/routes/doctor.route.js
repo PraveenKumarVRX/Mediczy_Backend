@@ -19,6 +19,7 @@ import { Notification } from '../services/notification.service.js';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { cache } from '../db/redis.js';
+import { evaluateVitalsAndAlert } from '../services/clinical-intelligence.service.js';
 import {
   buildLiveKitJoinData,
   ensureMeetingInfo,
@@ -1890,6 +1891,86 @@ router.get('/my-patients', authDoctor, async (req, res) => {
   }
 });
 
+// ─── Natural-language patient cohort search ───────────────────────────────────
+
+router.post('/my-patients/cohort-search', authDoctor, async (req, res) => {
+  try {
+    const doctorId = Number(req.doctor.id);
+    const query = String(req.body?.query || '').trim();
+    if (query.length < 3) {
+      return res.status(400).json({ success: false, message: 'query must be at least 3 characters' });
+    }
+
+    const normalized = query.toLowerCase();
+    const filters = [];
+    const unsupportedFilters = [];
+    const replacements = { doctorId };
+    let havingClause = '';
+
+    if (/\bdiabet(es|ic)\b/.test(normalized)) {
+      filters.push(`COALESCE(array_to_string(p."chronicConditions", ','), '') ILIKE '%diabet%'`);
+    }
+    if (/\bfemale\b/.test(normalized)) filters.push(`LOWER(u.gender) = 'female'`);
+    if (/\bmale\b/.test(normalized)) filters.push(`LOWER(u.gender) = 'male'`);
+
+    const unseenMatch = normalized.match(/not seen in (\d+) months?/);
+    if (unseenMatch) {
+      replacements.months = Number(unseenMatch[1]);
+      havingClause = `HAVING MAX(a."appointmentDate") < CURRENT_DATE - (:months || ' months')::interval`;
+    }
+
+    const ageAboveMatch = normalized.match(/age(?:d)? over (\d+)|older than (\d+)/);
+    if (ageAboveMatch) {
+      replacements.minAge = Number(ageAboveMatch[1] || ageAboveMatch[2]);
+      filters.push(`DATE_PART('year', AGE(CURRENT_DATE, u."dateOfBirth")) > :minAge`);
+    }
+
+    if (/hba1c/.test(normalized)) {
+      unsupportedFilters.push('HbA1c threshold requires a normalized lab-result feed before automatic filtering');
+    }
+
+    const whereFilters = filters.length ? `AND ${filters.join(' AND ')}` : '';
+    const [rows] = await User.sequelize.query(`
+      SELECT
+        u.id,
+        u."firstName",
+        u."lastName",
+        u.email,
+        u."phoneNumber",
+        u.gender,
+        u."dateOfBirth",
+        p."bloodGroup",
+        p."chronicConditions",
+        COUNT(a.id)::int AS "visitCount",
+        MAX(a."appointmentDate") AS "lastSeenDate"
+      FROM appointments a
+      JOIN users u ON u.id = a."userId"
+      LEFT JOIN patients p ON p."userId" = u.id
+      WHERE a."doctorId" = :doctorId
+      ${whereFilters}
+      GROUP BY u.id, p.id
+      ${havingClause}
+      ORDER BY "lastSeenDate" DESC NULLS LAST, u."firstName" ASC
+      LIMIT 100
+    `, { replacements });
+
+    res.json({
+      success: true,
+      query,
+      interpretation: {
+        appliedFilters: filters.length,
+        notSeenMonths: replacements.months || null,
+        unsupportedFilters,
+      },
+      patients: rows,
+      count: rows.length,
+    });
+  } catch (error) {
+    console.error('Cohort search error:', error);
+    res.status(500).json({ success: false, message: 'Failed to search patient cohort', error: error.message });
+  }
+});
+
 // ─── My-Patients: Update, Record Vitals, Add History ─────────────────────────
 
 /**
@@ -1949,7 +2030,15 @@ router.post('/my-patients/:patientId/vitals', authDoctor, async (req, res) => {
       }
     );
 
-    res.status(201).json({ success: true, vitals: rows || req.body });
+    const intelligence = await evaluateVitalsAndAlert({
+      tenantId: req.doctor.organizationId || req.doctor.hospitalId || req.doctor.id,
+      patientId,
+      source: 'doctor-patient-vitals',
+      recordedBy: req.doctor.id,
+      vitals: { bp, heartRate, temperature, spo2 }
+    });
+
+    res.status(201).json({ success: true, vitals: rows || req.body, intelligence });
   } catch (error) {
     console.error('Record vitals error:', error);
     // Table may not exist yet — return success so mobile UX doesn't break

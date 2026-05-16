@@ -10,7 +10,7 @@ import {
   FileSpreadsheet, Building2, Shield, Calendar, Hash, Layers, Save,
   ArrowLeft, Copy, IndianRupee, BrainCircuit, Zap, Activity, Target, Gauge,
   MoreVertical, CheckCircle2, XCircle, ChevronDown, Pencil, SlidersHorizontal,
-  TrendingDown, ClipboardCheck, Phone, Mail, MapPin, ShieldCheck,
+  TrendingDown, ClipboardCheck, Phone, Mail, MapPin, ShieldCheck, Wand2,
 } from 'lucide-react';
 import { RFQUnderwritingTab } from './RFQUnderwritingTab';
 import { toast } from 'sonner';
@@ -397,6 +397,17 @@ export function CRMRFQsPage() {
     }
   };
 
+  const quickCapturePlan = async (rfqId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await api.post(`/crm/rfqs/${rfqId}/autocapture-plan`, {}, { headers: authHeaders() });
+      if (res.data.success) {
+        if (res.data.alreadyCaptured) toast.info(res.data.message);
+        else { toast.success(`Plan captured: ${res.data.data.display_name}`); fetchRFQs(); }
+      }
+    } catch (err: any) { toast.error(err?.response?.data?.message || 'Capture failed'); }
+  };
+
   return (
     <CRMLayout title="RFQs">
     <div className="space-y-6">
@@ -554,10 +565,10 @@ export function CRMRFQsPage() {
                     <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{formatDate(r.created_at)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {r.status === 'won' && (
-                          <button onClick={e => { e.stopPropagation(); navigate(`/crm/corporate-plans?rfq_id=${r.id}&rfq_number=${encodeURIComponent(r.rfq_number)}&insured_name=${encodeURIComponent(r.insured_name)}&headcount=${r.member_count || 0}`); }}
-                            className="p-1.5 rounded-lg hover:bg-violet-500/10 text-slate-600 hover:text-violet-400 transition-colors" title="Create Corporate Plan">
-                            <Building2 className="h-3.5 w-3.5" />
+                        {['quoted', 'negotiating', 'won'].includes(r.status) && (
+                          <button onClick={e => quickCapturePlan(r.id, e)}
+                            className="p-1.5 rounded-lg hover:bg-amber-500/10 text-slate-600 hover:text-amber-400 transition-colors" title="Autocapture as Corporate Plan">
+                            <Wand2 className="h-3.5 w-3.5" />
                           </button>
                         )}
                         <button onClick={e => { e.stopPropagation(); deleteRFQ(r.id); }}
@@ -745,6 +756,8 @@ export function CRMRFQDetailPage() {
   const [intelligenceLoading, setIntelligenceLoading] = useState(false);
   const [deepAnalytics, setDeepAnalytics] = useState<any>(null);
   const [deepAnalyticsLoading, setDeepAnalyticsLoading] = useState(false);
+  const [capturingPlan, setCapturingPlan] = useState(false);
+  const [capturedPlan, setCapturedPlan] = useState<any>(null);
 
   const isValidId = id && /^\d+$/.test(id);
 
@@ -757,7 +770,9 @@ export function CRMRFQDetailPage() {
         setRfq(data.data);
         // Restore persisted AI quote result from DB (replaces sessionStorage handoff)
         if (data.data.ai_quote_data && !aiQuote) {
-          setAiQuote(typeof data.data.ai_quote_data === 'string' ? JSON.parse(data.data.ai_quote_data) : data.data.ai_quote_data);
+          const raw = typeof data.data.ai_quote_data === 'string' ? JSON.parse(data.data.ai_quote_data) : data.data.ai_quote_data;
+          // Normalize: old DB rows saved the outer { success, data: {...} } wrapper — unwrap if needed
+          setAiQuote(raw?.risk_assessment ? raw : (raw?.data || raw));
         }
       }
     } catch { /* */ }
@@ -827,7 +842,10 @@ export function CRMRFQDetailPage() {
         timeout: 120000,
       });
       if (data.success) {
-        toast.success('Claims data uploaded');
+        toast.success(`Claims uploaded: ${data.data?.claimCount ?? ''} records`);
+        if (data.data?.warnings?.length) {
+          data.data.warnings.forEach((w: string) => toast.warning(w, { duration: 8000 }));
+        }
         fetchClaimsAnalysis();
       }
     } catch (err: any) {
@@ -939,7 +957,11 @@ export function CRMRFQDetailPage() {
         headers: { ...authHeaders(), 'Content-Type': 'multipart/form-data' },
         timeout: 120000,
       });
-      if (res.data.success) toast.success('Members uploaded successfully');
+      if (res.data.success) {
+        const d = res.data.data;
+        const dupeMsg = d?.duplicatesRemoved > 0 ? ` (${d.duplicatesRemoved} duplicates removed)` : '';
+        toast.success(`${d?.memberCount ?? ''} members uploaded${dupeMsg}`);
+      }
       fetchRFQ();
       fetchAnalytics();
       fetchMembers();
@@ -948,6 +970,25 @@ export function CRMRFQDetailPage() {
     }
     setUploading(false);
     if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const handleAutocapturePlan = async () => {
+    setCapturingPlan(true);
+    try {
+      const res = await api.post(`/crm/rfqs/${id}/autocapture-plan`, {}, { headers: authHeaders() });
+      if (res.data.success) {
+        setCapturedPlan(res.data.data);
+        if (res.data.alreadyCaptured) {
+          toast.info(`Plan already exists: ${res.data.message}`);
+        } else {
+          toast.success(`Plan captured: "${res.data.data.display_name}" · Ref: ${res.data.data.contract_ref}`);
+          fetchRFQ();
+        }
+      }
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to capture plan');
+    }
+    setCapturingPlan(false);
   };
 
   if (loading) return (
@@ -1041,12 +1082,26 @@ export function CRMRFQDetailPage() {
             className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border-0 rounded-xl h-9 px-4 gap-2 text-sm font-medium shadow-lg shadow-emerald-600/20">
             <IndianRupee className="h-3.5 w-3.5" /> Create Quote
           </Button>
-          {rfq.status === 'won' && (
-            <Button
-              onClick={() => navigate(`/crm/corporate-plans?rfq_id=${rfq.id}&rfq_number=${encodeURIComponent(rfq.rfq_number)}&insured_name=${encodeURIComponent(rfq.insured_name)}&headcount=${rfq.member_count || 0}`)}
-              className="bg-gradient-to-r from-violet-600 to-blue-600 hover:from-violet-500 hover:to-blue-500 border-0 rounded-xl h-9 px-4 gap-2 text-sm font-medium shadow-lg shadow-violet-600/20">
-              <Building2 className="h-3.5 w-3.5" /> Create Corporate Plan
-            </Button>
+          {['quoted', 'negotiating', 'won'].includes(rfq.status) && (
+            capturedPlan ? (
+              <Button
+                onClick={() => navigate('/crm/corporate-plans')}
+                className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 rounded-xl h-9 px-4 gap-2 text-sm font-medium">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Plan Captured · {capturedPlan.contract_ref}
+              </Button>
+            ) : (
+              <Button
+                disabled={capturingPlan}
+                onClick={handleAutocapturePlan}
+                className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 border-0 rounded-xl h-9 px-4 gap-2 text-sm font-medium shadow-lg shadow-amber-600/20 disabled:opacity-60">
+                {capturingPlan ? (
+                  <div className="w-3.5 h-3.5 border border-white/50 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <Wand2 className="h-3.5 w-3.5" />
+                )}
+                {capturingPlan ? 'Capturing…' : 'Autocapture Plan'}
+              </Button>
+            )
           )}
         </div>
       </div>
@@ -1476,10 +1531,22 @@ function MembersTab({ members, search, setSearch, page, totalPages, setPage }: a
 function QuotesTab({ quotes, rfqId, onRefresh, navigate }: any) {
   const updateQuoteStatus = async (quoteId: number, status: string) => {
     try {
-      await api.put(`/crm/quotes/${quoteId}`, { status }, { headers: authHeaders() });
+      const res = await api.put(`/crm/quotes/${quoteId}`, { status }, { headers: authHeaders() });
       toast.success(`Quote marked as ${status}`);
+      if (status === 'sent') {
+        if (res.data?.email?.sent) {
+          toast.success(`Email sent to ${res.data.email.recipients}`);
+        } else if (res.data?.email?.error) {
+          toast.warning(`Quote marked sent but email failed: ${res.data.email.error}`);
+        } else if (res.data?.email && !res.data.email.recipients) {
+          toast.info('Quote marked sent — no broker/contact email on file to notify.');
+        }
+      }
       onRefresh();
-    } catch { toast.error('Failed to update quote'); }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Failed to update quote';
+      toast.error(msg);
+    }
   };
 
   const deleteQuote = async (quoteId: number) => {
@@ -2998,7 +3065,7 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
   const d = aiQuote;
 
   // Guard: cached quotes from older formats may be missing sub-fields
-  if (!d?.risk_assessment || !d?.win_probability) {
+  if (!d?.risk_assessment || !d?.opd_pricing) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">
         <AlertCircle className="h-9 w-9 text-amber-400" />

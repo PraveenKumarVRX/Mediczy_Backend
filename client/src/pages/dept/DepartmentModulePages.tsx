@@ -315,10 +315,7 @@ export const BiomedicalCalibration  = biomedPage("Calibration",  "Schedule and l
 export const BiomedicalReports      = biomedPage("Reports",      "Equipment performance and maintenance reports",       BarChart3);
 
 // ─── Blood Bank ───────────────────────────────────────────────────────────────
-export const BloodBankInventory    = bloodBankPage("Inventory",    "Manage blood unit stock by group and component",   Droplets,       { label: "Add Units",       path: "/blood-bank/inventory" });
-export const BloodBankRequisitions = bloodBankPage("Requisitions", "Process blood issue requests from wards",          ArrowRightLeft, { label: "New Requisition", path: "/blood-bank/requisitions" });
-export const BloodBankDonors       = bloodBankPage("Donors",       "Register and manage blood donors",                 Users,          { label: "Register Donor",  path: "/blood-bank/donors" });
-export const BloodBankReports      = bloodBankPage("Reports",      "Blood bank utilization and wastage reports",       BarChart3);
+export { BloodBankInventory, BloodBankRequisitions, BloodBankDonors, BloodBankReports } from "./BloodBankModulePages";
 
 // ─── Consent Management ───────────────────────────────────────────────────────
 export const ConsentPending   = consentPage("Pending Consents",  "Review and process outstanding consent forms",   Clock,     { label: "Process Consent", path: "/consent/pending" });
@@ -327,10 +324,7 @@ export const ConsentTemplates = consentPage("Templates",         "Create and man
 export const ConsentReports   = consentPage("Reports",           "Consent audit trail and compliance analytics",   BarChart3);
 
 // ─── CSSD ─────────────────────────────────────────────────────────────────────
-export const CSSDJobs      = cssdPage("Jobs",       "Manage sterilization jobs and instrument sets",  ListChecks, { label: "New Job",   path: "/cssd/jobs" });
-export const CSSDEquipment = cssdPage("Equipment",  "Track sterilization equipment and autoclave status", Layers);
-export const CSSDCycles    = cssdPage("Cycle Log",  "Log and review sterilization cycle records",     Flame,      { label: "New Cycle", path: "/cssd/cycles" });
-export const CSSDReports   = cssdPage("Reports",    "Sterilization throughput and compliance reports", BarChart3);
+export { CSSDJobs, CSSDEquipment, CSSDCycles, CSSDReports } from './CSSDModulePages';
 
 // ─── Dietary Services ─────────────────────────────────────────────────────────
 export const DietaryOrders   = dietaryPage("Diet Orders",  "Manage patient diet orders and restrictions",    Clipboard,    { label: "New Order", path: "/dietary/orders" });
@@ -357,10 +351,7 @@ export const MortuaryRecords  = mortuaryPage("Records",  "Search and view histor
 export const MortuaryReports  = mortuaryPage("Reports",  "Occupancy trends and administrative reports", BarChart3);
 
 // ─── Procurement ──────────────────────────────────────────────────────────────
-export const ProcurementOrders    = procurementPage("Purchase Orders", "Create and track purchase orders",              ShoppingCart, { label: "New PO",     path: "/procurement/orders" });
-export const ProcurementVendors   = procurementPage("Vendors",         "Manage approved vendor registry",               Truck,        { label: "Add Vendor", path: "/procurement/vendors" });
-export const ProcurementApprovals = procurementPage("Approvals",       "Review and approve pending purchase requests",  MonitorCheck);
-export const ProcurementReports   = procurementPage("Reports",         "Procurement spend and vendor performance reports", BarChart3);
+export { ProcurementOrders, ProcurementVendors, ProcurementApprovals, ProcurementReports } from './ProcurementModulePages';
 
 // ─── Queue Management ─────────────────────────────────────────────────────────
 export const QueueTokens   = queuePage("Tokens",   "Issue and manage queue tokens for patients", Hash,    { label: "Issue Token", path: "/queue/tokens" });

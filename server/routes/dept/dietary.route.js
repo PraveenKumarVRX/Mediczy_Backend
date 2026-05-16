@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { loginDietary } from '../../controllers/dept/dietary.controller.js';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import llmProvider from '../../services/ai-brain/llm-provider.js';
+import { connectPostgres } from '../../db/postgres.js';
 
 const router = express.Router();
 
@@ -18,6 +19,52 @@ const authDietary = (req, res, next) => {
   } catch {
     return res.status(401).json({ success: false, error: 'Invalid or expired dietary token' });
   }
+};
+
+const ensureDietaryTables = async () => {
+  const db = await connectPostgres();
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS dietary_orders (
+      id SERIAL PRIMARY KEY,
+      order_number VARCHAR(80) UNIQUE NOT NULL,
+      admission_id VARCHAR(80),
+      patient_id VARCHAR(80),
+      patient_name VARCHAR(160) NOT NULL,
+      ward VARCHAR(120),
+      bed VARCHAR(40),
+      diet_type VARCHAR(120) NOT NULL,
+      allergies TEXT[] NOT NULL DEFAULT '{}',
+      restrictions TEXT,
+      calories INTEGER,
+      priority VARCHAR(24) NOT NULL DEFAULT 'normal',
+      status VARCHAR(24) NOT NULL DEFAULT 'pending',
+      physician VARCHAR(160),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS dietary_templates (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(160) NOT NULL,
+      diet_type VARCHAR(120) NOT NULL,
+      calories INTEGER,
+      meal_plan JSONB NOT NULL DEFAULT '{}'::jsonb,
+      restrictions TEXT,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      version INTEGER NOT NULL DEFAULT 1,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS dietary_counselling (
+      id SERIAL PRIMARY KEY,
+      patient_id VARCHAR(80),
+      order_id INTEGER REFERENCES dietary_orders(id) ON DELETE SET NULL,
+      summary TEXT NOT NULL,
+      instructions TEXT,
+      created_by VARCHAR(160),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+  return db;
 };
 
 // ─── Login ─────────────────────────────────────────────────────────────────────
@@ -355,6 +402,96 @@ Be specific and data-driven.`;
   } catch (err) {
     console.error('[Dietary AI] meal-feedback error:', err.message);
     res.status(500).json({ success: false, error: 'Feedback analysis failed.' });
+  }
+});
+
+
+// ─── Inpatient workflow ──────────────────────────────────────────────────────
+router.get('/orders', authDietary, async (req, res) => {
+  try {
+    const db = await ensureDietaryTables();
+    const { status } = req.query;
+    const { rows } = await db.query(
+      `SELECT * FROM dietary_orders WHERE ($1::text IS NULL OR status = $1) ORDER BY created_at DESC`,
+      [status || null]
+    );
+    res.json({ success: true, data: rows });
+  } catch {
+    res.status(500).json({ success: false, message: 'Failed to load diet orders' });
+  }
+});
+
+router.post('/orders/from-admission', authDietary, async (req, res) => {
+  try {
+    const { admissionId, patientId, patientName, ward, bed, dietType, allergies = [], restrictions, calories, priority = 'normal', physician } = req.body;
+    if (!patientName || !dietType) return res.status(400).json({ success: false, message: 'patientName and dietType are required' });
+    const db = await ensureDietaryTables();
+    const { rows } = await db.query(`
+      INSERT INTO dietary_orders
+        (order_number, admission_id, patient_id, patient_name, ward, bed, diet_type, allergies, restrictions, calories, priority, physician)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8::text[],$9,$10,$11,$12)
+      RETURNING *
+    `, [`DO-${Date.now()}`, admissionId || null, patientId || null, patientName, ward || null, bed || null, dietType, allergies, restrictions || null, calories || null, priority, physician || null]);
+    res.status(201).json({ success: true, data: rows[0] });
+  } catch {
+    res.status(500).json({ success: false, message: 'Failed to create diet order' });
+  }
+});
+
+router.patch('/orders/:id', authDietary, async (req, res) => {
+  try {
+    const { status, dietType, allergies, restrictions, calories, priority } = req.body;
+    const db = await ensureDietaryTables();
+    const { rows } = await db.query(`
+      UPDATE dietary_orders SET
+        status=COALESCE($2,status), diet_type=COALESCE($3,diet_type), allergies=COALESCE($4::text[],allergies),
+        restrictions=COALESCE($5,restrictions), calories=COALESCE($6,calories), priority=COALESCE($7,priority), updated_at=NOW()
+      WHERE id=$1 RETURNING *
+    `, [req.params.id, status || null, dietType || null, allergies || null, restrictions || null, calories || null, priority || null]);
+    if (!rows[0]) return res.status(404).json({ success: false, message: 'Diet order not found' });
+    res.json({ success: true, data: rows[0] });
+  } catch {
+    res.status(500).json({ success: false, message: 'Failed to update diet order' });
+  }
+});
+
+router.get('/templates', authDietary, async (_req, res) => {
+  try {
+    const db = await ensureDietaryTables();
+    const { rows } = await db.query(`SELECT * FROM dietary_templates WHERE active=TRUE ORDER BY diet_type, name`);
+    res.json({ success: true, data: rows });
+  } catch {
+    res.status(500).json({ success: false, message: 'Failed to load dietary templates' });
+  }
+});
+
+router.post('/templates', authDietary, async (req, res) => {
+  try {
+    const { name, dietType, calories, mealPlan = {}, restrictions } = req.body;
+    if (!name || !dietType) return res.status(400).json({ success: false, message: 'name and dietType are required' });
+    const db = await ensureDietaryTables();
+    const { rows } = await db.query(`
+      INSERT INTO dietary_templates (name, diet_type, calories, meal_plan, restrictions)
+      VALUES ($1,$2,$3,$4::jsonb,$5) RETURNING *
+    `, [name, dietType, calories || null, JSON.stringify(mealPlan), restrictions || null]);
+    res.status(201).json({ success: true, data: rows[0] });
+  } catch {
+    res.status(500).json({ success: false, message: 'Failed to create dietary template' });
+  }
+});
+
+router.post('/counselling', authDietary, async (req, res) => {
+  try {
+    const { patientId, orderId, summary, instructions } = req.body;
+    if (!summary) return res.status(400).json({ success: false, message: 'summary is required' });
+    const db = await ensureDietaryTables();
+    const { rows } = await db.query(`
+      INSERT INTO dietary_counselling (patient_id, order_id, summary, instructions, created_by)
+      VALUES ($1,$2,$3,$4,$5) RETURNING *
+    `, [patientId || null, orderId || null, summary, instructions || null, req.dietaryUser?.name || req.dietaryUser?.email || 'Dietary Staff']);
+    res.status(201).json({ success: true, data: rows[0] });
+  } catch {
+    res.status(500).json({ success: false, message: 'Failed to save counselling note' });
   }
 });
 

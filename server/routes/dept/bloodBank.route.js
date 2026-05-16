@@ -151,6 +151,17 @@ const ensureTables = async () => {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS idx_bb_comm_recipients_comm ON blood_donor_comm_recipients(comm_id);
+
+    CREATE TABLE IF NOT EXISTS blood_bank_audit_events (
+      id SERIAL PRIMARY KEY,
+      event_type VARCHAR(80) NOT NULL,
+      entity_type VARCHAR(80) NOT NULL,
+      entity_id VARCHAR(80),
+      actor VARCHAR(160),
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_bb_audit_created ON blood_bank_audit_events(created_at DESC);
   `);
 
   return db;
@@ -159,6 +170,14 @@ const ensureTables = async () => {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const generateDonorId = () => `DNR-${Date.now().toString(36).toUpperCase()}`;
+const actorName = (req) => req.bloodBankUser?.name || req.bloodBankUser?.email || 'Blood Bank Staff';
+const recordAudit = async (db, req, eventType, entityType, entityId, payload = {}) => {
+  await db.query(
+    `INSERT INTO blood_bank_audit_events (event_type, entity_type, entity_id, actor, payload)
+     VALUES ($1,$2,$3,$4,$5::jsonb)`,
+    [eventType, entityType, entityId ? String(entityId) : null, actorName(req), JSON.stringify(payload)]
+  );
+};
 
 // Compute next eligibility date: whole blood → 56 days, platelets → 7 days, plasma → 28 days
 const nextEligible = (lastDate, component = 'whole_blood') => {
@@ -224,6 +243,7 @@ router.post('/inventory', authBloodBank, async (req, res) => {
       INSERT INTO blood_bank_units (unit_number, blood_group, component, donor_name, collected_at, expires_at, location)
       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *
     `, [unitNumber, bloodGroup, component, donorName || null, collectedAt, expiresAt, location || null]);
+    await recordAudit(db, req, 'unit_created', 'unit', rows[0].id, rows[0]);
     res.status(201).json({ success: true, data: rows[0] });
   } catch (err) {
     res.status(500).json({ success: false, message: err.code === '23505' ? 'Unit number already exists' : 'Failed to add unit' });
@@ -291,6 +311,7 @@ router.post('/donors', authBloodBank, async (req, res) => {
     `, [id, name, bloodGroup, phone||null, whatsapp||null, email||null, age||null, gender||null,
         address||null, city||null, pincode||null, donorType, lastDonationDate||null,
         nextDate, eligible, healthNotes||null, notificationConsent, preferredChannel]);
+    await recordAudit(db, req, 'donor_saved', 'donor', rows[0].id, { donorId: rows[0].donor_id, bloodGroup: rows[0].blood_group });
     res.status(201).json({ success: true, data: rows[0] });
   } catch (err) {
     console.error('[BloodBank donors POST]', err.message);
@@ -393,6 +414,7 @@ router.post('/donors/:id/donations', authBloodBank, async (req, res) => {
       WHERE id = $1
     `, [req.params.id, donationDate, eligDate]);
 
+    await recordAudit(client, req, 'donation_recorded', 'donation', donation.id, { donorId: req.params.id, component, unitsCollected });
     await client.query('COMMIT');
     res.status(201).json({ success: true, data: { donation, next_eligible_date: eligDate } });
   } catch (err) {
@@ -691,6 +713,7 @@ router.post('/requisitions', authBloodBank, async (req, res) => {
         (requisition_number, patient_id, patient_name, ward, blood_group, component, units_requested, urgency, requested_by, notes)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *
     `, [`REQ-${Date.now()}`, patientId||null, patientName, ward||null, bloodGroup, component, unitsRequested, urgency, requestedBy||null, notes||null]);
+    await recordAudit(db, req, 'requisition_created', 'requisition', rows[0].id, { bloodGroup, component, unitsRequested, urgency });
     res.status(201).json({ success: true, data: rows[0] });
   } catch {
     res.status(500).json({ success: false, message: 'Failed to create requisition' });
@@ -721,6 +744,7 @@ router.post('/requisitions/:id/issue', authBloodBank, async (req, res) => {
       UPDATE blood_bank_requisitions SET status='issued', issued_unit_ids=$2::int[], updated_at=NOW()
       WHERE id=$1 RETURNING *
     `, [id, unitIds]);
+    await recordAudit(client, req, 'requisition_issued', 'requisition', updated.id, { unitIds });
     await client.query('COMMIT');
     res.json({ success: true, data: updated });
   } catch {
@@ -728,6 +752,87 @@ router.post('/requisitions/:id/issue', authBloodBank, async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to issue requisition' });
   } finally {
     client.release();
+  }
+});
+
+
+router.post('/cross-match', authBloodBank, async (req, res) => {
+  try {
+    const { bloodGroup, component = 'whole_blood', unitsRequested = 1 } = req.body;
+    if (!BLOOD_GROUPS.includes(bloodGroup)) return res.status(400).json({ success: false, message: 'Valid bloodGroup is required' });
+    const compatibility = {
+      'A+': ['A+','A-','O+','O-'], 'A-': ['A-','O-'],
+      'B+': ['B+','B-','O+','O-'], 'B-': ['B-','O-'],
+      'AB+': ['A+','A-','B+','B-','AB+','AB-','O+','O-'], 'AB-': ['AB-','A-','B-','O-'],
+      'O+': ['O+','O-'], 'O-': ['O-'],
+    };
+    const db = await ensureTables();
+    const compatibleGroups = compatibility[bloodGroup] || [bloodGroup];
+    const { rows } = await db.query(`
+      SELECT id, unit_number, blood_group, component, expires_at
+      FROM blood_bank_units
+      WHERE blood_group = ANY($1::text[]) AND component = $2 AND status = 'available' AND expires_at >= CURRENT_DATE
+      ORDER BY expires_at ASC
+      LIMIT $3
+    `, [compatibleGroups, component, unitsRequested]);
+    res.json({ success: true, data: { compatible: rows.length >= Number(unitsRequested), compatibleGroups, units: rows } });
+  } catch {
+    res.status(500).json({ success: false, message: 'Failed to cross-match units' });
+  }
+});
+
+router.post('/requisitions/:id/return', authBloodBank, async (req, res) => {
+  const db = await ensureTables();
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(`SELECT * FROM blood_bank_requisitions WHERE id=$1 FOR UPDATE`, [req.params.id]);
+    const requisition = rows[0];
+    if (!requisition) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Requisition not found' }); }
+    if (requisition.status !== 'issued') { await client.query('ROLLBACK'); return res.status(409).json({ success: false, message: 'Only issued requisitions can be returned' }); }
+    await client.query(`UPDATE blood_bank_units SET status='available', updated_at=NOW() WHERE id=ANY($1::int[])`, [requisition.issued_unit_ids]);
+    const { rows: [updated] } = await client.query(`UPDATE blood_bank_requisitions SET status='returned', updated_at=NOW() WHERE id=$1 RETURNING *`, [req.params.id]);
+    await recordAudit(client, req, 'requisition_returned', 'requisition', updated.id, { unitIds: requisition.issued_unit_ids });
+    await client.query('COMMIT');
+    res.json({ success: true, data: updated });
+  } catch {
+    await client.query('ROLLBACK');
+    res.status(500).json({ success: false, message: 'Failed to return requisition' });
+  } finally {
+    client.release();
+  }
+});
+
+router.get('/alerts', authBloodBank, async (_req, res) => {
+  try {
+    const db = await ensureTables();
+    const shortages = await db.query(`
+      WITH groups AS (SELECT unnest($1::text[]) AS blood_group)
+      SELECT groups.blood_group, COUNT(u.id)::int AS available_units
+      FROM groups LEFT JOIN blood_bank_units u ON u.blood_group = groups.blood_group AND u.status = 'available'
+      GROUP BY groups.blood_group
+      HAVING COUNT(u.id) < 5
+      ORDER BY groups.blood_group
+    `, [BLOOD_GROUPS]);
+    const expiring = await db.query(`
+      SELECT id, unit_number, blood_group, component, expires_at
+      FROM blood_bank_units
+      WHERE status='available' AND expires_at <= CURRENT_DATE + INTERVAL '7 days'
+      ORDER BY expires_at ASC
+    `);
+    res.json({ success: true, data: { shortages: shortages.rows, expiring: expiring.rows } });
+  } catch {
+    res.status(500).json({ success: false, message: 'Failed to load alerts' });
+  }
+});
+
+router.get('/audit', authBloodBank, async (_req, res) => {
+  try {
+    const db = await ensureTables();
+    const { rows } = await db.query(`SELECT * FROM blood_bank_audit_events ORDER BY created_at DESC LIMIT 100`);
+    res.json({ success: true, data: rows });
+  } catch {
+    res.status(500).json({ success: false, message: 'Failed to load audit events' });
   }
 });
 

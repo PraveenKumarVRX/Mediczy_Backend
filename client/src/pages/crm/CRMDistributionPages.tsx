@@ -7,7 +7,7 @@ import {
   MapPin, Phone, Mail, ShieldCheck, Star, Zap, BarChart3,
   ArrowUpRight, ArrowDownRight, RefreshCw, Download,
   FileText, CalendarDays, RotateCcw, Layers, Briefcase,
-  CircleDollarSign, BadgeCheck, SquareArrowOutUpRight,
+  CircleDollarSign, BadgeCheck, SquareArrowOutUpRight, Trash2, Edit,
 } from 'lucide-react';
 import api from '@/utils/api';
 import { CRMLayout } from './CRMModulePages';
@@ -128,6 +128,14 @@ export function CRMAgentsPage() {
     setEditAgent(a);
     setForm({ name: a.name, email: a.email || '', phone: a.phone || '', city: a.city || 'Mumbai', channelType: a.channelType || 'IFA', agencyId: a.agencyId || '', notes: a.notes || '' });
     setShowForm(true);
+  };
+
+  const deleteAgent = async (id: number, name: string) => {
+    if (!window.confirm(`Delete agent "${name}"? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/crm/agents/${id}`, { headers: authHeaders() });
+      fetchAgents();
+    } catch (err: any) { alert(err.response?.data?.message || 'Delete failed'); }
   };
 
   const tierColor = (ct: string) => ({
@@ -309,7 +317,14 @@ export function CRMAgentsPage() {
                         </span>
                       </td>
                       <td className={`${tdClass} pr-5 text-right`}>
-                        <button onClick={() => openEdit(a)} className="text-[11px] text-slate-500 hover:text-violet-400 transition-colors px-2 py-1 rounded hover:bg-violet-500/10">Edit</button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => openEdit(a)} className="text-[11px] text-slate-500 hover:text-violet-400 transition-colors px-2 py-1 rounded hover:bg-violet-500/10 flex items-center gap-1">
+                            <Edit className="h-3 w-3" /> Edit
+                          </button>
+                          <button onClick={() => deleteAgent(a.id, a.name)} className="text-[11px] text-slate-600 hover:text-red-400 transition-colors p-1.5 rounded hover:bg-red-500/10">
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -394,6 +409,14 @@ export function CRMAgenciesPage() {
       await api.put(`/crm/agencies/${agency.id}`, { ...agency, onboardingStep: agency.onboardingStep + 1 }, { headers: authHeaders() });
       fetchAgencies();
     } catch {}
+  };
+
+  const deleteAgency = async (id: number, name: string) => {
+    if (!window.confirm(`Delete agency "${name}"? All associated agents will be unlinked.`)) return;
+    try {
+      await api.delete(`/crm/agencies/${id}`, { headers: authHeaders() });
+      fetchAgencies();
+    } catch (err: any) { alert(err.response?.data?.message || 'Delete failed'); }
   };
 
   return (
@@ -643,7 +666,14 @@ export function CRMAgenciesPage() {
                               <div className="text-[10px] text-slate-600 mt-0.5">{ONBOARDING_STEPS[(a.onboardingStep || 1) - 1]?.label}</div>
                             </td>
                             <td className={`${tdClass} pr-5 text-right`}>
-                              <button onClick={() => openEdit(a)} className="text-[11px] text-slate-500 hover:text-violet-400 transition-colors px-2 py-1 rounded hover:bg-violet-500/10">Edit</button>
+                              <div className="flex items-center justify-end gap-1">
+                                <button onClick={() => openEdit(a)} className="text-[11px] text-slate-500 hover:text-violet-400 transition-colors px-2 py-1 rounded hover:bg-violet-500/10 flex items-center gap-1">
+                                  <Edit className="h-3 w-3" /> Edit
+                                </button>
+                                <button onClick={() => deleteAgency(a.id, a.name)} className="text-[11px] text-slate-600 hover:text-red-400 transition-colors p-1.5 rounded hover:bg-red-500/10">
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -1118,6 +1148,14 @@ export function CRMCorporatePlansPage() {
     } catch {}
   };
 
+  const handleDeletePlan = async (id: number, name: string) => {
+    if (!window.confirm(`Delete corporate plan "${name}"? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/crm/corporate-plans/${id}`, { headers: authHeaders() });
+      fetchPlans();
+    } catch (err: any) { alert(err.response?.data?.message || 'Delete failed'); }
+  };
+
   const openEdit = (p: any) => {
     setEditPlan(p);
     setForm({
@@ -1467,8 +1505,8 @@ export function CRMCorporatePlansPage() {
                         <td className={`${tdClass} pr-5`}>
                           <div className="flex items-center gap-1 justify-end">
                             <button onClick={() => openEdit(p)}
-                              className="text-[11px] text-slate-500 hover:text-violet-400 px-2 py-1 rounded hover:bg-violet-500/10 transition-colors">
-                              Edit
+                              className="text-[11px] text-slate-500 hover:text-violet-400 px-2 py-1 rounded hover:bg-violet-500/10 transition-colors flex items-center gap-1">
+                              <Edit className="h-3 w-3" /> Edit
                             </button>
                             {p.status === 'active' && (
                               <button onClick={() => handleRenew(p)}
@@ -1476,6 +1514,10 @@ export function CRMCorporatePlansPage() {
                                 <RotateCcw className="h-3 w-3" />Renew
                               </button>
                             )}
+                            <button onClick={() => handleDeletePlan(p.id, p.display_name)}
+                              className="text-[11px] text-slate-600 hover:text-red-400 p-1.5 rounded hover:bg-red-500/10 transition-colors">
+                              <Trash2 className="h-3 w-3" />
+                            </button>
                           </div>
                         </td>
                       </tr>

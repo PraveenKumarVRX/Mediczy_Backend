@@ -115,6 +115,22 @@ export default function AIAnalyticsDashboard() {
     enabled: activeTab === "rag",
   });
 
+  const { data: staffing } = useQuery({
+    queryKey: ["roadmap-staffing"],
+    queryFn: () => api.get('/roadmap-intelligence/staffing/forecast').then(r => r.data.data),
+    staleTime: 60_000,
+  });
+  const { data: rwe = [] } = useQuery({
+    queryKey: ["roadmap-rwe"],
+    queryFn: () => api.get('/roadmap-intelligence/rwe/aggregate').then(r => r.data.data || []),
+    staleTime: 60_000,
+  });
+  const { data: esg = [] } = useQuery({
+    queryKey: ["roadmap-esg"],
+    queryFn: () => api.get('/roadmap-intelligence/esg/summary').then(r => r.data.data || []),
+    staleTime: 60_000,
+  });
+
   return (
     <AdminLayout>
     <div className="space-y-6">
@@ -167,6 +183,15 @@ export default function AIAnalyticsDashboard() {
                 <StatCard title="Risk Patients" value={overview.healthRisk.totalPatients} subtitle={`${overview.healthRisk.distribution.high + overview.healthRisk.distribution.critical} high/critical`} icon="🏥" color={overview.healthRisk.distribution.critical > 0 ? "text-red-600" : "text-primary"} />
                 <StatCard title="Notifications" value={overview.notifications.total} subtitle={`${overview.notifications.readRate}% read`} icon="🔔" />
               </div>
+
+              <Card>
+                <CardHeader><CardTitle className="text-lg">Roadmap Operations Snapshot</CardTitle><CardDescription>Phase 4 and 5 operational intelligence exposed from live services.</CardDescription></CardHeader>
+                <CardContent className="grid gap-4 md:grid-cols-3">
+                  <div className="rounded-lg border p-4"><p className="text-sm text-muted-foreground">Staffing forecast</p><p className="mt-1 text-2xl font-bold">{staffing?.recommendedNurses ?? '—'} nurses</p><p className="text-xs text-muted-foreground">{staffing?.projectedPatients ?? '—'} projected patients</p></div>
+                  <div className="rounded-lg border p-4"><p className="text-sm text-muted-foreground">RWE aggregate</p><p className="mt-1 text-2xl font-bold">{rwe.reduce((sum: number, row: any) => sum + Number(row.noisyPatientCount || 0), 0)}</p><p className="text-xs text-muted-foreground">Noisy patient count only</p></div>
+                  <div className="rounded-lg border p-4"><p className="text-sm text-muted-foreground">ESG emissions</p><p className="mt-1 text-2xl font-bold">{esg.reduce((sum: number, row: any) => sum + Number(row.emissions_kgco2e || 0), 0).toFixed(1)}</p><p className="text-xs text-muted-foreground">kgCO2e captured</p></div>
+                </CardContent>
+              </Card>
 
               {/* Overview Charts */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

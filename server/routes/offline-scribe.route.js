@@ -15,6 +15,7 @@ import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import logger from '../config/logger.js';
 
 const router = express.Router();
+const ambientSessions = new Map();
 const requireScribeAccess = requireRole(['doctor', 'assistant', 'nurse', 'team', 'admin', 'hospital']);
 
 // Offline scribe service URL (Python FastAPI)
@@ -618,6 +619,74 @@ router.post('/discharge', authUser, requireScribeAccess, async (req, res) => {
             error: 'Discharge summary generation failed',
             message: error.message
         });
+    }
+});
+
+
+// ===================================
+// Ambient streaming MVP
+// ===================================
+
+router.post('/sessions', authUser, requireScribeAccess, async (req, res) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    ambientSessions.set(id, {
+        id,
+        ownerId: req.user?.id,
+        language: normalizeLanguage(req.body.language || 'auto'),
+        documentType: mapDocumentTypeForBackend(req.body.document_type || 'opd-notes'),
+        patientContext: req.body.patient_context || {},
+        chunks: [],
+        createdAt: new Date().toISOString()
+    });
+    res.status(201).json({ success: true, sessionId: id });
+});
+
+router.post('/sessions/:id/chunks', authUser, requireScribeAccess, upload.single('audio'), async (req, res) => {
+    const session = ambientSessions.get(req.params.id);
+    if (!session || session.ownerId !== req.user?.id) {
+        return res.status(404).json({ success: false, message: 'Ambient session not found' });
+    }
+    if (!req.file) {
+        return res.status(400).json({ success: false, message: 'Upload audio chunk with field name "audio"' });
+    }
+    session.chunks.push(req.file.buffer);
+    return res.status(202).json({ success: true, chunkCount: session.chunks.length });
+});
+
+router.post('/sessions/:id/finalize', authUser, requireScribeAccess, async (req, res) => {
+    try {
+        assertLocalScribeTarget();
+        const session = ambientSessions.get(req.params.id);
+        if (!session || session.ownerId !== req.user?.id) {
+            return res.status(404).json({ success: false, message: 'Ambient session not found' });
+        }
+        if (!session.chunks.length) {
+            return res.status(400).json({ success: false, message: 'No audio chunks uploaded' });
+        }
+
+        const formData = new FormData();
+        formData.append('file', Buffer.concat(session.chunks), {
+            filename: 'ambient-session.webm',
+            contentType: 'audio/webm'
+        });
+        formData.append('language', session.language);
+        formData.append('document_type', session.documentType);
+        formData.append('patient_name', session.patientContext.name || session.patientContext.patient_name || '');
+        formData.append('patient_age', session.patientContext.age || session.patientContext.patient_age || '');
+        formData.append('patient_gender', session.patientContext.gender || session.patientContext.patient_gender || '');
+
+        const response = await fetch(`${OFFLINE_SCRIBE_URL}/api/scribe/full-pipeline`, { method: 'POST', body: formData });
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+            throw new Error(error.detail || error.error || `Pipeline failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+        ambientSessions.delete(req.params.id);
+        return res.json({ success: true, sessionId: req.params.id, result });
+    } catch (error) {
+        logger.error('Ambient scribe finalize failed:', { error: error.message, userId: req.user?.id });
+        return res.status(500).json({ success: false, message: error.message });
     }
 });
 

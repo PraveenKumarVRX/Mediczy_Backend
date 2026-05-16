@@ -11,10 +11,11 @@ import multer from 'multer';
 import fs from 'fs/promises';
 import path from 'path';
 import llmProvider from '../services/ai-brain/llm-provider.js';
-import { authDoctor } from '../middleware/auth.middleware.js';
+import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { scanOnly } from '../services/minio-upload.service.js';
 
 const router = express.Router();
+const requireVisionAccess = requireRole(['doctor', 'nurse', 'hospital', 'hospital_admin']);
 
 // Configure multer for image uploads
 const storage = multer.diskStorage({
@@ -46,7 +47,7 @@ const upload = multer({
  * @desc    Analyze medical image with AI Vision (Claude 3.5 Sonnet)
  * @access  Private (Doctor)
  */
-router.post('/analyze', authDoctor, upload.single('image'), async (req, res) => {
+router.post('/analyze', authUser, requireVisionAccess, upload.single('image'), async (req, res) => {
   let imagePath = null;
 
   try {
@@ -87,40 +88,50 @@ router.post('/analyze', authDoctor, upload.single('image'), async (req, res) => 
 
     console.log(`[AI Vision] Analyzing ${sourceType} - ${req.file.size} bytes - ${mediaType}`);
 
-    // Medical image analysis prompt
-    const visionPrompt = `You are an expert medical image analyst. Analyze this medical image and provide clinical insights.
+    const genericVisionPrompt = `You are an expert medical image analyst. Analyze this medical image and provide clinical insights.
 
 IMPORTANT: This is for clinical decision support only. A qualified physician must make the final diagnosis.
 
-Analyze the image and provide:
-
-1. **Findings**: Describe observable features (anatomical structures, pathological findings, artifacts)
-2. **Assessment**: Preliminary radiological/clinical assessment based on findings
-3. **Recommendations**: Suggested follow-up tests or clinical consultations
-4. **Drug Suggestions**: Common medications used for conditions visible in this image
-5. **ICD-10 Codes**: Relevant diagnostic codes
-
-Return ONLY valid JSON (no markdown, no code blocks):
+Return ONLY valid JSON:
 {
   "findings": "detailed description of what's visible",
   "assessment": "clinical assessment",
   "recommendations": ["recommendation1", "recommendation2"],
-  "drugSuggestions": [
-    {
-      "name": "medication name",
-      "dosage": "strength/form",
-      "frequency": "TDS/BID/OD",
-      "duration": "5-7 days",
-      "reason": "why suggested for this condition"
-    }
-  ],
-  "icd10Codes": [
-    {
-      "code": "ICD-10 code",
-      "description": "diagnostic description"
-    }
-  ]
+  "drugSuggestions": [],
+  "icd10Codes": []
 }`;
+    const woundVisionPrompt = `You are a wound-care clinical decision support assistant. Analyze the wound photograph for clinician review only.
+
+Return ONLY valid JSON:
+{
+  "findings": "wound bed, exudate, edge, surrounding skin",
+  "assessment": "brief wound assessment",
+  "woundType": "pressure_ulcer|surgical|diabetic_foot|burn|other",
+  "stage": "grade or stage if visible, otherwise indeterminate",
+  "estimatedAreaCm2": 0,
+  "healingTrajectory": "baseline|improving|worsening|indeterminate",
+  "recommendations": ["clinician-reviewed care suggestion"],
+  "drugSuggestions": [],
+  "icd10Codes": []
+}`;
+    const pathologyVisionPrompt = `You are a pathology image review assistant. Analyze the histopathology image for pathologist review only.
+
+Return ONLY valid JSON:
+{
+  "findings": "cellular architecture and suspicious regions",
+  "assessment": "preliminary pathology impression",
+  "suspiciousRegions": ["region description"],
+  "gradeSuggestion": "if inferable, otherwise indeterminate",
+  "confidence": 0,
+  "recommendations": ["pathologist review recommendation"],
+  "drugSuggestions": [],
+  "icd10Codes": []
+}`;
+    const visionPrompt = sourceType === 'wound'
+      ? woundVisionPrompt
+      : sourceType === 'pathology'
+        ? pathologyVisionPrompt
+        : genericVisionPrompt;
 
     // Call centralized Vision API via llmProvider
     const visionResult = await llmProvider.vision({
@@ -170,6 +181,13 @@ Return ONLY valid JSON (no markdown, no code blocks):
         recommendations: Array.isArray(analysis.recommendations) ? analysis.recommendations : [],
         drugSuggestions: Array.isArray(analysis.drugSuggestions) ? analysis.drugSuggestions : [],
         icd10Codes: Array.isArray(analysis.icd10Codes) ? analysis.icd10Codes : [],
+        woundType: analysis.woundType || null,
+        stage: analysis.stage || null,
+        estimatedAreaCm2: analysis.estimatedAreaCm2 || null,
+        healingTrajectory: analysis.healingTrajectory || null,
+        suspiciousRegions: Array.isArray(analysis.suspiciousRegions) ? analysis.suspiciousRegions : [],
+        gradeSuggestion: analysis.gradeSuggestion || null,
+        confidence: analysis.confidence || null,
         sourceType: sourceType || 'uploaded_image',
         analyzedAt: new Date().toISOString(),
         model: visionResult.model || 'claude-3-5-sonnet'

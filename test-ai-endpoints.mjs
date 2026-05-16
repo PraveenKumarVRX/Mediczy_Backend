@@ -3,13 +3,33 @@
  * Tests: CRM Auth → RFQ CRUD → AI Quote Generation → Claims Upload → Claims Analysis → LLM Integration
  */
 
+
 import { createRequire } from 'module';
+import fs from 'fs';
+import path from 'path';
 const require = createRequire(import.meta.url);
 const XLSX = require('./server/node_modules/xlsx');
 
-const BASE = 'http://localhost:8888/api/crm';
-const CRM_EMAIL = 'crm@mediczy.com';
-const CRM_PASSWORD = 'Crm@1234567';
+// Load .env.testing if present
+let env = {};
+try {
+  const envPath = path.resolve(process.cwd(), '.env.testing');
+  if (fs.existsSync(envPath)) {
+    const lines = fs.readFileSync(envPath, 'utf8').split('\n');
+    for (const line of lines) {
+      const match = line.match(/^([^#=]+)=(.*)$/);
+      if (match) {
+        env[match[1].trim()] = match[2].trim();
+      }
+    }
+  }
+} catch (e) {
+  // Ignore errors, fallback to defaults
+}
+
+const BASE = env.BASE_URL ? `${env.BASE_URL}/api/crm` : 'http://localhost:8888/api/crm';
+const CRM_EMAIL = env.TEST_USER_EMAIL || 'crm@mediczy.com';
+const CRM_PASSWORD = env.TEST_USER_PASSWORD || 'Crm@1234567';
 
 let TOKEN = '';
 let TEST_RFQ_ID = null;

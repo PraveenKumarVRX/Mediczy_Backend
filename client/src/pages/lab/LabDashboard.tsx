@@ -161,6 +161,22 @@ const LabDashboard = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [cartItems, setCartItems] = useState<Array<{id: string, name: string, price: number}>>([]);
   const [showCart, setShowCart] = useState(false);
+  const [pathologyImage, setPathologyImage] = useState<File | null>(null);
+  const [pathologyResult, setPathologyResult] = useState<any>(null);
+  const [pathologyLoading, setPathologyLoading] = useState(false);
+
+  const analyzePathologyImage = async () => {
+    if (!pathologyImage) return;
+    try {
+      setPathologyLoading(true);
+      const form = new FormData();
+      form.append('image', pathologyImage);
+      form.append('sourceType', 'pathology');
+      const response = await fetch('/api/ai/vision/analyze', { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('labToken') || ''}` }, body: form });
+      const payload = await response.json();
+      setPathologyResult(payload.analysis ?? null);
+    } finally { setPathologyLoading(false); }
+  };
 
   useEffect(() => {
     const token = localStorage.getItem('labToken');
@@ -720,6 +736,16 @@ const LabDashboard = () => {
             ))}
           </div>
         </div>
+      )}
+
+      {isPathology && (
+        <Card className="border-emerald-200 bg-emerald-50/40 dark:bg-emerald-950/10">
+          <CardHeader><CardTitle className="text-base">Digital Pathology Review</CardTitle><CardDescription>Upload a slide or microscopy image for clinician review support.</CardDescription></CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-col gap-2 md:flex-row"><Input type="file" accept="image/*" onChange={(e) => setPathologyImage(e.target.files?.[0] || null)} /><Button onClick={analyzePathologyImage} disabled={!pathologyImage || pathologyLoading}>{pathologyLoading ? 'Analyzing...' : 'Analyze Image'}</Button></div>
+            {pathologyResult && <div className="rounded-lg border bg-white p-3 text-sm dark:bg-slate-900"><p className="font-medium">{pathologyResult.assessment || 'Pathology assessment available'}</p><p className="mt-1 text-muted-foreground">{pathologyResult.findings}</p>{pathologyResult.grade && <Badge className="mt-2">Grade: {pathologyResult.grade}</Badge>}</div>}
+          </CardContent>
+        </Card>
       )}
 
       {/* Quick Actions */}

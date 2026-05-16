@@ -102,8 +102,28 @@ function formatCurrency(n: number) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+// Map RFQ product_type value to a PRODUCTS code
+function resolveProductCode(productType: string | undefined): string {
+  const pt = (productType || '').toUpperCase().replace(/\s+/g, '').split(/[/,+]/)[0];
+  if (pt.includes('OPD') || pt.includes('OUTPATIENT')) return 'OPD';
+  if (pt.includes('GPA') || pt.includes('ACCIDENT')) return 'GPA';
+  if (pt.includes('GTL') || pt.includes('LIFE') || pt.includes('TERM')) return 'GTL';
+  if (pt.includes('TOPUP') || pt.includes('SUPERTOP') || pt.includes('TOP-UP')) return 'TOPUP';
+  if (pt.includes('CI') || pt.includes('CRITICAL')) return 'CI';
+  return 'GMC';
+}
+
+// Products visible for a given RFQ product type — pure OPD shouldn't default to GMC matrix
+function relevantProducts(productType: string | undefined) {
+  const code = resolveProductCode(productType);
+  if (code === 'OPD') return PRODUCTS.filter(p => ['OPD', 'GMC'].includes(p.code));
+  if (code === 'GPA') return PRODUCTS.filter(p => ['GPA', 'GMC'].includes(p.code));
+  if (code === 'GTL') return PRODUCTS.filter(p => ['GTL', 'GMC'].includes(p.code));
+  return PRODUCTS;
+}
+
 export function RFQUnderwritingTab({ rfqId, rfq }: { rfqId: number; rfq: any }) {
-  const [selectedProduct, setSelectedProduct] = useState('GMC');
+  const [selectedProduct, setSelectedProduct] = useState(() => resolveProductCode(rfq?.product_type));
   const [activeSection, setActiveSection] = useState<'matrix' | 'analyze' | 'chat' | 'terms'>('matrix');
 
   // Coverage matrix state
@@ -296,9 +316,9 @@ export function RFQUnderwritingTab({ rfqId, rfq }: { rfqId: number; rfq: any }) 
           </div>
         </div>
 
-        {/* Product tabs */}
+        {/* Product tabs — filtered to products relevant for this RFQ type */}
         <div className="flex gap-2 flex-wrap mt-4">
-          {PRODUCTS.map(p => (
+          {relevantProducts(rfq?.product_type).map(p => (
             <button key={p.code} onClick={() => setSelectedProduct(p.code)}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
                 selectedProduct === p.code
@@ -741,10 +761,10 @@ export function RFQUnderwritingTab({ rfqId, rfq }: { rfqId: number; rfq: any }) 
                 <p className="text-sm text-slate-500">Ask iSHA-UW anything about underwriting this RFQ</p>
                 <div className="grid grid-cols-2 gap-2 mt-4 max-w-md mx-auto">
                   {[
-                    'What loading should I apply for this risk?',
-                    'Explain the PED waiting period rules',
-                    'Is maternity cover standard under GMC?',
-                    'What are the IRDAI room rent guidelines?',
+                    'Compare previous vs current member data and project claims',
+                    'What loading should I apply based on the claims experience?',
+                    'Walk me through the top diagnoses and what they mean for risk',
+                    'Is this group better or worse than market average?',
                   ].map(q => (
                     <button key={q} onClick={() => { setChatInput(q); }}
                       className="text-left px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs text-slate-400 hover:text-slate-200 hover:bg-white/[0.07] transition-all">

@@ -14,6 +14,9 @@ import express from 'express';
 import { authCRM } from '../middleware/crm.middleware.js';
 import sharedPool from '../db/pgPool.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
+import { getS3Client, getUploadsBucket } from '../services/s3-presign.service.js';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
+import XLSX from 'xlsx';
 
 const router = express.Router();
 
@@ -85,7 +88,76 @@ async function ensureTables() {
     CREATE INDEX IF NOT EXISTS idx_rfq_uw_rfq ON crm_rfq_underwriting(rfq_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_rfq_uw_rfq_product ON crm_rfq_underwriting(rfq_id, product_code);
   `);
+  // Add extracted_text cache column if it doesn't exist yet
+  await sharedPool.query(`
+    ALTER TABLE crm_rfq_files ADD COLUMN IF NOT EXISTS extracted_text TEXT;
+  `).catch(() => {});
   await seedProducts();
+}
+
+// ─── Document text extraction ─────────────────────────────────────────────────
+// Fetches a file from S3 and extracts readable text. Caches result in DB.
+
+async function extractAndCacheFileText(file) {
+  if (file.extracted_text) return file.extracted_text;
+  const bucket = getUploadsBucket();
+  if (!bucket || !file.s3_key) return null;
+
+  try {
+    const res = await getS3Client().send(new GetObjectCommand({ Bucket: bucket, Key: file.s3_key }));
+    const chunks = [];
+    for await (const chunk of res.Body) chunks.push(chunk);
+    const buffer = Buffer.concat(chunks);
+
+    const mime = file.mime_type || '';
+    const name = (file.original_name || '').toLowerCase();
+    let text = '';
+
+    if (mime === 'application/pdf' || name.endsWith('.pdf')) {
+      try {
+        const pdfParse = (await import('pdf-parse')).default;
+        const parsed = await pdfParse(buffer);
+        text = (parsed.text || '').slice(0, 12000);
+      } catch { text = ''; }
+    } else if (mime.includes('spreadsheet') || mime.includes('excel') || name.endsWith('.xlsx') || name.endsWith('.xls')) {
+      try {
+        const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+        const lines = [];
+        for (const sheetName of wb.SheetNames) {
+          const ws = wb.Sheets[sheetName];
+          const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+          lines.push(`=== ${sheetName} ===`);
+          for (let r = range.s.r; r <= Math.min(range.e.r, 200); r++) {
+            const row = [];
+            for (let c = range.s.c; c <= range.e.c; c++) {
+              const cell = ws[XLSX.utils.encode_cell({ r, c })];
+              if (cell?.v !== undefined && cell.v !== null && cell.v !== '') {
+                const v = cell.v instanceof Date ? cell.v.toISOString().slice(0, 10) : (cell.w || cell.v?.toString());
+                if (v?.toString().trim()) row.push(v.toString().trim());
+              }
+            }
+            if (row.length) lines.push(row.join(' | '));
+          }
+        }
+        text = lines.join('\n').slice(0, 12000);
+      } catch { text = ''; }
+    } else if (mime === 'text/csv' || name.endsWith('.csv')) {
+      text = buffer.toString('utf8').slice(0, 8000);
+    } else if (mime === 'text/plain' || name.endsWith('.txt')) {
+      text = buffer.toString('utf8').slice(0, 8000);
+    }
+
+    if (text.trim()) {
+      await sharedPool.query(
+        `UPDATE crm_rfq_files SET extracted_text = $1 WHERE id = $2`,
+        [text, file.id]
+      ).catch(() => {});
+    }
+    return text || null;
+  } catch (e) {
+    console.warn('[UW chat] doc extract failed:', e.message);
+    return null;
+  }
 }
 
 // ─── Seed insurance products & coverage matrix ───────────────────────────────
@@ -537,9 +609,9 @@ router.post('/rfqs/:rfqId/analyze', authCRM, async (req, res) => {
         COUNT(DISTINCT emp_code) AS total_employees,
         ROUND(AVG(age)) AS avg_age,
         COUNT(*) FILTER (WHERE gender ILIKE 'F%') AS female_count,
-        COUNT(*) FILTER (WHERE relationship ILIKE '%SELF%') AS self_count,
-        COALESCE(AVG(si_proposed) FILTER (WHERE si_proposed > 0), 0) AS avg_si,
-        COALESCE(MAX(si_proposed), 0) AS max_si
+        COUNT(*) FILTER (WHERE COALESCE(NULLIF(TRIM(relationship),''), relation_type) ILIKE '%SELF%') AS self_count,
+        COALESCE(AVG(COALESCE(NULLIF(si_proposed,0), si_expiring)) FILTER (WHERE COALESCE(si_proposed,si_expiring) > 0), 0) AS avg_si,
+        COALESCE(MAX(COALESCE(NULLIF(si_proposed,0), si_expiring)), 0) AS max_si
         FROM crm_rfq_members WHERE rfq_id = $1`, [rfqId]),
       sharedPool.query(`SELECT
         CASE WHEN age < 25 THEN '<25'
@@ -549,7 +621,7 @@ router.post('/rfqs/:rfqId/analyze', authCRM, async (req, res) => {
              WHEN age < 65 THEN '55-64'
              ELSE '65+' END AS band,
         COUNT(*) AS cnt
-        FROM crm_rfq_members WHERE rfq_id = $1 AND age IS NOT NULL GROUP BY band ORDER BY band`, [rfqId]),
+        FROM crm_rfq_members WHERE rfq_id = $1 AND age IS NOT NULL GROUP BY 1 ORDER BY 1`, [rfqId]),
       sharedPool.query(`SELECT
         COUNT(*) AS total_claims,
         COALESCE(SUM(claimed_amount), 0) AS total_claimed,
@@ -566,8 +638,12 @@ router.post('/rfqs/:rfqId/analyze', authCRM, async (req, res) => {
     const femaleRatio = totalLives > 0 ? (femaleCount / totalLives) : 0;
     const avgSI = parseFloat(ms.avg_si) || 0;
 
-    // Premium at risk (estimated)
-    const estimatedGWP = totalLives > 0 && avgSI > 0 ? Math.round(avgSI * totalLives * 0.012) : 0;
+    // Premium at risk — use actual premium_paid when available, else estimate at IRDA benchmark 1.2% of total SI
+    const actualPremium = rfq.premium_paid ? parseFloat(rfq.premium_paid) : 0;
+    const estimatedGWP = actualPremium > 0
+      ? Math.round(actualPremium)
+      : (totalLives > 0 && avgSI > 0 ? Math.round(avgSI * totalLives * 0.012) : 0);
+    const gwpSource = actualPremium > 0 ? 'actual' : 'estimated';
     const totalClaimed = parseFloat(cs.total_claimed) || 0;
     const totalApproved = parseFloat(cs.total_approved) || 0;
     const lossRatio = estimatedGWP > 0 ? Math.round((totalApproved / estimatedGWP) * 100) : 0;
@@ -714,9 +790,9 @@ RFQ SUMMARY:
 - Age Bands: ${ageBands.rows.map(r => `${r.band}: ${r.cnt}`).join(', ')}
 - Female Ratio: ${(femaleRatio * 100).toFixed(0)}%
 - Average SI: ₹${(avgSI / 100000).toFixed(1)}L
-- Estimated GWP: ₹${(estimatedGWP / 100000).toFixed(1)}L
+- GWP (${gwpSource}): ₹${(estimatedGWP / 100000).toFixed(1)}L
 - Claims History: ${cs.total_claims || 0} claims, ₹${(totalApproved / 100000).toFixed(1)}L approved
-- Loss Ratio: ${lossRatio}%
+- Loss Ratio: ${lossRatio}% (based on ${gwpSource} premium)
 - Requested Coverages: ${parsedRequested.join(', ') || 'Standard GMC'}
 - Coverage Gaps Found: ${gapAnalysis.filter(g => g.gap !== 'STANDARD_MATCH').length}
 - Risk Flags: ${riskFlags.map(f => f.flag).join(', ') || 'None'}
@@ -777,7 +853,7 @@ Be precise, professional, and cite specific IRDAI regulations where relevant.`;
       underwriting: {
         rfqId, insuredName: rfq.insured_name, productCode, productName: product.name,
         decision, uwStatus, riskScore, loadingPct,
-        memberProfile: { totalLives, avgAge, femaleRatio: (femaleRatio * 100).toFixed(0) + '%', avgSI, estimatedGWP },
+        memberProfile: { totalLives, avgAge, femaleRatio: (femaleRatio * 100).toFixed(0) + '%', avgSI, estimatedGWP, gwpSource },
         claimsProfile: { totalClaims: parseInt(cs.total_claims) || 0, totalApproved, lossRatio },
         coverageMatrix: { inclusions, exclusions, conditional, optional },
         requestedCoverages: parsedRequested,
@@ -796,7 +872,7 @@ Be precise, professional, and cite specific IRDAI regulations where relevant.`;
 });
 
 // ─── POST /api/crm/underwriting/rfqs/:rfqId/ai-chat ──────────────────────────
-// iSHA-UW conversational AI for underwriting questions on a specific RFQ.
+// iSHA-UW conversational AI — loads full analytics so responses are specific.
 
 router.post('/rfqs/:rfqId/ai-chat', authCRM, async (req, res) => {
   try {
@@ -804,23 +880,185 @@ router.post('/rfqs/:rfqId/ai-chat', authCRM, async (req, res) => {
     const { message, history = [], productCode = 'GMC' } = req.body;
     if (!message?.trim()) return res.status(400).json({ success: false, error: 'message required' });
 
-    const rfqRes = await sharedPool.query(`SELECT insured_name, product_type, policy_type, industry, member_count FROM crm_rfqs WHERE id = $1`, [rfqId]);
+    // Load full RFQ + live analytics + uploaded files in parallel
+    const [rfqRes, uwRes, memberRes, claimsRes, ageBandRes, topClaimsRes, filesRes] = await Promise.all([
+      sharedPool.query(`SELECT * FROM crm_rfqs WHERE id = $1`, [rfqId]),
+      sharedPool.query(`SELECT * FROM crm_rfq_underwriting WHERE rfq_id = $1 AND product_code = $2 ORDER BY updated_at DESC LIMIT 1`, [rfqId, productCode.toUpperCase()]),
+      sharedPool.query(`SELECT
+        COUNT(*) AS total_lives,
+        COUNT(DISTINCT emp_code) AS employees,
+        ROUND(AVG(age)) AS avg_age,
+        COUNT(*) FILTER (WHERE gender ILIKE 'F%') AS female_count,
+        COUNT(*) FILTER (WHERE COALESCE(NULLIF(TRIM(relationship),''), relation_type) ILIKE '%SELF%') AS self_count,
+        COALESCE(AVG(COALESCE(NULLIF(si_proposed,0), si_expiring)) FILTER (WHERE COALESCE(si_proposed,si_expiring) > 0), 0) AS avg_si
+        FROM crm_rfq_members WHERE rfq_id = $1`, [rfqId]),
+      sharedPool.query(`SELECT
+        COUNT(*) AS total_claims,
+        COALESCE(SUM(claimed_amount), 0) AS total_claimed,
+        COALESCE(SUM(approved_amount), 0) AS total_approved,
+        COALESCE(AVG(approved_amount) FILTER (WHERE approved_amount > 0), 0) AS avg_approved,
+        COALESCE(MAX(approved_amount), 0) AS max_claim
+        FROM crm_rfq_claims WHERE rfq_id = $1`, [rfqId]),
+      sharedPool.query(`SELECT
+        CASE WHEN age < 25 THEN 'Under 25'
+             WHEN age < 35 THEN '25–34'
+             WHEN age < 45 THEN '35–44'
+             WHEN age < 55 THEN '45–54'
+             WHEN age < 65 THEN '55–64'
+             ELSE '65+' END AS band,
+        COUNT(*) AS cnt
+        FROM crm_rfq_members WHERE rfq_id = $1 AND age IS NOT NULL GROUP BY 1 ORDER BY 1`, [rfqId]),
+      sharedPool.query(`SELECT diagnosis, COALESCE(SUM(approved_amount),0) AS paid
+        FROM crm_rfq_claims WHERE rfq_id = $1 AND diagnosis IS NOT NULL
+        GROUP BY diagnosis ORDER BY paid DESC LIMIT 8`, [rfqId]),
+      sharedPool.query(`SELECT id, category, original_name, s3_key, mime_type, extracted_text, uploaded_at
+        FROM crm_rfq_files WHERE rfq_id = $1
+        AND category NOT IN ('members')
+        ORDER BY uploaded_at ASC`, [rfqId]),
+    ]);
+
     const rfq = rfqRes.rows[0] || {};
-
-    const uwRes = await sharedPool.query(`SELECT * FROM crm_rfq_underwriting WHERE rfq_id = $1 AND product_code = $2 ORDER BY updated_at DESC LIMIT 1`, [rfqId, productCode.toUpperCase()]);
     const uw = uwRes.rows[0] || null;
+    const ms = memberRes.rows[0] || {};
+    const cs = claimsRes.rows[0] || {};
 
-    const context = `RFQ Context: ${rfq.insured_name || 'Unknown'}, ${rfq.member_count || 0} lives, ${rfq.product_type || productCode}.${
-      uw ? ` Current UW decision: ${uw.decision}, Risk score: ${uw.risk_score}, Loading: ${uw.loading_pct}%.` : ''
-    }`;
+    const totalLives = parseInt(ms.total_lives) || 0;
+    const employees = parseInt(ms.employees) || 0;
+    const avgAge = parseFloat(ms.avg_age) || 0;
+    const femaleCount = parseInt(ms.female_count) || 0;
+    const femaleRatio = totalLives > 0 ? ((femaleCount / totalLives) * 100).toFixed(0) : 0;
+    const avgSI = parseFloat(ms.avg_si) || 0;
+    const dependents = totalLives - (parseInt(ms.self_count) || employees);
+    const depRatio = employees > 0 ? (dependents / employees).toFixed(1) : 'N/A';
+
+    const actualPremium = rfq.premium_paid ? parseFloat(rfq.premium_paid) : 0;
+    const estimatedGWP = actualPremium > 0
+      ? actualPremium
+      : (totalLives > 0 && avgSI > 0 ? avgSI * totalLives * 0.012 : 0);
+    const totalApproved = parseFloat(cs.total_approved) || 0;
+    const lossRatio = estimatedGWP > 0 ? Math.round((totalApproved / estimatedGWP) * 100) : 0;
+    const avgClaim = parseFloat(cs.avg_approved) || 0;
+    const maxClaim = parseFloat(cs.max_claim) || 0;
+    const claimFreq = totalLives > 0 ? ((parseInt(cs.total_claims) / totalLives) * 100).toFixed(1) : 0;
+
+    const fmtL = n => n >= 10000000 ? `₹${(n/10000000).toFixed(2)}Cr` : n >= 100000 ? `₹${(n/100000).toFixed(1)}L` : `₹${Math.round(n).toLocaleString('en-IN')}`;
+
+    const ageBandText = ageBandRes.rows.map(r => `${r.band}: ${r.cnt} lives`).join(', ');
+    const topDxText = topClaimsRes.rows.length
+      ? topClaimsRes.rows.map(r => `${r.diagnosis || 'Unspecified'} (${fmtL(r.paid)})`).join(', ')
+      : 'No diagnosis data available';
+
+    // ── Extract text from uploaded documents (parallel, with DB caching) ───────
+    const docFiles = filesRes.rows || [];
+    const docTexts = await Promise.all(
+      docFiles.map(async f => {
+        const text = await extractAndCacheFileText(f);
+        return text ? { name: f.original_name, category: f.category, text } : null;
+      })
+    );
+    const validDocs = docTexts.filter(Boolean);
+
+    // Build document context block
+    let documentContext = '';
+    if (validDocs.length > 0) {
+      documentContext = `\n────────────────────────────────────────────────
+UPLOADED DOCUMENTS FOR THIS RFQ (${validDocs.length} files)
+────────────────────────────────────────────────`;
+      for (const doc of validDocs) {
+        documentContext += `\n\n[${doc.category.toUpperCase()}] ${doc.name}:\n${doc.text.slice(0, 3000)}`;
+      }
+    }
+
+    // ── RFQ text fields (broking slip notes, conditions etc.) ────────────────
+    const rfqTextFields = [
+      rfq.existing_coverages ? `EXISTING COVERAGES:\n${rfq.existing_coverages}` : '',
+      rfq.required_coverages ? `REQUIRED/REQUESTED COVERAGES:\n${rfq.required_coverages}` : '',
+      rfq.special_conditions ? `SPECIAL CONDITIONS:\n${typeof rfq.special_conditions === 'string' ? rfq.special_conditions : JSON.stringify(rfq.special_conditions, null, 2)}` : '',
+      rfq.exclusions ? `EXCLUSIONS REQUESTED:\n${rfq.exclusions}` : '',
+      rfq.terms_and_conditions ? `TERMS & CONDITIONS:\n${rfq.terms_and_conditions}` : '',
+      rfq.notes ? `NOTES:\n${rfq.notes}` : '',
+    ].filter(Boolean).join('\n\n');
+
+    const rfqTextContext = rfqTextFields ? `\n────────────────────────────────────────────────
+RFQ SLIP / COVERAGE NOTES
+────────────────────────────────────────────────\n${rfqTextFields.slice(0, 4000)}` : '';
+
+    // ── Parsed slip from underwriting run ────────────────────────────────────
+    let parsedSlipContext = '';
+    if (uw?.slip_parsed) {
+      try {
+        const slip = typeof uw.slip_parsed === 'string' ? JSON.parse(uw.slip_parsed) : uw.slip_parsed;
+        const req = slip.requestedFromSlip || [];
+        if (req.length) parsedSlipContext = `\nParsed coverage requests from slip: ${req.join(', ')}`;
+      } catch { /* ignore */ }
+    }
+
+    // Underwriting assessment context (if run)
+    const uwContext = uw ? `
+UNDERWRITING ASSESSMENT (already run):
+- Decision: ${uw.decision}
+- Risk Score: ${uw.risk_score}/100
+- Loading: ${uw.loading_pct}%
+- Conditions: ${(() => { try { return (Array.isArray(uw.conditions) ? uw.conditions : JSON.parse(uw.conditions || '[]')).join('; '); } catch { return 'N/A'; } })()}
+- Risk Flags: ${(() => { try { return (Array.isArray(uw.risk_flags) ? uw.risk_flags : JSON.parse(uw.risk_flags || '[]')).map(f => `${f.flag} (${f.severity})`).join(', ') || 'None'; } catch { return 'N/A'; } })()}` : `
+UNDERWRITING ASSESSMENT: Not yet run for ${productCode}.`;
+
+    const conversationSystem = `${ISHA_UNDERWRITING_SYSTEM}
+
+────────────────────────────────────────────────
+THIS RFQ — LIVE DATA YOU MUST USE IN YOUR ANSWERS
+────────────────────────────────────────────────
+INSURED: ${rfq.insured_name || 'Unknown'}
+PRODUCT: ${productCode} (${rfq.product_type || productCode})
+INDUSTRY: ${rfq.industry || 'Not specified'}
+POLICY: ${rfq.policy_start ? rfq.policy_start.toString().slice(0,10) : 'TBD'} → ${rfq.policy_end ? rfq.policy_end.toString().slice(0,10) : 'TBD'}
+EXISTING INSURER: ${rfq.existing_insurer || 'Not specified'}
+EXISTING TPA: ${rfq.existing_tpa || 'Not specified'}
+
+MEMBER PROFILE:
+- Total Lives: ${totalLives.toLocaleString()} (${employees.toLocaleString()} employees + ${dependents.toLocaleString()} dependents, dependent ratio ${depRatio}:1)
+- Average Age: ${avgAge || 'N/A'} years
+- Age Bands: ${ageBandText || 'No data'}
+- Female Ratio: ${femaleRatio}% (${femaleCount.toLocaleString()} female members)
+- Average Sum Insured: ${avgSI > 0 ? fmtL(avgSI) : 'Not available'}
+- Premium (${actualPremium > 0 ? 'actual' : 'estimated'}): ${estimatedGWP > 0 ? fmtL(estimatedGWP) : 'Not available'}
+
+CLAIMS EXPERIENCE:
+- Total Claims: ${parseInt(cs.total_claims || 0).toLocaleString()}
+- Total Approved: ${fmtL(totalApproved)}
+- Loss Ratio: ${lossRatio}%
+- Avg Claim Size: ${avgClaim > 0 ? fmtL(avgClaim) : 'N/A'}
+- Largest Claim: ${maxClaim > 0 ? fmtL(maxClaim) : 'N/A'}
+- Claim Frequency: ${claimFreq}% (claims per 100 lives)
+- Top Diagnoses by Cost: ${topDxText}
+${parsedSlipContext}
+${uwContext}
+${rfqTextContext}
+${documentContext}
+
+────────────────────────────────────────────────
+HOW TO RESPOND IN THIS CHAT
+────────────────────────────────────────────────
+You are a senior underwriter in a conversation with a colleague. You have the live data AND the uploaded documents above — use them.
+
+Rules:
+1. NEVER give generic bullet-point templates or assumptions — you have real data and real documents, use them.
+2. When answering from a document, cite it: "from the broking slip..." or "per the uploaded PDF...".
+3. Answer the specific question asked — be concise. One focused answer, not a lecture.
+4. Reference actual numbers directly: "the LR is ${lossRatio}%", "${totalLives.toLocaleString()} lives", "avg age ${avgAge}".
+5. If you spot something notable in the data or documents, mention it naturally — like in a meeting.
+6. Ask a follow-up if you need clarification rather than guessing.
+7. If a document is missing or data is unavailable, say so briefly and say what would help.
+8. Keep your tone direct, informed, professional — like a CUW in a quick review call.
+9. ${validDocs.length > 0 ? `You have ${validDocs.length} uploaded document(s): ${validDocs.map(d => d.name).join(', ')}. Use their content to answer questions about coverage, conditions, and terms.` : 'No documents have been uploaded yet for this RFQ. Suggest uploading the broking slip or claims statement for richer analysis.'}`;
 
     const messages = [
-      { role: 'system', content: ISHA_UNDERWRITING_SYSTEM + `\n\n${context}` },
-      ...history.slice(-6).map(h => ({ role: h.role, content: h.content })),
+      { role: 'system', content: conversationSystem },
+      ...history.slice(-8).map(h => ({ role: h.role, content: h.content })),
       { role: 'user', content: message },
     ];
 
-    const reply = await aiComplete(messages, { maxTokens: 1000, temperature: 0.35 });
+    const reply = await aiComplete(messages, { maxTokens: 800, temperature: 0.5 });
     res.json({ success: true, reply, assistant: 'iSHA-UW', timestamp: new Date().toISOString() });
   } catch (err) {
     console.error('[UW] ai-chat error:', err.message);
@@ -854,7 +1092,7 @@ router.post('/rfqs/:rfqId/generate-terms', authCRM, async (req, res) => {
 DETAILS:
 - Insured: ${rfq.insured_name}
 - Product: ${productCode} (${productCode === 'GMC' ? 'Group Mediclaim' : productCode})
-- Policy Period: ${rfq.policy_start ? rfq.policy_start.slice(0, 10) : 'TBD'} to ${rfq.policy_end ? rfq.policy_end.slice(0, 10) : 'TBD'}
+- Policy Period: ${rfq.policy_start ? new Date(rfq.policy_start).toISOString().slice(0, 10) : 'TBD'} to ${rfq.policy_end ? new Date(rfq.policy_end).toISOString().slice(0, 10) : 'TBD'}
 - Underwriting Decision: ${uw.decision}
 - Risk Score: ${uw.risk_score}/100
 - Loading: ${uw.loading_pct}%

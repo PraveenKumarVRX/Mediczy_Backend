@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import HospDeptLayout, { DeptNavSection } from '@/components/hosp-dept/HospDeptLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useQualityPortalData } from './useQualityPortalData';
+import api from '@/utils/api';
 
 export const qualityNavSections: DeptNavSection[] = [
   {
@@ -407,6 +408,21 @@ export const QualityIncidentsPage = () => {
 export const QualityKPIsPage = () => {
   const { data, loading, error, refresh } = useQualityPortalData();
   const indicators = data?.indicators ?? indicatorRows;
+  const [antibiogram, setAntibiogram] = useState<any[]>([]);
+  const [infectionAlerts, setInfectionAlerts] = useState<any[]>([]);
+
+  React.useEffect(() => {
+    Promise.all([
+      api.get('/roadmap-intelligence/antibiogram/summary'),
+      api.get('/roadmap-intelligence/infection-surveillance/alerts'),
+    ]).then(([antibiogramRes, alertsRes]) => {
+      setAntibiogram(antibiogramRes.data?.data ?? []);
+      setInfectionAlerts(alertsRes.data?.data ?? []);
+    }).catch(() => {
+      setAntibiogram([]);
+      setInfectionAlerts([]);
+    });
+  }, []);
 
   return (
   <PageShell
@@ -415,15 +431,53 @@ export const QualityKPIsPage = () => {
     actions={<><Button variant="outline" size="sm" className="gap-1"><BarChart3 className="h-4 w-4" />View Trends</Button><Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700"><Target className="h-4 w-4" />Set Threshold</Button></>}
   >
     <QualityDataState loading={loading} error={error} refresh={refresh} />
-    <Card>
-      <CardHeader><CardTitle className="text-base">Indicator Control Sheet</CardTitle></CardHeader>
-      <CardContent>
-        <SectionTable
-          headers={['Metric', 'Target', 'Actual', 'Trend', 'Owner']}
-          rows={indicators.map((row) => [row.metric, row.target, row.actual, <span className="inline-flex items-center gap-1 font-medium text-emerald-600"><ArrowUpRight className="h-4 w-4" />{row.trend}</span>, row.owner])}
-        />
-      </CardContent>
-    </Card>
+    <div className="grid gap-5 xl:grid-cols-[1.2fr_1fr]">
+      <Card>
+        <CardHeader><CardTitle className="text-base">Indicator Control Sheet</CardTitle></CardHeader>
+        <CardContent>
+          <SectionTable
+            headers={['Metric', 'Target', 'Actual', 'Trend', 'Owner']}
+            rows={indicators.map((row) => [row.metric, row.target, row.actual, <span className="inline-flex items-center gap-1 font-medium text-emerald-600"><ArrowUpRight className="h-4 w-4" />{row.trend}</span>, row.owner])}
+          />
+        </CardContent>
+      </Card>
+      <div className="space-y-5">
+        <Card>
+          <CardHeader><CardTitle className="text-base">Infection Surveillance Alerts</CardTitle></CardHeader>
+          <CardContent>
+            {infectionAlerts.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No 7-day organism cluster alerts.</p>
+            ) : (
+              <SectionTable
+                headers={['Organism', 'Isolates', 'Severity']}
+                rows={infectionAlerts.map((row) => [
+                  row.organism,
+                  String(row.isolates),
+                  <Badge className={row.severity === 'high' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}>{row.severity}</Badge>,
+                ])}
+              />
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-base">Antibiogram Snapshot</CardTitle></CardHeader>
+          <CardContent>
+            {antibiogram.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No culture data captured yet.</p>
+            ) : (
+              <SectionTable
+                headers={['Organism', 'Antibiotic', 'Sensitivity']}
+                rows={antibiogram.slice(0, 6).map((row) => [
+                  row.organism,
+                  row.antibiotic,
+                  `${row.sensitivity_percent ?? 0}% (${row.sensitive}/${row.total})`,
+                ])}
+              />
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   </PageShell>
   );
 };
@@ -431,6 +485,7 @@ export const QualityKPIsPage = () => {
 export const QualitySOPsPage = () => {
   const { data, loading, error, refresh } = useQualityPortalData();
   const policies = data?.policies ?? sopRows;
+  const nabhTemplates = data?.nabhTemplates ?? [];
 
   return (
   <PageShell
@@ -439,15 +494,26 @@ export const QualitySOPsPage = () => {
     actions={<><Button variant="outline" size="sm" className="gap-1"><Download className="h-4 w-4" />Policy Index</Button><Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700"><PlusCircle className="h-4 w-4" />Add SOP</Button></>}
   >
     <QualityDataState loading={loading} error={error} refresh={refresh} />
-    <Card>
-      <CardHeader><CardTitle className="text-base">Document Control Register</CardTitle></CardHeader>
-      <CardContent>
-        <SectionTable
-          headers={['Document', 'Version', 'Owner', 'Next Review', 'Status']}
-          rows={policies.map((row) => [row.title, row.version, row.owner, row.review, <ToneBadge value={row.status} />])}
-        />
-      </CardContent>
-    </Card>
+    <div className="grid gap-5 xl:grid-cols-2">
+      <Card>
+        <CardHeader><CardTitle className="text-base">Document Control Register</CardTitle></CardHeader>
+        <CardContent>
+          <SectionTable
+            headers={['Document', 'Version', 'Owner', 'Next Review', 'Status']}
+            rows={policies.map((row) => [row.title, row.version, row.owner, row.review, <ToneBadge value={row.status} />])}
+          />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle className="text-base">NABH Template Pack</CardTitle></CardHeader>
+        <CardContent>
+          <SectionTable
+            headers={['Code', 'Template', 'Version', 'Owner', 'Format']}
+            rows={nabhTemplates.map((row) => [row.code, row.title, row.version, row.owner, row.format])}
+          />
+        </CardContent>
+      </Card>
+    </div>
   </PageShell>
   );
 };
@@ -455,6 +521,22 @@ export const QualitySOPsPage = () => {
 export const QualityFeedbackPage = () => {
   const { data, loading, error, refresh } = useQualityPortalData();
   const feedback = data?.feedback ?? feedbackRows;
+  const [form, setForm] = useState({ patientId: '', visitType: 'opd', rating: '5', communicationScore: '5', cleanlinessScore: '5', waitTimeScore: '5', comment: '' });
+  const qualityHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('qualityToken') || ''}` });
+
+  const submitPrems = async () => {
+    await api.post('/hospital/practice/prems/responses', {
+      patientId: form.patientId || undefined,
+      visitType: form.visitType,
+      rating: Number(form.rating),
+      communicationScore: Number(form.communicationScore),
+      cleanlinessScore: Number(form.cleanlinessScore),
+      waitTimeScore: Number(form.waitTimeScore),
+      comment: form.comment,
+    }, { headers: qualityHeaders() });
+    setForm({ patientId: '', visitType: 'opd', rating: '5', communicationScore: '5', cleanlinessScore: '5', waitTimeScore: '5', comment: '' });
+    refresh();
+  };
 
   return (
   <PageShell
@@ -463,15 +545,30 @@ export const QualityFeedbackPage = () => {
     actions={<><Button variant="outline" size="sm" className="gap-1"><MessageSquare className="h-4 w-4" />Response Queue</Button><Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700"><Download className="h-4 w-4" />Export Feedback</Button></>}
   >
     <QualityDataState loading={loading} error={error} refresh={refresh} />
-    <Card>
-      <CardHeader><CardTitle className="text-base">Feedback Channels</CardTitle></CardHeader>
-      <CardContent>
-        <SectionTable
-          headers={['Channel', 'Responses', 'NPS', 'Complaints', 'Owner']}
-          rows={feedback.map((row) => [row.channel, String(row.responses), String(row.nps), String(row.complaints), row.owner])}
-        />
-      </CardContent>
-    </Card>
+    <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
+      <Card>
+        <CardHeader><CardTitle className="text-base">Feedback Channels</CardTitle></CardHeader>
+        <CardContent>
+          <SectionTable
+            headers={['Channel', 'Responses', 'NPS', 'Complaints', 'Owner']}
+            rows={feedback.map((row) => [row.channel, String(row.responses), String(row.nps), String(row.complaints), row.owner])}
+          />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle className="text-base">Capture PREMS Response</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <Input placeholder="Patient ID" value={form.patientId} onChange={(e) => setForm({ ...form, patientId: e.target.value })} />
+          <Select value={form.visitType} onValueChange={(visitType) => setForm({ ...form, visitType })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="opd">OPD</SelectItem><SelectItem value="ipd">IPD</SelectItem></SelectContent>
+          </Select>
+          <Input type="number" min="1" max="5" placeholder="Overall rating" value={form.rating} onChange={(e) => setForm({ ...form, rating: e.target.value })} />
+          <Input placeholder="Comment" value={form.comment} onChange={(e) => setForm({ ...form, comment: e.target.value })} />
+          <Button onClick={submitPrems} className="w-full">Save Response</Button>
+        </CardContent>
+      </Card>
+    </div>
   </PageShell>
   );
 };

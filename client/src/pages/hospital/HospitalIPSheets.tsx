@@ -17,6 +17,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
+import { useAutosave } from '@/hooks/useAutosave';
 import {
   FileText, Search, Plus, Download, Printer, Eye, Edit,
   Calendar, User, Bed, Stethoscope, Pill, Activity, Clock,
@@ -63,6 +64,17 @@ const HospitalIPSheets = () => {
   const [filterWard, setFilterWard] = useState('all');
   const [selectedPatient, setSelectedPatient] = useState<IPPatient | null>(null);
   const [sheetType, setSheetType] = useState('vitals');
+  const [draftNote, setDraftNote] = useState('');
+  const sheetAutosave = useAutosave({
+    key: `hospital_ip_sheet_draft:${selectedPatient?.id || 'none'}`,
+    value: { patientId: selectedPatient?.id, sheetType, note: draftNote },
+    save: async () => Promise.resolve(),
+  });
+
+  useEffect(() => {
+    const restored = sheetAutosave.restore();
+    if (restored?.note) setDraftNote(restored.note);
+  }, [selectedPatient?.id]);
 
   // Mock IP patients data
   const [ipPatients] = useState<IPPatient[]>([
@@ -189,7 +201,7 @@ const HospitalIPSheets = () => {
       const sheetData = {
         patientId: selectedPatient?.id,
         sheetType,
-        data: {}, // Sheet specific data
+        data: { note: draftNote },
         timestamp: new Date().toISOString()
       };
 
@@ -665,6 +677,8 @@ const HospitalIPSheets = () => {
                 </Card>
               )}
 
+              <div className="mb-4 flex items-center gap-2"><Badge variant="outline">Autosave: {sheetAutosave.status}</Badge></div>
+
               {/* Nursing Notes */}
               {sheetType === 'nursing' && (
                 <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
@@ -706,7 +720,7 @@ const HospitalIPSheets = () => {
                     </div>
                     <div className="mt-4">
                       <Label>Add New Note</Label>
-                      <Textarea placeholder="Enter nursing notes for current shift..." className="mt-2" />
+                      <Textarea placeholder="Enter nursing notes for current shift..." className="mt-2" value={draftNote} onChange={(e) => setDraftNote(e.target.value)} />
                       <Button className="mt-3 bg-teal-600 hover:bg-teal-700 text-white">
                         <Save className="h-4 w-4 mr-2" /> Save Note
                       </Button>

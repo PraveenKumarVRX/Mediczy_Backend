@@ -100,6 +100,16 @@ const DoctorPatients = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [error, setError] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [cohortQuery, setCohortQuery] = useState('');
+  const [cohortLoading, setCohortLoading] = useState(false);
+  const [cohortSummary, setCohortSummary] = useState<string | null>(null);
+  const [carePatientId, setCarePatientId] = useState('');
+  const [sdohForm, setSdohForm] = useState({ housing: 'stable', foodAccess: 'secure', transport: 'adequate', employment: 'employed', safety: 'safe' });
+  const [sdohResult, setSdohResult] = useState<any>(null);
+  const [trialDiagnoses, setTrialDiagnoses] = useState('');
+  const [trialAge, setTrialAge] = useState('');
+  const [trialMatches, setTrialMatches] = useState<any[]>([]);
+  const [careLoading, setCareLoading] = useState(false);
   
   // Add Patient Modal State
   const [isAddPatientOpen, setIsAddPatientOpen] = useState(false);
@@ -141,6 +151,63 @@ const DoctorPatients = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCohortSearch = async () => {
+    if (cohortQuery.trim().length < 3) {
+      toast.error('Enter a clinical cohort question first');
+      return;
+    }
+
+    try {
+      setCohortLoading(true);
+      const response = await api.post('/doctors/my-patients/cohort-search', { query: cohortQuery.trim() });
+      const cohort = response.data.patients || [];
+      setFilteredPatients(cohort.map((patient: any) => ({
+        ...patient,
+        firstName: patient.firstName,
+        lastName: patient.lastName,
+        phoneNumber: patient.phoneNumber,
+        createdAt: patient.lastSeenDate || new Date().toISOString(),
+        status: 'active',
+      })));
+      const unsupported = response.data.interpretation?.unsupportedFilters || [];
+      setCohortSummary(
+        `${cohort.length} patient${cohort.length === 1 ? '' : 's'} matched${unsupported.length ? `; ${unsupported.join('. ')}` : ''}`
+      );
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to search cohort');
+    } finally {
+      setCohortLoading(false);
+    }
+  };
+
+  const clearCohortSearch = () => {
+    setCohortQuery('');
+    setCohortSummary(null);
+    setFilteredPatients(patients);
+  };
+
+  const submitSdohScreening = async () => {
+    if (!carePatientId) return toast.error('Enter a patient ID for SDoH screening');
+    try {
+      setCareLoading(true);
+      const response = await api.post('/roadmap-intelligence/sdoh/screenings', { patientId: Number(carePatientId), ...sdohForm });
+      setSdohResult(response.data?.data ?? null);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to save SDoH screening');
+    } finally { setCareLoading(false); }
+  };
+
+  const matchClinicalTrials = async () => {
+    if (!trialDiagnoses.trim()) return toast.error('Enter at least one diagnosis');
+    try {
+      setCareLoading(true);
+      const response = await api.post('/roadmap-intelligence/trials/match', { diagnoses: trialDiagnoses.split(',').map((item) => item.trim()).filter(Boolean), age: Number(trialAge || 0) });
+      setTrialMatches(response.data?.data ?? []);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Failed to match clinical trials');
+    } finally { setCareLoading(false); }
   };
 
   const handleAddPatient = async () => {
@@ -363,6 +430,41 @@ const DoctorPatients = () => {
                 </div>
               </CardContent>
             </Card>
+          </div>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Clinical Cohort Search</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-col md:flex-row gap-2">
+                <Input
+                  value={cohortQuery}
+                  onChange={(e) => setCohortQuery(e.target.value)}
+                  placeholder="Show me diabetic patients not seen in 3 months"
+                />
+                <Button onClick={handleCohortSearch} disabled={cohortLoading} className="md:w-40">
+                  {cohortLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Search Cohort'}
+                </Button>
+                {cohortSummary && (
+                  <Button variant="outline" onClick={clearCohortSearch}>Clear</Button>
+                )}
+              </div>
+              {cohortSummary && <p className="text-sm text-muted-foreground">{cohortSummary}</p>}
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Card><CardHeader className="pb-3"><CardTitle className="text-base">SDoH Screening</CardTitle></CardHeader><CardContent className="space-y-3">
+              <Input value={carePatientId} onChange={(e) => setCarePatientId(e.target.value)} placeholder="Patient ID" />
+              <div className="grid grid-cols-2 gap-2">{([['housing',['stable','unstable']],['foodAccess',['secure','insecure']],['transport',['adequate','limited']],['employment',['employed','unemployed']],['safety',['safe','unsafe']]] as const).map(([field, values]) => <Select key={field} value={sdohForm[field]} onValueChange={(value) => setSdohForm({ ...sdohForm, [field]: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{values.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select>)}</div>
+              <Button onClick={submitSdohScreening} disabled={careLoading}>Save Screening</Button>
+              {sdohResult && <div className="rounded-md border p-3 text-sm"><div className="flex justify-between"><span>Risk level</span><Badge>{sdohResult.risk_level}</Badge></div><p className="mt-2 text-muted-foreground">Referrals: {(sdohResult.referrals || []).join(', ') || 'None'}</p></div>}
+            </CardContent></Card>
+            <Card><CardHeader className="pb-3"><CardTitle className="text-base">Clinical Trial Matching</CardTitle></CardHeader><CardContent className="space-y-3">
+              <Textarea value={trialDiagnoses} onChange={(e) => setTrialDiagnoses(e.target.value)} placeholder="Diagnoses, comma separated" /><Input type="number" value={trialAge} onChange={(e) => setTrialAge(e.target.value)} placeholder="Patient age" /><Button onClick={matchClinicalTrials} disabled={careLoading}>Match Trials</Button>
+              <div className="space-y-2">{trialMatches.map((trial) => <div key={trial.id} className="rounded-md border p-3 text-sm"><p className="font-medium">{trial.title}</p><p className="text-muted-foreground">{trial.id}</p></div>)}{!trialMatches.length && <p className="text-sm text-muted-foreground">No matches loaded yet.</p>}</div>
+            </CardContent></Card>
           </div>
 
           {/* Search and View Toggle */}

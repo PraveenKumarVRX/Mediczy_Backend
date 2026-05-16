@@ -8,6 +8,7 @@ import { authDoctor } from '../middleware/doctor.middleware.js';
 import ClinicalNote from '../models/clinical-note.model.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 import { connectPostgres } from '../db/postgres.js';
+import { createCodingSuggestions } from '../services/clinical-intelligence.service.js';
 
 const router = express.Router();
 
@@ -160,9 +161,13 @@ router.post('/notes/:id/sign', authDoctor, async (req, res) => {
       signatureHash
     });
 
+    const codingSuggestions = await createCodingSuggestions(note);
+
     res.json({
       success: true,
-      data: note
+      data: note,
+      codingSuggestions,
+      requiresCodingReview: codingSuggestions.length > 0
     });
   } catch (error) {
     console.error('Sign note error:', error);
@@ -309,6 +314,21 @@ router.get('/cpt/search', authDoctor, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Search failed' });
+  }
+});
+
+// Update draft note for autosave
+router.put('/notes/:id/draft', authDoctor, async (req, res) => {
+  try {
+    const note = await ClinicalNote.findOne({ where: { id: req.params.id, doctorId: req.doctor.id } });
+    if (!note) return res.status(404).json({ success: false, message: 'Clinical note not found' });
+    if (note.status === 'signed') return res.status(409).json({ success: false, message: 'Signed notes cannot be edited' });
+    const allowed = ['subjective', 'objective', 'assessment', 'plan', 'chiefComplaint', 'vitals', 'icd10Codes', 'cptCodes'];
+    const updates = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => allowed.includes(key)));
+    await note.update({ ...updates, status: 'draft' });
+    res.json({ success: true, data: note });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to autosave clinical note' });
   }
 });
 

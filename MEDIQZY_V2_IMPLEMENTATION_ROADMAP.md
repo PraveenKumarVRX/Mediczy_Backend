@@ -719,3 +719,15 @@ Beyond per-hospital SaaS licensing:
 2. Update PPT slides to reflect actual built capabilities (HyperGrid, 13 AI services, 12 portals, Federated Learning)
 3. Create MGM proposal variant deck using the slide strategy in Section 10
 4. Schedule architecture review for event-driven clinical triggers (Section 9.1)
+
+**Execution companion:** See `MEDIQZY_V2_FEASIBILITY_AND_PHASED_PLAN.md` for the current-state reconciliation, feasibility assessment, and revised phase sequencing based on repository reality as of May 15, 2026.
+
+
+## Implementation Status Update — May 16, 2026
+
+See `MEDIQZY_V2_PHASE2_3_IMPLEMENTATION_STATUS.md` for the implemented Phase 2 clinical-intelligence baseline and the Phase 3 CSSD/procurement operational baseline, including what remains open before Phase 3 can be called fully complete.
+
+
+## All-Phase Implementation Status — May 16, 2026
+
+See `MEDIQZY_V2_ALL_PHASES_IMPLEMENTATION_STATUS.md` for the completed Phase 0-4 implementation work, the delivered Phase 5 software scaffolding, and the explicit hardware/model/data gates that remain before the strategic bets can be represented as production-complete.

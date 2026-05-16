@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useAutosave } from "@/hooks/useAutosave";
 import { useAuth } from "@/auth/AuthProvider";
 import api from "@/utils/api";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
@@ -173,6 +174,20 @@ const DoctorPrescriptions = () => {
   const [formData, setFormData] = useState<NewPrescription>({ ...emptyPrescription });
   const [showScribe, setShowScribe] = useState(false);
   const [currentScribeField, setCurrentScribeField] = useState<string>("diagnosis");
+  const [pgxMedication, setPgxMedication] = useState('');
+  const [pgxResult, setPgxResult] = useState<any>(null);
+  const [pgxLoading, setPgxLoading] = useState(false);
+  const prescriptionAutosave = useAutosave({
+    key: 'doctor_prescription_draft',
+    value: formData,
+    save: async () => Promise.resolve(),
+  });
+
+  useEffect(() => {
+    if (!createDialogOpen) return;
+    const restored = prescriptionAutosave.restore();
+    if (restored) setFormData(restored);
+  }, [createDialogOpen]);
 
   const getErrorMessage = (error: any, fallback: string) => {
     return (
@@ -533,6 +548,13 @@ const DoctorPrescriptions = () => {
     setFormData({ ...formData, medications: newMedications });
   };
 
+  const checkPharmacogenomics = async () => {
+    if (!formData.patientId || !pgxMedication.trim()) { toast({ title: 'Missing details', description: 'Patient ID and medication are required for PGx review.', variant: 'destructive' }); return; }
+    try { setPgxLoading(true); const response = await api.post('/roadmap-intelligence/pgx/check', { patientId: formData.patientId, medication: pgxMedication.trim() }); setPgxResult(response.data?.data ?? null); }
+    catch (error: any) { toast({ title: 'PGx check failed', description: error.response?.data?.message || 'Unable to complete pharmacogenomics check.', variant: 'destructive' }); }
+    finally { setPgxLoading(false); }
+  };
+
   const addInstruction = () => {
     setFormData({
       ...formData,
@@ -855,6 +877,7 @@ const DoctorPrescriptions = () => {
               <DialogDescription>
                 Fill in the prescription details. You can save as draft and issue later.
               </DialogDescription>
+              <Badge variant="outline" className="w-fit">Autosave: {prescriptionAutosave.status}</Badge>
             </DialogHeader>
 
             <Tabs defaultValue="patient" className="w-full">
@@ -1280,6 +1303,8 @@ const DoctorPrescriptions = () => {
                     <Plus className="h-4 w-4 mr-1" /> Add Medication
                   </Button>
                 </div>
+                <Card className="border-dashed"><CardHeader className="pb-3"><CardTitle className="text-base">Pharmacogenomics Check</CardTitle><CardDescription>Decision support only. Uses stored PGx profile data when available.</CardDescription></CardHeader><CardContent className="space-y-3"><div className="flex flex-col gap-2 md:flex-row"><Input value={pgxMedication} onChange={(e) => setPgxMedication(e.target.value)} placeholder="Medication, e.g. clopidogrel" /><Button type="button" variant="outline" onClick={() => setPgxMedication(formData.medications[0]?.name || '')}>Use first medication</Button><Button type="button" onClick={checkPharmacogenomics} disabled={pgxLoading}>{pgxLoading ? 'Checking...' : 'Check PGx'}</Button></div>{pgxResult && <div className="rounded-md border p-3 text-sm"><div className="flex items-center justify-between gap-2"><span>{pgxResult.matched ? `${pgxResult.gene} profile found` : 'No matching PGx rule/profile'}</span>{pgxResult.matched && <Badge variant={pgxResult.risky ? 'destructive' : 'secondary'}>{pgxResult.risky ? 'Review' : 'No alert'}</Badge>}</div>{pgxResult.phenotype && <p className="mt-2 text-muted-foreground">Phenotype: {pgxResult.phenotype}</p>}{pgxResult.recommendation && <p className="mt-2 text-amber-700">{pgxResult.recommendation}</p>}</div>}</CardContent></Card>
+
                 <div className="space-y-4">
                   {formData.medications.map((med, index) => (
                     <Card key={index} className="p-4">

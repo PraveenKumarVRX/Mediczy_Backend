@@ -199,3 +199,70 @@ register({
     return { records: rows, count: rows.length };
   }
 });
+
+
+// ─── 5. Query Patient Cohort (doctor-scoped, safe subset) ───────────────────
+
+register({
+  name: 'query_patient_cohort',
+  description: 'Search the authenticated doctor\'s patient cohort using safe structured filters derived from natural language, such as diabetes, gender, age, or not-seen-in months.',
+  category: 'patient',
+  parameters: {
+    type: 'object',
+    properties: {
+      condition: { type: 'string', description: 'Chronic condition keyword such as diabetes or hypertension' },
+      gender: { type: 'string', description: 'female or male' },
+      min_age: { type: 'string', description: 'Minimum patient age' },
+      not_seen_months: { type: 'string', description: 'Only patients not seen in this many months' }
+    },
+    required: []
+  },
+  async execute(params, ctx) {
+    if (ctx.userType !== 'doctor') {
+      return { error: 'query_patient_cohort is available only in doctor context' };
+    }
+
+    const where = ['a."doctorId" = $1'];
+    const values = [ctx.userId];
+    let having = '';
+
+    if (params.condition) {
+      values.push(`%${String(params.condition).trim()}%`);
+      where.push(`COALESCE(array_to_string(p."chronicConditions", ','), '') ILIKE $${values.length}`);
+    }
+    if (params.gender) {
+      values.push(String(params.gender).toLowerCase());
+      where.push(`LOWER(u.gender) = $${values.length}`);
+    }
+    if (params.min_age) {
+      values.push(Number(params.min_age));
+      where.push(`DATE_PART('year', AGE(CURRENT_DATE, u."dateOfBirth")) >= $${values.length}`);
+    }
+    if (params.not_seen_months) {
+      values.push(Number(params.not_seen_months));
+      having = `HAVING MAX(a."appointmentDate") < CURRENT_DATE - ($${values.length} || ' months')::interval`;
+    }
+
+    const { rows } = await pool.query(`
+      SELECT
+        u.id,
+        u."firstName",
+        u."lastName",
+        u.email,
+        u."phoneNumber",
+        p."chronicConditions",
+        MAX(a."appointmentDate") AS "lastSeenDate",
+        COUNT(a.id)::int AS "visitCount"
+      FROM appointments a
+      JOIN users u ON u.id = a."userId"
+      LEFT JOIN patients p ON p."userId" = u.id
+      WHERE ${where.join(' AND ')}
+      GROUP BY u.id, p.id
+      ${having}
+      ORDER BY "lastSeenDate" DESC NULLS LAST
+      LIMIT 100
+    `, values);
+
+    return { patients: rows, count: rows.length, reviewed: false };
+  }
+});

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchPortalSection, savePortalSection } from '@/utils/hospitalInsurancePortalApi';
+import api from '@/utils/api';
 import InsurancePortalLayout from '@/components/hospital-insurance/InsurancePortalLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -37,10 +37,26 @@ const InsuranceTariffPage = () => {
   const [tariffs, setTariffs] = useState(mockTariffs);
   const [form, setForm] = useState({ insurer: '', category: '', item: '', unit: 'per day', rate: '', gst: '0', effective: '' });
 
+  const headers = () => {
+    const token = localStorage.getItem('hospitalToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   useEffect(() => {
-    fetchPortalSection('compliance/tariff').then(d => {
-      if (d?.tariffs?.length) setTariffs(d.tariffs);
-    });
+    api.get('/hospital/practice/tariffs', { headers: headers() }).then(({ data }) => {
+      const rows = (data.data || []).map((row: any) => ({
+        id: row.id,
+        insurer: row.payer_type || 'Self Pay',
+        category: row.category,
+        item: row.item_name,
+        unit: row.unit,
+        rate: Number(row.rate),
+        gst: Number(row.gst),
+        effective: row.effective_from,
+        code: row.code,
+      }));
+      if (rows.length) setTariffs(rows);
+    }).catch(() => undefined);
   }, []);
 
   const filtered = tariffs.filter(t => {
@@ -55,16 +71,33 @@ const InsuranceTariffPage = () => {
       toast({ title: 'Validation', description: 'Insurer, item, and rate are required.', variant: 'destructive' });
       return;
     }
-    let updated: typeof tariffs;
     if (editRow) {
-      updated = tariffs.map(t => t.id === editRow.id ? { ...t, ...form, rate: parseFloat(form.rate), gst: parseFloat(form.gst) } : t);
-      toast({ title: 'Tariff Updated' });
-    } else {
-      updated = [...tariffs, { ...form, id: Date.now(), rate: parseFloat(form.rate), gst: parseFloat(form.gst) }];
-      toast({ title: 'Tariff Added' });
+      toast({ title: 'Tariff editing is versioned', description: 'Create a new effective tariff row for rate changes.' });
+      return;
     }
-    setTariffs(updated);
-    await savePortalSection('compliance/tariff', { tariffs: updated });
+    const response = await api.post('/hospital/practice/tariffs', {
+      code: `${form.category.replace(/\s+/g, '_').toUpperCase()}_${Date.now()}`,
+      itemName: form.item,
+      category: form.category,
+      unit: form.unit,
+      payerType: form.insurer,
+      rate: parseFloat(form.rate),
+      gst: parseFloat(form.gst),
+      effectiveFrom: form.effective,
+    }, { headers: headers() });
+    const row = response.data.data;
+    setTariffs(prev => [...prev, {
+      id: row.id,
+      insurer: row.payer_type || 'Self Pay',
+      category: row.category,
+      item: row.item_name,
+      unit: row.unit,
+      rate: Number(row.rate),
+      gst: Number(row.gst),
+      effective: row.effective_from,
+      code: row.code,
+    }]);
+    toast({ title: 'Tariff Added' });
     setShowAdd(false); setEditRow(null);
     setForm({ insurer: '', category: '', item: '', unit: 'per day', rate: '', gst: '0', effective: '' });
   };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import HospDeptLayout, { DeptNavSection } from '@/components/hosp-dept/HospDeptLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { exportToExcel } from '@/utils/exportToExcel';
+import api from '@/utils/api';
 
 // ─── Shared Nav (exported for Dashboard) ───────────────────────────────────
 export const hrNavSections: DeptNavSection[] = [
@@ -454,57 +455,76 @@ export const HROnboardingPage = () => (
 // ═══════════════════════════════════════════════════════════════════════════════
 // 6. PAYROLL
 // ═══════════════════════════════════════════════════════════════════════════════
-const payroll = [
-  { id: 'EMP001', name: 'Dr. Kavita Joshi',  dept: 'Cardiology',  gross: 180000, pf: 12000, tds: 18000, other: 2000, net: 148000, status: 'Pending' },
-  { id: 'EMP002', name: 'Sanjay Kumar',       dept: 'Nursing',     gross: 45000,  pf: 5400,  tds: 2000,  other: 500,  net: 37100,  status: 'Pending' },
-  { id: 'EMP003', name: 'Pooja Verma',        dept: 'Accounts',    gross: 38000,  pf: 4560,  tds: 1500,  other: 400,  net: 31540,  status: 'Pending' },
-  { id: 'EMP004', name: 'Mohammed Iqbal',     dept: 'Housekeeping',gross: 22000,  pf: 2640,  tds: 0,     other: 200,  net: 19160,  status: 'Pending' },
-  { id: 'EMP005', name: 'Dr. Ramesh Pillai',  dept: 'Orthopaedics',gross: 220000, pf: 12000, tds: 32000, other: 3000, net: 173000, status: 'Pending' },
-  { id: 'EMP006', name: 'Sunita Rao',         dept: 'OT',          gross: 32000,  pf: 3840,  tds: 800,   other: 300,  net: 27060,  status: 'Pending' },
-];
-const fmt = (n: number) => '₹' + n.toLocaleString('en-IN');
+type PayrollLine = {
+  employeeCode: string;
+  employeeName: string;
+  department?: string;
+  gross: number;
+  pf: number;
+  esi: number;
+  tds: number;
+  otherDeductions: number;
+  net: number;
+};
+const fmt = (n: number) => '₹' + Number(n || 0).toLocaleString('en-IN');
 
-export const HRPayrollPage = () => (
-  <Wrap title="Payroll Processing" subtitle="Monthly salary computation and disbursement">
-    <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-      <KPI label="Total Payable"    value="₹82.4L" sub="March 2026 gross"    icon={Wallet}     color="text-teal-600" />
-      <KPI label="Net Disbursable"  value="₹68.9L" sub="After all deductions" icon={CheckCircle2} color="text-emerald-600" />
-      <KPI label="PF Contribution"  value="₹9.8L"  sub="Employer + Employee"  icon={ShieldCheck} color="text-blue-600" />
-      <KPI label="TDS Deducted"     value="₹4.2L"  sub="To be remitted"       icon={FileText}   color="text-amber-600" />
-    </div>
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-3">
-        <CardTitle className="text-base">Payroll Register — March 2026</CardTitle>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="gap-1"><Download className="h-4 w-4" />Export</Button>
-          <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700"><CheckCircle2 className="h-4 w-4" />Run Payroll</Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b"><TH>Emp ID</TH><TH>Name</TH><TH>Department</TH><TH>Gross</TH><TH>PF</TH><TH>TDS</TH><TH>Other Ded.</TH><TH>Net Pay</TH><TH>Status</TH></tr></thead>
-            <tbody className="divide-y">
-              {payroll.map(r => (
-                <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                  <TD><span className="font-mono text-xs">{r.id}</span></TD>
-                  <TD><span className="font-medium">{r.name}</span></TD>
-                  <TD>{r.dept}</TD>
-                  <TD><span className="text-slate-700">{fmt(r.gross)}</span></TD>
-                  <TD><span className="text-red-600">-{fmt(r.pf)}</span></TD>
-                  <TD><span className="text-red-600">-{fmt(r.tds)}</span></TD>
-                  <TD><span className="text-red-600">-{fmt(r.other)}</span></TD>
-                  <TD><span className="font-bold text-emerald-700">{fmt(r.net)}</span></TD>
-                  <TD><Bdg s={r.status} /></TD>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
-  </Wrap>
-);
+export const HRPayrollPage = () => {
+  const [structures, setStructures] = useState<any[]>([]);
+  const [latestRun, setLatestRun] = useState<any>(null);
+  const [lines, setLines] = useState<PayrollLine[]>([]);
+  const [loading, setLoading] = useState(true);
+  const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('hrToken') || localStorage.getItem('hospitalToken') || ''}` });
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const [structureRes, runRes] = await Promise.all([
+        api.get('/payroll/structures', { headers: headers() }),
+        api.get('/payroll/runs', { headers: headers() }),
+      ]);
+      setStructures(structureRes.data.data || []);
+      const run = (runRes.data.data || [])[0] || null;
+      setLatestRun(run);
+      if (run) {
+        const detail = await api.get(`/payroll/runs/${run.id}`, { headers: headers() });
+        setLines(detail.data.data.lines || []);
+      } else {
+        setLines([]);
+      }
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { refresh(); }, []);
+  const runPayroll = async () => { await api.post('/payroll/runs', { month: new Date().toISOString().slice(0,7) }, { headers: headers() }); await refresh(); };
+  const seedStructure = async () => { await api.post('/payroll/structures', { employeeCode: `EMP-${Date.now()}`, employeeName: 'New Employee', department: 'General', designation: 'Staff', basic: 30000, hra: 12000, allowances: 3000 }, { headers: headers() }); await refresh(); };
+  return (
+    <Wrap title="Payroll Processing" subtitle="Monthly salary computation and disbursement">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        <KPI label="Active Structures" value={String(structures.length)} sub="Employees configured" icon={Wallet} color="text-teal-600" />
+        <KPI label="Gross Payable" value={fmt(latestRun?.gross_total || 0)} sub={latestRun?.month || 'No run yet'} icon={CheckCircle2} color="text-emerald-600" />
+        <KPI label="PF Contribution" value={fmt(latestRun?.pf_total || 0)} sub="Employee contribution" icon={ShieldCheck} color="text-blue-600" />
+        <KPI label="Net Disbursable" value={fmt(latestRun?.net_total || 0)} sub={latestRun?.status || 'draft'} icon={FileText} color="text-amber-600" />
+      </div>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <CardTitle className="text-base">Payroll Register</CardTitle>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={seedStructure}>Add Sample Structure</Button>
+            <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700" onClick={runPayroll}><CheckCircle2 className="h-4 w-4" />Run Payroll</Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loading ? <p className="text-sm text-muted-foreground">Loading payroll...</p> : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b"><TH>Emp ID</TH><TH>Name</TH><TH>Department</TH><TH>Gross</TH><TH>PF</TH><TH>ESI</TH><TH>TDS</TH><TH>Other Ded.</TH><TH>Net Pay</TH></tr></thead>
+                <tbody className="divide-y">{lines.map((r) => <tr key={r.employeeCode}><TD>{r.employeeCode}</TD><TD>{r.employeeName}</TD><TD>{r.department}</TD><TD>{fmt(r.gross)}</TD><TD>{fmt(r.pf)}</TD><TD>{fmt(r.esi)}</TD><TD>{fmt(r.tds)}</TD><TD>{fmt(r.otherDeductions)}</TD><TD className="font-bold text-emerald-700">{fmt(r.net)}</TD></tr>)}</tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </Wrap>
+  );
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 7. PF & ESI (NEW)

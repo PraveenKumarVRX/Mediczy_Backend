@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
+import { useAutosave } from '@/hooks/useAutosave';
 import {
   FileText, Search, Plus, Download, Printer, Send, Eye, Edit,
   Calendar, User, Bed, Stethoscope, Pill, Activity, Clock,
@@ -209,6 +210,44 @@ const HospitalDischargeSummary = () => {
     attendingDoctor: '',
     consultants: ''
   });
+
+  const autosave = useAutosave({
+    key: 'hospital_discharge_summary_draft',
+    value: formData,
+    save: async () => Promise.resolve(),
+  });
+  const [readmissionRisk, setReadmissionRisk] = useState<any>(null);
+  const [dischargePlan, setDischargePlan] = useState<any>(null);
+  const [planOwner, setPlanOwner] = useState('Ward Coordinator');
+  const [targetDischargeDate, setTargetDischargeDate] = useState(new Date().toISOString().split('T')[0]);
+
+  useEffect(() => {
+    const restored = autosave.restore();
+    if (restored) setFormData(restored);
+  }, []);
+
+  useEffect(() => {
+    if (!formData.patientId) return;
+    api.get(`/hospital/practice/patients/${formData.patientId}/readmission-risk`, { headers: hospitalHeaders() })
+      .then((response) => setReadmissionRisk(response.data.data))
+      .catch(() => setReadmissionRisk(null));
+  }, [formData.patientId]);
+
+
+  const createDischargePlan = async () => {
+    if (!formData.patientId) return;
+    const response = await api.post('/hospital/practice/discharge-plans', {
+      patientId: formData.patientId,
+      targetDischargeDate,
+      owner: planOwner,
+      tasks: [
+        { label: 'Medication reconciliation', owner: 'Pharmacy', done: false },
+        { label: 'Diet counselling', owner: 'Dietary', done: false },
+        { label: 'Follow-up appointment', owner: 'Ward', done: false },
+      ],
+    }, { headers: hospitalHeaders() });
+    setDischargePlan(response.data.data);
+  };
 
   const initialSummaries: DischargeSummary[] = [
     {
@@ -717,7 +756,8 @@ const HospitalDischargeSummary = () => {
                   <CardTitle className="text-slate-800 dark:text-white">New Discharge Summary</CardTitle>
                   <CardDescription className="text-slate-500 dark:text-slate-400">Complete all sections for the discharge summary</CardDescription>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline">Autosave: {autosave.status}</Badge>
                   <Button variant="outline" onClick={handleSaveDraft}>
                     <FileCheck className="h-4 w-4 mr-2" /> Save Draft
                   </Button>
@@ -730,6 +770,50 @@ const HospitalDischargeSummary = () => {
             <CardContent className="pt-6">
               <ScrollArea className="h-[calc(100vh-300px)]">
                 <div className="space-y-8 pr-4">
+                  <Card>
+                    <CardContent className="pt-6 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium">Discharge Planning</p>
+                          <p className="text-xs text-muted-foreground">Coordinate cross-department sign-off before final discharge.</p>
+                        </div>
+                        {dischargePlan && <Badge>{dischargePlan.status}</Badge>}
+                      </div>
+                      {!dischargePlan ? (
+                        <div className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+                          <Input value={planOwner} onChange={(e) => setPlanOwner(e.target.value)} placeholder="Plan owner" />
+                          <Input type="date" value={targetDischargeDate} onChange={(e) => setTargetDischargeDate(e.target.value)} />
+                          <Button onClick={createDischargePlan}>Create Plan</Button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">{(dischargePlan.tasks || []).map((task: any) => <Badge key={task.label} variant="outline">{task.owner}: {task.label}</Badge>)}</div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {readmissionRisk && (
+                    <Card className={readmissionRisk.level === 'high' ? 'border-red-300 bg-red-50' : readmissionRisk.level === 'medium' ? 'border-amber-300 bg-amber-50' : 'border-emerald-300 bg-emerald-50'}>
+                      <CardContent className="pt-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium">30-Day Readmission Risk</p>
+                            <p className="text-2xl font-semibold capitalize">{readmissionRisk.level}</p>
+                          </div>
+                          <Badge>{Math.round(readmissionRisk.score || 0)}</Badge>
+                        </div>
+                        {Object.keys(readmissionRisk.factors || {}).length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {Object.entries(readmissionRisk.factors).slice(0, 3).map(([factor, value]) => (
+                              <Badge key={factor} variant="outline">{factor}: {String(value)}</Badge>
+                            ))}
+                          </div>
+                        )}
+                        {readmissionRisk.level === 'high' && (
+                          <Button className="mt-3" size="sm">Create follow-up care plan</Button>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
                   {/* Patient Information */}
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold text-slate-800 dark:text-white flex items-center gap-2">

@@ -35,6 +35,13 @@ const FALLBACK_POLICIES = [
   { title: 'Document Control Matrix', version: 'v1.9', owner: 'Accreditation Cell', review: '22 Mar 2026', status: 'Review Due' },
 ];
 
+const FALLBACK_NABH_TEMPLATES = [
+  { code: 'AAC-01', title: 'Initial Assessment Checklist', version: 'v1.0', owner: 'Clinical Ops', format: 'Checklist', status: 'Approved' },
+  { code: 'COP-03', title: 'Discharge Planning Record', version: 'v1.0', owner: 'Nursing', format: 'Form', status: 'Approved' },
+  { code: 'MOM-02', title: 'Medication Reconciliation Audit', version: 'v1.0', owner: 'Pharmacy QA', format: 'Audit', status: 'Approved' },
+  { code: 'HIC-04', title: 'Hand Hygiene Observation', version: 'v1.0', owner: 'HIC Team', format: 'Tracer', status: 'Approved' },
+];
+
 const FALLBACK_FEEDBACK = [
   { channel: 'IP Survey', responses: 186, nps: 71, complaints: 4, owner: 'Patient Relations' },
   { channel: 'OPD Kiosk', responses: 322, nps: 64, complaints: 11, owner: 'Front Office' },
@@ -142,6 +149,31 @@ const formatDateLabel = (value, fallback = 'TBD') => {
 };
 
 const getFeedbackSnapshot = async (organizationId) => {
+  if (await tableExists('prems_responses')) {
+    const premsRows = await safeQuery(
+      `SELECT
+         visit_type,
+         COUNT(*) AS responses,
+         ROUND(COALESCE(AVG(rating), 0), 1) AS avg_rating,
+         COUNT(*) FILTER (WHERE negative_followup = TRUE) AS complaints
+       FROM prems_responses
+       WHERE (:organizationId::int IS NULL OR hospital_id = :organizationId)
+       GROUP BY visit_type
+       ORDER BY visit_type`,
+      { organizationId }
+    );
+
+    if (premsRows.length) {
+      return premsRows.map((row) => ({
+        channel: `${String(row.visit_type || 'visit').toUpperCase()} PREMS`,
+        responses: Number(row.responses || 0),
+        nps: Math.max(0, Math.min(100, Math.round(Number(row.avg_rating || 0) * 20))),
+        complaints: Number(row.complaints || 0),
+        owner: 'Patient Relations',
+      }));
+    }
+  }
+
   if (!(await tableExists('appointments'))) {
     return FALLBACK_FEEDBACK;
   }
@@ -351,6 +383,7 @@ const buildPortalData = async (req) => {
     accreditation: FALLBACK_ACCREDITATION,
     indicators: FALLBACK_INDICATORS,
     policies,
+    nabhTemplates: FALLBACK_NABH_TEMPLATES,
     reports: FALLBACK_REPORTS,
     feedback,
     settings: FALLBACK_SETTINGS,
@@ -390,6 +423,10 @@ export const getQualityAccreditation = async (_req, res) => {
 
 export const getQualityKpis = async (_req, res) => {
   return res.status(200).json({ success: true, data: FALLBACK_INDICATORS });
+};
+
+export const getQualityNabhTemplates = async (_req, res) => {
+  return res.status(200).json({ success: true, data: FALLBACK_NABH_TEMPLATES });
 };
 
 export const getQualityPolicies = async (_req, res) => {

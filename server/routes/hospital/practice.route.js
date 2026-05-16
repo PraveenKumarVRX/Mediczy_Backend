@@ -18,6 +18,7 @@ import MedicalRecord from '../../models/postgres/medicalRecord.model.postgres.js
 import EHRRecord from '../../models/postgres/ehrRecord.model.postgres.js';
 import VitalSign from '../../models/postgres/vitalSign.model.postgres.js';
 import n8nService from '../../services/n8n.service.js';
+import { evaluateVitalsAndAlert, ensureClinicalIntelligenceTables } from '../../services/clinical-intelligence.service.js';
 
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
@@ -1387,6 +1388,12 @@ router.post('/discharge-summaries/submit', verifyHospitalToken, async (req, res)
       }
     );
 
+    await ensurePremsTables();
+    await sequelize.query(`
+      INSERT INTO prems_survey_invitations (hospital_id, patient_id, discharge_summary_id, visit_type, channel)
+      VALUES (:hospitalId, :patientId, :summaryId, 'ipd', 'whatsapp')
+    `, { replacements: { hospitalId, patientId, summaryId: summary[0].id } });
+
     res.status(201).json({ success: true, message: 'Discharge summary submitted for approval', data: summary[0] });
   } catch (error) {
     console.error('Error submitting discharge summary:', error);
@@ -1441,6 +1448,47 @@ router.put('/discharge-summaries/:id', verifyHospitalToken, async (req, res) => 
     console.error('Error updating discharge summary:', error);
     res.status(500).json({ success: false, message: 'Failed to update discharge summary', error: error.message });
   }
+});
+
+
+const ensureDischargePlanningTables = async () => {
+  await sequelize.query(`
+    CREATE TABLE IF NOT EXISTS discharge_plans (
+      id SERIAL PRIMARY KEY,
+      hospital_id INTEGER NOT NULL,
+      patient_id VARCHAR(80) NOT NULL,
+      admission_id VARCHAR(80),
+      target_discharge_date DATE,
+      owner VARCHAR(160),
+      status VARCHAR(24) NOT NULL DEFAULT 'active',
+      blockers JSONB NOT NULL DEFAULT '[]'::jsonb,
+      tasks JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+};
+
+router.get('/discharge-plans', verifyHospitalToken, async (req, res) => {
+  await ensureDischargePlanningTables();
+  const [rows] = await sequelize.query(`SELECT * FROM discharge_plans WHERE hospital_id = :hospitalId ORDER BY updated_at DESC`, { replacements: { hospitalId: req.hospitalId } });
+  res.json({ success: true, data: rows });
+});
+
+router.post('/discharge-plans', verifyHospitalToken, async (req, res) => {
+  await ensureDischargePlanningTables();
+  const { patientId, admissionId, targetDischargeDate, owner, blockers = [], tasks = [] } = req.body;
+  if (!patientId) return res.status(400).json({ success: false, message: 'patientId is required' });
+  const [rows] = await sequelize.query(`INSERT INTO discharge_plans (hospital_id, patient_id, admission_id, target_discharge_date, owner, blockers, tasks) VALUES (:hospitalId,:patientId,:admissionId,:targetDischargeDate,:owner,:blockers::jsonb,:tasks::jsonb) RETURNING *`, { replacements: { hospitalId: req.hospitalId, patientId, admissionId: admissionId || null, targetDischargeDate: targetDischargeDate || null, owner: owner || null, blockers: JSON.stringify(blockers), tasks: JSON.stringify(tasks) } });
+  res.status(201).json({ success: true, data: rows[0] });
+});
+
+router.patch('/discharge-plans/:id', verifyHospitalToken, async (req, res) => {
+  await ensureDischargePlanningTables();
+  const { targetDischargeDate, owner, blockers, tasks, status } = req.body;
+  const [rows] = await sequelize.query(`UPDATE discharge_plans SET target_discharge_date = COALESCE(:targetDischargeDate, target_discharge_date), owner = COALESCE(:owner, owner), blockers = COALESCE(:blockers::jsonb, blockers), tasks = COALESCE(:tasks::jsonb, tasks), status = COALESCE(:status, status), updated_at = NOW() WHERE id = :id AND hospital_id = :hospitalId RETURNING *`, { replacements: { id: req.params.id, hospitalId: req.hospitalId, targetDischargeDate: targetDischargeDate || null, owner: owner || null, blockers: blockers ? JSON.stringify(blockers) : null, tasks: tasks ? JSON.stringify(tasks) : null, status: status || null } });
+  if (!rows[0]) return res.status(404).json({ success: false, message: 'Discharge plan not found' });
+  res.json({ success: true, data: rows[0] });
 });
 
 /**
@@ -3094,10 +3142,268 @@ router.post('/vitals', verifyHospitalToken, async (req, res) => {
       organizationId
     });
 
-    res.status(201).json({ success: true, message: 'Vital signs recorded successfully', data: vital });
+    const intelligence = await evaluateVitalsAndAlert({
+      tenantId: organizationId,
+      patientId,
+      source: 'hospital-practice-vitals',
+      recordedBy,
+      vitals: { systolic, diastolic, temperature, heartRate, respiratoryRate, oxygenSaturation }
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Vital signs recorded successfully',
+      data: vital,
+      intelligence
+    });
   } catch (error) {
     console.error('Error recording vitals:', error);
     res.status(500).json({ success: false, message: 'Failed to record vitals', error: error.message });
+  }
+});
+
+
+router.get('/clinical-alerts', verifyHospitalToken, async (req, res) => {
+  try {
+    await ensureClinicalIntelligenceTables();
+    const [rows] = await sequelize.query(`
+      SELECT * FROM clinical_alerts
+      WHERE tenant_id = :tenantId
+        AND (:status::text IS NULL OR status = :status)
+      ORDER BY created_at DESC
+      LIMIT 100
+    `, { replacements: { tenantId: req.hospitalId, status: req.query.status || null } });
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to load clinical alerts', error: error.message });
+  }
+});
+
+router.patch('/clinical-alerts/:id/acknowledge', verifyHospitalToken, async (req, res) => {
+  try {
+    await ensureClinicalIntelligenceTables();
+    const [rows] = await sequelize.query(`
+      UPDATE clinical_alerts
+      SET status = 'acknowledged', acknowledged_by = :userId, acknowledged_at = NOW()
+      WHERE id = :id AND tenant_id = :tenantId
+      RETURNING *
+    `, { replacements: { id: req.params.id, tenantId: req.hospitalId, userId: req.userId || null } });
+    if (!rows[0]) return res.status(404).json({ success: false, message: 'Alert not found' });
+    res.json({ success: true, data: rows[0] });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to acknowledge alert', error: error.message });
+  }
+});
+
+
+// Phase 1: canonical tariff master
+const ensurePremsTables = async () => {
+  await sequelize.query(`
+    CREATE TABLE IF NOT EXISTS prems_survey_invitations (
+      id SERIAL PRIMARY KEY,
+      hospital_id INTEGER NOT NULL,
+      patient_id VARCHAR(80),
+      discharge_summary_id INTEGER,
+      visit_type VARCHAR(24) NOT NULL DEFAULT 'ipd',
+      channel VARCHAR(24) NOT NULL DEFAULT 'whatsapp',
+      status VARCHAR(24) NOT NULL DEFAULT 'queued',
+      sent_at TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+};
+
+router.get('/tariffs', verifyHospitalToken, async (req, res) => {
+  try {
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS hospital_tariffs (
+        id SERIAL PRIMARY KEY,
+        hospital_id INTEGER NOT NULL,
+        code VARCHAR(80) NOT NULL,
+        item_name VARCHAR(200) NOT NULL,
+        category VARCHAR(80) NOT NULL,
+        unit VARCHAR(40) NOT NULL,
+        room_category VARCHAR(80),
+        payer_type VARCHAR(80),
+        package_code VARCHAR(80),
+        rate NUMERIC(12,2) NOT NULL,
+        gst NUMERIC(5,2) NOT NULL DEFAULT 0,
+        effective_from DATE NOT NULL,
+        effective_to DATE,
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    const [rows] = await sequelize.query(`SELECT * FROM hospital_tariffs WHERE active = TRUE AND hospital_id = :hospitalId ORDER BY category, item_name`, { replacements: { hospitalId: req.hospitalId } });
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to load tariffs', error: error.message });
+  }
+});
+
+router.post('/tariffs', verifyHospitalToken, async (req, res) => {
+  try {
+    const { code, itemName, category, unit, roomCategory, payerType, packageCode, rate, gst = 0, effectiveFrom, effectiveTo } = req.body;
+    if (!code || !itemName || !category || !unit || rate === undefined || !effectiveFrom) {
+      return res.status(400).json({ success: false, message: 'code, itemName, category, unit, rate and effectiveFrom are required' });
+    }
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS hospital_tariffs (
+        id SERIAL PRIMARY KEY,
+        hospital_id INTEGER NOT NULL,
+        code VARCHAR(80) NOT NULL,
+        item_name VARCHAR(200) NOT NULL,
+        category VARCHAR(80) NOT NULL,
+        unit VARCHAR(40) NOT NULL,
+        room_category VARCHAR(80),
+        payer_type VARCHAR(80),
+        package_code VARCHAR(80),
+        rate NUMERIC(12,2) NOT NULL,
+        gst NUMERIC(5,2) NOT NULL DEFAULT 0,
+        effective_from DATE NOT NULL,
+        effective_to DATE,
+        active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    const [rows] = await sequelize.query(`
+      INSERT INTO hospital_tariffs (hospital_id, code, item_name, category, unit, room_category, payer_type, package_code, rate, gst, effective_from, effective_to)
+      VALUES (:hospitalId,:code,:itemName,:category,:unit,:roomCategory,:payerType,:packageCode,:rate,:gst,:effectiveFrom,:effectiveTo)
+      RETURNING *
+    `, { replacements: { hospitalId: req.hospitalId, code, itemName, category, unit, roomCategory: roomCategory || null, payerType: payerType || null, packageCode: packageCode || null, rate, gst, effectiveFrom, effectiveTo: effectiveTo || null } });
+    res.status(201).json({ success: true, data: rows[0] });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to create tariff', error: error.message });
+  }
+});
+
+
+router.get('/tariffs/lookup', verifyHospitalToken, async (req, res) => {
+  try {
+    const { code, roomCategory, payerType, onDate = new Date().toISOString().slice(0, 10) } = req.query;
+    if (!code) return res.status(400).json({ success: false, message: 'code is required' });
+    const [rows] = await sequelize.query(`
+      SELECT * FROM hospital_tariffs
+      WHERE hospital_id = :hospitalId AND code = :code AND active = TRUE
+        AND effective_from <= :onDate AND (effective_to IS NULL OR effective_to >= :onDate)
+        AND (:roomCategory::text IS NULL OR room_category IS NULL OR room_category = :roomCategory)
+        AND (:payerType::text IS NULL OR payer_type IS NULL OR payer_type = :payerType)
+      ORDER BY
+        CASE WHEN payer_type = :payerType THEN 0 ELSE 1 END,
+        CASE WHEN room_category = :roomCategory THEN 0 ELSE 1 END,
+        effective_from DESC
+      LIMIT 1
+    `, { replacements: { hospitalId: req.hospitalId, code, roomCategory: roomCategory || null, payerType: payerType || null, onDate } });
+    if (!rows[0]) return res.status(404).json({ success: false, message: 'No active tariff found' });
+    res.json({ success: true, data: rows[0] });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to resolve tariff', error: error.message });
+  }
+});
+
+// Phase 1: PREMS feedback capture
+router.get('/prems/responses', verifyHospitalToken, async (req, res) => {
+  try {
+    await ensurePremsTables();
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS prems_responses (
+        id SERIAL PRIMARY KEY,
+        hospital_id INTEGER NOT NULL,
+        patient_id VARCHAR(80),
+        visit_type VARCHAR(24) NOT NULL,
+        rating INTEGER NOT NULL,
+        communication_score INTEGER,
+        cleanliness_score INTEGER,
+        wait_time_score INTEGER,
+        comment TEXT,
+        negative_followup BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    const [rows] = await sequelize.query(`SELECT * FROM prems_responses WHERE hospital_id = :hospitalId ORDER BY created_at DESC LIMIT 100`, { replacements: { hospitalId: req.hospitalId } });
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to load PREMS responses', error: error.message });
+  }
+});
+
+router.post('/prems/responses', verifyHospitalToken, async (req, res) => {
+  try {
+    await ensurePremsTables();
+    const { patientId, visitType = 'opd', rating, communicationScore, cleanlinessScore, waitTimeScore, comment } = req.body;
+    if (!rating) return res.status(400).json({ success: false, message: 'rating is required' });
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS prems_responses (
+        id SERIAL PRIMARY KEY,
+        hospital_id INTEGER NOT NULL,
+        patient_id VARCHAR(80),
+        visit_type VARCHAR(24) NOT NULL,
+        rating INTEGER NOT NULL,
+        communication_score INTEGER,
+        cleanliness_score INTEGER,
+        wait_time_score INTEGER,
+        comment TEXT,
+        negative_followup BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `);
+    const negativeFollowup = Number(rating) <= 2;
+    const [rows] = await sequelize.query(`
+      INSERT INTO prems_responses (hospital_id, patient_id, visit_type, rating, communication_score, cleanliness_score, wait_time_score, comment, negative_followup)
+      VALUES (:hospitalId,:patientId,:visitType,:rating,:communicationScore,:cleanlinessScore,:waitTimeScore,:comment,:negativeFollowup)
+      RETURNING *
+    `, { replacements: { hospitalId: req.hospitalId, patientId: patientId || null, visitType, rating, communicationScore: communicationScore || null, cleanlinessScore: cleanlinessScore || null, waitTimeScore: waitTimeScore || null, comment: comment || null, negativeFollowup } });
+    if (negativeFollowup) {
+      await sequelize.query(`
+        INSERT INTO tickets ("ticketNumber", subject, description, category, priority, status, requester, metadata, "createdAt", "updatedAt")
+        VALUES (:ticketNumber, :subject, :description, 'feedback', 'high', 'open', :requester::jsonb, :metadata::jsonb, NOW(), NOW())
+      `, { replacements: {
+        ticketNumber: `PREMS-${Date.now()}`,
+        subject: `Negative PREMS feedback - ${visitType.toUpperCase()}`,
+        description: comment || 'Low patient experience score requires follow-up.',
+        requester: JSON.stringify({ userId: patientId || null }),
+        metadata: JSON.stringify({ source: 'prems', responseId: rows[0].id, hospitalId: req.hospitalId }),
+      } });
+    }
+    res.status(201).json({ success: true, data: rows[0] });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to save PREMS response', error: error.message });
+  }
+});
+
+
+router.get('/prems/invitations', verifyHospitalToken, async (req, res) => {
+  try {
+    await ensurePremsTables();
+    const [rows] = await sequelize.query(`SELECT * FROM prems_survey_invitations WHERE hospital_id = :hospitalId ORDER BY created_at DESC LIMIT 100`, { replacements: { hospitalId: req.hospitalId } });
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to load PREMS invitations', error: error.message });
+  }
+});
+
+// Phase 1: discharge-facing readmission risk
+router.get('/patients/:patientId/readmission-risk', verifyHospitalToken, async (req, res) => {
+  try {
+    const patientId = Number(req.params.patientId);
+    const [scores] = await sequelize.query(`
+      SELECT * FROM ai_health_risk_scores WHERE patient_id = :patientId ORDER BY updated_at DESC LIMIT 1
+    `, { replacements: { patientId } });
+    const [insights] = await sequelize.query(`
+      SELECT title, description, severity, data
+      FROM ai_clinical_insights
+      WHERE target_id = :patientId AND insight_type = 'readmission_risk'
+      ORDER BY created_at DESC LIMIT 1
+    `, { replacements: { patientId } });
+    const latest = scores[0] || null;
+    const insight = insights[0] || null;
+    const score = Number(latest?.readmission_risk_score ?? latest?.overall_score ?? 0);
+    const level = score >= 70 || insight?.severity === 'warning' ? 'high' : score >= 40 ? 'medium' : 'low';
+    res.json({ success: true, data: { level, score, factors: insight?.data || {}, insight } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to load readmission risk', error: error.message });
   }
 });
 

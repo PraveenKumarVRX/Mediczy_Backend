@@ -73,6 +73,9 @@ const InsuranceDenialsPage = () => {
   const [denials, setDenials] = useState<any[]>(fallbackDenials);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [riskForm, setRiskForm] = useState({ documentationComplete: 'yes', preAuthPresent: 'yes', codeMismatch: 'no', payerHistoryDenialRate: '10' });
+  const [riskResult, setRiskResult] = useState<any>(null);
+  const [riskLoading, setRiskLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -123,6 +126,7 @@ const InsuranceDenialsPage = () => {
   };
 
   const filtered = denials.filter(d => filterStatus === 'all' || d.status === filterStatus);
+  const calculateDenialRisk = async () => { try { setRiskLoading(true); const response = await api.post('/roadmap-intelligence/revenue-cycle/denial-risk', { documentationComplete: riskForm.documentationComplete === 'yes', preAuthPresent: riskForm.preAuthPresent === 'yes', codeMismatch: riskForm.codeMismatch === 'yes', payerHistoryDenialRate: Number(riskForm.payerHistoryDenialRate || 0) }); setRiskResult(response.data?.data ?? null); } finally { setRiskLoading(false); } };
 
   const totalDenied = denials.reduce((s, d) => s + d.amount, 0);
   const openAmount = denials.filter(d => d.status === 'open').reduce((s, d) => s + d.amount, 0);
@@ -156,6 +160,8 @@ const InsuranceDenialsPage = () => {
               </Card>
             ))}
           </div>
+
+          <Card><CardHeader><CardTitle className="text-base">Pre-submit Denial Risk</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-[repeat(4,minmax(0,1fr))_auto]">{([['documentationComplete','Documentation complete',['yes','no']],['preAuthPresent','Pre-auth attached',['yes','no']],['codeMismatch','Code mismatch',['no','yes']]] as const).map(([field,label,values]) => <div key={field} className="space-y-1"><label className="text-xs font-medium text-muted-foreground">{label}</label><Select value={riskForm[field]} onValueChange={(value) => setRiskForm({ ...riskForm, [field]: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{values.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></div>)}<div className="space-y-1"><label className="text-xs font-medium text-muted-foreground">Payer denial %</label><Input type="number" value={riskForm.payerHistoryDenialRate} onChange={(e) => setRiskForm({ ...riskForm, payerHistoryDenialRate: e.target.value })} /></div><div className="flex items-end"><Button onClick={calculateDenialRisk} disabled={riskLoading}>{riskLoading ? 'Calculating...' : 'Assess'}</Button></div>{riskResult && <div className="md:col-span-5 rounded-lg border p-3 text-sm"><div className="flex items-center justify-between"><span>Predicted denial risk</span><Badge className={riskResult.level === 'high' ? 'bg-red-100 text-red-700' : riskResult.level === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}>{riskResult.level} · {riskResult.score}</Badge></div><p className="mt-2 text-muted-foreground">{riskResult.suggestions?.join(' · ') || 'No remediation suggestions.'}</p></div>}</CardContent></Card>
 
           {/* Filter */}
           <div className="flex flex-wrap gap-2">

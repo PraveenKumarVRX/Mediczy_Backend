@@ -80,6 +80,7 @@ import {
   getQualityIncidents,
   getQualityKpis,
   getQualityNabhCompliance,
+  getQualityNabhTemplates,
   getQualityPolicies,
   getQualityPortalData,
   getQualityReports,
@@ -475,6 +476,7 @@ router.post('/icu/login', authLimiter, deptLoginValidation, icuStaffLogin);
 router.post('/quality/signup', deptBodyValidation, qualityStaffSignup);
 router.post('/quality/login', authLimiter, deptLoginValidation, qualityStaffLogin);
 router.get('/quality/portal-data', authUser, requireHospitalStaff, requireQualityStaff, getQualityPortalData);
+router.get('/quality/nabh-templates', authUser, requireHospitalStaff, requireQualityStaff, getQualityNabhTemplates);
 router.get('/quality/incidents', authUser, requireHospitalStaff, requireQualityStaff, getQualityIncidents);
 router.post('/quality/incidents', authUser, requireHospitalStaff, requireQualityStaff, [
   body('title').trim().notEmpty().withMessage('title is required'),

@@ -370,6 +370,19 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
         uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_rfq_files_rfq ON crm_rfq_files(rfq_id);
+
+      CREATE TABLE IF NOT EXISTS crm_rfq_audit_log (
+        id          BIGSERIAL    PRIMARY KEY,
+        rfq_id      BIGINT       NOT NULL,
+        event_type  VARCHAR(50)  NOT NULL,
+        old_value   TEXT,
+        new_value   TEXT,
+        changed_by  INTEGER,
+        note        TEXT,
+        created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_rfq_audit_rfq ON crm_rfq_audit_log(rfq_id);
+      CREATE INDEX IF NOT EXISTS idx_rfq_audit_ts  ON crm_rfq_audit_log(created_at);
     `);
     // ─── Distribution tables ───────────────────────────────────────────────
     await pool.query(`
@@ -1129,6 +1142,21 @@ router.get('/reports/team-performance', authCRM, async (req, res) => {
 // RFQ MANAGEMENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
+function normalizeProductType(raw) {
+  if (!raw) return 'GMC';
+  const s = raw.toUpperCase().replace(/\s+/g, '').replace(/[^A-Z0-9+/]/g, '');
+  if (s.includes('OPD') || s.includes('OUTPATIENT')) {
+    if (s.includes('GMC') || s.includes('MEDICLAIM') || s.includes('GHI') || s.includes('HOSPITALI')) return 'GMC+OPD';
+    return 'OPD';
+  }
+  if (s.includes('GPA') || (s.includes('ACCIDENT') && !s.includes('MEDICLAIM'))) return 'GPA';
+  if (s.includes('GTL') || (s.includes('LIFE') && s.includes('GROUP')) || s.includes('TERMLIFE')) return 'GTL';
+  if (s.includes('TOPUP') || s.includes('SUPERTOP') || s.includes('SUPERHEALTHTOP')) return 'TopUp GMC';
+  if (s.includes('CI') || s.includes('CRITICALILLNESS')) return 'CI';
+  if (s.includes('GMC') || s.includes('MEDICLAIM') || s.includes('HOSPITALI') || s.includes('GHI')) return 'GMC';
+  return raw; // keep as-is if unrecognised
+}
+
 function generateRFQNumber() {
   const d = new Date();
   const y = d.getFullYear();
@@ -1239,6 +1267,17 @@ router.put('/rfqs/:id', authCRM, async (req, res) => {
       return res.status(400).json({ success: false, message: `Invalid status: ${status}. Allowed: ${VALID_RFQ_STATUSES.join(', ')}` });
     }
 
+    // Transition guard: moving to 'won' requires at least one sent/accepted quote
+    if (status === 'won') {
+      const quoteCheck = await sharedPool.query(
+        `SELECT COUNT(*) FROM crm_quotes WHERE rfq_id = $1 AND status IN ('sent','accepted')`,
+        [req.params.id]
+      );
+      if (parseInt(quoteCheck.rows[0].count) === 0) {
+        return res.status(400).json({ success: false, message: 'Cannot mark as Won — at least one quote must be sent or accepted first.' });
+      }
+    }
+
     // Validate deal_id exists if provided
     if (deal_id) {
       const dealCheck = await sharedPool.query(`SELECT id FROM crm_deals WHERE id = $1`, [deal_id]);
@@ -1278,6 +1317,15 @@ router.put('/rfqs/:id', authCRM, async (req, res) => {
         assigned_to, deal_id, lead_id, lost_reason || null, req.params.id]
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
+
+    // Audit log for status change
+    if (status && rows[0].status !== status) {
+      sharedPool.query(
+        `INSERT INTO crm_rfq_audit_log (rfq_id, event_type, old_value, new_value, changed_by) VALUES ($1,'status_change',$2,$3,$4)`,
+        [rows[0].id, rows[0].status, status, req.crmUser?.id || null]
+      ).catch(() => {});
+    }
+
     return res.status(200).json({ success: true, data: rows[0] });
   } catch (error) { console.error('[CRM RFQ Update]', error.message); return res.status(500).json({ success: false, message: 'Failed to update RFQ' }); }
 });
@@ -1473,12 +1521,23 @@ router.post('/rfqs/:id/upload-members', authCRM, upload.single('file'), async (r
       };
     };
 
+    // Deduplicate rows within the upload by (emp_code, relationship) — keep last occurrence
+    const dedupeKey = (row) => {
+      const keys = Object.keys(row);
+      const find = (patterns) => { for (const p of patterns) { const k = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '').includes(p)); if (k) return String(row[k] || '').trim(); } return ''; };
+      return `${find(['empcode','employeecode','empid','employeeid'])}|${find(['relationship','relation'])}`;
+    };
+    const dedupeMap = new Map();
+    for (const row of rows) dedupeMap.set(dedupeKey(row), row);
+    const dedupedRows = [...dedupeMap.values()];
+    const duplicatesRemoved = rows.length - dedupedRows.length;
+
     // Build all member rows first, then replace atomically in a transaction
     let inserted = 0;
     const stats = newCleaningStats();
     const batchSize = 500;
     const allBatches = [];
-    for (let i = 0; i < rows.length; i += batchSize) {
+    for (let i = 0; i < dedupedRows.length; i += batchSize) {
       const batch = rows.slice(i, i + batchSize);
       const values = []; const placeholders = [];
       let pIdx = 1;
@@ -1531,11 +1590,11 @@ router.post('/rfqs/:id/upload-members', authCRM, upload.single('file'), async (r
     txClient.release();
     await uploadRfqFile(req.file.buffer, req.file.originalname, rfqId, 'members', req.crmUser.id);
 
-    console.log(`RFQ ${rfqId}: ${inserted} members, cleaned: ${JSON.stringify(stats)}`);;
+    console.log(`RFQ ${rfqId}: ${inserted} members (${duplicatesRemoved} dupes removed), cleaned: ${JSON.stringify(stats)}`);
     return res.status(200).json({
       success: true,
-      message: `Uploaded ${inserted} members from sheet "${memberSheetName}" — AI cleaned & standardized`,
-      data: { memberCount: inserted, sheetName: memberSheetName, cleaning: stats }
+      message: `Uploaded ${inserted} members from sheet "${memberSheetName}" — AI cleaned & standardized${duplicatesRemoved > 0 ? ` (${duplicatesRemoved} duplicate rows removed)` : ''}`,
+      data: { memberCount: inserted, duplicatesRemoved, sheetName: memberSheetName, cleaning: stats }
     });
   } catch (error) {
     console.error('[CRM RFQ Upload]', error.message);
@@ -1668,7 +1727,7 @@ ${sheetText.substring(0, 6000)}`;
           policy_start: parsed['policy period'] || null,
           policy_end: null,
           premium_paid: parsed['premium paid'] || null,
-          product_type: rfqSheetName.includes('OPD') ? 'OPD' : 'Group Mediclaim',
+          product_type: normalizeProductType(rfqSheetName.includes('OPD') ? 'OPD' : null),
           lives_at_inception: {
             employees: parseInt(parsed['total no. of employees at inception']) || 0,
             dependants: parseInt(parsed['total no. of dependants at inception']) || 0,
@@ -1720,7 +1779,7 @@ ${sheetText.substring(0, 6000)}`;
         parsed.insured_name || 'Unknown',
         parsed.insured_address || null,
         parsed.policy_type || 'Group Mediclaim',
-        parsed.product_type || (rfqSheetName.includes('OPD') ? 'OPD' : 'Group Mediclaim'),
+        normalizeProductType(parsed.product_type || (rfqSheetName.includes('OPD') ? 'OPD' : null)),
         parsed.existing_insurer || null,
         parsed.existing_tpa || null,
         parsed.policy_start || null,
@@ -1986,7 +2045,7 @@ Return ONLY JSON.`;
       [
         parsed.insured_name || null,
         parsed.insured_address || null,
-        parsed.product_type || null,
+        parsed.product_type ? normalizeProductType(parsed.product_type) : null,
         parsed.existing_insurer || null,
         parsed.existing_tpa || null,
         parsed.policy_start || null,
@@ -2143,7 +2202,7 @@ Return ONLY the JSON object, no explanation.`;
         parsed.insured_name || 'Unknown',
         parsed.insured_address || null,
         parsed.policy_type || 'Group Mediclaim',
-        parsed.product_type || 'Group Mediclaim',
+        normalizeProductType(parsed.product_type),
         parsed.existing_insurer || null,
         parsed.existing_tpa || null,
         parsed.policy_start || null,
@@ -2190,22 +2249,23 @@ router.get('/rfqs/:id/member-analytics', authCRM, async (req, res) => {
       totalRes, genderRes, relationRes, ageBandRes, bandRes, siRes, familySizeRes
     ] = await Promise.all([
       pool.query(`SELECT COUNT(*) AS total, COUNT(DISTINCT emp_code) AS employees,
-        COUNT(*) FILTER (WHERE relationship ILIKE 'SELF') AS self_count,
+        COUNT(*) FILTER (WHERE COALESCE(NULLIF(TRIM(relationship),''), relation_type) ILIKE '%SELF%') AS self_count,
         AVG(age) AS avg_age, MIN(age) AS min_age, MAX(age) AS max_age,
-        COALESCE(SUM(si_expiring),0) AS total_si_expiring, COALESCE(SUM(si_proposed),0) AS total_si_proposed
+        COALESCE(SUM(COALESCE(NULLIF(si_expiring,0), si_proposed)),0) AS total_si_expiring,
+        COALESCE(SUM(COALESCE(NULLIF(si_proposed,0), si_expiring)),0) AS total_si_proposed
         FROM crm_rfq_members WHERE rfq_id = $1`, [rfqId]),
       pool.query(`SELECT gender, COUNT(*) AS count FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY gender ORDER BY count DESC`, [rfqId]),
-      pool.query(`SELECT COALESCE(NULLIF(relationship,''), relation_type, 'Unknown') AS relation_type, COUNT(*) AS count FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY 1 ORDER BY count DESC`, [rfqId]),
+      pool.query(`SELECT COALESCE(NULLIF(TRIM(relationship),''), relation_type, 'Unknown') AS relation_type, COUNT(*) AS count FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY 1 ORDER BY count DESC`, [rfqId]),
       pool.query(`SELECT
         CASE WHEN age < 18 THEN '0-17' WHEN age < 30 THEN '18-29' WHEN age < 45 THEN '30-44'
              WHEN age < 60 THEN '45-59' WHEN age < 75 THEN '60-74' ELSE '75+' END AS age_band,
         COUNT(*) AS count
-        FROM crm_rfq_members WHERE rfq_id = $1 AND age IS NOT NULL GROUP BY age_band ORDER BY age_band`, [rfqId]),
+        FROM crm_rfq_members WHERE rfq_id = $1 AND age IS NOT NULL GROUP BY 1 ORDER BY 1`, [rfqId]),
       pool.query(`SELECT band, COUNT(*) AS count, COUNT(DISTINCT emp_code) AS emp_count
         FROM crm_rfq_members WHERE rfq_id = $1 AND band IS NOT NULL GROUP BY band ORDER BY band`, [rfqId]),
-      pool.query(`SELECT si_proposed, COUNT(*) AS count
-        FROM crm_rfq_members WHERE rfq_id = $1 AND relationship ILIKE 'SELF' AND si_proposed > 0
-        GROUP BY si_proposed ORDER BY si_proposed`, [rfqId]),
+      pool.query(`SELECT COALESCE(NULLIF(si_proposed,0), si_expiring) AS si_proposed, COUNT(*) AS count
+        FROM crm_rfq_members WHERE rfq_id = $1 AND COALESCE(NULLIF(TRIM(relationship),''), relation_type) ILIKE '%SELF%' AND COALESCE(NULLIF(si_proposed,0), si_expiring) > 0
+        GROUP BY 1 ORDER BY 1`, [rfqId]),
       pool.query(`SELECT emp_code, COUNT(*) AS family_size
         FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY emp_code ORDER BY family_size DESC`, [rfqId]),
     ]);
@@ -2352,31 +2412,33 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, upload.array('files', 10), a
 
     const [summaryRes, ageBandRes, siSlabRes, familyRes, genderRes, relationRes] = await Promise.all([
       pool.query(`SELECT COUNT(*) AS total, COUNT(DISTINCT emp_code) AS employees,
-        COUNT(*) FILTER (WHERE relationship ILIKE '%SELF%') AS self_count,
+        COUNT(*) FILTER (WHERE COALESCE(NULLIF(TRIM(relationship),''), relation_type) ILIKE '%SELF%') AS self_count,
         AVG(age) AS avg_age, MIN(age) AS min_age, MAX(age) AS max_age,
-        COALESCE(SUM(si_expiring),0) AS total_si_expiring,
-        COALESCE(SUM(si_proposed),0) AS total_si_proposed,
-        COALESCE(AVG(si_expiring) FILTER (WHERE si_expiring > 0), 0) AS avg_si_expiring,
-        COALESCE(AVG(si_proposed) FILTER (WHERE si_proposed > 0), 0) AS avg_si_proposed
+        COALESCE(SUM(COALESCE(NULLIF(si_expiring,0), si_proposed)),0) AS total_si_expiring,
+        COALESCE(SUM(COALESCE(NULLIF(si_proposed,0), si_expiring)),0) AS total_si_proposed,
+        COALESCE(AVG(COALESCE(NULLIF(si_expiring,0), si_proposed)) FILTER (WHERE COALESCE(si_expiring,si_proposed) > 0), 0) AS avg_si_expiring,
+        COALESCE(AVG(COALESCE(NULLIF(si_proposed,0), si_expiring)) FILTER (WHERE COALESCE(si_proposed,si_expiring) > 0), 0) AS avg_si_proposed
         FROM crm_rfq_members WHERE rfq_id = $1`, [rfqId]),
       pool.query(`SELECT age_band, cnt FROM (
         SELECT CASE WHEN age < 5 THEN '0-4' WHEN age < 18 THEN '5-17' WHEN age < 30 THEN '18-29'
           WHEN age < 45 THEN '30-44' WHEN age < 60 THEN '45-59'
           WHEN age < 75 THEN '60-74' ELSE '75+' END AS age_band, COUNT(*) AS cnt
-        FROM crm_rfq_members WHERE rfq_id = $1 AND age IS NOT NULL GROUP BY age_band
+        FROM crm_rfq_members WHERE rfq_id = $1 AND age IS NOT NULL GROUP BY 1
       ) sub ORDER BY age_band`, [rfqId]),
-      pool.query(`SELECT si_proposed AS slab, COUNT(*) AS lives
-        FROM crm_rfq_members WHERE rfq_id = $1 AND relationship ILIKE '%SELF%' AND si_proposed > 0
-        GROUP BY si_proposed ORDER BY si_proposed`, [rfqId]),
+      pool.query(`SELECT COALESCE(NULLIF(si_proposed,0), si_expiring) AS slab, COUNT(*) AS lives
+        FROM crm_rfq_members WHERE rfq_id = $1
+          AND COALESCE(NULLIF(TRIM(relationship),''), relation_type) ILIKE '%SELF%'
+          AND COALESCE(NULLIF(si_proposed,0), si_expiring) > 0
+        GROUP BY 1 ORDER BY 1`, [rfqId]),
       pool.query(`SELECT family_size, cnt FROM (
         SELECT fs AS family_size, COUNT(*) AS cnt FROM (
           SELECT emp_code, COUNT(*) AS fs FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY emp_code
         ) sub GROUP BY fs
       ) sub2 ORDER BY family_size`, [rfqId]),
       pool.query(`SELECT UPPER(TRIM(gender)) AS g, COUNT(*) AS cnt
-        FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY g`, [rfqId]),
-      pool.query(`SELECT UPPER(TRIM(relationship)) AS rel, COUNT(*) AS cnt
-        FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY rel`, [rfqId]),
+        FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY 1`, [rfqId]),
+      pool.query(`SELECT UPPER(TRIM(COALESCE(NULLIF(TRIM(relationship),''), relation_type))) AS rel, COUNT(*) AS cnt
+        FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY 1`, [rfqId]),
     ]);
     const summary = summaryRes.rows[0];
     const totalMembers = parseInt(summary.total) || 0;
@@ -2484,21 +2546,21 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, upload.array('files', 10), a
           FROM crm_rfq_claims WHERE rfq_id = $1 GROUP BY service_type ORDER BY claimed DESC`, [rfqId]),
         pool.query(`SELECT TO_CHAR(claim_date,'YYYY-MM') AS month, COUNT(*) AS claims,
           COALESCE(SUM(claimed_amount),0) AS claimed, COALESCE(SUM(approved_amount),0) AS approved
-          FROM crm_rfq_claims WHERE rfq_id = $1 AND claim_date IS NOT NULL GROUP BY month ORDER BY month`, [rfqId]),
+          FROM crm_rfq_claims WHERE rfq_id = $1 AND claim_date IS NOT NULL GROUP BY 1 ORDER BY 1`, [rfqId]),
         pool.query(`SELECT UPPER(TRIM(COALESCE(relationship,'UNKNOWN'))) AS rel, COUNT(*) AS cnt,
           COALESCE(SUM(claimed_amount),0) AS claimed, COUNT(DISTINCT emp_code) AS uniqueEmp
-          FROM crm_rfq_claims WHERE rfq_id = $1 GROUP BY rel ORDER BY claimed DESC`, [rfqId]),
+          FROM crm_rfq_claims WHERE rfq_id = $1 GROUP BY 1 ORDER BY claimed DESC`, [rfqId]),
         pool.query(`SELECT age_band, cnt, claimed, approved FROM (
           SELECT CASE WHEN age<18 THEN '0-17' WHEN age<30 THEN '18-29' WHEN age<45 THEN '30-44'
             WHEN age<60 THEN '45-59' WHEN age<75 THEN '60-74' ELSE '75+' END AS age_band,
             COUNT(*) AS cnt, COALESCE(SUM(claimed_amount),0) AS claimed, COALESCE(SUM(approved_amount),0) AS approved
-          FROM crm_rfq_claims WHERE rfq_id = $1 AND age IS NOT NULL GROUP BY age_band) sub ORDER BY age_band`, [rfqId]),
+          FROM crm_rfq_claims WHERE rfq_id = $1 AND age IS NOT NULL GROUP BY 1) sub ORDER BY age_band`, [rfqId]),
         pool.query(`SELECT
           CASE WHEN claimed_amount<500 THEN '<500' WHEN claimed_amount<1000 THEN '500-1K'
             WHEN claimed_amount<2500 THEN '1K-2.5K' WHEN claimed_amount<5000 THEN '2.5K-5K'
             WHEN claimed_amount<10000 THEN '5K-10K' WHEN claimed_amount<25000 THEN '10K-25K' ELSE '25K+' END AS band,
           COUNT(*) AS cnt, COALESCE(SUM(claimed_amount),0) AS total
-          FROM crm_rfq_claims WHERE rfq_id = $1 GROUP BY band ORDER BY MIN(claimed_amount)`, [rfqId]),
+          FROM crm_rfq_claims WHERE rfq_id = $1 GROUP BY 1 ORDER BY MIN(claimed_amount)`, [rfqId]),
       ]);
 
       const cs = claimsSummary.rows[0];
@@ -3383,8 +3445,25 @@ const aiQuoteResult = {
         // Claims experience data (if available)
         claims_experience: claimsExperience,
 
+
         // LLM underwriting assessment (from isha-inc.com iSHA Insurance LLM)
-        llm_assessment: llmAssessment,
+        llm_assessment: {
+          executive_summary: llmAssessment?.executive_summary || 'No LLM assessment available.',
+          risk_insights: Array.isArray(llmAssessment?.risk_insights) ? llmAssessment.risk_insights : [],
+          pricing_commentary: llmAssessment?.pricing_commentary || 'No pricing commentary.',
+          claims_commentary: llmAssessment?.claims_commentary || 'No claims commentary.',
+          recommendations: Array.isArray(llmAssessment?.recommendations) ? llmAssessment.recommendations : [],
+          negotiation_range: llmAssessment?.negotiation_range || {
+            floor_premium_per_family: null,
+            recommended_premium_per_family: null,
+            ceiling_premium_per_family: null,
+            rationale: 'No negotiation range provided.'
+          },
+          special_conditions: Array.isArray(llmAssessment?.special_conditions) ? llmAssessment.special_conditions : [],
+          confidence_level: llmAssessment?.confidence_level || 'unknown',
+          confidence_rationale: llmAssessment?.confidence_rationale || 'No rationale provided.',
+          raw: llmAssessment?.raw || false
+        },
 
         // Supplemental inputs used in this generation
         supplemental_inputs: {
@@ -3457,12 +3536,13 @@ const aiQuoteResult = {
     };
 
     // Persist AI quote result + inferred industry to DB (survives page refreshes — replaces sessionStorage handoff)
+    // Save only the inner data payload (not the outer success wrapper) so the frontend can use it directly
     await sharedPool.query(
       `UPDATE crm_rfqs SET ai_quote_data = $1, industry = COALESCE(industry, $2), updated_at = NOW() WHERE id = $3`,
-      [JSON.stringify(aiQuoteResult), inferIndustry(rfq.insured_name), rfqId]
+      [JSON.stringify(aiQuoteResult.data), inferIndustry(rfq.insured_name), rfqId]
     );
 
-    return res.status(200).json({ success: true, data: aiQuoteResult });
+    return res.status(200).json(aiQuoteResult);
   } catch (error) {
     console.error('[CRM AI Quote Generate]', error.message, error.stack);
     return res.status(500).json({ success: false, message: 'AI quote generation failed: ' + error.message });
@@ -3546,7 +3626,7 @@ router.post('/rfqs/:id/upload-claims', authCRM, upload.single('file'), async (re
     const batchSize = 500;
     const allClaimBatches = [];
     for (let i = 0; i < rows.length; i += batchSize) {
-      const batch = rows.slice(i, i + batchSize);
+      const batch = rows.slice(i, i + batchSize);  // claims batch (rows not deduped — keep all claims)
       const values = []; const placeholders = [];
       let pIdx = 1;
       for (const raw of batch) {
@@ -3586,6 +3666,25 @@ router.post('/rfqs/:id/upload-claims', authCRM, upload.single('file'), async (re
       }
     }
 
+    // Validate emp_codes against crm_rfq_members (warn on orphan claims)
+    let orphanEmpCodes = [];
+    try {
+      const claimEmpCodes = [...new Set(
+        allClaimBatches.flatMap(b => {
+          const chunk = [];
+          for (let i = 2; i < b.values.length; i += 21) chunk.push(b.values[i]);
+          return chunk;
+        }).filter(Boolean)
+      )];
+      if (claimEmpCodes.length > 0) {
+        const memberEmpRes = await sharedPool.query(
+          `SELECT DISTINCT emp_code FROM crm_rfq_members WHERE rfq_id = $1`, [rfqId]
+        );
+        const memberEmpSet = new Set(memberEmpRes.rows.map(r => r.emp_code).filter(Boolean));
+        orphanEmpCodes = claimEmpCodes.filter(ec => !memberEmpSet.has(ec)).slice(0, 20);
+      }
+    } catch (_) { /* non-fatal validation */ }
+
     // Atomic replace: DELETE then INSERT in a single transaction
     const claimTxClient = await sharedPool.connect();
     try {
@@ -3613,7 +3712,12 @@ router.post('/rfqs/:id/upload-claims', authCRM, upload.single('file'), async (re
     return res.status(200).json({
       success: true,
       message: `Uploaded ${inserted} claims from sheet "${claimsSheetName}" — AI cleaned & standardized`,
-      data: { claimCount: inserted, sheetName: claimsSheetName, cleaning: stats }
+      data: {
+        claimCount: inserted, sheetName: claimsSheetName, cleaning: stats,
+        warnings: orphanEmpCodes.length > 0
+          ? [`${orphanEmpCodes.length} emp_code(s) in claims not found in member list — cross-check: ${orphanEmpCodes.slice(0,5).join(', ')}${orphanEmpCodes.length > 5 ? '...' : ''}`]
+          : [],
+      }
     });
   } catch (error) {
     console.error('[CRM Claims Upload]', error.message);
@@ -3709,7 +3813,7 @@ router.get('/rfqs/:id/claims-analysis', authCRM, async (req, res) => {
           COALESCE(SUM(approved_amount), 0) AS total_approved,
           COALESCE(AVG(claimed_amount), 0) AS avg_per_claim
         FROM crm_rfq_claims WHERE rfq_id = $1 AND age IS NOT NULL
-        GROUP BY age_band
+        GROUP BY 1
       ) sub ORDER BY age_band`, [rfqId]),
 
       // 6. Top diagnoses
@@ -3728,7 +3832,7 @@ router.get('/rfqs/:id/claims-analysis', authCRM, async (req, res) => {
         COALESCE(SUM(claimed_amount), 0) AS total_claimed,
         COALESCE(SUM(approved_amount), 0) AS total_approved
         FROM crm_rfq_claims WHERE rfq_id = $1
-        GROUP BY status ORDER BY count DESC`, [rfqId]),
+        GROUP BY 1 ORDER BY count DESC`, [rfqId]),
 
       // 8. Provider type (cashless vs reimbursement)
       pool.query(`SELECT 
@@ -3753,7 +3857,7 @@ router.get('/rfqs/:id/claims-analysis', authCRM, async (req, res) => {
         COUNT(*) AS count,
         COALESCE(SUM(claimed_amount), 0) AS total
         FROM crm_rfq_claims WHERE rfq_id = $1
-        GROUP BY severity_band ORDER BY MIN(claimed_amount)`, [rfqId]),
+        GROUP BY 1 ORDER BY MIN(claimed_amount)`, [rfqId]),
 
       // 10. Top claimants (repeat utilizers)
       pool.query(`SELECT 
@@ -3864,7 +3968,7 @@ router.get('/rfqs/:id/claims-analysis', authCRM, async (req, res) => {
     } : null;
 
     // Relationship utilization rate (against member population)
-    const relMemberRes = await pool.query(`SELECT UPPER(TRIM(relationship)) AS rel, COUNT(*) AS count FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY rel`, [rfqId]);
+    const relMemberRes = await pool.query(`SELECT UPPER(TRIM(COALESCE(NULLIF(TRIM(relationship),''), relation_type))) AS rel, COUNT(*) AS count FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY 1`, [rfqId]);
     const relMemberMap = {};
     for (const r of relMemberRes.rows) relMemberMap[r.rel] = parseInt(r.count);
 
@@ -4041,6 +4145,24 @@ router.post('/rfqs/:id/quotes', authCRM, async (req, res) => {
       coverage_details, slab_pricing, terms, notes
     } = req.body;
 
+    // Validate premium and rate bounds
+    const premiumNum = parseFloat(total_premium) || 0;
+    if (premiumNum <= 0) {
+      return res.status(400).json({ success: false, message: 'Total premium must be greater than zero before saving a quote.' });
+    }
+    const commissionNum = parseFloat(commission_pct) || 0;
+    if (commissionNum < 0 || commissionNum > 30) {
+      return res.status(400).json({ success: false, message: 'Commission % must be between 0 and 30.' });
+    }
+    const discountNum = parseFloat(discount_pct) || 0;
+    if (discountNum < 0 || discountNum > 50) {
+      return res.status(400).json({ success: false, message: 'Discount % must be between 0 and 50.' });
+    }
+    const gstNum = parseFloat(gst_pct) ?? 18;
+    if (gstNum < 0 || gstNum > 28) {
+      return res.status(400).json({ success: false, message: 'GST % must be between 0 and 28.' });
+    }
+
     const versionRes = await sharedPool.query(`SELECT COALESCE(MAX(version),0)+1 AS next FROM crm_quotes WHERE rfq_id=$1`, [rfqId]);
     const version = versionRes.rows[0].next;
     const quote_number = generateQuoteNumber(rfqCheck.rows[0].rfq_number) + '-V' + version;
@@ -4123,25 +4245,23 @@ router.put('/quotes/:id', authCRM, async (req, res) => {
       await sharedPool.query(`UPDATE crm_rfqs SET status = 'quoted', updated_at = NOW() WHERE id = $1 AND status IN ('received','quoting','negotiating')`, [rows[0].rfq_id]);
 
       // ── Email notification on quote send ──────────────────────────────────
-      // Fire-and-forget: fetch RFQ details and email the broker
-      (async () => {
-        try {
-          const { rows: rfqRows } = await sharedPool.query(
-            `SELECT insured_name, rfq_number, broker_name, broker_email, member_count,
-                    contact_email, contact_name
-             FROM crm_rfqs WHERE id = $1`,
-            [rows[0].rfq_id]
-          );
-          if (!rfqRows.length) return;
+      let emailResult = { sent: false, recipients: null, error: null };
+      try {
+        const { rows: rfqRows } = await sharedPool.query(
+          `SELECT insured_name, rfq_number, broker_name, broker_email, member_count,
+                  contact_email, contact_name
+           FROM crm_rfqs WHERE id = $1`,
+          [rows[0].rfq_id]
+        );
+        if (rfqRows.length) {
           const rfq = rfqRows[0];
           const q   = rows[0];
           const recipients = [rfq.broker_email, rfq.contact_email].filter(Boolean).join(',');
-          if (!recipients) return;
-
-          const fmtCurrency = v => v != null ? `₹${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : 'N/A';
-          const validUntil  = q.valid_until ? new Date(q.valid_until).toLocaleDateString('en-IN') : 'N/A';
-
-          const html = `
+          if (recipients) {
+            emailResult.recipients = recipients;
+            const fmtCurrency = v => v != null ? `₹${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : 'N/A';
+            const validUntil  = q.valid_until ? new Date(q.valid_until).toLocaleDateString('en-IN') : 'N/A';
+            const html = `
 <!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="font-family:Arial,sans-serif;background:#f5f5f5;margin:0;padding:20px">
 <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1)">
@@ -4168,17 +4288,19 @@ router.put('/quotes/:id', authCRM, async (req, res) => {
   </div>
 </div>
 </body></html>`;
-
-          await sendCRMEmail({
-            to:      recipients,
-            subject: `Quote for ${rfq.insured_name} (RFQ #${rfq.rfq_number})`,
-            html,
-            text: `Dear ${rfq.broker_name || rfq.contact_name || 'Partner'},\n\nPlease find the health insurance quote for ${rfq.insured_name} (RFQ #${rfq.rfq_number}).\n\nTotal Premium: ${fmtCurrency(q.total_premium)}\nTotal Lives: ${q.total_lives || rfq.member_count || 'N/A'}\nValid Until: ${validUntil}\n\nRegards,\nMediqzy Team`,
-          });
-        } catch (e) {
-          console.warn('[CRM] Quote sent email error:', e.message);
+            await sendCRMEmail({
+              to:      recipients,
+              subject: `Quote for ${rfq.insured_name} (RFQ #${rfq.rfq_number})`,
+              html,
+              text: `Dear ${rfq.broker_name || rfq.contact_name || 'Partner'},\n\nPlease find the health insurance quote for ${rfq.insured_name} (RFQ #${rfq.rfq_number}).\n\nTotal Premium: ${fmtCurrency(q.total_premium)}\nTotal Lives: ${q.total_lives || rfq.member_count || 'N/A'}\nValid Until: ${validUntil}\n\nRegards,\nMediqzy Team`,
+            });
+            emailResult.sent = true;
+          }
         }
-      })();
+      } catch (e) {
+        emailResult.error = e.message;
+        console.warn('[CRM] Quote sent email error:', e.message);
+      }
     }
     if (status === 'negotiating') {
       // negotiating → rfq becomes 'negotiating'
@@ -4192,7 +4314,7 @@ router.put('/quotes/:id', authCRM, async (req, res) => {
       await sharedPool.query(`UPDATE crm_rfqs SET status = 'lost', lost_reason = COALESCE($2, lost_reason), updated_at = NOW() WHERE id = $1`, [rows[0].rfq_id, lost_reason || null]);
     }
 
-    return res.status(200).json({ success: true, data: rows[0] });
+    return res.status(200).json({ success: true, data: rows[0], email: emailResult || null });
   } catch (error) { console.error('[CRM Quote Update]', error.message); return res.status(500).json({ success: false, message: 'Failed to update quote' }); }
 });
 
@@ -4275,6 +4397,14 @@ router.put('/agents/:id', authCRM, async (req, res) => {
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 });
 
+router.delete('/agents/:id', authCRM, async (req, res) => {
+  try {
+    const { rowCount } = await sharedPool.query(`DELETE FROM crm_agents WHERE id = $1`, [req.params.id]);
+    if (!rowCount) return res.status(404).json({ success: false, message: 'Agent not found' });
+    return res.json({ success: true, message: 'Agent deleted' });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // DISTRIBUTION — AGENCIES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -4330,6 +4460,14 @@ router.put('/agencies/:id', authCRM, async (req, res) => {
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Agency not found' });
     return res.json({ success: true, data: rows[0] });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.delete('/agencies/:id', authCRM, async (req, res) => {
+  try {
+    const { rowCount } = await sharedPool.query(`DELETE FROM crm_agencies WHERE id = $1`, [req.params.id]);
+    if (!rowCount) return res.status(404).json({ success: false, message: 'Agency not found' });
+    return res.json({ success: true, message: 'Agency deleted' });
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -4491,6 +4629,219 @@ router.post('/corporate-plans/:id/renew', authCRM, async (req, res) => {
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 });
 
+router.delete('/corporate-plans/:id', authCRM, async (req, res) => {
+  try {
+    const { rowCount } = await sharedPool.query(`DELETE FROM crm_corporate_health_plans WHERE id = $1`, [req.params.id]);
+    if (!rowCount) return res.status(404).json({ success: false, message: 'Corporate plan not found' });
+    return res.json({ success: true, message: 'Corporate plan deleted' });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ─── Autocapture Plan from RFQ ─────────────────────────────────────────────
+// Reads all RFQ fields and auto-generates a uniquely named corporate plan.
+// Plan name format: "<InuredName> – <ProductType> Plan FY<YYYY>"
+// e.g.  "Tata Steel Ltd – GMC+OPD Plan FY2026"
+router.post('/rfqs/:id/autocapture-plan', authCRM, async (req, res) => {
+  try {
+    const rfqId = parseInt(req.params.id);
+    if (!rfqId || isNaN(rfqId)) return res.status(400).json({ success: false, message: 'Invalid RFQ ID' });
+
+    const { rows: [rfq] } = await sharedPool.query(`SELECT * FROM crm_rfqs WHERE id = $1`, [rfqId]);
+    if (!rfq) return res.status(404).json({ success: false, message: 'RFQ not found' });
+
+    // Check no plan already exists for this RFQ
+    const { rows: existing } = await sharedPool.query(
+      `SELECT id, display_name, contract_ref FROM crm_corporate_health_plans WHERE rfq_id = $1 LIMIT 1`, [rfqId]
+    );
+    if (existing.length) {
+      return res.json({ success: true, data: existing[0], alreadyCaptured: true,
+        message: `Plan already exists: ${existing[0].display_name} (${existing[0].contract_ref})` });
+    }
+
+    // Best accepted/sent quote for pricing
+    const { rows: quoteRows } = await sharedPool.query(
+      `SELECT total_premium, per_life_cost, per_family_cost, commission_pct FROM crm_quotes
+       WHERE rfq_id = $1 AND status NOT IN ('draft','rejected') ORDER BY total_premium DESC LIMIT 1`, [rfqId]
+    );
+    const bestQuote = quoteRows[0] || null;
+
+    // ── Build unique plan display name ─────────────────────────────────────
+    const corporate = (rfq.insured_name || 'Unknown Corp').trim();
+    const year = rfq.policy_start ? new Date(rfq.policy_start).getFullYear() : new Date().getFullYear();
+    const fyLabel = `FY${year}`;
+
+    // Derive product label from product_type / coverage_scope / policy_type
+    let productLabel = '';
+    if (rfq.product_type) {
+      const pt = rfq.product_type.toUpperCase();
+      if (pt.includes('OPD') && (pt.includes('GMC') || pt.includes('GHI'))) productLabel = 'GMC+OPD';
+      else if (pt.includes('OPD')) productLabel = 'OPD';
+      else if (pt.includes('GMC')) productLabel = 'GMC';
+      else if (pt.includes('GHI')) productLabel = 'GHI';
+      else if (pt.includes('GAI')) productLabel = 'GAI';
+      else if (pt.includes('WELLNESS')) productLabel = 'Wellness';
+      else productLabel = rfq.product_type;
+    } else if (rfq.policy_type) {
+      productLabel = rfq.policy_type.replace(/group\s*/i, '').trim() || 'Health';
+    } else {
+      productLabel = 'Health';
+    }
+
+    const displayName = `${corporate} – ${productLabel} Plan ${fyLabel}`;
+
+    // ── Derive pricing ───────────────────────────────────────────────────────
+    const employeeHeadcount = rfq.member_count || 0;
+    let negotiatedPricePerEmp = null;
+    if (bestQuote?.per_life_cost) {
+      negotiatedPricePerEmp = parseFloat(bestQuote.per_life_cost);
+    } else if (bestQuote?.total_premium && employeeHeadcount > 0) {
+      negotiatedPricePerEmp = parseFloat(bestQuote.total_premium) / employeeHeadcount;
+    } else if (rfq.premium_paid && employeeHeadcount > 0) {
+      negotiatedPricePerEmp = parseFloat(rfq.premium_paid) / employeeHeadcount;
+    }
+
+    // ── Plan template code ───────────────────────────────────────────────────
+    const ptUpper = (rfq.product_type || 'OPD').toUpperCase();
+    let planTemplateCode = 'OPD-STD';
+    if (ptUpper.includes('GMC') && ptUpper.includes('OPD')) planTemplateCode = 'GMC-OPD-COMBO';
+    else if (ptUpper.includes('GMC')) planTemplateCode = 'GMC-STD';
+    else if (ptUpper.includes('GHI')) planTemplateCode = 'GHI-STD';
+    else if (ptUpper.includes('GAI')) planTemplateCode = 'GAI-STD';
+    else if (ptUpper.includes('WELLNESS')) planTemplateCode = 'WELLNESS-STD';
+
+    const contractRef = await generateContractRef(corporate, year);
+
+    // ── Coverage notes summary ────────────────────────────────────────────────
+    const autoNotes = [
+      `Auto-captured from RFQ ${rfq.rfq_number} on ${new Date().toLocaleDateString('en-IN')}.`,
+      rfq.existing_insurer ? `Previous insurer: ${rfq.existing_insurer}.` : '',
+      rfq.industry ? `Industry: ${rfq.industry}.` : '',
+      rfq.required_coverages ? `Required coverages: ${rfq.required_coverages.slice(0, 200)}.` : '',
+      bestQuote ? `Best quoted premium: ₹${parseFloat(bestQuote.total_premium || 0).toLocaleString('en-IN')}.` : '',
+    ].filter(Boolean).join(' ');
+
+    const { rows: [plan] } = await sharedPool.query(
+      `INSERT INTO crm_corporate_health_plans
+       (corporate_name, plan_template_code, display_name, plan_year, contract_ref,
+        negotiated_price_per_emp, employee_headcount, corporate_share, employee_share,
+        start_date, end_date, status, notes, rfq_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,100,0,$8,$9,'draft',$10,$11,$12) RETURNING *`,
+      [corporate, planTemplateCode, displayName, year, contractRef,
+       negotiatedPricePerEmp ? Math.round(negotiatedPricePerEmp) : null,
+       employeeHeadcount,
+       rfq.policy_start || null, rfq.policy_end || null,
+       autoNotes, rfqId, req.user.id]
+    );
+
+    // Mark RFQ as won if it was quoted/negotiating
+    if (['quoted', 'negotiating', 'quoting'].includes(rfq.status)) {
+      await sharedPool.query(
+        `UPDATE crm_rfqs SET status='won', updated_at=NOW() WHERE id=$1`, [rfqId]
+      );
+    }
+
+    return res.status(201).json({
+      success: true, data: plan,
+      message: `Plan "${displayName}" created with ref ${contractRef}`,
+    });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ─── RFQ Autocapture Inbox — RFQs eligible to be captured as plans ─────────
+// Returns quoted/won RFQs that have no corporate plan yet
+router.get('/rfqs-autocapture-inbox', authCRM, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(`
+      SELECT r.id, r.rfq_number, r.insured_name, r.status, r.member_count,
+             r.product_type, r.policy_start, r.premium_paid,
+             COALESCE(q.total_premium, 0) AS best_quoted_premium,
+             r.created_at
+      FROM crm_rfqs r
+      LEFT JOIN crm_quotes q ON q.rfq_id = r.id AND q.status NOT IN ('draft','rejected')
+      WHERE r.status IN ('quoted','negotiating','won')
+        AND NOT EXISTS (SELECT 1 FROM crm_corporate_health_plans p WHERE p.rfq_id = r.id)
+      ORDER BY r.updated_at DESC
+      LIMIT 20
+    `);
+    return res.json({ success: true, data: rows });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ─── Funnel Analytics ──────────────────────────────────────────────────────
+router.get('/funnel-analytics', authCRM, async (req, res) => {
+  try {
+    const [rfqFunnel, leadFunnel, dealFunnel, velocity] = await Promise.all([
+      sharedPool.query(`
+        SELECT
+          COUNT(*) AS total,
+          COUNT(*) FILTER (WHERE status='received')    AS s1_received,
+          COUNT(*) FILTER (WHERE status='quoting')     AS s2_quoting,
+          COUNT(*) FILTER (WHERE status='quoted')      AS s3_quoted,
+          COUNT(*) FILTER (WHERE status='negotiating') AS s4_negotiating,
+          COUNT(*) FILTER (WHERE status='won')         AS s5_won,
+          COUNT(*) FILTER (WHERE status='lost')        AS s6_lost,
+          COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS new_30d,
+          COUNT(*) FILTER (WHERE status='won' AND updated_at >= NOW() - INTERVAL '30 days') AS won_30d,
+          COALESCE(AVG(EXTRACT(EPOCH FROM (updated_at - created_at))/86400) FILTER (WHERE status IN ('won','lost')), 0)::NUMERIC(8,1) AS avg_cycle_days
+        FROM crm_rfqs
+      `),
+      sharedPool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE status='new')       AS new_leads,
+          COUNT(*) FILTER (WHERE status='contacted') AS contacted,
+          COUNT(*) FILTER (WHERE status='qualified') AS qualified,
+          COUNT(*) FILTER (WHERE status='converted') AS converted,
+          COUNT(*) FILTER (WHERE status='lost')      AS lost,
+          COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS new_30d
+        FROM crm_leads
+      `),
+      sharedPool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE stage='qualification') AS qualification,
+          COUNT(*) FILTER (WHERE stage='discovery')     AS discovery,
+          COUNT(*) FILTER (WHERE stage='proposal')      AS proposal,
+          COUNT(*) FILTER (WHERE stage='negotiation')   AS negotiation,
+          COUNT(*) FILTER (WHERE stage='contract')      AS contract,
+          COUNT(*) FILTER (WHERE stage='won' OR won_at IS NOT NULL) AS won,
+          COALESCE(SUM(value) FILTER (WHERE (stage='won' OR won_at IS NOT NULL) AND won_at >= NOW() - INTERVAL '30 days'), 0) AS won_value_30d
+        FROM crm_deals
+      `),
+      sharedPool.query(`
+        SELECT
+          COALESCE(AVG(EXTRACT(EPOCH FROM (won_at - created_at))/86400) FILTER (WHERE won_at IS NOT NULL), 0)::NUMERIC(8,1) AS avg_deal_days,
+          COUNT(*) FILTER (WHERE won_at >= NOW() - INTERVAL '7 days')  AS deals_won_7d,
+          COUNT(*) FILTER (WHERE won_at >= NOW() - INTERVAL '30 days') AS deals_won_30d,
+          COALESCE(SUM(value) FILTER (WHERE won_at >= NOW() - INTERVAL '30 days'), 0) AS revenue_30d
+        FROM crm_deals
+      `),
+    ]);
+
+    const r = rfqFunnel.rows[0];
+    const l = leadFunnel.rows[0];
+    const d = dealFunnel.rows[0];
+    const v = velocity.rows[0];
+
+    // Conversion rates between consecutive funnel stages
+    const rfqConversions = {
+      receivedToQuoting:    r.s1_received > 0 ? Math.round((r.s2_quoting    / r.s1_received) * 100) : 0,
+      quotingToQuoted:      r.s2_quoting  > 0 ? Math.round((r.s3_quoted     / r.s2_quoting)  * 100) : 0,
+      quotedToNegotiating:  r.s3_quoted   > 0 ? Math.round((r.s4_negotiating/ r.s3_quoted)   * 100) : 0,
+      negotiatingToWon:     r.s4_negotiating > 0 ? Math.round((r.s5_won / r.s4_negotiating)  * 100) : 0,
+      overallWinRate:       r.total > 0 ? Math.round((r.s5_won / r.total) * 100) : 0,
+    };
+
+    return res.json({
+      success: true,
+      data: {
+        rfq: { ...r, conversions: rfqConversions },
+        leads: l,
+        deals: d,
+        velocity: v,
+      }
+    });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ─── RFQ Dashboard Stats ────────────────────────────────────────────────────
 router.get('/rfqs-stats', authCRM, async (req, res) => {
   try {
@@ -4566,10 +4917,10 @@ router.get('/rfqs/:id/deep-analytics', authCRM, async (req, res) => {
           END AS age_band,
           COUNT(*) AS count,
           AVG(si_proposed) AS avg_si,
-          SUM(CASE WHEN relation_type = 'Self' THEN 1 ELSE 0 END) AS employees,
-          SUM(CASE WHEN relation_type != 'Self' THEN 1 ELSE 0 END) AS dependents
+          SUM(CASE WHEN COALESCE(NULLIF(TRIM(relationship),''), relation_type) ILIKE '%SELF%' THEN 1 ELSE 0 END) AS employees,
+          SUM(CASE WHEN COALESCE(NULLIF(TRIM(relationship),''), relation_type) NOT ILIKE '%SELF%' THEN 1 ELSE 0 END) AS dependents
         FROM crm_rfq_members WHERE rfq_id = $1 AND age IS NOT NULL
-        GROUP BY age_band ORDER BY MIN(age)
+        GROUP BY 1 ORDER BY MIN(age)
       `, [rfqId]),
 
       // Gender distribution
@@ -4592,8 +4943,8 @@ router.get('/rfqs/:id/deep-analytics', authCRM, async (req, res) => {
           END AS tenure_band,
           COUNT(*) AS count,
           AVG(age) AS avg_age
-        FROM crm_rfq_members WHERE rfq_id = $1 AND relation_type = 'Self'
-        GROUP BY tenure_band ORDER BY MIN(COALESCE(doj, '1900-01-01'))
+        FROM crm_rfq_members WHERE rfq_id = $1 AND COALESCE(NULLIF(TRIM(relationship),''), relation_type) ILIKE '%SELF%'
+        GROUP BY 1 ORDER BY MIN(COALESCE(doj, '1900-01-01'))
       `, [rfqId]),
 
       // SI slab distribution
@@ -4609,8 +4960,8 @@ router.get('/rfqs/:id/deep-analytics', authCRM, async (req, res) => {
           END AS si_slab,
           COUNT(*) AS count,
           AVG(si_proposed) AS avg_si
-        FROM crm_rfq_members WHERE rfq_id = $1 AND relation_type = 'Self'
-        GROUP BY si_slab ORDER BY MIN(COALESCE(si_proposed, 0))
+        FROM crm_rfq_members WHERE rfq_id = $1 AND COALESCE(NULLIF(TRIM(relationship),''), relation_type) ILIKE '%SELF%'
+        GROUP BY 1 ORDER BY MIN(COALESCE(si_proposed, 0))
       `, [rfqId]),
     ]);
 
@@ -5241,7 +5592,7 @@ router.post('/rfqs/:id/ai-intelligence', authCRM, async (req, res) => {
           COUNT(*) AS count,
           ROUND(AVG(si_proposed)::numeric,0) AS avg_si
         FROM crm_rfq_members WHERE rfq_id = $1
-        GROUP BY age_band ORDER BY age_band
+        GROUP BY 1 ORDER BY 1
       `, [rfqId]),
 
       pool.query(`
@@ -5283,23 +5634,26 @@ router.post('/rfqs/:id/ai-intelligence', authCRM, async (req, res) => {
       premiumPaid: rfq.premium_paid,
     });
 
-    // ── 4. DeepTech: pre-auth analytics for claim pattern signals ─────────
+    // ── 4. DeepTech: platform-wide claim pattern signals from crm_rfq_claims ──
     let deeptechSignals = null;
     try {
-      const deeptechRes = await pool.query(`
+      const deeptechRes = await sharedPool.query(`
         SELECT
           COUNT(*) AS total_decisions,
-          COUNT(*) FILTER (WHERE decision = 'approved') AS approved,
-          AVG(requested_amount) AS avg_requested_amount,
-          json_agg(json_build_object('diagnosis_code', diagnosis_codes[1], 'cnt', cnt) ORDER BY cnt DESC) AS top_diagnoses
-        FROM (
-          SELECT decision, requested_amount, diagnosis_codes,
-                 COUNT(*) OVER (PARTITION BY diagnosis_codes[1]) AS cnt
-          FROM preauth_decisions
-          WHERE created_at >= NOW() - INTERVAL '90 days'
-            AND requested_amount BETWEEN 10000 AND 2000000
-          LIMIT 500
-        ) sub
+          COUNT(*) FILTER (WHERE LOWER(claim_status) IN ('approved','settled','paid')) AS approved,
+          AVG(claimed_amount) FILTER (WHERE claimed_amount BETWEEN 1000 AND 2000000) AS avg_requested_amount,
+          (
+            SELECT json_agg(row_to_json(d))
+            FROM (
+              SELECT diagnosis AS diagnosis_code, COUNT(*) AS cnt
+              FROM crm_rfq_claims
+              WHERE claim_date >= NOW() - INTERVAL '90 days'
+                AND diagnosis IS NOT NULL AND diagnosis <> ''
+              GROUP BY diagnosis ORDER BY cnt DESC LIMIT 8
+            ) d
+          ) AS top_diagnoses
+        FROM crm_rfq_claims
+        WHERE claim_date >= NOW() - INTERVAL '90 days'
       `);
       const dt = deeptechRes.rows[0];
       if (dt && parseInt(dt.total_decisions) > 0) {
@@ -5313,7 +5667,7 @@ router.post('/rfqs/:id/ai-intelligence', authCRM, async (req, res) => {
         };
       }
     } catch (dtErr) {
-      // DeepTech preauth table may not exist in CRM context — silently skip
+      console.warn('[CRM] DeepTech signals error:', dtErr.message);
       deeptechSignals = null;
     }
 
@@ -5868,7 +6222,7 @@ Actuarial Premium Waterfall:
 - Business Type: ${isRenewal ? `RENEWAL (from ${rfq.existing_insurer}${isPSUIncumbent ? ' — PSU, migration opportunity' : isPrivateIncumbent ? ' — private incumbent, strong competition' : ''})` : 'FRESH BUSINESS (new account)'}
 - Existing TPA: ${rfq.existing_tpa || 'Not disclosed'}
 - Location: ${city ? `${city}, India` : (rfq.insured_address || 'India')}
-- Policy Period: ${rfq.policy_start ? String(rfq.policy_start).slice(0,10) : 'TBD'} to ${rfq.policy_end ? String(rfq.policy_end).slice(0,10) : 'TBD'}
+- Policy Period: ${rfq.policy_start ? new Date(rfq.policy_start).toISOString().slice(0,10) : 'TBD'} to ${rfq.policy_end ? new Date(rfq.policy_end).toISOString().slice(0,10) : 'TBD'}
 - Prior Premium: ${rfq.premium_paid ? `₹${parseFloat(rfq.premium_paid).toLocaleString('en-IN')}` : 'Not disclosed'}
 ${actuarialSection}
 ${deeptechSection}
@@ -5964,7 +6318,7 @@ Product: ${rfq.product_type}
 Group Size: ${rfq.member_count} members
 Existing Insurer: ${rfq.existing_insurer || 'Not disclosed'}
 Existing TPA: ${rfq.existing_tpa || 'Not disclosed'}
-Policy Period: ${rfq.policy_start ? rfq.policy_start.slice(0,10) : 'TBD'} to ${rfq.policy_end ? rfq.policy_end.slice(0,10) : 'TBD'}
+Policy Period: ${rfq.policy_start ? new Date(rfq.policy_start).toISOString().slice(0,10) : 'TBD'} to ${rfq.policy_end ? new Date(rfq.policy_end).toISOString().slice(0,10) : 'TBD'}
 ${quoteInfo}
 ${bm ? `Market Context: Industry per-life range ₹${bm.floor.toLocaleString()}–₹${bm.ceiling.toLocaleString()} for this segment.` : ''}
 ${intelligence?.llm_intelligence?.win_strategy ? `Win Strategy: ${intelligence.llm_intelligence.win_strategy}` : ''}
