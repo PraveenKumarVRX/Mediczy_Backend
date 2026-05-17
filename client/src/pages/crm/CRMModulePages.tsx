@@ -9,7 +9,7 @@ import {
   Briefcase, ChevronRight, ChevronLeft, LayoutGrid,
   PieChart, Settings, Plus, Search, Trash2, Edit,
   CheckCircle, X, Save, Bell, ArrowRight, UserCheck,
-  Building2, IndianRupee,
+  Building2, IndianRupee, Brain,
 } from 'lucide-react';
 import api from '@/utils/api';
 
@@ -44,6 +44,7 @@ const sidebarNav = [
     { icon: Briefcase, label: 'Corp Plans', path: '/crm/corporate-plans' },
   ]},
   { section: 'INSIGHTS', items: [
+    { icon: Brain,    label: 'AI Insights', path: '/crm/ai-insights' },
     { icon: PieChart, label: 'Reports', path: '/crm/reports' },
     { icon: Settings, label: 'Settings', path: '/crm/settings' },
   ]},

@@ -74,6 +74,7 @@ const sidebarNav = [
     { icon: Package, label: 'Corp Plans', path: '/crm/corporate-plans' },
   ]},
   { section: 'INSIGHTS', items: [
+    { icon: BrainCircuit, label: 'AI Insights', path: '/crm/ai-insights' },
     { icon: PieChart, label: 'Reports', path: '/crm/reports' },
     { icon: Settings, label: 'Settings', path: '/crm/settings' },
   ]},
@@ -309,6 +310,25 @@ const CRMDashboard = () => {
         </header>
 
         <main className="p-6 space-y-6 pb-24">
+
+          {/* ── AI Insights Banner ────────────────────────────────────── */}
+          <button
+            onClick={() => navigate('/crm/ai-insights')}
+            className="w-full rounded-2xl bg-gradient-to-r from-violet-600/15 via-purple-600/10 to-blue-600/15 border border-violet-500/20 px-5 py-3.5 flex items-center justify-between group hover:border-violet-500/40 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-violet-500/20 flex items-center justify-center">
+                <BrainCircuit className="h-5 w-5 text-violet-400" />
+              </div>
+              <div className="text-left">
+                <div className="text-sm font-semibold text-white">AI Sales & Marketing Intelligence</div>
+                <div className="text-xs text-slate-500">Lead scoring · Deal health · Revenue forecast · Campaign optimiser</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-violet-400 text-xs font-medium">
+              Open Insights <Sparkles className="h-4 w-4 group-hover:scale-110 transition-transform" />
+            </div>
+          </button>
 
           {/* ── Row 1: Hero KPI Cards ─────────────────────────────────── */}
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
