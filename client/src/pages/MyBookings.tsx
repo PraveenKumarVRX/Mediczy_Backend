@@ -12,7 +12,6 @@ import {
   Phone,
   MessageSquare,
   FileText,
-  Star,
   CalendarPlus,
   Download,
 } from "lucide-react";
@@ -58,8 +57,6 @@ interface Booking {
   symptoms?: string;
   reason?: string;
   notes?: string;
-  rating?: number;
-  feedback?: string;
   createdAt: string;
 }
 
@@ -71,9 +68,6 @@ const MyBookings = () => {
 
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
-  const [ratingDialogOpen, setRatingDialogOpen] = useState(false);
-  const [rating, setRating] = useState(0);
-  const [feedback, setFeedback] = useState("");
   const [activeTab, setActiveTab] = useState<"upcoming" | "history" | "all">("upcoming");
 
   const { mutate: incrementTeleconsult } = useIncrementTeleconsult();
@@ -154,58 +148,6 @@ const MyBookings = () => {
       toast({
         title: "Error",
         description: error.response?.data?.message || "Failed to cancel appointment",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Rating mutation
-  const ratingMutation = useMutation({
-    mutationFn: async ({ id, rating, feedback }: { id: number; rating: number; feedback: string }) => {
-      await api.patch(`/appointments/${id}/rating`, { rating, feedback });
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["myBookings"] });
-
-      // Increment teleconsult usage for completed appointments
-      const appointment = bookings.find((b: Booking) => b.id === variables.id);
-      if (appointment?.specialization && appointment.status === "completed") {
-        try {
-          incrementTeleconsult({
-            specialty: appointment.specialization,
-            count: 1
-          }, {
-            onSuccess: () => {
-              // Invalidate MyPlans queries to show updated usage
-              queryClient.invalidateQueries({ queryKey: ["myPlan"] });
-              toast({
-                title: "✅ Plan Usage Updated",
-                description: "Your teleconsult has been tracked. Visit My Plans to see updated limits.",
-              });
-            },
-            onError: (error: any) => {
-              // Silently log if no active plan or limit exceeded
-              console.log("Usage tracking skipped:", error?.response?.data?.message);
-            }
-          });
-        } catch (e) {
-          console.log("Usage tracking failed:", e);
-        }
-      }
-
-      toast({
-        title: "Success",
-        description: "Thank you for your feedback!",
-      });
-      setRatingDialogOpen(false);
-      setSelectedBooking(null);
-      setRating(0);
-      setFeedback("");
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error.response?.data?.message || "Failed to submit rating",
         variant: "destructive",
       });
     },
@@ -602,76 +544,7 @@ const MyBookings = () => {
         </AlertDialog>
 
         {/* Rating Dialog */}
-        <Dialog open={ratingDialogOpen} onOpenChange={setRatingDialogOpen}>
-          <DialogContent className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-            <DialogHeader>
-              <DialogTitle className="text-slate-800 dark:text-white">Rate Your Experience</DialogTitle>
-              <DialogDescription className="text-slate-600 dark:text-slate-400">
-                How was your consultation with {selectedBooking?.doctorName}?
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div>
-                <Label className="text-slate-700 dark:text-slate-300">Rating</Label>
-                <div className="flex gap-2 mt-2">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      type="button"
-                      onClick={() => setRating(star)}
-                      className="focus:outline-none focus:ring-2 focus:ring-teal-500 rounded"
-                    >
-                      <Star
-                        className={`h-8 w-8 ${star <= rating
-                            ? "text-yellow-500 fill-yellow-500"
-                            : "text-slate-300 dark:text-slate-600"
-                          }`}
-                      />
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <Label className="text-slate-700 dark:text-slate-300">Feedback (Optional)</Label>
-                <Textarea
-                  placeholder="Share your experience..."
-                  value={feedback}
-                  onChange={(e) => setFeedback(e.target.value)}
-                  rows={4}
-                  className="bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-800 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setRatingDialogOpen(false)}
-                disabled={ratingMutation.isPending}
-                className="border-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => selectedBooking && ratingMutation.mutate({
-                  id: selectedBooking.id,
-                  rating,
-                  feedback
-                })}
-                disabled={rating === 0 || ratingMutation.isPending}
-                className="bg-teal-600 hover:bg-teal-700 text-white dark:bg-teal-500 dark:hover:bg-teal-600"
-              >
-                {ratingMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Submitting...
-                  </>
-                ) : (
-                  "Submit Rating"
-                )}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+
       </div>
     </div>
   );

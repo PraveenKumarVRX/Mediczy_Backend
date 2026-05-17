@@ -20,7 +20,21 @@ const HospitalLogin = () => {
   useEffect(() => {
     const token = localStorage.getItem('hospitalToken');
     if (token) {
-      navigate('/hospital/dashboard');
+      try {
+        const stored = localStorage.getItem('hospitalData');
+        const hd = stored ? JSON.parse(stored) : {};
+        const role = (hd.role || '').toLowerCase();
+        const ROLE_ROUTES: Record<string, string> = {
+          ceo: '/hospital/ceo',
+          coo: '/hospital/coo',
+          ms:  '/hospital/ms',
+          medical_superintendent: '/hospital/ms',
+          cmo: '/hospital/ms',
+        };
+        navigate(ROLE_ROUTES[role] || '/hospital/dashboard');
+      } catch {
+        navigate('/hospital/dashboard');
+      }
       return;
     }
     setIsCheckingAuth(false);
@@ -89,7 +103,17 @@ const HospitalLogin = () => {
       localStorage.setItem('userType', 'hospital');
       localStorage.setItem('hospitalData', JSON.stringify(data.hospital || data.user || {}));
 
-      navigate('/hospital/dashboard');
+      // Role-based redirect for executive logins
+      const role: string = (data.hospital?.role || data.user?.role || 'hospital_admin').toLowerCase();
+      const ROLE_ROUTES: Record<string, string> = {
+        ceo: '/hospital/ceo',
+        coo: '/hospital/coo',
+        ms:  '/hospital/ms',
+        medical_superintendent: '/hospital/ms',
+        cmo: '/hospital/ms',
+        chief_medical_officer: '/hospital/ms',
+      };
+      navigate(ROLE_ROUTES[role] || '/hospital/dashboard');
     } catch (err: any) {
       console.error('Hospital login error:', err);
       if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {

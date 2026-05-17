@@ -2211,7 +2211,6 @@ router.get('/doctors', asyncHandler(async (req, res) => {
            d.qualification,
            d.experience,
            COALESCE(d."consultationFees", d."onlineConsultationFee", d."inPersonConsultationFee") AS consultation_fee,
-           d.rating,
            d."profileImage" AS avatar_url,
            t.name AS hospital_name,
            (d.status = 'active') AS available,
@@ -2220,7 +2219,7 @@ router.get('/doctors', asyncHandler(async (req, res) => {
     FROM doctors d
     LEFT JOIN tenants t ON d.organization_id = t.id
     WHERE ${whereClause}
-    ORDER BY d.rating DESC, name ASC
+    ORDER BY name ASC
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `, params);
   
@@ -2255,7 +2254,6 @@ router.get('/doctors/:id', asyncHandler(async (req, res) => {
            d.qualification,
            d.experience,
            COALESCE(d."consultationFees", d."onlineConsultationFee", d."inPersonConsultationFee") AS consultation_fee,
-           d.rating,
            d."profileImage" AS avatar_url,
            t.name AS hospital_name,
            (d.status = 'active') AS available,
@@ -2534,13 +2532,11 @@ router.get('/chat/doctors', authenticate(), asyncHandler(async (req, res) => {
            d."profileImage" AS avatar_url,
            d.qualification,
            d.experience,
-           d.rating,
-           d."totalReviews" AS total_reviews,
            d."onlineConsultationFee" AS consultation_fee,
            COALESCE(d."isOnline", false) AS is_online
     FROM doctors d
     WHERE ${whereClause}
-    ORDER BY d."isOnline" DESC NULLS LAST, d.rating DESC NULLS LAST
+    ORDER BY d."isOnline" DESC NULLS LAST, d."firstName" ASC NULLS LAST, d."lastName" ASC NULLS LAST
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `, [...params, parseInt(limit), offset]);
   
@@ -2557,8 +2553,6 @@ router.get('/chat/doctors', authenticate(), asyncHandler(async (req, res) => {
         avatarUrl: d.avatar_url,
         qualification: d.qualification,
         experience: d.experience,
-        rating: d.rating,
-        totalReviews: d.total_reviews,
         consultationFee: d.consultation_fee,
         isOnline: d.is_online
       })),

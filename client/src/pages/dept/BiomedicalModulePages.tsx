@@ -3,6 +3,7 @@
  * Equipment Inventory, Work Orders, Calibration Tracking, Reports — all world-class.
  */
 import { useState, useMemo } from "react";
+import api from "@/utils/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -84,8 +85,29 @@ const BiomedicalEquipmentContent = () => {
   const [typeFilter, setTypeFilter] = useState("all");
   const [selected, setSelected] = useState<Device | null>(null);
   const [aiKey, setAiKey] = useState(0);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
 
   const types = ["all", ...Array.from(new Set(devicesData.map(d => d.type)))];
+
+  const syncToHyperGrid = async (device: Device) => {
+    setSyncingId(device.id);
+    try {
+      const token = localStorage.getItem('biomedicalToken');
+      await api.post('/biomedical/equipment/sync-hypergrid', {
+        deviceName: device.name,
+        equipmentClass: device.type.toLowerCase().replace(/\s+/g, '-'),
+        manufacturer: device.manufacturer,
+        model: device.model,
+        serialNumber: device.serialNo,
+        department: device.department,
+        location: device.location,
+        ownerDepartment: 'Biomedical',
+        notes: device.notes,
+      }, { headers: { Authorization: `Bearer ${token}` } });
+    } finally {
+      setSyncingId(null);
+    }
+  };
 
   const filtered = useMemo(() => devicesData.filter(d => {
     const matchSearch = d.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -197,6 +219,7 @@ const BiomedicalEquipmentContent = () => {
                         <div className="flex items-center gap-1">
                           <button onClick={() => setSelected(d)} className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950 transition-colors"><Eye className="h-3.5 w-3.5" /></button>
                           <button className="p-1.5 rounded-lg text-slate-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-950 transition-colors"><Edit2 className="h-3.5 w-3.5" /></button>
+                          <button onClick={() => syncToHyperGrid(d)} disabled={syncingId === d.id} className="rounded-lg px-2 py-1 text-[10px] text-slate-600 hover:bg-slate-100 disabled:opacity-50">{syncingId === d.id ? 'Syncing' : 'Sync HyperGrid'}</button>
                         </div>
                       </td>
                     </motion.tr>

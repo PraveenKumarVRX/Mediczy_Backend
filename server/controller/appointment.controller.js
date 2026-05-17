@@ -1023,58 +1023,6 @@ export const completeAppointment = async (req, res) => {
 };
 
 /**
- * Submit appointment rating
- * POST /api/appointments/:id/rating
- */
-export const rateAppointment = async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { id } = req.params;
-    const userId = req.user.id;
-    const { rating, feedback } = req.body;
-
-    const appointment = await Appointment.findByPk(id);
-
-    if (!appointment) {
-      return res.status(404).json({ message: 'Appointment not found' });
-    }
-
-    // Check authorization
-    if (String(appointment.userId) !== String(userId)) {
-      return res.status(403).json({ message: 'Unauthorized access' });
-    }
-
-    // Check if appointment is completed
-    if (appointment.status !== 'completed') {
-      return res.status(400).json({
-        message: 'Can only rate completed appointments'
-      });
-    }
-
-    // Update appointment
-    await appointment.update({
-      rating,
-      feedback
-    });
-
-    return res.status(200).json({
-      message: 'Rating submitted successfully',
-      appointment
-    });
-  } catch (error) {
-    console.error('Rate appointment error:', error);
-    return res.status(500).json({
-      message: 'Failed to submit rating',
-      error: error.message
-    });
-  }
-};
-
-/**
  * Update payment status
  * PATCH /api/appointments/:id/payment
  */

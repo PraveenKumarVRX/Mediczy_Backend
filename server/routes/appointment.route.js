@@ -7,7 +7,6 @@ import {
   rescheduleAppointmentSchema,
   cancelAppointmentSchema,
   completeAppointmentSchema,
-  rateAppointmentSchema,
   listAppointmentsQuerySchema,
 } from '../validationSchemas/appointment.schema.js';
 import {
@@ -18,7 +17,6 @@ import {
   cancelAppointment,
   rescheduleAppointment,
   completeAppointment,
-  rateAppointment,
   updatePaymentStatus
 } from '../controller/appointment.controller.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
@@ -552,38 +550,6 @@ router.post(
       });
     }
   }
-);
-
-/**
- * @route   PATCH /api/appointments/:id/rating
- * @desc    Submit appointment rating (alternative route)
- * @access  Private (User)
- */
-router.patch(
-  '/:id/rating',
-  authUser,
-  [
-    param('id').isInt().withMessage('Valid appointment ID is required'),
-    body('rating').isInt({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5'),
-    body('feedback').optional().isString()
-  ],
-  rateAppointment
-);
-
-/**
- * @route   POST /api/appointments/:id/rating
- * @desc    Submit appointment rating
- * @access  Private (User)
- */
-router.post(
-  '/:id/rating',
-  authUser,
-  [
-    param('id').isInt().withMessage('Valid appointment ID is required'),
-    body('rating').isInt({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5'),
-    body('feedback').optional().isString()
-  ],
-  rateAppointment
 );
 
 /**

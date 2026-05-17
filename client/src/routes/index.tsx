@@ -208,6 +208,14 @@ const HyperGridIoTView         = lazy(() => import("@/pages/admin/HyperGridIoTVi
 const CRMLogin     = lazy(() => import("@/pages/crm/CRMLogin"));
 const CRMDashboard = lazy(() => import("@/pages/crm/CRMDashboard"));
 const CRMEmailPage = lazy(() => import("@/pages/crm/CRMEmailPage"));
+const CRMCampaignAnalyticsPage = lazy(() => import("@/pages/crm/CRMCampaignAnalyticsPage"));
+const _CRMMarketingPages = () => import("@/pages/crm/CRMMarketingPages");
+const CRMCampaignsPage = lazyNamed(_CRMMarketingPages, "CRMCampaignsPage");
+const CRMCampaignBuilderPage = lazyNamed(_CRMMarketingPages, "CRMCampaignBuilderPage");
+const CRMListsPage = lazyNamed(_CRMMarketingPages, "CRMListsPage");
+const CRMListDetailPage = lazyNamed(_CRMMarketingPages, "CRMListDetailPage");
+const CRMTemplatesPage = lazyNamed(_CRMMarketingPages, "CRMTemplatesPage");
+const CRMSendersPage = lazyNamed(_CRMMarketingPages, "CRMSendersPage");
 
 const _CRMModulePages = () => import("@/pages/crm/CRMModulePages");
 const CRMLeadsPage      = lazyNamed(_CRMModulePages, "CRMLeadsPage");
@@ -291,6 +299,9 @@ const AssistantReports         = lazy(() => import("@/pages/assistant/AssistantR
 const HospitalRegister                 = lazy(() => import("@/pages/hospital/HospitalRegister"));
 const HospitalLogin                    = lazy(() => import("@/pages/hospital/HospitalLogin"));
 const HospitalDashboard                = lazy(() => import("@/pages/hospital/HospitalDashboard"));
+const CEODashboard                     = lazy(() => import("@/pages/hospital/CEODashboard"));
+const COODashboard                     = lazy(() => import("@/pages/hospital/COODashboard"));
+const MSDashboard                      = lazy(() => import("@/pages/hospital/MSDashboard"));
 const HospitalPracticeManagement       = lazy(() => import("@/pages/hospital/HospitalPracticeManagement"));
 const HospitalCorporateManagement      = lazy(() => import("@/pages/hospital/HospitalCorporateManagement"));
 const HospitalInsurancePayerManagement = lazy(() => import("@/pages/hospital/HospitalInsurancePayerManagement"));
@@ -783,6 +794,17 @@ const SecuritySupportPage      = lazyNamed(_SecurityModulePages, "SecuritySuppor
 const SecurityAssetTrackingPage = lazyNamed(_SecurityModulePages, "SecurityAssetTrackingPage");
 const SecurityImplementationPage = lazyNamed(_SecurityModulePages, "SecurityImplementationPage");
 
+// ─── Hospital Display & Kiosk System ─────────────────────────────────────────
+const OPDQueueDisplay        = lazy(() => import("@/pages/display/OPDQueueDisplay"));
+const SelfCheckinKiosk       = lazy(() => import("@/pages/display/SelfCheckinKiosk"));
+const ICUBoardDisplay        = lazy(() => import("@/pages/display/ICUBoardDisplay"));
+const BedsideDisplay         = lazy(() => import("@/pages/display/BedsideDisplay"));
+const BloodBankDisplay       = lazy(() => import("@/pages/display/BloodBankDisplay"));
+const OTStatusDisplay        = lazy(() => import("@/pages/display/OTStatusDisplay"));
+const WardNursingDisplay     = lazy(() => import("@/pages/display/WardNursingDisplay"));
+const DischargeStatusDisplay = lazy(() => import("@/pages/display/DischargeStatusDisplay"));
+const DisplayAdminPage       = lazy(() => import("@/pages/display/DisplayAdminPage"));
+
 // ─── PageLoader — Suspense fallback ──────────────────────────────────────────
 const PageLoader = () => (
   <div className="flex items-center justify-center h-screen w-full bg-white">
@@ -873,6 +895,9 @@ const AppRoutes = () => {
         <Route path="/hospital/register"                   element={<HospitalRegister />} />
         <Route path="/hospital/login"                      element={<HospitalLogin />} />
         <Route path="/hospital/dashboard"                  element={<HospitalDashboard />} />
+        <Route path="/hospital/ceo"                        element={<CEODashboard />} />
+        <Route path="/hospital/coo"                        element={<COODashboard />} />
+        <Route path="/hospital/ms"                         element={<MSDashboard />} />
         <Route path="/hospital/practice-management"        element={<HospitalPracticeManagement />} />
         <Route path="/hospital/corporate-management"       element={<HospitalCorporateManagement />} />
         <Route path="/hospital/insurance-payer-management" element={<HospitalInsurancePayerManagement />} />
@@ -1060,6 +1085,14 @@ const AppRoutes = () => {
         <Route path="/crm/commissions"         element={<CRMCommissionsPage />} />
         <Route path="/crm/corporate-plans"     element={<CRMCorporatePlansPage />} />
         <Route path="/crm/emails"              element={<CRMEmailPage />} />
+        <Route path="/crm/campaigns"           element={<CRMCampaignsPage />} />
+        <Route path="/crm/campaigns/new"       element={<CRMCampaignBuilderPage />} />
+        <Route path="/crm/campaigns/:id"       element={<CRMCampaignBuilderPage />} />
+        <Route path="/crm/campaigns/:id/analytics" element={<CRMCampaignAnalyticsPage />} />
+        <Route path="/crm/lists"               element={<CRMListsPage />} />
+        <Route path="/crm/lists/:id"           element={<CRMListDetailPage />} />
+        <Route path="/crm/templates"           element={<CRMTemplatesPage />} />
+        <Route path="/crm/senders"             element={<CRMSendersPage />} />
 
         {/* ── Team ────────────────────────────────────────────────────── */}
         <Route path="/team/login"                    element={<TeamLogin />} />
@@ -1578,6 +1611,17 @@ const AppRoutes = () => {
         <Route path="/my-insurance"  element={<MainLayout><MyInsurancePolicies /></MainLayout>} />
         <Route path="/help"          element={<MainLayout><HelpCenter /></MainLayout>} />
         <Route path="/contact-us"    element={<MainLayout><ContactUs /></MainLayout>} />
+
+        {/* ── Hospital Display & Kiosk System ─────────────────────────── */}
+        <Route path="/display/queue"            element={<OPDQueueDisplay />} />
+        <Route path="/display/icu-board"        element={<ICUBoardDisplay />} />
+        <Route path="/display/blood-bank"       element={<BloodBankDisplay />} />
+        <Route path="/display/ot-status"        element={<OTStatusDisplay />} />
+        <Route path="/display/ward"             element={<WardNursingDisplay />} />
+        <Route path="/display/bedside"          element={<BedsideDisplay />} />
+        <Route path="/display/discharge-status" element={<DischargeStatusDisplay />} />
+        <Route path="/kiosk/checkin"            element={<SelfCheckinKiosk />} />
+        <Route path="/display/admin"            element={<DisplayAdminPage />} />
 
         {/* ── Misc ────────────────────────────────────────────────────── */}
         <Route path="/diagnostic" element={<ConnectionDiagnostic />} />

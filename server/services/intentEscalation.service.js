@@ -11,7 +11,6 @@ const formatDoctor = (doctorInstance) => {
     name: `${doctorInstance.firstName || ""} ${doctorInstance.lastName || ""}`.trim(),
     specialization: doctorInstance.specialization,
     experience: doctorInstance.experience,
-    rating: doctorInstance.rating || null,
     consultationModes: doctorInstance.consultationModes || ["Video", "Voice", "Chat"],
     nextAvailableSlot: doctorInstance.nextAvailableSlot || null,
     languages: doctorInstance.languages || [],

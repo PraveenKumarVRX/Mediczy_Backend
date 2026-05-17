@@ -4,6 +4,7 @@ import { loginDietary } from '../../controllers/dept/dietary.controller.js';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import llmProvider from '../../services/ai-brain/llm-provider.js';
 import { connectPostgres } from '../../db/postgres.js';
+import { actorFrom, decideOperationsApproval, ensureOperationsGovernanceTables, listOperationsApprovals, listOperationsAudit, recordOperationsAudit, requestOperationsApproval } from '../../services/operations-governance.service.js';
 
 const router = express.Router();
 
@@ -64,6 +65,7 @@ const ensureDietaryTables = async () => {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
   `);
+  await ensureOperationsGovernanceTables(db);
   return db;
 };
 
@@ -432,6 +434,9 @@ router.post('/orders/from-admission', authDietary, async (req, res) => {
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::text[],$9,$10,$11,$12)
       RETURNING *
     `, [`DO-${Date.now()}`, admissionId || null, patientId || null, patientName, ward || null, bed || null, dietType, allergies, restrictions || null, calories || null, priority, physician || null]);
+    const actor = actorFrom(req.dietaryUser, physician || 'Dietary');
+    await requestOperationsApproval(db, { module: 'dietary', entityType: 'order', entityId: rows[0].id, action: 'release_meal', requestedBy: actor });
+    await recordOperationsAudit(db, { module: 'dietary', entityType: 'order', entityId: rows[0].id, action: 'order_created', actor, details: { priority, ward: ward || null, dietType } });
     res.status(201).json({ success: true, data: rows[0] });
   } catch {
     res.status(500).json({ success: false, message: 'Failed to create diet order' });
@@ -452,6 +457,23 @@ router.patch('/orders/:id', authDietary, async (req, res) => {
     res.json({ success: true, data: rows[0] });
   } catch {
     res.status(500).json({ success: false, message: 'Failed to update diet order' });
+  }
+});
+
+
+router.patch('/orders/:id/release', authDietary, async (req, res) => {
+  try {
+    const db = await ensureDietaryTables();
+    const actor = actorFrom(req.dietaryUser, 'Dietary Approver');
+    const { rows: approvals } = await db.query(`SELECT * FROM operations_approvals WHERE module='dietary' AND entity_type='order' AND entity_id=$1 AND action='release_meal'`, [req.params.id]);
+    if (!approvals[0]) return res.status(409).json({ success: false, message: 'Meal release approval not requested' });
+    if (approvals[0].status === 'pending') await decideOperationsApproval(db, { id: approvals[0].id, status: 'approved', decidedBy: actor });
+    const { rows } = await db.query(`UPDATE dietary_orders SET status='delivered', updated_at=NOW() WHERE id=$1 RETURNING *`, [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ success: false, message: 'Diet order not found' });
+    await recordOperationsAudit(db, { module: 'dietary', entityType: 'order', entityId: rows[0].id, action: 'meal_released', actor });
+    res.json({ success: true, data: rows[0] });
+  } catch {
+    res.status(500).json({ success: false, message: 'Failed to release diet order' });
   }
 });
 
@@ -493,6 +515,16 @@ router.post('/counselling', authDietary, async (req, res) => {
   } catch {
     res.status(500).json({ success: false, message: 'Failed to save counselling note' });
   }
+});
+
+router.get('/approvals', authDietary, async (_req, res) => {
+  const db = await ensureDietaryTables();
+  res.json({ success: true, data: await listOperationsApprovals(db, 'dietary') });
+});
+
+router.get('/audit', authDietary, async (_req, res) => {
+  const db = await ensureDietaryTables();
+  res.json({ success: true, data: await listOperationsAudit(db, 'dietary') });
 });
 
 export default router;

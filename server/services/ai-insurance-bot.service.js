@@ -18,9 +18,9 @@
 import pool from '../db/pgPool.js';
 import llmProvider from './ai-brain/llm-provider.js';
 
-const INSURANCE_GPU_URL = 'https://ai.isha.buzz/v1/chat/completions';
-const INSURANCE_MODEL = 'open-insurance-llama3';
-const INSURANCE_PORT = 8083;
+const INSURANCE_GPU_URL = `${process.env.ISHA_INC_URL || 'https://isha-inc.com'}/v1/chat/completions`;
+const INSURANCE_API_KEY = process.env.ISHA_INC_API_KEY || '';
+const INSURANCE_MODEL = 'insurance-llm';
 const REQUEST_TIMEOUT = 30000;
 
 class InsuranceBotService {
@@ -39,13 +39,14 @@ class InsuranceBotService {
 
       const response = await fetch(`${INSURANCE_GPU_URL}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${INSURANCE_API_KEY}`,
+        },
         body: JSON.stringify({
           model: INSURANCE_MODEL,
           messages: [{ role: 'user', content: 'ping' }],
           max_tokens: 5,
-          agent_type: 'Insurance',
-          model_port: INSURANCE_PORT
         }),
         signal: controller.signal
       });
@@ -165,7 +166,10 @@ Respond in a helpful, clear manner. Use bullet points for step-by-step processes
     try {
       const response = await fetch(INSURANCE_GPU_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${INSURANCE_API_KEY}`,
+        },
         body: JSON.stringify({
           model: INSURANCE_MODEL,
           messages: [
@@ -174,8 +178,6 @@ Respond in a helpful, clear manner. Use bullet points for step-by-step processes
           ],
           max_tokens: 1024,
           temperature: 0.3,
-          agent_type: 'Insurance',
-          model_port: INSURANCE_PORT
         }),
         signal: controller.signal
       });

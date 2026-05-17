@@ -331,7 +331,7 @@ export const hospitalLogin = async (req, res) => {
           status: 'active',
           [Op.or]: [
             { organization_type: 'hospital' },
-            { role: { [Op.in]: ['hospital_admin', 'doctor', 'staff', 'nurse', 'insurance_coordinator', 'billing', 'receptionist'] } }
+            { role: { [Op.in]: ['hospital_admin', 'doctor', 'staff', 'nurse', 'insurance_coordinator', 'billing', 'receptionist', 'ceo', 'coo', 'ms', 'medical_superintendent', 'cmo', 'chief_medical_officer'] } }
           ]
         }
       });
@@ -539,7 +539,7 @@ export const hospitalLoginV2 = async (req, res) => {
           email,
           status: 'active',
           [Op.or]: [{ tenant_id: tenant.id }, { organization_id: tenant.id }],
-          role: { [Op.in]: ['hospital_admin', 'doctor', 'staff', 'nurse', 'insurance_coordinator', 'billing', 'receptionist'] }
+          role: { [Op.in]: ['hospital_admin', 'doctor', 'staff', 'nurse', 'insurance_coordinator', 'billing', 'receptionist', 'ceo', 'coo', 'ms', 'medical_superintendent', 'cmo', 'chief_medical_officer'] }
         }
       });
 

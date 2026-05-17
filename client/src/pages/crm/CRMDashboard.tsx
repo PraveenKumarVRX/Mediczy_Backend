@@ -58,6 +58,12 @@ const sidebarNav = [
     { icon: Activity, label: 'Activities', path: '/crm/activities' },
     { icon: Mail, label: 'Email Inbox', path: '/crm/emails' },
   ]},
+  { section: 'MARKETING', items: [
+    { icon: Mail, label: 'Campaigns', path: '/crm/campaigns' },
+    { icon: Users, label: 'Lists', path: '/crm/lists' },
+    { icon: FileText, label: 'Templates', path: '/crm/templates' },
+    { icon: UserCheck, label: 'Senders', path: '/crm/senders' },
+  ]},
   { section: 'INSURANCE', items: [
     { icon: FileText, label: 'RFQs', path: '/crm/rfqs' },
   ]},

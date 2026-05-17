@@ -58,9 +58,12 @@ export const TIERS = {
 };
 
 // Tier → preferred provider name (maps to PROVIDERS in llm-provider.js)
+// REFLEX   → groq     (Llama 4 Scout, ~138ms consistent — qwen-0.6b-med evicts from VRAM)
+// STANDARD → isha-inc (smart-orchestrator: MedGemma + InsuranceLLM + RAG, ~554ms)
+// DEEP     → isha     (BiMediX2-8B FP16 — highest quality clinical reasoning)
 export const TIER_PROVIDERS = {
-  [TIERS.REFLEX]:   'local-slm',
-  [TIERS.STANDARD]: 'groq',
+  [TIERS.REFLEX]:   'groq',
+  [TIERS.STANDARD]: 'isha-inc',
   [TIERS.DEEP]:     'isha',
 };
 

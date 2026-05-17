@@ -6,6 +6,32 @@ import doctorModel from '../models/doctor.model.intelligent.js';
 const router = express.Router();
 
 /**
+ * @route   GET /api/doctors/availability
+ * @desc    Root — returns doctor's full availability profile (schedule + consultation types)
+ * @access  Private (Doctor)
+ */
+router.get('/', authUser, async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({ success: false, message: 'Access denied. Doctor role required.' });
+    }
+    const doctor = await doctorModel.findByPk(req.user.id);
+    if (!doctor) return res.status(404).json({ success: false, message: 'Doctor not found' });
+
+    res.json({
+      success: true,
+      data: {
+        weeklyAvailability: doctor.weeklyAvailability,
+        consultationTypes: doctor.consultationTypes,
+        isAvailable: doctor.isAvailable,
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch availability', error: error.message });
+  }
+});
+
+/**
  * @route   GET /api/doctors/availability/dashboard
  * @desc    Get doctor's availability dashboard
  * @access  Private (Doctor)

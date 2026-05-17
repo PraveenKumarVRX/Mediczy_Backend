@@ -1,0 +1,667 @@
+import express from 'express';
+import { connectPostgres } from '../db/postgres.js';
+
+const router = express.Router();
+
+// ─── In-memory SSE broker ────────────────────────────────────────────────────
+// Map<clientId, { res, zone, deviceId }>
+const sseClients = new Map();
+let _clientSeq = 0;
+
+function pushToAll(event, data) {
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  sseClients.forEach(({ res }) => { try { res.write(payload); } catch (_) {} });
+}
+
+function pushToZone(zone, event, data) {
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  sseClients.forEach((client) => {
+    if (!zone || client.zone === zone) {
+      try { client.res.write(payload); } catch (_) {}
+    }
+  });
+}
+
+// ─── DB helpers ──────────────────────────────────────────────────────────────
+async function safeQuery(sql, params = []) {
+  try {
+    const db = await connectPostgres();
+    const result = await db.query(sql, params);
+    return result.rows || [];
+  } catch (_) { return []; }
+}
+
+async function safeQueryOne(sql, params = []) {
+  const rows = await safeQuery(sql, params);
+  return rows[0] || null;
+}
+
+async function ensureTables() {
+  try {
+    const db = await connectPostgres();
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS display_zones (
+        id SERIAL PRIMARY KEY,
+        zone_id VARCHAR(80) UNIQUE NOT NULL,
+        name VARCHAR(200) NOT NULL,
+        description TEXT,
+        floor VARCHAR(50),
+        building VARCHAR(100),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS display_devices (
+        id SERIAL PRIMARY KEY,
+        device_token VARCHAR(120) UNIQUE NOT NULL,
+        name VARCHAR(200),
+        zone_id VARCHAR(80),
+        display_type VARCHAR(40),
+        url_path VARCHAR(200),
+        ip_address VARCHAR(60),
+        last_seen TIMESTAMPTZ,
+        active BOOLEAN DEFAULT TRUE,
+        config JSONB DEFAULT '{}',
+        registered_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS emergency_broadcasts (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        severity VARCHAR(30) DEFAULT 'critical',
+        zone_id VARCHAR(80),
+        pushed_by VARCHAR(200),
+        dismissed_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS checkin_tokens (
+        id SERIAL PRIMARY KEY,
+        token_number VARCHAR(20) NOT NULL,
+        patient_name VARCHAR(200),
+        appointment_id VARCHAR(100),
+        doctor_name VARCHAR(200),
+        counter VARCHAR(50),
+        zone_id VARCHAR(80),
+        status VARCHAR(30) DEFAULT 'waiting',
+        issued_at TIMESTAMPTZ DEFAULT NOW(),
+        called_at TIMESTAMPTZ
+      );
+    `);
+  } catch (e) {
+    console.warn('[display] table setup skipped:', e.message);
+  }
+}
+
+ensureTables();
+
+// ─── Device token auth (lightweight — long-lived tokens, no expiry) ──────────
+// For kiosk/display screens. Token is just a stored secret in display_devices.
+// Admin pages use standard JWT. Public display pages require NO auth.
+function deviceAuth(req, res, next) {
+  const token = req.headers['x-device-token'] || req.query.deviceToken;
+  if (!token) return res.status(401).json({ success: false, message: 'Device token required' });
+  safeQueryOne('SELECT * FROM display_devices WHERE device_token=$1 AND active=true', [token])
+    .then(device => {
+      if (!device) return res.status(401).json({ success: false, message: 'Unknown device token' });
+      req.displayDevice = device;
+      // Non-blocking heartbeat
+      safeQuery('UPDATE display_devices SET last_seen=NOW() WHERE device_token=$1', [token]);
+      next();
+    })
+    .catch(() => res.status(500).json({ success: false, message: 'Auth error' }));
+}
+
+// ─── SSE endpoint ─────────────────────────────────────────────────────────────
+// GET /api/display/events?zone=opd-waiting
+router.get('/events', (req, res) => {
+  const zone = req.query.zone || null;
+  const deviceId = req.query.deviceId || null;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // for nginx
+  res.flushHeaders();
+
+  // Send initial heartbeat
+  res.write(`event: connected\ndata: ${JSON.stringify({ ts: Date.now(), zone })}\n\n`);
+
+  const clientId = ++_clientSeq;
+  sseClients.set(clientId, { res, zone, deviceId });
+
+  // Keepalive every 25s
+  const keepalive = setInterval(() => {
+    try { res.write(': ping\n\n'); } catch (_) {}
+  }, 25000);
+
+  req.on('close', () => {
+    clearInterval(keepalive);
+    sseClients.delete(clientId);
+  });
+});
+
+// ─── Emergency broadcasts ─────────────────────────────────────────────────────
+
+// POST /api/display/emergency — push a broadcast
+router.post('/emergency', async (req, res) => {
+  try {
+    const { title, message, severity = 'critical', zone_id = null, pushed_by = 'admin' } = req.body;
+    if (!title || !message) return res.status(400).json({ success: false, message: 'title and message required' });
+
+    const db = await connectPostgres();
+    const result = await db.query(
+      `INSERT INTO emergency_broadcasts (title, message, severity, zone_id, pushed_by)
+       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      [title, message, severity, zone_id, pushed_by]
+    );
+    const broadcast = result.rows[0];
+
+    // Push to all SSE clients (or zone-specific)
+    if (zone_id) {
+      pushToZone(zone_id, 'emergency', broadcast);
+    } else {
+      pushToAll('emergency', broadcast);
+    }
+
+    res.json({ success: true, broadcast });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// GET /api/display/emergency — active broadcasts
+router.get('/emergency', async (_req, res) => {
+  const rows = await safeQuery(
+    'SELECT * FROM emergency_broadcasts WHERE dismissed_at IS NULL ORDER BY created_at DESC'
+  );
+  res.json({ success: true, broadcasts: rows });
+});
+
+// DELETE /api/display/emergency/:id — dismiss
+router.delete('/emergency/:id', async (req, res) => {
+  await safeQuery(
+    'UPDATE emergency_broadcasts SET dismissed_at=NOW() WHERE id=$1',
+    [req.params.id]
+  );
+  pushToAll('emergency-dismissed', { id: parseInt(req.params.id) });
+  res.json({ success: true });
+});
+
+// ─── Device registry ─────────────────────────────────────────────────────────
+
+// GET /api/display/devices
+router.get('/devices', async (_req, res) => {
+  const devices = await safeQuery(
+    'SELECT * FROM display_devices ORDER BY registered_at DESC'
+  );
+  res.json({ success: true, devices });
+});
+
+// POST /api/display/devices — register or update a device
+router.post('/devices', async (req, res) => {
+  try {
+    const { name, zone_id, display_type, url_path, ip_address, config } = req.body;
+    const crypto = await import('crypto');
+    const device_token = crypto.randomBytes(24).toString('hex');
+
+    const db = await connectPostgres();
+    const result = await db.query(
+      `INSERT INTO display_devices (device_token, name, zone_id, display_type, url_path, ip_address, config)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [device_token, name, zone_id, display_type, url_path, ip_address, JSON.stringify(config || {})]
+    );
+    res.json({ success: true, device: result.rows[0] });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// DELETE /api/display/devices/:token — deactivate
+router.delete('/devices/:token', async (req, res) => {
+  await safeQuery('UPDATE display_devices SET active=false WHERE device_token=$1', [req.params.token]);
+  res.json({ success: true });
+});
+
+// POST /api/display/heartbeat — device keepalive
+router.post('/heartbeat', deviceAuth, async (req, res) => {
+  res.json({ success: true, ts: Date.now() });
+});
+
+// ─── Zone registry ────────────────────────────────────────────────────────────
+
+router.get('/zones', async (_req, res) => {
+  const zones = await safeQuery('SELECT * FROM display_zones ORDER BY name');
+  if (zones.length === 0) {
+    // Return built-in zone catalog if table is empty
+    return res.json({ success: true, zones: ZONE_CATALOG });
+  }
+  res.json({ success: true, zones });
+});
+
+const ZONE_CATALOG = [
+  { zone_id: 'main-entrance', name: 'Main Entrance / Lobby', floor: 'G' },
+  { zone_id: 'opd-waiting', name: 'OPD Waiting Area', floor: 'G' },
+  { zone_id: 'opd-counter', name: 'OPD Registration Counter', floor: 'G' },
+  { zone_id: 'pharmacy-waiting', name: 'Pharmacy Waiting', floor: 'G' },
+  { zone_id: 'lab-waiting', name: 'Lab / Diagnostics Waiting', floor: 'G' },
+  { zone_id: 'radiology-waiting', name: 'Radiology Waiting', floor: '1' },
+  { zone_id: 'er-triage', name: 'ER Triage', floor: 'G' },
+  { zone_id: 'er-waiting', name: 'ER Family Waiting', floor: 'G' },
+  { zone_id: 'icu', name: 'ICU Nursing Station', floor: '2' },
+  { zone_id: 'ot-complex', name: 'OT Complex', floor: '3' },
+  { zone_id: 'ward-general', name: 'General Ward', floor: '2' },
+  { zone_id: 'ward-private', name: 'Private Ward', floor: '3' },
+  { zone_id: 'blood-bank', name: 'Blood Bank', floor: '1' },
+  { zone_id: 'cssd', name: 'CSSD', floor: 'B' },
+  { zone_id: 'discharge-lounge', name: 'Discharge Lounge', floor: 'G' },
+  { zone_id: 'insurance-desk', name: 'Insurance / TPA Desk', floor: 'G' },
+  { zone_id: 'cafeteria', name: 'Cafeteria / Canteen', floor: 'G' },
+  { zone_id: 'bedside', name: 'Bedside Terminal', floor: 'various' },
+];
+
+// ─── Display data endpoints ───────────────────────────────────────────────────
+// All are public (no auth) — meant for browser kiosk displays on internal LAN
+
+// OPD Queue board
+// GET /api/display/queue?counter=1
+router.get('/queue', async (req, res) => {
+  const { counter } = req.query;
+  // Try live data from queue_tokens table
+  const activeWhere = counter ? 'WHERE counter_id=$1 AND status IN (\'waiting\',\'calling\')' : 'WHERE status IN (\'waiting\',\'calling\')';
+  const params = counter ? [counter] : [];
+
+  const liveTokens = await safeQuery(
+    `SELECT * FROM queue_tokens ${activeWhere} ORDER BY created_at ASC LIMIT 20`,
+    params
+  );
+
+  if (liveTokens.length > 0) {
+    const current = liveTokens.find(t => t.status === 'calling') || liveTokens[0];
+    const next = liveTokens.filter(t => t.id !== current.id).slice(0, 3);
+    return res.json({
+      success: true,
+      current: { token: current.token_number, counter: current.counter_id, doctor: current.doctor_name },
+      next: next.map(t => ({ token: t.token_number, counter: t.counter_id })),
+      waiting: liveTokens.length,
+      avgWaitMins: 12,
+      live: true,
+    });
+  }
+
+  // Fallback demo data
+  res.json({
+    success: true,
+    current: { token: 'A-047', counter: 'Counter 2', doctor: 'Dr. Sharma (Gen. Medicine)' },
+    next: [
+      { token: 'A-048', counter: 'Counter 1' },
+      { token: 'A-049', counter: 'Counter 3' },
+      { token: 'B-012', counter: 'Counter 2' },
+    ],
+    waiting: 18,
+    avgWaitMins: 12,
+    live: false,
+    healthTips: [
+      'Stay hydrated — drink at least 8 glasses of water daily.',
+      'Regular hand washing prevents 80% of common infections.',
+      'A 30-minute walk daily reduces heart disease risk by 35%.',
+      'Adequate sleep (7-8 hrs) boosts immune function significantly.',
+    ],
+  });
+});
+
+// ICU Board
+// GET /api/display/icu-board
+router.get('/icu-board', async (_req, res) => {
+  const beds = await safeQuery(
+    `SELECT b.*, p.name as patient_name, p.age, p.gender
+     FROM icu_beds b
+     LEFT JOIN patients p ON p.id = b.patient_id
+     WHERE b.active = true
+     ORDER BY b.bed_number`
+  );
+
+  if (beds.length > 0) {
+    return res.json({ success: true, beds, live: true });
+  }
+
+  // Fallback demo
+  res.json({
+    success: true,
+    live: false,
+    beds: [
+      { bed_number: 'ICU-01', patient_name: 'Rajesh K.', age: 62, gender: 'M', diagnosis: 'ARDS', spo2: 94, hr: 88, bp: '128/82', temp: 37.8, rr: 20, news2: 5, alert_level: 'orange' },
+      { bed_number: 'ICU-02', patient_name: 'Sunita R.', age: 54, gender: 'F', diagnosis: 'Sepsis', spo2: 97, hr: 102, bp: '105/68', temp: 38.6, rr: 22, news2: 6, alert_level: 'red' },
+      { bed_number: 'ICU-03', patient_name: 'Mohammed A.', age: 71, gender: 'M', diagnosis: 'Acute MI', spo2: 98, hr: 76, bp: '138/90', temp: 37.1, rr: 16, news2: 3, alert_level: 'yellow' },
+      { bed_number: 'ICU-04', patient_name: '—', age: null, gender: null, diagnosis: null, spo2: null, hr: null, bp: null, temp: null, rr: null, news2: null, alert_level: 'green', status: 'available' },
+      { bed_number: 'ICU-05', patient_name: 'Priya M.', age: 38, gender: 'F', diagnosis: 'DKA', spo2: 99, hr: 95, bp: '118/76', temp: 37.4, rr: 18, news2: 2, alert_level: 'green' },
+      { bed_number: 'ICU-06', patient_name: 'Arun S.', age: 48, gender: 'M', diagnosis: 'Pneumonia', spo2: 92, hr: 110, bp: '100/60', temp: 39.1, rr: 26, news2: 8, alert_level: 'red' },
+    ],
+  });
+});
+
+// Blood Bank display
+// GET /api/display/blood-bank
+router.get('/blood-bank', async (_req, res) => {
+  const inventory = await safeQuery(
+    `SELECT blood_group, component, units_available, expiry_alert
+     FROM blood_inventory
+     WHERE active = true
+     ORDER BY blood_group, component`
+  );
+
+  if (inventory.length > 0) {
+    return res.json({ success: true, inventory, live: true });
+  }
+
+  const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+  const COMPONENTS = ['Whole Blood', 'RBC', 'Platelets', 'FFP', 'Cryoprecipitate'];
+  const demo = [];
+  BLOOD_GROUPS.forEach(bg => {
+    COMPONENTS.forEach(comp => {
+      const units = Math.floor(Math.random() * 20);
+      demo.push({
+        blood_group: bg,
+        component: comp,
+        units_available: units,
+        level: units === 0 ? 'critical' : units < 5 ? 'low' : 'ok',
+        expiry_alert: Math.random() > 0.85,
+      });
+    });
+  });
+
+  const requisitions = [
+    { req_id: 'REQ-001', blood_group: 'O+', component: 'RBC', units: 2, urgency: 'Emergency', ward: 'ICU-02', status: 'Processing' },
+    { req_id: 'REQ-002', blood_group: 'A+', component: 'Platelets', units: 4, urgency: 'Routine', ward: 'Ward 3B', status: 'Ready' },
+    { req_id: 'REQ-003', blood_group: 'B-', component: 'FFP', units: 2, urgency: 'Urgent', ward: 'OT-2', status: 'Pending Cross-match' },
+  ];
+
+  res.json({ success: true, inventory: demo, requisitions, live: false });
+});
+
+// OT Status display
+// GET /api/display/ot-status
+router.get('/ot-status', async (_req, res) => {
+  const ot = await safeQuery(
+    `SELECT r.*, s.name as surgeon, p.name as patient_name
+     FROM ot_rooms r
+     LEFT JOIN doctors s ON s.id = r.surgeon_id
+     LEFT JOIN patients p ON p.id = r.patient_id
+     WHERE r.active = true
+     ORDER BY r.room_number`
+  );
+
+  if (ot.length > 0) {
+    return res.json({ success: true, rooms: ot, live: true });
+  }
+
+  res.json({
+    success: true,
+    live: false,
+    rooms: [
+      { room_number: 'OT-1', status: 'In Progress', case_type: 'Laparoscopic Cholecystectomy', surgeon: 'Dr. Mehta', started_at: new Date(Date.now() - 95 * 60000).toISOString(), next_case: 'Total Hip Replacement' },
+      { room_number: 'OT-2', status: 'Prep / Anaesthesia', case_type: 'CABG', surgeon: 'Dr. Verma', started_at: new Date(Date.now() - 15 * 60000).toISOString(), next_case: null },
+      { room_number: 'OT-3', status: 'Available', case_type: null, surgeon: null, started_at: null, next_case: 'Total Knee Replacement @ 14:00' },
+      { room_number: 'OT-4', status: 'Cleaning / Turnover', case_type: null, surgeon: null, started_at: null, next_case: 'Appendectomy @ 13:30' },
+      { room_number: 'OT-5 (Ortho)', status: 'In Progress', case_type: 'Spinal Fusion L4-L5', surgeon: 'Dr. Kapoor', started_at: new Date(Date.now() - 140 * 60000).toISOString(), next_case: null },
+    ],
+  });
+});
+
+// Ward nursing station display
+// GET /api/display/ward?ward=3B
+router.get('/ward', async (req, res) => {
+  const { ward } = req.query;
+  const whereClause = ward ? 'WHERE w.ward_id=$1 AND w.active=true' : 'WHERE w.active=true';
+  const params = ward ? [ward] : [];
+
+  const beds = await safeQuery(
+    `SELECT w.bed_number, w.ward_id, p.name as patient_name, p.age, w.status,
+            w.vitals, w.pending_orders, w.medication_alerts, w.assigned_nurse
+     FROM ward_beds w
+     LEFT JOIN patients p ON p.id = w.patient_id
+     ${whereClause}
+     ORDER BY w.ward_id, w.bed_number
+     LIMIT 30`,
+    params
+  );
+
+  if (beds.length > 0) {
+    return res.json({ success: true, beds, live: true });
+  }
+
+  res.json({
+    success: true,
+    live: false,
+    wardName: ward || '3B – General Medicine',
+    beds: [
+      { bed_number: '3B-01', patient_name: 'Kavitha P.', age: 45, status: 'stable', diagnosis: 'T2DM review', nurse: 'Sr. Anita', pending_orders: 1, medication_due: false, vitals: { spo2: 98, hr: 78, bp: '120/80' } },
+      { bed_number: '3B-02', patient_name: 'Rajan V.', age: 58, status: 'monitoring', diagnosis: 'Hypertensive urgency', nurse: 'Sr. Anita', pending_orders: 3, medication_due: true, vitals: { spo2: 97, hr: 94, bp: '168/102' } },
+      { bed_number: '3B-03', patient_name: '—', age: null, status: 'available', nurse: null },
+      { bed_number: '3B-04', patient_name: 'Meena D.', age: 34, status: 'stable', diagnosis: 'Dengue fever', nurse: 'Sr. Priya', pending_orders: 0, medication_due: false, vitals: { spo2: 99, hr: 82, bp: '110/70' } },
+      { bed_number: '3B-05', patient_name: 'Suresh M.', age: 67, status: 'alert', diagnosis: 'Post-op day 1 CABG', nurse: 'Sr. Priya', pending_orders: 5, medication_due: true, vitals: { spo2: 95, hr: 104, bp: '108/66' } },
+      { bed_number: '3B-06', patient_name: 'Lakshmi B.', age: 29, status: 'stable', diagnosis: 'Normal delivery post-partum', nurse: 'Sr. Anita', pending_orders: 1, medication_due: false, vitals: { spo2: 99, hr: 70, bp: '112/72' } },
+    ],
+  });
+});
+
+// Bedside terminal
+// GET /api/display/bedside?bed=3B-02
+router.get('/bedside', async (req, res) => {
+  const { bed } = req.query;
+  if (!bed) return res.status(400).json({ success: false, message: 'bed parameter required' });
+
+  const bedData = await safeQueryOne(
+    `SELECT w.*, p.name as patient_name, p.age, p.gender, p.blood_group
+     FROM ward_beds w
+     LEFT JOIN patients p ON p.id = w.patient_id
+     WHERE w.bed_number=$1`,
+    [bed]
+  );
+
+  if (bedData) {
+    return res.json({ success: true, bed: bedData, live: true });
+  }
+
+  res.json({
+    success: true,
+    live: false,
+    bed: {
+      bed_number: bed,
+      patient_name: 'Rajan Venkataraman',
+      age: 58,
+      gender: 'Male',
+      blood_group: 'B+',
+      diagnosis: 'Hypertensive urgency',
+      admitted_on: new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10),
+      ward: '3B – General Medicine',
+      care_team: [
+        { role: 'Attending Physician', name: 'Dr. Anil Sharma', specialty: 'Internal Medicine' },
+        { role: 'Primary Nurse', name: 'Sr. Anita Rao' },
+        { role: 'Dietitian', name: 'Ms. Pooja Nair' },
+      ],
+      medications_today: [
+        { name: 'Amlodipine 5 mg', time: '08:00', given: true },
+        { name: 'Metoprolol 50 mg', time: '08:00', given: true },
+        { name: 'Losartan 50 mg', time: '20:00', given: false },
+      ],
+      diet: { plan: 'Low sodium, low fat', next_meal: 'Lunch – 13:00', restriction: 'No added salt' },
+      vitals: { spo2: 97, hr: 94, bp: '168/102', temp: 37.2, time: new Date().toISOString() },
+      notes_for_patient: 'Please press the nurse call button for any discomfort. Visiting hours: 10am–12pm and 5pm–7pm.',
+    },
+  });
+});
+
+// Discharge status lounge
+// GET /api/display/discharge-status
+router.get('/discharge-status', async (_req, res) => {
+  const discharges = await safeQuery(
+    `SELECT d.*, p.name as patient_name, w.bed_number
+     FROM discharge_summaries d
+     LEFT JOIN patients p ON p.id = d.patient_id
+     LEFT JOIN ward_beds w ON w.patient_id = d.patient_id
+     WHERE d.status IN ('processing','ready','pending_billing')
+     ORDER BY d.created_at DESC
+     LIMIT 15`
+  );
+
+  if (discharges.length > 0) {
+    return res.json({ success: true, discharges, live: true });
+  }
+
+  res.json({
+    success: true,
+    live: false,
+    discharges: [
+      { patient_name: 'Ramesh K. (Ward 2A-05)', status: 'pending_billing', step: 'Billing clearance', eta: 'Est. 45 min' },
+      { patient_name: 'Sujata N. (Ward 3B-09)', status: 'ready', step: 'Ready — please collect documents at counter 4', eta: null },
+      { patient_name: 'Pradeep V. (Ward 1C-02)', status: 'processing', step: 'Doctor signature pending', eta: 'Est. 20 min' },
+      { patient_name: 'Nandita S. (Ward 2B-11)', status: 'processing', step: 'Pharmacy kit preparation', eta: 'Est. 30 min' },
+    ],
+  });
+});
+
+// CSSD status display
+// GET /api/display/cssd
+router.get('/cssd', async (_req, res) => {
+  const sets = await safeQuery(
+    `SELECT * FROM cssd_sets WHERE status NOT IN ('available') ORDER BY updated_at DESC LIMIT 20`
+  );
+
+  if (sets.length > 0) {
+    return res.json({ success: true, sets, live: true });
+  }
+
+  res.json({
+    success: true,
+    live: false,
+    sets: [
+      { set_name: 'Laparoscopy Set A', status: 'sterilizing', cycle: 'Steam 134°C', eta: '15 min', requested_by: 'OT-2' },
+      { set_name: 'Ortho Tray #3', status: 'cooling', cycle: 'ETO Cycle 4', eta: '45 min', requested_by: 'OT-5' },
+      { set_name: 'Cardiac Instruments A', status: 'dispatch', cycle: 'Autoclave', eta: 'Ready', requested_by: 'OT-1' },
+      { set_name: 'Minor OT Set B', status: 'cleaning', cycle: '—', eta: '60 min', requested_by: 'OT-3' },
+    ],
+  });
+});
+
+// ─── Kiosk check-in endpoints ─────────────────────────────────────────────────
+
+// POST /api/display/checkin/appointments — lookup appointments by phone
+router.post('/checkin/appointments', async (req, res) => {
+  const { phone } = req.body;
+  if (!phone) return res.status(400).json({ success: false, message: 'phone required' });
+
+  const normalized = phone.replace(/\D/g, '').slice(-10);
+
+  const appointments = await safeQuery(
+    `SELECT a.id, a.appointment_date, a.appointment_time, a.status,
+            d.name as doctor_name, d.specialty,
+            p.name as patient_name
+     FROM appointments a
+     LEFT JOIN doctors d ON d.id = a.doctor_id
+     LEFT JOIN patients p ON p.phone = $1 OR p.phone = $2
+     WHERE (a.patient_phone=$1 OR a.patient_phone=$2)
+       AND a.appointment_date = CURRENT_DATE
+       AND a.status IN ('confirmed','scheduled')
+     ORDER BY a.appointment_time
+     LIMIT 5`,
+    [normalized, phone]
+  );
+
+  if (appointments.length > 0) {
+    return res.json({ success: true, appointments, live: true });
+  }
+
+  // Demo fallback
+  res.json({
+    success: true,
+    live: false,
+    appointments: [
+      {
+        id: 'DEMO-001',
+        appointment_date: new Date().toISOString().slice(0, 10),
+        appointment_time: '10:30',
+        doctor_name: 'Dr. Anil Sharma',
+        specialty: 'Internal Medicine',
+        patient_name: 'Demo Patient',
+        status: 'confirmed',
+      },
+    ],
+  });
+});
+
+// POST /api/display/checkin/issue-token — confirm check-in and issue queue token
+router.post('/checkin/issue-token', async (req, res) => {
+  try {
+    const { appointment_id, patient_name, doctor_name } = req.body;
+    if (!appointment_id) return res.status(400).json({ success: false, message: 'appointment_id required' });
+
+    // Generate token
+    const prefix = 'A';
+    const existingCount = await safeQuery(
+      "SELECT COUNT(*) FROM checkin_tokens WHERE issued_at::date = CURRENT_DATE"
+    );
+    const seq = (parseInt(existingCount[0]?.count || '0') + 1);
+    const token_number = `${prefix}-${String(seq).padStart(3, '0')}`;
+
+    const db = await connectPostgres();
+    const result = await db.query(
+      `INSERT INTO checkin_tokens (token_number, patient_name, appointment_id, doctor_name, status)
+       VALUES ($1,$2,$3,$4,'waiting') RETURNING *`,
+      [token_number, patient_name, appointment_id, doctor_name]
+    );
+    const issued = result.rows[0];
+
+    // Push token event to OPD queue displays
+    pushToZone('opd-waiting', 'new-token', issued);
+
+    res.json({ success: true, token: issued });
+  } catch (e) {
+    // Fallback: return a demo token if DB not available
+    res.json({
+      success: true,
+      live: false,
+      token: {
+        token_number: 'A-001',
+        patient_name: req.body.patient_name || 'Patient',
+        doctor_name: req.body.doctor_name || 'Doctor',
+        status: 'waiting',
+        issued_at: new Date().toISOString(),
+      },
+    });
+  }
+});
+
+// ─── Admin display control ────────────────────────────────────────────────────
+
+// POST /api/display/announce — push text announcement to specific zone
+router.post('/announce', async (req, res) => {
+  const { message, zone_id } = req.body;
+  if (!message) return res.status(400).json({ success: false, message: 'message required' });
+
+  if (zone_id) {
+    pushToZone(zone_id, 'announcement', { message, ts: Date.now() });
+  } else {
+    pushToAll('announcement', { message, ts: Date.now() });
+  }
+  res.json({ success: true });
+});
+
+// GET /api/display/stats — connected display count
+router.get('/stats', (_req, res) => {
+  const counts = {};
+  sseClients.forEach(({ zone }) => {
+    const key = zone || 'unzoned';
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  res.json({
+    success: true,
+    connected: sseClients.size,
+    byZone: counts,
+  });
+});
+
+export default router;

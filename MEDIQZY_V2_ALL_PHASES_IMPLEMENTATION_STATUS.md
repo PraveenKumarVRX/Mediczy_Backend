@@ -26,6 +26,9 @@
 - Pharmacogenomics profile + medication check service surfaced in prescription authoring.
 - Revenue-cycle denial-risk heuristic surfaced in denials workflow.
 - ESG capture and summary endpoints surfaced in admin analytics.
+- Smart-room device registry, room-event intake, and room readiness overview endpoints.
+- Voice-biometric consent, enrollment, and verification-record workflows with explicit validation gates.
+- AR surgical-planning case registry with segmentation/mesh/device readiness tracking.
 
 ## Strategic items that remain gated, not falsely marked complete
 
@@ -36,6 +39,8 @@ The following roadmap items cannot be truthfully completed by code changes alone
 3. **Voice biometric identification** - requires enrolled voice samples, model training, spoofing evaluation, and consent workflow.
 4. **Federated network antibiogram / RWE commercialization** - requires multi-tenant governance, privacy review, and cross-hospital data agreements beyond the local aggregate layer.
 5. **Production-grade pathology grading and pharmacogenomics** - current software paths exist, but clinical validation datasets and model governance remain required before production claims.
+
+All Phase 5 items now have a software workflow baseline in-repo; the remaining gaps are external validation, deployment, governance, or hardware gates rather than missing application surfaces.
 
 ## New major files / routes
 
@@ -53,7 +58,7 @@ The following roadmap items cannot be truthfully completed by code changes alone
 | Phase 2 clinical intelligence baseline | Complete |
 | Phase 3 operational baseline | Complete |
 | Phase 4 differentiators | Workflow-complete baseline |
-| Phase 5 software-ready components | Workflow-complete baseline |
+| Phase 5 software-ready components | Complete baseline |
 | Phase 5 hardware/model-dependent bets | Gated |
 
 ## Verification

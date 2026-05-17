@@ -11,6 +11,20 @@ import { UserPlan } from '../models/membershipPlan.model.intelligent.js';
 const router = express.Router();
 
 /**
+ * GET /api/membership-plans
+ * Root — returns all available plans (same as /plans)
+ */
+router.get('/', async (req, res) => {
+  try {
+    const { type } = req.query;
+    const plans = await membershipService.getAllPlans(type || null);
+    res.json({ success: true, data: { plans } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch plans', error: error.message });
+  }
+});
+
+/**
  * GET /api/membership-plans/plans
  * Get all available membership plans
  */

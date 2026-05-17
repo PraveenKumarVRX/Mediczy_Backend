@@ -80,6 +80,9 @@ import orgMembershipPlansRouter from './routes/org-membership-plans.route.js';
 import teamRouter from './routes/team.route.js';
 import teamEmailRouter from './routes/teamEmail.route.js';
 import crmEmailRouter from './routes/crmEmail.route.js';
+import crmCampaignsRouter from './routes/crmCampaigns.route.js';
+import crmCampaignAnalyticsRouter from './routes/crmCampaignAnalytics.route.js';
+import './workers/crm-campaign.worker.js';
 import welcomeEmailTemplatesRouter from './routes/welcomeEmailTemplates.route.js';
 import emailSettingsRouter from './routes/emailSettings.route.js';
 import marketingLeadsRouter from './routes/marketing-leads.route.js';
@@ -146,6 +149,7 @@ import prescriptionRouter from './routes/prescription.route.js';
 import ehrRouter from './routes/ehr.route.js';
 import payrollRouter from './routes/payroll.route.js';
 import roadmapIntelligenceRouter from './routes/roadmap-intelligence.route.js';
+import hospitalDisplayRouter from './routes/hospital-display.route.js';
 import emrRouter from './routes/emr.route.js';
 import healthDiaryRouter from './routes/health-diary.route.js';
 import healthIntelligenceRouter from './routes/health-intelligence.route.js';
@@ -1178,6 +1182,7 @@ app.use("/api/prescriptions", prescriptionRouter); // Prescription CRUD and PDF 
 app.use("/api/ehr", ehrRouter); // Electronic Health Records - admin access to patient records
 app.use('/api/payroll', payrollRouter);
 app.use('/api/roadmap-intelligence', roadmapIntelligenceRouter);
+app.use('/api/display', hospitalDisplayRouter);
 app.use("/api/emr", emrRouter); // EMR folder per user — accessible by team members
 app.use("/api/health-diary", healthDiaryRouter); // Patient health journal and diary entries
 app.use("/api/health-intelligence", healthIntelligenceRouter); // Dr. iSHA Health Intelligence Dashboard
@@ -1228,6 +1233,8 @@ app.use('/api', activityLogRoutes); // Activity logging routes
 app.use('/api/crm', crmRouter);
 app.use('/api/crm/underwriting', crmUnderwritingRouter); // RFQ underwriting pipeline
 app.use('/api/crm/emails', crmEmailRouter); // CRM email inbox with SMTP/IMAP settings
+app.use('/api/crm/campaigns', crmCampaignsRouter); // CRM marketing campaigns
+app.use('/api/crm/campaign-analytics', crmCampaignAnalyticsRouter); // CRM marketing analytics
 app.use('/api/fcm', fcmRouter);
 app.use('/api/call-notification', callNotificationRouter); // Doctor-to-patient call notifications
 app.use('/api/firebase', firebaseStatusRouter);

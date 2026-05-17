@@ -37,7 +37,6 @@ interface Doctor {
   profileImage?: string;
   specialization: string;
   experience: number;
-  averageRating?: number;
   serviceTiers?: any[];
 }
 
@@ -531,10 +530,6 @@ export default function QuickAppointmentModal({
                             <h3 className="font-semibold text-lg truncate">Dr. {doctor.firstName} {doctor.lastName}</h3>
                             <Badge variant="outline" className="mb-2 text-[#00FFF3] border-[#00FFF3]/30">{doctor.specialization}</Badge>
                             <div className="flex items-center gap-4 text-sm text-gray-400">
-                              <div className="flex items-center gap-1">
-                                <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" />
-                                <span>{(doctor.averageRating != null ? +doctor.averageRating : null)?.toFixed(1) || "4.5"}</span>
-                              </div>
                               <div className="flex items-center gap-1">
                                 <Clock className="h-3 w-3" />
                                 <span>{doctor.experience || 5}+ years</span>

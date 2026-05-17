@@ -698,7 +698,6 @@ router.get('/available-slots', [
         experience: `${doctor.experienceYears} years`,
         clinicName: doctor.clinicHospitalName,
         languages: doctor.languages,
-        rating: doctor.statistics.averageRating,
         totalConsultations: doctor.statistics.totalConsultations,
         profilePicture: doctor.mediaUploads?.profilePicture,
         nextAvailableDate: getNextAvailableDate(doctor.weeklyAvailability),

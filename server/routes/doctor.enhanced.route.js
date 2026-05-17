@@ -1558,7 +1558,7 @@ router.post('/messages/:patientId', authUser, async (req, res) => {
 
 /**
  * POST /smart-route — Symptom-based smart doctor ranking
- * Returns top matching doctors sorted by relevance, rating, and fees
+ * Returns top matching doctors sorted by relevance and fees
  */
 router.post('/smart-route', async (req, res) => {
   try {
@@ -1607,8 +1607,8 @@ router.post('/smart-route', async (req, res) => {
 
     const rawDoctors = await Doctor.findAll({
       where,
-      attributes: ['id', 'firstName', 'lastName', 'specialization', 'consultationFees', 'rating', 'totalReviews', 'isAvailable', 'profilePicture'],
-      order: [['rating', 'DESC'], ['consultationFees', 'ASC']],
+      attributes: ['id', 'firstName', 'lastName', 'specialization', 'consultationFees', 'isAvailable', 'profilePicture'],
+      order: [['consultationFees', 'ASC'], ['firstName', 'ASC']],
       limit: parseInt(limit, 10) > 20 ? 20 : parseInt(limit, 10),
     });
 
@@ -1617,13 +1617,11 @@ router.post('/smart-route', async (req, res) => {
       name: `${d.firstName} ${d.lastName}`.trim(),
       specialization: d.specialization,
       consultationFees: d.consultationFees,
-      rating: parseFloat(d.rating) || 0,
-      totalReviews: d.totalReviews || 0,
       availableToday: d.isAvailable !== false,
       profilePicture: d.profilePicture || null,
       recommendedReason: targetSpecialty
-        ? `Best match for ${targetSpecialty} · ${parseFloat(d.rating) ? `⭐ ${parseFloat(d.rating).toFixed(1)}` : 'New doctor'}`
-        : `Top rated · ${parseFloat(d.rating) ? `⭐ ${parseFloat(d.rating).toFixed(1)}` : 'New doctor'}`,
+        ? `Best match for ${targetSpecialty}`
+        : 'Available doctor',
     }));
 
     res.json({ success: true, data: doctors, matchedSpecialty: targetSpecialty });

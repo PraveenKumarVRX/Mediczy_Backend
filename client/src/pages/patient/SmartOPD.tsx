@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Stethoscope, Brain, Search, ChevronRight, Star, CircleDollarSign,
+  Stethoscope, Brain, Search, ChevronRight, CircleDollarSign,
   Video, MapPin, Loader2, Sparkles, X, Plus, AlertCircle
 } from 'lucide-react';
 import api from '@/utils/api';
@@ -22,8 +22,6 @@ interface Doctor {
   name: string;
   specialization: string;
   consultationFees: number;
-  rating: number;
-  totalReviews: number;
   availableToday: boolean;
   profilePicture: string | null;
   recommendedReason: string;
@@ -192,15 +190,6 @@ export default function SmartOPD() {
                         </div>
                         <p className="text-[10px] text-slate-500 mt-1">{doc.recommendedReason}</p>
                         <div className="flex items-center gap-3 mt-2">
-                          {doc.rating > 0 && (
-                            <div className="flex items-center gap-1">
-                              <Star className="h-3 w-3 text-amber-400 fill-amber-400" />
-                              <span className="text-xs text-white font-medium">{doc.rating.toFixed(1)}</span>
-                              {doc.totalReviews > 0 && (
-                                <span className="text-[10px] text-slate-500">({doc.totalReviews})</span>
-                              )}
-                            </div>
-                          )}
                           <div className="flex items-center gap-1">
                             <CircleDollarSign className="h-3 w-3 text-emerald-400" />
                             <span className="text-xs text-white">₹{doc.consultationFees}</span>

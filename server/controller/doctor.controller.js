@@ -821,8 +821,6 @@ export const getAvailableDoctors = async (req, res) => {
         'status',
         'profileImage',
         'languages',
-        'rating',
-        'totalReviews',
         'consultationFees',
         'onlineConsultationFee',
         'inPersonConsultationFee',
@@ -840,7 +838,6 @@ export const getAvailableDoctors = async (req, res) => {
       ],
       order: [
         ['isOnline', 'DESC'],
-        ['rating', 'DESC'],
         ['experience', 'DESC']
       ]
     });

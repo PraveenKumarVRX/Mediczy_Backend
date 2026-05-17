@@ -345,10 +345,6 @@ export default function DoctorServices() {
               <p className="text-2xl font-bold text-purple-600">₹0</p>
               <p className="text-sm text-gray-600 dark:text-gray-400">This Month</p>
             </div>
-            <div className="text-center p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-              <p className="text-2xl font-bold text-amber-600">4.8</p>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Avg. Rating</p>
-            </div>
           </div>
         </CardContent>
       </Card>

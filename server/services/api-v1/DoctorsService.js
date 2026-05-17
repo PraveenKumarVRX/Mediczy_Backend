@@ -56,9 +56,8 @@ class DoctorsService extends BaseService {
     const { 
       specialization, 
       isAvailable, 
-      minRating,
       search,
-      sortBy = 'rating',
+      sortBy = 'name',
       sortOrder = 'DESC',
       ...paginationOptions 
     } = options;
@@ -81,13 +80,6 @@ class DoctorsService extends BaseService {
       paramIndex++;
     }
 
-    // Filter by minimum rating
-    if (minRating !== undefined) {
-      whereConditions.push(`rating >= $${paramIndex}`);
-      params.push(minRating);
-      paramIndex++;
-    }
-
     // Search by name or email
     if (search) {
       whereConditions.push(`(name ILIKE $${paramIndex} OR email ILIKE $${paramIndex})`);
@@ -95,9 +87,9 @@ class DoctorsService extends BaseService {
       paramIndex++;
     }
 
-    const ALLOWED_SORT_COLUMNS = ['rating', 'created_at', 'updated_at', 'name', 'id'];
+    const ALLOWED_SORT_COLUMNS = ['created_at', 'updated_at', 'name', 'id'];
     const ALLOWED_SORT_ORDERS = ['ASC', 'DESC'];
-    const safeSortBy = ALLOWED_SORT_COLUMNS.includes(sortBy) ? sortBy : 'rating';
+    const safeSortBy = ALLOWED_SORT_COLUMNS.includes(sortBy) ? sortBy : 'name';
     const safeSortOrder = ALLOWED_SORT_ORDERS.includes(sortOrder?.toUpperCase()) ? sortOrder.toUpperCase() : 'DESC';
 
     const whereClause = whereConditions.join(' AND ');
@@ -243,23 +235,7 @@ class DoctorsService extends BaseService {
     return this.sanitize(result.rows[0]);
   }
 
-  /**
-   * Update doctor rating
-   */
-  async updateRating(tenantId, doctorId, newRating) {
-    const doctor = await this.getDoctor(tenantId, doctorId);
-    
-    const totalReviews = doctor.total_reviews + 1;
-    const currentTotal = doctor.rating * doctor.total_reviews;
-    const newAverage = (currentTotal + newRating) / totalReviews;
 
-    const updates = {
-      rating: newAverage,
-      total_reviews: totalReviews
-    };
-
-    return await this.update(doctorId, updates, tenantId);
-  }
 }
 
 export default DoctorsService;

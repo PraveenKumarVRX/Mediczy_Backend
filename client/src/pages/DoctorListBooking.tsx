@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   Search,
   Filter,
-  Star,
   MapPin,
   Clock,
   Award,
@@ -84,8 +83,6 @@ interface Doctor {
   experience: number;
   education: string[];
   languages: string[];
-  rating: number;
-  reviewCount: number;
   consultationFee: {
     online: number;
     inPerson: number;
@@ -307,8 +304,6 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
     experience: Number(doctor?.experience) || 5,
     education,
     languages,
-    rating: toNumber(doctor?.averageRating ?? doctor?.rating, 4.7),
-    reviewCount: toNumber(doctor?.totalReviews ?? doctor?.reviewCount, 0),
     consultationFee: {
       online: onlineFee,
       inPerson: inPersonFee,
@@ -349,8 +344,6 @@ const normalizeMasterDoctor = (doc: any): Doctor => {
     experience: Number(doc?.experience || 8),
     education: toArray(doc?.qualification, ["MBBS"]),
     languages: ["English"],
-    rating: 4.6,
-    reviewCount: 0,
     consultationFee: {
       online: toNumber(doc?.consultationFees, 700),
       inPerson: toNumber(doc?.consultationFees, 900),
@@ -380,7 +373,7 @@ const DoctorListBooking = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSpecialization, setSelectedSpecialization] = useState<string>("");
   const [selectedLocation, setSelectedLocation] = useState<string>("");
-  const [sortBy, setSortBy] = useState<string>("rating");
+  const [sortBy, setSortBy] = useState<string>("experience");
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [consultationType, setConsultationType] = useState<"online" | "inPerson">("online");
@@ -581,8 +574,6 @@ const DoctorListBooking = () => {
     // Sort doctors
     filtered.sort((a, b) => {
       switch (sortBy) {
-        case "rating":
-          return b.rating - a.rating;
         case "experience":
           return b.experience - a.experience;
         case "fee":
@@ -836,11 +827,6 @@ const DoctorListBooking = () => {
               </div>
 
               <div className="flex flex-wrap gap-4 mb-4">
-                <div className="flex items-center gap-1.5 bg-yellow-50 dark:bg-yellow-900/20 px-3 py-1.5 rounded-full">
-                  <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
-                  <span className="font-semibold text-slate-900 dark:text-white">{doctor.rating}</span>
-                  <span className="text-slate-500 dark:text-slate-400 text-sm">({doctor.reviewCount})</span>
-                </div>
                 <div className="flex items-center gap-1.5 bg-teal-50 dark:bg-teal-900/20 px-3 py-1.5 rounded-full">
                   <Award className="h-4 w-4 text-teal-500" />
                   <span className="text-slate-700 dark:text-slate-300">{doctor.experience} years</span>
@@ -1341,12 +1327,6 @@ const DoctorListBooking = () => {
                   <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="rating">
-                    <div className="flex items-center gap-2">
-                      <Star className="h-4 w-4 text-yellow-500" />
-                      Highest Rating
-                    </div>
-                  </SelectItem>
                   <SelectItem value="experience">
                     <div className="flex items-center gap-2">
                       <Award className="h-4 w-4 text-blue-500" />
@@ -1589,10 +1569,6 @@ const DoctorListBooking = () => {
                         </h4>
                         <p className="text-gray-600 dark:text-gray-300">{selectedDoctor.specialization}</p>
                         <div className="flex items-center gap-4 mt-2">
-                          <div className="flex items-center gap-1 bg-yellow-100 px-2 py-0.5 rounded-full">
-                            <Star className="h-3.5 w-3.5 text-yellow-500 fill-yellow-500" />
-                            <span className="text-sm font-medium">{selectedDoctor.rating}</span>
-                          </div>
                           <div className="flex items-center gap-1 text-gray-600 dark:text-gray-300">
                             <Award className="h-3.5 w-3.5" />
                             <span className="text-sm">{selectedDoctor.experience} years</span>
@@ -2434,8 +2410,6 @@ const mockDoctors: Doctor[] = [
     experience: 12,
     education: ["MBBS", "MD Cardiology"],
     languages: ["English", "Hindi"],
-    rating: 4.8,
-    reviewCount: 156,
     consultationFee: { online: 800, inPerson: 1200 },
     availability: { status: "Available", nextAvailableSlot: "Today 2:00 PM" },
     clinic: { name: "Heart Care Center", address: "123 Medical Street", city: "Mumbai", state: "Maharashtra" },
@@ -2451,8 +2425,6 @@ const mockDoctors: Doctor[] = [
     experience: 8,
     education: ["MBBS", "MD General Medicine"],
     languages: ["English", "Hindi", "Bengali"],
-    rating: 4.6,
-    reviewCount: 89,
     consultationFee: { online: 500, inPerson: 800 },
     availability: { status: "Available", nextAvailableSlot: "Tomorrow 10:00 AM" },
     clinic: { name: "City General Hospital", address: "456 Health Avenue", city: "Delhi", state: "Delhi" },
@@ -2468,8 +2440,6 @@ const mockDoctors: Doctor[] = [
     experience: 6,
     education: ["MBBS", "MD Dermatology"],
     languages: ["English", "Hindi"],
-    rating: 4.9,
-    reviewCount: 203,
     consultationFee: { online: 700, inPerson: 1000 },
     availability: { status: "Available", nextAvailableSlot: "Today 4:30 PM" },
     clinic: { name: "Skin Care Clinic", address: "789 Beauty Lane", city: "Bangalore", state: "Karnataka" },

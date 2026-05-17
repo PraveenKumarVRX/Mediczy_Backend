@@ -3,6 +3,15 @@ import jwt from 'jsonwebtoken';
 import { loginProcurement } from '../../controllers/dept/procurement.controller.js';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import { connectPostgres } from '../../db/postgres.js';
+import {
+  actorFrom,
+  decideOperationsApproval,
+  ensureOperationsGovernanceTables,
+  listOperationsApprovals,
+  listOperationsAudit,
+  recordOperationsAudit,
+  requestOperationsApproval,
+} from '../../services/operations-governance.service.js';
 
 const router = express.Router();
 
@@ -70,6 +79,7 @@ const ensureTables = async () => {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
   `);
+  await ensureOperationsGovernanceTables(db);
   return db;
 };
 
@@ -135,13 +145,25 @@ router.post('/orders', authProcurement, async (req, res) => {
       VALUES ($1,$2,$3,$4,$5)
     `, [rows[0].id, line.itemCode || null, line.description, line.quantity, line.unitPrice]);
   }
+  const actor = actorFrom(req.procurementUser, requestedBy || "Procurement");
+  await requestOperationsApproval(db, { module: "procurement", entityType: "order", entityId: rows[0].id, action: "approve_order", requestedBy: actor });
+  await recordOperationsAudit(db, { module: "procurement", entityType: "order", entityId: rows[0].id, action: "order_created", actor, details: { totalAmount: total, lineCount: lines.length } });
   res.status(201).json({ success: true, data: rows[0] });
 });
 
 router.patch('/orders/:id/approve', authProcurement, async (req, res) => {
   const db = await ensureTables();
+  const actor = actorFrom(req.procurementUser, 'Procurement Approver');
+  const { rows: approvals } = await db.query(`
+    SELECT * FROM operations_approvals
+    WHERE module='procurement' AND entity_type='order' AND entity_id=$1 AND action='approve_order'
+  `, [req.params.id]);
+  if (approvals[0]?.status === 'pending') {
+    await decideOperationsApproval(db, { id: approvals[0].id, status: 'approved', decidedBy: actor });
+  }
   const { rows } = await db.query(`UPDATE procurement_orders SET status = 'approved', updated_at = NOW() WHERE id = $1 RETURNING *`, [req.params.id]);
   if (!rows[0]) return res.status(404).json({ success: false, message: 'Order not found' });
+  await recordOperationsAudit(db, { module: 'procurement', entityType: 'order', entityId: rows[0].id, action: 'order_approved', actor });
   res.json({ success: true, data: rows[0] });
 });
 
@@ -156,14 +178,42 @@ router.post('/orders/:id/grn', authProcurement, async (req, res) => {
     RETURNING *
   `, [`GRN-${Date.now()}`, req.params.id, receivedBy || null, notes || null]);
   for (const line of lines) {
-    const { rows: updatedLines } = await db.query(`UPDATE procurement_order_lines SET received_quantity = LEAST(quantity, received_quantity + $2) WHERE id = $1 RETURNING *`, [line.lineId, line.receivedQuantity]);
-    const received = updatedLines[0];
-    if (received) {
-      await db.query(`INSERT INTO central_store_ledger (item_code, description, source_type, source_id, quantity_delta, unit_price) VALUES ($1,$2,'grn',$3,$4,$5)`, [received.item_code, received.description, rows[0].id, line.receivedQuantity, received.unit_price]);
-    }
+    await db.query(`UPDATE procurement_order_lines SET received_quantity = LEAST(quantity, received_quantity + $2) WHERE id = $1`, [line.lineId, line.receivedQuantity]);
   }
-  await db.query(`UPDATE procurement_orders SET status = 'received', updated_at = NOW() WHERE id = $1`, [req.params.id]);
+  const actor = actorFrom(req.procurementUser, receivedBy || 'Stores');
+  await requestOperationsApproval(db, { module: 'stores', entityType: 'grn', entityId: rows[0].id, action: 'post_to_ledger', requestedBy: actor });
+  await recordOperationsAudit(db, { module: 'stores', entityType: 'grn', entityId: rows[0].id, action: 'grn_created', actor, details: { orderId: Number(req.params.id), lineCount: lines.length } });
   res.status(201).json({ success: true, data: rows[0] });
+});
+
+router.patch('/grns/:id/approve', authProcurement, async (req, res) => {
+  const db = await ensureTables();
+  const actor = actorFrom(req.procurementUser, 'Stores Approver');
+  const { rows: grns } = await db.query('SELECT * FROM procurement_grns WHERE id = $1', [req.params.id]);
+  if (!grns[0]) return res.status(404).json({ success: false, message: 'GRN not found' });
+  const { rows: approvals } = await db.query(`SELECT * FROM operations_approvals WHERE module='stores' AND entity_type='grn' AND entity_id=$1 AND action='post_to_ledger'`, [req.params.id]);
+  if (!approvals[0]) return res.status(409).json({ success: false, message: 'Store posting approval not requested' });
+  if (approvals[0].status !== 'pending') return res.status(409).json({ success: false, message: `Store posting already ${approvals[0].status}` });
+  const { rows: lines } = await db.query(`SELECT * FROM procurement_order_lines WHERE order_id = $1 AND received_quantity > 0`, [grns[0].order_id]);
+  for (const line of lines) {
+    await db.query(`INSERT INTO central_store_ledger (item_code, description, source_type, source_id, quantity_delta, unit_price) VALUES ($1,$2,'grn',$3,$4,$5)`, [line.item_code, line.description, grns[0].id, line.received_quantity, line.unit_price]);
+  }
+  await decideOperationsApproval(db, { id: approvals[0].id, status: 'approved', decidedBy: actor });
+  await db.query(`UPDATE procurement_orders SET status = 'received', updated_at = NOW() WHERE id = $1`, [grns[0].order_id]);
+  await recordOperationsAudit(db, { module: 'stores', entityType: 'grn', entityId: grns[0].id, action: 'ledger_posted', actor, details: { orderId: grns[0].order_id, lineCount: lines.length } });
+  res.json({ success: true, data: grns[0] });
+});
+
+router.get('/approvals', authProcurement, async (_req, res) => {
+  const db = await ensureTables();
+  const approvals = await listOperationsApprovals(db, null);
+  res.json({ success: true, data: approvals.filter((item) => ['procurement', 'stores'].includes(item.module)) });
+});
+
+router.get('/audit', authProcurement, async (_req, res) => {
+  const db = await ensureTables();
+  const [procurementAudit, storesAudit] = await Promise.all([listOperationsAudit(db, 'procurement', 50), listOperationsAudit(db, 'stores', 50)]);
+  res.json({ success: true, data: [...procurementAudit, ...storesAudit].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 100) });
 });
 
 router.get('/stores/ledger', authProcurement, async (_req, res) => {

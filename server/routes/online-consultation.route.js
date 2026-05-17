@@ -66,9 +66,8 @@ router.get('/doctors', async (req, res) => {
     const {
       specialty,
       date,
-      minRating,
       maxFee,
-      sortBy = 'rating',
+      sortBy = 'fee',
       page = 1,
       limit = 20
     } = req.query;
@@ -88,26 +87,21 @@ router.get('/doctors', async (req, res) => {
         'id', 'prefix', 'firstName', 'lastName', 'email', 'phoneNumber',
         'profileImage', 'specialization', 'qualifications', 'experience',
         'registrationNumber', 'consultationFees', 'onlineConsultationFee',
-        'inPersonConsultationFee', 'rating', 'totalReviews',
+        'inPersonConsultationFee',
         'languages', 'isOnline'
       ],
-      order: sortBy === 'fee' 
-        ? [['onlineConsultationFee', 'ASC']]
-        : [['rating', 'DESC']],
+      order: sortBy === 'experience'
+        ? [['experience', 'DESC']]
+        : [['onlineConsultationFee', 'ASC']],
       limit: parseInt(limit),
       offset: (parseInt(page) - 1) * parseInt(limit)
     });
 
-    // Filter by maxFee and minRating if provided
+    // Filter by maxFee if provided
     let filteredDoctors = doctors;
     if (maxFee) {
       filteredDoctors = filteredDoctors.filter(d => 
         (d.onlineConsultationFee || d.consultationFees || 500) <= parseFloat(maxFee)
-      );
-    }
-    if (minRating) {
-      filteredDoctors = filteredDoctors.filter(d => 
-        (d.rating || 0) >= parseFloat(minRating)
       );
     }
 
@@ -125,8 +119,6 @@ router.get('/doctors', async (req, res) => {
         experience: doc.experience,
         registrationNumber: doc.registrationNumber,
         consultationFee: doc.onlineConsultationFee || doc.consultationFees || 500,
-        rating: doc.rating || 4.5,
-        totalReviews: doc.totalReviews || 0,
         bio: doc.metadata?.about || null,
         languages: doc.languages,
         isOnline: doc.isOnline,
@@ -175,8 +167,6 @@ router.get('/doctors/:id', async (req, res) => {
         registrationNumber: doctor.registrationNumber,
         consultationFee: doctor.onlineConsultationFee || doctor.consultationFees || 500,
         inPersonFee: doctor.inPersonConsultationFee || 700,
-        rating: doctor.rating || 4.5,
-        totalReviews: doctor.totalReviews || 0,
         bio: doctor.metadata?.about || null,
         languages: doctor.languages,
         clinicAddress: doctor.clinicAddress,

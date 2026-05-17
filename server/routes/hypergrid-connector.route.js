@@ -26,6 +26,18 @@ import { resolveConcept }        from '../services/hypergrid-terminology.service
 
 const router = express.Router();
 
+const ensureEquipmentInventoryTable = async (pool) => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS hg_equipment_inventory (
+      id SERIAL PRIMARY KEY, tenant_id INTEGER NOT NULL, equipment_class VARCHAR(120) NOT NULL,
+      device_name VARCHAR(200) NOT NULL, manufacturer VARCHAR(160), model VARCHAR(160), serial_number VARCHAR(160),
+      department VARCHAR(160), location VARCHAR(160), protocol VARCHAR(80), owner_department VARCHAR(120),
+      integration_status VARCHAR(32) NOT NULL DEFAULT 'identified', connector_id INTEGER, notes TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(), updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+};
+
 // ── Built-in adapter templates ────────────────────────────────────────────────
 const ADAPTER_TEMPLATES = [
   {
@@ -89,6 +101,24 @@ const HOSPITAL_PACKS = [
   { id: 'rural-clinic',  name: 'Rural Clinic (minimal)',   templateIds: ['his-hl7v2'] },
 ];
 
+
+const EQUIPMENT_INTEGRATION_CATALOG = [
+  { id: 'bedside-monitor', name: 'Bedside / multiparameter monitor', category: 'Critical Care', protocols: ['MQTT', 'HL7v2', 'IEEE 11073'], canonicalEvents: ['VitalsObserved', 'DeviceAlertRaised'], coverage: 'supported' },
+  { id: 'ventilator', name: 'Ventilator', category: 'Critical Care', protocols: ['MQTT', 'HL7v2'], canonicalEvents: ['VentilatorTelemetryReceived', 'DeviceAlertRaised'], coverage: 'supported' },
+  { id: 'infusion-pump', name: 'Infusion pump', category: 'Medication Delivery', protocols: ['MQTT', 'REST'], canonicalEvents: ['InfusionTelemetryReceived', 'DeviceAlertRaised'], coverage: 'supported' },
+  { id: 'ecg', name: 'ECG machine', category: 'Diagnostics', protocols: ['DICOM', 'HL7v2'], canonicalEvents: ['DiagnosticResultAvailable'], coverage: 'supported' },
+  { id: 'lab-analyzer', name: 'Laboratory analyzer', category: 'Laboratory', protocols: ['HL7v2', 'FHIR R4', 'ASTM'], canonicalEvents: ['LabResultAvailable'], coverage: 'supported' },
+  { id: 'ct-mri-xray', name: 'CT / MRI / X-ray / ultrasound', category: 'Imaging', protocols: ['DICOMweb', 'DICOM MWL'], canonicalEvents: ['ImagingStudyStored', 'ImagingStudyCompleted'], coverage: 'supported' },
+  { id: 'dialysis', name: 'Dialysis machine', category: 'Renal', protocols: ['MQTT', 'HL7v2'], canonicalEvents: ['TreatmentTelemetryReceived'], coverage: 'adapter_ready' },
+  { id: 'anesthesia', name: 'Anesthesia workstation', category: 'OT', protocols: ['HL7v2', 'MQTT'], canonicalEvents: ['AnesthesiaTelemetryReceived'], coverage: 'adapter_ready' },
+  { id: 'sterilizer', name: 'Autoclave / sterilizer', category: 'CSSD', protocols: ['MQTT', 'REST'], canonicalEvents: ['SterilizationCycleUpdated'], coverage: 'adapter_ready' },
+  { id: 'blood-bank', name: 'Blood-bank refrigerator / agitator', category: 'Blood Bank', protocols: ['MQTT', 'REST'], canonicalEvents: ['TemperatureObserved', 'DeviceAlertRaised'], coverage: 'adapter_ready' },
+  { id: 'smart-bed', name: 'Smart bed / nurse call', category: 'Ward', protocols: ['MQTT', 'REST'], canonicalEvents: ['BedStateChanged', 'NurseCallRaised'], coverage: 'adapter_ready' },
+  { id: 'rtls-rfid', name: 'RFID / RTLS / BLE tags', category: 'Asset Tracking', protocols: ['MQTT', 'REST'], canonicalEvents: ['AssetLocationUpdate'], coverage: 'supported' },
+  { id: 'wearables', name: 'Wearables and home monitors', category: 'Remote Monitoring', protocols: ['REST', 'FHIR R4'], canonicalEvents: ['VitalsObserved'], coverage: 'supported' },
+  { id: 'proprietary-device', name: 'Vendor-proprietary equipment', category: 'Custom', protocols: ['Vendor SDK', 'File Drop', 'Serial Bridge'], canonicalEvents: ['MappedPerVendor'], coverage: 'requires_vendor_adapter' },
+];
+
 // ── Get adapter templates ─────────────────────────────────────────────────────
 router.get('/templates', authUser, (req, res) => {
   const { category } = req.query;
@@ -107,6 +137,102 @@ router.get('/templates/:id', authUser, (req, res) => {
 // ── Hospital packs ────────────────────────────────────────────────────────────
 router.get('/packs', authUser, (req, res) => {
   res.json({ success: true, packs: HOSPITAL_PACKS });
+});
+
+
+router.get('/equipment/catalog', authUser, (req, res) => {
+  const { category, coverage } = req.query;
+  const equipment = EQUIPMENT_INTEGRATION_CATALOG.filter((item) =>
+    (!category || item.category === category) && (!coverage || item.coverage === coverage)
+  );
+  res.json({ success: true, equipment });
+});
+
+router.get('/equipment/coverage', authUser, async (req, res) => {
+  try {
+    const pool = await connectPostgres();
+    const tenantId = req.user.tenantId || req.user.id;
+    const connectors = await pool.query(`SELECT connector_type, template_id, status FROM hg_connectors WHERE tenant_id=$1`, [tenantId]);
+    const devices = await pool.query(`SELECT device_type, COUNT(*)::int AS count FROM hg_devices WHERE tenant_id=$1 AND active=TRUE GROUP BY device_type`, [tenantId]);
+    const connectorTypes = new Set(connectors.rows.map((row) => String(row.connector_type || '').toLowerCase()));
+    const deviceTypes = new Set(devices.rows.map((row) => String(row.device_type || '').toLowerCase()));
+    const equipment = EQUIPMENT_INTEGRATION_CATALOG.map((item) => {
+      const normalizedId = item.id.replace(/-/g, '_');
+      const connected = deviceTypes.has(normalizedId)
+        || item.protocols.some((protocol) => connectorTypes.has(protocol.toLowerCase()))
+        || (item.category === 'Imaging' && connectorTypes.has('ris/pacs'))
+        || (item.category === 'Laboratory' && connectorTypes.has('lis'));
+      return { ...item, connected };
+    });
+    res.json({
+      success: true,
+      summary: {
+        totalClasses: equipment.length,
+        connectedClasses: equipment.filter((item) => item.connected).length,
+        supportedClasses: equipment.filter((item) => item.coverage === 'supported').length,
+        adapterReadyClasses: equipment.filter((item) => item.coverage === 'adapter_ready').length,
+        vendorAdapterClasses: equipment.filter((item) => item.coverage === 'requires_vendor_adapter').length,
+      },
+      equipment,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Failed to build equipment coverage' });
+  }
+});
+
+router.get('/equipment/inventory', authUser, async (req, res) => {
+  try {
+    const pool = await connectPostgres();
+    await ensureEquipmentInventoryTable(pool);
+    const { status, department } = req.query;
+    const { rows } = await pool.query(`SELECT * FROM hg_equipment_inventory WHERE tenant_id=$1 AND ($2::text IS NULL OR integration_status=$2) AND ($3::text IS NULL OR department=$3) ORDER BY created_at DESC`, [req.user.tenantId || req.user.id, status || null, department || null]);
+    res.json({ success: true, equipment: rows });
+  } catch {
+    res.status(500).json({ success: false, message: 'Failed to list equipment inventory' });
+  }
+});
+router.post('/equipment/inventory', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+  try {
+    const pool = await connectPostgres();
+    await ensureEquipmentInventoryTable(pool);
+    const { equipmentClass, deviceName, manufacturer, model, serialNumber, department, location, protocol, ownerDepartment, notes } = req.body;
+    if (!equipmentClass || !deviceName) return res.status(400).json({ success: false, message: 'equipmentClass and deviceName required' });
+    const { rows } = await pool.query(`INSERT INTO hg_equipment_inventory (tenant_id, equipment_class, device_name, manufacturer, model, serial_number, department, location, protocol, owner_department, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`, [req.user.tenantId || req.user.id, equipmentClass, deviceName, manufacturer || null, model || null, serialNumber || null, department || null, location || null, protocol || null, ownerDepartment || null, notes || null]);
+    res.status(201).json({ success: true, equipment: rows[0] });
+  } catch {
+    res.status(500).json({ success: false, message: 'Failed to register equipment' });
+  }
+});
+router.patch('/equipment/inventory/:id', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+  try {
+    const VALID = ['identified', 'protocol_confirmed', 'mapped', 'certified', 'active', 'blocked'];
+    const { integrationStatus, protocol, connectorId, ownerDepartment, notes } = req.body;
+    if (integrationStatus && !VALID.includes(integrationStatus)) return res.status(400).json({ success: false, message: `integrationStatus must be: ${VALID.join(', ')}` });
+    const pool = await connectPostgres();
+    await ensureEquipmentInventoryTable(pool);
+    const { rows } = await pool.query(`UPDATE hg_equipment_inventory SET integration_status=COALESCE($3,integration_status), protocol=COALESCE($4,protocol), connector_id=COALESCE($5,connector_id), owner_department=COALESCE($6,owner_department), notes=COALESCE($7,notes), updated_at=NOW() WHERE id=$1 AND tenant_id=$2 RETURNING *`, [req.params.id, req.user.tenantId || req.user.id, integrationStatus || null, protocol || null, connectorId || null, ownerDepartment || null, notes || null]);
+    if (!rows[0]) return res.status(404).json({ success: false, message: 'Equipment not found' });
+    res.json({ success: true, equipment: rows[0] });
+  } catch {
+    res.status(500).json({ success: false, message: 'Failed to update equipment' });
+  }
+});
+router.get('/equipment/rollout', authUser, async (req, res) => {
+  try {
+    const pool = await connectPostgres();
+    await ensureEquipmentInventoryTable(pool);
+    const { rows } = await pool.query(`SELECT integration_status, COUNT(*)::int AS count FROM hg_equipment_inventory WHERE tenant_id=$1 GROUP BY integration_status`, [req.user.tenantId || req.user.id]);
+    const byStatus = Object.fromEntries(rows.map((row) => [row.integration_status, row.count]));
+    res.json({ success: true, data: { byStatus, nextSteps: [
+      'Register every physical device model in inventory',
+      'Confirm protocol or vendor interface for each model',
+      'Map data fields to canonical events',
+      'Certify connector with live sample payloads',
+      'Activate and monitor in production'
+    ] } });
+  } catch {
+    res.status(500).json({ success: false, message: 'Failed to build rollout summary' });
+  }
 });
 
 router.post('/packs', authUser, requireRole(['admin', 'hospital']), async (req, res) => {

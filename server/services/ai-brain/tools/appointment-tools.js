@@ -67,7 +67,7 @@ register({
 
 register({
   name: 'search_doctors',
-  description: 'Search for doctors by specialization, name, or availability. Returns doctor profiles with consultation fees and ratings.',
+  description: 'Search for doctors by specialization, name, or availability. Returns doctor profiles with consultation fees.',
   category: 'appointment',
   parameters: {
     type: 'object',

@@ -45,6 +45,27 @@ interface EdgeGateway {
   version?: string;
 }
 
+interface EquipmentCoverage {
+  id: string;
+  name: string;
+  category: string;
+  protocols: string[];
+  coverage: string;
+  connected: boolean;
+}
+
+interface EquipmentInventoryItem {
+  id: number;
+  equipment_class: string;
+  device_name: string;
+  manufacturer?: string;
+  model?: string;
+  department?: string;
+  protocol?: string;
+  owner_department?: string;
+  integration_status: string;
+}
+
 // ── Fake data (used until real API responds) ────────────────────────────────
 const fakeDevices: MQTTDevice[] = [
   { id: "dev-001", name: "ECG Monitor Bed-3A",   type: "ecg_monitor",     status: "online",      facilityId: "hosp-01", lastSeen: "2s ago",    topic: "devices/ecg/hosp-01/bed-3a" },
@@ -122,16 +143,24 @@ export default function HyperGridIoTView() {
   const [devices,   setDevices]   = useState<MQTTDevice[]>([]);
   const [gateways,  setGateways]  = useState<EdgeGateway[]>([]);
   const [brokerStats, setBrokerStats] = useState<any>(null);
+  const [equipmentCoverage, setEquipmentCoverage] = useState<EquipmentCoverage[]>([]);
+  const [coverageSummary, setCoverageSummary] = useState<any>(null);
+  const [equipmentInventory, setEquipmentInventory] = useState<EquipmentInventoryItem[]>([]);
+  const [rolloutSummary, setRolloutSummary] = useState<any>(null);
   const [loading,   setLoading]   = useState(false);
+  const [registration, setRegistration] = useState({ equipmentClass: '', deviceName: '', manufacturer: '', model: '', serialNumber: '', department: '', location: '', protocol: '', ownerDepartment: 'Biomedical', notes: '' });
   const [refreshedAt, setRefreshedAt] = useState(new Date());
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [devRes, gwRes, brokerRes] = await Promise.allSettled([
+      const [devRes, gwRes, brokerRes, coverageRes, inventoryRes, rolloutRes] = await Promise.allSettled([
         api.get("/api/hypergrid/mqtt/devices"),
         api.get("/api/hypergrid/edge/fleet/status"),
         api.get("/api/hypergrid/mqtt/broker/stats"),
+        api.get("/api/hypergrid/connectors/equipment/coverage"),
+        api.get("/api/hypergrid/connectors/equipment/inventory"),
+        api.get("/api/hypergrid/connectors/equipment/rollout"),
       ]);
       if (devRes.status === "fulfilled" && devRes.value.data.devices?.length) {
         setDevices(devRes.value.data.devices);
@@ -146,6 +175,12 @@ export default function HyperGridIoTView() {
       if (brokerRes.status === "fulfilled") {
         setBrokerStats(brokerRes.value.data);
       }
+      if (coverageRes.status === "fulfilled") {
+        setEquipmentCoverage(coverageRes.value.data.equipment || []);
+        setCoverageSummary(coverageRes.value.data.summary || null);
+      }
+      if (inventoryRes.status === "fulfilled") setEquipmentInventory(inventoryRes.value.data.equipment || []);
+      if (rolloutRes.status === "fulfilled") setRolloutSummary(rolloutRes.value.data.data || null);
     } catch (_) {
       setDevices(fakeDevices);
       setGateways(fakeGateways);
@@ -159,6 +194,13 @@ export default function HyperGridIoTView() {
   const onlineCount  = devices.filter(d => d.status === "online").length;
   const offlineCount = devices.filter(d => d.status === "offline").length;
   const gwOnline     = gateways.filter(g => g.status === "online").length;
+  const vendorQueue = equipmentInventory.filter((item) => item.equipment_class === 'proprietary-device' || item.integration_status === 'blocked');
+  const registerEquipment = async () => {
+    if (!registration.equipmentClass || !registration.deviceName) return;
+    await api.post('/api/hypergrid/connectors/equipment/inventory', registration);
+    setRegistration({ equipmentClass: '', deviceName: '', manufacturer: '', model: '', serialNumber: '', department: '', location: '', protocol: '', ownerDepartment: 'Biomedical', notes: '' });
+    await load();
+  };
 
   return (
     <AdminLayout>
@@ -209,6 +251,7 @@ export default function HyperGridIoTView() {
             <TabsTrigger value="gateways">Edge Gateways</TabsTrigger>
             <TabsTrigger value="readings">Live Readings</TabsTrigger>
             <TabsTrigger value="connectors">Connectors</TabsTrigger>
+            <TabsTrigger value="equipment">Equipment Coverage</TabsTrigger>
             <TabsTrigger value="dicom">DICOM Worklist</TabsTrigger>
           </TabsList>
 
@@ -394,6 +437,98 @@ export default function HyperGridIoTView() {
                 </Card>
               ))}
             </div>
+          </TabsContent>
+
+          <TabsContent value="equipment" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-semibold">Hospital Equipment Integration Coverage</CardTitle>
+                <CardDescription>Protocol support, onboarding readiness, and vendor-adapter gaps by equipment class.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Equipment classes', value: coverageSummary?.totalClasses ?? equipmentCoverage.length },
+                    { label: 'Connected now', value: coverageSummary?.connectedClasses ?? 0 },
+                    { label: 'Supported classes', value: coverageSummary?.supportedClasses ?? 0 },
+                    { label: 'Vendor adapters needed', value: coverageSummary?.vendorAdapterClasses ?? 0 },
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-md border p-3">
+                      <p className="text-xs text-muted-foreground">{item.label}</p>
+                      <p className="text-xl font-semibold">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="grid gap-3 md:grid-cols-5">
+                  {['identified','protocol_confirmed','mapped','certified','active'].map((status) => (
+                    <div key={status} className="rounded-md border p-3">
+                      <p className="text-xs text-muted-foreground capitalize">{status.replace(/_/g, ' ')}</p>
+                      <p className="text-xl font-semibold">{rolloutSummary?.byStatus?.[status] ?? 0}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="rounded-md border p-3 text-sm">
+                  <p className="font-medium">Rollout sequence</p>
+                  <p className="mt-1 text-muted-foreground">{(rolloutSummary?.nextSteps || []).join(' -> ')}</p>
+                </div>
+                <div className="rounded-md border p-4 space-y-3">
+                  <p className="text-sm font-medium">Register Device For Integration</p>
+                  <div className="grid gap-2 md:grid-cols-3">
+                    <input className="h-9 rounded-md border px-3 text-sm" placeholder="Equipment class" value={registration.equipmentClass} onChange={(e)=>setRegistration({...registration,equipmentClass:e.target.value})} />
+                    <input className="h-9 rounded-md border px-3 text-sm" placeholder="Device name" value={registration.deviceName} onChange={(e)=>setRegistration({...registration,deviceName:e.target.value})} />
+                    <input className="h-9 rounded-md border px-3 text-sm" placeholder="Manufacturer" value={registration.manufacturer} onChange={(e)=>setRegistration({...registration,manufacturer:e.target.value})} />
+                    <input className="h-9 rounded-md border px-3 text-sm" placeholder="Model" value={registration.model} onChange={(e)=>setRegistration({...registration,model:e.target.value})} />
+                    <input className="h-9 rounded-md border px-3 text-sm" placeholder="Serial number" value={registration.serialNumber} onChange={(e)=>setRegistration({...registration,serialNumber:e.target.value})} />
+                    <input className="h-9 rounded-md border px-3 text-sm" placeholder="Department" value={registration.department} onChange={(e)=>setRegistration({...registration,department:e.target.value})} />
+                    <input className="h-9 rounded-md border px-3 text-sm" placeholder="Location" value={registration.location} onChange={(e)=>setRegistration({...registration,location:e.target.value})} />
+                    <input className="h-9 rounded-md border px-3 text-sm" placeholder="Protocol" value={registration.protocol} onChange={(e)=>setRegistration({...registration,protocol:e.target.value})} />
+                    <input className="h-9 rounded-md border px-3 text-sm" placeholder="Owner department" value={registration.ownerDepartment} onChange={(e)=>setRegistration({...registration,ownerDepartment:e.target.value})} />
+                  </div>
+                  <textarea className="min-h-20 w-full rounded-md border p-3 text-sm" placeholder="Notes" value={registration.notes} onChange={(e)=>setRegistration({...registration,notes:e.target.value})} />
+                  <Button size="sm" onClick={registerEquipment}>Register Device</Button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-xs text-muted-foreground">
+                        <th className="text-left pb-2 pr-4">Equipment</th>
+                        <th className="text-left pb-2 pr-4">Category</th>
+                        <th className="text-left pb-2 pr-4">Protocols</th>
+                        <th className="text-left pb-2 pr-4">Coverage</th>
+                        <th className="text-left pb-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {equipmentCoverage.map((item) => (
+                        <tr key={item.id}>
+                          <td className="py-2 pr-4 font-medium">{item.name}</td>
+                          <td className="py-2 pr-4 text-muted-foreground">{item.category}</td>
+                          <td className="py-2 pr-4 text-xs">{item.protocols.join(', ')}</td>
+                          <td className="py-2 pr-4"><StatusBadge status={item.coverage.replace(/_/g, ' ')} /></td>
+                          <td className="py-2"><StatusBadge status={item.connected ? 'online' : 'pending'} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Vendor Adapter Work Queue</p>
+                  <div className="overflow-x-auto rounded-md border">
+                    <table className="w-full text-sm"><thead><tr className="border-b text-xs text-muted-foreground"><th className="p-2 text-left">Device</th><th className="p-2 text-left">Manufacturer</th><th className="p-2 text-left">Protocol</th><th className="p-2 text-left">Owner</th><th className="p-2 text-left">Reason</th></tr></thead><tbody className="divide-y">{vendorQueue.map((item)=><tr key={item.id}><td className="p-2">{item.device_name}</td><td className="p-2">{item.manufacturer || 'Unknown'}</td><td className="p-2">{item.protocol || 'Vendor adapter needed'}</td><td className="p-2">{item.owner_department || 'Pending'}</td><td className="p-2">{item.integration_status === 'blocked' ? 'Blocked' : 'Proprietary interface'}</td></tr>)}</tbody></table>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Actual Device Onboarding Register</p>
+                  <div className="overflow-x-auto rounded-md border">
+                    <table className="w-full text-sm">
+                      <thead><tr className="border-b text-xs text-muted-foreground"><th className="p-2 text-left">Device</th><th className="p-2 text-left">Class</th><th className="p-2 text-left">Dept</th><th className="p-2 text-left">Protocol</th><th className="p-2 text-left">Owner</th><th className="p-2 text-left">Rollout</th></tr></thead>
+                      <tbody className="divide-y">{equipmentInventory.map((item) => <tr key={item.id}><td className="p-2"><div className="font-medium">{item.device_name}</div><div className="text-xs text-muted-foreground">{[item.manufacturer,item.model].filter(Boolean).join(' ')}</div></td><td className="p-2">{item.equipment_class}</td><td className="p-2">{item.department || 'Unassigned'}</td><td className="p-2">{item.protocol || 'Pending'}</td><td className="p-2">{item.owner_department || 'Pending'}</td><td className="p-2"><StatusBadge status={item.integration_status.replace(/_/g, ' ')} /></td></tr>)}</tbody>
+                    </table>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* ── DICOM WORKLIST ── */}

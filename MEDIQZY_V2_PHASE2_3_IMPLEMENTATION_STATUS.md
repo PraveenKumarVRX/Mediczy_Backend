@@ -36,7 +36,7 @@ Phase 3 follow-up items now completed on May 16, 2026:
 2. Discharge planning with owner, target date, blockers, and multidisciplinary tasks.
 3. Central-store stock ledger posting from procurement GRNs.
 
-Remaining later hardening:
+Phase 3 hardening completed on May 16, 2026:
 
 1. Cross-department approval and audit expansion across CSSD, procurement, dietary, and stores.
 

@@ -2907,7 +2907,7 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
                           <div>
                             <p className="text-sm font-medium text-slate-800 dark:text-white">{doctor.name}</p>
                             <p className="text-xs text-slate-500 dark:text-slate-400">
-                              {doctor.specialization || 'General Practice'} • ⭐ {doctor.rating} • ₹{doctor.consultationFee}
+                              {doctor.specialization || 'General Practice'} • ₹{doctor.consultationFee}
                             </p>
                           </div>
                         </div>

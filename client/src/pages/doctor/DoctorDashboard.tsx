@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
@@ -12,7 +12,6 @@ import {
   Clock, 
   Users, 
   MessageSquare, 
-  Star, 
   Activity, 
   FileText, 
   AlertTriangle, 
@@ -42,7 +41,8 @@ import {
   LayoutGrid,
   ClipboardList,
   Wallet,
-  ScanLine
+  ScanLine,
+  Star
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -81,20 +81,19 @@ const DoctorDashboard = () => {
   }, [userType, navigate]);
 
   // Socket.IO connection for emergency triage calls
+  // Stable ref for toast so it doesn't re-trigger the socket effect on every render
+  const toastRef = useRef(toast);
+  useEffect(() => { toastRef.current = toast; });
+
   useEffect(() => {
     if (!currentDoctor?.id) return;
 
-    console.log('🔌 Doctor Dashboard: Connecting Socket.IO for doctor:', currentDoctor.id);
-    
-    // Connect to Socket.IO
     socketService.connect(currentDoctor.id, 'doctor');
     setIsSocketConnected(true);
 
-    // Listen for incoming triage call requests
     const handleTriageCallRequest = (callData: any) => {
-      console.log('📞 Emergency call request received:', callData);
       setIncomingCall(callData);
-      
+
       // Play notification sound via Web Audio API
       try {
         const ctx = new AudioContext();
@@ -114,8 +113,7 @@ const DoctorDashboard = () => {
       } catch (e) {
         console.log('Audio initialization failed:', e);
       }
-      
-      // Show browser notification
+
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('🚨 Emergency Call', {
           body: `${callData.patientName} needs urgent help`,
@@ -124,8 +122,8 @@ const DoctorDashboard = () => {
           requireInteraction: true,
         });
       }
-      
-      toast({
+
+      toastRef.current({
         title: "🚨 Emergency Call",
         description: `${callData.patientName} needs urgent medical attention`,
         variant: "default",
@@ -134,13 +132,11 @@ const DoctorDashboard = () => {
 
     socketService.on('triage-call-request', handleTriageCallRequest);
 
-    // Cleanup on unmount
     return () => {
-      console.log('🔌 Doctor Dashboard: Disconnecting Socket.IO');
       socketService.off('triage-call-request', handleTriageCallRequest);
       setIsSocketConnected(false);
     };
-  }, [currentDoctor?.id, toast]);
+  }, [currentDoctor?.id]); // toast removed — unstable ref causes reconnect loop
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 60000);
@@ -161,11 +157,9 @@ const DoctorDashboard = () => {
         return {
           totalPatients: 124,
           totalConsultations: 48,
-          rating: 4.8,
           responseRate: 95,
           patientGrowth: 12,
           consultationGrowth: 8,
-          ratingGrowth: 0.2,
           responseRateGrowth: 3,
           todayAppointments: 8,
           pendingAppointments: 3,
@@ -308,15 +302,6 @@ const DoctorDashboard = () => {
       trendLabel: `${stats?.completedToday || 5} completed`,
       bgColor: "bg-teal-500/10",
       iconColor: "text-teal-500",
-    },
-    {
-      title: "Rating",
-      value: stats?.rating || "4.8",
-      icon: Star,
-      trend: stats?.ratingGrowth || 0.2,
-      trendLabel: "this month",
-      bgColor: "bg-amber-500/10",
-      iconColor: "text-amber-500",
     },
     {
       title: "Revenue",
@@ -1001,7 +986,6 @@ const DoctorDashboard = () => {
               {[
                 { label: "Total Patients",    value: stats?.totalPatients ?? 0,       trend: `+${stats?.patientGrowth || 0}%`,       up: true  },
                 { label: "Consultations",     value: stats?.totalConsultations ?? 0,  trend: stats?.consultationGrowth !== undefined ? `${stats.consultationGrowth >= 0 ? '+' : ''}${stats.consultationGrowth}%` : '—', up: (stats?.consultationGrowth ?? 0) >= 0 },
-                { label: "Avg. Rating",       value: `${stats?.rating || 4.8} ★`,  trend: `+${stats?.ratingGrowth || 0.2}`,       up: true  },
                 { label: "Pending",           value: stats?.pendingAppointments || 3, trend: "review",                               up: false },
                 { label: "Revenue (Month)",   value: `₹${((stats?.revenue || 24500)/1000).toFixed(1)}K`, trend: "+15%",             up: true  },
                 { label: "Completed Today",   value: completedCount,               trend: `of ${totalToday}`,                      up: true  },

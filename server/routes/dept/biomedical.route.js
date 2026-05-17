@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { loginBiomedical } from '../../controllers/dept/biomedical.controller.js';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import llmProvider from '../../services/ai-brain/llm-provider.js';
+import { connectPostgres } from '../../db/postgres.js';
 
 const router = express.Router();
 
@@ -27,10 +28,29 @@ router.post('/login', (req, res, next) => { req.skipAuth = true; next(); }, logi
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
+const ensureHyperGridInventoryTable = async (db) => {
+  await db.query(`CREATE TABLE IF NOT EXISTS hg_equipment_inventory (id SERIAL PRIMARY KEY, tenant_id INTEGER NOT NULL, equipment_class VARCHAR(120) NOT NULL, device_name VARCHAR(200) NOT NULL, manufacturer VARCHAR(160), model VARCHAR(160), serial_number VARCHAR(160), department VARCHAR(160), location VARCHAR(160), protocol VARCHAR(80), owner_department VARCHAR(120), integration_status VARCHAR(32) NOT NULL DEFAULT 'identified', connector_id INTEGER, notes TEXT, created_at TIMESTAMP NOT NULL DEFAULT NOW(), updated_at TIMESTAMP NOT NULL DEFAULT NOW())`);
+};
+
 const aiComplete = async (messages, { maxTokens = 900, temperature = 0.35 } = {}) => {
   const result = await llmProvider.chat({ messages, maxTokens, temperature });
   return result?.content || result?.text || result?.message || String(result || '');
 };
+
+
+router.post('/equipment/sync-hypergrid', authBiomedical, async (req, res) => {
+  try {
+    const { deviceName, equipmentClass, manufacturer, model, serialNumber, department, location, protocol, notes } = req.body;
+    if (!deviceName || !equipmentClass) return res.status(400).json({ success: false, error: 'deviceName and equipmentClass are required' });
+    const db = await connectPostgres();
+    await ensureHyperGridInventoryTable(db);
+    const tenantId = req.biomedUser?.tenant_id || req.biomedUser?.hospital_id || req.biomedUser?.id;
+    const { rows } = await db.query(`INSERT INTO hg_equipment_inventory (tenant_id, equipment_class, device_name, manufacturer, model, serial_number, department, location, protocol, owner_department, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Biomedical',$10) RETURNING *`, [tenantId, equipmentClass, deviceName, manufacturer || null, model || null, serialNumber || null, department || null, location || null, protocol || null, notes || null]);
+    res.status(201).json({ success: true, equipment: rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to sync equipment to HyperGrid' });
+  }
+});
 
 // ─── POST /api/biomedical/ai/chat ─────────────────────────────────────────────
 // ARIA — clinical engineering AI chat for biomedical staff.

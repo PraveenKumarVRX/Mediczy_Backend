@@ -63,8 +63,6 @@ interface Doctor {
     city: string;
     state: string;
   };
-  averageRating: number;
-  totalReviews: number;
   isVerified: boolean;
   expertise: string[];
   languages: string[];
@@ -175,8 +173,6 @@ const dummyDoctors: Doctor[] = [
       city: "Mumbai",
       state: "Maharashtra"
     },
-    averageRating: 4.8,
-    totalReviews: 124,
     isVerified: true,
     expertise: ["Heart Surgery", "Cardiac Rehabilitation", "Preventive Cardiology"],
     languages: ["English", "Hindi", "Marathi"],
@@ -237,8 +233,6 @@ const dummyDoctors: Doctor[] = [
       city: "Delhi",
       state: "Delhi"
     },
-    averageRating: 4.9,
-    totalReviews: 98,
     isVerified: true,
     expertise: ["Child Healthcare", "Vaccination", "Developmental Pediatrics"],
     languages: ["English", "Hindi", "Gujarati"],
@@ -299,8 +293,6 @@ const dummyDoctors: Doctor[] = [
       city: "Bangalore",
       state: "Karnataka"
     },
-    averageRating: 4.7,
-    totalReviews: 76,
     isVerified: true,
     expertise: ["Cosmetic Dermatology", "Skin Cancer", "Laser Treatment"],
     languages: ["English", "Hindi", "Kannada"],
@@ -361,8 +353,6 @@ const dummyDoctors: Doctor[] = [
       city: "Chennai",
       state: "Tamil Nadu"
     },
-    averageRating: 4.9,
-    totalReviews: 112,
     isVerified: true,
     expertise: ["Stroke Treatment", "Epilepsy", "Movement Disorders"],
     languages: ["English", "Hindi", "Tamil"],
@@ -423,8 +413,6 @@ const dummyDoctors: Doctor[] = [
       city: "Hyderabad",
       state: "Telangana"
     },
-    averageRating: 4.6,
-    totalReviews: 89,
     isVerified: true,
     expertise: ["Joint Replacement", "Sports Injuries", "Spine Surgery"],
     languages: ["English", "Hindi", "Telugu"],
@@ -626,8 +614,6 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
   const lastName = doctor?.lastName || doctor?.name?.split?.(" ")?.slice(1).join(" ") || "";
   const specialization = doctor?.specialization || "General Medicine";
   const experience = toNumber(doctor?.experience, 5);
-  const averageRating = toNumber(doctor?.averageRating ?? doctor?.rating, 4.7);
-  const totalReviews = toNumber(doctor?.totalReviews ?? doctor?.reviewCount, 0);
   const clinicAddress = parseClinicAddress(doctor?.clinicAddress);
   const languages = toArray(doctor?.languages, ["English"]);
   const expertise = toArray(doctor?.expertise || doctor?.services, [specialization]);
@@ -636,11 +622,7 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
     `Dr. ${firstName} ${lastName}`.trim() +
       " provides trusted online consultations through the Mediczy network.";
 
-  const successRate = clamp(
-    toNumber(doctor?.successRate, Math.round(averageRating * 18)),
-    85,
-    99
-  );
+  const successRate = clamp(toNumber(doctor?.successRate, 95), 85, 99);
   const totalConsultations = toNumber(
     doctor?.totalConsultations,
     300 + experience * 60
@@ -666,8 +648,6 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
       instantBooking: Boolean(doctor?.isOnline),
     },
     clinicAddress,
-    averageRating,
-    totalReviews,
     isVerified: Boolean(doctor?.isVerified),
     expertise,
     languages,
@@ -685,7 +665,7 @@ const Consultation = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSpecialization, setSelectedSpecialization] = useState("all");
-  const [sortBy, setSortBy] = useState("rating");
+  const [sortBy, setSortBy] = useState("experience");
   const [selectedDoctor, setSelectedDoctor] = useState<string | null>(null);
   const [selectedTierByDoctor, setSelectedTierByDoctor] = useState<Record<string, string>>({});
   const { toast } = useToast();
@@ -806,8 +786,6 @@ const Consultation = () => {
         )
         .sort((a, b) => {
           switch (sortBy) {
-            case "rating":
-              return b.averageRating - a.averageRating;
             case "experience":
               return b.experience - a.experience;
             case "fees": {
@@ -842,7 +820,6 @@ const Consultation = () => {
                 <SelectValue placeholder="Sort By" />
               </SelectTrigger>
               <SelectContent className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-                <SelectItem value="rating" className="text-slate-700 dark:text-slate-200 focus:bg-teal-50 dark:focus:bg-teal-900/30">Highest Rating</SelectItem>
                 <SelectItem value="experience" className="text-slate-700 dark:text-slate-200 focus:bg-teal-50 dark:focus:bg-teal-900/30">Most Experienced</SelectItem>
                 <SelectItem value="fees" className="text-slate-700 dark:text-slate-200 focus:bg-teal-50 dark:focus:bg-teal-900/30">Lowest Price</SelectItem>
                 <SelectItem value="response" className="text-slate-700 dark:text-slate-200 focus:bg-teal-50 dark:focus:bg-teal-900/30">Fastest Response</SelectItem>
@@ -937,11 +914,6 @@ const Consultation = () => {
                               </div>
                               <p className="text-lg text-slate-600 dark:text-slate-400">{doctor.specialization}</p>
                               <div className="flex items-center gap-3 mt-2">
-                                <div className="flex items-center gap-1">
-                                  <Star className="h-5 w-5 text-yellow-500 fill-current" />
-                                  <span className="font-medium text-slate-800 dark:text-white">{(+(doctor.averageRating) || 0).toFixed(1)}</span>
-                                  <span className="text-slate-600 dark:text-slate-400">({doctor.totalReviews} reviews)</span>
-                                </div>
                                 {doctor.availability.instantBooking && (
                                   <Badge variant="secondary" className="bg-teal-100 dark:bg-teal-900/30 text-teal-800 dark:text-teal-300">
                                     Instant Booking
@@ -1095,11 +1067,6 @@ const Consultation = () => {
                             </h3>
                           </div>
                           <p className="text-sm text-slate-600 dark:text-slate-400 mb-2">{doctor.specialization}</p>
-                          <div className="flex items-center gap-1.5">
-                            <Star className="h-3.5 w-3.5 text-yellow-500 fill-current" />
-                            <span className="text-sm font-medium text-slate-800 dark:text-white">{(+(doctor.averageRating) || 0).toFixed(1)}</span>
-                            <span className="text-sm text-slate-600 dark:text-slate-400">({doctor.totalReviews})</span>
-                          </div>
                         </div>
                       </div>
 

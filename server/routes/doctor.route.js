@@ -522,11 +522,6 @@ router.get("/dashboard/stats", authDoctor, async (req, res) => {
       ? Math.round(((totalConsultations - lastMonthConsultations) / lastMonthConsultations) * 100)
       : 0;
 
-    // Get doctor's rating (from profile or calculate)
-    const doctor = await Doctor.findByPk(doctorId);
-    const rating = doctor?.rating || 4.5;
-    const ratingGrowth = 0.1; // Placeholder
-
     // Response rate (appointments accepted vs total)
     const totalRequests = await Appointment.count({ where: { doctorId } });
     const acceptedRequests = await Appointment.count({
@@ -560,11 +555,9 @@ router.get("/dashboard/stats", authDoctor, async (req, res) => {
       success: true,
       totalPatients,
       totalConsultations,
-      rating,
       responseRate,
       patientGrowth,
       consultationGrowth,
-      ratingGrowth,
       responseRateGrowth: 2,
       todayAppointments,
       pendingAppointments,

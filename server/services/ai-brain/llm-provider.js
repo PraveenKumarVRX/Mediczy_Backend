@@ -117,6 +117,16 @@ function getOpenAIClient() {
   return _clients.openai;
 }
 
+function getIshaIncClient() {
+  if (!_clients.ishaInc) {
+    const apiKey = process.env.ISHA_INC_API_KEY;
+    if (!apiKey) throw new Error('ISHA_INC_API_KEY not configured');
+    const baseURL = (process.env.ISHA_INC_URL || 'http://isha-inc.com') + '/v1';
+    _clients.ishaInc = new OpenAI({ baseURL, apiKey });
+  }
+  return _clients.ishaInc;
+}
+
 /**
  * Call local offline SLM (Indic-Gemma-2B via offline scribe FastAPI).
  * Translates OpenAI-compatible params → offline_scribe ChatRequest format.
@@ -176,51 +186,70 @@ async function callLocalSLM(provider, params) {
 
 const PROVIDERS = [
   {
+    name: 'isha-reflex',
+    label: 'iSHA.buzz (Qwen-0.6B-Med — REFLEX)',
+    model: process.env.ISHA_REFLEX_MODEL || 'qwen-0.6b-med',
+    getClient: () => ({ available: true }),
+    useFetch: true,
+    priority: 1,
+    extraBody: { agent_type: 'Clinical' },
+  },
+  {
     name: 'groq',
     label: 'Groq (Llama 4 Scout 17B)',
     model: 'meta-llama/llama-4-scout-17b-16e-instruct',
     getClient: getGroqClient,
-    priority: 1,
+    priority: 2,
+  },
+  {
+    name: 'isha-inc',
+    label: 'isha-inc.com (smart-orchestrator)',
+    model: process.env.ISHA_INC_MODEL || 'smart-orchestrator',
+    getClient: getIshaIncClient,
+    priority: 3,
   },
   {
     name: 'isha',
-    label: 'iSHA.buzz (BiMediX2)',
-    model: process.env.ISHA_LLM_MODEL || 'bi-medix2',
-    getClient: () => ({ available: true }),  // Placeholder — iSHA uses direct fetch
-    useFetch: true,                          // Flag: use callIsha() instead of SDK
-    priority: 2,
-    // Extra body params for iSHA GPU routing (matches SIB FastAPI)
-    extraBody: { agent_type: 'Clinical', model_port: 8080 },
+    label: 'iSHA.buzz (BiMediX2-8B FP16 — DEEP)',
+    model: process.env.ISHA_LLM_MODEL || 'bimedix2-8b-fp16',
+    getClient: () => ({ available: true }),
+    useFetch: true,
+    priority: 4,
+    extraBody: { agent_type: 'Clinical' },
   },
   {
     name: 'openai',
     label: 'OpenAI (GPT-3.5-turbo)',
     model: 'gpt-3.5-turbo',
     getClient: getOpenAIClient,
-    priority: 3,
+    priority: 5,
   },
   {
     name: 'local-slm',
     label: 'Local Indic-Gemma-2B (offline fallback)',
     model: 'indic-gemma-2b-navarasa',
     useFetch: false,
-    useLocalSLM: true,             // Flag: route to offline scribe /api/chat
+    useLocalSLM: true,
     baseUrl: process.env.OFFLINE_SCRIBE_URL || 'http://localhost:8006',
-    priority: 4,                   // Only used when all cloud providers fail
+    priority: 5,                   // Only used when all cloud providers fail
   },
 ];
 
-/**
- * Get active model config from database (for DB-driven overrides)
- */
+// ─── Model config cache (60s TTL — avoids DB hit on every request) ───────────
+let _cfgCache = null;
+let _cfgExpiry = 0;
+
 async function getModelConfig(name = 'isha-primary') {
+  const now = Date.now();
+  if (_cfgCache !== undefined && now < _cfgExpiry) return _cfgCache;
   try {
-    const db = pool;
-    const { rows } = await db.query(
+    const { rows } = await pool.query(
       'SELECT * FROM ai_model_configs WHERE name = $1 AND is_active = true',
       [name]
     );
-    return rows[0] || null;
+    _cfgCache  = rows[0] || null;
+    _cfgExpiry = now + 60_000;
+    return _cfgCache;
   } catch {
     return null;
   }
@@ -285,8 +314,16 @@ async function chat({
   cognitiveDecisionId = null,  // for outcome recording
 }) {
   const dbConfig = await getModelConfig();
-  const temp = temperature ?? dbConfig?.temperature ?? 0.4;
-  const maxTok = maxTokens || dbConfig?.max_tokens || 4096;
+
+  // Tier-aware defaults — smaller/faster for simple queries
+  const TIER_DEFAULTS = {
+    reflex:   { temp: 0.1, maxTok: 256  },
+    standard: { temp: 0.3, maxTok: 1024 },
+    deep:     { temp: 0.5, maxTok: 4096 },
+  };
+  const tierDef = TIER_DEFAULTS[cognitiveTier] || TIER_DEFAULTS.standard;
+  const temp   = temperature ?? dbConfig?.temperature ?? tierDef.temp;
+  const maxTok = maxTokens   || dbConfig?.max_tokens  || tierDef.maxTok;
 
   // ── Semantic cache check (before any LLM call) ──────────────────────────
   // Only cache simple user→assistant exchanges with no tools
@@ -415,46 +452,36 @@ async function chat({
     cascade,
   };
 
-  // Log to ai_request_logs
-  try {
-    const db = pool;
-    // Token cost lookup (USD per 1M tokens)
-    const COST_TABLE = {
-      groq:   { input: 0.11, output: 0.34 },
-      openai: { input: 0.50, output: 1.50 },
-      isha:   { input: 0.00, output: 0.00 }, // self-hosted
-    };
-    const costs = COST_TABLE[winningProvider.name] || { input: 0, output: 0 };
-    const costUsd = (
-      (result.usage.inputTokens  * costs.input  / 1_000_000) +
-      (result.usage.outputTokens * costs.output / 1_000_000)
-    );
-    await db.query(
-      `INSERT INTO ai_request_logs
-        (model_config_id, conversation_id, provider, model_name, input_messages, output_text,
-         input_tokens, output_tokens, total_tokens, cost_usd, latency_ms, status, error_message, tool_calls, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-      [
-        dbConfig?.id || null,
-        conversationId,
-        winningProvider.name,
-        result.model,
-        JSON.stringify(messages.map(m => ({ role: m.role, content: m.content?.substring(0, 500) }))),
-        result.content?.substring(0, 2000),
-        result.usage.inputTokens,
-        result.usage.outputTokens,
-        result.usage.totalTokens,
-        costUsd,
-        latencyMs,
-        cascade.length > 1 ? 'fallback' : 'success',
-        cascade.length > 1 ? errorMessage : null,
-        JSON.stringify(result.toolCalls),
-        JSON.stringify({ finish_reason: result.finishReason, cascade })
-      ]
-    );
-  } catch (logErr) {
-    console.error('[LLM] Failed to log request:', logErr.message);
-  }
+  // Log to ai_request_logs — fire-and-forget (never blocks the response)
+  const COST_TABLE = {
+    groq:          { input: 0.11, output: 0.34 },
+    openai:        { input: 0.50, output: 1.50 },
+    isha:          { input: 0.00, output: 0.00 },
+    'isha-reflex': { input: 0.00, output: 0.00 },
+    'isha-inc':    { input: 0.00, output: 0.00 },
+  };
+  const costs  = COST_TABLE[winningProvider.name] || { input: 0, output: 0 };
+  const costUsd = (
+    (result.usage.inputTokens  * costs.input  / 1_000_000) +
+    (result.usage.outputTokens * costs.output / 1_000_000)
+  );
+  pool.query(
+    `INSERT INTO ai_request_logs
+      (model_config_id, conversation_id, provider, model_name, input_messages, output_text,
+       input_tokens, output_tokens, total_tokens, cost_usd, latency_ms, status, error_message, tool_calls, metadata)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+    [
+      dbConfig?.id || null, conversationId, winningProvider.name, result.model,
+      JSON.stringify(messages.map(m => ({ role: m.role, content: m.content?.substring(0, 500) }))),
+      result.content?.substring(0, 2000),
+      result.usage.inputTokens, result.usage.outputTokens, result.usage.totalTokens,
+      costUsd, latencyMs,
+      cascade.length > 1 ? 'fallback' : 'success',
+      cascade.length > 1 ? errorMessage : null,
+      JSON.stringify(result.toolCalls),
+      JSON.stringify({ finish_reason: result.finishReason, cascade }),
+    ]
+  ).catch(e => console.error('[LLM] log error:', e.message));
 
   // ── Store successful response in semantic cache ──────────────────────────
   if (isCacheable && result.content && result.usage.totalTokens > 0) {
@@ -671,5 +698,9 @@ async function transcribe(fileInput, { language = 'en', responseFormat = 'verbos
 
   return { success: false, text: '', provider: 'none', error: `All STT providers failed: ${errors.join(' | ')}` };
 }
+
+// Pre-warm iSHA token and model config cache on module load
+getIshaToken().catch(() => {});
+getModelConfig().catch(() => {});
 
 export default { chat, vision, transcribe, getModelConfig, listProviders, PROVIDERS };

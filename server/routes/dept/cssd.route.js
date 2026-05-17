@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { loginCSSD } from '../../controllers/dept/cssd.controller.js';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import { connectPostgres } from '../../db/postgres.js';
+import { actorFrom, decideOperationsApproval, ensureOperationsGovernanceTables, listOperationsApprovals, listOperationsAudit, recordOperationsAudit, requestOperationsApproval } from '../../services/operations-governance.service.js';
 
 const router = express.Router();
 
@@ -58,6 +59,7 @@ const ensureTables = async () => {
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
   `);
+  await ensureOperationsGovernanceTables(db);
   return db;
 };
 
@@ -114,6 +116,7 @@ router.post('/jobs', authCSSD, async (req, res) => {
     RETURNING *
   `, [`JOB-${Date.now()}`, setId, sourceDepartment || null, requestedBy || null, notes || null]);
   await db.query(`UPDATE cssd_sets SET status = 'processing', updated_at = NOW() WHERE id = $1`, [setId]);
+  await recordOperationsAudit(db, { module: 'cssd', entityType: 'job', entityId: rows[0].id, action: 'job_created', actor: actorFrom(req.cssdUser, requestedBy || 'CSSD'), details: { setId, sourceDepartment: sourceDepartment || null } });
   res.status(201).json({ success: true, data: rows[0] });
 });
 
@@ -150,6 +153,9 @@ router.post('/cycles/:id/release', authCSSD, async (req, res) => {
 
 router.post('/jobs/:id/release', authCSSD, async (req, res) => {
   const db = await ensureTables();
+  const actor = actorFrom(req.cssdUser, 'CSSD');
+  const approval = await requestOperationsApproval(db, { module: 'cssd', entityType: 'job', entityId: Number(req.params.id), action: 'release_job', requestedBy: actor });
+  if (approval.status === 'pending') await decideOperationsApproval(db, { id: approval.id, status: 'approved', decidedBy: actor });
   const sterileUntil = req.body.sterileUntil || null;
   const { rows } = await db.query(`
     UPDATE cssd_jobs SET status = 'released', updated_at = NOW() WHERE id = $1 RETURNING *
@@ -158,7 +164,18 @@ router.post('/jobs/:id/release', authCSSD, async (req, res) => {
   if (rows[0].set_id) {
     await db.query(`UPDATE cssd_sets SET status = 'available', sterile_until = $2, updated_at = NOW() WHERE id = $1`, [rows[0].set_id, sterileUntil]);
   }
+  await recordOperationsAudit(db, { module: 'cssd', entityType: 'job', entityId: rows[0].id, action: 'job_released', actor, details: { sterileUntil } });
   res.json({ success: true, data: rows[0] });
+});
+
+router.get('/approvals', authCSSD, async (_req, res) => {
+  const db = await ensureTables();
+  res.json({ success: true, data: await listOperationsApprovals(db, 'cssd') });
+});
+
+router.get('/audit', authCSSD, async (_req, res) => {
+  const db = await ensureTables();
+  res.json({ success: true, data: await listOperationsAudit(db, 'cssd') });
 });
 
 export default router;

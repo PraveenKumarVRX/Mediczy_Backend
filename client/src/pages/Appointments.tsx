@@ -24,7 +24,6 @@ import {
   MessageSquare,
   Bell,
   BellOff,
-  Star,
   User,
   CalendarDays,
   Sparkles,
@@ -46,7 +45,6 @@ interface Appointment {
     id?: string;
     name: string;
     specialty: string;
-    rating: number;
     profileImage?: string;
   };
   date: string;
@@ -203,7 +201,6 @@ const Appointments = () => {
               ? [apt.doctor.firstName, apt.doctor.lastName].filter(Boolean).join(" ")
               : "Doctor"),
           specialty: apt.specialization ?? apt.doctor?.specialization ?? "",
-          rating: Number(apt.doctorRating ?? apt.doctor?.averageRating ?? 4.5) || 4.5,
           profileImage: apt.doctorProfileImage ?? apt.doctor?.profileImage,
         },
         meetingLink: apt.meetingLink ?? apt.meeting_link,
@@ -862,10 +859,6 @@ const Appointments = () => {
                             <h3 className="text-xl font-semibold text-[#00FFF3]">
                               {appointment.doctor.name}
                             </h3>
-                            <div className="flex items-center">
-                              <Star className="h-4 w-4 text-yellow-500 fill-current" />
-                              <span className="text-sm text-gray-400 ml-1">{appointment.doctor.rating}</span>
-                            </div>
                           </div>
                           <p className="text-gray-300">{appointment.doctor.specialty}</p>
 

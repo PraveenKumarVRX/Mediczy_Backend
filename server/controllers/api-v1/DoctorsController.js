@@ -50,7 +50,7 @@ export const listDoctors = asyncHandler(async (req, res) => {
     search,
     page: parseInt(req.query.page) || 1,
     limit: parseInt(req.query.limit) || 20,
-    sortBy: req.query.sortBy || 'rating',
+    sortBy: req.query.sortBy || 'name',
     sortOrder: req.query.sortOrder || 'DESC'
   };
   
@@ -95,17 +95,6 @@ export const getAvailability = asyncHandler(async (req, res) => {
 export const incrementConsultations = asyncHandler(async (req, res) => {
   const { doctorId } = req.params;
   const doctor = await doctorsService.incrementConsultations(req.tenantId, doctorId);
-  res.json(doctor);
-});
-
-/**
- * Update doctor rating
- */
-export const updateRating = asyncHandler(async (req, res) => {
-  const { doctorId } = req.params;
-  const { rating } = req.body;
-  
-  const doctor = await doctorsService.updateRating(req.tenantId, doctorId, rating);
   res.json(doctor);
 });
 

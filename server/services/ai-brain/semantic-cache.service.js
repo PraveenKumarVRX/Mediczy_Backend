@@ -21,23 +21,34 @@
 
 import pool from '../../db/pgPool.js';
 import { cache as redisClient } from '../../db/redis.js';
-import axios from 'axios';
 
 const ENABLED       = process.env.SEMANTIC_CACHE_ENABLED !== 'false';
-const THRESHOLD     = parseFloat(process.env.SEMANTIC_CACHE_THRESHOLD || '0.92');
+const THRESHOLD     = parseFloat(process.env.SEMANTIC_CACHE_THRESHOLD || '0.85');
 const TTL           = parseInt(process.env.SEMANTIC_CACHE_TTL_SECONDS || '86400', 10);
 const MAX_TOKENS    = parseInt(process.env.SEMANTIC_CACHE_MAX_TOKENS || '600', 10);
-const SIB_URL       = process.env.SIB_URL || 'http://localhost:8001';
 const CACHE_TABLE   = 'ai_semantic_cache';
 
-// ─── Embedding ───────────────────────────────────────────────────────────────
+const EMBED_URL     = (process.env.ISHA_INC_URL || 'https://isha-inc.com') + '/v1/embeddings';
+const EMBED_API_KEY = process.env.ISHA_INC_API_KEY || '';
+
+// ─── Embedding (isha-inc.com — all-MiniLM-L6-v2, 384-dim) ───────────────────
 
 async function embedQuery(text) {
   try {
-    const { data } = await axios.post(`${SIB_URL}/embed`, { texts: [text] }, { timeout: 5000 });
-    return data.embeddings?.[0] || null;
+    const res = await fetch(EMBED_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${EMBED_API_KEY}`,
+      },
+      body: JSON.stringify({ input: [text] }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.data?.[0]?.embedding || null;
   } catch {
-    return null; // If SIB is down, skip cache (fail open)
+    return null; // fail open — cache miss is safe
   }
 }
 
@@ -52,7 +63,7 @@ async function ensureTable() {
         id           SERIAL PRIMARY KEY,
         query_hash   VARCHAR(64)  NOT NULL UNIQUE,
         query_text   TEXT         NOT NULL,
-        embedding    VECTOR(768),
+        embedding    VECTOR(384),
         response     TEXT         NOT NULL,
         provider     VARCHAR(50),
         model        VARCHAR(100),

@@ -42,6 +42,40 @@ const ensureTables = async () => {
       quantity NUMERIC(12,2) NOT NULL, unit VARCHAR(40) NOT NULL, emissions_kgco2e NUMERIC(12,4) NOT NULL,
       captured_at DATE NOT NULL DEFAULT CURRENT_DATE, created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS smart_room_devices (
+      id SERIAL PRIMARY KEY, tenant_id INTEGER NOT NULL, room_code VARCHAR(80) NOT NULL,
+      device_code VARCHAR(80) NOT NULL, device_type VARCHAR(80) NOT NULL, status VARCHAR(24) NOT NULL DEFAULT 'registered',
+      last_seen_at TIMESTAMP, metadata JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      UNIQUE (tenant_id, device_code)
+    );
+    CREATE TABLE IF NOT EXISTS smart_room_events (
+      id SERIAL PRIMARY KEY, tenant_id INTEGER NOT NULL, room_code VARCHAR(80) NOT NULL,
+      device_code VARCHAR(80), event_type VARCHAR(120) NOT NULL, payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      occurred_at TIMESTAMP NOT NULL DEFAULT NOW(), created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS voice_biometric_consents (
+      id SERIAL PRIMARY KEY, tenant_id INTEGER NOT NULL, patient_id INTEGER NOT NULL,
+      consent_status VARCHAR(24) NOT NULL, captured_by VARCHAR(160), notes TEXT,
+      captured_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS voice_biometric_enrollments (
+      id SERIAL PRIMARY KEY, tenant_id INTEGER NOT NULL, patient_id INTEGER NOT NULL,
+      consent_id INTEGER REFERENCES voice_biometric_consents(id) ON DELETE SET NULL,
+      sample_ref VARCHAR(240) NOT NULL, model_version VARCHAR(80), status VARCHAR(24) NOT NULL DEFAULT 'pending_validation',
+      enrolled_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS voice_biometric_verifications (
+      id SERIAL PRIMARY KEY, tenant_id INTEGER NOT NULL, patient_id INTEGER NOT NULL,
+      enrollment_id INTEGER REFERENCES voice_biometric_enrollments(id) ON DELETE SET NULL,
+      sample_ref VARCHAR(240) NOT NULL, score NUMERIC(5,4), verdict VARCHAR(24) NOT NULL DEFAULT 'review_required',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS ar_surgical_plans (
+      id SERIAL PRIMARY KEY, tenant_id INTEGER NOT NULL, patient_id INTEGER NOT NULL,
+      case_reference VARCHAR(120) NOT NULL, dicom_study_ref VARCHAR(240), segmentation_ref VARCHAR(240), mesh_ref VARCHAR(240),
+      target_device VARCHAR(120), status VARCHAR(24) NOT NULL DEFAULT 'draft', notes TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(), updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
   `);
   return db;
 };
@@ -155,6 +189,76 @@ router.post('/esg/entries', authRoadmap, async (req, res) => {
 router.get('/esg/summary', authRoadmap, async (req, res) => {
   const db = await ensureTables();
   const { rows } = await db.query(`SELECT category, SUM(quantity)::numeric AS quantity, SUM(emissions_kgco2e)::numeric AS emissions_kgco2e FROM esg_entries WHERE tenant_id = $1 GROUP BY category ORDER BY category`, [req.tenantId]);
+  res.json({ success: true, data: rows });
+});
+
+router.post('/smart-room/devices', authRoadmap, async (req, res) => {
+  const db = await ensureTables();
+  const { roomCode, deviceCode, deviceType, metadata = {} } = req.body;
+  if (!roomCode || !deviceCode || !deviceType) return res.status(400).json({ success: false, message: 'roomCode, deviceCode and deviceType are required' });
+  const { rows } = await db.query(`
+    INSERT INTO smart_room_devices (tenant_id, room_code, device_code, device_type, metadata)
+    VALUES ($1,$2,$3,$4,$5::jsonb)
+    ON CONFLICT (tenant_id, device_code)
+    DO UPDATE SET room_code=EXCLUDED.room_code, device_type=EXCLUDED.device_type, metadata=EXCLUDED.metadata
+    RETURNING *
+  `, [req.tenantId, roomCode, deviceCode, deviceType, JSON.stringify(metadata)]);
+  res.status(201).json({ success: true, data: rows[0] });
+});
+router.post('/smart-room/events', authRoadmap, async (req, res) => {
+  const db = await ensureTables();
+  const { roomCode, deviceCode, eventType, payload = {}, occurredAt } = req.body;
+  if (!roomCode || !eventType) return res.status(400).json({ success: false, message: 'roomCode and eventType are required' });
+  if (deviceCode) await db.query(`UPDATE smart_room_devices SET last_seen_at=NOW(), status='online' WHERE tenant_id=$1 AND device_code=$2`, [req.tenantId, deviceCode]);
+  const { rows } = await db.query(`INSERT INTO smart_room_events (tenant_id, room_code, device_code, event_type, payload, occurred_at) VALUES ($1,$2,$3,$4,$5::jsonb,COALESCE($6::timestamp,NOW())) RETURNING *`, [req.tenantId, roomCode, deviceCode || null, eventType, JSON.stringify(payload), occurredAt || null]);
+  res.status(201).json({ success: true, data: rows[0] });
+});
+router.get('/smart-room/overview', authRoadmap, async (req, res) => {
+  const db = await ensureTables();
+  const { rows } = await db.query(`SELECT room_code, COUNT(*)::int AS devices, COUNT(*) FILTER (WHERE status='online')::int AS online_devices, MAX(last_seen_at) AS last_seen_at FROM smart_room_devices WHERE tenant_id=$1 GROUP BY room_code ORDER BY room_code`, [req.tenantId]);
+  res.json({ success: true, data: rows, readiness: 'requires_deployed_room_sensors_and_event_contract_validation' });
+});
+router.post('/voice-biometrics/consents', authRoadmap, async (req, res) => {
+  const db = await ensureTables();
+  const { patientId, consentStatus, capturedBy, notes } = req.body;
+  if (!patientId || !consentStatus) return res.status(400).json({ success: false, message: 'patientId and consentStatus are required' });
+  const { rows } = await db.query(`INSERT INTO voice_biometric_consents (tenant_id, patient_id, consent_status, captured_by, notes) VALUES ($1,$2,$3,$4,$5) RETURNING *`, [req.tenantId, patientId, consentStatus, capturedBy || null, notes || null]);
+  res.status(201).json({ success: true, data: rows[0] });
+});
+router.post('/voice-biometrics/enrollments', authRoadmap, async (req, res) => {
+  const db = await ensureTables();
+  const { patientId, consentId, sampleRef, modelVersion } = req.body;
+  if (!patientId || !consentId || !sampleRef) return res.status(400).json({ success: false, message: 'patientId, consentId and sampleRef are required' });
+  const { rows: consents } = await db.query(`SELECT * FROM voice_biometric_consents WHERE id=$1 AND tenant_id=$2 AND patient_id=$3 ORDER BY captured_at DESC LIMIT 1`, [consentId, req.tenantId, patientId]);
+  if (!consents[0] || consents[0].consent_status !== 'granted') return res.status(409).json({ success: false, message: 'Granted consent is required before enrollment' });
+  const { rows } = await db.query(`INSERT INTO voice_biometric_enrollments (tenant_id, patient_id, consent_id, sample_ref, model_version) VALUES ($1,$2,$3,$4,$5) RETURNING *`, [req.tenantId, patientId, consentId, sampleRef, modelVersion || null]);
+  res.status(201).json({ success: true, data: rows[0], readiness: 'pending_model_validation' });
+});
+router.post('/voice-biometrics/verifications', authRoadmap, async (req, res) => {
+  const db = await ensureTables();
+  const { patientId, enrollmentId, sampleRef, score = null } = req.body;
+  if (!patientId || !enrollmentId || !sampleRef) return res.status(400).json({ success: false, message: 'patientId, enrollmentId and sampleRef are required' });
+  const verdict = score === null ? 'review_required' : Number(score) >= 0.9 ? 'match_candidate' : 'non_match_candidate';
+  const { rows } = await db.query(`INSERT INTO voice_biometric_verifications (tenant_id, patient_id, enrollment_id, sample_ref, score, verdict) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`, [req.tenantId, patientId, enrollmentId, sampleRef, score, verdict]);
+  res.status(201).json({ success: true, data: rows[0], readiness: 'requires_spoofing_evaluation_and_clinical_consent_governance' });
+});
+router.post('/ar-surgical-plans', authRoadmap, async (req, res) => {
+  const db = await ensureTables();
+  const { patientId, caseReference, dicomStudyRef, segmentationRef, meshRef, targetDevice, notes } = req.body;
+  if (!patientId || !caseReference) return res.status(400).json({ success: false, message: 'patientId and caseReference are required' });
+  const { rows } = await db.query(`INSERT INTO ar_surgical_plans (tenant_id, patient_id, case_reference, dicom_study_ref, segmentation_ref, mesh_ref, target_device, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`, [req.tenantId, patientId, caseReference, dicomStudyRef || null, segmentationRef || null, meshRef || null, targetDevice || null, notes || null]);
+  res.status(201).json({ success: true, data: rows[0], readiness: 'requires_segmentation_pipeline_and_device_validation' });
+});
+router.patch('/ar-surgical-plans/:id', authRoadmap, async (req, res) => {
+  const db = await ensureTables();
+  const { segmentationRef, meshRef, targetDevice, status, notes } = req.body;
+  const { rows } = await db.query(`UPDATE ar_surgical_plans SET segmentation_ref=COALESCE($3,segmentation_ref), mesh_ref=COALESCE($4,mesh_ref), target_device=COALESCE($5,target_device), status=COALESCE($6,status), notes=COALESCE($7,notes), updated_at=NOW() WHERE id=$1 AND tenant_id=$2 RETURNING *`, [req.params.id, req.tenantId, segmentationRef || null, meshRef || null, targetDevice || null, status || null, notes || null]);
+  if (!rows[0]) return res.status(404).json({ success: false, message: 'AR surgical plan not found' });
+  res.json({ success: true, data: rows[0], readiness: 'requires_segmentation_pipeline_and_device_validation' });
+});
+router.get('/ar-surgical-plans/:patientId', authRoadmap, async (req, res) => {
+  const db = await ensureTables();
+  const { rows } = await db.query(`SELECT * FROM ar_surgical_plans WHERE tenant_id=$1 AND patient_id=$2 ORDER BY created_at DESC`, [req.tenantId, req.params.patientId]);
   res.json({ success: true, data: rows });
 });
 export default router;

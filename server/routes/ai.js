@@ -883,9 +883,9 @@ router.post('/appointment-conversation', auth, async (req, res) => {
               isActive: true,
               isVerified: true
             },
-            attributes: ['id', 'firstName', 'lastName', 'specialization', 'experience', 'consultationTypes', 'languages', 'rating'],
+            attributes: ['id', 'firstName', 'lastName', 'specialization', 'experience', 'consultationTypes', 'languages'],
             limit: 4,
-            order: [['rating', 'DESC'], ['createdAt', 'DESC']]
+            order: [['createdAt', 'DESC']]
           });
           
           availableDoctors = doctors.map(doc => {
@@ -897,7 +897,6 @@ router.post('/appointment-conversation', auth, async (req, res) => {
               lastName: docData.lastName,
               specialization: docData.specialization || 'General Physician',
               experience: docData.experience || 0,
-              rating: docData.rating || 4.5,
               availableFor: {
                 online: docData.consultationTypes?.online?.available || false,
                 walkIn: docData.consultationTypes?.walkIn?.available || false,
@@ -920,7 +919,6 @@ router.post('/appointment-conversation', auth, async (req, res) => {
               lastName: 'Johnson',
               specialization: 'General Physician',
               experience: 10,
-              rating: 4.8,
               availableFor: { online: true, walkIn: true, homeVisit: false },
               languages: ['English', 'Spanish']
             },
@@ -931,7 +929,6 @@ router.post('/appointment-conversation', auth, async (req, res) => {
               lastName: 'Kumar',
               specialization: 'Cardiologist',
               experience: 15,
-              rating: 4.9,
               availableFor: { online: true, walkIn: true, homeVisit: true },
               languages: ['English', 'Hindi', 'Bengali']
             },
@@ -942,7 +939,6 @@ router.post('/appointment-conversation', auth, async (req, res) => {
               lastName: 'Garcia',
               specialization: 'Pediatrician',
               experience: 8,
-              rating: 4.7,
               availableFor: { online: true, walkIn: true, homeVisit: true },
               languages: ['English', 'Spanish']
             },
@@ -953,7 +949,6 @@ router.post('/appointment-conversation', auth, async (req, res) => {
               lastName: 'Al-Rashid',
               specialization: 'Dermatologist',
               experience: 12,
-              rating: 4.6,
               availableFor: { online: true, walkIn: true, homeVisit: false },
               languages: ['English', 'Arabic']
             }
