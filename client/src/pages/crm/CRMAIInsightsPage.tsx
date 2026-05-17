@@ -340,7 +340,7 @@ function CampaignOptimizerPanel({ campaigns }: { campaigns: HubData['campaigns']
     setSelected(id);
     setLoading(true);
     try {
-      const { data } = await api.post(`/api/crm/ai/campaigns/${id}/optimize`, {}, { headers: authHeaders() });
+      const { data } = await api.post(`/crm/ai/campaigns/${id}/optimize`, {}, { headers: authHeaders() });
       setResult(data.data);
     } catch { setResult(null); }
     setLoading(false);
@@ -436,7 +436,7 @@ function SubjectLineGenerator() {
     if (!topic) return;
     setLoading(true);
     try {
-      const { data } = await api.post('/api/crm/ai/campaigns/subject-lines', { topic, audience, count: 5 }, { headers: authHeaders() });
+      const { data } = await api.post('/crm/ai/campaigns/subject-lines', { topic, audience, count: 5 }, { headers: authHeaders() });
       setResult(data.data);
     } catch { setResult(null); }
     setLoading(false);
@@ -489,7 +489,7 @@ export default function CRMAIInsightsPage() {
   const loadHub = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get('/api/crm/ai/hub', { headers: authHeaders() });
+      const { data } = await api.get('/crm/ai/hub', { headers: authHeaders() });
       setHub(data.data);
       setLastRefresh(new Date());
     } catch { /* silently degrade */ }
@@ -501,7 +501,7 @@ export default function CRMAIInsightsPage() {
   const rescore = async (leadId: number) => {
     setScoring(leadId);
     try {
-      const { data } = await api.post(`/api/crm/ai/leads/${leadId}/score`, {}, { headers: authHeaders() });
+      const { data } = await api.post(`/crm/ai/leads/${leadId}/score`, {}, { headers: authHeaders() });
       setHub(prev => prev ? ({
         ...prev,
         leads: prev.leads.map(l => l.id === leadId
