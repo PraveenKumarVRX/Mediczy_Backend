@@ -141,6 +141,24 @@ async function ensureTables() {
       metadata JSONB NOT NULL DEFAULT '{}'::jsonb
     );
   `);
+  // Schema migrations — add new columns idempotently
+  await sharedPool.query(`
+    ALTER TABLE crm_marketing_campaigns ADD COLUMN IF NOT EXISTS reply_to_address VARCHAR(255);
+    ALTER TABLE crm_marketing_campaigns ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
+    ALTER TABLE crm_marketing_campaigns ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE crm_marketing_campaigns ADD COLUMN IF NOT EXISTS utm_source VARCHAR(100) NOT NULL DEFAULT '';
+    ALTER TABLE crm_marketing_campaigns ADD COLUMN IF NOT EXISTS utm_medium VARCHAR(100) NOT NULL DEFAULT 'email';
+    ALTER TABLE crm_marketing_campaigns ADD COLUMN IF NOT EXISTS utm_campaign VARCHAR(100) NOT NULL DEFAULT '';
+    ALTER TABLE crm_marketing_campaigns ADD COLUMN IF NOT EXISTS utm_content VARCHAR(100) NOT NULL DEFAULT '';
+    ALTER TABLE crm_marketing_campaigns ADD COLUMN IF NOT EXISTS ab_test_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE crm_marketing_campaigns ADD COLUMN IF NOT EXISTS ab_test_subject_b TEXT NOT NULL DEFAULT '';
+    ALTER TABLE crm_marketing_campaigns ADD COLUMN IF NOT EXISTS ab_test_split INTEGER NOT NULL DEFAULT 50;
+    ALTER TABLE crm_marketing_campaigns ADD COLUMN IF NOT EXISTS send_timezone VARCHAR(50) NOT NULL DEFAULT 'Asia/Kolkata';
+    ALTER TABLE crm_marketing_campaigns ADD COLUMN IF NOT EXISTS recipient_count INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE crm_marketing_suppressions ADD COLUMN IF NOT EXISTS notes TEXT;
+    ALTER TABLE crm_marketing_list_members ADD COLUMN IF NOT EXISTS bounce_type VARCHAR(20);
+    ALTER TABLE crm_marketing_list_members ADD COLUMN IF NOT EXISTS last_engaged_at TIMESTAMPTZ;
+  `).catch(e => console.warn('[CRMCampaigns] migration warn:', e.message));
 }
 ensureTables().catch((e) => console.warn('[CRMCampaigns] DDL warn:', e.message));
 
@@ -366,6 +384,280 @@ router.post('/webhooks/provider', express.json(), async (req,res) => {
 router.get('/campaigns/:id/summary', async (req,res) => {
   const { rows } = await sharedPool.query(`SELECT COUNT(*)::int AS total,COUNT(*) FILTER (WHERE status='sent')::int AS sent,COUNT(*) FILTER (WHERE status='failed')::int AS failed,COUNT(*) FILTER (WHERE opened_at IS NOT NULL)::int AS opened,COUNT(*) FILTER (WHERE clicked_at IS NOT NULL)::int AS clicked FROM crm_marketing_campaign_recipients WHERE campaign_id=$1`, [req.params.id]);
   res.json({ success:true, data:rows[0] });
+});
+
+// ─── Duplicate campaign ───────────────────────────────────────────────────────
+router.post('/campaigns/:id/duplicate', authCRM, async (req, res) => {
+  try {
+    const src = (await sharedPool.query(`SELECT * FROM crm_marketing_campaigns WHERE id=$1`, [req.params.id])).rows[0];
+    if (!src) return res.status(404).json({ error: 'Not found' });
+    const { rows } = await sharedPool.query(
+      `INSERT INTO crm_marketing_campaigns
+         (name,subject,preheader,template_id,sender_id,html_content,text_content,description,tags,
+          utm_source,utm_medium,utm_campaign,utm_content,reply_to_address,
+          ab_test_enabled,ab_test_subject_b,ab_test_split,send_timezone,created_by)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+       RETURNING *`,
+      [
+        `Copy of ${src.name}`, src.subject, src.preheader, src.template_id, src.sender_id,
+        src.html_content, src.text_content, src.description, src.tags,
+        src.utm_source, src.utm_medium, src.utm_campaign, src.utm_content, src.reply_to_address,
+        src.ab_test_enabled, src.ab_test_subject_b, src.ab_test_split, src.send_timezone,
+        req.crmUser.id,
+      ],
+    );
+    const newId = rows[0].id;
+    // copy list associations
+    await sharedPool.query(
+      `INSERT INTO crm_marketing_campaign_lists (campaign_id,list_id,mode)
+       SELECT $1,list_id,mode FROM crm_marketing_campaign_lists WHERE campaign_id=$2`,
+      [newId, req.params.id],
+    );
+    res.json({ success: true, data: rows[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Test send ────────────────────────────────────────────────────────────────
+router.post('/campaigns/:id/test-send', authCRM, async (req, res) => {
+  try {
+    const { emails } = req.body; // string | string[]
+    const recipients = (Array.isArray(emails) ? emails : [emails]).filter(e => emailRegex.test(e));
+    if (!recipients.length) return res.status(400).json({ error: 'At least one valid email required' });
+
+    const campaign = (await sharedPool.query(`
+      SELECT c.*,s.name AS sender_name,s.email AS sender_email,COALESCE(s.reply_to,s.email) AS reply_to
+      FROM crm_marketing_campaigns c
+      LEFT JOIN crm_marketing_senders s ON s.id=c.sender_id
+      WHERE c.id=$1`, [req.params.id])).rows[0];
+    if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+    const smtp = await getSmtpConfig();
+    const nodemailer = (await import('nodemailer')).default;
+    const transporter = nodemailer.createTransport({
+      host: smtp.host, port: Number(smtp.port || 587), secure: Number(smtp.port) === 465,
+      auth: { user: smtp.username, pass: smtp.password },
+    });
+
+    const sampleVars = { first_name: 'Test', last_name: 'Recipient', company: 'Your Company', city: '', state: '' };
+    const html = `<div style="border:2px solid #f59e0b;padding:8px;font-size:11px;font-family:sans-serif;background:#fef3c7;margin-bottom:16px">⚠️ <strong>TEST SEND</strong> — This is a preview copy of your campaign.</div>${renderText(campaign.html_content, sampleVars)}`;
+    const subject = `[TEST] ${renderText(campaign.subject, sampleVars)}`;
+
+    const sent = [];
+    for (const to of recipients) {
+      await transporter.sendMail({
+        from: `"${campaign.sender_name || smtp.from_name || 'Mediqzy'}" <${campaign.sender_email || smtp.from_email || smtp.username}>`,
+        replyTo: campaign.reply_to_address || campaign.reply_to || campaign.sender_email,
+        to, subject,
+        html,
+        text: `[TEST SEND]\n\n${renderText(campaign.text_content, sampleVars)}`,
+      });
+      sent.push(to);
+    }
+    res.json({ success: true, data: { sent } });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Pause / Resume / Abort ────────────────────────────────────────────────────
+router.post('/campaigns/:id/pause', authCRM, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(
+      `UPDATE crm_marketing_campaigns SET status='paused',updated_at=NOW() WHERE id=$1 AND status IN ('sending','queued','scheduled') RETURNING id,status`,
+      [req.params.id],
+    );
+    if (!rows.length) return res.status(400).json({ error: 'Campaign cannot be paused in its current state' });
+    res.json({ success: true, data: rows[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/campaigns/:id/resume', authCRM, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(
+      `UPDATE crm_marketing_campaigns SET status='queued',updated_at=NOW() WHERE id=$1 AND status='paused' RETURNING id,status`,
+      [req.params.id],
+    );
+    if (!rows.length) return res.status(400).json({ error: 'Campaign is not paused' });
+    // re-queue pending recipients
+    const recipients = (await sharedPool.query(
+      `SELECT id FROM crm_marketing_campaign_recipients WHERE campaign_id=$1 AND status IN ('pending','queued')`,
+      [req.params.id],
+    )).rows;
+    const base = process.env.BASE_URL || 'http://localhost:8000';
+    for (const r of recipients) {
+      await campaignQueue.add('send-recipient', { recipientId: r.id, publicBaseUrl: base }, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } });
+    }
+    res.json({ success: true, data: { status: 'queued', requeued: recipients.length } });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/campaigns/:id/abort', authCRM, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(
+      `UPDATE crm_marketing_campaigns SET status='cancelled',updated_at=NOW() WHERE id=$1 AND status IN ('queued','scheduled','paused') RETURNING id,status`,
+      [req.params.id],
+    );
+    if (!rows.length) return res.status(400).json({ error: 'Campaign cannot be cancelled in its current state' });
+    res.json({ success: true, data: rows[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE campaign
+router.delete('/campaigns/:id', authCRM, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(`SELECT status FROM crm_marketing_campaigns WHERE id=$1`, [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    if (['sending','queued'].includes(rows[0].status)) return res.status(400).json({ error: 'Cannot delete an active campaign' });
+    await sharedPool.query(`DELETE FROM crm_marketing_campaigns WHERE id=$1`, [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── HTML Preview ─────────────────────────────────────────────────────────────
+router.get('/campaigns/:id/preview-html', authCRM, async (req, res) => {
+  try {
+    const campaign = (await sharedPool.query(`SELECT html_content,subject,preheader FROM crm_marketing_campaigns WHERE id=$1`, [req.params.id])).rows[0];
+    if (!campaign) return res.status(404).json({ error: 'Not found' });
+    const vars = { first_name: 'Preview', last_name: 'User', company: 'Your Company', city: 'Mumbai', state: 'Maharashtra' };
+    res.json({ success: true, data: { html: renderText(campaign.html_content, vars), subject: renderText(campaign.subject, vars) } });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Recipients list ──────────────────────────────────────────────────────────
+router.get('/campaigns/:id/recipients', authCRM, async (req, res) => {
+  try {
+    const { page = 1, limit = 50, status } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const statusFilter = status ? `AND status=$3` : '';
+    const params = status ? [req.params.id, parseInt(limit), status, offset] : [req.params.id, parseInt(limit), offset];
+    const countParam = status ? [req.params.id, status] : [req.params.id];
+    const countSql = `SELECT COUNT(*)::int FROM crm_marketing_campaign_recipients WHERE campaign_id=$1${status ? ' AND status=$2' : ''}`;
+    const [data, total] = await Promise.all([
+      sharedPool.query(
+        `SELECT id,email,status,personalization,sent_at,opened_at,clicked_at,last_error,provider_message_id FROM crm_marketing_campaign_recipients WHERE campaign_id=$1 ${statusFilter} ORDER BY created_at DESC LIMIT $2 OFFSET ${status ? '$4' : '$3'}`,
+        params,
+      ),
+      sharedPool.query(countSql, countParam),
+    ]);
+    res.json({ success: true, data: data.rows, total: total.rows[0].count, page: parseInt(page), limit: parseInt(limit) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Suppression management ───────────────────────────────────────────────────
+router.get('/suppressions', authCRM, async (req, res) => {
+  try {
+    const { page = 1, limit = 50, reason, search } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const wheres = []; const params = [];
+    if (reason) { params.push(reason); wheres.push(`reason=$${params.length}`); }
+    if (search) { params.push(`%${search}%`); wheres.push(`email ILIKE $${params.length}`); }
+    const where = wheres.length ? `WHERE ${wheres.join(' AND ')}` : '';
+    params.push(parseInt(limit)); const limitIdx = params.length;
+    params.push(offset); const offsetIdx = params.length;
+    const [data, total] = await Promise.all([
+      sharedPool.query(`SELECT id,email,reason,notes,source_campaign_id,created_at FROM crm_marketing_suppressions ${where} ORDER BY created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`, params),
+      sharedPool.query(`SELECT COUNT(*)::int FROM crm_marketing_suppressions ${where}`, params.slice(0, -2)),
+    ]);
+    res.json({ success: true, data: data.rows, total: total.rows[0].count });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/suppressions', authCRM, async (req, res) => {
+  try {
+    const { email, reason = 'manual', notes } = req.body;
+    if (!email || !emailRegex.test(email)) return res.status(400).json({ error: 'Valid email required' });
+    const { rows } = await sharedPool.query(
+      `INSERT INTO crm_marketing_suppressions (email,reason,notes) VALUES ($1,$2,$3) ON CONFLICT (email) DO UPDATE SET reason=$2,notes=$3,created_at=NOW() RETURNING *`,
+      [email.toLowerCase(), reason, notes ?? null],
+    );
+    res.json({ success: true, data: rows[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/suppressions/:email', authCRM, async (req, res) => {
+  try {
+    await sharedPool.query(`DELETE FROM crm_marketing_suppressions WHERE email=LOWER($1)`, [req.params.email]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Bulk import suppressions
+router.post('/suppressions/import', authCRM, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'File required' });
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    let added = 0, skipped = 0;
+    for (const row of rows) {
+      const email = (row.email || row.Email || row.EMAIL || '').toString().trim().toLowerCase();
+      if (!emailRegex.test(email)) { skipped++; continue; }
+      await sharedPool.query(
+        `INSERT INTO crm_marketing_suppressions (email,reason,notes) VALUES ($1,'imported','Bulk import') ON CONFLICT (email) DO NOTHING`,
+        [email],
+      );
+      added++;
+    }
+    res.json({ success: true, data: { added, skipped } });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── List members CRUD ────────────────────────────────────────────────────────
+router.put('/list-members/:memberId', authCRM, async (req, res) => {
+  try {
+    const { first_name, last_name, company, city, state, status } = req.body;
+    const { rows } = await sharedPool.query(
+      `UPDATE crm_marketing_list_members SET first_name=COALESCE($1,first_name),last_name=COALESCE($2,last_name),company=COALESCE($3,company),city=COALESCE($4,city),state=COALESCE($5,state),status=COALESCE($6,status),updated_at=NOW() WHERE id=$7 RETURNING *`,
+      [first_name, last_name, company, city, state, status, req.params.memberId],
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Member not found' });
+    res.json({ success: true, data: rows[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/list-members/:memberId', authCRM, async (req, res) => {
+  try {
+    await sharedPool.query(`DELETE FROM crm_marketing_list_members WHERE id=$1`, [req.params.memberId]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Template CRUD additions ──────────────────────────────────────────────────
+router.put('/templates/:id', authCRM, async (req, res) => {
+  try {
+    const { name, subject, preheader, html_content, text_content, category, variables } = req.body;
+    const { rows } = await sharedPool.query(
+      `UPDATE crm_marketing_templates SET name=COALESCE($1,name),subject=COALESCE($2,subject),preheader=COALESCE($3,preheader),html_content=COALESCE($4,html_content),text_content=COALESCE($5,text_content),category=COALESCE($6,category),variables=COALESCE($7::jsonb,variables),updated_at=NOW() WHERE id=$8 RETURNING *`,
+      [name, subject, preheader, html_content, text_content, category, variables ? JSON.stringify(variables) : null, req.params.id],
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Template not found' });
+    res.json({ success: true, data: rows[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/templates/:id', authCRM, async (req, res) => {
+  try {
+    await sharedPool.query(`DELETE FROM crm_marketing_templates WHERE id=$1`, [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Update list
+router.put('/lists/:id', authCRM, async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    const { rows } = await sharedPool.query(
+      `UPDATE crm_marketing_lists SET name=COALESCE($1,name),description=COALESCE($2,description),updated_at=NOW() WHERE id=$3 RETURNING *`,
+      [name, description, req.params.id],
+    );
+    if (!rows.length) return res.status(404).json({ error: 'List not found' });
+    res.json({ success: true, data: rows[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/lists/:id', authCRM, async (req, res) => {
+  try {
+    await sharedPool.query(`DELETE FROM crm_marketing_lists WHERE id=$1`, [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 export default router;

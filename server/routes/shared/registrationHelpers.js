@@ -62,12 +62,12 @@ export function createUploadMiddleware(idCardFieldName = 'contactIdCard') {
 // ── Rate limiter ──────────────────────────────────────────────────────────────
 export const registerLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 3,
+  max: 5,
   keyGenerator: req =>
     ipKeyGenerator(req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || '0.0.0.0'),
   handler: (_, res) =>
     res.status(429).json({ success: false, message: 'Too many registration attempts. Please try again in an hour.' }),
-  skipSuccessfulRequests: false,
+  skipSuccessfulRequests: true,
 });
 
 // ── Magic bytes validator ─────────────────────────────────────────────────────

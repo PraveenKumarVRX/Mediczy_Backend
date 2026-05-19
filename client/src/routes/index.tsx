@@ -216,7 +216,8 @@ const CRMCampaignBuilderPage = lazyNamed(_CRMMarketingPages, "CRMCampaignBuilder
 const CRMListsPage = lazyNamed(_CRMMarketingPages, "CRMListsPage");
 const CRMListDetailPage = lazyNamed(_CRMMarketingPages, "CRMListDetailPage");
 const CRMTemplatesPage = lazyNamed(_CRMMarketingPages, "CRMTemplatesPage");
-const CRMSendersPage = lazyNamed(_CRMMarketingPages, "CRMSendersPage");
+const CRMSendersPage       = lazyNamed(_CRMMarketingPages, "CRMSendersPage");
+const CRMSuppressionsPage  = lazyNamed(_CRMMarketingPages, "CRMSuppressionsPage");
 
 const _CRMModulePages = () => import("@/pages/crm/CRMModulePages");
 const CRMLeadsPage      = lazyNamed(_CRMModulePages, "CRMLeadsPage");
@@ -1095,6 +1096,7 @@ const AppRoutes = () => {
         <Route path="/crm/lists/:id"           element={<CRMListDetailPage />} />
         <Route path="/crm/templates"           element={<CRMTemplatesPage />} />
         <Route path="/crm/senders"             element={<CRMSendersPage />} />
+        <Route path="/crm/suppressions"        element={<CRMSuppressionsPage />} />
 
         {/* ── Team ────────────────────────────────────────────────────── */}
         <Route path="/team/login"                    element={<TeamLogin />} />

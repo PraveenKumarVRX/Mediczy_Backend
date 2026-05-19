@@ -33,6 +33,7 @@ const sidebarNav = [
     { icon: Users, label: 'Lists', path: '/crm/lists' },
     { icon: FileText, label: 'Templates', path: '/crm/templates' },
     { icon: UserCheck, label: 'Senders', path: '/crm/senders' },
+    { icon: X, label: 'Suppressions', path: '/crm/suppressions' },
   ]},
   { section: 'INSURANCE', items: [
     { icon: FileText, label: 'RFQs', path: '/crm/rfqs' },

@@ -1,6 +1,9 @@
 import paymentService from '../services/payment.service.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import kafkaEvents from '../services/kafka-events.service.js';
+import { getIntelligentDB } from '../db/intelligent-db-adapter.js';
+
+const db = getIntelligentDB();
 
 // Temporary in-memory store for payment transactions
 const paymentTransactions = new Map();

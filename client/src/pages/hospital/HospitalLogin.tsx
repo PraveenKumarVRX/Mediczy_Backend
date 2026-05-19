@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -237,6 +237,12 @@ const HospitalLogin = () => {
             </form>
 
             <div className="mt-6 text-center text-sm text-muted-foreground">
+              Don't have an account?{' '}
+              <Link to="/hospital/register" className="text-teal-600 hover:underline font-medium">
+                Register your hospital
+              </Link>
+            </div>
+            <div className="mt-3 text-center text-sm text-muted-foreground">
               Need help? Contact{' '}
               <a href="mailto:support@mediczy.com" className="text-teal-600 hover:underline font-medium">
                 support@mediczy.com
