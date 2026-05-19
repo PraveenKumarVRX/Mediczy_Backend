@@ -749,6 +749,8 @@ app.use((req, res, next) => {
     '/api/lab/register',
     '/api/pharmacy/register',
     '/api/homecare/register',
+    '/api/ambulance/register',
+    '/api/hospital/register',
     '/api/corporate/register',
     '/api/doctor/chat/upload',
     '/api/doctors/imaging/upload',

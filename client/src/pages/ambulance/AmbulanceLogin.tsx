@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -180,8 +180,14 @@ const AmbulanceLogin = () => {
 
           <div className="mt-6 text-center space-y-2">
             <p className="text-sm text-muted-foreground">
+              Don't have an account?{' '}
+              <Link to="/ambulance/register" className="text-red-600 hover:text-red-700 font-medium">
+                Register your service
+              </Link>
+            </p>
+            <p className="text-sm text-muted-foreground">
               Need assistance?{" "}
-              <a href="#" className="text-red-600 hover:text-red-700 font-medium">
+              <a href="mailto:support@mediczy.com" className="text-red-600 hover:text-red-700 font-medium">
                 Contact Support
               </a>
             </p>

@@ -76,6 +76,7 @@ router.post('/register', registerLimiter, hospUploadFields, async (req, res) => 
       docs, idCardMeta: idCard });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+    if (err.name === 'SequelizeUniqueConstraintError') return res.status(409).json({ success: false, message: 'Email already registered' });
     console.error('Hospital registration error:', err);
     res.status(500).json({ success: false, message: 'Registration failed', error: err.message });
   }

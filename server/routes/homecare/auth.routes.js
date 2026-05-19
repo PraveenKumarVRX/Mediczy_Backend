@@ -161,9 +161,10 @@ router.post('/register', registerLimiter, hcUploadFields, async (req, res) => {
       name, email: normalizedEmail, password, phone,
       address: { street: address || '', city, state: state || '', zipCode: '',
                  coordinates: lat && lng ? { lat: parseFloat(lat), lng: parseFloat(lng) } : null },
-      providerType: serviceType || 'Nursing Care',
+      providerType: 'agency',
       registrationNumber: registrationNumber || null,
       metadata: { registrationDocs: docs,
+        serviceType: serviceType || 'General Homecare',
         primaryContact: { name: coordinatorName, qualification: coordinatorQual,
                           certification: coordinatorCert || '', idCard },
         submittedAt: new Date() },
@@ -178,6 +179,7 @@ router.post('/register', registerLimiter, hcUploadFields, async (req, res) => {
       docs, idCardMeta: idCard });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+    if (err.name === 'SequelizeUniqueConstraintError') return res.status(409).json({ success: false, message: 'Email already registered' });
     console.error('Homecare registration error:', err);
     res.status(500).json({ success: false, message: 'Registration failed', error: err.message });
   }

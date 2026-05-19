@@ -2,6 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import Ambulance from '../../models/postgres/ambulance.model.postgres.js';
+import sharedPool from '../../db/pgPool.js';
 import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
 import {
@@ -12,6 +13,11 @@ import {
 const ambulanceUploadFields = createUploadMiddleware('contactIdCard');
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
+
+sharedPool.query(`
+  ALTER TABLE ambulances ALTER COLUMN "vehicleNumber" DROP NOT NULL;
+  ALTER TABLE ambulances ALTER COLUMN "emergencyPhone" DROP NOT NULL;
+`).catch(() => {});
 
 /**
  * POST /api/ambulance/login
@@ -125,7 +131,7 @@ router.post('/logout', (req, res) => {
 router.post('/register', registerLimiter, ambulanceUploadFields, async (req, res) => {
   try {
     req.body = req.body || {};
-    const { name, email, password, confirmPassword, phone, ambulanceType, city, state, address,
+    const { name, email, password, confirmPassword, phone, vehicleType, city, state, address,
             registrationNumber, managerName, managerPhone, vehicleRegNo,
             _hp, _fat, lat, lng } = req.body;
 
@@ -148,11 +154,21 @@ router.post('/register', registerLimiter, ambulanceUploadFields, async (req, res
     const docs   = await uploadDocuments({ files: req.files?.documents || [], emailKey, entityKey: 'ambulance', req });
     const idCard = await uploadIdCard({ file: req.files?.contactIdCard?.[0], emailKey, entityKey: 'ambulance', req });
 
+    const VEHICLE_TYPE_MAP = {
+      'Basic Life Support (BLS)': 'basic',
+      'Advanced Life Support (ALS)': 'advanced',
+      'Patient Transport Vehicle': 'basic',
+      'Neonatal Ambulance': 'neonatal',
+      'Air Ambulance': 'air',
+      'Mortuary Van': 'mortuary',
+    };
+    const resolvedVehicleType = (vehicleType && VEHICLE_TYPE_MAP[vehicleType]) || vehicleType?.toLowerCase() || 'basic';
+
     const ambulance = await Ambulance.create({
       providerName: name, email: normalizedEmail, password, phone,
       baseLocation: { street: address || '', city, state: state || '', zipCode: '',
                       latitude: lat ? parseFloat(lat) : null, longitude: lng ? parseFloat(lng) : null },
-      ambulanceType: ambulanceType || 'BLS',
+      vehicleType: resolvedVehicleType,
       registrationNumber: registrationNumber || null,
       metadata: {
         registrationDocs: docs,
@@ -166,12 +182,13 @@ router.post('/register', registerLimiter, ambulanceUploadFields, async (req, res
 
     sendAdminLeadEmail({ entityLabel: 'Ambulance Service', name, email: normalizedEmail, phone, city, state: state || '',
       registrationId: ambulance.id,
-      extraRows: [['Service Type', ambulanceType || 'BLS'], ...(registrationNumber ? [['Reg. Number', registrationNumber]] : []),
+      extraRows: [['Vehicle Type', vehicleType || 'Basic Life Support (BLS)'], ...(registrationNumber ? [['Reg. Number', registrationNumber]] : []),
                   ['Fleet Manager', managerName], ...(managerPhone ? [['Manager Phone', managerPhone]] : []),
                   ...(vehicleRegNo ? [['Vehicle Reg', vehicleRegNo]] : [])],
       docs, idCardMeta: idCard });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+    if (err.name === 'SequelizeUniqueConstraintError') return res.status(409).json({ success: false, message: 'Email already registered' });
     console.error('Ambulance registration error:', err);
     res.status(500).json({ success: false, message: 'Registration failed', error: err.message });
   }

@@ -18,6 +18,9 @@ import {
 
 const pharmUploadFields = createUploadMiddleware('contactIdCard');
 
+sharedPool.query(`ALTER TABLE pharmacies ALTER COLUMN "licenseNumber" DROP NOT NULL`).catch(() => {});
+
+
 import dashboardRouter from './pharmacy/dashboard.routes.js';
 import inventoryRouter from './pharmacy/inventory.routes.js';
 import posRouter from './pharmacy/pos.routes.js';
@@ -250,7 +253,7 @@ router.post('/register', registerLimiter, pharmUploadFields, async (req, res) =>
       address: { street: address || '', city, state: state || '', zipCode: '',
                  coordinates: lat && lng ? { lat: parseFloat(lat), lng: parseFloat(lng) } : null },
       pharmacyType: pharmacyType || 'Retail',
-      registrationNumber: registrationNumber || null,
+      licenseNumber: registrationNumber || null,
       metadata: {
         registrationDocs: docs,
         primaryContact: { name: pharmacistName, qualification: pharmacistQual || '', regNumber: pharmacistRegNo || '', idCard },
@@ -268,6 +271,7 @@ router.post('/register', registerLimiter, pharmUploadFields, async (req, res) =>
       docs, idCardMeta: idCard });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+    if (err.name === 'SequelizeUniqueConstraintError') return res.status(409).json({ success: false, message: 'Email already registered' });
     console.error('Pharmacy registration error:', err);
     res.status(500).json({ success: false, message: 'Registration failed', error: err.message });
   }

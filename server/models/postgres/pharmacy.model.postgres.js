@@ -67,7 +67,7 @@ const Pharmacy = postgresSequelize.define('Pharmacy', {
   },
   licenseNumber: {
     type: DataTypes.STRING(100),
-    allowNull: false,
+    allowNull: true,
     unique: true,
     comment: 'Drug license number'
   },

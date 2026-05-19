@@ -46,7 +46,7 @@ const Ambulance = postgresSequelize.define('Ambulance', {
   // Vehicle Information
   vehicleNumber: {
     type: DataTypes.STRING(50),
-    allowNull: false,
+    allowNull: true,
     unique: true
   },
   vehicleType: {
@@ -71,7 +71,7 @@ const Ambulance = postgresSequelize.define('Ambulance', {
   },
   emergencyPhone: {
     type: DataTypes.STRING(20),
-    allowNull: false
+    allowNull: true
   },
   alternatePhone: {
     type: DataTypes.STRING(20),
