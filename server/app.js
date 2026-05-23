@@ -531,7 +531,7 @@ const envOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(o => o.trim()).filter(Boolean)
   : [];
 
-const defaultProdOrigins = ['https://app.mediqzy.com', 'https://mediqzy.com', 'https://www.mediqzy.com'];
+const defaultProdOrigins = ['https://app.mediqzy.com', 'https://mediqzy.com', 'https://www.mediqzy.com', 'https://mediczy.in', 'https://www.mediczy.in'];
 const defaultDevOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
@@ -643,7 +643,16 @@ const aiImageLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const configLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: 'Too many config requests, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 app.use('/api/', globalLimiter);
+app.use('/api/payments/config', configLimiter);
 
 // ── IP Threat Intelligence Gate — blocks VPN/proxy/Tor/malicious IPs on all login endpoints
 const loginThreatGate = ipThreatGate({ proxy: true, tor: true, hosting: false });
@@ -700,7 +709,14 @@ app.use(compression({
 // 5. Body Parsers and File Upload
 // Doctor registration currently sends verification documents as base64 JSON.
 // Keep this aligned with the public registration document size allowance.
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({
+  limit: '50mb',
+  verify: (req, _res, buf) => {
+    if (req.originalUrl === '/api/payments/webhook') {
+      req.rawBody = buf.toString('utf8');
+    }
+  }
+}));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 
 app.use((err, req, res, next) => {
@@ -826,7 +842,9 @@ app.use((req, res, next) => {
       req.path.startsWith('/api/whatsapp-production/fallback') ||
       req.path.startsWith('/api/whatsapp-production/status-callback') ||
       req.path.startsWith('/api/support/webhook/rocketchat') ||
-      req.path.startsWith('/api/support/webhook/whatsapp')) {
+      req.path.startsWith('/api/support/webhook/whatsapp') ||
+      req.path === '/api/payments/webhook' ||
+      req.path === '/api/payments/config') {
     console.log('✅ [Bypass Check] Setting skipAuth=true for path:', req.path);
     req.skipAuth = true;
   }
@@ -1126,16 +1144,6 @@ app.use("/api/membership-plans", membershipPlansRouter);
 app.use("/api/leaderboard", leaderboardRouter);
 app.use("/api/password-reset", passwordResetRouter);
 
-// DEBUG: Log all /api/doctors/services requests
-app.use((req, res, next) => {
-  if (req.path.includes('/doctors/services')) {
-    const fs = require('fs');
-    fs.appendFileSync('/tmp/app-request-debug.log', 
-      `${new Date().toISOString()} ${req.method} ${req.path} ${req.url}\n`
-    );
-  }
-  next();
-});
 
 app.use("/api/reports", reportsRouter); // Patient medical reports
 app.use("/api/reports", uploadRouter); // Medical report upload
