@@ -6572,10 +6572,13 @@ async function syncTCsFromRFQ(rfqId, productType, tcText, createdBy) {
   }
 }
 
-// Guard: only CRM users with admin or manager permission may manage the T&C master
+// Guard: only CRM users with admin/manager permission or isAdmin flag may manage the T&C master
 function requireTCAdmin(req, res, next) {
-  const perms = req.crmUser?.crmPermissions || [];
-  if (!perms.includes('admin') && !perms.includes('superadmin') && !perms.includes('manager')) {
+  const user = req.crmUser || {};
+  // Middleware stores permissions as user.permissions (decoded from JWT)
+  const perms = user.permissions || user.crmPermissions || [];
+  const isAdmin = user.isAdmin === true || user.role === 'admin' || user.role === 'superadmin';
+  if (!isAdmin && !perms.includes('admin') && !perms.includes('superadmin') && !perms.includes('manager')) {
     return res.status(403).json({ success: false, message: 'Insufficient permissions to manage T&C master' });
   }
   next();

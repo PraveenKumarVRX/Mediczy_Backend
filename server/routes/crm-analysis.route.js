@@ -15,6 +15,13 @@ import llmProvider from '../services/ai-brain/llm-provider.js';
 
 const router = express.Router();
 
+// pg returns JSONB columns as already-parsed JS objects; this handles both cases
+function safeJSON(v, fallback = []) {
+  if (v === null || v === undefined) return fallback;
+  if (typeof v === 'object') return v;
+  try { return JSON.parse(v); } catch { return fallback; }
+}
+
 // ─── LLM helper ──────────────────────────────────────────────────────────────
 const aiComplete = async (messages, opts = {}) => {
   const result = await llmProvider.chat({ messages, maxTokens: opts.maxTokens || 2500, temperature: opts.temperature || 0.2 });
@@ -271,7 +278,7 @@ function buildCostModel({ ageBands, totalMembers, policyHistory, industry, avgSI
 function buildQuoteStrategies(costModel, rfq, policyHistory) {
   const { blendedPureRate, trend, manual } = costModel;
   const lives = parseInt(rfq.member_count) || 100;
-  const avgSI = parseInt((rfq.sum_insured_slabs && JSON.parse(rfq.sum_insured_slabs)?.[0]) || 300000);
+  const avgSI = parseInt((safeJSON(rfq.sum_insured_slabs, [])?.[0]) || 300000);
   const latestPremium = policyHistory.find(y => y.year_label === 'Y-1')?.gross_premium;
   const latestLR = trend.avgLR;
   const avgAge = manual.avgAge;
@@ -566,7 +573,7 @@ router.post('/rfqs/:rfqId/generate', authCRM, async (req, res) => {
 
     // Parse sum insured slabs → average SI
     let siSlabs = [];
-    try { siSlabs = JSON.parse(rfq.sum_insured_slabs || '[]'); } catch {}
+    siSlabs = safeJSON(rfq.sum_insured_slabs, []);
     const avgSI = prospective.si_override
       || (siSlabs.length ? siSlabs.reduce((a, b) => a + b, 0) / siSlabs.length : 300000);
 
@@ -661,6 +668,20 @@ Produce a JSON with exactly these keys:
   "underwriting_flags": ["flag1", "flag2"] // up to 5 risk flags or positive indicators
 }`;
 
+    const fallbackNarrative = {
+      executive_summary: `${rfq.insured_name} — ${totalMembers} lives, risk score ${riskResult.score}/100 (${riskResult.tier.toUpperCase()}). Blended pure rate ₹${costModel.blendedPureRate}/life; avg historical LR ${(trend.avgLR * 100).toFixed(1)}% (${trend.direction}). Recommend Strategy B (Balanced Performer) for optimal win probability.`,
+      retrospective_narrative: policyHistory.length ? histSummary : 'No historical data entered — manual actuarial rating applied based on member demographics.',
+      prospective_narrative: `Projected claims corpus ₹${(projTotalClaims / 100000).toFixed(1)}L for ${projectedLives} lives at ₹${costModel.blendedPureRate}/life pure rate. Medical inflation of ${(MEDICAL_INFLATION * 100).toFixed(0)}% pa applied to trend factor.`,
+      cost_model_narrative: `Blended pure rate ₹${costModel.blendedPureRate}/life using ${experience ? (experience.credibility * 100).toFixed(0) + '% experience weight + ' + (100 - experience.credibility * 100).toFixed(0) + '% manual' : 'full manual rating'}. Industry factor ${industryFactor}x, SI loading ${costModel.siLoadingFactor}x.`,
+      quote_A_rationale: strategies[0].why_wins[0],
+      quote_B_rationale: strategies[1].why_wins[0],
+      quote_C_rationale: strategies[2].why_wins[0],
+      recommended_strategy: riskResult.tier === 'red' || riskResult.tier === 'black' ? 'A' : 'B',
+      underwriting_flags: riskResult.tier !== 'green'
+        ? [`Risk tier ${riskResult.tier.toUpperCase()} — review underwriting terms before binding`, trend.direction === 'deteriorating' ? 'Claims trend deteriorating — consider co-pay or deductible' : null].filter(Boolean)
+        : ['Clean risk profile — standard terms applicable'],
+    };
+
     let aiOutput = {};
     try {
       const raw = await aiComplete([
@@ -671,17 +692,10 @@ Produce a JSON with exactly these keys:
       if (match) aiOutput = JSON.parse(match[0]);
     } catch (e) {
       console.warn('[CRM Analysis AI] AI narrative failed:', e.message);
-      aiOutput = {
-        executive_summary: `${rfq.insured_name} has ${totalMembers} lives with risk score ${riskResult.score}/100 (${riskResult.tier}). Blended pure rate is ₹${costModel.blendedPureRate}/life. Recommend Strategy B (Balanced Performer) for optimal win probability.`,
-        retrospective_narrative: policyHistory.length ? histSummary : 'No historical data available — manual rating applied.',
-        prospective_narrative: `Projected claims corpus ₹${(projTotalClaims / 100000).toFixed(1)}L for ${projectedLives} lives. Medical inflation of ${(MEDICAL_INFLATION * 100).toFixed(0)}% applied.`,
-        cost_model_narrative: `Blended pure rate ₹${costModel.blendedPureRate}/life using ${experience ? (experience.credibility * 100).toFixed(0) + '% experience weight' : 'manual rate'}. Industry factor ${industryFactor}x applied.`,
-        quote_A_rationale: strategies[0].why_wins[0],
-        quote_B_rationale: strategies[1].why_wins[0],
-        quote_C_rationale: strategies[2].why_wins[0],
-        recommended_strategy: 'B',
-        underwriting_flags: riskResult.tier !== 'green' ? [`Risk tier: ${riskResult.tier.toUpperCase()} — review before binding`] : ['Clean risk profile'],
-      };
+    }
+    // Fall back to rule-based narrative if AI returned empty or missing required key
+    if (!aiOutput.executive_summary) {
+      aiOutput = { ...fallbackNarrative, ...aiOutput };
     }
 
     // ── Increment version ──────────────────────────────────────────────────
@@ -803,7 +817,7 @@ router.post('/rfqs/:rfqId/cost-model-preview', authCRM, async (req, res) => {
     }
 
     let siSlabs = [];
-    try { siSlabs = JSON.parse(rfq.sum_insured_slabs || '[]'); } catch {}
+    siSlabs = safeJSON(rfq.sum_insured_slabs, []);
     const avgSI = avg_si || (siSlabs.length ? siSlabs.reduce((a, b) => a + b, 0) / siSlabs.length : 300000);
 
     const costModel = buildCostModel({
@@ -844,8 +858,7 @@ router.post('/rfqs/:rfqId/strategy-to-quote/:strategy', authCRM, async (req, res
       return res.status(400).json({ success: false, message: 'Run /generate first to produce strategies' });
     }
     const analysis = analysisRows[0];
-    const strategies = typeof analysis.quote_strategies === 'string'
-      ? JSON.parse(analysis.quote_strategies) : analysis.quote_strategies;
+    const strategies = safeJSON(analysis.quote_strategies, []);
     const chosen = strategies.find(s => s.strategy === strategyLetter);
     if (!chosen) return res.status(404).json({ success: false, message: 'Strategy not found in analysis' });
 
