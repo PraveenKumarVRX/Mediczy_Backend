@@ -16,24 +16,15 @@ class CacheService {
    */
   async initialize() {
     try {
+      // redis v5: use socket+password+database (not legacy host/port; not url+socket combined)
       this.client = redis.createClient({
-        host: process.env.REDIS_HOST || 'localhost',
-        port: process.env.REDIS_PORT || 6379,
+        socket: {
+          host: process.env.REDIS_HOST || 'localhost',
+          port: parseInt(process.env.REDIS_PORT || '6379', 10),
+          reconnectStrategy: (attempts) => Math.min(attempts * 100, 3000)
+        },
         password: process.env.REDIS_PASSWORD || undefined,
-        db: process.env.REDIS_DB || 0,
-        retry_strategy: (options) => {
-          if (options.error && options.error.code === 'ECONNREFUSED') {
-            console.error('Redis connection refused');
-            return new Error('Redis server refused connection');
-          }
-          if (options.total_retry_time > 1000 * 60 * 60) {
-            return new Error('Redis retry time exhausted');
-          }
-          if (options.attempt > 10) {
-            return undefined;
-          }
-          return Math.min(options.attempt * 100, 3000);
-        }
+        database: parseInt(process.env.REDIS_DB || '0', 10),
       });
 
       this.client.on('connect', () => {

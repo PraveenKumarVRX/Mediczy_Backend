@@ -1,0 +1,55 @@
+# ── Stage 1: Build React frontend ────────────────────────────────────────────
+FROM node:20-slim AS frontend-builder
+WORKDIR /frontend
+COPY client/package*.json ./
+RUN npm ci --ignore-scripts
+COPY client/ .
+RUN VITE_API_URL=https://mediczy.in/api \
+    VITE_SOCKET_URL=https://mediczy.in \
+    VITE_ENV=production \
+    npm run build
+
+# ── Stage 2: Build server deps (compiles native modules like bcrypt, duckdb) ──
+# node:20-slim is Debian-based (glibc) — required for duckdb prebuilt binaries
+FROM node:20-slim AS deps-builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY server/package*.json ./
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+RUN npm ci --omit=dev
+
+# ── Stage 3: Runtime image ────────────────────────────────────────────────────
+# Must also be Debian/glibc so that duckdb.node can dlopen ld-linux-x86-64.so.2
+FROM node:20-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+
+# Pre-compiled node_modules from stage 2 (bcrypt already built)
+COPY --from=deps-builder /app/node_modules ./node_modules
+
+# Full server source
+COPY server/ .
+
+# React build output
+COPY --from=frontend-builder /frontend/dist ./public
+
+# server/utils/emergencyKeywords.js imports ../../client/src/shared/emergencyKeywords.json
+# which resolves to /client/src/shared/ when running from /app — place it there.
+RUN mkdir -p /client/src/shared
+COPY client/src/shared/emergencyKeywords.json /client/src/shared/emergencyKeywords.json
+
+ENV NODE_ENV=production
+ENV PORT=8888
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+# LaBSE / @xenova model cache — mount an EFS volume here to persist across task restarts
+ENV TRANSFORMERS_CACHE=/app/.cache/transformers
+
+EXPOSE 8888
+
+# Default CMD: API server
+# Override to ["node", "worker-wrapper.cjs"] for the background worker task definition
+CMD ["node", "index.js"]
