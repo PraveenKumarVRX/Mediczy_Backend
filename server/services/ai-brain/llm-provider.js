@@ -167,6 +167,16 @@ function getIshaIncClient() {
  * Translates OpenAI-compatible params → offline_scribe ChatRequest format.
  * Returns an OpenAI-compatible response object for seamless cascade.
  */
+// Strings that indicate any provider is returning a stub (no real inference backend)
+const STUB_RESPONSE_MARKERS = [
+  'This is a stub response',
+  'Integrate vLLM or llama.cpp backend',
+  'enable real inference with BiMediX2',
+  'enable real inference with',
+  'Integrate vLLM',
+  'llama.cpp backend',
+];
+
 async function callLocalSLM(provider, params) {
   const url = `${provider.baseUrl}/api/chat`;
   const controller = new AbortController();
@@ -193,6 +203,12 @@ async function callLocalSLM(provider, params) {
     }
 
     const data = await res.json();
+    const content = data.content || '';
+
+    // Detect stub placeholder responses — treat as failure so cascade continues
+    if (STUB_RESPONSE_MARKERS.some(marker => content.includes(marker))) {
+      throw new Error('local-slm returned stub placeholder — real inference backend not running');
+    }
 
     // Convert offline scribe response to OpenAI-compatible format
     return {
@@ -200,7 +216,7 @@ async function callLocalSLM(provider, params) {
       object: 'chat.completion',
       choices: [{
         index: 0,
-        message: { role: 'assistant', content: data.content || '' },
+        message: { role: 'assistant', content },
         finish_reason: data.finish_reason || 'stop',
       }],
       model: data.model || provider.model,
@@ -440,15 +456,26 @@ async function chat({
       console.log(`[LLM] Trying ${provider.label} (model: ${params.model})...`);
       response = await callProvider(provider, params);
 
+      // Detect stub responses from any provider (e.g. iSHA returning 200 when model not loaded)
+      const rawContent = response.choices[0]?.message?.content || '';
+      if (STUB_RESPONSE_MARKERS.some(marker => rawContent.includes(marker))) {
+        console.warn(`[LLM] ${provider.label} returned stub placeholder, cascading...`);
+        cascade.push({ provider: provider.name, status: 'error', error: 'Stub placeholder response — backend not ready' });
+        errorMessage = (errorMessage ? errorMessage + ' | ' : '') + `${provider.name}: Stub placeholder response`;
+        response = null;
+        continue;
+      }
+
       // If JSON mode requested, validate the response is actually valid JSON
       if (responseFormat && responseFormat.type === 'json_object') {
-        const content = response.choices[0]?.message?.content || '';
+        const content = rawContent;
         try {
           JSON.parse(content);
         } catch {
           console.warn(`[LLM] ${provider.label} returned invalid JSON, cascading...`);
           cascade.push({ provider: provider.name, status: 'error', error: 'Invalid JSON response' });
           errorMessage = (errorMessage ? errorMessage + ' | ' : '') + `${provider.name}: Invalid JSON response`;
+          response = null;
           continue; // Try next provider
         }
       }
