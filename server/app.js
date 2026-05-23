@@ -83,6 +83,7 @@ import crmEmailRouter from './routes/crmEmail.route.js';
 import crmCampaignsRouter from './routes/crmCampaigns.route.js';
 import crmCampaignAnalyticsRouter from './routes/crmCampaignAnalytics.route.js';
 import crmAIRouter from './routes/crm-ai.route.js';
+import crmAnalysisRouter from './routes/crm-analysis.route.js';
 import './workers/crm-campaign.worker.js';
 import welcomeEmailTemplatesRouter from './routes/welcomeEmailTemplates.route.js';
 import emailSettingsRouter from './routes/emailSettings.route.js';
@@ -1247,6 +1248,7 @@ app.use('/api/crm/emails', crmEmailRouter); // CRM email inbox with SMTP/IMAP se
 app.use('/api/crm/campaigns', crmCampaignsRouter); // CRM marketing campaigns
 app.use('/api/crm/campaign-analytics', crmCampaignAnalyticsRouter); // CRM marketing analytics
 app.use('/api/crm/ai', crmAIRouter); // CRM AI — scoring, prediction, insights, forecast
+app.use('/api/crm/analysis', crmAnalysisRouter); // RFQ retrospective/prospective analysis + quote engine
 app.use('/api/fcm', fcmRouter);
 app.use('/api/call-notification', callNotificationRouter); // Doctor-to-patient call notifications
 app.use('/api/firebase', firebaseStatusRouter);
