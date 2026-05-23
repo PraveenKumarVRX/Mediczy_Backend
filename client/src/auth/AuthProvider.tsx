@@ -256,7 +256,7 @@ export const AuthProvider = ({ children }) => {
     // Check portal routes - require respective tokens
     if (isHospitalRoute) {
       const hospitalToken = getValidPortalToken('hospitalToken');
-      if (!hospitalToken && location.pathname !== '/hospital/login') {
+      if (!hospitalToken && location.pathname !== '/hospital/login' && location.pathname !== '/hospital/register') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/hospital/login", { replace: true });
         return;
@@ -300,7 +300,7 @@ export const AuthProvider = ({ children }) => {
     
     if (isAmbulanceRoute) {
       const ambulanceToken = getValidPortalToken('ambulanceToken');
-      if (!ambulanceToken && location.pathname !== '/ambulance/login') {
+      if (!ambulanceToken && location.pathname !== '/ambulance/login' && location.pathname !== '/ambulance/register') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/ambulance/login", { replace: true });
         return;
@@ -435,6 +435,7 @@ export const AuthProvider = ({ children }) => {
       "/doctor-login",
       "/doctor/login",
       "/hospital/login",
+      "/hospital/register",
       "/clinic/login",
       "/clinic/register",
       "/lab/login",
@@ -442,6 +443,7 @@ export const AuthProvider = ({ children }) => {
       "/pharmacy/login",
       "/pharmacy/register",
       "/ambulance/login",
+      "/ambulance/register",
       "/homecare/login",
       "/homecare/register",
       "/corporate/register",

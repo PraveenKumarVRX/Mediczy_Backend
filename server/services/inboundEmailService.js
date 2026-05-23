@@ -19,21 +19,20 @@ class InboundEmailService {
    * @param {number} [daysBack=30]  - how many days back to search (default 30)
    */
   async connectAndFetchEmails(teamMemberId, imapConfig, daysBack = 30) {
-    // Determine the furthest-back date we should fetch.
-    // Use: (a) daysBack ceiling, or (b) 1 day before the earliest email
-    // already stored — so we never miss a gap.
+    // Anchor to the most recent stored email (so incremental syncs only scan
+    // new messages). Fall back to daysBack days ago for first-time syncs.
     let sinceDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
     try {
-      const earliest = await EmailInbox.findOne({
+      const latest = await EmailInbox.findOne({
         where: { teamMemberId },
-        order: [['receivedAt', 'ASC']],
+        order: [['receivedAt', 'DESC']],
         attributes: ['receivedAt']
       });
-      if (earliest) {
-        // fetch 1 day before our earliest stored email to catch any gaps,
-        // but no further back than daysBack
-        const oneDayBefore = new Date(earliest.receivedAt.getTime() - 24 * 60 * 60 * 1000);
-        if (oneDayBefore < sinceDate) sinceDate = oneDayBefore;
+      if (latest) {
+        // Start 1 hour before the most recent email to catch any near-boundary
+        // messages that may have been missed, but never go further back than daysBack.
+        const oneHourBefore = new Date(latest.receivedAt.getTime() - 60 * 60 * 1000);
+        if (oneHourBefore > sinceDate) sinceDate = oneHourBefore;
       }
     } catch (_) { /* non-fatal */ }
 

@@ -255,7 +255,11 @@ router.post('/payment-order', authUser, [
     const gatewayConfig = paymentService.getGatewayConfig();
     res.json({
       success: true,
-      order: orderResult.order,
+      order: {
+        ...orderResult.order,
+        amountINR: Math.round(orderResult.order.amount / 100 * 100) / 100,
+        amountInPaise: orderResult.order.amount
+      },
       gatewayConfig,
       transaction: { description: `Upgrade to ${planName}` }
     });

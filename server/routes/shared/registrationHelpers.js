@@ -91,15 +91,20 @@ export async function scanWithClamAV(buffer, filename) {
   try {
     await writeFile(tmpPath, buffer);
     return await new Promise(resolve => {
-      execFile('/usr/bin/clamscan', ['--no-summary', '--stdout', tmpPath], { timeout: 30000 }, (err, stdout) => {
+      const scanner = process.env.CLAMAV_SCANNER || '/usr/bin/clamdscan';
+      const fallbackScanner = '/usr/bin/clamscan';
+      const runScan = (bin, allowFallback = true) => execFile(bin, ['--no-summary', '--stdout', tmpPath], { timeout: 10000 }, (err, stdout) => {
         if (err?.code === 1) {
           const line = stdout?.split('\n').find(l => l.includes('FOUND')) || 'Malware detected';
           resolve({ clean: false, threat: line.trim() });
+        } else if (err && allowFallback && bin !== fallbackScanner) {
+          runScan(fallbackScanner, false);
         } else {
-          if (err?.code === 2) console.warn(`ClamAV scan error for ${filename}:`, err.message);
+          if (err?.code === 2) console.warn('ClamAV scan error for ' + filename + ':', err.message);
           resolve({ clean: true });
         }
       });
+      runScan(scanner);
     });
   } finally {
     unlink(tmpPath).catch(() => {});
@@ -108,7 +113,6 @@ export async function scanWithClamAV(buffer, filename) {
 
 // ── Helper: validate and upload files to MinIO ────────────────────────────────
 export async function uploadDocuments({ files, emailKey, entityKey, req }) {
-  const { uploadToMinio } = await import('../../services/minio-upload.service.js');
   const docs = [];
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
@@ -121,32 +125,43 @@ export async function uploadDocuments({ files, emailKey, entityKey, req }) {
       console.error(`Malware detected in upload from IP ${req.ip}: ${scan.threat}`);
       throw { status: 400, message: `File "${file.originalname}" was rejected by our virus scanner.` };
     }
-    const result = await uploadToMinio({
-      buffer: file.buffer,
-      originalName: file.originalname,
-      mimeType: file.mimetype,
-      keyPrefix: `registrations/${entityKey}/${emailKey}`,
-    });
-    docs.push({ docType, originalName: file.originalname, url: result.url, key: result.key, bucket: result.bucket, mimeType: file.mimetype, size: file.size, uploadedAt: new Date() });
+    try {
+      const { uploadToMinio } = await import('../../services/minio-upload.service.js');
+      const result = await uploadToMinio({
+        buffer: file.buffer,
+        originalName: file.originalname,
+        mimeType: file.mimetype,
+        keyPrefix: `registrations/${entityKey}/${emailKey}`,
+      });
+      docs.push({ docType, originalName: file.originalname, url: result.url, key: result.key, bucket: result.bucket, mimeType: file.mimetype, size: file.size, uploadedAt: new Date() });
+    } catch (uploadErr) {
+      console.warn(`MinIO upload failed for "${file.originalname}" (non-critical, registration will proceed):`, uploadErr.message);
+      docs.push({ docType, originalName: file.originalname, url: null, key: null, bucket: null, mimeType: file.mimetype, size: file.size, uploadedAt: new Date(), uploadFailed: true });
+    }
   }
   return docs;
 }
 
 export async function uploadIdCard({ file, emailKey, entityKey, req }) {
   if (!file) return null;
-  const { uploadToMinio } = await import('../../services/minio-upload.service.js');
   if (!validateMagicBytes(file.buffer, file.mimetype)) {
     throw { status: 400, message: `ID card failed content validation.` };
   }
   const scan = await scanWithClamAV(file.buffer, file.originalname);
   if (!scan.clean) throw { status: 400, message: `ID card was rejected by our virus scanner.` };
-  const result = await uploadToMinio({
-    buffer: file.buffer,
-    originalName: file.originalname,
-    mimeType: file.mimetype,
-    keyPrefix: `registrations/${entityKey}-id/${emailKey}`,
-  });
-  return { originalName: file.originalname, url: result.url, key: result.key, bucket: result.bucket, mimeType: file.mimetype, size: file.size, uploadedAt: new Date() };
+  try {
+    const { uploadToMinio } = await import('../../services/minio-upload.service.js');
+    const result = await uploadToMinio({
+      buffer: file.buffer,
+      originalName: file.originalname,
+      mimeType: file.mimetype,
+      keyPrefix: `registrations/${entityKey}-id/${emailKey}`,
+    });
+    return { originalName: file.originalname, url: result.url, key: result.key, bucket: result.bucket, mimeType: file.mimetype, size: file.size, uploadedAt: new Date() };
+  } catch (uploadErr) {
+    console.warn(`MinIO upload failed for ID card "${file.originalname}" (non-critical, registration will proceed):`, uploadErr.message);
+    return { originalName: file.originalname, url: null, key: null, bucket: null, mimeType: file.mimetype, size: file.size, uploadedAt: new Date(), uploadFailed: true };
+  }
 }
 
 // ── Admin notification email ──────────────────────────────────────────────────

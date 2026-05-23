@@ -17,8 +17,10 @@ import pdfKnowledgeService from '../services/pdfKnowledge.service.js';
 import cdssService from '../services/cdss.service.js';
 import { scanOnly } from '../services/minio-upload.service.js';
 import cdssFeedbackService from '../services/cdss-feedback.service.js';
+import { authUser, requireRole } from '../middleware/auth.middleware.js';
 
 const router = Router();
+const adminOnly = [authUser, requireRole('admin')];
 
 /**
  * POST /cdss/knowledge/query
@@ -33,7 +35,7 @@ const router = Router();
  *   sources: ["gale", "bmj", "nejm"]
  * }
  */
-router.post('/query', async (req, res) => {
+router.post('/query', authUser, async (req, res) => {
   try {
     const { query, category = 'diagnosis', specialty = 'general', searchKnowledge = true, sources = [] } = req.body;
 
@@ -91,7 +93,7 @@ router.get('/health', async (req, res) => {
  *   ]
  * }
  */
-router.post('/drug-interactions', async (req, res) => {
+router.post('/drug-interactions', authUser, async (req, res) => {
   try {
     const { medications = [] } = req.body;
 
@@ -130,7 +132,7 @@ router.post('/drug-interactions', async (req, res) => {
  *   limit: 5
  * }
  */
-router.post('/medication-alternatives', async (req, res) => {
+router.post('/medication-alternatives', authUser, async (req, res) => {
   try {
     const { genericName, limit = 5 } = req.body;
 
@@ -198,7 +200,7 @@ const upload = multer({
  * - category: Category (e.g., "medical", "pharmacology")
  * - title: Document title (optional, defaults to filename)
  */
-router.post('/upload', upload.single('file'), async (req, res) => {
+router.post('/upload', ...adminOnly, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No PDF file uploaded' });
@@ -258,7 +260,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
  *   category: "category_name"
  * }
  */
-router.post('/ingest', async (req, res) => {
+router.post('/ingest', ...adminOnly, async (req, res) => {
   try {
     const { entries, source = 'manual', category = 'medical' } = req.body;
 
@@ -296,7 +298,7 @@ router.post('/ingest', async (req, res) => {
  *   minSimilarity: 0.5
  * }
  */
-router.post('/search', async (req, res) => {
+router.post('/search', authUser, async (req, res) => {
   try {
     const { query, k = 5, source, category, minSimilarity = 0.5 } = req.body;
 
@@ -328,7 +330,7 @@ router.post('/search', async (req, res) => {
  * GET /cdss/knowledge/stats
  * Get statistics about the knowledge base
  */
-router.get('/stats', async (req, res) => {
+router.get('/stats', ...adminOnly, async (req, res) => {
   try {
     const stats = await pdfKnowledgeService.getStats('cdss_knowledge');
     res.json({ success: true, ...stats });
@@ -342,7 +344,7 @@ router.get('/stats', async (req, res) => {
  * GET /cdss/knowledge/sources
  * List all available sources in the knowledge base
  */
-router.get('/sources', async (req, res) => {
+router.get('/sources', ...adminOnly, async (req, res) => {
   try {
     const stats = await pdfKnowledgeService.getStats('cdss_knowledge');
     res.json({
@@ -360,7 +362,7 @@ router.get('/sources', async (req, res) => {
  * DELETE /cdss/knowledge/source/:source
  * Delete all entries from a specific source
  */
-router.delete('/source/:source', async (req, res) => {
+router.delete('/source/:source', ...adminOnly, async (req, res) => {
   try {
     const { source } = req.params;
     const result = await pdfKnowledgeService.deleteBySource(source, 'cdss_knowledge');
@@ -380,7 +382,7 @@ router.delete('/source/:source', async (req, res) => {
  * Special endpoint to ingest Gale Encyclopedia of Medicine entries
  * Accepts structured medical entries with conditions, symptoms, treatments
  */
-router.post('/ingest-gale', async (req, res) => {
+router.post('/ingest-gale', ...adminOnly, async (req, res) => {
   try {
     const { entries } = req.body;
 
@@ -438,7 +440,7 @@ router.post('/ingest-gale', async (req, res) => {
 });
 
 // ── CDSS Feedback (Phase 2 Learning Loop) ──────────────────────
-router.post('/feedback', async (req, res) => {
+router.post('/feedback', authUser, async (req, res) => {
   try {
     const { queryId, action, feedbackType, originalResponse, modification, reason, codesKept, codesRemoved, codesAdded, queryText } = req.body;
     if (!queryId || !action) return res.status(400).json({ error: 'queryId and action required' });
@@ -454,7 +456,7 @@ router.post('/feedback', async (req, res) => {
   }
 });
 
-router.get('/feedback/stats', async (req, res) => {
+router.get('/feedback/stats', ...adminOnly, async (req, res) => {
   try {
     const days = parseInt(req.query.days) || 30;
     const stats = await cdssFeedbackService.getFeedbackStats(days);
@@ -464,7 +466,7 @@ router.get('/feedback/stats', async (req, res) => {
   }
 });
 
-router.get('/feedback/recent', async (req, res) => {
+router.get('/feedback/recent', ...adminOnly, async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
     const data = await cdssFeedbackService.getRecentFeedback(limit);

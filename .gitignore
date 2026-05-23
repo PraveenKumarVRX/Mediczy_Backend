@@ -97,3 +97,35 @@ tmp_*
 ql*
 cron-registry.json
 server/public/downloads/*.apk
+
+
+# Runtime uploads and generated local artifacts
+uploads/
+server/uploads/
+server/logs/
+reports/
+pids/
+*.pid
+*.sqlite
+*.duckdb
+*.duckdb.wal
+
+# Local/vendor SDK drops and copied workspaces
+Android_Ble_SDK-master/
+iOS_Ble_SDK-master/
+whisper.cpp/
+workspaces/
+
+# Legacy backups and ad-hoc generated variants
+*.bak
+*.backup
+*.old
+*.old.js
+*.new
+*.disabled
+*_OLD.tsx
+*_backup_*
+
+# Large raw SQL dumps
+/uat.sql
+/*dump*.sql

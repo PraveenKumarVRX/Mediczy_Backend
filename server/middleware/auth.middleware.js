@@ -127,16 +127,13 @@ const bindTenantContext = (req, tenantId) => {
 
 export const authUser = async (req, res, next) => {
   // Skip auth for Twilio webhooks and other public endpoints that set skipAuth
-  console.log('🔐 [authUser] Called for path:', req.path, 'skipAuth:', req.skipAuth);
   if (req.skipAuth) {
-    console.log('✅ [authUser] Skipping auth, skipAuth=true');
     return next();
   }
 
   const token = req.headers.authorization?.split(" ")[1];
 
   if (!token) {
-    console.log('❌ [authUser] No token found');
     return res.status(401).json({ message: "unauthorized token" });
   }
 
@@ -193,8 +190,6 @@ export const authUser = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
-    console.log("🔹 Token verification SUCCESS");
-
     // Doctor role: fetch full profile from DB BEFORE tenant bypass
     // (ensures firstName/lastName are populated for video call display names)
     if (decoded.role === "doctor") {
@@ -527,9 +522,7 @@ export const authUserOptional = async (req, _res, next) => {
 
 export const requireRole = (role) => {
   return (req, res, next) => {
-    console.log('🔑 [requireRole] Called with role:', role, 'req.userRole:', req.userRole, 'path:', req.path);
     if (!req.userRole) {
-      console.log('❌ [requireRole] No userRole, returning 401');
       return res.status(401).json({ message: 'Unauthorized' });
     }
     

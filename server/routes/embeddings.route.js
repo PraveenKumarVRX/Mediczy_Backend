@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import {
   upsertEmbeddings,
   searchEmbeddings,
@@ -8,6 +9,9 @@ import {
 } from '../repositories/embeddings.repository.js';
 
 const router = Router();
+
+router.use(authUser);
+router.use(requireRole('admin'));
 
 router.post('/', async (req, res) => {
   try {

@@ -709,6 +709,7 @@ router.post('/payments/razorpay/create', authUser, async (req, res) => {
       data: {
         orderId: razorpayOrder.orderId,
         amount: razorpayOrder.amount,
+        amountInPaise: razorpayOrder.amountInPaise,
         currency: razorpayOrder.currency,
         paymentId: payment.id,
         key: process.env.RAZORPAY_KEY_ID
@@ -768,18 +769,13 @@ router.post('/payments/razorpay/verify', authUser, async (req, res) => {
       });
     }
 
-    // Fetch payment details from Razorpay
-    const paymentDetails = await paymentGateway.fetchRazorpayPayment(razorpayPaymentId);
-
-    // Update payment record
+    // Commit DB update immediately — do not block on the Razorpay API fetch.
+    // Signature is already verified; the payment is valid regardless of whether
+    // the enrichment call below succeeds.
     await payment.update({
       status: 'success',
       gatewayPaymentId: razorpayPaymentId,
-      gatewaySignature: razorpaySignature,
-      method: paymentDetails.payment.method,
-      email: paymentDetails.payment.email,
-      phone: paymentDetails.payment.contact,
-      gatewayResponse: paymentDetails.payment
+      gatewaySignature: razorpaySignature
     });
 
     // Update order status
@@ -801,11 +797,25 @@ router.post('/payments/razorpay/verify', authUser, async (req, res) => {
       description: `Payment successful for order ${payment.orderId}`
     });
 
-    return res.json({
+    // Respond before the optional Razorpay enrichment fetch
+    res.json({
       success: true,
       message: 'Payment verified successfully',
       data: { payment }
     });
+
+    // Fire-and-forget: enrich payment record with method/email/phone from Razorpay.
+    // A failure here does not affect the client or the order.
+    paymentGateway.fetchRazorpayPayment(razorpayPaymentId).then(details => {
+      payment.update({
+        method: details.payment.method,
+        email: details.payment.email,
+        phone: details.payment.contact,
+        gatewayResponse: details.payment
+      }).catch(err => console.error('Payment enrichment DB update failed:', err.message));
+    }).catch(err => console.error('fetchRazorpayPayment enrichment failed:', err.message));
+
+    return;
 
   } catch (error) {
     console.error('Verify Razorpay payment error:', error);

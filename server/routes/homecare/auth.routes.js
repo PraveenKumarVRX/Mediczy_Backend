@@ -151,7 +151,18 @@ router.post('/register', registerLimiter, hcUploadFields, async (req, res) => {
 
     const normalizedEmail = email.toLowerCase();
     const existing = await HomecareProvider.findOne({ where: { email: normalizedEmail } });
-    if (existing) return res.status(409).json({ success: false, message: 'Email already registered' });
+    if (existing) {
+      if (existing.status === 'pending') {
+        return res.status(200).json({
+          success: true,
+          message: 'Your registration was already submitted and is pending review. We will contact you at ' + normalizedEmail + ' once approved.',
+          alreadyRegistered: true,
+          registrationId: existing.id,
+          entityType: 'homecare',
+        });
+      }
+      return res.status(409).json({ success: false, message: 'Email already registered' });
+    }
 
     const emailKey = normalizedEmail.replace(/[^a-z0-9]/g, '_');
     const docs   = await uploadDocuments({ files: req.files?.documents || [], emailKey, entityKey: 'homecare', req });

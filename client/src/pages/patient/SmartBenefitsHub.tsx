@@ -39,7 +39,7 @@ import MainLayout from '@/components/layout/MainLayout';
 interface BenefitPlan {
   id: string;
   name: string;
-  type: 'gmc' | 'gpa' | 'gtl' | 'opd' | 'dental' | 'vision' | 'wellness';
+  type: 'gmc' | 'gpa' | 'gtl' | 'opd' | 'dental' | 'vision' | 'wellness' | 'topup' | 'parents' | 'personal';
   insurer: string;
   insurerLogo?: string;
   policyNumber: string;
@@ -88,11 +88,60 @@ const typeGradient: Record<string, string> = {
   dental: 'from-pink-600 via-pink-500 to-rose-400',
   vision: 'from-indigo-600 via-indigo-500 to-blue-400',
   wellness: 'from-teal-600 via-teal-500 to-green-400',
+  topup: 'from-cyan-600 via-sky-500 to-blue-400',
+  parents: 'from-rose-600 via-red-500 to-orange-400',
+  personal: 'from-slate-600 via-slate-500 to-zinc-400',
 };
 
 const typeIcon: Record<string, any> = {
   gmc: Shield, gpa: ShieldCheck, gtl: Heart, opd: Stethoscope,
   dental: Bone, vision: Eye, wellness: Activity,
+  topup: TrendingUp, parents: Users, personal: FileCheck,
+};
+
+const eCardEligible = new Set(['gmc', 'parents', 'topup', 'personal']);
+
+const policyBenefitChips: Record<string, { icon: any; label: string; highlight?: boolean }[]> = {
+  gmc: [
+    { icon: Building2, label: '6,000+ Cashless', highlight: true },
+    { icon: Baby, label: 'Maternity ₹50K' },
+    { icon: Zap, label: 'Day Care' },
+  ],
+  gpa: [
+    { icon: ShieldCheck, label: 'Accidental Death', highlight: true },
+    { icon: Bone, label: 'Disability Cover' },
+    { icon: Award, label: 'Edu Benefit' },
+  ],
+  topup: [
+    { icon: TrendingUp, label: 'Family Floater', highlight: true },
+    { icon: RefreshCw, label: 'Multi-Claim' },
+    { icon: Building2, label: 'Post-Deductible' },
+  ],
+  parents: [
+    { icon: Users, label: 'Parents Covered', highlight: true },
+    { icon: Building2, label: 'Cashless Network' },
+    { icon: Calendar, label: 'Day Care' },
+  ],
+  personal: [
+    { icon: Shield, label: 'Individual Cover', highlight: true },
+    { icon: Stethoscope, label: 'Annual Checkup' },
+    { icon: Gift, label: 'NCB Eligible' },
+  ],
+  opd: [
+    { icon: Stethoscope, label: 'Consultations', highlight: true },
+    { icon: Pill, label: 'Medicines' },
+    { icon: Activity, label: 'Diagnostics' },
+  ],
+  gtl: [
+    { icon: Heart, label: '₹25L Life Cover', highlight: true },
+    { icon: Zap, label: '₹50L Accidental' },
+    { icon: AlertCircle, label: 'Terminal Illness' },
+  ],
+  dental: [
+    { icon: Bone, label: 'Dental Care', highlight: true },
+    { icon: Eye, label: 'Eye Exam' },
+    { icon: Star, label: 'Spectacles' },
+  ],
 };
 
 const statusConfig: Record<string, { color: string; bg: string; icon: any; label: string }> = {
@@ -108,6 +157,97 @@ const statusConfig: Record<string, { color: string; bg: string; icon: any; label
 const fmt = (n: number) => n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${(n / 1000).toFixed(0)}K`;
 const fmtFull = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 
+const defaultBenefitPlans: BenefitPlan[] = [
+  {
+    id: 'gmc', name: 'Group Mediclaim', type: 'gmc', insurer: 'ICICI Lombard',
+    policyNumber: 'GMC-2026-IND-4851', sumInsured: 500000, utilized: 45000,
+    remaining: 455000, familyCovered: 4, validFrom: '2026-04-01', validTo: '2027-03-31',
+    features: ['Cashless at 6000+ hospitals', 'No waiting period', 'Pre & post hospitalization', 'Day care procedures', 'Ambulance cover ₹2,500', 'Maternity benefit ₹50,000'],
+    sublimits: [
+      { name: 'Room Rent', limit: 5000, used: 0 },
+      { name: 'ICU', limit: 10000, used: 0 },
+      { name: 'Maternity', limit: 50000, used: 0 },
+      { name: 'Ambulance', limit: 2500, used: 0 },
+    ],
+  },
+  {
+    id: 'gpa', name: 'Group Personal Accident', type: 'gpa', insurer: 'Tata AIG',
+    policyNumber: 'GPA-2026-TATA-1187', sumInsured: 1000000, utilized: 0,
+    remaining: 1000000, familyCovered: 1, validFrom: '2026-04-01', validTo: '2027-03-31',
+    features: ['Accidental death cover', 'Permanent disability cover', 'Temporary total disability', 'Education benefit', 'Ambulance support'],
+    sublimits: [
+      { name: 'Accidental Death', limit: 1000000, used: 0 },
+      { name: 'Permanent Disability', limit: 1000000, used: 0 },
+      { name: 'Weekly Benefit', limit: 10000, used: 0 },
+    ],
+  },
+  {
+    id: 'topup', name: 'Super Top Up', type: 'topup', insurer: 'Care Health',
+    policyNumber: 'STU-2026-CARE-5590', sumInsured: 1000000, utilized: 0,
+    remaining: 1000000, familyCovered: 4, validFrom: '2026-04-01', validTo: '2027-03-31',
+    features: ['Coverage above deductible', 'Family floater top-up', 'Multiple claims aggregation', 'Cashless hospitalization after threshold'],
+    sublimits: [
+      { name: 'Deductible', limit: 300000, used: 0 },
+      { name: 'Top-up Cover', limit: 1000000, used: 0 },
+    ],
+  },
+  {
+    id: 'parents', name: 'Parents Mediclaim', type: 'parents', insurer: 'Aditya Birla Health',
+    policyNumber: 'PMC-2026-ABHI-4412', sumInsured: 300000, utilized: 0,
+    remaining: 300000, familyCovered: 2, validFrom: '2026-04-01', validTo: '2027-03-31',
+    features: ['Parent hospitalization cover', 'Cashless network access', 'Day care procedures', 'Pre & post hospitalization'],
+    sublimits: [
+      { name: 'Hospitalization', limit: 300000, used: 0 },
+      { name: 'Room Rent', limit: 3000, used: 0 },
+    ],
+  },
+  {
+    id: 'personal', name: 'Personal Health Insurance', type: 'personal', insurer: 'HDFC ERGO',
+    policyNumber: 'PHI-2026-HDFC-6729', sumInsured: 500000, utilized: 0,
+    remaining: 500000, familyCovered: 1, validFrom: '2026-04-01', validTo: '2027-03-31',
+    features: ['Individual health cover', 'Cashless hospitalization', 'Annual health checkup', 'No-claim bonus eligibility'],
+    sublimits: [
+      { name: 'Hospitalization', limit: 500000, used: 0 },
+      { name: 'Health Checkup', limit: 3000, used: 0 },
+    ],
+  },
+  {
+    id: 'opd', name: 'OPD Benefit', type: 'opd', insurer: 'Star Health',
+    policyNumber: 'OPD-2026-STR-9012', sumInsured: 15000, utilized: 3200,
+    remaining: 11800, familyCovered: 4, validFrom: '2026-04-01', validTo: '2027-03-31',
+    features: ['Doctor consultations', 'Medicines', 'Diagnostics', 'Physiotherapy'],
+    sublimits: [
+      { name: 'Consultation', limit: 5000, used: 2000 },
+      { name: 'Medicines', limit: 5000, used: 1200 },
+      { name: 'Diagnostics', limit: 5000, used: 0 },
+    ],
+  },
+  {
+    id: 'gtl', name: 'Group Term Life', type: 'gtl', insurer: 'HDFC Life',
+    policyNumber: 'GTL-2026-HDFC-3341', sumInsured: 2500000, utilized: 0,
+    remaining: 2500000, familyCovered: 1, validFrom: '2026-04-01', validTo: '2027-03-31',
+    features: ['Death benefit 25L', 'Accidental death 50L', 'Terminal illness cover'],
+    sublimits: [],
+  },
+  {
+    id: 'dental', name: 'Dental & Vision', type: 'dental', insurer: 'Niva Bupa',
+    policyNumber: 'DNT-2026-NIVA-7802', sumInsured: 10000, utilized: 0,
+    remaining: 10000, familyCovered: 4, validFrom: '2026-04-01', validTo: '2027-03-31',
+    features: ['Dental checkup', 'Cleaning & scaling', 'Eye exam', 'Spectacles allowance'],
+    sublimits: [
+      { name: 'Dental', limit: 5000, used: 0 },
+      { name: 'Vision', limit: 5000, used: 0 },
+    ],
+  },
+];
+
+const mergeExpectedBenefitPlans = (incoming: BenefitPlan[]) => {
+  const byType = new Set(incoming.map((plan) => plan.type));
+  const byName = new Set(incoming.map((plan) => plan.name.toLowerCase()));
+  const missing = defaultBenefitPlans.filter((plan) => !byType.has(plan.type) && !byName.has(plan.name.toLowerCase()));
+  return [...incoming, ...missing];
+};
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 export default function SmartBenefitsHub() {
   const navigate = useNavigate();
@@ -118,6 +258,7 @@ export default function SmartBenefitsHub() {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [loading, setLoading] = useState(true);
   const [showECard, setShowECard] = useState(false);
+  const [eCardPlan, setECardPlan] = useState<BenefitPlan | null>(null);
   const [showClaimModal, setShowClaimModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<BenefitPlan | null>(null);
   const [networkSearch, setNetworkSearch] = useState('');
@@ -128,6 +269,7 @@ export default function SmartBenefitsHub() {
 
   const loadBenefitsData = async () => {
     setLoading(true);
+    let apiPlans: BenefitPlan[] = [];
     try {
       const token = getToken();
       if (token) {
@@ -135,56 +277,12 @@ export default function SmartBenefitsHub() {
           api.get('/employee/benefits').catch(() => null),
           api.get('/employee/claims').catch(() => null),
         ]);
-        if (benefitsRes?.data?.plans) setPlans(benefitsRes.data.plans);
+        apiPlans = Array.isArray(benefitsRes?.data?.plans) ? benefitsRes.data.plans : [];
         if (claimsRes?.data?.claims) setClaims(claimsRes.data.claims);
       }
     } catch { /* graceful fallback */ }
 
-    // Demo data for showcase
-    if (plans.length === 0) {
-      setPlans([
-        {
-          id: '1', name: 'Group Mediclaim', type: 'gmc', insurer: 'ICICI Lombard',
-          policyNumber: 'GMC-2026-IND-4851', sumInsured: 500000, utilized: 45000,
-          remaining: 455000, familyCovered: 4, validFrom: '2026-04-01', validTo: '2027-03-31',
-          features: ['Cashless at 6000+ hospitals', 'No waiting period', 'Pre & post hospitalization', 'Day care procedures', 'Ambulance cover ₹2,500', 'Maternity benefit ₹50,000'],
-          sublimits: [
-            { name: 'Room Rent', limit: 5000, used: 0 },
-            { name: 'ICU', limit: 10000, used: 0 },
-            { name: 'Maternity', limit: 50000, used: 0 },
-            { name: 'Ambulance', limit: 2500, used: 0 },
-          ],
-        },
-        {
-          id: '2', name: 'OPD Benefit', type: 'opd', insurer: 'Star Health',
-          policyNumber: 'OPD-2026-STR-9012', sumInsured: 15000, utilized: 3200,
-          remaining: 11800, familyCovered: 4, validFrom: '2026-04-01', validTo: '2027-03-31',
-          features: ['Doctor consultations', 'Medicines', 'Diagnostics', 'Physiotherapy'],
-          sublimits: [
-            { name: 'Consultation', limit: 5000, used: 2000 },
-            { name: 'Medicines', limit: 5000, used: 1200 },
-            { name: 'Diagnostics', limit: 5000, used: 0 },
-          ],
-        },
-        {
-          id: '3', name: 'Group Term Life', type: 'gtl', insurer: 'HDFC Life',
-          policyNumber: 'GTL-2026-HDFC-3341', sumInsured: 2500000, utilized: 0,
-          remaining: 2500000, familyCovered: 1, validFrom: '2026-04-01', validTo: '2027-03-31',
-          features: ['Death benefit 25L', 'Accidental death 50L', 'Terminal illness cover'],
-          sublimits: [],
-        },
-        {
-          id: '4', name: 'Dental & Vision', type: 'dental', insurer: 'Niva Bupa',
-          policyNumber: 'DNT-2026-NIVA-7802', sumInsured: 10000, utilized: 0,
-          remaining: 10000, familyCovered: 4, validFrom: '2026-04-01', validTo: '2027-03-31',
-          features: ['Dental checkup', 'Cleaning & scaling', 'Eye exam', 'Spectacles allowance'],
-          sublimits: [
-            { name: 'Dental', limit: 5000, used: 0 },
-            { name: 'Vision', limit: 5000, used: 0 },
-          ],
-        },
-      ]);
-    }
+    setPlans(mergeExpectedBenefitPlans(apiPlans));
 
     if (family.length === 0) {
       setFamily([
@@ -245,16 +343,10 @@ export default function SmartBenefitsHub() {
                 {plans.length} active plans • {family.length} members covered
               </p>
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowECard(true)}
-                className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10 rounded-xl gap-1.5">
-                <CreditCard className="h-3.5 w-3.5" /> E-Card
-              </Button>
-              <Button size="sm" onClick={() => setShowClaimModal(true)}
-                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 border-0 rounded-xl gap-1.5 shadow-lg shadow-blue-600/20">
-                <Upload className="h-3.5 w-3.5" /> File Claim
-              </Button>
-            </div>
+            <Button size="sm" onClick={() => setShowClaimModal(true)}
+              className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 border-0 rounded-xl gap-1.5 shadow-lg shadow-blue-600/20">
+              <Upload className="h-3.5 w-3.5" /> File Claim
+            </Button>
           </div>
 
           {/* Coverage Summary Ring */}
@@ -351,11 +443,40 @@ export default function SmartBenefitsHub() {
                               transition={{ delay: 0.3, duration: 0.6, ease: 'easeOut' }}
                               className={`h-full bg-gradient-to-r ${gradient} rounded-full`} />
                           </div>
+
+                          {/* Per-policy benefit chips */}
+                          {(policyBenefitChips[plan.type] || []).length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mb-3">
+                              {(policyBenefitChips[plan.type] || []).map((chip, ci) => {
+                                const ChipIcon = chip.icon;
+                                return (
+                                  <span key={ci} className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                                    chip.highlight
+                                      ? `bg-gradient-to-r ${gradient} text-white shadow-sm`
+                                      : 'bg-white/[0.04] text-slate-400 border border-white/[0.06]'
+                                  }`}>
+                                    <ChipIcon className="h-2.5 w-2.5" />
+                                    {chip.label}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+
                           <div className="flex items-center justify-between">
                             <p className="text-[10px] text-slate-500">
                               {pct.toFixed(1)}% used • Valid till {new Date(plan.validTo).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
                             </p>
-                            <ChevronRight className="h-4 w-4 text-slate-600 group-hover:text-white transition-colors" />
+                            <div className="flex items-center gap-2">
+                              {eCardEligible.has(plan.type) && (
+                                <button
+                                  onClick={e => { e.stopPropagation(); setECardPlan(plan); setShowECard(true); }}
+                                  className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors border border-blue-500/20">
+                                  <CreditCard className="h-3 w-3" /> E-Card
+                                </button>
+                              )}
+                              <ChevronRight className="h-4 w-4 text-slate-600 group-hover:text-white transition-colors" />
+                            </div>
                           </div>
                         </CardContent>
                       </Card>
@@ -367,7 +488,7 @@ export default function SmartBenefitsHub() {
                 <div className="grid grid-cols-2 gap-3 mt-6">
                   {[
                     { icon: Building2, label: 'Find Hospital', desc: 'Cashless network', action: () => setTab('network') },
-                    { icon: Download, label: 'Download Card', desc: 'E-Health card', action: () => setShowECard(true) },
+                    { icon: Download, label: 'Download Card', desc: 'E-Health card', action: () => { setECardPlan(plans.find(p => p.type === 'gmc') || plans[0]); setShowECard(true); } },
                     { icon: Phone, label: 'Claim Help', desc: '24/7 support', action: () => navigate('/emergency') },
                     { icon: FileCheck, label: 'Pre-Auth', desc: 'Check status', action: () => setTab('claims') },
                   ].map((a, i) => (
@@ -611,49 +732,87 @@ export default function SmartBenefitsHub() {
       <Dialog open={showECard} onOpenChange={setShowECard}>
         <DialogContent className="bg-slate-900 border-white/10 max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-white">Digital Health Card</DialogTitle>
+            <DialogTitle className="text-white text-sm">
+              {eCardPlan ? `${eCardPlan.name} — E-Card` : 'Digital Health Card'}
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            {family.filter(f => f.relation === 'Self').map(member => (
-              <div key={member.id} className="bg-gradient-to-br from-blue-600 via-blue-700 to-violet-700 rounded-2xl p-6 relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
-                <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2" />
-                <div className="relative">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <Shield className="h-5 w-5 text-white/80" />
-                      <span className="text-xs font-semibold text-white/80 uppercase tracking-wider">Mediqzy Health Card</span>
+          {eCardPlan && (() => {
+            const EcIcon = typeIcon[eCardPlan.type] || Shield;
+            const ecGradient = typeGradient[eCardPlan.type] || typeGradient.gmc;
+            const coveredMembers = family.slice(0, eCardPlan.familyCovered);
+            const otherCards = plans.filter(p => eCardEligible.has(p.type) && p.id !== eCardPlan.id);
+            return (
+              <div className="space-y-4">
+                {/* Card visual */}
+                <div className={`bg-gradient-to-br ${ecGradient} rounded-2xl p-5 relative overflow-hidden`}>
+                  <div className="absolute top-0 right-0 w-28 h-28 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
+                  <div className="absolute bottom-0 left-0 w-20 h-20 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2" />
+                  <div className="relative">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <EcIcon className="h-4 w-4 text-white/80" />
+                        <span className="text-[10px] font-semibold text-white/80 uppercase tracking-wider">Mediqzy Health Card</span>
+                      </div>
+                      <QrCode className="h-6 w-6 text-white/60" />
                     </div>
-                    <QrCode className="h-6 w-6 text-white/60" />
-                  </div>
-                  <h3 className="text-lg font-bold text-white mb-1">{member.name}</h3>
-                  <p className="text-xs text-white/60 mb-4">Employee • ID: {member.eCardId}</p>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[10px] text-white/50">Policy</p>
-                      <p className="text-xs font-mono text-white/80">{plans[0]?.policyNumber || 'N/A'}</p>
+                    <h3 className="text-base font-bold text-white">{eCardPlan.insurer}</h3>
+                    <p className="text-xs text-white/60 mb-3">{eCardPlan.name}</p>
+                    {/* Covered members */}
+                    <div className="flex flex-wrap gap-1.5 mb-4">
+                      {coveredMembers.map(m => (
+                        <span key={m.id} className="inline-flex items-center text-[10px] bg-white/15 text-white px-2 py-0.5 rounded-full font-medium">
+                          {m.name} <span className="text-white/50 ml-1">({m.relation})</span>
+                        </span>
+                      ))}
                     </div>
-                    <div>
-                      <p className="text-[10px] text-white/50">Valid Till</p>
-                      <p className="text-xs font-mono text-white/80">{plans[0]?.validTo ? new Date(plans[0].validTo).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : 'N/A'}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-white/50">Cover</p>
-                      <p className="text-xs font-mono text-white/80">{fmt(totalSumInsured)}</p>
+                    <div className="flex items-center justify-between border-t border-white/10 pt-3">
+                      <div>
+                        <p className="text-[9px] text-white/50 mb-0.5">Policy No.</p>
+                        <p className="text-[11px] font-mono text-white/80">{eCardPlan.policyNumber}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[9px] text-white/50 mb-0.5">Cover</p>
+                        <p className="text-[11px] font-mono text-white/80">{fmt(eCardPlan.sumInsured)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[9px] text-white/50 mb-0.5">Valid Till</p>
+                        <p className="text-[11px] font-mono text-white/80">{new Date(eCardPlan.validTo).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
+
+                {/* Switch to other policy cards */}
+                {otherCards.length > 0 && (
+                  <div>
+                    <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider mb-2">Your Other Cards</p>
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      {otherCards.map(p => {
+                        const PIcon = typeIcon[p.type] || Shield;
+                        const pGrad = typeGradient[p.type] || typeGradient.gmc;
+                        return (
+                          <button key={p.id} onClick={() => setECardPlan(p)}
+                            className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r ${pGrad} text-white text-[10px] font-medium shadow-sm`}>
+                            <PIcon className="h-3 w-3" />
+                            {p.name.split(' ').slice(0, 2).join(' ')}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <Button className="flex-1 bg-blue-600 hover:bg-blue-500 border-0 rounded-xl gap-1 text-sm">
+                    <Download className="h-4 w-4" /> Download
+                  </Button>
+                  <Button variant="outline" className="flex-1 border-white/10 text-slate-300 rounded-xl gap-1 text-sm">
+                    <Share2 className="h-4 w-4" /> Share
+                  </Button>
+                </div>
               </div>
-            ))}
-            <div className="flex gap-2">
-              <Button className="flex-1 bg-blue-600 hover:bg-blue-500 border-0 rounded-xl gap-1">
-                <Download className="h-4 w-4" /> Download
-              </Button>
-              <Button variant="outline" className="flex-1 border-white/10 text-slate-300 rounded-xl gap-1">
-                <Share2 className="h-4 w-4" /> Share
-              </Button>
-            </div>
-          </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
@@ -750,9 +909,11 @@ export default function SmartBenefitsHub() {
                     <Button className="flex-1 bg-blue-600 hover:bg-blue-500 border-0 rounded-xl" onClick={() => { setSelectedPlan(null); setShowClaimModal(true); }}>
                       File Claim
                     </Button>
-                    <Button variant="outline" className="flex-1 border-white/10 rounded-xl" onClick={() => { setSelectedPlan(null); setShowECard(true); }}>
-                      View E-Card
-                    </Button>
+                    {eCardEligible.has(selectedPlan.type) && (
+                      <Button variant="outline" className="flex-1 border-white/10 rounded-xl gap-1" onClick={() => { setECardPlan(selectedPlan); setSelectedPlan(null); setShowECard(true); }}>
+                        <CreditCard className="h-4 w-4" /> E-Card
+                      </Button>
+                    )}
                   </div>
                 </div>
               </>

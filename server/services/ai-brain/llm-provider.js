@@ -11,6 +11,8 @@
  * NO other file should instantiate OpenAI / Groq / Anthropic directly.
  */
 
+import fs from 'fs';
+import path from 'path';
 import OpenAI from 'openai';
 import Groq from 'groq-sdk';
 import pool from '../../db/pgPool.js';
@@ -21,10 +23,38 @@ import { recordTelemetry } from './evaluation-engine.js';
 // ─── Provider Clients (lazy-init) ───────────────────────────
 
 const _clients = {};
+let _providerEnvCache = null;
+
+function getProviderEnv(key) {
+  if (process.env[key]) return process.env[key];
+  if (!_providerEnvCache) {
+    _providerEnvCache = {};
+    const candidates = [
+      path.resolve(process.cwd(), '../ai-engine/doctor_bot/.env'),
+      path.resolve(process.cwd(), 'ai-engine/doctor_bot/.env'),
+      '/home/ubuntu/Mediczy/ai-engine/doctor_bot/.env',
+    ];
+    for (const file of candidates) {
+      if (!fs.existsSync(file)) continue;
+      const lines = fs.readFileSync(file, 'utf8').split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const idx = trimmed.indexOf('=');
+        if (idx === -1) continue;
+        const envKey = trimmed.slice(0, idx).trim();
+        const raw = trimmed.slice(idx + 1).trim();
+        _providerEnvCache[envKey] = raw.replace(/^(['"])(.*)\1$/, '$2');
+      }
+      break;
+    }
+  }
+  return _providerEnvCache[key];
+}
 
 /**
  * Direct fetch for iSHA — uses JWT auto-login (same pattern as SIB retrieval_llm.py).
- * Credentials: ISHA_AUTH_USERNAME / ISHA_AUTH_PASSWORD (default: admin/admin123).
+ * Credentials: ISHA_AUTH_USERNAME / ISHA_AUTH_PASSWORD.
  * Token is cached in-memory and auto-refreshed 5 min before expiry.
  */
 let _ishaToken = null;
@@ -34,9 +64,13 @@ async function getIshaToken() {
   const now = Date.now() / 1000;
   if (_ishaToken && now < _ishaTokenExp - 300) return _ishaToken;
 
-  const baseURL = process.env.ISHA_AI_URL || 'https://ai.isha.buzz';
-  const username = process.env.ISHA_AUTH_USERNAME || 'admin';
-  const password = process.env.ISHA_AUTH_PASSWORD || 'admin123';
+  const baseURL = getProviderEnv('ISHA_AI_URL');
+  const username = getProviderEnv('ISHA_AUTH_USERNAME');
+  const password = getProviderEnv('ISHA_AUTH_PASSWORD');
+
+  if (!baseURL || !username || !password) {
+    throw new Error('iSHA AI credentials are not fully configured');
+  }
 
   const res = await fetch(`${baseURL}/auth/login`, {
     method: 'POST',
@@ -61,7 +95,8 @@ async function getIshaToken() {
 }
 
 async function callIsha(params) {
-  const baseURL = process.env.ISHA_AI_URL || 'https://ai.isha.buzz';
+  const baseURL = getProviderEnv('ISHA_AI_URL');
+  if (!baseURL) throw new Error('ISHA_AI_URL not configured');
   const url = `${baseURL}/v1/chat/completions`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30_000);
@@ -97,7 +132,7 @@ async function callIsha(params) {
 
 function getGroqClient() {
   if (!_clients.groq) {
-    const apiKey = process.env.GROQ_API_KEY;
+    const apiKey = getProviderEnv('GROQ_API_KEY');
     if (!apiKey || apiKey === 'your_groq_api_key_here') {
       throw new Error('GROQ_API_KEY not configured');
     }
@@ -108,7 +143,7 @@ function getGroqClient() {
 
 function getOpenAIClient() {
   if (!_clients.openai) {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = getProviderEnv('OPENAI_API_KEY');
     if (!apiKey || apiKey.startsWith('sk-proj-test')) {
       throw new Error('OPENAI_API_KEY not configured');
     }
@@ -119,9 +154,9 @@ function getOpenAIClient() {
 
 function getIshaIncClient() {
   if (!_clients.ishaInc) {
-    const apiKey = process.env.ISHA_INC_API_KEY;
+    const apiKey = getProviderEnv('ISHA_INC_API_KEY');
     if (!apiKey) throw new Error('ISHA_INC_API_KEY not configured');
-    const baseURL = (process.env.ISHA_INC_URL || 'http://isha-inc.com') + '/v1';
+    const baseURL = (getProviderEnv('ISHA_INC_URL') || 'http://isha-inc.com') + '/v1';
     _clients.ishaInc = new OpenAI({ baseURL, apiKey });
   }
   return _clients.ishaInc;
@@ -188,7 +223,7 @@ const PROVIDERS = [
   {
     name: 'isha-reflex',
     label: 'iSHA.buzz (Qwen-0.6B-Med — REFLEX)',
-    model: process.env.ISHA_REFLEX_MODEL || 'qwen-0.6b-med',
+    model: getProviderEnv('ISHA_REFLEX_MODEL') || 'qwen-0.6b-med',
     getClient: () => ({ available: true }),
     useFetch: true,
     priority: 1,
@@ -204,14 +239,14 @@ const PROVIDERS = [
   {
     name: 'isha-inc',
     label: 'isha-inc.com (smart-orchestrator)',
-    model: process.env.ISHA_INC_MODEL || 'smart-orchestrator',
+    model: getProviderEnv('ISHA_INC_MODEL') || 'smart-orchestrator',
     getClient: getIshaIncClient,
     priority: 3,
   },
   {
     name: 'isha',
     label: 'iSHA.buzz (BiMediX2-8B FP16 — DEEP)',
-    model: process.env.ISHA_LLM_MODEL || 'bimedix2-8b-fp16',
+    model: getProviderEnv('ISHA_LLM_MODEL') || 'bimedix2-8b-fp16',
     getClient: () => ({ available: true }),
     useFetch: true,
     priority: 4,
@@ -230,7 +265,7 @@ const PROVIDERS = [
     model: 'indic-gemma-2b-navarasa',
     useFetch: false,
     useLocalSLM: true,
-    baseUrl: process.env.OFFLINE_SCRIBE_URL || 'http://localhost:8006',
+    baseUrl: getProviderEnv('OFFLINE_SCRIBE_URL') || 'http://localhost:8006',
     priority: 5,                   // Only used when all cloud providers fail
   },
 ];
@@ -659,19 +694,20 @@ async function logVisionRequest(provider, model, content, latencyMs, mimeType, u
  * @param {string} [options.responseFormat] - 'verbose_json' | 'text' | 'json'
  * @returns {{ text: string, provider: string, duration?: number, language?: string }}
  */
-async function transcribe(fileInput, { language = 'en', responseFormat = 'verbose_json' } = {}) {
+async function transcribe(fileInput, { language = null, responseFormat = 'verbose_json' } = {}) {
   const errors = [];
 
   // 1. Try Groq Whisper (faster + free)
   try {
     const groqClient = getGroqClient();
     console.log('[STT] Trying Groq Whisper...');
-    const result = await groqClient.audio.transcriptions.create({
+    const params = {
       file: fileInput,
       model: 'whisper-large-v3',
-      language,
       response_format: responseFormat
-    });
+    };
+    if (language && language !== 'auto') params.language = language;
+    const result = await groqClient.audio.transcriptions.create(params);
     console.log('[STT] ✅ Groq Whisper succeeded');
     return { success: true, text: result.text, provider: 'groq-whisper', duration: result.duration, language: result.language };
   } catch (e) {
@@ -683,12 +719,13 @@ async function transcribe(fileInput, { language = 'en', responseFormat = 'verbos
   try {
     const oaiClient = getOpenAIClient();
     console.log('[STT] Trying OpenAI Whisper...');
-    const result = await oaiClient.audio.transcriptions.create({
+    const params = {
       file: fileInput,
       model: 'whisper-1',
-      language,
       response_format: responseFormat
-    });
+    };
+    if (language && language !== 'auto') params.language = language;
+    const result = await oaiClient.audio.transcriptions.create(params);
     console.log('[STT] ✅ OpenAI Whisper succeeded');
     return { success: true, text: result.text, provider: 'openai-whisper', duration: result.duration, language: result.language };
   } catch (e) {

@@ -1,7 +1,11 @@
 import express from 'express';
 import { addJob, getAllQueuesStats, queues } from '../config/queues.js';
+import { authUser, requireRole } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
+
+router.use(authUser);
+router.use(requireRole('admin'));
 
 /**
  * @route GET /api/queues/stats

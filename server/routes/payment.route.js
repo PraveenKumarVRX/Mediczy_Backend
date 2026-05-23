@@ -61,9 +61,10 @@ router.get('/stats', authUser, (req, res) => {
 
 // Get Razorpay key for frontend
 router.get('/config', (req, res) => {
+  res.set('Cache-Control', 'no-store');
   res.json({
     success: true,
-    keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_YOUR_KEY_ID',
+    keyId: process.env.RAZORPAY_KEY_ID,
     currency: 'INR'
   });
 });

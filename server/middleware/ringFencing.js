@@ -182,6 +182,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/appointments',
       '/api/enhanced-appointments',  // Enhanced appointment booking for doctors
       '/api/consultation',  // Online consultation endpoints for doctors
+      '/api/online-consultation',  // Online consultation v2 (book, video, chat, payments)
       '/api/prescriptions',
       '/api/video',
       '/api/chat',
@@ -687,7 +688,9 @@ const ringFencingMiddleware = (req, res, next) => {
   // Twilio cannot send JWT auth headers; these endpoints must accept unauthenticated requests
   if (requestPath.startsWith('/api/whatsapp-production/webhook') ||
       requestPath.startsWith('/api/whatsapp-production/fallback') ||
-      requestPath.startsWith('/api/whatsapp-production/status-callback')) {
+      requestPath.startsWith('/api/whatsapp-production/status-callback') ||
+      requestPath === '/api/payments/webhook' ||
+      requestPath === '/api/payments/config') {
     console.log('✅ Twilio WhatsApp webhook bypass (public, no auth required):', requestPath);
     return next();
   }

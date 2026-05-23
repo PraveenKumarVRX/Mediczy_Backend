@@ -148,7 +148,10 @@ const validateCommandResponse = (result) => {
 // Process voice commands
 router.post('/process-command', auth, async (req, res) => {
   try {
-    const { command, currentPath, userContext } = req.body;
+    const { command, currentPath = '/', userContext = {} } = req.body;
+    const safeRoutes = userContext?.availableRoutes?.length
+      ? userContext.availableRoutes
+      : ['/', '/health-tracker', '/appointments', '/preventive-health', '/insurance', '/symptoms', '/bmi', '/medicine', '/ai-doctor', '/chat'];
 
     // Validate input
     if (!command) {
@@ -268,7 +271,7 @@ Command: "${command}"
 Current Location: ${currentPath}
 User Context: ${JSON.stringify(userContext, null, 2)}
 
-Available Routes: ${userContext.availableRoutes.join(', ')}
+Available Routes: ${safeRoutes.join(', ')}
 
 Respond with a JSON object that includes:
 {
@@ -348,7 +351,7 @@ Examples:
 
       // Route through SIB (SOLE AI SOURCE)
       const sibResponse = await callSibQuery(
-        `Process this voice command for a health app navigation:\nCommand: "${command}"\nCurrent Location: ${currentPath}\nAvailable Routes: ${userContext.availableRoutes.join(', ')}\n\nRespond with JSON: {"intent": "navigation|query|action|system|error", "confidence": 0.0-1.0, "targetPath": "/path or null", "action": "specific action or null", "parameters": {}, "response": "user-friendly response"}`,
+        `Process this voice command for a health app navigation:\nCommand: "${command}"\nCurrent Location: ${currentPath}\nAvailable Routes: ${safeRoutes.join(', ')}\n\nRespond with JSON: {"intent": "navigation|query|action|system|error", "confidence": 0.0-1.0, "targetPath": "/path or null", "action": "specific action or null", "parameters": {}, "response": "user-friendly response"}`,
         { userId: req.user?.id }
       );
 

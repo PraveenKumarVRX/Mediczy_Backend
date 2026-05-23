@@ -10,13 +10,28 @@ const mask = (v) => (v ? `${v.slice(0, 3)}***${v.slice(-4)}` : 'undefined');
 // Ensure environment variables load from project root .env
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const envPath = path.resolve(__dirname, '..', '..', '.env');
-console.log('🔧 PaymentGateway env load', { envPath, exists: fs.existsSync(envPath) });
-const dotenvResult = dotenv.config({ path: envPath });
+const envPaths = [
+  path.resolve(__dirname, '..', '.env'),
+  path.resolve(__dirname, '..', '..', '.env')
+];
+const dotenvResults = envPaths.map((envPath) => ({
+  envPath,
+  exists: fs.existsSync(envPath),
+  result: dotenv.config({ path: envPath })
+}));
+dotenvResults.forEach(({ result }) => {
+  if (!result.parsed) return;
+  for (const [key, value] of Object.entries(result.parsed)) {
+    if (!process.env[key]) process.env[key] = value;
+  }
+});
+console.log('🔧 PaymentGateway env load', dotenvResults.map(({ envPath, exists }) => ({ envPath, exists })));
 console.log('🔧 Dotenv loaded', { 
-  error: dotenvResult.error ? dotenvResult.error.message : null, 
-  hasRazorpayKey: !!(dotenvResult.parsed && dotenvResult.parsed.RAZORPAY_KEY_ID),
-  hasRazorpaySecret: !!(dotenvResult.parsed && dotenvResult.parsed.RAZORPAY_KEY_SECRET)
+  errors: dotenvResults
+    .filter(({ result }) => result.error)
+    .map(({ envPath, result }) => ({ envPath, error: result.error.message })),
+  hasRazorpayKey: !!process.env.RAZORPAY_KEY_ID,
+  hasRazorpaySecret: !!process.env.RAZORPAY_KEY_SECRET
 });
 console.log('🔑 Razorpay env in service', {
   hasKey: !!process.env.RAZORPAY_KEY_ID,
@@ -27,8 +42,8 @@ console.log('🔑 Razorpay env in service', {
 let razorpayInstance = null;
 
 // Initialize Razorpay
-const resolvedRazorpayKeyId = process.env.RAZORPAY_KEY_ID || (dotenvResult.parsed && dotenvResult.parsed.RAZORPAY_KEY_ID);
-const resolvedRazorpaySecret = process.env.RAZORPAY_KEY_SECRET || (dotenvResult.parsed && dotenvResult.parsed.RAZORPAY_KEY_SECRET);
+const resolvedRazorpayKeyId = process.env.RAZORPAY_KEY_ID;
+const resolvedRazorpaySecret = process.env.RAZORPAY_KEY_SECRET;
 if (resolvedRazorpayKeyId && resolvedRazorpaySecret) {
   // Backfill process.env for downstream usage if missing
   if (!process.env.RAZORPAY_KEY_ID) process.env.RAZORPAY_KEY_ID = resolvedRazorpayKeyId;
@@ -46,7 +61,7 @@ if (resolvedRazorpayKeyId && resolvedRazorpaySecret) {
   console.warn(
     '⚠️ Razorpay credentials not configured',
     `(key_id=${mask(resolvedRazorpayKeyId)}, secret=${mask(resolvedRazorpaySecret)})`,
-    `envPath=${envPath}`
+    `envPaths checked`
   );
 }
 
@@ -63,6 +78,14 @@ class PaymentGatewayService {
    * Create Razorpay order
    */
   async createRazorpayOrder(orderData) {
+    if (!razorpayInstance && process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+      razorpayInstance = new Razorpay({
+        key_id: process.env.RAZORPAY_KEY_ID,
+        key_secret: process.env.RAZORPAY_KEY_SECRET
+      });
+      console.log('✅ Razorpay lazily initialized');
+    }
+
     if (!razorpayInstance) {
       throw new Error('Razorpay not configured');
     }

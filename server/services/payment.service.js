@@ -1,5 +1,24 @@
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const envPaths = [
+  path.resolve(__dirname, '..', '.env'),
+  path.resolve(__dirname, '..', '..', '.env')
+];
+envPaths.forEach((envPath) => {
+  if (!fs.existsSync(envPath)) return;
+  const result = dotenv.config({ path: envPath });
+  if (!result.parsed) return;
+  for (const [key, value] of Object.entries(result.parsed)) {
+    if (!process.env[key]) process.env[key] = value;
+  }
+});
 
 class PaymentService {
   constructor() {
@@ -9,9 +28,14 @@ class PaymentService {
 
   initializeRazorpay() {
     try {
-      // Initialize with environment variables or use test credentials
-      const keyId = process.env.RAZORPAY_KEY_ID || 'rzp_test_YOUR_KEY_ID';
-      const keySecret = process.env.RAZORPAY_KEY_SECRET || 'YOUR_KEY_SECRET';
+      const keyId = process.env.RAZORPAY_KEY_ID;
+      const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+      if (!keyId || !keySecret) {
+        this.razorpayInstance = null;
+        console.warn('⚠️ Razorpay credentials not configured for PaymentService');
+        return;
+      }
 
       this.razorpayInstance = new Razorpay({
         key_id: keyId,
@@ -31,6 +55,13 @@ class PaymentService {
    */
   async createOrder(orderData) {
     try {
+      if (!this.razorpayInstance) {
+        return {
+          success: false,
+          error: 'Razorpay not configured'
+        };
+      }
+
       const { amount, currency = 'INR', receipt, notes = {} } = orderData;
 
       // Amount should be in smallest currency unit (paise for INR)
@@ -40,7 +71,7 @@ class PaymentService {
         amount: amountInSmallestUnit,
         currency,
         receipt,
-        notes,
+        notes: Object.fromEntries(Object.entries(notes || {}).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => [k, String(v)])),
         payment_capture: 1 // Auto capture payment
       };
 
@@ -69,7 +100,8 @@ class PaymentService {
     try {
       const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = paymentData;
 
-      const keySecret = process.env.RAZORPAY_KEY_SECRET || 'YOUR_KEY_SECRET';
+      const keySecret = process.env.RAZORPAY_KEY_SECRET;
+      if (!keySecret) return false;
       
       const generatedSignature = crypto
         .createHmac('sha256', keySecret)
@@ -228,11 +260,13 @@ class PaymentService {
    */
   verifyWebhookSignature(body, signature) {
     try {
-      const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || 'YOUR_WEBHOOK_SECRET';
+      const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+      if (!webhookSecret || !signature) return false;
+      const signedPayload = typeof body === 'string' ? body : JSON.stringify(body);
       
       const expectedSignature = crypto
         .createHmac('sha256', webhookSecret)
-        .update(JSON.stringify(body))
+        .update(signedPayload)
         .digest('hex');
 
       const isValid = expectedSignature === signature;
@@ -256,7 +290,7 @@ class PaymentService {
    */
   getGatewayConfig() {
     return {
-      keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_YOUR_KEY_ID',
+      keyId: process.env.RAZORPAY_KEY_ID,
       currency: 'INR',
       name: 'Mediczy',
       description: 'Healthcare Platform',

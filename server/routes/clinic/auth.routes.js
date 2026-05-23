@@ -325,11 +325,19 @@ router.post('/register', registerLimiter, uploadFields, async (req, res) => {
 
     const existing = await Hospital.findOne({ where: { email: email.toLowerCase() } });
     if (existing) {
+      if (existing.status === 'pending') {
+        return res.status(200).json({
+          success: true,
+          message: 'Your registration was already submitted and is pending review. We will contact you at ' + email.toLowerCase() + ' once approved.',
+          alreadyRegistered: true,
+          registrationId: existing.id,
+          entityType: 'clinic',
+        });
+      }
       return res.status(409).json({ success: false, message: 'Email already registered' });
     }
 
-    // Upload registration documents to MinIO — required, not optional
-    const { uploadToMinio } = await import('../../services/minio-upload.service.js');
+    const emailKey = email.toLowerCase().replace(/[^a-z0-9]/g, '_');
     const registrationDocs = [];
     const docFiles = req.files?.documents || [];
     if (docFiles.length > 0) {
@@ -337,15 +345,12 @@ router.post('/register', registerLimiter, uploadFields, async (req, res) => {
         const file = docFiles[i];
         const docType = req.body[`docType_${i}`] || 'other';
 
-        // ── Magic bytes validation (prevent MIME spoofing) ───────────────────
         if (!validateMagicBytes(file.buffer, file.mimetype)) {
           return res.status(400).json({
             success: false,
             message: `File "${file.originalname}" failed content validation. Ensure it is a genuine PDF or image.`
           });
         }
-
-        // ── ClamAV virus scan ────────────────────────────────────────────────
         const scanResult = await scanWithClamAV(file.buffer, file.originalname);
         if (!scanResult.clean) {
           console.error(`Malware detected in upload from IP ${req.ip}: ${scanResult.threat}`);
@@ -355,27 +360,31 @@ router.post('/register', registerLimiter, uploadFields, async (req, res) => {
           });
         }
 
-        // ── Upload to MinIO ─────────────────────────────────────────────────
-        const result = await uploadToMinio({
-          buffer: file.buffer,
-          originalName: file.originalname,
-          mimeType: file.mimetype,
-          keyPrefix: `registrations/clinic/${email.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
-        });
-        registrationDocs.push({
-          docType,
-          originalName: file.originalname,
-          url: result.url,
-          key: result.key,
-          bucket: result.bucket,
-          mimeType: file.mimetype,
-          size: file.size,
-          uploadedAt: new Date()
-        });
+        try {
+          const { uploadToMinio } = await import('../../services/minio-upload.service.js');
+          const result = await uploadToMinio({
+            buffer: file.buffer,
+            originalName: file.originalname,
+            mimeType: file.mimetype,
+            keyPrefix: `registrations/clinic/${emailKey}`
+          });
+          registrationDocs.push({
+            docType, originalName: file.originalname,
+            url: result.url, key: result.key, bucket: result.bucket,
+            mimeType: file.mimetype, size: file.size, uploadedAt: new Date()
+          });
+        } catch (uploadErr) {
+          console.warn(`MinIO upload failed for "${file.originalname}" (non-critical):`, uploadErr.message);
+          registrationDocs.push({
+            docType, originalName: file.originalname,
+            url: null, key: null, bucket: null,
+            mimeType: file.mimetype, size: file.size, uploadedAt: new Date(), uploadFailed: true
+          });
+        }
       }
     }
 
-    // Upload doctor ID card to MinIO
+    // Upload doctor ID card (graceful — don't fail registration if MinIO is unavailable)
     const idCardFile = req.files.doctorIdCard[0];
     if (!validateMagicBytes(idCardFile.buffer, idCardFile.mimetype)) {
       return res.status(400).json({
@@ -391,21 +400,23 @@ router.post('/register', registerLimiter, uploadFields, async (req, res) => {
         message: `Doctor ID card was rejected by our virus scanner. Please upload a clean file.`
       });
     }
-    const idCardUpload = await uploadToMinio({
-      buffer: idCardFile.buffer,
-      originalName: idCardFile.originalname,
-      mimeType: idCardFile.mimetype,
-      keyPrefix: `registrations/clinic-doctor-id/${email.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
-    });
-    const doctorIdCardMeta = {
-      originalName: idCardFile.originalname,
-      url: idCardUpload.url,
-      key: idCardUpload.key,
-      bucket: idCardUpload.bucket,
-      mimeType: idCardFile.mimetype,
-      size: idCardFile.size,
-      uploadedAt: new Date()
-    };
+    let doctorIdCardMeta = { originalName: idCardFile.originalname, url: null, key: null, bucket: null, mimeType: idCardFile.mimetype, size: idCardFile.size, uploadedAt: new Date() };
+    try {
+      const { uploadToMinio } = await import('../../services/minio-upload.service.js');
+      const idCardUpload = await uploadToMinio({
+        buffer: idCardFile.buffer,
+        originalName: idCardFile.originalname,
+        mimeType: idCardFile.mimetype,
+        keyPrefix: `registrations/clinic-doctor-id/${emailKey}`
+      });
+      doctorIdCardMeta = {
+        originalName: idCardFile.originalname,
+        url: idCardUpload.url, key: idCardUpload.key, bucket: idCardUpload.bucket,
+        mimeType: idCardFile.mimetype, size: idCardFile.size, uploadedAt: new Date()
+      };
+    } catch (uploadErr) {
+      console.warn(`MinIO upload failed for doctor ID card (non-critical):`, uploadErr.message);
+    }
 
     const clinic = await Hospital.create({
       hospitalName: name,
@@ -573,7 +584,7 @@ router.post('/send-email-otp', authLimiter, async (req, res) => {
       </div>`;
 
     await transporter.sendMail({
-      from: `"Mediczy" <${process.env.SMTP_USER || 'noreply@mediczy.com'}>`,
+      from: process.env.EMAIL_FROM || `"Mediczy" <${process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@mediqzy.com'}>`,
       to: email,
       subject: `${otp.code} — Your Mediczy Email Verification OTP`,
       html

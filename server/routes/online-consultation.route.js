@@ -802,7 +802,7 @@ router.post('/payment/initiate/:appointmentId', authUser, async (req, res) => {
       });
     }
 
-    if (!['accepted', 'scheduled', 'confirmed'].includes(appointment.status)) {
+    if (!['accepted', 'scheduled'].includes(appointment.status)) {
       return res.status(400).json({
         success: false,
         message: `Cannot pay for appointment with status: ${appointment.status}.`
@@ -817,7 +817,7 @@ router.post('/payment/initiate/:appointmentId', authUser, async (req, res) => {
     }
 
     // Create Razorpay order
-    const amount = parseFloat(appointment.paymentAmount || appointment.consultationFee || 0) * 100; // Convert to paise
+    const amount = parseFloat(appointment.paymentAmount || appointment.consultationFee || 0); // PaymentService converts INR to paise
     const receipt = `apt_${appointmentId}_${Date.now()}`;
 
     try {
@@ -848,6 +848,7 @@ router.post('/payment/initiate/:appointmentId', authUser, async (req, res) => {
         order: {
           id: orderResult.order.id,
           amount: orderResult.order.amount,
+          amountINR: Math.round(orderResult.order.amount / 100 * 100) / 100,
           currency: orderResult.order.currency,
           receipt: orderResult.order.receipt
         },
@@ -859,7 +860,7 @@ router.post('/payment/initiate/:appointmentId', authUser, async (req, res) => {
           consultationFee: appointment.consultationFee
         },
         gatewayConfig: {
-          keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_YOUR_KEY_ID',
+          keyId: process.env.RAZORPAY_KEY_ID,
           currency: 'INR'
         }
       });
