@@ -273,9 +273,39 @@ function buildCostModel({ ageBands, totalMembers, policyHistory, industry, avgSI
 }
 
 /**
+ * Compute stop-loss clause impact on gross premium.
+ * Returns { netAdjFactor, riCostPerLife, riskReductionPct, riskReductionPerLife }
+ * so callers can show a breakdown.
+ *
+ * Actuarial basis (Indian RI market norms):
+ *  - Aggregate stop-loss at X% LR caps insurer liability above X% of premium
+ *  - RI reinsurance cost ≈ (100−X)% × 0.25% of gross rate (per market pricing)
+ *  - Risk margin reduction ≈ (100−X)% × 0.30% of gross rate (tail risk eliminated)
+ *  - Net for client: slight reduction in gross rate (insurer passes some saving)
+ */
+function computeStopLossAdjustment(stopLossPct, grossRate) {
+  if (!stopLossPct || stopLossPct <= 0 || stopLossPct >= 100) {
+    return { netAdjFactor: 1, riCostPerLife: 0, riskReductionPct: 0, riskReductionPerLife: 0 };
+  }
+  const exposure = (100 - stopLossPct) / 100;         // e.g. 0.10 for 90% SL
+  const riskReductionPct = exposure * 0.30;            // 90% SL → 3.0% of gross rate saved
+  const riCostPct        = exposure * 0.25;            // 90% SL → 2.5% of gross rate cost
+  const netReductionPct  = riskReductionPct - riCostPct; // net: +0.5% reduction at 90%
+  const netAdjFactor     = 1 - netReductionPct;
+  return {
+    netAdjFactor: +netAdjFactor.toFixed(4),
+    riCostPct:    +(riCostPct * 100).toFixed(2),
+    riskReductionPct: +(riskReductionPct * 100).toFixed(2),
+    netReductionPct:  +(netReductionPct * 100).toFixed(2),
+    riCostPerLife: Math.round(grossRate * riCostPct),
+    riskReductionPerLife: Math.round(grossRate * riskReductionPct),
+  };
+}
+
+/**
  * Build 3 differentiated quote strategies from the cost model output.
  */
-function buildQuoteStrategies(costModel, rfq, policyHistory) {
+function buildQuoteStrategies(costModel, rfq, policyHistory, stopLossPct = null) {
   const { blendedPureRate, trend, manual } = costModel;
   const lives = parseInt(rfq.member_count) || 100;
   const avgSI = parseInt((safeJSON(rfq.sum_insured_slabs, [])?.[0]) || 300000);
@@ -285,9 +315,16 @@ function buildQuoteStrategies(costModel, rfq, policyHistory) {
 
   const strategies = [];
 
+  // Pre-compute stop-loss adjustment on base gross rate (applied across all strategies)
+  const slBaseGross = blendedPureRate / (1 - LOADING_TIERS.balanced); // use balanced as base reference
+  const slAdj = computeStopLossAdjustment(stopLossPct, slBaseGross);
+  const slNote = stopLossPct
+    ? `${stopLossPct}% aggregate stop-loss (RI cost ₹${slAdj.riCostPerLife}/life, risk saving ₹${slAdj.riskReductionPerLife}/life, net ${slAdj.netReductionPct > 0 ? '-' : '+'}${Math.abs(slAdj.netReductionPct)}% on gross rate)`
+    : null;
+
   // ── Strategy A: Value Champion ───────────────────────────────────────────
   const loadingA = LOADING_TIERS.competitive;
-  const grossRateA = blendedPureRate / (1 - loadingA);
+  const grossRateA = Math.round(blendedPureRate / (1 - loadingA) * slAdj.netAdjFactor);
   const premiumA = Math.round(grossRateA * 1.18); // with GST
   const siA = Math.max(avgSI * 0.8, 200000);
   const totalA = Math.round(premiumA * lives);
@@ -329,7 +366,7 @@ function buildQuoteStrategies(costModel, rfq, policyHistory) {
 
   // ── Strategy B: Balanced Performer ───────────────────────────────────────
   const loadingB = LOADING_TIERS.balanced;
-  const grossRateB = blendedPureRate / (1 - loadingB);
+  const grossRateB = Math.round(blendedPureRate / (1 - loadingB) * slAdj.netAdjFactor);
   const premiumB = Math.round(grossRateB * 1.18);
   const siB = Math.max(avgSI, 300000);
   const totalB = Math.round(premiumB * lives);
@@ -370,7 +407,7 @@ function buildQuoteStrategies(costModel, rfq, policyHistory) {
 
   // ── Strategy C: Premium Shield ────────────────────────────────────────────
   const loadingC = LOADING_TIERS.premium;
-  const grossRateC = blendedPureRate / (1 - loadingC);
+  const grossRateC = Math.round(blendedPureRate / (1 - loadingC) * slAdj.netAdjFactor);
   const premiumC = Math.round(grossRateC * 1.18);
   const siC = Math.max(avgSI * 2, 500000);
   const totalC = Math.round(premiumC * lives);
@@ -411,6 +448,21 @@ function buildQuoteStrategies(costModel, rfq, policyHistory) {
     ],
     best_for: 'Large corporate (500+ lives), tech/finance sector, talent retention priority, executive benefit programme',
   });
+
+  // Attach stop-loss clause metadata to all strategies if applicable
+  if (stopLossPct && slAdj.riCostPerLife > 0) {
+    for (const s of strategies) {
+      s.stop_loss_clause = {
+        aggregate_stop_loss_pct: stopLossPct,
+        ri_cost_per_life: slAdj.riCostPerLife,
+        risk_saving_per_life: slAdj.riskReductionPerLife,
+        net_premium_impact_pct: slAdj.netReductionPct,
+        note: slNote,
+      };
+      s.key_features.push(`${stopLossPct}% aggregate stop-loss reinsurance clause included`);
+      s.why_wins.push(`Stop-loss at ${stopLossPct}% LR caps insurer tail-risk — RI cost ₹${slAdj.riCostPerLife}/life netted against ₹${slAdj.riskReductionPerLife}/life risk saving`);
+    }
+  }
 
   return strategies;
 }
@@ -540,7 +592,7 @@ router.get('/rfqs/:rfqId/analysis', authCRM, async (req, res) => {
 router.post('/rfqs/:rfqId/generate', authCRM, async (req, res) => {
   try {
     const { rfqId } = req.params;
-    const { prospective = {} } = req.body; // optional overrides: projected_lives, si_override, industry
+    const { prospective = {} } = req.body; // optional overrides: projected_lives, si_override, industry, stop_loss_pct
 
     // ── Load RFQ ──────────────────────────────────────────────────────────
     const rfqRes = await sharedPool.query(`SELECT * FROM crm_rfqs WHERE id=$1`, [rfqId]);
@@ -594,7 +646,8 @@ router.post('/rfqs/:rfqId/generate', authCRM, async (req, res) => {
     });
 
     // ── Build quote strategies ────────────────────────────────────────────
-    const strategies = buildQuoteStrategies(costModel, rfq, policyHistory);
+    const stopLossPct = prospective.stop_loss_pct ? parseFloat(prospective.stop_loss_pct) : null;
+    const strategies = buildQuoteStrategies(costModel, rfq, policyHistory, stopLossPct);
 
     // ── Build top diagnoses summary ───────────────────────────────────────
     const topDxRes = await sharedPool.query(
@@ -626,6 +679,10 @@ router.post('/rfqs/:rfqId/generate', authCRM, async (req, res) => {
 
     const systemPrompt = `You are iSHA-ACT, an expert Indian group health insurance actuary and underwriting strategist. You produce concise, data-driven, board-level analysis for insurance brokers. You know IRDAI regulations, Indian market loss ratios (industry avg 75–85%), medical inflation (14–16% pa), and win-loss drivers for group health tenders.`;
 
+    const stopLossNote = stopLossPct
+      ? `\n## STOP-LOSS CLAUSE\n${stopLossPct}% aggregate stop-loss applied. RI cost ₹${computeStopLossAdjustment(stopLossPct, costModel.blendedPureRate / (1 - LOADING_TIERS.balanced)).riCostPerLife}/life. Risk saving ₹${computeStopLossAdjustment(stopLossPct, costModel.blendedPureRate / (1 - LOADING_TIERS.balanced)).riskReductionPerLife}/life. Net impact: ${computeStopLossAdjustment(stopLossPct, costModel.blendedPureRate / (1 - LOADING_TIERS.balanced)).netReductionPct > 0 ? '-' : '+'}${Math.abs(computeStopLossAdjustment(stopLossPct, costModel.blendedPureRate / (1 - LOADING_TIERS.balanced)).netReductionPct)}% on gross rate (slight reduction — RI cost netted against risk saving).`
+      : '';
+
     const userPrompt = `Analyse this group health insurance RFQ and produce a structured analysis report.
 
 ## RFQ DETAILS
@@ -649,7 +706,7 @@ Risk score: ${riskResult.score}/100 (${riskResult.tier.toUpperCase()})
 
 ## PROSPECTIVE PROJECTIONS
 Projected lives: ${projectedLives} | Projected claims corpus: ₹${(projTotalClaims / 100000).toFixed(1)}L
-
+${stopLossNote}
 ## 3 QUOTE STRATEGIES
 A) ${strategies[0].name}: ₹${strategies[0].premium_per_life_incl_gst}/life incl GST | Total ₹${(strategies[0].total_premium_incl_gst / 100000).toFixed(1)}L | SI ₹${(strategies[0].sum_insured / 100000).toFixed(1)}L | ${strategies[0].co_pay_pct}% co-pay
 B) ${strategies[1].name}: ₹${strategies[1].premium_per_life_incl_gst}/life incl GST | Total ₹${(strategies[1].total_premium_incl_gst / 100000).toFixed(1)}L | SI ₹${(strategies[1].sum_insured / 100000).toFixed(1)}L | Nil co-pay | Maternity
@@ -798,6 +855,7 @@ router.post('/rfqs/:rfqId/cost-model-preview', authCRM, async (req, res) => {
       projected_lives, avg_si, industry,
       age_bands, // [{age_band, count}]
       policy_history, // [{year_label, gross_premium, total_claims_incurred, lives_count}]
+      stop_loss_pct,   // optional: 70/80/90 — aggregate stop-loss clause %
     } = req.body;
 
     const rfqRes = await sharedPool.query(`SELECT * FROM crm_rfqs WHERE id=$1`, [req.params.rfqId]);
@@ -825,10 +883,13 @@ router.post('/rfqs/:rfqId/cost-model-preview', authCRM, async (req, res) => {
       policyHistory, industry: industry || rfq.industry || '',
       avgSI, projectedLives: projected_lives || parseInt(rfq.member_count) || 100,
     });
-    const strategies = buildQuoteStrategies(costModel, rfq, policyHistory);
+    const slPct = stop_loss_pct ? parseFloat(stop_loss_pct) : null;
+    const strategies = buildQuoteStrategies(costModel, rfq, policyHistory, slPct);
+    const slAdjDetail = slPct ? computeStopLossAdjustment(slPct, costModel.blendedPureRate / (1 - LOADING_TIERS.balanced)) : null;
 
     return res.json({
       success: true,
+      stopLossClause: slPct ? { pct: slPct, ...slAdjDetail } : null,
       costModel: {
         manual: costModel.manual,
         experience: costModel.experience,
