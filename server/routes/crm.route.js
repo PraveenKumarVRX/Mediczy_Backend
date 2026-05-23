@@ -384,6 +384,29 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
       CREATE INDEX IF NOT EXISTS idx_rfq_audit_rfq ON crm_rfq_audit_log(rfq_id);
       CREATE INDEX IF NOT EXISTS idx_rfq_audit_ts  ON crm_rfq_audit_log(created_at);
     `);
+
+    // ─── Product T&C Master ────────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_product_tc_master (
+        id            BIGSERIAL    PRIMARY KEY,
+        product_type  VARCHAR(50)  NOT NULL,
+        section       VARCHAR(100) NOT NULL DEFAULT 'general',
+        title         VARCHAR(255) NOT NULL,
+        content       TEXT         NOT NULL,
+        source_rfq_id BIGINT       REFERENCES crm_rfqs(id) ON DELETE SET NULL,
+        is_active     BOOLEAN      NOT NULL DEFAULT TRUE,
+        is_pending    BOOLEAN      NOT NULL DEFAULT FALSE,
+        sort_order    INTEGER      NOT NULL DEFAULT 0,
+        created_by    INTEGER,
+        updated_by    INTEGER,
+        created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+        updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_tc_master_product  ON crm_product_tc_master(product_type);
+      CREATE INDEX IF NOT EXISTS idx_tc_master_active   ON crm_product_tc_master(is_active);
+      CREATE INDEX IF NOT EXISTS idx_tc_master_pending  ON crm_product_tc_master(is_pending);
+    `);
+
     // ─── Distribution tables ───────────────────────────────────────────────
     await pool.query(`
       CREATE TABLE IF NOT EXISTS crm_agencies (
@@ -1142,19 +1165,53 @@ router.get('/reports/team-performance', authCRM, async (req, res) => {
 // RFQ MANAGEMENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Canonical product types: GMC, GPA, GTL, OPD, GMC+OPD, GMC+GPA, GMC+GTL, Parents, TopUp, CI, MIXED
+const CANONICAL_PRODUCT_TYPES = ['GMC', 'GPA', 'GTL', 'OPD', 'GMC+OPD', 'GMC+GPA', 'GMC+GTL', 'Parents', 'TopUp', 'CI', 'MIXED'];
+const PRODUCT_TYPE_LABELS = {
+  GMC:       'Group Mediclaim (GMC / GHI)',
+  GPA:       'Group Personal Accident (GPA)',
+  GTL:       'Group Term Life Insurance (GTL)',
+  OPD:       'Group OPD / Outpatient Benefits',
+  'GMC+OPD': 'GMC + OPD Combo',
+  'GMC+GPA': 'GMC + GPA Combo',
+  'GMC+GTL': 'GMC + GTL Combo',
+  Parents:   'Parents Policy / Parents Floater',
+  TopUp:     'Super Top-up / Top-up Mediclaim',
+  CI:        'Critical Illness (CI)',
+  MIXED:     'Multiple Products (Mixed)',
+};
+
 function normalizeProductType(raw) {
   if (!raw) return 'GMC';
-  const s = raw.toUpperCase().replace(/\s+/g, '').replace(/[^A-Z0-9+/]/g, '');
-  if (s.includes('OPD') || s.includes('OUTPATIENT')) {
-    if (s.includes('GMC') || s.includes('MEDICLAIM') || s.includes('GHI') || s.includes('HOSPITALI')) return 'GMC+OPD';
-    return 'OPD';
-  }
-  if (s.includes('GPA') || (s.includes('ACCIDENT') && !s.includes('MEDICLAIM'))) return 'GPA';
-  if (s.includes('GTL') || (s.includes('LIFE') && s.includes('GROUP')) || s.includes('TERMLIFE')) return 'GTL';
-  if (s.includes('TOPUP') || s.includes('SUPERTOP') || s.includes('SUPERHEALTHTOP')) return 'TopUp GMC';
-  if (s.includes('CI') || s.includes('CRITICALILLNESS')) return 'CI';
-  if (s.includes('GMC') || s.includes('MEDICLAIM') || s.includes('HOSPITALI') || s.includes('GHI')) return 'GMC';
-  return raw; // keep as-is if unrecognised
+  const s = raw.toUpperCase().replace(/\s+/g, '').replace(/[^A-Z0-9+]/g, '');
+
+  // Detect combination products first
+  const hasGMC  = s.includes('GMC') || s.includes('MEDICLAIM') || s.includes('GHI') || s.includes('HOSPITALI') || s.includes('HEALTHINSUR');
+  const hasGPA  = s.includes('GPA') || (s.includes('ACCIDENT') && !s.includes('MEDICLAIM'));
+  const hasGTL  = s.includes('GTL') || s.includes('GTLI') || s.includes('TERMLIFE') || (s.includes('LIFE') && s.includes('GROUP'));
+  const hasOPD  = s.includes('OPD') || s.includes('OUTPATIENT');
+  const comboCount = [hasGMC, hasGPA, hasGTL, hasOPD].filter(Boolean).length;
+  if (comboCount >= 3) return 'MIXED';
+  if (hasGMC && hasGPA && !hasOPD && !hasGTL) return 'GMC+GPA';
+  if (hasGMC && hasGTL && !hasOPD && !hasGPA) return 'GMC+GTL';
+  if ((hasGMC || hasGPA) && hasOPD) return 'GMC+OPD';
+
+  // Parents Policy
+  if (s.includes('PARENT') || s.includes('FLOATER') || s.includes('FAMILYFLOATER')) return 'Parents';
+
+  // Super Top-up
+  if (s.includes('TOPUP') || s.includes('SUPERTOP') || s.includes('SUPERHEALTHTOP') || s.includes('TOPUPMEDICLAIM')) return 'TopUp';
+
+  // Critical Illness
+  if (s.includes('CRITICALILLNESS') || s.includes('CRITICALCARE') || (s.includes('CI') && s.length <= 4)) return 'CI';
+
+  // Single products
+  if (hasOPD) return 'OPD';
+  if (hasGPA) return 'GPA';
+  if (hasGTL) return 'GTL';
+  if (hasGMC) return 'GMC';
+
+  return 'GMC'; // default for unrecognised
 }
 
 function generateRFQNumber() {
@@ -1170,13 +1227,48 @@ function generateQuoteNumber(rfqNumber) {
   return rfqNumber.replace('RFQ-', 'QT-') + '-' + r;
 }
 
+// ─── RFQ Stats by Product Type ───────────────────────────────────────────────
+router.get('/rfqs/stats/by-product', authCRM, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(`
+      SELECT
+        product_type,
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE status = 'received')    AS received,
+        COUNT(*) FILTER (WHERE status = 'quoting')     AS quoting,
+        COUNT(*) FILTER (WHERE status = 'quoted')      AS quoted,
+        COUNT(*) FILTER (WHERE status = 'negotiating') AS negotiating,
+        COUNT(*) FILTER (WHERE status = 'won')         AS won,
+        COUNT(*) FILTER (WHERE status = 'lost')        AS lost
+      FROM crm_rfqs
+      GROUP BY product_type
+      ORDER BY total DESC
+    `);
+    const stats = {};
+    for (const r of rows) {
+      stats[r.product_type] = {
+        label:       PRODUCT_TYPE_LABELS[r.product_type] || r.product_type,
+        total:       parseInt(r.total),
+        received:    parseInt(r.received),
+        quoting:     parseInt(r.quoting),
+        quoted:      parseInt(r.quoted),
+        negotiating: parseInt(r.negotiating),
+        won:         parseInt(r.won),
+        lost:        parseInt(r.lost),
+      };
+    }
+    return res.json({ success: true, data: stats, productTypes: CANONICAL_PRODUCT_TYPES, labels: PRODUCT_TYPE_LABELS });
+  } catch (error) { console.error('[CRM RFQ Stats]', error.message); return res.status(500).json({ success: false, message: 'Failed to fetch product stats' }); }
+});
+
 // ─── List RFQs ───────────────────────────────────────────────────────────────
 router.get('/rfqs', authCRM, async (req, res) => {
   try {
-    const { page = 1, limit = 25, status, search, sortBy = 'created_at', sortOrder = 'DESC' } = req.query;
+    const { page = 1, limit = 25, status, product_type, search, sortBy = 'created_at', sortOrder = 'DESC' } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const conditions = []; const params = [];
     if (status && status !== 'all') { params.push(status); conditions.push(`status = $${params.length}`); }
+    if (product_type && product_type !== 'all') { params.push(product_type); conditions.push(`product_type = $${params.length}`); }
     if (search) { params.push(`%${search}%`); conditions.push(`(insured_name ILIKE $${params.length} OR rfq_number ILIKE $${params.length} OR broker_company ILIKE $${params.length})`); }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const allowedSorts = ['created_at', 'updated_at', 'insured_name', 'status', 'rfq_number', 'member_count'];
@@ -1674,7 +1766,7 @@ router.post('/rfqs/upload-excel', authCRM, upload.single('file'), async (req, re
   "policy_end": "YYYY-MM-DD or null",
   "premium_paid": "string or null",
   "policy_type": "Group Mediclaim",
-  "product_type": "Group Mediclaim or OPD or Group PA or Group Life",
+  "product_type": "one of: GMC (Group Mediclaim/GHI), GPA (Group Personal Accident), GTL (Group Term Life/GTLI), OPD (Outpatient Benefits), GMC+OPD, GMC+GPA, GMC+GTL, Parents (Parents Policy/Floater), TopUp (Super Top-up), CI (Critical Illness), MIXED",
   "member_count": number_or_null,
   "lives_at_inception": { "employees": number_or_0, "dependants": number_or_0, "total": number_or_0 },
   "lives_at_renewal": { "employees": number_or_0, "dependants": number_or_0, "total": number_or_0 },
@@ -1807,6 +1899,11 @@ ${sheetText.substring(0, 6000)}`;
 
     const rfqId = rows[0].id;
 
+    // Auto-push parsed T&Cs to product-wise master (as pending, requires admin approval)
+    if (parsed.terms_and_conditions) {
+      syncTCsFromRFQ(rfqId, rows[0].product_type, parsed.terms_and_conditions, req.crmUser.id).catch(() => {});
+    }
+
     // Persist original file to S3 for future re-parsing
     const slipKey = await uploadSlipToS3(req.file.buffer, req.file.originalname, rfqId);
     if (slipKey) await sharedPool.query('UPDATE crm_rfqs SET slip_file_key=$1 WHERE id=$2', [slipKey, rfqId]);
@@ -1910,7 +2007,7 @@ router.post('/rfqs/:id/reparse', authCRM, (req, res, next) => {
   "policy_start": "YYYY-MM-DD or null",
   "policy_end": "YYYY-MM-DD or null",
   "premium_paid": "string or null",
-  "product_type": "Group Mediclaim or OPD or Group PA or Group Life",
+  "product_type": "one of: GMC (Group Mediclaim/GHI), GPA (Group Personal Accident), GTL (Group Term Life/GTLI), OPD (Outpatient Benefits), GMC+OPD, GMC+GPA, GMC+GTL, Parents (Parents Policy/Floater), TopUp (Super Top-up), CI (Critical Illness), MIXED",
   "member_count": number_or_null,
   "lives_at_inception": { "employees": number_or_0, "dependants": number_or_0, "total": number_or_0 },
   "lives_at_renewal": { "employees": number_or_0, "dependants": number_or_0, "total": number_or_0 },
@@ -2070,6 +2167,11 @@ Return ONLY JSON.`;
       ]
     );
 
+    // Auto-push re-parsed T&Cs to product-wise master (pending, requires admin approval)
+    if (parsed.terms_and_conditions && rows[0]) {
+      syncTCsFromRFQ(rfqId, rows[0].product_type, parsed.terms_and_conditions, req.crmUser.id).catch(() => {});
+    }
+
     // If a new file was uploaded (not from S3), store it in S3 for future reparsing
     if (req.file?.buffer) {
       const newKey = await uploadSlipToS3(req.file.buffer, req.file.originalname, rfqId);
@@ -2106,7 +2208,7 @@ router.post('/rfqs/upload-document', authCRM, upload.single('file'), async (req,
   "policy_end": "YYYY-MM-DD or null",
   "premium_paid": "string or null",
   "policy_type": "Group Mediclaim",
-  "product_type": "Group Mediclaim or OPD or Group PA or Group Life",
+  "product_type": "one of: GMC (Group Mediclaim/GHI), GPA (Group Personal Accident), GTL (Group Term Life/GTLI), OPD (Outpatient Benefits), GMC+OPD, GMC+GPA, GMC+GTL, Parents (Parents Policy/Floater), TopUp (Super Top-up), CI (Critical Illness), MIXED",
   "member_count": number_or_null,
   "lives_at_inception": { "employees": number_or_0, "dependants": number_or_0, "total": number_or_0 },
   "lives_at_renewal": { "employees": number_or_0, "dependants": number_or_0, "total": number_or_0 },
@@ -2234,6 +2336,12 @@ Return ONLY the JSON object, no explanation.`;
     if (memberCount) {
       await sharedPool.query(`UPDATE crm_rfqs SET member_count = $1 WHERE id = $2`, [memberCount, rfqId]);
     }
+
+    // Auto-push parsed T&Cs to product-wise master (pending, requires admin approval)
+    if (parsed.terms_and_conditions) {
+      syncTCsFromRFQ(rfqId, rows[0].product_type, parsed.terms_and_conditions, req.crmUser.id).catch(() => {});
+    }
+
     await uploadRfqFile(req.file.buffer, originalName, rfqId, 'slip', req.crmUser.id);
 
     return res.status(201).json({
@@ -6426,5 +6534,205 @@ We are pleased to present our proposal for Group Health Insurance coverage for *
 **Mediczy Insurance Broking**  
 *Powered by Mediqzy AI Platform*`;
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ─── Product T&C Master ───────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Splits raw T&C text from a parsed RFQ into individual clauses and upserts
+ * them into crm_product_tc_master as pending (is_pending=true, is_active=false).
+ * Deduplicates by trimmed content match so re-parsing the same RFQ is safe.
+ */
+async function syncTCsFromRFQ(rfqId, productType, tcText, createdBy) {
+  if (!tcText || !tcText.trim()) return;
+  const pool = sharedPool;
+  // Split on numbered items, bullet points, or double newlines
+  const clauses = tcText
+    .split(/\n{2,}|(?:\r?\n)(?=\s*[\d•\-*]\s)/)
+    .map(c => c.replace(/^[\d\.\-•*\s]+/, '').trim())
+    .filter(c => c.length > 10);
+
+  for (const clause of clauses) {
+    // Skip if identical content already exists for this product_type
+    const { rowCount } = await pool.query(
+      `SELECT 1 FROM crm_product_tc_master WHERE product_type=$1 AND content=$2 LIMIT 1`,
+      [productType, clause]
+    );
+    if (rowCount > 0) continue;
+
+    // Derive a short title from first sentence / first 60 chars
+    const title = clause.split(/[.\n]/)[0].trim().slice(0, 120) || 'Parsed clause';
+    await pool.query(
+      `INSERT INTO crm_product_tc_master
+         (product_type, section, title, content, source_rfq_id, is_active, is_pending, created_by)
+       VALUES ($1,'parsed',$2,$3,$4,FALSE,TRUE,$5)`,
+      [productType, title, clause, rfqId, createdBy || null]
+    );
+  }
+}
+
+// Guard: only CRM users with admin or manager permission may manage the T&C master
+function requireTCAdmin(req, res, next) {
+  const perms = req.crmUser?.crmPermissions || [];
+  if (!perms.includes('admin') && !perms.includes('superadmin') && !perms.includes('manager')) {
+    return res.status(403).json({ success: false, message: 'Insufficient permissions to manage T&C master' });
+  }
+  next();
+}
+
+// ─── List T&C Master ──────────────────────────────────────────────────────────
+// GET /api/crm/tc-master?product_type=GMC&section=general&pending=true
+router.get('/tc-master', authCRM, async (req, res) => {
+  try {
+    const { product_type, section, pending } = req.query;
+    const cond = []; const params = [];
+    if (product_type && product_type !== 'all') { params.push(product_type); cond.push(`product_type = $${params.length}`); }
+    if (section)      { params.push(section); cond.push(`section = $${params.length}`); }
+    if (pending === 'true')  { cond.push(`is_pending = TRUE`); }
+    if (pending === 'false') { cond.push(`is_pending = FALSE`); }
+    const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
+    const { rows } = await sharedPool.query(
+      `SELECT t.*,
+              r.rfq_number AS source_rfq_number, r.insured_name AS source_insured_name
+       FROM crm_product_tc_master t
+       LEFT JOIN crm_rfqs r ON r.id = t.source_rfq_id
+       ${where}
+       ORDER BY t.product_type, t.section, t.sort_order, t.created_at DESC`,
+      params
+    );
+    return res.json({
+      success: true,
+      data: rows,
+      productTypes: CANONICAL_PRODUCT_TYPES,
+      labels: PRODUCT_TYPE_LABELS,
+      sections: ['general', 'coverage', 'exclusions', 'special', 'regulatory', 'pricing', 'renewal', 'parsed'],
+    });
+  } catch (err) { console.error('[TC Master List]', err.message); return res.status(500).json({ success: false, message: 'Failed to fetch T&C master' }); }
+});
+
+// GET /api/crm/tc-master/active/:productType  — active T&Cs for quote creation
+router.get('/tc-master/active/:productType', authCRM, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT id, section, title, content, sort_order
+       FROM crm_product_tc_master
+       WHERE product_type = $1 AND is_active = TRUE AND is_pending = FALSE
+       ORDER BY section, sort_order, created_at`,
+      [req.params.productType]
+    );
+    return res.json({ success: true, data: rows, label: PRODUCT_TYPE_LABELS[req.params.productType] || req.params.productType });
+  } catch (err) { return res.status(500).json({ success: false, message: 'Failed to fetch active T&Cs' }); }
+});
+
+// ─── Create T&C Entry ─────────────────────────────────────────────────────────
+router.post('/tc-master', authCRM, requireTCAdmin, async (req, res) => {
+  try {
+    const { product_type, section = 'general', title, content, sort_order = 0 } = req.body;
+    if (!product_type || !title || !content) {
+      return res.status(400).json({ success: false, message: 'product_type, title and content are required' });
+    }
+    if (!CANONICAL_PRODUCT_TYPES.includes(product_type)) {
+      return res.status(400).json({ success: false, message: `Invalid product_type. Allowed: ${CANONICAL_PRODUCT_TYPES.join(', ')}` });
+    }
+    const { rows } = await sharedPool.query(
+      `INSERT INTO crm_product_tc_master
+         (product_type, section, title, content, sort_order, is_active, is_pending, created_by)
+       VALUES ($1,$2,$3,$4,$5,TRUE,FALSE,$6) RETURNING *`,
+      [product_type, section, title, content, sort_order, req.crmUser?.id || null]
+    );
+    return res.status(201).json({ success: true, data: rows[0] });
+  } catch (err) { console.error('[TC Master Create]', err.message); return res.status(500).json({ success: false, message: 'Failed to create T&C entry' }); }
+});
+
+// ─── Update T&C Entry ─────────────────────────────────────────────────────────
+router.put('/tc-master/:id', authCRM, requireTCAdmin, async (req, res) => {
+  try {
+    const { section, title, content, sort_order, is_active, is_pending } = req.body;
+    const { rows } = await sharedPool.query(
+      `UPDATE crm_product_tc_master SET
+         section    = COALESCE($1, section),
+         title      = COALESCE($2, title),
+         content    = COALESCE($3, content),
+         sort_order = COALESCE($4, sort_order),
+         is_active  = COALESCE($5, is_active),
+         is_pending = COALESCE($6, is_pending),
+         updated_by = $7,
+         updated_at = NOW()
+       WHERE id = $8 RETURNING *`,
+      [section || null, title || null, content || null,
+       sort_order != null ? sort_order : null,
+       is_active != null ? is_active : null,
+       is_pending != null ? is_pending : null,
+       req.crmUser?.id || null, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'T&C entry not found' });
+    return res.json({ success: true, data: rows[0] });
+  } catch (err) { console.error('[TC Master Update]', err.message); return res.status(500).json({ success: false, message: 'Failed to update T&C entry' }); }
+});
+
+// ─── Approve pending T&C (single endpoint for is_pending→false, is_active→true) ──
+router.post('/tc-master/:id/approve', authCRM, requireTCAdmin, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(
+      `UPDATE crm_product_tc_master SET is_active=TRUE, is_pending=FALSE, updated_by=$1, updated_at=NOW()
+       WHERE id=$2 RETURNING *`,
+      [req.crmUser?.id || null, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'T&C entry not found' });
+    return res.json({ success: true, data: rows[0], message: 'T&C approved and activated' });
+  } catch (err) { return res.status(500).json({ success: false, message: 'Failed to approve T&C entry' }); }
+});
+
+// ─── Reject/Delete T&C Entry ──────────────────────────────────────────────────
+router.delete('/tc-master/:id', authCRM, requireTCAdmin, async (req, res) => {
+  try {
+    const { rowCount } = await sharedPool.query(`DELETE FROM crm_product_tc_master WHERE id=$1`, [req.params.id]);
+    if (!rowCount) return res.status(404).json({ success: false, message: 'T&C entry not found' });
+    return res.json({ success: true, message: 'T&C entry deleted' });
+  } catch (err) { return res.status(500).json({ success: false, message: 'Failed to delete T&C entry' }); }
+});
+
+// ─── Bulk approve all pending for a product type ──────────────────────────────
+router.post('/tc-master/bulk-approve', authCRM, requireTCAdmin, async (req, res) => {
+  try {
+    const { product_type } = req.body;
+    const cond = product_type ? `AND product_type = $2` : '';
+    const params = product_type ? [req.crmUser?.id || null, product_type] : [req.crmUser?.id || null];
+    const { rowCount } = await sharedPool.query(
+      `UPDATE crm_product_tc_master SET is_active=TRUE, is_pending=FALSE, updated_by=$1, updated_at=NOW()
+       WHERE is_pending=TRUE ${cond}`,
+      params
+    );
+    return res.json({ success: true, message: `${rowCount} T&C entries approved`, count: rowCount });
+  } catch (err) { return res.status(500).json({ success: false, message: 'Failed to bulk-approve T&C entries' }); }
+});
+
+// ─── Sync T&Cs from a specific RFQ into pending master ───────────────────────
+// POST /api/crm/tc-master/sync-rfq/:rfqId
+router.post('/tc-master/sync-rfq/:rfqId', authCRM, requireTCAdmin, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT id, product_type, terms_and_conditions FROM crm_rfqs WHERE id = $1`,
+      [req.params.rfqId]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
+    const rfq = rows[0];
+    if (!rfq.terms_and_conditions) {
+      return res.status(400).json({ success: false, message: 'This RFQ has no parsed terms & conditions to sync' });
+    }
+    await syncTCsFromRFQ(rfq.id, rfq.product_type, rfq.terms_and_conditions, req.crmUser?.id);
+    // Count how many pending were created
+    const { rows: pending } = await sharedPool.query(
+      `SELECT COUNT(*) FROM crm_product_tc_master WHERE source_rfq_id=$1 AND is_pending=TRUE`,
+      [rfq.id]
+    );
+    return res.json({
+      success: true,
+      message: `Synced T&Cs from RFQ — ${pending[0].count} pending clauses awaiting admin approval`,
+      pendingCount: parseInt(pending[0].count),
+    });
+  } catch (err) { console.error('[TC Sync]', err.message); return res.status(500).json({ success: false, message: 'Failed to sync T&Cs from RFQ' }); }
+});
 
 export default router;
