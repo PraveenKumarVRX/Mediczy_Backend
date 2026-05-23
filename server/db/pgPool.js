@@ -21,6 +21,7 @@ function getPool() {
       max:      parseInt(process.env.POSTGRES_POOL_MAX || '20', 10),
       idleTimeoutMillis:    30000,
       connectionTimeoutMillis: 10000,
+      ssl: process.env.POSTGRES_SSL === 'true' ? { rejectUnauthorized: false } : false,
     });
 
     _pool.on('error', (err) => {

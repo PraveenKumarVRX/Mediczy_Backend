@@ -34,6 +34,20 @@ const requireDoctor = requireRole(['doctor', 'admin', 'assistant', 'nurse', 'tea
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
 const OFFLINE_SCRIBE_URL = process.env.OFFLINE_SCRIBE_URL || 'http://localhost:8006';
+const LIVEKIT_HEALTH_URL = process.env.LIVEKIT_HEALTH_URL || 'http://127.0.0.1:7880';
+
+async function fetchJsonOrText(url, options = {}, timeoutMs = 5000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const contentType = response.headers.get('content-type') || '';
+    const body = contentType.includes('application/json') ? await response.json() : await response.text();
+    return { ok: response.ok, status: response.status, body };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 // ─── Tool Definitions ────────────────────────────────────────────────────────
 
@@ -83,7 +97,7 @@ const ASSISTANT_TOOLS = [
     type: 'function',
     function: {
       name: 'get_today_summary',
-      description: 'Get a summary of today for the doctor: appointment count, pending tasks, recent alerts.',
+      description: 'Get a count of today\'s appointments: how many scheduled, completed, and pending. Use ONLY for "how many patients today", "today\'s overview", "my schedule count". Do NOT use for messages, alerts, notifications, or updates — use get_doctor_briefing for those.',
       parameters: { type: 'object', properties: {} }
     }
   },
@@ -287,7 +301,11 @@ function buildSystemPrompt(context = {}) {
   const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
   const dateStr = now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-  return `You are iSHA — a fast, decisive AI assistant for Dr. ${doctorName || 'Doctor'} in the SmartHealth platform. Today: ${dateStr}, ${timeStr}. Screen: ${currentScreen || 'dashboard'}. ${patientInfo}
+  return `You are iSHA — a clinical AI assistant ONLY for Dr. ${doctorName || 'Doctor'} in the SmartHealth platform. You MUST NOT answer any question that is not about medicine, patients, appointments, prescriptions, or hospital workflow. For ANY non-medical query (geography, history, sports, trivia, general knowledge, coding, etc.), you MUST respond with this exact phrase: "I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks." Today: ${dateStr}, ${timeStr}. Screen: ${currentScreen || 'dashboard'}. ${patientInfo}
+
+STRICT SCOPE — NEVER VIOLATE:
+- Non-clinical question (geography, capital cities, sports, history, weather, general trivia, coding, politics, etc.) → respond ONLY: "I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks."
+- Do NOT answer these even if you know the answer. Do NOT call any tool. Just output that one sentence.
 
 CORE BEHAVIOR:
 - Respond directly to the task. No greetings, no self-introduction, no "Good afternoon Doctor" on every message.
@@ -307,14 +325,14 @@ TOOL ROUTING (strict):
 | "cancel appointment for X" | cancel_appointment |
 | "reschedule / move / shift / change appointment for X to DATE TIME" | reschedule_appointment (NOT list_appointments) |
 | "health / vitals / status of X" | get_patient_health |
-| "today's summary / overview / how many patients" | get_today_summary |
+| "today's summary / how many patients today / appointment count" | get_today_summary (counts only — NOT for messages/alerts) |
 | "search patient X" | search_patient |
 | "open / go to / show [screen]" | navigate_to |
-| "any updates / messages / alerts / emergencies / what's new / briefing" | get_doctor_briefing |
+| "any updates / messages / alerts / urgent / emergencies / what's new / briefing / what did I miss / any notifications" | get_doctor_briefing (NOT get_today_summary) |
 | "are you sure / is that right / really / confirm that" | NO tool — restate last answer verbally |
-| drug dosage / indication / side effects | get_drug_info |
-| drug interaction check | check_drug_interactions |
-| any clinical/medical question | medical_query |
+| "dose / dosage / side effects / indication / contraindication of [drug]" | get_drug_info |
+| "interaction / combine / mix [drug1] with [drug2]" | check_drug_interactions |
+| any other clinical/medical question (diagnosis, symptoms, treatment, physiology) | medical_query |
 
 RESPONSE FORMAT:
 - Appointment lists: one line per appointment → "HH:MM — Patient Name (status): reason"
@@ -348,11 +366,11 @@ async function executeGetTodaySummary(doctorId) {
     const today = new Date().toISOString().split('T')[0];
     const result = await pool.query(`
       SELECT
-        COUNT(*) FILTER (WHERE DATE(scheduled_at) = $1) AS today_appointments,
-        COUNT(*) FILTER (WHERE DATE(scheduled_at) = $1 AND status = 'completed') AS completed,
-        COUNT(*) FILTER (WHERE DATE(scheduled_at) = $1 AND status IN ('scheduled','confirmed')) AS pending
+        COUNT(*) FILTER (WHERE DATE("appointmentDate") = $1) AS today_appointments,
+        COUNT(*) FILTER (WHERE DATE("appointmentDate") = $1 AND status = 'completed') AS completed,
+        COUNT(*) FILTER (WHERE DATE("appointmentDate") = $1 AND status IN ('scheduled','confirmed','pending')) AS pending
       FROM appointments
-      WHERE doctor_id = $2
+      WHERE "doctorId" = $2
     `, [today, doctorId]);
     const row = result.rows[0] || {};
     return {
@@ -369,10 +387,13 @@ async function executeGetTodaySummary(doctorId) {
 async function executeAddClinicalNote(doctorId, patientId, note, category = 'observation') {
   if (!patientId) return { success: false, error: 'No patient selected' };
   try {
+    // Map voice category to SOAP column
+    const colMap = { plan: 'plan', follow_up: '"followUp"', instruction: '"patientEducation"' };
+    const noteCol = colMap[category] || 'subjective';
     await pool.query(`
-      INSERT INTO clinical_notes (doctor_id, patient_id, note, category, created_at)
-      VALUES ($1, $2, $3, $4, NOW())
-    `, [doctorId, patientId, note, category]);
+      INSERT INTO clinical_notes ("doctorId", "patientId", ${noteCol}, "status", "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, 'draft', NOW(), NOW())
+    `, [doctorId, patientId, note]);
     return { success: true };
   } catch (err) {
     logger.warn('[VoiceAssistant] add_clinical_note DB error', { error: err.message });
@@ -724,7 +745,7 @@ router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req,
   // ── Fallback: local Whisper (offline scribe, port 8006) ─────────────────────
   try {
     const form = new FormData();
-    form.append('audio', req.file.buffer, {
+    form.append('file', req.file.buffer, {
       filename: req.file.originalname || 'recording.wav',
       contentType: req.file.mimetype || 'audio/wav',
     });
@@ -753,6 +774,45 @@ router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req,
     logger.error('[VoiceAssistant] STT error', { error: err.message });
     return res.status(500).json({ error: err.message });
   }
+});
+
+// ─── GET /status — Aggregate voice stack readiness ─────────────────────────
+
+router.get('/status', authUser, requireDoctor, async (req, res) => {
+  const status = {
+    success: true,
+    service: 'voice-assistant',
+    components: {
+      stt: { status: 'unknown', provider: process.env.GROQ_API_KEY ? 'groq-whisper+local-fallback' : 'local-whisper' },
+      tts: { status: process.env.ELEVENLABS_API_KEY ? 'configured' : 'fallback', provider: process.env.ELEVENLABS_API_KEY ? 'elevenlabs' : 'browser' },
+      livekit: { status: 'unknown', configured: Boolean(process.env.LIVEKIT_API_KEY && process.env.LIVEKIT_API_SECRET && process.env.LIVEKIT_URL) },
+    },
+    endpoints: {
+      scribe: OFFLINE_SCRIBE_URL,
+      livekit: process.env.LIVEKIT_URL || null,
+    },
+  };
+
+  try {
+    const scribe = await fetchJsonOrText(OFFLINE_SCRIBE_URL + '/api/scribe/health', {}, 5000);
+    status.components.stt.status = scribe.ok && scribe.body?.components?.stt?.status === 'healthy' ? 'healthy' : 'degraded';
+    status.components.stt.backend = scribe.body?.components?.stt || null;
+  } catch (error) {
+    status.success = false;
+    status.components.stt = { ...status.components.stt, status: 'unhealthy', error: error.message };
+  }
+
+  try {
+    const livekit = await fetchJsonOrText(LIVEKIT_HEALTH_URL, {}, 5000);
+    status.components.livekit.status = livekit.ok ? 'healthy' : 'degraded';
+    status.components.livekit.healthUrl = LIVEKIT_HEALTH_URL;
+  } catch (error) {
+    status.success = false;
+    status.components.livekit = { ...status.components.livekit, status: 'unhealthy', healthUrl: LIVEKIT_HEALTH_URL, error: error.message };
+  }
+
+  const httpStatus = status.success ? 200 : 503;
+  return res.status(httpStatus).json(status);
 });
 
 // ─── GET /livekit-token — Issue short-lived token for iSHA audio room ────────
@@ -856,10 +916,15 @@ Available actions and their parameters:
 - "general"                 → {}
 
 Rules:
+- IDENTITY / GREETING (who are you, what can you do, hello, hi, good morning, introduce yourself) → {"action":"general","parameters":{},"response":"I'm iSHA, your AI clinical assistant. I can manage appointments, look up patient health, answer drug questions, and take clinical notes — just speak naturally."}
+- NON-CLINICAL QUERY (geography, capital cities, history, sports, weather, trivia, coding, general knowledge, politics, entertainment) → respond ONLY: {"action":"general","parameters":{},"response":"I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks."}
 - "reschedule" → always reschedule_appointment
-- drug/medication questions → medical_query or get_drug_info
-- greetings/who are you → general
-- For medical_query: write the full clinical answer in "response"
+- "alerts / messages / updates / notifications / briefing / what's new" → always get_doctor_briefing (NOT get_today_summary)
+- "how many patients / appointment count / today's summary" → get_today_summary
+- DRUG DOSE / SIDE EFFECTS / INDICATION / CONTRAINDICATION (e.g. "dose of metformin", "side effects of aspirin", "when to use lisinopril") → get_drug_info with {"drug":"<name>","question":"<specific aspect>"}
+- DRUG INTERACTIONS (e.g. "interaction between X and Y", "can I combine X with Y") → check_drug_interactions with {"drugs":["X","Y"]}
+- CLINICAL / MEDICAL QUESTION without a specific drug (diagnosis criteria, treatment protocol, symptoms, physiology) → medical_query with {"query":"<question>"}
+- For get_drug_info, check_drug_interactions, medical_query: write the full clinical answer directly in "response"
 - For all other actions: write a 1-sentence spoken confirmation in "response"`;
 
   try {
@@ -952,14 +1017,45 @@ Rules:
 
     // ── Step 2: Parse response ─────────────────────────────────────────────
 
-    // No action / general — direct answer
+    // No action / general — check if iSHA answered a medical question via 'general'
     if (!toolName || toolName === 'general') {
+      const SCOPE_REJECT   = "I'm iSHA, your clinical assistant. I can only help";
+      const GREETING_RESP  = "I'm iSHA, your AI clinical assistant. I can manage";
+      const OFF_TOPIC_MSG  = "I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks.";
+
+      // Detect if iSHA slipped and answered a non-clinical question anyway
+      const NON_CLINICAL_RE = /\b(python|javascript|typescript|java\b|golang|rust|c\+\+|programming|for\s+loop|while\s+loop|\bvariable\b|\barray\b|\bfunction\s*\(|console\.|print\(|def\s+\w|capital\s+of|president\s+of|ipl\b|cricket\s+world|football\s+match|photosynthesis|geography)\b/i;
+      const hasNonClinicalContent = NON_CLINICAL_RE.test(directContent || '');
+
+      // Re-route: BiMediX2 used 'general' but wrote a substantive clinical answer
+      const isClinicalFallthrough = directContent &&
+        directContent.length > 80 &&
+        !directContent.startsWith(SCOPE_REJECT) &&
+        !directContent.startsWith(GREETING_RESP) &&
+        !hasNonClinicalContent;
+
+      if (isClinicalFallthrough) {
+        return res.json({
+          intent: 'medical_query',
+          action: 'medical_query',
+          parameters: null,
+          response: directContent,
+          speak: directContent,
+          requiresConfirmation: false,
+        });
+      }
+
+      // Non-clinical content answered by model — substitute rejection phrase
+      const responseText = hasNonClinicalContent
+        ? OFF_TOPIC_MSG
+        : (directContent || "I'm your SmartHealth assistant. How can I help?");
+
       return res.json({
         intent: 'general',
         action: null,
         parameters: null,
-        response: directContent || "I'm your SmartHealth assistant. How can I help?",
-        speak: directContent || "I'm your SmartHealth assistant. How can I help?",
+        response: responseText,
+        speak: responseText,
         requiresConfirmation: false,
       });
     }
@@ -971,8 +1067,8 @@ Rules:
       const answer = directContent || await answerMedicalQuery(args.query || text, args.context || '');
       return res.json({
         intent: 'medical_query',
-        action: null,
-        parameters: null,
+        action: 'medical_query',
+        parameters: args,
         response: answer,
         speak: answer,
         requiresConfirmation: false,
