@@ -1284,6 +1284,13 @@ router.put('/rfqs/:id', authCRM, async (req, res) => {
       if (!dealCheck.rows.length) return res.status(400).json({ success: false, message: `Deal ${deal_id} not found` });
     }
 
+    // Capture old status before UPDATE so audit log comparison is accurate
+    let oldStatus = null;
+    if (status) {
+      const prev = await sharedPool.query(`SELECT status FROM crm_rfqs WHERE id = $1`, [req.params.id]);
+      oldStatus = prev.rows[0]?.status ?? null;
+    }
+
     const { rows } = await sharedPool.query(
       `UPDATE crm_rfqs SET
         insured_name = COALESCE($1, insured_name), insured_address = COALESCE($2, insured_address),
@@ -1319,10 +1326,10 @@ router.put('/rfqs/:id', authCRM, async (req, res) => {
     if (!rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
 
     // Audit log for status change
-    if (status && rows[0].status !== status) {
+    if (status && oldStatus && oldStatus !== status) {
       sharedPool.query(
         `INSERT INTO crm_rfq_audit_log (rfq_id, event_type, old_value, new_value, changed_by) VALUES ($1,'status_change',$2,$3,$4)`,
-        [rows[0].id, rows[0].status, status, req.crmUser?.id || null]
+        [rows[0].id, oldStatus, status, req.crmUser?.id || null]
       ).catch(() => {});
     }
 
@@ -4213,10 +4220,26 @@ router.put('/quotes/:id', authCRM, async (req, res) => {
       coverage_details, slab_pricing, terms, notes
     } = req.body;
 
-    // Validate status transitions — allowed: draft → sent → accepted/rejected, draft → negotiating → sent
     const VALID_QUOTE_STATUSES = ['draft', 'sent', 'negotiating', 'accepted', 'rejected'];
     if (status && !VALID_QUOTE_STATUSES.includes(status)) {
       return res.status(400).json({ success: false, message: `Invalid quote status: ${status}. Allowed: ${VALID_QUOTE_STATUSES.join(', ')}` });
+    }
+
+    // Validate state-machine transition before mutating
+    if (status) {
+      const { rows: curr } = await sharedPool.query(`SELECT status FROM crm_quotes WHERE id = $1`, [req.params.id]);
+      if (!curr.length) return res.status(404).json({ success: false, message: 'Quote not found' });
+      const ALLOWED_TRANSITIONS = {
+        draft:       ['sent', 'negotiating'],
+        sent:        ['negotiating', 'accepted', 'rejected'],
+        negotiating: ['sent', 'accepted', 'rejected'],
+        accepted:    [],
+        rejected:    [],
+      };
+      const currentStatus = curr[0].status;
+      if (currentStatus !== status && !ALLOWED_TRANSITIONS[currentStatus]?.includes(status)) {
+        return res.status(400).json({ success: false, message: `Cannot transition quote from '${currentStatus}' to '${status}'` });
+      }
     }
 
     const sentAt = status === 'sent' ? 'sent_at = NOW(),' : '';
@@ -4239,24 +4262,26 @@ router.put('/quotes/:id', authCRM, async (req, res) => {
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Quote not found' });
 
+    // Declared at handler scope so all branches can reference it in the response
+    let emailResult = null;
+
     // Drive RFQ status from quote status transitions
     if (status === 'sent') {
-      // sent → rfq becomes 'quoted'
-      await sharedPool.query(`UPDATE crm_rfqs SET status = 'quoted', updated_at = NOW() WHERE id = $1 AND status IN ('received','quoting','negotiating')`, [rows[0].rfq_id]);
+      // sent → rfq becomes 'quoted' only from received/quoting; never revert from negotiating
+      await sharedPool.query(`UPDATE crm_rfqs SET status = 'quoted', updated_at = NOW() WHERE id = $1 AND status IN ('received','quoting')`, [rows[0].rfq_id]);
 
       // ── Email notification on quote send ──────────────────────────────────
-      let emailResult = { sent: false, recipients: null, error: null };
+      emailResult = { sent: false, recipients: null, error: null };
       try {
         const { rows: rfqRows } = await sharedPool.query(
-          `SELECT insured_name, rfq_number, broker_name, broker_email, member_count,
-                  contact_email, contact_name
+          `SELECT insured_name, rfq_number, broker_name, broker_email, member_count
            FROM crm_rfqs WHERE id = $1`,
           [rows[0].rfq_id]
         );
         if (rfqRows.length) {
           const rfq = rfqRows[0];
           const q   = rows[0];
-          const recipients = [rfq.broker_email, rfq.contact_email].filter(Boolean).join(',');
+          const recipients = rfq.broker_email || null;
           if (recipients) {
             emailResult.recipients = recipients;
             const fmtCurrency = v => v != null ? `₹${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : 'N/A';
@@ -4270,7 +4295,7 @@ router.put('/quotes/:id', authCRM, async (req, res) => {
     <p style="margin:4px 0 0;opacity:0.85;font-size:14px">RFQ #${rfq.rfq_number}</p>
   </div>
   <div style="padding:28px">
-    <p style="margin:0 0 16px;color:#374151">Dear ${rfq.broker_name || rfq.contact_name || 'Valued Partner'},</p>
+    <p style="margin:0 0 16px;color:#374151">Dear ${rfq.broker_name || 'Valued Partner'},</p>
     <p style="margin:0 0 20px;color:#374151">We are pleased to share our health insurance quote for <strong>${rfq.insured_name}</strong>.</p>
     <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
       <tr style="background:#f3f4f6"><td style="padding:10px 14px;font-size:13px;color:#6b7280;width:40%">Insured Name</td><td style="padding:10px 14px;font-size:14px;color:#111827;font-weight:600">${rfq.insured_name}</td></tr>
@@ -4292,7 +4317,7 @@ router.put('/quotes/:id', authCRM, async (req, res) => {
               to:      recipients,
               subject: `Quote for ${rfq.insured_name} (RFQ #${rfq.rfq_number})`,
               html,
-              text: `Dear ${rfq.broker_name || rfq.contact_name || 'Partner'},\n\nPlease find the health insurance quote for ${rfq.insured_name} (RFQ #${rfq.rfq_number}).\n\nTotal Premium: ${fmtCurrency(q.total_premium)}\nTotal Lives: ${q.total_lives || rfq.member_count || 'N/A'}\nValid Until: ${validUntil}\n\nRegards,\nMediqzy Team`,
+              text: `Dear ${rfq.broker_name || 'Partner'},\n\nPlease find the health insurance quote for ${rfq.insured_name} (RFQ #${rfq.rfq_number}).\n\nTotal Premium: ${fmtCurrency(q.total_premium)}\nTotal Lives: ${q.total_lives || rfq.member_count || 'N/A'}\nValid Until: ${validUntil}\n\nRegards,\nMediqzy Team`,
             });
             emailResult.sent = true;
           }
@@ -4303,18 +4328,25 @@ router.put('/quotes/:id', authCRM, async (req, res) => {
       }
     }
     if (status === 'negotiating') {
-      // negotiating → rfq becomes 'negotiating'
       await sharedPool.query(`UPDATE crm_rfqs SET status = 'negotiating', updated_at = NOW() WHERE id = $1 AND status IN ('quoted')`, [rows[0].rfq_id]);
     }
     if (status === 'accepted') {
-      await sharedPool.query(`UPDATE crm_rfqs SET status = 'won', updated_at = NOW() WHERE id = $1`, [rows[0].rfq_id]);
+      // Advance RFQ to won; guard to quoted/negotiating so a stale re-accept can't reopen a lost deal
+      await sharedPool.query(`UPDATE crm_rfqs SET status = 'won', updated_at = NOW() WHERE id = $1 AND status IN ('quoted','negotiating')`, [rows[0].rfq_id]);
     }
     if (status === 'rejected') {
       const { lost_reason } = req.body;
-      await sharedPool.query(`UPDATE crm_rfqs SET status = 'lost', lost_reason = COALESCE($2, lost_reason), updated_at = NOW() WHERE id = $1`, [rows[0].rfq_id, lost_reason || null]);
+      // Mark RFQ lost only when no other active (sent/negotiating) quotes remain
+      const { rows: activeQuotes } = await sharedPool.query(
+        `SELECT COUNT(*) FROM crm_quotes WHERE rfq_id = $1 AND id != $2 AND status IN ('sent','negotiating')`,
+        [rows[0].rfq_id, rows[0].id]
+      );
+      if (parseInt(activeQuotes[0].count) === 0) {
+        await sharedPool.query(`UPDATE crm_rfqs SET status = 'lost', lost_reason = COALESCE($2, lost_reason), updated_at = NOW() WHERE id = $1`, [rows[0].rfq_id, lost_reason || null]);
+      }
     }
 
-    return res.status(200).json({ success: true, data: rows[0], email: emailResult || null });
+    return res.status(200).json({ success: true, data: rows[0], email: emailResult });
   } catch (error) { console.error('[CRM Quote Update]', error.message); return res.status(500).json({ success: false, message: 'Failed to update quote' }); }
 });
 
@@ -4375,7 +4407,7 @@ router.post('/agents', authCRM, [body('name').notEmpty()], async (req, res) => {
     const { rows } = await sharedPool.query(
       `INSERT INTO crm_agents (name, email, phone, city, channel_type, agent_code, agency_id, notes, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [name, email || null, phone || null, city || null, channelType, agentCode || null, agencyId || null, notes || null, req.user.id]
+      [name, email || null, phone || null, city || null, channelType, agentCode || null, agencyId || null, notes || null, req.crmUser?.id || null]
     );
     return res.status(201).json({ success: true, data: rows[0] });
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
