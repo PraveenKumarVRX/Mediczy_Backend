@@ -14,6 +14,8 @@ TEST_CREDENTIALS.md
 secrets/
 credentials/
 config/firebase-service-account.json
+config/firebase-service-account-doctor.json
+config/firebase-service-account-ios.json
 **/google-services.json
 **/GoogleService-Info.plist
 
