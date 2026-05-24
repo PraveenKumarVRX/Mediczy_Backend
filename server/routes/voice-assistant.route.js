@@ -928,7 +928,7 @@ Rules:
 - For all other actions: write a 1-sentence spoken confirmation in "response"`;
 
   try {
-    // ── Step 1: Call iSHA with JSON intent prompt (primary LLM) ──────────
+    // ── Step 1: Call central LLM router (SIB-first) for JSON intent ─────
     let toolName = null;
     let args = {};
     let directContent = null;
@@ -944,7 +944,7 @@ Rules:
         maxTokens: 600,
         temperature: 0.1,
         skipCache: true,
-        forceProvider: 'isha',
+        forceProvider: 'sib',
       });
 
       const raw = (ishaResp.content || '').trim();
@@ -971,7 +971,7 @@ Rules:
       directContent = parsed.response || null;
       ishaOk = true;
     } catch (ishaErr) {
-      logger.warn('[VoiceAssistant] iSHA failed, falling back to Groq', { error: ishaErr.message });
+      logger.warn('[VoiceAssistant] SIB intent path failed, falling back to cascade', { error: ishaErr.message });
 
       // If iSHA returned plain conversational text, use it directly — no need to call Groq
       if (ishaErr._rawContent && !ishaErr._rawContent.includes('{')) {
@@ -991,7 +991,6 @@ Rules:
             maxTokens: 800,
             temperature: 0.1,
             skipCache: true,
-            forceProvider: 'groq',
           });
           const toolCalls = agentResp.toolCalls || [];
           directContent = agentResp.content;

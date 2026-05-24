@@ -3263,14 +3263,15 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, upload.array('files', 10), a
       impact: 'result'
     });
 
-    // ── 3e. LLM UNDERWRITING ASSESSMENT (isha-inc.com / iSHA Insurance LLM via DocsGPT SSE) ─
-    // Send the computed actuarial data to the local insurance LLM on RTX 3060
-    // for qualitative underwriting commentary, risk insights & recommendations
-    const ISHA_LLM_URL = process.env.ISHA_LLM_URL || 'https://isha-inc.com/stream';
-    const ISHA_LLM_TIMEOUT = parseInt(process.env.ISHA_LLM_TIMEOUT || '60000');
+    // ── 3e. LLM UNDERWRITING ASSESSMENT (SIB FastAPI primary path) ─
+    // Route underwriting analysis through central llmProvider so SIB controls
+    // orchestration and downstream provider fallback behavior.
 
     let llmAssessment = null;
     try {
+      const llmMod = await import('../services/ai-brain/llm-provider.js');
+      const llmProvider = llmMod.default;
+
       const llmPayload = {
         rfq: {
           insured_name: rfq.insured_name,
@@ -3336,7 +3337,7 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, upload.array('files', 10), a
         }
       }
 
-      // Build the question for DocsGPT / iSHA iDMS
+      // Build the underwriting prompt
       const llmQuestion = `You are an expert insurance underwriter and actuary specializing in Indian group health insurance (OPD, GMC, GPA).
 You are reviewing an RFQ and the actuarial engine's computed pricing. Provide a detailed underwriting assessment.
 
@@ -3369,72 +3370,19 @@ Do NOT include markdown formatting. Return valid JSON only.
 Here is the RFQ data to analyze:
 ${JSON.stringify(llmPayload, null, 2)}${supplementalContext ? `\n\n${supplementalContext}` : ''}`;
 
-      // Call iSHA iDMS /stream endpoint (DocsGPT SSE format)
-      const llmRes = await fetch(ISHA_LLM_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question: llmQuestion,
-          history: [],
-        }),
-        signal: AbortSignal.timeout(ISHA_LLM_TIMEOUT),
+      const llmRes = await llmProvider.chat({
+        messages: [
+          { role: 'system', content: 'Return valid JSON only.' },
+          { role: 'user', content: llmQuestion },
+        ],
+        maxTokens: 1600,
+        temperature: 0.2,
+        responseFormat: { type: 'json_object' },
+        forceProvider: 'sib',
+        skipCache: true,
       });
 
-      // Helper: parse SSE text and extract full answer from DocsGPT stream
-      const parseSseAnswer = (sseText) => {
-        let answer = '';
-        for (const line of sseText.split('\n')) {
-          if (line.startsWith('data: ')) {
-            try {
-              const evt = JSON.parse(line.slice(6));
-              if (evt.type === 'answer' && evt.answer) {
-                answer += evt.answer;
-              }
-            } catch { /* skip non-JSON data lines */ }
-          }
-        }
-        return answer;
-      };
-
-      // Helper: attempt a single LLM call and return fullAnswer string
-      const attemptLlmCall = async () => {
-        const res = await fetch(ISHA_LLM_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: llmQuestion, history: [] }),
-          signal: AbortSignal.timeout(ISHA_LLM_TIMEOUT),
-        });
-        if (!res.ok) {
-          console.warn(`[CRM AI Quote] LLM HTTP ${res.status} from ${ISHA_LLM_URL}`);
-          return '';
-        }
-        const sseText = await res.text();
-        console.log(`[CRM AI Quote] SSE response length: ${sseText.length} chars`);
-        const answer = parseSseAnswer(sseText);
-        if (!answer) {
-          console.warn(`[CRM AI Quote] SSE had no answer chunks. First 500 chars: ${sseText.substring(0, 500)}`);
-        }
-        return answer;
-      };
-
-      // Try up to 2 attempts (retry once on empty)
-      let fullAnswer = '';
-      if (llmRes.ok) {
-        const sseText = await llmRes.text();
-        console.log(`[CRM AI Quote] SSE response length: ${sseText.length} chars`);
-        fullAnswer = parseSseAnswer(sseText);
-        if (!fullAnswer) {
-          console.warn(`[CRM AI Quote] First attempt empty. SSE first 500 chars: ${sseText.substring(0, 500)}`);
-          console.log(`[CRM AI Quote] Retrying LLM call...`);
-          try {
-            fullAnswer = await attemptLlmCall();
-          } catch (retryErr) {
-            console.warn(`[CRM AI Quote] Retry failed: ${retryErr.message}`);
-          }
-        }
-      } else {
-        console.warn(`[CRM AI Quote] LLM HTTP ${llmRes.status} from ${ISHA_LLM_URL}`);
-      }
+      const fullAnswer = (llmRes?.content || '').trim();
 
       if (fullAnswer) {
         // Parse JSON from LLM response — handle potential markdown code blocks
@@ -3460,12 +3408,12 @@ ${JSON.stringify(llmPayload, null, 2)}${supplementalContext ? `\n\n${supplementa
           });
         }
       }
-      console.log(`[CRM AI Quote] LLM assessment ${llmAssessment ? 'received' : 'empty'} from ${ISHA_LLM_URL}`);
+      console.log(`[CRM AI Quote] LLM assessment ${llmAssessment ? 'received' : 'empty'} via ${llmRes?.provider || 'unknown'}`);
     } catch (llmErr) {
-      console.warn(`[CRM AI Quote] LLM call to ${ISHA_LLM_URL} failed: ${llmErr.message}. Proceeding without LLM assessment.`);
+      console.warn(`[CRM AI Quote] LLM call failed: ${llmErr.message}. Proceeding without LLM assessment.`);
       reasoning.push({
         step: 'AI Underwriting Assessment',
-        detail: `Insurance LLM (isha-inc.com) unavailable — actuarial model pricing stands as-is. Error: ${llmErr.message}`,
+        detail: `Insurance LLM unavailable — actuarial model pricing stands as-is. Error: ${llmErr.message}`,
         impact: 'neutral'
       });
     }

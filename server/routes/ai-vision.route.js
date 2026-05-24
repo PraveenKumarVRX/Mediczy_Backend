@@ -1,6 +1,6 @@
 /**
  * AI Vision Routes - Medical Image Analysis
- * Analyzes medical images (X-rays, scans, etc.) using Claude Vision
+ * Analyzes medical images (X-rays, scans, etc.) using llmProvider vision cascade
  * 
  * Endpoints:
  * - POST /api/ai/vision/analyze - Analyze medical image
@@ -44,7 +44,7 @@ const upload = multer({
 
 /**
  * @route   POST /api/ai/vision/analyze
- * @desc    Analyze medical image with AI Vision (Claude 3.5 Sonnet)
+ * @desc    Analyze medical image with AI Vision (iSHA-inc/Gemini/Groq cascade)
  * @access  Private (Doctor)
  */
 router.post('/analyze', authUser, requireVisionAccess, upload.single('image'), async (req, res) => {
@@ -232,7 +232,7 @@ router.get('/health', (req, res) => {
     success: true,
     service: 'AI Vision',
     status: 'operational',
-    model: 'claude-3-5-sonnet',
+    model: 'isha-inc-vision | gemini-vision | groq-vision',
     maxFileSize: '10MB',
     supportedFormats: ['JPEG', 'PNG', 'GIF', 'WebP']
   });

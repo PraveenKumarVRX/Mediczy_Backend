@@ -4,7 +4,7 @@
  * Centralises every AI capability behind a unified cascade:
  *
  *  Text   → iSHA (primary) → Groq → OpenAI
- *  Vision → Anthropic Claude (only provider with vision)
+ *  Vision → iSHA-inc Vision (primary) → Gemini → Groq
  *  STT    → Groq Whisper → OpenAI Whisper
  *  TTS    → ElevenLabs (handled elsewhere)
  *
@@ -15,6 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
 import Groq from 'groq-sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import pool from '../../db/pgPool.js';
 import semanticCache from './semantic-cache.service.js';
 import cognitiveRouter, { TIERS, TIER_PROVIDERS } from './cognitive-router.js';
@@ -94,6 +95,40 @@ async function getIshaToken() {
   return _ishaToken;
 }
 
+// isha-inc.com uses Cloudflare which blocks the OpenAI SDK User-Agent — use fetch directly.
+async function callIshaInc(params) {
+  const baseURL = (getProviderEnv('ISHA_INC_URL') || 'https://isha-inc.com') + '/v1/chat/completions';
+  const apiKey  = getProviderEnv('ISHA_INC_API_KEY');
+  if (!apiKey) throw new Error('ISHA_INC_API_KEY not configured');
+
+  const controller = new AbortController();
+  const timeoutId  = setTimeout(() => controller.abort(), 30_000);
+
+  try {
+    const res = await fetch(baseURL, {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'User-Agent':    'Mozilla/5.0 (compatible; Mediczy/1.0)',
+        'Accept':        'application/json',
+      },
+      body:   JSON.stringify(params),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`isha-inc ${res.status}: ${body.substring(0, 200)}`);
+    }
+    return res.json();
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') throw new Error('isha-inc request timed out (30s)');
+    throw err;
+  }
+}
+
 async function callIsha(params) {
   const baseURL = getProviderEnv('ISHA_AI_URL');
   if (!baseURL) throw new Error('ISHA_AI_URL not configured');
@@ -107,11 +142,34 @@ async function callIsha(params) {
     'Authorization': `Bearer ${token}`,
   };
 
+  // Sanitise ₹ → Rs. and guard against context overflow (bi-medix2 llama_cpp has ~6k usable tokens)
+  const ISHA_MAX_CHARS = 12000; // ~3000 tokens; leave headroom for completion
+  const messages = (params.messages || []).map(m => ({
+    ...m,
+    content: typeof m.content === 'string' ? m.content.replace(/₹/g, 'Rs.') : m.content,
+  }));
+
+  const totalChars = messages.reduce((s, m) => s + (m.content?.length || 0), 0);
+  if (totalChars > ISHA_MAX_CHARS) {
+    // Trim the system message (first message) from the end to fit budget
+    const sysMsgIdx = messages.findIndex(m => m.role === 'system');
+    if (sysMsgIdx !== -1) {
+      const budget = ISHA_MAX_CHARS - (totalChars - messages[sysMsgIdx].content.length);
+      if (budget > 500) {
+        messages[sysMsgIdx] = { ...messages[sysMsgIdx], content: messages[sysMsgIdx].content.slice(0, budget) };
+      } else {
+        throw new Error(`iSHA prompt too large (${totalChars} chars) — skipping to next provider`);
+      }
+    }
+  }
+
+  const sanitisedParams = { ...params, messages };
+
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(params),
+      body: JSON.stringify(sanitisedParams),
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
@@ -167,14 +225,11 @@ function getIshaIncClient() {
  * Translates OpenAI-compatible params → offline_scribe ChatRequest format.
  * Returns an OpenAI-compatible response object for seamless cascade.
  */
-// Strings that indicate any provider is returning a stub (no real inference backend)
+// Strings that indicate any provider is returning a stub (no real inference backend).
+// Keep these SPECIFIC to avoid false-positives from legitimate model responses.
 const STUB_RESPONSE_MARKERS = [
-  'This is a stub response',
   'Integrate vLLM or llama.cpp backend',
   'enable real inference with BiMediX2',
-  'enable real inference with',
-  'Integrate vLLM',
-  'llama.cpp backend',
 ];
 
 async function callLocalSLM(provider, params) {
@@ -233,13 +288,89 @@ async function callLocalSLM(provider, params) {
   }
 }
 
+async function callSib(params) {
+  const baseUrl = getProviderEnv('SIB_URL') || 'http://localhost:8005';
+  const url = `${baseUrl.replace(/\/$/, '')}/chat`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
+  const messages = Array.isArray(params.messages) ? params.messages : [];
+  const systemParts = messages
+    .filter(m => m?.role === 'system' && typeof m?.content === 'string')
+    .map(m => m.content.trim())
+    .filter(Boolean);
+  const userParts = messages
+    .filter(m => m?.role !== 'system' && typeof m?.content === 'string')
+    .map(m => m.content.trim())
+    .filter(Boolean);
+
+  const message = [...systemParts, ...userParts].join('\n\n').trim();
+  if (!message) throw new Error('SIB request has no message content');
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        user_id: 'mediczy-backend',
+        context: {
+          source: 'llm-provider',
+          model_hint: params.model,
+          max_tokens: params.max_tokens,
+          temperature: params.temperature,
+        },
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`sib ${res.status}: ${body.substring(0, 200)}`);
+    }
+
+    const data = await res.json();
+    const content = (data.response || data.answer || data.content || '').toString();
+    if (!content.trim()) throw new Error('sib returned empty response');
+
+    return {
+      id: data.id || `sib-${Date.now()}`,
+      object: 'chat.completion',
+      choices: [{
+        index: 0,
+        message: { role: 'assistant', content },
+        finish_reason: 'stop',
+      }],
+      model: data.model || params.model || 'sib',
+      usage: {
+        prompt_tokens: data.usage?.prompt_tokens || 0,
+        completion_tokens: data.usage?.completion_tokens || 0,
+        total_tokens: data.usage?.total_tokens || 0,
+      },
+    };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') throw new Error('sib request timed out (30s)');
+    throw err;
+  }
+}
+
 // ─── Provider Definitions ───────────────────────────────────
 
 const PROVIDERS = [
   {
+    name: 'sib',
+    label: 'SIB FastAPI (Primary AI Router)',
+    model: getProviderEnv('SIB_MODEL') || 'sib-router',
+    getClient: () => ({ available: true }),
+    useSib: true,
+    priority: 0,
+  },
+  {
     name: 'isha-reflex',
-    label: 'iSHA.buzz (Qwen-0.6B-Med — REFLEX)',
-    model: getProviderEnv('ISHA_REFLEX_MODEL') || 'qwen-0.6b-med',
+    label: 'iSHA.buzz (BiMediX2-8B — REFLEX)',
+    model: getProviderEnv('ISHA_REFLEX_MODEL') || 'bi-medix2',
     getClient: () => ({ available: true }),
     useFetch: true,
     priority: 1,
@@ -260,9 +391,17 @@ const PROVIDERS = [
     priority: 3,
   },
   {
+    name: 'isha-insurance',
+    label: 'isha-inc.com (MedGemma-4B)',
+    model: 'medgemma-4b',
+    getClient: () => ({ available: true }),
+    useFetchIshaInc: true,   // bypass OpenAI SDK — Cloudflare blocks its User-Agent
+    priority: 2,
+  },
+  {
     name: 'isha',
-    label: 'iSHA.buzz (BiMediX2-8B FP16 — DEEP)',
-    model: getProviderEnv('ISHA_LLM_MODEL') || 'bimedix2-8b-fp16',
+    label: 'iSHA.buzz (BiMediX2-8B — DEEP)',
+    model: getProviderEnv('ISHA_LLM_MODEL') || 'bi-medix2',
     getClient: () => ({ available: true }),
     useFetch: true,
     priority: 4,
@@ -326,7 +465,17 @@ async function callProvider(provider, params) {
     return callLocalSLM(provider, finalParams);
   }
 
-  // iSHA uses direct fetch (no Authorization header)
+  // SIB FastAPI router (preferred primary path)
+  if (provider.useSib) {
+    return callSib(finalParams);
+  }
+
+  // isha-inc.com: direct fetch to bypass Cloudflare OpenAI-SDK block
+  if (provider.useFetchIshaInc) {
+    return callIshaInc(finalParams);
+  }
+
+  // iSHA.buzz: direct fetch with JWT auth
   if (provider.useFetch) {
     return callIsha(finalParams);
   }
@@ -459,7 +608,9 @@ async function chat({
       // Detect stub responses from any provider (e.g. iSHA returning 200 when model not loaded)
       const rawContent = response.choices[0]?.message?.content || '';
       if (STUB_RESPONSE_MARKERS.some(marker => rawContent.includes(marker))) {
-        console.warn(`[LLM] ${provider.label} returned stub placeholder, cascading...`);
+        const matchedMarker = STUB_RESPONSE_MARKERS.find(marker => rawContent.includes(marker));
+        console.warn(`[LLM] ${provider.label} returned stub placeholder, cascading... MARKER="${matchedMarker}" CONTENT="${rawContent.substring(0,200)}"`);
+
         cascade.push({ provider: provider.name, status: 'error', error: 'Stub placeholder response — backend not ready' });
         errorMessage = (errorMessage ? errorMessage + ' | ' : '') + `${provider.name}: Stub placeholder response`;
         response = null;
@@ -516,6 +667,7 @@ async function chat({
 
   // Log to ai_request_logs — fire-and-forget (never blocks the response)
   const COST_TABLE = {
+    sib:           { input: 0.00, output: 0.00 },
     groq:          { input: 0.11, output: 0.34 },
     openai:        { input: 0.50, output: 1.50 },
     isha:          { input: 0.00, output: 0.00 },
@@ -585,20 +737,110 @@ function listProviders() {
   });
 }
 
-// ─── Vision (Anthropic Claude → Groq Llama 4 Scout) ───────
+// ─── Vision (iSHA-inc/Gemini primary, Groq optional fallback) ───────
 
-let _anthropicClient = null;
+let _geminiVisionClient = null;
+
+async function callIshaIncVision({ base64Image, mimeType, prompt, maxTokens }) {
+  const baseURL = (getProviderEnv('ISHA_INC_URL') || 'https://isha-inc.com') + '/v1/chat/completions';
+  const apiKey = getProviderEnv('ISHA_INC_API_KEY');
+  if (!apiKey) throw new Error('ISHA_INC_API_KEY not configured');
+
+  const model = getProviderEnv('ISHA_INC_VISION_MODEL') || getProviderEnv('ISHA_INC_MODEL') || 'smart-orchestrator';
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 45_000);
+
+  try {
+    const imageUrl = `data:${mimeType};base64,${base64Image}`;
+    const res = await fetch(baseURL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'User-Agent': 'Mozilla/5.0 (compatible; Mediczy/1.0)',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: maxTokens,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: imageUrl } },
+          ],
+        }],
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`isha-inc-vision ${res.status}: ${body.substring(0, 200)}`);
+    }
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    return {
+      content,
+      provider: 'isha-inc-vision',
+      model: data.model || model,
+      usage: {
+        input_tokens: data.usage?.prompt_tokens || 0,
+        output_tokens: data.usage?.completion_tokens || 0,
+      },
+    };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') throw new Error('isha-inc-vision request timed out (45s)');
+    throw err;
+  }
+}
+
+async function callGeminiVision({ base64Image, mimeType, prompt }) {
+  const apiKey = getProviderEnv('GEMINI_API_KEY') || getProviderEnv('GOOGLE_API_KEY');
+  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
+    throw new Error('GEMINI_API_KEY not configured');
+  }
+
+  if (!_geminiVisionClient) {
+    _geminiVisionClient = new GoogleGenerativeAI(apiKey);
+  }
+
+  const modelName = getProviderEnv('GEMINI_VISION_MODEL') || 'gemini-1.5-flash';
+  const model = _geminiVisionClient.getGenerativeModel({ model: modelName });
+  const result = await model.generateContent([
+    prompt,
+    {
+      inlineData: {
+        mimeType,
+        data: base64Image,
+      },
+    },
+  ]);
+
+  const content = result?.response?.text?.() || '';
+  return {
+    content,
+    provider: 'gemini-vision',
+    model: modelName,
+    usage: {
+      input_tokens: 0,
+      output_tokens: 0,
+    },
+  };
+}
 
 /**
  * Analyse an image using cascading vision providers.
- * Cascade: Anthropic Claude 3.5 Sonnet → Groq Llama 4 Scout
+ * Cascade: iSHA-inc Vision → Gemini Vision → Groq Vision (optional)
  *
  * @param {Object} options
  * @param {string} options.base64Image - Base64-encoded image data
  * @param {string} options.mimeType    - image/jpeg, image/png, etc.
  * @param {string} options.prompt      - Analysis prompt
  * @param {number} [options.maxTokens] - Max response tokens (default 2000)
- * @param {string} [options.forceProvider] - Force 'anthropic' or 'groq'
+ * @param {string} [options.forceProvider] - Force 'isha-inc' | 'gemini' | 'groq'
  * @returns {{ content: string, provider: string, model: string, usage: Object, latencyMs: number, cascade: Array }}
  */
 async function vision({ base64Image, mimeType, prompt, maxTokens = 2000, forceProvider = null }) {
@@ -608,45 +850,27 @@ async function vision({ base64Image, mimeType, prompt, maxTokens = 2000, forcePr
 
   const providers = forceProvider
     ? [forceProvider]
-    : ['anthropic', 'groq'];
+    : ['isha-inc', 'gemini', 'groq'];
 
   for (const prov of providers) {
     try {
-      if (prov === 'anthropic') {
-        // ── Anthropic Claude Vision ──
-        if (!process.env.ANTHROPIC_API_KEY) {
-          throw new Error('ANTHROPIC_API_KEY not configured');
-        }
-
-        let Anthropic;
-        try {
-          Anthropic = (await import('@anthropic-ai/sdk')).default;
-        } catch {
-          throw new Error('Anthropic SDK not installed — run: npm i @anthropic-ai/sdk');
-        }
-
-        if (!_anthropicClient) {
-          _anthropicClient = new Anthropic();
-        }
-
-        const response = await _anthropicClient.messages.create({
-          model: process.env.ANTHROPIC_VISION_MODEL || 'claude-3-5-sonnet-20241022',
-          max_tokens: maxTokens,
-          messages: [{
-            role: 'user',
-            content: [
-              { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64Image } },
-              { type: 'text', text: prompt }
-            ]
-          }]
-        });
-
-        const content = response.content[0]?.type === 'text' ? response.content[0].text : '';
+      if (prov === 'isha-inc') {
+        // ── iSHA-inc Vision (local GPU/orchestrator) ──
+        const response = await callIshaIncVision({ base64Image, mimeType, prompt, maxTokens });
         const latencyMs = Date.now() - start;
-        cascade.push({ provider: 'anthropic-vision', status: 'success' });
+        cascade.push({ provider: 'isha-inc-vision', status: 'success' });
 
-        await logVisionRequest('anthropic-vision', response.model || 'claude-3-5-sonnet', content, latencyMs, mimeType, response.usage, cascade);
-        return { content, provider: 'anthropic-vision', model: response.model || 'claude-3-5-sonnet', latencyMs, usage: response.usage, cascade };
+        await logVisionRequest('isha-inc-vision', response.model, response.content, latencyMs, mimeType, response.usage, cascade);
+        return { content: response.content, provider: 'isha-inc-vision', model: response.model, latencyMs, usage: response.usage, cascade };
+
+      } else if (prov === 'gemini') {
+        // ── Gemini Vision ──
+        const response = await callGeminiVision({ base64Image, mimeType, prompt, maxTokens });
+        const latencyMs = Date.now() - start;
+        cascade.push({ provider: 'gemini-vision', status: 'success' });
+
+        await logVisionRequest('gemini-vision', response.model, response.content, latencyMs, mimeType, response.usage, cascade);
+        return { content: response.content, provider: 'gemini-vision', model: response.model, latencyMs, usage: response.usage, cascade };
 
       } else if (prov === 'groq') {
         // ── Groq Llama 4 Scout Vision ──

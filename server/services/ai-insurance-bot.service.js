@@ -18,11 +18,6 @@
 import pool from '../db/pgPool.js';
 import llmProvider from './ai-brain/llm-provider.js';
 
-const INSURANCE_GPU_URL = `${process.env.ISHA_INC_URL || 'https://isha-inc.com'}/v1/chat/completions`;
-const INSURANCE_API_KEY = process.env.ISHA_INC_API_KEY || '';
-const INSURANCE_MODEL = 'insurance-llm';
-const REQUEST_TIMEOUT = 30000;
-
 class InsuranceBotService {
   constructor() {
     this.isAvailable = null; // null = not checked yet
@@ -34,25 +29,16 @@ class InsuranceBotService {
    */
   async checkHealth() {
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-
-      const response = await fetch(`${INSURANCE_GPU_URL}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${INSURANCE_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: INSURANCE_MODEL,
-          messages: [{ role: 'user', content: 'ping' }],
-          max_tokens: 5,
-        }),
-        signal: controller.signal
+      await llmProvider.chat({
+        messages: [
+          { role: 'system', content: 'Health check. Reply with pong.' },
+          { role: 'user', content: 'ping' }
+        ],
+        maxTokens: 8,
+        forceProvider: 'sib',
+        skipCache: true,
       });
-
-      clearTimeout(timeout);
-      this.isAvailable = response.ok;
+      this.isAvailable = true;
       this.lastHealthCheck = Date.now();
       return this.isAvailable;
     } catch {
@@ -116,10 +102,20 @@ Respond in a helpful, clear manner. Use bullet points for step-by-step processes
 
     if (this.isAvailable) {
       try {
-        response = await this.queryGPU(systemPrompt, query);
-        source = `gpu-${INSURANCE_MODEL}`;
+        const sibResult = await llmProvider.chat({
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: query }
+          ],
+          maxTokens: 1024,
+          temperature: 0.3,
+          forceProvider: 'sib',
+          skipCache: true,
+        });
+        response = sibResult.content;
+        source = `sib-${sibResult.provider}`;
       } catch (err) {
-        console.error('[InsuranceBot] GPU model error:', err.message);
+        console.error('[InsuranceBot] SIB model error:', err.message);
         this.isAvailable = false;
       }
     }
@@ -154,46 +150,6 @@ Respond in a helpful, clear manner. Use bullet points for step-by-step processes
       insuranceType,
       modelAvailable: this.isAvailable
     };
-  }
-
-  /**
-   * Direct GPU model query via OpenInsurance-LLaMA3
-   */
-  async queryGPU(systemPrompt, userQuery) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
-
-    try {
-      const response = await fetch(INSURANCE_GPU_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${INSURANCE_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: INSURANCE_MODEL,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userQuery }
-          ],
-          max_tokens: 1024,
-          temperature: 0.3,
-        }),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeout);
-
-      if (!response.ok) {
-        throw new Error(`GPU returned ${response.status}`);
-      }
-
-      const data = await response.json();
-      return data.choices?.[0]?.message?.content || null;
-    } catch (err) {
-      clearTimeout(timeout);
-      throw err;
-    }
   }
 
   /**

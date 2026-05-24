@@ -74,27 +74,30 @@ import EmailSettings from '../models/emailSettings.model.js';
 import TeamMember from '../models/postgres/team-member.model.postgres.js';
 import TeamEmailTemplate from '../models/teamEmailTemplate.model.js';
 import { processEmailFull, batchProcessInbox } from '../services/emailAutoProcessService.js';
-
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL   = 'llama-3.3-70b-versatile';
+import llmProvider from '../services/ai-brain/llm-provider.js';
 
 async function callGroq(prompt, maxTokens = 400, temperature = 0.7) {
-  const res = await fetch(GROQ_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
+  try {
+    const sibResult = await llmProvider.chat({
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: maxTokens,
+      maxTokens,
       temperature,
-    }),
+      forceProvider: 'sib',
+      skipCache: true,
+    });
+    if (sibResult?.content?.trim()) return sibResult.content.trim();
+  } catch (err) {
+    console.warn('[TeamEmail] SIB path failed, falling back to Groq cascade:', err.message);
+  }
+
+  const fallbackResult = await llmProvider.chat({
+    messages: [{ role: 'user', content: prompt }],
+    maxTokens,
+    temperature,
+    forceProvider: 'groq',
+    skipCache: true,
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error?.message || 'Groq API error');
-  return data.choices?.[0]?.message?.content?.trim() || '';
+  return fallbackResult?.content?.trim() || '';
 }
 
 const router = express.Router();
