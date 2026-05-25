@@ -1,0 +1,38 @@
+{
+  "insured_name": "Acme Manufacturing Pvt Ltd",
+  "insured_address": "Bangalore, Karnataka",
+  "policy_type": "Group Mediclaim",
+  "product_type": "GMC",
+  "broker_name": "Karan Mehta",
+  "broker_company": "Acme Brokers",
+  "existing_insurer": "Sample Insurance",
+  "existing_tpa": "Sample TPA",
+  "premium_paid": 1250000,
+  "lives_at_inception": {
+    "employees": 180,
+    "dependants": 220,
+    "total": 400
+  },
+  "lives_at_renewal": {
+    "employees": 190,
+    "dependants": 240,
+    "total": 430
+  },
+  "coverage_scope": {
+    "family_composition": "Self+Spouse+2 Children",
+    "type": "Floater",
+    "sum_insured": "500000"
+  },
+  "special_conditions": [
+    {
+      "condition": "Maternity",
+      "detail": "24 month waiting"
+    }
+  ],
+  "sum_insured_slabs": [
+    300000,
+    500000,
+    700000
+  ],
+  "notes": "Synthetic payload for GPU capacity mixed-load test"
+}
