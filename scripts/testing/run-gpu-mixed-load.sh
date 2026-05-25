@@ -7,6 +7,19 @@ LOG_ROOT="$ROOT_DIR/logs/perf"
 TS="$(date +%Y%m%d-%H%M%S)"
 RUN_DIR="$LOG_ROOT/$TS"
 
+# Preserve caller-provided env values so they take precedence over file values.
+CLI_BASE_URL="${BASE_URL:-}"
+CLI_PROFILE="${PROFILE:-}"
+CLI_VOICE_RPS_TARGET="${VOICE_RPS_TARGET:-}"
+CLI_RFQ_RPS_TARGET="${RFQ_RPS_TARGET:-}"
+CLI_MIXED_DURATION_SECONDS="${MIXED_DURATION_SECONDS:-}"
+CLI_DOCTOR_TOKEN="${DOCTOR_TOKEN:-}"
+CLI_CRM_TOKEN="${CRM_TOKEN:-}"
+CLI_DOCTOR_EMAIL="${DOCTOR_EMAIL:-}"
+CLI_DOCTOR_PASSWORD="${DOCTOR_PASSWORD:-}"
+CLI_CRM_EMAIL="${CRM_EMAIL:-}"
+CLI_CRM_PASSWORD="${CRM_PASSWORD:-}"
+
 mkdir -p "$RUN_DIR/raw"
 
 if [[ -f "$ENV_FILE" ]]; then
@@ -16,13 +29,17 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
-BASE_URL="${BASE_URL:-http://localhost:8888}"
-PROFILE="${PROFILE:-clinic-peak}"
-VOICE_RPS_TARGET="${VOICE_RPS_TARGET:-25}"
-RFQ_RPS_TARGET="${RFQ_RPS_TARGET:-4}"
-MIXED_DURATION_SECONDS="${MIXED_DURATION_SECONDS:-600}"
-DOCTOR_TOKEN="${DOCTOR_TOKEN:-}"
-CRM_TOKEN="${CRM_TOKEN:-}"
+BASE_URL="${CLI_BASE_URL:-${BASE_URL:-http://localhost:8888}}"
+PROFILE="${CLI_PROFILE:-${PROFILE:-clinic-peak}}"
+VOICE_RPS_TARGET="${CLI_VOICE_RPS_TARGET:-${VOICE_RPS_TARGET:-25}}"
+RFQ_RPS_TARGET="${CLI_RFQ_RPS_TARGET:-${RFQ_RPS_TARGET:-4}}"
+MIXED_DURATION_SECONDS="${CLI_MIXED_DURATION_SECONDS:-${MIXED_DURATION_SECONDS:-600}}"
+DOCTOR_TOKEN="${CLI_DOCTOR_TOKEN:-${DOCTOR_TOKEN:-}}"
+CRM_TOKEN="${CLI_CRM_TOKEN:-${CRM_TOKEN:-}}"
+DOCTOR_EMAIL="${CLI_DOCTOR_EMAIL:-${DOCTOR_EMAIL:-}}"
+DOCTOR_PASSWORD="${CLI_DOCTOR_PASSWORD:-${DOCTOR_PASSWORD:-}}"
+CRM_EMAIL="${CLI_CRM_EMAIL:-${CRM_EMAIL:-}}"
+CRM_PASSWORD="${CLI_CRM_PASSWORD:-${CRM_PASSWORD:-}}"
 
 VOICE_PAYLOAD_FILE="$ROOT_DIR/scripts/testing/payloads/voice-agent.json"
 CRM_PAYLOAD_FILE="$ROOT_DIR/scripts/testing/payloads/crm-rfq.json"
@@ -38,13 +55,17 @@ if [[ ! -f "$CRM_PAYLOAD_FILE" ]]; then
 fi
 
 if [[ -z "$DOCTOR_TOKEN" ]]; then
-  echo "DOCTOR_TOKEN is required in scripts/testing/.gpu-capacity.env"
-  exit 1
+  if [[ -z "$DOCTOR_EMAIL" || -z "$DOCTOR_PASSWORD" ]]; then
+    echo "Set either DOCTOR_TOKEN or (DOCTOR_EMAIL + DOCTOR_PASSWORD) in scripts/testing/.gpu-capacity.env"
+    exit 1
+  fi
 fi
 
 if [[ -z "$CRM_TOKEN" ]]; then
-  echo "CRM_TOKEN is required in scripts/testing/.gpu-capacity.env"
-  exit 1
+  if [[ -z "$CRM_EMAIL" || -z "$CRM_PASSWORD" ]]; then
+    echo "Set either CRM_TOKEN or (CRM_EMAIL + CRM_PASSWORD) in scripts/testing/.gpu-capacity.env"
+    exit 1
+  fi
 fi
 
 case "$PROFILE" in
@@ -76,6 +97,78 @@ if (( rfq_workers < 1 )); then rfq_workers=1; fi
 
 VOICE_URL="$BASE_URL/api/voice-assistant/agent"
 RFQ_URL="$BASE_URL/api/crm/rfqs"
+
+login_doctor() {
+  local tries=0
+  while (( tries < 3 )); do
+    local body_file
+    body_file="$(mktemp)"
+    local code
+    code="$(curl -sS -o "$body_file" -w "%{http_code}" \
+      -X POST "$BASE_URL/api/doctors/login" \
+      -H "Content-Type: application/json" \
+      --data "{\"email\":\"$DOCTOR_EMAIL\",\"password\":\"$DOCTOR_PASSWORD\"}" || true)"
+
+    if [[ "$code" == "200" ]]; then
+      local parsed
+      parsed="$(node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(String(p.token||""));' "$body_file" 2>/dev/null || true)"
+      rm -f "$body_file"
+      if [[ -n "$parsed" ]]; then
+        DOCTOR_TOKEN="$parsed"
+        return 0
+      fi
+    fi
+
+    rm -f "$body_file"
+    tries=$((tries + 1))
+    sleep $((tries * 2))
+  done
+  return 1
+}
+
+login_crm() {
+  local tries=0
+  while (( tries < 3 )); do
+    local body_file
+    body_file="$(mktemp)"
+    local code
+    code="$(curl -sS -o "$body_file" -w "%{http_code}" \
+      -X POST "$BASE_URL/api/crm/login" \
+      -H "Content-Type: application/json" \
+      --data "{\"email\":\"$CRM_EMAIL\",\"password\":\"$CRM_PASSWORD\"}" || true)"
+
+    if [[ "$code" == "200" ]]; then
+      local parsed
+      parsed="$(node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(String(p.token||""));' "$body_file" 2>/dev/null || true)"
+      rm -f "$body_file"
+      if [[ -n "$parsed" ]]; then
+        CRM_TOKEN="$parsed"
+        return 0
+      fi
+    fi
+
+    rm -f "$body_file"
+    tries=$((tries + 1))
+    sleep $((tries * 2))
+  done
+  return 1
+}
+
+if [[ -z "$DOCTOR_TOKEN" ]]; then
+  echo "Bootstrapping doctor token via /api/doctors/login ..."
+  if ! login_doctor; then
+    echo "Failed to fetch doctor token automatically."
+    exit 1
+  fi
+fi
+
+if [[ -z "$CRM_TOKEN" ]]; then
+  echo "Bootstrapping CRM token via /api/crm/login ..."
+  if ! login_crm; then
+    echo "Failed to fetch CRM token automatically."
+    exit 1
+  fi
+fi
 
 echo "# Mixed Load Run Summary" > "$RUN_DIR/summary.md"
 echo "" >> "$RUN_DIR/summary.md"

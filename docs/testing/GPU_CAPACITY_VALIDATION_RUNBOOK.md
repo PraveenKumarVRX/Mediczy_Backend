@@ -60,6 +60,11 @@ Optional (for one-command mixed run):
 - `DOCTOR_TOKEN`
 - `CRM_TOKEN`
 
+If tokens are not provided, mixed-load can auto-bootstrap tokens using:
+
+- `DOCTOR_EMAIL` + `DOCTOR_PASSWORD` (via `/api/doctors/login`)
+- `CRM_EMAIL` + `CRM_PASSWORD` (via `/api/crm/login`)
+
 Payload fixtures included:
 
 - `scripts/testing/payloads/voice-agent.json`
