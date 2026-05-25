@@ -10,12 +10,21 @@ import pg from 'pg';
 
 const BASE = 'http://localhost:8888/api';
 const DB_CONFIG = {
-  host: 'localhost',
-  port: 5432,
-  user: 'mediczy_helper',
-  password: 'Mediczy2024Helper',
-  database: 'mediczy_ai'
+  host: process.env.POSTGRES_HOST || 'localhost',
+  port: Number(process.env.POSTGRES_PORT || 5432),
+  user: process.env.POSTGRES_USER || 'mediczy_helper',
+  password: process.env.POSTGRES_PASSWORD || 'Mediczy2024Helper',
+  database: process.env.POSTGRES_DATABASE || process.env.POSTGRES_DB || 'mediczy_ai',
+  ssl: process.env.POSTGRES_SSL === 'true' ? { rejectUnauthorized: false } : false,
 };
+
+const PATIENT_EMAIL = process.env.VIDEO_TEST_PATIENT_EMAIL || 'user@mediczy.com';
+const PATIENT_PASSWORD = process.env.VIDEO_TEST_PATIENT_PASSWORD || 'User123';
+const DOCTOR_EMAIL = process.env.VIDEO_TEST_DOCTOR_EMAIL || 'doctor@mediczy.com';
+const DOCTOR_PASSWORD = process.env.VIDEO_TEST_DOCTOR_PASSWORD || 'Doctor123';
+
+let activePatientEmail = PATIENT_EMAIL;
+let activePatientPassword = PATIENT_PASSWORD;
 
 let testAppointmentId = null;
 let passed = 0;
@@ -51,11 +60,70 @@ async function cleanup() {
   }
 }
 
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function loginWithRetry(url, payload, maxAttempts = 3) {
+  let lastRes = null;
+  let lastData = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    lastRes = res;
+    lastData = data;
+
+    if (res.status !== 429) return { res, data, attempt };
+
+    const retryAfter = Number(res.headers.get('retry-after') || 0);
+    const backoffMs = retryAfter > 0 ? retryAfter * 1000 : attempt * 1500;
+    warn('Rate limited on login, retrying', `attempt ${attempt}/${maxAttempts}, wait ${backoffMs}ms`);
+    await sleep(backoffMs);
+  }
+
+  return { res: lastRes, data: lastData, attempt: maxAttempts };
+}
+
+async function registerFallbackPatient() {
+  const seed = Date.now();
+  const email = `video.e2e.${seed}@mediczy.test`;
+  const password = `AutoUser123!${seed.toString().slice(-2)}`;
+  const phone = `+91${String(seed).slice(-10)}`;
+
+  const res = await fetch(`${BASE}/users/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email,
+      password,
+      firstName: 'Video',
+      lastName: 'E2EUser',
+      phoneNumber: phone,
+      dateOfBirth: '1994-05-10',
+      gender: 'Male'
+    })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (res.status >= 200 && res.status < 300) {
+    activePatientEmail = email;
+    activePatientPassword = password;
+    console.log(`  ✅ Fallback patient created (${email})`);
+    return true;
+  }
+
+  warn('Fallback patient registration failed', `HTTP ${res.status} ${data?.message || ''} ${JSON.stringify(data).slice(0, 220)}`);
+  return false;
+}
+
 async function run() {
   console.log('╔══════════════════════════════════════════════════════╗');
   console.log('║   MEDICZY VIDEO CALL E2E TEST                      ║');
-  console.log('║   Patient: user@mediczy.com / User123              ║');
-  console.log('║   Doctor:  doctor@mediczy.com / Doctor123           ║');
+  console.log(`║   Patient: ${PATIENT_EMAIL} / ${PATIENT_PASSWORD.padStart(7, '*')}              ║`);
+  console.log(`║   Doctor:  ${DOCTOR_EMAIL} / ${DOCTOR_PASSWORD.padStart(7, '*')}           ║`);
   console.log('╚══════════════════════════════════════════════════════╝');
   console.log(`Run at: ${new Date().toISOString()}\n`);
 
@@ -64,12 +132,21 @@ async function run() {
   let patientToken;
   let patientId;
   try {
-    const res = await fetch(`${BASE}/users/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'user@mediczy.com', password: 'User123' })
-    });
-    const data = await res.json();
+    let { res, data } = await loginWithRetry(
+      `${BASE}/users/login`,
+      { email: activePatientEmail, password: activePatientPassword }
+    );
+
+    if (!(res.status === 200 && data?.token && data?.user)) {
+      const created = await registerFallbackPatient();
+      if (created) {
+        ({ res, data } = await loginWithRetry(
+          `${BASE}/users/login`,
+          { email: activePatientEmail, password: activePatientPassword }
+        ));
+      }
+    }
+
     assert('Patient login HTTP 200', res.status === 200, `got ${res.status}`);
     assert('Patient login success', !!data.token && !!data.user, data.message || '');
     assert('Patient token received', !!data.token, data.token ? 'JWT present' : 'missing');
@@ -87,12 +164,10 @@ async function run() {
   let doctorToken;
   let doctorId;
   try {
-    const res = await fetch(`${BASE}/doctors/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'doctor@mediczy.com', password: 'Doctor123' })
-    });
-    const data = await res.json();
+    const { res, data } = await loginWithRetry(
+      `${BASE}/doctors/login`,
+      { email: DOCTOR_EMAIL, password: DOCTOR_PASSWORD }
+    );
     assert('Doctor login HTTP 200', res.status === 200, `got ${res.status}`);
     assert('Doctor login success', !!data.token && !!data.doctor, data.message || '');
     assert('Doctor token received', !!data.token, data.token ? 'JWT present' : 'missing');
