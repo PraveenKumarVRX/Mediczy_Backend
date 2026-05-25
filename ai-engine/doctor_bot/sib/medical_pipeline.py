@@ -23,6 +23,18 @@ from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    from .route_safety_validator import validate_routing
+except Exception:
+    def validate_routing(query: str, intent: str, backend: str, confidence: float):
+        class _FallbackDecision:
+            def __init__(self):
+                self.backend = backend
+                self.intent = intent
+                self.force_non_local = False
+                self.reason = None
+        return _FallbackDecision()
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sib.medical_pipeline")
@@ -860,6 +872,27 @@ Thank you for sharing your health concern with me.
             logger.info(f"🦙 TinyLlama routing: intent={routing_decision.intent}, "
                        f"backend={routing_decision.backend}, "
                        f"confidence={routing_decision.confidence:.0%}")
+
+            # Safety-first validator: high-risk/ambiguous decisions cannot rely on local lightweight routing alone.
+            safety_route = validate_routing(
+                query=query,
+                intent=routing_decision.intent,
+                backend=routing_decision.backend,
+                confidence=routing_decision.confidence,
+            )
+
+            if safety_route.reason:
+                logger.info(
+                    "🛡️ Route safety override: %s -> backend=%s (reason=%s)",
+                    routing_decision.intent,
+                    safety_route.backend,
+                    safety_route.reason,
+                )
+
+            routing_decision.intent = safety_route.intent
+            routing_decision.backend = safety_route.backend
+            if safety_route.force_non_local:
+                routing_decision.quick_response = None
             
             # Handle LOCAL responses immediately (~0ms)
             if routing_decision.backend == "local" and routing_decision.quick_response:
