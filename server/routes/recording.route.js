@@ -13,7 +13,7 @@ const router = express.Router();
 // Configure multer for recording uploads
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
-    const uploadDir = '/mnt/recordings';
+    const uploadDir = '/tmp/recordings';
     try {
       await fs.mkdir(uploadDir, { recursive: true });
       cb(null, uploadDir);

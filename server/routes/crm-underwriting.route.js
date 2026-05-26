@@ -20,12 +20,88 @@ import XLSX from 'xlsx';
 
 const router = express.Router();
 
-// ─── LLM helper ──────────────────────────────────────────────────────────────
+const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
 
-const aiComplete = async (messages, { maxTokens = 1200, temperature = 0.25 } = {}) => {
+// ─── LLM helper ──────────────────────────────────────────────────────────────
+// UW chat uses isha-insurance (InsuranceLLM-Llama3-8B) first, falls back to groq.
+
+const aiComplete = async (messages, { maxTokens = 1200, temperature = 0.25, uwMode = false } = {}) => {
+  if (uwMode) {
+    // Try InsuranceLLM first, then Groq — skip BiMediX2 (not trained for insurance)
+    for (const provider of ['isha-insurance', 'groq']) {
+      try {
+        const result = await llmProvider.chat({ messages, maxTokens, temperature, forceProvider: provider });
+        const text = result?.content || result?.text || result?.message || String(result || '');
+        if (text?.trim()) return text;
+      } catch (err) {
+        console.warn(`[UW] ${provider} failed: ${err.message}`);
+      }
+    }
+    throw new Error('All UW providers failed');
+  }
   const result = await llmProvider.chat({ messages, maxTokens, temperature });
   return result?.content || result?.text || result?.message || String(result || '');
 };
+
+// ─── SIB RAG enrichment ───────────────────────────────────────────────────────
+// Pulls real-time web results + SIB knowledge base for the user's question.
+// Runs with a 5-second timeout so it never blocks the chat response.
+
+async function sibRagContext(query) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+
+  // Detect if query is insurance-domain to decide web search phrasing
+  const isInsurance = /\b(loss.?ratio|loading|premium|gwp|irdai|underwriting|claim|coverage|policy|tpa|gmc|gpa|gtl|si |sum.?insured|reinsur|deductible)\b/i.test(query);
+  const webQuery = isInsurance ? `${query} IRDAI India group health insurance` : query;
+
+  try {
+    const [webRes, kbRes] = await Promise.allSettled([
+      fetch(`${SIB_URL}/web/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: webQuery, max_results: 4 }),
+        signal: controller.signal,
+      }).then(r => r.json()),
+
+      fetch(`${SIB_URL}/knowledge/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, limit: 3 }),
+        signal: controller.signal,
+      }).then(r => r.json()),
+    ]);
+
+    clearTimeout(timer);
+    const parts = [];
+
+    // Web search — live IRDAI/regulatory results
+    if (webRes.status === 'fulfilled' && webRes.value?.results?.length) {
+      const snippets = webRes.value.results
+        .filter(r => r.snippet)
+        .slice(0, 3)
+        .map(r => `• ${r.title}: ${r.snippet}`)
+        .join('\n');
+      if (snippets) parts.push(`LIVE WEB CONTEXT (as of ${new Date().toISOString().slice(0, 10)}):\n${snippets}`);
+    }
+
+    // SIB KB — medical condition data useful for UW risk assessment
+    if (kbRes.status === 'fulfilled' && kbRes.value?.results?.length) {
+      const facts = kbRes.value.results
+        .filter(r => r.data)
+        .slice(0, 2)
+        .map(r => `• [${r.type}: ${r.key}]: ${JSON.stringify(r.data).slice(0, 250)}`)
+        .join('\n');
+      if (facts) parts.push(`CLINICAL REFERENCE DATA:\n${facts}`);
+    }
+
+    if (!parts.length) return '';
+    return `\n────────────────────────────────────────────────\nRAG-ENRICHED CONTEXT (retrieved for this query)\n────────────────────────────────────────────────\n${parts.join('\n\n')}`;
+  } catch {
+    clearTimeout(timer);
+    return '';
+  }
+}
 
 // ─── DB bootstrap ─────────────────────────────────────────────────────────────
 
@@ -1052,13 +1128,16 @@ Rules:
 8. Keep your tone direct, informed, professional — like a CUW in a quick review call.
 9. ${validDocs.length > 0 ? `You have ${validDocs.length} uploaded document(s): ${validDocs.map(d => d.name).join(', ')}. Use their content to answer questions about coverage, conditions, and terms.` : 'No documents have been uploaded yet for this RFQ. Suggest uploading the broking slip or claims statement for richer analysis.'}`;
 
+    // Enrich with SIB RAG: live web search + knowledge base (runs in parallel, 5s timeout)
+    const ragContext = await sibRagContext(message);
+
     const messages = [
-      { role: 'system', content: conversationSystem },
+      { role: 'system', content: conversationSystem + ragContext },
       ...history.slice(-8).map(h => ({ role: h.role, content: h.content })),
       { role: 'user', content: message },
     ];
 
-    const reply = await aiComplete(messages, { maxTokens: 800, temperature: 0.5 });
+    const reply = await aiComplete(messages, { maxTokens: 800, temperature: 0.5, uwMode: true });
     res.json({ success: true, reply, assistant: 'iSHA-UW', timestamp: new Date().toISOString() });
   } catch (err) {
     console.error('[UW] ai-chat error:', err.message);

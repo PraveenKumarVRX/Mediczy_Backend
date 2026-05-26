@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw, LogOut, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
-import api from '@/services/api';
+import api from '@/utils/api';
 
 interface Admission {
   id: number;

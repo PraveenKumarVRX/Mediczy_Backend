@@ -101,26 +101,6 @@
       "error": null
     },
     {
-      "name": "Implementation guide exists",
-      "status": "PASS",
-      "error": null
-    },
-    {
-      "name": "Deployment guide exists",
-      "status": "PASS",
-      "error": null
-    },
-    {
-      "name": "Super admin quick reference exists",
-      "status": "PASS",
-      "error": null
-    },
-    {
-      "name": "Security enhancement document exists",
-      "status": "PASS",
-      "error": null
-    },
-    {
       "name": "Admin routes directory exists",
       "status": "PASS",
       "error": null
@@ -174,11 +154,11 @@
     }
   ],
   "summary": {
-    "totalTests": 34,
-    "passedTests": 34,
+    "totalTests": 30,
+    "passedTests": 30,
     "failedTests": 0,
-    "warnings": 1,
+    "warnings": 4,
     "passRate": "100.0",
-    "timestamp": "2026-02-08T16:39:17.156Z"
+    "timestamp": "2026-05-26T17:10:26.120Z"
   }
 }

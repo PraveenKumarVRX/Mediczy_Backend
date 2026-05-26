@@ -9,6 +9,25 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+const LEGACY_ROOT = '/workspaces/Mediczy';
+const REPO_ROOT = fs.existsSync(LEGACY_ROOT) ? LEGACY_ROOT : path.resolve(__dirname);
+
+const mapLegacyPath = (value) =>
+  typeof value === 'string' ? value.replace('/workspaces/Mediczy', REPO_ROOT) : value;
+
+const fsExistsSync = fs.existsSync.bind(fs);
+const fsStatSync = fs.statSync.bind(fs);
+const fsReadFileSync = fs.readFileSync.bind(fs);
+const fsReaddirSync = fs.readdirSync.bind(fs);
+
+fs.existsSync = (targetPath) => fsExistsSync(mapLegacyPath(targetPath));
+fs.statSync = (targetPath) => fsStatSync(mapLegacyPath(targetPath));
+fs.readFileSync = (targetPath, ...rest) => fsReadFileSync(mapLegacyPath(targetPath), ...rest);
+fs.readdirSync = (targetPath, ...rest) => fsReaddirSync(mapLegacyPath(targetPath), ...rest);
+
+const execCompat = (command, options) =>
+  execSync(command.replaceAll('/workspaces/Mediczy', REPO_ROOT), options);
+
 // Color codes for terminal output
 const colors = {
   reset: '\x1b[0m',
@@ -65,7 +84,7 @@ async function runSanityCheck() {
   log.section('1. SYNTAX & COMPILATION CHECKS');
 
   try {
-    execSync('cd /workspaces/Mediczy/server && node -c app.js 2>&1', { stdio: 'pipe' });
+    execCompat('cd /workspaces/Mediczy/server && node -c app.js 2>&1', { stdio: 'pipe' });
     log.success('Main app.js - Syntax valid');
     passCount++;
   } catch (e) {
@@ -83,7 +102,7 @@ async function runSanityCheck() {
     log.test(`Checking syntax of ${routeFiles.length} route files...`);
     routeFiles.forEach(file => {
       try {
-        execSync(`cd /workspaces/Mediczy/server && node -c routes/${file} 2>&1`, { stdio: 'pipe' });
+        execCompat(`cd /workspaces/Mediczy/server && node -c routes/${file} 2>&1`, { stdio: 'pipe' });
         passCount++;
       } catch (e) {
         log.error(`Route ${file} - Syntax error`);
@@ -103,7 +122,7 @@ async function runSanityCheck() {
     log.test(`Checking ${apiFiles.length} API files...`);
     apiFiles.forEach(file => {
       try {
-        execSync(`cd /workspaces/Mediczy/server && node -c api/${file} 2>&1`, { stdio: 'pipe' });
+        execCompat(`cd /workspaces/Mediczy/server && node -c api/${file} 2>&1`, { stdio: 'pipe' });
         passCount++;
       } catch (e) {
         // No error counting for api files
@@ -119,7 +138,7 @@ async function runSanityCheck() {
   const criticalFiles = [
     '/workspaces/Mediczy/server/app.js',
     '/workspaces/Mediczy/server/package.json',
-    '/workspaces/Mediczy/server/server.js',
+    '/workspaces/Mediczy/server/index.js',
     '/workspaces/Mediczy/server/config',
     '/workspaces/Mediczy/server/models',
     '/workspaces/Mediczy/server/controllers',

@@ -41,6 +41,7 @@ interface Appointment {
   meetingLink?: string;
   roomId?: string;
   meetingId?: string;
+  paymentStatus?: string;
   doctor: {
     id?: string;
     name: string;
@@ -286,6 +287,7 @@ const Appointments = () => {
         })(),
         // Keep the original status for display
         originalStatus: apt.status || 'scheduled',
+        paymentStatus: apt.paymentStatus,
         symptoms: apt.symptoms,
         notes: apt.notes,
         reminderEnabled: true,
@@ -618,6 +620,16 @@ const Appointments = () => {
   };
 
   const handleJoinCall = (appointment: Appointment) => {
+    const backendStatus = (appointment.originalStatus || '').toLowerCase();
+    if (!['confirmed', 'in-progress'].includes(backendStatus)) {
+      toast({
+        title: "Cannot Join Yet",
+        description: `Appointment is ${appointment.originalStatus || 'not ready'} for video consultation.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (appointment.meetingLink && isExternalMeetingLink(appointment.meetingLink)) {
       window.open(appointment.meetingLink, '_blank', 'width=1280,height=720');
       toast({
@@ -644,14 +656,83 @@ const Appointments = () => {
       return;
     }
 
-    // Navigate to video consultation page
-    const appointmentId = appointment.backendId ?? appointment.id ?? "";
-    navigate(`/video-consultation?room=${encodeURIComponent(roomId)}&appointmentId=${encodeURIComponent(String(appointmentId))}`);
+    // Preflight on backend for payment/time-window checks before navigation
+    const appointmentId = appointment.backendId ?? Number(appointment.id);
+    if (!appointmentId || !Number.isFinite(appointmentId)) {
+      toast({
+        title: "Cannot Join",
+        description: "Appointment reference is missing.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    toast({
-      title: "Joining Video Call",
-      description: `Connecting to consultation with ${appointment.doctor.name || "Doctor"}`,
-    });
+    api
+      .get(`/consultation/video/join/${appointmentId}`)
+      .then((response) => {
+        const resolvedRoomId = response.data?.video?.meetingId || roomId;
+        navigate(`/video-consultation?room=${encodeURIComponent(resolvedRoomId)}&appointmentId=${encodeURIComponent(String(appointmentId))}`);
+        toast({
+          title: "Joining Video Call",
+          description: `Connecting to consultation with ${appointment.doctor.name || "Doctor"}`,
+        });
+      })
+      .catch((error: any) => {
+        toast({
+          title: "Cannot Join Yet",
+          description: error.response?.data?.message || "Video consultation is not available right now.",
+          variant: "destructive",
+        });
+      });
+  };
+
+  const getJoinCallState = (appointment: Appointment) => {
+    const backendStatus = (appointment.originalStatus || '').toLowerCase();
+    if (!['confirmed', 'in-progress'].includes(backendStatus)) {
+      return {
+        enabled: false,
+        reason: `Call is unavailable until appointment is confirmed. Current status: ${appointment.originalStatus || 'not ready'}.`,
+      };
+    }
+
+    const appointmentDateTime = new Date(`${appointment.date} ${appointment.time || '00:00'}`);
+    if (isNaN(appointmentDateTime.getTime())) {
+      return {
+        enabled: false,
+        reason: 'Appointment date/time is invalid.',
+      };
+    }
+
+    const now = new Date();
+    const windowStart = new Date(appointmentDateTime.getTime() - 15 * 60 * 1000);
+    const windowEnd = new Date(appointmentDateTime.getTime() + 60 * 60 * 1000);
+
+    if (now < windowStart) {
+      return {
+        enabled: false,
+        reason: 'Call opens 15 minutes before appointment time.',
+      };
+    }
+
+    if (now > windowEnd && backendStatus !== 'in-progress') {
+      return {
+        enabled: false,
+        reason: 'Consultation window has ended.',
+      };
+    }
+
+    const ps = (appointment.paymentStatus || '').toLowerCase();
+    if (ps && !['paid', 'credit'].includes(ps)) {
+      return {
+        enabled: false,
+        reason: 'Complete payment or ensure active membership before joining.',
+      };
+    }
+
+    return {
+      enabled: true,
+      reason: '',
+    };
   };
 
   const handleCancelAppointment = async (appointment: Appointment) => {
@@ -905,15 +986,21 @@ const Appointments = () => {
 
                         <div className="flex gap-2 mt-4">
                           {appointment.consultationType === 'online' && appointment.channel === 'video' && (
-                            <Button
-                              size="sm"
-                              className="bg-green-600 hover:bg-green-700"
-                              disabled={actionLoadingId === appointment.id}
-                              onClick={() => handleJoinCall(appointment)}
-                            >
-                              <Video className="h-4 w-4 mr-1" />
-                              Join Call
-                            </Button>
+                            <div className="flex flex-col items-start gap-1">
+                              <Button
+                                size="sm"
+                                className="bg-green-600 hover:bg-green-700 disabled:opacity-60"
+                                disabled={actionLoadingId === appointment.id || !getJoinCallState(appointment).enabled}
+                                title={getJoinCallState(appointment).enabled ? "" : getJoinCallState(appointment).reason}
+                                onClick={() => handleJoinCall(appointment)}
+                              >
+                                <Video className="h-4 w-4 mr-1" />
+                                {getJoinCallState(appointment).enabled ? 'Join Call' : 'Call Not Ready'}
+                              </Button>
+                              {!getJoinCallState(appointment).enabled && (
+                                <p className="text-[11px] text-amber-400">{getJoinCallState(appointment).reason}</p>
+                              )}
+                            </div>
                           )}
                           <Button
                             variant="outline"

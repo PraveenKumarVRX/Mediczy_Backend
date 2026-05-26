@@ -6,8 +6,11 @@
     "dev": "concurrently \"npm run dev:watch --prefix server\" \"npm run dev:watch --prefix client\"",
     "dev:server": "npm run dev:watch --prefix server",
     "dev:client": "npm run dev:watch --prefix client",
-    "start": "./dev-start.sh",
-    "build": "npm run build --prefix client"
+    "start": "./scripts/development/dev-start.sh",
+    "build": "npm run build --prefix client",
+    "test:sanity-smoke:canonical": "bash ./scripts/testing/run-canonical-sanity-smoke.sh",
+    "test:whatsapp-sib-auth-smoke": "npm run test:whatsapp-sib-auth-smoke --prefix server",
+    "test:rag-refresh-audit": "npm run test:rag-refresh-audit --prefix server"
   },
   "dependencies": {
     "@google/generative-ai": "^0.22.0",

@@ -60,7 +60,7 @@ fi
 # Unhealthy — log and restart
 log "LiveKit unhealthy (HTTP=$HTTP_CODE port_7881=$PORT_OK) — attempting restart"
 
-eval "$PM2 restart livekit" >> "$LOG" 2>&1
+eval "$PM2 restart livekit-server" >> "$LOG" 2>&1
 sleep 10
 
 # Re-check after restart
@@ -87,7 +87,7 @@ Detection: HTTP $HTTP_CODE, port_7881=$PORT_OK
 Recovery: Restart attempted, still HTTP $HTTP_CODE2
 
 IMMEDIATE ACTION REQUIRED.
-Run: pm2 restart livekit && pm2 logs livekit --lines 30"
+Run: pm2 restart livekit-server && pm2 logs livekit-server --lines 30"
 fi
 
 # Keep 30 days of watchdog logs

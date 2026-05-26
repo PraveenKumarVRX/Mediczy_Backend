@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw, CheckCircle, XCircle, Zap, Server } from 'lucide-react';
-import api from '@/services/api';
+import api from '@/utils/api';
 
 interface HL7Status { mllpStatus: string; port: number; uptime: number; messagesProcessed: number; lastActivity: string; }
 interface HL7MessageType { type: string; event: string; description: string; supported: boolean; }

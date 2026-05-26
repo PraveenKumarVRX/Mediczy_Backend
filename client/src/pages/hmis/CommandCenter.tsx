@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Minus, BarChart2 } from 'lucide-react';
-import api from '@/services/api';
+import api from '@/utils/api';
 
 interface Snapshot { bedOccupancyPct: number; activeAdmissions: number; todayOTCases: number; criticalAlerts: number; pendingDischarges: number; preAuthsPending: number; }
 interface KPI { name: string; value: string; target: string; status: 'on-track' | 'needs-attention' | 'critical'; }

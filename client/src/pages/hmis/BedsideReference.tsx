@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BookOpen, Pill, Search, ClipboardList, AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
-import api from '@/services/api';
+import api from '@/utils/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

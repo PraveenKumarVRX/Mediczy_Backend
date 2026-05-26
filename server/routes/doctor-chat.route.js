@@ -10,18 +10,9 @@
 
 import express from 'express';
 import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
 import pool from '../db/pgPool.js';
 import { authUser } from '../middleware/auth.middleware.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
-
-// ── File upload setup ──────────────────────────────────────────────────────
-const CHAT_UPLOAD_DIR = path.join(__dirname, '../../uploads/chat');
-if (!fs.existsSync(CHAT_UPLOAD_DIR)) fs.mkdirSync(CHAT_UPLOAD_DIR, { recursive: true });
+import { s3Storage, s3PresignedUrl } from '../utils/s3-storage.js';
 
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg', 'image/png', 'image/gif', 'image/webp',
@@ -34,13 +25,7 @@ const ALLOWED_MIME_TYPES = new Set([
 ]);
 
 const chatUpload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, CHAT_UPLOAD_DIR),
-    filename:    (_req, file, cb) => {
-      const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-      cb(null, `${Date.now()}_${safe}`);
-    },
-  }),
+  storage: s3Storage('chat'),
   limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
   fileFilter: (_req, file, cb) => {
     if (ALLOWED_MIME_TYPES.has(file.mimetype)) cb(null, true);
@@ -388,34 +373,34 @@ router.get('/contacts/team', authUser, requireDoctor, async (req, res) => {
 });
 
 // ── POST /api/doctor/chat/upload ────────────────────────────────────────────
-// Upload a file attachment for chat
 router.post('/upload', authUser, requireDoctor, (req, res) => {
   chatUpload.single('file')(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message });
     if (!req.file) return res.status(400).json({ error: 'No file received' });
-    const url = `/api/doctor/chat/files/${req.file.filename}`;
+    // req.file.location = S3 URL; req.file.key = S3 object key
     res.json({
-      success: true,
-      url,
-      name: req.file.originalname,
-      size: req.file.size,
+      success:  true,
+      url:      `/api/doctor/chat/files/${encodeURIComponent(req.file.key)}`,
+      s3Key:    req.file.key,
+      name:     req.file.originalname,
+      size:     req.file.size,
       mimeType: req.file.mimetype,
     });
   });
 });
 
-// ── GET /api/doctor/chat/files/:fileName ────────────────────────────────────
-// Serve an uploaded chat file (auth required)
-router.get('/files/:fileName', authUser, (req, res) => {
-  const safeName = path.basename(req.params.fileName);
-  const filePath = path.join(CHAT_UPLOAD_DIR, safeName);
-  const resolved = path.resolve(filePath);
-  // Path traversal guard
-  if (!resolved.startsWith(path.resolve(CHAT_UPLOAD_DIR))) {
-    return res.status(403).json({ error: 'Forbidden' });
+// ── GET /api/doctor/chat/files/:key ─────────────────────────────────────────
+// Redirect to a short-lived presigned S3 URL (auth required)
+router.get('/files/:key', authUser, async (req, res) => {
+  try {
+    const key = decodeURIComponent(req.params.key);
+    // Guard: key must start with 'chat/'
+    if (!key.startsWith('chat/')) return res.status(403).json({ error: 'Forbidden' });
+    const url = await s3PresignedUrl(key, 3600);
+    res.redirect(302, url);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  if (!fs.existsSync(resolved)) return res.status(404).json({ error: 'File not found' });
-  res.sendFile(resolved);
 });
 
 export default router;

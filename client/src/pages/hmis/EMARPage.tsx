@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw, Pill, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
-import api from '@/services/api';
+import api from '@/utils/api';
 
 interface EMARItem {
   orderId: number;

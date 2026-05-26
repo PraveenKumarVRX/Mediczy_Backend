@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw, AlertTriangle, TrendingUp, Clock, Activity } from 'lucide-react';
-import api from '@/services/api';
+import api from '@/utils/api';
 
 interface ReadmissionRisk { patient_name: string; mrn: string; risk_score: number; risk_level: 'low' | 'medium' | 'high'; primary_factors: string[]; }
 interface PredictedLOS { patient_name: string; mrn: string; days_so_far: number; predicted_remaining: number; expected_discharge: string; status: 'on_track' | 'due_soon' | 'overdue'; }

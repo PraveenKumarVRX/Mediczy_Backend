@@ -21,8 +21,12 @@ Endpoints:
 """
 
 import logging
+import asyncio
 import time
 import tempfile
+import uuid
+import shutil
+import re
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
@@ -174,6 +178,234 @@ class AuditLogger:
 audit = AuditLogger()
 
 # =============================================================================
+# QUALITY, SAFETY, AND ASYNC JOBS
+# =============================================================================
+
+JOB_DIR = Path(os.getenv("SCRIBE_JOB_DIR", "/tmp/mediczy-scribe-jobs"))
+JOB_DIR.mkdir(parents=True, exist_ok=True)
+JOBS: Dict[str, Dict[str, Any]] = {}
+JOB_RETENTION_SECONDS = int(os.getenv("SCRIBE_JOB_RETENTION_SECONDS", "86400"))
+
+MEDICAL_TERMS = {
+    "fever", "pain", "cough", "cold", "vomiting", "diabetes", "hypertension",
+    "bp", "pulse", "spo2", "temperature", "diagnosis", "tablet", "capsule",
+    "syrup", "injection", "mg", "ml", "od", "bd", "tds", "qid", "pc", "ac",
+    "बुखार", "दर्द", "खांसी", "दवा", "गोली", "बीपी", "शुगर",
+    "காய்ச்சல்", "வலி", "மருந்து", "மாத்திரை", "இருமல்",
+    "జ్వరం", "నొప్పి", "మందు", "మాత్ర", "దగ్గు",
+}
+
+UNSAFE_GENERATION_PATTERNS = [
+    (r"\bguaranteed\b|\bcure\b", "Avoid guarantee/cure language in clinical documents."),
+    (r"\bno need (to )?(consult|review)\b", "AI output must not discourage clinician review."),
+    (r"\bself[- ]?medicat", "Self-medication language requires clinician review."),
+]
+
+PRESCRIPTION_REQUIRED_PATTERNS = {
+    "dose": r"\b\d+(\.\d+)?\s?(mg|mcg|g|ml|units?|iu)\b",
+    "frequency": r"\b(OD|BD|TDS|QID|HS|SOS|PRN|once daily|twice daily|three times|daily)\b",
+    "duration": r"\b\d+\s?(day|days|week|weeks|month|months)\b",
+}
+
+KNOWN_DRUG_TERMS = {
+    "paracetamol", "dolo", "crocin", "acetaminophen", "azithromycin", "augmentin",
+    "amoxicillin", "clavulanate", "combiflam", "ibuprofen", "pantoprazole",
+    "pan", "ecosprin", "aspirin", "metformin", "telmisartan", "amlodipine",
+    "atorvastatin", "cetirizine", "levocetirizine", "salbutamol", "montelukast",
+    "ondansetron", "omeprazole", "rabeprazole", "insulin", "ceftriaxone",
+}
+
+
+def _extract_known_drugs(text: str) -> set:
+    lowered = (text or "").lower()
+    found = set()
+    for drug in KNOWN_DRUG_TERMS:
+        if re.search(r"\b" + re.escape(drug) + r"\b", lowered):
+            found.add(drug)
+    return found
+
+
+def _script_counts(text: str) -> Dict[str, int]:
+    return {
+        "latin": len(re.findall(r"[A-Za-z]", text or "")),
+        "devanagari": len(re.findall(r"[\u0900-\u097F]", text or "")),
+        "tamil": len(re.findall(r"[\u0B80-\u0BFF]", text or "")),
+        "telugu": len(re.findall(r"[\u0C00-\u0C7F]", text or "")),
+    }
+
+
+def score_transcript_quality(result: Dict[str, Any], requested_language: str = "auto") -> Dict[str, Any]:
+    text = (result.get("text") or "").strip()
+    words = re.findall(r"\w+", text, flags=re.UNICODE)
+    warnings: List[str] = []
+    score = 1.0
+
+    if not text:
+        return {
+            "score": 0.0,
+            "grade": "failed",
+            "warnings": ["No transcript text produced."],
+            "word_count": 0,
+            "script_counts": _script_counts(text),
+            "requires_review": True,
+        }
+
+    if len(words) < 4:
+        score -= 0.35
+        warnings.append("Transcript is very short; verify audio capture and completeness.")
+
+    confidence = float(result.get("language_probability") or 0)
+    if requested_language == "auto" and confidence and confidence < 0.45:
+        score -= 0.15
+        warnings.append("Low automatic language confidence.")
+
+    realtime_factor = float(result.get("realtime_factor") or 0)
+    if realtime_factor > 4:
+        score -= 0.1
+        warnings.append("Slow transcription path used; consider GPU/faster-whisper for production scale.")
+
+    unknown_noise = len(re.findall(r"\[[^\]]*(inaudible|music|noise|silence)[^\]]*\]", text, re.I))
+    if unknown_noise:
+        score -= min(0.25, unknown_noise * 0.08)
+        warnings.append("Transcript contains possible inaudible/noise markers.")
+
+    medical_hits = sum(1 for term in MEDICAL_TERMS if term.lower() in text.lower())
+    if len(words) >= 8 and medical_hits == 0:
+        score -= 0.08
+        warnings.append("No known medical terms detected; verify this is clinical dictation.")
+
+    score = max(0.0, min(1.0, round(score, 2)))
+    grade = "excellent" if score >= 0.85 else "good" if score >= 0.7 else "review" if score >= 0.5 else "poor"
+    return {
+        "score": score,
+        "grade": grade,
+        "warnings": warnings,
+        "word_count": len(words),
+        "medical_term_hits": medical_hits,
+        "script_counts": _script_counts(text),
+        "requires_review": score < 0.85 or bool(warnings),
+    }
+
+
+def validate_clinical_output(
+    document_type: str,
+    transcript: str,
+    normalized_text: str,
+    generated_text: str,
+    structured: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    output = generated_text or ""
+    flags: List[Dict[str, str]] = []
+    doc_type = (document_type or "").lower()
+
+    if len(output.strip()) < 40:
+        flags.append({"severity": "high", "code": "short_output", "message": "Generated document is too short for clinical use."})
+
+    for pattern, message in UNSAFE_GENERATION_PATTERNS:
+        if re.search(pattern, output, re.I):
+            flags.append({"severity": "high", "code": "unsafe_language", "message": message})
+
+    if doc_type == "prescription":
+        for key, pattern in PRESCRIPTION_REQUIRED_PATTERNS.items():
+            if not re.search(pattern, output, re.I):
+                flags.append({"severity": "medium", "code": f"missing_{key}", "message": f"Prescription may be missing {key}; doctor must verify."})
+
+        transcript_drugs = _extract_known_drugs(normalized_text or transcript)
+        output_drugs = _extract_known_drugs(output)
+        missing_drugs = sorted(transcript_drugs - output_drugs)
+        extra_drugs = sorted(output_drugs - transcript_drugs)
+        if missing_drugs:
+            flags.append({"severity": "high", "code": "medication_omission", "message": f"Medication(s) mentioned in transcript missing from output: {', '.join(missing_drugs)}."})
+        if extra_drugs:
+            flags.append({"severity": "high", "code": "possible_medication_hallucination", "message": f"Medication(s) appear in output but not transcript: {', '.join(extra_drugs)}."})
+
+    if re.search(r"\b(bp|blood pressure|spo2|pulse|temperature|temp|weight)\b", transcript, re.I) and not re.search(r"\b(bp|blood pressure|spo2|pulse|temperature|temp|weight)\b", output, re.I):
+        flags.append({"severity": "medium", "code": "vitals_may_be_missing", "message": "Vitals were mentioned in transcript but not clearly present in output."})
+
+    if re.search(r"\b(allergy|allergic|एलर्जी)\b", transcript, re.I) and not re.search(r"\b(allergy|allergic|एलर्जी)\b", output, re.I):
+        flags.append({"severity": "high", "code": "allergy_may_be_missing", "message": "Allergy was mentioned in transcript but not clearly present in output."})
+
+    severity_order = {"low": 1, "medium": 2, "high": 3}
+    max_severity = "low"
+    for flag in flags:
+        if severity_order[flag["severity"]] > severity_order[max_severity]:
+            max_severity = flag["severity"]
+
+    return {
+        "requires_doctor_review": True,
+        "safety_level": "blocked" if max_severity == "high" else "needs_review" if flags else "draft_ok",
+        "highest_severity": max_severity if flags else None,
+        "flags": flags,
+        "checks": {
+            "non_empty_output": bool(output.strip()),
+            "template_bound": True,
+            "ai_badge_required": True,
+            "clinician_final_authority": True,
+        },
+    }
+
+
+def build_document_response(
+    document_type: str,
+    transcript: str,
+    normalized: NormalizationResult,
+    result: Dict[str, Any],
+    total_time: float,
+    transcription: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    quality = score_transcript_quality(transcription, transcription.get("language", "auto")) if transcription else None
+    safety = validate_clinical_output(
+        document_type,
+        transcript,
+        normalized.normalized_text,
+        result.get("text", ""),
+        result.get("structured", {}),
+    )
+    response = {
+        "success": True,
+        "document_type": document_type,
+        "raw_output": result.get("text", ""),
+        "structured": result.get("structured", {}),
+        "normalized_input": normalized.normalized_text,
+        "normalization_changes": len(normalized.changes),
+        "generation_time": result.get("generation_time", 0),
+        "total_time": total_time,
+        "tokens": result.get("tokens", 0),
+        "transcript_quality": quality,
+        "clinical_safety": safety,
+        "ai_badge": SECURITY_CONFIG["ai_badge_required"],
+        "requires_review": True,
+        "disclaimer": COMPLIANCE_DISCLAIMER,
+    }
+    if transcription:
+        response["transcript"] = transcription.get("text", "")
+        response["detected_language"] = transcription.get("language")
+        response["transcription_time"] = transcription.get("transcription_time")
+        response["stt"] = {
+            "backend": transcription.get("backend"),
+            "model_used": transcription.get("model_used"),
+            "audio_duration": transcription.get("audio_duration"),
+            "realtime_factor": transcription.get("realtime_factor"),
+            "chunked": transcription.get("chunked", False),
+            "chunks_processed": transcription.get("chunks_processed", 1),
+        }
+    return response
+
+
+def _cleanup_old_jobs() -> None:
+    cutoff = time.time() - JOB_RETENTION_SECONDS
+    expired = [job_id for job_id, job in JOBS.items() if job.get("updated_at", 0) < cutoff]
+    for job_id in expired:
+        job = JOBS.pop(job_id, {})
+        path = job.get("file_path")
+        if path:
+            try:
+                Path(path).unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
+# =============================================================================
 # ENDPOINTS
 # =============================================================================
 
@@ -305,7 +537,8 @@ async def transcribe_audio(
 
         # Transcribe
         stt = get_stt_service()
-        result = stt.transcribe(
+        result = await asyncio.to_thread(
+            stt.transcribe,
             wav_path,
             language=effective_language,
             translate=translate,
@@ -343,6 +576,7 @@ async def transcribe_audio(
                 "requested_language": requested_language,
                 "dominant_language_hint": dominant_language_hint,
                 "effective_language": effective_language,
+                "quality": score_transcript_quality(result, requested_language),
             }
         else:
             raise HTTPException(500, result.get("error", "Transcription failed"))
@@ -394,23 +628,12 @@ async def normalize_text(request: NormalizationRequest):
 
 @app.post("/api/scribe/prescription")
 async def generate_prescription(request: PrescriptionRequest):
-    """
-    Generate OPD prescription from transcript.
-    
-    Pipeline:
-    1. Normalize text
-    2. Generate with Indic-Gemma
-    3. Apply prescription template
-    4. Return structured output
-    """
+    """Generate OPD prescription from transcript with safety metadata."""
     start_time = time.time()
-    
-    # Step 1: Normalize
     normalized = normalize_medical_text(request.transcript)
-    
-    # Step 2: Generate with LLM
     llm = get_llm_engine()
-    result = llm.format_prescription(
+    result = await asyncio.to_thread(
+        llm.format_prescription,
         normalized.normalized_text,
         patient_info={
             "name": request.patient_name,
@@ -418,134 +641,74 @@ async def generate_prescription(request: PrescriptionRequest):
             "gender": request.patient_gender,
         }
     )
-    
     total_time = time.time() - start_time
-    
-    # Audit log
+
     audit.log("prescription_generation", {
         "input_length": len(request.transcript),
         "success": result.get("success"),
         "generation_time": result.get("generation_time"),
     })
-    
-    if result["success"]:
-        return {
-            "success": True,
-            "document_type": "prescription",
-            "raw_output": result["text"],
-            "structured": result.get("structured", {}),
-            "normalized_input": normalized.normalized_text,
-            "normalization_changes": len(normalized.changes),
-            "generation_time": result.get("generation_time", 0),
-            "total_time": total_time,
-            "tokens": result.get("tokens", 0),
-            "ai_badge": SECURITY_CONFIG["ai_badge_required"],
-            "disclaimer": COMPLIANCE_DISCLAIMER,
-        }
-    else:
-        raise HTTPException(500, result.get("error", "Generation failed"))
+
+    if result.get("success"):
+        return build_document_response("prescription", request.transcript, normalized, result, total_time)
+    raise HTTPException(500, result.get("error", "Generation failed"))
 
 
 @app.post("/api/scribe/opd-notes")
 async def generate_opd_notes(request: OPDNotesRequest):
-    """Generate OPD clinical notes from transcript"""
+    """Generate OPD clinical notes from transcript with safety metadata."""
     start_time = time.time()
-    
-    # Normalize
     normalized = normalize_medical_text(request.transcript)
-    
-    # Generate
     llm = get_llm_engine()
-    result = llm.format_opd_notes(normalized.normalized_text, request.patient_info)
-    
+    result = await asyncio.to_thread(llm.format_opd_notes, normalized.normalized_text, request.patient_info)
     total_time = time.time() - start_time
-    
-    # Audit log
+
     audit.log("opd_notes_generation", {
         "input_length": len(request.transcript),
         "success": result.get("success"),
     })
-    
-    if result["success"]:
-        return {
-            "success": True,
-            "document_type": "opd_notes",
-            "raw_output": result["text"],
-            "normalized_input": normalized.normalized_text,
-            "total_time": total_time,
-            "ai_badge": True,
-            "disclaimer": COMPLIANCE_DISCLAIMER,
-        }
-    else:
-        raise HTTPException(500, result.get("error", "Generation failed"))
+
+    if result.get("success"):
+        return build_document_response("opd_notes", request.transcript, normalized, result, total_time)
+    raise HTTPException(500, result.get("error", "Generation failed"))
 
 
 @app.post("/api/scribe/discharge")
 async def generate_discharge_summary(request: DischargeSummaryRequest):
-    """Generate discharge summary from transcript/notes"""
+    """Generate discharge summary from transcript/notes with safety metadata."""
     start_time = time.time()
-    
-    # Normalize
     normalized = normalize_medical_text(request.transcript)
-    
-    # Generate
     llm = get_llm_engine()
-    result = llm.format_discharge_summary(normalized.normalized_text, request.patient_info)
-    
+    result = await asyncio.to_thread(llm.format_discharge_summary, normalized.normalized_text, request.patient_info)
     total_time = time.time() - start_time
-    
-    # Audit log
+
     audit.log("discharge_summary_generation", {
         "input_length": len(request.transcript),
         "success": result.get("success"),
     })
-    
-    if result["success"]:
-        return {
-            "success": True,
-            "document_type": "discharge_summary",
-            "raw_output": result["text"],
-            "normalized_input": normalized.normalized_text,
-            "total_time": total_time,
-            "ai_badge": True,
-            "disclaimer": COMPLIANCE_DISCLAIMER,
-        }
-    else:
-        raise HTTPException(500, result.get("error", "Generation failed"))
+
+    if result.get("success"):
+        return build_document_response("discharge_summary", request.transcript, normalized, result, total_time)
+    raise HTTPException(500, result.get("error", "Generation failed"))
 
 
 @app.post("/api/scribe/ipd-notes")
 async def generate_ipd_notes(request: IPDNotesRequest):
-    """Generate IPD daily progress notes from round dictation"""
+    """Generate IPD daily progress notes from round dictation with safety metadata."""
     start_time = time.time()
-    
-    # Normalize
     normalized = normalize_medical_text(request.transcript)
-    
-    # Generate
     llm = get_llm_engine()
-    result = llm.format_ipd_notes(normalized.normalized_text, request.patient_info)
-    
+    result = await asyncio.to_thread(llm.format_ipd_notes, normalized.normalized_text, request.patient_info)
     total_time = time.time() - start_time
-    
-    # Audit log
+
     audit.log("ipd_notes_generation", {
         "input_length": len(request.transcript),
         "success": result.get("success"),
     })
-    
-    if result["success"]:
-        return {
-            "success": True,
-            "document_type": "ipd_notes",
-            "raw_output": result["text"],
-            "normalized_input": normalized.normalized_text,
-            "total_time": total_time,
-            "ai_badge": True,
-            "disclaimer": COMPLIANCE_DISCLAIMER,
-        }
-    else:
-        raise HTTPException(500, result.get("error", "Generation failed"))
+
+    if result.get("success"):
+        return build_document_response("ipd_notes", request.transcript, normalized, result, total_time)
+    raise HTTPException(500, result.get("error", "Generation failed"))
 
 
 @app.post("/api/scribe/full-pipeline")
@@ -580,7 +743,7 @@ async def full_pipeline(
         wav_path = processor.convert_to_wav(tmp_path)
         
         stt = get_stt_service()
-        transcription = stt.transcribe(wav_path, language=language)
+        transcription = await asyncio.to_thread(stt.transcribe, wav_path, language=language)
         
         if not transcription["success"]:
             raise HTTPException(500, f"Transcription failed: {transcription.get('error')}")
@@ -617,35 +780,19 @@ async def full_pipeline(
             "success": result.get("success"),
         })
         
-        if result["success"]:
-            return {
-                "success": True,
-                "document_type": document_type,
-                
-                # Transcription
-                "transcript": transcription["text"],
-                "detected_language": transcription.get("language"),
-                "transcription_time": transcription.get("transcription_time"),
-                
-                # Normalization
-                "normalized_text": normalized.normalized_text,
-                "normalization_changes": normalized.changes,
-                
-                # Generated document
-                "raw_output": result["text"],
-                "structured": result.get("structured", {}),
-                "generation_time": result.get("generation_time"),
-                
-                # Timing
-                "total_pipeline_time": pipeline_time,
-                
-                # Compliance
-                "ai_badge": True,
-                "requires_review": True,
-                "disclaimer": COMPLIANCE_DISCLAIMER,
-            }
-        else:
-            raise HTTPException(500, result.get("error", "Generation failed"))
+        if result.get("success"):
+            response = build_document_response(
+                document_type,
+                transcription["text"],
+                normalized,
+                result,
+                pipeline_time,
+                transcription=transcription,
+            )
+            response["total_pipeline_time"] = pipeline_time
+            response["normalization_changes"] = normalized.changes
+            return response
+        raise HTTPException(500, result.get("error", "Generation failed"))
     
     finally:
         # Cleanup
@@ -655,6 +802,164 @@ async def full_pipeline(
                 os.unlink(wav_path)
         except:
             pass
+
+
+
+async def _run_full_pipeline_from_path(
+    audio_path: str,
+    filename: str,
+    document_type: str,
+    language: str,
+    patient_name: Optional[str] = None,
+    patient_age: Optional[str] = None,
+    patient_gender: Optional[str] = None,
+) -> Dict[str, Any]:
+    pipeline_start = time.time()
+    file_ext = Path(filename).suffix.lower() or ".wav"
+    tmp_path = audio_path
+    wav_path = tmp_path
+
+    processor = AudioProcessor()
+    if file_ext != ".wav":
+        wav_path = await asyncio.to_thread(processor.convert_to_wav, tmp_path)
+
+    stt = get_stt_service()
+    transcription = await asyncio.to_thread(stt.transcribe, wav_path, language=language)
+    if not transcription.get("success"):
+        raise RuntimeError(f"Transcription failed: {transcription.get('error')}")
+
+    normalized = normalize_medical_text(transcription["text"])
+    llm = get_llm_engine()
+    patient_info = {"name": patient_name, "age": patient_age, "gender": patient_gender}
+
+    if document_type == "prescription":
+        result = await asyncio.to_thread(llm.format_prescription, normalized.normalized_text, patient_info)
+    elif document_type == "opd_notes":
+        result = await asyncio.to_thread(llm.format_opd_notes, normalized.normalized_text, patient_info)
+    elif document_type == "discharge_summary":
+        result = await asyncio.to_thread(llm.format_discharge_summary, normalized.normalized_text, patient_info)
+    elif document_type == "ipd_notes":
+        result = await asyncio.to_thread(llm.format_ipd_notes, normalized.normalized_text, patient_info)
+    else:
+        raise ValueError(f"Unknown document type: {document_type}")
+
+    if not result.get("success"):
+        raise RuntimeError(result.get("error", "Generation failed"))
+
+    pipeline_time = time.time() - pipeline_start
+    response = build_document_response(
+        document_type,
+        transcription["text"],
+        normalized,
+        result,
+        pipeline_time,
+        transcription=transcription,
+    )
+    response["total_pipeline_time"] = pipeline_time
+    response["normalization_changes"] = normalized.changes
+    return response
+
+
+async def _process_full_pipeline_job(job_id: str):
+    job = JOBS.get(job_id)
+    if not job:
+        return
+    job.update({"status": "running", "started_at": time.time(), "updated_at": time.time(), "progress": 10})
+    try:
+        result = await _run_full_pipeline_from_path(
+            job["file_path"],
+            job["filename"],
+            job["document_type"],
+            job["language"],
+            job.get("patient_name"),
+            job.get("patient_age"),
+            job.get("patient_gender"),
+        )
+        job.update({
+            "status": "completed",
+            "progress": 100,
+            "result": result,
+            "completed_at": time.time(),
+            "updated_at": time.time(),
+        })
+        audit.log("full_pipeline_job_completed", {"job_id": job_id, "document_type": job["document_type"]})
+    except Exception as error:
+        logger.exception("Full-pipeline job failed: %s", job_id)
+        job.update({
+            "status": "failed",
+            "progress": 100,
+            "error": str(error),
+            "completed_at": time.time(),
+            "updated_at": time.time(),
+        })
+        audit.log("full_pipeline_job_failed", {"job_id": job_id, "error": str(error)})
+    finally:
+        try:
+            Path(job["file_path"]).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+@app.post("/api/scribe/jobs/full-pipeline")
+async def create_full_pipeline_job(
+    file: UploadFile = File(...),
+    document_type: str = Form("prescription"),
+    language: str = Form("auto"),
+    patient_name: str = Form(None),
+    patient_age: str = Form(None),
+    patient_gender: str = Form(None),
+):
+    """Create an async audio-to-document job for longer recordings."""
+    _cleanup_old_jobs()
+    allowed_extensions = [".wav", ".mp3", ".m4a", ".ogg", ".webm"]
+    file_ext = Path(file.filename or "audio.wav").suffix.lower() or ".wav"
+    if file_ext not in allowed_extensions:
+        raise HTTPException(400, f"Invalid file type. Allowed: {allowed_extensions}")
+
+    normalized_doc_type = document_type
+    if normalized_doc_type == "discharge":
+        normalized_doc_type = "discharge_summary"
+    if normalized_doc_type not in {"prescription", "opd_notes", "ipd_notes", "discharge_summary"}:
+        raise HTTPException(400, f"Unknown document type: {document_type}")
+
+    job_id = str(uuid.uuid4())
+    target = JOB_DIR / f"{job_id}{file_ext}"
+    with target.open("wb") as out:
+        shutil.copyfileobj(file.file, out)
+
+    JOBS[job_id] = {
+        "job_id": job_id,
+        "status": "queued",
+        "progress": 0,
+        "filename": file.filename or target.name,
+        "file_path": str(target),
+        "document_type": normalized_doc_type,
+        "language": normalize_transcription_language(language),
+        "patient_name": patient_name,
+        "patient_age": patient_age,
+        "patient_gender": patient_gender,
+        "created_at": time.time(),
+        "updated_at": time.time(),
+    }
+    asyncio.create_task(_process_full_pipeline_job(job_id))
+    audit.log("full_pipeline_job_created", {"job_id": job_id, "document_type": normalized_doc_type})
+    return {
+        "success": True,
+        "job_id": job_id,
+        "status": "queued",
+        "poll_url": f"/api/scribe/jobs/{job_id}",
+        "disclaimer": COMPLIANCE_DISCLAIMER,
+    }
+
+
+@app.get("/api/scribe/jobs/{job_id}")
+async def get_scribe_job(job_id: str):
+    """Get async Scribe job status and result."""
+    job = JOBS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found or expired")
+    public = {k: v for k, v in job.items() if k != "file_path"}
+    return public
 
 
 # =============================================================================

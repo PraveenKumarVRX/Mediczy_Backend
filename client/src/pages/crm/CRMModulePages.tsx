@@ -226,13 +226,40 @@ const tdClass = 'py-3.5';
 // LEADS PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+const SOURCE_LABELS: Record<string, string> = {
+  'manual': 'Manual',
+  'website': 'Website',
+  'referral': 'Referral',
+  'social': 'Social',
+  'cold_call': 'Cold Call',
+  'event': 'Event',
+  'partner': 'Partner',
+  'advertisement': 'Advertisement',
+  'facebook-lead-ads': 'Facebook Ads',
+  'marketing-website': 'Marketing',
+};
+
+function SourceBadge({ source }: { source: string }) {
+  if (source === 'facebook-lead-ads') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-blue-600/20 text-blue-400 border border-blue-500/30">
+        <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+        Facebook Ads
+      </span>
+    );
+  }
+  return <span className="text-[11px] text-slate-500">{SOURCE_LABELS[source] || source}</span>;
+}
+
 export function CRMLeadsPage() {
   const [leads, setLeads] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [sourceFilter, setSourceFilter] = useState('all');
   const [showForm, setShowForm] = useState(false);
   const [editLead, setEditLead] = useState<any>(null);
   const [form, setForm] = useState({ name: '', email: '', phone: '', company: '', source: 'manual', status: 'new', priority: 'medium', notes: '' });
@@ -244,11 +271,12 @@ export function CRMLeadsPage() {
       const params: any = { page, limit: 25 };
       if (search) params.search = search;
       if (statusFilter !== 'all') params.status = statusFilter;
+      if (sourceFilter !== 'all') params.source = sourceFilter;
       const { data } = await api.get('/crm/leads', { headers: authHeaders(), params });
-      if (data.success) { setLeads(data.data); setTotalPages(data.pagination?.totalPages || 1); }
+      if (data.success) { setLeads(data.data); setTotalPages(data.pagination?.totalPages || 1); setTotal(data.pagination?.total || 0); }
     } catch (err: any) { if (err.response?.status === 401) navigate('/crm/login'); }
     finally { setLoading(false); }
-  }, [page, search, statusFilter, navigate]);
+  }, [page, search, statusFilter, sourceFilter, navigate]);
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
@@ -291,8 +319,8 @@ export function CRMLeadsPage() {
       <div className="space-y-5">
         {/* Toolbar */}
         <div className="flex flex-col sm:flex-row gap-3 justify-between">
-          <div className="flex gap-2 flex-1">
-            <div className="relative flex-1 max-w-sm">
+          <div className="flex gap-2 flex-1 flex-wrap">
+            <div className="relative flex-1 min-w-[160px] max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-600" />
               <input placeholder="Search leads..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
                 className="w-full h-10 pl-10 pr-4 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30 transition-colors" />
@@ -302,6 +330,15 @@ export function CRMLeadsPage() {
               <option value="all" className="bg-[#0d1120]">All Status</option>
               {['new', 'contacted', 'qualified', 'converted', 'lost'].map(s => <option key={s} value={s} className="bg-[#0d1120]">{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
             </select>
+            <select value={sourceFilter} onChange={e => { setSourceFilter(e.target.value); setPage(1); }}
+              className="h-10 px-3 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-slate-300 focus:outline-none focus:border-violet-500/30">
+              <option value="all" className="bg-[#0d1120]">All Sources</option>
+              <option value="facebook-lead-ads" className="bg-[#0d1120]">Facebook Ads</option>
+              {['manual', 'website', 'referral', 'social', 'cold_call', 'event', 'partner', 'advertisement', 'marketing-website'].map(s => (
+                <option key={s} value={s} className="bg-[#0d1120]">{SOURCE_LABELS[s] || s}</option>
+              ))}
+            </select>
+            {total > 0 && <span className="self-center text-xs text-slate-500">{total} lead{total !== 1 ? 's' : ''}</span>}
           </div>
           <Button onClick={() => { setEditLead(null); setForm({ name: '', email: '', phone: '', company: '', source: 'manual', status: 'new', priority: 'medium', notes: '' }); setShowForm(true); }}
             className="h-10 bg-gradient-to-r from-violet-600 to-blue-600 hover:from-violet-500 hover:to-blue-500 text-white rounded-xl shadow-lg shadow-violet-600/20">
@@ -333,7 +370,9 @@ export function CRMLeadsPage() {
                 <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Source</label>
                 <select value={form.source} onChange={e => setForm({ ...form, source: e.target.value })}
                   className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-slate-300 focus:outline-none">
-                  {['manual', 'website', 'referral', 'social', 'cold_call', 'event', 'partner', 'advertisement'].map(s => <option key={s} value={s} className="bg-[#0d1120]">{s.replace('_', ' ')}</option>)}
+                  {['manual', 'website', 'referral', 'social', 'cold_call', 'event', 'partner', 'advertisement', 'facebook-lead-ads'].map(s => (
+                    <option key={s} value={s} className="bg-[#0d1120]">{SOURCE_LABELS[s] || s.replace('_', ' ')}</option>
+                  ))}
                 </select>
               </div>
               <div className="space-y-1">
@@ -392,7 +431,7 @@ export function CRMLeadsPage() {
                       <td className={`${tdClass} text-slate-400`}>{l.company || '—'}</td>
                       <td className={tdClass}><span className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border ${statusBadge[l.status] || 'bg-slate-500/15 text-slate-400 border-slate-500/20'}`}>{l.status}</span></td>
                       <td className={tdClass}><span className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border ${priorityBadge[l.priority] || ''}`}>{l.priority}</span></td>
-                      <td className={`${tdClass} text-[11px] text-slate-500`}>{l.source}</td>
+                      <td className={tdClass}><SourceBadge source={l.source} /></td>
                       <td className={`${tdClass} text-[11px] text-slate-600`}>{new Date(l.created_at).toLocaleDateString()}</td>
                       <td className={`${tdClass} pr-5 text-right`}>
                         <div className="flex items-center justify-end gap-1">

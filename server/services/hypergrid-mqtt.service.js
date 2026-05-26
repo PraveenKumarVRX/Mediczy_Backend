@@ -14,6 +14,7 @@
  */
 
 import Aedes from 'aedes';
+import * as AedesModule from 'aedes';
 import net from 'net';
 import { createClient } from 'redis';
 import { connectPostgres } from '../db/postgres.js';
@@ -25,6 +26,29 @@ const REDIS_URL   = process.env.REDIS_URL || 'redis://localhost:6379';
 let broker   = null;
 let tcpServer = null;
 let redisPublisher = null;
+
+function createAedesBroker(opts) {
+  // Prefer modern API from namespace export.
+  if (AedesModule?.Aedes && typeof AedesModule.Aedes.createBroker === 'function') {
+    return AedesModule.Aedes.createBroker(opts);
+  }
+
+  // Support createBroker exposed directly on default export in some builds.
+  if (Aedes && typeof Aedes.createBroker === 'function') {
+    return Aedes.createBroker(opts);
+  }
+
+  const candidate =
+    typeof Aedes === 'function'
+      ? Aedes
+      : (Aedes && typeof Aedes.default === 'function' ? Aedes.default : null);
+
+  if (!candidate) {
+    throw new Error('Unsupported Aedes export format');
+  }
+
+  return new candidate(opts);
+}
 
 // ─── Canonical event types ────────────────────────────────────────────────────
 const TOPIC_PATTERNS = [
@@ -77,7 +101,7 @@ export async function startMqttBroker() {
     redisPublisher = null;
   });
 
-  broker = new Aedes({
+  broker = await Promise.resolve(createAedesBroker({
     authenticate(client, username, password, cb) {
       // Validate device API key stored in hg_devices table
       if (!username || !password) return cb(null, false);
@@ -89,7 +113,7 @@ export async function startMqttBroker() {
           .catch(() => cb(null, false));
       }).catch(() => cb(null, false));
     },
-  });
+  }));
 
   // Normalise every published message into a canonical event
   broker.on('publish', async (packet, client) => {

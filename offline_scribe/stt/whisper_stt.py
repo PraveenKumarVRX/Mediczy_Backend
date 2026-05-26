@@ -175,6 +175,18 @@ def select_whisper_model_path(language: str) -> Path:
     return default_model
 
 
+def describe_selected_whisper_model(language: str = "auto") -> Dict[str, Any]:
+    selected = select_whisper_model_path(normalize_transcription_language(language))
+    return {
+        "strategy": os.getenv("STT_MODEL_STRATEGY", "smart").strip().lower() or "smart",
+        "configured_model": WHISPER_MODEL,
+        "configured_model_path": str(WHISPER_MODEL_PATH),
+        "selected_model": selected.name,
+        "selected_model_path": str(selected),
+        "selected_model_exists": selected.exists(),
+    }
+
+
 class WhisperSTT:
     """
     Offline Speech-to-Text using Whisper.
@@ -671,10 +683,12 @@ class WhisperSTT:
     
     def health_check(self) -> Dict[str, Any]:
         """Check STT service health"""
+        model_info = describe_selected_whisper_model("auto")
         return {
             "status": "healthy" if self.model or self.backend == "whisper-cpp" else "unhealthy",
             "backend": self.backend,
             "model_size": self.model_size,
+            "model": model_info,
             "supported_languages": [
                 code for code, lang in SUPPORTED_LANGUAGES.items() 
                 if lang.get("enabled", False)

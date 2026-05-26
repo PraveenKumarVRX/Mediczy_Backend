@@ -9,21 +9,12 @@
  */
 
 import cron from 'node-cron';
-import { Sequelize } from 'sequelize';
 import webinarNotificationService from './webinar-notification.service.js';
 import { tick, tickError } from '../utils/cronRegistry.js';
 import n8nService from './n8n.service.js';
+import postgresSequelize from '../db/postgres-sequelize.js';
 
-const sequelize = new Sequelize(
-  process.env.POSTGRES_DATABASE || 'mediczy_ai',
-  process.env.POSTGRES_USER || 'mediczy_helper',
-  process.env.POSTGRES_PASSWORD || 'Mediczy2024Helper',
-  {
-    host: process.env.POSTGRES_HOST || '127.0.0.1',
-    dialect: 'postgres',
-    logging: false
-  }
-);
+const sequelize = postgresSequelize;
 
 class WebinarReminderService {
   constructor() {
@@ -88,7 +79,7 @@ class WebinarReminderService {
          ORDER BY w.scheduled_at ASC`,
         { 
           replacements: [now.toISOString()], 
-          type: Sequelize.QueryTypes.SELECT 
+          type: sequelize.QueryTypes.SELECT 
         }
       );
 
@@ -166,7 +157,7 @@ class WebinarReminderService {
          LEFT JOIN doctors d ON w.doctor_id = d.id
          LEFT JOIN users u ON d."userId" = u.id
          WHERE w.id = $1`,
-        { replacements: [webinarId], type: Sequelize.QueryTypes.SELECT }
+        { replacements: [webinarId], type: sequelize.QueryTypes.SELECT }
       );
 
       if (webinar.length === 0) {
@@ -210,7 +201,7 @@ class WebinarReminderService {
             AND reminder_24h_sent = FALSE
             AND scheduled_at < NOW() + INTERVAL '25 hours') as pending_24h_reminders
          FROM webinars`,
-        { type: Sequelize.QueryTypes.SELECT }
+        { type: sequelize.QueryTypes.SELECT }
       );
 
       return stats[0];

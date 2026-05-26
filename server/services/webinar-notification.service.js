@@ -6,18 +6,9 @@
 import notificationService from './notification.service.js';
 import emailService from './emailService.js';
 import { generateWebinarICalFile, generateWebinarHostICalFile, generateWebinarICalFilename } from '../utils/webinarICalGenerator.js';
-import { Sequelize } from 'sequelize';
+import postgresSequelize from '../db/postgres-sequelize.js';
 
-const sequelize = new Sequelize(
-  process.env.POSTGRES_DATABASE || 'mediczy_ai',
-  process.env.POSTGRES_USER || 'mediczy_helper',
-  process.env.POSTGRES_PASSWORD || 'Mediczy2024Helper',
-  {
-    host: process.env.POSTGRES_HOST || '127.0.0.1',
-    dialect: 'postgres',
-    logging: false
-  }
-);
+const sequelize = postgresSequelize;
 
 class WebinarNotificationService {
   
@@ -54,7 +45,7 @@ class WebinarNotificationService {
         `UPDATE webinar_registrations 
          SET confirmation_email_sent = TRUE, ical_attachment_sent = TRUE, updated_at = CURRENT_TIMESTAMP 
          WHERE id = $1`,
-        { replacements: [registrationData.id], type: Sequelize.QueryTypes.UPDATE }
+        { replacements: [registrationData.id], type: sequelize.QueryTypes.UPDATE }
       );
       
       // Send push notification
@@ -89,7 +80,7 @@ class WebinarNotificationService {
          FROM webinar_registrations wr
          JOIN users u ON wr.user_id = u.id
          WHERE wr.webinar_id = $1 AND wr.status IN ('registered', 'approved')`,
-        { replacements: [webinarData.id], type: Sequelize.QueryTypes.SELECT }
+        { replacements: [webinarData.id], type: sequelize.QueryTypes.SELECT }
       );
       
       let sentCount = 0;
@@ -116,7 +107,7 @@ class WebinarNotificationService {
       // Update webinar record
       await sequelize.query(
         `UPDATE webinars SET reminder_1week_sent = TRUE WHERE id = $1`,
-        { replacements: [webinarData.id], type: Sequelize.QueryTypes.UPDATE }
+        { replacements: [webinarData.id], type: sequelize.QueryTypes.UPDATE }
       );
       
       console.log(`✅ Sent 1-week reminders to ${sentCount}/${attendees.length} attendees`);
@@ -139,7 +130,7 @@ class WebinarNotificationService {
          FROM webinar_registrations wr
          JOIN users u ON wr.user_id = u.id
          WHERE wr.webinar_id = $1 AND wr.status IN ('registered', 'approved')`,
-        { replacements: [webinarData.id], type: Sequelize.QueryTypes.SELECT }
+        { replacements: [webinarData.id], type: sequelize.QueryTypes.SELECT }
       );
       
       let sentCount = 0;
@@ -170,7 +161,7 @@ class WebinarNotificationService {
       
       await sequelize.query(
         `UPDATE webinars SET reminder_24h_sent = TRUE WHERE id = $1`,
-        { replacements: [webinarData.id], type: Sequelize.QueryTypes.UPDATE }
+        { replacements: [webinarData.id], type: sequelize.QueryTypes.UPDATE }
       );
       
       console.log(`✅ Sent 24-hour reminders to ${sentCount}/${attendees.length} attendees`);
@@ -193,7 +184,7 @@ class WebinarNotificationService {
          FROM webinar_registrations wr
          JOIN users u ON wr.user_id = u.id
          WHERE wr.webinar_id = $1 AND wr.status IN ('registered', 'approved')`,
-        { replacements: [webinarData.id], type: Sequelize.QueryTypes.SELECT }
+        { replacements: [webinarData.id], type: sequelize.QueryTypes.SELECT }
       );
       
       let sentCount = 0;
@@ -219,7 +210,7 @@ class WebinarNotificationService {
       
       await sequelize.query(
         `UPDATE webinars SET reminder_2h_sent = TRUE WHERE id = $1`,
-        { replacements: [webinarData.id], type: Sequelize.QueryTypes.UPDATE }
+        { replacements: [webinarData.id], type: sequelize.QueryTypes.UPDATE }
       );
       
       console.log(`✅ Sent 2-hour reminders to ${sentCount}/${attendees.length} attendees`);
@@ -242,7 +233,7 @@ class WebinarNotificationService {
          FROM webinar_registrations wr
          JOIN users u ON wr.user_id = u.id
          WHERE wr.webinar_id = $1 AND wr.status IN ('registered', 'approved')`,
-        { replacements: [webinarData.id], type: Sequelize.QueryTypes.SELECT }
+        { replacements: [webinarData.id], type: sequelize.QueryTypes.SELECT }
       );
       
       let sentCount = 0;
@@ -270,7 +261,7 @@ class WebinarNotificationService {
       
       await sequelize.query(
         `UPDATE webinars SET reminder_15min_sent = TRUE WHERE id = $1`,
-        { replacements: [webinarData.id], type: Sequelize.QueryTypes.UPDATE }
+        { replacements: [webinarData.id], type: sequelize.QueryTypes.UPDATE }
       );
       
       console.log(`✅ Sent 15-minute reminders to ${sentCount}/${attendees.length} attendees`);
@@ -303,7 +294,7 @@ class WebinarNotificationService {
       
       await sequelize.query(
         `UPDATE webinars SET ical_sent = TRUE WHERE id = $1`,
-        { replacements: [webinarData.id], type: Sequelize.QueryTypes.UPDATE }
+        { replacements: [webinarData.id], type: sequelize.QueryTypes.UPDATE }
       );
       
       console.log(`✅ Host calendar invite sent to ${doctorData.email}`);

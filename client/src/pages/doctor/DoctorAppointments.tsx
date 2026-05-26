@@ -83,6 +83,54 @@ const normalizeStatus = (s?: string) =>
 const canInitiateCall = (s?: string) =>
   ["scheduled", "confirmed", "accepted", "in-progress"].includes(normalizeStatus(s));
 
+const getDoctorCallState = (apt: Appointment) => {
+  const channel = normalizeStatus(apt.channel || "");
+  const ct = normalizeStatus(apt.consultationType || "");
+  const isVideo = channel.includes("video") || ct === "online" || ct.includes("video") || ct.includes("tele");
+  if (!isVideo) {
+    return { show: false, enabled: false, reason: "" };
+  }
+
+  const status = normalizeStatus(apt.status);
+  if (!["scheduled", "confirmed", "accepted", "in-progress"].includes(status)) {
+    return {
+      show: true,
+      enabled: false,
+      reason: `Call unavailable for ${apt.status} appointments.`,
+    };
+  }
+
+  const paymentStatus = normalizeStatus(apt.paymentStatus || "");
+  if (paymentStatus && !["paid", "credit"].includes(paymentStatus)) {
+    return {
+      show: true,
+      enabled: false,
+      reason: "Awaiting payment or active membership for this patient.",
+    };
+  }
+
+  const appointmentDateTime = new Date(`${apt.appointmentDate} ${apt.appointmentTime || "00:00"}`);
+  if (Number.isNaN(appointmentDateTime.getTime())) {
+    return {
+      show: true,
+      enabled: false,
+      reason: "Invalid appointment date/time.",
+    };
+  }
+
+  const now = new Date();
+  const minutesUntilStart = (appointmentDateTime.getTime() - now.getTime()) / (1000 * 60);
+  if (minutesUntilStart > 15) {
+    return {
+      show: true,
+      enabled: false,
+      reason: "Start becomes available 15 minutes before appointment time.",
+    };
+  }
+
+  return { show: true, enabled: true, reason: "" };
+};
+
 const getDisplayStatus = (apt: Appointment): string => {
   const today = format(new Date(), "yyyy-MM-dd");
   const ns = normalizeStatus(apt.status);
@@ -454,15 +502,22 @@ const DoctorAppointments = () => {
                 </Button>
               </>
             ) : (
-              canInitiateCall(apt.status) && (
-                <Button
-                  size="sm"
-                  onClick={() => handleStartConsultation(apt)}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-4 gap-1.5 h-8 text-xs font-semibold"
-                >
-                  <ConsultIcon apt={apt} />
-                  Start Call
-                </Button>
+              getDoctorCallState(apt).show && (
+                <div className="flex flex-col items-start gap-1">
+                  <Button
+                    size="sm"
+                    onClick={() => handleStartConsultation(apt)}
+                    disabled={!getDoctorCallState(apt).enabled}
+                    title={getDoctorCallState(apt).enabled ? "" : getDoctorCallState(apt).reason}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-4 gap-1.5 h-8 text-xs font-semibold disabled:opacity-60"
+                  >
+                    <ConsultIcon apt={apt} />
+                    {getDoctorCallState(apt).enabled ? "Start Call" : "Call Locked"}
+                  </Button>
+                  {!getDoctorCallState(apt).enabled && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400">{getDoctorCallState(apt).reason}</p>
+                  )}
+                </div>
               )
             )}
             {["pending", "scheduled", "confirmed", "accepted"].includes(normalizeStatus(apt.status)) && (

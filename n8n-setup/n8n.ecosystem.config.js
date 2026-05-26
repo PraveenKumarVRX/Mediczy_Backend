@@ -9,16 +9,11 @@ module.exports = {
     watch: false,
     max_memory_restart: '500M',
     env: {
-      // n8n Authentication
-      N8N_BASIC_AUTH_ACTIVE: 'true',
-      N8N_BASIC_AUTH_USER: 'admin',
-      N8N_BASIC_AUTH_PASSWORD: 'MediczyN8N2025!',
-      
       // n8n Host Configuration
-      N8N_HOST: 'localhost',
-      N8N_PROTOCOL: 'http',
+      N8N_HOST: 'n8n.mediqzy.com',
+      N8N_PROTOCOL: 'https',
       N8N_PORT: '5678',
-      WEBHOOK_URL: 'http://localhost:5678',
+      WEBHOOK_URL: 'https://n8n.mediqzy.com',
       GENERIC_TIMEZONE: 'Asia/Kolkata',
       N8N_LOG_LEVEL: 'info',
       
@@ -42,7 +37,13 @@ module.exports = {
       
       // Performance
       N8N_METRICS: 'true',
-      N8N_SECURE_COOKIE: 'false'
+      N8N_SECURE_COOKIE: 'false',
+
+      // Disable telemetry & AI assistant (community plan — avoids console noise)
+      N8N_DIAGNOSTICS_ENABLED: 'false',
+      N8N_VERSION_NOTIFICATIONS_ENABLED: 'true',
+      N8N_TEMPLATES_ENABLED: 'false',
+      N8N_AI_ENABLED: 'false'
     },
     error_file: '~/.n8n/logs/error.log',
     out_file: '~/.n8n/logs/out.log',

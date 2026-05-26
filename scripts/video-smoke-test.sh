@@ -46,7 +46,7 @@ HEALTH=$(curl -s --max-time 10 "$API/api/video/health" 2>/dev/null)
 echo "$HEALTH" | grep -q '"success":true' && pass "Video API health: OK" || fail "Video API health endpoint down"
 
 # PM2 processes
-for PROC in livekit mediczy-server; do
+for PROC in livekit-server mediczy-server; do
     STATUS=$(pm2 jlist 2>/dev/null | python3 -c "
 import sys,json
 procs = json.load(sys.stdin)
@@ -133,7 +133,7 @@ fi
 
 # --- 5. TURN TLS Handshake ---
 log "--- TURN Connectivity ---"
-TLS_OK=$(echo | timeout 5 openssl s_client -connect 127.0.0.1:5349 2>/dev/null | grep -c "CONNECTED")
+TLS_OK=$(echo | timeout 5 openssl s_client -connect 172.31.47.217:5349 2>/dev/null | grep -c "CONNECTED")
 [[ "$TLS_OK" -ge 1 ]] && pass "TURN TLS handshake: OK" || fail "TURN TLS handshake failed on port 5349"
 
 # --- Summary ---

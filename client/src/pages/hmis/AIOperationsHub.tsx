@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw, Brain, AlertTriangle, Users, Bed, FileCheck, TrendingUp, CheckCircle, XCircle, Clock } from 'lucide-react';
-import api from '@/services/api';
+import api from '@/utils/api';
 
 type Tab = 'forecast' | 'docs' | 'workload' | 'beds';
 
