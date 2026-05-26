@@ -157,28 +157,28 @@ class UnifiedRAGRetriever:
             limit = k * 2
 
             def _sync_query():
-                from utils.pgvector_store import _get_connection
-                conn = _get_connection()
-                cur = conn.cursor()
-                if patient_id:
-                    cur.execute("""
-                        SELECT content, source_id, metadata,
-                               1 - (embedding <=> %s::vector) AS score
-                        FROM sib_embeddings
-                        WHERE source_id = %s
-                        ORDER BY embedding <=> %s::vector
-                        LIMIT %s
-                    """, (vec_list, patient_id, vec_list, limit))
-                else:
-                    cur.execute("""
-                        SELECT content, source_id, metadata,
-                               1 - (embedding <=> %s::vector) AS score
-                        FROM sib_embeddings
-                        ORDER BY embedding <=> %s::vector
-                        LIMIT %s
-                    """, (vec_list, vec_list, limit))
-                rows = cur.fetchall()
-                cur.close()
+                from utils.pgvector_store import _db_conn
+                with _db_conn() as conn:
+                    cur = conn.cursor()
+                    if patient_id:
+                        cur.execute("""
+                            SELECT content, source_id, metadata,
+                                   1 - (embedding <=> %s::vector) AS score
+                            FROM sib_embeddings
+                            WHERE source_id = %s
+                            ORDER BY embedding <=> %s::vector
+                            LIMIT %s
+                        """, (vec_list, patient_id, vec_list, limit))
+                    else:
+                        cur.execute("""
+                            SELECT content, source_id, metadata,
+                                   1 - (embedding <=> %s::vector) AS score
+                            FROM sib_embeddings
+                            ORDER BY embedding <=> %s::vector
+                            LIMIT %s
+                        """, (vec_list, vec_list, limit))
+                    rows = cur.fetchall()
+                    cur.close()
                 return rows
 
             rows = await asyncio.to_thread(_sync_query)

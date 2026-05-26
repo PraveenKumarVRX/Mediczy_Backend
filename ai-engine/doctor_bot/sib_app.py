@@ -329,12 +329,43 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager"""
     # Startup
     await app_state.initialize()
-    # Warmup S-PubMedBert so first /embed or /ingest request isn't slow
-    try:
+
+    # Prewarm all AI models in parallel — avoids cold-start latency on first request
+    async def _prewarm_pubmed():
         await asyncio.to_thread(_get_embed_model)
-        logger.info("✅ S-PubMedBert warmup complete")
-    except Exception as _e:
-        logger.warning(f"S-PubMedBert warmup skipped: {_e}")
+        logger.info("✅ S-PubMedBert preloaded")
+
+    async def _prewarm_clinical():
+        try:
+            from utils.pgvector_store import warmup
+            await asyncio.to_thread(warmup)
+            logger.info("✅ ClinicalBERT + pgvector pool preloaded")
+        except Exception as _e:
+            logger.warning(f"ClinicalBERT warmup skipped: {_e}")
+
+    async def _prewarm_qwen():
+        try:
+            from sib.tinyllama_router import get_router
+            await asyncio.to_thread(get_router)
+            logger.info("✅ Qwen 2.5-3B (TinyLlamaRouter) preloaded")
+        except Exception as _e:
+            logger.warning(f"Qwen preload skipped: {_e}")
+
+    async def _prewarm_groq():
+        try:
+            from sib.brain import _get_groq_client
+            await asyncio.to_thread(_get_groq_client)
+            logger.info("✅ Groq client singleton initialised")
+        except Exception as _e:
+            logger.warning(f"Groq preload skipped: {_e}")
+
+    await asyncio.gather(
+        _prewarm_pubmed(),
+        _prewarm_clinical(),
+        _prewarm_qwen(),
+        _prewarm_groq(),
+        return_exceptions=True,
+    )
     yield
     # Shutdown
     logger.info("👋 Shutting down SIB...")

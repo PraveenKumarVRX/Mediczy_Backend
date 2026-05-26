@@ -13,6 +13,7 @@ Orchestration Model (v2):
 """
 
 import asyncio
+import hashlib
 import os
 import time
 import logging
@@ -23,6 +24,62 @@ from enum import Enum
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sib.brain")
+
+# ─── Module-level singletons (one-time cost) ─────────────────────────────────
+
+_groq_client = None          # Groq SDK client — created once
+_isha_session = None         # httpx.Client with keep-alive for iSHA GPU
+
+# ─── LLM response cache ───────────────────────────────────────────────────────
+_llm_cache: Dict[str, tuple] = {}    # key → (result_dict, timestamp)
+_LLM_CACHE_TTL = 300                  # seconds; clinical answers expire in 5 min
+
+
+def _cache_key(prompt: str, system: Optional[str]) -> str:
+    raw = f"{system or ''}|||{prompt}"
+    return hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()
+
+
+def _cache_get(prompt: str, system: Optional[str]) -> Optional[Dict]:
+    key = _cache_key(prompt, system)
+    entry = _llm_cache.get(key)
+    if entry and (time.time() - entry[1]) < _LLM_CACHE_TTL:
+        return {**entry[0], "cached": True}
+    if entry:
+        del _llm_cache[key]
+    return None
+
+
+def _cache_set(prompt: str, system: Optional[str], result: Dict) -> None:
+    key = _cache_key(prompt, system)
+    _llm_cache[key] = (result, time.time())
+    if len(_llm_cache) > 512:
+        now = time.time()
+        expired = [k for k, (_, ts) in list(_llm_cache.items()) if now - ts > _LLM_CACHE_TTL]
+        for k in expired:
+            _llm_cache.pop(k, None)
+
+
+def _get_groq_client():
+    """Return singleton Groq client (instantiated once)."""
+    global _groq_client
+    if _groq_client is None:
+        from groq import Groq
+        _groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
+    return _groq_client
+
+
+def _get_isha_session() -> "httpx.Client":
+    """Return persistent httpx.Client for iSHA GPU (connection pool + keep-alive)."""
+    global _isha_session
+    if _isha_session is None or _isha_session.is_closed:
+        import httpx
+        _isha_session = httpx.Client(
+            timeout=httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0),
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+            headers={"User-Agent": "Mediczy-SIB/3.0"},
+        )
+    return _isha_session
 
 
 class RequestType(Enum):
@@ -213,72 +270,85 @@ class SyntheticIntelligenceBrain:
 
     def llm_reasoning(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
         """
-        Primary LLM reasoning with fallback strategy.
+        Primary LLM reasoning with 5-tier fallback.
 
         Fallback order:
-        1. iSHA node1 (ai.isha.buzz)  — BiMediX2-8B (clinical) / OpenInsuranceLLM (insurance)
-        2. iSHA node2 (isha-inc.com)  — MedGemma-4B (clinical) / InsuranceLLM (insurance)
+        1. iSHA node1 (ai.isha.buzz)  — BiMediX2-8B / OpenInsuranceLLM
+        2. iSHA node2 (isha-inc.com)  — MedGemma-4B / InsuranceLLM
         3. Groq                        — cloud fallback 1
-        4. OpenAI gpt-4o-mini          — cloud fallback 2
+        4. OpenAI gpt-3.5-turbo        — cloud fallback 2
         5. Gemini 1.5-flash            — cloud fallback 3
+
+        Results are cached for 5 minutes to avoid redundant LLM calls.
         """
         start_time = time.time()
 
-        # iSHA GPU node 1: ai.isha.buzz — BiMediX2-8B
+        # Fast path: return cached result for identical prompts
+        cached = _cache_get(prompt, system_prompt)
+        if cached:
+            logger.debug("LLM cache hit")
+            return cached
+
+        # iSHA GPU node 1
         try:
             result = self._local_gpu_inference(prompt, system_prompt)
             result["provider"] = LLMProvider.LLAMA_LOCAL.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
-            logger.info(f"✅ iSHA node1 (ai.isha.buzz) inference: {result['latency_ms']}ms (model: {result.get('model', 'unknown')})")
+            logger.info(f"✅ iSHA node1 inference: {result['latency_ms']}ms model={result.get('model','?')}")
+            _cache_set(prompt, system_prompt, result)
             return result
         except Exception as e:
-            logger.warning(f"⚠️ iSHA node1 (ai.isha.buzz) failed: {e}")
+            logger.warning(f"⚠️ iSHA node1 failed: {e}")
 
-        # iSHA GPU node 2: isha-inc.com — InsuranceLLM or MedGemma-4B (same private infra)
+        # iSHA GPU node 2
         try:
             node2_model = "insurance-llm" if self._is_insurance_query(prompt) else "medgemma-4b"
             result = self._isha_inc_inference(prompt, system_prompt, model=node2_model)
             result["provider"] = LLMProvider.ISHA_INC.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
-            logger.info(f"✅ iSHA node2 (isha-inc.com/{node2_model}) inference: {result['latency_ms']}ms")
+            logger.info(f"✅ iSHA node2 ({node2_model}): {result['latency_ms']}ms")
+            _cache_set(prompt, system_prompt, result)
             return result
         except Exception as e:
-            logger.warning(f"⚠️ iSHA node2 (isha-inc.com) failed: {e}, falling back to Groq")
+            logger.warning(f"⚠️ iSHA node2 failed: {e}")
 
-        # Cloud fallback 1: Groq
+        # Groq (cloud fallback 1)
         try:
             result = self._groq_inference(prompt, system_prompt)
             result["provider"] = LLMProvider.GROQ.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
-            logger.info(f"✅ Groq inference (fallback): {result['latency_ms']}ms")
+            logger.info(f"✅ Groq fallback: {result['latency_ms']}ms")
+            _cache_set(prompt, system_prompt, result)
             return result
         except Exception as e:
-            logger.warning(f"⚠️ Groq failed: {e}, falling back to OpenAI")
+            logger.warning(f"⚠️ Groq failed: {e}")
 
-        # Cloud fallback 2: OpenAI
+        # OpenAI (cloud fallback 2)
         try:
             result = self._openai_inference(prompt, system_prompt)
             result["provider"] = LLMProvider.OPENAI.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
-            logger.info(f"✅ OpenAI inference (fallback): {result['latency_ms']}ms")
+            logger.info(f"✅ OpenAI fallback: {result['latency_ms']}ms")
+            _cache_set(prompt, system_prompt, result)
             return result
         except Exception as e:
-            logger.warning(f"⚠️ OpenAI failed: {e}, falling back to Gemini")
+            logger.warning(f"⚠️ OpenAI failed: {e}")
 
-        # Cloud fallback 3: Gemini
+        # Gemini (cloud fallback 3)
         try:
             result = self._gemini_inference(prompt, system_prompt)
             result["provider"] = LLMProvider.GEMINI.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
-            logger.info(f"✅ Gemini inference (fallback): {result['latency_ms']}ms")
+            logger.info(f"✅ Gemini fallback: {result['latency_ms']}ms")
+            _cache_set(prompt, system_prompt, result)
             return result
         except Exception as e:
             logger.error(f"❌ All LLM providers failed: {e}")
             return {
-                "answer": "I apologize, but I'm currently unable to process your request. Please try again later.",
+                "answer": "I'm unable to process your request right now. Please try again shortly.",
                 "error": str(e),
                 "provider": "none",
-                "latency_ms": round((time.time() - start_time) * 1000, 2)
+                "latency_ms": round((time.time() - start_time) * 1000, 2),
             }
     
     def _select_gpu_model(self, prompt: str) -> tuple:
@@ -304,33 +374,29 @@ class SyntheticIntelligenceBrain:
         # Default: Use BiMediX2 (8080) for all medical queries - best clinical AI
         return 8080, "BiMediX2-8B", "Clinical"
     
-    def _local_gpu_inference(self, prompt: str, system_prompt: Optional[str] = None, max_tokens: int = 1024, temperature: float = 0.7) -> Dict[str, Any]:
-        """iSHA AI GPU inference via https://ai.isha.buzz (Cloudflare tunnel to GPU servers)"""
-        import requests
-        
-        # Select the best model based on query content
+    def _local_gpu_inference(self, prompt: str, system_prompt: Optional[str] = None,
+                             max_tokens: int = 1024, temperature: float = 0.7) -> Dict[str, Any]:
+        """iSHA GPU node1 via ai.isha.buzz — persistent httpx session (connection reuse)."""
         port, model_name, agent_type = self._select_gpu_model(prompt)
-        
-        # Use ai.isha.buzz which tunnels to GPU servers
         gpu_url = os.environ.get("ISHA_AI_URL", "https://ai.isha.buzz")
-        
-        logger.info(f"🧠 Routing to {model_name} (port {port}) for agent_type: {agent_type}")
-        
+        logger.info(f"🧠 iSHA node1: {model_name} port={port} agent={agent_type}")
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
-        
-        headers = {}
+
+        headers = {"Content-Type": "application/json"}
         try:
             from utils.retrieval_llm import _get_isha_token
             token = _get_isha_token()
             if token:
                 headers["Authorization"] = f"Bearer {token}"
-        except Exception as auth_error:
-            logger.debug(f"iSHA auth token unavailable for local GPU inference: {auth_error}")
+        except Exception:
+            pass
 
-        response = requests.post(
+        session = _get_isha_session()
+        response = session.post(
             f"{gpu_url}/v1/chat/completions",
             headers=headers,
             json={
@@ -338,106 +404,74 @@ class SyntheticIntelligenceBrain:
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "agent_type": agent_type,
-                "model_port": port  # Hint for backend routing
+                "model_port": port,
             },
-            timeout=60
         )
         response.raise_for_status()
         data = response.json()
-        
-        answer = data["choices"][0]["message"]["content"]
-        model = data.get("model", model_name)
-        
-        return {"answer": answer, "model": model}
-    
+        return {"answer": data["choices"][0]["message"]["content"], "model": data.get("model", model_name)}
+
     def _groq_inference(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
-        """Groq API inference"""
-        from groq import Groq
-        
-        client = Groq(api_key=self.groq_api_key)
-        
+        """Groq API — singleton client, no per-request instantiation."""
+        client = _get_groq_client()
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
-        
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=messages,
             max_tokens=1024,
-            temperature=0.7
+            temperature=0.7,
         )
-        
-        answer = response.choices[0].message.content
-        return {"answer": answer, "model": "llama-3.3-70b-versatile"}
-    
+        return {"answer": response.choices[0].message.content, "model": "llama-3.3-70b-versatile"}
+
     def _isha_inc_inference(self, prompt: str, system_prompt: Optional[str] = None,
                             model: str = "insurance-llm", max_tokens: int = 512) -> Dict[str, Any]:
-        """isha-inc.com inference — InsuranceLLM-Llama3-8B or MedGemma-4B.
-        Uses plain requests (not OpenAI SDK) to bypass Cloudflare User-Agent block.
-        """
-        import requests as req_lib
-
+        """iSHA GPU node2 via isha-inc.com — persistent httpx session (connection reuse)."""
         api_key = os.environ.get("ISHA_INC_API_KEY", "")
         base_url = os.environ.get("ISHA_INC_URL", "https://isha-inc.com")
-        # isha-inc.com is iSHA private GPU (node2) — uses static Bearer key, no login flow
 
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        response = req_lib.post(
+        session = _get_isha_session()
+        response = session.post(
             f"{base_url}/v1/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (compatible; Mediczy-SIB/1.0)",
                 "Accept": "application/json",
             },
             json={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": 0.3},
-            timeout=30,
         )
         response.raise_for_status()
         data = response.json()
-        answer = data["choices"][0]["message"]["content"]
-        return {"answer": answer, "model": data.get("model", model)}
+        return {"answer": data["choices"][0]["message"]["content"], "model": data.get("model", model)}
 
     def _openai_inference(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
-        """OpenAI API inference — cloud fallback 2 after Groq"""
+        """OpenAI gpt-3.5-turbo — cloud fallback 2."""
         from openai import OpenAI
-
         client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
-
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
-
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=messages,
-            max_tokens=1024,
-            temperature=0.7,
+            model="gpt-3.5-turbo", messages=messages, max_tokens=1024, temperature=0.7,
         )
-        answer = response.choices[0].message.content
-        return {"answer": answer, "model": "gpt-3.5-turbo"}
+        return {"answer": response.choices[0].message.content, "model": "gpt-3.5-turbo"}
 
     def _gemini_inference(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
-        """Gemini API inference"""
+        """Gemini 1.5-flash — cloud fallback 3."""
         import google.generativeai as genai
-        
         genai.configure(api_key=self.gemini_api_key)
         model = genai.GenerativeModel("gemini-1.5-flash")
-        
-        full_prompt = prompt
-        if system_prompt:
-            full_prompt = f"{system_prompt}\n\n{prompt}"
-        
+        full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
         response = model.generate_content(full_prompt)
-        answer = response.text
-        
-        return {"answer": answer, "model": "gemini-1.5-flash"}
+        return {"answer": response.text, "model": "gemini-1.5-flash"}
     
     # ==================== Request Handling ====================
     
@@ -466,7 +500,8 @@ class SyntheticIntelligenceBrain:
                 from sib.qwen_planner import get_planner, execute_plan
 
                 planner = get_planner()
-                plan = planner.plan(request_type, data)
+                # plan() is CPU-bound (Llama.cpp) — run in thread to free event loop
+                plan = await asyncio.to_thread(planner.plan, request_type, data)
 
                 if plan is not None:
                     logger.info(
@@ -477,12 +512,14 @@ class SyntheticIntelligenceBrain:
 
                     step_results = await execute_plan(plan, self, data)
 
-                    # Synthesize final answer from all botlet outputs
+                    # synthesize() is also CPU-bound (Llama.cpp) — run in thread
                     request_text = (
                         data.get("message") or data.get("query") or
                         data.get("prompt") or request_type
                     )
-                    synthesis = planner.synthesize(str(request_text), step_results)
+                    synthesis = await asyncio.to_thread(
+                        planner.synthesize, str(request_text), step_results
+                    )
 
                     elapsed = round((time.time() - start_time) * 1000, 2)
                     return {

@@ -339,13 +339,13 @@ async def _execute_step(
         # ── LLM backends — direct inference ──────────────────────────────
         elif botlet in ("isha_gpu", "isha", "groq", "gemini", "llm", "llm_reasoning"):
             prompt = params.get("prompt") or params.get("message") or str(params)
-            # Build prompt augmented with any dependent step context
             dep_context = " ".join(
                 str(prior_results[d])[:400] for d in step.depends_on if d in prior_results
             )
             if dep_context:
                 prompt = f"Context:\n{dep_context}\n\nQuery: {prompt}"
-            return brain.llm_reasoning(prompt, params.get("system_prompt"))
+            # Run sync llm_reasoning in thread pool — keeps the event loop free
+            return await asyncio.to_thread(brain.llm_reasoning, prompt, params.get("system_prompt"))
 
         # ── Automation routes (delegated to task_router) ──────────────────
         elif botlet in (
