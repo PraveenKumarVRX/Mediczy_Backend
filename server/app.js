@@ -1506,6 +1506,7 @@ import clinicalScoresRouter from './routes/clinical-scores.route.js';
 import labRuleEngineRouter from './routes/lab-rule-engine.route.js';
 import bedsideReferenceRouter from './routes/bedside-reference.route.js';
 import hl7GatewayRouter from './routes/hl7-gateway.route.js';
+import hmisAnalyticsRouter from './routes/hmis-analytics.route.js';
 
 app.use('/api/v1/adt', adtRouter);
 app.use('/api/v1/beds', bedsManagementRouter);
@@ -1530,6 +1531,7 @@ app.use('/api/v1/scores', clinicalScoresRouter);
 app.use('/api/v1/lab-rules', labRuleEngineRouter);
 app.use('/api/v1/reference', bedsideReferenceRouter);
 app.use('/api/v1/hl7', hl7GatewayRouter);
+app.use('/api/v1/analytics', hmisAnalyticsRouter);
 
 // ============== ENTERPRISE API v2 (New Architecture) ==============
 // API v2 - Enterprise-grade endpoints with proper MVC pattern

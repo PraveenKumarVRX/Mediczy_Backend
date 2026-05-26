@@ -723,7 +723,7 @@ const ITEDPReportsPage  = lazyNamed(_ITEDPModulePages, "ITEDPReportsPage");
 const ITEDPSettingsPage = lazyNamed(_ITEDPModulePages, "ITEDPSettingsPage");
 const ITEDPSupportPage  = lazyNamed(_ITEDPModulePages, "ITEDPSupportPage");
 
-// ── Ward / ADT / ER / Care Navigator (Phase 1–4 HMIS) ──────────────────────
+// ── Ward / ADT / ER / Care Navigator (Phase 1–5 HMIS) ──────────────────────
 const WardDashboard         = lazy(() => import("@/pages/ward/WardDashboard"));
 const AdmitPatientForm      = lazy(() => import("@/pages/ward/AdmitPatientForm"));
 const ERQueuePage           = lazy(() => import("@/pages/er/ERQueue"));
@@ -736,6 +736,13 @@ const FollowUpManagement    = lazy(() => import("@/pages/hmis/FollowUpManagement
 const EChartingPage         = lazy(() => import("@/pages/hmis/EChartingPage"));
 const ClinicalCalculators   = lazy(() => import("@/pages/hmis/ClinicalCalculators"));
 const BedsideReference      = lazy(() => import("@/pages/hmis/BedsideReference"));
+// Section 16 screens — bed map, OT command center, eMAR, discharge board, inpatient workspace, leadership analytics
+const BedMap                = lazy(() => import("@/pages/hmis/BedMap"));
+const OTCommandCenter       = lazy(() => import("@/pages/hmis/OTCommandCenter"));
+const EMARPage              = lazy(() => import("@/pages/hmis/EMARPage"));
+const DischargeBoard        = lazy(() => import("@/pages/hmis/DischargeBoard"));
+const InpatientWorkspace    = lazy(() => import("@/pages/hmis/InpatientWorkspace"));
+const CommandCenter         = lazy(() => import("@/pages/hmis/CommandCenter"));
 
 const OTLogin     = lazy(() => import("@/pages/ot/OTLogin"));
 const OTDashboard = lazy(() => import("@/pages/ot/OTDashboard"));
@@ -1516,6 +1523,13 @@ const AppRoutes = () => {
         <Route path="/hmis/echart"                                      element={<EChartingPage />} />
         <Route path="/hmis/calculators"                                 element={<ClinicalCalculators />} />
         <Route path="/hmis/reference"                                   element={<BedsideReference />} />
+        {/* Section 16 screens */}
+        <Route path="/hmis/beds/map"                                    element={<BedMap />} />
+        <Route path="/hmis/ot/command-center"                           element={<OTCommandCenter />} />
+        <Route path="/hmis/emar"                                        element={<EMARPage />} />
+        <Route path="/hmis/discharge-board"                             element={<DischargeBoard />} />
+        <Route path="/hmis/patient/:patientId/workspace"                element={<InpatientWorkspace />} />
+        <Route path="/hmis/command-center"                              element={<CommandCenter />} />
 
         {/* ── Quality & Accreditation (NABH + JCI) ────────────────────── */}
         <Route path="/quality/login"          element={<QualityLogin />} />

@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
- * Run HMIS Patient Journey Migrations (Phase 1-4)
- * Executes all 7 migration files in order.
+ * Run HMIS Patient Journey Migrations (Phase 1-5)
+ * Executes all 8 migration files in order.
+ * B8 fix: all migration files listed explicitly with correct names.
+ * Usage: node run-hmis-migrations.js [up|down|status]
  */
 
 import { Sequelize } from 'sequelize';
@@ -22,13 +24,14 @@ const sequelize = new Sequelize(
 );
 
 const MIGRATIONS = [
-  { name: 'Create wards table',           file: './migrations/20260525000001-create-wards-table.js' },
-  { name: 'Update beds table',            file: './migrations/20260525000002-update-beds-table.js' },
-  { name: 'Create ip_admissions',         file: './migrations/20260525000003-create-ip-admissions.js' },
-  { name: 'Create adt_events',            file: './migrations/20260525000004-create-adt-events.js' },
-  { name: 'Create OT tables',             file: './migrations/20260525000005-create-ot-tables.js' },
-  { name: 'Create eMAR tables',           file: './migrations/20260525000006-create-emar-tables.js' },
-  { name: 'Create vitals & alerts',       file: './migrations/20260525000007-create-vitals-and-alerts.js' },
+  { name: 'Phase 1: Create wards table',              file: './migrations/20260525000001-create-wards-table.js' },
+  { name: 'Phase 1: Update beds table',               file: './migrations/20260525000002-update-beds-table.js' },
+  { name: 'Phase 1: Create ip_admissions',            file: './migrations/20260525000003-create-ip-admissions.js' },
+  { name: 'Phase 1: Create adt_events',               file: './migrations/20260525000004-create-adt-events.js' },
+  { name: 'Phase 3: Create OT tables',                file: './migrations/20260525000005-create-ot-tables.js' },
+  { name: 'Phase 2: Create eMAR tables',              file: './migrations/20260525000006-create-emar-tables.js' },
+  { name: 'Phase 2: Create vitals & alerts',          file: './migrations/20260525000007-create-vitals-and-alerts.js' },
+  { name: 'Phase 3-5: Clinical, discharge, follow-up',file: './migrations/20260526000001-create-hmis-phase3-5-tables.js' },
 ];
 
 async function runAll() {
@@ -37,6 +40,17 @@ async function runAll() {
 
   const qi = sequelize.getQueryInterface();
   const command = process.argv[2] || 'up';
+
+  if (command === 'status') {
+    console.log('Migration manifest:');
+    for (const m of MIGRATIONS) {
+      const { default: fs } = await import('fs');
+      const exists = fs.existsSync(new URL(m.file, import.meta.url));
+      console.log(`  [${exists ? 'FILE OK' : 'MISSING'}] ${m.name} — ${m.file}`);
+    }
+    console.log('\nRun "node run-hmis-migrations.js up" to apply.');
+    return;
+  }
 
   if (command === 'down') {
     // Rollback in reverse order
