@@ -35,24 +35,25 @@ interface LiveKitRoomProps {
   onRestore?: () => void;
 }
 
+const TURN_HOST = '13.127.125.93';
+const TURN_USER = 'livekit';
+const TURN_CRED = '2d3a799e5dbfb0934f8bdb90f3161cd3';
+
 const MEDIQZY_ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
-  {
-    urls: 'turn:13.127.125.93:3478?transport=udp',
-    username: 'livekit',
-    credential: '2d3a799e5dbfb0934f8bdb90f3161cd3',
-  },
-  {
-    urls: 'turn:13.127.125.93:3478?transport=tcp',
-    username: 'livekit',
-    credential: '2d3a799e5dbfb0934f8bdb90f3161cd3',
-  },
-  {
-    urls: 'turns:13.127.125.93:5349?transport=tcp',
-    username: 'livekit',
-    credential: '2d3a799e5dbfb0934f8bdb90f3161cd3',
-  },
+  // Own STUN: coturn also serves STUN — useful when Google STUN is blocked on client network
+  { urls: `stun:${TURN_HOST}:3478` },
+  { urls: `turn:${TURN_HOST}:3478?transport=udp`, username: TURN_USER, credential: TURN_CRED },
+  { urls: `turn:${TURN_HOST}:3478?transport=tcp`, username: TURN_USER, credential: TURN_CRED },
+  { urls: `turns:${TURN_HOST}:5349?transport=tcp`, username: TURN_USER, credential: TURN_CRED },
+];
+
+// Relay-only fallback for restrictive corporate networks that block STUN/direct UDP
+const MEDIQZY_ICE_RELAY_ONLY: RTCIceServer[] = [
+  { urls: `turn:${TURN_HOST}:3478?transport=udp`, username: TURN_USER, credential: TURN_CRED },
+  { urls: `turn:${TURN_HOST}:3478?transport=tcp`, username: TURN_USER, credential: TURN_CRED },
+  { urls: `turns:${TURN_HOST}:5349?transport=tcp`, username: TURN_USER, credential: TURN_CRED },
 ];
 
 /**
@@ -165,8 +166,11 @@ export default function LiveKitRoom({
   onRestore,
 }: LiveKitRoomProps) {
   const [error, setError] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
-  const MAX_RETRIES = 2;
+  // Incremented on disconnect to force fresh GridLayout mount, preventing stale
+  // placeholder track IDs from crashing updatePages() during reconnect.
+  const [layoutKey, setLayoutKey] = useState(0);
+  // Switch to relay-only ICE on pc-connection failure (restrictive corporate networks)
+  const [useRelayOnly, setUseRelayOnly] = useState(false);
 
   // Guard: never attempt LiveKit connection without credentials
   if (!serverUrl || !token) {
@@ -192,28 +196,41 @@ export default function LiveKitRoom({
     onDisconnect?.();
   }, [onDisconnect]);
 
+  const handleRoomDisconnected = useCallback(() => {
+    // Bump layout key to force fresh GridLayout mount on next reconnect.
+    // This prevents stale placeholder track IDs from crashing updatePages().
+    setLayoutKey(k => k + 1);
+  }, []);
+
   const handleError = useCallback((err: Error) => {
     console.error('LiveKit error:', err);
     const isSignalError = err.message?.includes('Abort handler') ||
       err.message?.includes('signal connection') ||
       err.message?.includes('timed out');
-    
-    // Auto-retry signal errors up to MAX_RETRIES times
-    if (isSignalError && retryCount < MAX_RETRIES) {
-      console.log(`🔄 LiveKit auto-retry ${retryCount + 1}/${MAX_RETRIES}...`);
-      setRetryCount(prev => prev + 1);
-      setError(null); // Clear error to re-render LKRoom
+
+    // Let LiveKit SDK handle transient signal issues internally.
+    if (isSignalError) {
+      console.warn('LiveKit transient signal issue; SDK reconnect in progress.');
       return;
     }
-    
+
+    // ICE/pc failure on 'all' policy → retry once with relay-only (restrictive network)
+    const isPcFailure = err.message?.includes('could not establish pc') ||
+      err.message?.includes('ConnectionError');
+    if (isPcFailure && !useRelayOnly) {
+      console.warn('ICE failed — retrying with relay-only policy (TURN forced)');
+      setUseRelayOnly(true);
+      setLayoutKey(k => k + 1);
+      return;
+    }
+
     setError(err.message);
     onError?.(err);
-  }, [onError, retryCount]);
+  }, [onError, useRelayOnly]);
 
   const handleConnected = useCallback(() => {
     console.log('✅ Connected to LiveKit room:', roomName);
     setError(null);
-    setRetryCount(0);
   }, [roomName]);
 
   if (error) {
@@ -238,24 +255,27 @@ export default function LiveKitRoom({
   const roomStyle = isMinimized
     ? { height: '260px', width: '100%' }
     : { height: '100vh', width: '100vw' };
-  const rtcIceServers = iceServers?.length ? iceServers : MEDIQZY_ICE_SERVERS;
+  const rtcIceServers = iceServers?.length
+    ? iceServers
+    : useRelayOnly ? MEDIQZY_ICE_RELAY_ONLY : MEDIQZY_ICE_SERVERS;
 
   return (
     <div className={shellClassName} data-lk-theme="default">
       <LKRoom
+        key={layoutKey}
         serverUrl={serverUrl}
         token={token}
         connect={true}
         video={false}
         audio={true}
         onConnected={handleConnected}
-        onDisconnected={handleDisconnect}
+        onDisconnected={handleRoomDisconnected}
         onError={handleError}
         connectOptions={{
           peerConnectionTimeout: 30000,
           rtcConfig: {
             iceServers: rtcIceServers,
-            iceTransportPolicy: 'all',
+            iceTransportPolicy: useRelayOnly ? 'relay' : 'all',
           },
         }}
         options={{
@@ -318,9 +338,7 @@ export default function LiveKitRoom({
             </div>
           </div>
 
-          {/* Enable camera after audio negotiates to prevent SDP race */}
           <CameraEnabler enabled={!audioOnly} />
-          {/* Main video conference area — no screen share */}
           <MedicalVideoLayout controls={controls} />
           
           {/* Audio renderer */}
@@ -480,7 +498,10 @@ export function SimpleLiveKitRoom({
         video={false}
         audio={true}
         style={{ height: '100%', width: '100%' }}
-        onDisconnected={onDisconnect}
+        onDisconnected={() => {
+          // Keep embedded room mounted during transient reconnect cycles.
+          console.warn('SimpleLiveKitRoom disconnected event received; waiting for reconnect flow.');
+        }}
         connectOptions={{
           peerConnectionTimeout: 30000,
           rtcConfig: {
