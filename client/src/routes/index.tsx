@@ -743,6 +743,9 @@ const EMARPage              = lazy(() => import("@/pages/hmis/EMARPage"));
 const DischargeBoard        = lazy(() => import("@/pages/hmis/DischargeBoard"));
 const InpatientWorkspace    = lazy(() => import("@/pages/hmis/InpatientWorkspace"));
 const CommandCenter         = lazy(() => import("@/pages/hmis/CommandCenter"));
+const PredictiveAnalytics   = lazy(() => import("@/pages/hmis/PredictiveAnalytics"));
+const ReportCenter          = lazy(() => import("@/pages/hmis/ReportCenter"));
+const HL7FHIRMonitor        = lazy(() => import("@/pages/hmis/HL7FHIRMonitor"));
 
 const OTLogin     = lazy(() => import("@/pages/ot/OTLogin"));
 const OTDashboard = lazy(() => import("@/pages/ot/OTDashboard"));
@@ -1530,6 +1533,9 @@ const AppRoutes = () => {
         <Route path="/hmis/discharge-board"                             element={<DischargeBoard />} />
         <Route path="/hmis/patient/:patientId/workspace"                element={<InpatientWorkspace />} />
         <Route path="/hmis/command-center"                              element={<CommandCenter />} />
+        <Route path="/hmis/predictive-analytics"                        element={<PredictiveAnalytics />} />
+        <Route path="/hmis/report-center"                               element={<ReportCenter />} />
+        <Route path="/hmis/hl7-fhir"                                    element={<HL7FHIRMonitor />} />
 
         {/* ── Quality & Accreditation (NABH + JCI) ────────────────────── */}
         <Route path="/quality/login"          element={<QualityLogin />} />

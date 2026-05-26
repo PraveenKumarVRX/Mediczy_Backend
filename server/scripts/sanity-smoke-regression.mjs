@@ -651,6 +651,39 @@ async function runHmisApiTests() {
     // Gap-closure: canonical doc paths
     { path: '/api/v1/alerts/clinical',                  label: 'Canonical §8 P2 clinical alerts path (new)' },
     { path: '/api/v1/discharge/readiness/1',            label: 'Canonical §8 P5 discharge readiness path (new)' },
+    // World-class: Predictive analytics
+    { path: '/api/v1/analytics/readmission-risk',       label: 'Predictive: readmission risk scores' },
+    { path: '/api/v1/analytics/predicted-los',          label: 'Predictive: predicted length of stay' },
+    { path: '/api/v1/analytics/discharge-delay-forecast', label: 'Predictive: discharge delay forecast' },
+    { path: '/api/v1/analytics/anomalies',              label: 'Predictive: KPI anomaly detection' },
+    { path: '/api/v1/analytics/trend',                  label: 'Predictive: daily trend (admissions)' },
+    { path: '/api/v1/analytics/ward-drilldown',         label: 'Predictive: ward drill-down' },
+    { path: '/api/v1/analytics/doctor-performance',     label: 'Predictive: doctor performance' },
+    { path: '/api/v1/analytics/benchmarks',             label: 'Predictive: LOS benchmarks' },
+    // World-class: Automation engine
+    { path: '/api/v1/automation/queue',                 label: 'Automation: pending job queue' },
+    { path: '/api/v1/automation/history',               label: 'Automation: job history' },
+    { path: '/api/v1/automation/stats',                 label: 'Automation: aggregate stats' },
+    // World-class: Clinical reports
+    { path: '/api/v1/reports/clinical/catalog',         label: 'Clinical reports: catalog' },
+    { path: '/api/v1/reports/clinical/census',          label: 'Clinical reports: daily census' },
+    { path: '/api/v1/reports/clinical/ot-utilization',  label: 'Clinical reports: OT utilization' },
+    { path: '/api/v1/reports/clinical/emar-compliance', label: 'Clinical reports: eMAR compliance' },
+    { path: '/api/v1/reports/clinical/readmission-risk',label: 'Clinical reports: readmission risk' },
+    { path: '/api/v1/reports/clinical/executive-digest',label: 'Clinical reports: executive digest' },
+    { path: '/api/v1/reports/clinical/preauth-status',  label: 'Clinical reports: pre-auth status' },
+    // World-class: HL7 enhancements
+    { path: '/api/v1/hl7/message-types',               label: 'HL7: supported message types' },
+    // World-class: FHIR R4
+    { path: '/api/fhir/r4/metadata',                   label: 'FHIR R4: CapabilityStatement' },
+    { path: '/api/fhir/r4/Patient',                    label: 'FHIR R4: Patient search' },
+    { path: '/api/fhir/r4/Observation',                label: 'FHIR R4: Observation search' },
+    { path: '/api/fhir/r4/MedicationRequest',          label: 'FHIR R4: MedicationRequest search' },
+    { path: '/api/fhir/r4/Condition',                  label: 'FHIR R4: Condition search' },
+    { path: '/api/fhir/r4/Procedure',                  label: 'FHIR R4: Procedure search' },
+    { path: '/api/fhir/r4/ServiceRequest',             label: 'FHIR R4: ServiceRequest search' },
+    { path: '/api/fhir/r4/Practitioner',               label: 'FHIR R4: Practitioner search' },
+    { path: '/api/fhir/r4/cds-services',               label: 'FHIR: CDS Hooks discovery' },
   ];
 
   for (const route of hmisGetRoutes) {

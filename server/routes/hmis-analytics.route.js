@@ -1,15 +1,13 @@
 import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import {
-  getCommandCenter,
-  getOperationalKPIs,
-  getClinicalKPIs,
-  getQualityKPIs,
-  getFinancialKPIs,
-  getPatientExperienceKPIs,
-  getWardCensus,
-  getLOSTrend,
+  getCommandCenter, getOperationalKPIs, getClinicalKPIs, getQualityKPIs,
+  getFinancialKPIs, getPatientExperienceKPIs, getWardCensus, getLOSTrend,
 } from '../services/analytics.service.js';
+import {
+  getReadmissionRiskScores, getPredictedLOS, getDischargeDelayForecast,
+  getKPIAnomalies, getDailyTrend, getWardDrillDown, getDoctorPerformance, getBenchmarks,
+} from '../services/hmis-predictive.service.js';
 
 const router = express.Router();
 
@@ -95,6 +93,102 @@ router.get('/los', authUser, async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const data = await getLOSTrend(organizationId, { days: req.query.days ? parseInt(req.query.days) : 30 });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── Predictive Analytics ──────────────────────────────────────────────────────
+
+// GET /api/v1/analytics/readmission-risk
+router.get('/readmission-risk', authUser, async (req, res) => {
+  try {
+    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const data = await getReadmissionRiskScores(organizationId, { limit: parseInt(req.query.limit) || 50 });
+    res.json({ success: true, count: data.length, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/v1/analytics/predicted-los
+router.get('/predicted-los', authUser, async (req, res) => {
+  try {
+    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const data = await getPredictedLOS(organizationId);
+    res.json({ success: true, count: data.length, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/v1/analytics/discharge-delay-forecast
+router.get('/discharge-delay-forecast', authUser, async (req, res) => {
+  try {
+    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const data = await getDischargeDelayForecast(organizationId);
+    res.json({ success: true, count: data.length, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/v1/analytics/anomalies
+router.get('/anomalies', authUser, async (req, res) => {
+  try {
+    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const data = await getKPIAnomalies(organizationId);
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/v1/analytics/trend?metric=admissions&days=14
+router.get('/trend', authUser, async (req, res) => {
+  try {
+    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const data = await getDailyTrend(organizationId, {
+      days:   parseInt(req.query.days)   || 14,
+      metric: req.query.metric           || 'admissions',
+    });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/v1/analytics/ward-drilldown?wardId=1&days=30
+router.get('/ward-drilldown', authUser, async (req, res) => {
+  try {
+    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const data = await getWardDrillDown(organizationId, {
+      wardId: req.query.wardId ? parseInt(req.query.wardId) : undefined,
+      days:   parseInt(req.query.days) || 30,
+    });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/v1/analytics/doctor-performance?days=30
+router.get('/doctor-performance', authUser, async (req, res) => {
+  try {
+    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const data = await getDoctorPerformance(organizationId, { days: parseInt(req.query.days) || 30 });
+    res.json({ success: true, count: data.length, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/v1/analytics/benchmarks
+router.get('/benchmarks', authUser, async (req, res) => {
+  try {
+    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const data = await getBenchmarks(organizationId);
     res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
