@@ -5,7 +5,7 @@
  * and claim denial risk prediction — all SQL-based, no external runtime.
  */
 
-import { postgresSequelize as sequelize } from '../db/postgres.js';
+import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 
 // ─── Billing Gap Analysis ─────────────────────────────────────────────────────

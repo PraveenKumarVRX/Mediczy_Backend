@@ -22,6 +22,7 @@ interface LiveKitRoomProps {
   token: string;
   roomName: string;
   participantName: string;
+  iceServers?: RTCIceServer[];
   onDisconnect?: () => void;
   onError?: (error: Error) => void;
   /** Override which controls are shown. Defaults to { screenShare: false } for medical calls */
@@ -33,6 +34,26 @@ interface LiveKitRoomProps {
   onMinimize?: () => void;
   onRestore?: () => void;
 }
+
+const MEDIQZY_ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  {
+    urls: 'turn:13.127.125.93:3478?transport=udp',
+    username: 'livekit',
+    credential: '2d3a799e5dbfb0934f8bdb90f3161cd3',
+  },
+  {
+    urls: 'turn:13.127.125.93:3478?transport=tcp',
+    username: 'livekit',
+    credential: '2d3a799e5dbfb0934f8bdb90f3161cd3',
+  },
+  {
+    urls: 'turns:13.127.125.93:5349?transport=tcp',
+    username: 'livekit',
+    credential: '2d3a799e5dbfb0934f8bdb90f3161cd3',
+  },
+];
 
 /**
  * CameraEnabler — renders inside an LKRoom context and enables the local camera
@@ -65,7 +86,8 @@ function CameraEnabler({ enabled }: { enabled: boolean }) {
 function MedicalVideoLayout({ controls }: { controls?: ControlBarControls }) {
   const tracks = useTracks(
     [
-      { source: Track.Source.Camera, withPlaceholder: true },
+      // Avoid placeholder track churn during reconnect; it can desync GridLayout paging.
+      { source: Track.Source.Camera, withPlaceholder: false },
       { source: Track.Source.ScreenShare, withPlaceholder: false },
     ],
     { onlySubscribed: false }
@@ -135,6 +157,7 @@ export default function LiveKitRoom({
   participantName,
   onDisconnect,
   onError,
+  iceServers,
   controls,
   audioOnly = false,
   isMinimized = false,
@@ -215,6 +238,7 @@ export default function LiveKitRoom({
   const roomStyle = isMinimized
     ? { height: '260px', width: '100%' }
     : { height: '100vh', width: '100vw' };
+  const rtcIceServers = iceServers?.length ? iceServers : MEDIQZY_ICE_SERVERS;
 
   return (
     <div className={shellClassName} data-lk-theme="default">
@@ -227,6 +251,13 @@ export default function LiveKitRoom({
         onConnected={handleConnected}
         onDisconnected={handleDisconnect}
         onError={handleError}
+        connectOptions={{
+          peerConnectionTimeout: 30000,
+          rtcConfig: {
+            iceServers: rtcIceServers,
+            iceTransportPolicy: 'all',
+          },
+        }}
         options={{
           adaptiveStream: true,
           dynacast: true,
@@ -401,6 +432,7 @@ function RemoteVideoCapture({
 export function SimpleLiveKitRoom({
   serverUrl,
   token,
+  iceServers,
   onDisconnect,
   onRemoteVideo,
   onRemoteAudio,
@@ -408,6 +440,7 @@ export function SimpleLiveKitRoom({
 }: {
   serverUrl: string;
   token: string;
+  iceServers?: RTCIceServer[];
   onDisconnect?: () => void;
   /** Callback fired when a remote participant's camera video element is available (or null when lost) */
   onRemoteVideo?: (video: HTMLVideoElement | null) => void;
@@ -436,6 +469,8 @@ export function SimpleLiveKitRoom({
     );
   }
 
+  const rtcIceServers = iceServers?.length ? iceServers : MEDIQZY_ICE_SERVERS;
+
   return (
     <div className="h-full w-full" data-lk-theme="default">
       <LKRoom
@@ -446,6 +481,13 @@ export function SimpleLiveKitRoom({
         audio={true}
         style={{ height: '100%', width: '100%' }}
         onDisconnected={onDisconnect}
+        connectOptions={{
+          peerConnectionTimeout: 30000,
+          rtcConfig: {
+            iceServers: rtcIceServers,
+            iceTransportPolicy: 'all',
+          },
+        }}
       >
         <LayoutContextProvider>
           {/* Enable camera after audio negotiates to prevent SDP race */}

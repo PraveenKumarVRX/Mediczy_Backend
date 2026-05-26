@@ -70,7 +70,7 @@ if [[ "$HTTP_CODE2" == "200" ]]; then
     send_alert "⚠️ Mediqzy LiveKit Restarted - $HOSTNAME" \
 "LiveKit was down but has been automatically recovered.
 
-Server: $HOSTNAME (13.234.17.52)
+Server: $HOSTNAME (13.127.125.93)
 Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
 Detection: HTTP $HTTP_CODE, port_7881=$PORT_OK
 Recovery: Restarted, now responding HTTP 200
@@ -81,7 +81,7 @@ else
     send_alert "🔴 CRITICAL: Mediqzy LiveKit DOWN - $HOSTNAME" \
 "LiveKit is DOWN and could not be auto-recovered.
 
-Server: $HOSTNAME (13.234.17.52)
+Server: $HOSTNAME (13.127.125.93)
 Time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
 Detection: HTTP $HTTP_CODE, port_7881=$PORT_OK
 Recovery: Restart attempted, still HTTP $HTTP_CODE2

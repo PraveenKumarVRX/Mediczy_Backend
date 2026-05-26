@@ -475,6 +475,7 @@ const MainLayout = ({ children }: MainLayoutProps) => {
             onRestore={videoCall.restore}
             onDisconnect={videoCall.handleDisconnect}
             onError={videoCall.handleError}
+            iceServers={videoCall.liveKitConnection.iceServers}
           />
         </Suspense>
       )}

@@ -4,6 +4,7 @@ export interface LiveKitConnection {
   serverUrl: string;
   token: string;
   roomName: string;
+  iceServers?: RTCIceServer[];
 }
 
 type DisconnectHandler = () => void;

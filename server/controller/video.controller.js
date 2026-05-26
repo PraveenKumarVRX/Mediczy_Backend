@@ -10,6 +10,24 @@ import { redisClient } from '../config/redis.js';
 const INVITE_TTL_SECONDS = 4 * 60 * 60; // 4 hours
 const INVITE_SECRET = process.env.VIDEO_INVITE_SECRET || JWT_CONFIG.SECRET + ':video-invite';
 const FRONTEND_BASE = (process.env.FRONTEND_URL || 'https://app.mediqzy.com').replace(/\/+$/, '');
+const DEFAULT_TURN_HOST = '13.127.125.93';
+const DEFAULT_TURN_USERNAME = 'livekit';
+const DEFAULT_TURN_CREDENTIAL = '2d3a799e5dbfb0934f8bdb90f3161cd3';
+
+function getIceServers() {
+  const turnHost = process.env.TURN_SERVER_HOST || DEFAULT_TURN_HOST;
+  const turnUsername = process.env.TURN_USERNAME || DEFAULT_TURN_USERNAME;
+  const turnCredential = process.env.TURN_CREDENTIAL || DEFAULT_TURN_CREDENTIAL;
+
+  return [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: `turn:${turnHost}:3478?transport=udp`, username: turnUsername, credential: turnCredential },
+    { urls: `turn:${turnHost}:3478?transport=tcp`, username: turnUsername, credential: turnCredential },
+    { urls: `turns:${turnHost}:5349?transport=tcp`, username: turnUsername, credential: turnCredential }
+  ];
+}
+
 
 // Redis key prefix for invite codes (cluster-safe, persists across restarts)
 const INVITE_REDIS_PREFIX = 'video:invite:';
@@ -20,15 +38,10 @@ class VideoController {
   // Test endpoint for video calling system
   static testVideoSystem = (req, res) => {
     try {
-      const turnHost = process.env.TURN_SERVER_HOST || '13.234.17.52';
+      const turnHost = process.env.TURN_SERVER_HOST || DEFAULT_TURN_HOST;
       const serverConfig = {
         turnServer: `turn:${turnHost}:3478`,
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: `turn:${turnHost}:3478?transport=udp`, username: 'livekit', credential: 'livekit' },
-          { urls: `turn:${turnHost}:3478?transport=tcp`, username: 'livekit', credential: 'livekit' }
-        ]
+        iceServers: getIceServers()
       };
 
       res.json({
@@ -124,12 +137,7 @@ class VideoController {
         roomId: resolvedRoomId,
         roomUrl,
         expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(), // 2 hours
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: `turn:${process.env.TURN_SERVER_HOST || '13.234.17.52'}:3478?transport=udp`, username: 'livekit', credential: 'livekit' },
-          { urls: `turn:${process.env.TURN_SERVER_HOST || '13.234.17.52'}:3478?transport=tcp`, username: 'livekit', credential: 'livekit' }
-        ]
+        iceServers: getIceServers()
       });
 
     } catch (error) {
@@ -258,12 +266,14 @@ class VideoController {
         token: livekitData.token,
         serverUrl: livekitData.serverUrl,
         roomName: meetingId,
+        iceServers: getIceServers(),
         success: true,
         video: {
           meetingId,
           meetingLink: livekitData.meetUrl,
           joinUrl: livekitData.joinUrl,
-          livekit: livekitData
+          livekit: livekitData,
+          iceServers: getIceServers()
         },
         expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
       });
@@ -307,7 +317,8 @@ class VideoController {
           meetingId,
           meetingLink: livekitData.meetUrl,
           joinUrl: livekitData.joinUrl,
-          livekit: livekitData
+          livekit: livekitData,
+          iceServers: getIceServers()
         },
         expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
       });
@@ -461,12 +472,7 @@ class VideoController {
           serverUrl: process.env.LIVEKIT_URL || 'ws://localhost:7880',
           roomName: roomId
         },
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: `turns:${(process.env.LIVEKIT_URL || 'wss://video.mediqzy.com').replace(/^wss?:\/\//, '')}:5349?transport=tcp`, username: 'livekit', credential: 'livekit' },
-          { urls: `turn:${(process.env.LIVEKIT_URL || 'wss://video.mediqzy.com').replace(/^wss?:\/\//, '')}:3478?transport=udp`, username: 'livekit', credential: 'livekit' }
-        ]
+        iceServers: getIceServers()
       };
 
       res.json({

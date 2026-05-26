@@ -13,7 +13,7 @@ SMTP_FROM="Mediqzy Monitoring <care@mysmarthealth.in>"
 LOG_DIR="/home/ubuntu/Mediczy/logs"
 LOG_FILE="$LOG_DIR/video-smoke-$(date +%Y%m%d-%H%M%S).log"
 HOSTNAME=$(hostname)
-SERVER_IP="13.234.17.52"
+SERVER_IP="13.127.125.93"
 
 mkdir -p "$LOG_DIR"
 
@@ -94,16 +94,19 @@ fi
 # --- 4. Token Generation ---
 log "--- Token Generation ---"
 if [[ -n "$USER_TOKEN" ]]; then
-    # Find most recent confirmed video appointment
+    # Find most recent joinable video appointment
     APT_ID=$(curl -s --max-time 10 "$API/api/appointments/my" \
       -H "Authorization: Bearer $USER_TOKEN" 2>/dev/null | python3 -c "
 import sys,json
 data = json.load(sys.stdin)
 appts = data if isinstance(data, list) else data.get('data', data.get('appointments', data.get('rows', [])))
 if isinstance(appts, list):
-    for a in sorted(appts, key=lambda x: x.get('id',0), reverse=True):
-        if a.get('consultationType') == 'video' or a.get('type') == 'video':
-            print(a.get('id') or a.get('appointmentId',''))
+    joinable = {"scheduled", "confirmed", "accepted", "in-progress", "rescheduled"}
+    for a in sorted(appts, key=lambda x: x.get("id",0), reverse=True):
+        is_video = a.get("consultationType") == "video" or a.get("type") == "video"
+        status = str(a.get("status", "")).lower()
+        if is_video and status in joinable:
+            print(a.get("id") or a.get("appointmentId",""))
             break
 " 2>/dev/null)
 
@@ -133,7 +136,7 @@ fi
 
 # --- 5. TURN TLS Handshake ---
 log "--- TURN Connectivity ---"
-TLS_OK=$(echo | timeout 5 openssl s_client -connect 172.31.47.217:5349 2>/dev/null | grep -c "CONNECTED")
+TLS_OK=$(echo | timeout 5 openssl s_client -connect $SERVER_IP:5349 -servername video.mediqzy.com 2>/dev/null | grep -c "CONNECTED")
 [[ "$TLS_OK" -ge 1 ]] && pass "TURN TLS handshake: OK" || fail "TURN TLS handshake failed on port 5349"
 
 # --- Summary ---

@@ -80,6 +80,7 @@ interface LiveKitConnection {
   serverUrl: string;
   token: string;
   roomName: string;
+  iceServers?: RTCIceServer[];
 }
 
 const DoctorVideoConsultation = () => {
@@ -329,10 +330,12 @@ const DoctorVideoConsultation = () => {
           
           // Use native LiveKit SDK connection
           if (livekitData?.serverUrl && livekitData?.token) {
+            setCurrentMeetingUrl("");
             setLiveKitConnection({
               serverUrl: livekitData.serverUrl,
               token: livekitData.token,
-              roomName: livekitData.roomName || videoData.meetingId
+              roomName: livekitData.roomName || videoData.meetingId,
+              iceServers: livekitData.iceServers || videoData.iceServers
             });
             setIsInCall(true);
             setConnectionStatus('connecting');
@@ -373,34 +376,65 @@ const DoctorVideoConsultation = () => {
   }, [toast]);
 
   // Actually start the call after device check
-  const startVideoCall = useCallback(() => {
+  const startVideoCall = useCallback(async () => {
     stopPreviewStream();
     setShowPreCallCheck(false);
-    
-    const meetingUrl = generateMeetingUrl(roomId);
-    const isLiveKitMeeting = meetingUrl.includes('/rooms/') || meetingUrl.includes('/room/');
-    if (isLiveKitMeeting && !preferEmbeddedJoin) {
-      toast({
-        title: "Embedded Mode Enabled",
-        description: "Video will open inside the app. Use the external link button to open a new window.",
-      });
+
+    let normalizedRoom = roomId.trim();
+    if (normalizedRoom.startsWith("http")) {
+      try {
+        const parsed = new URL(normalizedRoom);
+        const parts = parsed.pathname.split("/").filter(Boolean);
+        const roomIndex = parts.findIndex((segment) => ["rooms", "room", "join"].includes(segment));
+        if (roomIndex >= 0 && parts[roomIndex + 1]) {
+          normalizedRoom = parts[roomIndex + 1];
+        }
+      } catch {
+        // Keep the entered room value.
+      }
+    }
+    if (normalizedRoom.includes("/rooms/")) {
+      normalizedRoom = normalizedRoom.split("/rooms/")[1]?.split("?")[0] || normalizedRoom;
+    } else if (normalizedRoom.includes("/room/")) {
+      normalizedRoom = normalizedRoom.split("/room/")[1]?.split("?")[0] || normalizedRoom;
+    } else if (normalizedRoom.includes("/join/")) {
+      normalizedRoom = normalizedRoom.split("/join/")[1]?.split("?")[0] || normalizedRoom;
     }
 
-    setCurrentMeetingUrl(meetingUrl);
-    setIsInCall(true);
-    setConnectionStatus('connecting');
-    const providerLabel = 'LiveKit';
-    
-    toast({
-      title: "Starting Video Consultation",
-      description: `Connecting to ${providerLabel}...`,
-    });
-    
-    setTimeout(() => {
-      setConnectionStatus('connected');
-    }, 3000);
-  }, [roomId, generateMeetingUrl, preferEmbeddedJoin, stopPreviewStream, toast]);
+    if (!normalizedRoom) {
+      toast({ variant: "destructive", title: "Invalid Room", description: "Please enter a valid meeting code." });
+      return;
+    }
 
+    try {
+      toast({ title: "Starting Video Consultation", description: "Getting secure LiveKit credentials..." });
+      const tokenResponse = await api.post("/video/livekit/token", {
+        roomName: normalizedRoom,
+        participantName: currentDoctor?.firstName || "Doctor",
+      });
+      const payload = tokenResponse.data || {};
+      const data = payload.video?.livekit || payload.livekit || payload;
+      if (!payload?.success || !data?.token || !data?.serverUrl) {
+        throw new Error("Video credentials missing from server response");
+      }
+      const conn = { serverUrl: data.serverUrl, token: data.token, roomName: data.roomName || normalizedRoom, iceServers: data.iceServers || payload.video?.iceServers || payload.iceServers };
+      setRoomId(normalizedRoom);
+      setCurrentMeetingUrl("");
+      setLiveKitConnection(conn);
+      setIsInCall(true);
+      setConnectionStatus("connecting");
+    } catch (error: any) {
+      console.error("Failed to start doctor LiveKit call:", error);
+      setIsInCall(false);
+      setConnectionStatus("disconnected");
+      setCurrentMeetingUrl("");
+      toast({
+        variant: "destructive",
+        title: "Cannot Start Video Call",
+        description: error.response?.data?.message || error.message || "Unable to get secure video credentials.",
+      });
+    }
+  }, [roomId, stopPreviewStream, toast, currentDoctor]);
   // End video call
   const endVideoCall = useCallback(() => {
     setIsInCall(false);
@@ -597,6 +631,7 @@ const DoctorVideoConsultation = () => {
             participantName={currentDoctor?.firstName || 'Doctor'}
             onDisconnect={handleLiveKitDisconnect}
             onError={handleLiveKitError}
+            iceServers={liveKitConnection.iceServers}
             onMinimize={() => setIsCallMinimized(true)}
           />
         </Suspense>
@@ -629,8 +664,10 @@ const DoctorVideoConsultation = () => {
     );
   }
 
-  // Fallback UI when LiveKit SDK connection failed
-  if (isInCall && currentMeetingUrl) {
+  // Legacy URL fallback is intentionally disabled. All in-app calls must use
+  // tokenized LiveKit SDK credentials; otherwise users see a false connection
+  // failure even when TURN/LiveKit are healthy.
+  if (false && isInCall && currentMeetingUrl) {
     return (
       <div 
         ref={containerRef}
@@ -1136,6 +1173,7 @@ const DoctorVideoConsultation = () => {
             participantName={currentDoctor?.name || currentDoctor?.firstName || 'Doctor'}
             onDisconnect={handleLiveKitDisconnect}
             onError={handleLiveKitError}
+            iceServers={liveKitConnection.iceServers}
             isMinimized
             onRestore={() => setIsCallMinimized(false)}
           />

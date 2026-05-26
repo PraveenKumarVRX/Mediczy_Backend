@@ -68,6 +68,7 @@ interface LiveKitConnection {
   serverUrl: string;
   token: string;
   roomName: string;
+  iceServers?: RTCIceServer[];
 }
 
 const VideoConsultation = () => {
@@ -345,7 +346,8 @@ const VideoConsultation = () => {
         const tokenResponse = await api.post('/mobile/video/token', { roomName });
         const data = tokenResponse.data?.data || tokenResponse.data;
         if (tokenResponse.data?.success && data?.token && data?.serverUrl) {
-          const conn = { serverUrl: data.serverUrl, token: data.token, roomName: data.roomName || roomName };
+          const conn = { serverUrl: data.serverUrl, token: data.token, roomName: data.roomName || roomName, iceServers: data.iceServers };
+          setCurrentMeetingUrl("");
           setLiveKitConnection(conn);
           setIsInCall(true);
           setConnectionStatus('connecting');
@@ -364,7 +366,8 @@ const VideoConsultation = () => {
         });
         const data = legacyResponse.data || {};
         if (data?.success && data?.token && data?.serverUrl) {
-          const conn = { serverUrl: data.serverUrl, token: data.token, roomName: data.roomName || roomName };
+          const conn = { serverUrl: data.serverUrl, token: data.token, roomName: data.roomName || roomName, iceServers: data.iceServers };
+          setCurrentMeetingUrl("");
           setLiveKitConnection(conn);
           setIsInCall(true);
           setConnectionStatus('connecting');
@@ -412,7 +415,8 @@ const VideoConsultation = () => {
           
           // Use native LiveKit SDK connection
           if (livekitData.serverUrl && livekitData.token) {
-            const conn = { serverUrl: livekitData.serverUrl, token: livekitData.token, roomName: livekitData.roomName || videoData.meetingId };
+            const conn = { serverUrl: livekitData.serverUrl, token: livekitData.token, roomName: livekitData.roomName || videoData.meetingId, iceServers: livekitData.iceServers || videoData.iceServers };
+            setCurrentMeetingUrl("");
             setLiveKitConnection(conn);
             setIsInCall(true);
             setConnectionStatus('connecting');
@@ -479,39 +483,78 @@ const VideoConsultation = () => {
   }, [currentUser, toast]);
 
   // Actually start the call after device check
-  const startVideoCall = useCallback(() => {
+  const startVideoCall = useCallback(async () => {
     stopPreviewStream();
     setShowPreCallCheck(false);
-    
-    const meetingUrl = generateMeetingUrl(roomId);
-    const isLiveKitMeeting = meetingUrl.includes('/rooms/') || meetingUrl.includes('/room/');
-    if (isLiveKitMeeting && !preferEmbeddedJoin) {
+
+    let normalizedRoom = roomId.trim();
+    if (normalizedRoom.startsWith('http')) {
+      try {
+        const parsed = new URL(normalizedRoom);
+        const parts = parsed.pathname.split('/').filter(Boolean);
+        const roomIndex = parts.findIndex((segment) => ['rooms', 'room', 'join'].includes(segment));
+        if (roomIndex >= 0 && parts[roomIndex + 1]) {
+          normalizedRoom = parts[roomIndex + 1];
+        }
+      } catch {
+        // Keep the entered room value.
+      }
+    }
+    if (normalizedRoom.includes('/rooms/')) {
+      normalizedRoom = normalizedRoom.split('/rooms/')[1]?.split('?')[0] || normalizedRoom;
+    } else if (normalizedRoom.includes('/room/')) {
+      normalizedRoom = normalizedRoom.split('/room/')[1]?.split('?')[0] || normalizedRoom;
+    } else if (normalizedRoom.includes('/join/')) {
+      normalizedRoom = normalizedRoom.split('/join/')[1]?.split('?')[0] || normalizedRoom;
+    }
+
+    if (!normalizedRoom) {
       toast({
-        title: "Opening LiveKit",
-        description: "Launching LiveKit in a new window...",
+        variant: "destructive",
+        title: "Invalid Room",
+        description: "Please enter a valid meeting code.",
       });
-      window.open(meetingUrl, '_blank', 'width=1280,height=720');
-      setIsInCall(false);
-      setConnectionStatus('disconnected');
-      setCurrentMeetingUrl("");
       return;
     }
 
-    setCurrentMeetingUrl(meetingUrl);
-    setIsInCall(true);
-    setConnectionStatus('connecting');
-    const providerLabel = 'LiveKit';
-    
-    toast({
-      title: "Joining Video Consultation",
-      description: `Connecting to ${providerLabel}...`,
-    });
-    
-    // Simulate connection after iframe loads
-    setTimeout(() => {
-      setConnectionStatus('connected');
-    }, 3000);
-  }, [roomId, generateMeetingUrl, preferEmbeddedJoin, stopPreviewStream, toast]);
+    try {
+      toast({
+        title: "Joining Video Consultation",
+        description: "Getting secure LiveKit credentials...",
+      });
+
+      const tokenResponse = await api.post('/mobile/video/token', { roomName: normalizedRoom });
+      const data = tokenResponse.data?.data || tokenResponse.data;
+
+      if (!tokenResponse.data?.success || !data?.token || !data?.serverUrl) {
+        throw new Error('Video credentials missing from server response');
+      }
+
+      const conn = {
+        serverUrl: data.serverUrl,
+        token: data.token,
+        roomName: data.roomName || normalizedRoom,
+        iceServers: data.iceServers,
+      };
+
+      setRoomId(normalizedRoom);
+      setCurrentMeetingUrl("");
+      setLiveKitConnection(conn);
+      setIsInCall(true);
+      setConnectionStatus('connecting');
+      videoCall.startCall(conn, currentUser?.firstName || 'Patient');
+    } catch (error: any) {
+      console.error('Failed to start LiveKit call:', error);
+      setIsInCall(false);
+      setConnectionStatus('disconnected');
+      setCurrentMeetingUrl("");
+      toast({
+        variant: "destructive",
+        title: "Cannot Join Video Call",
+        description: error.response?.data?.message || error.message || "Unable to get secure video credentials.",
+      });
+    }
+  }, [roomId, stopPreviewStream, toast, videoCall, currentUser]);
 
   // End video call
   const endVideoCall = useCallback(() => {
@@ -669,8 +712,10 @@ const VideoConsultation = () => {
   // Active call is now rendered by MainLayout via VideoCallContext (fixed overlay).
   // Show a minimal in-page banner so the user knows the call is live.
 
-  // Fallback UI when LiveKit SDK connection failed
-  if (isInCall && currentMeetingUrl) {
+  // Legacy URL fallback is intentionally disabled. All in-app calls must use
+  // tokenized LiveKit SDK credentials; otherwise users see a false connection
+  // failure even when TURN/LiveKit are healthy.
+  if (false && isInCall && currentMeetingUrl) {
     return (
       <div 
         ref={containerRef}

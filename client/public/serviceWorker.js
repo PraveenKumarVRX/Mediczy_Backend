@@ -1,12 +1,12 @@
 // Service Worker for Mediczy Healthcare Platform
-const CACHE_NAME = 'mediczy-v18'; // v18: force cache clear — fix quick actions + AI Doctor z-index
+const CACHE_NAME = 'mediczy-v19'; // v19: force video consultation bundle refresh
 const ESSENTIAL_URLS = [
   '/'
 ];
 
 // Install event - cache only the HTML shell for offline fallback
 self.addEventListener('install', (event) => {
-  console.log('🔧 ServiceWorker v17 installing...');
+  console.log('🔧 ServiceWorker v19 installing...');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
@@ -24,7 +24,7 @@ self.addEventListener('install', (event) => {
 
 // Activate event - clean up ALL old caches and take control
 self.addEventListener('activate', (event) => {
-  console.log('🚀 ServiceWorker v17 activating...');
+  console.log('🚀 ServiceWorker v19 activating...');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(

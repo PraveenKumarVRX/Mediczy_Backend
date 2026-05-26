@@ -2356,6 +2356,20 @@ router.get('/doctors/:id/availability', asyncHandler(async (req, res) => {
 
 import { buildLiveKitJoinData, createMeetingInfo } from '../../utils/videoProvider.js';
 
+const MOBILE_TURN_HOST = process.env.TURN_SERVER_HOST || '13.127.125.93';
+const MOBILE_TURN_USERNAME = process.env.TURN_USERNAME || 'livekit';
+const MOBILE_TURN_CREDENTIAL = process.env.TURN_CREDENTIAL || '2d3a799e5dbfb0934f8bdb90f3161cd3';
+
+function getMobileIceServers() {
+  return [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'turn:' + MOBILE_TURN_HOST + ':3478?transport=udp', username: MOBILE_TURN_USERNAME, credential: MOBILE_TURN_CREDENTIAL },
+    { urls: 'turn:' + MOBILE_TURN_HOST + ':3478?transport=tcp', username: MOBILE_TURN_USERNAME, credential: MOBILE_TURN_CREDENTIAL },
+    { urls: 'turns:' + MOBILE_TURN_HOST + ':5349?transport=tcp', username: MOBILE_TURN_USERNAME, credential: MOBILE_TURN_CREDENTIAL }
+  ];
+}
+
 /**
  * Generate LiveKit token for video consultation
  * POST /api/mobile/video/token
@@ -2401,6 +2415,7 @@ router.post('/video/token', authenticate(), asyncHandler(async (req, res) => {
         roomName: livekitData.roomName,
         meetUrl: livekitData.meetUrl,
         joinUrl: livekitData.joinUrl,
+        iceServers: getMobileIceServers(),
         expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
       }
     });

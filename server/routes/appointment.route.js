@@ -187,6 +187,23 @@ router.get(
   (req, _res, next) => { req.query.upcoming = 'true'; next(); },
   getUserAppointments
 );
+/**
+ * @route   GET /api/appointments/my
+ * @desc    Alias for GET / - Get current user appointments
+ * @access  Private (User)
+ */
+router.get(
+  '/my',
+  authUser,
+  [
+    query('status').optional().isString(),
+    query('consultationType').optional().isString(),
+    query('upcoming').optional().isBoolean(),
+    query('past').optional().isBoolean()
+  ],
+  getUserAppointments
+);
+
 
 /**
  * @route   GET /api/appointments/:id
