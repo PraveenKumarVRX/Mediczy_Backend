@@ -18,18 +18,38 @@ import { createRequire } from 'module';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import dotenv from 'dotenv';
 
 const require = createRequire(import.meta.url);
 const jwt = require('jsonwebtoken');
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
+
+function envFlag(name, fallback = false) {
+  const raw = process.env[name];
+  if (raw == null) return fallback;
+  return String(raw).toLowerCase() === 'true';
+}
+
+const useSSL = envFlag('POSTGRES_SSL') || String(process.env.PGSSLMODE || '').toLowerCase() === 'require';
+const pgSsl = useSSL ? { rejectUnauthorized: false } : false;
+
 // ─── Config ────────────────────────────────────────────────────────────────────
-const DB = {
-  host: process.env.POSTGRES_HOST || '127.0.0.1',
-  port: parseInt(process.env.POSTGRES_PORT || '5432'),
-  database: process.env.POSTGRES_DATABASE || 'mediczy_ai',
-  user: process.env.POSTGRES_USER || 'mediczy_helper',
-  password: process.env.POSTGRES_PASSWORD || 'Mediczy2024Helper',
-};
+const DB = process.env.DATABASE_URL
+  ? {
+      connectionString: process.env.DATABASE_URL,
+      ssl: pgSsl,
+    }
+  : {
+      host: process.env.POSTGRES_HOST || '127.0.0.1',
+      port: parseInt(process.env.POSTGRES_PORT || '5432'),
+      database: process.env.POSTGRES_DATABASE || 'mediczy_ai',
+      user: process.env.POSTGRES_USER || 'mediczy_helper',
+      password: process.env.POSTGRES_PASSWORD || 'Mediczy2024Helper',
+      ssl: pgSsl,
+    };
 const PORT = process.env.PORT || '8888';
 const BASE_URL = `http://localhost:${PORT}`;
 const JWT_SECRET = process.env.JWT_SECRET ||
@@ -565,6 +585,119 @@ async function runLabCatalogTests() {
   }
 }
 
+// ─── HMIS Phase 1–5 API Smoke Tests ───────────────────────────────────────────
+async function runHmisApiTests() {
+  console.log('\n── SECTION 6: HMIS Phase 1–5 API Smoke Tests ───────────────────');
+
+  const token = jwt.sign(
+    { id: 21, email: 'team@mediczy.com', role: 'system_admin', organization_id: 1, isAdmin: true },
+    JWT_SECRET,
+    { expiresIn: '5m' }
+  );
+
+  const hmisGetRoutes = [
+    // ADT
+    { path: '/api/v1/adt/admissions',            label: 'ADT admissions list' },
+    { path: '/api/v1/adt/bed-map',               label: 'ADT real-time bed map' },
+    // Nursing
+    { path: '/api/v1/nursing/tasks?admissionId=1', label: 'Nursing tasks by admission' },
+    // Clinical workspace
+    { path: '/api/v1/clinical-workspace/patient/1', label: 'Clinical workspace patient summary' },
+    // OT schedule
+    { path: '/api/v1/ot/schedule',               label: 'OT schedule (today)' },
+    { path: '/api/v1/ot/conflicts?roomId=1&start=2026-01-01&end=2026-12-31', label: 'OT conflict check' },
+    // ICU census
+    { path: '/api/v1/icu/census',                label: 'ICU census list' },
+    // Billing
+    { path: '/api/v1/billing/estimates?admissionId=1', label: 'Billing estimates list' },
+    // Discharge
+    { path: '/api/v1/discharge/draft/1',         label: 'Discharge draft by admission' },
+    // Follow-up
+    { path: '/api/v1/follow-up/plans?patientId=1', label: 'Follow-up plans' },
+    { path: '/api/v1/recovery/alerts?patientId=1', label: 'Recovery monitoring alerts' },
+    // Insurance pre-auth
+    { path: '/api/v1/insurance/preauth',          label: 'Insurance pre-auth list' },
+    // Patient timeline
+    { path: '/api/v1/navigation/patient/1/timeline', label: 'Patient navigation timeline' },
+    // Anesthesia
+    { path: '/api/v1/anesthesia/assessment/booking/1', label: 'Anesthesia assessment by booking' },
+    // E-charting
+    { path: '/api/v1/echart/vitals/1/latest',           label: 'E-chart: latest vitals for admission' },
+    { path: '/api/v1/echart/io/1',                      label: 'E-chart: I&O summary for admission' },
+    // Clinical score calculators
+    { path: '/api/v1/scores',                           label: 'Clinical calculators list' },
+    // Lab rule engine
+    { path: '/api/v1/lab-rules',                        label: 'Lab rule engine: rule list' },
+    { path: '/api/v1/lab-rules/alerts/1',               label: 'Lab rule alerts for patient 1' },
+    // Bedside reference
+    { path: '/api/v1/reference/drugs?q=metformin',      label: 'Bedside ref: drug search (metformin)' },
+    { path: '/api/v1/reference/procedures',             label: 'Bedside ref: procedure list' },
+    { path: '/api/v1/reference/procedures/lumbar_puncture', label: 'Bedside ref: LP checklist' },
+    // HL7 gateway status
+    { path: '/api/v1/hl7/status',                       label: 'HL7 MLLP gateway status' },
+  ];
+
+  for (const route of hmisGetRoutes) {
+    try {
+      const r = await httpGet(route.path, token);
+      if ([200, 201, 404, 400, 403].includes(r.status)) {
+        pass('HMIS', `GET ${route.path} → ${r.status} (${route.label})`);
+      } else if (r.status === 401) {
+        fail('HMIS', `GET ${route.path} (${route.label})`, 'JWT rejected 401');
+      } else if (r.status === 500) {
+        const msg = r.body?.message || r.body?.error || JSON.stringify(r.body).slice(0, 150);
+        fail('HMIS', `GET ${route.path} (${route.label})`, `500: ${msg}`);
+      } else {
+        pass('HMIS', `GET ${route.path} → ${r.status} (non-500, acceptable)`);
+      }
+    } catch (e) {
+      fail('HMIS', `GET ${route.path}`, e.message);
+    }
+  }
+
+  // POST: clinical score calculator (qSOFA — requires no DB)
+  try {
+    const r = await httpPost('/api/v1/scores/qsofa', { respiratoryRate: 24, sbp: 88, alteredMentalStatus: false }, token);
+    if (r.status === 200 && r.body?.data?.score !== undefined) {
+      pass('HMIS', `POST /api/v1/scores/qsofa → 200 score=${r.body.data.score}`);
+    } else if (r.status === 500) {
+      fail('HMIS', 'POST /api/v1/scores/qsofa', `500: ${JSON.stringify(r.body).slice(0,150)}`);
+    } else {
+      pass('HMIS', `POST /api/v1/scores/qsofa → ${r.status} (non-500)`);
+    }
+  } catch (e) {
+    fail('HMIS', 'POST /api/v1/scores/qsofa', e.message);
+  }
+
+  // POST: SOFA score
+  try {
+    const r = await httpPost('/api/v1/scores/sofaScore', { pao2FiO2Ratio: 250, onMechanicalVentilation: true, platelets: 90, bilirubinUmolL: 40, map: 65, gcs: 13, creatinineUmolL: 150 }, token);
+    if (r.status === 200 && r.body?.data?.score !== undefined) {
+      pass('HMIS', `POST /api/v1/scores/sofaScore → 200 score=${r.body.data.score}`);
+    } else if (r.status === 500) {
+      fail('HMIS', 'POST /api/v1/scores/sofaScore', `500: ${JSON.stringify(r.body).slice(0,150)}`);
+    } else {
+      pass('HMIS', `POST /api/v1/scores/sofaScore → ${r.status} (non-500)`);
+    }
+  } catch (e) {
+    fail('HMIS', 'POST /api/v1/scores/sofaScore', e.message);
+  }
+
+  // POST: lab rule dry-run evaluate (no DB needed)
+  try {
+    const r = await httpPost('/api/v1/lab-rules/evaluate', { labs: { potassium: 6.1, lactate: 4.2, glucose: 2.8 }, meds: { aceInhibitor: true }, diagnosis: {} }, token);
+    if (r.status === 200 && r.body?.data?.alertCount !== undefined) {
+      pass('HMIS', `POST /api/v1/lab-rules/evaluate → 200 alertCount=${r.body.data.alertCount}`);
+    } else if (r.status === 500) {
+      fail('HMIS', 'POST /api/v1/lab-rules/evaluate', `500: ${JSON.stringify(r.body).slice(0,150)}`);
+    } else {
+      pass('HMIS', `POST /api/v1/lab-rules/evaluate → ${r.status} (non-500)`);
+    }
+  } catch (e) {
+    fail('HMIS', 'POST /api/v1/lab-rules/evaluate', e.message);
+  }
+}
+
 // ─── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   console.log('╔══════════════════════════════════════════════════════════════════╗');
@@ -593,6 +726,7 @@ async function main() {
 
   await runApiTests();
   await runLabCatalogTests();
+  await runHmisApiTests();
 
   // ─── Summary ─────────────────────────────────────────────────────────────
   console.log('\n╔══════════════════════════════════════════════════════════════════╗');

@@ -88,6 +88,7 @@ import './workers/crm-campaign.worker.js';
 import welcomeEmailTemplatesRouter from './routes/welcomeEmailTemplates.route.js';
 import emailSettingsRouter from './routes/emailSettings.route.js';
 import marketingLeadsRouter from './routes/marketing-leads.route.js';
+import fbLeadsRouter from './routes/fb-leads.route.js';
 import nurseRouter from './routes/nurse.route.js';
 import assistantRouter from './routes/assistant.route.js';
 import prometheus from './config/prometheus.js';
@@ -226,6 +227,7 @@ import hypergridEdgeRouter         from './routes/hypergrid-edge.route.js';
 import hypergridMarketplaceRouter  from './routes/hypergrid-marketplace.route.js';
 import { startMqttBroker }         from './services/hypergrid-mqtt.service.js';
 import { initEventBus }            from './services/hypergrid-event-bus.service.js';
+import { startDeviceAlarmBridge }  from './services/device-alarm-bridge.service.js';
 import { initTerminologyService }  from './services/hypergrid-terminology.service.js';
 
 // Phase 5: Tenant infrastructure services (AWS-model)
@@ -476,6 +478,7 @@ initEventBus().catch(err => console.warn('⚠️  HyperGrid event bus init faile
 initTerminologyService().catch(err => console.warn('⚠️  HyperGrid terminology init failed:', err.message));
 if (process.env.DISABLE_MQTT !== 'true') {
   startMqttBroker().catch(err => console.warn('⚠️  HyperGrid MQTT broker init failed:', err.message));
+  startDeviceAlarmBridge().catch(err => console.warn('⚠️  Device alarm bridge init failed:', err.message));
 }
 
 // Initialize compliance schedulers (GDPR/DPDP/HIPAA)
@@ -1278,6 +1281,7 @@ app.get('/metrics', authUser, requireRole('admin'), prometheus.metricsEndpoint);
 app.use('/api/sms', smsRouter); // SMS gateway management
 app.use('/api/video-config', videoConfigRouter); // Video configuration management
 app.use('/api/public', marketingLeadsRouter); // Public marketing lead capture
+app.use('/api/fb-leads', fbLeadsRouter);    // Facebook Lead Ads webhook (public — no auth)
 app.use('/api/voice-config', voiceConfigRouter); // Voice call configuration management
 app.use('/api/whatsapp', whatsappRouter); // WhatsApp templates, campaigns & messaging
 app.use('/api/whatsapp-config', whatsappConfigRouter); // WhatsApp provider configuration management
@@ -1479,6 +1483,53 @@ app.use('/api/auth', authTokenRouter); // Token refresh and revocation endpoints
 // Temporarily disabled - requires ringFencing middleware
 // import authUniversalRouter from './routes/auth.universal.route.js';
 // app.use('/api/auth', authUniversalRouter); // Universal auth endpoints (logout, session-info, token revocation)
+
+// ============== INPATIENT / HMIS CORE (Phase 1-4 Patient Journey) ==============
+import adtRouter from './routes/adt.route.js';
+import bedsManagementRouter from './routes/beds-management.route.js';
+import otSchedulingRouter from './routes/ot-scheduling.route.js';
+import emarRouter from './routes/emar.route.js';
+import vitalsRouter from './routes/vitals.route.js';
+import erWorkflowRouter from './routes/er-workflow.route.js';
+import patientNavigationRouter from './routes/patient-navigation.route.js';
+import nursingIpdRouter from './routes/nursing-ipd.route.js';
+import clinicalWorkspaceRouter from './routes/clinical-workspace.route.js';
+import anesthesiaRouter from './routes/anesthesia.route.js';
+import billingEstimateRouter from './routes/billing-estimate.route.js';
+import corporateHmisRouter from './routes/corporate-hmis.route.js';
+import dischargeWorkflowRouter from './routes/discharge-workflow.route.js';
+import followUpHmisRouter from './routes/follow-up-hmis.route.js';
+import icuRouter from './routes/icu.route.js';
+import hmisPreAuthRouter from './routes/hmis-preauth.route.js';
+import nursingEchartRouter from './routes/nursing-echart.route.js';
+import clinicalScoresRouter from './routes/clinical-scores.route.js';
+import labRuleEngineRouter from './routes/lab-rule-engine.route.js';
+import bedsideReferenceRouter from './routes/bedside-reference.route.js';
+import hl7GatewayRouter from './routes/hl7-gateway.route.js';
+
+app.use('/api/v1/adt', adtRouter);
+app.use('/api/v1/beds', bedsManagementRouter);
+app.use('/api/v1/ot', otSchedulingRouter);
+app.use('/api/v1/emar', emarRouter);
+app.use('/api/v1/vitals', vitalsRouter);
+app.use('/api/v1/er', erWorkflowRouter);
+app.use('/api/v1/navigation', patientNavigationRouter);
+app.use('/api/v1/nursing', nursingIpdRouter);
+app.use('/api/v1/clinical-workspace', clinicalWorkspaceRouter);
+app.use('/api/v1/anesthesia', anesthesiaRouter);
+app.use('/api/v1/billing', billingEstimateRouter);
+app.use('/api/v1/corporate', corporateHmisRouter);
+app.use('/api/v1/occupational-health', corporateHmisRouter);
+app.use('/api/v1/discharge', dischargeWorkflowRouter);
+app.use('/api/v1/follow-up', followUpHmisRouter);
+app.use('/api/v1/recovery', followUpHmisRouter);
+app.use('/api/v1/icu', icuRouter);
+app.use('/api/v1/insurance', hmisPreAuthRouter);
+app.use('/api/v1/echart', nursingEchartRouter);
+app.use('/api/v1/scores', clinicalScoresRouter);
+app.use('/api/v1/lab-rules', labRuleEngineRouter);
+app.use('/api/v1/reference', bedsideReferenceRouter);
+app.use('/api/v1/hl7', hl7GatewayRouter);
 
 // ============== ENTERPRISE API v2 (New Architecture) ==============
 // API v2 - Enterprise-grade endpoints with proper MVC pattern

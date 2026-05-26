@@ -723,6 +723,20 @@ const ITEDPReportsPage  = lazyNamed(_ITEDPModulePages, "ITEDPReportsPage");
 const ITEDPSettingsPage = lazyNamed(_ITEDPModulePages, "ITEDPSettingsPage");
 const ITEDPSupportPage  = lazyNamed(_ITEDPModulePages, "ITEDPSupportPage");
 
+// ── Ward / ADT / ER / Care Navigator (Phase 1–4 HMIS) ──────────────────────
+const WardDashboard         = lazy(() => import("@/pages/ward/WardDashboard"));
+const AdmitPatientForm      = lazy(() => import("@/pages/ward/AdmitPatientForm"));
+const ERQueuePage           = lazy(() => import("@/pages/er/ERQueue"));
+const SmartCareNavigator    = lazy(() => import("@/pages/patient/SmartCareNavigator"));
+const PatientTimeline       = lazy(() => import("@/pages/hmis/PatientTimeline"));
+const NursingTaskBoard      = lazy(() => import("@/pages/hmis/NursingTaskBoard"));
+const AnesthesiaAssessment  = lazy(() => import("@/pages/hmis/AnesthesiaAssessment"));
+const DischargeWorkflow     = lazy(() => import("@/pages/hmis/DischargeWorkflow"));
+const FollowUpManagement    = lazy(() => import("@/pages/hmis/FollowUpManagement"));
+const EChartingPage         = lazy(() => import("@/pages/hmis/EChartingPage"));
+const ClinicalCalculators   = lazy(() => import("@/pages/hmis/ClinicalCalculators"));
+const BedsideReference      = lazy(() => import("@/pages/hmis/BedsideReference"));
+
 const OTLogin     = lazy(() => import("@/pages/ot/OTLogin"));
 const OTDashboard = lazy(() => import("@/pages/ot/OTDashboard"));
 const _OTModulePages = () => import("@/pages/ot/OTModulePages");
@@ -1486,6 +1500,22 @@ const AppRoutes = () => {
         <Route path="/icu/analytics"   element={<ICUAnalyticsPage />} />
         <Route path="/icu/settings"    element={<ICUSettingsPage />} />
         <Route path="/icu/support"     element={<ICUSupportPage />} />
+
+        {/* ── Ward / ADT / ER / HMIS (Phase 1-5 Patient Journey) ─────── */}
+        <Route path="/hospital/ward"                                    element={<WardDashboard />} />
+        <Route path="/hospital/adt/admit"                               element={<AdmitPatientForm />} />
+        <Route path="/hospital/adt/er-to-ip"                           element={<AdmitPatientForm />} />
+        <Route path="/hospital/er/queue"                                element={<ERQueuePage />} />
+        <Route path="/patient/care-journey"                             element={<SmartCareNavigator />} />
+        <Route path="/hmis/patient/:patientId/timeline"                 element={<PatientTimeline />} />
+        <Route path="/hmis/admission/:admissionId/nursing-tasks"        element={<NursingTaskBoard />} />
+        <Route path="/hmis/ot/:otBookingId/anesthesia"                  element={<AnesthesiaAssessment />} />
+        <Route path="/hmis/admission/:admissionId/discharge"            element={<DischargeWorkflow />} />
+        <Route path="/hmis/patient/:patientId/follow-up"                element={<FollowUpManagement />} />
+        <Route path="/hmis/admission/:admissionId/echart"              element={<EChartingPage />} />
+        <Route path="/hmis/echart"                                      element={<EChartingPage />} />
+        <Route path="/hmis/calculators"                                 element={<ClinicalCalculators />} />
+        <Route path="/hmis/reference"                                   element={<BedsideReference />} />
 
         {/* ── Quality & Accreditation (NABH + JCI) ────────────────────── */}
         <Route path="/quality/login"          element={<QualityLogin />} />
