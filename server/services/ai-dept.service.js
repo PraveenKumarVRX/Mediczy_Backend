@@ -9,7 +9,7 @@
  * gracefully when optional tables are absent.
  */
 
-import { postgresSequelize as sequelize } from '../db/postgres.js';
+import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 
 const q = (sql, rep) =>

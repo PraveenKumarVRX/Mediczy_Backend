@@ -748,6 +748,7 @@ const ReportCenter          = lazy(() => import("@/pages/hmis/ReportCenter"));
 const HL7FHIRMonitor        = lazy(() => import("@/pages/hmis/HL7FHIRMonitor"));
 const AIOperationsHub       = lazy(() => import("@/pages/hmis/AIOperationsHub"));
 const AIRevenueIntelligence = lazy(() => import("@/pages/hmis/AIRevenueIntelligence"));
+const AIDepartmentHub       = lazy(() => import("@/pages/hmis/AIDepartmentHub"));
 
 const OTLogin     = lazy(() => import("@/pages/ot/OTLogin"));
 const OTDashboard = lazy(() => import("@/pages/ot/OTDashboard"));
@@ -1540,6 +1541,7 @@ const AppRoutes = () => {
         <Route path="/hmis/hl7-fhir"                                    element={<HL7FHIRMonitor />} />
         <Route path="/hmis/ai-ops"                                      element={<AIOperationsHub />} />
         <Route path="/hmis/ai-revenue"                                  element={<AIRevenueIntelligence />} />
+        <Route path="/hmis/ai-dept"                                     element={<AIDepartmentHub />} />
 
         {/* ── Quality & Accreditation (NABH + JCI) ────────────────────── */}
         <Route path="/quality/login"          element={<QualityLogin />} />

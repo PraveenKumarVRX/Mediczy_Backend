@@ -693,6 +693,19 @@ async function runHmisApiTests() {
     { path: '/api/v1/ai-revenue/billing-gaps',         label: 'AI Revenue: billing gap analysis' },
     { path: '/api/v1/ai-revenue/leakage-score',        label: 'AI Revenue: revenue leakage score' },
     { path: '/api/v1/ai-revenue/denial-risk',          label: 'AI Revenue: denial risk scoring' },
+    // AI Department Intelligence (11 departments + summary)
+    { path: '/api/v1/ai-dept/lab',          label: 'AI Dept: lab intelligence' },
+    { path: '/api/v1/ai-dept/pharmacy',     label: 'AI Dept: pharmacy intelligence' },
+    { path: '/api/v1/ai-dept/ward',         label: 'AI Dept: ward intelligence' },
+    { path: '/api/v1/ai-dept/ot',           label: 'AI Dept: OT intelligence' },
+    { path: '/api/v1/ai-dept/icu',          label: 'AI Dept: ICU intelligence' },
+    { path: '/api/v1/ai-dept/er',           label: 'AI Dept: ER intelligence' },
+    { path: '/api/v1/ai-dept/opd',          label: 'AI Dept: OPD intelligence' },
+    { path: '/api/v1/ai-dept/surveillance', label: 'AI Dept: surveillance intelligence' },
+    { path: '/api/v1/ai-dept/insurance',    label: 'AI Dept: insurance intelligence' },
+    { path: '/api/v1/ai-dept/accounts',     label: 'AI Dept: accounts intelligence' },
+    { path: '/api/v1/ai-dept/hrms',         label: 'AI Dept: HRMS intelligence' },
+    { path: '/api/v1/ai-dept/summary',      label: 'AI Dept: all-department summary' },
   ];
 
   for (const route of hmisGetRoutes) {
