@@ -12,14 +12,30 @@
  */
 
 const { Pool } = require('pg');
+const dotenv = require('dotenv');
+const path = require('path');
 
-const pool = new Pool({
-  host: 'localhost',
-  port: 5432,
-  database: 'mediczy_ai',
-  user: 'mediczy_helper',
-  password: 'Mediczy2024Helper'
-});
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
+function envFlag(name, fallback = false) {
+  const raw = process.env[name];
+  if (raw == null) return fallback;
+  return String(raw).toLowerCase() === 'true';
+}
+
+const useSSL = envFlag('POSTGRES_SSL') || String(process.env.PGSSLMODE || '').toLowerCase() === 'require';
+const pgSsl = useSSL ? { rejectUnauthorized: false } : false;
+
+const pool = process.env.DATABASE_URL
+  ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: pgSsl })
+  : new Pool({
+      host: process.env.POSTGRES_HOST || 'localhost',
+      port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
+      database: process.env.POSTGRES_DATABASE || 'mediczy_ai',
+      user: process.env.POSTGRES_USER || 'mediczy_helper',
+      password: process.env.POSTGRES_PASSWORD || 'Mediczy2024Helper',
+      ssl: pgSsl,
+    });
 
 async function migrateSchema() {
   const client = await pool.connect();

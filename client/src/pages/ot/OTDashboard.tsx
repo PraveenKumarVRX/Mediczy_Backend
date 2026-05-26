@@ -1,33 +1,38 @@
+import { useState, useEffect } from 'react';
 import HospDeptLayout from '@/components/hosp-dept/HospDeptLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Scissors, CalendarCheck, Users, Wrench,
-  FlaskConical, Stethoscope, ClipboardList, BarChart3,
+  Stethoscope, ClipboardList,
   PlusCircle, Clock, CheckCircle2, AlertCircle,
-  XCircle, Activity, FileText, Package, ShieldCheck, ClipboardCheck, LayoutGrid,
+  XCircle, Activity, FileText, ShieldCheck, ClipboardCheck, LayoutGrid, RefreshCw,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { otNavSections } from './OTModulePages';
+import api from '@/utils/api';
 
 const navSections = otNavSections;
 
-const kpis = [
-  { label: 'Scheduled Today',  value: '12',  sub: '3 in progress now',   icon: CalendarCheck, color: 'text-teal-600' },
-  { label: 'Completed',        value: '8',   sub: 'As of 3:00 PM',       icon: CheckCircle2,  color: 'text-emerald-600' },
-  { label: 'In Progress',      value: '3',   sub: 'OT 1, 2 & 3 active',  icon: Activity,      color: 'text-blue-600' },
-  { label: 'Postponed',        value: '1',   sub: 'Rescheduled: 19 Mar', icon: XCircle,       color: 'text-amber-600' },
-];
+interface ScheduleRow {
+  otNo: string;
+  patient: string;
+  surgeon: string;
+  procedure: string;
+  time: string;
+  status: string;
+  duration: string;
+}
 
-const todaySchedule = [
-  { otNo: 'OT-1', patient: 'Rajesh Malhotra', surgeon: 'Dr. Mehta',   procedure: 'CABG',              time: '08:00',   status: 'Completed', duration: '4h 20m' },
-  { otNo: 'OT-2', patient: 'Sangita Rao',      surgeon: 'Dr. Sharma',  procedure: 'Hip Replacement',   time: '09:30',   status: 'In Progress',duration: '—' },
-  { otNo: 'OT-1', patient: 'Nikhil Desai',     surgeon: 'Dr. Mehta',   procedure: 'Appendectomy',      time: '14:00',   status: 'Upcoming',  duration: '—' },
-  { otNo: 'OT-3', patient: 'Fatima Khan',       surgeon: 'Dr. Joshi',   procedure: 'Lap Chole',         time: '10:00',   status: 'Completed', duration: '1h 15m' },
-  { otNo: 'OT-3', patient: 'Ramesh Tiwari',     surgeon: 'Dr. Joshi',   procedure: 'Inguinal Hernia',   time: '12:30',   status: 'In Progress',duration: '—' },
-  { otNo: 'OT-2', patient: 'Priya Nair',        surgeon: 'Dr. Gupta',   procedure: 'Knee Replacement',  time: '15:00',   status: 'Upcoming',  duration: '—' },
-];
+function mapApiStatus(s: string): string {
+  const m: Record<string, string> = {
+    scheduled: 'Upcoming', patient_in: 'In Progress', prep: 'In Progress',
+    incision: 'In Progress', closure: 'In Progress', completed: 'Completed',
+    cancelled: 'Postponed', postponed: 'Postponed',
+  };
+  return m[s] ?? 'Upcoming';
+}
 
 const equipmentStatus = [
   { name: 'Anaesthesia Machine',  ot: 'OT-1', status: 'In Use',      last: '—' },
@@ -50,6 +55,48 @@ const statusColor: Record<string, string> = {
 
 const OTDashboard = () => {
   const navigate = useNavigate();
+  const [schedule, setSchedule] = useState<ScheduleRow[]>([]);
+  const [scheduleLoading, setScheduleLoading] = useState(true);
+  const [kpiValues, setKpiValues] = useState({ scheduled: 0, completed: 0, inProgress: 0, postponed: 0 });
+
+  const loadSchedule = async () => {
+    setScheduleLoading(true);
+    try {
+      const res = await api.get('/api/v1/ot/schedule');
+      const raw: any[] = res.data?.data ?? [];
+      const rows: ScheduleRow[] = raw.map(b => ({
+        otNo:      b.room_name ?? b.room_id ?? '—',
+        patient:   b.patient_name ?? `Patient #${b.patient_id}`,
+        surgeon:   b.surgeon_name ?? b.surgeon_id ?? '—',
+        procedure: b.procedure_name ?? '—',
+        time:      b.scheduled_start ? new Date(b.scheduled_start).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—',
+        status:    mapApiStatus(b.status ?? ''),
+        duration:  b.actual_duration_min ? `${Math.floor(b.actual_duration_min / 60)}h ${b.actual_duration_min % 60}m` : '—',
+      }));
+      setSchedule(rows);
+      setKpiValues({
+        scheduled:  rows.length,
+        completed:  rows.filter(r => r.status === 'Completed').length,
+        inProgress: rows.filter(r => r.status === 'In Progress').length,
+        postponed:  rows.filter(r => r.status === 'Postponed').length,
+      });
+    } catch {
+      // silently keep empty; fallback static data shown if needed
+    } finally {
+      setScheduleLoading(false);
+    }
+  };
+
+  useEffect(() => { loadSchedule(); }, []);
+
+  const displaySchedule = schedule;
+  const kpis = [
+    { label: 'Scheduled Today',  value: String(kpiValues.scheduled),  sub: `${kpiValues.inProgress} in progress now`,  icon: CalendarCheck, color: 'text-teal-600' },
+    { label: 'Completed',        value: String(kpiValues.completed),   sub: 'Today',                                    icon: CheckCircle2,  color: 'text-emerald-600' },
+    { label: 'In Progress',      value: String(kpiValues.inProgress),  sub: 'Active theatres',                          icon: Activity,      color: 'text-blue-600' },
+    { label: 'Postponed',        value: String(kpiValues.postponed),   sub: 'Rescheduled',                              icon: XCircle,       color: 'text-amber-600' },
+  ];
+
   return (
     <HospDeptLayout
       deptKey="ot"
@@ -86,12 +133,22 @@ const OTDashboard = () => {
         <div className="lg:col-span-2 space-y-5">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <CardTitle className="text-base">Today's OT Schedule — 15 Mar 2026</CardTitle>
-              <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700" onClick={() => navigate('/ot/schedule')}>
-                <PlusCircle className="h-4 w-4" />Schedule OT
-              </Button>
+              <CardTitle className="text-base">Today's OT Schedule</CardTitle>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={loadSchedule} disabled={scheduleLoading}>
+                  <RefreshCw className={`h-4 w-4 ${scheduleLoading ? 'animate-spin' : ''}`} />
+                </Button>
+                <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700" onClick={() => navigate('/ot/schedule')}>
+                  <PlusCircle className="h-4 w-4" />Schedule OT
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
+              {scheduleLoading ? (
+                <p className="text-sm text-muted-foreground text-center py-4">Loading schedule…</p>
+              ) : displaySchedule.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">No procedures scheduled today</p>
+              ) : (
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-muted-foreground">
@@ -103,7 +160,7 @@ const OTDashboard = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {todaySchedule.map((s, i) => (
+                  {displaySchedule.map((s, i) => (
                     <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer"
                         onClick={() => navigate('/ot/schedule')}>
                       <td className="py-2.5 font-bold text-teal-700">{s.otNo}</td>
@@ -117,6 +174,7 @@ const OTDashboard = () => {
                   ))}
                 </tbody>
               </table>
+              )}
               <Button variant="ghost" size="sm" className="mt-3 w-full text-teal-600" onClick={() => navigate('/ot/schedule')}>
                 View full schedule →
               </Button>
@@ -198,12 +256,12 @@ const OTDashboard = () => {
             </CardTitle></CardHeader>
             <CardContent className="space-y-2 text-sm">
               {[
-                { label: 'Total Scheduled',   value: '12' },
-                { label: 'Completed',         value: '8' },
-                { label: 'In Progress',       value: '3' },
-                { label: 'Upcoming',          value: '2' },
-                { label: 'Postponed',         value: '1' },
-                { label: 'Emergency OTs',     value: '0' },
+                { label: 'Total Scheduled',   value: String(kpiValues.scheduled) },
+                { label: 'Completed',         value: String(kpiValues.completed) },
+                { label: 'In Progress',       value: String(kpiValues.inProgress) },
+                { label: 'Upcoming',          value: String(schedule.filter(r => r.status === 'Upcoming').length) },
+                { label: 'Postponed',         value: String(kpiValues.postponed) },
+                { label: 'Emergency OTs',     value: '—' },
               ].map((s) => (
                 <div key={s.label} className="flex justify-between">
                   <span className="text-muted-foreground">{s.label}</span>

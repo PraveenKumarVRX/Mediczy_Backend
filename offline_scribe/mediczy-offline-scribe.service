@@ -15,7 +15,8 @@ Environment=LOG_DIR=/home/ubuntu/Mediczy/logs
 Environment=PYTHONUNBUFFERED=1
 Environment=STT_BACKEND=whisper-cpp
 Environment=WHISPER_CPP_BIN=/home/ubuntu/Mediczy/whisper.cpp/build/bin/whisper-cli
-Environment=WHISPER_MODEL=base
+Environment=WHISPER_MODEL=medium
+Environment=STT_MODEL_STRATEGY=default
 
 # Start command
 ExecStart=/usr/bin/python3 main.py

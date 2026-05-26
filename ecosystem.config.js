@@ -62,8 +62,13 @@ module.exports = {
         SIB_URL: 'http://localhost:8001',
         POSTGRES_POOL_MAX: process.env.POSTGRES_POOL_MAX || '25',
         POSTGRES_POOL_MIN: process.env.POSTGRES_POOL_MIN || '5',
-        POSTGRES_HOST: process.env.POSTGRES_HOST || '127.0.0.1',
+        POSTGRES_HOST: process.env.POSTGRES_HOST || 'mediczy-prod.cloqkwiey4k0.ap-south-1.rds.amazonaws.com',
         POSTGRES_PORT: process.env.POSTGRES_PORT || '5432',
+        POSTGRES_DATABASE: process.env.POSTGRES_DATABASE || 'mediczy_prod',
+        POSTGRES_DB: process.env.POSTGRES_DB || 'mediczy_prod',
+        POSTGRES_USER: process.env.POSTGRES_USER || 'postgres',
+        POSTGRES_PASSWORD: process.env.POSTGRES_PASSWORD,
+        DISABLE_KAFKA: 'true',
       },
       error_file: path.join(LOGS_DIR, 'server-error.log'),
       out_file: path.join(LOGS_DIR, 'server-out.log'),
@@ -90,12 +95,12 @@ module.exports = {
       env: {
         PYTHONUNBUFFERED: '1',
         PORT: 8001,
-        POSTGRES_HOST: '127.0.0.1',
-        POSTGRES_PORT: '5432',
-        POSTGRES_DATABASE: 'mediczy_ai',
-        POSTGRES_DB: 'mediczy_ai',
-        POSTGRES_USER: 'mediczy_helper',
-        POSTGRES_PASSWORD: 'Mediczy2024Helper',
+        POSTGRES_HOST: process.env.POSTGRES_HOST || 'mediczy-prod.cloqkwiey4k0.ap-south-1.rds.amazonaws.com',
+        POSTGRES_PORT: process.env.POSTGRES_PORT || '5432',
+        POSTGRES_DATABASE: process.env.POSTGRES_DATABASE || 'mediczy_prod',
+        POSTGRES_DB: process.env.POSTGRES_DB || 'mediczy_prod',
+        POSTGRES_USER: process.env.POSTGRES_USER || 'postgres',
+        POSTGRES_PASSWORD: process.env.POSTGRES_PASSWORD,
         DUCKDB_ENABLED: 'true',
         DUCKDB_PATH: ':memory:',
         PGVECTOR_DIMENSION: process.env.PGVECTOR_DIMENSION || '1536',
@@ -127,7 +132,8 @@ module.exports = {
       exec_mode: 'fork',
       env: {
         NODE_ENV: 'production',
-        WORKER_CONCURRENCY: 10
+        WORKER_CONCURRENCY: 10,
+        DISABLE_KAFKA: 'true'
       },
       error_file: path.join(LOGS_DIR, 'worker-error.log'),
       out_file: path.join(LOGS_DIR, 'worker-out.log'),
@@ -140,6 +146,41 @@ module.exports = {
       min_uptime: '10s',
       kill_timeout: 10000,
       restart_delay: 2000
+    },
+
+    // ==================== Offline AI Scribe ====================
+    {
+      name: 'offline-scribe',
+      script: 'main.py',
+      cwd: path.join(ROOT_DIR, 'offline_scribe'),
+      instances: 1,
+      exec_mode: 'fork',
+      interpreter: 'python3',
+      env: {
+        SCRIBE_HOST: '0.0.0.0',
+        SCRIBE_PORT: 8006,
+        MODELS_DIR: '/home/ubuntu/models',
+        LOG_DIR: path.join(LOGS_DIR, 'offline-scribe'),
+        STT_BACKEND: 'whisper-cpp',
+        WHISPER_CPP_BIN: path.join(ROOT_DIR, 'whisper.cpp', 'build', 'bin', 'whisper-cli'),
+        WHISPER_MODEL: process.env.WHISPER_MODEL || 'medium',
+        STT_MODEL_STRATEGY: process.env.STT_MODEL_STRATEGY || 'default',
+        STT_ENABLE_CHUNKING: 'true',
+        STT_CHUNK_DURATION: process.env.STT_CHUNK_DURATION || '30',
+        LOG_LEVEL: 'INFO',
+        PYTHONUNBUFFERED: '1'
+      },
+      error_file: path.join(LOGS_DIR, 'offline-scribe-error.log'),
+      out_file: path.join(LOGS_DIR, 'offline-scribe-out.log'),
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+      max_memory_restart: '5G',
+      watch: false,
+      autorestart: true,
+      max_restarts: 20,
+      min_uptime: '30s',
+      restart_delay: 5000,
+      kill_timeout: 15000
     },
 
     // ==================== LiveKit Video Server ====================

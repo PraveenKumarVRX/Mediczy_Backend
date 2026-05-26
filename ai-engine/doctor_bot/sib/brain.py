@@ -47,10 +47,12 @@ class RequestType(Enum):
 
 
 class LLMProvider(Enum):
-    """LLM providers in fallback order"""
-    LLAMA_LOCAL = "llama_local"
-    GROQ = "groq"
-    GEMINI = "gemini"
+    """LLM providers in fallback order (node1/node2 are both iSHA private GPU infrastructure)"""
+    LLAMA_LOCAL = "isha_node1_bimedix2"    # ai.isha.buzz — BiMediX2-8B / InsuranceLLM
+    ISHA_INC    = "isha_node2"             # isha-inc.com — MedGemma-4B / InsuranceLLM / smart-orchestrator
+    GROQ        = "groq"                   # cloud fallback 1
+    OPENAI      = "openai"                 # cloud fallback 2
+    GEMINI      = "gemini"                 # cloud fallback 3
 
 
 class SyntheticIntelligenceBrain:
@@ -204,39 +206,75 @@ class SyntheticIntelligenceBrain:
     
     # ==================== LLM Reasoning with Fallback ====================
     
+    def _is_insurance_query(self, prompt: str) -> bool:
+        """Return True if the prompt is insurance/underwriting domain."""
+        keywords = ['insurance', 'claim', 'billing', 'coverage', 'policy', 'premium',
+                    'deductible', 'copay', 'reimbursement', 'pre-authorization', 'network',
+                    'underwriting', 'loss ratio', 'loading', 'irdai', 'tpa', 'gmc', 'gpa',
+                    'cashless', 'preauth', 'sum insured', 'co-pay', 'mediclaim']
+        lower = prompt.lower()
+        return any(kw in lower for kw in keywords)
+
     def llm_reasoning(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
         """
         Primary LLM reasoning with fallback strategy.
-        
+
         Fallback order:
-        1. Local GPU (http://127.0.0.1:8080) - HIGHEST PRIORITY
-        2. Groq API (cloud fallback)
-        
-        Args:
-            prompt: User prompt / query
-            system_prompt: Optional system prompt
-            
-        Returns:
-            Dict with answer, model used, latency
+        1. iSHA node1 (ai.isha.buzz)  — BiMediX2-8B (clinical) / OpenInsuranceLLM (insurance)
+        2. iSHA node2 (isha-inc.com)  — MedGemma-4B (clinical) / InsuranceLLM (insurance)
+        3. Groq                        — cloud fallback 1
+        4. OpenAI gpt-4o-mini          — cloud fallback 2
+        5. Gemini 1.5-flash            — cloud fallback 3
         """
         start_time = time.time()
-        
-        # Try Local GPU first (HIGHEST PRIORITY)
+
+        # iSHA GPU node 1: ai.isha.buzz — BiMediX2-8B
         try:
             result = self._local_gpu_inference(prompt, system_prompt)
             result["provider"] = LLMProvider.LLAMA_LOCAL.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
-            logger.info(f"✅ Local GPU inference: {result['latency_ms']}ms (model: {result.get('model', 'unknown')})")
+            logger.info(f"✅ iSHA node1 (ai.isha.buzz) inference: {result['latency_ms']}ms (model: {result.get('model', 'unknown')})")
             return result
         except Exception as e:
-            logger.warning(f"⚠️ Local GPU failed: {e}, falling back to Groq")
-        
-        # Fallback to Groq API
+            logger.warning(f"⚠️ iSHA node1 (ai.isha.buzz) failed: {e}")
+
+        # iSHA GPU node 2: isha-inc.com — InsuranceLLM or MedGemma-4B (same private infra)
+        try:
+            node2_model = "insurance-llm" if self._is_insurance_query(prompt) else "medgemma-4b"
+            result = self._isha_inc_inference(prompt, system_prompt, model=node2_model)
+            result["provider"] = LLMProvider.ISHA_INC.value
+            result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
+            logger.info(f"✅ iSHA node2 (isha-inc.com/{node2_model}) inference: {result['latency_ms']}ms")
+            return result
+        except Exception as e:
+            logger.warning(f"⚠️ iSHA node2 (isha-inc.com) failed: {e}, falling back to Groq")
+
+        # Cloud fallback 1: Groq
         try:
             result = self._groq_inference(prompt, system_prompt)
             result["provider"] = LLMProvider.GROQ.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
-            logger.info(f"✅ Groq API inference (fallback): {result['latency_ms']}ms")
+            logger.info(f"✅ Groq inference (fallback): {result['latency_ms']}ms")
+            return result
+        except Exception as e:
+            logger.warning(f"⚠️ Groq failed: {e}, falling back to OpenAI")
+
+        # Cloud fallback 2: OpenAI
+        try:
+            result = self._openai_inference(prompt, system_prompt)
+            result["provider"] = LLMProvider.OPENAI.value
+            result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
+            logger.info(f"✅ OpenAI inference (fallback): {result['latency_ms']}ms")
+            return result
+        except Exception as e:
+            logger.warning(f"⚠️ OpenAI failed: {e}, falling back to Gemini")
+
+        # Cloud fallback 3: Gemini
+        try:
+            result = self._gemini_inference(prompt, system_prompt)
+            result["provider"] = LLMProvider.GEMINI.value
+            result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
+            logger.info(f"✅ Gemini inference (fallback): {result['latency_ms']}ms")
             return result
         except Exception as e:
             logger.error(f"❌ All LLM providers failed: {e}")
@@ -384,6 +422,58 @@ class SyntheticIntelligenceBrain:
         answer = response.choices[0].message.content
         return {"answer": answer, "model": "llama-3.3-70b-versatile"}
     
+    def _isha_inc_inference(self, prompt: str, system_prompt: Optional[str] = None,
+                            model: str = "insurance-llm", max_tokens: int = 512) -> Dict[str, Any]:
+        """isha-inc.com inference — InsuranceLLM-Llama3-8B or MedGemma-4B.
+        Uses plain requests (not OpenAI SDK) to bypass Cloudflare User-Agent block.
+        """
+        import requests as req_lib
+
+        api_key = os.environ.get("ISHA_INC_API_KEY", "")
+        base_url = os.environ.get("ISHA_INC_URL", "https://isha-inc.com")
+        # isha-inc.com is iSHA private GPU (node2) — uses static Bearer key, no login flow
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        response = req_lib.post(
+            f"{base_url}/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (compatible; Mediczy-SIB/1.0)",
+                "Accept": "application/json",
+            },
+            json={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": 0.3},
+            timeout=30,
+        )
+        response.raise_for_status()
+        data = response.json()
+        answer = data["choices"][0]["message"]["content"]
+        return {"answer": answer, "model": data.get("model", model)}
+
+    def _openai_inference(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
+        """OpenAI API inference — cloud fallback 2 after Groq"""
+        from openai import OpenAI
+
+        client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=messages,
+            max_tokens=1024,
+            temperature=0.7,
+        )
+        answer = response.choices[0].message.content
+        return {"answer": answer, "model": "gpt-3.5-turbo"}
+
     def _gemini_inference(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
         """Gemini API inference"""
         import google.generativeai as genai
@@ -528,6 +618,11 @@ class SyntheticIntelligenceBrain:
         include_risk = data.get("include_risk", False)
         include_rag = data.get("include_rag", True)
         patient_data = data.get("patient_data")
+
+        # Carry KB RAG context (injected by /chat endpoint) through to chat_bot
+        kb_context = data.get("kb_context", "")
+        if kb_context:
+            patient_data = {**(patient_data or {}), "_kb_context": kb_context}
 
         use_langgraph = (
             os.environ.get("SIB_LANGGRAPH_ENABLED", "true").lower() == "true"

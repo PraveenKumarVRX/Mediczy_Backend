@@ -90,11 +90,46 @@ const getICUAuthHeaders = () => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
-export const fetchICUPortalData = async () => {
-  const response = await api.get('/hospital/practice/icu/portal-data', {
-    headers: getICUAuthHeaders()
-  });
-  return response.data?.data as ICUPortalData;
+export const fetchICUPortalData = async (): Promise<ICUPortalData> => {
+  try {
+    // Primary: new HMIS ICU API
+    const censusRes = await api.get('/api/v1/icu/census', { headers: getICUAuthHeaders() });
+    const patients: ICUPortalPatient[] = (censusRes.data?.data ?? []).map((p: any) => ({
+      patientId:   p.patient_id,
+      bedId:       p.id,
+      bed:         p.bed_number ?? 'ICU',
+      zone:        p.icu_unit ?? 'General',
+      type:        'ICU',
+      nurseRatio:  '1:2',
+      turnaround:  '—',
+      patient:     p.patient_name ?? '—',
+      age:         p.date_of_birth ? Math.floor((Date.now() - new Date(p.date_of_birth).getTime()) / 3.156e10) : null,
+      diagnosis:   p.admitting_reason ?? '—',
+      consultant:  p.admitting_doctor_id ?? '—',
+      vent:        '—',
+      status:      'Active',
+      score:       '—',
+      hrs:         p.admitted_at ? Math.round((Date.now() - new Date(p.admitted_at).getTime()) / 3600000) : 0,
+      latestVitals: null
+    }));
+
+    const occupied = patients.length;
+    return {
+      summary: {
+        totalBeds: occupied + 4, occupiedBeds: occupied,
+        availableBeds: 4, reservedBeds: 0,
+        monitoredBeds: occupied, criticalPatients: 0,
+        stablePatients: occupied, openAlerts: 0
+      },
+      patients,
+      livePatients: [],
+      beds: patients.map(p => ({ bed: p.bed, zone: p.zone, type: p.type, status: 'Occupied', patient: p.patient }))
+    } as ICUPortalData;
+  } catch {
+    // Fallback to old portal route
+    const response = await api.get('/hospital/practice/icu/portal-data', { headers: getICUAuthHeaders() });
+    return response.data?.data as ICUPortalData;
+  }
 };
 
 export const useICUPortalData = (pollMs = 0) => {

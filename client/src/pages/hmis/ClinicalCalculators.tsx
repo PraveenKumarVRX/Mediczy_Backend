@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Calculator, ChevronDown, ChevronRight, AlertTriangle, CheckCircle2, Info } from 'lucide-react';
-import api from '@/services/api';
+import api from '@/utils/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

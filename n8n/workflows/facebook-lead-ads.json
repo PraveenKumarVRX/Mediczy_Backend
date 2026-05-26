@@ -1,0 +1,133 @@
+{
+  "name": "Mediczy - Facebook Lead Ads → CRM",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["leadgen"],
+        "options": {}
+      },
+      "id": "fb-lead-trigger",
+      "name": "Facebook Lead Ads Trigger",
+      "type": "n8n-nodes-base.facebookLeadAdsTrigger",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "credentials": {
+        "facebookLeadAdsOAuth2Api": {
+          "id": "facebook-lead-ads-cred",
+          "name": "Facebook Lead Ads (Mediczy)"
+        }
+      },
+      "notes": "Fires when someone submits a Facebook Lead Ad form. Connect your Facebook Page via OAuth."
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const data = item.json;\n\n  // Flatten field_data array into a plain object\n  const fields = {};\n  if (Array.isArray(data.field_data)) {\n    for (const f of data.field_data) {\n      fields[f.name] = Array.isArray(f.values) ? f.values[0] : f.values;\n    }\n  }\n\n  const name = fields.full_name\n    || [fields.first_name, fields.last_name].filter(Boolean).join(' ')\n    || data.id\n    || 'Unknown';\n\n  const rawPhone = fields.phone_number || fields.phone || '';\n  const phone = rawPhone.startsWith('+')\n    ? rawPhone\n    : rawPhone ? `+91${rawPhone.replace(/^0/, '').replace(/\\D/g, '')}` : null;\n\n  results.push({\n    json: {\n      name,\n      email: fields.email || null,\n      phone,\n      company: fields.company_name || fields.organization || null,\n      entityType: fields.job_title || fields.designation || null,\n      requirements: fields.message || fields.comments || null,\n      sourcePage: 'https://facebook.com/ads',\n      _fbLeadId: data.id,\n      _fbFormId: data.form_id || null,\n      _fbPageId: data.page_id || null,\n      _fbAdId: data.ad_id || null,\n      _fbCampaignId: data.campaign_id || null,\n      _rawFields: fields\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "map-fields",
+      "name": "Map FB Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300],
+      "notes": "Flatten Facebook field_data[] into a clean object and normalise the phone to E.164 (+91 default)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/api/public/marketing-leads",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"name\": \"{{ $json.name }}\",\n  \"email\": \"{{ $json.email }}\",\n  \"phone\": \"{{ $json.phone }}\",\n  \"organization\": \"{{ $json.company }}\",\n  \"entityType\": \"{{ $json.entityType }}\",\n  \"requirements\": \"{{ $json.requirements }}\",\n  \"sourcePage\": \"https://facebook.com/ads\",\n  \"_lt\": 0\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "post-to-crm",
+      "name": "Save to CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 200],
+      "notes": "POST lead into crm_leads via existing marketing-leads endpoint"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/api/whatsapp/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"to\": \"{{ $json.phone }}\",\n  \"message\": \"Hi {{ $json.name }}! 👋 Thank you for your interest in Mediqzy. Our team will reach out to you shortly. Feel free to reply here with any questions!\"\n}",
+        "options": {
+          "timeout": 10000,
+          "continueOnFail": true
+        }
+      },
+      "id": "send-whatsapp",
+      "name": "WhatsApp Follow-up",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 420],
+      "notes": "Send instant WhatsApp reply to the lead. Continues even if this fails."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.phone }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ]
+        }
+      },
+      "id": "has-phone",
+      "name": "Has Phone?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 420],
+      "notes": "Only send WhatsApp if phone number is present"
+    }
+  ],
+  "connections": {
+    "Facebook Lead Ads Trigger": {
+      "main": [[{ "node": "Map FB Fields", "type": "main", "index": 0 }]]
+    },
+    "Map FB Fields": {
+      "main": [
+        [
+          { "node": "Save to CRM", "type": "main", "index": 0 },
+          { "node": "Has Phone?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Has Phone?": {
+      "main": [
+        [{ "node": "WhatsApp Follow-up", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "tags": ["crm", "facebook", "leads", "marketing", "whatsapp"],
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "mediczy-n8n"
+  }
+}

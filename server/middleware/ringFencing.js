@@ -267,7 +267,13 @@ const USER_TYPE_PERMISSIONS = {
       '/api/hypergrid',  // HyperGrid interoperability & IoT layer
       '/api/cdss',  // Clinical Decision Support System
       '/api/compliance',  // HIPAA/DPDP compliance dashboard
-      '/v1'  // API v1 multi-tenant mobile app endpoints
+      '/v1',  // API v1 multi-tenant mobile app endpoints
+      '/api/v1/adt',      // ADT — Admit / Discharge / Transfer
+      '/api/v1/beds',     // Bed Management
+      '/api/v1/ot',       // OT Scheduling
+      '/api/v1/emar',     // eMAR
+      '/api/v1/vitals',   // Vitals & Early Warning
+      '/api/v1/er'        // ER Workflow
     ],
     tokenField: 'adminId'
   },
@@ -361,7 +367,13 @@ const USER_TYPE_PERMISSIONS = {
       '/api/hospital/departments',
       '/api/insurance/admin',
       '/api/ehr',  // Electronic Health Records
-      '/api/users/change-password'  // Password change from hospital settings
+      '/api/users/change-password',  // Password change from hospital settings
+      '/api/v1/adt',      // ADT — Admit / Discharge / Transfer
+      '/api/v1/beds',     // Bed Management
+      '/api/v1/ot',       // OT Scheduling
+      '/api/v1/emar',     // eMAR
+      '/api/v1/vitals',   // Vitals & Early Warning
+      '/api/v1/er'        // ER Workflow
     ],
     tokenField: 'hospitalId'
   },

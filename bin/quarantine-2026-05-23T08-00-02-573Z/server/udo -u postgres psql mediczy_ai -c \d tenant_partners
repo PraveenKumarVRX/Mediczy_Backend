@@ -1,0 +1,35 @@
+                                                        Table "public.corporate_plan_sponsorships"
+      Column       |                       Type                        | Collation | Nullable |                          Default                          
+-------------------+---------------------------------------------------+-----------+----------+-----------------------------------------------------------
+ id                | integer                                           |           | not null | nextval('corporate_plan_sponsorships_id_seq'::regclass)
+ corporate_id      | integer                                           |           | not null | 
+ plan_id           | integer                                           |           | not null | 
+ employee_id       | integer                                           |           |          | 
+ sponsorship_type  | enum_corporate_plan_sponsorships_sponsorship_type |           | not null | 'FULL'::enum_corporate_plan_sponsorships_sponsorship_type
+ corporate_share   | numeric(5,2)                                      |           | not null | 100
+ employee_share    | numeric(5,2)                                      |           | not null | 0
+ max_employees     | integer                                           |           |          | 
+ used_count        | integer                                           |           | not null | 0
+ start_date        | timestamp with time zone                          |           | not null | 
+ end_date          | timestamp with time zone                          |           |          | 
+ is_active         | boolean                                           |           | not null | true
+ approval_required | boolean                                           |           | not null | false
+ auto_assign       | boolean                                           |           | not null | true
+ department        | character varying(100)                            |           |          | 
+ conditions        | jsonb                                             |           |          | 
+ metadata          | jsonb                                             |           |          | 
+ created_at        | timestamp with time zone                          |           | not null | 
+ updated_at        | timestamp with time zone                          |           | not null | 
+Indexes:
+    "corporate_plan_sponsorships_pkey" PRIMARY KEY, btree (id)
+    "corporate_plan_sponsorships_corporate_id" btree (corporate_id)
+    "corporate_plan_sponsorships_employee_id" btree (employee_id)
+    "corporate_plan_sponsorships_is_active" btree (is_active)
+    "corporate_plan_sponsorships_plan_id" btree (plan_id)
+    "idx_corporate_active_sponsorships" btree (corporate_id, is_active)
+Foreign-key constraints:
+    "corporate_plan_sponsorships_employee_id_fkey" FOREIGN KEY (employee_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE
+    "corporate_plan_sponsorships_plan_id_fkey" FOREIGN KEY (plan_id) REFERENCES subscription_plans(id) ON UPDATE CASCADE ON DELETE RESTRICT
+Referenced by:
+    TABLE "user_subscriptions" CONSTRAINT "user_subscriptions_corporate_sponsorship_id_fkey" FOREIGN KEY (corporate_sponsorship_id) REFERENCES corporate_plan_sponsorships(id)
+

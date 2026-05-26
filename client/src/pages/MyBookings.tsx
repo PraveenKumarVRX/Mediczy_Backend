@@ -183,7 +183,7 @@ const MyBookings = () => {
     }
   };
 
-  const handleJoinVideoCall = (booking: Booking) => {
+  const handleJoinVideoCall = async (booking: Booking) => {
     const resolveRoomId = (meetingLink?: string) => {
       if (!meetingLink) return `apt-${booking.id}`;
       if (meetingLink.includes('/rooms/')) return meetingLink.split('/rooms/')[1]?.split('?')[0];
@@ -202,15 +202,27 @@ const MyBookings = () => {
       }
     };
 
-    // Navigate to embedded video consultation page with room parameter
-    const roomId = resolveRoomId(booking.meetingLink);
+    try {
+      // Preflight on backend to surface actionable errors (status/payment/time-window)
+      const response = await api.get(`/consultation/video/join/${booking.id}`);
+      if (!response.data?.success) {
+        throw new Error('Video call is not ready yet');
+      }
 
-    navigate(`/video-consultation?room=${encodeURIComponent(roomId)}&appointmentId=${booking.id}`);
+      const roomId = response.data?.video?.meetingId || resolveRoomId(booking.meetingLink);
+      navigate(`/video-consultation?room=${encodeURIComponent(roomId)}&appointmentId=${booking.id}`);
 
-    toast({
-      title: "Joining Video Call",
-      description: `Connecting to video consultation with Dr. ${booking.doctorName}`,
-    });
+      toast({
+        title: "Joining Video Call",
+        description: `Connecting to video consultation with Dr. ${booking.doctorName}`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Cannot Join Yet",
+        description: error.response?.data?.message || "Video consultation is not available right now.",
+        variant: "destructive",
+      });
+    }
   };
 
   const getStatusBadge = (status: Booking["status"]) => {
@@ -259,7 +271,7 @@ const MyBookings = () => {
     setRatingDialogOpen(true);
   };
 
-  const handleJoinCall = (booking: Booking) => {
+  const handleJoinCall = async (booking: Booking) => {
     const resolveRoomId = (meetingLink?: string) => {
       if (!meetingLink) return `apt-${booking.id}`;
       if (meetingLink.includes('/rooms/')) return meetingLink.split('/rooms/')[1]?.split('?')[0];
@@ -278,16 +290,26 @@ const MyBookings = () => {
       }
     };
 
-    // Generate room ID from appointment or meeting link
-    const roomId = resolveRoomId(booking.meetingLink);
+    try {
+      const response = await api.get(`/consultation/video/join/${booking.id}`);
+      if (!response.data?.success) {
+        throw new Error('Video call is not ready yet');
+      }
 
-    // Navigate to video consultation page
-    navigate(`/video-consultation?room=${encodeURIComponent(roomId)}&appointmentId=${booking.id}`);
+      const roomId = response.data?.video?.meetingId || resolveRoomId(booking.meetingLink);
+      navigate(`/video-consultation?room=${encodeURIComponent(roomId)}&appointmentId=${booking.id}`);
 
-    toast({
-      title: "Joining Video Call",
-      description: `Connecting to consultation with Dr. ${booking.doctorName}`,
-    });
+      toast({
+        title: "Joining Video Call",
+        description: `Connecting to consultation with Dr. ${booking.doctorName}`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Cannot Join Yet",
+        description: error.response?.data?.message || "Consultation is not available right now.",
+        variant: "destructive",
+      });
+    }
   };
 
   const canCancel = (booking: Booking) => {
@@ -298,15 +320,56 @@ const MyBookings = () => {
   };
 
   const canJoinCall = (booking: Booking) => {
-    // Allow join for scheduled/confirmed/in-progress within the valid window
+    // Backend allows join only for confirmed/in-progress appointments.
+    // Keep UI aligned to reduce failed join attempts.
     // Window: 15 min before → 60 min after appointment time
-    if (!["scheduled", "confirmed", "in-progress"].includes(booking.status)) return false;
+    if (!["confirmed", "in-progress"].includes(booking.status)) return false;
     const appointmentDateTime = new Date(`${booking.appointmentDate} ${booking.appointmentTime}`);
     if (isNaN(appointmentDateTime.getTime())) return false;
     const now = new Date();
     const windowStart = new Date(appointmentDateTime.getTime() - 15 * 60 * 1000);
     const windowEnd = new Date(appointmentDateTime.getTime() + 60 * 60 * 1000);
     return now >= windowStart && now <= windowEnd;
+  };
+
+  const getJoinState = (booking: Booking) => {
+    const appointmentDateTime = new Date(`${booking.appointmentDate} ${booking.appointmentTime}`);
+    if (!["confirmed", "in-progress"].includes(booking.status)) {
+      return {
+        enabled: false,
+        reason: `Call becomes available after confirmation. Current status: ${booking.status}.`,
+      };
+    }
+
+    if (isNaN(appointmentDateTime.getTime())) {
+      return {
+        enabled: false,
+        reason: "Appointment date/time is invalid.",
+      };
+    }
+
+    const now = new Date();
+    const windowStart = new Date(appointmentDateTime.getTime() - 15 * 60 * 1000);
+    const windowEnd = new Date(appointmentDateTime.getTime() + 60 * 60 * 1000);
+
+    if (now < windowStart) {
+      return {
+        enabled: false,
+        reason: "Call opens 15 minutes before your appointment time.",
+      };
+    }
+
+    if (now > windowEnd && booking.status !== "in-progress") {
+      return {
+        enabled: false,
+        reason: "The consultation window has ended.",
+      };
+    }
+
+    return {
+      enabled: true,
+      reason: "",
+    };
   };
 
   const canRate = (booking: Booking) => {
@@ -445,28 +508,35 @@ const MyBookings = () => {
                 )}
 
                 <div className="mt-6 flex items-center gap-4 flex-wrap">
-                  {canJoinCall(booking) && (
-                    <>
-                      {booking.consultationType === 'online' ? (
+                  {(["video", "audio", "chat"].includes(booking.consultationType) && ["scheduled", "confirmed", "in-progress"].includes(booking.status)) && (
+                    <div className="flex flex-col gap-1">
+                      {booking.consultationType === 'video' ? (
                         <Button
                           variant="default"
                           onClick={() => handleJoinVideoCall(booking)}
-                          className="bg-teal-600 hover:bg-teal-700 text-white dark:bg-teal-500 dark:hover:bg-teal-600"
+                          disabled={!getJoinState(booking).enabled}
+                          title={getJoinState(booking).enabled ? "" : getJoinState(booking).reason}
+                          className="bg-teal-600 hover:bg-teal-700 text-white dark:bg-teal-500 dark:hover:bg-teal-600 disabled:opacity-60"
                         >
                           <Video className="h-4 w-4 mr-2" />
-                          Join Video Call
+                          {getJoinState(booking).enabled ? "Join Video Call" : "Call Not Ready"}
                         </Button>
                       ) : (
                         <Button
                           variant="default"
                           onClick={() => handleJoinCall(booking)}
-                          className="bg-teal-600 hover:bg-teal-700 text-white dark:bg-teal-500 dark:hover:bg-teal-600"
+                          disabled={!getJoinState(booking).enabled}
+                          title={getJoinState(booking).enabled ? "" : getJoinState(booking).reason}
+                          className="bg-teal-600 hover:bg-teal-700 text-white dark:bg-teal-500 dark:hover:bg-teal-600 disabled:opacity-60"
                         >
                           {getConsultationTypeIcon(booking.consultationType)}
-                          <span className="ml-2">Join Consultation</span>
+                          <span className="ml-2">{getJoinState(booking).enabled ? "Join Consultation" : "Consultation Not Ready"}</span>
                         </Button>
                       )}
-                    </>
+                      {!getJoinState(booking).enabled && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400">{getJoinState(booking).reason}</p>
+                      )}
+                    </div>
                   )}
                   {["scheduled", "confirmed"].includes(booking.status) && (
                     <>

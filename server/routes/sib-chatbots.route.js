@@ -2,8 +2,38 @@ import express from 'express';
 import fetch from 'node-fetch';
 import unifiedConversationService from '../services/unified-conversation.service.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import pool from '../db/pgPool.js';
 
 const router = express.Router();
+
+async function ensureTables() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sib_chatbot_configs (
+      bot_id TEXT PRIMARY KEY,
+      system_prompt TEXT,
+      status TEXT DEFAULT 'active',
+      channels JSONB DEFAULT '[]'::jsonb,
+      settings JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS sib_chatbot_interactions (
+      id BIGSERIAL PRIMARY KEY,
+      bot_id TEXT NOT NULL,
+      session_id TEXT,
+      user_id TEXT,
+      response_time_ms INTEGER,
+      provider TEXT,
+      intent TEXT,
+      success BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_sib_bot_interactions_bot_id ON sib_chatbot_interactions(bot_id);
+    CREATE INDEX IF NOT EXISTS idx_sib_bot_interactions_created ON sib_chatbot_interactions(created_at DESC);
+  `);
+}
+
+ensureTables().catch(err => console.warn('[sib-chatbots] table init error:', err.message));
 
 // Compose admin auth middleware
 const authAdmin = [authUser, requireRole('admin')];
@@ -192,10 +222,12 @@ router.post('/:botId/chat', async (req, res) => {
       });
     }
 
+    const sessionId = conversationId || `admin_${Date.now()}`;
+    const t0 = Date.now();
     const unifiedResponse = await unifiedConversationService.processMessage({
       message,
       channel: 'admin-chat',
-      sessionId: conversationId || `admin_${Date.now()}`,
+      sessionId,
       identifier: userId || conversationId || botId,
       userContext: {
         userId,
@@ -204,6 +236,13 @@ router.post('/:botId/chat', async (req, res) => {
         botType: botConfig.botletType
       }
     });
+    const responseTimeMs = Date.now() - t0;
+
+    pool.query(
+      `INSERT INTO sib_chatbot_interactions (bot_id, session_id, user_id, response_time_ms, provider, intent, success)
+       VALUES ($1, $2, $3, $4, $5, $6, TRUE)`,
+      [botId, sessionId, userId || null, responseTimeMs, unifiedResponse.provider || null, unifiedResponse.intentType || null]
+    ).catch(() => {});
 
     // Format response
     res.json({
@@ -232,6 +271,10 @@ router.post('/:botId/chat', async (req, res) => {
     });
 
   } catch (error) {
+    pool.query(
+      `INSERT INTO sib_chatbot_interactions (bot_id, session_id, success) VALUES ($1, $2, FALSE)`,
+      [req.params.botId, req.body?.conversationId || null]
+    ).catch(() => {});
     console.error(`Chatbot ${req.params.botId} error:`, error);
     
     // Provide fallback response for emergency bot
@@ -423,15 +466,28 @@ router.get('/:botId/stats', authAdmin, async (req, res) => {
       });
     }
 
-    // TODO: Get real stats from database
-    // For now, return mock stats that will be replaced with real data
+    const { rows } = await pool.query(
+      `SELECT
+         COUNT(*)::int AS interactions,
+         COUNT(*) FILTER (WHERE success = TRUE)::int AS successes,
+         COUNT(DISTINCT session_id) FILTER (WHERE created_at > NOW() - INTERVAL '1 hour')::int AS active_conversations,
+         ROUND(AVG(response_time_ms)) AS avg_response_time_ms
+       FROM sib_chatbot_interactions
+       WHERE bot_id = $1 AND created_at > NOW() - INTERVAL '24 hours'`,
+      [botId]
+    );
+    const row = rows[0];
     const stats = {
       botId,
       botName: botConfig.name,
-      interactions: Math.floor(Math.random() * 1000) + 100,
-      accuracy: 94 + Math.random() * 5,
-      avgResponseTime: `${(0.2 + Math.random() * 0.5).toFixed(1)}s`,
-      activeConversations: Math.floor(Math.random() * 20),
+      interactions: row.interactions,
+      accuracy: row.interactions > 0
+        ? parseFloat(((row.successes / row.interactions) * 100).toFixed(1))
+        : null,
+      avgResponseTime: row.avg_response_time_ms
+        ? `${(row.avg_response_time_ms / 1000).toFixed(1)}s`
+        : null,
+      activeConversations: row.active_conversations,
       period: 'last_24h'
     };
 
@@ -467,12 +523,27 @@ router.put('/:botId/config', authAdmin, async (req, res) => {
       });
     }
 
-    // Update configuration in memory (in production, save to database)
     if (systemPrompt) {
       botConfig.systemPrompt = systemPrompt;
     }
 
-    // TODO: Persist configuration to database
+    await pool.query(
+      `INSERT INTO sib_chatbot_configs (bot_id, system_prompt, status, channels, settings, updated_at)
+       VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, NOW())
+       ON CONFLICT (bot_id) DO UPDATE SET
+         system_prompt = COALESCE(EXCLUDED.system_prompt, sib_chatbot_configs.system_prompt),
+         status        = COALESCE(EXCLUDED.status, sib_chatbot_configs.status),
+         channels      = COALESCE(EXCLUDED.channels, sib_chatbot_configs.channels),
+         settings      = COALESCE(EXCLUDED.settings, sib_chatbot_configs.settings),
+         updated_at    = NOW()`,
+      [
+        botId,
+        systemPrompt || null,
+        status || 'active',
+        JSON.stringify(channels || []),
+        JSON.stringify(settings || {})
+      ]
+    );
 
     res.json({
       success: true,

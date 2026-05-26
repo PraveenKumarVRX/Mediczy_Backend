@@ -6,7 +6,7 @@
  * All computations are SQL-based — no external ML runtime required.
  */
 
-import { postgresSequelize as sequelize } from '../db/postgres.js';
+import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 
 // ─── Capacity Forecasting ─────────────────────────────────────────────────────

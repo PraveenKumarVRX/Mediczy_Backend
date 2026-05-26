@@ -181,22 +181,24 @@ class IndicLLMEngine:
         
         IMPORTANT: LLM only formats - does NOT add medications.
         """
-        # Gemma instruct format with one-shot example so 2B model learns the pattern
         prompt = f"""<start_of_turn>user
-You are a medical documentation assistant. Extract prescription details from doctor's notes. Fill in ONLY what is mentioned. Do not use placeholders.
+You are a medical documentation formatter. Extract ONLY the details explicitly present in the transcript.
 
-EXAMPLE:
-TRANSCRIPT: 45F, cough 5 days, fever 100F. BP 120/80. Azithromycin 500mg OD 5 days, Dolo 650 TDS. Rest and fluids. Review 5 days.
-DIAGNOSIS: Acute respiratory tract infection
+CRITICAL SAFETY RULES:
+- Do not copy examples. There are no examples in this prompt.
+- Do not add, infer, substitute, or recommend any medicine.
+- Medicine names, dose, frequency, and duration must be copied exactly from the transcript after normalization.
+- If diagnosis is not stated, write: Not documented.
+- If a section is not stated, leave it blank.
+
+Output exactly this format:
+DIAGNOSIS: <only stated diagnosis or Not documented>
 MEDICINES:
-1. Azithromycin | 500mg | Once daily | 5 days
-2. Dolo (Paracetamol) | 650mg | Three times daily | 5 days
+1. <drug name> | <dose> | <frequency> | <duration> | <instructions>
 ADVICE:
-- Rest
-- Adequate fluids
-FOLLOW-UP: 5 days
+- <only stated advice>
+FOLLOW-UP: <only stated follow-up>
 
-NOW EXTRACT:
 TRANSCRIPT: {transcript}<end_of_turn>
 <start_of_turn>model
 DIAGNOSIS: """

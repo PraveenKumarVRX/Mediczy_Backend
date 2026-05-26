@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw, FileText, Download, BarChart2, Activity, DollarSign, Users } from 'lucide-react';
-import api from '@/services/api';
+import api from '@/utils/api';
 
 interface ReportMeta { id: string; name: string; description: string; params: string[]; }
 interface Digest { headline: { occupancy_pct: number; admissions_today: number; discharges_today: number; critical_alerts: number; emar_compliance_pct: number; ot_cases_today: number; preauths_pending: number; }; alerts: { type: string; message: string; severity: string; }[]; }

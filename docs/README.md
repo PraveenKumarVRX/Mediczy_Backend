@@ -1,7 +1,7 @@
 # Mediczy Documentation Index
 
-> **Total Documentation Files**: 436 organized markdown files  
-> **Last Updated**: January 15, 2026
+> **Total Documentation Files**: 437 organized markdown files  
+> **Last Updated**: May 23, 2026
 
 ## 📚 Documentation Structure
 
@@ -112,8 +112,9 @@ PostgreSQL, migrations, and database architecture.
 - Migration guides
 - BullMQ vs RabbitMQ vs Celery
 
-### 🏗️ [Architecture](./architecture/) - 12 files
+### 🏗️ [Architecture](./architecture/) - 13 files
 System architecture, design patterns, and scaling.
+- **[NestJS Migration Plan](./architecture/NESTJS_MIGRATION_PLAN.md)** — Strangler fig migration from Express to NestJS. Phases, patterns, nginx config, rollback protocol, progress tracker.
 - Technical architecture
 - Multi-tenant architecture
 - PaaS architecture

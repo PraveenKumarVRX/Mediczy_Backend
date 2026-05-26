@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw, DollarSign, AlertTriangle, TrendingUp, TrendingDown, Zap, ShieldAlert, ClipboardList } from 'lucide-react';
-import api from '@/services/api';
+import api from '@/utils/api';
 
 type Tab = 'gaps' | 'leakage' | 'orders' | 'denial';
 

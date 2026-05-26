@@ -22,19 +22,23 @@ module.exports = {
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
     },
 
-    // Production server - no auto-reload
+    // Production server - cluster mode (uses all CPU cores)
     {
       name: 'mediczy-server',
-      script: 'index.js',
+      script: 'scripts/ssm-env-loader.mjs',
+      args: 'index.js',
       cwd: '/home/ubuntu/Mediczy/server',
       interpreter: 'node',
+      interpreter_args: '--experimental-vm-modules',
       watch: false,
-      instances: 1,
-      exec_mode: 'fork',
+      instances: 1,       // Single instance to avoid memory-threshold restart loops
+      exec_mode: 'cluster',
       autorestart: true,
-      max_memory_restart: '1G',
+      max_memory_restart: '2G',
       env: {
-        NODE_ENV: 'production'
+        NODE_ENV: 'production',
+        AWS_REGION: 'ap-south-1',
+        SSM_PARAM_PATH: '/mediczy/prod',
       },
       error_file: '../logs/mediczy-server-error.log',
       out_file: '../logs/mediczy-server-out.log',

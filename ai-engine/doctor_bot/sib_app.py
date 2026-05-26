@@ -25,6 +25,7 @@ Endpoints:
 Run with: uvicorn sib_app:app --host 0.0.0.0 --port 8001
 """
 
+import asyncio
 import os
 import time
 import logging
@@ -33,11 +34,15 @@ import warnings
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from pathlib import Path
+import textwrap
+import math
+import json as _json
+import traceback
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).resolve().parent / ".env")
+load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 
 # Configure logging
 log_level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -84,6 +89,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="User message")
     include_risk: bool = Field(False, description="Include risk assessment")
     include_rag: bool = Field(True, description="Include retrieval-augmented context")
+    skip_kb_rag: bool = Field(False, description="Skip knowledge-base RAG enrichment for this turn")
     patient_data: Optional[Dict[str, Any]] = Field(None, description="Patient health data")
 
 
@@ -232,6 +238,21 @@ class HybridSearchRequest(BaseModel):
     dense_weight: float = Field(0.6, ge=0, le=1, description="Weight for dense retrieval (1-dense_weight for sparse)")
 
 
+class EmbedRequest(BaseModel):
+    """Embedding request — returns 768-dim ClinicalBERT vectors"""
+    texts: list[str] = Field(..., description="Texts to embed")
+
+
+class IngestDocumentRequest(BaseModel):
+    """Knowledge document ingestion request"""
+    title: str = Field(..., description="Document title")
+    text: str = Field(..., description="Full document text")
+    category: str = Field("clinical", description="Category: clinical | insurance | guideline | irdai")
+    source: str = Field("manual", description="Source label (e.g. irdai, who, user_upload)")
+    scope: str = Field("global", description="Scope: global | hospital | doctor")
+    scope_id: Optional[str] = Field(None, description="Scope ID if not global")
+
+
 class EHRTextRequest(BaseModel):
     """EHR text ingestion request"""
     text: str = Field(..., description="EHR text content")
@@ -301,6 +322,12 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager"""
     # Startup
     await app_state.initialize()
+    # Warmup S-PubMedBert so first /embed or /ingest request isn't slow
+    try:
+        await asyncio.to_thread(_get_embed_model)
+        logger.info("✅ S-PubMedBert warmup complete")
+    except Exception as _e:
+        logger.warning(f"S-PubMedBert warmup skipped: {_e}")
     yield
     # Shutdown
     logger.info("👋 Shutting down SIB...")
@@ -415,14 +442,71 @@ async def health():
 async def chat(request: ChatRequest):
     """
     Multi-turn conversational AI endpoint.
-    
-    Maintains conversation history per patient.
-    Optionally includes risk assessment.
+
+    Every turn is enriched with pgvector KB chunks (ai_document_chunks) that are
+    semantically relevant to the user's message.  The retrieved guidelines/policies
+    are injected into the LLM prompt as [KNOWLEDGE BASE] context so the model can
+    answer using the latest indexed IRDAI circulars, WHO advisories, etc.
+
+    Pass skip_kb_rag=true to bypass enrichment (e.g. simple acknowledgements).
     """
     if not app_state.sib:
         raise HTTPException(status_code=503, detail="SIB not initialized")
-    
-    result = await app_state.sib.handle_request(RequestType.CHAT.value, request.model_dump())
+
+    req_data = request.model_dump()
+
+    # ── KB RAG enrichment ────────────────────────────────────────────────────
+    if (
+        not request.skip_kb_rag
+        and app_state.db
+        and app_state.db.pgvector_enabled
+        and len(request.message.strip()) > 10
+    ):
+        try:
+            q_enc = await asyncio.to_thread(
+                _get_embed_model().encode,
+                [request.message],
+                convert_to_numpy=True,
+                show_progress_bar=False,
+            )
+            vec_str = f"[{','.join(str(round(float(v), 6)) for v in q_enc[0])}]"
+
+            async with app_state.db.pg_pool.acquire(timeout=10) as conn:
+                kb_rows = await conn.fetch(
+                    f"""SELECT c.content,
+                               1 - (c.embedding <=> '{vec_str}'::vector) AS score,
+                               d.title, d.category
+                        FROM ai_document_chunks c
+                        JOIN ai_knowledge_documents d ON d.id = c.document_id
+                        WHERE d.status = 'ready'
+                          AND 1 - (c.embedding <=> '{vec_str}'::vector) >= 0.30
+                        ORDER BY c.embedding <=> '{vec_str}'::vector
+                        LIMIT 3""",
+                    timeout=10,
+                )
+
+            if kb_rows:
+                parts = [
+                    f"[{r['category'].upper()} — {r['title']}]\n{r['content']}"
+                    for r in kb_rows
+                ]
+                req_data["kb_context"] = "\n\n".join(parts)
+                req_data["_kb_chunks_injected"] = len(kb_rows)
+                req_data["_kb_top_score"] = round(float(kb_rows[0]["score"]), 3)
+                logger.info(f"KB RAG: {len(kb_rows)} chunks injected (top score {float(kb_rows[0]['score']):.3f})")
+        except Exception as _kb_err:
+            logger.warning(f"KB RAG enrichment skipped: {_kb_err}")
+    # ─────────────────────────────────────────────────────────────────────────
+
+    result = await app_state.sib.handle_request(RequestType.CHAT.value, req_data)
+
+    # Surface KB injection metadata in response (for debugging / frontend transparency)
+    if req_data.get("_kb_chunks_injected"):
+        result["kb_rag"] = {
+            "chunks_injected": req_data["_kb_chunks_injected"],
+            "top_score": req_data["_kb_top_score"],
+        }
+
     return result
 
 
@@ -1699,6 +1783,301 @@ async def summarize(request: SummarizeRequest):
 
 
 # ==================== Stats Endpoint ====================
+
+# ── Embedding model singletons (loaded once, stay warm) ──────────────────────
+# S-PubMedBert: used for /embed endpoint → ai_document_chunks (new ingested docs)
+# Note: medical_embeddings (10K rows) uses Xenova/LaBSE from Node.js ingest — queried
+#       by rag-pipeline.js on the Node.js side. SIB Python uses S-PubMedBert only.
+_embed_model = None       # S-PubMedBert-MS-MARCO, 768-dim
+
+def _get_embed_model():
+    global _embed_model
+    if _embed_model is None:
+        from sentence_transformers import SentenceTransformer
+        _embed_model = SentenceTransformer("pritamdeka/S-PubMedBert-MS-MARCO")
+        logger.info("✅ S-PubMedBert-MS-MARCO loaded for /embed")
+    return _embed_model
+
+
+@app.post("/embed")
+async def embed_texts(request: EmbedRequest):
+    """
+    Generate 768-dim ClinicalBERT (S-PubMedBert) embeddings.
+
+    Called by rag-pipeline.js for document ingestion and query vectorisation.
+    Returns float32 vectors that match the pgvector dimension of
+    ai_document_chunks, sib_embeddings, and medical_embeddings.
+    """
+    if not request.texts:
+        raise HTTPException(status_code=400, detail="'texts' list is empty")
+    try:
+        model = _get_embed_model()
+        vecs = await asyncio.to_thread(model.encode, request.texts, convert_to_numpy=True, show_progress_bar=False)
+        return {"embeddings": vecs.tolist(), "model": "S-PubMedBert-MS-MARCO", "dimension": 768}
+    except Exception as e:
+        logger.error(f"/embed error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ingest")
+async def ingest_document(request: IngestDocumentRequest):
+    """
+    Ingest a knowledge document into the pgvector knowledge base.
+
+    Chunks the text → embeds with S-PubMedBert → stores in ai_document_chunks.
+    Used for IRDAI circulars, WHO guidelines, insurance PDFs, etc.
+
+    Nightly cron / n8n workflows POST here to keep the KB current.
+    """
+    if not app_state.db:
+        raise HTTPException(status_code=503, detail="Database not initialised")
+
+    CHUNK_WORDS = 300
+    OVERLAP_WORDS = 40
+
+    words = request.text.split()
+    if len(words) < 10:
+        raise HTTPException(status_code=400, detail="Text too short to index")
+
+    # Build overlapping chunks
+    step = CHUNK_WORDS - OVERLAP_WORDS
+    raw_chunks = []
+    for i in range(0, len(words), step):
+        chunk = " ".join(words[i: i + CHUNK_WORDS])
+        if len(chunk.strip()) > 30:
+            raw_chunks.append(chunk.strip())
+        if i + CHUNK_WORDS >= len(words):
+            break
+
+    try:
+        db = app_state.db
+        model = _get_embed_model()
+
+        doc_meta = _json.dumps({"source": request.source})
+
+        # Insert parent document record
+        async with db.pg_pool.acquire() as conn:
+            doc_row = await conn.fetchrow(
+                """INSERT INTO ai_knowledge_documents
+                     (title, category, scope, scope_id, metadata, status, updated_at)
+                   VALUES ($1, $2, $3, $4, $5::jsonb, 'processing', NOW())
+                   RETURNING id""",
+                request.title, request.category, request.scope, request.scope_id, doc_meta
+            )
+
+        doc_id = doc_row["id"]
+
+        # Embed all chunks in batch (off event loop — model.encode is CPU-bound)
+        vecs = await asyncio.to_thread(model.encode, raw_chunks, convert_to_numpy=True, show_progress_bar=False)
+
+        # Store all chunks + mark ready in one connection — vector as SQL literal bypasses type introspection
+        async with db.pg_pool.acquire(timeout=20) as conn:
+            for idx, (chunk, vec) in enumerate(zip(raw_chunks, vecs)):
+                vec_literal = f"[{','.join(str(round(float(v), 6)) for v in vec)}]"
+                token_count = math.ceil(len(chunk.split()) / 0.75)
+                await conn.execute(
+                    f"""INSERT INTO ai_document_chunks
+                          (document_id, chunk_index, content, token_count, embedding, metadata)
+                        VALUES ($1, $2, $3, $4, '{vec_literal}'::vector, $5)""",
+                    doc_id, idx, chunk, token_count,
+                    '{"ingestedBy":"sib-ingest"}',
+                    timeout=20
+                )
+            await conn.execute(
+                "UPDATE ai_knowledge_documents SET status='ready', chunk_count=$1, updated_at=NOW() WHERE id=$2",
+                len(raw_chunks), doc_id
+            )
+
+        logger.info(f"✅ Ingested '{request.title}': {len(raw_chunks)} chunks, doc_id={doc_id}")
+        return {
+            "status": "ok",
+            "document_id": doc_id,
+            "title": request.title,
+            "chunks": len(raw_chunks),
+            "category": request.category,
+        }
+
+    except Exception as e:
+        logger.error(f"/ingest error: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e) or type(e).__name__)
+
+
+@app.post("/rag/search")
+async def rag_search(query: str, top_k: int = 6, category: Optional[str] = None):
+    """
+    pgvector semantic search across all knowledge tables.
+
+    Queries in parallel:
+      - ai_document_chunks  (ingested guidelines, IRDAI, etc.)
+      - medical_embeddings  (10K medical Q&A from HuggingFace)
+      - sib_embeddings      (EHR history)
+
+    Returns merged, re-ranked results by cosine similarity.
+    Used internally by /knowledge/search and the UW chat RAG enrichment.
+    """
+    if not query or not query.strip():
+        raise HTTPException(status_code=400, detail="'query' is required")
+    if not app_state.db:
+        raise HTTPException(status_code=503, detail="Database not initialised")
+
+    try:
+        # S-PubMedBert — used by SIB /ingest endpoint for all new documents
+        q_enc = await asyncio.to_thread(_get_embed_model().encode, [query], convert_to_numpy=True, show_progress_bar=False)
+        q_vec = q_enc[0]
+        vec_str = f"[{','.join(str(round(float(v), 6)) for v in q_vec)}]"
+
+        # Note: medical_embeddings uses Xenova/LaBSE (Node.js ingest) — incompatible vector space.
+        # That table is queried by rag-pipeline.js on the Node.js side; skip it here.
+        cat_filter = "AND d.category = $3" if category else ""
+
+        async def _q(sql, *params):
+            async with app_state.db.pg_pool.acquire(timeout=20) as c:
+                return await c.fetch(sql, *params, timeout=20)
+
+        # Only ai_document_chunks uses S-PubMedBert (ingested via /ingest).
+        # sib_embeddings and medical_embeddings use different models — queried by Node.js rag-pipeline.
+        # Vector embedded as SQL literal to bypass asyncpg type-introspection timeout on pgvector type.
+        cat_clause = f"AND d.category = $2" if category else ""
+        cat_params  = [category] if category else []
+        limit_param = top_k * 2
+
+        async with app_state.db.pg_pool.acquire(timeout=20) as conn:
+            rows = await conn.fetch(
+                f"""SELECT c.content,
+                           1 - (c.embedding <=> '{vec_str}'::vector) AS score,
+                           d.title AS doc_title, d.category,
+                           d.metadata->>'source' AS source,
+                           'knowledge_base' AS table_source
+                    FROM ai_document_chunks c
+                    JOIN ai_knowledge_documents d ON d.id = c.document_id
+                    WHERE d.status = 'ready' {cat_clause}
+                    ORDER BY c.embedding <=> '{vec_str}'::vector
+                    LIMIT {limit_param}
+                """, *cat_params, timeout=20
+            )
+
+        all_rows = list(rows)
+
+        MIN_SCORE = 0.30
+        merged = sorted(
+            [r for r in all_rows if (r["score"] or 0) >= MIN_SCORE],
+            key=lambda r: r["score"],
+            reverse=True
+        )[:top_k]
+
+        return {
+            "query": query,
+            "results": [
+                {
+                    "content": r["content"],
+                    "score": round(float(r["score"]), 4),
+                    "doc_title": r["doc_title"],
+                    "category": r["category"],
+                    "source": r["source"],
+                    "from": r["table_source"],
+                }
+                for r in merged
+            ],
+            "retrieved": len(merged),
+        }
+
+    except Exception as e:
+        logger.error(f"/rag/search error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/kb/refresh")
+async def refresh_knowledge_base():
+    """
+    Nightly knowledge base refresh — fetches recent medical/IRDAI updates
+    and ingests them as new documents.
+
+    Called by cron or n8n workflow at 02:00 IST daily.
+    Sources:
+      - IRDAI circulars search (web)
+      - WHO India health advisories (web)
+    """
+    if not app_state.sib:
+        raise HTTPException(status_code=503, detail="SIB not initialised")
+
+    refresh_queries = [
+        ("IRDAI health insurance circular 2025 2026 India guidelines", "insurance", "irdai"),
+        ("WHO India health advisory 2025 disease outbreak", "clinical", "who"),
+        ("group mediclaim policy IRDAI standardisation India", "insurance", "irdai"),
+        ("NABH hospital accreditation standards India clinical protocol", "clinical", "nabh"),
+    ]
+
+    ingested = []
+    errors = []
+
+    try:
+        web_bot = app_state.sib.web_search_bot
+
+        for search_q, category, source_label in refresh_queries:
+            try:
+                web_result = web_bot.search(search_q, max_results=3)
+                if asyncio.iscoroutine(web_result):
+                    web_result = await web_result
+                results = web_result.get("results", [])
+                for r in results:
+                    snippet = r.get("snippet") or r.get("description") or ""
+                    title   = r.get("title", search_q[:80])
+                    if len(snippet) < 80:
+                        continue
+                    # Build mini document from title + snippet
+                    doc_text = f"{title}\n\n{snippet}"
+
+                    # Embed + store (reuse ingest logic directly)
+                    words = doc_text.split()
+                    if len(words) < 15:
+                        continue
+
+                    model = _get_embed_model()
+                    enc_result = await asyncio.to_thread(model.encode, [doc_text], convert_to_numpy=True, show_progress_bar=False)
+                    vec = enc_result[0]
+                    vec_str = f"[{','.join(str(round(float(v), 6)) for v in vec)}]"
+
+                    ref_meta = _json.dumps({"source": source_label, "via": "kb_refresh"})
+
+                    async with app_state.db.pg_pool.acquire() as conn:
+                        existing = await conn.fetchval(
+                            "SELECT id FROM ai_knowledge_documents WHERE title = $1 AND metadata->>'source' = $2",
+                            title[:255], source_label
+                        )
+                        if existing:
+                            continue  # already indexed
+
+                        doc_id = await conn.fetchval(
+                            """INSERT INTO ai_knowledge_documents
+                                 (title, category, scope, metadata, status, updated_at)
+                               VALUES ($1, $2, 'global', $3::jsonb, 'ready', NOW())
+                               RETURNING id""",
+                            title[:255], category, ref_meta
+                        )
+                        await conn.execute(
+                            f"""INSERT INTO ai_document_chunks
+                                  (document_id, chunk_index, content, token_count, embedding, metadata)
+                                VALUES ($1, 0, $2, $3, '{vec_str}'::vector, $4::jsonb)""",
+                            doc_id, doc_text, len(words), ref_meta,
+                            timeout=20
+                        )
+                        ingested.append({"title": title, "category": category, "source": source_label})
+
+            except Exception as e:
+                errors.append(f"{search_q[:40]}: {str(e)[:100]}")
+
+        logger.info(f"✅ KB refresh: {len(ingested)} new documents ingested")
+        return {
+            "status": "ok",
+            "ingested": len(ingested),
+            "documents": ingested,
+            "errors": errors,
+        }
+
+    except Exception as e:
+        logger.error(f"/kb/refresh error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/stats")
 async def get_stats():

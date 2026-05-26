@@ -10,16 +10,10 @@
 import express from 'express';
 import multer  from 'multer';
 import path    from 'path';
-import fs      from 'fs';
-import { fileURLToPath } from 'url';
 import { authUser as authDoctor } from '../middleware/auth.middleware.js';
 import pool from '../db/pgPool.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const UPLOAD_DIR = path.join(__dirname, '../../uploads/imaging');
-
-// Ensure upload dir exists
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+import { s3Storage, s3PresignedUrl, s3Client, BUCKET } from '../utils/s3-storage.js';
+import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 const ALLOWED_MIME = [
   'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/bmp',
@@ -31,16 +25,8 @@ const ALLOWED_MIME = [
 const ALLOWED_EXT = ['.jpg','.jpeg','.png','.gif','.webp','.bmp','.tiff','.dcm',
                      '.mp4','.webm','.ogv','.mov','.avi','.pdf'];
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-  filename:    (_req, file, cb) => {
-    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-    cb(null, `${Date.now()}_${safeName}`);
-  },
-});
-
 const upload = multer({
-  storage,
+  storage: s3Storage('imaging'),
   limits: { fileSize: 200 * 1024 * 1024 }, // 200 MB (DICOM / video)
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
@@ -87,9 +73,9 @@ router.post('/upload', authDoctor, upload.single('file'), async (req, res) => {
         studyDate,
         title || req.file.originalname,
         notes,
-        req.file.filename,
+        req.file.key,           // S3 object key stored as file_name
         req.file.originalname,
-        req.file.path,
+        req.file.key,           // S3 key stored in file_path column
         req.file.size,
         req.file.mimetype,
       ]
@@ -104,8 +90,6 @@ router.post('/upload', authDoctor, upload.single('file'), async (req, res) => {
     });
   } catch (err) {
     console.error('imaging upload error:', err);
-    // Remove orphaned file on error
-    if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
     res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -167,15 +151,8 @@ router.get('/file/:id', authDoctor, async (req, res) => {
       [req.params.id, doctorId]
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Not found' });
-
-    const record  = rows[0];
-    const filePath = record.file_path;
-
-    if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, message: 'File not found on disk' });
-
-    res.setHeader('Content-Type', record.mime_type || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(record.original_name)}"`);
-    res.sendFile(path.resolve(filePath));
+    const url = await s3PresignedUrl(rows[0].file_path, 3600);
+    res.redirect(302, url);
   } catch (err) {
     console.error('imaging serve error:', err);
     res.status(500).json({ success: false, message: err.message });
@@ -192,8 +169,10 @@ router.delete('/:id', authDoctor, async (req, res) => {
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Not found' });
 
-    const filePath = rows[0].file_path;
-    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    const s3Key = rows[0].file_path;
+    if (s3Key) {
+      await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: s3Key })).catch(() => {});
+    }
 
     res.json({ success: true, message: 'Imaging study deleted' });
   } catch (err) {

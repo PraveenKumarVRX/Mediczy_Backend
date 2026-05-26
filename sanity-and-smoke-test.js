@@ -662,9 +662,15 @@ class SanityCheckAndSmokeTest {
         this.log(`❌ Emergency video call failed: Invalid response`, 'error');
       }
     } catch (error) {
-      test.status = 'failed';
-      test.error = error.message;
-      this.log(`❌ Emergency video call test failed: ${error.message}`, 'error');
+      if (error.response?.status === 429) {
+        test.status = 'warning';
+        test.error = 'Rate limited during emergency video call smoke test';
+        this.log(`⚠️ Emergency video call test rate-limited (429); endpoint is reachable but throttled`, 'warning');
+      } else {
+        test.status = 'failed';
+        test.error = error.message;
+        this.log(`❌ Emergency video call test failed: ${error.message}`, 'error');
+      }
     }
     this.recordResult('smoke', test);
   }

@@ -7,17 +7,33 @@
 
 import pg from 'pg';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const { Client } = pg;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
+function envFlag(name, fallback = false) {
+  const raw = process.env[name];
+  if (raw == null) return fallback;
+  return String(raw).toLowerCase() === 'true';
+}
+
+const useSSL = envFlag('POSTGRES_SSL') || String(process.env.PGSSLMODE || '').toLowerCase() === 'require';
+const pgSsl = useSSL ? { rejectUnauthorized: false } : false;
 
 async function configureCarEmailForParinitha() {
-  const client = new Client({
-    user: process.env.DB_USER || process.env.POSTGRES_USER || 'postgres',
-    password: process.env.DB_PASSWORD || process.env.POSTGRES_PASSWORD || 'password',
-    host: process.env.DB_HOST || process.env.POSTGRES_HOST || 'localhost',
-    port: process.env.DB_PORT || process.env.POSTGRES_PORT || 5432,
-    database: process.env.DB_NAME || process.env.POSTGRES_DATABASE || 'mediczy_ai'
-  });
+  const client = process.env.DATABASE_URL
+    ? new Client({ connectionString: process.env.DATABASE_URL, ssl: pgSsl })
+    : new Client({
+        user: process.env.DB_USER || process.env.POSTGRES_USER || 'postgres',
+        password: process.env.DB_PASSWORD || process.env.POSTGRES_PASSWORD || 'password',
+        host: process.env.DB_HOST || process.env.POSTGRES_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || process.env.POSTGRES_PORT || '5432', 10),
+        database: process.env.DB_NAME || process.env.POSTGRES_DATABASE || 'mediczy_ai',
+        ssl: pgSsl,
+      });
 
   try {
     await client.connect();
@@ -111,11 +127,6 @@ async function configureCarEmailForParinitha() {
   }
 }
 
-// Load environment from server directory
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.join('/home/ubuntu/Mediczy/server', '.env') });
+// Load environment from server directory (already loaded at module init)
 
 configureCarEmailForParinitha().catch(console.error);

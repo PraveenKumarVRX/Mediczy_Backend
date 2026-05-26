@@ -13,13 +13,12 @@ import express   from 'express';
 import multer    from 'multer';
 import path      from 'path';
 import fs        from 'fs';
-import { fileURLToPath } from 'url';
+import os        from 'os';
 import pool      from '../../db/pgPool.js';
 import { authLab } from '../../middleware/authLab.middleware.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const UPLOAD_DIR = path.join(__dirname, '../../../uploads/ris');
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+import { s3Client, BUCKET, s3PresignedUrl } from '../../utils/s3-storage.js';
+import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import crypto    from 'crypto';
 
 const router = express.Router();
 
@@ -77,16 +76,15 @@ const ALLOWED_MIME = [
   'video/mp4','video/webm','video/ogg','video/quicktime',
   'application/pdf',
 ];
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-  filename:    (_req, file, cb) => {
-    const ext  = path.extname(file.originalname) || '';
-    const base = `ris_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    cb(null, base + ext);
-  },
-});
+// Write to /tmp first so parseDicomTags can read from disk, then upload to S3
 const upload = multer({
-  storage,
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+    filename:    (_req, file, cb) => {
+      const ext = path.extname(file.originalname) || '';
+      cb(null, `ris_${Date.now()}_${crypto.randomBytes(6).toString('hex')}${ext}`);
+    },
+  }),
   limits: { fileSize: 500 * 1024 * 1024 }, // 500 MB for DICOM series
   fileFilter: (_req, file, cb) => {
     const ok = ALLOWED_MIME.includes(file.mimetype)
@@ -140,7 +138,17 @@ router.post('/upload', authLab, upload.single('file'), async (req, res) => {
     }
 
     const { isDicom, tags } = parseDicomTags(req.file.path);
-    const relPath = path.relative(path.join(__dirname, '../../../'), req.file.path);
+
+    // Upload from /tmp to S3
+    const ext    = path.extname(req.file.originalname) || '';
+    const s3Key  = `ris/${Date.now()}_${crypto.randomBytes(8).toString('hex')}${ext}`;
+    await s3Client.send(new PutObjectCommand({
+      Bucket:      BUCKET,
+      Key:         s3Key,
+      Body:        fs.createReadStream(req.file.path),
+      ContentType: req.file.mimetype || 'application/octet-stream',
+    }));
+    fs.unlink(req.file.path, () => {});
 
     const result = await pool.query(`
       INSERT INTO ris_studies
@@ -169,9 +177,9 @@ router.post('/upload', authLab, upload.single('file'), async (req, res) => {
       studyDate || new Date().toISOString().slice(0,10),
       studyTime || null,
       priority,
-      req.file.filename,
+      s3Key,
       req.file.originalname,
-      relPath,
+      s3Key,           // file_path now stores S3 key
       req.file.size,
       req.file.mimetype,
       isDicom,
@@ -182,7 +190,7 @@ router.post('/upload', authLab, upload.single('file'), async (req, res) => {
     return res.status(201).json({ success: true, study: result.rows[0] });
   } catch (err) {
     console.error('[RIS] Upload error:', err);
-    try { if (req.file) fs.unlinkSync(req.file.path); } catch {}
+    try { if (req.file?.path) fs.unlinkSync(req.file.path); } catch {}
     return res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -248,14 +256,9 @@ router.get('/file/:id', authLab, async (req, res) => {
     );
     if (!row.rows.length) return res.status(404).json({ success: false, message: 'Not found' });
 
-    const study   = row.rows[0];
-    const absPath = path.join(__dirname, '../../../', study.file_path);
-    if (!fs.existsSync(absPath)) return res.status(404).json({ success: false, message: 'File missing on disk' });
-
-    res.setHeader('Content-Type', study.mime_type || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `inline; filename="${study.file_name}"`);
-    res.setHeader('Cache-Control', 'private, max-age=86400');
-    return res.sendFile(absPath);
+    const study = row.rows[0];
+    const url   = await s3PresignedUrl(study.file_path, 3600);
+    return res.redirect(302, url);
   } catch (err) {
     console.error('[RIS] File serve error:', err);
     return res.status(500).json({ success: false, message: err.message });
@@ -323,10 +326,10 @@ router.delete('/:id', authLab, async (req, res) => {
     );
     if (!row.rows.length) return res.status(404).json({ success: false, message: 'Not found' });
 
-    const study   = row.rows[0];
-    const absPath = path.join(__dirname, '../../../', study.file_path);
-    try { if (fs.existsSync(absPath)) fs.unlinkSync(absPath); } catch {}
-
+    const study = row.rows[0];
+    if (study.file_path) {
+      await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: study.file_path })).catch(() => {});
+    }
     await pool.query('DELETE FROM ris_studies WHERE id = $1', [req.params.id]);
     return res.json({ success: true });
   } catch (err) {

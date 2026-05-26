@@ -23,6 +23,9 @@ import { Kafka, Partitioners } from 'kafkajs';
 const REDIS_URL  = process.env.REDIS_URL   || 'redis://localhost:6379';
 const KAFKA_BROKERS = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 const KAFKA_TOPIC   = process.env.KAFKA_TOPIC    || 'hg.health.events';
+const KAFKA_DISABLED =
+  process.env.DISABLE_KAFKA === 'true' ||
+  process.env.KAFKA_ENABLED === 'false';
 
 let redisPublisher  = null;
 let redisSubscriber = null;
@@ -50,6 +53,12 @@ async function initRedis() {
 
 // ─── Kafka producer ───────────────────────────────────────────────────────────
 async function initKafka() {
+  if (KAFKA_DISABLED) {
+    console.log('[EventBus] Kafka disabled by environment, using Redis-only mode');
+    kafkaProducer = null;
+    return;
+  }
+
   try {
     const kafka = new Kafka({
       clientId: 'hypergrid-event-bus',

@@ -16,22 +16,13 @@
 
 import express      from 'express';
 import multer       from 'multer';
-import path         from 'path';
-import fs           from 'fs';
-import crypto       from 'crypto';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { connectPostgres }       from '../db/postgres.js';
 import { publishEvent }          from '../services/hypergrid-event-bus.service.js';
+import { s3Storage, s3PresignedUrl } from '../utils/s3-storage.js';
 
-const router  = express.Router();
-const DICOM_STORE = process.env.DICOM_STORE_PATH || '/tmp/dicom-store';
-fs.mkdirSync(DICOM_STORE, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (_, __, cb) => cb(null, DICOM_STORE),
-  filename:    (_, file, cb) => cb(null, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${path.extname(file.originalname)}`),
-});
-const upload = multer({ storage, limits: { fileSize: 512 * 1024 * 1024 } }); // 512 MB
+const router = express.Router();
+const upload = multer({ storage: s3Storage('dicom'), limits: { fileSize: 512 * 1024 * 1024 } }); // 512 MB
 
 // ── STOW-RS: Store studies ────────────────────────────────────────────────────
 router.post('/studies', authUser, upload.array('files'), async (req, res) => {
@@ -66,9 +57,9 @@ router.post('/studies', authUser, upload.array('files'), async (req, res) => {
            (sop_instance_uid, study_instance_uid, file_path, file_size,
             content_type, tenant_id, created_at)
          VALUES ($1,$2,$3,$4,$5,$6,NOW())`,
-        [sopUID, uid, file.path, file.size, file.mimetype, tenantId]
+        [sopUID, uid, file.key, file.size, file.mimetype, tenantId]
       );
-      instances.push({ sopInstanceUID: sopUID, fileName: file.filename });
+      instances.push({ sopInstanceUID: sopUID, s3Key: file.key });
     }
 
     await publishEvent({
@@ -152,10 +143,8 @@ router.get('/studies/:studyUID/instances/:sopUID/file', authUser, async (req, re
       [req.params.sopUID, req.user.tenantId || req.user.id]
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Instance not found' });
-    if (!fs.existsSync(r.rows[0].file_path))
-      return res.status(410).json({ success: false, message: 'File no longer available' });
-    res.setHeader('Content-Type', r.rows[0].content_type || 'application/dicom');
-    res.sendFile(path.resolve(r.rows[0].file_path));
+    const url = await s3PresignedUrl(r.rows[0].file_path, 3600);
+    res.redirect(302, url);
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to retrieve instance' });
   }
