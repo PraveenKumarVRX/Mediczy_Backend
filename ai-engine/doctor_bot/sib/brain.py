@@ -97,10 +97,6 @@ class SyntheticIntelligenceBrain:
         # Learning pipeline (lazy loading)
         self._learning_pipeline = None
         
-        # Cached Llama model (loaded once)
-        self._llama_model = None
-        self._llama_loading = False
-        
         # LLM settings
         self.llm_timeout = self.config.get("llm_timeout", 30)
         self.llm_max_retries = self.config.get("llm_max_retries", 2)
@@ -353,53 +349,6 @@ class SyntheticIntelligenceBrain:
         model = data.get("model", model_name)
         
         return {"answer": answer, "model": model}
-    
-    def _llama_inference(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
-        """Local Llama-3.1-8B inference with model caching"""
-        try:
-            from utils.retrieval_llm import generate_with_local_llm
-            
-            full_prompt = prompt
-            if system_prompt:
-                full_prompt = f"{system_prompt}\n\n{prompt}"
-            
-            answer = generate_with_local_llm(full_prompt)
-            return {"answer": answer, "model": "llama-3.1-8b-q4_k_m"}
-        except ImportError:
-            # Direct llama-cpp-python usage with model caching
-            from llama_cpp import Llama
-            from pathlib import Path
-            
-            # Load model only once (cached)
-            if self._llama_model is None:
-                model_path = Path(__file__).parent.parent / "models" / "Llama-3.1-8B-Instruct-Q4_K_M.gguf"
-                if not model_path.exists():
-                    raise FileNotFoundError(f"Model not found: {model_path}")
-                
-                logger.info(f"🚀 Loading Llama model from {model_path}...")
-                start_load = time.time()
-                self._llama_model = Llama(
-                    model_path=str(model_path),
-                    n_ctx=4096,
-                    n_threads=4,
-                    n_gpu_layers=-1,  # Use GPU if available
-                    verbose=False
-                )
-                logger.info(f"✅ Llama model loaded in {time.time() - start_load:.2f}s")
-            
-            messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": prompt})
-            
-            response = self._llama_model.create_chat_completion(
-                messages=messages,
-                max_tokens=1024,
-                temperature=0.7
-            )
-            
-            answer = response["choices"][0]["message"]["content"]
-            return {"answer": answer, "model": "Llama-3.1-8B-Instruct-Q4_K_M"}
     
     def _groq_inference(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
         """Groq API inference"""

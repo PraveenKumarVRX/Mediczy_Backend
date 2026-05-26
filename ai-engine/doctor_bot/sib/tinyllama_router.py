@@ -876,6 +876,13 @@ def get_router() -> TinyLlamaRouter:
     return _router_instance
 
 
+def get_shared_llm():
+    """Return the underlying Llama model instance (shared across all consumers).
+    Callers must not modify model state — use only for inference calls.
+    Returns None if the model failed to load."""
+    return get_router()._llm
+
+
 # Quick test
 if __name__ == "__main__":
     router = TinyLlamaRouter()
