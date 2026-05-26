@@ -1510,6 +1510,8 @@ import hmisAnalyticsRouter from './routes/hmis-analytics.route.js';
 import hmisAlertsRouter from './routes/hmis-alerts.route.js';
 import hmisAutomationRouter from './routes/hmis-automation.route.js';
 import clinicalReportsRouter from './routes/clinical-reports.route.js';
+import aiHmisOpsRouter from './routes/ai-hmis-ops.route.js';
+import aiRevenueRouter from './routes/ai-revenue.route.js';
 
 app.use('/api/v1/adt', adtRouter);
 app.use('/api/v1/beds', bedsManagementRouter);
@@ -1538,6 +1540,8 @@ app.use('/api/v1/analytics', hmisAnalyticsRouter);
 app.use('/api/v1/alerts', hmisAlertsRouter);
 app.use('/api/v1/automation', hmisAutomationRouter);
 app.use('/api/v1/reports/clinical', clinicalReportsRouter);
+app.use('/api/v1/ai-ops', aiHmisOpsRouter);
+app.use('/api/v1/ai-revenue', aiRevenueRouter);
 
 // ============== ENTERPRISE API v2 (New Architecture) ==============
 // API v2 - Enterprise-grade endpoints with proper MVC pattern

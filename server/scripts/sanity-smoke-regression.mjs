@@ -684,6 +684,15 @@ async function runHmisApiTests() {
     { path: '/api/fhir/r4/ServiceRequest',             label: 'FHIR R4: ServiceRequest search' },
     { path: '/api/fhir/r4/Practitioner',               label: 'FHIR R4: Practitioner search' },
     { path: '/api/fhir/r4/cds-services',               label: 'FHIR: CDS Hooks discovery' },
+    // AI Operations Hub
+    { path: '/api/v1/ai-ops/capacity-forecast',        label: 'AI Ops: 24h capacity forecast' },
+    { path: '/api/v1/ai-ops/documentation-audit',      label: 'AI Ops: documentation audit' },
+    { path: '/api/v1/ai-ops/workload-balance',         label: 'AI Ops: ward workload balance' },
+    { path: '/api/v1/ai-ops/discharge-summary/1',      label: 'AI Ops: discharge summary synthesis' },
+    // AI Revenue Intelligence
+    { path: '/api/v1/ai-revenue/billing-gaps',         label: 'AI Revenue: billing gap analysis' },
+    { path: '/api/v1/ai-revenue/leakage-score',        label: 'AI Revenue: revenue leakage score' },
+    { path: '/api/v1/ai-revenue/denial-risk',          label: 'AI Revenue: denial risk scoring' },
   ];
 
   for (const route of hmisGetRoutes) {
