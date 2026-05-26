@@ -635,6 +635,22 @@ async function runHmisApiTests() {
     { path: '/api/v1/reference/procedures/lumbar_puncture', label: 'Bedside ref: LP checklist' },
     // HL7 gateway status
     { path: '/api/v1/hl7/status',                       label: 'HL7 MLLP gateway status' },
+    // New gap-fix endpoints (navigation/start, nursing/vitals, clinical-alerts, OT readiness, insurance case status, analytics)
+    { path: '/api/v1/ot/cases/today',                   label: 'OT cases today (new)' },
+    { path: '/api/v1/ot/case/1/readiness',              label: 'OT case readiness score (new)' },
+    { path: '/api/v1/vitals/clinical-alerts',            label: 'Combined clinical alerts feed (new)' },
+    { path: '/api/v1/insurance/case/1/status',          label: 'Insurance case status by admission (new)' },
+    { path: '/api/v1/analytics/command-center',         label: 'Analytics: command center (new)' },
+    { path: '/api/v1/analytics/operational',            label: 'Analytics: operational KPIs (new)' },
+    { path: '/api/v1/analytics/clinical',               label: 'Analytics: clinical KPIs (new)' },
+    { path: '/api/v1/analytics/quality',                label: 'Analytics: quality KPIs (new)' },
+    { path: '/api/v1/analytics/financial',              label: 'Analytics: financial KPIs (new)' },
+    { path: '/api/v1/analytics/patient-experience',     label: 'Analytics: patient experience KPIs (new)' },
+    { path: '/api/v1/analytics/ward-census',            label: 'Analytics: ward census (new)' },
+    { path: '/api/v1/analytics/los',                    label: 'Analytics: length of stay trend (new)' },
+    // Gap-closure: canonical doc paths
+    { path: '/api/v1/alerts/clinical',                  label: 'Canonical §8 P2 clinical alerts path (new)' },
+    { path: '/api/v1/discharge/readiness/1',            label: 'Canonical §8 P5 discharge readiness path (new)' },
   ];
 
   for (const route of hmisGetRoutes) {

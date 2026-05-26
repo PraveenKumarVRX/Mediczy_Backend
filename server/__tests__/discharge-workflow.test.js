@@ -12,6 +12,31 @@ jest.unstable_mockModule('../services/discharge-workflow.service.js', () => ({
   sendDischargePacket:   jest.fn(),
 }));
 
+jest.unstable_mockModule('../services/consent-enforcement.service.js', () => ({
+  enforceDischargeSignConsent: jest.fn().mockResolvedValue(undefined),
+  enforceOTBookingConsent:     jest.fn().mockResolvedValue(undefined),
+  enforceOTIncisionConsent:    jest.fn().mockResolvedValue(undefined),
+  enforceAnesthesiaConsent:    jest.fn().mockResolvedValue(undefined),
+  enforceHighAlertMedConsent:  jest.fn().mockResolvedValue(undefined),
+  enforceConsent:              jest.fn().mockResolvedValue(undefined),
+  getConsentEnforcementLog:    jest.fn().mockResolvedValue([]),
+}));
+
+jest.unstable_mockModule('../services/adt.service.js', () => ({
+  getDischargeReadiness: jest.fn().mockResolvedValue({ dimensions: [], allClear: false }),
+  admitPatient:          jest.fn(),
+  transferPatient:       jest.fn(),
+  dischargePatient:      jest.fn(),
+  getAdmission:          jest.fn(),
+  getActiveAdmissions:   jest.fn(),
+  getPatientAdtHistory:  jest.fn(),
+  cancelAdmit:           jest.fn(),
+  convertOpToIp:         jest.fn(),
+  convertErToIp:         jest.fn(),
+  initDischargeReadiness: jest.fn(),
+  updateReadinessItem:   jest.fn(),
+}));
+
 const { default: request } = await import('supertest');
 const { default: express }  = await import('express');
 
