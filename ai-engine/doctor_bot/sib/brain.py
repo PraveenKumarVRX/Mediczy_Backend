@@ -5,14 +5,14 @@ Synthetic Intelligence Brain (SIB) - Core Orchestrator
 Central brain that orchestrates all botlets for Dr iSHA & Mediqzy.
 Routes requests, aggregates outputs, applies reasoning & safety filters.
 
-Features:
-- Multi-botlet orchestration
-- LLM fallback strategy (Llama → Groq → Gemini)
-- Request routing and aggregation
-- Safety and compliance layer
-- Unified response formatting
+Orchestration Model (v2):
+  Every request → QwenPlanner.plan() → ExecutionPlan
+  Brain executes plan steps (parallel asyncio groups) against real botlets.
+  QwenPlanner.synthesize() composes the final unified answer.
+  Falls back to hardcoded routing if Qwen is unavailable.
 """
 
+import asyncio
 import os
 import time
 import logging
@@ -443,113 +443,66 @@ class SyntheticIntelligenceBrain:
     
     async def handle_request(self, request_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Main request handler. Routes to appropriate botlet(s).
-        
-        Args:
-            request_type: Type of request (chat, query, ehr_upload, task, etc.)
-            data: Request data
-            
-        Returns:
-            Aggregated response from botlets
+        Main request handler — Qwen-planned orchestration with hardcoded fallback.
+
+        Flow:
+          1. Health-check and purely local types bypass the planner (no overhead).
+          2. QwenPlanner.plan() generates a multi-step execution plan.
+          3. execute_plan() runs steps in parallel asyncio groups against real botlets.
+          4. QwenPlanner.synthesize() composes a unified final answer.
+          5. If Qwen is unavailable → hardcoded routing fallback.
         """
         self.request_count += 1
         start_time = time.time()
-        
-        # Track botlet usage
         self.botlet_stats[request_type] = self.botlet_stats.get(request_type, 0) + 1
-        
+
         try:
-            if request_type == RequestType.CHAT.value:
-                return self._handle_chat(data)
-            
-            elif request_type == RequestType.QUERY.value:
-                return self._handle_query(data)
-            
-            elif request_type == RequestType.EHR_UPLOAD.value:
-                return self._handle_ehr_upload(data)
-            
-            elif request_type == RequestType.TASK.value:
-                return self._handle_task(data)
-            
-            elif request_type == RequestType.NOTIFY.value:
-                return self._handle_notification(data)
-            
-            elif request_type == RequestType.INSURANCE.value:
-                return self._handle_insurance(data)
-            
-            elif request_type == RequestType.RISK.value:
-                return self._handle_risk(data)
-            
-            elif request_type == RequestType.SUMMARIZE.value:
-                return self._handle_summarize(data)
-            
-            elif request_type == RequestType.WEB_SEARCH.value:
-                return await self._handle_web_search(data)
-            
-            elif request_type == RequestType.HEALTH_CHECK.value:
+            # ── Fast-path: types that never need planning ──────────────────
+            if request_type == RequestType.HEALTH_CHECK.value:
                 return self._health_check()
-            
-            # New enhanced request types
-            elif request_type == RequestType.AGENT_QUERY.value:
-                return self.query_with_agent(
-                    data.get("query", ""),
-                    data.get("context", data.get("patient_data", {}))
-                )
-            
-            elif request_type == RequestType.KNOWLEDGE_SEARCH.value:
-                return self.search_knowledge(
-                    data.get("query", ""),
-                    data.get("category", "all")
-                )
-            
-            elif request_type == RequestType.SYMPTOM_CHECK.value:
-                symptoms = data.get("symptoms", [])
-                if isinstance(symptoms, str):
-                    symptoms = [symptoms]
-                return self.classify_symptoms(symptoms, data.get("context", {}))
-            
-            elif request_type == RequestType.TRIAGE.value:
-                # Handle different field name variations
-                complaint = data.get("chief_complaint") or data.get("complaint") or ""
-                # If symptoms provided as list, join them
-                symptoms = data.get("symptoms", [])
-                if isinstance(symptoms, list) and symptoms:
-                    if not complaint:
-                        complaint = ", ".join(symptoms)
-                    else:
-                        complaint = f"{complaint}. Also: {', '.join(symptoms)}"
-                elif isinstance(symptoms, str) and not complaint:
-                    complaint = symptoms
-                
-                vitals = data.get("vital_signs") or data.get("vitals") or {}
-                context = {
-                    "age": data.get("patient_age"),
-                    "patient_type": data.get("patient_type", "adult"),
-                    "mental_status": data.get("mental_status", "alert"),
-                    **(data.get("context") or {})
-                }
-                return self.triage_patient(complaint, vitals, context)
-            
-            elif request_type == RequestType.DRUG_CHECK.value:
-                medications = data.get("drugs") or data.get("medications") or []
-                if isinstance(medications, str):
-                    medications = [medications]
-                patient_conditions = data.get("patient_conditions", [])
-                return self.check_drug_interactions(medications, patient_conditions)
-            
-            elif request_type == RequestType.HYBRID_SEARCH.value:
-                return self.hybrid_search(
-                    data.get("query", ""),
-                    data.get("k", 5),
-                    data.get("method", "hybrid")
-                )
-            
-            else:
-                return {
-                    "error": f"Unknown request type: {request_type}",
-                    "supported_types": [rt.value for rt in RequestType]
-                }
-        
+
+            # ── Primary path: Qwen planning + execution ────────────────────
+            try:
+                from sib.qwen_planner import get_planner, execute_plan
+
+                planner = get_planner()
+                plan = planner.plan(request_type, data)
+
+                if plan is not None:
+                    logger.info(
+                        f"🧠 QwenPlanner: intent={plan.intent} urgency={plan.urgency} "
+                        f"steps={len(plan.steps)} groups={plan.parallel_groups} "
+                        f"reasoning='{plan.reasoning}'"
+                    )
+
+                    step_results = await execute_plan(plan, self, data)
+
+                    # Synthesize final answer from all botlet outputs
+                    request_text = (
+                        data.get("message") or data.get("query") or
+                        data.get("prompt") or request_type
+                    )
+                    synthesis = planner.synthesize(str(request_text), step_results)
+
+                    elapsed = round((time.time() - start_time) * 1000, 2)
+                    return {
+                        "answer":        synthesis.get("answer"),
+                        "chat_answer":   synthesis.get("answer"),
+                        "confidence":    synthesis.get("confidence"),
+                        "sources":       synthesis.get("sources"),
+                        "intent":        plan.intent,
+                        "urgency":       plan.urgency,
+                        "plan_steps":    len(plan.steps),
+                        "plan_reasoning": plan.reasoning,
+                        "provider":      "qwen_orchestrated",
+                        "latency_ms":    elapsed,
+                    }
+            except Exception as plan_err:
+                logger.warning(f"⚠️ QwenPlanner unavailable ({plan_err}), using hardcoded routing")
+
+            # ── Fallback: hardcoded routing (Qwen unavailable) ─────────────
+            return await self._hardcoded_route(request_type, data, start_time)
+
         except Exception as e:
             logger.error(f"❌ Request handling error: {e}")
             import traceback
@@ -557,7 +510,64 @@ class SyntheticIntelligenceBrain:
             return {
                 "error": str(e),
                 "request_type": request_type,
-                "latency_ms": round((time.time() - start_time) * 1000, 2)
+                "latency_ms": round((time.time() - start_time) * 1000, 2),
+            }
+
+    async def _hardcoded_route(
+        self, request_type: str, data: Dict[str, Any], start_time: float
+    ) -> Dict[str, Any]:
+        """Original static routing — used when Qwen planner is unavailable."""
+        if request_type == RequestType.CHAT.value:
+            return self._handle_chat(data)
+        elif request_type == RequestType.QUERY.value:
+            return self._handle_query(data)
+        elif request_type == RequestType.EHR_UPLOAD.value:
+            return self._handle_ehr_upload(data)
+        elif request_type == RequestType.TASK.value:
+            return self._handle_task(data)
+        elif request_type == RequestType.NOTIFY.value:
+            return self._handle_notification(data)
+        elif request_type == RequestType.INSURANCE.value:
+            return self._handle_insurance(data)
+        elif request_type == RequestType.RISK.value:
+            return self._handle_risk(data)
+        elif request_type == RequestType.SUMMARIZE.value:
+            return self._handle_summarize(data)
+        elif request_type == RequestType.WEB_SEARCH.value:
+            return await self._handle_web_search(data)
+        elif request_type == RequestType.AGENT_QUERY.value:
+            return self.query_with_agent(
+                data.get("query", ""),
+                data.get("context", data.get("patient_data", {}))
+            )
+        elif request_type == RequestType.KNOWLEDGE_SEARCH.value:
+            return self.search_knowledge(data.get("query", ""), data.get("category", "all"))
+        elif request_type == RequestType.SYMPTOM_CHECK.value:
+            symptoms = data.get("symptoms", [])
+            if isinstance(symptoms, str):
+                symptoms = [symptoms]
+            return self.classify_symptoms(symptoms, data.get("context", {}))
+        elif request_type == RequestType.TRIAGE.value:
+            complaint = data.get("chief_complaint") or data.get("complaint") or ""
+            symptoms = data.get("symptoms", [])
+            if isinstance(symptoms, list) and symptoms:
+                complaint = f"{complaint}. Also: {', '.join(symptoms)}" if complaint else ", ".join(symptoms)
+            elif isinstance(symptoms, str) and not complaint:
+                complaint = symptoms
+            vitals = data.get("vital_signs") or data.get("vitals") or {}
+            ctx = {"age": data.get("patient_age"), **(data.get("context") or {})}
+            return self.triage_patient(complaint, vitals, ctx)
+        elif request_type == RequestType.DRUG_CHECK.value:
+            meds = data.get("drugs") or data.get("medications") or []
+            if isinstance(meds, str):
+                meds = [meds]
+            return self.check_drug_interactions(meds, data.get("patient_conditions", []))
+        elif request_type == RequestType.HYBRID_SEARCH.value:
+            return self.hybrid_search(data.get("query", ""), data.get("k", 5), data.get("method", "hybrid"))
+        else:
+            return {
+                "error": f"Unknown request type: {request_type}",
+                "supported_types": [rt.value for rt in RequestType],
             }
     
     def _handle_chat(self, data: Dict[str, Any]) -> Dict[str, Any]:
