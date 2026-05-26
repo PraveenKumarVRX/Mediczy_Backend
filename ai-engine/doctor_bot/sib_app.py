@@ -343,21 +343,32 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Dr. iSHA & Mediqzy - SIB API",
     description="""
-    Synthetic Intelligence Brain (SIB) powered medical AI system.
-    
-    Features:
-    - Multi-turn conversational AI (ChatBotlet)
-    - RAG-powered Q&A (EHRBotlet + LLM)
-    - Bayesian Network risk scoring (RiskBotlet)
-    - Medical summarization (SummarizerBotlet)
-    - Task & workflow management (TaskBotlet)
-    - Notifications & alerts (NotificationBotlet)
-    - Insurance processing (InsuranceBotlet)
-    
-    LLM Fallback: Llama-3.1 → Groq → Gemini
-    Optimized for 4-core CPU + 16GB RAM.
+    Synthetic Intelligence Brain (SIB) — Qwen-Orchestrated Medical AI.
+
+    Orchestration (v2):
+      Every request → QwenPlanner.plan() → parallel botlet execution → QwenPlanner.synthesize()
+      Qwen 2.5-3B (CPU, local) plans and synthesizes; iSHA GPU / Groq / Gemini execute deep reasoning.
+
+    Endpoints:
+    - /chat:            Multi-turn conversational AI (Qwen-orchestrated)
+    - /query:           RAG-powered Q&A with risk assessment
+    - /planner/plan:    Direct QwenPlanner call — returns execution plan JSON
+    - /planner/status:  Qwen model load status and capabilities
+    - /automate:        Unified automation route → QwenPlanner → task_router
+    - /triage:          ESI 5-level triage
+    - /emergency-triage: Real-time emergency assessment
+    - /risk:            Bayesian cardiovascular risk scoring
+    - /drugs/check:     Drug interaction checker
+    - /ehr/*:           EHR ingestion and retrieval
+    - /task, /notify, /insurance, /summarize: Botlet management
+    - /mediczy/*:       Live DB — doctors, hospitals, clinics, labs, patients
+    - /embed, /ingest, /rag/search: Vector knowledge base
+    - /kb/refresh:      Nightly IRDAI / WHO knowledge refresh
+    - /webhook/n8n:     n8n bidirectional integration
+
+    LLM Stack: Qwen 2.5-3B (planner) → iSHA GPU (BiMediX2/MedGemma) → Groq → Gemini
     """,
-    version="2.0.0",
+    version="3.0.0",
     lifespan=lifespan
 )
 
@@ -382,15 +393,24 @@ async def root():
     """Root endpoint"""
     return {
         "name": "Dr. iSHA & Mediqzy - Synthetic Intelligence Brain",
-        "version": "2.0.0",
+        "version": "3.0.0",
         "status": "online",
         "docs": "/docs",
+        "orchestration": "Qwen 2.5-3B plans → botlets execute → Qwen synthesizes",
+        "planner": "/planner/status",
+        "automate": "/automate",
         "botlets": [
-            "ChatBotlet", "EHRBotlet", "RiskBotlet", 
-            "SummarizerBotlet", "TaskBotlet", 
+            "ChatBotlet", "EHRBotlet", "RiskBotlet",
+            "SummarizerBotlet", "TaskBotlet",
             "NotificationBotlet", "InsuranceBotlet",
-            "EmergencyTriageBotlet"
-        ]
+            "EmergencyTriageBotlet", "WebSearchBotlet",
+        ],
+        "llm_stack": [
+            "Qwen 2.5-3B (planner/synthesizer, local CPU)",
+            "iSHA GPU: BiMediX2-8B / MedGemma-4B (clinical reasoning)",
+            "Groq: Llama-3.3-70B (cloud fallback 1)",
+            "Gemini: 1.5-flash (cloud fallback 2)",
+        ],
     }
 
 
@@ -684,11 +704,11 @@ async def upload_ehr(file: UploadFile = File(...), patient_id: Optional[str] = F
         f.write(content)
     
     # Ingest via SIB
-    result = app_state.sib.handle_request(RequestType.EHR_UPLOAD.value, {
+    result = await app_state.sib.handle_request(RequestType.EHR_UPLOAD.value, {
         "file_path": str(file_path),
         "patient_id": patient_id
     })
-    
+
     return result
 
 
@@ -698,11 +718,11 @@ async def ingest_ehr_text(request: EHRTextRequest):
     if not app_state.sib:
         raise HTTPException(status_code=503, detail="SIB not initialized")
     
-    result = app_state.sib.handle_request(RequestType.EHR_UPLOAD.value, {
+    result = await app_state.sib.handle_request(RequestType.EHR_UPLOAD.value, {
         "file_content": request.text,
         "patient_id": request.patient_id
     })
-    
+
     return result
 
 
@@ -909,7 +929,7 @@ async def summarize(request: SummarizeRequest):
     if not app_state.sib:
         raise HTTPException(status_code=503, detail="SIB not initialized")
     
-    result = app_state.sib.handle_request(RequestType.SUMMARIZE.value, request.model_dump())
+    result = await app_state.sib.handle_request(RequestType.SUMMARIZE.value, request.model_dump())
     return result
 
 
@@ -1766,20 +1786,178 @@ async def n8n_webhook_receiver(request: N8NWebhookRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ==================== Background Scheduler ====================
+# ==================== QwenPlanner Endpoints ====================
 
-@app.post("/summarize")
-async def summarize(request: SummarizeRequest):
+
+class PlanRequest(BaseModel):
+    """Direct QwenPlanner request — returns the execution plan without running it."""
+    request_type: str = Field(..., description="SIB request type (chat, query, triage, etc.)")
+    data: Dict[str, Any] = Field(default_factory=dict, description="Request payload")
+    context: Optional[Dict[str, Any]] = Field(None, description="Additional context")
+
+
+class AutomateRequest(BaseModel):
+    """Unified automation request routed through QwenPlanner → task_router."""
+    task_type: str = Field(..., description="Task type: appointment_reschedule, send_reminder, generate_prescription, etc.")
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    user_id: Optional[str] = None
+    patient_id: Optional[str] = None
+    context: Optional[Dict[str, Any]] = None
+
+
+@app.post("/planner/plan")
+async def planner_plan(request: PlanRequest):
     """
-    Medical summarization endpoint.
-    
-    Types: general, treatment, diagnosis, visit
+    Call QwenPlanner directly and return the execution plan JSON.
+
+    Use this for:
+    - Debugging what Qwen plans for a given request
+    - Building UI that shows AI reasoning transparency
+    - Testing plan quality before full execution
     """
     if not app_state.sib:
         raise HTTPException(status_code=503, detail="SIB not initialized")
-    
-    result = app_state.sib.handle_request(RequestType.SUMMARIZE.value, request.model_dump())
-    return result
+    try:
+        from sib.qwen_planner import get_planner
+        planner = get_planner()
+        plan = planner.plan(request.request_type, request.data, request.context)
+        if plan is None:
+            return {
+                "status": "unavailable",
+                "message": "Qwen model not loaded — planner inactive",
+                "fallback": "hardcoded routing will be used",
+            }
+        return {
+            "status": "ok",
+            "intent": plan.intent,
+            "urgency": plan.urgency,
+            "steps": [
+                {
+                    "step": s.step,
+                    "botlet": s.botlet,
+                    "action": s.action,
+                    "params": s.params,
+                    "depends_on": s.depends_on,
+                }
+                for s in plan.steps
+            ],
+            "parallel_groups": plan.parallel_groups,
+            "synthesis_step": plan.synthesis_step,
+            "reasoning": plan.reasoning,
+        }
+    except Exception as e:
+        logger.error(f"/planner/plan error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/planner/status")
+async def planner_status():
+    """
+    QwenPlanner and Qwen model load status.
+
+    Returns whether Qwen 2.5-3B is loaded, the model path,
+    and which botlets and automation routes the planner can command.
+    """
+    try:
+        from sib.qwen_planner import get_planner
+        from sib.tinyllama_router import get_router
+
+        planner = get_planner()
+        router = get_router()
+        llm_loaded = router._loaded and router._llm is not None
+
+        return {
+            "qwen_loaded": llm_loaded,
+            "model_path": router.model_path,
+            "model_profile": __import__("os").environ.get("ROUTER_MODEL_PROFILE", "balanced"),
+            "planner_active": llm_loaded,
+            "fallback_routing": not llm_loaded,
+            "commandable_botlets": [
+                "chat", "ehr", "risk", "summarizer", "task",
+                "notification", "insurance", "web_search",
+                "triage", "drug_check", "knowledge", "local",
+            ],
+            "llm_backends": ["isha_gpu", "groq", "gemini"],
+            "automation_routes": [
+                "appointment_schedule", "appointment_reschedule", "appointment_cancel",
+                "generate_prescription", "review_prescription",
+                "send_reminder", "send_notification",
+                "health_diary_add", "health_diary_update",
+                "assess_risk", "detect_emergency", "process_ehr",
+            ],
+        }
+    except Exception as e:
+        logger.error(f"/planner/status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/automate")
+async def automate_task(request: AutomateRequest):
+    """
+    Unified automation endpoint — routes through QwenPlanner → SIBTaskRouter.
+
+    All automation flows (appointments, prescriptions, reminders, diary, risk, emergency)
+    run through this single endpoint. Qwen plans the task chain; SIBTaskRouter executes it.
+
+    Supported task_type values:
+    - appointment_reschedule, appointment_cancel, appointment_schedule
+    - generate_prescription, review_prescription
+    - send_reminder, send_notification
+    - health_diary_add, health_diary_update
+    - assess_risk, detect_emergency, process_ehr
+    """
+    if not app_state.sib:
+        raise HTTPException(status_code=503, detail="SIB not initialized")
+
+    try:
+        from sib.task_router import TaskType, get_task_router
+
+        task_type_map = {
+            "appointment_schedule":   "schedule_appointment",
+            "appointment_reschedule": "reschedule_appointment",
+            "appointment_cancel":     "cancel_appointment",
+            "generate_prescription":  "generate_prescription",
+            "review_prescription":    "review_prescription",
+            "send_reminder":          "send_reminder",
+            "send_notification":      "send_notification",
+            "health_diary_add":       "add_health_diary_entry",
+            "health_diary_update":    "update_health_diary",
+            "assess_risk":            "assess_risk",
+            "detect_emergency":       "detect_emergency",
+            "process_ehr":            "process_ehr",
+        }
+
+        task_type_str = task_type_map.get(request.task_type.lower(), request.task_type.lower())
+        try:
+            task_type = TaskType(task_type_str)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Unknown task_type: {request.task_type}")
+
+        router = get_task_router(app_state.db)
+        result = await router.route_task(
+            task_type=task_type,
+            payload=request.payload,
+            user_id=request.user_id,
+            patient_id=request.patient_id,
+            context=request.context,
+        )
+
+        return {
+            "success": result.status.value == "completed",
+            "task_type": result.task_type.value,
+            "status": result.status.value,
+            "data": result.data,
+            "error": result.error,
+            "timestamp": result.timestamp,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"/automate error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Background Scheduler ====================
 
 
 # ==================== Stats Endpoint ====================
