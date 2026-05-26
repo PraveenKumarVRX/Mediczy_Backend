@@ -280,7 +280,9 @@ async def _execute_step(
         elif botlet == "ehr":
             if action in ("retrieve", "search", "query"):
                 query = params.get("query") or params.get("message") or params.get("prompt") or ""
-                return brain.ehr_bot.retrieve(query, patient_id=params.get("patient_id"))
+                result = await brain.ehr_bot.retrieve(query, patient_id=params.get("patient_id"))
+                # Return the formatted context string so dependent LLM steps can use it directly
+                return result.get("context") or result
             return brain._handle_ehr_upload(params)
 
         # ── Risk botlet ───────────────────────────────────────────────────

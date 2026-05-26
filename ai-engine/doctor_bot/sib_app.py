@@ -292,6 +292,13 @@ class AppState:
             self.db = await initialize_database()
             self.sib = get_sib()
             self.sib.db = self.db
+            # Wire asyncpg pool into UnifiedRAGRetriever singleton
+            try:
+                from sib.retrieval.unified_rag import get_unified_rag
+                get_unified_rag(self.db.pg_pool)
+                logger.info("   ↳ UnifiedRAG: pool injected")
+            except Exception as _rag_e:
+                logger.warning(f"   ↳ UnifiedRAG pool injection failed: {_rag_e}")
             logger.info("✅ Database connection established")
             logger.info(f"   ↳ PostgreSQL: Connected")
             if self.db.pgvector_enabled:
@@ -475,45 +482,17 @@ async def chat(request: ChatRequest):
 
     req_data = request.model_dump()
 
-    # ── KB RAG enrichment ────────────────────────────────────────────────────
-    if (
-        not request.skip_kb_rag
-        and app_state.db
-        and app_state.db.pgvector_enabled
-        and len(request.message.strip()) > 10
-    ):
+    # ── KB RAG enrichment (UnifiedRAGRetriever) ──────────────────────────────
+    if not request.skip_kb_rag and len(request.message.strip()) > 10:
         try:
-            q_enc = await asyncio.to_thread(
-                _get_embed_model().encode,
-                [request.message],
-                convert_to_numpy=True,
-                show_progress_bar=False,
-            )
-            vec_str = f"[{','.join(str(round(float(v), 6)) for v in q_enc[0])}]"
-
-            async with app_state.db.pg_pool.acquire(timeout=10) as conn:
-                kb_rows = await conn.fetch(
-                    f"""SELECT c.content,
-                               1 - (c.embedding <=> '{vec_str}'::vector) AS score,
-                               d.title, d.category
-                        FROM ai_document_chunks c
-                        JOIN ai_knowledge_documents d ON d.id = c.document_id
-                        WHERE d.status = 'ready'
-                          AND 1 - (c.embedding <=> '{vec_str}'::vector) >= 0.30
-                        ORDER BY c.embedding <=> '{vec_str}'::vector
-                        LIMIT 3""",
-                    timeout=10,
-                )
-
-            if kb_rows:
-                parts = [
-                    f"[{r['category'].upper()} — {r['title']}]\n{r['content']}"
-                    for r in kb_rows
-                ]
-                req_data["kb_context"] = "\n\n".join(parts)
-                req_data["_kb_chunks_injected"] = len(kb_rows)
-                req_data["_kb_top_score"] = round(float(kb_rows[0]["score"]), 3)
-                logger.info(f"KB RAG: {len(kb_rows)} chunks injected (top score {float(kb_rows[0]['score']):.3f})")
+            from sib.retrieval.unified_rag import get_unified_rag
+            _rag = get_unified_rag()
+            _chunks = await _rag.retrieve(request.message, k=3)
+            if _chunks:
+                req_data["kb_context"] = _rag.to_context_string(_chunks, max_chars=1800)
+                req_data["_kb_chunks_injected"] = len(_chunks)
+                req_data["_kb_top_score"] = round(_chunks[0].score, 3)
+                logger.info(f"KB RAG: {len(_chunks)} chunks injected (top score {_chunks[0].score:.3f})")
         except Exception as _kb_err:
             logger.warning(f"KB RAG enrichment skipped: {_kb_err}")
     # ─────────────────────────────────────────────────────────────────────────
@@ -2161,6 +2140,39 @@ async def rag_search(query: str, top_k: int = 6, category: Optional[str] = None)
 
     except Exception as e:
         logger.error(f"/rag/search error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/rag/retrieve")
+async def rag_retrieve(
+    query: str,
+    patient_id: Optional[str] = None,
+    k: int = 5,
+    category: Optional[str] = None,
+):
+    """
+    Unified RAG retrieval across all SIB vector stores.
+
+    Queries ai_document_chunks (S-PubMedBert) and sib_embeddings (Bio_ClinicalBERT)
+    in parallel, merges by cosine score, and returns top-k deduplicated chunks.
+    Supersedes /rag/search for EHR-aware retrieval.
+    """
+    if not app_state.sib:
+        raise HTTPException(status_code=503, detail="SIB not initialized")
+    try:
+        from sib.retrieval.unified_rag import get_unified_rag
+        rag = get_unified_rag()
+        chunks = await rag.retrieve(query, patient_id=patient_id, k=k, category=category)
+        return {
+            "query": query,
+            "patient_id": patient_id,
+            "category": category,
+            "results": rag.to_dict_list(chunks),
+            "retrieved": len(chunks),
+            "context_string": rag.to_context_string(chunks),
+        }
+    except Exception as e:
+        logger.error(f"/rag/retrieve error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
