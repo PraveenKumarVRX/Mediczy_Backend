@@ -1967,6 +1967,97 @@ async def automate_task(request: AutomateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ==================== Quantum Brain Endpoints ====================
+
+
+class QuantumDiagnoseRequest(BaseModel):
+    chief_complaint: str = Field(..., description="Presenting complaint (chest_pain, dyspnea, etc.)")
+    findings: List[str] = Field(default_factory=list, description="Present clinical findings")
+    absent_findings: List[str] = Field(default_factory=list, description="Explicitly absent findings")
+    risk_factors: List[str] = Field(default_factory=list, description="Background risk factors")
+    age: Optional[int] = None
+    sex: Optional[str] = None
+    confirmed_diagnosis: Optional[str] = Field(None, description="Collapse state on confirmed dx")
+    explain: bool = Field(True, description="Include human-readable explanation")
+
+
+@app.post("/quantum/diagnose")
+async def quantum_diagnose(request: QuantumDiagnoseRequest):
+    """
+    Quantum Bayesian Differential Diagnosis.
+
+    Applies quantum probability theory to differential diagnosis:
+    - Initializes a superposition of candidate diagnoses from the chief complaint
+    - Updates amplitudes using the Lüders rule (√LR, not LR) for each finding
+    - Applies constructive/destructive interference between diagnosis pairs
+    - Returns ranked differential with Born-rule probabilities and entropy metric
+
+    Clinically meaningful entropy:
+      - High entropy (>3 bits): genuinely uncertain, more workup needed
+      - Low entropy (<1 bit):   diagnosis strongly favoured, consider confirmation
+    """
+    if not app_state.sib:
+        raise HTTPException(status_code=503, detail="SIB not initialized")
+    try:
+        result = await app_state.sib.qbr_bot.diagnose(request.model_dump())
+        if not request.explain:
+            result.pop("explanation", None)
+        return result
+    except Exception as e:
+        logger.error(f"/quantum/diagnose error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/quantum/findings")
+async def quantum_known_findings():
+    """Return all clinical findings recognized by the Quantum Bayesian Reasoner."""
+    from sib.quantum_brain import get_qbr
+    return {"findings": get_qbr().list_known_findings(), "count": len(get_qbr().list_known_findings())}
+
+
+# ==================== Synthetic Intelligence Endpoints ====================
+
+
+@app.get("/synthetic/analytics")
+async def synthetic_analytics(window: int = 500):
+    """
+    Synthetic Intelligence self-assessment report.
+
+    Returns:
+      - health_score (0–100): overall AI system health
+      - analytics: latency, confidence, error rates by provider/intent/urgency
+      - degraded_providers: backends showing high error rates or latency
+      - insights: human-readable observations from outcome patterns
+      - recommendations: actionable items for operators
+      - trend: whether performance is improving or degrading
+    """
+    from sib.synthetic_intelligence import get_adaptive_brain
+    brain = get_adaptive_brain()
+    return brain.get_intelligence_report()
+
+
+@app.get("/synthetic/urgency-latency")
+async def synthetic_urgency_latency():
+    """
+    Urgency vs. latency correlation.
+    Emergency queries should be served faster than low-urgency queries.
+    Returns avg latency per urgency level for monitoring.
+    """
+    from sib.synthetic_intelligence import get_adaptive_brain
+    return {"urgency_latency_ms": get_adaptive_brain().urgency_latency_correlation()}
+
+
+@app.get("/synthetic/provider/{intent}")
+async def synthetic_best_provider(intent: str):
+    """
+    Return the historically best LLM provider for a given intent class.
+    Used by the adaptive brain to reorder the fallback chain per intent.
+    """
+    from sib.synthetic_intelligence import get_adaptive_brain
+    provider = get_adaptive_brain().recommended_provider_order(intent)
+    return {"intent": intent, "recommended_order": provider or "default_fallback_chain"}
+
+
 # ==================== Background Scheduler ====================
 
 

@@ -66,6 +66,9 @@ class QwenPlanner:
         "chat         — multi-turn conversation, general medical Q&A\n"
         "ehr          — EHR ingestion, patient record retrieval (RAG)\n"
         "risk         — Bayesian cardiovascular risk scoring\n"
+        "qbr          — Quantum Bayesian Reasoner: differential diagnosis via quantum probability "
+                        "(superposition + interference); use for symptom-based differential, "
+                        "diagnostic uncertainty, complex multi-symptom presentations\n"
         "summarizer   — medical document summarisation\n"
         "task         — task creation, updates, completion tracking\n"
         "notification — patient/doctor alerts and reminders\n"
@@ -335,6 +338,10 @@ async def _execute_step(
                 params.get("query") or params.get("message") or "",
                 params.get("category") or "all",
             )
+
+        # ── Quantum Bayesian Reasoner ─────────────────────────────────────
+        elif botlet in ("qbr", "quantum", "quantum_diagnose", "differential"):
+            return await brain.qbr_bot.diagnose(params)
 
         # ── LLM backends — direct inference ──────────────────────────────
         elif botlet in ("isha_gpu", "isha", "groq", "gemini", "llm", "llm_reasoning"):

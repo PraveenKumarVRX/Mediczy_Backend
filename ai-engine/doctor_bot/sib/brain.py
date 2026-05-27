@@ -147,6 +147,7 @@ class SyntheticIntelligenceBrain:
         self._insurance_bot = None
         self._web_search_bot = None
         self._langgraph_agent = None
+        self._qbr_bot = None        # Quantum Bayesian Reasoner botlet
         
         # Shared memory
         self._memory = None
@@ -240,6 +241,14 @@ class SyntheticIntelligenceBrain:
             from .botlets.web_search_botlet import WebSearchBotlet
             self._web_search_bot = WebSearchBotlet(self.memory)
         return self._web_search_bot
+
+    @property
+    def qbr_bot(self):
+        """QuantumBayesianReasoner botlet — quantum differential diagnosis."""
+        if self._qbr_bot is None:
+            from .quantum_brain.qbr_botlet import QBRBotlet
+            self._qbr_bot = QBRBotlet(self.memory)
+        return self._qbr_bot
 
     @property
     def langgraph_agent(self):
@@ -522,7 +531,7 @@ class SyntheticIntelligenceBrain:
                     )
 
                     elapsed = round((time.time() - start_time) * 1000, 2)
-                    return {
+                    result = {
                         "answer":        synthesis.get("answer"),
                         "chat_answer":   synthesis.get("answer"),
                         "confidence":    synthesis.get("confidence"),
@@ -534,6 +543,13 @@ class SyntheticIntelligenceBrain:
                         "provider":      "qwen_orchestrated",
                         "latency_ms":    elapsed,
                     }
+                    # Synthetic intelligence: record outcome for adaptive learning
+                    try:
+                        from sib.synthetic_intelligence import get_outcome_tracker
+                        get_outcome_tracker().record(result, request_type)
+                    except Exception:
+                        pass
+                    return result
             except Exception as plan_err:
                 logger.warning(f"⚠️ QwenPlanner unavailable ({plan_err}), using hardcoded routing")
 
