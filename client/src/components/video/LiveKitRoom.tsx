@@ -33,28 +33,9 @@ interface LiveKitRoomProps {
   isMinimized?: boolean;
   onMinimize?: () => void;
   onRestore?: () => void;
+  /** Fill the parent container instead of taking the full viewport (fixed inset-0) */
+  inline?: boolean;
 }
-
-const TURN_HOST = '13.127.125.93';
-const TURN_USER = 'livekit';
-const TURN_CRED = '2d3a799e5dbfb0934f8bdb90f3161cd3';
-
-const MEDIQZY_ICE_SERVERS: RTCIceServer[] = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  // Own STUN: coturn also serves STUN — useful when Google STUN is blocked on client network
-  { urls: `stun:${TURN_HOST}:3478` },
-  { urls: `turn:${TURN_HOST}:3478?transport=udp`, username: TURN_USER, credential: TURN_CRED },
-  { urls: `turn:${TURN_HOST}:3478?transport=tcp`, username: TURN_USER, credential: TURN_CRED },
-  { urls: `turns:${TURN_HOST}:5349?transport=tcp`, username: TURN_USER, credential: TURN_CRED },
-];
-
-// Relay-only fallback for restrictive corporate networks that block STUN/direct UDP
-const MEDIQZY_ICE_RELAY_ONLY: RTCIceServer[] = [
-  { urls: `turn:${TURN_HOST}:3478?transport=udp`, username: TURN_USER, credential: TURN_CRED },
-  { urls: `turn:${TURN_HOST}:3478?transport=tcp`, username: TURN_USER, credential: TURN_CRED },
-  { urls: `turns:${TURN_HOST}:5349?transport=tcp`, username: TURN_USER, credential: TURN_CRED },
-];
 
 /**
  * CameraEnabler — renders inside an LKRoom context and enables the local camera
@@ -67,14 +48,19 @@ function CameraEnabler({ enabled }: { enabled: boolean }) {
 
   useEffect(() => {
     if (!enabled || enabledOnce.current) return;
-    // Give audio ~400 ms to finish its SDP offer/answer cycle first.
-    const timer = setTimeout(() => {
+    const enableCamera = () => {
+      if (enabledOnce.current || room.state !== ConnectionState.Connected) return;
       enabledOnce.current = true;
       room.localParticipant.setCameraEnabled(true).catch((err) => {
         console.warn('CameraEnabler: setCameraEnabled failed', err);
       });
-    }, 400);
-    return () => clearTimeout(timer);
+    };
+
+    enableCamera();
+    room.on(RoomEvent.ConnectionStateChanged, enableCamera);
+    return () => {
+      room.off(RoomEvent.ConnectionStateChanged, enableCamera);
+    };
   }, [room, enabled]);
 
   return null;
@@ -164,6 +150,7 @@ export default function LiveKitRoom({
   isMinimized = false,
   onMinimize,
   onRestore,
+  inline = false,
 }: LiveKitRoomProps) {
   const [error, setError] = useState<string | null>(null);
   // Incremented on disconnect to force fresh GridLayout mount, preventing stale
@@ -197,9 +184,8 @@ export default function LiveKitRoom({
   }, [onDisconnect]);
 
   const handleRoomDisconnected = useCallback(() => {
-    // Bump layout key to force fresh GridLayout mount on next reconnect.
-    // This prevents stale placeholder track IDs from crashing updatePages().
-    setLayoutKey(k => k + 1);
+    // Keep component mounted so LiveKit SDK can finish its own reconnect flow.
+    console.warn('LiveKit disconnected event received; waiting for SDK reconnect handling.');
   }, []);
 
   const handleError = useCallback((err: Error) => {
@@ -250,14 +236,24 @@ export default function LiveKitRoom({
 
   const shellClassName = isMinimized
     ? 'fixed bottom-4 right-4 z-50 h-[260px] w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-slate-700 bg-slate-900 shadow-2xl'
-    : 'fixed inset-0 bg-slate-900 z-50';
+    : inline
+      ? 'h-full w-full bg-slate-900'
+      : 'fixed inset-0 bg-slate-900 z-50';
 
   const roomStyle = isMinimized
     ? { height: '260px', width: '100%' }
-    : { height: '100vh', width: '100vw' };
-  const rtcIceServers = iceServers?.length
-    ? iceServers
-    : useRelayOnly ? MEDIQZY_ICE_RELAY_ONLY : MEDIQZY_ICE_SERVERS;
+    : inline
+      ? { height: '100%', width: '100%' }
+      : { height: '100vh', width: '100vw' };
+  const hasCustomIceServers = Array.isArray(iceServers) && iceServers.length > 0;
+  const rtcConfig = {
+    ...(hasCustomIceServers ? { iceServers } : {}),
+    ...(useRelayOnly ? { iceTransportPolicy: 'relay' as RTCIceTransportPolicy } : {}),
+  };
+  const connectOptions = {
+    peerConnectionTimeout: 30000,
+    ...(Object.keys(rtcConfig).length > 0 ? { rtcConfig } : {}),
+  };
 
   return (
     <div className={shellClassName} data-lk-theme="default">
@@ -271,13 +267,7 @@ export default function LiveKitRoom({
         onConnected={handleConnected}
         onDisconnected={handleRoomDisconnected}
         onError={handleError}
-        connectOptions={{
-          peerConnectionTimeout: 30000,
-          rtcConfig: {
-            iceServers: rtcIceServers,
-            iceTransportPolicy: useRelayOnly ? 'relay' : 'all',
-          },
-        }}
+        connectOptions={connectOptions}
         options={{
           adaptiveStream: true,
           dynacast: true,
@@ -487,7 +477,7 @@ export function SimpleLiveKitRoom({
     );
   }
 
-  const rtcIceServers = iceServers?.length ? iceServers : MEDIQZY_ICE_SERVERS;
+  const hasCustomIceServers = Array.isArray(iceServers) && iceServers.length > 0;
 
   return (
     <div className="h-full w-full" data-lk-theme="default">
@@ -504,10 +494,7 @@ export function SimpleLiveKitRoom({
         }}
         connectOptions={{
           peerConnectionTimeout: 30000,
-          rtcConfig: {
-            iceServers: rtcIceServers,
-            iceTransportPolicy: 'all',
-          },
+          ...(hasCustomIceServers ? { rtcConfig: { iceServers } } : {}),
         }}
       >
         <LayoutContextProvider>

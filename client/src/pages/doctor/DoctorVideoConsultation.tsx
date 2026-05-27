@@ -43,13 +43,18 @@ import {
   Share2,
   AlertCircle,
   Wifi,
-  ClipboardList
+  ClipboardList,
+  BookOpen,
+  Eye,
+  FileText,
+  Square
 } from "lucide-react";
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from '@tanstack/react-query';
 import api from '@/utils/api';
+import { Skeleton } from "@/components/ui/skeleton";
 
 // Lazy load LiveKit components
 const LiveKitRoom = lazy(() => import('@/components/video/LiveKitRoom'));
@@ -129,12 +134,14 @@ const DoctorVideoConsultation = () => {
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [showPatientPane, setShowPatientPane] = useState(false);
+  const [inCallPanelTab, setInCallPanelTab] = useState<'emr' | 'history' | 'scribe' | 'vision'>('emr');
   
   // Refs
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const autoJoinAttemptRef = useRef<string | null>(null);
 
   const normalizeMeetUrl = (url?: string) => {
     if (!url) return 'https://video.mediqzy.com';
@@ -544,6 +551,11 @@ const DoctorVideoConsultation = () => {
   // Auto-join video call when appointmentId is passed in URL (from DoctorAppointments or emergency accept)
   useEffect(() => {
     if (appointmentIdFromUrl && currentDoctor && !isInCall && !liveKitConnection) {
+      if (autoJoinAttemptRef.current === appointmentIdFromUrl) {
+        return;
+      }
+      autoJoinAttemptRef.current = appointmentIdFromUrl;
+
       // If LiveKit token was passed directly (e.g., from emergency accept), use it immediately
       if (lkTokenFromUrl && lkServerFromUrl) {
         setLiveKitConnection({
@@ -561,7 +573,7 @@ const DoctorVideoConsultation = () => {
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [appointmentIdFromUrl, currentDoctor]);
+  }, [appointmentIdFromUrl, currentDoctor, isInCall, liveKitConnection, lkTokenFromUrl, lkServerFromUrl, roomFromUrl, initiateVideoCall]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -584,82 +596,165 @@ const DoctorVideoConsultation = () => {
 
   const handleLiveKitError = useCallback((error: Error) => {
     console.error('LiveKit error:', error);
-    // Auto-retry on signal connection errors (abort/timeout)
     const isSignalError = error.message?.includes('Abort handler') ||
       error.message?.includes('signal connection') ||
       error.message?.includes('timed out');
-    if (isSignalError && liveKitConnection) {
-      console.log('🔄 Signal connection error detected, retrying...');
+    if (isSignalError) {
       toast({
         title: "Reconnecting...",
-        description: "Video connection interrupted. Retrying automatically...",
+        description: "Temporary network issue detected. Trying to recover call.",
       });
-      // Re-fetch a fresh token and reconnect
-      const aptId = appointmentIdFromUrl || currentConsultation?.id;
-      if (aptId) {
-        setIsInCall(false);
-        setLiveKitConnection(null);
-        setTimeout(() => {
-          initiateVideoCall({ id: aptId, patient: '', time: '', duration: '', type: 'video', status: 'in-progress' } as Consultation);
-        }, 1000);
-        return;
-      }
+      return;
     }
     toast({
       variant: "destructive",
       title: "Video Call Error",
       description: error.message,
     });
-  }, [toast, liveKitConnection, appointmentIdFromUrl, currentConsultation, initiateVideoCall]);
+  }, [toast]);
 
-  // Active video call UI - Native LiveKit
+  // Active video call UI — split layout: video left, clinical panel right
   if (isInCall && liveKitConnection && !isCallMinimized) {
+    const panelTabs = [
+      { id: 'emr'     as const, Icon: ClipboardList, label: 'EMR'       },
+      { id: 'history' as const, Icon: BookOpen,       label: 'History'   },
+      { id: 'scribe'  as const, Icon: Mic,            label: 'AI Scribe' },
+      { id: 'vision'  as const, Icon: Eye,            label: 'AI Vision' },
+    ];
+
     return (
-      <div ref={containerRef} className="h-screen w-full">
-        <Suspense fallback={
-          <div className="flex items-center justify-center h-screen bg-slate-900">
-            <div className="text-center">
-              <Loader2 className="w-12 h-12 animate-spin text-teal-500 mx-auto mb-4" />
-              <p className="text-white text-lg">Loading video components...</p>
+      <div ref={containerRef} className="h-screen w-full flex flex-row overflow-hidden bg-slate-900">
+        {/* ── Video area — fills remaining width ── */}
+        <div className="flex-1 min-w-0 h-full relative">
+          <Suspense fallback={
+            <div className="flex items-center justify-center h-full bg-slate-900">
+              <div className="text-center">
+                <Loader2 className="w-12 h-12 animate-spin text-teal-500 mx-auto mb-4" />
+                <p className="text-white text-lg">Loading video components...</p>
+              </div>
             </div>
-          </div>
-        }>
-          <LiveKitRoom
-            serverUrl={liveKitConnection.serverUrl}
-            token={liveKitConnection.token}
-            roomName={liveKitConnection.roomName}
-            participantName={currentDoctor?.firstName || 'Doctor'}
-            onDisconnect={handleLiveKitDisconnect}
-            onError={handleLiveKitError}
-            iceServers={liveKitConnection.iceServers}
-            onMinimize={() => setIsCallMinimized(true)}
-          />
-        </Suspense>
-
-        {/* Patient info pane — fixed right panel over the video, z above LiveKit (z-50) */}
-        {showPatientPane && currentConsultation?.patientId && (
-          <div className="fixed top-0 right-0 bottom-0 z-[51] w-80 shadow-2xl overflow-hidden">
-            <PatientInfoPane
-              patientId={currentConsultation.patientId}
-              patientName={currentConsultation.patient}
+          }>
+            <LiveKitRoom
+              serverUrl={liveKitConnection.serverUrl}
+              token={liveKitConnection.token}
+              roomName={liveKitConnection.roomName}
+              participantName={currentDoctor?.firstName || 'Doctor'}
+              onDisconnect={handleLiveKitDisconnect}
+              onError={handleLiveKitError}
+              iceServers={liveKitConnection.iceServers}
+              onMinimize={() => setIsCallMinimized(true)}
+              inline={true}
             />
-          </div>
-        )}
+          </Suspense>
+        </div>
 
-        {/* Toggle button for patient info pane */}
-        <button
-          onClick={() => setShowPatientPane(p => !p)}
-          title={showPatientPane ? 'Hide patient info' : 'Show patient info'}
-          className={`fixed top-4 z-[51] flex items-center gap-2 px-3 py-2 rounded-full text-xs font-medium shadow-lg transition-all ${
-            showPatientPane
-              ? 'right-[336px] bg-teal-600 text-white hover:bg-teal-700'
-              : 'right-16 bg-slate-700/80 text-slate-200 hover:bg-slate-600'
-          } ${!currentConsultation?.patientId ? 'opacity-50 cursor-not-allowed' : ''}`}
-          disabled={!currentConsultation?.patientId}
-        >
-          <ClipboardList className="w-4 h-4" />
-          {showPatientPane ? 'Hide Info' : 'Patient Info'}
-        </button>
+        {/* ── Right clinical panel — replaces the black half-screen ── */}
+        <div className="w-[380px] flex-shrink-0 flex flex-col h-full bg-slate-900 border-l border-slate-700">
+          {/* Recording bar — always visible at the top of the panel */}
+          <InCallRecordingBar
+            appointmentId={currentConsultation?.id}
+            roomId={liveKitConnection.roomName}
+            patientId={currentConsultation?.patientId}
+          />
+          {/* Tab bar */}
+          <div className="flex items-center gap-0.5 px-2 py-2 bg-slate-800/80 border-b border-slate-700 flex-shrink-0">
+            {panelTabs.map(({ id, Icon, label }) => (
+              <button
+                key={id}
+                onClick={() => setInCallPanelTab(id)}
+                className={`flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium flex-1 justify-center transition-colors ${
+                  inCallPanelTab === id
+                    ? 'bg-teal-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/60'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="truncate">{label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Panel content */}
+          <div className="flex-1 overflow-hidden">
+            {/* EMR — vitals, records, labs */}
+            {inCallPanelTab === 'emr' && (
+              currentConsultation?.patientId ? (
+                <PatientInfoPane
+                  patientId={currentConsultation.patientId}
+                  patientName={currentConsultation.patient}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-3 p-6">
+                  <ClipboardList className="w-10 h-10" />
+                  <p className="text-sm text-center">Patient records will appear here once a consultation is linked to a patient.</p>
+                </div>
+              )
+            )}
+
+            {/* History — prescription history + health diary */}
+            {inCallPanelTab === 'history' && (
+              <PatientHistoryDiaryTab
+                patientId={currentConsultation?.patientId}
+                patientName={currentConsultation?.patient}
+              />
+            )}
+
+            {/* AI Scribe — live transcription & offline mode */}
+            {inCallPanelTab === 'scribe' && (
+              <div className="h-full overflow-y-auto">
+                <div className="p-3">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="p-1.5 rounded-lg bg-purple-500/20 flex-shrink-0">
+                      <Mic className="w-4 h-4 text-purple-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-white">AI Medical Scribe</p>
+                      <p className="text-[11px] text-slate-400">Live transcription &amp; auto-prescription</p>
+                    </div>
+                  </div>
+                  <Tabs defaultValue="online">
+                    <TabsList className="w-full mb-3 bg-slate-800">
+                      <TabsTrigger value="online" className="flex-1 text-xs">🎤 Online</TabsTrigger>
+                      <TabsTrigger value="offline" className="flex-1 text-xs">📴 Offline</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="online">
+                      <AIScribeConsultation
+                        appointmentId={currentConsultation?.id}
+                        currentFormData={undefined}
+                        onPrescriptionGenerated={(prescription) => {
+                          toast({ title: "✅ Prescription Generated", description: "Opening Prescriptions to review." });
+                          localStorage.setItem('importedPrescription', JSON.stringify(prescription));
+                          navigate('/doctor/prescriptions');
+                        }}
+                      />
+                    </TabsContent>
+                    <TabsContent value="offline">
+                      <OfflineScribePanel
+                        compact
+                        defaultLanguage="hi"
+                        defaultDocumentType="prescription"
+                        patientContext={currentConsultation ? {
+                          name: currentConsultation.patient,
+                          patient_id: currentConsultation.patientId,
+                        } : undefined}
+                        onPrescriptionGenerated={(prescription) => {
+                          toast({ title: "✅ Prescription Generated", description: "Opening Prescriptions to review." });
+                          localStorage.setItem('importedPrescription', JSON.stringify(prescription));
+                          navigate('/doctor/prescriptions');
+                        }}
+                      />
+                    </TabsContent>
+                  </Tabs>
+                </div>
+              </div>
+            )}
+
+            {/* AI Vision — capture & analyze patient video frame */}
+            {inCallPanelTab === 'vision' && (
+              <AIVisionInCallPanel consultationId={currentConsultation?.id} />
+            )}
+          </div>
+        </div>
       </div>
     );
   }
@@ -1330,5 +1425,445 @@ const DoctorVideoConsultation = () => {
     </MainLayout>
   );
 };
+
+// ── In-call recording bar ─────────────────────────────────────────────────────
+
+function InCallRecordingBar({
+  appointmentId,
+  roomId,
+  patientId,
+}: {
+  appointmentId?: string;
+  roomId?: string;
+  patientId?: string;
+}) {
+  const { toast } = useToast();
+  type Phase = 'idle' | 'recording' | 'uploading' | 'processing' | 'done' | 'error';
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [elapsed, setElapsed] = useState(0);
+  const [recordingId, setRecordingId] = useState<number | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  useEffect(() => {
+    if (phase === 'recording') {
+      timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [phase]);
+
+  const fmtTime = (s: number) =>
+    `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+
+  const startRecording = async () => {
+    if (!appointmentId || !roomId || !patientId) {
+      toast({ title: "Cannot record", description: "Link a consultation appointment to enable recording", variant: "destructive" });
+      return;
+    }
+    try {
+      // 1. Create DB record
+      const res = await api.post('/consultation-recordings/start', {
+        appointmentId: parseInt(appointmentId),
+        roomId,
+        patientId: parseInt(patientId),
+      });
+      setRecordingId(res.data.recording.id);
+
+      // 2. Mix local mic + any remote audio playing through LiveKit <audio> elements
+      const ctx = new AudioContext();
+      audioCtxRef.current = ctx;
+      const dest = ctx.createMediaStreamDestination();
+
+      try {
+        const localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        ctx.createMediaStreamSource(localStream).connect(dest);
+      } catch { /* mic denied — record remote-only */ }
+
+      document.querySelectorAll('audio').forEach((el) => {
+        const audio = el as HTMLAudioElement;
+        try {
+          if (audio.srcObject instanceof MediaStream) {
+            ctx.createMediaStreamSource(audio.srcObject as MediaStream).connect(dest);
+          }
+        } catch {}
+      });
+
+      // 3. Start MediaRecorder on the mixed stream
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : '';
+      chunksRef.current = [];
+      const recorder = new MediaRecorder(dest.stream, mimeType ? { mimeType } : {});
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      recorder.start(1000);
+      mediaRecorderRef.current = recorder;
+
+      setElapsed(0);
+      setPhase('recording');
+      toast({ title: "🔴 Recording started", description: "Mixed audio (doctor + patient) being captured" });
+    } catch (err: any) {
+      toast({ title: "Failed to start recording", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const stopAndUpload = async () => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || !recordingId) return;
+
+    setPhase('uploading');
+
+    // Collect final chunks
+    await new Promise<void>((resolve) => {
+      recorder.onstop = () => resolve();
+      recorder.stop();
+    });
+    audioCtxRef.current?.close().catch(() => {});
+
+    const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+    chunksRef.current = [];
+    const capturedElapsed = elapsed;
+
+    try {
+      // Mark stopped in DB (browserUpload=true skips broken processRecordingFile)
+      await api.post(`/consultation-recordings/stop/${recordingId}?browserUpload=true`);
+
+      // Upload blob → MinIO → AI transcription
+      const fd = new FormData();
+      fd.append('recording', blob, `consultation-${roomId}-${Date.now()}.webm`);
+      fd.append('duration', String(capturedElapsed));
+      await api.post(`/consultation-recordings/${recordingId}/upload-blob`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 10 * 60 * 1000, // 10 min for large uploads
+      });
+
+      setPhase('processing');
+      toast({ title: "Uploaded to MinIO", description: "AI transcription running in background..." });
+      pollStatus(recordingId);
+    } catch (err: any) {
+      setPhase('error');
+      toast({ title: "Upload failed", description: err.response?.data?.message || err.message, variant: "destructive" });
+    }
+  };
+
+  const pollStatus = (id: number) => {
+    const iv = setInterval(async () => {
+      try {
+        const res = await api.get(`/consultation-recordings/${id}`);
+        const status = res.data.recording?.status;
+        if (status === 'completed') {
+          setPhase('done');
+          clearInterval(iv);
+          toast({ title: "🎉 Recording ready!", description: "Transcription & AI summary are available" });
+        } else if (status === 'failed') {
+          setPhase('error');
+          clearInterval(iv);
+          toast({ title: "Transcription failed", description: "Recording saved to MinIO but AI processing failed", variant: "destructive" });
+        }
+      } catch { clearInterval(iv); }
+    }, 5000);
+  };
+
+  const canRecord = !!(appointmentId && roomId && patientId);
+
+  return (
+    <div className={`flex items-center gap-2 px-3 py-1.5 border-b border-slate-700 flex-shrink-0 text-xs ${
+      phase === 'recording' ? 'bg-red-950/30' : 'bg-slate-800/50'
+    }`}>
+      {phase === 'idle' && (
+        <>
+          <button
+            onClick={startRecording}
+            disabled={!canRecord}
+            title={canRecord ? 'Start recording this consultation' : 'No appointment linked — cannot record'}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded font-medium transition-colors ${
+              canRecord
+                ? 'bg-red-600 hover:bg-red-700 text-white'
+                : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+            }`}
+          >
+            <div className="w-2 h-2 rounded-full bg-current" />
+            Record
+          </button>
+          <span className="text-slate-500 text-[10px]">Audio saved to MinIO</span>
+        </>
+      )}
+
+      {phase === 'recording' && (
+        <>
+          <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+          <span className="font-mono text-red-400">{fmtTime(elapsed)}</span>
+          <button
+            onClick={stopAndUpload}
+            className="flex items-center gap-1 px-2 py-0.5 rounded font-medium bg-slate-700 hover:bg-slate-600 text-white ml-1"
+          >
+            <Square className="w-3 h-3" /> Stop
+          </button>
+          <span className="text-slate-500 text-[10px] ml-auto">Recording…</span>
+        </>
+      )}
+
+      {phase === 'uploading' && (
+        <div className="flex items-center gap-1.5 text-blue-400">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          Uploading to MinIO…
+        </div>
+      )}
+
+      {phase === 'processing' && (
+        <div className="flex items-center gap-1.5 text-purple-400">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          AI transcribing…
+        </div>
+      )}
+
+      {phase === 'done' && (
+        <div className="flex items-center gap-2 text-green-400">
+          <CheckCircle className="w-3 h-3" />
+          Recording saved
+          <button
+            onClick={() => { setPhase('idle'); setRecordingId(null); setElapsed(0); }}
+            className="px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 text-[10px]"
+          >
+            New
+          </button>
+        </div>
+      )}
+
+      {phase === 'error' && (
+        <div className="flex items-center gap-2 text-red-400">
+          <AlertCircle className="w-3 h-3" />
+          Failed
+          <button
+            onClick={() => { setPhase('idle'); setRecordingId(null); setElapsed(0); }}
+            className="px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 text-[10px]"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── In-call helper components ─────────────────────────────────────────────────
+
+function PatientHistoryDiaryTab({ patientId, patientName }: { patientId?: string; patientName?: string }) {
+  const id = patientId ? String(patientId) : '';
+
+  const { data: prescriptions, isLoading: rxLoading } = useQuery({
+    queryKey: ['patient-rx-call', id],
+    queryFn: async () => {
+      const res = await api.get(`/doctors/my-patients/${id}/prescriptions`);
+      return (res.data.prescriptions ?? []) as any[];
+    },
+    enabled: !!id,
+    staleTime: 60_000,
+  });
+
+  const { data: diary, isLoading: diaryLoading } = useQuery({
+    queryKey: ['patient-diary-call', id],
+    queryFn: async () => {
+      try {
+        const res = await api.get(`/doctors/my-patients/${id}/diary`);
+        return (res.data.entries ?? res.data.diary ?? []) as any[];
+      } catch {
+        return [] as any[];
+      }
+    },
+    enabled: !!id,
+    staleTime: 60_000,
+  });
+
+  if (!id) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-3 p-6">
+        <BookOpen className="w-10 h-10" />
+        <p className="text-sm text-center">Patient history &amp; diary will appear here when linked to a consultation.</p>
+      </div>
+    );
+  }
+
+  return (
+    <ScrollArea className="h-full">
+      <div className="p-3 space-y-4">
+        {/* Prescription history */}
+        <section>
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <FileText className="w-3 h-3" /> Prescription History
+          </p>
+          {rxLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-14 w-full rounded-lg bg-slate-800" />
+              <Skeleton className="h-14 w-full rounded-lg bg-slate-800" />
+            </div>
+          ) : !prescriptions?.length ? (
+            <p className="text-xs text-slate-500 italic py-2">No prescriptions on record</p>
+          ) : (
+            <div className="space-y-2">
+              {prescriptions.slice(0, 6).map((rx: any, i: number) => (
+                <div key={rx.id ?? i} className="bg-slate-800/60 rounded-lg p-2.5">
+                  <div className="flex justify-between items-center mb-0.5">
+                    <p className="text-xs font-medium text-white truncate flex-1">{rx.diagnosis || 'Prescription'}</p>
+                    <p className="text-[11px] text-slate-400 ml-2 flex-shrink-0">
+                      {rx.date ? new Date(rx.date).toLocaleDateString() : ''}
+                    </p>
+                  </div>
+                  {rx.medications && (
+                    <p className="text-[11px] text-slate-400 line-clamp-2">
+                      {Array.isArray(rx.medications)
+                        ? rx.medications.map((m: any) => m.name || m).join(', ')
+                        : String(rx.medications)}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Health diary */}
+        <section>
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <BookOpen className="w-3 h-3" /> Health Diary
+          </p>
+          {diaryLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-16 w-full rounded-lg bg-slate-800" />
+              <Skeleton className="h-16 w-full rounded-lg bg-slate-800" />
+            </div>
+          ) : !diary?.length ? (
+            <p className="text-xs text-slate-500 italic py-2">No diary entries found</p>
+          ) : (
+            <div className="space-y-2">
+              {diary.slice(0, 6).map((entry: any, i: number) => (
+                <div key={entry.id ?? i} className="bg-slate-800/60 rounded-lg p-2.5">
+                  <div className="flex justify-between items-center mb-0.5">
+                    <p className="text-xs font-medium text-white truncate flex-1">
+                      {entry.title || entry.type || 'Entry'}
+                    </p>
+                    <p className="text-[11px] text-slate-400 ml-2 flex-shrink-0">
+                      {entry.date ? new Date(entry.date).toLocaleDateString() : ''}
+                    </p>
+                  </div>
+                  {(entry.content || entry.notes) && (
+                    <p className="text-[11px] text-slate-400 line-clamp-3">{entry.content || entry.notes}</p>
+                  )}
+                  {entry.mood && (
+                    <span className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded border border-slate-600 text-slate-400">
+                      {entry.mood}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </ScrollArea>
+  );
+}
+
+function AIVisionInCallPanel({ consultationId }: { consultationId?: string }) {
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [captureError, setCaptureError] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const captureAndAnalyze = async () => {
+    setIsAnalyzing(true);
+    setCaptureError(null);
+    setResult(null);
+    try {
+      // Prefer the hidden remote-capture video, fall back to any visible video
+      const videoEl =
+        (document.getElementById('__remote-capture-video') as HTMLVideoElement | null) ??
+        (document.querySelector('video:not([muted])') as HTMLVideoElement | null) ??
+        (document.querySelector('video') as HTMLVideoElement | null);
+
+      if (!videoEl || !canvasRef.current) throw new Error('No video feed available to capture');
+
+      const canvas = canvasRef.current;
+      canvas.width = videoEl.videoWidth || 640;
+      canvas.height = videoEl.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas not supported');
+      ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+      const imageData = canvas.toDataURL('image/jpeg', 0.8);
+
+      const res = await api.post('/ai/vision/analyze-frame', {
+        image: imageData,
+        context: 'video_consultation',
+        consultation_id: consultationId,
+      });
+      setResult(res.data.analysis || res.data.result || 'Analysis complete.');
+    } catch (err: any) {
+      setCaptureError(err.response?.data?.message || err.message || 'Failed to analyze frame');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  return (
+    <div className="h-full overflow-y-auto p-3">
+      <canvas ref={canvasRef} className="hidden" />
+
+      <div className="flex items-center gap-2 mb-4">
+        <div className="p-1.5 rounded-lg bg-blue-500/20 flex-shrink-0">
+          <Eye className="w-4 h-4 text-blue-400" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-white">AI Vision Analysis</p>
+          <p className="text-[11px] text-slate-400">Analyze patient video for clinical indicators</p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="bg-slate-800/60 rounded-lg p-3 space-y-1.5">
+          {[
+            'Captures current remote video frame',
+            'Detects pallor, jaundice, respiratory effort',
+            'Identifies visible skin conditions',
+            'Estimates pain / distress level from expression',
+          ].map((line) => (
+            <p key={line} className="text-[11px] text-slate-400 flex items-center gap-1.5">
+              <span className="text-teal-400 flex-shrink-0">•</span> {line}
+            </p>
+          ))}
+        </div>
+
+        <Button
+          onClick={captureAndAnalyze}
+          disabled={isAnalyzing}
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm h-9"
+        >
+          {isAnalyzing ? (
+            <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analyzing...</>
+          ) : (
+            <><Eye className="w-4 h-4 mr-2" />Analyze Current Frame</>
+          )}
+        </Button>
+
+        {captureError && (
+          <div className="bg-red-950/40 border border-red-800/50 rounded-lg p-3">
+            <p className="text-xs text-red-400">{captureError}</p>
+          </div>
+        )}
+
+        {result && (
+          <div className="bg-slate-800 rounded-lg p-3">
+            <p className="text-xs font-semibold text-teal-400 mb-2">AI Analysis Result</p>
+            <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{result}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default DoctorVideoConsultation;

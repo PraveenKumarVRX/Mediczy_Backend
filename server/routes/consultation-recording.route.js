@@ -9,11 +9,21 @@ import { fileURLToPath } from 'url';
 import axios from 'axios';
 import FormData from 'form-data';
 import llmProvider from '../services/ai-brain/llm-provider.js';
+import multer from 'multer';
+import { uploadToMinio } from '../services/minio-upload.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = express.Router();
+
+// Multer storage for browser-recorded blobs (written to temp dir then streamed to MinIO)
+const BLOB_TMP_DIR = '/tmp/consultation-recordings';
+try { fs.mkdirSync(BLOB_TMP_DIR, { recursive: true }); } catch {}
+const blobUpload = multer({
+  dest: BLOB_TMP_DIR,
+  limits: { fileSize: 2 * 1024 * 1024 * 1024 }, // 2 GB
+});
 
 const LIVEKIT_RECORDINGS_DIR = process.env.LIVEKIT_RECORDINGS_DIR || '/mnt/recordings';
 const RECORDINGS_BASE_URL = process.env.RECORDINGS_BASE_URL || '/api/recordings';
@@ -113,10 +123,12 @@ router.post('/stop/:recordingId', authDoctor, [
 
     await recording.save();
 
-    // Process recording file asynchronously
-    processRecordingFile(recording).catch(err => {
-      console.error('Error processing recording:', err);
-    });
+    // Skip server-side file processing when the browser will upload the blob itself
+    if (req.query.browserUpload !== 'true') {
+      processRecordingFile(recording).catch(err => {
+        console.error('Error processing recording:', err);
+      });
+    }
 
     res.json({
       success: true,
@@ -137,6 +149,116 @@ router.post('/stop/:recordingId', authDoctor, [
     });
   }
 });
+
+/**
+ * @route   POST /api/consultation-recordings/:id/upload-blob
+ * @desc    Receive browser-recorded WebM blob → upload to MinIO → AI transcription
+ * @access  Private (Doctor)
+ */
+router.post('/:id/upload-blob', authDoctor, blobUpload.single('recording'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const recording = await ConsultationRecording.findByPk(id);
+
+    if (!recording) {
+      if (req.file) fs.unlinkSync(req.file.path);
+      return res.status(404).json({ success: false, message: 'Recording not found' });
+    }
+    if (recording.doctorId !== req.doctor.id) {
+      if (req.file) fs.unlinkSync(req.file.path);
+      return res.status(403).json({ success: false, message: 'Unauthorized' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No recording file uploaded' });
+    }
+
+    const localPath = req.file.path;
+    const originalName = req.file.originalname || `consultation-${recording.roomId}-${Date.now()}.webm`;
+    const mimeType = req.file.mimetype || 'audio/webm';
+    const duration = req.body.duration ? parseInt(req.body.duration) : recording.duration;
+
+    // Upload to MinIO (streams from disk — no full-RAM load)
+    const { url: minioUrl, key: s3Key } = await uploadToMinio({
+      filePath: localPath,
+      originalName,
+      mimeType,
+      keyPrefix: `consultation-recordings/${recording.doctorId}`,
+    });
+
+    // Update DB with MinIO location and set status to processing
+    recording.recordingUrl = minioUrl;
+    recording.recordingFileName = path.basename(s3Key);
+    recording.recordingPath = s3Key;
+    recording.fileSize = req.file.size;
+    recording.format = (path.extname(originalName).slice(1) || 'webm').replace('audio/', '');
+    if (duration) recording.duration = duration;
+    recording.status = 'processing';
+    recording.metadata = {
+      ...(recording.metadata || {}),
+      browserRecorded: true,
+      uploadedAt: new Date().toISOString(),
+    };
+    await recording.save();
+
+    // Respond immediately — transcription runs asynchronously
+    res.json({
+      success: true,
+      message: 'Uploaded to MinIO — AI transcription started',
+      recording: { id: recording.id, status: 'processing', recordingUrl: minioUrl },
+    });
+
+    // Async: transcribe from local file, then clean up
+    processUploadedRecording(recording, localPath).catch(err =>
+      console.error('processUploadedRecording error:', err)
+    );
+  } catch (error) {
+    console.error('upload-blob error:', error);
+    if (req.file) { try { fs.unlinkSync(req.file.path); } catch {} }
+    if (error.code === 'MALWARE_DETECTED') {
+      return res.status(400).json({ success: false, code: 'MALWARE_DETECTED', message: 'File rejected: malware detected' });
+    }
+    res.status(500).json({ success: false, message: 'Upload failed', error: error.message });
+  }
+});
+
+/**
+ * Transcribe a browser-recorded file that has already been uploaded to MinIO.
+ * Runs async after the HTTP response is sent; deletes the local temp file when done.
+ */
+async function processUploadedRecording(recording, localFilePath) {
+  try {
+    console.log(`🎙️ Transcribing browser recording: ${recording.id}`);
+    const transcriptionResult = await transcribeRecording(localFilePath);
+
+    if (transcriptionResult.success) {
+      recording.transcription = transcriptionResult.text;
+
+      console.log(`🤖 Generating AI summary for recording: ${recording.id}`);
+      const analysisResult = await analyzeConsultationTranscript(transcriptionResult.text);
+      if (analysisResult.success) {
+        recording.aiSummary = analysisResult.summary;
+        recording.aiPrescription = analysisResult.prescription;
+        recording.metadata = {
+          ...(recording.metadata || {}),
+          transcriptionProvider: transcriptionResult.provider,
+          analysisModel: analysisResult.model,
+          processingTime: Date.now() - new Date(recording.endedAt || Date.now()).getTime(),
+        };
+      }
+    }
+
+    recording.status = 'completed';
+    await recording.save();
+    console.log(`✅ Browser recording processed: ${recording.id}`);
+  } catch (error) {
+    console.error(`❌ processUploadedRecording error for ${recording.id}:`, error);
+    recording.status = 'failed';
+    recording.metadata = { ...(recording.metadata || {}), error: error.message };
+    await recording.save();
+  } finally {
+    try { fs.unlinkSync(localFilePath); } catch {}
+  }
+}
 
 /**
  * Process recording file - find, store metadata, generate transcription
