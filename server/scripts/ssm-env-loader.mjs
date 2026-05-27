@@ -38,8 +38,9 @@ async function loadFromSSM() {
       const res = await client.send(cmd);
       for (const param of res.Parameters || []) {
         const key = param.Name.replace(`${SSM_PATH}/`, '');
-        // Only set if not already present in environment (local .env takes precedence in dev)
-        if (!(key in process.env)) {
+        // In production, SSM is the source of truth. This prevents stale PM2/env
+        // values from masking rotated secrets such as OPENAI_API_KEY.
+        if (process.env.NODE_ENV === 'production' || !(key in process.env)) {
           process.env[key] = param.Value;
         }
       }

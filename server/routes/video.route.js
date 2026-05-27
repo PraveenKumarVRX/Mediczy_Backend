@@ -27,6 +27,13 @@ router.get('/health', (req, res) => {
 router.get('/test', VideoController.testVideoSystem);
 
 /**
+ * @route   GET /api/video/livekit/diagnostics
+ * @desc    Validate LiveKit API reachability and ICE configuration
+ * @access  Private
+ */
+router.get('/livekit/diagnostics', authUser, VideoController.liveKitDiagnostics);
+
+/**
  * @route   POST /api/video/room/token
  * @desc    Generate video room token
  * @access  Private

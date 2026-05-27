@@ -685,6 +685,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/webhooks/n8n-callback/', // n8n workflow callbacks (server-to-server, token-auth at route level)
   '/api/pharmacy/medicines', // Public medicine search from master database
   '/api/lab-tests/catalog',  // Public lab test catalog — browse tests and prices without login
+  '/api/email/track/',       // Email open/click tracking pixels (hit by email clients, no auth)
   '/health', // Public health check
 ];
 

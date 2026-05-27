@@ -23,6 +23,8 @@ import nodemailer from 'nodemailer';
 import twilio from 'twilio';
 import OTP from '../../models/otp.model.intelligent.js';
 import { authLimiter, otpLimiter } from '../../middleware/rateLimiter.middleware.js';
+import emailService from '../../services/emailService.js';
+import { EmailLog } from '../../models/email.model.js';
 
 // ── Multer ────────────────────────────────────────────────────────────────────
 const ALLOWED_MIMES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -234,18 +236,44 @@ export function addOtpRoutes(router, entityLabel, accentColor = '#0d9488') {
     }
     try {
       const otp = await OTP.generate({ email, purpose: 'registration', expiryMinutes: 10 });
-      const port = parseInt(process.env.SMTP_PORT) || 587;
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST || 'smtp.gmail.com',
-        port,
-        secure: port === 465,
-        auth: { user: (process.env.SMTP_USER || '').trim(), pass: (process.env.SMTP_PASSWORD || process.env.SMTP_PASS || '').trim() },
-      });
-      await transporter.sendMail({
-        from: process.env.EMAIL_FROM || `"Mediczy" <${process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@mediqzy.com'}>`,
+
+      // Use the DB-driven email service (Zoho SMTP, 5k/day, pooled)
+      const dbConfig = await emailService.getDefaultConfig();
+      let transporter;
+      let fromAddress;
+
+      if (dbConfig) {
+        transporter = await emailService.getTransporter(dbConfig);
+        fromAddress = `"${dbConfig.fromName}" <${dbConfig.fromEmail}>`;
+      } else {
+        // Env-var fallback (should not normally be reached)
+        const port = parseInt(process.env.SMTP_PORT) || 587;
+        transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST || 'smtppro.zoho.in',
+          port,
+          secure: port === 465,
+          auth: { user: (process.env.SMTP_USER || '').trim(), pass: (process.env.SMTP_PASSWORD || '').trim() },
+          tls: { rejectUnauthorized: false },
+        });
+        fromAddress = process.env.EMAIL_FROM || `"Mediqzy" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`;
+      }
+
+      // Create log entry before sending so we have the ID for the tracking pixel
+      const logEntry = await EmailLog.create({
         to: email,
+        from: fromAddress,
         subject: `${otp.code} — Your Mediczy Email Verification OTP`,
-        html: `
+        status: 'pending',
+        priority: 'high',
+        configId: dbConfig ? dbConfig.id : null,
+        metadata: { entityLabel, purpose: 'otp_verification' },
+        sentAt: null,
+      });
+
+      const baseUrl = process.env.BASE_URL || 'https://app.mediqzy.com';
+      const trackingPixelUrl = `${baseUrl}/api/email/track/open/${logEntry.id}`;
+
+      const htmlBody = `
           <div style="font-family:sans-serif;max-width:480px;margin:0 auto;background:#07101f;color:#e2e8f0;border-radius:16px;overflow:hidden">
             <div style="background:linear-gradient(135deg,${accentColor},#0891b2);padding:28px 32px">
               <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800">Mediczy ${entityLabel} Portal</h1>
@@ -259,11 +287,35 @@ export function addOtpRoutes(router, entityLabel, accentColor = '#0d9488') {
               </div>
               <p style="margin:0;color:#64748b;font-size:12px;text-align:center">Expires in 10 minutes. Do not share with anyone.</p>
             </div>
-          </div>`,
+          </div>
+          <img src="${trackingPixelUrl}" width="1" height="1" style="display:none" alt="" />`;
+
+      const sendResult = await transporter.sendMail({
+        from: fromAddress,
+        to: email,
+        subject: `${otp.code} — Your Mediczy Email Verification OTP`,
+        html: htmlBody,
       });
+
+      // Update log to sent
+      await logEntry.update({
+        status: 'sent',
+        sentAt: new Date(),
+        metadata: {
+          ...logEntry.metadata,
+          messageId: sendResult.messageId,
+          response: sendResult.response,
+        },
+      });
+
       res.json({ success: true, message: 'OTP sent to your email address' });
     } catch (err) {
       console.error(`${entityLabel} email OTP error:`, err.message);
+      // Log the failure if we managed to create a log entry
+      try {
+        const failLog = await EmailLog.findOne({ where: { to: email, status: 'pending' }, order: [['createdAt', 'DESC']] });
+        if (failLog) await failLog.update({ status: 'failed', errorMessage: err.message });
+      } catch (_) {}
       res.status(500).json({ success: false, message: 'Failed to send OTP. Please try again.' });
     }
   });

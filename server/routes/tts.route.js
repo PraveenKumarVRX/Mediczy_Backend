@@ -14,115 +14,189 @@ const router = express.Router();
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const DEFAULT_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || 'pjcYQlDFKMbcOUp6F5GD';
 
+// OpenAI fallback TTS configuration
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_TTS_MODEL = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
+const OPENAI_TTS_VOICE = process.env.OPENAI_TTS_VOICE || 'coral';
+const OPENAI_TTS_INSTRUCTIONS = process.env.OPENAI_TTS_INSTRUCTIONS ||
+  'Speak as Dr. iSHA, a calm, professional clinical assistant. Keep the tone clear, warm, and concise.';
+
+function cleanTtsText(text) {
+  return text
+    .replace(/[🚨⚠️🏥🩺📞✅❌💊🔴🟡🟢📹💬🎤📸📍👁️🧠❤️🫁🏃👤📊🧍😣💪🗣️]/g, '')
+    .replace(/\*\*/g, '')
+    .replace(/#{1,6}\s/g, '')
+    .replace(/•/g, '')
+    .replace(/---/g, '')
+    .trim()
+    .substring(0, 5000);
+}
+
+function getOpenAiTtsModels() {
+  const configured = (process.env.OPENAI_TTS_FALLBACK_MODELS || "")
+    .split(",")
+    .map(model => model.trim())
+    .filter(Boolean);
+
+  return Array.from(new Set([OPENAI_TTS_MODEL, ...configured, "tts-1"]));
+}
+
+async function createOpenAiTtsResponse(text, signal) {
+  if (!OPENAI_API_KEY || OPENAI_API_KEY === "your-openai-api-key") {
+    return {
+      ok: false,
+      status: 503,
+      error: "OPENAI_API_KEY not configured"
+    };
+  }
+
+  let lastFailure = null;
+
+  for (const model of getOpenAiTtsModels()) {
+    const response = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer " + OPENAI_API_KEY,
+        "Content-Type": "application/json",
+        "Accept": "audio/mpeg",
+      },
+      body: JSON.stringify({
+        model,
+        voice: OPENAI_TTS_VOICE,
+        input: text,
+        instructions: OPENAI_TTS_INSTRUCTIONS,
+        response_format: "mp3",
+      }),
+      signal,
+    });
+
+    if (response.ok) {
+      return { ok: true, response, model };
+    }
+
+    const err = await response.text().catch(() => "");
+    lastFailure = {
+      status: response.status,
+      model,
+      error: err.slice(0, 500)
+    };
+    console.warn("⚠️ OpenAI TTS model unavailable:", model, response.status, err.slice(0, 200));
+  }
+
+  return {
+    ok: false,
+    status: lastFailure?.status || 503,
+    model: lastFailure?.model || OPENAI_TTS_MODEL,
+    error: lastFailure?.error || "OpenAI TTS unavailable"
+  };
+}
+
 /**
  * POST /api/tts/speak
- * Convert text to speech using Eleven Labs
+ * Convert text to speech using ElevenLabs, then OpenAI TTS fallback.
  */
-router.post('/speak', async (req, res) => {
+router.post("/speak", async (req, res) => {
   try {
-    const { text, voiceId, model = 'eleven_turbo_v2_5' } = req.body;
+    const { text, voiceId, model = "eleven_turbo_v2_5" } = req.body;
 
     if (!text) {
-      return res.status(400).json({ success: false, message: 'Text is required' });
+      return res.status(400).json({ success: false, message: "Text is required" });
     }
 
-    if (!ELEVENLABS_API_KEY) {
-      console.warn('⚠️ ELEVENLABS_API_KEY not configured');
-      return res.status(503).json({ 
-        success: false, 
-        message: 'TTS service not configured',
-        fallback: true
-      });
-    }
-
-    // Clean and limit text
-    const cleanText = text
-      .replace(/[🚨⚠️🏥🩺📞✅❌💊🔴🟡🟢📹💬🎤📸📍👁️🧠❤️🫁🏃👤📊🧍😣💪🗣️]/g, '')
-      .replace(/\*\*/g, '')
-      .replace(/#{1,6}\s/g, '')
-      .replace(/•/g, '')
-      .replace(/---/g, '')
-      .trim()
-      .substring(0, 5000);
+    const cleanText = cleanTtsText(text);
 
     if (!cleanText) {
-      return res.status(400).json({ success: false, message: 'No speakable text after cleaning' });
+      return res.status(400).json({ success: false, message: "No speakable text after cleaning" });
     }
 
-    console.log(`🔊 Eleven Labs TTS: "${cleanText.substring(0, 50)}..." (${cleanText.length} chars)`);
-
-    // Add timeout with AbortController (30s for Eleven Labs API)
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-    let response;
     try {
-      response = await fetch(
-        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId || DEFAULT_VOICE_ID}`,
-        {
-          method: 'POST',
-          headers: {
-            'Accept': 'audio/mpeg',
-            'Content-Type': 'application/json',
-            'xi-api-key': ELEVENLABS_API_KEY,
-          },
-          body: JSON.stringify({
-            text: cleanText,
-            model_id: model,
-            voice_settings: {
-              stability: 0.5,
-              similarity_boost: 0.8,
-              style: 0.3,
-              use_speaker_boost: true
-            }
-          }),
-          signal: controller.signal
+      if (ELEVENLABS_API_KEY) {
+        console.log("🔊 ElevenLabs TTS: " + cleanText.substring(0, 50) + "... (" + cleanText.length + " chars)");
+        const response = await fetch(
+          "https://api.elevenlabs.io/v1/text-to-speech/" + (voiceId || DEFAULT_VOICE_ID),
+          {
+            method: "POST",
+            headers: {
+              "Accept": "audio/mpeg",
+              "Content-Type": "application/json",
+              "xi-api-key": ELEVENLABS_API_KEY,
+            },
+            body: JSON.stringify({
+              text: cleanText,
+              model_id: model,
+              voice_settings: {
+                stability: 0.5,
+                similarity_boost: 0.8,
+                style: 0.3,
+                use_speaker_boost: true
+              }
+            }),
+            signal: controller.signal
+          }
+        );
+
+        if (response.ok) {
+          const audioBuffer = await response.buffer();
+          res.set({
+            "Content-Type": "audio/mpeg",
+            "Content-Length": audioBuffer.length,
+            "Cache-Control": "no-cache",
+            "X-TTS-Provider": "elevenlabs"
+          });
+          console.log("✅ ElevenLabs TTS audio generated: " + audioBuffer.length + " bytes");
+          return res.send(audioBuffer);
         }
-      );
+
+        const errorText = await response.text();
+        console.warn("⚠️ ElevenLabs TTS unavailable:", response.status, errorText.slice(0, 200));
+      } else {
+        console.warn("⚠️ ELEVENLABS_API_KEY not configured, trying OpenAI TTS fallback");
+      }
+
+      const openAiResult = await createOpenAiTtsResponse(cleanText, controller.signal);
+      if (openAiResult.ok) {
+        const audioBuffer = await openAiResult.response.buffer();
+        res.set({
+          "Content-Type": "audio/mpeg",
+          "Content-Length": audioBuffer.length,
+          "Cache-Control": "no-cache",
+          "X-TTS-Provider": "openai",
+          "X-TTS-Model": openAiResult.model
+        });
+        console.log("✅ OpenAI TTS fallback audio generated: " + audioBuffer.length + " bytes");
+        return res.send(audioBuffer);
+      }
+
+      console.warn("⚠️ OpenAI TTS fallback unavailable:", openAiResult.status, openAiResult.error);
+      return res.status(200).json({
+        success: false,
+        fallback: true,
+        provider: "browser",
+        message: "Cloud TTS unavailable, use browser speech synthesis",
+        openaiStatus: openAiResult.status,
+        openaiError: openAiResult.error
+      });
     } finally {
       clearTimeout(timeoutId);
     }
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ Eleven Labs API error:', response.status, errorText);
-      return res.status(response.status).json({
-        success: false,
-        message: 'TTS generation failed',
-        error: errorText,
-        fallback: true
-      });
-    }
-
-    // Send the audio response (don't use Transfer-Encoding with Content-Length)
-    const audioBuffer = await response.buffer();
-    
-    res.set({
-      'Content-Type': 'audio/mpeg',
-      'Content-Length': audioBuffer.length,
-      'Cache-Control': 'no-cache'
-    });
-
-    res.send(audioBuffer);
-
-    console.log(`✅ TTS audio generated: ${audioBuffer.length} bytes`);
-
   } catch (error) {
-    console.error('❌ TTS error:', error.message);
-    
-    // Handle timeout errors specifically
-    if (error.name === 'AbortError') {
+    console.error("❌ TTS error:", error.message);
+
+    if (error.name === "AbortError") {
       return res.status(504).json({
         success: false,
-        message: 'TTS request timed out - using fallback',
-        error: 'timeout',
+        message: "TTS request timed out, using fallback",
+        error: "timeout",
         fallback: true
       });
     }
-    
+
     res.status(500).json({
       success: false,
-      message: 'TTS service error',
+      message: "TTS service error",
       error: error.message,
       fallback: true
     });
@@ -131,52 +205,75 @@ router.post('/speak', async (req, res) => {
 
 /**
  * POST /api/tts/stream
- * Streaming TTS — pipes ElevenLabs audio chunks directly to client.
- * Client receives audio/mpeg stream starting in ~300ms (before full generation).
+ * Streaming TTS. Uses ElevenLabs first, then streams OpenAI TTS fallback.
  */
-router.post('/stream', async (req, res) => {
-  const { text, voiceId, model = 'eleven_turbo_v2_5' } = req.body;
+router.post("/stream", async (req, res) => {
+  const { text, voiceId, model = "eleven_turbo_v2_5" } = req.body;
 
-  if (!text) return res.status(400).json({ error: 'Text is required' });
-  if (!ELEVENLABS_API_KEY) return res.status(503).json({ error: 'TTS not configured', fallback: true });
+  if (!text) return res.status(400).json({ error: "Text is required" });
 
-  const cleanText = text
-    .replace(/[🚨⚠️🏥🩺📞✅❌💊🔴🟡🟢📹💬🎤📸📍👁️🧠❤️🫁🏃👤📊🧍😣💪🗣️]/g, '')
-    .replace(/\*\*/g, '').replace(/#{1,6}\s/g, '').replace(/•/g, '').replace(/---/g, '')
-    .trim().substring(0, 5000);
+  const cleanText = cleanTtsText(text);
+  if (!cleanText) return res.status(400).json({ error: "No speakable text" });
 
-  if (!cleanText) return res.status(400).json({ error: 'No speakable text' });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   try {
-    const elResp = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId || DEFAULT_VOICE_ID}/stream`,
-      {
-        method: 'POST',
-        headers: {
-          'Accept': 'audio/mpeg',
-          'Content-Type': 'application/json',
-          'xi-api-key': ELEVENLABS_API_KEY,
-        },
-        body: JSON.stringify({
-          text: cleanText,
-          model_id: model,
-          voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.3, use_speaker_boost: true },
-        }),
-      }
-    );
+    if (ELEVENLABS_API_KEY) {
+      const elResp = await fetch(
+        "https://api.elevenlabs.io/v1/text-to-speech/" + (voiceId || DEFAULT_VOICE_ID) + "/stream",
+        {
+          method: "POST",
+          headers: {
+            "Accept": "audio/mpeg",
+            "Content-Type": "application/json",
+            "xi-api-key": ELEVENLABS_API_KEY,
+          },
+          body: JSON.stringify({
+            text: cleanText,
+            model_id: model,
+            voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.3, use_speaker_boost: true },
+          }),
+          signal: controller.signal,
+        }
+      );
 
-    if (!elResp.ok) {
+      if (elResp.ok) {
+        clearTimeout(timeoutId);
+        res.set({ "Content-Type": "audio/mpeg", "Transfer-Encoding": "chunked", "Cache-Control": "no-cache", "X-TTS-Provider": "elevenlabs" });
+        elResp.body.pipe(res);
+        return elResp.body.on("error", () => res.end());
+      }
+
       const err = await elResp.text();
-      return res.status(elResp.status).json({ error: err.slice(0, 200), fallback: true });
+      console.warn("⚠️ ElevenLabs stream unavailable:", elResp.status, err.slice(0, 200));
+    } else {
+      console.warn("⚠️ ELEVENLABS_API_KEY not configured, trying OpenAI TTS fallback");
     }
 
-    res.set({ 'Content-Type': 'audio/mpeg', 'Transfer-Encoding': 'chunked', 'Cache-Control': 'no-cache' });
-    elResp.body.pipe(res);
-    elResp.body.on('error', () => res.end());
+    const openAiResult = await createOpenAiTtsResponse(cleanText, controller.signal);
+    clearTimeout(timeoutId);
 
+    if (openAiResult.ok) {
+      res.set({ "Content-Type": "audio/mpeg", "Transfer-Encoding": "chunked", "Cache-Control": "no-cache", "X-TTS-Provider": "openai",
+          "X-TTS-Model": openAiResult.model });
+      openAiResult.response.body.pipe(res);
+      return openAiResult.response.body.on("error", () => res.end());
+    }
+
+    console.warn("⚠️ OpenAI TTS fallback unavailable:", openAiResult.status, openAiResult.error);
+    return res.status(200).json({
+      success: false,
+      fallback: true,
+      provider: "browser",
+      message: "Cloud TTS unavailable, use browser speech synthesis",
+      openaiStatus: openAiResult.status,
+      openaiError: openAiResult.error
+    });
   } catch (err) {
-    console.error('❌ TTS stream error:', err.message);
-    if (!res.headersSent) res.status(500).json({ error: err.message, fallback: true });
+    clearTimeout(timeoutId);
+    console.error("❌ TTS stream error:", err.message);
+    if (!res.headersSent) res.status(err.name === "AbortError" ? 504 : 500).json({ error: err.message, fallback: true });
   }
 });
 
@@ -250,12 +347,17 @@ router.get('/voices', async (req, res) => {
  * GET /api/tts/status
  * Check TTS service status
  */
-router.get('/status', (req, res) => {
+router.get("/status", (req, res) => {
   res.json({
     success: true,
-    configured: !!ELEVENLABS_API_KEY,
+    configured: !!(ELEVENLABS_API_KEY || OPENAI_API_KEY),
+    primaryConfigured: !!ELEVENLABS_API_KEY,
+    fallbackConfigured: !!OPENAI_API_KEY && OPENAI_API_KEY !== "your-openai-api-key",
     defaultVoiceId: DEFAULT_VOICE_ID,
-    provider: 'elevenlabs'
+    provider: "elevenlabs",
+    fallbackProvider: "openai",
+    openaiModel: OPENAI_TTS_MODEL,
+    openaiVoice: OPENAI_TTS_VOICE
   });
 });
 

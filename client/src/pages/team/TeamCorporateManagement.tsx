@@ -57,6 +57,7 @@ import {
   Clock,
   MapPin,
   Bell,
+  Send,
   ChevronLeft
 } from 'lucide-react';
 import api from '@/utils/api';
@@ -186,6 +187,17 @@ interface CorporatePlan {
   healthPackageIds?: string[];
 }
 
+type CommunicationChannel = 'email' | 'whatsapp' | 'sms';
+type CommunicationRecipientMode = 'individual' | 'selected' | 'bulk';
+
+interface CommunicationTemplate {
+  id: string;
+  name: string;
+  subject?: string;
+  content: string;
+  category: string;
+}
+
 const packageTypes = ['Basic', 'Standard', 'Premium', 'Enterprise', 'Custom'];
 const statusOptions = ['Active', 'Inactive', 'Pending', 'Suspended'];
 const planTypes = ['Basic', 'Standard', 'Premium', 'Elite', 'Group Health Insurance', 'OPD Plan', 'Wellness Plan'];
@@ -212,6 +224,59 @@ const industries = [
   'Retail', 'Education', 'Consulting', 'Telecommunications', 'Real Estate', 'Other'
 ];
 
+const defaultCommunicationTemplates: Record<CommunicationChannel, CommunicationTemplate[]> = {
+  email: [
+    {
+      id: 'email-welcome',
+      name: 'Corporate Welcome',
+      category: 'Onboarding',
+      subject: 'Welcome to SmartHealth Corporate Program - {{companyName}}',
+      content:
+        'Hello {{contactPerson}},\n\nWelcome to SmartHealth corporate wellness program for {{companyName}}. Your corporate ID is {{corporateId}}.\n\nWe are excited to support your {{employeeCount}} employees with preventive care and wellness services.\n\nRegards,\nTeam SmartHealth',
+    },
+    {
+      id: 'email-renewal',
+      name: 'Plan Renewal Reminder',
+      category: 'Plans',
+      subject: 'Plan Renewal Reminder - {{companyName}}',
+      content:
+        'Dear {{contactPerson}},\n\nThis is a reminder to review and renew the {{packageType}} package for {{companyName}} (Corporate ID: {{corporateId}}).\n\nPlease connect with us to avoid interruption in employee benefits.\n\nRegards,\nTeam SmartHealth',
+    },
+  ],
+  whatsapp: [
+    {
+      id: 'wa-health-camp',
+      name: 'Health Camp Invite',
+      category: 'Wellness',
+      content:
+        'Hi {{contactPerson}}, this is Team SmartHealth. A health camp slot is available for {{companyName}}. Reply YES to schedule for your {{employeeCount}} employees.',
+    },
+    {
+      id: 'wa-opd-update',
+      name: 'OPD Benefit Update',
+      category: 'Benefits',
+      content:
+        'Hello {{contactPerson}}, OPD benefits under {{packageType}} plan are now active for {{companyName}} ({{corporateId}}). Need a quick orientation call?',
+    },
+  ],
+  sms: [
+    {
+      id: 'sms-onboarded',
+      name: 'Onboarding Confirmation',
+      category: 'Onboarding',
+      content:
+        'SmartHealth: {{companyName}} onboarded successfully. Corporate ID: {{corporateId}}. HR SPOC: {{contactPerson}}.',
+    },
+    {
+      id: 'sms-action-required',
+      name: 'Action Required',
+      category: 'Operations',
+      content:
+        'SmartHealth: Please review pending corporate updates for {{companyName}} ({{corporateId}}). Contact support for assistance.',
+    },
+  ],
+};
+
 const TeamCorporateManagement = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -220,10 +285,47 @@ const TeamCorporateManagement = () => {
   // State
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
+  const [communicationChannel, setCommunicationChannel] = useState<CommunicationChannel>('email');
+  const [communicationTemplates, setCommunicationTemplates] = useState<Record<CommunicationChannel, CommunicationTemplate[]>>(defaultCommunicationTemplates);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+  const [communicationDraft, setCommunicationDraft] = useState({
+    name: '',
+    category: 'General',
+    subject: '',
+    content: '',
+  });
+  const [editingCommunicationTemplateId, setEditingCommunicationTemplateId] = useState<string | null>(null);
+  const [communicationComposer, setCommunicationComposer] = useState({
+    to: '',
+    subject: '',
+    message: '',
+  });
+  const [communicationRecipientMode, setCommunicationRecipientMode] = useState<CommunicationRecipientMode>('individual');
+  const [communicationRecipientSearch, setCommunicationRecipientSearch] = useState('');
+  const [selectedCommunicationEmployeeIds, setSelectedCommunicationEmployeeIds] = useState<string[]>([]);
+  const [communicationBulkRecipients, setCommunicationBulkRecipients] = useState('');
+  const [communicationLogs, setCommunicationLogs] = useState<any[]>([]);
+  const [communicationAnalytics, setCommunicationAnalytics] = useState<any>(null);
+  const [communicationLogsLoading, setCommunicationLogsLoading] = useState(false);
+  const [communicationAnalyticsDays, setCommunicationAnalyticsDays] = useState('30');
+  const [sendingCommunication, setSendingCommunication] = useState(false);
   const [corporates, setCorporates] = useState<Corporate[]>([]);
   const [selectedCorporate, setSelectedCorporate] = useState<Corporate | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  
+  const [showEditCorporateDialog, setShowEditCorporateDialog] = useState(false);
+  const [showDeleteCorporateDialog, setShowDeleteCorporateDialog] = useState(false);
+  const [editingCorporate, setEditingCorporate] = useState<Corporate | null>(null);
+  const [corporateToDelete, setCorporateToDelete] = useState<Corporate | null>(null);
+  const [editCorporateForm, setEditCorporateForm] = useState({
+    companyName: '', contactPerson: '', email: '', phoneNumber: '',
+    industry: '', employeeCount: '', packageType: '', status: '',
+  });
+  const [savingCorporate, setSavingCorporate] = useState(false);
+  const [deletingCorporate, setDeletingCorporate] = useState(false);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [empCurrentPage, setEmpCurrentPage] = useState(1);
+  const EMP_PAGE_SIZE = 10;
+
   // Dialog states
   const [showAddCorporateDialog, setShowAddCorporateDialog] = useState(false);
   const [showAddHRDialog, setShowAddHRDialog] = useState(false);
@@ -419,10 +521,270 @@ const TeamCorporateManagement = () => {
   };
   const [eventForm, setEventForm] = useState(defaultEventForm);
 
-  // Mock data for employees and network
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [empCurrentPage, setEmpCurrentPage] = useState(1);
-  const EMP_PAGE_SIZE = 10;
+  const getCommunicationStorageKey = (corporateId?: number) =>
+    corporateId ? `teamCorporateCommunicationTemplates:${corporateId}` : '';
+
+  const getDefaultRecipientByChannel = (channel: CommunicationChannel, corporate: Corporate | null) => {
+    if (!corporate) return '';
+    if (channel === 'email') return corporate.email || '';
+    return corporate.phoneNumber || '';
+  };
+
+  const applyCommunicationPlaceholders = (text: string) => {
+    if (!selectedCorporate) return text;
+    const map: Record<string, string> = {
+      companyName: selectedCorporate.companyName || '',
+      contactPerson: selectedCorporate.contactPerson || '',
+      corporateId: selectedCorporate.uniqueId || `ID-${selectedCorporate.id}`,
+      employeeCount: String(selectedCorporate.employeeCount || 0),
+      industry: selectedCorporate.industry || '',
+      packageType: selectedCorporate.packageType || '',
+    };
+    return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => map[key] || '');
+  };
+
+  const persistCommunicationTemplates = (next: Record<CommunicationChannel, CommunicationTemplate[]>) => {
+    if (!selectedCorporate?.id) return;
+    localStorage.setItem(getCommunicationStorageKey(selectedCorporate.id), JSON.stringify(next));
+    setCommunicationTemplates(next);
+  };
+
+  const resetCommunicationDraft = () => {
+    setCommunicationDraft({ name: '', category: 'General', subject: '', content: '' });
+    setEditingCommunicationTemplateId(null);
+  };
+
+  const saveCommunicationTemplate = () => {
+    if (!communicationDraft.name || !communicationDraft.content) {
+      toast({ variant: 'destructive', title: 'Missing fields', description: 'Template name and content are required.' });
+      return;
+    }
+
+    if (editingCommunicationTemplateId) {
+      const next: Record<CommunicationChannel, CommunicationTemplate[]> = {
+        ...communicationTemplates,
+        [communicationChannel]: communicationTemplates[communicationChannel].map((template) =>
+          template.id === editingCommunicationTemplateId
+            ? {
+                ...template,
+                name: communicationDraft.name,
+                category: communicationDraft.category || 'General',
+                subject: communicationChannel === 'email' ? communicationDraft.subject : undefined,
+                content: communicationDraft.content,
+              }
+            : template
+        ),
+      };
+      persistCommunicationTemplates(next);
+      resetCommunicationDraft();
+      toast({ title: 'Template updated', description: `${communicationChannel.toUpperCase()} template updated.` });
+      return;
+    }
+
+    const next: Record<CommunicationChannel, CommunicationTemplate[]> = {
+      ...communicationTemplates,
+      [communicationChannel]: [
+        {
+          id: `${communicationChannel}-${Date.now()}`,
+          name: communicationDraft.name,
+          category: communicationDraft.category || 'General',
+          subject: communicationChannel === 'email' ? communicationDraft.subject : undefined,
+          content: communicationDraft.content,
+        },
+        ...communicationTemplates[communicationChannel],
+      ],
+    };
+    persistCommunicationTemplates(next);
+    resetCommunicationDraft();
+    toast({ title: 'Template saved', description: `${communicationChannel.toUpperCase()} template added.` });
+  };
+
+  const editCommunicationTemplate = (template: CommunicationTemplate) => {
+    setEditingCommunicationTemplateId(template.id);
+    setCommunicationDraft({
+      name: template.name,
+      category: template.category || 'General',
+      subject: template.subject || '',
+      content: template.content || '',
+    });
+  };
+
+  const useCommunicationTemplate = (template: CommunicationTemplate) => {
+    setSelectedTemplateId(template.id);
+    setCommunicationComposer((prev) => ({
+      ...prev,
+      subject: template.subject ? applyCommunicationPlaceholders(template.subject) : '',
+      message: applyCommunicationPlaceholders(template.content),
+    }));
+  };
+
+  const removeCommunicationTemplate = (templateId: string) => {
+    const next: Record<CommunicationChannel, CommunicationTemplate[]> = {
+      ...communicationTemplates,
+      [communicationChannel]: communicationTemplates[communicationChannel].filter((template) => template.id !== templateId),
+    };
+    persistCommunicationTemplates(next);
+  };
+
+  const getEmployeeChannelAddress = (employee: Employee) => {
+    if (communicationChannel === 'email') return (employee.email || '').trim().toLowerCase();
+    return (employee.phone || '').trim();
+  };
+
+  const eligibleCommunicationEmployees = employees.filter((employee) => getEmployeeChannelAddress(employee));
+  const filteredCommunicationEmployees = eligibleCommunicationEmployees.filter((employee) => {
+    const q = communicationRecipientSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      employee.name?.toLowerCase().includes(q) ||
+      employee.email?.toLowerCase().includes(q) ||
+      employee.phone?.toLowerCase().includes(q) ||
+      employee.department?.toLowerCase().includes(q) ||
+      employee.employeeId?.toLowerCase().includes(q)
+    );
+  });
+
+  const buildCommunicationRecipients = () => {
+    if (communicationRecipientMode === 'individual') {
+      return communicationComposer.to ? [communicationComposer.to.trim()] : [];
+    }
+    if (communicationRecipientMode === 'selected') {
+      return selectedCommunicationEmployeeIds
+        .map((id) => employees.find((employee) => employee.id === id))
+        .filter(Boolean)
+        .map((employee) => getEmployeeChannelAddress(employee as Employee))
+        .filter(Boolean);
+    }
+
+    const bulkList = communicationBulkRecipients
+      .split(/\n|,|;/g)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    return [...new Set(bulkList)];
+  };
+
+  const fetchCommunicationInsights = async (opts?: { days?: string }) => {
+    if (!selectedCorporate?.id) return;
+    try {
+      setCommunicationLogsLoading(true);
+      const token = localStorage.getItem('teamToken');
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+      const days = opts?.days || communicationAnalyticsDays;
+
+      const [logsResp, analyticsResp] = await Promise.all([
+        api.get('/team/communications/logs', {
+          params: { corporateId: selectedCorporate.id, channel: communicationChannel, limit: 15 },
+          headers,
+        }),
+        api.get('/team/communications/analytics', {
+          params: { corporateId: selectedCorporate.id, days },
+          headers,
+        }),
+      ]);
+
+      setCommunicationLogs(logsResp?.data?.logs || []);
+      setCommunicationAnalytics(analyticsResp?.data || null);
+    } catch (error) {
+      console.error('Failed to fetch communication insights', error);
+    } finally {
+      setCommunicationLogsLoading(false);
+    }
+  };
+
+  const sendCommunication = async () => {
+    const recipients = buildCommunicationRecipients();
+    if (recipients.length === 0 || !communicationComposer.message) {
+      toast({ variant: 'destructive', title: 'Missing fields', description: 'Recipient(s) and message are required.' });
+      return;
+    }
+
+    const selectedTemplate = communicationTemplates[communicationChannel].find((template) => template.id === selectedTemplateId);
+
+    setSendingCommunication(true);
+    try {
+      await api.post('/team/communications/send', {
+        channel: communicationChannel,
+        to: recipients[0],
+        recipients: recipients.slice(1),
+        recipientMode: communicationRecipientMode,
+        subject: communicationComposer.subject,
+        message: communicationComposer.message,
+        templateId: selectedTemplateId || undefined,
+        templateName: selectedTemplate?.name || undefined,
+        companyName: selectedCorporate?.companyName,
+        corporateId: selectedCorporate?.id,
+      }, {
+        headers: (() => {
+          const token = localStorage.getItem('teamToken');
+          return token ? { Authorization: `Bearer ${token}` } : undefined;
+        })(),
+      });
+
+      toast({
+        title: `${communicationChannel.toUpperCase()} sent`,
+        description: `Message sent to ${recipients.length} recipient${recipients.length > 1 ? 's' : ''} for ${selectedCorporate?.companyName || 'corporate contact'}.`,
+      });
+      await fetchCommunicationInsights();
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: `${communicationChannel.toUpperCase()} send failed`,
+        description: error?.response?.data?.message || 'Unable to send right now. Template is still saved.',
+      });
+    } finally {
+      setSendingCommunication(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedCorporate) return;
+    const key = getCommunicationStorageKey(selectedCorporate.id);
+    const raw = key ? localStorage.getItem(key) : null;
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as Record<CommunicationChannel, CommunicationTemplate[]>;
+        setCommunicationTemplates({
+          email: parsed.email || defaultCommunicationTemplates.email,
+          whatsapp: parsed.whatsapp || defaultCommunicationTemplates.whatsapp,
+          sms: parsed.sms || defaultCommunicationTemplates.sms,
+        });
+      } catch {
+        setCommunicationTemplates(defaultCommunicationTemplates);
+      }
+    } else {
+      setCommunicationTemplates(defaultCommunicationTemplates);
+    }
+
+    setCommunicationComposer({
+      to: getDefaultRecipientByChannel(communicationChannel, selectedCorporate),
+      subject: '',
+      message: '',
+    });
+    setSelectedTemplateId('');
+    setCommunicationRecipientMode('individual');
+    setCommunicationRecipientSearch('');
+    setSelectedCommunicationEmployeeIds([]);
+    setCommunicationBulkRecipients('');
+    resetCommunicationDraft();
+  }, [selectedCorporate]);
+
+  useEffect(() => {
+    if (!selectedCorporate) return;
+    setCommunicationComposer((prev) => ({
+      ...prev,
+      to: getDefaultRecipientByChannel(communicationChannel, selectedCorporate),
+    }));
+    setSelectedCommunicationEmployeeIds([]);
+    setCommunicationBulkRecipients('');
+    setCommunicationRecipientSearch('');
+    resetCommunicationDraft();
+  }, [communicationChannel, selectedCorporate]);
+
+  useEffect(() => {
+    if (activeTab === 'communication' && selectedCorporate?.id) {
+      fetchCommunicationInsights();
+    }
+  }, [activeTab, selectedCorporate?.id, communicationChannel]);
 
   // Debounced Employee ID duplicate check against already-loaded employees
   useEffect(() => {
@@ -958,6 +1320,78 @@ const TeamCorporateManagement = () => {
         title: 'Error',
         description: error.response?.data?.message || 'Failed to create corporate'
       });
+    }
+  };
+
+  // Edit Corporate
+  const openEditCorporate = (corp: Corporate) => {
+    setEditingCorporate(corp);
+    setEditCorporateForm({
+      companyName: corp.companyName || '',
+      contactPerson: corp.contactPerson || '',
+      email: corp.email || '',
+      phoneNumber: corp.phoneNumber || '',
+      industry: corp.industry || '',
+      employeeCount: String(corp.employeeCount || ''),
+      packageType: corp.packageType || '',
+      status: corp.status || 'Active',
+    });
+    setShowEditCorporateDialog(true);
+  };
+
+  const handleEditCorporate = async () => {
+    if (!editingCorporate) return;
+    setSavingCorporate(true);
+    try {
+      const token = localStorage.getItem('teamToken');
+      await api.put(`/admin/corporates/${editingCorporate.id}`, {
+        ...editCorporateForm,
+        employeeCount: parseInt(editCorporateForm.employeeCount) || 0,
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      toast({ title: 'Success', description: 'Corporate updated successfully' });
+      setShowEditCorporateDialog(false);
+      setEditingCorporate(null);
+      fetchCorporates();
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to update corporate',
+      });
+    } finally {
+      setSavingCorporate(false);
+    }
+  };
+
+  // Delete Corporate
+  const openDeleteCorporate = (corp: Corporate) => {
+    setCorporateToDelete(corp);
+    setShowDeleteCorporateDialog(true);
+  };
+
+  const handleDeleteCorporate = async () => {
+    if (!corporateToDelete) return;
+    setDeletingCorporate(true);
+    try {
+      const token = localStorage.getItem('teamToken');
+      await api.delete(`/admin/corporates/${corporateToDelete.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      toast({ title: 'Deleted', description: `${corporateToDelete.companyName} removed successfully` });
+      setShowDeleteCorporateDialog(false);
+      setCorporateToDelete(null);
+      if (selectedCorporate?.id === corporateToDelete.id) setSelectedCorporate(null);
+      fetchCorporates();
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to delete corporate',
+      });
+    } finally {
+      setDeletingCorporate(false);
     }
   };
 
@@ -1802,53 +2236,107 @@ const TeamCorporateManagement = () => {
               </div>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filteredCorporates.map((corp) => (
-                <div
-                  key={corp.id}
-                  className={`p-4 border rounded-lg cursor-pointer transition-all ${
-                    selectedCorporate?.id === corp.id
-                      ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
-                      : 'hover:border-primary/50 hover:bg-muted/50'
-                  }`}
-                  onClick={() => setSelectedCorporate(corp)}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-primary/10">
-                        <Building2 className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold">{corp.companyName}</h3>
-                        <p className="text-sm text-muted-foreground">{corp.industry}</p>
-                        {corp.uniqueId && (
-                          <span className="inline-block mt-0.5 text-[10px] font-mono bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded">{corp.uniqueId}</span>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-32">Unique ID</TableHead>
+                  <TableHead>Company Name</TableHead>
+                  <TableHead>Industry</TableHead>
+                  <TableHead className="text-center">Employees</TableHead>
+                  <TableHead>Plan</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredCorporates.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      No corporates found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredCorporates.map((corp) => (
+                    <TableRow
+                      key={corp.id}
+                      className={`cursor-pointer transition-colors ${selectedCorporate?.id === corp.id ? 'bg-primary/5' : 'hover:bg-muted/50'}`}
+                      onClick={() => setSelectedCorporate(corp)}
+                    >
+                      <TableCell>
+                        {corp.uniqueId ? (
+                          <span className="text-xs font-mono bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded">
+                            {corp.uniqueId}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
                         )}
-                      </div>
-                    </div>
-                    {getStatusBadge(corp.status)}
-                  </div>
-                  <div className="mt-3 flex items-center gap-4 text-sm text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Users className="h-4 w-4" />
-                      {corp.employeeCount || 0} employees
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Package className="h-4 w-4" />
-                      {corp.packageType}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 rounded-md bg-primary/10 shrink-0">
+                            <Building2 className="h-4 w-4 text-primary" />
+                          </div>
+                          <div>
+                            <p className="font-medium">{corp.companyName}</p>
+                            {corp.contactPerson && (
+                              <p className="text-xs text-muted-foreground">{corp.contactPerson}</p>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{corp.industry || '—'}</TableCell>
+                      <TableCell className="text-center text-sm">{corp.employeeCount || 0}</TableCell>
+                      <TableCell>
+                        <span className="flex items-center gap-1 text-sm">
+                          <Package className="h-3.5 w-3.5 text-muted-foreground" />
+                          {corp.packageType || '—'}
+                        </span>
+                      </TableCell>
+                      <TableCell>{getStatusBadge(corp.status)}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            title="View"
+                            onClick={() => setSelectedCorporate(corp)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            title="Edit"
+                            onClick={() => openEditCorporate(corp)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            title="Delete"
+                            onClick={() => openDeleteCorporate(corp)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
 
         {/* Selected Corporate Management */}
         {selectedCorporate && (
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-7">
+            <TabsList className="grid w-full grid-cols-8">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="hr-admin">HR Admin</TabsTrigger>
               <TabsTrigger value="employees">Employees</TabsTrigger>
@@ -1858,6 +2346,7 @@ const TeamCorporateManagement = () => {
                 <CalendarDays className="h-3.5 w-3.5" />Calendar
               </TabsTrigger>
               <TabsTrigger value="network">Network</TabsTrigger>
+              <TabsTrigger value="communication">Communication</TabsTrigger>
             </TabsList>
 
             {/* Overview Tab */}
@@ -2277,6 +2766,375 @@ const TeamCorporateManagement = () => {
                       </CardContent>
                     </Card>
                   </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Communication Tab */}
+            <TabsContent value="communication" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Communication Hub</CardTitle>
+                  <CardDescription>
+                    Create and use Email, WhatsApp, and SMS templates for {selectedCorporate.companyName}.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Tabs value={communicationChannel} onValueChange={(v) => setCommunicationChannel(v as CommunicationChannel)}>
+                    <TabsList className="grid w-full grid-cols-3">
+                      <TabsTrigger value="email">Email</TabsTrigger>
+                      <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
+                      <TabsTrigger value="sms">SMS</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base">Template Library</CardTitle>
+                        <CardDescription>
+                          {'Placeholders: {{companyName}}, {{contactPerson}}, {{corporateId}}, {{employeeCount}}, {{industry}}, {{packageType}}'}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {communicationTemplates[communicationChannel].map((template) => (
+                          <div key={template.id} className="border rounded-lg p-3 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <p className="font-medium">{template.name}</p>
+                                <p className="text-xs text-muted-foreground">{template.category}</p>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button size="sm" variant="outline" onClick={() => useCommunicationTemplate(template)}>
+                                  Use
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => editCommunicationTemplate(template)}>
+                                  Edit
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => removeCommunicationTemplate(template.id)}>
+                                  Delete
+                                </Button>
+                              </div>
+                            </div>
+                            {template.subject && <p className="text-xs">Subject: {template.subject}</p>}
+                            <p className="text-sm text-muted-foreground line-clamp-2">{template.content}</p>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base">Composer</CardTitle>
+                        <CardDescription>Send or draft communications for this corporate account.</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="space-y-2">
+                          <Label>Template for Sending</Label>
+                          <Select
+                            value={selectedTemplateId || 'none'}
+                            onValueChange={(value) => {
+                              if (value === 'none') {
+                                setSelectedTemplateId('');
+                                return;
+                              }
+                              const template = communicationTemplates[communicationChannel].find((item) => item.id === value);
+                              if (template) useCommunicationTemplate(template);
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Choose a template" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">No template</SelectItem>
+                              {communicationTemplates[communicationChannel].map((template) => (
+                                <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>Recipient Mode</Label>
+                          <Select
+                            value={communicationRecipientMode}
+                            onValueChange={(value) => setCommunicationRecipientMode(value as CommunicationRecipientMode)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Choose recipient mode" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="individual">Individual Recipient</SelectItem>
+                              <SelectItem value="selected">Selected Employees</SelectItem>
+                              <SelectItem value="bulk">Bulk List</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {communicationRecipientMode === 'individual' && (
+                          <div className="space-y-2">
+                            <Label>To</Label>
+                            <Input
+                              value={communicationComposer.to}
+                              onChange={(e) => setCommunicationComposer((prev) => ({ ...prev, to: e.target.value }))}
+                              placeholder={communicationChannel === 'email' ? 'recipient@email.com' : '+91XXXXXXXXXX'}
+                            />
+                          </div>
+                        )}
+
+                        {communicationRecipientMode === 'selected' && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <Label>Select Employees ({selectedCommunicationEmployeeIds.length})</Label>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  const visibleIds = filteredCommunicationEmployees.map((employee) => employee.id);
+                                  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedCommunicationEmployeeIds.includes(id));
+                                  if (allVisibleSelected) {
+                                    setSelectedCommunicationEmployeeIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+                                  } else {
+                                    setSelectedCommunicationEmployeeIds((prev) => [...new Set([...prev, ...visibleIds])]);
+                                  }
+                                }}
+                              >
+                                Toggle Visible
+                              </Button>
+                            </div>
+                            <Input
+                              placeholder="Search employees by name, email, phone, dept"
+                              value={communicationRecipientSearch}
+                              onChange={(e) => setCommunicationRecipientSearch(e.target.value)}
+                            />
+                            <ScrollArea className="h-44 rounded-md border p-2">
+                              <div className="space-y-2">
+                                {filteredCommunicationEmployees.length === 0 && (
+                                  <p className="text-xs text-muted-foreground p-2">No employees available for this channel.</p>
+                                )}
+                                {filteredCommunicationEmployees.map((employee) => {
+                                  const address = getEmployeeChannelAddress(employee);
+                                  const checked = selectedCommunicationEmployeeIds.includes(employee.id);
+                                  return (
+                                    <div key={employee.id} className="flex items-start gap-2 p-2 rounded border">
+                                      <Checkbox
+                                        checked={checked}
+                                        onCheckedChange={(value) => {
+                                          setSelectedCommunicationEmployeeIds((prev) => {
+                                            if (value) return [...new Set([...prev, employee.id])];
+                                            return prev.filter((id) => id !== employee.id);
+                                          });
+                                        }}
+                                      />
+                                      <div className="min-w-0">
+                                        <p className="text-sm font-medium truncate">{employee.name} ({employee.employeeId})</p>
+                                        <p className="text-xs text-muted-foreground truncate">{address}</p>
+                                        <p className="text-[11px] text-muted-foreground truncate">{employee.department || 'No Department'}</p>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </ScrollArea>
+                          </div>
+                        )}
+
+                        {communicationRecipientMode === 'bulk' && (
+                          <div className="space-y-2">
+                            <Label>Bulk Recipients</Label>
+                            <Textarea
+                              rows={4}
+                              value={communicationBulkRecipients}
+                              onChange={(e) => setCommunicationBulkRecipients(e.target.value)}
+                              placeholder={communicationChannel === 'email' ? 'alice@company.com\nbob@company.com' : '919999999999\n918888888888'}
+                            />
+                            <p className="text-xs text-muted-foreground">Use comma, semicolon, or new line separated values.</p>
+                          </div>
+                        )}
+
+                        {communicationChannel === 'email' && (
+                          <div className="space-y-2">
+                            <Label>Subject</Label>
+                            <Input
+                              value={communicationComposer.subject}
+                              onChange={(e) => setCommunicationComposer((prev) => ({ ...prev, subject: e.target.value }))}
+                              placeholder="Email subject"
+                            />
+                          </div>
+                        )}
+                        <div className="space-y-2">
+                          <Label>Message</Label>
+                          <Textarea
+                            rows={7}
+                            value={communicationComposer.message}
+                            onChange={(e) => setCommunicationComposer((prev) => ({ ...prev, message: e.target.value }))}
+                            placeholder="Type message or use a template"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <Button onClick={sendCommunication} disabled={sendingCommunication}>
+                            <Send className="h-4 w-4 mr-2" />
+                            {sendingCommunication ? 'Sending...' : 'Send'}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => navigator.clipboard.writeText(communicationComposer.message || '')}
+                          >
+                            <Copy className="h-4 w-4 mr-2" />Copy
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <CardTitle className="text-base">Delivery Logs & Analytics</CardTitle>
+                          <CardDescription>Track team communication delivery status for this corporate.</CardDescription>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Select
+                            value={communicationAnalyticsDays}
+                            onValueChange={(value) => {
+                              setCommunicationAnalyticsDays(value);
+                              fetchCommunicationInsights({ days: value });
+                            }}
+                          >
+                            <SelectTrigger className="w-32">
+                              <SelectValue placeholder="Window" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="7">Last 7 days</SelectItem>
+                              <SelectItem value="30">Last 30 days</SelectItem>
+                              <SelectItem value="90">Last 90 days</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button variant="outline" size="sm" onClick={() => fetchCommunicationInsights()} disabled={communicationLogsLoading}>
+                            <RefreshCw className={`h-4 w-4 ${communicationLogsLoading ? 'animate-spin' : ''}`} />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <Card>
+                          <CardContent className="pt-4">
+                            <p className="text-xs text-muted-foreground">Total</p>
+                            <p className="text-2xl font-semibold">{communicationAnalytics?.summary?.total || 0}</p>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="pt-4">
+                            <p className="text-xs text-muted-foreground">Sent</p>
+                            <p className="text-2xl font-semibold text-green-600">{communicationAnalytics?.summary?.sent || 0}</p>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="pt-4">
+                            <p className="text-xs text-muted-foreground">Failed</p>
+                            <p className="text-2xl font-semibold text-red-600">{communicationAnalytics?.summary?.failed || 0}</p>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="pt-4">
+                            <p className="text-xs text-muted-foreground">Success Rate</p>
+                            <p className="text-2xl font-semibold">{communicationAnalytics?.summary?.successRate || 0}%</p>
+                          </CardContent>
+                        </Card>
+                      </div>
+
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Time</TableHead>
+                            <TableHead>Channel</TableHead>
+                            <TableHead>Recipient</TableHead>
+                            <TableHead>Template</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Provider</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {communicationLogs.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={6} className="text-center text-muted-foreground">No communication logs yet.</TableCell>
+                            </TableRow>
+                          ) : (
+                            communicationLogs.map((log) => (
+                              <TableRow key={log.id}>
+                                <TableCell>{new Date(log.created_at).toLocaleString()}</TableCell>
+                                <TableCell className="uppercase">{log.channel}</TableCell>
+                                <TableCell className="max-w-[220px] truncate">{log.recipient}</TableCell>
+                                <TableCell>{log.template_name || '-'}</TableCell>
+                                <TableCell>
+                                  <Badge className={log.status === 'sent' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
+                                    {log.status}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>{log.provider || '-'}</TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">{editingCommunicationTemplateId ? 'Edit Template' : 'Create Template'}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label>Template Name</Label>
+                        <Input
+                          value={communicationDraft.name}
+                          onChange={(e) => setCommunicationDraft((prev) => ({ ...prev, name: e.target.value }))}
+                          placeholder="Example: Plan Renewal Follow-up"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Category</Label>
+                        <Input
+                          value={communicationDraft.category}
+                          onChange={(e) => setCommunicationDraft((prev) => ({ ...prev, category: e.target.value }))}
+                          placeholder="Operations"
+                        />
+                      </div>
+                      {communicationChannel === 'email' && (
+                        <div className="space-y-2 md:col-span-2">
+                          <Label>Subject</Label>
+                          <Input
+                            value={communicationDraft.subject}
+                            onChange={(e) => setCommunicationDraft((prev) => ({ ...prev, subject: e.target.value }))}
+                            placeholder="Subject with placeholders"
+                          />
+                        </div>
+                      )}
+                      <div className="space-y-2 md:col-span-2">
+                        <Label>Template Content</Label>
+                        <Textarea
+                          rows={5}
+                          value={communicationDraft.content}
+                          onChange={(e) => setCommunicationDraft((prev) => ({ ...prev, content: e.target.value }))}
+                          placeholder="Use placeholders like {{companyName}} and {{contactPerson}}"
+                        />
+                      </div>
+                      <div className="md:col-span-2 flex justify-end">
+                        <div className="flex gap-2">
+                          {editingCommunicationTemplateId && (
+                            <Button variant="outline" onClick={resetCommunicationDraft}>Cancel</Button>
+                          )}
+                          <Button onClick={saveCommunicationTemplate}>
+                            {editingCommunicationTemplateId ? 'Update Template' : 'Save Template'}
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
                 </CardContent>
               </Card>
             </TabsContent>
@@ -5172,6 +6030,121 @@ const TeamCorporateManagement = () => {
           </Dialog>
         ))}
       </div>
+
+      {/* Edit Corporate Dialog */}
+      <Dialog open={showEditCorporateDialog} onOpenChange={setShowEditCorporateDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Corporate</DialogTitle>
+            <DialogDescription>Update corporate account details</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2 space-y-1.5">
+                <Label>Company Name</Label>
+                <Input
+                  value={editCorporateForm.companyName}
+                  onChange={(e) => setEditCorporateForm(p => ({ ...p, companyName: e.target.value }))}
+                  placeholder="Acme Corp"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Contact Person</Label>
+                <Input
+                  value={editCorporateForm.contactPerson}
+                  onChange={(e) => setEditCorporateForm(p => ({ ...p, contactPerson: e.target.value }))}
+                  placeholder="Full name"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Phone</Label>
+                <Input
+                  value={editCorporateForm.phoneNumber}
+                  onChange={(e) => setEditCorporateForm(p => ({ ...p, phoneNumber: e.target.value }))}
+                  placeholder="+91 99999 99999"
+                />
+              </div>
+              <div className="col-span-2 space-y-1.5">
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  value={editCorporateForm.email}
+                  onChange={(e) => setEditCorporateForm(p => ({ ...p, email: e.target.value }))}
+                  placeholder="hr@company.com"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Industry</Label>
+                <Select value={editCorporateForm.industry} onValueChange={(v) => setEditCorporateForm(p => ({ ...p, industry: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select industry" /></SelectTrigger>
+                  <SelectContent>
+                    {['Information Technology', 'Healthcare', 'Finance', 'Manufacturing', 'Retail', 'Education', 'Logistics', 'Other'].map(ind => (
+                      <SelectItem key={ind} value={ind}>{ind}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Employee Count</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={editCorporateForm.employeeCount}
+                  onChange={(e) => setEditCorporateForm(p => ({ ...p, employeeCount: e.target.value }))}
+                  placeholder="500"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Package Type</Label>
+                <Select value={editCorporateForm.packageType} onValueChange={(v) => setEditCorporateForm(p => ({ ...p, packageType: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select plan" /></SelectTrigger>
+                  <SelectContent>
+                    {['Basic', 'Standard', 'Premium', 'Enterprise'].map(pt => (
+                      <SelectItem key={pt} value={pt}>{pt}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Status</Label>
+                <Select value={editCorporateForm.status} onValueChange={(v) => setEditCorporateForm(p => ({ ...p, status: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Active">Active</SelectItem>
+                    <SelectItem value="Inactive">Inactive</SelectItem>
+                    <SelectItem value="Suspended">Suspended</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditCorporateDialog(false)}>Cancel</Button>
+            <Button onClick={handleEditCorporate} disabled={savingCorporate}>
+              {savingCorporate ? 'Saving…' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Corporate Confirmation Dialog */}
+      <Dialog open={showDeleteCorporateDialog} onOpenChange={setShowDeleteCorporateDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Corporate</DialogTitle>
+            <DialogDescription>
+              This will permanently remove <strong>{corporateToDelete?.companyName}</strong> and all associated data. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowDeleteCorporateDialog(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteCorporate} disabled={deletingCorporate}>
+              {deletingCorporate ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </MainLayout>
   );
 };

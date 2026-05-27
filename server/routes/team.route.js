@@ -13,6 +13,9 @@ import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import sharedPool from '../db/pgPool.js';
 import nodemailer from 'nodemailer';
+import axios from 'axios';
+import { SMSService } from '../services/sms.service.js';
+import whatsappProductionService from '../services/whatsapp-production.service.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
 
 const router = express.Router();
@@ -71,6 +74,27 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
       CREATE INDEX IF NOT EXISTS idx_tappt_doctor  ON team_appointments(doctor_id);
       CREATE INDEX IF NOT EXISTS idx_tappt_status  ON team_appointments(status);
       CREATE INDEX IF NOT EXISTS idx_tappt_tenant  ON team_appointments(tenant_id);
+
+      CREATE TABLE IF NOT EXISTS team_communication_logs (
+        id                  BIGSERIAL PRIMARY KEY,
+        team_user_id        INTEGER NOT NULL,
+        corporate_id        INTEGER,
+        channel             VARCHAR(20) NOT NULL,
+        recipient           VARCHAR(255) NOT NULL,
+        recipient_mode      VARCHAR(30) NOT NULL DEFAULT 'single',
+        template_id         VARCHAR(100),
+        template_name       VARCHAR(150),
+        subject             TEXT,
+        message             TEXT,
+        provider            VARCHAR(50),
+        status              VARCHAR(20) NOT NULL,
+        provider_message_id VARCHAR(255),
+        error_message       TEXT,
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_tcomm_team_created   ON team_communication_logs(team_user_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_tcomm_channel_status ON team_communication_logs(channel, status);
+      CREATE INDEX IF NOT EXISTS idx_tcomm_corporate      ON team_communication_logs(corporate_id);
     `);
   } catch (err) {
     console.error('[Team] DB table init error:', err.message);
@@ -1673,6 +1697,590 @@ const _teamMailer = () => {
     auth: { user: (process.env.SMTP_USER||'').trim(), pass: (process.env.SMTP_PASSWORD||process.env.SMTP_PASS||'').trim() },
   });
 };
+
+const _normalizePhone = (input = '') => {
+  const digits = String(input).replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 10) return `91${digits}`;
+  return digits;
+};
+
+const _smsService = () => {
+  const provider = process.env.SMS_PROVIDER || 'pay4sms';
+  const apiKey = process.env.SMS_API_KEY || '';
+  const apiSecret = process.env.SMS_API_SECRET || '';
+  const senderId = process.env.SMS_SENDER_ID || 'MSMART';
+  if (!apiKey) return null;
+  return new SMSService({
+    provider,
+    apiKey,
+    apiSecret,
+    senderId,
+    templateId: process.env.SMS_TEMPLATE_ID,
+    otpTemplateId: process.env.SMS_OTP_TEMPLATE_ID,
+    apiUrl: process.env.SMS_API_URL,
+  });
+};
+
+const _normalizeEmail = (input = '') => String(input || '').trim().toLowerCase();
+
+const _extractRecipients = ({ to, recipients }) => {
+  const all = [];
+  if (to) all.push(String(to));
+  if (Array.isArray(recipients)) {
+    recipients.forEach((item) => {
+      if (item !== null && item !== undefined) all.push(String(item));
+    });
+  }
+  const unique = [...new Set(all.map((v) => v.trim()).filter(Boolean))];
+  return unique;
+};
+
+const _buildProfessionalEmailHtml = ({ subject, message, companyName }) => {
+  const safeSubject = String(subject || 'SmartHealth Communication')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const safeMessage = String(message || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br/>');
+  const safeCompany = String(companyName || 'your organization')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /></head>
+<body style="margin:0;padding:0;background:#f4f7fb;font-family:Segoe UI,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f7fb;padding:24px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 10px 28px rgba(12,38,74,.12);">
+          <tr>
+            <td style="background:linear-gradient(120deg,#0f766e,#155e75);padding:22px 28px;color:#ffffff;">
+              <div style="font-size:12px;letter-spacing:.08em;opacity:.9;text-transform:uppercase;">SmartHealth Corporate Communication</div>
+              <div style="font-size:24px;font-weight:700;margin-top:8px;line-height:1.25;">${safeSubject}</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 28px 12px 28px;color:#0f172a;font-size:15px;line-height:1.75;">
+              ${safeMessage}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 28px 24px 28px;color:#334155;font-size:13px;line-height:1.6;">
+              This communication was sent for <strong>${safeCompany}</strong> via the SmartHealth team dashboard.
+            </td>
+          </tr>
+          <tr>
+            <td style="border-top:1px solid #e2e8f0;padding:14px 28px;color:#64748b;font-size:12px;line-height:1.6;">
+              Regards,<br/><strong>Team SmartHealth</strong><br/>support@mediqzy.com
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body></html>`;
+};
+
+const _logTeamCommunication = async ({
+  teamUserId,
+  corporateId,
+  channel,
+  recipient,
+  recipientMode,
+  templateId,
+  templateName,
+  subject,
+  message,
+  provider,
+  status,
+  providerMessageId,
+  errorMessage,
+}) => {
+  const pool = sharedPool;
+  await pool.query(
+    `INSERT INTO team_communication_logs
+      (team_user_id, corporate_id, channel, recipient, recipient_mode, template_id, template_name, subject, message, provider, status, provider_message_id, error_message)
+     VALUES
+      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+    [
+      teamUserId,
+      corporateId || null,
+      channel,
+      recipient,
+      recipientMode || 'single',
+      templateId || null,
+      templateName || null,
+      subject || null,
+      message,
+      provider || null,
+      status,
+      providerMessageId || null,
+      errorMessage || null,
+    ]
+  );
+};
+
+router.post('/communications/send', authTeam, async (req, res) => {
+  try {
+    const {
+      channel,
+      to,
+      recipients = [],
+      recipientMode = 'single',
+      subject = '',
+      message = '',
+      corporateId,
+      templateId,
+      templateName,
+      companyName,
+    } = req.body || {};
+    const safeChannel = String(channel || '').toLowerCase();
+    const safeMessage = String(message || '').trim();
+    const recipientList = _extractRecipients({ to, recipients });
+    const teamUserId = req.teamUser?.id || req.user?.id;
+
+    if (!['email', 'whatsapp', 'sms'].includes(safeChannel)) {
+      return res.status(400).json({ success: false, message: 'Invalid channel. Use email, whatsapp, or sms.' });
+    }
+    if (!safeMessage || recipientList.length === 0) {
+      return res.status(400).json({ success: false, message: 'Message and at least one recipient are required.' });
+    }
+    if (recipientList.length > 500) {
+      return res.status(400).json({ success: false, message: 'Recipient limit exceeded. Maximum 500 recipients per request.' });
+    }
+
+    if (safeChannel === 'email') {
+      const emailRecipients = recipientList.map(_normalizeEmail).filter((email) => /^\S+@\S+\.\S+$/.test(email));
+      if (emailRecipients.length === 0) {
+        return res.status(400).json({ success: false, message: 'No valid recipient email addresses found.' });
+      }
+
+      const mailer = _teamMailer();
+      const sendResults = [];
+      for (const email of emailRecipients) {
+        try {
+          const sent = await mailer.sendMail({
+            from: `"SmartHealth Team" <${process.env.SMTP_FROM || 'noreply@mediqzy.com'}>`,
+            to: email,
+            subject: String(subject || 'SmartHealth Communication').slice(0, 200),
+            text: safeMessage,
+            html: _buildProfessionalEmailHtml({
+              subject: String(subject || 'SmartHealth Communication').slice(0, 200),
+              message: safeMessage,
+              companyName,
+            }),
+          });
+
+          await _logTeamCommunication({
+            teamUserId,
+            corporateId,
+            channel: 'email',
+            recipient: email,
+            recipientMode,
+            templateId,
+            templateName,
+            subject,
+            message: safeMessage,
+            provider: 'smtp',
+            status: 'sent',
+            providerMessageId: sent?.messageId || null,
+          });
+          sendResults.push({ recipient: email, success: true, messageId: sent?.messageId || null });
+        } catch (err) {
+          await _logTeamCommunication({
+            teamUserId,
+            corporateId,
+            channel: 'email',
+            recipient: email,
+            recipientMode,
+            templateId,
+            templateName,
+            subject,
+            message: safeMessage,
+            provider: 'smtp',
+            status: 'failed',
+            errorMessage: err?.message || 'Email send failed',
+          });
+          sendResults.push({ recipient: email, success: false, error: err?.message || 'Email send failed' });
+        }
+      }
+
+      const successCount = sendResults.filter((item) => item.success).length;
+      const failedCount = sendResults.length - successCount;
+      return res.status(failedCount > 0 ? 207 : 200).json({
+        success: failedCount === 0,
+        message: `Email send complete. Success: ${successCount}, Failed: ${failedCount}`,
+        channel: safeChannel,
+        summary: { total: sendResults.length, success: successCount, failed: failedCount },
+        results: sendResults,
+      });
+    }
+
+    if (safeChannel === 'whatsapp') {
+      const phoneRecipients = recipientList.map((value) => _normalizePhone(String(value))).filter((value) => value && value.length >= 10);
+      if (phoneRecipients.length === 0) {
+        return res.status(400).json({ success: false, message: 'No valid WhatsApp recipient numbers found.' });
+      }
+
+      // Prefer Twilio WhatsApp (existing production path), then fallback to Meta Graph API.
+      if (whatsappProductionService?.twilioConfigured) {
+        const results = [];
+        for (const normalizedTo of phoneRecipients) {
+          try {
+            const twilioResponse = await whatsappProductionService.sendSessionMessage({
+              to: normalizedTo,
+              body: safeMessage.slice(0, 4096),
+            });
+            await _logTeamCommunication({
+              teamUserId,
+              corporateId,
+              channel: 'whatsapp',
+              recipient: normalizedTo,
+              recipientMode,
+              templateId,
+              templateName,
+              subject,
+              message: safeMessage,
+              provider: 'twilio',
+              status: 'sent',
+              providerMessageId: twilioResponse?.sid || null,
+            });
+            results.push({ recipient: normalizedTo, success: true, provider: 'twilio', sid: twilioResponse?.sid || null, status: twilioResponse?.status || null });
+          } catch (err) {
+            await _logTeamCommunication({
+              teamUserId,
+              corporateId,
+              channel: 'whatsapp',
+              recipient: normalizedTo,
+              recipientMode,
+              templateId,
+              templateName,
+              subject,
+              message: safeMessage,
+              provider: 'twilio',
+              status: 'failed',
+              errorMessage: err?.message || 'WhatsApp send failed',
+            });
+            results.push({ recipient: normalizedTo, success: false, provider: 'twilio', error: err?.message || 'WhatsApp send failed' });
+          }
+        }
+
+        const successCount = results.filter((item) => item.success).length;
+        const failedCount = results.length - successCount;
+        return res.status(failedCount > 0 ? 207 : 200).json({
+          success: failedCount === 0,
+          message: `WhatsApp send complete (Twilio). Success: ${successCount}, Failed: ${failedCount}`,
+          channel: safeChannel,
+          provider: 'twilio',
+          summary: { total: results.length, success: successCount, failed: failedCount },
+          results,
+        });
+      }
+
+      const accessToken = process.env.FACEBOOK_ACCESS_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
+      const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+      if (!accessToken || !phoneNumberId) {
+        return res.status(500).json({
+          success: false,
+          message: 'WhatsApp is not configured on server (Twilio/Meta config missing).',
+        });
+      }
+
+      const results = [];
+      for (const normalizedTo of phoneRecipients) {
+        try {
+          const metaResponse = await axios.post(
+            `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
+            {
+              messaging_product: 'whatsapp',
+              to: normalizedTo,
+              type: 'text',
+              text: { body: safeMessage.slice(0, 4096) },
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+              },
+              timeout: 15000,
+            }
+          );
+          const providerMessageId = metaResponse?.data?.messages?.[0]?.id || null;
+          await _logTeamCommunication({
+            teamUserId,
+            corporateId,
+            channel: 'whatsapp',
+            recipient: normalizedTo,
+            recipientMode,
+            templateId,
+            templateName,
+            subject,
+            message: safeMessage,
+            provider: 'meta',
+            status: 'sent',
+            providerMessageId,
+          });
+          results.push({ recipient: normalizedTo, success: true, provider: 'meta', messageId: providerMessageId });
+        } catch (err) {
+          await _logTeamCommunication({
+            teamUserId,
+            corporateId,
+            channel: 'whatsapp',
+            recipient: normalizedTo,
+            recipientMode,
+            templateId,
+            templateName,
+            subject,
+            message: safeMessage,
+            provider: 'meta',
+            status: 'failed',
+            errorMessage: err?.message || 'WhatsApp send failed',
+          });
+          results.push({ recipient: normalizedTo, success: false, provider: 'meta', error: err?.message || 'WhatsApp send failed' });
+        }
+      }
+
+      const successCount = results.filter((item) => item.success).length;
+      const failedCount = results.length - successCount;
+      return res.status(failedCount > 0 ? 207 : 200).json({
+        success: failedCount === 0,
+        message: `WhatsApp send complete (Meta). Success: ${successCount}, Failed: ${failedCount}`,
+        channel: safeChannel,
+        provider: 'meta',
+        summary: { total: results.length, success: successCount, failed: failedCount },
+        results,
+      });
+    }
+
+    const smsService = _smsService();
+    if (!smsService) {
+      return res.status(500).json({ success: false, message: 'SMS is not configured on server.' });
+    }
+    const phoneRecipients = recipientList.map((value) => _normalizePhone(String(value))).filter((value) => value && value.length >= 10);
+    if (phoneRecipients.length === 0) {
+      return res.status(400).json({ success: false, message: 'No valid SMS recipient numbers found.' });
+    }
+
+    const results = [];
+    for (const normalizedTo of phoneRecipients) {
+      try {
+        const smsResult = await smsService.sendSMS({
+          to: normalizedTo,
+          message: safeMessage,
+          templateId: templateId || process.env.SMS_TEMPLATE_ID,
+        });
+
+        if (!smsResult?.success) {
+          await _logTeamCommunication({
+            teamUserId,
+            corporateId,
+            channel: 'sms',
+            recipient: normalizedTo,
+            recipientMode,
+            templateId,
+            templateName,
+            subject,
+            message: safeMessage,
+            provider: smsResult?.provider || 'sms',
+            status: 'failed',
+            errorMessage: smsResult?.error || 'SMS provider rejected the message.',
+          });
+          results.push({ recipient: normalizedTo, success: false, provider: smsResult?.provider || 'sms', error: smsResult?.error || 'SMS provider rejected the message.' });
+          continue;
+        }
+
+        await _logTeamCommunication({
+          teamUserId,
+          corporateId,
+          channel: 'sms',
+          recipient: normalizedTo,
+          recipientMode,
+          templateId,
+          templateName,
+          subject,
+          message: safeMessage,
+          provider: smsResult?.provider || 'sms',
+          status: 'sent',
+          providerMessageId: smsResult?.messageId || null,
+        });
+        results.push({ recipient: normalizedTo, success: true, provider: smsResult?.provider || 'sms', messageId: smsResult?.messageId || null });
+      } catch (err) {
+        await _logTeamCommunication({
+          teamUserId,
+          corporateId,
+          channel: 'sms',
+          recipient: normalizedTo,
+          recipientMode,
+          templateId,
+          templateName,
+          subject,
+          message: safeMessage,
+          provider: 'sms',
+          status: 'failed',
+          errorMessage: err?.message || 'SMS send failed',
+        });
+        results.push({ recipient: normalizedTo, success: false, provider: 'sms', error: err?.message || 'SMS send failed' });
+      }
+    }
+
+    const successCount = results.filter((item) => item.success).length;
+    const failedCount = results.length - successCount;
+    return res.status(failedCount > 0 ? 207 : 200).json({
+      success: failedCount === 0,
+      message: `SMS send complete. Success: ${successCount}, Failed: ${failedCount}`,
+      channel: safeChannel,
+      summary: { total: results.length, success: successCount, failed: failedCount },
+      results,
+    });
+  } catch (error) {
+    console.error('[Team] communication send error:', error?.response?.data || error?.message || error);
+    return res.status(500).json({
+      success: false,
+      message: error?.response?.data?.error?.message || error?.message || 'Failed to send communication',
+    });
+  }
+});
+
+router.get('/communications/logs', authTeam, async (req, res) => {
+  try {
+    const teamUserId = req.teamUser?.id || req.user?.id;
+    const {
+      page = 1,
+      limit = 20,
+      channel,
+      status,
+      corporateId,
+      search,
+      startDate,
+      endDate,
+    } = req.query;
+
+    const safeLimit = Math.min(Math.max(parseInt(String(limit), 10) || 20, 1), 200);
+    const safePage = Math.max(parseInt(String(page), 10) || 1, 1);
+    const offset = (safePage - 1) * safeLimit;
+
+    const conditions = ['team_user_id = $1'];
+    const values = [teamUserId];
+    let idx = 2;
+
+    if (channel) { conditions.push(`channel = $${idx++}`); values.push(String(channel)); }
+    if (status) { conditions.push(`status = $${idx++}`); values.push(String(status)); }
+    if (corporateId) { conditions.push(`corporate_id = $${idx++}`); values.push(parseInt(String(corporateId), 10)); }
+    if (search) {
+      conditions.push(`(recipient ILIKE $${idx} OR COALESCE(template_name,'') ILIKE $${idx} OR COALESCE(subject,'') ILIKE $${idx})`);
+      values.push(`%${String(search)}%`);
+      idx += 1;
+    }
+    if (startDate) { conditions.push(`created_at >= $${idx++}`); values.push(new Date(String(startDate))); }
+    if (endDate) { conditions.push(`created_at <= $${idx++}`); values.push(new Date(String(endDate))); }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+    const pool = sharedPool;
+
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM team_communication_logs ${whereClause}`,
+      values
+    );
+    const total = countResult.rows[0]?.total || 0;
+
+    const logResult = await pool.query(
+      `SELECT id, team_user_id, corporate_id, channel, recipient, recipient_mode, template_id, template_name, subject, provider, status, provider_message_id, error_message, created_at
+       FROM team_communication_logs
+       ${whereClause}
+       ORDER BY created_at DESC
+       LIMIT $${idx++} OFFSET $${idx++}`,
+      [...values, safeLimit, offset]
+    );
+
+    return res.json({
+      success: true,
+      logs: logResult.rows,
+      pagination: {
+        page: safePage,
+        limit: safeLimit,
+        total,
+        totalPages: Math.ceil(total / safeLimit),
+      },
+    });
+  } catch (error) {
+    console.error('[Team] communication logs error:', error?.message || error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch communication logs' });
+  }
+});
+
+router.get('/communications/analytics', authTeam, async (req, res) => {
+  try {
+    const teamUserId = req.teamUser?.id || req.user?.id;
+    const { corporateId, days = 30 } = req.query;
+    const safeDays = Math.min(Math.max(parseInt(String(days), 10) || 30, 1), 365);
+
+    const values = [teamUserId, safeDays];
+    let corporateClause = '';
+    if (corporateId) {
+      values.push(parseInt(String(corporateId), 10));
+      corporateClause = `AND corporate_id = $3`;
+    }
+
+    const pool = sharedPool;
+    const summary = await pool.query(
+      `SELECT
+         COUNT(*)::int AS total,
+         COUNT(*) FILTER (WHERE status = 'sent')::int AS sent,
+         COUNT(*) FILTER (WHERE status = 'failed')::int AS failed
+       FROM team_communication_logs
+       WHERE team_user_id = $1
+         AND created_at >= NOW() - ($2 || ' days')::interval
+         ${corporateClause}`,
+      values
+    );
+
+    const byChannel = await pool.query(
+      `SELECT channel,
+              COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status = 'sent')::int AS sent,
+              COUNT(*) FILTER (WHERE status = 'failed')::int AS failed
+       FROM team_communication_logs
+       WHERE team_user_id = $1
+         AND created_at >= NOW() - ($2 || ' days')::interval
+         ${corporateClause}
+       GROUP BY channel
+       ORDER BY channel ASC`,
+      values
+    );
+
+    const trend = await pool.query(
+      `SELECT TO_CHAR(DATE_TRUNC('day', created_at), 'YYYY-MM-DD') AS day,
+              COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status = 'sent')::int AS sent,
+              COUNT(*) FILTER (WHERE status = 'failed')::int AS failed
+       FROM team_communication_logs
+       WHERE team_user_id = $1
+         AND created_at >= NOW() - ($2 || ' days')::interval
+         ${corporateClause}
+       GROUP BY DATE_TRUNC('day', created_at)
+       ORDER BY DATE_TRUNC('day', created_at) ASC`,
+      values
+    );
+
+    const s = summary.rows[0] || { total: 0, sent: 0, failed: 0 };
+    const successRate = s.total > 0 ? Number(((s.sent * 100) / s.total).toFixed(2)) : 0;
+
+    return res.json({
+      success: true,
+      windowDays: safeDays,
+      summary: {
+        total: Number(s.total) || 0,
+        sent: Number(s.sent) || 0,
+        failed: Number(s.failed) || 0,
+        successRate,
+      },
+      byChannel: byChannel.rows,
+      trend: trend.rows,
+    });
+  } catch (error) {
+    console.error('[Team] communication analytics error:', error?.message || error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch communication analytics' });
+  }
+});
 
 // List all registered doctors (with search + status filter)
 router.get('/registered-doctors', authTeam, async (req, res) => {

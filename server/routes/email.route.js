@@ -2,6 +2,7 @@ import express from 'express';
 import { body, param, query } from 'express-validator';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import emailService from '../services/emailService.js';
+import { EmailLog } from '../models/email.model.js';
 import {
   getEmailConfigs,
   createEmailConfig,
@@ -28,7 +29,50 @@ import {
 
 const router = express.Router();
 
-// All routes require admin authentication
+// ── Public tracking routes (no auth — email clients request these) ────────────
+router.get('/track/open/:emailLogId', async (req, res) => {
+  // Return 1x1 transparent pixel immediately — never block on DB
+  const pixel = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+    'base64'
+  );
+  res.writeHead(200, {
+    'Content-Type': 'image/png',
+    'Content-Length': pixel.length,
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+  });
+  res.end(pixel);
+
+  // Update DB asynchronously — don't hold up the response
+  setImmediate(async () => {
+    try {
+      const log = await EmailLog.findByPk(req.params.emailLogId);
+      if (log && !log.openedAt) {
+        await log.update({ openedAt: new Date(), status: log.status === 'sent' ? 'delivered' : log.status });
+      }
+    } catch (e) { /* silent */ }
+  });
+});
+
+router.get('/track/click/:emailLogId', async (req, res) => {
+  const { url } = req.query;
+  if (url) {
+    res.redirect(decodeURIComponent(url));
+  } else {
+    res.status(400).json({ error: 'URL parameter required' });
+  }
+
+  setImmediate(async () => {
+    try {
+      const log = await EmailLog.findByPk(req.params.emailLogId);
+      if (log && !log.clickedAt) {
+        await log.update({ clickedAt: new Date() });
+      }
+    } catch (e) { /* silent */ }
+  });
+});
+
+// ── All remaining routes require admin authentication ─────────────────────────
 router.use(authUser, requireRole('admin'));
 
 // SMTP Configuration routes
@@ -173,53 +217,5 @@ router.get('/logs/export', [
   query('format').optional().isIn(['csv', 'xlsx'])
 ], exportEmailLogs);
 
-// Email tracking routes (public - no auth required)
-router.get('/track/open/:emailLogId', async (req, res) => {
-  try {
-    const { emailLogId } = req.params;
-    await emailService.trackEmailOpen(emailLogId, req);
-    
-    // Return 1x1 transparent pixel
-    const pixel = Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
-      'base64'
-    );
-    
-    res.writeHead(200, {
-      'Content-Type': 'image/png',
-      'Content-Length': pixel.length,
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0'
-    });
-    res.end(pixel);
-  } catch (error) {
-    console.error('Error tracking email open:', error);
-    res.status(200).end(); // Don't expose errors in tracking
-  }
-});
-
-router.get('/track/click/:emailLogId', async (req, res) => {
-  try {
-    const { emailLogId } = req.params;
-    const { url } = req.query;
-    
-    await emailService.trackEmailClick(emailLogId, req, url);
-    
-    // Redirect to the original URL
-    if (url) {
-      res.redirect(decodeURIComponent(url));
-    } else {
-      res.status(400).json({ error: 'URL parameter required' });
-    }
-  } catch (error) {
-    console.error('Error tracking email click:', error);
-    if (req.query.url) {
-      res.redirect(decodeURIComponent(req.query.url));
-    } else {
-      res.status(400).json({ error: 'Tracking failed' });
-    }
-  }
-});
 
 export default router;

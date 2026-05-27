@@ -49,7 +49,7 @@ module.exports = {
       script: './start-wrapper.cjs',
       cwd: SERVER_DIR,
       instances: 1,  // Single instance to save memory (LaBSE model needs ~1.5GB)
-      exec_mode: 'cluster',
+      exec_mode: 'fork',
       node_args: '--max-old-space-size=1536',  // Limit heap to 1.5GB (LaBSE embeddings need headroom)
       env: {
         // Spread ALL vars from .env first, then apply explicit overrides below.

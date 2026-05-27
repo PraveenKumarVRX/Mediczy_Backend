@@ -9,6 +9,8 @@ const s3RecordingsBucket = process.env.S3_RECORDINGS_BUCKET || s3Bucket;
 const s3PublicBaseUrl = process.env.S3_PUBLIC_BASE_URL;
 const presignExpiresIn = Number(process.env.S3_PRESIGN_EXPIRES || 300);
 const minioEndpoint = process.env.MINIO_ENDPOINT;
+// Public-facing URL (may differ from internal endpoint for localhost setups)
+const minioPublicUrl = process.env.MINIO_PUBLIC_URL || minioEndpoint;
 
 // Build S3Client config — adds MinIO endpoint + path-style if MINIO_ENDPOINT is set
 const s3Config = { region: s3Region };
@@ -39,8 +41,8 @@ const buildPublicUrl = (bucket, region, key, publicBaseUrl) => {
   if (publicBaseUrl) {
     return `${publicBaseUrl.replace(/\/$/, '')}/${key}`;
   }
-  if (minioEndpoint) {
-    return `${minioEndpoint.replace(/\/$/, '')}/${bucket}/${key}`;
+  if (minioPublicUrl) {
+    return `${minioPublicUrl.replace(/\/$/, '')}/${bucket}/${key}`;
   }
   return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
 };

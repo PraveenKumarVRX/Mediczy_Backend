@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import api from "@/lib/api";
+import { getToken } from "@/hooks/auth";
 import {
   Send, Volume2, VolumeX, Loader2, Sparkles,
   Navigation, User, FileText, Calendar, Brain, Pill, AlertTriangle,
@@ -236,14 +237,23 @@ export default function DoctorVoiceAssistant() {
     };
 
     try {
+      const authToken = getToken();
       const resp = await fetch("/api/tts/stream", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: "Bearer " + authToken } : {}),
+        },
         body: JSON.stringify({ text: clean, model: "eleven_turbo_v2_5" }),
         signal: abortCtrl.signal,
       });
-      if (!resp.ok) throw new Error(`TTS ${resp.status}`);
+      if (!resp.ok) throw new Error("TTS " + resp.status);
       if (abortCtrl.signal.aborted) { clearSafety(); resumeVAD(); return; }
+      const contentType = resp.headers.get("Content-Type") || "";
+      if (!contentType.includes("audio")) {
+        await resp.text().catch(() => "");
+        throw new Error("TTS fallback response");
+      }
       const blob = await resp.blob();
       if (abortCtrl.signal.aborted) { clearSafety(); resumeVAD(); return; }
 

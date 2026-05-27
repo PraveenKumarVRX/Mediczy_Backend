@@ -10,22 +10,64 @@ import { redisClient } from '../config/redis.js';
 const INVITE_TTL_SECONDS = 4 * 60 * 60; // 4 hours
 const INVITE_SECRET = process.env.VIDEO_INVITE_SECRET || JWT_CONFIG.SECRET + ':video-invite';
 const FRONTEND_BASE = (process.env.FRONTEND_URL || 'https://app.mediqzy.com').replace(/\/+$/, '');
-const DEFAULT_TURN_HOST = '13.127.125.93';
-const DEFAULT_TURN_USERNAME = 'livekit';
-const DEFAULT_TURN_CREDENTIAL = '2d3a799e5dbfb0934f8bdb90f3161cd3';
 
 function getIceServers() {
-  const turnHost = process.env.TURN_SERVER_HOST || DEFAULT_TURN_HOST;
-  const turnUsername = process.env.TURN_USERNAME || DEFAULT_TURN_USERNAME;
-  const turnCredential = process.env.TURN_CREDENTIAL || DEFAULT_TURN_CREDENTIAL;
+  // Prefer explicit JSON for complex deployments.
+  const explicitIceServers = process.env.LIVEKIT_ICE_SERVERS_JSON;
+  if (explicitIceServers) {
+    try {
+      const parsed = JSON.parse(explicitIceServers);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    } catch (error) {
+      console.warn('Invalid LIVEKIT_ICE_SERVERS_JSON, ignoring custom ICE config');
+    }
+  }
 
-  return [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: `turn:${turnHost}:3478?transport=udp`, username: turnUsername, credential: turnCredential },
-    { urls: `turn:${turnHost}:3478?transport=tcp`, username: turnUsername, credential: turnCredential },
-    { urls: `turns:${turnHost}:5349?transport=tcp`, username: turnUsername, credential: turnCredential }
-  ];
+  const turnHost = process.env.TURN_SERVER_HOST;
+  const turnUsername = process.env.TURN_USERNAME;
+  const turnCredential = process.env.TURN_CREDENTIAL;
+
+  // If TURN is not explicitly configured, prefer LiveKit server-provided ICE entirely.
+  if (!(turnHost && turnUsername && turnCredential)) {
+    return null;
+  }
+
+  const includePublicStun = process.env.INCLUDE_PUBLIC_STUN !== 'false';
+  const iceServers = [];
+  if (includePublicStun) {
+    iceServers.push(
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    );
+  }
+
+  if (turnHost && turnUsername && turnCredential) {
+    iceServers.push(
+      { urls: `turn:${turnHost}:3478?transport=udp`, username: turnUsername, credential: turnCredential },
+      { urls: `turn:${turnHost}:3478?transport=tcp`, username: turnUsername, credential: turnCredential },
+      { urls: `turns:${turnHost}:5349?transport=tcp`, username: turnUsername, credential: turnCredential }
+    );
+  }
+
+  return iceServers.length > 0 ? iceServers : null;
+}
+
+function withOptionalIceServers(payload) {
+  const iceServers = getIceServers();
+  return iceServers ? { ...payload, iceServers } : payload;
+}
+
+function buildParticipantIdentity({ userRole, userId, meetingId, requestedIdentity }) {
+  if (requestedIdentity && String(requestedIdentity).trim()) {
+    return String(requestedIdentity).trim();
+  }
+  const safeRole = String(userRole || 'user').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  const safeUserId = String(userId || 'unknown').replace(/[^a-z0-9_-]/gi, '');
+  const safeMeeting = String(meetingId || 'room').replace(/[^a-z0-9_-]/gi, '').slice(-24);
+  const nonce = crypto.randomBytes(3).toString('hex');
+  return `${safeRole}-${safeUserId}-${safeMeeting}-${nonce}`;
 }
 
 
@@ -38,10 +80,13 @@ class VideoController {
   // Test endpoint for video calling system
   static testVideoSystem = (req, res) => {
     try {
-      const turnHost = process.env.TURN_SERVER_HOST || DEFAULT_TURN_HOST;
+      const optionalIceServers = getIceServers();
       const serverConfig = {
-        turnServer: `turn:${turnHost}:3478`,
-        iceServers: getIceServers()
+        livekitUrl: process.env.LIVEKIT_URL || null,
+        hasLivekitKey: Boolean(process.env.LIVEKIT_API_KEY),
+        hasLivekitSecret: Boolean(process.env.LIVEKIT_API_SECRET),
+        hasCustomIce: Array.isArray(optionalIceServers) && optionalIceServers.length > 0,
+        iceServersCount: optionalIceServers?.length || 0,
       };
 
       res.json({
@@ -56,6 +101,54 @@ class VideoController {
         success: false,
         message: 'Video system test failed',
         error: error.message
+      });
+    }
+  };
+
+  static liveKitDiagnostics = async (req, res) => {
+    try {
+      const serverUrl = process.env.LIVEKIT_URL || null;
+      const apiKey = process.env.LIVEKIT_API_KEY;
+      const apiSecret = process.env.LIVEKIT_API_SECRET;
+      const optionalIceServers = getIceServers();
+
+      const diagnostics = {
+        timestamp: new Date().toISOString(),
+        livekit: {
+          serverUrl,
+          hasApiKey: Boolean(apiKey),
+          hasApiSecret: Boolean(apiSecret),
+        },
+        ice: {
+          configured: Array.isArray(optionalIceServers) && optionalIceServers.length > 0,
+          count: optionalIceServers?.length || 0,
+          source: process.env.LIVEKIT_ICE_SERVERS_JSON ? 'LIVEKIT_ICE_SERVERS_JSON' : 'derived-env-or-none',
+        },
+      };
+
+      if (serverUrl && apiKey && apiSecret) {
+        const roomService = new RoomServiceClient(serverUrl, apiKey, apiSecret);
+        const apiCheck = await Promise.race([
+          roomService
+            .listRooms()
+            .then((rooms) => ({ ok: true, roomCount: Array.isArray(rooms) ? rooms.length : 0 }))
+            .catch((error) => ({ ok: false, error: error.message })),
+          new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: 'LiveKit API timeout after 4000ms' }), 4000)),
+        ]);
+        diagnostics.livekit.apiReachable = apiCheck.ok;
+        diagnostics.livekit.apiDetails = apiCheck;
+      } else {
+        diagnostics.livekit.apiReachable = false;
+        diagnostics.livekit.apiDetails = { ok: false, error: 'Missing LIVEKIT_URL, LIVEKIT_API_KEY, or LIVEKIT_API_SECRET' };
+      }
+
+      return res.json({ success: true, diagnostics });
+    } catch (error) {
+      console.error('LiveKit diagnostics failed:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'LiveKit diagnostics failed',
+        error: error.message,
       });
     }
   };
@@ -131,14 +224,13 @@ class VideoController {
       // Generate room URL
       const roomUrl = `${req.protocol}://${req.get('host')}/video-room/${resolvedRoomId}?token=${roomToken}`;
 
-      res.json({
+      res.json(withOptionalIceServers({
         success: true,
         roomToken,
         roomId: resolvedRoomId,
         roomUrl,
         expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(), // 2 hours
-        iceServers: getIceServers()
-      });
+      }));
 
     } catch (error) {
       console.error('Failed to generate room token:', error);
@@ -249,34 +341,41 @@ class VideoController {
         meetingId = roomId || resolvedMeetingId;
       }
 
+      const participantIdentity = buildParticipantIdentity({
+        userRole,
+        userId,
+        meetingId,
+        requestedIdentity: identity,
+      });
+
       console.log('🎥 Generating LiveKit token from query params:', {
         roomId: meetingId,
         appointmentId,
-        identity: identity || `${userRole}-${userId}`
+        identity: participantIdentity,
       });
 
       const livekitData = await buildLiveKitJoinData({
         meetingId,
-        identity: identity || `${userRole}-${userId}`,
+        identity: participantIdentity,
         name: displayName
       });
 
       // Return in format expected by client
-      res.json({
+      res.json(withOptionalIceServers({
         token: livekitData.token,
         serverUrl: livekitData.serverUrl,
         roomName: meetingId,
-        iceServers: getIceServers(),
+        identity: participantIdentity,
         success: true,
-        video: {
+        video: withOptionalIceServers({
           meetingId,
           meetingLink: livekitData.meetUrl,
           joinUrl: livekitData.joinUrl,
           livekit: livekitData,
-          iceServers: getIceServers()
-        },
+          identity: participantIdentity,
+        }),
         expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
-      });
+      }));
     } catch (error) {
       console.error('❌ Failed to generate LiveKit token from query:', error);
       res.status(500).json({
@@ -305,23 +404,29 @@ class VideoController {
         'Mediczy User';
 
       const meetingId = roomName || createMeetingInfo({}).meetingId;
+      const participantIdentity = buildParticipantIdentity({
+        userRole,
+        userId,
+        meetingId,
+      });
+
       const livekitData = await buildLiveKitJoinData({
         meetingId,
-        identity: `${userRole}-${userId}`,
+        identity: participantIdentity,
         name: displayName
       });
 
-      res.json({
+      res.json(withOptionalIceServers({
         success: true,
-        video: {
+        video: withOptionalIceServers({
           meetingId,
           meetingLink: livekitData.meetUrl,
           joinUrl: livekitData.joinUrl,
           livekit: livekitData,
-          iceServers: getIceServers()
-        },
+          identity: participantIdentity,
+        }),
         expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
-      });
+      }));
     } catch (error) {
       console.error('Failed to generate LiveKit token:', error);
       res.status(500).json({
@@ -450,16 +555,22 @@ class VideoController {
       }
 
       // Generate LiveKit token for this participant
+      const participantIdentity = buildParticipantIdentity({
+        userRole,
+        userId,
+        meetingId: roomId,
+      });
+
       const livekitData = await buildLiveKitJoinData({
         meetingId: roomId,
-        identity: `${userRole}-${userId}`,
+        identity: participantIdentity,
         name: displayName
       }).catch(err => {
         console.warn(`⚠️ LiveKit token generation failed: ${err.message}`);
         return null;
       });
 
-      const roomData = {
+      const roomData = withOptionalIceServers({
         roomId,
         userId,
         userRole,
@@ -472,8 +583,8 @@ class VideoController {
           serverUrl: process.env.LIVEKIT_URL || 'ws://localhost:7880',
           roomName: roomId
         },
-        iceServers: getIceServers()
-      };
+        identity: participantIdentity,
+      });
 
       res.json({
         success: true,
