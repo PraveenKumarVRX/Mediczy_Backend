@@ -1,5 +1,0 @@
-                  id                  | user_id | provider |         email         |    imap_host    | imap_port | imap_user | imap_pass |    smtp_host    | smtp_port | smtp_user | smtp_pass | is_active | is_default 
---------------------------------------+---------+----------+-----------------------+-----------------+-----------+-----------+-----------+-----------------+-----------+-----------+-----------+-----------+------------
- 3eca3033-1348-48a5-a7a3-19f0b97c30fd |     110 | zoho-pro | care@mysmarthealth.in | imappro.zoho.in |       993 | SET       | SET       | smtppro.zoho.in |       465 | SET       | SET       | t         | t
-(1 row)
-
