@@ -55,6 +55,8 @@ export const TASK_DEFINITIONS = [
   { key: 'ai_clinical_insights',  name: 'AI Clinical Insights',                  schedule: 'Every 8 hours',    category: 'ai',         scheduleDesc: '0 */8 * * *' },
   { key: 'ai_self_learning',      name: 'AI Self-Learning Pipeline',             schedule: 'Every 4 hours',    category: 'ai',         scheduleDesc: '30 */4 * * *' },
   { key: 'ai_proactive_alerts',   name: 'AI Proactive Patient Alerts',           schedule: 'Every 4 hours',    category: 'ai',         scheduleDesc: '0 */4 * * *' },
+  // Lab
+  { key: 'lab_critical_escalation', name: 'Lab Critical Alert Escalation',       schedule: 'Every 15 min',     category: 'clinical',   scheduleDesc: '*/15 * * * *' },
   // Compliance
   { key: 'data_retention_daily',  name: 'Data Retention — Daily',                schedule: 'Daily 2 AM',       category: 'compliance', scheduleDesc: '0 2 * * *' },
   { key: 'data_retention_weekly', name: 'Data Retention — Weekly',               schedule: 'Weekly Sun 3 AM',  category: 'compliance', scheduleDesc: '0 3 * * 0' },

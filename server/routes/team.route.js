@@ -12,11 +12,14 @@ import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import sharedPool from '../db/pgPool.js';
+import TeamMember from '../models/postgres/team-member.model.postgres.js';
+import llmProvider from '../services/ai-brain/llm-provider.js';
 import nodemailer from 'nodemailer';
 import axios from 'axios';
 import { SMSService } from '../services/sms.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
+import { generateAssistedEmailDraft, analyzeEmailCommunication } from '../services/ai-email-arg.service.js';
 
 const router = express.Router();
 
@@ -515,32 +518,47 @@ router.get('/profile', authTeam, attachAccessLevel, async (req, res) => {
   try {
     const teamUser = req.teamUser;
 
-    // In production, fetch full team user details from database
+    // Fetch full profile from team_members table (lookup by email since JWT id = users.id, not team_members.id)
+    const member = await TeamMember.findOne({
+      where: { email: teamUser.email },
+      attributes: ['id', 'email', 'firstName', 'lastName', 'role', 'department', 'designation',
+        'profileImage', 'phoneNumber', 'employeeId', 'unique_id', 'isActive',
+        'permissions', 'accessLevel', 'metadata', 'joiningDate']
+    });
+
+    let permissions = [];
+    let modules = null;
+    // Permissions live in users.metadata (the base user record), not team_members
+    const baseUser = await userModel.findOne({
+      where: { id: teamUser.id },
+      attributes: ['metadata']
+    });
+    const baseMeta = (() => { try { return baseUser?.metadata ? JSON.parse(baseUser.metadata) : {}; } catch (_) { return {}; } })();
+    permissions = baseMeta.permissions || [];
+    modules = baseMeta.grantedModules || null;
+
     res.status(200).json({
       success: true,
       teamUser: {
         id: teamUser.id,
-        email: teamUser.email,
-        role: teamUser.role || 'Team Member',
-        isActive: true,
+        email: member?.email || teamUser.email,
+        firstName: member?.firstName || '',
+        lastName: member?.lastName || '',
+        role: member?.role || teamUser.role || 'Team Member',
+        designation: member?.designation || teamUser.designation || 'Healthcare Staff',
+        department: member?.department || teamUser.department || 'Healthcare Operations',
+        profileImage: member?.profileImage || null,
+        phoneNumber: member?.phoneNumber || null,
+        employeeId: member?.employeeId || null,
+        uniqueId: member?.unique_id || null,
+        isActive: member?.isActive !== false,
+        joiningDate: member?.joiningDate || null,
         accessLevel: req.accessLevel || 'view',
         canView: req.canView !== false,
         canEdit: req.canEdit || false,
         canDelete: req.canDelete || false,
-        permissions: [
-          'User Management',
-          'Doctor Management',
-          'Appointment Management',
-          'Patient Reports',
-          'Chat Dashboard Access',
-          'Hospital Management',
-          'Pharmacy Management',
-          'Health Plans Access'
-        ],
-        modules: [
-          'users', 'doctors', 'appointments', 'chat',
-          'hospitals', 'pharmacies', 'plans', 'reports'
-        ],
+        permissions,
+        modules,
         editableModules: req.editableModules || [],
         deletableModules: req.deletableModules || []
       }
@@ -1780,6 +1798,78 @@ const _buildProfessionalEmailHtml = ({ subject, message, companyName }) => {
 </body></html>`;
 };
 
+const _ensureTeamAiCommunicationTable = async () => {
+  await sharedPool.query(`
+    CREATE TABLE IF NOT EXISTS crm_ai_email_communications (
+      id                 BIGSERIAL PRIMARY KEY,
+      entity_type        VARCHAR(40),
+      entity_id          BIGINT,
+      lead_id            BIGINT,
+      deal_id            BIGINT,
+      contact_email      VARCHAR(255),
+      subject            TEXT,
+      body               TEXT,
+      intent             VARCHAR(100),
+      tone               VARCHAR(80),
+      status             VARCHAR(40) DEFAULT $q$draft$q$,
+      event_type         VARCHAR(40),
+      sentiment          VARCHAR(40),
+      engagement_score   INTEGER DEFAULT 0,
+      conversion_signal  VARCHAR(40),
+      urgency            VARCHAR(40),
+      next_action        JSONB DEFAULT '{}'::jsonb,
+      suggested_stage    VARCHAR(100),
+      revenue_impact     NUMERIC(15,2) DEFAULT 0,
+      ai_payload         JSONB DEFAULT '{}'::jsonb,
+      learning_tags      JSONB DEFAULT $q$[]$q$::jsonb,
+      created_by         INTEGER,
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_email_entity ON crm_ai_email_communications(entity_type, entity_id);
+    CREATE INDEX IF NOT EXISTS idx_ai_email_team ON crm_ai_email_communications(created_by, entity_type, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ai_email_team_entity_created ON crm_ai_email_communications(created_by, entity_type, entity_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ai_email_team_score_created ON crm_ai_email_communications(created_by, entity_type, engagement_score DESC, created_at DESC);
+  `);
+};
+
+_ensureTeamAiCommunicationTable().catch((err) => {
+  console.warn("[Team] AI communication table initialization skipped:", err.message);
+});
+
+const _loadTeamCorporate = async (corporateId) => {
+  if (!corporateId) return null;
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT id, "companyName", "contactPerson", email, "phoneNumber", industry, "employeeCount", "packageType", status
+       FROM corporates WHERE id = $1 LIMIT 1`,
+      [parseInt(String(corporateId), 10)]
+    );
+    return rows[0] || null;
+  } catch (_) {
+    return null;
+  }
+};
+
+const _recordTeamAiCommunication = async ({ teamUserId, corporateId, contactEmail, subject, message, intent, tone, status, eventType, analysis, draft, replyText }) => {
+  await _ensureTeamAiCommunicationTable().catch(() => {});
+  const payload = analysis || draft || {};
+  const result = await sharedPool.query(
+    `INSERT INTO crm_ai_email_communications
+      (entity_type, entity_id, contact_email, subject, body, intent, tone, status, event_type, sentiment, engagement_score,
+       conversion_signal, urgency, next_action, suggested_stage, revenue_impact, ai_payload, learning_tags, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+     RETURNING *`,
+    [
+      "team_corporate", corporateId || null, contactEmail || null, subject || null, message || null, intent || payload.intent || null, tone || payload.tone || null,
+      status || eventType || "draft", eventType || null, payload.sentiment || null, Number(payload.engagementScore) || 0, payload.conversionSignal || null, payload.urgency || null,
+      JSON.stringify(payload.nextAction || {}), payload.suggestedStage || payload.pipelineStageSuggestion || null, Number(payload.revenueImpact) || 0,
+      JSON.stringify({ ...payload, replyText: replyText || null }), JSON.stringify(payload.learningTags || payload.reasons || []), teamUserId || null,
+    ]
+  );
+  return result.rows[0];
+};
+
 const _logTeamCommunication = async ({
   teamUserId,
   corporateId,
@@ -2140,6 +2230,102 @@ router.post('/communications/send', authTeam, async (req, res) => {
   }
 });
 
+router.post("/communications/ai-draft", authTeam, async (req, res) => {
+  try {
+    const teamUserId = req.teamUser?.id || req.user?.id;
+    const corporateId = req.body?.corporateId ? parseInt(String(req.body.corporateId), 10) : null;
+    const loadedCorporate = await _loadTeamCorporate(corporateId);
+    const corporate = loadedCorporate || req.body?.corporate || {};
+    const intent = req.body?.intent || "corporate_follow_up";
+    const tone = req.body?.tone || "professional";
+    const channel = req.body?.channel || "email";
+    const context = { ...(req.body?.context || {}), channel, teamDashboard: true };
+
+    const draft = await generateAssistedEmailDraft({ entityType: "team_corporate", entity: corporate, intent, tone, context, previousMessages: [] });
+    const row = await _recordTeamAiCommunication({
+      teamUserId, corporateId, contactEmail: corporate.email || req.body?.contactEmail || null, subject: draft.subject, message: draft.body,
+      intent, tone: draft.tone || tone, status: "draft", draft,
+    });
+
+    return res.json({ success: true, data: { id: row.id, draft: { ...draft, message: draft.body }, communication: row } });
+  } catch (error) {
+    console.error("[Team] AI communication draft error:", error?.message || error);
+    return res.status(500).json({ success: false, message: "Failed to generate AI communication draft" });
+  }
+});
+
+router.post("/communications/ai-monitor", authTeam, async (req, res) => {
+  try {
+    const teamUserId = req.teamUser?.id || req.user?.id;
+    const corporateId = req.body?.corporateId ? parseInt(String(req.body.corporateId), 10) : null;
+    const existingId = req.body?.communicationId ? parseInt(String(req.body.communicationId), 10) : null;
+    const eventType = req.body?.eventType || "sent";
+    const loadedCorporate = await _loadTeamCorporate(corporateId);
+    const corporate = loadedCorporate || req.body?.corporate || {};
+    let existing = null;
+    if (existingId) {
+      const result = await sharedPool.query(`SELECT * FROM crm_ai_email_communications WHERE id = $1 AND created_by = $2`, [existingId, teamUserId]);
+      existing = result.rows[0] || null;
+    }
+    const analysis = await analyzeEmailCommunication({
+      eventType, subject: req.body?.subject || existing?.subject || "", body: req.body?.message || req.body?.body || existing?.body || "",
+      replyText: req.body?.replyText || "", currentStage: corporate.status || req.body?.currentStage || "", entity: corporate,
+      revenueImpact: req.body?.revenueImpact || existing?.revenue_impact || 0,
+    });
+    const row = await _recordTeamAiCommunication({
+      teamUserId, corporateId, contactEmail: corporate.email || req.body?.contactEmail || existing?.contact_email || null,
+      subject: req.body?.subject || existing?.subject || null, message: req.body?.message || req.body?.body || existing?.body || null,
+      intent: analysis.intent, tone: req.body?.tone || existing?.tone || null, status: eventType, eventType, analysis, replyText: req.body?.replyText || null,
+    });
+    if (existingId) await sharedPool.query(`UPDATE crm_ai_email_communications SET status=$1, event_type=$2, updated_at=NOW() WHERE id=$3 AND created_by=$4`, [eventType, eventType, existingId, teamUserId]).catch(() => {});
+    return res.json({ success: true, data: { id: row.id, analysis, communication: row } });
+  } catch (error) {
+    console.error("[Team] AI communication monitor error:", error?.message || error);
+    return res.status(500).json({ success: false, message: "Failed to monitor AI communication" });
+  }
+});
+
+router.get("/communications/ai-dashboard", authTeam, async (req, res) => {
+  try {
+    const teamUserId = req.teamUser?.id || req.user?.id;
+    const corporateId = req.query?.corporateId ? parseInt(String(req.query.corporateId), 10) : null;
+    const days = Math.min(Math.max(parseInt(String(req.query?.days || 30), 10) || 30, 1), 365);
+    const values = [teamUserId, days];
+    let corporateClause = "";
+    if (corporateId) { values.push(corporateId); corporateClause = "AND entity_id = $3"; }
+    const stats = await sharedPool.query(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status = $q$draft$q$)::int AS drafts,
+              COUNT(*) FILTER (WHERE event_type = $q$sent$q$)::int AS sent,
+              COUNT(*) FILTER (WHERE event_type = $q$reply$q$)::int AS replies,
+              COUNT(*) FILTER (WHERE conversion_signal = $q$hot$q$)::int AS hot_signals,
+              ROUND(AVG(engagement_score))::int AS avg_engagement,
+              COALESCE(SUM(revenue_impact),0)::numeric AS revenue_influenced
+       FROM crm_ai_email_communications
+       WHERE created_by = $1 AND entity_type = $q$team_corporate$q$
+         AND created_at >= NOW() - make_interval(days => $2::int)
+         ${corporateClause}`, values);
+    const actions = await sharedPool.query(
+      `SELECT id, subject, body, contact_email AS "contactEmail", status, event_type AS "eventType", sentiment, engagement_score AS "engagementScore",
+              conversion_signal AS "conversionSignal", urgency, next_action AS "nextAction", suggested_stage AS "suggestedStage",
+              revenue_impact AS "revenueImpact", created_at AS "createdAt"
+       FROM crm_ai_email_communications
+       WHERE created_by = $1 AND entity_type = $q$team_corporate$q$
+         AND created_at >= NOW() - make_interval(days => $2::int)
+         ${corporateClause}
+       ORDER BY engagement_score DESC, created_at DESC LIMIT 10`, values);
+    const row = stats.rows[0] || {};
+    const sent = Number(row.sent) || 0;
+    const replies = Number(row.replies) || 0;
+    const total = Number(row.total) || 0;
+    const hotSignals = Number(row.hot_signals) || 0;
+    return res.json({ success: true, data: { windowDays: days, totals: { total, drafts: Number(row.drafts) || 0, sent, replies, hotSignals, avgEngagement: Number(row.avg_engagement) || 0, revenueInfluenced: Number(row.revenue_influenced) || 0 }, rates: { replyRate: sent ? Math.round((replies / sent) * 100) : 0, hotSignalRate: total ? Math.round((hotSignals / total) * 100) : 0 }, nextActions: actions.rows } });
+  } catch (error) {
+    console.error("[Team] AI communication dashboard error:", error?.message || error);
+    return res.status(500).json({ success: false, message: "Failed to fetch AI communication dashboard" });
+  }
+});
+
 router.get('/communications/logs', authTeam, async (req, res) => {
   try {
     const teamUserId = req.teamUser?.id || req.user?.id;
@@ -2458,6 +2644,30 @@ router.patch('/registered-doctors/:id/reject', authTeam, async (req, res) => {
   } catch (err) {
     console.error('[Team] reject doctor error:', err);
     return res.status(500).json({ success: false, message: 'Failed to reject doctor' });
+  }
+});
+
+// ─── AI Text Generation ───────────────────────────────────────────────────────
+router.post('/ai/generate', authTeam, async (req, res) => {
+  try {
+    const { prompt, maxTokens = 400, temperature = 0.7 } = req.body;
+    if (!prompt || typeof prompt !== 'string' || prompt.trim().length < 5) {
+      return res.status(400).json({ success: false, message: 'prompt is required' });
+    }
+    let content = '';
+    try {
+      const r = await llmProvider.chat({ messages: [{ role: 'user', content: prompt.trim() }], maxTokens, temperature, forceProvider: 'sib', skipCache: true });
+      content = r?.content?.trim() || '';
+    } catch (_) {}
+    if (!content) {
+      const r = await llmProvider.chat({ messages: [{ role: 'user', content: prompt.trim() }], maxTokens, temperature, forceProvider: 'groq', skipCache: true });
+      content = r?.content?.trim() || '';
+    }
+    if (!content) return res.status(500).json({ success: false, message: 'AI provider returned empty response' });
+    res.json({ success: true, data: { content } });
+  } catch (err) {
+    console.error('[ai/generate]', err.message);
+    res.status(500).json({ success: false, message: err.message || 'AI generation failed' });
   }
 });
 

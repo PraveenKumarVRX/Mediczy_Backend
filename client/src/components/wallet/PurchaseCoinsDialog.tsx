@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/auth/AuthProvider";
 import api from "@/utils/api";
-import { Coins, Check, Sparkles, Loader2 } from "lucide-react";
+import { Coins, Check, Sparkles, Loader2, Ticket, Clock } from "lucide-react";
 
 // Declare Razorpay type
 declare global {
@@ -32,6 +32,20 @@ interface PurchaseCoinsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
+  prefillCouponCode?: string;
+}
+
+interface AvailableCoupon {
+  id: number;
+  code: string;
+  type: 'PERCENTAGE' | 'FIXED_HC' | 'FREE_HC';
+  value: number;
+  minPurchase: number;
+  description?: string;
+  corporateName?: string;
+  validUntil: string;
+  remainingForUser: number;
+  isPersonalized: boolean;
 }
 
 // Fallback packages matching server's health-coins.config.js
@@ -43,7 +57,7 @@ const FALLBACK_PACKAGES: Package[] = [
   { coins: 2500, price: 1299, discount: 48, popular: false }
 ];
 
-export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseCoinsDialogProps) {
+export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess, prefillCouponCode }: PurchaseCoinsDialogProps) {
   const { toast } = useToast();
   const { currentUser } = useAuth();
   const [packages, setPackages] = useState<Package[]>(FALLBACK_PACKAGES);
@@ -53,17 +67,24 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
   const [validatingCoupon, setValidatingCoupon] = useState(false);
+  const [availableCoupons, setAvailableCoupons] = useState<AvailableCoupon[]>([]);
+  const [loadingAvailableCoupons, setLoadingAvailableCoupons] = useState(false);
 
   // Fetch packages from server when dialog opens
   useEffect(() => {
     if (open) {
       fetchPackages();
+      fetchAvailableCoupons();
+      if (prefillCouponCode) {
+        setCouponCode(prefillCouponCode.toUpperCase());
+      }
     } else {
       setSelectedPackage(null);
       setCouponCode('');
       setAppliedCoupon(null);
+      setAvailableCoupons([]);
     }
-  }, [open]);
+  }, [open, prefillCouponCode]);
 
   const fetchPackages = async () => {
     setLoadingPackages(true);
@@ -77,6 +98,27 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
     } finally {
       setLoadingPackages(false);
     }
+  };
+
+  const fetchAvailableCoupons = async () => {
+    setLoadingAvailableCoupons(true);
+    try {
+      const response = await api.get('/wallet/my-coupons');
+      if (response.data?.success) {
+        setAvailableCoupons(response.data.coupons || []);
+      }
+    } catch (error) {
+      setAvailableCoupons([]);
+      console.error('Failed to fetch available coupons:', error);
+    } finally {
+      setLoadingAvailableCoupons(false);
+    }
+  };
+
+  const couponLabel = (coupon: AvailableCoupon) => {
+    if (coupon.type === 'PERCENTAGE') return `${coupon.value}% off`;
+    if (coupon.type === 'FREE_HC') return `+${coupon.value} free HC`;
+    return `+${coupon.value} bonus HC`;
   };
 
   const validateCoupon = async () => {
@@ -392,6 +434,61 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
             )}
           </div>
         )}
+
+        {/* Personalized Offers */}
+        <div className="mt-4 rounded-lg border border-amber-200/70 bg-gradient-to-r from-amber-50 to-orange-50 p-4 dark:border-amber-900/40 dark:from-amber-950/20 dark:to-orange-950/20">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h4 className="font-semibold text-sm flex items-center gap-2">
+              <Ticket className="h-4 w-4 text-amber-600" />
+              Offers For You
+            </h4>
+            {loadingAvailableCoupons && <Loader2 className="h-4 w-4 animate-spin text-amber-600" />}
+          </div>
+
+          {!loadingAvailableCoupons && availableCoupons.length === 0 && (
+            <p className="text-xs text-muted-foreground">No active coupon offers are assigned to your account right now.</p>
+          )}
+
+          <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+            {availableCoupons.map((coupon) => (
+              <div
+                key={coupon.id}
+                className="rounded-md border border-amber-200/70 bg-white/70 p-2.5 dark:border-amber-900/50 dark:bg-slate-900/40"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold tracking-wide text-sm">{coupon.code}</span>
+                      <Badge variant="secondary" className="text-[10px]">{couponLabel(coupon)}</Badge>
+                      {coupon.isPersonalized && (
+                        <Badge className="bg-amber-600 text-white text-[10px]">Personal</Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {coupon.description || 'Apply this code during checkout'}
+                    </p>
+                    <div className="text-[11px] text-muted-foreground mt-1 flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" /> Valid till {new Date(coupon.validUntil).toLocaleDateString()}</span>
+                      <span>Uses left: {coupon.remainingForUser}</span>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setCouponCode(coupon.code);
+                      setAppliedCoupon(null);
+                    }}
+                    disabled={processing}
+                  >
+                    Use
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
 
         <div className="mt-4 bg-muted/50 p-4 rounded-lg">
           <h4 className="font-semibold mb-2 text-sm">What you can do with Health Coins:</h4>

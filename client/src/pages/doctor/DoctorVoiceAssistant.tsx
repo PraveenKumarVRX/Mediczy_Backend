@@ -50,15 +50,15 @@ const SCREEN_PATHS: Record<string, string> = {
   analytics:      "/doctor/analytics",
   billing:        "/doctor/billing",
   "health-records": "/doctor/health-records",
-  "er-dashboard": "/doctor/er-dashboard",
-  "icu-dashboard": "/doctor/icu-dashboard",
+  "er-dashboard": "/doctor/triage",
+  "icu-dashboard": "/doctor/health-monitoring",
   "voice-scribe": "/doctor/voice-scribe",
   calculators:    "/doctor/calculators",
-  "ai-assist":    "/doctor/ai-assist",
-  templates:      "/doctor/document-templates",
-  monitoring:     "/doctor/monitoring",
-  queue:          "/doctor/queue",
-  staff:          "/doctor/staff",
+  "ai-assist":    "/doctor/assist",
+  templates:      "/doctor/templates",
+  monitoring:     "/doctor/health-monitoring",
+  queue:          "/doctor/appointments",
+  staff:          "/doctor/settings",
 };
 
 // Intent icons

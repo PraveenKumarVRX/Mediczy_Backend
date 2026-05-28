@@ -105,6 +105,34 @@ const keyGenerator = (req) => {
 };
 
 /**
+ * Auth limiter key generator
+ * Separates limits per login route and user identifier to avoid cross-portal lockouts.
+ */
+const authKeyGenerator = (req) => {
+  const routeKey = `${req.baseUrl || ''}${req.path || ''}`;
+  const normalizedRoute = routeKey.replace(/\//g, ':') || 'unknown-route';
+
+  const email = typeof req.body?.email === 'string'
+    ? req.body.email.trim().toLowerCase()
+    : '';
+
+  if (email) {
+    return `auth:${normalizedRoute}:email:${email}`;
+  }
+
+  let ip = req.ip ||
+    req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+    req.connection?.remoteAddress ||
+    '127.0.0.1';
+
+  if (ip === '::1' || ip === '::ffff:127.0.0.1') {
+    ip = '127.0.0.1';
+  }
+
+  return `auth:${normalizedRoute}:ip:${ip}`;
+};
+
+/**
  * Custom handler for rate limit exceeded
  */
 const limitExceededHandler = (req, res) => {
@@ -188,15 +216,20 @@ const rateLimitConfigs = {
  */
 export const createRateLimiter = (type = 'api', customConfig = {}) => {
   const baseConfig = rateLimitConfigs[type] || rateLimitConfigs.api;
+  const {
+    keyGenerator: customKeyGenerator,
+    handler: customHandler,
+    ...restCustomConfig
+  } = customConfig;
   
   return rateLimit({
     ...baseConfig,
-    ...customConfig,
+    ...restCustomConfig,
     standardHeaders: true, // Return rate limit info in headers
     legacyHeaders: false, // Disable X-RateLimit headers
     store: getStore(),
-    keyGenerator,
-    handler: limitExceededHandler,
+    keyGenerator: customKeyGenerator || keyGenerator,
+    handler: customHandler || limitExceededHandler,
     validate: false // Disable all validation including IPv6 check
   });
 };
@@ -204,7 +237,7 @@ export const createRateLimiter = (type = 'api', customConfig = {}) => {
 /**
  * Pre-configured rate limiters for common use cases
  */
-export const authLimiter = createRateLimiter('auth');
+export const authLimiter = createRateLimiter('auth', { keyGenerator: authKeyGenerator });
 export const otpLimiter = createRateLimiter('otp');
 export const apiLimiter = createRateLimiter('api');
 export const mobileLimiter = createRateLimiter('mobile');

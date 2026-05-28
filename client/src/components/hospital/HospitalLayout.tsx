@@ -1,8 +1,8 @@
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import HospitalSidebar from "./HospitalSidebar";
-import { Bell, HeartPulse, ChevronDown, Building2, Sun, Moon, Loader2 } from "lucide-react";
+import { Bell, HeartPulse, ChevronDown, Building2, Sun, Moon, Loader2, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -32,11 +32,29 @@ const HospitalLayout = ({ children, title, subtitle }: HospitalLayoutProps) => {
   const navigate = useNavigate();
   const { setTheme, theme } = useTheme();
   const { hospitalData, isLoading: authLoading, logout } = useHospitalAuth();
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  const profileCapabilities = Array.isArray((hospitalData as any)?.capabilities)
+    ? ((hospitalData as any).capabilities as string[])
+    : undefined;
 
   // Fetch module capabilities for sidebar gating
   const { data: capabilities } = useQuery<string[] | undefined>({
     queryKey: ["hospital-capabilities"],
-    queryFn: async () => undefined,
+    queryFn: async () => {
+      const endpoints = ["/hospital/capabilities", "/hospital/plan/capabilities"];
+      for (const endpoint of endpoints) {
+        try {
+          const res = await api.get(endpoint);
+          const rows = res?.data?.data ?? res?.data?.capabilities ?? res?.data;
+          if (Array.isArray(rows)) return rows as string[];
+        } catch {
+          // Try the next endpoint and gracefully fallback.
+        }
+      }
+      return undefined;
+    },
+    enabled: !profileCapabilities,
     staleTime: 10 * 60_000,
     retry: false,
   });
@@ -65,16 +83,31 @@ const HospitalLayout = ({ children, title, subtitle }: HospitalLayoutProps) => {
     );
   }
 
+  const effectiveCapabilities = profileCapabilities ?? capabilities;
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
       {/* Sidebar */}
-      <HospitalSidebar capabilities={capabilities && capabilities.length > 0 ? capabilities : undefined} />
+      <HospitalSidebar
+        capabilities={effectiveCapabilities && effectiveCapabilities.length > 0 ? effectiveCapabilities : undefined}
+        mobileOpen={mobileSidebarOpen}
+        onCloseMobile={() => setMobileSidebarOpen(false)}
+      />
 
       {/* Main Content Area */}
-      <div className="ml-64 transition-all duration-300">
+      <div className="ml-0 md:ml-64 transition-all duration-300">
         {/* Top Header */}
-        <header className="sticky top-0 z-30 h-16 bg-white/90 dark:bg-slate-800/90 backdrop-blur border-b border-slate-200 dark:border-slate-700/50 flex items-center justify-between px-6">
+        <header className="sticky top-0 z-30 h-16 bg-white/90 dark:bg-slate-800/90 backdrop-blur border-b border-slate-200 dark:border-slate-700/50 flex items-center justify-between px-4 md:px-6">
           <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden"
+              onClick={() => setMobileSidebarOpen(true)}
+              aria-label="Open hospital navigation"
+            >
+              <Menu className="w-5 h-5 text-slate-600" />
+            </Button>
             <div className="flex items-center gap-2 text-teal-600 dark:text-teal-400 font-semibold">
               <HeartPulse className="h-5 w-5" />
               <span className="text-sm">Mediqzy</span>
@@ -152,7 +185,7 @@ const HospitalLayout = ({ children, title, subtitle }: HospitalLayoutProps) => {
         </header>
 
         {/* Page Content */}
-        <main className="p-6">{children}</main>
+        <main className="p-4 md:p-6">{children}</main>
       </div>
     </div>
   );

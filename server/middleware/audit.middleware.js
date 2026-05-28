@@ -185,6 +185,48 @@ export const auditLoginAttempt = async (req, userId, email, success, errorMessag
 };
 
 /**
+ * Audit account status transitions (e.g., active -> inactive)
+ */
+export const auditAccountStatusTransition = async (
+  req,
+  {
+    userId,
+    userEmail,
+    fromStatus,
+    toStatus,
+    reasonCode,
+    reason,
+    source,
+    extra = {},
+  }
+) => {
+  try {
+    await AuditLog.logEvent({
+      userId,
+      userType: req?.user?.role || 'system',
+      userEmail: userEmail || req?.user?.email || null,
+      action: 'ACCOUNT_STATUS_CHANGED',
+      resourceType: 'User',
+      resourceId: String(userId),
+      req,
+      status: 'SUCCESS',
+      isPII: true,
+      dataFields: {
+        fromStatus,
+        toStatus,
+        reasonCode,
+        reason,
+        source,
+        ...extra,
+      },
+      purpose: 'Account lifecycle governance and membership compliance',
+    });
+  } catch (error) {
+    console.error('Account status transition audit failed:', error);
+  }
+};
+
+/**
  * Audit consent actions
  */
 export const auditConsent = async (req, userId, consentType, action) => {

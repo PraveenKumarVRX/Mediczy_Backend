@@ -25,6 +25,7 @@ import intelligentDb from "../utils/intelligentDbClient.js";
 import OTP from "../models/otp.model.intelligent.js";
 import { cache } from "../db/redis.js";
 import postgresSequelize from "../db/postgres-sequelize.js";
+import { UserPlan, MembershipPlan } from "../models/membershipPlan.model.intelligent.js";
 import {
   buildProfileKeyPrefix,
   buildPublicFileUrl,
@@ -42,6 +43,90 @@ const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 const normalizePhone = (value) => String(value || "").replace(/[^0-9]/g, "");
 const buildSignupVerificationKey = (email, phoneNumber) => {
   return `signup:verify:${normalizeEmail(email)}:${normalizePhone(phoneNumber)}`;
+};
+
+const isLoopbackRequest = (req) => {
+  const host = String(req.hostname || '').toLowerCase();
+  const ip = String(req.ip || '').toLowerCase();
+  const forwarded = String(req.headers['x-forwarded-for'] || '').toLowerCase();
+
+  return host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '::1' ||
+    ip === '127.0.0.1' ||
+    ip === '::1' ||
+    ip === '::ffff:127.0.0.1' ||
+    forwarded.includes('127.0.0.1') ||
+    forwarded.includes('::1');
+};
+
+const shouldIncludeOtpInResponse = (req) => {
+  return process.env.NODE_ENV === 'development' &&
+    process.env.OTP_DEBUG_RESPONSE === 'true' &&
+    process.env.ALLOW_LOCAL_OTP_ECHO === 'true' &&
+    isLoopbackRequest(req);
+};
+
+const buildInactiveAccountContext = async (userId) => {
+  try {
+    const latestPlan = await UserPlan.findOne({
+      where: { userId },
+      include: [{ model: MembershipPlan, as: "plan", required: false }],
+      order: [["endDate", "DESC"], ["createdAt", "DESC"]],
+    });
+
+    if (!latestPlan) {
+      return {
+        reasonCode: "NO_ACTIVE_MEMBERSHIP",
+        reason: "No active membership plan found",
+        action: "RENEW_MEMBERSHIP",
+        nextStep: "/choose-plan",
+      };
+    }
+
+    const endDate = latestPlan.endDate ? String(latestPlan.endDate) : null;
+    const expired = endDate ? new Date(`${endDate}T23:59:59.999Z`) < new Date() : false;
+    const latestPlanName = latestPlan?.plan?.name || null;
+
+    if (latestPlan.status === "expired" || expired) {
+      return {
+        reasonCode: "MEMBERSHIP_EXPIRED",
+        reason: endDate
+          ? `Membership plan expired on ${endDate}`
+          : "Membership plan has expired",
+        action: "RENEW_MEMBERSHIP",
+        nextStep: "/my-plans",
+        expiredOn: endDate,
+        planName: latestPlanName,
+      };
+    }
+
+    if (latestPlan.status !== "active") {
+      return {
+        reasonCode: "MEMBERSHIP_INACTIVE",
+        reason: `Membership is ${latestPlan.status}`,
+        action: "CONTACT_SUPPORT",
+        nextStep: "/support",
+        planName: latestPlanName,
+      };
+    }
+
+    return {
+      reasonCode: "ACCOUNT_INACTIVE",
+      reason: "Account is inactive",
+      action: "CONTACT_SUPPORT",
+      nextStep: "/support",
+      planName: latestPlanName,
+    };
+  } catch (error) {
+    console.error("Failed to build inactive account context:", error);
+    return {
+      reasonCode: "ACCOUNT_INACTIVE",
+      reason: "Account is inactive",
+      action: "CONTACT_SUPPORT",
+      nextStep: "/support",
+    };
+  }
 };
 
 /**
@@ -262,7 +347,7 @@ router.post(
         });
       }
 
-      const includeOtp = process.env.NODE_ENV === 'development' || process.env.OTP_DEBUG_RESPONSE === 'true';
+      const includeOtp = shouldIncludeOtpInResponse(req);
       const verificationKey = buildSignupVerificationKey(email, phoneNumber);
 
       try {
@@ -611,7 +696,8 @@ router.post(
         gender,
         emailVerified: true,
         phoneVerified: true,
-        status: 'active',
+        // Corporate users are activated only after the HR roster entry is claimed.
+        status: isCorporate ? 'inactive' : 'active',
         organization_id: isCorporate ? (corporateRecord?.id ?? 7) : 7,
         organization_type: isCorporate ? 'corporate' : 'individual',
         tenant_id: isCorporate ? (corporateRecord?.tenant_id ?? 7) : 7
@@ -640,6 +726,7 @@ router.post(
 
       // Corporate-specific: link to corporate via user_associations + update employee record
       if (isCorporate && corporateRecord) {
+        let corporateLinked = false;
         try {
           await postgresSequelize.query(
             `INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
@@ -647,27 +734,54 @@ router.post(
              ON CONFLICT ("userId", "entityType", "entityId", role) WHERE "entityType" = 'corporate' DO UPDATE SET status = 'active', "updatedAt" = NOW()`,
             { replacements: { userId: newUser.id, corporateId: corporateRecord.id } }
           );
+
           if (employeeDbId) {
-            // Primary path: mark corporate_employees row as claimed
-            await postgresSequelize.query(
-              `UPDATE corporate_employees SET "userId" = :userId, "updatedAt" = NOW() WHERE id = :empDbId AND "userId" IS NULL`,
-              { replacements: { userId: newUser.id, empDbId: parseInt(employeeDbId) }, type: postgresSequelize.QueryTypes.UPDATE }
+            // Primary path: claim corporate_employees row and mark profile as activated.
+            const [claimResult] = await postgresSequelize.query(
+              `UPDATE corporate_employees
+               SET "userId" = :userId,
+                   "isActive" = true,
+                   metadata = COALESCE(metadata, '{}'::jsonb)
+                              || jsonb_build_object('profileActivation', 'active', 'activatedAt', NOW()::text),
+                   "updatedAt" = NOW()
+               WHERE id = :empDbId AND "userId" IS NULL
+               RETURNING id`,
+              { replacements: { userId: newUser.id, empDbId: parseInt(employeeDbId) }, type: postgresSequelize.QueryTypes.SELECT }
             );
+            corporateLinked = !!claimResult;
           } else if (employeeId) {
-            // Fallback path: mark the original user_associations metadata row as claimed
-            // so the same employee ID cannot be re-registered
-            await postgresSequelize.query(
-              `UPDATE user_associations SET "userId" = :userId, "updatedAt" = NOW()
+            // Fallback path: mark user_associations roster entry as claimed.
+            const [fallbackClaim] = await postgresSequelize.query(
+              `UPDATE user_associations
+               SET "userId" = :userId,
+                   metadata = COALESCE(metadata, '{}'::jsonb)
+                              || jsonb_build_object('profileActivation', 'active', 'activatedAt', NOW()::text),
+                   "updatedAt" = NOW()
                WHERE "entityType" = 'corporate' AND "entityId" = :corporateId
                  AND status = 'active'
                  AND UPPER(metadata->>'employeeId') = UPPER(:employeeId)
-                 AND "userId" IS NULL`,
-              { replacements: { userId: newUser.id, corporateId: corporateRecord.id, employeeId: String(employeeId).trim() } }
+                 AND "userId" IS NULL
+               RETURNING id`,
+              { replacements: { userId: newUser.id, corporateId: corporateRecord.id, employeeId: String(employeeId).trim() }, type: postgresSequelize.QueryTypes.SELECT }
             );
+            corporateLinked = !!fallbackClaim;
           }
         } catch (linkErr) {
-          console.error('⚠️  Corporate linking failed (non-blocking):', linkErr.message);
+          console.error('Corporate linking failed:', linkErr.message);
         }
+
+        if (!corporateLinked) {
+          return res.status(500).json({
+            success: false,
+            message: 'Employee registration could not be activated. Please contact your HR admin.'
+          });
+        }
+
+        // Activate corporate user only after successful employee linkage.
+        await postgresSequelize.query(
+          `UPDATE users SET status = 'active', "updatedAt" = NOW() WHERE id = :id`,
+          { replacements: { id: newUser.id }, type: postgresSequelize.QueryTypes.UPDATE }
+        );
       }
 
       // Individual path: assign Free Basic (trial) plan + link to My SmartHealth corporate
@@ -993,7 +1107,7 @@ router.post(
     const identifier = String(
       req.body?.identifier ?? req.body?.email ?? req.body?.phoneNumber ?? req.body?.phone
     ).trim();
-    const includeOtp = process.env.NODE_ENV === 'development' || process.env.OTP_DEBUG_RESPONSE === 'true';
+    const includeOtp = shouldIncludeOtpInResponse(req);
 
     try {
       // Determine if identifier is email or phone
@@ -1342,6 +1456,21 @@ router.post(
         return res.status(400).json({
           success: false,
           message: 'Invalid or expired OTP'
+        });
+      }
+
+      if (user.status !== 'active' || user.isActive === false) {
+        await auditLoginAttempt(req, user.id, user.email, false, 'Inactive user attempted OTP login');
+        const details = await buildInactiveAccountContext(user.id);
+        return res.status(403).json({
+          success: false,
+          code: 'ACCOUNT_INACTIVE',
+          message: details.reasonCode === 'MEMBERSHIP_EXPIRED'
+            ? 'Your membership has expired. Please renew to continue.'
+            : details.reasonCode === 'NO_ACTIVE_MEMBERSHIP'
+            ? 'No active membership plan found. Please choose a plan to continue.'
+            : 'Account is inactive. Please contact support.',
+          details
         });
       }
 
@@ -1718,11 +1847,13 @@ router.put("/profile", authUser, async (req, res) => {
  * @desc    Request password reset OTP via Email, SMS, and WhatsApp
  * @access  Public
  */
-router.post("/forgot-password", [
+const forgotPasswordValidators = [
   body("email").optional().isEmail().withMessage("Must be a valid email"),
   body("phone").optional().matches(/^\+?[1-9]\d{1,14}$/).withMessage("Invalid phone format"),
   body("userType").optional().isIn(['user', 'doctor']).withMessage("User type must be 'user' or 'doctor'")
-], async (req, res) => {
+];
+
+const forgotPasswordHandler = async (req, res) => {
   try {
     const { email, phone, userType = 'user' } = req.body;
 
@@ -1750,20 +1881,27 @@ router.post("/forgot-password", [
       message: 'Failed to process password reset request'
     });
   }
-});
+};
+
+router.post("/forgot-password", forgotPasswordValidators, forgotPasswordHandler);
+
+// Backward-compatible alias used by older/mobile clients.
+router.post("/forgot-password/request", forgotPasswordValidators, forgotPasswordHandler);
 
 /**
  * @route   POST /api/users/verify-reset-otp
  * @desc    Verify OTP and get reset token
  * @access  Public
  */
-router.post("/verify-reset-otp", [
+const verifyResetOtpValidators = [
   body("email").optional().isEmail().withMessage("Must be a valid email"),
   body("phone").optional().matches(/^\+?[1-9]\d{1,14}$/).withMessage("Invalid phone format"),
   body("code").optional().isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits"),
   body("otp").optional().isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits"),
   body("userType").optional().isIn(['user', 'doctor']).withMessage("User type must be 'user' or 'doctor'")
-], async (req, res) => {
+];
+
+const verifyResetOtpHandler = async (req, res) => {
   try {
     const { email, phone, userType = 'user' } = req.body;
     // Accept both 'code' (web) and 'otp' (mobile app) field names
@@ -1799,18 +1937,25 @@ router.post("/verify-reset-otp", [
       message: 'Failed to verify OTP'
     });
   }
-});
+};
+
+router.post("/verify-reset-otp", verifyResetOtpValidators, verifyResetOtpHandler);
+
+// Backward-compatible alias used by older/mobile clients.
+router.post("/forgot-password/verify", verifyResetOtpValidators, verifyResetOtpHandler);
 
 /**
  * @route   POST /api/users/reset-password
  * @desc    Reset password with verified token
  * @access  Public
  */
-router.post("/reset-password", [
+const resetPasswordValidators = [
   body("resetToken").notEmpty().withMessage("Reset token is required"),
   body("newPassword").isLength({ min: 6 }).withMessage("Password must be at least 6 characters long"),
   body("userType").optional().isIn(['user', 'doctor']).withMessage("User type must be 'user' or 'doctor'")
-], async (req, res) => {
+];
+
+const resetPasswordHandler = async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -1893,7 +2038,12 @@ router.post("/reset-password", [
       message: 'Failed to reset password'
     });
   }
-});
+};
+
+router.post("/reset-password", resetPasswordValidators, resetPasswordHandler);
+
+// Backward-compatible alias used by older/mobile clients.
+router.post("/forgot-password/reset", resetPasswordValidators, resetPasswordHandler);
 
 /**
  * @route   POST /api/users/change-password

@@ -878,12 +878,17 @@ const Appointments = () => {
       )}
 
       <div className="space-y-8 animate-in fade-in duration-700">
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl w-fit font-bold tracking-tight primary-grad">
-              Appointments
-            </h1>
-            <div className="flex items-center space-x-3">
+        <div className="rounded-2xl bg-gradient-to-r from-[#0B1120] via-[#102238] to-[#0B1120] border border-[#00FFF3]/20 p-5 md:p-6 shadow-2xl">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-[#00FFF3]/10 px-3 py-1 text-xs font-semibold text-[#00FFF3] mb-3">
+                <CalendarDays className="h-3.5 w-3.5" />
+                Care Schedule Hub
+              </div>
+              <h1 className="text-3xl w-fit font-bold tracking-tight primary-grad">Appointments</h1>
+              <p className="text-sm text-slate-300 mt-1">Manage upcoming consults, revisit history, and act on AI guidance.</p>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
               <Button
                 variant="outline"
                 onClick={() => setShowAIChat(true)}
@@ -898,6 +903,21 @@ const Appointments = () => {
                 <Plus className="h-4 w-4 mr-2" />
                 New Appointment
               </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mt-5">
+            <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+              <p className="text-xs font-semibold text-[#00FFF3]">Step 1: Review upcoming</p>
+              <p className="text-[11px] text-slate-300">Confirm time, mode, and readiness for each consult.</p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+              <p className="text-xs font-semibold text-[#00FFF3]">Step 2: Join or reschedule</p>
+              <p className="text-[11px] text-slate-300">Take timely action to avoid no-show and expired windows.</p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+              <p className="text-xs font-semibold text-[#00FFF3]">Step 3: Follow through</p>
+              <p className="text-[11px] text-slate-300">Use AI insights for follow-ups and preventive planning.</p>
             </div>
           </div>
         </div>
@@ -915,6 +935,51 @@ const Appointments = () => {
               {aiAnalyzing && <div className="w-2 h-2 bg-[#00FFF3] rounded-full animate-pulse" />}
             </TabsTrigger>
           </TabsList>
+
+          <div className="rounded-xl border border-[#00FFF3]/20 bg-[#0f1d30] p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3 transition-all duration-300">
+            <div>
+              <p className="text-xs font-semibold text-[#00FFF3]">Next Best Action</p>
+              <p className="text-[11px] text-slate-300">
+                {activeTab === "upcoming"
+                  ? "Join ready video calls, or reschedule early to keep care continuity."
+                  : activeTab === "completed"
+                    ? "Review reports and book follow-up consults for unresolved symptoms."
+                    : "Generate new AI guidance and act on high-priority recommendations first."}
+              </p>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {activeTab === "upcoming" && (
+                <>
+                  <Button size="sm" variant="outline" className="border-[#00FFF3]/30 text-[#00FFF3]" onClick={() => setShowBookingModal(true)}>
+                    <Plus className="h-3.5 w-3.5 mr-1" /> Book Slot
+                  </Button>
+                  <Button size="sm" variant="outline" className="border-[#00FFF3]/30 text-[#00FFF3]" onClick={() => setActiveTab("smart")}>
+                    <Brain className="h-3.5 w-3.5 mr-1" /> AI Assist
+                  </Button>
+                </>
+              )}
+              {activeTab === "completed" && (
+                <>
+                  <Button size="sm" variant="outline" className="border-[#00FFF3]/30 text-[#00FFF3]" onClick={() => navigate("/my-prescriptions")}>
+                    View Prescriptions
+                  </Button>
+                  <Button size="sm" variant="outline" className="border-[#00FFF3]/30 text-[#00FFF3]" onClick={() => setShowBookingModal(true)}>
+                    Book Follow-up
+                  </Button>
+                </>
+              )}
+              {activeTab === "smart" && (
+                <>
+                  <Button size="sm" variant="outline" className="border-[#00FFF3]/30 text-[#00FFF3]" onClick={generateSmartSuggestions} disabled={aiAnalyzing}>
+                    <Sparkles className="h-3.5 w-3.5 mr-1" /> Refresh
+                  </Button>
+                  <Button size="sm" variant="outline" className="border-[#00FFF3]/30 text-[#00FFF3]" onClick={() => setShowAIChat(true)}>
+                    <MessageSquare className="h-3.5 w-3.5 mr-1" /> Ask AI
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
 
           {/* Upcoming Appointments */}
           <TabsContent value="upcoming" className="space-y-6">

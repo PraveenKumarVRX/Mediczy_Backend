@@ -10,6 +10,69 @@ import Doctor from "../models/doctor.model.intelligent.js";
 import Nurse from "../models/nurse.model.intelligent.js";
 import Assistant from "../models/assistant.model.intelligent.js";
 import { UserPlan, MembershipPlan } from "../models/membershipPlan.model.intelligent.js";
+import postgresSequelize from "../db/postgres-sequelize.js";
+
+const buildInactiveAccountContext = async (userId) => {
+  try {
+    const latestPlan = await UserPlan.findOne({
+      where: { userId },
+      include: [{ model: MembershipPlan, as: "plan", required: false }],
+      order: [["endDate", "DESC"], ["createdAt", "DESC"]],
+    });
+
+    if (!latestPlan) {
+      return {
+        reasonCode: "NO_ACTIVE_MEMBERSHIP",
+        reason: "No active membership plan found",
+        action: "RENEW_MEMBERSHIP",
+        nextStep: "/choose-plan",
+      };
+    }
+
+    const endDate = latestPlan.endDate ? String(latestPlan.endDate) : null;
+    const expired = endDate ? new Date(`${endDate}T23:59:59.999Z`) < new Date() : false;
+    const latestPlanName = latestPlan?.plan?.name || null;
+
+    if (latestPlan.status === "expired" || expired) {
+      return {
+        reasonCode: "MEMBERSHIP_EXPIRED",
+        reason: endDate
+          ? `Membership plan expired on ${endDate}`
+          : "Membership plan has expired",
+        action: "RENEW_MEMBERSHIP",
+        nextStep: "/my-plans",
+        expiredOn: endDate,
+        planName: latestPlanName,
+      };
+    }
+
+    if (latestPlan.status !== "active") {
+      return {
+        reasonCode: "MEMBERSHIP_INACTIVE",
+        reason: `Membership is ${latestPlan.status}`,
+        action: "CONTACT_SUPPORT",
+        nextStep: "/support",
+        planName: latestPlanName,
+      };
+    }
+
+    return {
+      reasonCode: "ACCOUNT_INACTIVE",
+      reason: "Account is inactive",
+      action: "CONTACT_SUPPORT",
+      nextStep: "/support",
+      planName: latestPlanName,
+    };
+  } catch (error) {
+    console.error("Failed to build inactive account context:", error);
+    return {
+      reasonCode: "ACCOUNT_INACTIVE",
+      reason: "Account is inactive",
+      action: "CONTACT_SUPPORT",
+      nextStep: "/support",
+    };
+  }
+};
 
 export async function registerUser(req, res) {
   // Validate request
@@ -31,6 +94,7 @@ export async function registerUser(req, res) {
   const employeeId = req.body.employeeId || null;
   const corporateId = req.body.corporateId || null;
   const membershipType = req.body.membershipType || 'individual';
+  const isCorporateSignup = membershipType === 'corporate' && corporateId && employeeId;
 
   try {
     // Check if user already exists
@@ -46,6 +110,37 @@ export async function registerUser(req, res) {
       if (existingByPhone) {
         return res.status(409).json({ message: "Phone number already exists" });
       }
+    }
+
+    let corporateRosterRow = null;
+    if (isCorporateSignup) {
+      const [corp] = await postgresSequelize.query(
+        `SELECT id FROM corporates WHERE id = :corporateId AND status = 'Active' LIMIT 1`,
+        { replacements: { corporateId: Number(corporateId) }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+      if (!corp) {
+        return res.status(400).json({ message: "Invalid corporate selected" });
+      }
+
+      const [roster] = await postgresSequelize.query(
+        `SELECT id, "userId" FROM corporate_employees
+         WHERE corporate_id = :corporateId
+           AND UPPER("employeeId") = UPPER(:employeeId)
+           AND "isActive" = true
+         LIMIT 1`,
+        {
+          replacements: { corporateId: Number(corporateId), employeeId: String(employeeId).trim() },
+          type: postgresSequelize.QueryTypes.SELECT,
+        }
+      );
+
+      if (!roster) {
+        return res.status(404).json({ message: "Employee ID not found for this company. Please contact your HR." });
+      }
+      if (roster.userId) {
+        return res.status(409).json({ message: "This employee ID is already registered. Please log in instead." });
+      }
+      corporateRosterRow = roster;
     }
 
     // Family Doctor concept: Default primary doctor is CMO Dr. Nandita Agarwal (ID: 5)
@@ -69,9 +164,44 @@ export async function registerUser(req, res) {
       primaryDoctorId: DEFAULT_PRIMARY_DOCTOR_ID,
       // Prevent privilege escalation / self-verification via extra body fields
       isAdmin: false,
-      status: "active",
+      status: isCorporateSignup ? "inactive" : "active",
       emailVerified: false,
     });
+
+    if (isCorporateSignup) {
+      await postgresSequelize.query(
+        `INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
+         VALUES (:userId, 'corporate', :corporateId, 'employee', false, 'active', NOW(), NOW(), NOW())
+         ON CONFLICT ("userId", "entityType", "entityId", role)
+         WHERE "entityType" = 'corporate'
+         DO UPDATE SET status = 'active', "updatedAt" = NOW()`,
+        { replacements: { userId: newUser.id, corporateId: Number(corporateId) }, type: postgresSequelize.QueryTypes.INSERT }
+      );
+
+      const [claimResult] = await postgresSequelize.query(
+        `UPDATE corporate_employees
+         SET "userId" = :userId,
+             metadata = COALESCE(metadata, '{}'::jsonb)
+                        || jsonb_build_object('profileActivation', 'active', 'activatedAt', NOW()::text),
+             "updatedAt" = NOW()
+         WHERE id = :employeeRowId
+           AND "userId" IS NULL
+         RETURNING id`,
+        {
+          replacements: { userId: newUser.id, employeeRowId: corporateRosterRow.id },
+          type: postgresSequelize.QueryTypes.SELECT,
+        }
+      );
+
+      if (!claimResult) {
+        return res.status(500).json({ message: "Employee registration could not be activated. Please contact your HR admin." });
+      }
+
+      await postgresSequelize.query(
+        `UPDATE users SET status = 'active', "updatedAt" = NOW() WHERE id = :id`,
+        { replacements: { id: newUser.id }, type: postgresSequelize.QueryTypes.UPDATE }
+      );
+    }
 
     // Generate JWT Token including role/corporateId
     const token = generateAuthTokenForUser(newUser);
@@ -250,7 +380,7 @@ export async function signInUser(req, res) {
   // Validate request input
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    return res.status(400).json({ success: false, errors: errors.array() });
   }
 
   const rawEmail = req.body.email;
@@ -308,14 +438,22 @@ export async function signInUser(req, res) {
     if (!user) {
       // Audit failed login attempt
       await auditLoginAttempt(req, null, loginIdentifier, false, 'User not found');
-      return res.status(401).json({ message: "Invalid email or password" }); // Unauthorized
+      return res.status(401).json({ success: false, message: "Invalid email or password" }); // Unauthorized
     }
 
     // Account guard for suspended/inactive users
     if (user.status !== 'active' || user.isActive === false) {
       await auditLoginAttempt(req, user.id, loginIdentifier, false, 'Inactive user attempted login');
+      const details = await buildInactiveAccountContext(user.id);
       return res.status(403).json({
-        message: "Account is inactive. Please contact support."
+        success: false,
+        code: 'ACCOUNT_INACTIVE',
+        message: details.reasonCode === 'MEMBERSHIP_EXPIRED'
+          ? 'Your membership has expired. Please renew to continue.'
+          : details.reasonCode === 'NO_ACTIVE_MEMBERSHIP'
+          ? 'No active membership plan found. Please choose a plan to continue.'
+          : "Account is inactive. Please contact support.",
+        details
       });
     }
 
@@ -362,6 +500,7 @@ export async function signInUser(req, res) {
       const portal = portalHints[roleLower] || 'the appropriate';
       await auditLoginAttempt(req, user.id, loginIdentifier, false, `${roleLower} attempted user login`);
       return res.status(403).json({
+        success: false,
         message: `Please use the ${portal} login portal`
       });
     }
@@ -370,6 +509,7 @@ export async function signInUser(req, res) {
     if (user.isAdmin) {
       await auditLoginAttempt(req, user.id, loginIdentifier, false, 'Admin attempted user login');
       return res.status(403).json({ 
+        success: false,
         message: "Please use the admin login portal" 
       });
     }
@@ -382,7 +522,7 @@ export async function signInUser(req, res) {
       });
       if (doctorRecord) {
         await auditLoginAttempt(req, user.id, loginIdentifier, false, 'Doctor attempted user login');
-        return res.status(403).json({ message: "Please use the doctor login portal" });
+        return res.status(403).json({ success: false, message: "Please use the doctor login portal" });
       }
       const nurseRecord = await Nurse.findOne({
         where: sequelizeWhere(fn("lower", col("email")), email),
@@ -390,7 +530,7 @@ export async function signInUser(req, res) {
       });
       if (nurseRecord) {
         await auditLoginAttempt(req, user.id, loginIdentifier, false, 'Nurse attempted user login');
-        return res.status(403).json({ message: "Please use the nurse login portal" });
+        return res.status(403).json({ success: false, message: "Please use the nurse login portal" });
       }
       const assistantRecord = await Assistant.findOne({
         where: sequelizeWhere(fn("lower", col("email")), email),
@@ -398,7 +538,7 @@ export async function signInUser(req, res) {
       });
       if (assistantRecord) {
         await auditLoginAttempt(req, user.id, loginIdentifier, false, 'Assistant attempted user login');
-        return res.status(403).json({ message: "Please use the assistant login portal" });
+        return res.status(403).json({ success: false, message: "Please use the assistant login portal" });
       }
     }
 
@@ -407,7 +547,7 @@ export async function signInUser(req, res) {
     if (!isPasswordValid) {
       // Audit failed login attempt
       await auditLoginAttempt(req, user.id, loginIdentifier, false, 'Invalid password');
-      return res.status(401).json({ message: "Invalid email or password" }); // Unauthorized
+      return res.status(401).json({ success: false, message: "Invalid email or password" }); // Unauthorized
     }
 
     // Update last login (PostgreSQL uses lastLoginAt)
@@ -429,6 +569,7 @@ export async function signInUser(req, res) {
 
     // Respond with user data & token
     return res.status(200).json({
+      success: true,
       message: "Login successful",
       token,
       requirePasswordChange,
@@ -457,7 +598,7 @@ export async function signInUser(req, res) {
     });
   } catch (error) {
     console.error("Login error:", error);
-    return res.status(500).json({ message: "Internal Server Error" });
+    return res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 }
 

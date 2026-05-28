@@ -394,7 +394,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/lab/dashboard',
       '/api/lab/tests',
       '/api/lab/results',
-      '/api/lab/reports'
+      '/api/lab/reports',
+      '/api/ai/vision'
     ],
     tokenField: 'labId'
   },
@@ -510,6 +511,13 @@ const resolveUserType = (decoded) => {
   return USER_TYPE_ALIASES[rawType] || rawType;
 };
 
+const normalizePathPrefix = (path) => path.replace(/\/+$/, '');
+
+const isPathAllowed = (requestPath, allowedPath) => {
+  const normalizedAllowed = normalizePathPrefix(allowedPath);
+  return requestPath === normalizedAllowed || requestPath.startsWith(`${normalizedAllowed}/`);
+};
+
 // Public endpoints that don't require authentication
 const PUBLIC_ENDPOINTS = [
   '/health',
@@ -540,11 +548,17 @@ const PUBLIC_ENDPOINTS = [
   '/api/users/login/send-otp',
   '/api/users/login/verify-otp',
   '/api/users/forgot-password',
+  '/api/users/forgot-password/request',
   '/api/users/verify-reset-otp',
+  '/api/users/forgot-password/verify',
   '/api/users/reset-password',
+  '/api/users/forgot-password/reset',
   '/api/users/forgot-password',
+  '/api/users/forgot-password/request',
   '/api/users/verify-reset-otp',
+  '/api/users/forgot-password/verify',
   '/api/users/reset-password',
+  '/api/users/forgot-password/reset',
   '/api/doctors/login',
   '/api/doctors/register',
   '/api/doctors/send-email-otp',
@@ -782,8 +796,8 @@ const ringFencingMiddleware = (req, res, next) => {
     }
 
     // Check if user has access to this endpoint
-    const hasPathAccess = permissions.allowedPaths.some(allowedPath =>
-      requestPath.startsWith(allowedPath)
+    const hasPathAccess = permissions.allowedPaths.some((allowedPath) =>
+      isPathAllowed(requestPath, allowedPath)
     );
 
     if (!hasPathAccess) {

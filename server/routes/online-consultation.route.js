@@ -1379,10 +1379,12 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
       });
     }
 
-    // Check payment status - allow emergency triage on credit
-    const isPaymentValid = appointment.paymentStatus === 'paid' || 
-                           appointment.paymentStatus === 'credit' ||
-                           isEmergencyTriage;
+    // Check payment status - allow emergency triage and nominal/free consults.
+    const normalizedPaymentStatus = String(appointment.paymentStatus || '').toLowerCase();
+    const isPaymentSettled = normalizedPaymentStatus === 'paid' || normalizedPaymentStatus === 'credit';
+    const consultationFee = Number(appointment.consultationFee ?? appointment.paymentAmount ?? 0);
+    const isNominalOrFreeConsultation = Number.isFinite(consultationFee) && consultationFee <= 1;
+    const isPaymentValid = isPaymentSettled || isEmergencyTriage || isNominalOrFreeConsultation;
 
     if (!isPaymentValid) {
       // Check if user has an active membership plan
@@ -1628,7 +1630,11 @@ router.get('/my-appointments', authUser, async (req, res) => {
         paymentStatus: apt.paymentStatus,
         consultationFee: apt.consultationFee,
         meetingLink: apt.status === 'confirmed' ? apt.meetingLink : null,
-        canJoinVideo: apt.status === 'confirmed' && apt.paymentStatus === 'paid',
+        canJoinVideo:
+          apt.status === 'confirmed' &&
+          (['paid', 'credit'].includes(String(apt.paymentStatus || '').toLowerCase()) ||
+            (Number.isFinite(Number(apt.consultationFee ?? apt.paymentAmount ?? 0)) &&
+              Number(apt.consultationFee ?? apt.paymentAmount ?? 0) <= 1)),
         createdAt: apt.createdAt
       };
 
@@ -1718,7 +1724,11 @@ router.get('/doctor/appointments', authUser, async (req, res) => {
         symptoms: apt.symptoms,
         reason: apt.reason,
         meetingLink: apt.meetingLink,
-        canStartVideo: apt.status === 'confirmed' && apt.paymentStatus === 'paid'
+        canStartVideo:
+          apt.status === 'confirmed' &&
+          (['paid', 'credit'].includes(String(apt.paymentStatus || '').toLowerCase()) ||
+            (Number.isFinite(Number(apt.consultationFee ?? apt.paymentAmount ?? 0)) &&
+              Number(apt.consultationFee ?? apt.paymentAmount ?? 0) <= 1))
       };
 
       if (apt.status === 'pending') {

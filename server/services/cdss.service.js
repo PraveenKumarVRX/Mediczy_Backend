@@ -15,6 +15,7 @@ import llmProvider from './ai-brain/llm-provider.js';
 import { connectPostgres } from '../db/postgres.js';
 
 const SIB_BASE_URL = process.env.SIB_URL || 'http://localhost:8001';
+const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
 
 class CDSSService {
   constructor() {

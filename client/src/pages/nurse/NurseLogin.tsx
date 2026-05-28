@@ -91,7 +91,9 @@ const NurseLogin = () => {
     } catch (err: any) {
       console.error('Nurse login error:', err);
       console.log('[NurseLogin] Error object keys', Object.keys(err || {}));
-      if (err.response?.status === 401) {
+      if (err.response?.status === 429) {
+        setError('Too many login attempts. Please wait 15 minutes and try again.');
+      } else if (err.response?.status === 401) {
         setError('Invalid email or password');
       } else if (err.response?.status === 403) {
         setError('Your account is inactive or login access is disabled');

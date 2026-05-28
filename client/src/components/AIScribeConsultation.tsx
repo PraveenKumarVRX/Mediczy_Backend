@@ -249,13 +249,14 @@ export const AIScribeConsultation: React.FC<AIScribeConsultationProps> = ({
     }
 
     try {
-      const response = await fetch(`/api/ai/scribe/autocomplete?q=${encodeURIComponent(query)}&limit=8`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`,
+      const response = await api.get('/ai/scribe/autocomplete', {
+        params: {
+          q: query,
+          limit: 8,
         },
       });
 
-      const data = await response.json();
+      const data = response.data;
       if (data.success && data.suggestions) {
         setSuggestions(data.suggestions);
         setShowSuggestions(true);

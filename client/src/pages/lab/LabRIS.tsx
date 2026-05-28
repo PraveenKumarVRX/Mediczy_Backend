@@ -11,7 +11,7 @@ import axios                    from 'axios';
 import {
   Upload, Search, Filter, RefreshCw,
   FileText, FlaskConical, Calendar, User,
-  AlertCircle, CheckCircle2, Clock, Activity,
+  AlertCircle, CheckCircle2, Clock, Activity, AlertTriangle,
   ChevronDown, X, ScanLine, Info, Edit3,
   Download, Printer, Eye, Trash2,
 } from 'lucide-react';
@@ -63,6 +63,42 @@ interface UploadForm {
   notes: string;
 }
 
+interface CriticalAlertItem {
+  id: number;
+  study_id: number;
+  status: 'Open' | 'Acknowledged' | 'Escalated';
+  alert_reason: string;
+  raised_by: string | null;
+  raised_at: string | null;
+  due_at: string | null;
+  acknowledged_by: string | null;
+  acknowledged_at: string | null;
+}
+
+interface CronHealthTask {
+  key: string;
+  name: string;
+  lastRun: string | null;
+  lastStatus: string;
+  lastError: string | null;
+  isRunning?: boolean;
+}
+
+interface DicomWebInstance {
+  sop_instance_uid: string;
+  content_type?: string | null;
+  file_size?: number | null;
+  created_at?: string | null;
+}
+
+interface DicomwebVerification {
+  ok: boolean;
+  status: number;
+  latencyMs: number;
+  message: string;
+  checkedAt: string;
+}
+
 const API_BASE = '/api/lab/ris';
 const MODALITIES = ['CT','MRI','X-Ray','USG','Echo','Mammography','Fluoroscopy','NM','PET','Other'];
 const STATUSES   = ['Ordered','Scheduled','InProgress','Completed','Reported','Cancelled'];
@@ -97,6 +133,21 @@ const fmt = (d?: string | null) => {
   if (!d) return '—';
   try { return new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }); }
   catch { return d; }
+};
+
+const fmtDateTime = (d?: string | null) => {
+  if (!d) return '—';
+  try {
+    return new Date(d).toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return d;
+  }
 };
 
 const fmtSize = (bytes: number) => {
@@ -320,14 +371,58 @@ const ReportPanel: React.FC<{
   const [status, setStatus]     = useState(study.report_status || 'Draft');
   const [saving, setSaving]     = useState(false);
   const [saved, setSaved]       = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [qcStatus, setQcStatus] = useState<'Passed' | 'Failed' | 'NeedsReview'>('NeedsReview');
+  const [qcNotes, setQcNotes] = useState('');
+  const [reagentLotNumber, setReagentLotNumber] = useState('');
+  const [calibrationReference, setCalibrationReference] = useState('');
+  const [contextNotes, setContextNotes] = useState('');
+  const [criticalEnabled, setCriticalEnabled] = useState(false);
+  const [criticalReason, setCriticalReason] = useState('');
+  const [criticalDueMinutes, setCriticalDueMinutes] = useState('30');
   const token                   = localStorage.getItem('labToken') || '';
   const labData                 = JSON.parse(localStorage.getItem('labData') || '{}');
+  const displayLabName          = labData.labName || labData.name || 'Radiologist';
 
   const save = async () => {
     setSaving(true);
+    setSaveError(null);
     try {
+      if (status === 'Final') {
+        await axios.put(
+          `${API_BASE}/${study.id}/qc`,
+          {
+            qcStatus,
+            reviewNotes: qcNotes,
+            reviewedBy: displayLabName,
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        await axios.put(
+          `${API_BASE}/${study.id}/result-context`,
+          {
+            reagentLotNumber,
+            calibrationReference,
+            contextNotes,
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      }
+
       const res = await axios.put(`${API_BASE}/${study.id}/report`,
-        { reportText: text, reportStatus: status, reportedBy: labData.labName || 'Radiologist' },
+        {
+          reportText: text,
+          reportStatus: status,
+          reportedBy: displayLabName,
+          criticalValue: criticalEnabled
+            ? {
+              enabled: true,
+              reason: criticalReason || 'Critical value in report',
+              dueMinutes: Number(criticalDueMinutes || '30'),
+            }
+            : { enabled: false },
+        },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (res.data.success) {
@@ -335,8 +430,10 @@ const ReportPanel: React.FC<{
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
       }
-    } catch (e) {
-      console.error(e);
+    } catch (e: unknown) {
+      const message = (e as { response?: { data?: { message?: string } }; message?: string })
+        ?.response?.data?.message || (e as { message?: string })?.message || 'Failed to save report';
+      setSaveError(message);
     } finally {
       setSaving(false);
     }
@@ -375,6 +472,98 @@ const ReportPanel: React.FC<{
         rows={12}
       />
 
+      <div className="mt-3 p-3 rounded-lg border border-gray-700 bg-gray-900/70 space-y-3">
+        <div className="text-xs font-semibold text-gray-300">Quality & Compliance</div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">QC Status</label>
+            <select
+              value={qcStatus}
+              onChange={e => setQcStatus(e.target.value as 'Passed' | 'Failed' | 'NeedsReview')}
+              className="w-full text-xs px-2 py-2 rounded bg-gray-800 text-gray-300 border border-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="NeedsReview">Needs Review</option>
+              <option value="Passed">Passed</option>
+              <option value="Failed">Failed</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">Critical Value SLA (minutes)</label>
+            <input
+              value={criticalDueMinutes}
+              onChange={e => setCriticalDueMinutes(e.target.value)}
+              type="number"
+              min={5}
+              className="w-full text-xs px-2 py-2 rounded bg-gray-800 text-gray-300 border border-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">Reagent Lot Number</label>
+            <input
+              value={reagentLotNumber}
+              onChange={e => setReagentLotNumber(e.target.value)}
+              className="w-full text-xs px-2 py-2 rounded bg-gray-800 text-gray-300 border border-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              placeholder="e.g. LOT-2026-05A"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">Calibration Reference</label>
+            <input
+              value={calibrationReference}
+              onChange={e => setCalibrationReference(e.target.value)}
+              className="w-full text-xs px-2 py-2 rounded bg-gray-800 text-gray-300 border border-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              placeholder="e.g. CAL-XR-008"
+            />
+          </div>
+        </div>
+
+        <textarea
+          value={qcNotes}
+          onChange={e => setQcNotes(e.target.value)}
+          rows={2}
+          className="w-full text-xs px-2 py-2 rounded bg-gray-800 text-gray-300 border border-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 placeholder-gray-500"
+          placeholder="QC notes (review outcome, deviations, reviewer comments)"
+        />
+
+        <textarea
+          value={contextNotes}
+          onChange={e => setContextNotes(e.target.value)}
+          rows={2}
+          className="w-full text-xs px-2 py-2 rounded bg-gray-800 text-gray-300 border border-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 placeholder-gray-500"
+          placeholder="Result context notes"
+        />
+
+        <div className="flex items-center gap-2">
+          <input
+            id={`critical-${study.id}`}
+            type="checkbox"
+            checked={criticalEnabled}
+            onChange={e => setCriticalEnabled(e.target.checked)}
+            className="rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-500"
+          />
+          <label htmlFor={`critical-${study.id}`} className="text-xs text-gray-300">Raise critical value alert</label>
+        </div>
+
+        {criticalEnabled && (
+          <input
+            value={criticalReason}
+            onChange={e => setCriticalReason(e.target.value)}
+            className="w-full text-xs px-2 py-2 rounded bg-gray-800 text-gray-300 border border-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            placeholder="Critical reason (e.g. Troponin above threshold)"
+          />
+        )}
+      </div>
+
+      {saveError && (
+        <div className="mt-3 px-3 py-2 rounded-lg border border-red-800 bg-red-950 text-xs text-red-300 flex items-center gap-1.5">
+          <AlertCircle size={12} />
+          {saveError}
+        </div>
+      )}
+
       <div className="flex gap-2 mt-3">
         <button
           onClick={save}
@@ -406,6 +595,7 @@ const LabRIS: React.FC = () => {
   const navigate   = useNavigate();
   const token      = localStorage.getItem('labToken');
   const labData    = JSON.parse(localStorage.getItem('labData') || '{}');
+  const displayLabName = labData.labName || labData.name || 'Radiology';
 
   // Auth guard
   useEffect(() => {
@@ -428,6 +618,16 @@ const LabRIS: React.FC = () => {
   const [filterFrom, setFilterFrom]   = useState('');
   const [filterTo, setFilterTo]       = useState('');
   const [showUpload, setShowUpload]   = useState(false);
+  const [criticalAlerts, setCriticalAlerts] = useState<CriticalAlertItem[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [alertsError, setAlertsError] = useState<string | null>(null);
+  const [alertActionLoadingId, setAlertActionLoadingId] = useState<number | null>(null);
+  const [cronHealthTask, setCronHealthTask] = useState<CronHealthTask | null>(null);
+  const [dicomWebFileUrl, setDicomWebFileUrl] = useState<string | null>(null);
+  const [dicomWebInstances, setDicomWebInstances] = useState<DicomWebInstance[]>([]);
+  const [selectedSopUID, setSelectedSopUID] = useState<string | null>(null);
+  const [verifyingDicomweb, setVerifyingDicomweb] = useState(false);
+  const [dicomwebVerification, setDicomwebVerification] = useState<DicomwebVerification | null>(null);
 
   const LIMIT = 30;
 
@@ -464,6 +664,174 @@ const LabRIS: React.FC = () => {
   useEffect(() => {
     if (token) fetchStudies(1);
   }, [fetchStudies, token]);
+
+  const fetchCriticalAlerts = useCallback(async (studyId: number) => {
+    if (!token) return;
+    setAlertsLoading(true);
+    setAlertsError(null);
+    try {
+      const [alertsRes, cronRes] = await Promise.all([
+        axios.get(`${API_BASE}/${studyId}/critical-alerts`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        axios.get(`${API_BASE}/cron/health`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).catch(() => null),
+      ]);
+
+      if (alertsRes.data?.success) {
+        setCriticalAlerts(alertsRes.data.alerts || []);
+      } else {
+        setCriticalAlerts([]);
+      }
+
+      const cronTask = cronRes?.data?.tasks?.[0] || null;
+      setCronHealthTask(cronTask);
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } }; message?: string })
+        ?.response?.data?.message || (e as { message?: string })?.message || 'Failed to load critical alerts';
+      setAlertsError(msg);
+      setCriticalAlerts([]);
+    } finally {
+      setAlertsLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (!selectedStudy?.id) {
+      setCriticalAlerts([]);
+      setAlertsError(null);
+      return;
+    }
+    fetchCriticalAlerts(selectedStudy.id);
+  }, [selectedStudy?.id, fetchCriticalAlerts]);
+
+  useEffect(() => {
+    if (!selectedStudy?.id || !selectedStudy?.is_dicom || !selectedStudy?.study_instance_uid || !token) {
+      setDicomWebFileUrl(null);
+      setDicomWebInstances([]);
+      setSelectedSopUID(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const resolveDicomWebFile = async () => {
+      try {
+        const studyUID = encodeURIComponent(selectedStudy.study_instance_uid);
+        const res = await axios.get(`/api/hypergrid/dicom/studies/${studyUID}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const instances = Array.isArray(res.data?.instances) ? res.data.instances : [];
+        if (!cancelled) {
+          setDicomWebInstances(instances);
+        }
+        const first = instances[0];
+        if (!cancelled && first?.sop_instance_uid) {
+          setSelectedSopUID(first.sop_instance_uid);
+          setDicomWebFileUrl(
+            `/api/hypergrid/dicom/studies/${studyUID}/instances/${encodeURIComponent(first.sop_instance_uid)}/file`
+          );
+        } else if (!cancelled) {
+          setSelectedSopUID(null);
+          setDicomWebFileUrl(null);
+        }
+      } catch {
+        if (!cancelled) {
+          setDicomWebInstances([]);
+          setSelectedSopUID(null);
+          setDicomWebFileUrl(null);
+        }
+      }
+    };
+
+    resolveDicomWebFile();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedStudy?.id, selectedStudy?.is_dicom, selectedStudy?.study_instance_uid, token]);
+
+  const onSelectDicomInstance = (sopUID: string) => {
+    if (!selectedStudy?.study_instance_uid) return;
+    const studyUID = encodeURIComponent(selectedStudy.study_instance_uid);
+    setSelectedSopUID(sopUID);
+    setDicomWebFileUrl(`/api/hypergrid/dicom/studies/${studyUID}/instances/${encodeURIComponent(sopUID)}/file`);
+  };
+
+  const openDicomwebDebugUrl = () => {
+    if (!dicomWebFileUrl) return;
+    window.open(dicomWebFileUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const copyDicomwebUrl = async () => {
+    if (!dicomWebFileUrl) return;
+    try {
+      await navigator.clipboard.writeText(dicomWebFileUrl);
+      window.alert('DICOMweb instance endpoint copied to clipboard.');
+    } catch {
+      window.alert('Unable to copy. Please copy the URL manually from the debug panel.');
+    }
+  };
+
+  const verifyDicomwebApi = async () => {
+    if (!selectedStudy?.study_instance_uid || !token) return;
+    const studyUID = encodeURIComponent(selectedStudy.study_instance_uid);
+    setVerifyingDicomweb(true);
+    try {
+      const started = performance.now();
+      const res = await axios.get(`/api/hypergrid/dicom/studies/${studyUID}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const elapsed = Math.round(performance.now() - started);
+      const instances = Array.isArray(res.data?.instances) ? res.data.instances : [];
+      const selectedPresent = selectedSopUID
+        ? instances.some((inst: DicomWebInstance) => inst.sop_instance_uid === selectedSopUID)
+        : instances.length > 0;
+
+      setDicomwebVerification({
+        ok: Boolean(res.data?.success) && selectedPresent,
+        status: res.status,
+        latencyMs: elapsed,
+        message: selectedPresent
+          ? `Study metadata reachable; instances=${instances.length}`
+          : 'Study reachable, but selected SOP instance not found',
+        checkedAt: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      const elapsed = 0;
+      setDicomwebVerification({
+        ok: false,
+        status: e?.response?.status || 0,
+        latencyMs: elapsed,
+        message: e?.response?.data?.message || e?.message || 'Verification failed',
+        checkedAt: new Date().toISOString(),
+      });
+    } finally {
+      setVerifyingDicomweb(false);
+    }
+  };
+
+  const updateCriticalAlertStatus = async (alertId: number, status: 'Acknowledged' | 'Escalated') => {
+    if (!token) return;
+    setAlertActionLoadingId(alertId);
+    try {
+      await axios.put(
+        `${API_BASE}/critical-alerts/${alertId}/ack`,
+        {
+          status,
+          acknowledgmentNotes: status === 'Escalated' ? 'Escalated from RIS widget' : 'Acknowledged from RIS widget',
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (selectedStudy?.id) {
+        await fetchCriticalAlerts(selectedStudy.id);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setAlertActionLoadingId(null);
+    }
+  };
 
   const handleDelete = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -513,7 +881,7 @@ const LabRIS: React.FC = () => {
                 <ScanLine className="text-indigo-400" size={18} />
                 RIS Worklist
               </h1>
-              <p className="text-xs text-gray-500">{labData.labName || 'Radiology'} · {total} studies</p>
+              <p className="text-xs text-gray-500">{displayLabName} · {total} studies</p>
             </div>
             <button
               onClick={() => setShowUpload(true)}
@@ -751,15 +1119,41 @@ const LabRIS: React.FC = () => {
             {/* Tab content */}
             <div className="flex-1 overflow-hidden">
               {activeTab === 'viewer' && (
-                <DicomViewer
-                  studyId={selectedStudy.id}
-                  fileName={selectedStudy.file_name}
-                  mimeType={selectedStudy.mime_type}
-                  isDicom={selectedStudy.is_dicom}
-                  patientName={selectedStudy.patient_name}
-                  modality={selectedStudy.modality}
-                  studyDate={fmt(selectedStudy.study_date)}
-                />
+                <div className="h-full flex flex-col">
+                  <div className="px-4 py-2 border-b border-gray-800 flex items-center gap-3 flex-wrap bg-gray-950/70">
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full ${dicomWebFileUrl ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-800 text-slate-300'}`}>
+                      Source: {dicomWebFileUrl ? 'DICOMweb' : 'RIS File'}
+                    </span>
+                    {selectedStudy.is_dicom && dicomWebInstances.length > 0 && (
+                      <>
+                        <span className="text-xs text-gray-400">Instance</span>
+                        <select
+                          value={selectedSopUID || ''}
+                          onChange={(e) => onSelectDicomInstance(e.target.value)}
+                          className="px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-white"
+                        >
+                          {dicomWebInstances.map((inst, idx) => (
+                            <option key={inst.sop_instance_uid} value={inst.sop_instance_uid}>
+                              {`#${idx + 1} · ${inst.sop_instance_uid.slice(-10)} · ${fmtSize(Number(inst.file_size || 0))}`}
+                            </option>
+                          ))}
+                        </select>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex-1 min-h-0">
+                    <DicomViewer
+                      studyId={selectedStudy.id}
+                      fileName={selectedStudy.file_name}
+                      mimeType={selectedStudy.mime_type}
+                      isDicom={selectedStudy.is_dicom}
+                      patientName={selectedStudy.patient_name}
+                      modality={selectedStudy.modality}
+                      studyDate={fmt(selectedStudy.study_date)}
+                      fileUrlOverride={dicomWebFileUrl || undefined}
+                    />
+                  </div>
+                </div>
               )}
 
               {activeTab === 'info' && (
@@ -817,11 +1211,151 @@ const LabRIS: React.FC = () => {
                       ))}
                     </div>
                   </div>
+
+                  {/* DICOMweb debug helpers */}
+                  {selectedStudy.is_dicom && (
+                    <div className="mt-6 bg-gray-900 rounded-lg p-4 border border-gray-800">
+                      <h4 className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">DICOMweb Debug</h4>
+                      <div className="grid grid-cols-1 gap-2 text-xs">
+                        <div className="bg-gray-950 border border-gray-800 rounded p-2">
+                          <div className="text-gray-500 mb-1">Study UID</div>
+                          <div className="font-mono text-gray-300 break-all">{selectedStudy.study_instance_uid || '—'}</div>
+                        </div>
+                        <div className="bg-gray-950 border border-gray-800 rounded p-2">
+                          <div className="text-gray-500 mb-1">Selected SOP UID</div>
+                          <div className="font-mono text-gray-300 break-all">{selectedSopUID || '—'}</div>
+                        </div>
+                        <div className="bg-gray-950 border border-gray-800 rounded p-2">
+                          <div className="text-gray-500 mb-1">Instance Endpoint</div>
+                          <div className="font-mono text-gray-300 break-all">{dicomWebFileUrl || 'Not resolved (RIS fallback active)'}</div>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          onClick={openDicomwebDebugUrl}
+                          disabled={!dicomWebFileUrl}
+                          className="px-3 py-1.5 text-xs rounded-lg border bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700 disabled:opacity-40"
+                        >
+                          Open DICOMweb URL
+                        </button>
+                        <button
+                          onClick={copyDicomwebUrl}
+                          disabled={!dicomWebFileUrl}
+                          className="px-3 py-1.5 text-xs rounded-lg border bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700 disabled:opacity-40"
+                        >
+                          Copy Endpoint
+                        </button>
+                        <button
+                          onClick={verifyDicomwebApi}
+                          disabled={verifyingDicomweb || !selectedStudy.study_instance_uid}
+                          className="px-3 py-1.5 text-xs rounded-lg border bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700 disabled:opacity-40"
+                        >
+                          {verifyingDicomweb ? 'Verifying...' : 'Verify via API'}
+                        </button>
+                      </div>
+                      {dicomwebVerification && (
+                        <div className="mt-3 text-xs rounded border border-gray-800 bg-gray-950 p-2">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`px-2 py-0.5 rounded-full ${dicomwebVerification.ok ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>
+                              {dicomwebVerification.ok ? 'PASS' : 'FAIL'}
+                            </span>
+                            <span className="text-gray-400">HTTP {dicomwebVerification.status || '—'}</span>
+                            <span className="text-gray-400">{dicomwebVerification.latencyMs} ms</span>
+                          </div>
+                          <div className="text-gray-300">{dicomwebVerification.message}</div>
+                          <div className="text-gray-500 mt-1">Checked: {fmtDateTime(dicomwebVerification.checkedAt)}</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
               {activeTab === 'report' && (
                 <div className="h-full overflow-y-auto p-6">
+                  <div className="mb-4 rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                        <AlertTriangle size={14} className="text-red-400" />
+                        Critical Alerts
+                      </h4>
+                      <button
+                        onClick={() => selectedStudy?.id && fetchCriticalAlerts(selectedStudy.id)}
+                        className="text-xs text-gray-400 hover:text-white flex items-center gap-1"
+                      >
+                        <RefreshCw size={11} /> Refresh
+                      </button>
+                    </div>
+
+                    {cronHealthTask && (
+                      <div className="mb-3 text-xs rounded-lg border border-gray-800 bg-gray-950/70 p-2 text-gray-400">
+                        <span className="text-gray-300">Escalation Cron:</span>{' '}
+                        {cronHealthTask.lastStatus === 'success' ? (
+                          <span className="text-emerald-400">Healthy</span>
+                        ) : cronHealthTask.lastStatus === 'error' ? (
+                          <span className="text-red-400">Error</span>
+                        ) : (
+                          <span className="text-amber-400">{cronHealthTask.lastStatus || 'unknown'}</span>
+                        )}
+                        {' · '}Last run: {fmtDateTime(cronHealthTask.lastRun)}
+                        {cronHealthTask.lastError ? (
+                          <span className="text-red-400"> · {cronHealthTask.lastError}</span>
+                        ) : null}
+                      </div>
+                    )}
+
+                    {alertsLoading ? (
+                      <div className="text-xs text-gray-500">Loading alerts…</div>
+                    ) : alertsError ? (
+                      <div className="text-xs text-red-400">{alertsError}</div>
+                    ) : criticalAlerts.length === 0 ? (
+                      <div className="text-xs text-gray-500">No critical alerts for this study.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {criticalAlerts.map((alert) => (
+                          <div key={alert.id} className="rounded-lg border border-gray-800 bg-gray-950/60 p-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="text-sm text-white">{alert.alert_reason}</div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  Raised: {fmtDateTime(alert.raised_at)} · Due: {fmtDateTime(alert.due_at)}
+                                </div>
+                              </div>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                alert.status === 'Open'
+                                  ? 'bg-red-900 text-red-300'
+                                  : alert.status === 'Escalated'
+                                    ? 'bg-amber-900 text-amber-300'
+                                    : 'bg-emerald-900 text-emerald-300'
+                              }`}>
+                                {alert.status}
+                              </span>
+                            </div>
+
+                            {alert.status === 'Open' && (
+                              <div className="mt-2 flex gap-2">
+                                <button
+                                  onClick={() => updateCriticalAlertStatus(alert.id, 'Acknowledged')}
+                                  disabled={alertActionLoadingId === alert.id}
+                                  className="text-xs px-2 py-1 rounded bg-emerald-800 text-emerald-200 hover:bg-emerald-700 disabled:opacity-50"
+                                >
+                                  Acknowledge
+                                </button>
+                                <button
+                                  onClick={() => updateCriticalAlertStatus(alert.id, 'Escalated')}
+                                  disabled={alertActionLoadingId === alert.id}
+                                  className="text-xs px-2 py-1 rounded bg-amber-800 text-amber-200 hover:bg-amber-700 disabled:opacity-50"
+                                >
+                                  Escalate
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <ReportPanel
                     study={selectedStudy}
                     onSaved={updated => setStudies(prev => prev.map(s => s.id === updated.id ? updated : s))}

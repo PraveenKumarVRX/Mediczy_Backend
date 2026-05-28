@@ -13,6 +13,34 @@ import { Op } from 'sequelize';
 
 const router = express.Router();
 
+const parseAssignedUserIds = (coupon) => {
+  const metadata = coupon?.metadata || {};
+  const ids = metadata.assignedUserIds;
+
+  if (!ids) return [];
+
+  if (Array.isArray(ids)) {
+    return ids
+      .map((id) => parseInt(id, 10))
+      .filter((id) => Number.isInteger(id) && id > 0);
+  }
+
+  if (typeof ids === 'string') {
+    return ids
+      .split(',')
+      .map((id) => parseInt(id.trim(), 10))
+      .filter((id) => Number.isInteger(id) && id > 0);
+  }
+
+  return [];
+};
+
+const isCouponEligibleForUser = (coupon, userId) => {
+  const assignedUserIds = parseAssignedUserIds(coupon);
+  if (!assignedUserIds.length) return true;
+  return assignedUserIds.includes(parseInt(userId, 10));
+};
+
 /**
  * GET /api/wallet
  * Get user wallet balance and summary
@@ -323,6 +351,78 @@ router.get('/rewards', authUser, async (req, res) => {
 });
 
 /**
+ * GET /api/wallet/my-coupons
+ * Get active coupons available for the logged-in user
+ */
+router.get('/my-coupons', authUser, async (req, res) => {
+  try {
+    const now = new Date();
+    const coupons = await Coupon.findAll({
+      where: {
+        isActive: true,
+        validFrom: { [Op.lte]: now },
+        validUntil: { [Op.gte]: now }
+      },
+      order: [['validUntil', 'ASC'], ['createdAt', 'DESC']],
+      limit: 50
+    });
+
+    const eligibleCoupons = [];
+
+    for (const coupon of coupons) {
+      if (!isCouponEligibleForUser(coupon, req.user.id)) {
+        continue;
+      }
+
+      if (coupon.usageCount >= coupon.maxUsage) {
+        continue;
+      }
+
+      const userUsage = await CouponUsage.count({
+        where: {
+          couponId: coupon.id,
+          userId: req.user.id
+        }
+      });
+
+      const remainingForUser = Math.max(0, (coupon.maxUsagePerUser || 1) - userUsage);
+      if (remainingForUser <= 0) {
+        continue;
+      }
+
+      const assignedUserIds = parseAssignedUserIds(coupon);
+
+      eligibleCoupons.push({
+        id: coupon.id,
+        code: coupon.code,
+        type: coupon.type,
+        value: Number(coupon.value),
+        minPurchase: Number(coupon.minPurchase || 0),
+        description: coupon.description,
+        corporateName: coupon.corporateName,
+        validUntil: coupon.validUntil,
+        maxUsagePerUser: coupon.maxUsagePerUser,
+        userUsage,
+        remainingForUser,
+        isPersonalized: assignedUserIds.length > 0
+      });
+    }
+
+    res.json({
+      success: true,
+      coupons: eligibleCoupons
+    });
+  } catch (error) {
+    console.error('Get my coupons error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch available coupons',
+      error: error.message
+    });
+  }
+});
+
+/**
  * POST /api/wallet/validate-coupon
  * Validate coupon code for HC purchase
  */
@@ -351,6 +451,13 @@ router.post('/validate-coupon', authUser, async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Invalid or expired coupon code'
+      });
+    }
+
+    if (!isCouponEligibleForUser(coupon, req.user.id)) {
+      return res.status(403).json({
+        success: false,
+        message: 'This coupon is not assigned to your account'
       });
     }
     
@@ -474,6 +581,13 @@ router.post('/create-order', authUser, async (req, res) => {
         return res.status(400).json({
           success: false,
           message: 'Invalid or expired coupon code'
+        });
+      }
+
+      if (!isCouponEligibleForUser(coupon, req.user.id)) {
+        return res.status(403).json({
+          success: false,
+          message: 'This coupon is not assigned to your account'
         });
       }
       
@@ -743,6 +857,10 @@ router.post('/redeem-free-coupon', authUser, async (req, res) => {
 
     if (!coupon) {
       return res.status(400).json({ success: false, message: 'Invalid or expired coupon' });
+    }
+
+    if (!isCouponEligibleForUser(coupon, req.user.id)) {
+      return res.status(403).json({ success: false, message: 'This coupon is not assigned to your account' });
     }
 
     // Only FREE_HC coupons can be redeemed for free

@@ -43,6 +43,20 @@
 - **Async Tasks**: [ASYNC_TASKS.md](ASYNC_TASKS.md) - Background job processing guide
 - **CRM Quick Start**: [CRM_QUICKSTART.md](CRM_QUICKSTART.md) - Quick reference card
 
+## Copilot AI CTO Playbook
+
+- **System Instructions**: [.github/copilot-instructions.md](.github/copilot-instructions.md)
+- **Operator Cheatsheet**: [.github/copilot-cheatsheet.md](.github/copilot-cheatsheet.md)
+- **Prompt Templates**: [.github/copilot-prompt-templates.md](.github/copilot-prompt-templates.md)
+
+Use this flow for day-to-day execution:
+
+1. Scope and plan: `/pm` or `/discovery`
+2. Design and constraints: `/arch`, `/ux`, `/ui`
+3. Build safely: `/build` or `/backend` + `/frontend`
+4. Verify: `/qa`
+5. Release gate: `/release` or `/ship`
+
 ## Admin Setup & Master Data Uploads
 
 The platform now supports an Admin workflow for uploading master data (Doctors, Labs, Pharmacies) in bulk.

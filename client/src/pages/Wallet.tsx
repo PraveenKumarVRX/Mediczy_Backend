@@ -18,7 +18,9 @@ import {
   Flame,
   FootprintsIcon,
   HeartPulse,
-  Calendar
+  Calendar,
+  Ticket,
+  Clock
 } from "lucide-react";
 import {
   Table,
@@ -40,10 +42,29 @@ export default function Wallet() {
   const [wallet, setWallet] = useState(null);
   const [claiming, setClaiming] = useState(false);
   const [showPurchaseDialog, setShowPurchaseDialog] = useState(false);
+  const [prefillCouponCode, setPrefillCouponCode] = useState('');
+  const [offers, setOffers] = useState<any[]>([]);
+  const [loadingOffers, setLoadingOffers] = useState(false);
 
   useEffect(() => {
     fetchWallet();
+    fetchOffers();
   }, []);
+
+  const fetchOffers = async () => {
+    try {
+      setLoadingOffers(true);
+      const response = await api.get('/wallet/my-coupons');
+      if (response.data?.success) {
+        setOffers(response.data.coupons || []);
+      }
+    } catch (error) {
+      setOffers([]);
+      console.error('Offers API Error:', error);
+    } finally {
+      setLoadingOffers(false);
+    }
+  };
 
   const fetchWallet = async () => {
     try {
@@ -117,6 +138,12 @@ export default function Wallet() {
     return type === 'EARN' || type === 'PURCHASE' || type === 'BONUS' ? 'text-green-600' : 'text-red-600';
   };
 
+  const couponSummary = (offer: any) => {
+    if (offer.type === 'PERCENTAGE') return `${offer.value}% off`;
+    if (offer.type === 'FREE_HC') return `+${offer.value} free HC`;
+    return `+${offer.value} bonus HC`;
+  };
+
   if (loading) {
     return (
       <div className="container mx-auto p-6">
@@ -176,7 +203,7 @@ export default function Wallet() {
             <h1 className="text-2xl md:text-3xl font-bold mb-2">Health Coins Wallet</h1>
             <p className="text-slate-300 text-sm md:text-base">Earn and spend health coins for rewards and services</p>
           </div>
-          <Button onClick={() => setShowPurchaseDialog(true)} size="lg" className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg shadow-emerald-500/30 self-start">
+          <Button onClick={() => { setPrefillCouponCode(''); setShowPurchaseDialog(true); }} size="lg" className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg shadow-emerald-500/30 self-start">
             <Plus className="h-4 w-4 mr-2" />
             Buy Coins
           </Button>
@@ -322,6 +349,61 @@ export default function Wallet() {
         </motion.div>
       )}
 
+      {/* Offers Section */}
+      <motion.div variants={item}>
+      <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200/70 dark:from-amber-950/20 dark:to-orange-950/20 dark:border-amber-900/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Ticket className="h-5 w-5 text-amber-600" />
+            Offers & Coupon Codes
+          </CardTitle>
+          <CardDescription>
+            Personalized offers for your billing and wallet purchases
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loadingOffers ? (
+            <p className="text-sm text-muted-foreground">Loading your offers...</p>
+          ) : offers.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {offers.slice(0, 6).map((offer) => (
+                <div key={offer.id} className="rounded-lg border border-amber-200/80 bg-white/80 p-3 dark:border-amber-900/40 dark:bg-slate-900/30">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm tracking-wide">{offer.code}</span>
+                        <Badge variant="secondary" className="text-[10px]">{couponSummary(offer)}</Badge>
+                        {offer.isPersonalized && <Badge className="bg-amber-600 text-white text-[10px]">For You</Badge>}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">{offer.description || 'Apply this code while buying coins'}</p>
+                      <div className="mt-1 text-[11px] text-muted-foreground flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />Valid till {new Date(offer.validUntil).toLocaleDateString()}</span>
+                        <span>Uses left: {offer.remainingForUser}</span>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setPrefillCouponCode(offer.code);
+                        setShowPurchaseDialog(true);
+                      }}
+                    >
+                      Apply
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              No active offers are assigned to your account right now.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      </motion.div>
+
       {/* Transaction History */}
       <motion.div variants={item}>
       <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
@@ -386,7 +468,11 @@ export default function Wallet() {
       <PurchaseCoinsDialog
         open={showPurchaseDialog}
         onOpenChange={setShowPurchaseDialog}
-        onSuccess={fetchWallet}
+        onSuccess={async () => {
+          await fetchWallet();
+          await fetchOffers();
+        }}
+        prefillCouponCode={prefillCouponCode}
       />
     </motion.div>
   );

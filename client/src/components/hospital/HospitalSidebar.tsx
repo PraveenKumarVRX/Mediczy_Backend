@@ -12,6 +12,7 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  X,
   Shield,
   Bed,
   Stethoscope,
@@ -34,7 +35,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useHospitalAuth } from "@/hooks/useHospitalAuth";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -52,6 +52,8 @@ interface HospitalSidebarProps {
    *  When provided, items with a matching `capability` that is NOT in this
    *  list are rendered in a disabled/locked state. */
   capabilities?: string[];
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
 const mainNavItems: SidebarItem[] = [
@@ -79,7 +81,6 @@ const clinicalItems: SidebarItem[] = [
 const billingItems: SidebarItem[] = [
   { icon: Shield, label: "Insurance Claims Cockpit", href: "/hospital/insurance-claims?tab=claims", capability: "insurance_billing" },
   { icon: FileText, label: "Insurance Payer Setup", href: "/hospital/insurance-payer-management", capability: "insurance_billing" },
-  { icon: Shield, label: "Insurance Management", href: "/hospital/insurance-claims?tab=claims", capability: "insurance_billing" },
   { icon: Receipt, label: "Billing & Invoicing", href: "/hospital/billing", capability: "billing" },
 ];
 
@@ -90,7 +91,7 @@ const systemItems: SidebarItem[] = [
   { icon: HelpCircle, label: "Help & Support", href: "/hospital/support" },
 ];
 
-const HospitalSidebar = ({ capabilities }: HospitalSidebarProps) => {
+const HospitalSidebar = ({ capabilities, mobileOpen = false, onCloseMobile }: HospitalSidebarProps) => {
   const location = useLocation();
   const { logout } = useHospitalAuth();
   const [collapsed, setCollapsed] = useState(false);
@@ -109,8 +110,27 @@ const HospitalSidebar = ({ capabilities }: HospitalSidebarProps) => {
     return capabilities.includes(item.capability);
   };
 
+  const isItemActive = (href: string): boolean => {
+    const [itemPath, itemQuery] = href.split("?");
+    if (location.pathname !== itemPath) return false;
+    if (!itemQuery) return true;
+
+    const expected = new URLSearchParams(itemQuery);
+    const current = new URLSearchParams(location.search);
+    for (const [key, value] of expected.entries()) {
+      if (current.get(key) !== value) return false;
+    }
+    return true;
+  };
+
+  const handleNavSelect = () => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      onCloseMobile?.();
+    }
+  };
+
   const NavItem = ({ item }: { item: SidebarItem }) => {
-    const active = location.pathname === item.href;
+    const active = isItemActive(item.href);
     const accessible = isAccessible(item);
 
     const inner = (
@@ -162,17 +182,28 @@ const HospitalSidebar = ({ capabilities }: HospitalSidebarProps) => {
     }
 
     return (
-      <Link to={item.href}>
+      <Link to={item.href} onClick={handleNavSelect}>
         {inner}
       </Link>
     );
   };
 
   return (
+    <>
+      {mobileOpen && (
+        <button
+          type="button"
+          aria-label="Close navigation overlay"
+          className="fixed inset-0 z-30 bg-black/40 md:hidden"
+          onClick={onCloseMobile}
+        />
+      )}
+
     <aside
       className={cn(
-        "fixed left-0 top-0 z-40 h-screen bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 flex flex-col transition-all duration-300 shadow-xl",
-        collapsed ? "w-16" : "w-64"
+        "fixed left-0 top-0 z-40 h-screen bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 flex flex-col transition-all duration-300 shadow-xl w-64 md:translate-x-0",
+        mobileOpen ? "translate-x-0" : "-translate-x-full",
+        collapsed && "md:w-16"
       )}
     >
       {/* Header */}
@@ -193,6 +224,16 @@ const HospitalSidebar = ({ capabilities }: HospitalSidebarProps) => {
             <Building2 className="w-5 h-5 text-white" />
           </div>
         )}
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden text-slate-300 hover:text-white hover:bg-slate-800/60"
+          onClick={onCloseMobile}
+          aria-label="Close hospital navigation"
+        >
+          <X className="w-4 h-4" />
+        </Button>
       </div>
 
       {/* Navigation */}
@@ -262,7 +303,7 @@ const HospitalSidebar = ({ capabilities }: HospitalSidebarProps) => {
           size="sm"
           onClick={() => setCollapsed(!collapsed)}
           className={cn(
-            "w-full justify-center text-slate-400 hover:text-white hover:bg-slate-800/60",
+            "hidden md:flex w-full justify-center text-slate-400 hover:text-white hover:bg-slate-800/60",
             !collapsed && "justify-start"
           )}
         >
@@ -291,6 +332,7 @@ const HospitalSidebar = ({ capabilities }: HospitalSidebarProps) => {
         </Button>
       </div>
     </aside>
+    </>
   );
 };
 

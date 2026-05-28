@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
 import {  
   Power,
   AlertTriangle,
@@ -256,22 +257,44 @@ export default function SIBControlDashboard() {
     }
   };
 
+  const systemSteps = [
+    {
+      label: 'Monitor Health',
+      done: Boolean(health),
+      helper: 'Live system status, kill-switch state, and throughput.'
+    },
+    {
+      label: 'Review Approvals',
+      done: pendingApprovals.length === 0,
+      helper: 'Validate AI decisions requiring human oversight.'
+    },
+    {
+      label: 'Enforce Safety',
+      done: !health?.killSwitchActive,
+      helper: 'Use controls only when incident conditions are confirmed.'
+    }
+  ];
+
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Brain className="h-8 w-8" />
-            SIB Control Layer
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            AI Safety Framework & Decision Management
-          </p>
-        </div>
-        
-        <div className="flex items-center gap-4">
+    <div className="max-w-7xl mx-auto space-y-6 p-4 md:p-6">
+      <section className="rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6 text-white shadow-2xl">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold tracking-wide mb-3">
+              <Shield className="h-3.5 w-3.5" />
+              AI Safety Ops Console
+            </div>
+            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
+              <Brain className="h-7 w-7 text-cyan-300" />
+              SIB Control Layer
+            </h1>
+            <p className="text-slate-300 mt-1">
+              Human-in-the-loop governance for critical AI decisions.
+            </p>
+          </div>
+
           {health && (
-            <Badge variant={health.killSwitchActive ? 'destructive' : 'default'} className="text-lg py-2 px-4">
+            <Badge variant={health.killSwitchActive ? 'destructive' : 'default'} className="text-sm py-2 px-4 h-fit">
               {health.killSwitchActive ? (
                 <><Power className="h-4 w-4 mr-2" /> Kill Switch ACTIVE</>
               ) : (
@@ -280,7 +303,16 @@ export default function SIBControlDashboard() {
             </Badge>
           )}
         </div>
-      </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-5">
+          {systemSteps.map((step) => (
+            <div key={step.label} className={`rounded-xl border px-4 py-3 ${step.done ? 'border-emerald-300/40 bg-emerald-500/20' : 'border-white/20 bg-white/10'}`}>
+              <p className="text-sm font-semibold">{step.label}</p>
+              <p className="text-xs text-slate-200 mt-0.5">{step.helper}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
       {/* Health Status */}
       {health && (
@@ -330,7 +362,7 @@ export default function SIBControlDashboard() {
       )}
 
       <Tabs defaultValue="approvals" className="space-y-4">
-        <TabsList>
+        <TabsList className="flex flex-wrap h-auto">
           <TabsTrigger value="approvals" className="flex items-center gap-2">
             <Clock className="h-4 w-4" />
             Pending Approvals ({pendingApprovals.length})
@@ -375,7 +407,9 @@ export default function SIBControlDashboard() {
                         Requested: {new Date(approval.requestedAt).toLocaleString()}
                       </CardDescription>
                     </div>
-                    <Badge variant="outline">Awaiting Review</Badge>
+                    <Badge variant="outline" className={approval.decision.confidence >= 0.8 ? 'border-red-300 text-red-700' : 'border-amber-300 text-amber-700'}>
+                      {approval.decision.confidence >= 0.8 ? 'High-impact' : 'Moderate-impact'}
+                    </Badge>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -391,7 +425,13 @@ export default function SIBControlDashboard() {
                     </pre>
                   </div>
 
-                  <div className="flex gap-2">
+                  <Alert>
+                    <AlertDescription className="text-xs">
+                      Verify patient safety and policy compliance before execution. Approval writes to immutable audit logs.
+                    </AlertDescription>
+                  </Alert>
+
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <Button
                       onClick={() => handleApproveDecision(approval.approvalId, 'Approved from dashboard')}
                       disabled={loading}
@@ -539,6 +579,10 @@ export default function SIBControlDashboard() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                Activate kill switch only for confirmed incident scenarios. This action blocks all AI decision pathways.
+              </div>
+
               {!showKillSwitchConfirm ? (
                 <Button
                   variant={health?.killSwitchActive ? 'default' : 'destructive'}
@@ -558,12 +602,11 @@ export default function SIBControlDashboard() {
                     </p>
                     
                     {health?.killSwitchActive && (
-                      <input
+                      <Input
                         type="password"
                         placeholder="Admin Token (SIB_ADMIN_TOKEN)"
                         value={adminToken}
                         onChange={(e) => setAdminToken(e.target.value)}
-                        className="w-full px-3 py-2 border rounded"
                       />
                     )}
 

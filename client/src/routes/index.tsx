@@ -142,6 +142,9 @@ const DoctorVoiceScribe        = lazy(() => import("@/pages/doctor/DoctorVoiceSc
 const DoctorCalculators        = lazy(() => import("@/pages/doctor/DoctorCalculators"));
 const DoctorVoiceAssistant     = lazy(() => import("@/pages/doctor/DoctorVoiceAssistant"));
 const DoctorMessaging          = lazy(() => import("@/pages/doctor/DoctorMessaging"));
+const DoctorWebinarDashboard   = lazy(() => import("@/pages/doctor/DoctorWebinarDashboard"));
+const WebinarListPage          = lazy(() => import("@/pages/webinar/WebinarListPage"));
+const WebinarRoomPage          = lazy(() => import("@/pages/webinar/WebinarRoomPage"));
 
 // ─── Admin ───────────────────────────────────────────────────────────────────
 const AdminLogin               = lazy(() => import("@/pages/admin/AdminLogin"));
@@ -921,6 +924,12 @@ const AppRoutes = () => {
         <Route path="/doctor/assistant"           element={<DoctorVoiceAssistant />} />
         <Route path="/doctor/messages"            element={<DoctorMessaging />} />
         <Route path="/doctor/imaging"             element={<DoctorImaging />} />
+        <Route path="/doctor/webinars"            element={<DoctorWebinarDashboard />} />
+        <Route path="/doctor/webinar/:webinarId/host" element={<WebinarRoomPage isHost={true} />} />
+
+        {/* ── Webinars ───────────────────────────────────────────────── */}
+        <Route path="/webinars"                   element={<WebinarListPage />} />
+        <Route path="/webinar/:webinarId"         element={<WebinarRoomPage />} />
 
         {/* ── Hospital ────────────────────────────────────────────────── */}
         <Route path="/hospital/register"                   element={<HospitalRegister />} />

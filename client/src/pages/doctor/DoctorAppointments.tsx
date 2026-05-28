@@ -101,7 +101,13 @@ const getDoctorCallState = (apt: Appointment) => {
   }
 
   const paymentStatus = normalizeStatus(apt.paymentStatus || "");
-  if (paymentStatus && !["paid", "credit"].includes(paymentStatus)) {
+  const consultationFee = Number(apt.consultationFee ?? 0);
+  const isNominalOrFreeConsultation = Number.isFinite(consultationFee) && consultationFee <= 1;
+  if (
+    paymentStatus &&
+    !["paid", "credit", "free", "complimentary", "coupon"].includes(paymentStatus) &&
+    !isNominalOrFreeConsultation
+  ) {
     return {
       show: true,
       enabled: false,

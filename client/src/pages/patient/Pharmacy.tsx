@@ -547,6 +547,27 @@ const Pharmacy = () => {
         </div>
       </motion.div>
 
+      <motion.div {...fadeUp(0.04)} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Card className="border-emerald-200/70 dark:border-emerald-900/40 bg-emerald-50/70 dark:bg-emerald-950/20">
+          <CardContent className="p-4">
+            <p className="text-xs text-emerald-700 dark:text-emerald-300">Network pharmacies</p>
+            <p className="text-lg font-semibold text-emerald-800 dark:text-emerald-200">Verified supply partners</p>
+          </CardContent>
+        </Card>
+        <Card className="border-blue-200/70 dark:border-blue-900/40 bg-blue-50/70 dark:bg-blue-950/20">
+          <CardContent className="p-4">
+            <p className="text-xs text-blue-700 dark:text-blue-300">Delivery tracking</p>
+            <p className="text-lg font-semibold text-blue-800 dark:text-blue-200">Real-time status updates</p>
+          </CardContent>
+        </Card>
+        <Card className="border-amber-200/70 dark:border-amber-900/40 bg-amber-50/70 dark:bg-amber-950/20">
+          <CardContent className="p-4">
+            <p className="text-xs text-amber-700 dark:text-amber-300">Prescription safety</p>
+            <p className="text-lg font-semibold text-amber-800 dark:text-amber-200">Rx checks for restricted meds</p>
+          </CardContent>
+        </Card>
+      </motion.div>
+
       {/* ━━━ Stats Grid ━━━ */}
       <motion.div {...fadeUp(0.08)} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[

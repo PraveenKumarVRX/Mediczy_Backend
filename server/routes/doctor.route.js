@@ -2883,8 +2883,17 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     }
 
     // Check if payment is completed (if required)
-    // Allow if: payment is marked as paid OR user has active membership plan
-    if (['online', 'video'].includes(appointment.consultationType) && appointment.paymentStatus !== 'paid') {
+    // Allow if: payment is settled, consultation fee is nominal/free, or user has active membership plan.
+    const normalizedPaymentStatus = String(appointment.paymentStatus || '').toLowerCase();
+    const isPaymentSettled = ['paid', 'credit'].includes(normalizedPaymentStatus);
+    const consultationFee = Number(appointment.consultationFee ?? appointment.paymentAmount ?? 0);
+    const isNominalOrFreeConsultation = Number.isFinite(consultationFee) && consultationFee <= 1;
+
+    if (
+      ['online', 'video'].includes(appointment.consultationType) &&
+      !isPaymentSettled &&
+      !isNominalOrFreeConsultation
+    ) {
       // Check if user has an active membership plan
       const activePlan = await UserPlan.findOne({
         where: {

@@ -11,7 +11,7 @@ export const BRAND = {
   signoff: 'Team SmartHealth',
   
   // Logo (update asset if needed)
-  logo: '/logo/SmartHealth_logo.png',
+  logo: '/logo/Mediqzy_logo.jpeg',
   
   // Colors (Tailwind classes)
   colors: {

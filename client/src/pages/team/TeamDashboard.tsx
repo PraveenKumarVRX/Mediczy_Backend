@@ -44,11 +44,11 @@ interface TeamUser {
   isActive: boolean;
 }
 
-const TeamDashboard = () => {
+const TeamDashboard = ({ initialTab }: { initialTab?: 'dashboard' | 'emails' } = {}) => {
   const navigate = useNavigate();
   const [teamUser, setTeamUser] = useState<TeamUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'emails'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'emails'>(initialTab ?? 'dashboard');
 
   useEffect(() => {
     const fetchTeamProfile = async () => {

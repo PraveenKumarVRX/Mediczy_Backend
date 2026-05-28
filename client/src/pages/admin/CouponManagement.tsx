@@ -57,6 +57,7 @@ export default function CouponManagement() {
     maxUsagePerUser: '1',
     validUntil: '',
     corporateName: '',
+    assignedUserIds: '',
     description: '',
     termsAndConditions: ''
   });
@@ -165,6 +166,7 @@ export default function CouponManagement() {
       maxUsagePerUser: '1',
       validUntil: '',
       corporateName: '',
+      assignedUserIds: '',
       description: '',
       termsAndConditions: ''
     });
@@ -172,11 +174,19 @@ export default function CouponManagement() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    const payload = {
+      ...formData,
+      assignedUserIds: formData.assignedUserIds
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean)
+    };
     
     if (editingCoupon) {
-      updateMutation.mutate({ id: editingCoupon.id, data: formData });
+      updateMutation.mutate({ id: editingCoupon.id, data: payload });
     } else {
-      createMutation.mutate(formData);
+      createMutation.mutate(payload);
     }
   };
 
@@ -191,6 +201,7 @@ export default function CouponManagement() {
       maxUsagePerUser: coupon.maxUsagePerUser.toString(),
       validUntil: coupon.validUntil ? format(new Date(coupon.validUntil), 'yyyy-MM-dd') : '',
       corporateName: coupon.corporateName || '',
+      assignedUserIds: Array.isArray(coupon.metadata?.assignedUserIds) ? coupon.metadata.assignedUserIds.join(', ') : '',
       description: coupon.description || '',
       termsAndConditions: coupon.termsAndConditions || ''
     });
@@ -323,6 +334,7 @@ export default function CouponManagement() {
                 <TableHead>Type</TableHead>
                 <TableHead>Value</TableHead>
                 <TableHead>Corporate</TableHead>
+                <TableHead>Audience</TableHead>
                 <TableHead>Usage</TableHead>
                 <TableHead>Valid Until</TableHead>
                 <TableHead>Status</TableHead>
@@ -345,6 +357,13 @@ export default function CouponManagement() {
                       {coupon.type === 'PERCENTAGE' ? `${coupon.value}%` : `${coupon.value} HC`}
                     </TableCell>
                     <TableCell>{coupon.corporateName || '-'}</TableCell>
+                    <TableCell>
+                      {Array.isArray(coupon.metadata?.assignedUserIds) && coupon.metadata.assignedUserIds.length > 0 ? (
+                        <Badge variant="outline">{coupon.metadata.assignedUserIds.length} user(s)</Badge>
+                      ) : (
+                        <Badge variant="secondary">All users</Badge>
+                      )}
+                    </TableCell>
                     <TableCell>
                       {coupon.usageCount} / {coupon.maxUsage}
                     </TableCell>
@@ -499,6 +518,16 @@ export default function CouponManagement() {
                 onChange={(e) => setFormData({ ...formData, corporateName: e.target.value })}
                 placeholder="Company Name"
               />
+            </div>
+
+            <div>
+              <Label>Assigned User IDs</Label>
+              <Input
+                value={formData.assignedUserIds}
+                onChange={(e) => setFormData({ ...formData, assignedUserIds: e.target.value })}
+                placeholder="101, 245, 902 (leave empty for all users)"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Comma-separated internal user IDs for user-specific coupon codes.</p>
             </div>
 
             <div>

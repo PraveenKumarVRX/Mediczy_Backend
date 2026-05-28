@@ -16,7 +16,10 @@
 
 import express      from 'express';
 import multer       from 'multer';
+import jwt          from 'jsonwebtoken';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import { authLab } from '../middleware/authLab.middleware.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
 import { connectPostgres }       from '../db/postgres.js';
 import { publishEvent }          from '../services/hypergrid-event-bus.service.js';
 import { s3Storage, s3PresignedUrl } from '../utils/s3-storage.js';
@@ -24,8 +27,38 @@ import { s3Storage, s3PresignedUrl } from '../utils/s3-storage.js';
 const router = express.Router();
 const upload = multer({ storage: s3Storage('dicom'), limits: { fileSize: 512 * 1024 * 1024 } }); // 512 MB
 
+const authDicomAccess = (req, res, next) => {
+  authLab(req, res, () => {
+    req.user = {
+      ...(req.user || {}),
+      ...(req.lab || {}),
+      id: req.lab?.id,
+      tenantId: req.lab?.id,
+      role: 'lab',
+    };
+    req.userRole = 'lab';
+    next();
+  });
+};
+
+const authAnyDicom = (req, res, next) => {
+  const authHeader = req.headers.authorization || '';
+  if (authHeader.toLowerCase().startsWith('bearer ')) {
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
+      if (decoded?.role === 'lab') {
+        return authDicomAccess(req, res, next);
+      }
+    } catch {
+      // Fall through to regular authUser handling.
+    }
+  }
+  return authUser(req, res, next);
+};
+
 // ── STOW-RS: Store studies ────────────────────────────────────────────────────
-router.post('/studies', authUser, upload.array('files'), async (req, res) => {
+router.post('/studies', authAnyDicom, upload.array('files'), async (req, res) => {
   try {
     const {
       studyInstanceUID, patientId, patientName, modality,
@@ -83,7 +116,7 @@ router.post('/studies', authUser, upload.array('files'), async (req, res) => {
 });
 
 // ── QIDO-RS: Query studies ────────────────────────────────────────────────────
-router.get('/studies', authUser, async (req, res) => {
+router.get('/studies', authAnyDicom, async (req, res) => {
   try {
     const { patientId, modality, studyDate, limit = 20, page = 1 } = req.query;
     const tenantId = req.user.tenantId || req.user.id;
@@ -111,7 +144,7 @@ router.get('/studies', authUser, async (req, res) => {
 });
 
 // ── WADO-RS: Retrieve study metadata ─────────────────────────────────────────
-router.get('/studies/:studyUID', authUser, async (req, res) => {
+router.get('/studies/:studyUID', authAnyDicom, async (req, res) => {
   try {
     const pool = await connectPostgres();
     const tenantId = req.user.tenantId || req.user.id;
@@ -133,7 +166,7 @@ router.get('/studies/:studyUID', authUser, async (req, res) => {
 });
 
 // ── Retrieve instance file ────────────────────────────────────────────────────
-router.get('/studies/:studyUID/instances/:sopUID/file', authUser, async (req, res) => {
+router.get('/studies/:studyUID/instances/:sopUID/file', authAnyDicom, async (req, res) => {
   try {
     const pool = await connectPostgres();
     const r = await pool.query(
@@ -151,7 +184,7 @@ router.get('/studies/:studyUID/instances/:sopUID/file', authUser, async (req, re
 });
 
 // ── Modality Worklist ─────────────────────────────────────────────────────────
-router.get('/worklist', authUser, async (req, res) => {
+router.get('/worklist', authAnyDicom, async (req, res) => {
   try {
     const { modality, date } = req.query;
     const tenantId = req.user.tenantId || req.user.id;
@@ -172,7 +205,7 @@ router.get('/worklist', authUser, async (req, res) => {
 });
 
 // ── Add worklist item ─────────────────────────────────────────────────────────
-router.post('/worklist', authUser, requireRole(['admin', 'hospital', 'doctor']), async (req, res) => {
+router.post('/worklist', authAnyDicom, requireRole(['admin', 'hospital', 'doctor']), async (req, res) => {
   try {
     const { patientId, patientName, modality, scheduledDate,
             scheduledTime, requestedProcedure, accessionNumber } = req.body;
@@ -195,7 +228,7 @@ router.post('/worklist', authUser, requireRole(['admin', 'hospital', 'doctor']),
 });
 
 // ── Attach structured report to study ────────────────────────────────────────
-router.post('/studies/:studyUID/report', authUser, requireRole(['admin', 'hospital', 'doctor']), async (req, res) => {
+router.post('/studies/:studyUID/report', authAnyDicom, requireRole(['admin', 'hospital', 'doctor']), async (req, res) => {
   try {
     const { findings, impression, reportedBy } = req.body;
     if (!findings) return res.status(400).json({ success: false, message: 'findings required' });

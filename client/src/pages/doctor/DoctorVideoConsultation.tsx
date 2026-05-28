@@ -129,6 +129,7 @@ const DoctorVideoConsultation = () => {
   const [showTranscriptionDialog, setShowTranscriptionDialog] = useState(false);
   const [selectedRecording, setSelectedRecording] = useState<any>(null);
   const [showOfflineScribe, setShowOfflineScribe] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   // UI state
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
@@ -542,10 +543,23 @@ const DoctorVideoConsultation = () => {
   };
 
   // Refresh all data
-  const handleRefresh = () => {
-    refetchStats();
-    refetchUpcoming();
-    refetchRecent();
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([refetchStats(), refetchUpcoming(), refetchRecent()]);
+      toast({
+        title: 'Refreshed',
+        description: 'Video consultation data updated',
+      });
+    } catch {
+      toast({
+        title: 'Refresh failed',
+        description: 'Unable to refresh consultation data',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   // Auto-join video call when appointmentId is passed in URL (from DoctorAppointments or emergency accept)
@@ -818,8 +832,8 @@ const DoctorVideoConsultation = () => {
               <p className="text-slate-600 dark:text-slate-400 mt-1">Connect with your patients virtually via secure HD video</p>
             </div>
             <div className="flex gap-2">
-              <Button onClick={handleRefresh} variant="outline" size="sm" className="gap-2">
-                <RefreshCw className="h-4 w-4" />
+              <Button onClick={handleRefresh} variant="outline" size="sm" className="gap-2" disabled={isRefreshing}>
+                <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                 Refresh
               </Button>
               <Button onClick={handleQuickStart} size="lg" className="gap-2 bg-teal-600 hover:bg-teal-700">

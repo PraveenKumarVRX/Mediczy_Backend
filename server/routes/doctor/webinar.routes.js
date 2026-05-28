@@ -5,7 +5,7 @@
 
 import express from 'express';
 import { AccessToken } from 'livekit-server-sdk';
-import { Sequelize } from 'sequelize';
+import { Sequelize, QueryTypes } from 'sequelize';
 
 const router = express.Router();
 
@@ -40,6 +40,8 @@ router.get('/my-webinars', verifyDoctor, async (req, res) => {
   try {
     const { status, page = 1, limit = 20 } = req.query;
     const doctorId = req.user.doctorId || req.user.id;
+    const pageNumber = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNumber = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
 
     let query = `
       SELECT 
@@ -67,15 +69,18 @@ router.get('/my-webinars', verifyDoctor, async (req, res) => {
     query += ` GROUP BY w.id, a.peak_concurrent_users, a.engagement_score`;
     query += ` ORDER BY w.scheduled_at DESC`;
     
-    const offset = (page - 1) * limit;
+    const offset = (pageNumber - 1) * limitNumber;
     query += ` LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
-    params.push(limit, offset);
+    params.push(limitNumber, offset);
 
-    const result = await sequelize.query(query, params);
+    const webinars = await sequelize.query(query, {
+      bind: params,
+      type: QueryTypes.SELECT
+    });
 
     res.json({
       success: true,
-      webinars: result.rows.map(w => ({
+      webinars: webinars.map(w => ({
         id: w.id,
         title: w.title,
         description: w.description,
@@ -107,12 +112,12 @@ router.get('/my-webinars', verifyDoctor, async (req, res) => {
 // ============================================
 // GET WEBINAR DETAILS (Doctor view)
 // ============================================
-router.get('/webinars/:id', verifyDoctor, async (req, res) => {
+router.get('/:id', verifyDoctor, async (req, res) => {
   try {
     const { id } = req.params;
     const doctorId = req.user.doctorId || req.user.id;
 
-    const result = await sequelize.query(
+    const webinars = await sequelize.query(
       `SELECT 
         w.*,
         a.total_registrations,
@@ -125,17 +130,17 @@ router.get('/webinars/:id', verifyDoctor, async (req, res) => {
       FROM webinars w
       LEFT JOIN webinar_analytics a ON w.id = a.webinar_id
       WHERE w.id = $1 AND w.doctor_id = $2`,
-      [id, doctorId]
+      { bind: [id, doctorId], type: QueryTypes.SELECT }
     );
 
-    if (result.rows.length === 0) {
+    if (webinars.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Webinar not found or access denied'
       });
     }
 
-    const webinar = result.rows[0];
+    const webinar = webinars[0];
 
     // Get approved registrations
     const registrations = await sequelize.query(
@@ -148,7 +153,7 @@ router.get('/webinars/:id', verifyDoctor, async (req, res) => {
       JOIN users u ON wr.user_id = u.id
       WHERE wr.webinar_id = $1 AND wr.registration_status = 'approved'
       ORDER BY wr.created_at DESC`,
-      [id]
+      { bind: [id], type: QueryTypes.SELECT }
     );
 
     res.json({
@@ -176,7 +181,7 @@ router.get('/webinars/:id', verifyDoctor, async (req, res) => {
           totalChatMessages: webinar.total_chat_messages,
           engagementScore: webinar.engagement_score
         },
-        attendees: registrations.rows,
+        attendees: registrations,
         startedAt: webinar.started_at,
         endedAt: webinar.ended_at
       }
@@ -194,7 +199,7 @@ router.get('/webinars/:id', verifyDoctor, async (req, res) => {
 // ============================================
 // START WEBINAR
 // ============================================
-router.post('/webinars/:id/start', verifyDoctor, async (req, res) => {
+router.post('/:id/start', verifyDoctor, async (req, res) => {
   try {
     const { id } = req.params;
     const doctorId = req.user.doctorId || req.user.id;
@@ -202,17 +207,17 @@ router.post('/webinars/:id/start', verifyDoctor, async (req, res) => {
     // Verify webinar belongs to doctor
     const checkResult = await sequelize.query(
       `SELECT * FROM webinars WHERE id = $1 AND doctor_id = $2`,
-      [id, doctorId]
+      { bind: [id, doctorId], type: QueryTypes.SELECT }
     );
 
-    if (checkResult.rows.length === 0) {
+    if (checkResult.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Webinar not found or access denied'
       });
     }
 
-    const webinar = checkResult.rows[0];
+    const webinar = checkResult[0];
 
     if (webinar.status === 'live') {
       return res.status(400).json({
@@ -233,7 +238,7 @@ router.post('/webinars/:id/start', verifyDoctor, async (req, res) => {
       `UPDATE webinars 
        SET status = 'live', started_at = CURRENT_TIMESTAMP 
        WHERE id = $1`,
-      [id]
+      { bind: [id] }
     );
 
     // Generate LiveKit token for host
@@ -293,7 +298,7 @@ router.post('/webinars/:id/start', verifyDoctor, async (req, res) => {
 // ============================================
 // END WEBINAR
 // ============================================
-router.post('/webinars/:id/end', verifyDoctor, async (req, res) => {
+router.post('/:id/end', verifyDoctor, async (req, res) => {
   try {
     const { id } = req.params;
     const doctorId = req.user.doctorId || req.user.id;
@@ -301,17 +306,17 @@ router.post('/webinars/:id/end', verifyDoctor, async (req, res) => {
     // Verify webinar belongs to doctor
     const checkResult = await sequelize.query(
       `SELECT * FROM webinars WHERE id = $1 AND doctor_id = $2`,
-      [id, doctorId]
+      { bind: [id, doctorId], type: QueryTypes.SELECT }
     );
 
-    if (checkResult.rows.length === 0) {
+    if (checkResult.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Webinar not found or access denied'
       });
     }
 
-    const webinar = checkResult.rows[0];
+    const webinar = checkResult[0];
 
     if (webinar.status !== 'live') {
       return res.status(400).json({
@@ -321,13 +326,14 @@ router.post('/webinars/:id/end', verifyDoctor, async (req, res) => {
     }
 
     // Update webinar status to completed
-    const result = await sequelize.query(
+    const [updatedRows] = await sequelize.query(
       `UPDATE webinars 
        SET status = 'completed', ended_at = CURRENT_TIMESTAMP 
        WHERE id = $1
        RETURNING *`,
-      [id]
+      { bind: [id] }
     );
+    const updatedWebinar = updatedRows[0];
 
     // Update all attendees who haven't left
     await sequelize.query(
@@ -335,18 +341,18 @@ router.post('/webinars/:id/end', verifyDoctor, async (req, res) => {
        SET left_at = CURRENT_TIMESTAMP,
            duration = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - joined_at))::INTEGER
        WHERE webinar_id = $1 AND joined_at IS NOT NULL AND left_at IS NULL`,
-      [id]
+      { bind: [id] }
     );
 
     res.json({
       success: true,
       message: 'Webinar ended successfully',
       webinar: {
-        id: result.rows[0].id,
+        id: updatedWebinar.id,
         status: 'completed',
-        startedAt: result.rows[0].started_at,
-        endedAt: result.rows[0].ended_at,
-        duration: Math.round((new Date(result.rows[0].ended_at) - new Date(result.rows[0].started_at)) / 1000 / 60)
+        startedAt: updatedWebinar.started_at,
+        endedAt: updatedWebinar.ended_at,
+        duration: Math.round((new Date(updatedWebinar.ended_at) - new Date(updatedWebinar.started_at)) / 1000 / 60)
       }
     });
   } catch (error) {
@@ -362,7 +368,7 @@ router.post('/webinars/:id/end', verifyDoctor, async (req, res) => {
 // ============================================
 // START RECORDING
 // ============================================
-router.post('/webinars/:id/start-recording', verifyDoctor, async (req, res) => {
+router.post('/:id/start-recording', verifyDoctor, async (req, res) => {
   try {
     const { id } = req.params;
     const doctorId = req.user.doctorId || req.user.id;
@@ -370,7 +376,7 @@ router.post('/webinars/:id/start-recording', verifyDoctor, async (req, res) => {
     // Verify webinar belongs to doctor
     const checkResult = await sequelize.query(
       `SELECT * FROM webinars WHERE id = $1 AND doctor_id = $2`,
-      { replacements: [id, doctorId], type: sequelize.QueryTypes.SELECT }
+      { bind: [id, doctorId], type: QueryTypes.SELECT }
     );
 
     if (checkResult.length === 0) {
@@ -389,7 +395,7 @@ router.post('/webinars/:id/start-recording', verifyDoctor, async (req, res) => {
       });
     }
 
-    if (!webinar.allow_recording) {
+    if (!webinar.recording_enabled && !webinar.allow_recording) {
       return res.status(403).json({
         success: false,
         message: 'Recording is not enabled for this webinar'
@@ -397,21 +403,22 @@ router.post('/webinars/:id/start-recording', verifyDoctor, async (req, res) => {
     }
 
     // Create recording record
-    const recordingResult = await sequelize.query(
+    const [recordingRows] = await sequelize.query(
       `INSERT INTO webinar_recordings 
        (webinar_id, status, started_at, created_at, updated_at)
        VALUES ($1, 'recording', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        RETURNING *`,
-      { replacements: [id], type: sequelize.QueryTypes.INSERT }
+      { bind: [id] }
     );
+    const recording = recordingRows[0];
 
     res.json({
       success: true,
       message: 'Recording started',
       recording: {
-        id: recordingResult[0][0].id,
+        id: recording.id,
         status: 'recording',
-        startedAt: recordingResult[0][0].started_at
+        startedAt: recording.started_at
       }
     });
   } catch (error) {
@@ -427,7 +434,7 @@ router.post('/webinars/:id/start-recording', verifyDoctor, async (req, res) => {
 // ============================================
 // STOP RECORDING
 // ============================================
-router.post('/webinars/:id/stop-recording', verifyDoctor, async (req, res) => {
+router.post('/:id/stop-recording', verifyDoctor, async (req, res) => {
   try {
     const { id } = req.params;
     const doctorId = req.user.doctorId || req.user.id;
@@ -435,7 +442,7 @@ router.post('/webinars/:id/stop-recording', verifyDoctor, async (req, res) => {
     // Verify webinar belongs to doctor
     const checkResult = await sequelize.query(
       `SELECT * FROM webinars WHERE id = $1 AND doctor_id = $2`,
-      { replacements: [id, doctorId], type: sequelize.QueryTypes.SELECT }
+      { bind: [id, doctorId], type: QueryTypes.SELECT }
     );
 
     if (checkResult.length === 0) {
@@ -450,7 +457,7 @@ router.post('/webinars/:id/stop-recording', verifyDoctor, async (req, res) => {
       `SELECT * FROM webinar_recordings 
        WHERE webinar_id = $1 AND status = 'recording'
        ORDER BY started_at DESC LIMIT 1`,
-      { replacements: [id], type: sequelize.QueryTypes.SELECT }
+      { bind: [id], type: QueryTypes.SELECT }
     );
 
     if (recordingCheck.length === 0) {
@@ -463,7 +470,7 @@ router.post('/webinars/:id/stop-recording', verifyDoctor, async (req, res) => {
     const recording = recordingCheck[0];
 
     // Update recording status
-    const updateResult = await sequelize.query(
+    const [updatedRows] = await sequelize.query(
       `UPDATE webinar_recordings 
        SET status = 'processing', 
            ended_at = CURRENT_TIMESTAMP,
@@ -471,16 +478,17 @@ router.post('/webinars/:id/stop-recording', verifyDoctor, async (req, res) => {
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
        RETURNING *`,
-      { replacements: [recording.id], type: sequelize.QueryTypes.UPDATE }
+      { bind: [recording.id] }
     );
+    const updatedRecording = updatedRows[0];
 
     res.json({
       success: true,
       message: 'Recording stopped and processing',
       recording: {
-        id: updateResult[0][0].id,
+        id: updatedRecording.id,
         status: 'processing',
-        durationSeconds: updateResult[0][0].duration_seconds
+        durationSeconds: updatedRecording.duration_seconds
       }
     });
   } catch (error) {
@@ -496,7 +504,7 @@ router.post('/webinars/:id/stop-recording', verifyDoctor, async (req, res) => {
 // ============================================
 // GET ATTENDEES (Real-time)
 // ============================================
-router.get('/webinars/:id/attendees', verifyDoctor, async (req, res) => {
+router.get('/:id/attendees', verifyDoctor, async (req, res) => {
   try {
     const { id } = req.params;
     const doctorId = req.user.doctorId || req.user.id;
@@ -504,17 +512,17 @@ router.get('/webinars/:id/attendees', verifyDoctor, async (req, res) => {
     // Verify webinar belongs to doctor
     const checkResult = await sequelize.query(
       `SELECT * FROM webinars WHERE id = $1 AND doctor_id = $2`,
-      [id, doctorId]
+      { bind: [id, doctorId], type: QueryTypes.SELECT }
     );
 
-    if (checkResult.rows.length === 0) {
+    if (checkResult.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Webinar not found or access denied'
       });
     }
 
-    const result = await sequelize.query(
+    const attendeesData = await sequelize.query(
       `SELECT 
         wr.*,
         CONCAT(u."firstName", ' ', u."lastName") as user_name,
@@ -524,10 +532,10 @@ router.get('/webinars/:id/attendees', verifyDoctor, async (req, res) => {
       JOIN users u ON wr.user_id = u.id
       WHERE wr.webinar_id = $1
       ORDER BY wr.joined_at DESC NULLS LAST, wr.created_at DESC`,
-      [id]
+      { bind: [id], type: QueryTypes.SELECT }
     );
 
-    const attendees = result.rows.map(a => ({
+    const attendees = attendeesData.map(a => ({
       id: a.id,
       userId: a.user_id,
       name: a.user_name,
@@ -563,7 +571,7 @@ router.get('/webinars/:id/attendees', verifyDoctor, async (req, res) => {
 // ============================================
 // GET Q&A QUESTIONS
 // ============================================
-router.get('/webinars/:id/questions', verifyDoctor, async (req, res) => {
+router.get('/:id/questions', verifyDoctor, async (req, res) => {
   try {
     const { id } = req.params;
     const { answered } = req.query;
@@ -572,10 +580,10 @@ router.get('/webinars/:id/questions', verifyDoctor, async (req, res) => {
     // Verify webinar belongs to doctor
     const checkResult = await sequelize.query(
       `SELECT * FROM webinars WHERE id = $1 AND doctor_id = $2`,
-      [id, doctorId]
+      { bind: [id, doctorId], type: QueryTypes.SELECT }
     );
 
-    if (checkResult.rows.length === 0) {
+    if (checkResult.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Webinar not found or access denied'
@@ -600,11 +608,14 @@ router.get('/webinars/:id/questions', verifyDoctor, async (req, res) => {
 
     query += ` ORDER BY wcm.is_pinned DESC, wcm.created_at DESC`;
 
-    const result = await sequelize.query(query, params);
+    const questions = await sequelize.query(query, {
+      bind: params,
+      type: QueryTypes.SELECT
+    });
 
     res.json({
       success: true,
-      questions: result.rows.map(q => ({
+      questions: questions.map(q => ({
         id: q.id,
         userId: q.user_id,
         userName: q.user_name,
@@ -629,7 +640,7 @@ router.get('/webinars/:id/questions', verifyDoctor, async (req, res) => {
 // ============================================
 // ANSWER QUESTION
 // ============================================
-router.post('/webinars/:id/questions/:questionId/answer', verifyDoctor, async (req, res) => {
+router.post('/:id/questions/:questionId/answer', verifyDoctor, async (req, res) => {
   try {
     const { id, questionId } = req.params;
     const { answer } = req.body;
@@ -638,25 +649,25 @@ router.post('/webinars/:id/questions/:questionId/answer', verifyDoctor, async (r
     // Verify webinar belongs to doctor
     const checkResult = await sequelize.query(
       `SELECT * FROM webinars WHERE id = $1 AND doctor_id = $2`,
-      [id, doctorId]
+      { bind: [id, doctorId], type: QueryTypes.SELECT }
     );
 
-    if (checkResult.rows.length === 0) {
+    if (checkResult.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Webinar not found or access denied'
       });
     }
 
-    const result = await sequelize.query(
+    const [updatedRows] = await sequelize.query(
       `UPDATE webinar_chat_messages 
        SET answer = $1, is_answered = true, answered_by = $2
        WHERE id = $3 AND webinar_id = $4
        RETURNING *`,
-      [answer, req.user.id, questionId, id]
+      { bind: [answer, req.user.id, questionId, id] }
     );
 
-    if (result.rows.length === 0) {
+    if (!updatedRows.length) {
       return res.status(404).json({
         success: false,
         message: 'Question not found'
@@ -666,7 +677,7 @@ router.post('/webinars/:id/questions/:questionId/answer', verifyDoctor, async (r
     res.json({
       success: true,
       message: 'Question answered successfully',
-      question: result.rows[0]
+      question: updatedRows[0]
     });
   } catch (error) {
     console.error('Error answering question:', error);
@@ -681,7 +692,7 @@ router.post('/webinars/:id/questions/:questionId/answer', verifyDoctor, async (r
 // ============================================
 // GET WEBINAR RECORDINGS
 // ============================================
-router.get('/webinars/:id/recordings', verifyDoctor, async (req, res) => {
+router.get('/:id/recordings', verifyDoctor, async (req, res) => {
   try {
     const { id } = req.params;
     const doctorId = req.user.doctorId || req.user.id;
@@ -689,24 +700,24 @@ router.get('/webinars/:id/recordings', verifyDoctor, async (req, res) => {
     // Verify webinar belongs to doctor
     const checkResult = await sequelize.query(
       `SELECT * FROM webinars WHERE id = $1 AND doctor_id = $2`,
-      [id, doctorId]
+      { bind: [id, doctorId], type: QueryTypes.SELECT }
     );
 
-    if (checkResult.rows.length === 0) {
+    if (checkResult.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Webinar not found or access denied'
       });
     }
 
-    const result = await sequelize.query(
+    const recordings = await sequelize.query(
       `SELECT * FROM webinar_recordings WHERE webinar_id = $1 ORDER BY created_at DESC`,
-      [id]
+      { bind: [id], type: QueryTypes.SELECT }
     );
 
     res.json({
       success: true,
-      recordings: result.rows
+      recordings
     });
   } catch (error) {
     console.error('Error fetching recordings:', error);

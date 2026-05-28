@@ -136,17 +136,37 @@ const MyInsurancePolicies = () => {
   return (
     <>
       <div className="container mx-auto px-4 py-6 max-w-4xl">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <Shield className="w-6 h-6 text-teal-500" /> My Insurance Policies
-            </h1>
-            <p className="text-sm text-slate-500 mt-0.5">Upload and manage your health insurance documents</p>
+        <div className="rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50 via-cyan-50 to-emerald-50 p-5 md:p-6 mb-6 shadow-sm transition-all duration-300">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-teal-600/10 px-3 py-1 text-xs font-semibold text-teal-700 mb-3">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Policy Protection Center
+              </div>
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <Shield className="w-6 h-6 text-teal-500" /> My Insurance Policies
+              </h1>
+              <p className="text-sm text-slate-600 mt-0.5">Upload and manage your health insurance documents</p>
+            </div>
+            <Button onClick={() => setAddDialogOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" /> Add Policy
+            </Button>
           </div>
-          <Button onClick={() => setAddDialogOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" /> Add Policy
-          </Button>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mt-5">
+            <div className="rounded-lg border border-teal-200 bg-white/80 px-3 py-2">
+              <p className="text-xs font-semibold text-teal-700">Step 1: Add policy details</p>
+              <p className="text-[11px] text-slate-600">Capture insurer, policy number, cover amount, and members.</p>
+            </div>
+            <div className="rounded-lg border border-teal-200 bg-white/80 px-3 py-2">
+              <p className="text-xs font-semibold text-teal-700">Step 2: Attach document</p>
+              <p className="text-[11px] text-slate-600">Upload PDFs or images so policy proofs are always accessible.</p>
+            </div>
+            <div className="rounded-lg border border-teal-200 bg-white/80 px-3 py-2">
+              <p className="text-xs font-semibold text-teal-700">Step 3: Track renewals</p>
+              <p className="text-[11px] text-slate-600">Use expiry alerts to renew before coverage gaps happen.</p>
+            </div>
+          </div>
         </div>
 
         {/* Alerts */}
@@ -166,6 +186,21 @@ const MyInsurancePolicies = () => {
             </AlertDescription>
           </Alert>
         )}
+
+        <div className="rounded-xl border border-teal-200 bg-teal-50/70 p-3 mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3 transition-all duration-300">
+          <div>
+            <p className="text-xs font-semibold text-teal-700">Next Best Action</p>
+            <p className="text-[11px] text-slate-600">Keep one active family policy and renew expiring covers before treatment requests.</p>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <Button size="sm" variant="outline" onClick={() => setAddDialogOpen(true)}>
+              <Plus className="w-3.5 h-3.5 mr-1" /> Add Policy
+            </Button>
+            <Button size="sm" variant="outline" onClick={load}>
+              <RefreshCw className="w-3.5 h-3.5 mr-1" /> Refresh List
+            </Button>
+          </div>
+        </div>
 
         {/* Stats row */}
         {!loading && policies.length > 0 && (

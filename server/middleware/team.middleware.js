@@ -70,6 +70,10 @@ export const authTeam = async (req, res, next) => {
     let metadata = {};
     try { metadata = user.metadata ? JSON.parse(user.metadata) : {}; } catch (_) { metadata = {}; }
 
+    const permissions = Array.isArray(metadata.permissions)
+      ? metadata.permissions.filter((permission) => typeof permission === 'string' && permission.trim().length > 0)
+      : [];
+
     req.teamUser = {
       id: user.id,
       email: user.email,
@@ -79,6 +83,7 @@ export const authTeam = async (req, res, next) => {
       tenantId: metadata.tenantId || user.organization_id || decoded.tenantId || null,
       department: metadata.department || null,
       designation: metadata.designation || null,
+      permissions,
       editableModules:  metadata.editableModules  || [],
       deletableModules: metadata.deletableModules || []
     };

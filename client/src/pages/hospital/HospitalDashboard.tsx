@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -117,6 +116,13 @@ const HospitalDashboard = () => {
   const navigate = useNavigate();
   const { hospitalData } = useHospitalAuth();
 
+  const handleKeyboardNavigate = (event: React.KeyboardEvent<HTMLDivElement>, route: string) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      navigate(route);
+    }
+  };
+
   const tryApiGet = async <T,>(
     endpoints: string[],
     mapResponse: (data: any) => T,
@@ -174,6 +180,7 @@ const HospitalDashboard = () => {
   const {
     data: admissions = [],
     isLoading: admissionsLoading,
+    isError: admissionsError,
   } = useQuery<Admission[]>({
     queryKey: ['hospital-recent-admissions'],
     queryFn: async () =>
@@ -205,6 +212,7 @@ const HospitalDashboard = () => {
   const {
     data: bedOccupancy = [],
     isLoading: bedsLoading,
+    isError: bedsError,
   } = useQuery<BedOccupancy[]>({
     queryKey: ['hospital-beds-occupancy'],
     queryFn: async () =>
@@ -247,6 +255,7 @@ const HospitalDashboard = () => {
   const {
     data: claims = [],
     isLoading: claimsLoading,
+    isError: claimsError,
   } = useQuery<Claim[]>({
     queryKey: ['hospital-pending-claims'],
     queryFn: async () =>
@@ -345,6 +354,10 @@ const HospitalDashboard = () => {
             key={index}
             className="cursor-pointer bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-teal-200 dark:hover:border-teal-500/50 hover:shadow-xl hover:shadow-teal-500/10 transition-all transform hover:-translate-y-1 group"
             onClick={() => navigate(module.route)}
+            role="button"
+            tabIndex={0}
+            aria-label={`Open ${module.title}`}
+            onKeyDown={(event) => handleKeyboardNavigate(event, module.route)}
           >
             <CardContent className="pt-6">
               <div className={`bg-gradient-to-br ${module.color} p-4 rounded-xl w-fit mb-4 shadow-lg transition-transform duration-300 group-hover:scale-110`}>
@@ -374,6 +387,10 @@ const HospitalDashboard = () => {
             key={index}
             className="cursor-pointer bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-teal-200 dark:hover:border-teal-500/50 hover:shadow-lg hover:shadow-teal-500/10 transition-all transform hover:-translate-y-1 group"
             onClick={() => navigate(item.route)}
+            role="button"
+            tabIndex={0}
+            aria-label={`Open ${item.title}`}
+            onKeyDown={(event) => handleKeyboardNavigate(event, item.route)}
           >
             <CardContent className="pt-5">
               <div className={`bg-gradient-to-br ${item.color} p-3 rounded-lg w-fit mb-3 shadow-md transition-transform duration-300 group-hover:scale-105`}>
@@ -405,6 +422,11 @@ const HospitalDashboard = () => {
             {admissionsLoading ? (
               <div className="space-y-3">
                 {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
+              </div>
+            ) : admissionsError ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/10 p-3 flex items-start gap-2 text-amber-700 dark:text-amber-400 text-sm">
+                <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                Could not load recent admissions. Please try again.
               </div>
             ) : admissions.length === 0 ? (
               <p className="text-sm text-slate-400 text-center py-8">No recent admissions data available.</p>
@@ -446,6 +468,11 @@ const HospitalDashboard = () => {
           <CardContent className="space-y-6">
             {bedsLoading ? (
               Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)
+            ) : bedsError ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/10 p-3 flex items-start gap-2 text-amber-700 dark:text-amber-400 text-sm">
+                <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                Could not load bed occupancy. Please refresh.
+              </div>
             ) : bedOccupancy.length === 0 ? (
               <p className="text-sm text-slate-400 text-center py-4">No bed data available.</p>
             ) : (
@@ -455,7 +482,7 @@ const HospitalDashboard = () => {
                     <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{ward.department}</span>
                     <span className="text-sm text-slate-500 dark:text-slate-400">{ward.occupied}/{ward.total}</span>
                   </div>
-                  <Progress value={(ward.occupied / ward.total) * 100} className="h-2" />
+                  <Progress value={ward.total > 0 ? (ward.occupied / ward.total) * 100 : 0} className="h-2" />
                 </div>
               ))
             )}
@@ -482,6 +509,11 @@ const HospitalDashboard = () => {
           {claimsLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28 w-full rounded-xl" />)}
+            </div>
+          ) : claimsError ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/10 p-3 flex items-start gap-2 text-amber-700 dark:text-amber-400 text-sm">
+              <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              Could not load pending claims. Please try again.
             </div>
           ) : claims.length === 0 ? (
             <p className="text-sm text-slate-400 text-center py-6">No pending claims data available.</p>

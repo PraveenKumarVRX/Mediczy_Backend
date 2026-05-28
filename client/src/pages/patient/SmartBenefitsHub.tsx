@@ -156,6 +156,7 @@ const statusConfig: Record<string, { color: string; bg: string; icon: any; label
 // ─── Formatters ──────────────────────────────────────────────────────────────
 const fmt = (n: number) => n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${(n / 1000).toFixed(0)}K`;
 const fmtFull = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+const MOTION_STAGGER = 0.08;
 
 const defaultBenefitPlans: BenefitPlan[] = [
   {
@@ -349,6 +350,21 @@ export default function SmartBenefitsHub() {
             </Button>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mb-4">
+            <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
+              <p className="text-xs font-semibold text-cyan-300">Step 1: Check available cover</p>
+              <p className="text-[11px] text-slate-400">Review each plan limit and current utilization before treatment.</p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
+              <p className="text-xs font-semibold text-cyan-300">Step 2: File clean claims</p>
+              <p className="text-[11px] text-slate-400">Submit the right documents once to reduce rework and delays.</p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
+              <p className="text-xs font-semibold text-cyan-300">Step 3: Track settlement</p>
+              <p className="text-[11px] text-slate-400">Follow timeline updates until approval and payout completion.</p>
+            </div>
+          </div>
+
           {/* Coverage Summary Ring */}
           <div className="grid grid-cols-3 gap-3 mb-6">
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
@@ -394,6 +410,38 @@ export default function SmartBenefitsHub() {
           ))}
         </div>
 
+        <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3 mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3 transition-all duration-300">
+          <div>
+            <p className="text-xs font-semibold text-cyan-300">Next Best Action</p>
+            <p className="text-[11px] text-slate-400">
+              {tab === 'benefits'
+                ? 'Review remaining cover and open policy cards to verify limits before treatment.'
+                : tab === 'claims'
+                  ? 'File new claims with complete docs and monitor current review milestones.'
+                  : tab === 'family'
+                    ? 'Verify covered members and update dependent details for uninterrupted access.'
+                    : 'Use network search to find nearest cashless providers before admission.'}
+            </p>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {(tab === 'benefits' || tab === 'claims') && (
+              <Button size="sm" className="bg-blue-600 hover:bg-blue-500 border-0" onClick={() => setShowClaimModal(true)}>
+                <Upload className="h-3.5 w-3.5 mr-1" /> File Claim
+              </Button>
+            )}
+            {tab !== 'network' && (
+              <Button size="sm" variant="outline" className="border-white/10 text-slate-300" onClick={() => setTab('network')}>
+                <MapPin className="h-3.5 w-3.5 mr-1" /> Find Network
+              </Button>
+            )}
+            {tab !== 'claims' && (
+              <Button size="sm" variant="outline" className="border-white/10 text-slate-300" onClick={() => setTab('claims')}>
+                Track Claims
+              </Button>
+            )}
+          </div>
+        </div>
+
         <AnimatePresence mode="wait">
           {/* ─── Benefits Tab ────────────────────────────────────────────── */}
           {tab === 'benefits' && (
@@ -405,7 +453,7 @@ export default function SmartBenefitsHub() {
                   const pct = plan.sumInsured > 0 ? (plan.utilized / plan.sumInsured) * 100 : 0;
                   return (
                     <motion.div key={plan.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.1 }}
+                      transition={{ delay: i * MOTION_STAGGER, duration: 0.25 }}
                       onClick={() => setSelectedPlan(plan)}
                       className="cursor-pointer group">
                       <Card className="!p-0 overflow-hidden border-white/[0.06] hover:border-white/[0.12] transition-all bg-slate-900/50 backdrop-blur-sm">
@@ -493,7 +541,7 @@ export default function SmartBenefitsHub() {
                     { icon: FileCheck, label: 'Pre-Auth', desc: 'Check status', action: () => setTab('claims') },
                   ].map((a, i) => (
                     <motion.button key={i} onClick={a.action}
-                      initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 + i * 0.1 }}
+                      initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 + i * MOTION_STAGGER, duration: 0.25 }}
                       className="flex items-center gap-3 p-3.5 rounded-xl bg-slate-800/50 border border-white/[0.06] hover:border-white/[0.12] hover:bg-slate-800/80 transition-all text-left">
                       <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center flex-shrink-0">
                         <a.icon className="h-4 w-4 text-blue-400" />
@@ -535,7 +583,7 @@ export default function SmartBenefitsHub() {
                   const StatusIcon = cfg.icon;
                   return (
                     <motion.div key={claim.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.1 }}>
+                      transition={{ delay: i * MOTION_STAGGER, duration: 0.25 }}>
                       <Card className="!p-0 overflow-hidden border-white/[0.06] bg-slate-900/50">
                         <CardContent className="p-4">
                           <div className="flex items-start justify-between mb-3">

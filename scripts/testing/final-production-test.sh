@@ -11,6 +11,9 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+BASE_URL="${BASE_URL:-https://app.mediqzy.com}"
+ORIGIN_URL="${ORIGIN_URL:-https://app.mediqzy.com}"
+
 TOTAL_PASSED=0
 TOTAL_FAILED=0
 TOTAL_WARNINGS=0
@@ -34,7 +37,7 @@ echo "════════════════════════�
 echo "  TEST 2: DATABASE CONNECTIVITY"
 echo "═══════════════════════════════════════════════════════════════════"
 
-RESPONSE=$(curl -s -w "%{http_code}" -o /dev/null http://localhost:8000/api/doctors/login -X POST \
+RESPONSE=$(curl -s -w "%{http_code}" -o /dev/null "$BASE_URL/api/doctors/login" -X POST \
     -H "Content-Type: application/json" \
     -d '{"email":"doctor@mediczy.com","password":"Doctor123"}')
 
@@ -58,7 +61,7 @@ test_auth() {
     local password=$3
     local endpoint=$4
     
-    TOKEN=$(curl -s -X POST "http://localhost:8000$endpoint" \
+    TOKEN=$(curl -s -X POST "$BASE_URL$endpoint" \
         -H "Content-Type: application/json" \
         -d "{\"email\":\"$email\",\"password\":\"$password\"}" | jq -r '.token // empty')
     
@@ -81,7 +84,7 @@ echo "════════════════════════�
 echo "  TEST 4: SECURITY HEADERS"
 echo "═══════════════════════════════════════════════════════════════════"
 
-HEADERS=$(curl -s -I http://localhost:8000)
+HEADERS=$(curl -s -I "$BASE_URL")
 
 if echo "$HEADERS" | grep -qi "X-Content-Type-Options"; then
     echo -e "  ${GREEN}✓ X-Content-Type-Options header present${NC}"
@@ -113,7 +116,7 @@ echo "════════════════════════�
 echo "  TEST 5: RATE LIMITING"
 echo "═══════════════════════════════════════════════════════════════════"
 
-HEADERS=$(curl -s -I http://localhost:8000/api/users/login)
+HEADERS=$(curl -s -I "$BASE_URL/api/users/login")
 if echo "$HEADERS" | grep -qi "RateLimit\|X-RateLimit"; then
     echo -e "  ${GREEN}✓ Rate limiting headers present${NC}"
     TOTAL_PASSED=$((TOTAL_PASSED + 1))
@@ -128,8 +131,8 @@ echo "════════════════════════�
 echo "  TEST 6: CORS CONFIGURATION"
 echo "═══════════════════════════════════════════════════════════════════"
 
-CORS_HEADERS=$(curl -s -I -X OPTIONS http://localhost:8000/api/users/login \
-    -H "Origin: http://localhost:5173" \
+CORS_HEADERS=$(curl -s -I -X OPTIONS "$BASE_URL/api/users/login" \
+    -H "Origin: $ORIGIN_URL" \
     -H "Access-Control-Request-Method: POST")
 
 if echo "$CORS_HEADERS" | grep -qi "Access-Control-Allow"; then
@@ -146,19 +149,20 @@ echo "════════════════════════�
 echo "  TEST 7: ENVIRONMENT CONFIGURATION"
 echo "═══════════════════════════════════════════════════════════════════"
 
-if [ -n "$JWT_SECRET" ]; then
-    echo -e "  ${GREEN}✓ JWT_SECRET is set${NC}"
+ENVIRONMENT=$(curl -s "$BASE_URL/api/health" | jq -r '.environment // empty' 2>/dev/null)
+if [ "$ENVIRONMENT" = "production" ]; then
+    echo -e "  ${GREEN}✓ API reports production environment${NC}"
     TOTAL_PASSED=$((TOTAL_PASSED + 1))
 else
-    echo -e "  ${YELLOW}⚠ JWT_SECRET not set (using fallback)${NC}"
+    echo -e "  ${YELLOW}⚠ API environment check inconclusive (value: ${ENVIRONMENT:-unknown})${NC}"
     TOTAL_WARNINGS=$((TOTAL_WARNINGS + 1))
 fi
 
-if [ "$NODE_ENV" = "production" ]; then
-    echo -e "  ${GREEN}✓ NODE_ENV set to production${NC}"
+if echo "$HEADERS" | grep -qi "Strict-Transport-Security"; then
+    echo -e "  ${GREEN}✓ HTTPS security policy active${NC}"
     TOTAL_PASSED=$((TOTAL_PASSED + 1))
 else
-    echo -e "  ${YELLOW}⚠ NODE_ENV not set to production (current: ${NODE_ENV:-development})${NC}"
+    echo -e "  ${YELLOW}⚠ HTTPS security policy not visible from response headers${NC}"
     TOTAL_WARNINGS=$((TOTAL_WARNINGS + 1))
 fi
 echo ""
@@ -179,10 +183,10 @@ if [ $TOTAL_FAILED -eq 0 ] && [ $TOTAL_WARNINGS -le 5 ]; then
     echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Next steps:"
-    echo "  1. Set JWT_SECRET environment variable"
-    echo "  2. Set NODE_ENV=production"
-    echo "  3. Review PRODUCTION_CHECKLIST.md"
-    echo "  4. Deploy to production"
+    echo "  1. Run deployment verification checklist"
+    echo "  2. Monitor logs for first 30 minutes"
+    echo "  3. Verify business-critical user flows"
+    echo "  4. Keep rollback plan ready"
     exit 0
 elif [ $TOTAL_FAILED -eq 0 ]; then
     echo -e "${YELLOW}⚠ READY WITH WARNINGS - Review before production${NC}"

@@ -271,6 +271,36 @@ const groupSlotsByTimeOfDay = (slots: any[]) => {
   return { morning, afternoon, evening };
 };
 
+const normalizeExternalUrl = (value?: string) => {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return "";
+    }
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+};
+
+const buildYoutubeSubscribeUrl = (value?: string) => {
+  const normalized = normalizeExternalUrl(value);
+  if (!normalized) return "";
+
+  try {
+    const parsed = new URL(normalized);
+    parsed.searchParams.set("sub_confirmation", "1");
+    return parsed.toString();
+  } catch {
+    return normalized;
+  }
+};
+
 const normalizeDoctorFromApi = (doctor: any): Doctor => {
   const clinicInfo = parseClinicInfo(doctor?.clinicAddress);
   const languages = toArray(doctor?.languages, ["English"]);
@@ -293,6 +323,11 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
   const rawInPersonFee = doctor?.inPersonConsultationFee ?? null;
   const supportsOnline = rawOnlineFee != null || Boolean(doctor?.isOnline);
   const supportsInPerson = rawInPersonFee != null || Boolean(doctor?.clinicAddress);
+  const socialLinks = {
+    facebook: normalizeExternalUrl(doctor?.socialLinks?.facebook),
+    instagram: normalizeExternalUrl(doctor?.socialLinks?.instagram),
+    youtube: normalizeExternalUrl(doctor?.socialLinks?.youtube),
+  };
 
   return {
     _id: String(fallbackId),
@@ -319,7 +354,7 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
     verified: Boolean(doctor?.isVerified),
     supportsOnline,
     supportsInPerson,
-    socialLinks: doctor?.socialLinks || {},
+    socialLinks,
   } as Doctor;
 };
 
@@ -887,7 +922,7 @@ const DoctorListBooking = () => {
                   )}
                   {doctor.socialLinks.youtube && (
                     <a
-                      href={`${doctor.socialLinks.youtube}?sub_confirmation=1`}
+                      href={buildYoutubeSubscribeUrl(doctor.socialLinks.youtube)}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}
@@ -1214,6 +1249,36 @@ const DoctorListBooking = () => {
         </div>
 
         <div className="container mx-auto px-4 py-6">
+          <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Card className="border-slate-200/80 dark:border-slate-700/60 bg-white/90 dark:bg-slate-800/70">
+              <CardContent className="p-4 flex items-center gap-3">
+                <Shield className="h-5 w-5 text-emerald-600" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Verified profiles</p>
+                  <p className="text-lg font-semibold">{filteredDoctors.filter((doctor) => doctor.verified).length}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-slate-200/80 dark:border-slate-700/60 bg-white/90 dark:bg-slate-800/70">
+              <CardContent className="p-4 flex items-center gap-3">
+                <Video className="h-5 w-5 text-blue-600" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Online consultation</p>
+                  <p className="text-lg font-semibold">{filteredDoctors.filter((doctor) => doctor.supportsOnline !== false).length}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-slate-200/80 dark:border-slate-700/60 bg-white/90 dark:bg-slate-800/70">
+              <CardContent className="p-4 flex items-center gap-3">
+                <Building2 className="h-5 w-5 text-green-600" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Clinic visit available</p>
+                  <p className="text-lg font-semibold">{filteredDoctors.filter((doctor) => doctor.supportsInPerson || !!doctor.clinic?.address).length}</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           {userType === "doctor" && (
             <div className="mb-4 rounded-xl border border-yellow-200 bg-yellow-50 text-yellow-800 px-4 py-3 text-sm">
               Doctor accounts cannot book appointments from the patient view. Please sign in as a patient to book.

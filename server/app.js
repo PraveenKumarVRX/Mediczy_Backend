@@ -1157,8 +1157,9 @@ app.use("/api/reports", reportAnalysisRouter); // Report analysis
 app.use("/api/health-score", healthScoreRouter); // Daily composite health score + logging
 
 // Doctor routes - all mounted under /api/doctors for consistency
-app.use("/api/doctors", doctorRoutes); // Core: login, register, profile, appointments
-app.use("/api/doctors", doctorEnhancedRoutes); // Enhanced: search, public profiles
+// Mount enhanced routes first so canonical auth/profile handlers are used.
+app.use("/api/doctors", doctorEnhancedRoutes); // Enhanced: auth, search, public profiles
+app.use("/api/doctors", doctorRoutes); // Core: register, appointments, alerts, dashboard stats
 app.use("/api/doctors", availabilityRouter); // Availability management
 app.use("/api/doctors", doctorSettingsRoutes); // Settings: attached pharmacies/labs
 app.use("/api/ai/scribe", aiScribeRouter); // AI Scribe for prescription generation

@@ -18,6 +18,33 @@ interface DeliveryStatus {
   whatsapp?: "success" | "failed";
 }
 
+const toDeliveryState = (sent?: boolean): "success" | "failed" => (sent ? "success" : "failed");
+
+const parseDeliveryStatus = (responseData: any): DeliveryStatus => {
+  const status: DeliveryStatus = {};
+
+  if (Array.isArray(responseData?.deliveryStatus)) {
+    responseData.deliveryStatus.forEach((result: any) => {
+      if (result.channel === "email") status.email = result.success ? "success" : "failed";
+      if (result.channel === "sms") status.sms = result.success ? "success" : "failed";
+      if (result.channel === "whatsapp") status.whatsapp = result.success ? "success" : "failed";
+    });
+  }
+
+  const channels = responseData?.data?.deliveryChannels || responseData?.deliveryChannels;
+  if (channels) {
+    if (channels.email) status.email = toDeliveryState(channels.email.sent);
+    if (channels.sms) status.sms = toDeliveryState(channels.sms.sent);
+    if (channels.whatsapp) status.whatsapp = toDeliveryState(channels.whatsapp.sent);
+  }
+
+  return status;
+};
+
+const getResetTokenFromResponse = (responseData: any): string | undefined => {
+  return responseData?.resetToken || responseData?.data?.resetToken;
+};
+
 const ForgotPassword = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -75,16 +102,11 @@ const ForgotPassword = () => {
         skipAuth: true,
       } as any);
 
-      // Parse delivery status from response
-      const status: DeliveryStatus = {};
-      if (data.deliveryStatus) {
-        data.deliveryStatus.forEach((result: any) => {
-          if (result.channel === "email") status.email = result.success ? "success" : "failed";
-          if (result.channel === "sms") status.sms = result.success ? "success" : "failed";
-          if (result.channel === "whatsapp") status.whatsapp = result.success ? "success" : "failed";
-        });
+      if (data?.success === false) {
+        throw new Error(data?.message || "Failed to send OTP. Please try again.");
       }
-      setDeliveryStatus(status);
+
+      setDeliveryStatus(parseDeliveryStatus(data));
 
       toast({
         title: "OTP Sent",
@@ -131,7 +153,16 @@ const ForgotPassword = () => {
         skipAuth: true,
       } as any);
 
-      setResetToken(data.resetToken);
+      if (data?.success === false) {
+        throw new Error(data?.message || "OTP verification failed");
+      }
+
+      const verifiedResetToken = getResetTokenFromResponse(data);
+      if (!verifiedResetToken) {
+        throw new Error("Reset token missing from OTP verification response");
+      }
+
+      setResetToken(verifiedResetToken);
       
       toast({
         title: "OTP Verified",
@@ -167,15 +198,11 @@ const ForgotPassword = () => {
         skipAuth: true,
       } as any);
 
-      const status: DeliveryStatus = {};
-      if (data.deliveryStatus) {
-        data.deliveryStatus.forEach((result: any) => {
-          if (result.channel === "email") status.email = result.success ? "success" : "failed";
-          if (result.channel === "sms") status.sms = result.success ? "success" : "failed";
-          if (result.channel === "whatsapp") status.whatsapp = result.success ? "success" : "failed";
-        });
+      if (data?.success === false) {
+        throw new Error(data?.message || "Failed to resend OTP. Please try again.");
       }
-      setDeliveryStatus(status);
+
+      setDeliveryStatus(parseDeliveryStatus(data));
 
       toast({
         title: "OTP Resent",
@@ -225,6 +252,10 @@ const ForgotPassword = () => {
       }, {
         skipAuth: true,
       } as any);
+
+      if (data?.success === false) {
+        throw new Error(data?.message || "Failed to reset password. Please try again.");
+      }
 
       toast({
         title: "Password Reset Successful",

@@ -11,7 +11,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-BASE_URL="http://localhost:8000"
+BASE_URL="${BASE_URL:-https://app.mediqzy.com}"
 PASSED=0
 FAILED=0
 WARNINGS=0

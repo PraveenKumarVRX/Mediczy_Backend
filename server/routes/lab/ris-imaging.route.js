@@ -22,6 +22,219 @@ import crypto    from 'crypto';
 
 const router = express.Router();
 
+const VALID_STUDY_STATUSES = ['Ordered', 'Scheduled', 'InProgress', 'Completed', 'Reported', 'Cancelled'];
+const VALID_REPORT_STATUSES = ['Pending', 'Draft', 'Final', 'Addendum'];
+const CRITICAL_VALUE_ALERT_STATUSES = ['Open', 'Acknowledged', 'Escalated'];
+const QC_TEMPLATE_MODALITIES = ['CT', 'MRI', 'XR', 'USG', 'ECHO', 'MAMMO', 'FLUORO', 'NM', 'PET', 'OT'];
+const ALLOWED_STATUS_TRANSITIONS = {
+  Ordered: ['Scheduled', 'Cancelled'],
+  Scheduled: ['InProgress', 'Cancelled'],
+  InProgress: ['Completed', 'Cancelled'],
+  Completed: ['Reported', 'Cancelled'],
+  Reported: ['Cancelled'],
+  Cancelled: [],
+};
+
+const getActor = (req) => ({
+  actorId: req.lab?.id || null,
+  actorName: req.lab?.labName || req.lab?.name || req.lab?.email || 'lab-user',
+});
+
+const writeAuditEvent = async (db, {
+  studyId,
+  labId,
+  eventType,
+  actorId,
+  actorName,
+  details = {},
+}) => {
+  await db.query(
+    `INSERT INTO ris_study_audit_events
+      (study_id, lab_id, event_type, actor_id, actor_name, details)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+    [studyId, labId, eventType, actorId, actorName, JSON.stringify(details || {})]
+  );
+};
+
+const writeCustodyEvent = async (db, {
+  studyId,
+  labId,
+  fromStatus,
+  toStatus,
+  reason,
+  actorId,
+  actorName,
+  metadata = {},
+}) => {
+  await db.query(
+    `INSERT INTO ris_sample_custody_events
+      (study_id, lab_id, from_status, to_status, reason, actor_id, actor_name, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+    [studyId, labId, fromStatus, toStatus, reason || null, actorId, actorName, JSON.stringify(metadata || {})]
+  );
+};
+
+const getLatestQcReview = async (db, studyId, labId) => {
+  const row = await db.query(
+    `SELECT id, qc_status, reviewed_by, reviewed_at, review_notes
+     FROM ris_qc_reviews
+     WHERE study_id = $1 AND lab_id = $2
+     ORDER BY reviewed_at DESC, id DESC
+     LIMIT 1`,
+    [studyId, labId]
+  );
+  return row.rows[0] || null;
+};
+
+const getResultContext = async (db, studyId, labId) => {
+  const row = await db.query(
+    `SELECT id, reagent_lot_number, calibration_reference, context_notes, updated_at
+     FROM ris_result_context
+     WHERE study_id = $1 AND lab_id = $2
+     LIMIT 1`,
+    [studyId, labId]
+  );
+  return row.rows[0] || null;
+};
+
+const normalizeModality = (modality) => {
+  const m = String(modality || '').trim().toUpperCase();
+  if (m === 'X-RAY' || m === 'XRAY') return 'XR';
+  if (m === 'ULTRASOUND') return 'USG';
+  if (m === 'MAMMOGRAPHY') return 'MAMMO';
+  if (m === 'FLUOROSCOPY') return 'FLUORO';
+  if (m === 'OTHER') return 'OT';
+  return m;
+};
+
+const validateChecklistAgainstTemplate = (templateRows, checklistAnswers = []) => {
+  const requiredTemplateItems = templateRows.filter((row) => row.required);
+  const answersMap = new Map(
+    (Array.isArray(checklistAnswers) ? checklistAnswers : []).map((item) => [String(item.itemKey), Boolean(item.passed)])
+  );
+
+  const missingRequired = [];
+  for (const item of requiredTemplateItems) {
+    if (answersMap.get(String(item.item_key)) !== true) {
+      missingRequired.push(item.item_key);
+    }
+  }
+  return {
+    passed: missingRequired.length === 0,
+    missingRequired,
+  };
+};
+
+const csvEscape = (value) => {
+  if (value === null || typeof value === 'undefined') return '';
+  const str = String(value).replace(/\r?\n/g, ' ');
+  return `"${str.replace(/"/g, '""')}"`;
+};
+
+const buildEvidenceCsv = ({ generatedAt, generatedBy, summary, filters, studies, auditEvents, custodyEvents, qcReviews, criticalAlerts, resultContexts, signature }) => {
+  const lines = [];
+
+  lines.push('section,key,value');
+  lines.push(`meta,generatedAt,${csvEscape(generatedAt)}`);
+  lines.push(`meta,generatedBy,${csvEscape(generatedBy?.labName || generatedBy?.actor || '')}`);
+  lines.push(`meta,contentHash,${csvEscape(signature?.contentHash || '')}`);
+  lines.push(`meta,filterFrom,${csvEscape(filters?.from || '')}`);
+  lines.push(`meta,filterTo,${csvEscape(filters?.to || '')}`);
+
+  lines.push(`summary,studies,${summary?.studies || 0}`);
+  lines.push(`summary,auditEvents,${summary?.auditEvents || 0}`);
+  lines.push(`summary,custodyEvents,${summary?.custodyEvents || 0}`);
+  lines.push(`summary,qcReviews,${summary?.qcReviews || 0}`);
+  lines.push(`summary,criticalAlerts,${summary?.criticalAlerts || 0}`);
+  lines.push(`summary,resultContexts,${summary?.resultContexts || 0}`);
+
+  lines.push('');
+  lines.push('studies,id,patient_name,modality,status,report_status,accession_number,created_at');
+  for (const row of studies || []) {
+    lines.push([
+      'studies',
+      row.id,
+      csvEscape(row.patient_name),
+      csvEscape(row.modality),
+      csvEscape(row.status),
+      csvEscape(row.report_status),
+      csvEscape(row.accession_number),
+      csvEscape(row.created_at),
+    ].join(','));
+  }
+
+  lines.push('');
+  lines.push('audit_events,id,study_id,event_type,actor_name,created_at');
+  for (const row of auditEvents || []) {
+    lines.push([
+      'audit_events',
+      row.id,
+      row.study_id,
+      csvEscape(row.event_type),
+      csvEscape(row.actor_name),
+      csvEscape(row.created_at),
+    ].join(','));
+  }
+
+  lines.push('');
+  lines.push('custody_events,id,study_id,from_status,to_status,reason,created_at');
+  for (const row of custodyEvents || []) {
+    lines.push([
+      'custody_events',
+      row.id,
+      row.study_id,
+      csvEscape(row.from_status),
+      csvEscape(row.to_status),
+      csvEscape(row.reason),
+      csvEscape(row.created_at),
+    ].join(','));
+  }
+
+  lines.push('');
+  lines.push('qc_reviews,id,study_id,qc_status,reviewed_by,reviewed_at');
+  for (const row of qcReviews || []) {
+    lines.push([
+      'qc_reviews',
+      row.id,
+      row.study_id,
+      csvEscape(row.qc_status),
+      csvEscape(row.reviewed_by),
+      csvEscape(row.reviewed_at),
+    ].join(','));
+  }
+
+  lines.push('');
+  lines.push('critical_alerts,id,study_id,status,alert_reason,raised_by,raised_at,acknowledged_by,acknowledged_at');
+  for (const row of criticalAlerts || []) {
+    lines.push([
+      'critical_alerts',
+      row.id,
+      row.study_id,
+      csvEscape(row.status),
+      csvEscape(row.alert_reason),
+      csvEscape(row.raised_by),
+      csvEscape(row.raised_at),
+      csvEscape(row.acknowledged_by),
+      csvEscape(row.acknowledged_at),
+    ].join(','));
+  }
+
+  lines.push('');
+  lines.push('result_contexts,id,study_id,reagent_lot_number,calibration_reference,updated_at');
+  for (const row of resultContexts || []) {
+    lines.push([
+      'result_contexts',
+      row.id,
+      row.study_id,
+      csvEscape(row.reagent_lot_number),
+      csvEscape(row.calibration_reference),
+      csvEscape(row.updated_at),
+    ].join(','));
+  }
+
+  return lines.join('\n');
+};
+
 // ─── DB bootstrap ────────────────────────────────────────────────────────────
 const ensureTable = async () => {
   await pool.query(`
@@ -38,6 +251,8 @@ const ensureTable = async () => {
       body_part        VARCHAR(100),
       study_description VARCHAR(500),
       referring_physician VARCHAR(255),
+      referring_doctor_id INTEGER,
+      referring_doctor_name VARCHAR(255),
       study_date       DATE NOT NULL DEFAULT CURRENT_DATE,
       study_time       TIME,
       priority         VARCHAR(20) DEFAULT 'Routine' CHECK (priority IN ('STAT','Urgent','Routine')),
@@ -65,6 +280,90 @@ const ensureTable = async () => {
     CREATE INDEX IF NOT EXISTS idx_ris_modality   ON ris_studies(modality);
     CREATE INDEX IF NOT EXISTS idx_ris_status     ON ris_studies(status);
     CREATE INDEX IF NOT EXISTS idx_ris_study_date ON ris_studies(study_date DESC);
+
+    CREATE TABLE IF NOT EXISTS ris_study_audit_events (
+      id BIGSERIAL PRIMARY KEY,
+      study_id BIGINT NOT NULL REFERENCES ris_studies(id) ON DELETE CASCADE,
+      lab_id INTEGER NOT NULL,
+      event_type VARCHAR(80) NOT NULL,
+      actor_id INTEGER,
+      actor_name VARCHAR(255),
+      details JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_ris_audit_study ON ris_study_audit_events(study_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS ris_sample_custody_events (
+      id BIGSERIAL PRIMARY KEY,
+      study_id BIGINT NOT NULL REFERENCES ris_studies(id) ON DELETE CASCADE,
+      lab_id INTEGER NOT NULL,
+      from_status VARCHAR(30),
+      to_status VARCHAR(30) NOT NULL,
+      reason VARCHAR(500),
+      actor_id INTEGER,
+      actor_name VARCHAR(255),
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_ris_custody_study ON ris_sample_custody_events(study_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS ris_qc_reviews (
+      id BIGSERIAL PRIMARY KEY,
+      study_id BIGINT NOT NULL REFERENCES ris_studies(id) ON DELETE CASCADE,
+      lab_id INTEGER NOT NULL,
+      qc_status VARCHAR(20) NOT NULL CHECK (qc_status IN ('Passed','Failed','NeedsReview')),
+      review_notes TEXT,
+      reviewed_by VARCHAR(255),
+      reviewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_ris_qc_study ON ris_qc_reviews(study_id, reviewed_at DESC);
+
+    CREATE TABLE IF NOT EXISTS ris_result_context (
+      id BIGSERIAL PRIMARY KEY,
+      study_id BIGINT NOT NULL REFERENCES ris_studies(id) ON DELETE CASCADE,
+      lab_id INTEGER NOT NULL,
+      reagent_lot_number VARCHAR(120) NOT NULL,
+      calibration_reference VARCHAR(120) NOT NULL,
+      context_notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (study_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ris_result_context_study ON ris_result_context(study_id);
+
+    CREATE TABLE IF NOT EXISTS ris_critical_value_alerts (
+      id BIGSERIAL PRIMARY KEY,
+      study_id BIGINT NOT NULL REFERENCES ris_studies(id) ON DELETE CASCADE,
+      lab_id INTEGER NOT NULL,
+      alert_reason VARCHAR(500) NOT NULL,
+      value_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      status VARCHAR(20) NOT NULL DEFAULT 'Open' CHECK (status IN ('Open','Acknowledged','Escalated')),
+      raised_by VARCHAR(255),
+      raised_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      due_at TIMESTAMPTZ,
+      acknowledged_by VARCHAR(255),
+      acknowledged_at TIMESTAMPTZ,
+      acknowledgment_notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_ris_critical_study ON ris_critical_value_alerts(study_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ris_critical_status ON ris_critical_value_alerts(lab_id, status, due_at);
+
+    CREATE TABLE IF NOT EXISTS ris_qc_templates (
+      id BIGSERIAL PRIMARY KEY,
+      lab_id INTEGER NOT NULL,
+      modality VARCHAR(20) NOT NULL,
+      item_key VARCHAR(120) NOT NULL,
+      item_label VARCHAR(255) NOT NULL,
+      required BOOLEAN NOT NULL DEFAULT TRUE,
+      display_order INTEGER NOT NULL DEFAULT 1,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (lab_id, modality, item_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ris_qc_template_modality ON ris_qc_templates(lab_id, modality, display_order);
   `);
 };
 ensureTable().catch(e => console.error('[RIS] Table init error:', e.message));
@@ -187,7 +486,78 @@ router.post('/upload', authLab, upload.single('file'), async (req, res) => {
       notes || null,
     ]);
 
-    return res.status(201).json({ success: true, study: result.rows[0] });
+    const study = result.rows[0];
+
+    // Best-effort PACS sync so LabRIS studies are discoverable via DICOMweb endpoints.
+    try {
+      await pool.query(
+        `INSERT INTO hg_dicom_studies
+           (study_instance_uid, patient_id, patient_name, modality,
+            study_date, study_description, accession_number, tenant_id, created_by, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+         ON CONFLICT (study_instance_uid, tenant_id)
+         DO UPDATE SET
+           modality = EXCLUDED.modality,
+           study_description = EXCLUDED.study_description,
+           accession_number = EXCLUDED.accession_number,
+           updated_at = NOW()`,
+        [
+          study.study_instance_uid,
+          study.patient_id || null,
+          study.patient_name || null,
+          study.modality || null,
+          study.study_date || null,
+          study.study_description || null,
+          study.accession_number || null,
+          req.lab.id,
+          req.lab.id,
+        ]
+      );
+
+      const sopUid = `2.25.${Date.now()}.${study.id}`;
+      await pool.query(
+        `INSERT INTO hg_dicom_instances
+           (sop_instance_uid, study_instance_uid, file_path, file_size,
+            content_type, tenant_id, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,NOW())
+         ON CONFLICT (sop_instance_uid) DO NOTHING`,
+        [
+          sopUid,
+          study.study_instance_uid,
+          study.file_path,
+          study.file_size,
+          study.mime_type,
+          req.lab.id,
+        ]
+      );
+    } catch (syncErr) {
+      console.warn('[RIS] PACS sync warning:', syncErr?.message || syncErr);
+    }
+
+    const actor = getActor(req);
+    await writeAuditEvent(pool, {
+      studyId: study.id,
+      labId: req.lab.id,
+      eventType: 'STUDY_CREATED',
+      actorId: actor.actorId,
+      actorName: actor.actorName,
+      details: {
+        patientName: study.patient_name,
+        modality: study.modality,
+        priority: study.priority,
+      },
+    });
+    await writeCustodyEvent(pool, {
+      studyId: study.id,
+      labId: req.lab.id,
+      fromStatus: null,
+      toStatus: study.status,
+      reason: 'Study uploaded',
+      actorId: actor.actorId,
+      actorName: actor.actorName,
+    });
+
+    return res.status(201).json({ success: true, study });
   } catch (err) {
     console.error('[RIS] Upload error:', err);
     try { if (req.file?.path) fs.unlinkSync(req.file.path); } catch {}
@@ -279,62 +649,959 @@ router.get('/:id', authLab, async (req, res) => {
   }
 });
 
-// ─── PUT /:id/status ─────────────────────────────────────────────────────────
-router.put('/:id/status', authLab, async (req, res) => {
+// ─── GET /:id/audit ─────────────────────────────────────────────────────────
+router.get('/:id/audit', authLab, async (req, res) => {
   try {
-    const { status } = req.body;
-    const valid = ['Ordered','Scheduled','InProgress','Completed','Reported','Cancelled'];
-    if (!valid.includes(status)) {
-      return res.status(400).json({ success: false, message: 'Invalid status' });
-    }
-    const row = await pool.query(
-      `UPDATE ris_studies SET status = $1, updated_at = NOW()
-       WHERE id = $2 AND lab_id = $3 RETURNING *`,
-      [status, req.params.id, req.lab.id]
+    const studyCheck = await pool.query(
+      'SELECT id FROM ris_studies WHERE id = $1 AND lab_id = $2',
+      [req.params.id, req.lab.id]
     );
-    if (!row.rows.length) return res.status(404).json({ success: false, message: 'Not found' });
-    return res.json({ success: true, study: row.rows[0] });
+    if (!studyCheck.rows.length) {
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
+
+    const rows = await pool.query(
+      `SELECT id, study_id, event_type, actor_id, actor_name, details, created_at
+       FROM ris_study_audit_events
+       WHERE study_id = $1 AND lab_id = $2
+       ORDER BY created_at DESC`,
+      [req.params.id, req.lab.id]
+    );
+
+    return res.json({ success: true, auditEvents: rows.rows });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── GET /:id/custody ───────────────────────────────────────────────────────
+router.get('/:id/custody', authLab, async (req, res) => {
+  try {
+    const studyCheck = await pool.query(
+      'SELECT id FROM ris_studies WHERE id = $1 AND lab_id = $2',
+      [req.params.id, req.lab.id]
+    );
+    if (!studyCheck.rows.length) {
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
+
+    const rows = await pool.query(
+      `SELECT id, study_id, from_status, to_status, reason, actor_id, actor_name, metadata, created_at
+       FROM ris_sample_custody_events
+       WHERE study_id = $1 AND lab_id = $2
+       ORDER BY created_at DESC`,
+      [req.params.id, req.lab.id]
+    );
+
+    return res.json({ success: true, custodyEvents: rows.rows });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── GET /qc/templates/:modality ────────────────────────────────────────────
+router.get('/qc/templates/:modality', authLab, async (req, res) => {
+  try {
+    const modality = normalizeModality(req.params.modality);
+    const templateRows = await pool.query(
+      `SELECT item_key, item_label, required, display_order
+       FROM ris_qc_templates
+       WHERE lab_id = $1 AND modality = $2
+       ORDER BY display_order ASC, id ASC`,
+      [req.lab.id, modality]
+    );
+
+    return res.json({
+      success: true,
+      modality,
+      templateItems: templateRows.rows,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── PUT /qc/templates/:modality ────────────────────────────────────────────
+router.put('/qc/templates/:modality', authLab, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const modality = normalizeModality(req.params.modality);
+    const templateItems = Array.isArray(req.body?.templateItems) ? req.body.templateItems : [];
+
+    if (!QC_TEMPLATE_MODALITIES.includes(modality)) {
+      return res.status(400).json({ success: false, message: 'Invalid modality for QC template' });
+    }
+    if (!templateItems.length) {
+      return res.status(400).json({ success: false, message: 'templateItems are required' });
+    }
+
+    await client.query('BEGIN');
+    await client.query(
+      'DELETE FROM ris_qc_templates WHERE lab_id = $1 AND modality = $2',
+      [req.lab.id, modality]
+    );
+
+    let order = 1;
+    for (const item of templateItems) {
+      const itemKey = String(item?.itemKey || '').trim();
+      const itemLabel = String(item?.itemLabel || '').trim();
+      if (!itemKey || !itemLabel) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, message: 'Each template item needs itemKey and itemLabel' });
+      }
+      await client.query(
+        `INSERT INTO ris_qc_templates
+          (lab_id, modality, item_key, item_label, required, display_order)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [req.lab.id, modality, itemKey, itemLabel, item?.required !== false, Number(item?.displayOrder || order)]
+      );
+      order += 1;
+    }
+
+    await client.query('COMMIT');
+    return res.json({ success: true, modality, itemCount: templateItems.length });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    return res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ─── PUT /:id/qc ─────────────────────────────────────────────────────────────
+router.put('/:id/qc', authLab, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const qcStatus = String(req.body?.qcStatus || '').trim();
+    const reviewNotes = req.body?.reviewNotes || null;
+    const checklistAnswers = Array.isArray(req.body?.checklistAnswers) ? req.body.checklistAnswers : [];
+    const reviewedBy = req.body?.reviewedBy || req.lab.labName || req.lab.name || req.lab.email;
+    const validQcStatuses = ['Passed', 'Failed', 'NeedsReview'];
+
+    if (!validQcStatuses.includes(qcStatus)) {
+      return res.status(400).json({ success: false, message: 'Invalid qcStatus' });
+    }
+
+    await client.query('BEGIN');
+    const studyCheck = await client.query(
+      'SELECT id FROM ris_studies WHERE id = $1 AND lab_id = $2 FOR UPDATE',
+      [req.params.id, req.lab.id]
+    );
+    if (!studyCheck.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
+
+    const studyMeta = await client.query(
+      'SELECT modality FROM ris_studies WHERE id = $1 AND lab_id = $2',
+      [req.params.id, req.lab.id]
+    );
+    const normalizedModality = normalizeModality(studyMeta.rows[0]?.modality || 'OT');
+    const templateRows = await client.query(
+      `SELECT item_key, required
+       FROM ris_qc_templates
+       WHERE lab_id = $1 AND modality = $2`,
+      [req.lab.id, normalizedModality]
+    );
+    const checklistValidation = validateChecklistAgainstTemplate(templateRows.rows, checklistAnswers);
+    if (qcStatus === 'Passed' && templateRows.rows.length > 0 && !checklistValidation.passed) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Required QC checklist items must pass before setting qcStatus=Passed',
+        missingRequiredItems: checklistValidation.missingRequired,
+      });
+    }
+
+    const qcRow = await client.query(
+      `INSERT INTO ris_qc_reviews (study_id, lab_id, qc_status, review_notes, reviewed_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [req.params.id, req.lab.id, qcStatus, reviewNotes, reviewedBy]
+    );
+
+    const actor = getActor(req);
+    await writeAuditEvent(client, {
+      studyId: Number(req.params.id),
+      labId: req.lab.id,
+      eventType: 'QC_REVIEW_UPDATED',
+      actorId: actor.actorId,
+      actorName: actor.actorName,
+      details: {
+        qcStatus,
+        reviewedBy,
+        reviewNotes,
+        checklistAnswersCount: checklistAnswers.length,
+        checklistMissingRequired: checklistValidation.missingRequired,
+      },
+    });
+
+    await client.query('COMMIT');
+    return res.json({ success: true, qcReview: qcRow.rows[0] });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    return res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ─── GET /critical-alerts/summary ───────────────────────────────────────────
+router.get('/critical-alerts/summary', authLab, async (req, res) => {
+  try {
+    const row = await pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE status = 'Open')::int         AS open_count,
+         COUNT(*) FILTER (WHERE status = 'Escalated')::int    AS escalated_count,
+         COUNT(*) FILTER (WHERE status = 'Acknowledged')::int AS acknowledged_count,
+         COUNT(*) FILTER (WHERE status = 'Open' AND due_at IS NOT NULL AND due_at < NOW())::int AS overdue_open_count
+       FROM ris_critical_value_alerts
+       WHERE lab_id = $1`,
+      [req.lab.id]
+    );
+
+    return res.json({
+      success: true,
+      summary: row.rows[0],
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── POST /critical-alerts/escalate-overdue ─────────────────────────────────
+router.post('/critical-alerts/escalate-overdue', authLab, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const overdueRows = await client.query(
+      `SELECT id, study_id, status
+       FROM ris_critical_value_alerts
+       WHERE lab_id = $1
+         AND status = 'Open'
+         AND due_at IS NOT NULL
+         AND due_at < NOW()
+       FOR UPDATE`,
+      [req.lab.id]
+    );
+
+    if (overdueRows.rows.length) {
+      await client.query(
+        `UPDATE ris_critical_value_alerts
+         SET status = 'Escalated',
+             updated_at = NOW()
+         WHERE lab_id = $1
+           AND status = 'Open'
+           AND due_at IS NOT NULL
+           AND due_at < NOW()`,
+        [req.lab.id]
+      );
+
+      const actor = getActor(req);
+      for (const row of overdueRows.rows) {
+        await writeAuditEvent(client, {
+          studyId: row.study_id,
+          labId: req.lab.id,
+          eventType: 'CRITICAL_VALUE_ESCALATED',
+          actorId: actor.actorId,
+          actorName: actor.actorName,
+          details: {
+            alertId: row.id,
+            fromStatus: row.status,
+            toStatus: 'Escalated',
+            reason: 'SLA overdue',
+          },
+        });
+      }
+    }
+
+    await client.query('COMMIT');
+    return res.json({ success: true, escalatedCount: overdueRows.rows.length });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    return res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ─── GET /cron/health ────────────────────────────────────────────────────────
+router.get('/cron/health', authLab, async (_req, res) => {
+  try {
+    const { getStatus } = await import('../../utils/cronRegistry.js');
+    const allTasks = getStatus();
+    const labTasks = allTasks.filter((task) => task.key === 'lab_critical_escalation');
+    return res.json({
+      success: true,
+      tasks: labTasks,
+      retrievedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── GET /export/evidence-pack ───────────────────────────────────────────────
+router.get('/export/evidence-pack', authLab, async (req, res) => {
+  try {
+    const from = String(req.query?.from || '').trim();
+    const to = String(req.query?.to || '').trim();
+    const dateFilters = [];
+    const params = [req.lab.id];
+    let p = 2;
+
+    if (from) {
+      dateFilters.push(`s.created_at >= $${p++}`);
+      params.push(from);
+    }
+    if (to) {
+      dateFilters.push(`s.created_at <= $${p++}`);
+      params.push(to);
+    }
+    const filterSql = dateFilters.length ? ` AND ${dateFilters.join(' AND ')}` : '';
+
+    const studies = await pool.query(
+      `SELECT s.id, s.patient_name, s.modality, s.status, s.report_status, s.created_at, s.updated_at,
+              s.reported_by, s.reported_at, s.accession_number
+       FROM ris_studies s
+       WHERE s.lab_id = $1 ${filterSql}
+       ORDER BY s.created_at DESC
+       LIMIT 500`,
+      params
+    );
+
+    const generatedAt = new Date().toISOString();
+    const generatedBy = {
+      labId: req.lab.id,
+      labName: req.lab.labName || req.lab.name || req.lab.email || 'lab-user',
+      actor: req.lab.email || req.lab.name || req.lab.labName || 'lab-user',
+    };
+
+    const studyIds = studies.rows.map((row) => row.id);
+    if (!studyIds.length) {
+      const emptyPayload = {
+        success: true,
+        generatedAt,
+        generatedBy,
+        filters: { from: from || null, to: to || null },
+        summary: { studies: 0, auditEvents: 0, custodyEvents: 0, qcReviews: 0, criticalAlerts: 0, resultContexts: 0 },
+        data: {
+          studies: [],
+          auditEvents: [],
+          custodyEvents: [],
+          qcReviews: [],
+          criticalAlerts: [],
+          resultContexts: [],
+        },
+      };
+      const emptyHash = crypto
+        .createHash('sha256')
+        .update(JSON.stringify({ filters: emptyPayload.filters, summary: emptyPayload.summary, data: emptyPayload.data }))
+        .digest('hex');
+
+      const signedEmptyPayload = {
+        ...emptyPayload,
+        signature: {
+          algorithm: 'sha256',
+          contentHash: emptyHash,
+          generatedAt,
+          generatedBy,
+        },
+      };
+
+      const downloadFormat = String(req.query?.download || '').toLowerCase();
+      if (downloadFormat === 'csv') {
+        const csv = buildEvidenceCsv({
+          generatedAt,
+          generatedBy,
+          summary: signedEmptyPayload.summary,
+          filters: signedEmptyPayload.filters,
+          studies: [],
+          auditEvents: [],
+          custodyEvents: [],
+          qcReviews: [],
+          criticalAlerts: [],
+          resultContexts: [],
+          signature: signedEmptyPayload.signature,
+        });
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="lab-evidence-pack-${Date.now()}-${emptyHash.slice(0, 12)}.csv"`);
+        return res.send(csv);
+      }
+      if (downloadFormat === 'json') {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="lab-evidence-pack-${Date.now()}-${emptyHash.slice(0, 12)}.json"`);
+      }
+      return res.json(signedEmptyPayload);
+    }
+
+    const [auditEvents, custodyEvents, qcReviews, criticalAlerts, resultContexts] = await Promise.all([
+      pool.query(
+        `SELECT id, study_id, event_type, actor_id, actor_name, details, created_at
+         FROM ris_study_audit_events
+         WHERE lab_id = $1 AND study_id = ANY($2::bigint[])
+         ORDER BY created_at DESC`,
+        [req.lab.id, studyIds]
+      ),
+      pool.query(
+        `SELECT id, study_id, from_status, to_status, reason, actor_id, actor_name, metadata, created_at
+         FROM ris_sample_custody_events
+         WHERE lab_id = $1 AND study_id = ANY($2::bigint[])
+         ORDER BY created_at DESC`,
+        [req.lab.id, studyIds]
+      ),
+      pool.query(
+        `SELECT id, study_id, qc_status, review_notes, reviewed_by, reviewed_at
+         FROM ris_qc_reviews
+         WHERE lab_id = $1 AND study_id = ANY($2::bigint[])
+         ORDER BY reviewed_at DESC`,
+        [req.lab.id, studyIds]
+      ),
+      pool.query(
+        `SELECT id, study_id, status, alert_reason, value_payload, raised_by, raised_at,
+                due_at, acknowledged_by, acknowledged_at, acknowledgment_notes
+         FROM ris_critical_value_alerts
+         WHERE lab_id = $1 AND study_id = ANY($2::bigint[])
+         ORDER BY created_at DESC`,
+        [req.lab.id, studyIds]
+      ),
+      pool.query(
+        `SELECT id, study_id, reagent_lot_number, calibration_reference, context_notes, updated_at
+         FROM ris_result_context
+         WHERE lab_id = $1 AND study_id = ANY($2::bigint[])
+         ORDER BY updated_at DESC`,
+        [req.lab.id, studyIds]
+      ),
+    ]);
+
+    const payload = {
+      success: true,
+      generatedAt,
+      generatedBy,
+      filters: { from: from || null, to: to || null },
+      summary: {
+        studies: studies.rows.length,
+        auditEvents: auditEvents.rows.length,
+        custodyEvents: custodyEvents.rows.length,
+        qcReviews: qcReviews.rows.length,
+        criticalAlerts: criticalAlerts.rows.length,
+        resultContexts: resultContexts.rows.length,
+      },
+      data: {
+        studies: studies.rows,
+        auditEvents: auditEvents.rows,
+        custodyEvents: custodyEvents.rows,
+        qcReviews: qcReviews.rows,
+        criticalAlerts: criticalAlerts.rows,
+        resultContexts: resultContexts.rows,
+      },
+    };
+
+    const contentHash = crypto
+      .createHash('sha256')
+      .update(JSON.stringify({ filters: payload.filters, summary: payload.summary, data: payload.data }))
+      .digest('hex');
+
+    payload.signature = {
+      algorithm: 'sha256',
+      contentHash,
+      generatedAt,
+      generatedBy,
+    };
+
+    const downloadFormat = String(req.query?.download || '').toLowerCase();
+    if (downloadFormat === 'csv') {
+      const csv = buildEvidenceCsv({
+        generatedAt,
+        generatedBy,
+        summary: payload.summary,
+        filters: payload.filters,
+        studies: payload.data.studies,
+        auditEvents: payload.data.auditEvents,
+        custodyEvents: payload.data.custodyEvents,
+        qcReviews: payload.data.qcReviews,
+        criticalAlerts: payload.data.criticalAlerts,
+        resultContexts: payload.data.resultContexts,
+        signature: payload.signature,
+      });
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="lab-evidence-pack-${Date.now()}-${contentHash.slice(0, 12)}.csv"`);
+      return res.send(csv);
+    }
+    if (downloadFormat === 'json') {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="lab-evidence-pack-${Date.now()}-${contentHash.slice(0, 12)}.json"`);
+    }
+    return res.json(payload);
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── PUT /:id/result-context ────────────────────────────────────────────────
+router.put('/:id/result-context', authLab, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const reagentLotNumber = String(req.body?.reagentLotNumber || '').trim();
+    const calibrationReference = String(req.body?.calibrationReference || '').trim();
+    const contextNotes = req.body?.contextNotes || null;
+
+    if (!reagentLotNumber || !calibrationReference) {
+      return res.status(400).json({
+        success: false,
+        message: 'reagentLotNumber and calibrationReference are required',
+      });
+    }
+
+    await client.query('BEGIN');
+    const studyCheck = await client.query(
+      'SELECT id FROM ris_studies WHERE id = $1 AND lab_id = $2 FOR UPDATE',
+      [req.params.id, req.lab.id]
+    );
+    if (!studyCheck.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
+
+    const ctxRow = await client.query(
+      `INSERT INTO ris_result_context (study_id, lab_id, reagent_lot_number, calibration_reference, context_notes)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (study_id)
+       DO UPDATE SET
+         reagent_lot_number = EXCLUDED.reagent_lot_number,
+         calibration_reference = EXCLUDED.calibration_reference,
+         context_notes = EXCLUDED.context_notes,
+         updated_at = NOW()
+       RETURNING *`,
+      [req.params.id, req.lab.id, reagentLotNumber, calibrationReference, contextNotes]
+    );
+
+    const actor = getActor(req);
+    await writeAuditEvent(client, {
+      studyId: Number(req.params.id),
+      labId: req.lab.id,
+      eventType: 'RESULT_CONTEXT_UPDATED',
+      actorId: actor.actorId,
+      actorName: actor.actorName,
+      details: {
+        reagentLotNumber,
+        calibrationReference,
+      },
+    });
+
+    await client.query('COMMIT');
+    return res.json({ success: true, context: ctxRow.rows[0] });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    return res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ─── GET /:id/critical-alerts ───────────────────────────────────────────────
+router.get('/:id/critical-alerts', authLab, async (req, res) => {
+  try {
+    const studyCheck = await pool.query(
+      'SELECT id FROM ris_studies WHERE id = $1 AND lab_id = $2',
+      [req.params.id, req.lab.id]
+    );
+    if (!studyCheck.rows.length) {
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
+
+    const alerts = await pool.query(
+      `SELECT id, study_id, status, alert_reason, value_payload, raised_by, raised_at,
+              due_at, acknowledged_by, acknowledged_at, acknowledgment_notes, updated_at
+       FROM ris_critical_value_alerts
+       WHERE study_id = $1 AND lab_id = $2
+       ORDER BY created_at DESC`,
+      [req.params.id, req.lab.id]
+    );
+
+    return res.json({ success: true, alerts: alerts.rows });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── POST /:id/critical-alerts ──────────────────────────────────────────────
+router.post('/:id/critical-alerts', authLab, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const alertReason = String(req.body?.alertReason || '').trim();
+    const valuePayload = req.body?.valuePayload || {};
+    const raisedBy = req.body?.raisedBy || req.lab.labName || req.lab.name || req.lab.email;
+    const forceOverdue = req.body?.forceOverdue === true;
+    const dueMinutes = Number.isFinite(Number(req.body?.dueMinutes)) ? Number(req.body.dueMinutes) : 30;
+
+    if (!alertReason) {
+      return res.status(400).json({ success: false, message: 'alertReason is required' });
+    }
+
+    await client.query('BEGIN');
+    const studyCheck = await client.query(
+      'SELECT id FROM ris_studies WHERE id = $1 AND lab_id = $2 FOR UPDATE',
+      [req.params.id, req.lab.id]
+    );
+    if (!studyCheck.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
+
+    const dueAtExpr = forceOverdue
+      ? `NOW() - INTERVAL '1 minute'`
+      : `NOW() + ($6::text || ' minutes')::interval`;
+    const alertSql = `INSERT INTO ris_critical_value_alerts
+        (study_id, lab_id, alert_reason, value_payload, status, raised_by, due_at)
+       VALUES ($1, $2, $3, $4::jsonb, 'Open', $5, ${dueAtExpr})
+       RETURNING *`;
+    const alertParams = forceOverdue
+      ? [req.params.id, req.lab.id, alertReason, JSON.stringify(valuePayload), raisedBy]
+      : [req.params.id, req.lab.id, alertReason, JSON.stringify(valuePayload), raisedBy, String(Math.max(5, dueMinutes))];
+    const alertRow = await client.query(alertSql, alertParams);
+
+    const actor = getActor(req);
+    await writeAuditEvent(client, {
+      studyId: Number(req.params.id),
+      labId: req.lab.id,
+      eventType: 'CRITICAL_VALUE_RAISED',
+      actorId: actor.actorId,
+      actorName: actor.actorName,
+      details: {
+        alertId: alertRow.rows[0].id,
+        alertReason,
+      },
+    });
+
+    await client.query('COMMIT');
+    return res.status(201).json({ success: true, alert: alertRow.rows[0] });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    return res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ─── PUT /critical-alerts/:alertId/ack ──────────────────────────────────────
+router.put('/critical-alerts/:alertId/ack', authLab, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const status = String(req.body?.status || 'Acknowledged').trim();
+    const acknowledgmentNotes = req.body?.acknowledgmentNotes || null;
+    const acknowledgedBy = req.body?.acknowledgedBy || req.lab.labName || req.lab.name || req.lab.email;
+
+    if (!CRITICAL_VALUE_ALERT_STATUSES.includes(status) || status === 'Open') {
+      return res.status(400).json({ success: false, message: 'Invalid acknowledgment status' });
+    }
+
+    await client.query('BEGIN');
+    const current = await client.query(
+      `SELECT id, study_id, status
+       FROM ris_critical_value_alerts
+       WHERE id = $1 AND lab_id = $2
+       FOR UPDATE`,
+      [req.params.alertId, req.lab.id]
+    );
+    if (!current.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Alert not found' });
+    }
+
+    const alert = await client.query(
+      `UPDATE ris_critical_value_alerts
+       SET status = $1,
+           acknowledged_by = $2,
+           acknowledged_at = NOW(),
+           acknowledgment_notes = $3,
+           updated_at = NOW()
+       WHERE id = $4
+       RETURNING *`,
+      [status, acknowledgedBy, acknowledgmentNotes, req.params.alertId]
+    );
+
+    const actor = getActor(req);
+    await writeAuditEvent(client, {
+      studyId: current.rows[0].study_id,
+      labId: req.lab.id,
+      eventType: 'CRITICAL_VALUE_ACKNOWLEDGED',
+      actorId: actor.actorId,
+      actorName: actor.actorName,
+      details: {
+        alertId: Number(req.params.alertId),
+        fromStatus: current.rows[0].status,
+        toStatus: status,
+      },
+    });
+
+    await client.query('COMMIT');
+    return res.json({ success: true, alert: alert.rows[0] });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    return res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ─── PUT /:id/status ─────────────────────────────────────────────────────────
+router.put('/:id/status', authLab, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { status } = req.body;
+    if (!VALID_STUDY_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status' });
+    }
+
+    await client.query('BEGIN');
+
+    const currentRes = await client.query(
+      `SELECT id, status
+       FROM ris_studies
+       WHERE id = $1 AND lab_id = $2
+       FOR UPDATE`,
+      [req.params.id, req.lab.id]
+    );
+    if (!currentRes.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
+
+    const currentStatus = currentRes.rows[0].status;
+    if (currentStatus === status) {
+      await client.query('ROLLBACK');
+      return res.json({ success: true, message: 'Status unchanged', study: currentRes.rows[0] });
+    }
+
+    const allowed = ALLOWED_STATUS_TRANSITIONS[currentStatus] || [];
+    if (!allowed.includes(status)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: `Invalid transition from ${currentStatus} to ${status}`,
+      });
+    }
+
+    const row = await client.query(
+      `UPDATE ris_studies
+       SET status = $1, updated_at = NOW()
+       WHERE id = $2 AND lab_id = $3
+       RETURNING *`,
+      [status, req.params.id, req.lab.id]
+    );
+
+    const actor = getActor(req);
+    await writeAuditEvent(client, {
+      studyId: row.rows[0].id,
+      labId: req.lab.id,
+      eventType: 'STATUS_CHANGED',
+      actorId: actor.actorId,
+      actorName: actor.actorName,
+      details: { fromStatus: currentStatus, toStatus: status },
+    });
+    await writeCustodyEvent(client, {
+      studyId: row.rows[0].id,
+      labId: req.lab.id,
+      fromStatus: currentStatus,
+      toStatus: status,
+      reason: req.body?.reason || 'Status updated',
+      actorId: actor.actorId,
+      actorName: actor.actorName,
+    });
+
+    await client.query('COMMIT');
+    return res.json({ success: true, study: row.rows[0] });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    return res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
   }
 });
 
 // ─── PUT /:id/report ─────────────────────────────────────────────────────────
 router.put('/:id/report', authLab, async (req, res) => {
+  const client = await pool.connect();
   try {
-    const { reportText, reportStatus = 'Final', reportedBy } = req.body;
-    const row = await pool.query(
-      `UPDATE ris_studies
-       SET report_text = $1, report_status = $2, reported_by = $3,
-           reported_at = NOW(), status = 'Reported', updated_at = NOW()
-       WHERE id = $4 AND lab_id = $5 RETURNING *`,
-      [reportText, reportStatus, reportedBy || req.lab.labName, req.params.id, req.lab.id]
+    const { reportText, reportStatus = 'Final', reportedBy, criticalValue } = req.body;
+    if (!VALID_REPORT_STATUSES.includes(reportStatus)) {
+      return res.status(400).json({ success: false, message: 'Invalid report status' });
+    }
+    if ((reportStatus === 'Final' || reportStatus === 'Addendum') && !String(reportText || '').trim()) {
+      return res.status(400).json({ success: false, message: 'reportText is required for final report states' });
+    }
+
+    await client.query('BEGIN');
+
+    const currentRes = await client.query(
+      `SELECT id, status, report_status
+       FROM ris_studies
+       WHERE id = $1 AND lab_id = $2
+       FOR UPDATE`,
+      [req.params.id, req.lab.id]
     );
-    if (!row.rows.length) return res.status(404).json({ success: false, message: 'Not found' });
+    if (!currentRes.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
+
+    const current = currentRes.rows[0];
+    if ((reportStatus === 'Final' || reportStatus === 'Addendum') && !['Completed', 'Reported'].includes(current.status)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'Final reports are allowed only after study is Completed',
+      });
+    }
+
+    if (reportStatus === 'Final') {
+      const latestQc = await getLatestQcReview(client, req.params.id, req.lab.id);
+      if (!latestQc || latestQc.qc_status !== 'Passed') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: 'QC pass is required before finalizing report',
+        });
+      }
+
+      const resultContext = await getResultContext(client, req.params.id, req.lab.id);
+      if (!resultContext?.reagent_lot_number || !resultContext?.calibration_reference) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: 'Result context with reagentLotNumber and calibrationReference is required before finalizing',
+        });
+      }
+    }
+
+    const nextStudyStatus = (reportStatus === 'Final' || reportStatus === 'Addendum')
+      ? 'Reported'
+      : current.status;
+
+    const row = await client.query(
+      `UPDATE ris_studies
+       SET report_text = COALESCE($1, report_text),
+           report_status = $2,
+           reported_by = $3,
+           reported_at = NOW(),
+           status = $4,
+           updated_at = NOW()
+       WHERE id = $5 AND lab_id = $6
+       RETURNING *`,
+      [reportText || null, reportStatus, reportedBy || req.lab.labName, nextStudyStatus, req.params.id, req.lab.id]
+    );
+
+    const actor = getActor(req);
+    await writeAuditEvent(client, {
+      studyId: row.rows[0].id,
+      labId: req.lab.id,
+      eventType: 'REPORT_UPDATED',
+      actorId: actor.actorId,
+      actorName: actor.actorName,
+      details: {
+        fromReportStatus: current.report_status,
+        toReportStatus: reportStatus,
+      },
+    });
+
+    if (criticalValue?.enabled === true) {
+      const alertReason = String(criticalValue?.reason || 'Critical value in finalized report').trim();
+      if (alertReason) {
+        const dueMinutes = Number.isFinite(Number(criticalValue?.dueMinutes))
+          ? Number(criticalValue.dueMinutes)
+          : 30;
+        const alertRow = await client.query(
+          `INSERT INTO ris_critical_value_alerts
+            (study_id, lab_id, alert_reason, value_payload, status, raised_by, due_at)
+           VALUES ($1, $2, $3, $4::jsonb, 'Open', $5, NOW() + ($6::text || ' minutes')::interval)
+           RETURNING id`,
+          [
+            req.params.id,
+            req.lab.id,
+            alertReason,
+            JSON.stringify(criticalValue?.payload || {}),
+            reportedBy || req.lab.labName || req.lab.name || req.lab.email,
+            String(Math.max(5, dueMinutes)),
+          ]
+        );
+
+        await writeAuditEvent(client, {
+          studyId: row.rows[0].id,
+          labId: req.lab.id,
+          eventType: 'CRITICAL_VALUE_RAISED',
+          actorId: actor.actorId,
+          actorName: actor.actorName,
+          details: {
+            alertId: alertRow.rows[0].id,
+            alertReason,
+          },
+        });
+      }
+    }
+
+    if (current.status !== nextStudyStatus) {
+      await writeCustodyEvent(client, {
+        studyId: row.rows[0].id,
+        labId: req.lab.id,
+        fromStatus: current.status,
+        toStatus: nextStudyStatus,
+        reason: `Report moved to ${reportStatus}`,
+        actorId: actor.actorId,
+        actorName: actor.actorName,
+        metadata: { reportStatus },
+      });
+    }
+
+    await client.query('COMMIT');
     return res.json({ success: true, study: row.rows[0] });
   } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
     return res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
   }
 });
 
 // ─── DELETE /:id ──────────────────────────────────────────────────────────────
 router.delete('/:id', authLab, async (req, res) => {
+  const client = await pool.connect();
   try {
-    const row = await pool.query(
+    await client.query('BEGIN');
+
+    const row = await client.query(
       'SELECT * FROM ris_studies WHERE id = $1 AND lab_id = $2',
       [req.params.id, req.lab.id]
     );
-    if (!row.rows.length) return res.status(404).json({ success: false, message: 'Not found' });
+    if (!row.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
 
     const study = row.rows[0];
+    const actor = getActor(req);
+    await writeAuditEvent(client, {
+      studyId: study.id,
+      labId: req.lab.id,
+      eventType: 'STUDY_DELETED',
+      actorId: actor.actorId,
+      actorName: actor.actorName,
+      details: { status: study.status, filePath: study.file_path },
+    });
+
     if (study.file_path) {
       await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: study.file_path })).catch(() => {});
     }
-    await pool.query('DELETE FROM ris_studies WHERE id = $1', [req.params.id]);
+    await client.query('DELETE FROM ris_studies WHERE id = $1', [req.params.id]);
+    await client.query('COMMIT');
     return res.json({ success: true });
   } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
     console.error('[RIS] Delete error:', err);
     return res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
   }
 });
 

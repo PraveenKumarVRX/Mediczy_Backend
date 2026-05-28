@@ -2084,7 +2084,15 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
             lastName: lastName || '',
             companyName: corporate.companyName,
             employeeId,
-            department
+            department,
+            planName: emp.planName || emp.insurancePlan || emp.plan || corporate.packageType || "Nijacart Employee Health Plan",
+            coverageAmount: emp.coverageAmount || emp.sumInsured || emp.sum_insured || emp.coverage,
+            planStartDate: emp.planStartDate || emp.startDate || emp.coverageStartDate,
+            planEndDate: emp.planEndDate || emp.endDate || emp.coverageEndDate,
+            planValidity: emp.planValidity || emp.validity,
+            planBenefits: emp.planBenefits || emp.benefits,
+            sponsor: emp.sponsor || emp.employerContribution,
+            copay: emp.copay || emp.employeeShare
           }, temporaryPassword).catch(err => {
             console.error(`Failed to send welcome email to employee ${normalizedEmail}:`, err.message);
           });
@@ -2127,6 +2135,7 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
   try {
     const numericCorporateId = req.resolvedCorporate.id;
 
+    const { limit: qLimit = 1000, offset: qOffset = 0 } = req.query;
     const employees = await postgresSequelize.query(`
       SELECT u.id, u.email, u."firstName", u."lastName", u."phoneNumber",
              u.address_city, u.address_state, u."address_zipCode",
@@ -2144,13 +2153,15 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
         WHERE "userId" = u.id AND corporate_id = :corporateId AND status = 'active'
         ORDER BY "validTo" DESC LIMIT 1
       ) uhp ON true
-      WHERE ua."entityType" = 'corporate' 
+      WHERE ua."entityType" = 'corporate'
         AND ua."entityId" = :corporateId
         AND ua.role = 'employee'
       ORDER BY u."firstName"
+      LIMIT :limit OFFSET :offset
     `, {
-      replacements: { corporateId: numericCorporateId },
-      type: postgresSequelize.QueryTypes.SELECT
+      replacements: { corporateId: numericCorporateId, limit: Math.min(parseInt(qLimit) || 1000, 2000), offset: parseInt(qOffset) || 0 },
+      type: postgresSequelize.QueryTypes.SELECT,
+      benchmark: true,
     });
     
     return res.json({

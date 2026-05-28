@@ -133,12 +133,32 @@ const HelpCenter = () => {
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-4xl">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-          <HelpCircle className="w-6 h-6 text-teal-500" /> Help & Support
-        </h1>
-        <p className="text-sm text-slate-500 mt-0.5">Raise a service request or view your tickets</p>
+      <div className="rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50 via-cyan-50 to-blue-50 p-5 md:p-6 mb-6 shadow-sm transition-all duration-300">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full bg-teal-600/10 px-3 py-1 text-xs font-semibold text-teal-700 mb-3">
+            <MessageSquare className="h-3.5 w-3.5" />
+            Guided Support Desk
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <HelpCircle className="w-6 h-6 text-teal-500" /> Help & Support
+          </h1>
+          <p className="text-sm text-slate-600 mt-0.5">Raise a service request, monitor ticket progress, and resolve issues faster.</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mt-5">
+          <div className="rounded-lg border border-teal-200 bg-white/80 px-3 py-2">
+            <p className="text-xs font-semibold text-teal-700">Step 1: Submit clearly</p>
+            <p className="text-[11px] text-slate-600">Add category, priority, and full context to speed triage.</p>
+          </div>
+          <div className="rounded-lg border border-teal-200 bg-white/80 px-3 py-2">
+            <p className="text-xs font-semibold text-teal-700">Step 2: Track updates</p>
+            <p className="text-[11px] text-slate-600">Watch status changes and agent responses in one timeline.</p>
+          </div>
+          <div className="rounded-lg border border-teal-200 bg-white/80 px-3 py-2">
+            <p className="text-xs font-semibold text-teal-700">Step 3: Use smart FAQs</p>
+            <p className="text-[11px] text-slate-600">Resolve repeat queries quickly with guided answers.</p>
+          </div>
+        </div>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -158,6 +178,36 @@ const HelpCenter = () => {
             <HelpCircle className="w-4 h-4 mr-1.5" />FAQs
           </TabsTrigger>
         </TabsList>
+
+        <div className="rounded-xl border border-teal-200 bg-teal-50/70 p-3 mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 transition-all duration-300">
+          <div>
+            <p className="text-xs font-semibold text-teal-700">Next Best Action</p>
+            <p className="text-[11px] text-slate-600">
+              {tab === "new"
+                ? "Use high priority only for care-blocking issues and include IDs for faster triage."
+                : tab === "my-tickets"
+                  ? "Open recent tickets and respond to agent updates to avoid resolution delays."
+                  : "Check FAQs first for instant answers, then raise a request if needed."}
+            </p>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {tab !== "new" && (
+              <Button size="sm" variant="outline" onClick={() => setTab("new")}>
+                <Plus className="w-3.5 h-3.5 mr-1" /> New Ticket
+              </Button>
+            )}
+            {tab === "my-tickets" && (
+              <Button size="sm" variant="outline" onClick={loadTickets} disabled={loadingTickets}>
+                <RefreshCw className={`w-3.5 h-3.5 mr-1 ${loadingTickets ? "animate-spin" : ""}`} /> Refresh
+              </Button>
+            )}
+            {tab !== "faq" && (
+              <Button size="sm" variant="outline" onClick={() => setTab("faq")}>
+                <HelpCircle className="w-3.5 h-3.5 mr-1" /> Browse FAQ
+              </Button>
+            )}
+          </div>
+        </div>
 
         {/* ── New Ticket ── */}
         <TabsContent value="new">

@@ -334,6 +334,145 @@ Expected: Modal closes
 
 ---
 
+## BACKEND QA QUICK CHECKLIST (Auth + AI Scribe)
+
+Use this section to validate the issues raised in manual QA around invalid credentials, 429 lockouts, and AI scribe behavior.
+
+### Preconditions
+
+1. Ensure backend health is OK:
+
+```bash
+BASE='http://127.0.0.1:8888'
+curl -s -w '\n%{http_code}\n' "$BASE/health"
+```
+
+Expected: JSON response and status code 200.
+
+2. If credentials/rate-limit state seems stale, reset QA auth state:
+
+```bash
+cd /home/ubuntu/Mediczy/server
+npm run fix:qa-login-blockers:ssm
+```
+
+Expected: script reports created/updated QA accounts and cleared local rate-limit keys.
+
+### Portal Login Verification Matrix
+
+Run each command and confirm HTTP 200 with success message.
+
+Doctor:
+
+```bash
+BASE='http://127.0.0.1:8888'
+curl -s -w '\n%{http_code}\n' -X POST "$BASE/api/doctors/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"doctor@mediczy.com","password":"Doctor123"}'
+```
+
+Lab:
+
+```bash
+BASE='http://127.0.0.1:8888'
+curl -s -w '\n%{http_code}\n' -X POST "$BASE/api/lab/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"qa.lab@mediczy.com","password":"QaLab@123"}'
+```
+
+Pharmacy:
+
+```bash
+BASE='http://127.0.0.1:8888'
+curl -s -w '\n%{http_code}\n' -X POST "$BASE/api/pharmacy/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"qa.pharmacy@mediczy.com","password":"QaPharm@123"}'
+```
+
+Nurse:
+
+```bash
+BASE='http://127.0.0.1:8888'
+curl -s -w '\n%{http_code}\n' -X POST "$BASE/api/nurse/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"qa.nurse@mediczy.com","password":"QaNurse@123"}'
+```
+
+Hospital:
+
+```bash
+BASE='http://127.0.0.1:8888'
+curl -s -w '\n%{http_code}\n' -X POST "$BASE/api/hospital/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"qa.hospital@mediczy.com","password":"QaHosp@123"}'
+```
+
+### AI Scribe Validation
+
+1. Fetch doctor token:
+
+```bash
+BASE='http://127.0.0.1:8888'
+LOGIN=$(curl -s -X POST "$BASE/api/doctors/login" -H 'Content-Type: application/json' -d '{"email":"doctor@mediczy.com","password":"Doctor123"}')
+TOKEN=$(echo "$LOGIN" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const j=JSON.parse(d);console.log(j.token||'')}catch(e){console.log('')}})")
+echo "$TOKEN"
+```
+
+Expected: non-empty JWT token string.
+
+2. Autocomplete endpoint:
+
+```bash
+BASE='http://127.0.0.1:8888'
+curl -s -w '\n%{http_code}\n' -G "$BASE/api/ai/scribe/autocomplete" \
+  -H "Authorization: Bearer $TOKEN" \
+  --data-urlencode 'q=headache'
+```
+
+Expected: status 200 and success true.
+
+3. Generate prescription (correct payload field):
+
+```bash
+BASE='http://127.0.0.1:8888'
+curl -s -w '\n%{http_code}\n' -X POST "$BASE/api/ai/scribe/generate-prescription" \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"consultationNotes":"Patient with fever and cough for 3 days. advised paracetamol 650 mg three times daily after food for 3 days.","saveToDatabase":false,"language":"en"}'
+```
+
+Expected: status 200 and success true.
+
+4. Negative contract check (required-field behavior):
+
+```bash
+BASE='http://127.0.0.1:8888'
+curl -s -w '\n%{http_code}\n' -X POST "$BASE/api/ai/scribe/generate-prescription" \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"notes":"This should fail because consultationNotes is missing"}'
+```
+
+Expected: status 400 with code NOTES_REQUIRED.
+
+### Execution Result Sheet (Single Screenshot Friendly)
+
+| Check | Expected | Actual Status | PASS/FAIL |
+|---|---|---|---|
+| Health endpoint | 200 | ___ | ___ |
+| Doctor login | 200 + login success message | ___ | ___ |
+| Lab login | 200 + login success message | ___ | ___ |
+| Pharmacy login | 200 + success true | ___ | ___ |
+| Nurse login | 200 + nurse login success message | ___ | ___ |
+| Hospital login | 200 + login success message | ___ | ___ |
+| AI autocomplete | 200 + success true | ___ | ___ |
+| AI generate prescription | 200 + success true | ___ | ___ |
+| AI generate negative check | 400 + code NOTES_REQUIRED | ___ | ___ |
+
+Tester: __________  Date: __________  Environment: __________
+
+---
+
 ## CRASH TESTING
 
 **Try these to ensure no crashes:**

@@ -1214,6 +1214,8 @@ router.post('/employees', authUser, requireRole('corporate'), async (req, res) =
     const metadata = JSON.stringify({
       firstName,
       lastName: lastNameParts.join(' '),
+      profileActivation: 'inactive',
+      activatedAt: null,
     });
 
     await postgresSequelize.query(
@@ -1224,7 +1226,12 @@ router.post('/employees', authUser, requireRole('corporate'), async (req, res) =
          department=:department,
          designation=:designation,
          "joiningDate"=:joiningDate,
-         metadata=CAST(:metadata AS JSONB),
+         metadata=CASE
+           WHEN corporate_employees."userId" IS NOT NULL
+             THEN COALESCE(corporate_employees.metadata, '{}'::jsonb)
+                  || jsonb_build_object('profileActivation', 'active')
+           ELSE CAST(:metadata AS JSONB)
+         END,
          "isActive"=true,
          "updatedAt"=NOW()`,
       { replacements: { corporateId, employeeId: normalizedEmployeeId, businessUnit: businessUnit || null, department: department || null, designation: designation || '', joiningDate: joiningDate || null, metadata } }
@@ -1300,6 +1307,8 @@ router.post('/employees/bulk-upload', authUser, requireRole('corporate'), async 
       const metadata = JSON.stringify({
         firstName,
         lastName: lastNameParts.join(' '),
+        profileActivation: 'inactive',
+        activatedAt: null,
       });
 
       // Upsert corporate_employees record
@@ -1311,7 +1320,12 @@ router.post('/employees/bulk-upload', authUser, requireRole('corporate'), async 
            department=:department,
            designation=:designation,
            "joiningDate"=:joiningDate,
-           metadata=CAST(:metadata AS JSONB),
+           metadata=CASE
+             WHEN corporate_employees."userId" IS NOT NULL
+               THEN COALESCE(corporate_employees.metadata, '{}'::jsonb)
+                    || jsonb_build_object('profileActivation', 'active')
+             ELSE CAST(:metadata AS JSONB)
+           END,
            "isActive"=true,
            "updatedAt"=NOW()`,
         { replacements: { corporateId, employeeId: generatedEmployeeId, businessUnit: emp.businessUnit || emp.business_unit || null, department: emp.department || null, designation: emp.designation || '', joiningDate: emp.joiningDate || null, metadata } }

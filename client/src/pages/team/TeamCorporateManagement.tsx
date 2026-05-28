@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/use-toast';
 import { 
   Building2, 
@@ -58,7 +58,8 @@ import {
   MapPin,
   Bell,
   Send,
-  ChevronLeft
+  ChevronLeft,
+  Sparkles
 } from 'lucide-react';
 import api from '@/utils/api';
 import { useNavigate } from 'react-router-dom';
@@ -277,6 +278,65 @@ const defaultCommunicationTemplates: Record<CommunicationChannel, CommunicationT
   ],
 };
 
+const aiTemplatePresets = [
+  {
+    key: 'renewal_push',
+    label: 'Renewal Push',
+    objective: 'renewal',
+    tone: 'professional',
+    cta: 'schedule_call',
+    category: 'Plans',
+    nameHint: 'Plan Renewal Reminder',
+    instruction: 'Highlight urgency and plan continuity impact. Keep compliance-safe language.',
+    channels: ['email', 'whatsapp'] as CommunicationChannel[],
+  },
+  {
+    key: 'onboarding_launch',
+    label: 'Onboarding Launch',
+    objective: 'onboarding',
+    tone: 'friendly',
+    cta: 'book_demo',
+    category: 'Onboarding',
+    nameHint: 'Corporate Welcome',
+    instruction: 'Set clear next steps and onboarding timeline with a simple CTA.',
+    channels: ['email', 'whatsapp', 'sms'] as CommunicationChannel[],
+  },
+  {
+    key: 'reactivation_nudge',
+    label: 'Reactivation Nudge',
+    objective: 'reactivation',
+    tone: 'consultative',
+    cta: 'reply_yes',
+    category: 'Operations',
+    nameHint: 'Engagement Re-activation',
+    instruction: 'Use a low-friction re-engagement ask and concise benefit reminder.',
+    channels: ['whatsapp', 'sms'] as CommunicationChannel[],
+  },
+  {
+    key: 'upsell_expand',
+    label: 'Upsell Expand',
+    objective: 'upsell',
+    tone: 'professional',
+    cta: 'share_documents',
+    category: 'Benefits',
+    nameHint: 'Benefits Expansion Proposal',
+    instruction: 'Frame upgrade value with outcome-led messaging and next action clarity.',
+    channels: ['email', 'whatsapp'] as CommunicationChannel[],
+  },
+];
+
+const channelWordLimits: Record<CommunicationChannel, number> = {
+  email: 150,
+  whatsapp: 80,
+  sms: 35,
+};
+
+const channelCharacterLimits: Record<CommunicationChannel, number> = {
+  email: 1200,
+  whatsapp: 420,
+  sms: 160,
+};
+
 const TeamCorporateManagement = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -306,12 +366,28 @@ const TeamCorporateManagement = () => {
   const [communicationBulkRecipients, setCommunicationBulkRecipients] = useState('');
   const [communicationLogs, setCommunicationLogs] = useState<any[]>([]);
   const [communicationAnalytics, setCommunicationAnalytics] = useState<any>(null);
+  const [aiCommunicationDashboard, setAiCommunicationDashboard] = useState<any>(null);
+  const [aiCommunicationDraftId, setAiCommunicationDraftId] = useState<string | number | null>(null);
+  const [aiCommunicationLoading, setAiCommunicationLoading] = useState(false);
+  const [aiReplyText, setAiReplyText] = useState("");
+  const [aiReplyMonitoring, setAiReplyMonitoring] = useState(false);
+  const [aiTemplateWriting, setAiTemplateWriting] = useState(false);
+  const [aiTemplateConfig, setAiTemplateConfig] = useState({
+    objective: 'follow_up',
+    tone: 'professional',
+    cta: 'book_demo',
+    customInstruction: '',
+    editInstruction: 'Make this template clearer, shorter, and conversion-focused while preserving placeholders.',
+  });
   const [communicationLogsLoading, setCommunicationLogsLoading] = useState(false);
   const [communicationAnalyticsDays, setCommunicationAnalyticsDays] = useState('30');
   const [sendingCommunication, setSendingCommunication] = useState(false);
   const [corporates, setCorporates] = useState<Corporate[]>([]);
   const [selectedCorporate, setSelectedCorporate] = useState<Corporate | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [corporateStatusFilter, setCorporateStatusFilter] = useState<'all' | 'active' | 'inactive' | 'pending' | 'suspended'>('all');
+  const [templateLibrarySearch, setTemplateLibrarySearch] = useState('');
+  const [templateLibraryCategory, setTemplateLibraryCategory] = useState<'all' | string>('all');
   const [showEditCorporateDialog, setShowEditCorporateDialog] = useState(false);
   const [showDeleteCorporateDialog, setShowDeleteCorporateDialog] = useState(false);
   const [editingCorporate, setEditingCorporate] = useState<Corporate | null>(null);
@@ -503,7 +579,7 @@ const TeamCorporateManagement = () => {
     green:  'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-300',
     red:    'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300',
     yellow: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300',
-    slate:  'bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-900/30 dark:text-slate-300',
+    slate:  'bg-muted text-foreground border dark:bg-slate-900/30 dark:text-slate-300',
   };
   const defaultEventForm = {
     title: '',
@@ -554,9 +630,234 @@ const TeamCorporateManagement = () => {
     setEditingCommunicationTemplateId(null);
   };
 
+  const countWords = (text: string) => {
+    return (text || '').trim().split(/\s+/).filter(Boolean).length;
+  };
+
+  const clampWords = (text: string, maxWords: number) => {
+    const tokens = (text || '').trim().split(/\s+/).filter(Boolean);
+    if (tokens.length <= maxWords) {
+      return { text: (text || '').trim(), truncated: false, count: tokens.length };
+    }
+    return {
+      text: tokens.slice(0, maxWords).join(' '),
+      truncated: true,
+      count: maxWords,
+    };
+  };
+
+  const clampChars = (text: string, maxChars: number) => {
+    const cleaned = (text || '').trim();
+    if (cleaned.length <= maxChars) {
+      return { text: cleaned, truncated: false, count: cleaned.length };
+    }
+    return {
+      text: cleaned.slice(0, maxChars).trim(),
+      truncated: true,
+      count: maxChars,
+    };
+  };
+
+  const lintTemplateCopy = (channel: CommunicationChannel, subject: string, content: string) => {
+    const blocking: string[] = [];
+    const warnings: string[] = [];
+    const text = (content || '').trim();
+    const charCount = text.length;
+    const charLimit = channelCharacterLimits[channel];
+    const lines = text ? text.split(/\n+/).length : 0;
+
+    if (charCount > charLimit) {
+      blocking.push(`Content exceeds ${charLimit} characters for ${channel.toUpperCase()}.`);
+    }
+
+    if (channel === 'email') {
+      if (!subject.trim()) blocking.push('Email templates require a subject line.');
+      if (subject.trim().length > 70) warnings.push('Subject is long; keep under 70 characters for better open rates.');
+    }
+
+    if (channel === 'whatsapp') {
+      if (charCount > 220 && lines < 2) warnings.push('Add line breaks for better WhatsApp readability.');
+      if (text && !/(reply|book|schedule|yes|call|demo)/i.test(text)) warnings.push('Consider adding a clear WhatsApp call-to-action.');
+    }
+
+    if (channel === 'sms') {
+      if (lines > 2) warnings.push('SMS works better as one short paragraph.');
+      if (/(https?:\/\/|www\.)/i.test(text)) warnings.push('Links consume SMS characters quickly; use concise short links.');
+    }
+
+    return { blocking, warnings, charCount, lines, charLimit };
+  };
+
+  const templateWordLimit = channelWordLimits[communicationChannel];
+  const templateCharLimit = channelCharacterLimits[communicationChannel];
+  const templateDraftWordCount = countWords(communicationDraft.content || '');
+  const templateDraftCharCount = (communicationDraft.content || '').trim().length;
+  const templateDraftWithinLimit = templateDraftWordCount <= templateWordLimit;
+  const templateCopyLint = lintTemplateCopy(communicationChannel, communicationDraft.subject || '', communicationDraft.content || '');
+  const templateHasBlockingLint = templateCopyLint.blocking.length > 0;
+  const composerMessageWordCount = countWords(communicationComposer.message || '');
+  const composerMessageCharCount = (communicationComposer.message || '').trim().length;
+  const composerWithinWordLimit = composerMessageWordCount <= templateWordLimit;
+  const composerCopyLint = lintTemplateCopy(communicationChannel, communicationComposer.subject || '', communicationComposer.message || '');
+  const composerHasBlockingLint = composerCopyLint.blocking.length > 0;
+  const availableAiPresets = aiTemplatePresets.filter((preset) => preset.channels.includes(communicationChannel));
+
+  const applyAiTemplatePreset = (presetKey: string) => {
+    const preset = availableAiPresets.find((item) => item.key === presetKey);
+    if (!preset) return;
+
+    setAiTemplateConfig((prev) => ({
+      ...prev,
+      objective: preset.objective,
+      tone: preset.tone,
+      cta: preset.cta,
+      customInstruction: preset.instruction,
+    }));
+
+    setCommunicationDraft((prev) => ({
+      ...prev,
+      name: prev.name || preset.nameHint,
+      category: prev.category === 'General' ? preset.category : prev.category,
+    }));
+
+    toast({
+      title: 'Preset applied',
+      description: `${preset.label} configured in AI Template Studio.`,
+    });
+  };
+
+  const parseAiTemplateOutput = (text: string) => {
+    const trimmed = (text || '').trim();
+    if (!trimmed) return { subject: '', content: '' };
+    if (communicationChannel !== 'email') {
+      return { subject: '', content: trimmed };
+    }
+    const lines = trimmed.split('\n');
+    const subjectLine = lines.find((l: string) => l.toLowerCase().startsWith('subject:'));
+    const body = lines.filter((l: string) => !l.toLowerCase().startsWith('subject:')).join('\n').trim();
+    return {
+      subject: subjectLine ? subjectLine.replace(/^subject:\s*/i, '').trim() : '',
+      content: body || trimmed,
+    };
+  };
+
+  const generateAiTemplate = async () => {
+    if (!selectedCorporate) return;
+    setAiTemplateWriting(true);
+    try {
+      const channelHint = communicationChannel === 'email' ? 'professional email' : communicationChannel === 'whatsapp' ? 'WhatsApp message' : 'SMS text';
+      const nameHint = communicationDraft.name || 'Corporate Outreach';
+      const categoryHint = communicationDraft.category || 'General';
+      const objectiveHint = aiTemplateConfig.objective.replace(/_/g, ' ');
+      const ctaHint = aiTemplateConfig.cta.replace(/_/g, ' ');
+      const prompt = `Write a concise, professional ${channelHint} template for a healthcare benefits platform.
+Corporate: ${selectedCorporate.companyName} | Industry: ${selectedCorporate.industry || 'General'} | Employees: ${selectedCorporate.employeeCount || 0} | Plan: ${selectedCorporate.packageType || 'Standard'}
+Template name: "${nameHint}" | Category: ${categoryHint}
+Objective: ${objectiveHint} | Tone: ${aiTemplateConfig.tone} | CTA: ${ctaHint}
+Use these exact placeholders where appropriate: {{companyName}}, {{contactPerson}}, {{employeeCount}}, {{industry}}, {{packageType}}
+${aiTemplateConfig.customInstruction ? `Additional instruction: ${aiTemplateConfig.customInstruction}` : ''}
+${communicationChannel === 'email' ? 'Also suggest a subject line on the first line starting with "Subject: "' : ''}
+    Keep it warm, professional, and action-oriented. Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the body.`;
+
+      const res = await api.post('/team/ai/generate', { prompt, maxTokens: 300 });
+      const text: string = res.data?.data?.content || res.data?.content || '';
+      if (!text) throw new Error('No content returned');
+
+      const parsed = parseAiTemplateOutput(text);
+      const limitedByWords = clampWords(parsed.content, templateWordLimit);
+      const limited = clampChars(limitedByWords.text, templateCharLimit);
+      setCommunicationDraft(prev => ({
+        ...prev,
+        subject: communicationChannel === 'email' ? (parsed.subject || prev.subject) : prev.subject,
+        content: limited.text,
+      }));
+      if (limitedByWords.truncated || limited.truncated) {
+        toast({ title: 'AI content trimmed', description: `Content exceeded ${templateWordLimit} words and was trimmed for ${communicationChannel.toUpperCase()}.` });
+      }
+      toast({ title: 'AI template generated', description: 'Review and edit before saving.' });
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'AI failed', description: err.message || 'Could not generate template' });
+    } finally {
+      setAiTemplateWriting(false);
+    }
+  };
+
+  const aiEditExistingTemplate = async (template: CommunicationTemplate) => {
+    if (!selectedCorporate) return;
+    setAiTemplateWriting(true);
+    try {
+      const channelHint = communicationChannel === 'email' ? 'professional email' : communicationChannel === 'whatsapp' ? 'WhatsApp message' : 'SMS text';
+      const prompt = `Rewrite this ${channelHint} template for better conversion while preserving placeholders exactly.
+Corporate: ${selectedCorporate.companyName} | Industry: ${selectedCorporate.industry || 'General'} | Plan: ${selectedCorporate.packageType || 'Standard'}
+Template name: "${template.name}" | Category: ${template.category}
+Current subject: ${template.subject || 'N/A'}
+Current content:
+${template.content}
+
+Edit instruction: ${aiTemplateConfig.editInstruction || 'Improve clarity, readability, and CTA strength.'}
+Tone: ${aiTemplateConfig.tone} | Objective: ${aiTemplateConfig.objective.replace(/_/g, ' ')} | CTA: ${aiTemplateConfig.cta.replace(/_/g, ' ')}
+Preserve placeholders exactly if present: {{companyName}}, {{contactPerson}}, {{corporateId}}, {{employeeCount}}, {{industry}}, {{packageType}}
+${communicationChannel === 'email' ? 'Return subject in first line as "Subject: ..." and then body.' : 'Return message body only.'}`;
+
+      const res = await api.post('/team/ai/generate', { prompt, maxTokens: 350 });
+      const text: string = res.data?.data?.content || res.data?.content || '';
+      if (!text) throw new Error('No content returned');
+      const parsed = parseAiTemplateOutput(text);
+      const limitedByWords = clampWords(parsed.content, templateWordLimit);
+      const limited = clampChars(limitedByWords.text, templateCharLimit);
+
+      const next: Record<CommunicationChannel, CommunicationTemplate[]> = {
+        ...communicationTemplates,
+        [communicationChannel]: communicationTemplates[communicationChannel].map((item) =>
+          item.id === template.id
+            ? {
+                ...item,
+                subject: communicationChannel === 'email' ? (parsed.subject || item.subject || '') : undefined,
+                content: limited.text || item.content,
+                category: item.category || 'General',
+              }
+            : item
+        ),
+      };
+      persistCommunicationTemplates(next);
+
+      if (editingCommunicationTemplateId === template.id) {
+        setCommunicationDraft((prev) => ({
+          ...prev,
+          subject: communicationChannel === 'email' ? (parsed.subject || prev.subject) : prev.subject,
+          content: limited.text || prev.content,
+        }));
+      }
+      if (limitedByWords.truncated || limited.truncated) {
+        toast({ title: 'AI content trimmed', description: `Edited template exceeded ${templateWordLimit} words and was trimmed.` });
+      }
+      toast({ title: 'Template AI-edited', description: 'Existing template updated with AI improvements.' });
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'AI edit failed', description: err.message || 'Could not edit template with AI' });
+    } finally {
+      setAiTemplateWriting(false);
+    }
+  };
+
   const saveCommunicationTemplate = () => {
     if (!communicationDraft.name || !communicationDraft.content) {
       toast({ variant: 'destructive', title: 'Missing fields', description: 'Template name and content are required.' });
+      return;
+    }
+    if (templateHasBlockingLint) {
+      toast({
+        variant: 'destructive',
+        title: 'Template validation failed',
+        description: templateCopyLint.blocking[0],
+      });
+      return;
+    }
+    if (!templateDraftWithinLimit) {
+      toast({
+        variant: 'destructive',
+        title: 'Template too long',
+        description: `${communicationChannel.toUpperCase()} templates must be within ${templateWordLimit} words (current: ${templateDraftWordCount}).`,
+      });
       return;
     }
 
@@ -618,6 +919,61 @@ const TeamCorporateManagement = () => {
     }));
   };
 
+  const storeAiDraftAsTemplate = (draft: any, sourceId?: string | number | null) => {
+    if (!draft) return null;
+    const content = draft.message || draft.body || '';
+    if (!content.trim()) return null;
+    const templateId = sourceId ? `ai-${sourceId}` : `ai-${communicationChannel}-${Date.now()}`;
+    const template: CommunicationTemplate = {
+      id: templateId,
+      name: `AI Draft - ${selectedCorporate?.companyName || 'Corporate'}`,
+      category: 'AI Draft',
+      subject: communicationChannel === 'email' ? (draft.subject || communicationComposer.subject || '') : undefined,
+      content,
+    };
+    const existing = communicationTemplates[communicationChannel].filter((item) => item.id !== templateId);
+    const next: Record<CommunicationChannel, CommunicationTemplate[]> = {
+      ...communicationTemplates,
+      [communicationChannel]: [template, ...existing],
+    };
+    persistCommunicationTemplates(next);
+    setSelectedTemplateId(templateId);
+    return template;
+  };
+
+  const saveComposerAsCommunicationTemplate = () => {
+    if (!communicationComposer.message.trim()) {
+      toast({ variant: 'destructive', title: 'Nothing to save', description: 'Write or generate a message before saving a template.' });
+      return;
+    }
+    const template: CommunicationTemplate = {
+      id: `manual-${communicationChannel}-${Date.now()}`,
+      name: `Saved Draft - ${selectedCorporate?.companyName || 'Corporate'}`,
+      category: 'Saved Draft',
+      subject: communicationChannel === 'email' ? communicationComposer.subject : undefined,
+      content: communicationComposer.message,
+    };
+    const next: Record<CommunicationChannel, CommunicationTemplate[]> = {
+      ...communicationTemplates,
+      [communicationChannel]: [template, ...communicationTemplates[communicationChannel]],
+    };
+    persistCommunicationTemplates(next);
+    setSelectedTemplateId(template.id);
+    toast({ title: 'Template stored', description: 'Current draft saved to the Template Library.' });
+  };
+
+  const useStoredAiCommunication = (action: any) => {
+    if (!action) return;
+    setAiCommunicationDraftId(action.id || null);
+    setCommunicationComposer((prev) => ({
+      ...prev,
+      subject: communicationChannel === 'email' ? (action.subject || prev.subject || '') : prev.subject,
+      message: action.body || action.message || action.nextAction?.message || prev.message,
+    }));
+    const matchingTemplate = communicationTemplates[communicationChannel].find((item) => item.id === `ai-${action.id}`);
+    if (matchingTemplate) setSelectedTemplateId(matchingTemplate.id);
+  };
+
   const removeCommunicationTemplate = (templateId: string) => {
     const next: Record<CommunicationChannel, CommunicationTemplate[]> = {
       ...communicationTemplates,
@@ -643,6 +999,24 @@ const TeamCorporateManagement = () => {
       employee.employeeId?.toLowerCase().includes(q)
     );
   });
+
+  const communicationSummary = communicationAnalytics?.summary || {};
+  const communicationTotal = Number(communicationSummary.total || 0);
+  const communicationSent = Number(communicationSummary.sent || 0);
+  const communicationFailed = Number(communicationSummary.failed || 0);
+  const communicationSuccessRate = Number(communicationSummary.successRate || 0);
+  const aiNextActionCount = Number(aiCommunicationDashboard?.nextActions?.length || 0);
+  const audienceCount = communicationRecipientMode === 'selected'
+    ? selectedCommunicationEmployeeIds.length
+    : communicationRecipientMode === 'bulk'
+      ? communicationBulkRecipients.split(/\n|,|;/g).map((item) => item.trim()).filter(Boolean).length
+      : (communicationComposer.to.trim() ? 1 : 0);
+  const isCommunicationReadyToSend = audienceCount > 0
+    && communicationComposer.message.trim().length > 0
+    && (communicationChannel !== 'email' || communicationComposer.subject.trim().length > 0)
+    && composerWithinWordLimit
+    && !composerHasBlockingLint;
+  const communicationHealthTone = communicationSuccessRate >= 80 ? 'healthy' : communicationSuccessRate >= 50 ? 'watch' : 'critical';
 
   const buildCommunicationRecipients = () => {
     if (communicationRecipientMode === 'individual') {
@@ -671,19 +1045,47 @@ const TeamCorporateManagement = () => {
       const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
       const days = opts?.days || communicationAnalyticsDays;
 
-      const [logsResp, analyticsResp] = await Promise.all([
-        api.get('/team/communications/logs', {
+      const [logsResp, analyticsResp, aiDashboardResp] = await Promise.allSettled([
+        api.get("/team/communications/logs", {
           params: { corporateId: selectedCorporate.id, channel: communicationChannel, limit: 15 },
           headers,
         }),
-        api.get('/team/communications/analytics', {
+        api.get("/team/communications/analytics", {
           params: { corporateId: selectedCorporate.id, days },
           headers,
         }),
+        api.get("/team/communications/ai-dashboard", {
+          params: { corporateId: selectedCorporate.id, days },
+          headers,
+          timeout: 45000,
+        }),
       ]);
 
-      setCommunicationLogs(logsResp?.data?.logs || []);
-      setCommunicationAnalytics(analyticsResp?.data || null);
+      if (logsResp.status === 'fulfilled') {
+        setCommunicationLogs(logsResp.value?.data?.logs || []);
+      } else {
+        console.error('Failed to fetch communication logs', logsResp.reason);
+      }
+
+      if (analyticsResp.status === 'fulfilled') {
+        setCommunicationAnalytics(analyticsResp.value?.data || null);
+      } else {
+        console.error('Failed to fetch communication analytics', analyticsResp.reason);
+      }
+
+      if (aiDashboardResp.status === 'fulfilled') {
+        setAiCommunicationDashboard(aiDashboardResp.value?.data?.data || null);
+      } else {
+        console.error('Failed to fetch AI communication dashboard', aiDashboardResp.reason);
+        const aiDashboardError = aiDashboardResp.reason as any;
+        const timedOut = aiDashboardError?.code === 'ECONNABORTED' || String(aiDashboardError?.message || '').toLowerCase().includes('timeout');
+        toast({
+          title: 'AI dashboard delayed',
+          description: timedOut
+            ? 'Core communication insights loaded. AI dashboard is taking longer than expected and will retry on refresh.'
+            : 'Core communication insights loaded. AI dashboard is temporarily unavailable.',
+        });
+      }
     } catch (error) {
       console.error('Failed to fetch communication insights', error);
     } finally {
@@ -691,10 +1093,95 @@ const TeamCorporateManagement = () => {
     }
   };
 
+  const teamAuthHeaders = () => {
+    const token = localStorage.getItem("teamToken");
+    return token ? { Authorization: `Bearer ${token}` } : undefined;
+  };
+
+  const generateAiCommunicationDraft = async () => {
+    if (!selectedCorporate?.id) return;
+    setAiCommunicationLoading(true);
+    try {
+      const { data } = await api.post("/team/communications/ai-draft", {
+        corporateId: selectedCorporate.id,
+        corporate: selectedCorporate,
+        channel: communicationChannel,
+        intent: communicationChannel === "email" ? "corporate_plan_follow_up" : "corporate_short_outreach",
+        tone: "professional",
+        context: {
+          recipientMode: communicationRecipientMode,
+          employeeCount: selectedCorporate.employeeCount,
+          packageType: selectedCorporate.packageType,
+          currentSubject: communicationComposer.subject,
+          currentMessage: communicationComposer.message,
+        },
+      }, { headers: teamAuthHeaders() });
+      const draft = data?.data?.draft;
+      if (draft) {
+        setCommunicationComposer((prev) => ({
+          ...prev,
+          subject: communicationChannel === "email" ? (draft.subject || prev.subject) : prev.subject,
+          message: draft.message || draft.body || prev.message,
+        }));
+        setAiCommunicationDraftId(data?.data?.id || null);
+        storeAiDraftAsTemplate(draft, data?.data?.id || null);
+        toast({ title: "AI draft stored", description: "Draft added to the composer and Template Library." });
+        await fetchCommunicationInsights();
+      }
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "AI draft failed", description: error?.response?.data?.message || "Unable to generate draft right now." });
+    } finally {
+      setAiCommunicationLoading(false);
+    }
+  };
+
+  const recordAiReplySignal = async () => {
+    if (!selectedCorporate?.id || !aiReplyText.trim()) return;
+    setAiReplyMonitoring(true);
+    try {
+      await api.post("/team/communications/ai-monitor", {
+        communicationId: aiCommunicationDraftId || undefined,
+        corporateId: selectedCorporate.id,
+        corporate: selectedCorporate,
+        eventType: "reply",
+        subject: communicationComposer.subject,
+        message: communicationComposer.message,
+        replyText: aiReplyText,
+      }, { headers: teamAuthHeaders() });
+      setAiReplyText("");
+      toast({ title: "Reply monitored", description: "AI updated engagement and next action." });
+      await fetchCommunicationInsights();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "AI monitor failed", description: error?.response?.data?.message || "Unable to record reply signal." });
+    } finally {
+      setAiReplyMonitoring(false);
+    }
+  };
+
   const sendCommunication = async () => {
     const recipients = buildCommunicationRecipients();
-    if (recipients.length === 0 || !communicationComposer.message) {
+    if (recipients.length === 0 || !communicationComposer.message.trim()) {
       toast({ variant: 'destructive', title: 'Missing fields', description: 'Recipient(s) and message are required.' });
+      return;
+    }
+    if (communicationChannel === 'email' && !communicationComposer.subject.trim()) {
+      toast({ variant: 'destructive', title: 'Subject required', description: 'Email communication requires a subject line.' });
+      return;
+    }
+    if (!composerWithinWordLimit) {
+      toast({
+        variant: 'destructive',
+        title: 'Message too long',
+        description: `${communicationChannel.toUpperCase()} composer message must be within ${templateWordLimit} words (current: ${composerMessageWordCount}).`,
+      });
+      return;
+    }
+    if (composerHasBlockingLint) {
+      toast({
+        variant: 'destructive',
+        title: 'Message validation failed',
+        description: composerCopyLint.blocking[0],
+      });
       return;
     }
 
@@ -724,6 +1211,17 @@ const TeamCorporateManagement = () => {
         title: `${communicationChannel.toUpperCase()} sent`,
         description: `Message sent to ${recipients.length} recipient${recipients.length > 1 ? 's' : ''} for ${selectedCorporate?.companyName || 'corporate contact'}.`,
       });
+      if (communicationChannel === "email") {
+        await api.post("/team/communications/ai-monitor", {
+          communicationId: aiCommunicationDraftId || undefined,
+          corporateId: selectedCorporate?.id,
+          corporate: selectedCorporate,
+          eventType: "sent",
+          subject: communicationComposer.subject,
+          message: communicationComposer.message,
+          contactEmail: recipients[0],
+        }, { headers: teamAuthHeaders() }).catch(() => {});
+      }
       await fetchCommunicationInsights();
     } catch (error: any) {
       toast({
@@ -2175,11 +2673,43 @@ const TeamCorporateManagement = () => {
     });
   };
 
+  const normalizeText = (value?: string) => (value || '').replace(/\s+/g, ' ').trim();
+  const looksSuspiciousText = (value?: string) => {
+    const v = (value || '').toLowerCase();
+    return /drop\s+table|truncate\s+table|delete\s+from|--|;|\/\*|\*\//.test(v);
+  };
+
   // Filter corporates
-  const filteredCorporates = corporates.filter(corp => 
-    corp.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    corp.email?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredCorporates = corporates.filter((corp) => {
+    const q = searchTerm.trim().toLowerCase();
+    const statusMatch = corporateStatusFilter === 'all' || (corp.status || '').toLowerCase() === corporateStatusFilter;
+    if (!statusMatch) return false;
+    if (!q) return true;
+    return [
+      corp.companyName,
+      corp.contactPerson,
+      corp.email,
+      corp.industry,
+      corp.uniqueId,
+      corp.packageType,
+    ]
+      .filter(Boolean)
+      .some((v) => String(v).toLowerCase().includes(q));
+  });
+
+  const visibleTemplates = communicationTemplates[communicationChannel].filter((template) => {
+    const q = templateLibrarySearch.trim().toLowerCase();
+    const categoryOk = templateLibraryCategory === 'all' || (template.category || 'General') === templateLibraryCategory;
+    if (!categoryOk) return false;
+    if (!q) return true;
+    return [template.name, template.category, template.subject, template.content]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(q));
+  });
+
+  const templateCategoryOptions = Array.from(
+    new Set(communicationTemplates[communicationChannel].map((item) => item.category || 'General'))
+  ).sort();
 
   const getStatusBadge = (status: string) => {
     const statusColors: Record<string, string> = {
@@ -2205,38 +2735,54 @@ const TeamCorporateManagement = () => {
     <MainLayout>
       <div className="space-y-6 animate-in fade-in">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Corporate Management</h1>
-            <p className="text-muted-foreground">
+        <div className="rounded-2xl border bg-gradient-to-r from-slate-900 via-slate-800 to-cyan-900 px-5 py-5 text-white shadow-sm md:px-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Corporate Management</h1>
+              <p className="mt-1 text-slate-300">
               Manage corporate accounts, employees, plans, and network partners
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={() => setShowAddCorporateDialog(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Onboard Corporate
-            </Button>
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button className="bg-white text-slate-900 hover:bg-slate-100" onClick={() => setShowAddCorporateDialog(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Onboard Corporate
+              </Button>
+            </div>
           </div>
         </div>
 
         {/* Corporate Selector */}
-        <Card>
-          <CardHeader className="pb-3">
+        <Card className="border shadow-sm">
+          <CardHeader className="pb-3 bg-muted/40 border-b">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Select Corporate</CardTitle>
-              <div className="relative w-64">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search corporates..."
-                  className="pl-8"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
+              <CardTitle className="text-base text-foreground">Select Corporate</CardTitle>
+              <div className="flex items-center gap-2">
+                <Select value={corporateStatusFilter} onValueChange={(value) => setCorporateStatusFilter(value as any)}>
+                  <SelectTrigger className="w-36 bg-card">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="suspended">Suspended</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="relative w-64">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground/70" />
+                  <Input
+                    placeholder="Search corporates..."
+                    className="pl-8 bg-card"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="p-0">
+          <CardContent className="p-0 overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -2260,12 +2806,12 @@ const TeamCorporateManagement = () => {
                   filteredCorporates.map((corp) => (
                     <TableRow
                       key={corp.id}
-                      className={`cursor-pointer transition-colors ${selectedCorporate?.id === corp.id ? 'bg-primary/5' : 'hover:bg-muted/50'}`}
+                      className={`cursor-pointer transition-colors ${selectedCorporate?.id === corp.id ? 'bg-cyan-50 dark:bg-cyan-950/30' : 'hover:bg-muted/40'}`}
                       onClick={() => setSelectedCorporate(corp)}
                     >
                       <TableCell>
                         {corp.uniqueId ? (
-                          <span className="text-xs font-mono bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded">
+                          <span className="text-xs font-mono bg-muted dark:bg-slate-800 text-muted-foreground dark:text-muted-foreground/70 px-1.5 py-0.5 rounded">
                             {corp.uniqueId}
                           </span>
                         ) : (
@@ -2278,9 +2824,14 @@ const TeamCorporateManagement = () => {
                             <Building2 className="h-4 w-4 text-primary" />
                           </div>
                           <div>
-                            <p className="font-medium">{corp.companyName}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium">{normalizeText(corp.companyName)}</p>
+                              {looksSuspiciousText(corp.companyName) && (
+                                <Badge variant="outline" className="border-amber-400 bg-amber-50 text-amber-700">Review</Badge>
+                              )}
+                            </div>
                             {corp.contactPerson && (
-                              <p className="text-xs text-muted-foreground">{corp.contactPerson}</p>
+                              <p className="text-xs text-muted-foreground">{normalizeText(corp.contactPerson)}</p>
                             )}
                           </div>
                         </div>
@@ -2336,17 +2887,27 @@ const TeamCorporateManagement = () => {
         {/* Selected Corporate Management */}
         {selectedCorporate && (
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-8">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="hr-admin">HR Admin</TabsTrigger>
-              <TabsTrigger value="employees">Employees</TabsTrigger>
-              <TabsTrigger value="plans">Plans</TabsTrigger>
-              <TabsTrigger value="packages">Health Packages</TabsTrigger>
-              <TabsTrigger value="calendar" className="flex items-center gap-1.5">
+            <Card className="mb-4 border bg-gradient-to-r from-white via-slate-50 to-cyan-50/80 shadow-sm">
+              <CardContent className="flex flex-wrap items-center gap-3 py-4">
+                <Badge className="bg-slate-900 text-white hover:bg-slate-900">{selectedCorporate.companyName}</Badge>
+                <Badge variant="outline" className="border bg-card text-foreground/80">ID: {selectedCorporate.uniqueId || `ID-${selectedCorporate.id}`}</Badge>
+                <Badge variant="outline" className="border bg-card text-foreground/80">{selectedCorporate.industry || 'Industry N/A'}</Badge>
+                <Badge variant="outline" className="border bg-card text-foreground/80">Employees: {selectedCorporate.employeeCount || 0}</Badge>
+                <Badge variant="outline" className="border bg-card text-foreground/80">Plan: {selectedCorporate.packageType || 'Not Set'}</Badge>
+              </CardContent>
+            </Card>
+
+            <TabsList className="flex w-full overflow-x-auto rounded-xl bg-muted p-1 h-auto gap-0.5">
+              <TabsTrigger className="rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground" value="overview">Overview</TabsTrigger>
+              <TabsTrigger className="rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground" value="hr-admin">HR Admin</TabsTrigger>
+              <TabsTrigger className="rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground" value="employees">Employees</TabsTrigger>
+              <TabsTrigger className="rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground" value="plans">Plans</TabsTrigger>
+              <TabsTrigger className="rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground" value="packages">Health Packages</TabsTrigger>
+              <TabsTrigger value="calendar" className="flex items-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground">
                 <CalendarDays className="h-3.5 w-3.5" />Calendar
               </TabsTrigger>
-              <TabsTrigger value="network">Network</TabsTrigger>
-              <TabsTrigger value="communication">Communication</TabsTrigger>
+              <TabsTrigger className="rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground" value="network">Network</TabsTrigger>
+              <TabsTrigger className="rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground" value="communication">Communication</TabsTrigger>
             </TabsList>
 
             {/* Overview Tab */}
@@ -2454,7 +3015,7 @@ const TeamCorporateManagement = () => {
                           {selectedCorporate.uniqueId && (
                             <button
                               title="Copy Corporate ID"
-                              className="text-slate-400 hover:text-teal-600"
+                              className="text-muted-foreground/70 hover:text-teal-600"
                               onClick={() => { navigator.clipboard.writeText(selectedCorporate.uniqueId!); toast({ title: 'Copied', description: `Corporate ID ${selectedCorporate.uniqueId} copied` }); }}
                             ><Copy className="h-3.5 w-3.5" /></button>
                           )}
@@ -2771,113 +3332,313 @@ const TeamCorporateManagement = () => {
             </TabsContent>
 
             {/* Communication Tab */}
-            <TabsContent value="communication" className="space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Communication Hub</CardTitle>
-                  <CardDescription>
-                    Create and use Email, WhatsApp, and SMS templates for {selectedCorporate.companyName}.
-                  </CardDescription>
+            <TabsContent value="communication" className="space-y-5">
+              <Card className="overflow-hidden border shadow-sm">
+                <CardHeader className="border-b bg-gradient-to-r from-muted/60 via-background to-cyan-500/10 dark:to-cyan-950/20">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <Badge className="bg-slate-900 text-white hover:bg-slate-900">Communication Hub</Badge>
+                        <Badge variant="outline" className="border-cyan-300 bg-cyan-50 text-cyan-900">Corporate: {selectedCorporate.companyName}</Badge>
+                        <Badge variant="outline" className="border bg-card text-foreground/80 uppercase">{communicationChannel}</Badge>
+                      </div>
+                      <CardTitle className="text-2xl font-semibold text-foreground">World-Class Corporate Outreach Desk</CardTitle>
+                      <CardDescription className="mt-1 text-muted-foreground">
+                        Design templates, orchestrate campaigns, monitor buying signals, and execute reliable communication across Email, WhatsApp, and SMS.
+                      </CardDescription>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" onClick={() => fetchCommunicationInsights()} disabled={communicationLogsLoading}>
+                        <RefreshCw className={`mr-2 h-4 w-4 ${communicationLogsLoading ? 'animate-spin' : ''}`} />Refresh Data
+                      </Button>
+                      <Button onClick={generateAiCommunicationDraft} disabled={aiCommunicationLoading}>
+                        <Brain className="mr-2 h-4 w-4" />{aiCommunicationLoading ? 'Drafting...' : 'AI Draft & Store'}
+                      </Button>
+                    </div>
+                  </div>
                 </CardHeader>
-                <CardContent className="space-y-4">
+
+                <CardContent className="space-y-5 bg-muted/30 p-4 md:p-6">
+                  <Card className="border bg-card">
+                    <CardContent className="pt-4">
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                        <div className="rounded-lg border bg-muted/30 p-3">
+                          <p className="text-xs text-muted-foreground">Step 1</p>
+                          <p className="text-sm font-medium text-foreground">Choose Channel</p>
+                          <p className="text-xs text-muted-foreground">Current: {communicationChannel.toUpperCase()}</p>
+                        </div>
+                        <div className="rounded-lg border bg-muted/30 p-3">
+                          <p className="text-xs text-muted-foreground">Step 2</p>
+                          <p className="text-sm font-medium text-foreground">Pick or Create Template</p>
+                          <p className="text-xs text-muted-foreground">{selectedTemplateId ? 'Template selected' : 'No template selected'}</p>
+                        </div>
+                        <div className="rounded-lg border bg-muted/30 p-3">
+                          <p className="text-xs text-muted-foreground">Step 3</p>
+                          <p className="text-sm font-medium text-foreground">Confirm Audience</p>
+                          <p className="text-xs text-muted-foreground">Recipients ready: {audienceCount}</p>
+                        </div>
+                        <div className="rounded-lg border bg-muted/30 p-3">
+                          <p className="text-xs text-muted-foreground">Step 4</p>
+                          <p className="text-sm font-medium text-foreground">Send & Monitor</p>
+                          <p className="text-xs text-muted-foreground">{isCommunicationReadyToSend ? 'Ready to send' : 'Missing required inputs'}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
                   <Tabs value={communicationChannel} onValueChange={(v) => setCommunicationChannel(v as CommunicationChannel)}>
-                    <TabsList className="grid w-full grid-cols-3">
-                      <TabsTrigger value="email">Email</TabsTrigger>
-                      <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
-                      <TabsTrigger value="sms">SMS</TabsTrigger>
+                    <TabsList className="grid w-full grid-cols-3 rounded-xl bg-muted p-1">
+                      <TabsTrigger value="email" className="rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground">Email</TabsTrigger>
+                      <TabsTrigger value="whatsapp" className="rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground">WhatsApp</TabsTrigger>
+                      <TabsTrigger value="sms" className="rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground">SMS</TabsTrigger>
                     </TabsList>
                   </Tabs>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-base">Template Library</CardTitle>
-                        <CardDescription>
-                          {'Placeholders: {{companyName}}, {{contactPerson}}, {{corporateId}}, {{employeeCount}}, {{industry}}, {{packageType}}'}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        {communicationTemplates[communicationChannel].map((template) => (
-                          <div key={template.id} className="border rounded-lg p-3 space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <div>
-                                <p className="font-medium">{template.name}</p>
-                                <p className="text-xs text-muted-foreground">{template.category}</p>
-                              </div>
-                              <div className="flex gap-2">
-                                <Button size="sm" variant="outline" onClick={() => useCommunicationTemplate(template)}>
-                                  Use
-                                </Button>
-                                <Button size="sm" variant="outline" onClick={() => editCommunicationTemplate(template)}>
-                                  Edit
-                                </Button>
-                                <Button size="sm" variant="ghost" onClick={() => removeCommunicationTemplate(template.id)}>
-                                  Delete
-                                </Button>
-                              </div>
-                            </div>
-                            {template.subject && <p className="text-xs">Subject: {template.subject}</p>}
-                            <p className="text-sm text-muted-foreground line-clamp-2">{template.content}</p>
-                          </div>
-                        ))}
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                    <Card className="border bg-card">
+                      <CardContent className="pt-4">
+                        <p className="text-xs text-muted-foreground">Audience Ready</p>
+                        <p className="text-2xl font-semibold text-foreground">{audienceCount}</p>
                       </CardContent>
                     </Card>
+                    <Card className="border bg-card">
+                      <CardContent className="pt-4">
+                        <p className="text-xs text-muted-foreground">Total Comm</p>
+                        <p className="text-2xl font-semibold text-foreground">{communicationTotal}</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30">
+                      <CardContent className="pt-4">
+                        <p className="text-xs text-emerald-700 dark:text-emerald-400">Sent</p>
+                        <p className="text-2xl font-semibold text-emerald-700 dark:text-emerald-400">{communicationSent}</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-rose-200 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/30">
+                      <CardContent className="pt-4">
+                        <p className="text-xs text-rose-700 dark:text-rose-400">Failed</p>
+                        <p className="text-2xl font-semibold text-rose-700 dark:text-rose-400">{communicationFailed}</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-sky-200 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/30">
+                      <CardContent className="pt-4">
+                        <p className="text-xs text-sky-700 dark:text-sky-400">Success Rate</p>
+                        <p className="text-2xl font-semibold text-sky-700 dark:text-sky-400">{communicationSuccessRate}%</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-violet-200 bg-violet-50 dark:border-violet-800 dark:bg-violet-950/30">
+                      <CardContent className="pt-4">
+                        <p className="text-xs text-violet-700 dark:text-violet-400">AI Next Actions</p>
+                        <p className="text-2xl font-semibold text-violet-700 dark:text-violet-400">{aiNextActionCount}</p>
+                      </CardContent>
+                    </Card>
+                  </div>
 
-                    <Card>
+                  <Card className="border bg-card">
+                    <CardContent className="flex flex-col gap-3 pt-4 md:flex-row md:items-center md:justify-between">
+                      <div className="flex items-start gap-3">
+                        {communicationHealthTone === 'healthy' ? (
+                          <CheckCircle className="mt-0.5 h-5 w-5 text-emerald-600" />
+                        ) : communicationHealthTone === 'watch' ? (
+                          <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />
+                        ) : (
+                          <XCircle className="mt-0.5 h-5 w-5 text-rose-600" />
+                        )}
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">Communication Health Status</p>
+                          <p className="text-sm text-muted-foreground">
+                            {communicationHealthTone === 'healthy' && 'Delivery performance is strong. Continue scaling high-response templates.'}
+                            {communicationHealthTone === 'watch' && 'Delivery quality is moderate. Prioritize template fixes and recipient hygiene.'}
+                            {communicationHealthTone === 'critical' && 'Critical communication risk detected. Fix provider settings and run retry campaigns.'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge className="bg-muted text-foreground/80">Window: Last {communicationAnalyticsDays} days</Badge>
+                        <Badge className="bg-card text-foreground/80 border">Channel: {communicationChannel.toUpperCase()}</Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-cyan-200 bg-gradient-to-br from-cyan-50 to-cyan-100/60 dark:border-cyan-800 dark:from-cyan-950/30 dark:to-cyan-900/10">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-base text-foreground"><Brain className="h-4 w-4 text-cyan-700" />AI-Assisted Communication</CardTitle>
+                      <CardDescription className="text-muted-foreground">Draft, monitor, and prioritize outreach using AI-assisted intent signals.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                        {[
+                          { label: 'Drafts', value: aiCommunicationDashboard?.totals?.drafts || 0 },
+                          { label: 'Sent', value: aiCommunicationDashboard?.totals?.sent || 0 },
+                          { label: 'Replies', value: aiCommunicationDashboard?.totals?.replies || 0 },
+                          { label: 'Hot Signals', value: aiCommunicationDashboard?.totals?.hotSignals || 0 },
+                          { label: 'Avg Score', value: aiCommunicationDashboard?.totals?.avgEngagement || 0 },
+                        ].map((item) => (
+                          <div key={item.label} className="rounded-lg border-cyan-200 bg-card p-3">
+                            <p className="text-xs text-muted-foreground">{item.label}</p>
+                            <p className="text-xl font-semibold text-foreground">{item.value}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>Record Reply or Buying Signal</Label>
+                          <Textarea rows={3} value={aiReplyText} onChange={(e) => setAiReplyText(e.target.value)} placeholder="Paste corporate reply, for example: Yes, share demo slots next week." />
+                          <Button size="sm" variant="outline" onClick={recordAiReplySignal} disabled={aiReplyMonitoring || !aiReplyText.trim()}>
+                            <Activity className="mr-2 h-4 w-4" />{aiReplyMonitoring ? 'Monitoring...' : 'Monitor Reply'}
+                          </Button>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>AI Next Actions</Label>
+                          <div className="max-h-40 space-y-2 overflow-auto pr-1">
+                            {(aiCommunicationDashboard?.nextActions || []).slice(0, 4).map((action: any) => (
+                              <div key={action.id} className="rounded-lg border-cyan-200 bg-card p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="truncate text-sm font-medium text-foreground">{action.subject || action.nextAction?.type || 'Follow-up'}</p>
+                                  <Badge variant="outline" className="capitalize">{action.conversionSignal || action.status}</Badge>
+                                </div>
+                                <p className="mt-1 truncate text-xs text-muted-foreground">{action.nextAction?.message || action.contactEmail || 'AI monitored communication'}</p>
+                                <div className="mt-2 flex gap-2">
+                                  <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => useStoredAiCommunication(action)}>Use</Button>
+                                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { storeAiDraftAsTemplate({ subject: action.subject, message: action.body || action.nextAction?.message }, action.id); toast({ title: 'Template stored', description: 'AI draft saved to the Template Library.' }); }}>Save Template</Button>
+                                </div>
+                              </div>
+                            ))}
+                            {!aiCommunicationDashboard?.nextActions?.length && (
+                              <p className="rounded-lg border-dashed border bg-card p-3 text-xs text-muted-foreground">No AI-monitored actions yet. Generate an AI draft to start tracking intent signals.</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <div className="overflow-x-auto pb-2">
+                    <div className="grid min-w-[1080px] grid-cols-5 gap-4">
+                      <Card className="border bg-card col-span-2">
                       <CardHeader>
-                        <CardTitle className="text-base">Composer</CardTitle>
-                        <CardDescription>Send or draft communications for this corporate account.</CardDescription>
+                        <CardTitle className="text-base text-foreground">Template Library</CardTitle>
+                        <CardDescription className="text-muted-foreground">Use dynamic placeholders: {'{{companyName}}, {{contactPerson}}, {{corporateId}}, {{employeeCount}}, {{industry}}, {{packageType}}'}</CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-3">
-                        <div className="space-y-2">
-                          <Label>Template for Sending</Label>
-                          <Select
-                            value={selectedTemplateId || 'none'}
-                            onValueChange={(value) => {
-                              if (value === 'none') {
-                                setSelectedTemplateId('');
-                                return;
-                              }
-                              const template = communicationTemplates[communicationChannel].find((item) => item.id === value);
-                              if (template) useCommunicationTemplate(template);
-                            }}
-                          >
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                          <div className="relative">
+                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground/70" />
+                            <Input
+                              value={templateLibrarySearch}
+                              onChange={(e) => setTemplateLibrarySearch(e.target.value)}
+                              placeholder="Search templates"
+                              className="pl-8"
+                            />
+                          </div>
+                          <Select value={templateLibraryCategory} onValueChange={(value) => setTemplateLibraryCategory(value)}>
                             <SelectTrigger>
-                              <SelectValue placeholder="Choose a template" />
+                              <SelectValue placeholder="Category" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="none">No template</SelectItem>
-                              {communicationTemplates[communicationChannel].map((template) => (
-                                <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
+                              <SelectItem value="all">All Categories</SelectItem>
+                              {templateCategoryOptions.map((category) => (
+                                <SelectItem key={category} value={category}>{category}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         </div>
+                        <ScrollArea className="h-[470px] w-full rounded-md border">
+                          <div className="min-w-[700px] space-y-3 p-2">
+                            {visibleTemplates.length === 0 && (
+                              <div className="rounded-lg border-dashed border bg-muted/40 p-4 text-sm text-muted-foreground">No templates available for this channel. Create one from the form below.</div>
+                            )}
+                            {visibleTemplates.map((template) => (
+                              <div key={template.id} className="min-w-[680px] space-y-2 rounded-lg border bg-muted/30 p-3">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="truncate font-medium text-foreground">{template.name}</p>
+                                    <p className="text-xs text-muted-foreground">{template.category}</p>
+                                  </div>
+                                  <div className="flex shrink-0 gap-2 whitespace-nowrap">
+                                    <Button size="sm" variant="outline" className="whitespace-nowrap" onClick={() => useCommunicationTemplate(template)}>Use</Button>
+                                    <Button size="sm" variant="outline" className="whitespace-nowrap" onClick={() => editCommunicationTemplate(template)}>Edit</Button>
+                                    <Button size="sm" variant="outline" className="gap-1 whitespace-nowrap" disabled={aiTemplateWriting || !selectedCorporate} onClick={() => aiEditExistingTemplate(template)}>
+                                      <Sparkles className="h-3.5 w-3.5" />AI Edit
+                                    </Button>
+                                    <Button size="sm" variant="ghost" className="whitespace-nowrap text-rose-700 hover:bg-rose-50" onClick={() => removeCommunicationTemplate(template.id)}>Delete</Button>
+                                  </div>
+                                </div>
+                                {template.subject && <p className="text-xs text-foreground/80"><span className="font-medium">Subject:</span> {template.subject}</p>}
+                                <p className="line-clamp-3 text-sm text-muted-foreground">{template.content}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <ScrollBar orientation="horizontal" className="h-3" />
+                        </ScrollArea>
+                      </CardContent>
+                    </Card>
 
-                        <div className="space-y-2">
-                          <Label>Recipient Mode</Label>
-                          <Select
-                            value={communicationRecipientMode}
-                            onValueChange={(value) => setCommunicationRecipientMode(value as CommunicationRecipientMode)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Choose recipient mode" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="individual">Individual Recipient</SelectItem>
-                              <SelectItem value="selected">Selected Employees</SelectItem>
-                              <SelectItem value="bulk">Bulk List</SelectItem>
-                            </SelectContent>
-                          </Select>
+                      <Card className="border bg-card col-span-3">
+                      <CardHeader>
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <CardTitle className="text-base text-foreground">Composer</CardTitle>
+                            <CardDescription className="text-muted-foreground">Send or draft communication for this corporate account with validation-first flow.</CardDescription>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge className="bg-muted text-foreground/80">Audience: {audienceCount}</Badge>
+                            <Badge className={isCommunicationReadyToSend ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700 dark:text-amber-400'}>
+                              {isCommunicationReadyToSend ? 'Ready to Send' : 'Missing Required Inputs'}
+                            </Badge>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label>Template for Sending</Label>
+                            <Select
+                              value={selectedTemplateId || 'none'}
+                              onValueChange={(value) => {
+                                if (value === 'none') {
+                                  setSelectedTemplateId('');
+                                  return;
+                                }
+                                const template = communicationTemplates[communicationChannel].find((item) => item.id === value);
+                                if (template) useCommunicationTemplate(template);
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Choose a template" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">No template</SelectItem>
+                                {communicationTemplates[communicationChannel].map((template) => (
+                                  <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>Recipient Mode</Label>
+                            <Select value={communicationRecipientMode} onValueChange={(value) => setCommunicationRecipientMode(value as CommunicationRecipientMode)}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Choose recipient mode" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="individual">Individual Recipient</SelectItem>
+                                <SelectItem value="selected">Selected Employees</SelectItem>
+                                <SelectItem value="bulk">Bulk List</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
 
                         {communicationRecipientMode === 'individual' && (
                           <div className="space-y-2">
-                            <Label>To</Label>
+                            <Label>Recipient Address</Label>
                             <Input
                               value={communicationComposer.to}
                               onChange={(e) => setCommunicationComposer((prev) => ({ ...prev, to: e.target.value }))}
-                              placeholder={communicationChannel === 'email' ? 'recipient@email.com' : '+91XXXXXXXXXX'}
+                              placeholder={communicationChannel === 'email' ? 'recipient@company.com' : '+91XXXXXXXXXX'}
                             />
                           </div>
                         )}
@@ -2904,20 +3665,20 @@ const TeamCorporateManagement = () => {
                               </Button>
                             </div>
                             <Input
-                              placeholder="Search employees by name, email, phone, dept"
+                              placeholder="Search by name, email, phone, department"
                               value={communicationRecipientSearch}
                               onChange={(e) => setCommunicationRecipientSearch(e.target.value)}
                             />
-                            <ScrollArea className="h-44 rounded-md border p-2">
+                            <ScrollArea className="h-44 rounded-md border bg-muted/40 p-2">
                               <div className="space-y-2">
                                 {filteredCommunicationEmployees.length === 0 && (
-                                  <p className="text-xs text-muted-foreground p-2">No employees available for this channel.</p>
+                                  <p className="p-2 text-xs text-muted-foreground">No employees available for this channel.</p>
                                 )}
                                 {filteredCommunicationEmployees.map((employee) => {
                                   const address = getEmployeeChannelAddress(employee);
                                   const checked = selectedCommunicationEmployeeIds.includes(employee.id);
                                   return (
-                                    <div key={employee.id} className="flex items-start gap-2 p-2 rounded border">
+                                    <div key={employee.id} className="flex items-start gap-2 rounded border bg-card p-2">
                                       <Checkbox
                                         checked={checked}
                                         onCheckedChange={(value) => {
@@ -2928,9 +3689,9 @@ const TeamCorporateManagement = () => {
                                         }}
                                       />
                                       <div className="min-w-0">
-                                        <p className="text-sm font-medium truncate">{employee.name} ({employee.employeeId})</p>
-                                        <p className="text-xs text-muted-foreground truncate">{address}</p>
-                                        <p className="text-[11px] text-muted-foreground truncate">{employee.department || 'No Department'}</p>
+                                        <p className="truncate text-sm font-medium text-foreground">{employee.name} ({employee.employeeId})</p>
+                                        <p className="truncate text-xs text-muted-foreground">{address}</p>
+                                        <p className="truncate text-[11px] text-muted-foreground">{employee.department || 'No Department'}</p>
                                       </div>
                                     </div>
                                   );
@@ -2963,37 +3724,70 @@ const TeamCorporateManagement = () => {
                             />
                           </div>
                         )}
+
                         <div className="space-y-2">
-                          <Label>Message</Label>
+                          <div className="flex items-center justify-between">
+                            <Label>Message</Label>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs ${composerWithinWordLimit ? 'text-muted-foreground' : 'text-rose-600 dark:text-rose-400'}`}>
+                                {composerMessageWordCount}/{templateWordLimit} words
+                              </span>
+                              <span className={`text-xs ${composerMessageCharCount <= templateCharLimit ? 'text-muted-foreground' : 'text-rose-600 dark:text-rose-400'}`}>
+                                {composerMessageCharCount}/{templateCharLimit} chars
+                              </span>
+                            </div>
+                          </div>
                           <Textarea
                             rows={7}
                             value={communicationComposer.message}
                             onChange={(e) => setCommunicationComposer((prev) => ({ ...prev, message: e.target.value }))}
-                            placeholder="Type message or use a template"
+                            placeholder="Type message or apply a template"
                           />
+                          {composerCopyLint.blocking.length > 0 && (
+                            <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-400">
+                              {composerCopyLint.blocking.map((item) => (
+                                <p key={item}>{item}</p>
+                              ))}
+                            </div>
+                          )}
+                          {composerCopyLint.warnings.length > 0 && (
+                            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+                              {composerCopyLint.warnings.map((item) => (
+                                <p key={item}>{item}</p>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                        <div className="flex gap-2">
-                          <Button onClick={sendCommunication} disabled={sendingCommunication}>
-                            <Send className="h-4 w-4 mr-2" />
+
+                        <div className="flex flex-wrap gap-2">
+                          <Button onClick={sendCommunication} disabled={sendingCommunication || !isCommunicationReadyToSend}>
+                            <Send className="mr-2 h-4 w-4" />
                             {sendingCommunication ? 'Sending...' : 'Send'}
                           </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => navigator.clipboard.writeText(communicationComposer.message || '')}
-                          >
-                            <Copy className="h-4 w-4 mr-2" />Copy
+                          <Button variant="outline" onClick={() => navigator.clipboard.writeText(communicationComposer.message || '')}>
+                            <Copy className="mr-2 h-4 w-4" />Copy
+                          </Button>
+                          <Button variant="outline" onClick={saveComposerAsCommunicationTemplate}>
+                            <Plus className="mr-2 h-4 w-4" />Save Template
                           </Button>
                         </div>
+
+                        {!isCommunicationReadyToSend && (
+                          <p className="rounded-md border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                            Add at least one recipient, write a message, and for email also add a subject before sending.
+                          </p>
+                        )}
                       </CardContent>
-                    </Card>
+                      </Card>
+                    </div>
                   </div>
 
-                  <Card>
+                  <Card className="border bg-card">
                     <CardHeader>
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
-                          <CardTitle className="text-base">Delivery Logs & Analytics</CardTitle>
-                          <CardDescription>Track team communication delivery status for this corporate.</CardDescription>
+                          <CardTitle className="text-base text-foreground">Delivery Logs and Analytics</CardTitle>
+                          <CardDescription className="text-muted-foreground">Monitor outcomes and catch delivery failures quickly.</CardDescription>
                         </div>
                         <div className="flex items-center gap-2">
                           <Select
@@ -3018,76 +3812,150 @@ const TeamCorporateManagement = () => {
                         </div>
                       </div>
                     </CardHeader>
+
                     <CardContent className="space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                        <Card>
-                          <CardContent className="pt-4">
-                            <p className="text-xs text-muted-foreground">Total</p>
-                            <p className="text-2xl font-semibold">{communicationAnalytics?.summary?.total || 0}</p>
-                          </CardContent>
-                        </Card>
-                        <Card>
-                          <CardContent className="pt-4">
-                            <p className="text-xs text-muted-foreground">Sent</p>
-                            <p className="text-2xl font-semibold text-green-600">{communicationAnalytics?.summary?.sent || 0}</p>
-                          </CardContent>
-                        </Card>
-                        <Card>
-                          <CardContent className="pt-4">
-                            <p className="text-xs text-muted-foreground">Failed</p>
-                            <p className="text-2xl font-semibold text-red-600">{communicationAnalytics?.summary?.failed || 0}</p>
-                          </CardContent>
-                        </Card>
-                        <Card>
-                          <CardContent className="pt-4">
-                            <p className="text-xs text-muted-foreground">Success Rate</p>
-                            <p className="text-2xl font-semibold">{communicationAnalytics?.summary?.successRate || 0}%</p>
-                          </CardContent>
-                        </Card>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                        <div className="rounded-lg border bg-muted/40 p-3">
+                          <p className="text-xs text-muted-foreground">Total</p>
+                          <p className="text-2xl font-semibold text-foreground">{communicationTotal}</p>
+                        </div>
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-800 dark:bg-emerald-950/30">
+                          <p className="text-xs text-emerald-700 dark:text-emerald-400">Sent</p>
+                          <p className="text-2xl font-semibold text-emerald-700 dark:text-emerald-400">{communicationSent}</p>
+                        </div>
+                        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 dark:border-rose-800 dark:bg-rose-950/30">
+                          <p className="text-xs text-rose-700 dark:text-rose-400">Failed</p>
+                          <p className="text-2xl font-semibold text-rose-700 dark:text-rose-400">{communicationFailed}</p>
+                        </div>
+                        <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 dark:border-sky-800 dark:bg-sky-950/30">
+                          <p className="text-xs text-sky-700 dark:text-sky-400">Success Rate</p>
+                          <p className="text-2xl font-semibold text-sky-700 dark:text-sky-400">{communicationSuccessRate}%</p>
+                        </div>
                       </div>
 
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Time</TableHead>
-                            <TableHead>Channel</TableHead>
-                            <TableHead>Recipient</TableHead>
-                            <TableHead>Template</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Provider</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {communicationLogs.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={6} className="text-center text-muted-foreground">No communication logs yet.</TableCell>
+                      <div className="overflow-x-auto rounded-lg border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-muted/60">
+                              <TableHead>Time</TableHead>
+                              <TableHead>Channel</TableHead>
+                              <TableHead>Recipient</TableHead>
+                              <TableHead>Template</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Provider</TableHead>
                             </TableRow>
-                          ) : (
-                            communicationLogs.map((log) => (
-                              <TableRow key={log.id}>
-                                <TableCell>{new Date(log.created_at).toLocaleString()}</TableCell>
-                                <TableCell className="uppercase">{log.channel}</TableCell>
-                                <TableCell className="max-w-[220px] truncate">{log.recipient}</TableCell>
-                                <TableCell>{log.template_name || '-'}</TableCell>
-                                <TableCell>
-                                  <Badge className={log.status === 'sent' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
-                                    {log.status}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell>{log.provider || '-'}</TableCell>
+                          </TableHeader>
+                          <TableBody>
+                            {communicationLogs.length === 0 ? (
+                              <TableRow>
+                                <TableCell colSpan={6} className="text-center text-muted-foreground">No communication logs yet.</TableCell>
                               </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
+                            ) : (
+                              communicationLogs.map((log) => (
+                                <TableRow key={log.id}>
+                                  <TableCell>{new Date(log.created_at).toLocaleString()}</TableCell>
+                                  <TableCell className="uppercase">{log.channel}</TableCell>
+                                  <TableCell className="max-w-[220px] truncate">{log.recipient}</TableCell>
+                                  <TableCell>{log.template_name || '-'}</TableCell>
+                                  <TableCell>
+                                    <Badge className={log.status === 'sent' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}>
+                                      {log.status}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell>{log.provider || '-'}</TableCell>
+                                </TableRow>
+                              ))
+                            )}
+                          </TableBody>
+                        </Table>
+                      </div>
                     </CardContent>
                   </Card>
 
-                  <Card>
+                  <Card className="border bg-card">
                     <CardHeader>
-                      <CardTitle className="text-base">{editingCommunicationTemplateId ? 'Edit Template' : 'Create Template'}</CardTitle>
+                      <CardTitle className="text-base text-foreground">{editingCommunicationTemplateId ? 'Edit Template' : 'Create Template'}</CardTitle>
+                      <CardDescription className="text-muted-foreground">Build reusable content blocks with placeholders for rapid campaign execution.</CardDescription>
                     </CardHeader>
-                    <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <CardContent className="space-y-4">
+                      <div className="rounded-lg border bg-muted/30 p-3">
+                        <p className="mb-3 text-sm font-medium text-foreground">AI Template Studio</p>
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          {availableAiPresets.map((preset) => (
+                            <Button
+                              key={preset.key}
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7"
+                              onClick={() => applyAiTemplatePreset(preset.key)}
+                            >
+                              {preset.label}
+                            </Button>
+                          ))}
+                          {availableAiPresets.length === 0 && (
+                            <p className="text-xs text-muted-foreground">No quick presets for this channel.</p>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+                          <div className="space-y-2">
+                            <Label>Objective</Label>
+                            <Select value={aiTemplateConfig.objective} onValueChange={(value) => setAiTemplateConfig((prev) => ({ ...prev, objective: value }))}>
+                              <SelectTrigger><SelectValue placeholder="Objective" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="follow_up">Follow-up</SelectItem>
+                                <SelectItem value="onboarding">Onboarding</SelectItem>
+                                <SelectItem value="renewal">Renewal</SelectItem>
+                                <SelectItem value="upsell">Upsell</SelectItem>
+                                <SelectItem value="reactivation">Reactivation</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Tone</Label>
+                            <Select value={aiTemplateConfig.tone} onValueChange={(value) => setAiTemplateConfig((prev) => ({ ...prev, tone: value }))}>
+                              <SelectTrigger><SelectValue placeholder="Tone" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="professional">Professional</SelectItem>
+                                <SelectItem value="consultative">Consultative</SelectItem>
+                                <SelectItem value="friendly">Friendly</SelectItem>
+                                <SelectItem value="urgent">Urgent</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>CTA</Label>
+                            <Select value={aiTemplateConfig.cta} onValueChange={(value) => setAiTemplateConfig((prev) => ({ ...prev, cta: value }))}>
+                              <SelectTrigger><SelectValue placeholder="CTA" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="book_demo">Book Demo</SelectItem>
+                                <SelectItem value="schedule_call">Schedule Call</SelectItem>
+                                <SelectItem value="reply_yes">Reply YES</SelectItem>
+                                <SelectItem value="share_documents">Share Documents</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>AI Edit Instruction</Label>
+                            <Input
+                              value={aiTemplateConfig.editInstruction}
+                              onChange={(e) => setAiTemplateConfig((prev) => ({ ...prev, editInstruction: e.target.value }))}
+                              placeholder="How AI should rewrite templates"
+                            />
+                          </div>
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          <Label>Additional AI Instruction</Label>
+                          <Textarea
+                            rows={2}
+                            value={aiTemplateConfig.customInstruction}
+                            onChange={(e) => setAiTemplateConfig((prev) => ({ ...prev, customInstruction: e.target.value }))}
+                            placeholder="Example: keep it under 90 words and include compliance-safe language"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <div className="space-y-2">
                         <Label>Template Name</Label>
                         <Input
@@ -3104,8 +3972,9 @@ const TeamCorporateManagement = () => {
                           placeholder="Operations"
                         />
                       </div>
+                      </div>
                       {communicationChannel === 'email' && (
-                        <div className="space-y-2 md:col-span-2">
+                        <div className="space-y-2">
                           <Label>Subject</Label>
                           <Input
                             value={communicationDraft.subject}
@@ -3114,21 +3983,54 @@ const TeamCorporateManagement = () => {
                           />
                         </div>
                       )}
-                      <div className="space-y-2 md:col-span-2">
-                        <Label>Template Content</Label>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label>Template Content</Label>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs ${templateDraftWithinLimit ? 'text-muted-foreground' : 'text-rose-600 dark:text-rose-400'}`}>
+                              {templateDraftWordCount}/{templateWordLimit} words
+                            </span>
+                            <span className={`text-xs ${templateDraftCharCount <= templateCharLimit ? 'text-muted-foreground' : 'text-rose-600 dark:text-rose-400'}`}>
+                              {templateDraftCharCount}/{templateCharLimit} chars
+                            </span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 gap-1.5 border-cyan-500/50 text-cyan-600 hover:bg-cyan-50 hover:text-cyan-700 dark:text-cyan-400 dark:hover:bg-cyan-950/40"
+                              onClick={generateAiTemplate}
+                              disabled={aiTemplateWriting || !selectedCorporate}
+                            >
+                              <Sparkles className="h-3.5 w-3.5" />
+                              {aiTemplateWriting ? 'Writing...' : 'AI Write'}
+                            </Button>
+                          </div>
+                        </div>
                         <Textarea
                           rows={5}
                           value={communicationDraft.content}
                           onChange={(e) => setCommunicationDraft((prev) => ({ ...prev, content: e.target.value }))}
-                          placeholder="Use placeholders like {{companyName}} and {{contactPerson}}"
+                          placeholder="Use placeholders like {{companyName}} and {{contactPerson}}, or click AI Write to generate."
                         />
+                        {templateCopyLint.blocking.length > 0 && (
+                          <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-400">
+                            {templateCopyLint.blocking.map((item) => (
+                              <p key={item}>{item}</p>
+                            ))}
+                          </div>
+                        )}
+                        {templateCopyLint.warnings.length > 0 && (
+                          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+                            {templateCopyLint.warnings.map((item) => (
+                              <p key={item}>{item}</p>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <div className="md:col-span-2 flex justify-end">
+                      <div className="flex justify-end">
                         <div className="flex gap-2">
-                          {editingCommunicationTemplateId && (
-                            <Button variant="outline" onClick={resetCommunicationDraft}>Cancel</Button>
-                          )}
-                          <Button onClick={saveCommunicationTemplate}>
+                          {editingCommunicationTemplateId && <Button variant="outline" onClick={resetCommunicationDraft}>Cancel</Button>}
+                          <Button onClick={saveCommunicationTemplate} disabled={templateHasBlockingLint || !templateDraftWithinLimit}>
                             {editingCommunicationTemplateId ? 'Update Template' : 'Save Template'}
                           </Button>
                         </div>
@@ -3428,7 +4330,7 @@ const TeamCorporateManagement = () => {
                         </TabsTrigger>
                       </TabsList>
                       {selectedNetworkPartnerIds.length > 0 && (
-                        <div className="flex items-center gap-2 bg-primary/10 border border-primary/30 rounded-lg px-3 py-1.5">
+                        <div className="flex items-center gap-2 bg-primary/10 border-primary/30 rounded-lg px-3 py-1.5">
                           <span className="text-sm font-medium text-primary">{selectedNetworkPartnerIds.length} partner{selectedNetworkPartnerIds.length !== 1 ? 's' : ''} selected</span>
                           <Button size="sm" className="h-7 text-xs" onClick={handleBulkAssignNetworks}>
                             <Users className="h-3 w-3 mr-1" />Assign to Employees
@@ -4107,7 +5009,7 @@ const TeamCorporateManagement = () => {
                     </Button>
                   </div>
                 </div>
-                <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+                <div className="flex items-start gap-2 rounded-md bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-800 p-3 text-sm text-amber-800 dark:text-amber-400">
                   <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                   <p>A welcome email with these credentials has been sent to <strong>{newEmployeeCredentials.email}</strong>. The employee should change this password on first login.</p>
                 </div>
@@ -4668,7 +5570,7 @@ const TeamCorporateManagement = () => {
                           const checked = selectedDepartmentsForAssign.includes(dept);
                           return (
                             <label key={dept} className={`flex items-center gap-3 p-2 rounded cursor-pointer hover:bg-muted/50 ${
-                              checked ? 'bg-primary/5 border border-primary/30' : 'border border-transparent'
+                              checked ? 'bg-primary/5 border-primary/30' : 'border-transparent'
                             }`}>
                               <Checkbox checked={checked} onCheckedChange={(v) => {
                                 setSelectedDepartmentsForAssign(v
@@ -4761,7 +5663,7 @@ const TeamCorporateManagement = () => {
               })()}
 
               {/* Benefits */}
-              <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+              <div className="bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 rounded-lg p-3">
                 <p className="font-medium text-blue-800 dark:text-blue-300 text-sm mb-1">What employees get</p>
                 <ul className="text-sm text-blue-700 dark:text-blue-400 space-y-0.5">
                   {assigningNetworks.some(p => p.type === 'lab') && <><li>• Preferred lab(s) for diagnostic tests</li><li>• Corporate discount on all tests</li><li>• Priority booking and home collection</li></>}
@@ -4960,7 +5862,7 @@ const TeamCorporateManagement = () => {
                 </p>
               </div>
 
-              <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg p-4">
+              <div className="bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800 rounded-lg p-4">
                 <div className="flex items-start gap-3">
                   <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
                   <div>
@@ -5689,11 +6591,11 @@ const TeamCorporateManagement = () => {
                 <div className="space-y-4 py-2">
                   {/* Summary Cards */}
                   <div className="grid grid-cols-4 gap-3">
-                    <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-center">
+                    <div className="bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 rounded-lg p-3 text-center">
                       <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{total}</p>
                       <p className="text-xs text-blue-600 dark:text-blue-400">Total Rows</p>
                     </div>
-                    <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg p-3 text-center">
+                    <div className="bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800 rounded-lg p-3 text-center">
                       <p className="text-2xl font-bold text-green-700 dark:text-green-300">{bulkUploadResults.created.length}</p>
                       <p className="text-xs text-green-600 dark:text-green-400">Activated</p>
                     </div>
@@ -5723,7 +6625,7 @@ const TeamCorporateManagement = () => {
 
                   {/* Successful */}
                   {bulkUploadResults.created.length > 0 && (
-                    <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
+                    <div className="bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800 rounded-lg p-3">
                       <p className="text-sm font-medium text-green-800 dark:text-green-300 mb-1 flex items-center gap-1.5">
                         <CheckCircle className="h-4 w-4" /> Activated Employees
                       </p>
@@ -5736,7 +6638,7 @@ const TeamCorporateManagement = () => {
 
                   {/* Failed Entries */}
                   {bulkUploadResults.failed.length > 0 && (
-                    <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+                    <div className="bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800 rounded-lg p-3">
                       <p className="text-sm font-medium text-red-800 dark:text-red-300 mb-2 flex items-center gap-1.5">
                         <XCircle className="h-4 w-4" /> Failed Entries
                       </p>
@@ -5765,7 +6667,7 @@ const TeamCorporateManagement = () => {
 
                   {/* QC Log */}
                   {qcLog.length > 0 && (
-                    <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+                    <div className="bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
                       <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-2 flex items-center gap-1.5">
                         <AlertCircle className="h-4 w-4" /> QC Warnings ({qcLog.length} rows)
                         <span className="text-xs font-normal text-yellow-600 dark:text-yellow-400 ml-1">— employees were still activated; review &amp; correct data</span>
