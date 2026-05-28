@@ -17,7 +17,6 @@ import {
   ClipboardList,
   UserCog,
   Microscope,
-  Flask,
   Clock,
   CreditCard,
   TrendingUp,
@@ -51,6 +50,7 @@ const mainNavItems: SidebarItem[] = [
 ];
 
 const labWorkItems: SidebarItem[] = [
+  { icon: Activity, label: "Home Collection Ops", href: "/lab/home-collection", highlight: true },
   { icon: TestTube, label: "Sample Collection", href: "/lab/samples" },
   { icon: Microscope, label: "Processing", href: "/lab/processing" },
   { icon: CheckCircle, label: "Results Entry", href: "/lab/results" },
@@ -60,6 +60,7 @@ const labWorkItems: SidebarItem[] = [
 const managementItems: SidebarItem[] = [
   { icon: Package, label: "Inventory", href: "/lab/inventory" },
   { icon: Receipt, label: "Billing", href: "/lab/billing" },
+  { icon: Beaker, label: "Billing Ops", href: "/lab/billing-ops", highlight: true },
   { icon: CreditCard, label: "Payments", href: "/lab/payments" },
   { icon: TrendingUp, label: "Analytics", href: "/lab/analytics" },
 ];
@@ -71,10 +72,70 @@ const systemItems: SidebarItem[] = [
   { icon: HelpCircle, label: "Help & Support", href: "/lab/support" },
 ];
 
+const canAccessLabBillingOps = (): boolean => {
+  const billingHints = ["billing", "finance", "accounts", "revenue", "payment"];
+  const hasHint = (value: unknown) => {
+    if (typeof value !== "string") return false;
+    const normalized = value.toLowerCase();
+    return billingHints.some((hint) => normalized.includes(hint));
+  };
+
+  let labData: any = null;
+  let tokenClaims: any = null;
+
+  try {
+    const rawLabData = localStorage.getItem("labData");
+    if (rawLabData) labData = JSON.parse(rawLabData);
+  } catch {
+    labData = null;
+  }
+
+  try {
+    const token = localStorage.getItem("labToken");
+    if (token) tokenClaims = JSON.parse(atob(token.split(".")[1]));
+  } catch {
+    tokenClaims = null;
+  }
+
+  const roles = [
+    ...(Array.isArray(labData?.roles) ? labData.roles : []),
+    ...(Array.isArray(tokenClaims?.roles) ? tokenClaims.roles : []),
+    labData?.role,
+    tokenClaims?.role,
+    labData?.department,
+    tokenClaims?.department,
+  ].filter(Boolean);
+
+  const scopes = [
+    ...(Array.isArray(labData?.permissions) ? labData.permissions : []),
+    ...(Array.isArray(labData?.scopes) ? labData.scopes : []),
+    ...(Array.isArray(tokenClaims?.permissions) ? tokenClaims.permissions : []),
+    ...(Array.isArray(tokenClaims?.scopes) ? tokenClaims.scopes : []),
+    tokenClaims?.scope,
+  ]
+    .filter(Boolean)
+    .flatMap((entry: unknown) =>
+      typeof entry === "string" ? entry.split(/[\s,]+/) : [entry]
+    )
+    .filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
+
+  const hasRoleSignal = roles.some((value) => hasHint(String(value)) || String(value).toLowerCase().includes("admin"));
+  const hasScopeSignal = scopes.some((value) => hasHint(value) || value.toLowerCase().includes("lab:billing"));
+
+  // Backward compatibility: when no role/scope metadata is present, keep Billing Ops visible.
+  if (roles.length === 0 && scopes.length === 0) return true;
+
+  return hasRoleSignal || hasScopeSignal;
+};
+
 const LabSidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
+  const allowBillingOps = canAccessLabBillingOps();
+  const visibleManagementItems = managementItems.filter(
+    (item) => item.href !== "/lab/billing-ops" || allowBillingOps
+  );
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -191,7 +252,7 @@ const LabSidebar = () => {
             </p>
           )}
           <div className="space-y-1">
-            {managementItems.map((item) => (
+            {visibleManagementItems.map((item) => (
               <NavItem key={item.href} item={item} />
             ))}
           </div>

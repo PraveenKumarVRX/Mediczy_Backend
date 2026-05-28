@@ -13,6 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import api from "@/utils/api";
 import {
   CartesianGrid,
   Line,
@@ -82,6 +83,49 @@ type ProcessingItem = {
   technician: string;
   progress: number; // 0-100
   status: "Processing" | "QC" | "Review";
+};
+
+type HomeCollectionStatus =
+  | "unassigned"
+  | "assigned"
+  | "en_route"
+  | "arrived"
+  | "collected"
+  | "in_transit"
+  | "handed_over"
+  | "cancelled";
+
+type HomeCollectionJobItem = {
+  id: Id;
+  bookingId: Id;
+  patientName: string;
+  slot: string;
+  phlebotomistName?: string;
+  phlebotomistPhone?: string;
+  addressLine: string;
+  status: HomeCollectionStatus;
+  proofCode?: string;
+  handoverRef?: string;
+  updatedAt: string;
+};
+
+type HomeCollectionEventItem = {
+  id: Id;
+  eventType: string;
+  actorName?: string;
+  actorRole?: string;
+  createdAt: string;
+  payload?: Record<string, unknown>;
+};
+
+type HomeCollectionBookingOption = {
+  bookingId: Id;
+  patientName: string;
+  scheduledDate?: string;
+  scheduledSlot?: string;
+  addressLine1?: string;
+  city?: string;
+  state?: string;
 };
 
 type ResultItem = {
@@ -191,23 +235,58 @@ const makeId = (prefix: string) => {
 const makeBarcode = (sampleId: string) => `LAB-${sampleId.replace(/[^A-Z0-9]/gi, "").slice(-12).toUpperCase()}`;
 
 function useLocalStorageState<T>(key: string, initial: T) {
-  const [value, setValue] = useState<T>(() => {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return initial;
-      return JSON.parse(raw) as T;
-    } catch {
-      return initial;
-    }
-  });
+  const [value, setValue] = useState<T>(initial);
+
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // ignore
-    }
-  }, [key, value]);
+    let mounted = true;
+    const token = localStorage.getItem("labToken");
+
+    const hydrate = async () => {
+      if (!token) {
+        if (mounted) setHydrated(true);
+        return;
+      }
+      try {
+        const stateKey = encodeURIComponent(key);
+        const { data } = await api.get(`/lab/state/${stateKey}`);
+        if (mounted && data?.success && data?.data !== null) {
+          setValue(data.data as T);
+        }
+      } catch {
+        // Keep local fallback data when remote hydration fails.
+      } finally {
+        if (mounted) setHydrated(true);
+      }
+    };
+
+    hydrate();
+    return () => {
+      mounted = false;
+    };
+  }, [key]);
+
+  useEffect(() => {
+    const token = localStorage.getItem("labToken");
+    if (!token || !hydrated) return;
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (cancelled) return;
+      try {
+        const stateKey = encodeURIComponent(key);
+        await api.put(`/lab/state/${stateKey}`, { data: value });
+      } catch {
+        // Silent fallback to local persistence.
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [key, value, hydrated]);
 
   return [value, setValue] as const;
 }
@@ -2383,6 +2462,15 @@ export const LabPaymentsPage = () => {
 
   const [openRec, setOpenRec] = useState(false);
   const [form, setForm] = useState({ billId: "", patientName: "", amount: "", method: "Cash" as PaymentItem["method"], status: "Completed" as PaymentItem["status"] });
+  const [apiBookingId, setApiBookingId] = useState("");
+  const [apiPaymentMethod, setApiPaymentMethod] = useState<PaymentItem["method"]>("UPI");
+  const [apiPaymentReference, setApiPaymentReference] = useState("");
+  const [apiAmount, setApiAmount] = useState("");
+  const [apiActionLoading, setApiActionLoading] = useState(false);
+  const [billingQueue, setBillingQueue] = useState<any[]>([]);
+  const [centralizedSummary, setCentralizedSummary] = useState<any[]>([]);
+  const [ipCreditLedger, setIpCreditLedger] = useState<any[]>([]);
+  const [ipCreditLoading, setIpCreditLoading] = useState(false);
 
   useEffect(() => {
     if (location.pathname === "/lab/payments/new") setOpenRec(true);
@@ -2425,6 +2513,204 @@ export const LabPaymentsPage = () => {
     setForm({ billId: "", patientName: "", amount: "", method: "Cash", status: "Completed" });
     toast({ title: "Payment recorded", description: `${txn.id} saved.` });
   };
+
+  const getLabsV1Base = () => {
+    const tenantId = localStorage.getItem("tenantId") || localStorage.getItem("X-Tenant-ID") || import.meta.env.VITE_TENANT_ID;
+    if (!tenantId) return null;
+    return `/v1/${encodeURIComponent(tenantId)}/labs`;
+  };
+
+  const pushApiPaymentTxn = (booking: any, status: "Completed" | "Pending") => {
+    const amount = Number(apiAmount || booking?.total_amount || 0);
+    const patientName = booking?.patient_name || `Booking ${booking?.booking_id || apiBookingId}`;
+    const txn: PaymentItem = {
+      id: booking?.payment_id || makeId("TXN"),
+      billId: booking?.booking_id || undefined,
+      patientName,
+      amount: Number.isFinite(amount) ? amount : 0,
+      method: apiPaymentMethod,
+      status,
+      date: today(),
+    };
+    setPayments((prev) => [txn, ...prev]);
+  };
+
+  const initiateApiPayment = async () => {
+    const base = getLabsV1Base();
+    if (!base) {
+      toast({ title: "Tenant not set", description: "Cannot initiate booking payment without tenantId." });
+      return;
+    }
+    if (!apiBookingId.trim()) {
+      toast({ title: "Missing booking", description: "Booking ID is required." });
+      return;
+    }
+
+    setApiActionLoading(true);
+    try {
+      const payload = {
+        payment_method: apiPaymentMethod,
+        payment_reference: apiPaymentReference.trim() || undefined,
+        payment_metadata: {
+          source: "lab-portal",
+          amount: apiAmount ? Number(apiAmount) : undefined,
+          recorded_at: new Date().toISOString(),
+        },
+      };
+      const { data } = await api.post(`${base}/bookings/${encodeURIComponent(apiBookingId.trim())}/payment`, payload);
+      pushApiPaymentTxn(data, "Pending");
+      toast({ title: "Initiated", description: `Payment initiated for ${apiBookingId.trim()}.` });
+    } catch (e: any) {
+      const message = e?.response?.data?.message || "Unable to initiate booking payment.";
+      toast({ title: "Initiation failed", description: message });
+    } finally {
+      setApiActionLoading(false);
+    }
+  };
+
+  const updateApiPaymentStatus = async (payment_status: "paid" | "failed") => {
+    const base = getLabsV1Base();
+    if (!base) {
+      toast({ title: "Tenant not set", description: "Cannot update booking payment without tenantId." });
+      return;
+    }
+    if (!apiBookingId.trim()) {
+      toast({ title: "Missing booking", description: "Booking ID is required." });
+      return;
+    }
+
+    setApiActionLoading(true);
+    try {
+      const payload = {
+        payment_status,
+        payment_method: apiPaymentMethod,
+        payment_reference: apiPaymentReference.trim() || undefined,
+        payment_metadata: {
+          source: "lab-portal",
+          amount: apiAmount ? Number(apiAmount) : undefined,
+          updated_at: new Date().toISOString(),
+        },
+      };
+      const { data } = await api.put(`${base}/bookings/${encodeURIComponent(apiBookingId.trim())}/payment`, payload);
+      if (payment_status === "paid") {
+        pushApiPaymentTxn(data, "Completed");
+      }
+      toast({
+        title: payment_status === "paid" ? "Marked paid" : "Marked failed",
+        description: `Payment status updated for ${apiBookingId.trim()}.`,
+      });
+    } catch (e: any) {
+      const message = e?.response?.data?.message || "Unable to update booking payment status.";
+      toast({ title: "Update failed", description: message });
+    } finally {
+      setApiActionLoading(false);
+    }
+  };
+
+  const loadBillingQueue = async () => {
+    const base = getLabsV1Base();
+    if (!base) return;
+    try {
+      const { data } = await api.get(`${base}/billing/work-queue`, { params: { page: 1, limit: 10 } });
+      setBillingQueue(Array.isArray(data?.data) ? data.data : []);
+    } catch {
+      setBillingQueue([]);
+    }
+  };
+
+  const loadCentralizedSummary = async () => {
+    const base = getLabsV1Base();
+    if (!base) return;
+    try {
+      const { data } = await api.get(`${base}/billing/centralized-summary`, {
+        params: { group_by: "partner" },
+      });
+      setCentralizedSummary(Array.isArray(data?.data) ? data.data : []);
+    } catch {
+      setCentralizedSummary([]);
+    }
+  };
+
+  const loadIpCreditLedger = async () => {
+    const base = getLabsV1Base();
+    if (!base) return;
+    setIpCreditLoading(true);
+    try {
+      const params: Record<string, unknown> = { page: 1, limit: 10 };
+      if (apiBookingId.trim()) params.booking_id = apiBookingId.trim();
+      const { data } = await api.get(`${base}/ip-credit/ledger`, { params });
+      setIpCreditLedger(Array.isArray(data?.data) ? data.data : []);
+    } catch {
+      setIpCreditLedger([]);
+    } finally {
+      setIpCreditLoading(false);
+    }
+  };
+
+  const applyIpCredit = async () => {
+    const base = getLabsV1Base();
+    if (!base) {
+      toast({ title: "Tenant not set", description: "Cannot apply IP credit without tenantId." });
+      return;
+    }
+    if (!apiBookingId.trim()) {
+      toast({ title: "Missing booking", description: "Booking ID is required." });
+      return;
+    }
+
+    setApiActionLoading(true);
+    try {
+      await api.post(`${base}/bookings/${encodeURIComponent(apiBookingId.trim())}/ip-credit/apply`, {
+        amount: apiAmount ? Number(apiAmount) : undefined,
+        reference: apiPaymentReference.trim() || undefined,
+        notes: "Applied from lab payments console",
+        metadata: { source: "lab-portal" }
+      });
+      toast({ title: "Credit applied", description: `IP credit applied to ${apiBookingId.trim()}.` });
+      await Promise.all([loadIpCreditLedger(), loadBillingQueue()]);
+    } catch (e: any) {
+      const message = e?.response?.data?.message || "Unable to apply IP credit.";
+      toast({ title: "Apply failed", description: message });
+    } finally {
+      setApiActionLoading(false);
+    }
+  };
+
+  const settleIpCredit = async () => {
+    const base = getLabsV1Base();
+    if (!base) {
+      toast({ title: "Tenant not set", description: "Cannot settle IP credit without tenantId." });
+      return;
+    }
+    if (!apiBookingId.trim()) {
+      toast({ title: "Missing booking", description: "Booking ID is required." });
+      return;
+    }
+
+    setApiActionLoading(true);
+    try {
+      await api.post(`${base}/bookings/${encodeURIComponent(apiBookingId.trim())}/ip-credit/settle`, {
+        amount: apiAmount ? Number(apiAmount) : undefined,
+        reference: apiPaymentReference.trim() || undefined,
+        payment_method: apiPaymentMethod,
+        close_booking: true,
+        notes: "Settled from lab payments console",
+        metadata: { source: "lab-portal" }
+      });
+      toast({ title: "Credit settled", description: `IP credit settled for ${apiBookingId.trim()}.` });
+      await Promise.all([loadIpCreditLedger(), loadBillingQueue()]);
+    } catch (e: any) {
+      const message = e?.response?.data?.message || "Unable to settle IP credit.";
+      toast({ title: "Settlement failed", description: message });
+    } finally {
+      setApiActionLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadBillingQueue();
+    loadCentralizedSummary();
+  }, []);
 
   return (
     <LabLayout title="Payments" subtitle="Track payments and financial transactions">
@@ -2480,6 +2766,126 @@ export const LabPaymentsPage = () => {
                 ))}
               </TableBody>
             </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>API-v1 Booking Payment Actions</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Booking ID *</Label>
+                <Input value={apiBookingId} onChange={(e) => setApiBookingId(e.target.value)} placeholder="e.g. lab-20260528-AB12CD" />
+              </div>
+              <div className="space-y-2">
+                <Label>Amount (optional)</Label>
+                <Input value={apiAmount} onChange={(e) => setApiAmount(e.target.value)} placeholder="e.g. 2450" />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Method</Label>
+                <Select value={apiPaymentMethod} onValueChange={(v) => setApiPaymentMethod(v as PaymentItem["method"])}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Cash">Cash</SelectItem>
+                    <SelectItem value="Card">Card</SelectItem>
+                    <SelectItem value="UPI">UPI</SelectItem>
+                    <SelectItem value="Insurance">Insurance</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Reference (optional)</Label>
+                <Input value={apiPaymentReference} onChange={(e) => setApiPaymentReference(e.target.value)} placeholder="UPI/Bank/Auth reference" />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={initiateApiPayment} disabled={apiActionLoading}>Initiate</Button>
+              <Button onClick={() => updateApiPaymentStatus("paid")} disabled={apiActionLoading}>Mark Paid</Button>
+              <Button variant="destructive" onClick={() => updateApiPaymentStatus("failed")} disabled={apiActionLoading}>Mark Failed</Button>
+              <Button variant="outline" onClick={applyIpCredit} disabled={apiActionLoading}>Apply IP Credit</Button>
+              <Button variant="outline" onClick={settleIpCredit} disabled={apiActionLoading}>Settle IP Credit</Button>
+              <Button variant="outline" onClick={loadIpCreditLedger} disabled={ipCreditLoading}>Refresh Ledger</Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Billing Work Queue</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {billingQueue.length === 0 ? (
+                <p className="text-muted-foreground">No pending queue items.</p>
+              ) : (
+                billingQueue.map((row) => (
+                  <div key={row.booking_id} className="flex items-center justify-between border rounded px-3 py-2">
+                    <div>
+                      <div className="font-medium">{row.booking_id}</div>
+                      <div className="text-xs text-muted-foreground">{row.patient_name || row.user_id}</div>
+                    </div>
+                    <div className="text-right">
+                      <div>₹{row.total_amount}</div>
+                      <Badge variant="outline">{row.payment_status}</Badge>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Centralized Billing Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {centralizedSummary.length === 0 ? (
+                <p className="text-muted-foreground">No summary data available.</p>
+              ) : (
+                centralizedSummary.map((row) => (
+                  <div key={String(row.group_key)} className="flex items-center justify-between border rounded px-3 py-2">
+                    <div>
+                      <div className="font-medium">{row.group_key}</div>
+                      <div className="text-xs text-muted-foreground">Bookings: {row.booking_count}</div>
+                    </div>
+                    <div className="text-right">
+                      <div>Total: ₹{row.total_amount}</div>
+                      <div className="text-xs text-muted-foreground">Outstanding: ₹{row.outstanding_amount}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>IP Credit Ledger</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {ipCreditLedger.length === 0 ? (
+              <p className="text-muted-foreground">No ledger entries found.</p>
+            ) : (
+              ipCreditLedger.map((entry) => (
+                <div key={entry.entry_id} className="flex items-center justify-between border rounded px-3 py-2">
+                  <div>
+                    <div className="font-medium">{entry.booking_id}</div>
+                    <div className="text-xs text-muted-foreground">{entry.entry_type} • {entry.reference || "no-ref"}</div>
+                  </div>
+                  <div className="text-right">
+                    <div>₹{entry.amount}</div>
+                    <div className="text-xs text-muted-foreground">Balance: ₹{entry.balance_after}</div>
+                  </div>
+                </div>
+              ))
+            )}
           </CardContent>
         </Card>
 
@@ -2551,6 +2957,262 @@ export const LabPaymentsPage = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      </div>
+    </LabLayout>
+  );
+};
+
+// Billing Ops Page (API-driven)
+export const LabBillingOpsPage = () => {
+  const { toast } = useToast();
+  const [bookingId, setBookingId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState<PaymentItem["method"]>("UPI");
+  const [reference, setReference] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [billingQueue, setBillingQueue] = useState<any[]>([]);
+  const [centralizedSummary, setCentralizedSummary] = useState<any[]>([]);
+  const [ipCreditLedger, setIpCreditLedger] = useState<any[]>([]);
+
+  const getLabsV1Base = () => {
+    const tenantId = localStorage.getItem("tenantId") || localStorage.getItem("X-Tenant-ID") || import.meta.env.VITE_TENANT_ID;
+    if (!tenantId) return null;
+    return `/v1/${encodeURIComponent(tenantId)}/labs`;
+  };
+
+  const loadBillingQueue = async () => {
+    const base = getLabsV1Base();
+    if (!base) return;
+    try {
+      const { data } = await api.get(`${base}/billing/work-queue`, { params: { page: 1, limit: 12 } });
+      setBillingQueue(Array.isArray(data?.data) ? data.data : []);
+    } catch {
+      setBillingQueue([]);
+    }
+  };
+
+  const loadCentralizedSummary = async () => {
+    const base = getLabsV1Base();
+    if (!base) return;
+    try {
+      const { data } = await api.get(`${base}/billing/centralized-summary`, { params: { group_by: "partner" } });
+      setCentralizedSummary(Array.isArray(data?.data) ? data.data : []);
+    } catch {
+      setCentralizedSummary([]);
+    }
+  };
+
+  const loadIpCreditLedger = async () => {
+    const base = getLabsV1Base();
+    if (!base) return;
+    try {
+      const params: Record<string, unknown> = { page: 1, limit: 12 };
+      if (bookingId.trim()) params.booking_id = bookingId.trim();
+      const { data } = await api.get(`${base}/ip-credit/ledger`, { params });
+      setIpCreditLedger(Array.isArray(data?.data) ? data.data : []);
+    } catch {
+      setIpCreditLedger([]);
+    }
+  };
+
+  useEffect(() => {
+    loadBillingQueue();
+    loadCentralizedSummary();
+  }, []);
+
+  const requireBooking = () => {
+    if (!bookingId.trim()) {
+      toast({ title: "Missing booking", description: "Booking ID is required." });
+      return false;
+    }
+    return true;
+  };
+
+  const withApi = async (fn: (base: string) => Promise<void>) => {
+    const base = getLabsV1Base();
+    if (!base) {
+      toast({ title: "Tenant not set", description: "Set tenantId in localStorage to use Billing Ops." });
+      return;
+    }
+    setLoading(true);
+    try {
+      await fn(base);
+      await Promise.all([loadBillingQueue(), loadIpCreditLedger()]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const initiate = () => withApi(async (base) => {
+    if (!requireBooking()) return;
+    await api.post(`${base}/bookings/${encodeURIComponent(bookingId.trim())}/payment`, {
+      payment_method: method,
+      payment_reference: reference.trim() || undefined,
+      payment_metadata: {
+        source: "lab-billing-ops",
+        amount: amount ? Number(amount) : undefined,
+        recorded_at: new Date().toISOString(),
+      },
+    });
+    toast({ title: "Initiated", description: `Payment initiated for ${bookingId.trim()}.` });
+  });
+
+  const markPaid = () => withApi(async (base) => {
+    if (!requireBooking()) return;
+    await api.put(`${base}/bookings/${encodeURIComponent(bookingId.trim())}/payment`, {
+      payment_status: "paid",
+      payment_method: method,
+      payment_reference: reference.trim() || undefined,
+      payment_metadata: {
+        source: "lab-billing-ops",
+        amount: amount ? Number(amount) : undefined,
+        updated_at: new Date().toISOString(),
+      },
+    });
+    toast({ title: "Marked paid", description: `Payment status updated for ${bookingId.trim()}.` });
+  });
+
+  const markFailed = () => withApi(async (base) => {
+    if (!requireBooking()) return;
+    await api.put(`${base}/bookings/${encodeURIComponent(bookingId.trim())}/payment`, {
+      payment_status: "failed",
+      payment_method: method,
+      payment_reference: reference.trim() || undefined,
+      payment_metadata: {
+        source: "lab-billing-ops",
+        amount: amount ? Number(amount) : undefined,
+        updated_at: new Date().toISOString(),
+      },
+    });
+    toast({ title: "Marked failed", description: `Payment status updated for ${bookingId.trim()}.` });
+  });
+
+  const applyCredit = () => withApi(async (base) => {
+    if (!requireBooking()) return;
+    await api.post(`${base}/bookings/${encodeURIComponent(bookingId.trim())}/ip-credit/apply`, {
+      amount: amount ? Number(amount) : undefined,
+      reference: reference.trim() || undefined,
+      notes: "Applied from Billing Ops",
+      metadata: { source: "lab-billing-ops" },
+    });
+    toast({ title: "Credit applied", description: `IP credit applied to ${bookingId.trim()}.` });
+  });
+
+  const settleCredit = () => withApi(async (base) => {
+    if (!requireBooking()) return;
+    await api.post(`${base}/bookings/${encodeURIComponent(bookingId.trim())}/ip-credit/settle`, {
+      amount: amount ? Number(amount) : undefined,
+      reference: reference.trim() || undefined,
+      payment_method: method,
+      close_booking: true,
+      notes: "Settled from Billing Ops",
+      metadata: { source: "lab-billing-ops" },
+    });
+    toast({ title: "Credit settled", description: `IP credit settled for ${bookingId.trim()}.` });
+  });
+
+  return (
+    <LabLayout title="Billing Ops" subtitle="API-driven billing queue, centralized view, and IP credit operations">
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Actions</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Booking ID *</Label>
+                <Input value={bookingId} onChange={(e) => setBookingId(e.target.value)} placeholder="e.g. lab-20260528-AB12CD" />
+              </div>
+              <div className="space-y-2">
+                <Label>Amount (optional)</Label>
+                <Input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 2450" />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Method</Label>
+                <Select value={method} onValueChange={(v) => setMethod(v as PaymentItem["method"])}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Cash">Cash</SelectItem>
+                    <SelectItem value="Card">Card</SelectItem>
+                    <SelectItem value="UPI">UPI</SelectItem>
+                    <SelectItem value="Insurance">Insurance</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Reference</Label>
+                <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Transaction reference" />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={initiate} disabled={loading}>Initiate</Button>
+              <Button onClick={markPaid} disabled={loading}>Mark Paid</Button>
+              <Button variant="destructive" onClick={markFailed} disabled={loading}>Mark Failed</Button>
+              <Button variant="outline" onClick={applyCredit} disabled={loading}>Apply IP Credit</Button>
+              <Button variant="outline" onClick={settleCredit} disabled={loading}>Settle IP Credit</Button>
+              <Button variant="outline" onClick={loadIpCreditLedger} disabled={loading}>Refresh Ledger</Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader><CardTitle>Billing Work Queue</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {billingQueue.length === 0 ? <p className="text-muted-foreground">No pending queue items.</p> : billingQueue.map((row) => (
+                <div key={row.booking_id} className="flex items-center justify-between border rounded px-3 py-2">
+                  <div>
+                    <div className="font-medium">{row.booking_id}</div>
+                    <div className="text-xs text-muted-foreground">{row.patient_name || row.user_id}</div>
+                  </div>
+                  <div className="text-right">
+                    <div>₹{row.total_amount}</div>
+                    <Badge variant="outline">{row.payment_status}</Badge>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Centralized Billing Summary</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {centralizedSummary.length === 0 ? <p className="text-muted-foreground">No summary data available.</p> : centralizedSummary.map((row) => (
+                <div key={String(row.group_key)} className="flex items-center justify-between border rounded px-3 py-2">
+                  <div>
+                    <div className="font-medium">{row.group_key}</div>
+                    <div className="text-xs text-muted-foreground">Bookings: {row.booking_count}</div>
+                  </div>
+                  <div className="text-right">
+                    <div>Total: ₹{row.total_amount}</div>
+                    <div className="text-xs text-muted-foreground">Outstanding: ₹{row.outstanding_amount}</div>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader><CardTitle>IP Credit Ledger</CardTitle></CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {ipCreditLedger.length === 0 ? <p className="text-muted-foreground">No ledger entries found.</p> : ipCreditLedger.map((entry) => (
+              <div key={entry.entry_id} className="flex items-center justify-between border rounded px-3 py-2">
+                <div>
+                  <div className="font-medium">{entry.booking_id}</div>
+                  <div className="text-xs text-muted-foreground">{entry.entry_type} • {entry.reference || "no-ref"}</div>
+                </div>
+                <div className="text-right">
+                  <div>₹{entry.amount}</div>
+                  <div className="text-xs text-muted-foreground">Balance: ₹{entry.balance_after}</div>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       </div>
     </LabLayout>
   );
@@ -2878,6 +3540,632 @@ export const LabStaffPage = () => {
             <DialogFooter>
               <Button variant="outline" onClick={() => setOpenEdit(false)}>Cancel</Button>
               <Button onClick={save}>Save</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </LabLayout>
+  );
+};
+
+// Home Collection Operations Page
+export const LabHomeCollectionOpsPage = () => {
+  const { toast } = useToast();
+  const navigate = useNavigate();
+  const [jobs, setJobs] = useState<HomeCollectionJobItem[]>([
+    {
+      id: makeId("HCJOB"),
+      bookingId: "LAB-BOOK-10021",
+      patientName: "Anita Sharma",
+      slot: "09:00 AM - 11:00 AM",
+      addressLine: "HSR Layout, Sector 2, Bangalore",
+      status: "unassigned",
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      id: makeId("HCJOB"),
+      bookingId: "LAB-BOOK-10022",
+      patientName: "Rahul Verma",
+      slot: "11:00 AM - 01:00 PM",
+      phlebotomistName: "Kiran",
+      phlebotomistPhone: "+91-9000000011",
+      addressLine: "BTM 2nd Stage, Bangalore",
+      status: "en_route",
+      updatedAt: new Date().toISOString(),
+    },
+  ]);
+  const [loading, setLoading] = useState(false);
+  const [actionJobId, setActionJobId] = useState<string | null>(null);
+  const [openEvents, setOpenEvents] = useState(false);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [selectedJobForEvents, setSelectedJobForEvents] = useState<HomeCollectionJobItem | null>(null);
+  const [events, setEvents] = useState<HomeCollectionEventItem[]>([]);
+  const [bookingOptions, setBookingOptions] = useState<HomeCollectionBookingOption[]>([]);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+
+  const [createForm, setCreateForm] = useState({
+    bookingId: "",
+    scheduledDate: "",
+    scheduledSlot: "",
+    addressLine1: "",
+    city: "",
+    state: "",
+    notes: "",
+  });
+
+  const [assignForm, setAssignForm] = useState({
+    jobId: "",
+    phlebotomistName: "",
+    phlebotomistPhone: "",
+  });
+
+  const [notesByJob, setNotesByJob] = useState<Record<string, string>>({});
+
+  const normalizeBookingOption = (raw: any): HomeCollectionBookingOption => {
+    const addr = raw?.collection_address || {};
+    return {
+      bookingId: raw?.booking_id,
+      patientName: raw?.patient_name || "Unknown",
+      scheduledDate: raw?.collection_date || undefined,
+      scheduledSlot: raw?.collection_time_slot || undefined,
+      addressLine1: addr?.line1 || addr?.addressLine1 || undefined,
+      city: addr?.city || undefined,
+      state: addr?.state || undefined,
+    };
+  };
+
+  const statusBadgeClass = (status: HomeCollectionStatus) => {
+    if (status === "cancelled") return "bg-red-100 text-red-700 border-red-200";
+    if (status === "handed_over") return "bg-green-100 text-green-700 border-green-200";
+    if (status === "collected" || status === "in_transit") return "bg-blue-100 text-blue-700 border-blue-200";
+    if (status === "en_route" || status === "arrived") return "bg-amber-100 text-amber-700 border-amber-200";
+    return "bg-slate-100 text-slate-700 border-slate-200";
+  };
+
+  const humanizeStatus = (status: string) => status.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+
+  const getLabsV1Base = () => {
+    const tenantId = localStorage.getItem("tenantId") || localStorage.getItem("X-Tenant-ID") || import.meta.env.VITE_TENANT_ID;
+    if (!tenantId) return null;
+    return `/v1/${encodeURIComponent(tenantId)}/labs`;
+  };
+
+  const mapApiJob = (raw: any): HomeCollectionJobItem => {
+    const pickupAddress = raw?.pickup_address || {};
+    const addressLine = [pickupAddress.line1, pickupAddress.line2, pickupAddress.city, pickupAddress.state]
+      .filter(Boolean)
+      .join(", ");
+
+    return {
+      id: raw.job_id,
+      bookingId: raw.booking_id,
+      patientName: raw.patient_name || "Unknown",
+      slot: raw.scheduled_slot || "-",
+      phlebotomistName: raw.phlebotomist_name || undefined,
+      phlebotomistPhone: raw.phlebotomist_phone || undefined,
+      addressLine: addressLine || "Address not available",
+      status: raw.status,
+      proofCode: raw.proof_of_collection?.proof_code || raw.proof_of_collection?.otp || undefined,
+      handoverRef: raw.handover_details?.handover_ref || undefined,
+      updatedAt: raw.updated_at || new Date().toISOString(),
+    };
+  };
+
+  const mapApiEvent = (raw: any): HomeCollectionEventItem => ({
+    id: raw.event_id || String(raw.id || makeId("HCEVT")),
+    eventType: raw.event_type || "UNKNOWN",
+    actorName: raw.actor_name || undefined,
+    actorRole: raw.actor_role || undefined,
+    createdAt: raw.created_at || new Date().toISOString(),
+    payload: raw.event_payload || {},
+  });
+
+  const loadJobs = async () => {
+    const base = getLabsV1Base();
+    if (!base) {
+      toast({ title: "Tenant not set", description: "Set tenantId in localStorage to load API-v1 jobs." });
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data } = await api.get(`${base}/home-collection/jobs`, { params: { page: 1, limit: 100 } });
+      const rows = Array.isArray(data?.data) ? data.data : [];
+      setJobs(rows.map(mapApiJob));
+    } catch {
+      toast({ title: "API unavailable", description: "Showing local fallback job board." });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadBookingOptions = async () => {
+    const base = getLabsV1Base();
+    if (!base) return;
+
+    setBookingsLoading(true);
+    try {
+      const { data } = await api.get(`${base}/bookings`, { params: { page: 1, limit: 100 } });
+      const rows = Array.isArray(data?.data) ? data.data : [];
+      setBookingOptions(rows.map(normalizeBookingOption));
+    } catch {
+      setBookingOptions([]);
+    } finally {
+      setBookingsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadJobs();
+    loadBookingOptions();
+  }, []);
+
+  const applyBookingSelection = (bookingId: string) => {
+    setCreateForm((prev) => ({ ...prev, bookingId }));
+    const selected = bookingOptions.find((b) => b.bookingId === bookingId);
+    if (!selected) return;
+
+    setCreateForm((prev) => ({
+      ...prev,
+      bookingId,
+      scheduledDate: selected.scheduledDate || prev.scheduledDate,
+      scheduledSlot: selected.scheduledSlot || prev.scheduledSlot,
+      addressLine1: selected.addressLine1 || prev.addressLine1,
+      city: selected.city || prev.city,
+      state: selected.state || prev.state,
+    }));
+  };
+
+  const filteredBookingOptions = useMemo(() => {
+    const q = createForm.bookingId.trim().toLowerCase();
+    if (!q) return bookingOptions.slice(0, 12);
+    return bookingOptions
+      .filter((b) => b.bookingId.toLowerCase().includes(q) || b.patientName.toLowerCase().includes(q))
+      .slice(0, 12);
+  }, [bookingOptions, createForm.bookingId]);
+
+  const renderEventPayload = (payload: Record<string, unknown> | undefined) => {
+    if (!payload || Object.keys(payload).length === 0) {
+      return <div className="text-xs text-muted-foreground">No payload details</div>;
+    }
+
+    const p = payload as any;
+    const lines: string[] = [];
+
+    if (p.from_status || p.to_status) {
+      lines.push(`Status: ${humanizeStatus(String(p.from_status || "-"))} -> ${humanizeStatus(String(p.to_status || "-"))}`);
+    }
+    if (p.phlebotomist_name || p.phlebotomist_id) {
+      lines.push(`Phlebotomist: ${p.phlebotomist_name || p.phlebotomist_id}`);
+    }
+    if (p.scheduled_date || p.scheduled_slot) {
+      lines.push(`Schedule: ${p.scheduled_date || "-"} ${p.scheduled_slot || ""}`.trim());
+    }
+    if (p.notes) {
+      lines.push(`Notes: ${p.notes}`);
+    }
+    if (p.proof_of_collection?.proof_code) {
+      lines.push(`Proof Code: ${p.proof_of_collection.proof_code}`);
+    }
+    if (p.handover_details?.handover_ref) {
+      lines.push(`Handover Ref: ${p.handover_details.handover_ref}`);
+    }
+
+    const usedKeys = new Set([
+      "from_status",
+      "to_status",
+      "phlebotomist_name",
+      "phlebotomist_id",
+      "scheduled_date",
+      "scheduled_slot",
+      "notes",
+      "proof_of_collection",
+      "handover_details",
+    ]);
+
+    const extraEntries = Object.entries(p).filter(([k]) => !usedKeys.has(k));
+
+    return (
+      <div className="space-y-1">
+        {lines.map((line, idx) => (
+          <div key={`${idx}-${line}`} className="text-xs">{line}</div>
+        ))}
+        {extraEntries.length > 0 ? (
+          <details className="text-xs">
+            <summary className="cursor-pointer text-muted-foreground">More details</summary>
+            <pre className="mt-2 bg-muted p-2 rounded overflow-x-auto">{JSON.stringify(Object.fromEntries(extraEntries), null, 2)}</pre>
+          </details>
+        ) : null}
+      </div>
+    );
+  };
+
+  const createJobFromBooking = async () => {
+    if (!createForm.bookingId.trim()) {
+      toast({ title: "Missing booking", description: "Booking ID is required." });
+      return;
+    }
+
+    const base = getLabsV1Base();
+    if (!base) {
+      toast({ title: "Tenant not set", description: "Cannot create API-v1 job without tenantId." });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const payload = {
+        booking_id: createForm.bookingId.trim(),
+        scheduled_date: createForm.scheduledDate || undefined,
+        scheduled_slot: createForm.scheduledSlot || undefined,
+        pickup_address: {
+          line1: createForm.addressLine1 || undefined,
+          city: createForm.city || undefined,
+          state: createForm.state || undefined,
+        },
+        notes: createForm.notes || undefined,
+      };
+
+      await api.post(`${base}/home-collection/jobs`, payload);
+      toast({ title: "Created", description: "Home collection job created." });
+      setCreateForm({
+        bookingId: "",
+        scheduledDate: "",
+        scheduledSlot: "",
+        addressLine1: "",
+        city: "",
+        state: "",
+        notes: "",
+      });
+      await loadJobs();
+    } catch (e: any) {
+      const message = e?.response?.data?.message || "Unable to create job from booking.";
+      toast({ title: "Create failed", description: message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openEventsTimeline = async (job: HomeCollectionJobItem) => {
+    const base = getLabsV1Base();
+    if (!base) {
+      toast({ title: "Tenant not set", description: "Cannot load timeline without tenantId." });
+      return;
+    }
+
+    setSelectedJobForEvents(job);
+    setOpenEvents(true);
+    setEventsLoading(true);
+    try {
+      const { data } = await api.get(`${base}/home-collection/jobs/${encodeURIComponent(job.id)}/events`);
+      const rows = Array.isArray(data?.data) ? data.data : [];
+      setEvents(rows.map(mapApiEvent));
+    } catch {
+      setEvents([]);
+      toast({ title: "Timeline unavailable", description: "Unable to load job events." });
+    } finally {
+      setEventsLoading(false);
+    }
+  };
+
+  const statusFlow: HomeCollectionStatus[] = [
+    "unassigned",
+    "assigned",
+    "en_route",
+    "arrived",
+    "collected",
+    "in_transit",
+    "handed_over",
+  ];
+
+  const progressStatus = async (job: HomeCollectionJobItem) => {
+    if (job.status === "handed_over" || job.status === "cancelled") return;
+
+    if (job.status === "unassigned") {
+      toast({ title: "Assign required", description: "Assign a phlebotomist first." });
+      return;
+    }
+
+    const currentIdx = statusFlow.indexOf(job.status);
+    const nextStatus = statusFlow[currentIdx + 1] ?? job.status;
+    const base = getLabsV1Base();
+    const note = notesByJob[job.id]?.trim();
+
+    if (!base) {
+      toast({ title: "Tenant not set", description: "Cannot update API-v1 job without tenantId." });
+      return;
+    }
+
+    setActionJobId(job.id);
+    try {
+      const payload: Record<string, unknown> = {
+        status: nextStatus,
+        notes: note || undefined,
+      };
+      if (nextStatus === "collected") {
+        payload.proof_of_collection = { proof_code: `POC-${Math.random().toString(36).slice(2, 8).toUpperCase()}` };
+      }
+      if (nextStatus === "handed_over") {
+        payload.handover_details = { handover_ref: `HND-${Math.random().toString(36).slice(2, 8).toUpperCase()}` };
+      }
+
+      const { data } = await api.put(`${base}/home-collection/jobs/${encodeURIComponent(job.id)}/status`, payload);
+      setJobs((prev) => prev.map((item) => (item.id === job.id ? mapApiJob(data) : item)));
+      toast({ title: "Updated", description: `${job.bookingId} moved to ${nextStatus}.` });
+    } catch {
+      toast({ title: "Update failed", description: "Unable to update job status." });
+    } finally {
+      setActionJobId(null);
+    }
+  };
+
+  const cancelJob = async (job: HomeCollectionJobItem) => {
+    const base = getLabsV1Base();
+    if (!base) {
+      toast({ title: "Tenant not set", description: "Cannot cancel API-v1 job without tenantId." });
+      return;
+    }
+    const note = notesByJob[job.id]?.trim();
+    setActionJobId(job.id);
+    try {
+      const { data } = await api.put(`${base}/home-collection/jobs/${encodeURIComponent(job.id)}/status`, {
+        status: "cancelled",
+        notes: note || undefined,
+      });
+      setJobs((prev) => prev.map((item) => (item.id === job.id ? mapApiJob(data) : item)));
+      toast({ title: "Cancelled", description: `${job.bookingId} was cancelled.` });
+    } catch {
+      toast({ title: "Cancel failed", description: "Unable to cancel this job." });
+    } finally {
+      setActionJobId(null);
+    }
+  };
+
+  const assignPhlebotomist = async () => {
+    if (!assignForm.jobId || !assignForm.phlebotomistName.trim()) {
+      toast({ title: "Missing details", description: "Select job and phlebotomist name." });
+      return;
+    }
+
+    const base = getLabsV1Base();
+    if (!base) {
+      toast({ title: "Tenant not set", description: "Cannot assign API-v1 job without tenantId." });
+      return;
+    }
+
+    setActionJobId(assignForm.jobId);
+    try {
+      const idSlug = assignForm.phlebotomistName.trim().toLowerCase().replace(/\s+/g, "-");
+      const { data } = await api.post(`${base}/home-collection/jobs/${encodeURIComponent(assignForm.jobId)}/assign`, {
+        phlebotomist_id: `ph-${idSlug}`,
+        phlebotomist_name: assignForm.phlebotomistName.trim(),
+        phlebotomist_phone: assignForm.phlebotomistPhone.trim() || undefined,
+      });
+      setJobs((prev) => prev.map((item) => (item.id === assignForm.jobId ? mapApiJob(data) : item)));
+      setAssignForm({ jobId: "", phlebotomistName: "", phlebotomistPhone: "" });
+      toast({ title: "Assigned", description: "Phlebotomist assigned successfully." });
+    } catch {
+      toast({ title: "Assignment failed", description: "Unable to assign phlebotomist." });
+    } finally {
+      setActionJobId(null);
+    }
+  };
+
+  const stats = useMemo(() => {
+    const open = jobs.filter((j) => !["cancelled", "handed_over"].includes(j.status)).length;
+    const enRoute = jobs.filter((j) => j.status === "en_route").length;
+    const collected = jobs.filter((j) => j.status === "collected").length;
+    const completed = jobs.filter((j) => j.status === "handed_over").length;
+    return [
+      { title: "Open Jobs", value: String(open), helper: "Active home collections" },
+      { title: "En Route", value: String(enRoute), helper: "Phlebotomist travelling" },
+      { title: "Collected", value: String(collected), helper: "Samples picked up" },
+      { title: "Handed Over", value: String(completed), helper: "Delivered to lab" },
+    ];
+  }, [jobs]);
+
+  return (
+    <LabLayout title="Home Collection Ops" subtitle="Phlebotomist assignment and sample custody flow">
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Button variant="outline" size="icon" onClick={() => navigate(-1)}>
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold">Home Collection Operations</h1>
+              <p className="text-muted-foreground">Track phlebotomist lifecycle from assignment to handover</p>
+            </div>
+          </div>
+          <Button variant="outline" onClick={loadJobs} disabled={loading}>
+            {loading ? "Refreshing..." : "Refresh"}
+          </Button>
+        </div>
+
+        <StatGrid items={stats} />
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Create Job From Booking</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Input
+                value={createForm.bookingId}
+                onChange={(e) => applyBookingSelection(e.target.value)}
+                placeholder={bookingsLoading ? "Loading bookings..." : "Search by booking ID or patient"}
+                list="lab-home-booking-options"
+              />
+              <datalist id="lab-home-booking-options">
+                {filteredBookingOptions.map((b) => (
+                  <option key={b.bookingId} value={b.bookingId}>{`${b.bookingId} - ${b.patientName}`}</option>
+                ))}
+              </datalist>
+              <Input
+                type="date"
+                value={createForm.scheduledDate}
+                onChange={(e) => setCreateForm((p) => ({ ...p, scheduledDate: e.target.value }))}
+              />
+              <Input
+                value={createForm.scheduledSlot}
+                onChange={(e) => setCreateForm((p) => ({ ...p, scheduledSlot: e.target.value }))}
+                placeholder="Scheduled slot"
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Input
+                value={createForm.addressLine1}
+                onChange={(e) => setCreateForm((p) => ({ ...p, addressLine1: e.target.value }))}
+                placeholder="Address line"
+              />
+              <Input
+                value={createForm.city}
+                onChange={(e) => setCreateForm((p) => ({ ...p, city: e.target.value }))}
+                placeholder="City"
+              />
+              <Input
+                value={createForm.state}
+                onChange={(e) => setCreateForm((p) => ({ ...p, state: e.target.value }))}
+                placeholder="State"
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
+              <Input
+                value={createForm.notes}
+                onChange={(e) => setCreateForm((p) => ({ ...p, notes: e.target.value }))}
+                placeholder="Notes"
+              />
+              <Button onClick={createJobFromBooking} disabled={loading}>
+                {loading ? "Creating..." : "Create Job"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Assign Phlebotomist</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <Select value={assignForm.jobId} onValueChange={(v) => setAssignForm((p) => ({ ...p, jobId: v }))}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select Job" />
+              </SelectTrigger>
+              <SelectContent>
+                {jobs
+                  .filter((j) => ["unassigned", "assigned"].includes(j.status))
+                  .map((j) => (
+                    <SelectItem key={j.id} value={j.id}>{j.bookingId} - {j.patientName}</SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <Input
+              value={assignForm.phlebotomistName}
+              onChange={(e) => setAssignForm((p) => ({ ...p, phlebotomistName: e.target.value }))}
+              placeholder="Phlebotomist name"
+            />
+            <Input
+              value={assignForm.phlebotomistPhone}
+              onChange={(e) => setAssignForm((p) => ({ ...p, phlebotomistPhone: e.target.value }))}
+              placeholder="Phone"
+            />
+            <Button onClick={assignPhlebotomist} disabled={Boolean(actionJobId)}>Assign</Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Live Job Board</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Booking</TableHead>
+                  <TableHead>Patient</TableHead>
+                  <TableHead>Phlebotomist</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Evidence</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {jobs.map((job) => (
+                  <TableRow key={job.id}>
+                    <TableCell className="font-mono text-xs">{job.bookingId}</TableCell>
+                    <TableCell>
+                      <div className="font-medium">{job.patientName}</div>
+                      <div className="text-xs text-muted-foreground">{job.slot}</div>
+                      <div className="text-xs text-muted-foreground">{job.addressLine}</div>
+                    </TableCell>
+                    <TableCell>
+                      <div>{job.phlebotomistName || "Unassigned"}</div>
+                      <div className="text-xs text-muted-foreground">{job.phlebotomistPhone || "-"}</div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={statusBadgeClass(job.status)}>{humanizeStatus(job.status)}</Badge>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      <div>POC: {job.proofCode || "-"}</div>
+                      <div>Handover: {job.handoverRef || "-"}</div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => openEventsTimeline(job)}>
+                            Timeline
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => progressStatus(job)} disabled={actionJobId === job.id}>
+                            Next Stage
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => cancelJob(job)} disabled={job.status === "cancelled" || job.status === "handed_over" || actionJobId === job.id}>
+                            Cancel
+                          </Button>
+                        </div>
+                        <Input
+                          placeholder="Cancellation note / handover remarks"
+                          value={notesByJob[job.id] || ""}
+                          onChange={(e) => setNotesByJob((prev) => ({ ...prev, [job.id]: e.target.value }))}
+                        />
+                        <div className="text-xs text-muted-foreground">Updated: {new Date(job.updatedAt).toLocaleString()}</div>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Dialog open={openEvents} onOpenChange={setOpenEvents}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Job Timeline</DialogTitle>
+              <DialogDescription>
+                {selectedJobForEvents ? `${selectedJobForEvents.bookingId} - ${selectedJobForEvents.patientName}` : "Event history"}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 max-h-[420px] overflow-y-auto">
+              {eventsLoading ? (
+                <p className="text-sm text-muted-foreground">Loading events...</p>
+              ) : events.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No events found for this job.</p>
+              ) : (
+                events.map((evt) => (
+                  <div key={evt.id} className="p-3 border rounded-lg space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <Badge variant="outline">{evt.eventType}</Badge>
+                      <span className="text-xs text-muted-foreground">{new Date(evt.createdAt).toLocaleString()}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Actor: {evt.actorName || "System"}{evt.actorRole ? ` (${evt.actorRole})` : ""}
+                    </div>
+                    <div className="text-xs bg-muted p-2 rounded overflow-x-auto">{renderEventPayload(evt.payload)}</div>
+                  </div>
+                ))
+              )}
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setOpenEvents(false)}>Close</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

@@ -370,6 +370,7 @@ const LabOrdersPage        = lazyNamed(_LabModulePages, "LabOrdersPage");
 const LabPatientsPage      = lazyNamed(_LabModulePages, "LabPatientsPage");
 const LabAppointmentsPage  = lazyNamed(_LabModulePages, "LabAppointmentsPage");
 const LabQueuePage         = lazyNamed(_LabModulePages, "LabQueuePage");
+const LabHomeCollectionOpsPage = lazyNamed(_LabModulePages, "LabHomeCollectionOpsPage");
 const LabSamplesPage       = lazyNamed(_LabModulePages, "LabSamplesPage");
 const LabProcessingPage    = lazyNamed(_LabModulePages, "LabProcessingPage");
 const LabResultsPage       = lazyNamed(_LabModulePages, "LabResultsPage");
@@ -377,6 +378,7 @@ const LabReportsPage       = lazyNamed(_LabModulePages, "LabReportsPage");
 const LabInventoryPage     = lazyNamed(_LabModulePages, "LabInventoryPage");
 const LabBillingPage       = lazyNamed(_LabModulePages, "LabBillingPage");
 const LabPaymentsPage      = lazyNamed(_LabModulePages, "LabPaymentsPage");
+const LabBillingOpsPage    = lazyNamed(_LabModulePages, "LabBillingOpsPage");
 const LabAnalyticsPage     = lazyNamed(_LabModulePages, "LabAnalyticsPage");
 const LabStaffPage         = lazyNamed(_LabModulePages, "LabStaffPage");
 const LabNotificationsPage = lazyNamed(_LabModulePages, "LabNotificationsPage");
@@ -979,11 +981,14 @@ const AppRoutes = () => {
         <Route path="/clinic/support"       element={<ClinicSupportPage />} />
 
         {/* ── Lab ─────────────────────────────────────────────────────── */}
+        <Route path="/lab"                 element={<Navigate to="/lab/dashboard" replace />} />
         <Route path="/lab/login"           element={<LabLogin />} />
         <Route path="/lab/register"        element={<LabRegister />} />
         <Route path="/lab/dashboard"       element={<LabDashboard />} />
         <Route path="/lab/test-catalog"    element={<LabDashboard />} />
         <Route path="/lab/ris"             element={<LabRIS />} />
+        <Route path="/lab/imaging"         element={<LabRIS />} />
+        <Route path="/lab/sonology"        element={<LabRIS />} />
         <Route path="/lab/orders"          element={<LabOrdersPage />} />
         <Route path="/lab/orders/new"      element={<LabOrdersPage />} />
         <Route path="/lab/patients"        element={<LabPatientsPage />} />
@@ -992,6 +997,7 @@ const AppRoutes = () => {
         <Route path="/lab/appointments/new" element={<LabAppointmentsPage />} />
         <Route path="/lab/queue"           element={<LabQueuePage />} />
         <Route path="/lab/queue/new"       element={<LabQueuePage />} />
+        <Route path="/lab/home-collection" element={<LabHomeCollectionOpsPage />} />
         <Route path="/lab/samples"         element={<LabSamplesPage />} />
         <Route path="/lab/samples/new"     element={<LabSamplesPage />} />
         <Route path="/lab/processing"      element={<LabProcessingPage />} />
@@ -1004,6 +1010,7 @@ const AppRoutes = () => {
         <Route path="/lab/inventory/new"   element={<LabInventoryPage />} />
         <Route path="/lab/billing"         element={<LabBillingPage />} />
         <Route path="/lab/billing/new"     element={<LabBillingPage />} />
+        <Route path="/lab/billing-ops"     element={<LabBillingOpsPage />} />
         <Route path="/lab/payments"        element={<LabPaymentsPage />} />
         <Route path="/lab/payments/new"    element={<LabPaymentsPage />} />
         <Route path="/lab/analytics"       element={<LabAnalyticsPage />} />
@@ -1128,6 +1135,7 @@ const AppRoutes = () => {
         {/* ── Team ────────────────────────────────────────────────────── */}
         <Route path="/team/login"                    element={<TeamLogin />} />
         <Route path="/team/dashboard"                element={<TeamDashboard />} />
+        <Route path="/team/email-inbox"              element={<TeamDashboard initialTab="emails" />} />
         <Route path="/team/profile"                  element={<TeamProfile />} />
         <Route path="/team/directory"                element={<TeamDirectory />} />
         <Route path="/team/reports"                  element={<TeamReports />} />

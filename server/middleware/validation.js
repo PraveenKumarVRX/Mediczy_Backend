@@ -224,6 +224,80 @@ export const labsValidation = {
     validators.resourceId('bookingId'),
     body('report_url').isURL().withMessage('Invalid report URL'),
     handleValidationErrors
+  ],
+
+  initiatePayment: [
+    validators.tenantId(),
+    validators.resourceId('bookingId'),
+    body('payment_method').optional().isString().isLength({ min: 2, max: 50 }).withMessage('payment_method must be 2-50 characters'),
+    body('payment_reference').optional().isString().isLength({ min: 2, max: 100 }).withMessage('payment_reference must be 2-100 characters'),
+    body('payment_metadata').optional().isObject().withMessage('payment_metadata must be an object'),
+    handleValidationErrors
+  ],
+
+  updatePaymentStatus: [
+    validators.tenantId(),
+    validators.resourceId('bookingId'),
+    body('payment_status')
+      .isIn(['pending', 'initiated', 'paid', 'failed'])
+      .withMessage('payment_status must be pending, initiated, paid, or failed'),
+    body('payment_method').optional().isString().isLength({ min: 2, max: 50 }).withMessage('payment_method must be 2-50 characters'),
+    body('payment_reference').optional().isString().isLength({ min: 2, max: 100 }).withMessage('payment_reference must be 2-100 characters'),
+    body('payment_metadata').optional().isObject().withMessage('payment_metadata must be an object'),
+    handleValidationErrors
+  ],
+
+  applyIpCredit: [
+    validators.tenantId(),
+    validators.resourceId('bookingId'),
+    body('amount').optional().isFloat({ min: 0.01 }).withMessage('amount must be a positive number'),
+    body('reference').optional().isString().isLength({ min: 2, max: 100 }).withMessage('reference must be 2-100 characters'),
+    body('notes').optional().isString().isLength({ min: 1, max: 500 }).withMessage('notes must be 1-500 characters'),
+    body('metadata').optional().isObject().withMessage('metadata must be an object'),
+    handleValidationErrors
+  ],
+
+  settleIpCredit: [
+    validators.tenantId(),
+    validators.resourceId('bookingId'),
+    body('amount').optional().isFloat({ min: 0.01 }).withMessage('amount must be a positive number'),
+    body('reference').optional().isString().isLength({ min: 2, max: 100 }).withMessage('reference must be 2-100 characters'),
+    body('payment_method').optional().isString().isLength({ min: 2, max: 50 }).withMessage('payment_method must be 2-50 characters'),
+    body('close_booking').optional().isBoolean().withMessage('close_booking must be a boolean'),
+    body('notes').optional().isString().isLength({ min: 1, max: 500 }).withMessage('notes must be 1-500 characters'),
+    body('metadata').optional().isObject().withMessage('metadata must be an object'),
+    handleValidationErrors
+  ],
+
+  createHomeCollectionJob: [
+    validators.tenantId(),
+    body('booking_id').notEmpty().withMessage('booking_id is required'),
+    validators.date('scheduled_date', false),
+    body('scheduled_slot').optional().isString().withMessage('scheduled_slot must be a string'),
+    body('pickup_address').optional().isObject().withMessage('pickup_address must be an object'),
+    body('notes').optional().isString().withMessage('notes must be a string'),
+    handleValidationErrors
+  ],
+
+  assignPhlebotomist: [
+    validators.tenantId(),
+    validators.resourceId('jobId'),
+    body('phlebotomist_id').notEmpty().withMessage('phlebotomist_id is required'),
+    body('phlebotomist_name').notEmpty().withMessage('phlebotomist_name is required'),
+    body('phlebotomist_phone').optional().isString().withMessage('phlebotomist_phone must be a string'),
+    handleValidationErrors
+  ],
+
+  updateHomeCollectionJobStatus: [
+    validators.tenantId(),
+    validators.resourceId('jobId'),
+    body('status')
+      .isIn(['assigned', 'en_route', 'arrived', 'collected', 'in_transit', 'handed_over', 'cancelled'])
+      .withMessage('Invalid status value'),
+    body('proof_of_collection').optional().isObject().withMessage('proof_of_collection must be an object'),
+    body('handover_details').optional().isObject().withMessage('handover_details must be an object'),
+    body('notes').optional().isString().withMessage('notes must be a string'),
+    handleValidationErrors
   ]
 };
 
