@@ -28,7 +28,7 @@ import {
   Users,
   Zap,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import api from "@/utils/api";
@@ -52,18 +52,44 @@ interface ModuleConfig {
   initiatives: Initiative[];
   primaryAction?: string;
   primaryActionHref?: string;
+  // When provided, ModuleShell fetches this endpoint and merges live values
+  // into the static metric list by matching label (case-insensitive substring).
+  liveMetrics?: { endpoint: string; extract: (data: any) => Record<string, string | number> };
 }
 
-const ModuleShell = ({ title, description, metrics, initiatives, primaryAction, primaryActionHref }: ModuleConfig) => {
+const ModuleShell = ({ title, description, metrics: staticMetrics, initiatives, primaryAction, primaryActionHref, liveMetrics }: ModuleConfig) => {
+  const navigate = useNavigate();
+
+  const { data: liveData } = useQuery({
+    queryKey: ["module-live-metrics", liveMetrics?.endpoint],
+    queryFn: async () => {
+      if (!liveMetrics) return null;
+      const { data } = await api.get(liveMetrics.endpoint);
+      return data;
+    },
+    enabled: Boolean(liveMetrics),
+    staleTime: 60_000,
+  });
+
+  const liveValues: Record<string, string | number> = liveData && liveMetrics
+    ? liveMetrics.extract(liveData)
+    : {};
+
+  // Merge live values into static metrics — live value wins when present
+  const metrics = staticMetrics.map((m) => {
+    const key = Object.keys(liveValues).find(
+      (k) => m.label.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(m.label.toLowerCase())
+    );
+    return key !== undefined ? { ...m, value: String(liveValues[key]) } : m;
+  });
+
   const handlePrimaryAction = () => {
     if (title === "User Management") {
-      // Navigate to admin users page
-      window.location.href = '/admin/users';
+      navigate('/admin/users');
     } else if (title === "Doctor Network") {
-      // Navigate to admin doctors page
-      window.location.href = '/admin/doctors';
+      navigate('/admin/doctors');
     } else if (primaryActionHref) {
-      window.location.href = primaryActionHref;
+      navigate(primaryActionHref);
     }
   };
 
@@ -142,11 +168,17 @@ const modules: Record<string, ModuleConfig> = {
     title: "User Management",
     description: "Track onboarding, deactivate accounts, and audit permissions without leaving the team workspace.",
     primaryAction: "Invite new member",
+    liveMetrics: {
+      endpoint: "/team/module-stats",
+      extract: (d) => ({
+        "Active users": d.stats?.users?.active ?? d.stats?.users?.total,
+      }),
+    },
     metrics: [
-      { label: "Active users", value: "1,240", trend: "+3.2% vs last week" },
-      { label: "Pending invites", value: "18" },
-      { label: "Access reviews", value: "4 due" },
-      { label: "Support escalations", value: "2 open" },
+      { label: "Active users", value: "—", trend: "" },
+      { label: "Pending invites", value: "—" },
+      { label: "Access reviews", value: "—" },
+      { label: "Support escalations", value: "—" },
     ],
     initiatives: [
       { title: "De-duplicate legacy accounts", description: "Merge duplicate user records before Q4 close", status: "In Progress" },
@@ -158,11 +190,18 @@ const modules: Record<string, ModuleConfig> = {
     title: "Doctor Network",
     description: "Monitor onboarding, credentials, and engagement for every doctor on the platform.",
     primaryAction: "Add doctor",
+    liveMetrics: {
+      endpoint: "/team/module-stats",
+      extract: (d) => ({
+        "Active doctors": d.stats?.doctors?.total,
+        "Pending verifications": d.stats?.doctors?.pendingVerification,
+      }),
+    },
     metrics: [
-      { label: "Active doctors", value: "362", trend: "+12 new this month" },
-      { label: "Pending verifications", value: "5" },
-      { label: "Avg rating", value: "4.86" },
-      { label: "Availability gaps", value: "3 specialties" },
+      { label: "Active doctors", value: "—", trend: "" },
+      { label: "Pending verifications", value: "—" },
+      { label: "Avg rating", value: "—" },
+      { label: "Availability gaps", value: "—" },
     ],
     initiatives: [
       { title: "Credential refresh", description: "Revalidate licenses expiring within 45 days", status: "In Progress" },
@@ -175,11 +214,17 @@ const modules: Record<string, ModuleConfig> = {
     description: "Maintain enterprise partnerships, track utilization, and surface renewal signals for each corporate client.",
     primaryAction: "Create corporate workspace",
     primaryActionHref: "/admin/corporates",
+    liveMetrics: {
+      endpoint: "/team/module-stats",
+      extract: (d) => ({
+        "Active contracts": d.stats?.corporates?.total,
+      }),
+    },
     metrics: [
-      { label: "Active contracts", value: "42" },
-      { label: "Renewals this month", value: "6" },
-      { label: "Coverage rate", value: "92%" },
-      { label: "Open escalations", value: "3" },
+      { label: "Active contracts", value: "—" },
+      { label: "Renewals this month", value: "—" },
+      { label: "Coverage rate", value: "—" },
+      { label: "Open escalations", value: "—" },
     ],
     initiatives: [
       { title: "Quarterly business reviews", description: "Schedule QBRs for accounts with >500 employees", status: "Scheduled" },
@@ -190,11 +235,15 @@ const modules: Record<string, ModuleConfig> = {
   hospitalManagement: {
     title: "Hospital Management",
     description: "Coordinate hospital onboarding, service catalogs, and allocation of partner specialists.",
+    liveMetrics: {
+      endpoint: "/team/module-stats",
+      extract: (d) => ({ "Hospitals live": d.stats?.hospitals?.total }),
+    },
     metrics: [
-      { label: "Hospitals live", value: "58" },
-      { label: "Pending vetting", value: "5" },
-      { label: "Avg response SLA", value: "1h 12m" },
-      { label: "Availability alerts", value: "2" },
+      { label: "Hospitals live", value: "—" },
+      { label: "Pending vetting", value: "—" },
+      { label: "Avg response SLA", value: "—" },
+      { label: "Availability alerts", value: "—" },
     ],
     initiatives: [
       { title: "Imaging integration", description: "Roll out PACS adapters for tier-1 hospitals", status: "Deploying" },
@@ -205,11 +254,15 @@ const modules: Record<string, ModuleConfig> = {
   clinicManagement: {
     title: "Clinic Management",
     description: "Track clinic partners, queue health, and reimbursement readiness from one dashboard.",
+    liveMetrics: {
+      endpoint: "/team/module-stats",
+      extract: (d) => ({ "Clinics onboarded": d.stats?.clinics?.total }),
+    },
     metrics: [
-      { label: "Clinics onboarded", value: "134" },
-      { label: "Daily queue load", value: "482 visits" },
-      { label: "Pending payouts", value: "₹3.4L" },
-      { label: "Compliance issues", value: "0" },
+      { label: "Clinics onboarded", value: "—" },
+      { label: "Daily queue load", value: "—" },
+      { label: "Pending payouts", value: "—" },
+      { label: "Compliance issues", value: "—" },
     ],
     initiatives: [
       { title: "Faster payouts", description: "Move all clinics to automated billing" },
@@ -220,11 +273,15 @@ const modules: Record<string, ModuleConfig> = {
   labManagement: {
     title: "Lab Management",
     description: "Orchestrate diagnostics partners, sample pickups, and SLA reporting.",
+    liveMetrics: {
+      endpoint: "/team/module-stats",
+      extract: (d) => ({ "Labs live": d.stats?.labs?.total }),
+    },
     metrics: [
-      { label: "Labs live", value: "76" },
-      { label: "Samples today", value: "1,204" },
-      { label: "Delayed reports", value: "8" },
-      { label: "Automation coverage", value: "68%" },
+      { label: "Labs live", value: "—" },
+      { label: "Samples today", value: "—" },
+      { label: "Delayed reports", value: "—" },
+      { label: "Automation coverage", value: "—" },
     ],
     initiatives: [
       { title: "Chain-of-custody rollout", description: "Digitize tracking for top metro labs", status: "Rolling out" },
@@ -235,11 +292,17 @@ const modules: Record<string, ModuleConfig> = {
   appointments: {
     title: "Appointments Operations",
     description: "Monitor booking load, triage escalations, and rebalance slots across portals.",
+    liveMetrics: {
+      endpoint: "/team/module-stats",
+      extract: (d) => ({
+        "Bookings today": d.stats?.appointments?.today,
+      }),
+    },
     metrics: [
-      { label: "Bookings today", value: "612" },
-      { label: "Reschedules", value: "44" },
-      { label: "High priority", value: "9" },
-      { label: "SLA compliance", value: "97%" },
+      { label: "Bookings today", value: "—" },
+      { label: "Reschedules", value: "—" },
+      { label: "High priority", value: "—" },
+      { label: "SLA compliance", value: "—" },
     ],
     initiatives: [
       { title: "Waitlist automation", description: "Auto-upgrade slots when cancellations occur", status: "Beta" },
@@ -312,11 +375,15 @@ const modules: Record<string, ModuleConfig> = {
     description: "Oversee pharmacy network, monitor inventory, and manage medication dispensing across all locations.",
     primaryAction: "Add pharmacy",
     primaryActionHref: "/admin/pharmacies",
+    liveMetrics: {
+      endpoint: "/team/module-stats",
+      extract: (d) => ({ "Active pharmacies": d.stats?.pharmacies?.total }),
+    },
     metrics: [
-      { label: "Active pharmacies", value: "127", trend: "+5 this month" },
-      { label: "Total medicines", value: "45.2K" },
-      { label: "Low stock alerts", value: "12" },
-      { label: "Monthly revenue", value: "₹2.4M" },
+      { label: "Active pharmacies", value: "—", trend: "" },
+      { label: "Total medicines", value: "—" },
+      { label: "Low stock alerts", value: "—" },
+      { label: "Monthly revenue", value: "—" },
     ],
     initiatives: [
       { title: "Inventory optimization", description: "Implement auto-reorder for critical medicines", status: "In Progress" },
