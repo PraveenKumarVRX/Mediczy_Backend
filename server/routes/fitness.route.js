@@ -287,254 +287,212 @@ router.get('/summary', auth, async (req, res) => {
   }
 });
 
-// ─── Google Fit server-side proxy ────────────────────────────────────────────
+// ─── Google Health Connect receiver ──────────────────────────────────────────
 //
-// These routes receive the user's Google access token (obtained client-side via
-// @react-oauth/google implicit flow) and proxy all Google Fitness REST API calls
-// through the server — avoiding any browser CORS/CSP issues and storing data.
+// Google Health Connect is an Android-only native SDK — there is NO REST API
+// accessible from a web browser. The Mediczy Android app reads data from the
+// Health Connect SDK locally and pushes it to these endpoints.
+//
+// Flow:
+//   Android app → Health Connect SDK (local read)
+//                → POST /api/fitness/health-connect/sync (pushes to server)
+//   Web dashboard → GET  /api/fitness/health-connect/status / summary (reads stored data)
 
-const GFIT_AGGREGATE = 'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate';
-const GFIT_SESSIONS  = 'https://www.googleapis.com/fitness/v1/users/me/sessions';
 
 /**
- * POST /api/fitness/google/fetch
- * Body: { googleAccessToken, days? }
- * Auth: mediczy JWT (user must be logged in)
+ * POST /api/fitness/health-connect/sync
+ * Receives one day of Health Connect data pushed by the Mediczy Android app.
  *
- * Fetches activity + heart rate + sleep data from Google Fit using the
- * access token supplied by the client, stores it, and returns processed data.
+ * Body (single day):
+ *   { date, steps, calories, distance, activeMinutes,
+ *     heartRate:{avg,min,max}, sleepHours, bloodOxygen,
+ *     weight, source:"health_connect", appVersion? }
+ *
+ * Body (batch — up to 90 days):
+ *   { days: [ <same shape as above> ... ] }
  */
-router.post('/google/fetch', auth, async (req, res) => {
+router.post('/health-connect/sync', auth, async (req, res) => {
   try {
-    const { googleAccessToken, days = 7 } = req.body;
-    if (!googleAccessToken) {
-      return res.status(400).json({ error: 'googleAccessToken is required' });
-    }
-
     const userId = req.user.id;
-    const endTime   = new Date();
-    const startTime = new Date();
-    startTime.setDate(startTime.getDate() - parseInt(days));
+    const { days: batchDays, ...singleDay } = req.body;
 
-    const gHeaders = {
-      Authorization: `Bearer ${googleAccessToken}`,
-      'Content-Type': 'application/json',
-    };
+    // Normalise to array
+    const records = Array.isArray(batchDays)
+      ? batchDays
+      : (singleDay.date ? [singleDay] : []);
 
-    // ── 1. Activity + heart rate aggregate ──────────────────────────────────
-    const activityPayload = {
-      aggregateBy: [
-        { dataTypeName: 'com.google.step_count.delta'   },
-        { dataTypeName: 'com.google.calories.expended'  },
-        { dataTypeName: 'com.google.distance.delta'      },
-        { dataTypeName: 'com.google.active_minutes'      },
-        { dataTypeName: 'com.google.heart_rate.bpm'      },
-      ],
-      startTimeMillis: startTime.getTime(),
-      endTimeMillis:   endTime.getTime(),
-      bucketByTime: { durationMillis: 86400000 }, // daily buckets
-    };
-
-    let activityData = { bucket: [] };
-    try {
-      const resp = await axios.post(GFIT_AGGREGATE, activityPayload, { headers: gHeaders, timeout: 12000 });
-      activityData = resp.data;
-    } catch (err) {
-      console.error('[GoogleFit] activity fetch error:', err.response?.data?.error?.message || err.message);
-      // If 401, return meaningful error
-      if (err.response?.status === 401) {
-        return res.status(401).json({ error: 'Google access token expired. Please reconnect Google Fit.' });
-      }
-      if (err.response?.status === 403) {
-        return res.status(403).json({ error: 'Google Fit permission denied. Ensure fitness scopes were granted.' });
-      }
+    if (records.length === 0) {
+      return res.status(400).json({ success: false, error: 'Provide date or days array' });
+    }
+    if (records.length > 90) {
+      return res.status(400).json({ success: false, error: 'Maximum 90 days per batch' });
     }
 
-    // ── 2. Sleep sessions ────────────────────────────────────────────────────
-    let sleepSessions = [];
-    try {
-      const sleepResp = await axios.get(GFIT_SESSIONS, {
-        headers: gHeaders,
-        timeout: 10000,
-        params: {
-          startTime:    startTime.toISOString(),
-          endTime:      endTime.toISOString(),
-          activityType: 72,  // Google Fit activity type for SLEEP
-        },
-      });
-      sleepSessions = sleepResp.data?.session || [];
-    } catch (err) {
-      console.error('[GoogleFit] sleep fetch error:', err.response?.data?.error?.message || err.message);
-    }
-
-    // ── 3. Parse activity buckets (find dataset by dataTypeName, not index) ─
-    const dailyData = [];
-
-    for (const bucket of activityData.bucket || []) {
-      const date = new Date(parseInt(bucket.startTimeMillis)).toLocaleDateString('en-CA');
-
-      let steps = 0, calories = 0, distance = 0, activeMinutes = 0;
-      let hrMin = 0, hrMax = 0, hrAvg = 0;
-
-      for (const ds of (bucket.dataset || [])) {
-        const src = ds.dataSourceId || '';
-        const pt  = ds.point?.[0];
-        if (!pt) continue;
-        const vals = pt.value || [];
-
-        if (src.includes('step_count') || src.includes('steps')) {
-          steps = Math.round(vals[0]?.intVal ?? vals[0]?.fpVal ?? 0);
-        } else if (src.includes('calories')) {
-          calories = Math.round(vals[0]?.fpVal ?? vals[0]?.intVal ?? 0);
-        } else if (src.includes('distance')) {
-          distance = Math.round((vals[0]?.fpVal ?? vals[0]?.intVal ?? 0) * 100) / 100;
-        } else if (src.includes('active_minutes') || src.includes('move_minutes')) {
-          activeMinutes = Math.round(vals[0]?.intVal ?? vals[0]?.fpVal ?? 0);
-        } else if (src.includes('heart_rate')) {
-          // Google Fit heart_rate aggregate returns: [avg, min, max] in value array
-          // Each entry is {fpVal: number} — guard each index defensively
-          hrAvg = Math.round(vals[0]?.fpVal ?? vals[0]?.intVal ?? 0);
-          hrMin = vals.length > 1 ? Math.round(vals[1]?.fpVal ?? vals[1]?.intVal ?? 0) : 0;
-          hrMax = vals.length > 2 ? Math.round(vals[2]?.fpVal ?? vals[2]?.intVal ?? 0) : 0;
-        }
-      }
-
-      dailyData.push({ date, steps, calories, distance, activeMinutes, heartRate: { avg: hrAvg, min: hrMin, max: hrMax } });
-    }
-
-    // ── 4. Parse sleep sessions ──────────────────────────────────────────────
-    const sleepByDate = {};
-    for (const session of sleepSessions) {
-      const date = new Date(parseInt(session.startTimeMillis)).toLocaleDateString('en-CA');
-      const durationMs = parseInt(session.endTimeMillis) - parseInt(session.startTimeMillis);
-      const durationHours = Math.round((durationMs / 3_600_000) * 10) / 10;
-      sleepByDate[date] = (sleepByDate[date] || 0) + durationHours;
-    }
-
-    // Merge sleep into daily data
-    for (const day of dailyData) {
-      day.sleepHours = sleepByDate[day.date] ?? null;
-    }
-
-    // ── 5. Persist to health_data ────────────────────────────────────────────
     let savedCount = 0;
     let failedCount = 0;
     const failedDetails = [];
-    if (HealthData) {
-      for (const day of dailyData) {
-        const rAt = new Date(day.date);
-        const rows = [];
-        if (day.steps)         rows.push({ dataType: 'steps',        value: day.steps,         unit: 'steps',  recordedAt: rAt });
-        if (day.calories)      rows.push({ dataType: 'calories',     value: day.calories,      unit: 'kcal',   recordedAt: rAt });
-        if (day.distance)      rows.push({ dataType: 'distance',     value: day.distance,      unit: 'm',      recordedAt: rAt });
-        if (day.activeMinutes) rows.push({ dataType: 'active_minutes', value: day.activeMinutes, unit: 'min',  recordedAt: rAt });
-        if (day.heartRate?.avg) rows.push({ dataType: 'heart_rate', value: day.heartRate.avg, unit: 'bpm',   recordedAt: rAt });
-        if (day.sleepHours)    rows.push({ dataType: 'sleep',        value: day.sleepHours,    unit: 'hours',  recordedAt: rAt });
 
-        for (const row of rows) {
-          try {
+    for (const r of records) {
+      if (!r.date) { failedCount++; failedDetails.push('missing date'); continue; }
+      const recordedAt = new Date(r.date);
+      const rows = [];
+      if (r.steps)                rows.push({ dataType: 'steps',          value: Math.round(r.steps),            unit: 'steps',   recordedAt });
+      if (r.calories)             rows.push({ dataType: 'calories',        value: Math.round(r.calories),         unit: 'kcal',    recordedAt });
+      if (r.distance)             rows.push({ dataType: 'distance',        value: r.distance,                     unit: 'm',       recordedAt });
+      if (r.activeMinutes)        rows.push({ dataType: 'active_minutes',  value: Math.round(r.activeMinutes),    unit: 'min',     recordedAt });
+      if (r.heartRate?.avg)       rows.push({ dataType: 'heart_rate',      value: r.heartRate.avg,                unit: 'bpm',     recordedAt, metadata: { min: r.heartRate.min, max: r.heartRate.max, source: 'health_connect' } });
+      if (r.sleepHours)           rows.push({ dataType: 'sleep',           value: r.sleepHours,                   unit: 'hours',   recordedAt });
+      if (r.bloodOxygen)          rows.push({ dataType: 'spo2',            value: r.bloodOxygen,                  unit: '%',       recordedAt });
+      if (r.weight)               rows.push({ dataType: 'weight',          value: r.weight,                       unit: 'kg',      recordedAt });
+
+      for (const row of rows) {
+        try {
+          if (HealthData) {
             await HealthData.upsert({
               userId,
               ...row,
-              source:     'google_fit',
-              deviceId:   'google-fit',
-              deviceName: 'Google Fit',
-              metadata:   { syncedAt: new Date().toISOString() },
+              source:     'health_connect',
+              deviceId:   'android-health-connect',
+              deviceName: 'Google Health Connect',
+              metadata:   { ...(row.metadata || {}), syncedAt: new Date().toISOString(), appVersion: r.appVersion },
               createdAt:  new Date(),
               updatedAt:  new Date(),
             });
-            savedCount++;
-          } catch (upsertErr) {
-            failedCount++;
-            failedDetails.push(`${row.dataType}@${day.date}: ${upsertErr.message}`);
-            console.error('[GoogleFit] upsert failed for', row.dataType, row.recordedAt, upsertErr.message);
           }
+          // Also upsert into FitnessData for backward-compat with /fitness/summary
+          if (FitnessData && row.dataType === 'steps') {
+            await FitnessData.upsert({
+              user_id: userId,
+              date: recordedAt,
+              steps: row.value,
+              calories: r.calories || 0,
+              distance: r.distance || 0,
+              active_minutes: r.activeMinutes || 0,
+              heart_rate_avg: r.heartRate?.avg || null,
+              heart_rate_min: r.heartRate?.min || null,
+              heart_rate_max: r.heartRate?.max || null,
+              sleep_duration: r.sleepHours || null,
+              oxygen_saturation: r.bloodOxygen || null,
+              weight: r.weight || null,
+              source: 'health_connect',
+            });
+          }
+          savedCount++;
+        } catch (e) {
+          failedCount++;
+          failedDetails.push(`${row.dataType}@${r.date}: ${e.message}`);
+          console.error('[HealthConnect] upsert failed:', row.dataType, r.date, e.message);
         }
       }
     }
 
-    // ── 6. Update user connection status ────────────────────────────────────
+    // Mark user as Health Connect connected
     try {
       const { User } = await import('../models/user.model.intelligent.js');
       await User.update(
-        { googleFitConnected: true, googleFitLastSync: new Date() },
+        { healthConnectConnected: true, healthConnectLastSync: new Date() },
         { where: { id: userId } }
       );
     } catch (e) {
-      console.warn('[GoogleFit] Could not update user fit status:', e.message);
+      console.warn('[HealthConnect] Could not update user status:', e.message);
     }
-
-    const summary = {
-      totalSteps:        dailyData.reduce((s, d) => s + d.steps, 0),
-      avgSteps:          Math.round(dailyData.reduce((s, d) => s + d.steps, 0) / (dailyData.length || 1)),
-      totalCalories:     dailyData.reduce((s, d) => s + d.calories, 0),
-      avgActiveMinutes:  Math.round(dailyData.reduce((s, d) => s + d.activeMinutes, 0) / (dailyData.length || 1)),
-      avgHeartRate:      Math.round(dailyData.filter(d => d.heartRate.avg).reduce((s, d) => s + d.heartRate.avg, 0) / (dailyData.filter(d => d.heartRate.avg).length || 1)),
-      avgSleepHours:     Math.round(dailyData.filter(d => d.sleepHours).reduce((s, d) => s + d.sleepHours, 0) / (dailyData.filter(d => d.sleepHours).length || 1) * 10) / 10,
-      sleepDaysTracked:  dailyData.filter(d => d.sleepHours).length,
-      daysTracked:       dailyData.length,
-    };
 
     const partialFailure = failedCount > 0;
-    if (partialFailure) {
-      console.warn(`[GoogleFit] Partial sync for user ${userId}: ${savedCount} saved, ${failedCount} failed`);
-    } else {
-      console.log(`[GoogleFit] Synced ${savedCount} records for user ${userId}. Sleep sessions: ${sleepSessions.length}`);
-    }
+    console.log(`[HealthConnect] user=${userId} saved=${savedCount} failed=${failedCount}`);
 
     res.json({
       success: true,
-      dailyData,
-      summary,
       savedCount,
       failedCount,
       partialFailure,
-      // Only include details in non-production to avoid leaking internals
-      ...(process.env.NODE_ENV !== 'production' && failedDetails.length
-        ? { failedDetails }
-        : {}),
-      sleepSessionCount: sleepSessions.length,
+      ...(process.env.NODE_ENV !== 'production' && failedDetails.length ? { failedDetails } : {}),
     });
   } catch (err) {
-    console.error('[GoogleFit] fetch error:', err.message);
-    res.status(500).json({ error: 'Failed to fetch Google Fit data: ' + err.message });
+    console.error('[HealthConnect] sync error:', err.message);
+    res.status(500).json({ success: false, error: 'Health Connect sync failed: ' + err.message });
   }
 });
 
 /**
- * GET /api/fitness/google/status
- * Returns whether the logged-in user has Google Fit connected.
+ * GET /api/fitness/health-connect/status
+ * Returns connection status and last sync timestamp.
  */
-router.get('/google/status', auth, async (req, res) => {
+router.get('/health-connect/status', auth, async (req, res) => {
   try {
     const { User } = await import('../models/user.model.intelligent.js');
     const user = await User.findByPk(req.user.id, {
-      attributes: ['googleFitConnected', 'googleFitLastSync'],
+      attributes: ['healthConnectConnected', 'healthConnectLastSync'],
     });
-    res.json({
-      connected:   user?.googleFitConnected || false,
-      lastSync:    user?.googleFitLastSync   || null,
-    });
+
+    // Fallback: if columns don't exist yet, check HealthData for any records
+    let connected = user?.healthConnectConnected || false;
+    let lastSync  = user?.healthConnectLastSync  || null;
+
+    if (!connected && HealthData) {
+      try {
+        const latest = await HealthData.findOne({
+          where: { userId: req.user.id, source: 'health_connect' },
+          order: [['createdAt', 'DESC']],
+          attributes: ['createdAt'],
+        });
+        if (latest) { connected = true; lastSync = latest.createdAt; }
+      } catch { /* HealthData may not have health_connect records */ }
+    }
+
+    res.json({ success: true, connected, lastSync });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
 /**
- * DELETE /api/fitness/google/disconnect
- * Clears the Google Fit connection flag for the user.
+ * DELETE /api/fitness/health-connect/disconnect
+ * Clears the Health Connect connection flag and optionally deletes stored data.
  */
-router.delete('/google/disconnect', auth, async (req, res) => {
+router.delete('/health-connect/disconnect', auth, async (req, res) => {
   try {
+    const userId = req.user.id;
+    const { deleteData = false } = req.query;
+
     const { User } = await import('../models/user.model.intelligent.js');
     await User.update(
-      { googleFitConnected: false, googleFitLastSync: null },
-      { where: { id: req.user.id } }
-    );
-    res.json({ success: true });
+      { healthConnectConnected: false, healthConnectLastSync: null },
+      { where: { id: userId } }
+    ).catch(() => {});
+
+    let deletedRows = 0;
+    if (deleteData === 'true' && HealthData) {
+      const result = await HealthData.destroy({
+        where: { userId, source: 'health_connect' },
+      }).catch(() => 0);
+      deletedRows = result || 0;
+    }
+
+    res.json({ success: true, deletedRows });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-export default router; 
+// ─── Legacy /google/* aliases (kept for backward compat, delegate to HC) ─────
+// Remove after Android app is fully migrated.
+router.post('/google/fetch', auth, (req, res) =>
+  res.status(410).json({ error: 'Google Fit is deprecated. Use POST /api/fitness/health-connect/sync from the Android app.' })
+);
+router.get('/google/status', auth, async (req, res) => {
+  // Forward to health-connect/status transparently
+  try {
+    const { User } = await import('../models/user.model.intelligent.js');
+    const user = await User.findByPk(req.user.id, { attributes: ['healthConnectConnected', 'healthConnectLastSync'] });
+    res.json({ connected: user?.healthConnectConnected || false, lastSync: user?.healthConnectLastSync || null });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+router.delete('/google/disconnect', auth, async (req, res) => {
+  try {
+    const { User } = await import('../models/user.model.intelligent.js');
+    await User.update({ healthConnectConnected: false, healthConnectLastSync: null }, { where: { id: req.user.id } });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+export default router;

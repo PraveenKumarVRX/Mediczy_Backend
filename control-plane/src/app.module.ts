@@ -50,7 +50,7 @@ import { RootController } from './root.controller';
     HttpModule,
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'public'),
-      exclude: ['/api{/*path}', '/', '/health'],
+      exclude: ['/api{/*path}', '/cp{/*path}', '/', '/health', '/live'],
     }),
     AuthModule,
     TenantsModule,

@@ -31,33 +31,57 @@ _groq_client = None          # Groq SDK client — created once
 _isha_session = None         # httpx.Client with keep-alive for iSHA GPU
 
 # ─── LLM response cache ───────────────────────────────────────────────────────
-_llm_cache: Dict[str, tuple] = {}    # key → (result_dict, timestamp)
-_LLM_CACHE_TTL = 300                  # seconds; clinical answers expire in 5 min
+# ─── Thread-safe LLM response cache ─────────────────────────────────────────
+# SHA-256 keyed; user_id isolated so Patient A never sees Patient B's answer.
+# Sensitive clinical queries are never cached (see _is_sensitive_query).
+import threading as _threading
+
+_llm_cache: Dict[str, tuple] = {}
+_llm_cache_lock = _threading.Lock()
+_LLM_CACHE_TTL = 300  # 5 minutes
+
+# Query patterns that MUST NOT be cached (patient-specific or high-stakes)
+_SKIP_CACHE_PATTERNS = (
+    "chest pain", "emergency", "heart attack", "stroke", "unconscious",
+    "bleeding", "suicide", "overdose", "anaphylaxis", "cardiac",
+)
 
 
-def _cache_key(prompt: str, system: Optional[str]) -> str:
-    raw = f"{system or ''}|||{prompt}"
-    return hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()
+def _is_sensitive_query(prompt: str) -> bool:
+    p = prompt.lower()
+    return any(kw in p for kw in _SKIP_CACHE_PATTERNS)
 
 
-def _cache_get(prompt: str, system: Optional[str]) -> Optional[Dict]:
-    key = _cache_key(prompt, system)
-    entry = _llm_cache.get(key)
-    if entry and (time.time() - entry[1]) < _LLM_CACHE_TTL:
-        return {**entry[0], "cached": True}
-    if entry:
-        del _llm_cache[key]
+def _cache_key(prompt: str, system: Optional[str], user_id: Optional[str] = None) -> str:
+    """SHA-256 cache key with user isolation — prevents cross-patient PHI leakage."""
+    raw = f"{user_id or 'anon'}|||{system or ''}|||{prompt}"
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _cache_get(prompt: str, system: Optional[str], user_id: Optional[str] = None) -> Optional[Dict]:
+    if _is_sensitive_query(prompt):
+        return None  # Never serve cached answers for high-stakes queries
+    key = _cache_key(prompt, system, user_id)
+    with _llm_cache_lock:
+        entry = _llm_cache.get(key)
+        if entry and (time.time() - entry[1]) < _LLM_CACHE_TTL:
+            return {**entry[0], "cached": True}
+        if entry:
+            del _llm_cache[key]
     return None
 
 
-def _cache_set(prompt: str, system: Optional[str], result: Dict) -> None:
-    key = _cache_key(prompt, system)
-    _llm_cache[key] = (result, time.time())
-    if len(_llm_cache) > 512:
-        now = time.time()
-        expired = [k for k, (_, ts) in list(_llm_cache.items()) if now - ts > _LLM_CACHE_TTL]
-        for k in expired:
-            _llm_cache.pop(k, None)
+def _cache_set(prompt: str, system: Optional[str], result: Dict, user_id: Optional[str] = None) -> None:
+    if _is_sensitive_query(prompt):
+        return  # Do not cache sensitive clinical responses
+    key = _cache_key(prompt, system, user_id)
+    with _llm_cache_lock:
+        _llm_cache[key] = (result, time.time())
+        if len(_llm_cache) > 512:
+            now = time.time()
+            expired = [k for k, (_, ts) in list(_llm_cache.items()) if now - ts > _LLM_CACHE_TTL]
+            for k in expired:
+                _llm_cache.pop(k, None)
 
 
 def _get_groq_client():
@@ -569,37 +593,48 @@ class SyntheticIntelligenceBrain:
     async def _hardcoded_route(
         self, request_type: str, data: Dict[str, Any], start_time: float
     ) -> Dict[str, Any]:
-        """Original static routing — used when Qwen planner is unavailable."""
+        """
+        Static routing fallback — used when QwenPlanner is unavailable.
+
+        All synchronous _handle_* methods are wrapped with asyncio.to_thread()
+        so they never block the uvicorn event loop.  Without this, a single
+        60-second LLM call would freeze ALL concurrent requests.
+        """
+        logger.warning("⚠️ QwenPlanner fallback active — hardcoded routing for: %s", request_type)
+
         if request_type == RequestType.CHAT.value:
-            return self._handle_chat(data)
+            return await asyncio.to_thread(self._handle_chat, data)
         elif request_type == RequestType.QUERY.value:
-            return self._handle_query(data)
+            return await asyncio.to_thread(self._handle_query, data)
         elif request_type == RequestType.EHR_UPLOAD.value:
-            return self._handle_ehr_upload(data)
+            return await asyncio.to_thread(self._handle_ehr_upload, data)
         elif request_type == RequestType.TASK.value:
-            return self._handle_task(data)
+            return await asyncio.to_thread(self._handle_task, data)
         elif request_type == RequestType.NOTIFY.value:
-            return self._handle_notification(data)
+            return await asyncio.to_thread(self._handle_notification, data)
         elif request_type == RequestType.INSURANCE.value:
-            return self._handle_insurance(data)
+            return await asyncio.to_thread(self._handle_insurance, data)
         elif request_type == RequestType.RISK.value:
-            return self._handle_risk(data)
+            return await asyncio.to_thread(self._handle_risk, data)
         elif request_type == RequestType.SUMMARIZE.value:
-            return self._handle_summarize(data)
+            return await asyncio.to_thread(self._handle_summarize, data)
         elif request_type == RequestType.WEB_SEARCH.value:
-            return await self._handle_web_search(data)
+            return await self._handle_web_search(data)  # already async
         elif request_type == RequestType.AGENT_QUERY.value:
-            return self.query_with_agent(
+            return await asyncio.to_thread(
+                self.query_with_agent,
                 data.get("query", ""),
                 data.get("context", data.get("patient_data", {}))
             )
         elif request_type == RequestType.KNOWLEDGE_SEARCH.value:
-            return self.search_knowledge(data.get("query", ""), data.get("category", "all"))
+            return await asyncio.to_thread(
+                self.search_knowledge, data.get("query", ""), data.get("category", "all")
+            )
         elif request_type == RequestType.SYMPTOM_CHECK.value:
             symptoms = data.get("symptoms", [])
             if isinstance(symptoms, str):
                 symptoms = [symptoms]
-            return self.classify_symptoms(symptoms, data.get("context", {}))
+            return await asyncio.to_thread(self.classify_symptoms, symptoms, data.get("context", {}))
         elif request_type == RequestType.TRIAGE.value:
             complaint = data.get("chief_complaint") or data.get("complaint") or ""
             symptoms = data.get("symptoms", [])
@@ -609,14 +644,18 @@ class SyntheticIntelligenceBrain:
                 complaint = symptoms
             vitals = data.get("vital_signs") or data.get("vitals") or {}
             ctx = {"age": data.get("patient_age"), **(data.get("context") or {})}
-            return self.triage_patient(complaint, vitals, ctx)
+            return await asyncio.to_thread(self.triage_patient, complaint, vitals, ctx)
         elif request_type == RequestType.DRUG_CHECK.value:
             meds = data.get("drugs") or data.get("medications") or []
             if isinstance(meds, str):
                 meds = [meds]
-            return self.check_drug_interactions(meds, data.get("patient_conditions", []))
+            return await asyncio.to_thread(
+                self.check_drug_interactions, meds, data.get("patient_conditions", [])
+            )
         elif request_type == RequestType.HYBRID_SEARCH.value:
-            return self.hybrid_search(data.get("query", ""), data.get("k", 5), data.get("method", "hybrid"))
+            return await asyncio.to_thread(
+                self.hybrid_search, data.get("query", ""), data.get("k", 5), data.get("method", "hybrid")
+            )
         else:
             return {
                 "error": f"Unknown request type: {request_type}",
@@ -1191,12 +1230,16 @@ Please provide a helpful, medically accurate response."""
         logger.info("🔄 SIB state reset")
 
 
-# Singleton instance
+# Thread-safe singleton (double-check lock pattern)
 _sib_instance: Optional[SyntheticIntelligenceBrain] = None
+_sib_lock = _threading.Lock()
+
 
 def get_sib() -> SyntheticIntelligenceBrain:
-    """Get or create the SIB singleton instance"""
+    """Return the SIB singleton — thread-safe, initialised exactly once."""
     global _sib_instance
     if _sib_instance is None:
-        _sib_instance = SyntheticIntelligenceBrain()
+        with _sib_lock:
+            if _sib_instance is None:
+                _sib_instance = SyntheticIntelligenceBrain()
     return _sib_instance

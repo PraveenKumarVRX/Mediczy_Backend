@@ -26,7 +26,7 @@
 | mediczy-server | 8888 | Node.js API | No (UAT only) |
 | mediczy-worker | — | Background jobs | No (UAT only) |
 | sib-brain | 8001 | Python AI / ClinicalBERT / LaBSE | **YES — ECS SIB_URL points here** |
-| livekit-server | 7880 | Video calling | **YES — ECS uses same LiveKit** |
+| livekit-server | 7880 | Video calling | No after ECS LiveKit Cloud cutover; UAT fallback only |
 | mediczy-n8n | 5678 | Workflow automation | **YES — ECS N8N_WEBHOOK_URL** |
 | minio-server | 9000 | Object storage | Partial — prod may use S3 |
 | offline-scribe | 8006 | Whisper STT | No (not in prod task def) |
@@ -43,7 +43,7 @@
 | Redis | `REDIS_HOST=172.31.47.217` (EC2 private IP) | EC2 reboot → prod queues/sessions die |
 | SIB FastAPI | `SIB_URL=http://172.31.47.217:8001` | EC2 reboot → AI features break in prod |
 | n8n | `N8N_WEBHOOK_URL` points to EC2 | Workflow automations fail |
-| LiveKit | ECS uses same LiveKit on EC2 | Video calls break if EC2 restarts |
+| LiveKit | ECS should use LiveKit Cloud `wss://msh-kw9tvxa9.livekit.cloud`; token server stays in ECS backend | Until ECS env is updated, video calls may still depend on EC2/self-hosted LiveKit |
 
 ---
 
@@ -170,6 +170,68 @@ SIB_URL           = http://172.31.47.217:8001  ← plaintext EC2 IP
 
 ---
 
+### P1c — LiveKit Cloud on ECS Backend ✅ DONE
+**Why:** Prod should not depend on the EC2 LiveKit SFU. LiveKit Cloud project `p_5plkzn8qpro` is already valid, SIP is enabled, and the Cloud token server should remain OFF because ECS must generate short-lived healthcare-session tokens.
+
+**Target architecture:**
+```
+Frontend / mobile → ECS API /api/video/livekit/token → LiveKit Cloud
+```
+
+**Existing backend support:**
+- Token API already exists: `GET /api/video/livekit/token` and `POST /api/video/livekit/token` in `server/routes/video.route.js`.
+- Token generation already uses `livekit-server-sdk` in `server/utils/videoProvider.js`.
+- Appointment authorization is enforced before consultation room tokens are issued.
+
+**ECS task definition changes:**
+1. Store credentials in SSM Parameter Store, not plaintext task env:
+   ```bash
+   aws ssm put-parameter --region ap-south-1 \
+     --name /mediczy/prod/LIVEKIT_API_KEY \
+     --type SecureString \
+     --value <paste-api-key> \
+     --overwrite
+
+   aws ssm put-parameter --region ap-south-1 \
+     --name /mediczy/prod/LIVEKIT_API_SECRET \
+     --type SecureString \
+     --value <paste-api-secret> \
+     --overwrite
+   ```
+2. Add these env vars to the `mediczy-app` container:
+   ```
+   LIVEKIT_URL=wss://msh-kw9tvxa9.livekit.cloud
+   LIVEKIT_API_URL=https://msh-kw9tvxa9.livekit.cloud
+   LIVEKIT_MEET_URL=https://msh-kw9tvxa9.livekit.cloud
+   ```
+3. Add ECS secret refs for `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` using `/mediczy/prod/LIVEKIT_API_KEY` and `/mediczy/prod/LIVEKIT_API_SECRET`.
+4. Use `ecs/livekit-cloud-task-def-patch.json` as the implementation patch reference when registering the new task definition revision.
+5. Force deploy `mediczy-app` after registering the revision.
+
+**Completed 2026-05-29:**
+- SSM params set: `/mediczy/prod/LIVEKIT_API_KEY`, `/mediczy/prod/LIVEKIT_API_SECRET`.
+- ECS task definition registered: `mediczy-app:7`.
+- `mediczy-app` service updated on `control-plane-cluster` and reached steady state.
+- Container health check changed from `wget` to Node localhost probe to stop false unhealthy replacements.
+
+**Verification:**
+```bash
+curl -s https://mediczy.in/api/video/test | python3 -m json.tool
+# Expect: livekitUrl = wss://msh-kw9tvxa9.livekit.cloud, hasLivekitKey=true, hasLivekitSecret=true
+
+curl -s -H "Authorization: Bearer <doctor-or-patient-jwt>" \
+  https://mediczy.in/api/video/livekit/diagnostics | python3 -m json.tool
+# Expect: diagnostics.livekit.apiReachable=true
+```
+
+**Do not change now:**
+- Do not enable LiveKit Cloud token server.
+- Do not delete or recreate the LiveKit Cloud project.
+- Do not change codecs.
+- Do not configure agents or SIP unless phone calling is explicitly in scope.
+
+---
+
 ### P2a — ECS Container Health Checks ✅ TODO
 **Why:** Without a container-level health check, ECS can't detect a hung/deadlocked app (not crashed, just unresponsive). ALB health check alone is not sufficient.
 
@@ -290,12 +352,11 @@ Repeat for mediczy-worker (min 1, max 2).
 
 ---
 
-### P4b — Containerize LiveKit, n8n, Offline Scribe ✅ TODO
-**Why:** These services run on EC2 and are shared between UAT and prod. Not containerized.
+### P4b — Containerize n8n and Offline Scribe ✅ TODO
+**Why:** These services run on EC2 and are shared between UAT and prod. LiveKit is intentionally moving to LiveKit Cloud via P1c, so it should not be self-hosted for prod now.
 
 | Service | Challenge | Approach |
 |---|---|---|
-| LiveKit | Needs UDP ports 50000-60000 | Run on dedicated EC2 or LiveKit Cloud |
 | n8n | Stateful (workflow data) | Postgres-backed n8n on ECS + EFS for files |
 | Offline Scribe | Whisper model (~3 GB), CPU-heavy | Large Fargate task (4 vCPU / 8 GB) + EFS |
 
@@ -310,13 +371,14 @@ Repeat for mediczy-worker (min 1, max 2).
 | P0 | ACM cert + HTTPS:443 ALB + Cloudflare Full | TODO | — |
 | P1a | ElastiCache Redis | TODO | — |
 | P1b | mediczy-worker SSM secrets | TODO | — |
+| P1c | LiveKit Cloud via ECS backend token server | DONE | 2026-05-29 |
 | P2a | ECS container health checks | TODO | — |
 | P2b | ECS auto-scaling | TODO | — |
 | P2c | EFS for TRANSFORMERS_CACHE | TODO | — |
 | P3a | Containerize SIB FastAPI | TODO | — |
 | P3b | MinIO vs S3 clarification | TODO | — |
 | P4a | Separate RDS for UAT | TODO | — |
-| P4b | Containerize LiveKit / n8n / Scribe | TODO | — |
+| P4b | Containerize n8n / Scribe | TODO | — |
 
 ---
 

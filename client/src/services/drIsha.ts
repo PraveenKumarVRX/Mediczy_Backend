@@ -65,7 +65,8 @@ class DrIshaAPI {
    * Get authorization header with current user token
    */
   getAuthHeaders() {
-    const token = localStorage.getItem('token');
+    // Check both patient token ('token') and doctor token ('doctorToken')
+    const token = localStorage.getItem('token') || localStorage.getItem('doctorToken');
     return {
       'Content-Type': 'application/json',
       'Authorization': token ? `Bearer ${token}` : '',
@@ -391,31 +392,14 @@ class DrIshaAPI {
   /**
    * Handle API errors consistently
    */
-  handleError(error) {
-    if (error.response) {
-      return {
-        success: false,
-        error: error.response.data,
-        status: error.response.status,
-      };
-    } else if (error.request) {
-      return {
-        success: false,
-        error: {
-          message: 'Unable to connect to Dr. Isha',
-          details: 'Please check your internet connection and try again.',
-          type: 'network_error'
-        },
-      };
+  handleError(error: unknown) {
+    const e = error as { response?: { data: unknown; status: number }; request?: unknown; message?: string };
+    if (e.response) {
+      return { success: false, error: e.response.data, status: e.response.status };
+    } else if (e.request) {
+      return { success: false, error: { message: 'Unable to connect to Dr. Isha', details: 'Please check your internet connection and try again.', type: 'network_error' } };
     } else {
-      return {
-        success: false,
-        error: {
-          message: 'Request failed',
-          details: error.message,
-          type: 'request_error'
-        },
-      };
+      return { success: false, error: { message: 'Request failed', details: e.message ?? 'Unknown error', type: 'request_error' } };
     }
   }
 

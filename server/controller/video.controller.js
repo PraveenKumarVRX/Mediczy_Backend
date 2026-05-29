@@ -3,7 +3,7 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { Appointment, Prescription, Doctor, User } from '../models/index.js';
-import { buildLiveKitJoinData, createMeetingInfo, generateCanonicalMeetingId, verifyCanonicalMeetingId } from '../utils/videoProvider.js';
+import { buildLiveKitJoinData, createMeetingInfo, generateCanonicalMeetingId, resolveLiveKitApiUrl, resolveLiveKitWsUrl, verifyCanonicalMeetingId } from '../utils/videoProvider.js';
 import { RoomServiceClient } from 'livekit-server-sdk';
 import { redisClient } from '../config/redis.js';
 
@@ -82,7 +82,7 @@ class VideoController {
     try {
       const optionalIceServers = getIceServers();
       const serverConfig = {
-        livekitUrl: process.env.LIVEKIT_URL || null,
+        livekitUrl: resolveLiveKitWsUrl() || null,
         hasLivekitKey: Boolean(process.env.LIVEKIT_API_KEY),
         hasLivekitSecret: Boolean(process.env.LIVEKIT_API_SECRET),
         hasCustomIce: Array.isArray(optionalIceServers) && optionalIceServers.length > 0,
@@ -107,7 +107,7 @@ class VideoController {
 
   static liveKitDiagnostics = async (req, res) => {
     try {
-      const serverUrl = process.env.LIVEKIT_URL || null;
+      const serverUrl = resolveLiveKitWsUrl() || null;
       const apiKey = process.env.LIVEKIT_API_KEY;
       const apiSecret = process.env.LIVEKIT_API_SECRET;
       const optionalIceServers = getIceServers();
@@ -116,6 +116,7 @@ class VideoController {
         timestamp: new Date().toISOString(),
         livekit: {
           serverUrl,
+          apiUrl: resolveLiveKitApiUrl(),
           hasApiKey: Boolean(apiKey),
           hasApiSecret: Boolean(apiSecret),
         },
@@ -127,7 +128,7 @@ class VideoController {
       };
 
       if (serverUrl && apiKey && apiSecret) {
-        const roomService = new RoomServiceClient(serverUrl, apiKey, apiSecret);
+        const roomService = new RoomServiceClient(resolveLiveKitApiUrl(), apiKey, apiSecret);
         const apiCheck = await Promise.race([
           roomService
             .listRooms()
@@ -580,7 +581,7 @@ class VideoController {
         videoToken: videoRoomToken,
         livekit: livekitData || {
           token: null,
-          serverUrl: process.env.LIVEKIT_URL || 'ws://localhost:7880',
+          serverUrl: resolveLiveKitWsUrl() || 'ws://localhost:7880',
           roomName: roomId
         },
         identity: participantIdentity,
@@ -864,11 +865,11 @@ class VideoController {
       let participants = [];
       let roomActive = false;
       try {
-        const serverUrl = process.env.LIVEKIT_URL;
+        const serverUrl = resolveLiveKitWsUrl();
         const apiKey = process.env.LIVEKIT_API_KEY;
         const apiSecret = process.env.LIVEKIT_API_SECRET;
         if (serverUrl && apiKey && apiSecret) {
-          const svc = new RoomServiceClient(serverUrl, apiKey, apiSecret);
+          const svc = new RoomServiceClient(resolveLiveKitApiUrl(), apiKey, apiSecret);
           const lkParticipants = await svc.listParticipants(roomId);
           roomActive = lkParticipants.length > 0;
           participants = lkParticipants.map(p => ({

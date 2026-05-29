@@ -2,6 +2,7 @@ import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import UserHealthAssessment from '../models/user-health-assessment.model.js';
 import { User } from '../models/user.model.intelligent.js';
+import { computeAllClinicalScores } from '../services/clinical-engines.service.js';
 
 const router = express.Router();
 
@@ -354,8 +355,51 @@ router.post('/save', authUser, async (req, res) => {
       diet_quality: diet_quality || 'fair'
     };
 
-    // Calculate risk score
+    // Calculate legacy risk score (kept for backwards compat)
     const riskAssessment = calculateHealthRiskScore(assessmentData);
+
+    // Compute validated clinical scores (QRISK3-SA, FINDRISC, STOP-BANG, CKD-EPI)
+    const clinicalScores = computeAllClinicalScores({
+      age: assessmentData.age,
+      sex: assessmentData.gender === 'male' ? 'male' : 'female',
+      ethnicity: req.body.ethnicity || 'south_asian',
+      bmi: assessmentData.bmi || null,
+      waistCm: assessmentData.waist || null,
+      neckCircumferenceCm: req.body.neck_cm ? parseFloat(req.body.neck_cm) : null,
+      sbp: req.body.sbp ? parseFloat(req.body.sbp) : null,
+      bpTreated: assessmentData.hypertension === 'yes',
+      smoking: (() => {
+        switch (assessmentData.smoking) {
+          case 'current': return 'heavy';
+          case 'former':  return 'ex';
+          default:        return 'never';
+        }
+      })(),
+      diabetes: assessmentData.diabetes === 'yes' ? 'type2' : 'none',
+      hypertension: assessmentData.hypertension === 'yes',
+      atrialFibrillation: req.body.af === 'yes',
+      familyHistoryPrematureCVD: req.body.family_heart_disease === 'yes',
+      familyDiabetes: req.body.family_diabetes === 'yes' ? 'first_degree' : 'none',
+      physicalActivityMinPerDay: (() => {
+        switch (assessmentData.exercise_frequency) {
+          case 'active':   return 60;
+          case 'moderate': return 30;
+          case 'light':    return 15;
+          default:         return 0;
+        }
+      })(),
+      eatsVegetablesFruitsDaily: assessmentData.diet_quality === 'good' || assessmentData.diet_quality === 'excellent',
+      bpMedication: assessmentData.hypertension === 'yes',
+      historyHighGlucose: assessmentData.diabetes === 'yes',
+      snoresLoudly:     req.body.snores_loudly === 'yes',
+      daytimeSleepiness: req.body.daytime_sleepiness === 'yes',
+      observedApneas:   req.body.observed_apneas === 'yes',
+      hba1c_percent:    req.body.hba1c ? parseFloat(req.body.hba1c) : null,
+      totalCholesterol_mmol: req.body.total_chol_mmol ? parseFloat(req.body.total_chol_mmol) : null,
+      hdlCholesterol_mmol: req.body.hdl_mmol ? parseFloat(req.body.hdl_mmol) : null,
+      serumCreatinine_mgdL: req.body.creatinine_mgdl ? parseFloat(req.body.creatinine_mgdl) : null,
+      urineACR_mgmmol: req.body.urine_acr ? parseFloat(req.body.urine_acr) : null,
+    });
 
     // Always create a new assessment row (keep full history)
     const assessment = await UserHealthAssessment.create({
@@ -364,7 +408,7 @@ router.post('/save', authUser, async (req, res) => {
       riskScore: riskAssessment.score,
       riskLevel: riskAssessment.riskLevel,
       riskFactors: riskAssessment.riskFactors,
-      allResponses: responses,
+      allResponses: { ...responses, _clinicalScores: clinicalScores },
       assessedAt: new Date()
     });
 
@@ -425,7 +469,8 @@ router.post('/save', authUser, async (req, res) => {
         maxScore: riskAssessment.maxScore,
         riskLevel: riskAssessment.riskLevel,
         riskFactors: riskAssessment.riskFactors,
-        recommendations: generateRecommendations(riskAssessment.riskLevel, riskAssessment.riskFactors)
+        recommendations: generateRecommendations(riskAssessment.riskLevel, riskAssessment.riskFactors),
+        clinicalScores
       }
     });
 
@@ -534,12 +579,18 @@ router.get('/history', authUser, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Fetch all assessments ordered by date
-    const assessments = await UserHealthAssessment.findAll({
+    const limit = Math.max(1, Math.min(200, parseInt(req.query.limit ?? '50', 10)));
+    const offset = Math.max(0, parseInt(req.query.offset ?? '0', 10));
+
+    // Fetch assessments with pagination
+    const { rows: assessmentRows, count: totalCount } = await UserHealthAssessment.findAndCountAll({
       where: { userId },
       order: [['assessed_at', 'DESC']],
-      attributes: ['id', 'riskScore', 'riskLevel', 'riskFactors', 'assessedAt', 'age', 'bmi', 'whr']
+      limit,
+      offset,
+      attributes: ['id', 'riskScore', 'riskLevel', 'riskFactors', 'assessedAt', 'age', 'bmi', 'whr', 'allResponses']
     });
+    const assessments = assessmentRows;
 
     // Get user DOB for birthday-based annual calculation
     const user = await User.findByPk(userId, { attributes: ['dateOfBirth'] }).catch(() => null);
@@ -614,6 +665,7 @@ router.get('/history', authUser, async (req, res) => {
     // Classify each assessment into periods
     const mapped = assessments.map(a => {
       const d = new Date(a.assessedAt || a.created_at);
+      const storedClinical = a.allResponses?._clinicalScores ?? null;
       return {
         id: a.id,
         score: parseFloat(a.riskScore) || 0,
@@ -623,6 +675,7 @@ router.get('/history', authUser, async (req, res) => {
         age: a.age,
         bmi: a.bmi ? parseFloat(a.bmi) : null,
         whr: a.whr ? parseFloat(a.whr) : null,
+        clinicalScores: storedClinical,
         periods: {
           daily: d >= dailyCycleStart && d < dailyCycleEnd,
           weekly: d >= weekStart,
@@ -680,7 +733,10 @@ router.get('/history', authUser, async (req, res) => {
 
     res.json({
       success: true,
-      total: assessments.length,
+      total: totalCount,
+      limit,
+      offset,
+      hasMore: offset + assessments.length < totalCount,
       assessments: mapped,
       periodSummaries: summaries,
       dailyCycle: {

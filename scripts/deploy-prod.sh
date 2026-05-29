@@ -13,6 +13,9 @@ ECS_CLUSTER="control-plane-cluster"
 ECS_SERVICES=("mediczy-app" "mediczy-worker")
 AWS_REGION="ap-south-1"
 HEALTH_URL="https://mediczy.in/api/health"
+CONTROL_PLANE_HEALTH_URL="https://mediczy.in/cp/live"
+CONTROL_PLANE_DEPLOY_SCRIPT="$REPO_DIR/scripts/deploy-nestjs-control-plane-ecs.sh"
+DEPLOY_CONTROL_PLANE="${DEPLOY_CONTROL_PLANE:-false}"
 LOCK_FILE="/tmp/mediczy-prod-deploy.lock"
 LOG_DIR="$REPO_DIR/logs"
 LOG_FILE="$LOG_DIR/deploy-prod-$(date +%Y%m%d-%H%M%S).log"
@@ -27,6 +30,27 @@ echo "============================================================"
 echo "  Mediczy Prod Deploy — $(date)"
 echo "  Log: $LOG_FILE"
 echo "============================================================"
+
+# ── Args parsing ──────────────────────────────────────────────────────────────
+POSITIONAL=()
+for arg in "$@"; do
+  case "$arg" in
+    --with-control-plane)
+      DEPLOY_CONTROL_PLANE="true"
+      ;;
+    --no-control-plane)
+      DEPLOY_CONTROL_PLANE="false"
+      ;;
+    *)
+      POSITIONAL+=("$arg")
+      ;;
+  esac
+done
+set -- "${POSITIONAL[@]}"
+
+if [ "$DEPLOY_CONTROL_PLANE" = "1" ] || [ "$DEPLOY_CONTROL_PLANE" = "yes" ]; then
+  DEPLOY_CONTROL_PLANE="true"
+fi
 
 # ── Lock: prevent concurrent deploys ─────────────────────────────────────────
 if [ -f "$LOCK_FILE" ]; then
@@ -110,6 +134,7 @@ printf "│  Note      : %-38s│\n" "${RELEASE_NOTE:0:38}"
 printf "│  From tag  : %-38s│\n" "$LAST_TAG"
 printf "│  Branch    : main → prod                            │\n"
 printf "│  Target    : mediczy.in (ECS Fargate)               │\n"
+printf "│  ControlPl : %-38s│\n" "$DEPLOY_CONTROL_PLANE"
 echo "└─────────────────────────────────────────────────────┘"
 echo ""
 read -r -p "  Proceed? [yes/N] " CONFIRM
@@ -119,8 +144,13 @@ if [ "$CONFIRM" != "yes" ]; then
 fi
 
 # ── Step 1: Merge main → prod and tag ─────────────────────────────────────────
+TOTAL_STEPS=5
+if [ "$DEPLOY_CONTROL_PLANE" = "true" ]; then
+  TOTAL_STEPS=6
+fi
+
 echo ""
-echo "[1/5] Merging main → prod and tagging $VERSION..."
+echo "[1/$TOTAL_STEPS] Merging main → prod and tagging $VERSION..."
 
 git checkout prod
 git pull origin prod
@@ -133,7 +163,7 @@ echo "  main merged into prod. Tag $VERSION pushed."
 
 # ── Step 2: Authenticate to ECR ───────────────────────────────────────────────
 echo ""
-echo "[2/5] Authenticating to ECR..."
+echo "[2/$TOTAL_STEPS] Authenticating to ECR..."
 
 aws ecr get-login-password --region "$AWS_REGION" \
   | docker login --username AWS --password-stdin "$ECR_REGISTRY"
@@ -142,7 +172,7 @@ echo "  ECR login successful."
 
 # ── Step 3: Build Docker image ────────────────────────────────────────────────
 echo ""
-echo "[3/5] Building Docker image (this takes 3-5 minutes)..."
+echo "[3/$TOTAL_STEPS] Building Docker image (this takes 3-5 minutes)..."
 
 docker build \
   -f Dockerfile.mediczy-app \
@@ -154,7 +184,7 @@ echo "  Build complete."
 
 # ── Step 4: Push to ECR ───────────────────────────────────────────────────────
 echo ""
-echo "[4/5] Pushing images to ECR..."
+echo "[4/$TOTAL_STEPS] Pushing images to ECR..."
 
 docker tag "$ECR_REPO:latest"   "$ECR_REGISTRY/$ECR_REPO:latest"
 docker tag "$ECR_REPO:$VERSION" "$ECR_REGISTRY/$ECR_REPO:$VERSION"
@@ -166,7 +196,7 @@ echo "  Pushed :latest and :$VERSION to ECR."
 
 # ── Step 5: Force ECS deployment ──────────────────────────────────────────────
 echo ""
-echo "[5/5] Triggering ECS rolling deployment..."
+echo "[5/$TOTAL_STEPS] Triggering ECS rolling deployment..."
 
 for SERVICE in "${ECS_SERVICES[@]}"; do
   aws ecs update-service \
@@ -188,6 +218,18 @@ aws ecs wait services-stable \
   --region   "$AWS_REGION" && echo "  Service stable." \
   || echo "  WARN: wait timed out — check ECS console."
 
+if [ "$DEPLOY_CONTROL_PLANE" = "true" ]; then
+  echo ""
+  echo "[6/$TOTAL_STEPS] Deploying NestJS control-plane service..."
+
+  if [ ! -x "$CONTROL_PLANE_DEPLOY_SCRIPT" ]; then
+    echo "ERROR: Control-plane deploy script is missing or not executable: $CONTROL_PLANE_DEPLOY_SCRIPT"
+    exit 1
+  fi
+
+  IMAGE_TAG="$VERSION" AWS_REGION="$AWS_REGION" ECS_CLUSTER="$ECS_CLUSTER" "$CONTROL_PLANE_DEPLOY_SCRIPT"
+fi
+
 # ── Health check ─────────────────────────────────────────────────────────────
 echo ""
 echo "[HEALTH] Checking $HEALTH_URL ..."
@@ -205,6 +247,21 @@ else
   echo ""
   echo "  If prod is broken, rollback with:"
   echo "    ./scripts/deploy-prod.sh rollback $LAST_TAG"
+fi
+
+if [ "$DEPLOY_CONTROL_PLANE" = "true" ]; then
+  echo ""
+  echo "[HEALTH] Checking $CONTROL_PLANE_HEALTH_URL ..."
+  CP_HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$CONTROL_PLANE_HEALTH_URL" || echo "000")
+  CP_HEALTH_BODY=$(curl -s "$CONTROL_PLANE_HEALTH_URL" || echo "unreachable")
+
+  if [ "$CP_HTTP_STATUS" = "200" ]; then
+    echo "  Control-plane health check PASSED (HTTP $CP_HTTP_STATUS)"
+    echo "  $CP_HEALTH_BODY"
+  else
+    echo "  WARN: Control-plane health returned HTTP $CP_HTTP_STATUS"
+    echo "  $CP_HEALTH_BODY"
+  fi
 fi
 
 # ── Return to main ────────────────────────────────────────────────────────────

@@ -1,6 +1,8 @@
 import express from "express";
 import dotenv from "dotenv";
-dotenv.config();
+if (process.env.NODE_ENV !== 'production' || process.env.DOTENV_IN_PROD === 'true') {
+  dotenv.config();
+}
 import cors from "cors";
 import helmet from "helmet";
 import { createRequire } from 'module';

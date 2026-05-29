@@ -26,6 +26,7 @@
     "@hookform/resolvers": "^3.9.0",
     "@livekit/components-react": "^2.9.19",
     "@livekit/components-styles": "^1.2.0",
+    "@livekit/rtc-node": "^0.13.29",
     "@lottiefiles/react-lottie-player": "^3.6.0",
     "@mui/icons-material": "^6.4.6",
     "@mui/material": "^6.4.6",

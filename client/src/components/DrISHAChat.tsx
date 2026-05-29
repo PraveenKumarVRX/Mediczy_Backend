@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Bot, Send, User, Mic, Volume2, AlertCircle, Clock, CheckCircle, XCircle } from "lucide-react";
+import { Bot, Send, User, Mic, Volume2, VolumeX, AlertCircle, Clock, CheckCircle, XCircle, Trash2, Copy, Check } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
@@ -46,29 +46,67 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
   maxHeight = "600px"
 }) => {
   const navigate = useNavigate();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const STORAGE_KEY = 'dr_isha_session';
+
+  // Restore persisted session from localStorage on mount
+  const [messages, setMessages] = useState<Message[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const { messages: savedMsgs } = JSON.parse(saved);
+        if (Array.isArray(savedMsgs) && savedMsgs.length > 0) {
+          return savedMsgs.map((m: Message) => ({ ...m, timestamp: new Date(m.timestamp) }));
+        }
+      }
+    } catch {}
+    return [];
+  });
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [ttsEnabled, setTtsEnabled] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [sessionId, setSessionId] = useState<string>("");
+  const [sessionId, setSessionId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const { sessionId: savedSid } = JSON.parse(saved);
+        if (savedSid) { drIshaAPI.currentSessionId = savedSid; return savedSid; }
+      }
+    } catch {}
+    return drIshaAPI.startNewSession();
+  });
+  const [suggestedFollowUps, setSuggestedFollowUps] = useState<string[]>([
+    "Tell me more", "What should I do?", "Is this serious?", "Home remedies?", "When to see a doctor?"
+  ]);
+
+  // Persist session to localStorage whenever messages/sessionId change
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ sessionId, messages: messages.slice(-30) }));
+    } catch {}
+  }, [messages, sessionId]);
 
   useEffect(() => {
-    // Initialize session
-    const newSessionId = drIshaAPI.startNewSession();
-    setSessionId(newSessionId);
+    // Only initialize a new session if we didn't restore one
+    const restored = messages.length > 0;
+    if (!restored) {
+      const newSessionId = drIshaAPI.startNewSession();
+      setSessionId(newSessionId);
+    }
 
-    // Add welcome message if enabled
-    if (showWelcomeCard && welcomeMessage) {
-      const welcomeMsg: Message = {
+    // Show welcome only for fresh sessions (not restored ones)
+    if (!restored && showWelcomeCard && welcomeMessage) {
+      const disclaimer = "\n\n*Disclaimer: I am an AI assistant, not a licensed physician. This is for informational purposes only — always consult a qualified healthcare professional for diagnosis and treatment.*";
+      setMessages([{
         id: `welcome-${Date.now()}`,
         role: "assistant",
-        content: welcomeMessage,
+        content: welcomeMessage + disclaimer,
         timestamp: new Date(),
         confidence: 1.0
-      };
-      setMessages([welcomeMsg]);
+      }]);
     }
   }, [welcomeMessage, showWelcomeCard]);
 
@@ -115,8 +153,8 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
       };
       setMessages(prev => [...prev, typingMessage]);
 
-      // Get conversation history for context
-      const conversationHistory = messages.slice(-5).map(msg => ({
+      // Pass up to 15 turns for context continuity
+      const conversationHistory = messages.slice(-15).map(msg => ({
         role: msg.role,
         content: msg.content
       }));
@@ -147,47 +185,46 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
 
         setMessages(prev => [...prev, assistantMessage]);
 
+        // Update adaptive follow-up chips based on response context
+        if (response_data?.suggestedFollowUps && Array.isArray(response_data.suggestedFollowUps)) {
+          setSuggestedFollowUps(response_data.suggestedFollowUps.slice(0, 5));
+        }
+
         // ===== INTELLIGENT INTENT HANDLING =====
         const response_data = response.data;
 
+        // Safe navigation — only follow redirectUrls that start with '/' (internal paths)
+        // The backend already validates these; we double-check client-side
+        const safeNavigate = (url: string | undefined, fallback: string) => {
+          const target = url?.startsWith('/') && !url.startsWith('//') ? url : fallback;
+          try { navigate(target); } catch { /* navigation error — stay on current page */ }
+        };
+
         // Handle Emergency Intent
         if (response_data.intentType === 'emergency') {
-          toast.error('EMERGENCY DETECTED - Call emergency services immediately!', {
-            duration: 5000
-          });
-          setTimeout(() => {
-            navigate(response_data.redirectUrl || '/emergency');
-          }, 2000);
+          toast.error('EMERGENCY DETECTED - Call emergency services immediately!', { duration: 5000 });
+          setTimeout(() => safeNavigate(response_data.redirectUrl, '/emergency'), 2000);
         }
         // Handle Appointment Intent
         else if (response_data.intentType === 'appointment') {
-          toast.success('Let me help you book an appointment!', {
-            duration: 3000
-          });
-          setTimeout(() => {
-            navigate(response_data.redirectUrl || '/patient/appointments');
-          }, 1500);
+          toast.success('Let me help you book an appointment!', { duration: 3000 });
+          setTimeout(() => safeNavigate(response_data.redirectUrl, '/patient/appointments'), 1500);
         }
         // Handle Doctor Search Intent
         else if (response_data.intentType === 'doctor_search') {
-          toast.info('Browse our network of doctors', {
-            duration: 3000
-          });
-          setTimeout(() => {
-            navigate(response_data.redirectUrl || '/patient/doctors');
-          }, 1500);
+          toast.info('Browse our network of doctors', { duration: 3000 });
+          setTimeout(() => safeNavigate(response_data.redirectUrl, '/patient/doctors'), 1500);
         }
         // Handle Specialist Referral (Pregnancy, Mental Health, Pediatric)
-        else if (response_data.intentType === 'pregnancy' ||
-                 response_data.intentType === 'mental_health' ||
-                 response_data.intentType === 'pediatric') {
+        else if (
+          response_data.intentType === 'pregnancy' ||
+          response_data.intentType === 'mental_health' ||
+          response_data.intentType === 'pediatric'
+        ) {
           const specialistName = response_data.suggestedSpecialist || 'Specialist';
-          toast.info(`Connecting you with a ${specialistName}`, {
-            duration: 3000
-          });
-          setTimeout(() => {
-            navigate(`/patient/doctors?specialty=${response_data.specialization || ''}`);
-          }, 1500);
+          toast.info(`Connecting you with a ${specialistName}`, { duration: 3000 });
+          const specialty = encodeURIComponent(response_data.specialization || '');
+          setTimeout(() => safeNavigate(response_data.redirectUrl, `/patient/doctors?specialty=${specialty}`), 1500);
         }
 
         // Call onResponseReceived callback
@@ -195,13 +232,12 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
           onResponseReceived(assistantMessage);
         }
 
-        // Optional: Text-to-speech for responses
-        if (window.speechSynthesis && assistantMessage.content.length < 500) {
-          // Speak short responses automatically
+        // TTS — only when user has opted in and response is short enough for voice
+        if (ttsEnabled && window.speechSynthesis && assistantMessage.content.length < 500) {
           const utterance = new SpeechSynthesisUtterance(assistantMessage.content);
           utterance.rate = 0.9;
-          utterance.volume = 0.7;
-          // window.speechSynthesis.speak(utterance);
+          utterance.volume = 0.8;
+          window.speechSynthesis.speak(utterance);
         }
       } else {
         throw new Error(response.error?.message || 'Failed to get response from Dr. iSHA');
@@ -425,11 +461,24 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
                       
                       {/* Action buttons for assistant messages */}
                       {message.role === "assistant" && !message.isTyping && (
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                           <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 w-6 p-0"
+                            size="sm" variant="ghost" className="h-6 w-6 p-0"
+                            title="Copy response"
+                            onClick={() => {
+                              navigator.clipboard.writeText(message.content).then(() => {
+                                setCopiedId(message.id);
+                                setTimeout(() => setCopiedId(null), 1500);
+                              }).catch(() => {});
+                            }}
+                          >
+                            {copiedId === message.id
+                              ? <Check className="w-3 h-3 text-emerald-500" />
+                              : <Copy className="w-3 h-3" />}
+                          </Button>
+                          <Button
+                            size="sm" variant="ghost" className="h-6 w-6 p-0"
+                            title="Read aloud"
                             onClick={() => speakMessage(message.content)}
                           >
                             <Volume2 className="w-3 h-3" />
@@ -452,13 +501,7 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
             transition={{ delay: 0.5, duration: 0.3 }}
             className="flex flex-wrap gap-2 mt-2 mb-4 px-1"
           >
-            {[
-              "Tell me more",
-              "What should I do?",
-              "Is this serious?",
-              "Home remedies?",
-              "When to see a doctor?",
-            ].map((suggestion) => (
+            {suggestedFollowUps.map((suggestion) => (
               <button
                 key={suggestion}
                 onClick={() => sendMessage(suggestion)}
@@ -505,6 +548,40 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
             disabled={isLoading || isListening}
             className="flex-1 bg-card/50 backdrop-blur-sm border-primary/20"
           />
+          {/* TTS opt-in toggle */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            title={ttsEnabled ? "Mute auto-read" : "Enable auto-read aloud"}
+            onClick={() => {
+              if (ttsEnabled) window.speechSynthesis?.cancel();
+              setTtsEnabled(p => !p);
+            }}
+            className={cn("flex-shrink-0 transition-colors", ttsEnabled ? "text-teal-600" : "text-muted-foreground")}
+          >
+            {ttsEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+          </Button>
+
+          {/* Clear chat */}
+          {messages.length > 1 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              title="Clear conversation"
+              onClick={() => {
+                const newSid = drIshaAPI.startNewSession();
+                setSessionId(newSid);
+                setMessages([]);
+                try { localStorage.removeItem(STORAGE_KEY); } catch {}
+                setSuggestedFollowUps(["Tell me more","What should I do?","Is this serious?","Home remedies?","When to see a doctor?"]);
+              }}
+              className="flex-shrink-0 text-muted-foreground hover:text-destructive"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
           
           <Button 
             type="submit" 

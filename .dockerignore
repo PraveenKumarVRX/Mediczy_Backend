@@ -2,7 +2,8 @@
 **/.git
 **/dist
 **/build
-**/.env
+**/.env*
+server/public/downloads/*.apk
 **/logs
 **/*.log
 client/.vite

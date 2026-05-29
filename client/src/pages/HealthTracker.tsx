@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import GoogleFitDashboard from "@/components/GoogleFitDashboard";
+import HealthConnectDashboard from "@/components/HealthConnectDashboard";
 import AppleHealthDashboard from "@/components/AppleHealthDashboard";
 import DrISHAChat from "@/components/DrISHAChat";
 import { drIshaAPI } from "@/services/drIsha";
@@ -872,7 +872,7 @@ const HealthTracker = () => {
                   </TabsList>
 
                   <TabsContent value="google">
-                    <GoogleFitDashboard />
+                    <HealthConnectDashboard />
                   </TabsContent>
 
                   <TabsContent value="apple">

@@ -17,4 +17,22 @@ export class HealthController {
   check() {
     return this.health.check([() => this.db.pingCheck('database')]);
   }
+
+  @Get('live')
+  live() {
+    return {
+      status: 'ok',
+      service: 'control-plane',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  @Get('cp/live')
+  liveCp() {
+    return {
+      status: 'ok',
+      service: 'control-plane',
+      timestamp: new Date().toISOString(),
+    };
+  }
 }

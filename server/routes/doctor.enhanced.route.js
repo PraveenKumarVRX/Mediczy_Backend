@@ -96,6 +96,13 @@ router.get('/available', [
       status: 'active'
     };
 
+    const onlineCapabilityLiteral = `("isOnline" = true)`;
+
+    const inPersonCapabilityLiteral = `(
+      "inPersonConsultationFee" IS NOT NULL
+      OR ("clinicAddress" IS NOT NULL AND BTRIM("clinicAddress") <> '')
+    )`;
+
     if (specialization) {
       whereClause.specialization = specialization;
     }
@@ -120,6 +127,31 @@ router.get('/available', [
         { lastName: { [sequelize.Sequelize.Op.iLike]: `%${search}%` } },
         { specialization: { [sequelize.Sequelize.Op.iLike]: `%${search}%` } }
       ];
+    }
+
+    if (consultationType) {
+      const normalizedConsultationType = String(consultationType).toLowerCase();
+
+      if (normalizedConsultationType === 'online') {
+        if (!whereClause[sequelize.Sequelize.Op.and]) {
+          whereClause[sequelize.Sequelize.Op.and] = [];
+        }
+        whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(onlineCapabilityLiteral));
+      }
+
+      if (
+        normalizedConsultationType === 'inperson' ||
+        normalizedConsultationType === 'in-person' ||
+        normalizedConsultationType === 'walkin' ||
+        normalizedConsultationType === 'walk-in' ||
+        normalizedConsultationType === 'homevisit' ||
+        normalizedConsultationType === 'home-visit'
+      ) {
+        if (!whereClause[sequelize.Sequelize.Op.and]) {
+          whereClause[sequelize.Sequelize.Op.and] = [];
+        }
+        whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(inPersonCapabilityLiteral));
+      }
     }
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -239,6 +271,13 @@ router.get('/', [
     // Build where clause
     const whereClause = {};
 
+    const onlineCapabilityLiteral = `("isOnline" = true)`;
+
+    const inPersonCapabilityLiteral = `(
+      "inPersonConsultationFee" IS NOT NULL
+      OR ("clinicAddress" IS NOT NULL AND BTRIM("clinicAddress") <> '')
+    )`;
+
     if (specialization) {
       whereClause.specialization = specialization;
     }
@@ -258,6 +297,31 @@ router.get('/', [
         { lastName: { [sequelize.Sequelize.Op.iLike]: `%${search}%` } },
         { specialization: { [sequelize.Sequelize.Op.iLike]: `%${search}%` } }
       ];
+    }
+
+    if (consultationType) {
+      const normalizedConsultationType = String(consultationType).toLowerCase();
+
+      if (normalizedConsultationType === 'online') {
+        if (!whereClause[sequelize.Sequelize.Op.and]) {
+          whereClause[sequelize.Sequelize.Op.and] = [];
+        }
+        whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(onlineCapabilityLiteral));
+      }
+
+      if (
+        normalizedConsultationType === 'inperson' ||
+        normalizedConsultationType === 'in-person' ||
+        normalizedConsultationType === 'walkin' ||
+        normalizedConsultationType === 'walk-in' ||
+        normalizedConsultationType === 'homevisit' ||
+        normalizedConsultationType === 'home-visit'
+      ) {
+        if (!whereClause[sequelize.Sequelize.Op.and]) {
+          whereClause[sequelize.Sequelize.Op.and] = [];
+        }
+        whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(inPersonCapabilityLiteral));
+      }
     }
 
     const offset = (parseInt(page) - 1) * parseInt(limit);

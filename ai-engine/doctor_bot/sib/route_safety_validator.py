@@ -89,7 +89,8 @@ def validate_routing(query: str, intent: str, backend: str, confidence: float) -
             reason="High-risk intent cannot be finalized by local router",
         )
 
-    if current_intent in HIGH_RISK_INTENTS and score < 0.75:
+    # Threshold raised to 0.90: 0.75 allowed 25% misclassification on cardiac/stroke cases
+    if current_intent in HIGH_RISK_INTENTS and score < 0.90:
         return SafetyRoutingDecision(
             backend="isha",
             intent=current_intent,

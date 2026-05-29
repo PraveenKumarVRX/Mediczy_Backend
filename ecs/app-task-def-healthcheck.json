@@ -1,0 +1,64 @@
+{
+  "_comment": "Patch these blocks into the mediczy-app container definition and task def volumes array.",
+  "_instructions": [
+    "1. Merge 'containerPatch' into the mediczy-app container definition (healthCheck + mountPoints).",
+    "2. Replace REPLACE_WITH_EFS_ID with the actual EFS filesystem ID from setup-autoscaling-efs.sh output.",
+    "3. Add the 'volumes' array to the top-level task definition JSON.",
+    "4. Re-register: aws ecs register-task-definition --cli-input-json file://app-task-def-full.json --region ap-south-1",
+    "5. Force redeploy: aws ecs update-service --cluster control-plane-cluster --service mediczy-app --task-definition mediczy-app:<new-rev> --force-new-deployment --region ap-south-1",
+    "6. Apply ecs/livekit-cloud-task-def-patch.json to the same mediczy-app container so prod tokens point to LiveKit Cloud."
+  ],
+  "containerPatch": {
+    "healthCheck": {
+      "command": [
+        "CMD-SHELL",
+        "curl -f http://localhost:8888/api/health || exit 1"
+      ],
+      "interval": 30,
+      "timeout": 10,
+      "retries": 3,
+      "startPeriod": 60
+    },
+    "mountPoints": [
+      {
+        "sourceVolume": "transformers-cache",
+        "containerPath": "/app/.cache/transformers",
+        "readOnly": false
+      }
+    ],
+    "environment": [
+      {
+        "name": "LIVEKIT_URL",
+        "value": "wss://msh-kw9tvxa9.livekit.cloud"
+      },
+      {
+        "name": "LIVEKIT_API_URL",
+        "value": "https://msh-kw9tvxa9.livekit.cloud"
+      },
+      {
+        "name": "LIVEKIT_MEET_URL",
+        "value": "https://msh-kw9tvxa9.livekit.cloud"
+      }
+    ],
+    "secrets": [
+      {
+        "name": "LIVEKIT_API_KEY",
+        "valueFrom": "arn:aws:ssm:ap-south-1:480664947830:parameter/mediczy/prod/LIVEKIT_API_KEY"
+      },
+      {
+        "name": "LIVEKIT_API_SECRET",
+        "valueFrom": "arn:aws:ssm:ap-south-1:480664947830:parameter/mediczy/prod/LIVEKIT_API_SECRET"
+      }
+    ]
+  },
+  "volumes": [
+    {
+      "name": "transformers-cache",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "REPLACE_WITH_EFS_ID",
+        "rootDirectory": "/transformers",
+        "transitEncryption": "ENABLED"
+      }
+    }
+  ]
+}

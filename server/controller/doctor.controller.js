@@ -798,7 +798,7 @@ export const updateDoctorStatus = async (req, res) => {
 
 export const getAvailableDoctors = async (req, res) => {
   try {
-    const { specialization, isOnline } = req.query;
+    const { specialization, isOnline, consultationType, userLat, userLng, sort } = req.query;
 
     // Build the query object
     const query = {};
@@ -813,6 +813,60 @@ export const getAvailableDoctors = async (req, res) => {
     if (specialization) {
       query.specialization = specialization;
     }
+
+    const normalizedConsultationType = String(consultationType || '').trim().toLowerCase();
+    const hasUserCoords = Number.isFinite(Number(userLat)) && Number.isFinite(Number(userLng));
+    const requestedLat = hasUserCoords ? Number(userLat) : null;
+    const requestedLng = hasUserCoords ? Number(userLng) : null;
+
+    const parseCoordinate = (value) => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : null;
+    };
+
+    const extractDoctorCoordinates = (doctor) => {
+      const candidates = [];
+
+      if (doctor?.clinicAddress_json && typeof doctor.clinicAddress_json === 'object') {
+        candidates.push(doctor.clinicAddress_json);
+      }
+
+      if (Array.isArray(doctor?.practiceLocations) && doctor.practiceLocations.length > 0) {
+        candidates.push(doctor.practiceLocations[0]);
+      }
+
+      for (const candidate of candidates) {
+        const lat = parseCoordinate(candidate?.latitude ?? candidate?.lat);
+        const lng = parseCoordinate(candidate?.longitude ?? candidate?.lng ?? candidate?.lon);
+        if (lat !== null && lng !== null) {
+          return { lat, lng };
+        }
+      }
+
+      return null;
+    };
+
+    const computeDistanceKm = (lat1, lng1, lat2, lng2) => {
+      const toRadians = (degrees) => (degrees * Math.PI) / 180;
+      const earthRadiusKm = 6371;
+      const dLat = toRadians(lat2 - lat1);
+      const dLng = toRadians(lng2 - lng1);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
+        Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return earthRadiusKm * c;
+    };
+
+    const supportsOnlineConsultation = (doctor) => {
+      return Boolean(doctor?.isOnline) || doctor?.onlineConsultationFee != null || doctor?.consultationFees != null;
+    };
+
+    const supportsInPersonConsultation = (doctor) => {
+      const clinicAddress = typeof doctor?.clinicAddress === 'string' ? doctor.clinicAddress.trim() : '';
+      return doctor?.inPersonConsultationFee != null || clinicAddress.length > 0;
+    };
 
     // Find doctors matching the criteria using Sequelize
     const doctors = await doctorModel.findAll({
@@ -847,16 +901,110 @@ export const getAvailableDoctors = async (req, res) => {
         'registrationNumber',
         'socialLinks'
       ],
-      order: [
-        ['isOnline', 'DESC'],
-        ['experience', 'DESC']
-      ]
+      order: [['isOnline', 'DESC'], ['experience', 'DESC']]
     });
+
+    let formattedDoctors = doctors.map((doctor) => {
+      const plainDoctor = typeof doctor?.toJSON === 'function' ? doctor.toJSON() : doctor;
+      const doctorCoordinates = extractDoctorCoordinates(plainDoctor);
+
+      let distanceKm = null;
+      if (hasUserCoords && doctorCoordinates) {
+        distanceKm = Number(
+          computeDistanceKm(requestedLat, requestedLng, doctorCoordinates.lat, doctorCoordinates.lng).toFixed(2)
+        );
+      }
+
+      return {
+        ...plainDoctor,
+        distanceKm,
+      };
+    });
+
+    if (normalizedConsultationType === 'online') {
+      formattedDoctors = formattedDoctors.filter((doctor) => supportsOnlineConsultation(doctor));
+    } else if (
+      normalizedConsultationType === 'inperson' ||
+      normalizedConsultationType === 'in-person' ||
+      normalizedConsultationType === 'walkin' ||
+      normalizedConsultationType === 'walk-in'
+    ) {
+      formattedDoctors = formattedDoctors.filter((doctor) => supportsInPersonConsultation(doctor));
+    }
+
+    const normalizedSort = String(sort || '').trim().toLowerCase();
+
+    const compareDistance = (a, b) => {
+      const aDistance = Number.isFinite(a.distanceKm) ? a.distanceKm : Number.POSITIVE_INFINITY;
+      const bDistance = Number.isFinite(b.distanceKm) ? b.distanceKm : Number.POSITIVE_INFINITY;
+      return aDistance - bDistance;
+    };
+
+    const compareExperience = (a, b) => (Number(b.experience) || 0) - (Number(a.experience) || 0);
+
+    const compareFee = (a, b) => {
+      const aOnlineFee = Number(a.onlineConsultationFee ?? a.consultationFees ?? Number.POSITIVE_INFINITY);
+      const bOnlineFee = Number(b.onlineConsultationFee ?? b.consultationFees ?? Number.POSITIVE_INFINITY);
+      const aInPersonFee = Number(a.inPersonConsultationFee ?? a.consultationFees ?? Number.POSITIVE_INFINITY);
+      const bInPersonFee = Number(b.inPersonConsultationFee ?? b.consultationFees ?? Number.POSITIVE_INFINITY);
+
+      const useInPersonFee =
+        normalizedConsultationType === 'inperson' ||
+        normalizedConsultationType === 'in-person' ||
+        normalizedConsultationType === 'walkin' ||
+        normalizedConsultationType === 'walk-in';
+
+      return useInPersonFee ? aInPersonFee - bInPersonFee : aOnlineFee - bOnlineFee;
+    };
+
+    const compareOnlinePriority = (a, b) => {
+      const onlineDiff = Number(Boolean(b.isOnline)) - Number(Boolean(a.isOnline));
+      if (onlineDiff !== 0) return onlineDiff;
+
+      const verifiedDiff = Number(Boolean(b.isVerified)) - Number(Boolean(a.isVerified));
+      if (verifiedDiff !== 0) return verifiedDiff;
+
+      return compareExperience(a, b);
+    };
+
+    if (normalizedSort === 'nearest' && hasUserCoords) {
+      formattedDoctors.sort((a, b) => {
+        const byDistance = compareDistance(a, b);
+        if (byDistance !== 0) return byDistance;
+        return compareOnlinePriority(a, b);
+      });
+    } else if (normalizedSort === 'fee') {
+      formattedDoctors.sort((a, b) => {
+        const byFee = compareFee(a, b);
+        if (byFee !== 0) return byFee;
+        return compareOnlinePriority(a, b);
+      });
+    } else if (normalizedSort === 'experience') {
+      formattedDoctors.sort((a, b) => {
+        const byExperience = compareExperience(a, b);
+        if (byExperience !== 0) return byExperience;
+        return compareOnlinePriority(a, b);
+      });
+    } else if (
+      (normalizedConsultationType === 'inperson' ||
+        normalizedConsultationType === 'in-person' ||
+        normalizedConsultationType === 'walkin' ||
+        normalizedConsultationType === 'walk-in') &&
+      hasUserCoords
+    ) {
+      formattedDoctors.sort((a, b) => {
+        const byDistance = compareDistance(a, b);
+        if (byDistance !== 0) return byDistance;
+        return compareOnlinePriority(a, b);
+      });
+    } else {
+      formattedDoctors.sort(compareOnlinePriority);
+    }
 
     res.status(200).json({
       success: true,
-      count: doctors.length,
-      data: doctors,
+      count: formattedDoctors.length,
+      data: formattedDoctors,
     });
   } catch (error) {
     console.error("Error finding doctors:", error);

@@ -102,7 +102,13 @@ interface Doctor {
   verified: boolean;
   supportsOnline: boolean;
   supportsInPerson: boolean;
+  distanceKm?: number | null;
   socialLinks?: { facebook?: string; instagram?: string; youtube?: string };
+}
+
+interface UserCoordinates {
+  lat: number;
+  lng: number;
 }
 
 const specializations = [
@@ -321,8 +327,12 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
 
   const rawOnlineFee = doctor?.onlineConsultationFee ?? doctor?.consultationFee ?? null;
   const rawInPersonFee = doctor?.inPersonConsultationFee ?? null;
+  const hasClinicAddress =
+    typeof doctor?.clinicAddress === "string"
+      ? doctor.clinicAddress.trim().length > 0
+      : Boolean(doctor?.clinicAddress && Object.keys(doctor.clinicAddress || {}).length > 0);
   const supportsOnline = rawOnlineFee != null || Boolean(doctor?.isOnline);
-  const supportsInPerson = rawInPersonFee != null || Boolean(doctor?.clinicAddress);
+  const supportsInPerson = rawInPersonFee != null || hasClinicAddress;
   const socialLinks = {
     facebook: normalizeExternalUrl(doctor?.socialLinks?.facebook),
     instagram: normalizeExternalUrl(doctor?.socialLinks?.instagram),
@@ -354,6 +364,7 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
     verified: Boolean(doctor?.isVerified),
     supportsOnline,
     supportsInPerson,
+    distanceKm: Number.isFinite(Number(doctor?.distanceKm)) ? Number(doctor.distanceKm) : null,
     socialLinks,
   } as Doctor;
 };
@@ -397,6 +408,7 @@ const normalizeMasterDoctor = (doc: any): Doctor => {
     verified: Boolean(doc?.isVerified ?? true),
     supportsOnline: true,
     supportsInPerson: Boolean(doc?.clinic_name || doc?.address),
+    distanceKm: null,
   };
 };
 
@@ -408,7 +420,7 @@ const DoctorListBooking = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSpecialization, setSelectedSpecialization] = useState<string>("");
   const [selectedLocation, setSelectedLocation] = useState<string>("");
-  const [sortBy, setSortBy] = useState<string>("experience");
+  const [sortBy, setSortBy] = useState<string>("recommended");
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [consultationType, setConsultationType] = useState<"online" | "inPerson">("online");
@@ -423,6 +435,8 @@ const DoctorListBooking = () => {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [userType, setUserType] = useState<string | null>(() => getUserType());
   const [monthAvailability, setMonthAvailability] = useState<Record<string, boolean>>({});
+  const [userCoordinates, setUserCoordinates] = useState<UserCoordinates | null>(null);
+  const [locationDetectionAttempted, setLocationDetectionAttempted] = useState(false);
   
   // Health Coins payment states
   const [paymentMethod, setPaymentMethod] = useState<"inr" | "hc">("inr");
@@ -450,11 +464,35 @@ const DoctorListBooking = () => {
 
   useEffect(() => {
     fetchDoctors();
-  }, []);
+  }, [consultationTypeFilter, userCoordinates]);
 
   useEffect(() => {
     filterDoctors();
   }, [doctors, searchTerm, selectedSpecialization, selectedLocation, sortBy, consultationTypeFilter]);
+
+  useEffect(() => {
+    if (consultationTypeFilter !== "inPerson") return;
+    if (userCoordinates) return;
+    if (locationDetectionAttempted) return;
+    if (typeof window === "undefined" || !window.navigator?.geolocation) {
+      setLocationDetectionAttempted(true);
+      return;
+    }
+
+    setLocationDetectionAttempted(true);
+    window.navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserCoordinates({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+      },
+      () => {
+        // Keep graceful fallback when user declines location access.
+      },
+      { enableHighAccuracy: false, timeout: 6000 }
+    );
+  }, [consultationTypeFilter, userCoordinates, locationDetectionAttempted]);
 
   const categorizedDoctors = useMemo(() => {
     const categories = specializations.map((spec) => {
@@ -496,12 +534,68 @@ const DoctorListBooking = () => {
     return apiDoctors.map(normalizeDoctorFromApi).filter(Boolean);
   };
 
+  const fetchAllDoctorsFromApi = async (path: string, params?: Record<string, any>) => {
+    const baseParams = { ...(params || {}) };
+    const initialResponse = await api.get(path, { params: { ...baseParams, page: 1 } });
+
+    const getDoctorsFromPayload = (payload: any) => {
+      const rows = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload?.doctors)
+        ? payload.doctors
+        : Array.isArray(payload?.data?.doctors)
+        ? payload.data.doctors
+        : Array.isArray(payload?.data?.rows)
+        ? payload.data.rows
+        : Array.isArray(payload?.data?.data)
+        ? payload.data.data
+        : [];
+      return rows.map(normalizeDoctorFromApi).filter(Boolean);
+    };
+
+    const combinedDoctors = getDoctorsFromPayload(initialResponse.data);
+    const totalPages = Number(initialResponse.data?.pagination?.pages || 1);
+
+    if (totalPages <= 1) {
+      return combinedDoctors;
+    }
+
+    const pageRequests: Promise<any>[] = [];
+    for (let page = 2; page <= totalPages; page += 1) {
+      pageRequests.push(api.get(path, { params: { ...baseParams, page } }));
+    }
+
+    const pageResponses = await Promise.all(pageRequests);
+    pageResponses.forEach((res) => {
+      combinedDoctors.push(...getDoctorsFromPayload(res.data));
+    });
+
+    return combinedDoctors;
+  };
+
   const fetchDoctors = async () => {
     try {
       setLoading(true);
       let primaryDoctors: Doctor[] = [];
+      const availableDoctorParams: Record<string, any> = {};
+
+      if (consultationTypeFilter === "online") {
+        availableDoctorParams.consultationType = "online";
+        availableDoctorParams.sort = "online_first";
+      } else if (consultationTypeFilter === "inPerson") {
+        availableDoctorParams.consultationType = "inPerson";
+        availableDoctorParams.sort = userCoordinates ? "nearest" : "experience";
+      }
+
+      availableDoctorParams.limit = 100;
+
+      if (userCoordinates) {
+        availableDoctorParams.userLat = userCoordinates.lat;
+        availableDoctorParams.userLng = userCoordinates.lng;
+      }
+
       try {
-        primaryDoctors = await fetchDoctorsFromApi("/doctors/available");
+        primaryDoctors = await fetchAllDoctorsFromApi("/doctors/available", availableDoctorParams);
       } catch (error) {
         console.warn("Primary doctor list unavailable, falling back to /doctors:", error);
       }
@@ -513,7 +607,7 @@ const DoctorListBooking = () => {
 
       let secondaryDoctors: Doctor[] = [];
       try {
-        secondaryDoctors = await fetchDoctorsFromApi("/doctors", { limit: 100 });
+        secondaryDoctors = await fetchAllDoctorsFromApi("/doctors", { limit: 100 });
       } catch (error) {
         console.warn("Secondary doctor list failed:", error);
       }
@@ -592,9 +686,9 @@ const DoctorListBooking = () => {
     }
 
     if (consultationTypeFilter === "online") {
-      filtered = filtered.filter(doctor => doctor.supportsOnline !== false);
+      filtered = filtered.filter((doctor) => doctor.supportsOnline !== false);
     } else if (consultationTypeFilter === "inPerson") {
-      filtered = filtered.filter(doctor => doctor.supportsInPerson || !!doctor.clinic?.address);
+      filtered = filtered.filter((doctor) => doctor.supportsInPerson);
     }
 
     if (selectedLocation) {
@@ -606,15 +700,86 @@ const DoctorListBooking = () => {
       });
     }
 
-    // Sort doctors
+    const parseLocationMatchScore = (doctor: Doctor) => {
+      if (!selectedLocation.trim()) return 0;
+      const query = selectedLocation.trim().toLowerCase();
+      const city = doctor.clinic?.city?.toLowerCase?.() || "";
+      const state = doctor.clinic?.state?.toLowerCase?.() || "";
+      if (city === query || state === query) return 2;
+      if (city.includes(query) || state.includes(query)) return 1;
+      return 0;
+    };
+
+    const distanceScore = (doctor: Doctor) =>
+      Number.isFinite(doctor.distanceKm as number) ? (doctor.distanceKm as number) : Number.POSITIVE_INFINITY;
+
+    const onlineRank = (doctor: Doctor) => {
+      const status = doctor.availability?.status || "Away";
+      const explicitlyAvailable = status === "Available";
+      const supportsOnlineNow = doctor.supportsOnline !== false;
+      return explicitlyAvailable || supportsOnlineNow ? 1 : 0;
+    };
+
+    const inPersonRank = (doctor: Doctor) => {
+      return doctor.supportsInPerson || Boolean(doctor.clinic?.address) ? 1 : 0;
+    };
+
+    const compareRecommended = (a: Doctor, b: Doctor) => {
+      if (consultationTypeFilter === "online") {
+        const onlineDiff = onlineRank(b) - onlineRank(a);
+        if (onlineDiff !== 0) return onlineDiff;
+      } else if (consultationTypeFilter === "inPerson") {
+        const inPersonDiff = inPersonRank(b) - inPersonRank(a);
+        if (inPersonDiff !== 0) return inPersonDiff;
+
+        const locDiff = parseLocationMatchScore(b) - parseLocationMatchScore(a);
+        if (locDiff !== 0) return locDiff;
+
+        const byDistance = distanceScore(a) - distanceScore(b);
+        if (Number.isFinite(byDistance) && byDistance !== 0) return byDistance;
+      }
+
+      const verifiedDiff = Number(b.verified) - Number(a.verified);
+      if (verifiedDiff !== 0) return verifiedDiff;
+
+      return b.experience - a.experience;
+    };
+
     filtered.sort((a, b) => {
+      const consultationBiasDiff =
+        consultationTypeFilter === "online"
+          ? onlineRank(b) - onlineRank(a)
+          : consultationTypeFilter === "inPerson"
+          ? inPersonRank(b) - inPersonRank(a)
+          : 0;
+
+      if (consultationBiasDiff !== 0) {
+        return consultationBiasDiff;
+      }
+
       switch (sortBy) {
+        case "available": {
+          const byAvailability = onlineRank(b) - onlineRank(a);
+          if (byAvailability !== 0) return byAvailability;
+          return b.experience - a.experience;
+        }
+        case "nearest": {
+          const byLocationMatch = parseLocationMatchScore(b) - parseLocationMatchScore(a);
+          if (byLocationMatch !== 0) return byLocationMatch;
+          const byDistance = distanceScore(a) - distanceScore(b);
+          if (Number.isFinite(byDistance) && byDistance !== 0) return byDistance;
+          return b.experience - a.experience;
+        }
         case "experience":
           return b.experience - a.experience;
-        case "fee":
-          return a.consultationFee.online - b.consultationFee.online;
+        case "fee": {
+          const aFee = consultationTypeFilter === "inPerson" ? a.consultationFee.inPerson : a.consultationFee.online;
+          const bFee = consultationTypeFilter === "inPerson" ? b.consultationFee.inPerson : b.consultationFee.online;
+          return aFee - bFee;
+        }
+        case "recommended":
         default:
-          return 0;
+          return compareRecommended(a, b);
       }
     });
 
@@ -859,6 +1024,15 @@ const DoctorListBooking = () => {
                   <SpecIcon className={cn("h-4 w-4", getSpecializationColor(doctor.specialization))} />
                   <span className="text-slate-600 dark:text-slate-400 font-medium">{doctor.specialization}</span>
                 </div>
+                <div className="flex items-center gap-2 mt-2">
+                  {doctor.supportsOnline && doctor.supportsInPerson ? (
+                    <Badge className="rounded-full bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300 border-0">Online + Clinic</Badge>
+                  ) : doctor.supportsOnline ? (
+                    <Badge className="rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-0">Online only</Badge>
+                  ) : doctor.supportsInPerson ? (
+                    <Badge className="rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 border-0">Clinic available</Badge>
+                  ) : null}
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-4 mb-4">
@@ -870,6 +1044,12 @@ const DoctorListBooking = () => {
                   <MapPin className="h-4 w-4 text-slate-500" />
                   <span className="text-slate-700 dark:text-slate-300">{doctor.clinic.city}</span>
                 </div>
+                  {consultationTypeFilter === "inPerson" && Number.isFinite(doctor.distanceKm as number) && (
+                    <div className="flex items-center gap-1.5 bg-green-50 dark:bg-green-900/20 px-3 py-1.5 rounded-full">
+                      <MapPin className="h-4 w-4 text-green-600" />
+                      <span className="text-slate-700 dark:text-slate-300">{doctor.distanceKm} km away</span>
+                    </div>
+                  )}
               </div>
 
               <div className="flex items-center gap-2 mb-3 text-sm text-gray-500 dark:text-gray-400">
@@ -1273,7 +1453,7 @@ const DoctorListBooking = () => {
                 <Building2 className="h-5 w-5 text-green-600" />
                 <div>
                   <p className="text-xs text-muted-foreground">Clinic visit available</p>
-                  <p className="text-lg font-semibold">{filteredDoctors.filter((doctor) => doctor.supportsInPerson || !!doctor.clinic?.address).length}</p>
+                  <p className="text-lg font-semibold">{filteredDoctors.filter((doctor) => doctor.supportsInPerson).length}</p>
                 </div>
               </CardContent>
             </Card>
@@ -1386,12 +1566,35 @@ const DoctorListBooking = () => {
             </p>
             
             <div className="flex items-center gap-3">
+              {consultationTypeFilter === "inPerson" && !userCoordinates && (
+                <Badge variant="outline" className="rounded-full px-3 py-1 text-xs">
+                  Enable location for nearest ranking
+                </Badge>
+              )}
               <Select value={sortBy} onValueChange={setSortBy}>
                 <SelectTrigger className="w-[180px] rounded-full">
                   <SlidersHorizontal className="h-4 w-4 mr-2" />
                   <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="recommended">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-teal-500" />
+                      Recommended
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="available">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-blue-500" />
+                      Available Now
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="nearest">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-green-500" />
+                      Nearest First
+                    </div>
+                  </SelectItem>
                   <SelectItem value="experience">
                     <div className="flex items-center gap-2">
                       <Award className="h-4 w-4 text-blue-500" />

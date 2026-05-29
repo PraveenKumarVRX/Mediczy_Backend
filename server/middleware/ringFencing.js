@@ -663,8 +663,8 @@ const PUBLIC_ENDPOINTS = [
   '/oauth',  // OAuth 2.0 SSO endpoints (Rocket.Chat integration)
   '/api/otp',
   '/api/masterdata', // Public read-only provider data (hospitals, labs, clinics)
-  '/api/medical-ai/test', // AI medical consultation test endpoint (for demos and testing)
   '/api/medical-ai/health', // Medical AI health check (public monitoring)
+  '/api/medical-ai/languages', // Supported languages list (public — no PHI)
   '/api/medical-ai/instant-triage-call', // Emergency triage endpoint - accessible without authentication
   '/api/tts', // Text-to-Speech for emergency triage (Eleven Labs)
   '/api/membership/plans', // Public membership plans listing
