@@ -6,7 +6,7 @@
 set -e
 
 # Configuration
-PROD_SERVER="ubuntu@13.234.17.52"
+PROD_SERVER="ubuntu@13.127.125.93"
 PROD_PATH="/home/ubuntu/Mediczy"
 SSH_KEY="$HOME/.ssh/mediqzy.pem"
 
@@ -87,8 +87,8 @@ echo "  ✅ OAuth endpoints verified"
 echo ""
 echo "🔗 Production URLs:"
 echo "  • API: https://app.mediqzy.com (via nginx)"
-echo "  • Backend: http://13.234.17.52:8888"
-echo "  • OAuth: http://13.234.17.52:8888/oauth/"
+echo "  • Backend: http://13.127.125.93:8888"
+echo "  • OAuth: http://13.127.125.93:8888/oauth/"
 echo ""
 echo "📋 To rollback:"
 echo "  ssh -i $SSH_KEY $PROD_SERVER"

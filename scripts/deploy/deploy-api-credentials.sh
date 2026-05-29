@@ -12,7 +12,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Production server
-PROD_SERVER="ubuntu@13.234.17.52"
+PROD_SERVER="ubuntu@13.127.125.93"
 PROD_PATH="/home/ubuntu/Mediczy"
 
 echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"

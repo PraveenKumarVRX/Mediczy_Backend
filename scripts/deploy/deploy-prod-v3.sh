@@ -6,7 +6,7 @@
 set -e
 
 # Configuration
-PROD_SERVER="ubuntu@13.234.17.52"
+PROD_SERVER="ubuntu@13.127.125.93"
 PROD_PATH="/home/ubuntu/Mediczy"
 SSH_KEY="$HOME/.ssh/mediqzy.pem"
 
