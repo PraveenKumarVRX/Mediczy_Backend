@@ -418,6 +418,8 @@ router.post('/google/fetch', auth, async (req, res) => {
 
     // ── 5. Persist to health_data ────────────────────────────────────────────
     let savedCount = 0;
+    let failedCount = 0;
+    const failedDetails = [];
     if (HealthData) {
       for (const day of dailyData) {
         const rAt = new Date(day.date);
@@ -443,6 +445,8 @@ router.post('/google/fetch', auth, async (req, res) => {
             });
             savedCount++;
           } catch (upsertErr) {
+            failedCount++;
+            failedDetails.push(`${row.dataType}@${day.date}: ${upsertErr.message}`);
             console.error('[GoogleFit] upsert failed for', row.dataType, row.recordedAt, upsertErr.message);
           }
         }
@@ -471,9 +475,26 @@ router.post('/google/fetch', auth, async (req, res) => {
       daysTracked:       dailyData.length,
     };
 
-    console.log(`[GoogleFit] Synced ${savedCount} records for user ${userId}. Sleep sessions: ${sleepSessions.length}`);
+    const partialFailure = failedCount > 0;
+    if (partialFailure) {
+      console.warn(`[GoogleFit] Partial sync for user ${userId}: ${savedCount} saved, ${failedCount} failed`);
+    } else {
+      console.log(`[GoogleFit] Synced ${savedCount} records for user ${userId}. Sleep sessions: ${sleepSessions.length}`);
+    }
 
-    res.json({ success: true, dailyData, summary, savedCount, sleepSessionCount: sleepSessions.length });
+    res.json({
+      success: true,
+      dailyData,
+      summary,
+      savedCount,
+      failedCount,
+      partialFailure,
+      // Only include details in non-production to avoid leaking internals
+      ...(process.env.NODE_ENV !== 'production' && failedDetails.length
+        ? { failedDetails }
+        : {}),
+      sleepSessionCount: sleepSessions.length,
+    });
   } catch (err) {
     console.error('[GoogleFit] fetch error:', err.message);
     res.status(500).json({ error: 'Failed to fetch Google Fit data: ' + err.message });

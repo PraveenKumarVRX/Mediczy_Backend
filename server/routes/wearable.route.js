@@ -7,6 +7,7 @@ import express from 'express';
 import Wearable from '../models/postgres/wearable.model.postgres.js';
 import HealthReading from '../models/postgres/health-reading.model.postgres.js';
 import { authUser } from '../middleware/auth.middleware.js';
+import { auditHealthAccess } from '../middleware/audit.middleware.js';
 import { Op } from 'sequelize';
 
 const router = express.Router();
@@ -429,7 +430,7 @@ const VALID_ALERT_SEVERITIES = new Set(['info', 'warning', 'critical']);
  * POST /api/wearables/:id/readings
  * Upload health readings from wearable — must be device owner or admin
  */
-router.post('/:id/readings', authUser, async (req, res) => {
+router.post('/:id/readings', authUser, auditHealthAccess('WEARABLE_READINGS_WRITE', { resourceType: 'HealthReading' }), async (req, res) => {
   try {
     const { id } = req.params;
     const { readings } = req.body;

@@ -1,5 +1,6 @@
 import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
+import { auditHealthAccess } from '../middleware/audit.middleware.js';
 import {
   saveVitals, getVitalsTrend, getActiveAlerts,
   acknowledgeAlert, resolveAlert, getLatestVitals
@@ -37,7 +38,7 @@ function validateVitalRanges(body) {
 }
 
 // POST /api/v1/vitals
-router.post('/', authUser, async (req, res) => {
+router.post('/', authUser, auditHealthAccess('VITALS_WRITE', { resourceType: 'VitalSigns' }), async (req, res) => {
   try {
     const rangeErrors = validateVitalRanges(req.body);
     if (rangeErrors.length) {

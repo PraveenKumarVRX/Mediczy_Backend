@@ -1,5 +1,7 @@
 import express from "express";
 import { authUser } from "../middleware/auth.middleware.js";
+import { authLimiter } from "../middleware/rateLimiter.middleware.js";
+import { auditHealthAccess } from "../middleware/audit.middleware.js";
 import FitnessData from "../models/FitnessData.model.intelligent.js";
 
 const router = express.Router();
@@ -8,7 +10,7 @@ const router = express.Router();
  * Store Apple Health data from iOS app
  * POST /api/apple-health/sync
  */
-router.post("/sync", authUser, async (req, res) => {
+router.post("/sync", authLimiter, authUser, auditHealthAccess('APPLE_HEALTH_SYNC_WRITE'), async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -82,7 +84,7 @@ router.post("/sync", authUser, async (req, res) => {
  * Batch sync multiple days of Apple Health data
  * POST /api/apple-health/sync-batch
  */
-router.post("/sync-batch", authUser, async (req, res) => {
+router.post("/sync-batch", authLimiter, authUser, auditHealthAccess('APPLE_HEALTH_BATCH_WRITE'), async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
@@ -221,7 +223,7 @@ router.get("/status", authUser, async (req, res) => {
  * Get aggregated Apple Health data for a date range
  * GET /api/apple-health/summary
  */
-router.get("/summary", authUser, async (req, res) => {
+router.get("/summary", authUser, auditHealthAccess('APPLE_HEALTH_SUMMARY_READ'), async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });

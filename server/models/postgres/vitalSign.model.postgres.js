@@ -1,5 +1,20 @@
+/**
+ * VitalSign — Hospital inpatient vital signs (vital_signs table).
+ *
+ * Architecture note — TWO separate vitals systems exist in this codebase:
+ *
+ *  1. THIS model (VitalSign / vital_signs table)
+ *     → Used by hospital/practice.route.js for inpatient ward monitoring
+ *     → Linked to admissions via patient_id + admission_id
+ *     → Also referenced by scripts/sync-postgres-tables.js
+ *
+ *  2. vitals-ews.service.js / vital_records table
+ *     → Used by vitals.route.js (/api/v1/vitals) for clinical EWS alerts
+ *     → Computes NEWS2 score and triggers early_warning_alerts
+ *
+ * DO NOT remove this model — it is actively used by hospital inpatient routes.
+ */
 import { DataTypes } from 'sequelize';
-import { JWT_CONFIG } from '../../config/auth.config.js';
 import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 
 const VitalSign = sequelize.define('VitalSign', {

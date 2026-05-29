@@ -2,6 +2,8 @@ import express from 'express';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 import { authUser } from '../middleware/auth.middleware.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
+import { auditHealthAccess } from '../middleware/audit.middleware.js';
 
 const router = express.Router();
 
@@ -52,7 +54,7 @@ function validateRange(name, val, min, max) {
 }
 
 // ── POST /api/activity-tracker/log — Log or update today's activity ──
-router.post('/log', authUser, async (req, res) => {
+router.post('/log', authLimiter, authUser, auditHealthAccess('ACTIVITY_LOG_WRITE'), async (req, res) => {
   try {
     await ensureTable();
     const userId = req.user.id;
@@ -150,7 +152,7 @@ router.post('/log', authUser, async (req, res) => {
 });
 
 // ── GET /api/activity-tracker/today — Get today's activity ──
-router.get('/today', authUser, async (req, res) => {
+router.get('/today', authUser, auditHealthAccess('ACTIVITY_LOG_READ'), async (req, res) => {
   try {
     await ensureTable();
     const [rows] = await postgresSequelize.query(`
