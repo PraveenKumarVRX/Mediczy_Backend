@@ -13,7 +13,7 @@ import http from 'http';
 const { Client } = pg;
 
 // ─── Config ──────────────────────────────────────────────────────────────────
-const DB = { host: '127.0.0.1', port: 5432, user: 'mediczy_helper', password: 'Mediczy2024Helper', database: 'mediczy_ai' };
+const DB = { host: '127.0.0.1', port: 5432, user: 'mediczy_helper', password: (process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || undefined), database: 'mediczy_ai' };
 const API = 'http://localhost:8888';
 
 let passed = 0, failed = 0;

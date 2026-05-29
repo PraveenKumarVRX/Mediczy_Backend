@@ -249,21 +249,17 @@ const buildDefaultABDM = () => ({
 });
 
 const buildDefaultTariff = () => ({
-  insurers: ['Star Health', 'Care Health', 'HDFC ERGO', 'ICICI Lombard', 'Bajaj Allianz', 'Niva Bupa', 'New India', 'United India', 'CGHS', 'ECHS'],
-  categories: ['All', 'Room Charges', 'ICU', 'Procedures', 'Nursing', 'OT Charges', 'Diagnostics', 'Pharmacy'],
+  insurers: ['Star Health', 'Medi Assist', 'Care Health', 'HDFC ERGO', 'ICICI Lombard', 'Bajaj Allianz', 'Niva Bupa', 'New India', 'United India', 'CGHS', 'ECHS'],
+  tpas: ['Direct', 'Medi Assist', 'Vidal Health', 'Paramount', 'MDIndia', 'FHPL', 'Heritage', 'HealthIndia'],
+  categories: ['Room Charges', 'ICU', 'Procedures', 'Nursing', 'OT Charges', 'Diagnostics', 'Pharmacy', 'Packages', 'Consumables'],
+  uploads: [],
   items: [
-    { id: 'tariff-1', insurer: 'Star Health', category: 'Room Charges', item: 'General Ward', unit: 'per day', rate: 1500, gst: 0, effective: '2024-01-01' },
-    { id: 'tariff-2', insurer: 'Star Health', category: 'Room Charges', item: 'Semi-Private', unit: 'per day', rate: 3000, gst: 0, effective: '2024-01-01' },
-    { id: 'tariff-3', insurer: 'Star Health', category: 'Room Charges', item: 'Private Room', unit: 'per day', rate: 5000, gst: 0, effective: '2024-01-01' },
-    { id: 'tariff-4', insurer: 'Star Health', category: 'ICU', item: 'Medical ICU', unit: 'per day', rate: 12000, gst: 0, effective: '2024-01-01' },
-    { id: 'tariff-5', insurer: 'Star Health', category: 'Procedures', item: 'CABG (Bypass)', unit: 'per episode', rate: 280000, gst: 0, effective: '2024-01-01' },
-    { id: 'tariff-6', insurer: 'Star Health', category: 'Procedures', item: 'Total Knee Replacement', unit: 'per episode', rate: 180000, gst: 5, effective: '2024-01-01' },
-    { id: 'tariff-7', insurer: 'Care Health', category: 'Room Charges', item: 'General Ward', unit: 'per day', rate: 1800, gst: 0, effective: '2024-04-01' },
-    { id: 'tariff-8', insurer: 'Care Health', category: 'Room Charges', item: 'Private Room', unit: 'per day', rate: 5500, gst: 0, effective: '2024-04-01' },
-    { id: 'tariff-9', insurer: 'HDFC ERGO', category: 'Procedures', item: 'Laparoscopic Cholecystectomy', unit: 'per episode', rate: 65000, gst: 5, effective: '2024-01-01' },
-    { id: 'tariff-10', insurer: 'CGHS', category: 'Room Charges', item: 'General Ward', unit: 'per day', rate: 1200, gst: 0, effective: '2024-04-01' },
+    { id: 'tariff-1', payerName: 'Star Health', payerType: 'insurer', tpaName: 'Direct', agreementCode: 'SH-MOU-2026', category: 'Room Charges', serviceCode: 'ROOM-GEN', serviceName: 'General Ward', unit: 'per day', grossRate: 1800, discountType: 'percentage', discountValue: 10, contractedRate: 1620, gst: 0, validFrom: '2026-04-01', validTo: '2027-03-31', discountTerms: '10% discount on published room tariff as per MOU.', documentName: 'sample-rate-card.csv', uploadedAt: '2026-04-01T00:00:00.000Z', status: 'active' },
+    { id: 'tariff-2', payerName: 'Star Health', payerType: 'insurer', tpaName: 'Direct', agreementCode: 'SH-MOU-2026', category: 'Procedures', serviceCode: 'PKG-CABG', serviceName: 'CABG Package', unit: 'per episode', grossRate: 300000, discountType: 'package', discountValue: 0, contractedRate: 280000, gst: 0, validFrom: '2026-04-01', validTo: '2027-03-31', discountTerms: 'Package includes OT, surgeon, routine consumables, and ward stay per payer terms.', documentName: 'sample-rate-card.csv', uploadedAt: '2026-04-01T00:00:00.000Z', status: 'active' },
+    { id: 'tariff-3', payerName: 'Medi Assist', payerType: 'tpa', tpaName: 'Medi Assist', agreementCode: 'MA-PREF-2026', category: 'Diagnostics', serviceCode: 'MRI-BRAIN', serviceName: 'MRI Brain Plain', unit: 'per scan', grossRate: 8500, discountType: 'percentage', discountValue: 15, contractedRate: 7225, gst: 0, validFrom: '2026-01-01', validTo: '2026-12-31', discountTerms: 'Preferred tariff for cashless desk estimates and final bill scrutiny.', documentName: 'sample-rate-card.csv', uploadedAt: '2026-01-01T00:00:00.000Z', status: 'active' },
+    { id: 'tariff-4', payerName: 'CGHS', payerType: 'government', tpaName: 'Direct', agreementCode: 'CGHS-2026', category: 'Room Charges', serviceCode: 'ROOM-GEN-CGHS', serviceName: 'General Ward', unit: 'per day', grossRate: 1500, discountType: 'none', discountValue: 0, contractedRate: 1500, gst: 0, validFrom: '2026-04-01', validTo: '2027-03-31', discountTerms: 'Government schedule applies. Do not override without updated circular.', documentName: 'sample-rate-card.csv', uploadedAt: '2026-04-01T00:00:00.000Z', status: 'active' },
   ],
-  lastUpdated: '2024-12-01',
+  lastUpdated: '2026-04-01T00:00:00.000Z',
 });
 
 const buildDefaultEmpanelment = () => ({

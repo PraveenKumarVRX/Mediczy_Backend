@@ -29,7 +29,7 @@ const DB_HOST        = process.env.POSTGRES_HOST     || '127.0.0.1';
 const DB_PORT        = parseInt(process.env.POSTGRES_PORT) || 5432;
 const DB_NAME        = process.env.POSTGRES_DB       || 'mediczy_ai';
 const DB_USER        = process.env.POSTGRES_USER     || 'mediczy_helper';
-const DB_PASS        = process.env.POSTGRES_PASSWORD || 'Mediczy2024Helper';
+const DB_PASS        = process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || undefined;
 
 // What to block (toggle false to monitor-only without blocking)
 const BLOCK_POLICY = {

@@ -8,7 +8,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 
 // Database connection
-const sequelize = new Sequelize('mediczy_ai', 'mediczy_helper', 'Mediczy2024Helper', {
+const sequelize = new Sequelize('mediczy_ai', 'mediczy_helper', (process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || undefined), {
   host: '127.0.0.1',
   dialect: 'postgres',
   logging: false

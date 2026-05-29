@@ -106,9 +106,12 @@ router.post('/', authUser, async (req, res) => {
 
 /**
  * POST /api/wearables/provision
- * Provision new wearable device (Admin)
+ * Provision new wearable device — admin only
  */
 router.post('/provision', authUser, async (req, res) => {
+  if (!req.user?.isAdmin && req.userRole !== 'admin' && req.userRole !== 'super_admin') {
+    return res.status(403).json({ success: false, message: 'Admin access required to provision devices' });
+  }
   try {
     const {
       device_id,
@@ -173,9 +176,12 @@ router.post('/provision', authUser, async (req, res) => {
 
 /**
  * POST /api/wearables/:id/assign
- * Assign wearable to user
+ * Assign wearable to user — admin only
  */
 router.post('/:id/assign', authUser, async (req, res) => {
+  if (!req.user?.isAdmin && req.userRole !== 'admin' && req.userRole !== 'super_admin') {
+    return res.status(403).json({ success: false, message: 'Admin access required to assign devices' });
+  }
   try {
     const { id } = req.params;
     const {
@@ -282,9 +288,13 @@ router.get('/', authUser, async (req, res) => {
 
 /**
  * GET /api/wearables/user/:user_id
- * Get user's wearable devices
+ * Get user's wearable devices — own data only (admins may view any user)
  */
 router.get('/user/:user_id', authUser, async (req, res) => {
+  const isAdmin = req.user?.isAdmin || ['admin', 'super_admin'].includes(req.userRole);
+  if (!isAdmin && String(req.params.user_id) !== String(req.user.id)) {
+    return res.status(403).json({ success: false, message: 'You can only view your own devices' });
+  }
   try {
     const { user_id } = req.params;
     
@@ -357,9 +367,9 @@ router.get('/:id', authUser, async (req, res) => {
 
 /**
  * PUT /api/wearables/:id/sync
- * Sync wearable data (called by device/app)
+ * Sync wearable data — must be the device owner or admin
  */
-router.put('/:id/sync', async (req, res) => {
+router.put('/:id/sync', authUser, async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -368,13 +378,23 @@ router.put('/:id/sync', async (req, res) => {
       current_metrics,
       firmware_version
     } = req.body;
-    
+
+    // Validate battery_level range if provided
+    if (battery_level !== undefined && (battery_level < 0 || battery_level > 100)) {
+      return res.status(400).json({ success: false, message: 'battery_level must be 0–100' });
+    }
+
     const wearable = await Wearable.findByPk(id);
     if (!wearable) {
       return res.status(404).json({
         success: false,
         message: 'Wearable not found'
       });
+    }
+
+    const isAdmin = req.user?.isAdmin || ['admin', 'super_admin'].includes(req.userRole);
+    if (!isAdmin && wearable.user_id && String(wearable.user_id) !== String(req.user.id)) {
+      return res.status(403).json({ success: false, message: 'You can only sync your own device' });
     }
     
     await wearable.update({
@@ -402,45 +422,59 @@ router.put('/:id/sync', async (req, res) => {
   }
 });
 
+const VALID_READING_TYPES = new Set(['heart_rate','blood_pressure','spo2','steps','sleep','calories','temperature','weight','glucose','ecg','activity']);
+const VALID_ALERT_SEVERITIES = new Set(['info', 'warning', 'critical']);
+
 /**
  * POST /api/wearables/:id/readings
- * Upload health readings from wearable
+ * Upload health readings from wearable — must be device owner or admin
  */
-router.post('/:id/readings', async (req, res) => {
+router.post('/:id/readings', authUser, async (req, res) => {
   try {
     const { id } = req.params;
-    const { readings } = req.body; // Array of readings
-    
+    const { readings } = req.body;
+
+    if (!Array.isArray(readings) || readings.length === 0) {
+      return res.status(400).json({ success: false, message: 'readings must be a non-empty array' });
+    }
+    if (readings.length > 500) {
+      return res.status(400).json({ success: false, message: 'Maximum 500 readings per batch' });
+    }
+
     const wearable = await Wearable.findByPk(id);
     if (!wearable) {
-      return res.status(404).json({
-        success: false,
-        message: 'Wearable not found'
-      });
+      return res.status(404).json({ success: false, message: 'Wearable not found' });
     }
-    
+
     if (!wearable.user_id) {
-      return res.status(400).json({
-        success: false,
-        message: 'Wearable not assigned to any user'
-      });
+      return res.status(400).json({ success: false, message: 'Wearable not assigned to any user' });
     }
-    
-    // Bulk insert readings
-    const healthReadings = readings.map(reading => ({
-      wearable_id: wearable.id,
-      user_id: wearable.user_id,
-      reading_type: reading.type,
-      value: reading.value,
-      unit: reading.unit,
-      recorded_at: reading.timestamp || new Date(),
-      activity: reading.activity,
-      location: reading.location,
-      is_normal: reading.is_normal,
-      alert_triggered: reading.alert_triggered || false,
-      alert_severity: reading.alert_severity
-    }));
-    
+
+    const isAdmin = req.user?.isAdmin || ['admin', 'super_admin'].includes(req.userRole);
+    if (!isAdmin && String(wearable.user_id) !== String(req.user.id)) {
+      return res.status(403).json({ success: false, message: 'You can only upload readings for your own device' });
+    }
+
+    // Validate and sanitise each reading
+    const healthReadings = readings.map((reading, i) => {
+      if (reading.alert_severity && !VALID_ALERT_SEVERITIES.has(reading.alert_severity)) {
+        throw new Error(`readings[${i}].alert_severity must be info|warning|critical`);
+      }
+      return {
+        wearable_id: wearable.id,
+        user_id: wearable.user_id,
+        reading_type: reading.type,
+        value: reading.value,
+        unit: reading.unit,
+        recorded_at: reading.timestamp || new Date(),
+        activity: reading.activity,
+        location: reading.location,
+        is_normal: reading.is_normal !== undefined ? Boolean(reading.is_normal) : null,
+        alert_triggered: Boolean(reading.alert_triggered),
+        alert_severity: reading.alert_severity || null,
+      };
+    });
+
     await HealthReading.bulkCreate(healthReadings);
     
     // Update current metrics on wearable
@@ -479,27 +513,29 @@ router.get('/:id/readings', authUser, async (req, res) => {
   try {
     const { id } = req.params;
     const { type, start_date, end_date, limit = 100 } = req.query;
-    
+    const safeLimit = Math.min(Math.max(parseInt(limit) || 100, 1), 500); // cap 1–500
+
     const wearable = await Wearable.findByPk(id);
     if (!wearable) {
-      return res.status(404).json({
-        success: false,
-        message: 'Wearable not found'
-      });
+      return res.status(404).json({ success: false, message: 'Wearable not found' });
     }
-    
+
+    // Ownership: users may only read their own device data
+    const isAdmin = req.user?.isAdmin || ['admin', 'super_admin'].includes(req.userRole);
+    if (!isAdmin && wearable.user_id && String(wearable.user_id) !== String(req.user.id)) {
+      return res.status(403).json({ success: false, message: 'You can only read your own device data' });
+    }
+
     const where = { wearable_id: id };
     if (type) where.reading_type = type;
     if (start_date && end_date) {
-      where.recorded_at = {
-        [Op.between]: [new Date(start_date), new Date(end_date)]
-      };
+      where.recorded_at = { [Op.between]: [new Date(start_date), new Date(end_date)] };
     }
-    
+
     const readings = await HealthReading.findAll({
       where,
       order: [['recorded_at', 'DESC']],
-      limit: parseInt(limit)
+      limit: safeLimit,
     });
     
     res.json({
@@ -518,15 +554,20 @@ router.get('/:id/readings', authUser, async (req, res) => {
 
 /**
  * GET /api/wearables/user/:user_id/health-summary
- * Get user's health summary from all wearables
+ * Get user's health summary — own data only (admins may view any user)
  */
 router.get('/user/:user_id/health-summary', authUser, async (req, res) => {
+  const isAdmin = req.user?.isAdmin || ['admin', 'super_admin'].includes(req.userRole);
+  if (!isAdmin && String(req.params.user_id) !== String(req.user.id)) {
+    return res.status(403).json({ success: false, message: 'You can only view your own health summary' });
+  }
   try {
     const { user_id } = req.params;
     const { days = 7 } = req.query;
+    const safeDays = Math.min(Math.max(parseInt(days) || 7, 1), 365);
     
     const since = new Date();
-    since.setDate(since.getDate() - parseInt(days));
+    since.setDate(since.getDate() - safeDays);
     
     // Get latest readings for each type
     const readingTypes = ['heart_rate', 'blood_pressure', 'spo2', 'steps', 'sleep', 'calories'];

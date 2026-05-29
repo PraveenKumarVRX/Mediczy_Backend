@@ -12,7 +12,7 @@ const { Sequelize } = require('sequelize');
 
 const DB_NAME = process.env.DB_NAME || 'mediczy_ai';
 const DB_USER = process.env.DB_USER || 'mediczy_helper';
-const DB_PASS = process.env.DB_PASS || 'Mediczy2024Helper';
+const DB_PASS = process.env.DB_PASS || (process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || undefined);
 const DB_HOST = process.env.DB_HOST || '127.0.0.1';
 const DB_PORT = parseInt(process.env.DB_PORT || '5432', 10);
 

@@ -626,14 +626,14 @@ const validateToken = async (token) => {
   }
 
   try {
-    // Try to send a test message to validate token
+    // Firebase Admin validates a token by sending a dry-run message.
+    // dryRun is the second argument to send(); it is not part of the message payload.
     const testMessage = {
       token,
-      data: { test: 'true' },
-      dry_run: true // Don't actually send the message
+      data: { test: 'true' }
     };
-    
-    await messaging.send(testMessage);
+
+    await messaging.send(testMessage, true);
     return true;
   } catch (error) {
     console.error('Invalid FCM token:', error);

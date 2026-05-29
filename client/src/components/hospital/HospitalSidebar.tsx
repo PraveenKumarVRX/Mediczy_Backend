@@ -35,7 +35,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import { useHospitalAuth } from "@/hooks/useHospitalAuth";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface SidebarItem {
@@ -48,6 +47,7 @@ interface SidebarItem {
 }
 
 interface HospitalSidebarProps {
+  onLogout?: () => void;
   /** Optional list of capability slugs granted to this hospital's plan.
    *  When provided, items with a matching `capability` that is NOT in this
    *  list are rendered in a disabled/locked state. */
@@ -91,12 +91,11 @@ const systemItems: SidebarItem[] = [
   { icon: HelpCircle, label: "Help & Support", href: "/hospital/support" },
 ];
 
-const HospitalSidebar = ({ capabilities, mobileOpen = false, onCloseMobile }: HospitalSidebarProps) => {
+const HospitalSidebar = ({ capabilities, mobileOpen = false, onCloseMobile, onLogout }: HospitalSidebarProps) => {
   const location = useLocation();
-  const { logout } = useHospitalAuth();
   const [collapsed, setCollapsed] = useState(false);
 
-  const handleLogout = () => logout();
+  const handleLogout = () => onLogout?.();
 
   /**
    * Returns true if the item should be accessible.

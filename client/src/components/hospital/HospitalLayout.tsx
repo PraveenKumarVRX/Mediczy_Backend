@@ -92,6 +92,7 @@ const HospitalLayout = ({ children, title, subtitle }: HospitalLayoutProps) => {
         capabilities={effectiveCapabilities && effectiveCapabilities.length > 0 ? effectiveCapabilities : undefined}
         mobileOpen={mobileSidebarOpen}
         onCloseMobile={() => setMobileSidebarOpen(false)}
+        onLogout={handleLogout}
       />
 
       {/* Main Content Area */}

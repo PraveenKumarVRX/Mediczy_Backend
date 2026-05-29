@@ -30,9 +30,16 @@ router.post('/register-token', authUser, async (req, res) => {
       });
     }
 
-    // Validate the FCM token if Firebase is initialized
-    // Skip validation if explicitly requested (for testing) or if token looks like a real FCM token
-    const shouldValidate = isFirebaseInitialized && !skipValidation && fcmToken.length > 100;
+    if (typeof fcmToken !== 'string' || fcmToken.length < 80 || fcmToken.length > 4096 || /\s/.test(fcmToken)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Malformed FCM token'
+      });
+    }
+
+    // Validate the FCM token if Firebase is initialized.
+    // Firebase web registration tokens are long opaque strings; short tokens are rejected above.
+    const shouldValidate = isFirebaseInitialized && !skipValidation;
     if (shouldValidate) {
       const isValidToken = await validateToken(fcmToken);
       if (!isValidToken) {

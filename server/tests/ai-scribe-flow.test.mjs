@@ -40,7 +40,7 @@ const PATIENT_ID = 1138;
 const DB = {
   host: '127.0.0.1', port: 5432,
   database: 'mediczy_ai',
-  user: 'mediczy_helper', password: 'Mediczy2024Helper',
+  user: 'mediczy_helper', password: (process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || undefined),
 };
 
 // ─── Counters ─────────────────────────────────────────────────────────────────

@@ -417,7 +417,7 @@ activityLogRoutes.get('/admin/activity-logs', async (req, res) => {
 
     let decoded;
     try {
-      decoded = jwt.verify(token, JWT_CONFIG.SECRET || 'your-secret-key');
+      decoded = jwt.verify(token, JWT_CONFIG.SECRET);
     } catch (err) {
       return res.status(401).json({ message: 'Invalid token' });
     }

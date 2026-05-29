@@ -143,7 +143,7 @@ module.exports = {
         POSTGRES_DATABASE: process.env.POSTGRES_DATABASE || 'mediczy_ai',
         POSTGRES_DB: process.env.POSTGRES_DATABASE || 'mediczy_ai',
         POSTGRES_USER: process.env.POSTGRES_USER || 'mediczy_helper',
-        POSTGRES_PASSWORD: process.env.POSTGRES_PASSWORD || 'Mediczy2024Helper',
+        POSTGRES_PASSWORD: process.env.POSTGRES_PASSWORD || (process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || undefined),
         DUCKDB_ENABLED: 'true',
         DUCKDB_PATH: ':memory:',
         PGVECTOR_DIMENSION: process.env.PGVECTOR_DIMENSION || '1536',

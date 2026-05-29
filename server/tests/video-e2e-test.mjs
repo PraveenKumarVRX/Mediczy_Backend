@@ -13,7 +13,7 @@ const DB_CONFIG = {
   host: process.env.POSTGRES_HOST || 'localhost',
   port: Number(process.env.POSTGRES_PORT || 5432),
   user: process.env.POSTGRES_USER || 'mediczy_helper',
-  password: process.env.POSTGRES_PASSWORD || 'Mediczy2024Helper',
+  password: process.env.POSTGRES_PASSWORD || (process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || undefined),
   database: process.env.POSTGRES_DATABASE || process.env.POSTGRES_DB || 'mediczy_ai',
   ssl: process.env.POSTGRES_SSL === 'true' ? { rejectUnauthorized: false } : false,
 };

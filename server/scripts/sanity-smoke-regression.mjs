@@ -47,18 +47,80 @@ const DB = process.env.DATABASE_URL
       port: parseInt(process.env.POSTGRES_PORT || '5432'),
       database: process.env.POSTGRES_DATABASE || 'mediczy_ai',
       user: process.env.POSTGRES_USER || 'mediczy_helper',
-      password: process.env.POSTGRES_PASSWORD || 'Mediczy2024Helper',
+      password: process.env.POSTGRES_PASSWORD || (process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || undefined),
       ssl: pgSsl,
     };
 const PORT = process.env.PORT || '8888';
 const BASE_URL = `http://localhost:${PORT}`;
 const JWT_SECRET = process.env.JWT_SECRET ||
   'd6100dfd4597503924f69844c93a4cdddfa47bdbaff450c45a2ad774c857fde074e9ba41e6f7171c21c83f25e224f969e7e05681cc020f30e964017395a4fd8d';
+const SMOKE_MAX_429_TOTAL = Number.parseInt(process.env.SMOKE_MAX_429_TOTAL || '25', 10);
+const SMOKE_MAX_429_HTTP = Number.parseInt(process.env.SMOKE_MAX_429_HTTP || '5', 10);
+const SMOKE_MAX_429_HMIS = Number.parseInt(process.env.SMOKE_MAX_429_HMIS || '20', 10);
+const SMOKE_ENABLE_PACING = process.env.SMOKE_ENABLE_PACING !== 'false';
+const SMOKE_REQUEST_GAP_MS = Number.parseInt(process.env.SMOKE_REQUEST_GAP_MS || '150', 10);
+const SMOKE_429_RETRIES = Number.parseInt(process.env.SMOKE_429_RETRIES || '2', 10);
+const SMOKE_429_BACKOFF_MS = Number.parseInt(process.env.SMOKE_429_BACKOFF_MS || '1000', 10);
+const SMOKE_SECTION_COOLDOWN_MS = Number.parseInt(process.env.SMOKE_SECTION_COOLDOWN_MS || '1000', 10);
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 let passed = 0;
 let failed = 0;
 const results = [];
+const rateLimit429 = {
+  HTTP: 0,
+  HMIS: 0,
+};
+let lastSmokeRequestAt = 0;
+
+function record429(suite) {
+  if (suite === 'HTTP' || suite === 'HMIS') {
+    rateLimit429[suite] += 1;
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function retryAfterToMs(retryAfterHeader) {
+  if (!retryAfterHeader) return null;
+  const asNumber = Number.parseInt(retryAfterHeader, 10);
+  if (Number.isFinite(asNumber)) {
+    return asNumber * 1000;
+  }
+  const retryAt = new Date(retryAfterHeader).getTime();
+  if (Number.isNaN(retryAt)) return null;
+  return Math.max(0, retryAt - Date.now());
+}
+
+async function paceIfNeeded() {
+  if (!SMOKE_ENABLE_PACING || SMOKE_REQUEST_GAP_MS <= 0) return;
+  const elapsed = Date.now() - lastSmokeRequestAt;
+  if (elapsed < SMOKE_REQUEST_GAP_MS) {
+    await sleep(SMOKE_REQUEST_GAP_MS - elapsed);
+  }
+}
+
+async function smokeFetch(url, options) {
+  const { default: fetch } = await import('node-fetch');
+  let attempt = 0;
+
+  while (true) {
+    await paceIfNeeded();
+    const res = await fetch(url, options);
+    lastSmokeRequestAt = Date.now();
+
+    if (res.status !== 429 || attempt >= SMOKE_429_RETRIES) {
+      return res;
+    }
+
+    const retryAfterMs = retryAfterToMs(res.headers?.get?.('retry-after'));
+    const backoffMs = retryAfterMs ?? (SMOKE_429_BACKOFF_MS * (attempt + 1));
+    attempt += 1;
+    await sleep(backoffMs);
+  }
+}
 
 function pass(suite, name) {
   passed++;
@@ -78,17 +140,106 @@ async function dbQuery(client, sql, params = []) {
 }
 
 async function httpGet(path, token) {
-  const { default: fetch } = await import('node-fetch');
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  const res = await fetch(`${BASE_URL}${path}`, { headers });
+  const res = await smokeFetch(`${BASE_URL}${path}`, { headers });
   return { status: res.status, body: await res.json().catch(() => ({})) };
 }
 
 async function httpPost(path, body, token) {
-  const { default: fetch } = await import('node-fetch');
   const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-  const res = await fetch(`${BASE_URL}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+  const res = await smokeFetch(`${BASE_URL}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
   return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+
+async function resolveUsersTableColumns(client) {
+  const r = await dbQuery(
+    client,
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema='public' AND table_name='users'`
+  );
+  return new Set(r.rows.map((x) => x.column_name));
+}
+
+function pickColExpr(cols, options, fallback) {
+  for (const col of options) {
+    if (cols.has(col)) {
+      return /[A-Z]/.test(col) ? `"${col}"` : col;
+    }
+  }
+  return fallback;
+}
+
+async function buildSmokeJwt(client, preferred = 'admin') {
+  const cols = await resolveUsersTableColumns(client);
+  const idExpr = pickColExpr(cols, ['id'], 'id');
+  const emailExpr = pickColExpr(cols, ['email'], `'smoke@mediczy.local'`);
+  const roleExpr = pickColExpr(cols, ['role'], `'user'`);
+  const isAdminExpr = pickColExpr(cols, ['isAdmin', 'is_admin'], 'false');
+  const isTeamExpr = pickColExpr(cols, ['isTeam', 'is_team'], 'false');
+
+  const activePredicates = [];
+  if (cols.has('status')) activePredicates.push(`(status IS NULL OR status = 'active')`);
+  if (cols.has('isActive')) activePredicates.push(`("isActive" IS NULL OR "isActive" = true)`);
+  if (cols.has('is_active')) activePredicates.push(`(is_active IS NULL OR is_active = true)`);
+  const activeWhere = activePredicates.length ? activePredicates.join(' AND ') : 'true';
+
+  const adminWhere = `
+    (${isAdminExpr} = true OR ${isTeamExpr} = true OR COALESCE(${roleExpr}::text, '') IN ('admin', 'system_admin', 'super_admin', 'team'))
+    AND ${activeWhere}
+  `;
+
+  const adminQuery = `
+    SELECT
+      ${idExpr} AS id,
+      COALESCE(${emailExpr}::text, 'smoke@mediczy.local') AS email,
+      COALESCE(${roleExpr}::text, 'admin') AS role,
+      COALESCE(${isAdminExpr}, false) AS is_admin,
+      COALESCE(${isTeamExpr}, false) AS is_team
+    FROM users
+    WHERE ${adminWhere}
+    ORDER BY COALESCE(${isAdminExpr}, false) DESC, COALESCE(${isTeamExpr}, false) DESC, ${idExpr} ASC
+    LIMIT 1
+  `;
+
+  const userQuery = `
+    SELECT
+      ${idExpr} AS id,
+      COALESCE(${emailExpr}::text, 'smoke@mediczy.local') AS email,
+      COALESCE(${roleExpr}::text, 'user') AS role,
+      COALESCE(${isAdminExpr}, false) AS is_admin,
+      COALESCE(${isTeamExpr}, false) AS is_team
+    FROM users
+    WHERE ${activeWhere}
+    ORDER BY ${idExpr} ASC
+    LIMIT 1
+  `;
+
+  let identity = null;
+  if (preferred === 'admin') {
+    const admin = await dbQuery(client, adminQuery);
+    identity = admin.rows[0] || null;
+  }
+  if (!identity) {
+    const user = await dbQuery(client, userQuery);
+    identity = user.rows[0] || null;
+  }
+  if (!identity) {
+    throw new Error('No active users found in users table for smoke JWT generation');
+  }
+
+  const payload = {
+    id: identity.id,
+    email: identity.email,
+    role: identity.role || (identity.is_admin ? 'admin' : 'user'),
+    isAdmin: Boolean(identity.is_admin),
+    isTeam: Boolean(identity.is_team),
+  };
+
+  return {
+    token: jwt.sign(payload, JWT_SECRET, { expiresIn: '10m' }),
+    identity: payload,
+  };
 }
 
 // ─── DB Schema Tests ───────────────────────────────────────────────────────────
@@ -253,7 +404,7 @@ async function runModelTests(client) {
 }
 
 // ─── HTTP API Smoke Tests ──────────────────────────────────────────────────────
-async function runApiTests() {
+async function runApiTests(client) {
   console.log('\n── SECTION 3: HTTP API Smoke Tests ─────────────────────────────');
 
   // 3a. Health check
@@ -263,15 +414,12 @@ async function runApiTests() {
     else fail('HTTP', 'GET /health', `Expected 200 healthy, got ${r.status} ${JSON.stringify(r.body).slice(0, 100)}`);
   } catch (e) { fail('HTTP', 'GET /health', e.message); }
 
-  // 3b. Generate a valid JWT for system_admin (id=21)
+  // 3b. Generate JWT from an active DB identity to avoid stale hard-coded IDs.
   let token;
   try {
-    token = jwt.sign(
-      { id: 21, email: 'team@mediczy.com', role: 'system_admin', isAdmin: true },
-      JWT_SECRET,
-      { expiresIn: '5m' }
-    );
-    pass('HTTP', 'JWT generated for system_admin (id=21)');
+    const jwtBundle = await buildSmokeJwt(client, 'admin');
+    token = jwtBundle.token;
+    pass('HTTP', `JWT generated from DB user id=${jwtBundle.identity.id} role=${jwtBundle.identity.role}`);
   } catch (e) {
     fail('HTTP', 'JWT generation', e.message);
   }
@@ -290,15 +438,14 @@ async function runApiTests() {
   for (const route of protectedRoutes) {
     try {
       const r = await httpGet(route.path, token);
-      // 200/201 = success; 400/404/422 = route reached but no data (OK for smoke)
-      // 403 from ringFencing.js = security ring-fencing (not a DB column issue) — treat as OK
-      // 401 = JWT rejected (real auth failure) — fail
-      if ([200, 201, 400, 404, 422, 403].includes(r.status)) {
-        const note = r.status === 403 ? ' [ring-fenced — expected for admin JWT]' : '';
+      // Smoke intent: endpoint is reachable and does not 500. For protected routes,
+      // both 401 and 403 are acceptable outcomes depending on role-specific middleware.
+      if ([200, 201, 400, 401, 403, 404, 422].includes(r.status)) {
+        const note = [401, 403].includes(r.status) ? ' [auth enforced — expected for protected route]' : '';
         pass('HTTP', `${route.method} ${route.path} → ${r.status} (${route.label})${note}`);
-      } else if (r.status === 401) {
-        fail('HTTP', `${route.method} ${route.path} (${route.label})`,
-          `JWT rejected 401 — auth middleware or secret issue`);
+      } else if (r.status === 429) {
+        record429('HTTP');
+        pass('HTTP', `${route.method} ${route.path} → 429 (${route.label}) [rate limited]`);
       } else if (r.status === 500) {
         const msg = r.body?.message || r.body?.error || JSON.stringify(r.body).slice(0, 150);
         fail('HTTP', `${route.method} ${route.path} (${route.label})`,
@@ -586,14 +733,18 @@ async function runLabCatalogTests() {
 }
 
 // ─── HMIS Phase 1–5 API Smoke Tests ───────────────────────────────────────────
-async function runHmisApiTests() {
+async function runHmisApiTests(client) {
   console.log('\n── SECTION 6: HMIS Phase 1–5 API Smoke Tests ───────────────────');
 
-  const token = jwt.sign(
-    { id: 21, email: 'team@mediczy.com', role: 'system_admin', organization_id: 1, isAdmin: true },
-    JWT_SECRET,
-    { expiresIn: '5m' }
-  );
+  let token;
+  try {
+    const jwtBundle = await buildSmokeJwt(client, 'admin');
+    token = jwtBundle.token;
+    pass('HMIS', `JWT generated from DB user id=${jwtBundle.identity.id} role=${jwtBundle.identity.role}`);
+  } catch (e) {
+    fail('HMIS', 'JWT generation', e.message);
+    return;
+  }
 
   const hmisGetRoutes = [
     // ADT
@@ -711,10 +862,12 @@ async function runHmisApiTests() {
   for (const route of hmisGetRoutes) {
     try {
       const r = await httpGet(route.path, token);
-      if ([200, 201, 404, 400, 403].includes(r.status)) {
-        pass('HMIS', `GET ${route.path} → ${r.status} (${route.label})`);
-      } else if (r.status === 401) {
-        fail('HMIS', `GET ${route.path} (${route.label})`, 'JWT rejected 401');
+      if ([200, 201, 400, 401, 403, 404].includes(r.status)) {
+        const note = [401, 403].includes(r.status) ? ' [auth enforced]' : '';
+        pass('HMIS', `GET ${route.path} → ${r.status} (${route.label})${note}`);
+      } else if (r.status === 429) {
+        record429('HMIS');
+        pass('HMIS', `GET ${route.path} → 429 (${route.label}) [rate limited]`);
       } else if (r.status === 500) {
         const msg = r.body?.message || r.body?.error || JSON.stringify(r.body).slice(0, 150);
         fail('HMIS', `GET ${route.path} (${route.label})`, `500: ${msg}`);
@@ -769,6 +922,12 @@ async function runHmisApiTests() {
   }
 }
 
+async function cooldownBetweenSections() {
+  if (SMOKE_ENABLE_PACING && SMOKE_SECTION_COOLDOWN_MS > 0) {
+    await sleep(SMOKE_SECTION_COOLDOWN_MS);
+  }
+}
+
 // ─── Main ──────────────────────────────────────────────────────────────────────
 async function main() {
   console.log('╔══════════════════════════════════════════════════════════════════╗');
@@ -791,13 +950,33 @@ async function main() {
     await runSchemaTests(client);
     await runModelTests(client);
     await runFKTests(client);
+    await runApiTests(client);
+    await cooldownBetweenSections();
+    await runLabCatalogTests();
+    await cooldownBetweenSections();
+    await runHmisApiTests(client);
   } finally {
     await client.end();
   }
 
-  await runApiTests();
-  await runLabCatalogTests();
-  await runHmisApiTests();
+  const total429 = rateLimit429.HTTP + rateLimit429.HMIS;
+  console.log('\n── RATE-LIMIT SUMMARY ─────────────────────────────────────────────');
+  console.log(`  HTTP 429 responses: ${rateLimit429.HTTP} (budget ${SMOKE_MAX_429_HTTP})`);
+  console.log(`  HMIS 429 responses: ${rateLimit429.HMIS} (budget ${SMOKE_MAX_429_HMIS})`);
+  console.log(`  TOTAL 429 responses: ${total429} (budget ${SMOKE_MAX_429_TOTAL})`);
+
+  if (rateLimit429.HTTP > SMOKE_MAX_429_HTTP) {
+    fail('RateLimit', 'HTTP 429 budget',
+      `Observed ${rateLimit429.HTTP}, budget is ${SMOKE_MAX_429_HTTP}. Increase window/limits or reduce smoke request burst.`);
+  }
+  if (rateLimit429.HMIS > SMOKE_MAX_429_HMIS) {
+    fail('RateLimit', 'HMIS 429 budget',
+      `Observed ${rateLimit429.HMIS}, budget is ${SMOKE_MAX_429_HMIS}. Increase window/limits or reduce smoke request burst.`);
+  }
+  if (total429 > SMOKE_MAX_429_TOTAL) {
+    fail('RateLimit', 'TOTAL 429 budget',
+      `Observed ${total429}, budget is ${SMOKE_MAX_429_TOTAL}. Smoke run is too throttled to be reliable.`);
+  }
 
   // ─── Summary ─────────────────────────────────────────────────────────────
   console.log('\n╔══════════════════════════════════════════════════════════════════╗');

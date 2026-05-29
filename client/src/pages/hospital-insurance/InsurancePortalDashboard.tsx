@@ -69,21 +69,13 @@ const InsurancePortalDashboard = () => {
   const [tatData, setTatData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   useEffect(() => { fetchDashboard(); }, []);
 
-  const DEMO_STATS = { pending: 18, approved: 52, rejected: 12, query: 8, total: 90, totalAmount: 9800000, approvedAmount: 7200000, pendingAmount: 2600000, settled: 15 };
-  const DEMO_ALERTS = { queriesNeedingResponse: 3, pendingDocuments: 5, expiringSoon: 2 };
-  const DEMO_RECENT_CLAIMS = [
-    { id: 'CLM-2026-0002', claimNumber: 'CLM-2026-0002', patientName: 'Sunita Sharma', insurer: 'HDFC Ergo', status: 'claim_query', claimAmount: 320000 },
-    { id: 'CLM-2026-0003', claimNumber: 'CLM-2026-0003', patientName: 'Amit Verma', insurer: 'ICICI Lombard', status: 'pa_query_pending', claimAmount: 85000 },
-    { id: 'CLM-2026-0005', claimNumber: 'CLM-2026-0005', patientName: 'Meera Devi', insurer: 'Care Health', status: 'discharge_today', claimAmount: 110000 },
-    { id: 'CLM-2026-0001', claimNumber: 'CLM-2026-0001', patientName: 'Ramesh Kumar', insurer: 'Star Health', status: 'pa_approved', claimAmount: 150000 },
-    { id: 'CLM-2026-0007', claimNumber: 'CLM-2026-0007', patientName: 'Geeta Nair', insurer: 'SBI General', status: 'settlement', claimAmount: 200000 },
-  ];
-
   const fetchDashboard = async () => {
     setRefreshing(true);
+    setDashboardError(null);
     try {
       const [dashRes, agingRes, trendRes, tatRes] = await Promise.allSettled([
         api.get('/hospital/insurance/dashboard'),
@@ -93,84 +85,59 @@ const InsurancePortalDashboard = () => {
       ]);
 
       if (dashRes.status === 'fulfilled' && dashRes.value.data.success) {
-        const d = dashRes.value.data.dashboard;
-        const s = d?.stats;
-        setStats(s?.total > 0 ? s : DEMO_STATS);
-        setRecentClaims(d?.recentActivity?.length > 0 ? d.recentActivity : DEMO_RECENT_CLAIMS);
-        setAlerts(d?.alerts?.queriesNeedingResponse != null ? d.alerts : DEMO_ALERTS);
-        if (d?.insurerBreakdown?.length > 0) setInsurerData(d.insurerBreakdown);
+        const d = dashRes.value.data.dashboard || {};
+        setStats({ pending: 0, approved: 0, rejected: 0, query: 0, total: 0, totalAmount: 0, approvedAmount: 0, pendingAmount: 0, ...(d.stats || {}) });
+        setRecentClaims(Array.isArray(d.recentActivity) ? d.recentActivity : []);
+        setAlerts({ queriesNeedingResponse: 0, pendingDocuments: 0, expiringSoon: 0, ...(d.alerts || {}) });
+        setInsurerData(Array.isArray(d.insurerBreakdown) ? d.insurerBreakdown : []);
       } else {
-        setStats(DEMO_STATS);
-        setRecentClaims(DEMO_RECENT_CLAIMS);
-        setAlerts(DEMO_ALERTS);
+        setDashboardError('Dashboard data is temporarily unavailable.');
+        setStats({ pending: 0, approved: 0, rejected: 0, query: 0, total: 0, totalAmount: 0, approvedAmount: 0, pendingAmount: 0 });
+        setRecentClaims([]);
+        setAlerts({ queriesNeedingResponse: 0, pendingDocuments: 0, expiringSoon: 0 });
+        setInsurerData([]);
       }
-      if (agingRes.status === 'fulfilled' && agingRes.value.data.success) {
-        setAgingData(normalizeAgingBuckets(agingRes.value.data));
-      }
-      if (trendRes.status === 'fulfilled' && trendRes.value.data.success) {
-        setTrendData(normalizeTrendTimeline(trendRes.value.data));
-      }
-      if (tatRes.status === 'fulfilled' && tatRes.value.data.success) {
-        setTatData(normalizeTatReport(tatRes.value.data));
-      }
+      setAgingData(agingRes.status === 'fulfilled' && agingRes.value.data.success ? normalizeAgingBuckets(agingRes.value.data) : []);
+      setTrendData(trendRes.status === 'fulfilled' && trendRes.value.data.success ? normalizeTrendTimeline(trendRes.value.data) : []);
+      setTatData(tatRes.status === 'fulfilled' && tatRes.value.data.success ? normalizeTatReport(tatRes.value.data) : []);
     } catch (err) {
-      console.warn('Dashboard fetch error, using demo data');
-      setStats(DEMO_STATS);
-      setRecentClaims(DEMO_RECENT_CLAIMS);
-      setAlerts(DEMO_ALERTS);
+      console.warn('Dashboard fetch error', err);
+      setDashboardError('Dashboard data is temporarily unavailable.');
+      setStats({ pending: 0, approved: 0, rejected: 0, query: 0, total: 0, totalAmount: 0, approvedAmount: 0, pendingAmount: 0 });
+      setRecentClaims([]);
+      setAlerts({ queriesNeedingResponse: 0, pendingDocuments: 0, expiringSoon: 0 });
+      setAgingData([]);
+      setTrendData([]);
+      setInsurerData([]);
+      setTatData([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  // Fallback demo data if API returns nothing
-  const displayAging = agingData.length > 0 ? agingData : [
-    { bucket: '0-30 days', count: 42, amount: 2100000 },
-    { bucket: '31-60 days', count: 28, amount: 1400000 },
-    { bucket: '61-90 days', count: 15, amount: 750000 },
-    { bucket: '90+ days', count: 8, amount: 400000 },
-  ];
-  const displayTrend = trendData.length > 0 ? trendData : [
-    { month: 'Nov', submitted: 48, approved: 32, rejected: 8 },
-    { month: 'Dec', submitted: 55, approved: 38, rejected: 10 },
-    { month: 'Jan', submitted: 62, approved: 44, rejected: 9 },
-    { month: 'Feb', submitted: 58, approved: 40, rejected: 11 },
-    { month: 'Mar', submitted: 70, approved: 52, rejected: 7 },
-    { month: 'Apr', submitted: 66, approved: 48, rejected: 8 },
-  ];
-  const displayInsurer = insurerData.length > 0 ? insurerData : [
-    { name: 'Star Health', value: 28 },
-    { name: 'ICICI Lombard', value: 22 },
-    { name: 'HDFC Ergo', value: 18 },
-    { name: 'Bajaj Allianz', value: 14 },
-    { name: 'Care Health', value: 10 },
-    { name: 'Others', value: 8 },
-  ];
-  const displayTat = tatData.length > 0 ? tatData : [
-    { insurer: 'Star Health', avgHrs: 4.2 },
-    { insurer: 'ICICI Lombard', avgHrs: 6.1 },
-    { insurer: 'HDFC Ergo', avgHrs: 3.8 },
-    { insurer: 'Bajaj Allianz', avgHrs: 8.5 },
-    { insurer: 'Care Health', avgHrs: 5.2 },
-  ];
+  const displayAging = agingData;
+  const displayTrend = trendData;
+  const displayInsurer = insurerData;
+  const displayTat = tatData;
 
   const statusPieData = [
-    { name: 'Pending', value: stats.pending || 18 },
-    { name: 'Approved', value: stats.approved || 52 },
-    { name: 'Rejected', value: stats.rejected || 12 },
-    { name: 'Query', value: stats.query || 8 },
+    { name: 'Pending', value: stats.pending || 0 },
+    { name: 'Approved', value: stats.approved || 0 },
+    { name: 'Rejected', value: stats.rejected || 0 },
+    { name: 'Query', value: stats.query || 0 },
   ];
+  const hasStatusData = statusPieData.some((item) => item.value > 0);
 
   const kpiCards = [
-    { label: 'Total Claims', value: loading ? '—' : (stats.total || 90), icon: FileText, color: 'bg-indigo-500', trend: '+12%', up: true, href: `${base}/claims` },
-    { label: 'Pending', value: loading ? '—' : (stats.pending || 18), icon: Clock, color: 'bg-amber-500', trend: 'SLA risk', up: false, href: `${base}/claims?status=pending` },
-    { label: 'Approved', value: loading ? '—' : (stats.approved || 52), icon: CheckCircle2, color: 'bg-emerald-500', trend: '+8%', up: true, href: `${base}/claims?status=approved` },
-    { label: 'Queries', value: loading ? '—' : (stats.query || 8), icon: MessageSquare, color: 'bg-orange-500', trend: 'Respond now', up: false, href: `${base}/tasks` },
-    { label: 'Rejected', value: loading ? '—' : (stats.rejected || 12), icon: XCircle, color: 'bg-red-500', trend: '-3%', up: true, href: `${base}/denials` },
-    { label: 'Billed', value: loading ? '—' : fmt(stats.totalAmount || 9800000), icon: IndianRupee, color: 'bg-blue-500', trend: 'This month', up: true, href: `${base}/reconciliation` },
-    { label: 'Approved Amt', value: loading ? '—' : fmt(stats.approvedAmount || 7200000), icon: TrendingUp, color: 'bg-teal-500', trend: '73.5%', up: true, href: `${base}/reconciliation` },
-    { label: 'Outstanding', value: loading ? '—' : fmt((stats.totalAmount || 9800000) - (stats.approvedAmount || 7200000)), icon: Timer, color: 'bg-violet-500', trend: 'Pending recv.', up: false, href: `${base}/reconciliation` },
+    { label: 'Total Claims', value: loading ? '—' : (stats.total || 0), icon: FileText, color: 'bg-indigo-500', trend: 'Live count', up: true, href: `${base}/claims` },
+    { label: 'Pending', value: loading ? '—' : (stats.pending || 0), icon: Clock, color: 'bg-amber-500', trend: 'SLA risk', up: false, href: `${base}/claims?status=pending` },
+    { label: 'Approved', value: loading ? '—' : (stats.approved || 0), icon: CheckCircle2, color: 'bg-emerald-500', trend: 'Live count', up: true, href: `${base}/claims?status=approved` },
+    { label: 'Queries', value: loading ? '—' : (stats.query || 0), icon: MessageSquare, color: 'bg-orange-500', trend: 'Respond now', up: false, href: `${base}/tasks` },
+    { label: 'Rejected', value: loading ? '—' : (stats.rejected || 0), icon: XCircle, color: 'bg-red-500', trend: 'Live count', up: false, href: `${base}/denials` },
+    { label: 'Billed', value: loading ? '—' : fmt(stats.totalAmount || 0), icon: IndianRupee, color: 'bg-blue-500', trend: 'This month', up: true, href: `${base}/reconciliation` },
+    { label: 'Approved Amt', value: loading ? '—' : fmt(stats.approvedAmount || 0), icon: TrendingUp, color: 'bg-teal-500', trend: 'Live amount', up: true, href: `${base}/reconciliation` },
+    { label: 'Outstanding', value: loading ? '—' : fmt(stats.pendingAmount ?? Math.max(0, (stats.totalAmount || 0) - (stats.approvedAmount || 0))), icon: Timer, color: 'bg-violet-500', trend: 'Pending recv.', up: false, href: `${base}/reconciliation` },
   ];
 
   const quickActions = [
@@ -205,7 +172,7 @@ const InsurancePortalDashboard = () => {
     <InsurancePortalLayout title="Dashboard" subtitle="Hospital Insurance Claims Management Portal">
       <div className="space-y-5">
 
-        {/* ── Hero banner ── */}
+        {/* Hero banner */}
         <div
           className="relative rounded-2xl overflow-hidden p-6"
           style={{ background: 'linear-gradient(130deg, #0b0f1e 0%, #1e1b4b 50%, #1e3a5f 100%)' }}
@@ -218,18 +185,18 @@ const InsurancePortalDashboard = () => {
               <p className="text-[11px] font-bold uppercase tracking-widest mb-1.5" style={{ color: 'rgba(165,180,252,0.6)' }}>
                 {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
               </p>
-              <h2 className="text-2xl font-bold text-white leading-tight">Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 17 ? 'Afternoon' : 'Evening'} 👋</h2>
-              <p className="text-[13px] mt-1" style={{ color: 'rgba(148,163,184,0.8)' }}>Here's your insurance claims overview for today</p>
+              <h2 className="text-2xl font-bold text-white leading-tight">Good {new Date().getHours() < 12 ? 'Morning' : new Date().getHours() < 17 ? 'Afternoon' : 'Evening'}</h2>
+              <p className="text-[13px] mt-1" style={{ color: 'rgba(148,163,184,0.8)' }}>Live insurance claims overview for today</p>
             </div>
             <div className="flex items-center gap-3">
               <div className="text-right">
                 <p className="text-[11px] font-medium" style={{ color: 'rgba(165,180,252,0.6)' }}>Total Billed</p>
-                <p className="text-2xl font-bold text-white">{fmt(stats.totalAmount || 9800000)}</p>
+                <p className="text-2xl font-bold text-white">{fmt(stats.totalAmount || 0)}</p>
               </div>
               <div className="w-px h-12" style={{ background: 'rgba(255,255,255,0.1)' }} />
               <div className="text-right">
                 <p className="text-[11px] font-medium" style={{ color: 'rgba(165,180,252,0.6)' }}>Approved</p>
-                <p className="text-2xl font-bold" style={{ color: '#86efac' }}>{fmt(stats.approvedAmount || 7200000)}</p>
+                <p className="text-2xl font-bold" style={{ color: '#86efac' }}>{fmt(stats.approvedAmount || 0)}</p>
               </div>
               <div className="w-px h-12" style={{ background: 'rgba(255,255,255,0.1)' }} />
               <Button
@@ -246,7 +213,13 @@ const InsurancePortalDashboard = () => {
           </div>
         </div>
 
-        {/* ── Action alerts ── */}
+        {dashboardError && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+            {dashboardError}
+          </div>
+        )}
+
+        {/* Action alerts */}
         {hasActionAlerts && (
           <div
             className="rounded-xl p-4"
@@ -287,7 +260,7 @@ const InsurancePortalDashboard = () => {
           </div>
         )}
 
-        {/* ── KPI 8-Card Grid ── */}
+        {/* KPI Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3">
           {kpiCards.map((card) => {
             const Icon = card.icon;
@@ -311,7 +284,7 @@ const InsurancePortalDashboard = () => {
           })}
         </div>
 
-        {/* ── Quick Actions ── */}
+        {/* Quick Actions */}
         <div className="bg-card border border-border shadow-sm rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[13px] font-bold text-foreground tracking-tight">Quick Actions</h3>
@@ -333,7 +306,7 @@ const InsurancePortalDashboard = () => {
           </div>
         </div>
 
-        {/* ── Charts Row 1: Trend + Status Pie ── */}
+        {/* Charts Row 1: Trend + Status Pie */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 bg-card border border-border shadow-sm rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-4">
@@ -342,6 +315,7 @@ const InsurancePortalDashboard = () => {
               </div>
               <h3 className="text-[13px] font-bold text-foreground">Claims Trend — Last 6 Months</h3>
             </div>
+            {displayTrend.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={displayTrend} barCategoryGap="25%">
                 <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
@@ -357,6 +331,9 @@ const InsurancePortalDashboard = () => {
                 <Bar dataKey="rejected" name="Rejected" fill="#f43f5e" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
+            ) : (
+              <div className="flex h-[220px] items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">No trend data yet</div>
+            )}
           </div>
 
           <div className="bg-card border border-border shadow-sm rounded-2xl p-5">
@@ -366,6 +343,7 @@ const InsurancePortalDashboard = () => {
               </div>
               <h3 className="text-[13px] font-bold text-foreground">Status Breakdown</h3>
             </div>
+            {hasStatusData ? (
             <ResponsiveContainer width="100%" height={220}>
               <PieChart>
                 <Pie data={statusPieData} cx="50%" cy="45%" innerRadius={55} outerRadius={80} paddingAngle={4} dataKey="value">
@@ -380,10 +358,13 @@ const InsurancePortalDashboard = () => {
                 <Legend wrapperStyle={{ fontSize: 11 }} />
               </PieChart>
             </ResponsiveContainer>
+            ) : (
+              <div className="flex h-[220px] items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">No claim status data yet</div>
+            )}
           </div>
         </div>
 
-        {/* ── Charts Row 2: Aging + Insurer + TAT ── */}
+        {/* Charts Row 2: Aging + Insurer + TAT */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Aging buckets */}
           <div className="bg-card border border-border shadow-sm rounded-2xl p-5">
@@ -394,7 +375,7 @@ const InsurancePortalDashboard = () => {
               <h3 className="text-[13px] font-bold text-foreground">Claim Aging — ₹ Outstanding</h3>
             </div>
             <div className="space-y-3.5">
-              {displayAging.map((row, i) => (
+              {displayAging.length > 0 ? displayAging.map((row, i) => (
                 <div key={i}>
                   <div className="flex justify-between text-xs mb-1.5">
                     <span className="font-semibold text-foreground">{row.bucket}</span>
@@ -410,7 +391,7 @@ const InsurancePortalDashboard = () => {
                     />
                   </div>
                 </div>
-              ))}
+              )) : <div className="flex h-28 items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">No aging data yet</div>}
             </div>
             <button onClick={() => navigate(`${base}/reports`)}
               className="mt-5 text-xs font-semibold flex items-center gap-1 transition-colors hover:gap-2"
@@ -427,6 +408,7 @@ const InsurancePortalDashboard = () => {
               </div>
               <h3 className="text-[13px] font-bold text-foreground">Claims by Insurer</h3>
             </div>
+            {displayInsurer.length > 0 ? (
             <ResponsiveContainer width="100%" height={180}>
               <PieChart>
                 <Pie data={displayInsurer} cx="50%" cy="50%" outerRadius={75} dataKey="value">
@@ -441,6 +423,9 @@ const InsurancePortalDashboard = () => {
                 <Legend wrapperStyle={{ fontSize: 10 }} />
               </PieChart>
             </ResponsiveContainer>
+            ) : (
+              <div className="flex h-[180px] items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">No insurer split yet</div>
+            )}
           </div>
 
           {/* TAT by insurer */}
@@ -452,7 +437,7 @@ const InsurancePortalDashboard = () => {
               <h3 className="text-[13px] font-bold text-foreground">Avg TAT by Insurer (hrs)</h3>
             </div>
             <div className="space-y-3">
-              {displayTat.map((row, i) => (
+              {displayTat.length > 0 ? displayTat.map((row, i) => (
                 <div key={i} className="flex items-center gap-2.5">
                   <span className="text-xs w-28 truncate font-medium text-foreground">{row.insurer}</span>
                   <div className="flex-1 rounded-full h-2" style={{ background: 'rgba(0,0,0,0.05)' }}>
@@ -468,7 +453,7 @@ const InsurancePortalDashboard = () => {
                     {row.avgHrs}h
                   </span>
                 </div>
-              ))}
+              )) : <div className="flex h-28 items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">No TAT data yet</div>}
             </div>
             <button onClick={() => navigate(`${base}/sla`)}
               className="mt-4 text-xs font-semibold flex items-center gap-1 hover:gap-2 transition-all"
@@ -478,7 +463,7 @@ const InsurancePortalDashboard = () => {
           </div>
         </div>
 
-        {/* ── Recent Claims ── */}
+        {/* Recent Claims */}
         <div className="bg-card border border-border shadow-sm rounded-2xl overflow-hidden">
           <div className="px-5 py-4 flex items-center justify-between border-b border-border">
             <div className="flex items-center gap-2">

@@ -5,10 +5,10 @@ Targeted fix:
 2. Also improve geocoded_display -> formatted_address for all labs
 """
 
-import json, time, psycopg2, urllib.request, urllib.parse, re
+import os, json, time, psycopg2, urllib.request, urllib.parse, re
 
 DB = dict(host="127.0.0.1", port=5432, dbname="mediczy_ai",
-          user="mediczy_helper", password="Mediczy2024Helper")
+          user="mediczy_helper", password=os.getenv("POSTGRES_PASSWORD") or os.getenv("DB_PASSWORD") or os.getenv("DB_PASS"))
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 HEADERS = {"User-Agent": "Mediczy-LabEnrichment/1.0 (admin@mediczy.com)"}
