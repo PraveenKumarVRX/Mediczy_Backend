@@ -5231,5 +5231,108 @@ router.delete('/security/blocked-ips/:ip', authUser, requireRole('admin'), async
   }
 });
 
+// ─── Team Privilege Management (admin portal) ────────────────────────────────
+
+/** GET /api/admin/team-members — list all team members with their permissions */
+router.get('/team-members', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const { page = 1, limit = 50, search = '' } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
+
+    const { Op } = await import('sequelize');
+    const where = {
+      [Op.or]: [
+        { isTeam: true },
+        { membershipType: 'team' },
+        { role: 'team' },
+      ],
+    };
+    if (search) {
+      where[Op.and] = [
+        {
+          [Op.or]: [
+            { email: { [Op.iLike]: `%${search}%` } },
+            { firstName: { [Op.iLike]: `%${search}%` } },
+            { lastName: { [Op.iLike]: `%${search}%` } },
+          ],
+        },
+      ];
+    }
+
+    const { count, rows } = await userModel.findAndCountAll({
+      where,
+      attributes: ['id', 'email', 'firstName', 'lastName', 'role', 'status', 'isActive', 'metadata', 'createdAt'],
+      limit: Number(limit),
+      offset,
+      order: [['firstName', 'ASC'], ['email', 'ASC']],
+    });
+
+    const members = rows.map((u) => {
+      let metadata = {};
+      try { metadata = u.metadata ? JSON.parse(u.metadata) : {}; } catch (_) {}
+      return {
+        id: u.id,
+        email: u.email,
+        firstName: u.firstName || '',
+        lastName: u.lastName || '',
+        role: u.role,
+        status: u.status,
+        isActive: u.isActive !== false,
+        permissions: Array.isArray(metadata.permissions) ? metadata.permissions : [],
+        editableModules: Array.isArray(metadata.editableModules) ? metadata.editableModules : [],
+        deletableModules: Array.isArray(metadata.deletableModules) ? metadata.deletableModules : [],
+        privilegesUpdatedAt: metadata.privilegesUpdatedAt || null,
+      };
+    });
+
+    res.json({ success: true, members, total: count, page: Number(page), limit: Number(limit) });
+  } catch (err) {
+    console.error('[admin/team-members] error:', err.message);
+    res.status(500).json({ success: false, message: 'Failed to fetch team members' });
+  }
+});
+
+/** PUT /api/admin/team-members/:id/privileges — set permissions for a team member */
+router.put('/team-members/:id/privileges', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { permissions, editableModules, deletableModules } = req.body;
+
+    const user = await userModel.findByPk(id, {
+      attributes: ['id', 'email', 'firstName', 'lastName', 'isTeam', 'membershipType', 'role', 'metadata'],
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Team member not found' });
+    }
+
+    let metadata = {};
+    try { metadata = user.metadata ? JSON.parse(user.metadata) : {}; } catch (_) {}
+
+    if (Array.isArray(permissions))      metadata.permissions      = permissions;
+    if (Array.isArray(editableModules))  metadata.editableModules  = editableModules;
+    if (Array.isArray(deletableModules)) metadata.deletableModules = deletableModules;
+    metadata.privilegesUpdatedAt = new Date().toISOString();
+    metadata.privilegesUpdatedBy = req.user?.id;
+
+    await user.update({ metadata: JSON.stringify(metadata) });
+
+    res.json({
+      success: true,
+      message: 'Privileges updated',
+      member: {
+        id: user.id,
+        email: user.email,
+        permissions: metadata.permissions || [],
+        editableModules: metadata.editableModules || [],
+        deletableModules: metadata.deletableModules || [],
+      },
+    });
+  } catch (err) {
+    console.error('[admin/team-privileges] error:', err.message);
+    res.status(500).json({ success: false, message: 'Failed to update privileges' });
+  }
+});
+
 export default router;
 

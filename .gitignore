@@ -131,3 +131,11 @@ workspaces/
 # Large raw SQL dumps
 /uat.sql
 /*dump*.sql
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+offline_scribe/__pycache__/
+offline_scribe/**/__pycache__/
+server/__pycache__/

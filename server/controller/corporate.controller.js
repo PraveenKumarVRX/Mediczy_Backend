@@ -88,18 +88,19 @@ export const corporateLogin = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid corporate credentials' });
     }
 
-    // Generate JWT token
-    const token = jwt.sign(
-      { 
+    // Issue JTI-tracked token (enables revocation + device fingerprint)
+    const { issuePortalTokenPair } = await import('../services/token-revocation.service.js');
+    const deviceFp = req.headers['x-device-fingerprint'] || null;
+    const { accessToken: token } = await issuePortalTokenPair(
+      {
         id: corporateRecord.id,
         userId: corporateRecord.id,
         corporateId: corporateRecord.id,
         email: corporateRecord.email,
         role: 'corporate',
-        userType: 'corporate'
+        userType: 'corporate',
       },
-      JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
+      { portal: 'corporate', deviceFp }
     );
 
     await auditLoginAttempt(req, corporateRecord.id, normalizedEmail, true);

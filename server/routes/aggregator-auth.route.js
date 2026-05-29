@@ -11,6 +11,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { InsuranceBroker, AuditLog } from '../models/index.js';
 import { authUser } from '../middleware/auth.middleware.js';
+import { authAggregator } from '../middleware/aggregator.middleware.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
@@ -288,7 +289,7 @@ router.post(
  * @desc    Get aggregator profile (requires authentication)
  * @access  Private
  */
-router.get('/profile', authUser, async (req, res) => {
+router.get('/profile', authAggregator, async (req, res) => {
   try {
     const aggregator = await InsuranceBroker.findByPk(req.user.id);
     if (!aggregator) {
@@ -333,7 +334,7 @@ router.get('/profile', authUser, async (req, res) => {
  * @desc    Get aggregator dashboard statistics
  * @access  Private
  */
-router.get('/dashboard', authUser, async (req, res) => {
+router.get('/dashboard', authAggregator, async (req, res) => {
   try {
     const aggregator = await InsuranceBroker.findByPk(req.user.id);
     if (!aggregator) {

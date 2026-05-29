@@ -1,6 +1,7 @@
 import express from 'express';
 import { body } from 'express-validator';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import { authCorporate } from '../middleware/corporate.middleware.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import {
   corporateLogin,
@@ -456,14 +457,14 @@ router.post(
   corporateLogin
 );
 
-router.get('/dashboard/summary', authUser, requireRole('corporate'), getCorporateSummary);
-router.get('/dashboard/health-analytics', authUser, requireRole('corporate'), getCorporateHealthAnalytics);
-router.get('/dashboard/employees-health', authUser, requireRole('corporate'), getCorporateEmployeesHealth);
-router.get('/dashboard/appointments', authUser, requireRole('corporate'), getCorporateAppointments);
+router.get('/dashboard/summary', authCorporate, getCorporateSummary);
+router.get('/dashboard/health-analytics', authCorporate, getCorporateHealthAnalytics);
+router.get('/dashboard/employees-health', authCorporate, getCorporateEmployeesHealth);
+router.get('/dashboard/appointments', authCorporate, getCorporateAppointments);
 
 // Corporate profile — must be defined before the aggregator router (also mounted at /api/corporate)
 // intercepts /profile via its /:id route which only works for aggregator users.
-router.get('/profile', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/profile', authCorporate, async (req, res) => {
   try {
     const corporateId = req.user?.corporateId || req.user?.id;
     const [rows] = await postgresSequelize.query(
@@ -484,7 +485,7 @@ router.get('/profile', authUser, requireRole('corporate'), async (req, res) => {
   }
 });
 
-router.put('/profile', authUser, requireRole('corporate'), async (req, res) => {
+router.put('/profile', authCorporate, async (req, res) => {
   try {
     const corporateId = req.user?.corporateId || req.user?.id;
     const allowed = ['contactPerson', 'phoneNumber', 'alternatePhone', 'industry', 'address', 'gstNumber', 'panNumber'];
@@ -998,17 +999,17 @@ router.get('/claims', authUser, async (req, res) => {
 // Corporate portal: Notifications
 // ---------------------------------------------------------------------------
 
-router.get('/notifications', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/notifications', authCorporate, async (req, res) => {
   return res.json({ success: true, data: { notifications: corporateNotifications } });
 });
 
-router.post('/notifications/:id/read', authUser, requireRole('corporate'), async (req, res) => {
+router.post('/notifications/:id/read', authCorporate, async (req, res) => {
   const { id } = req.params;
   corporateNotifications = corporateNotifications.map((n) => (n.id === id ? { ...n, read: true } : n));
   return res.json({ success: true });
 });
 
-router.post('/notifications/read-all', authUser, requireRole('corporate'), async (req, res) => {
+router.post('/notifications/read-all', authCorporate, async (req, res) => {
   corporateNotifications = corporateNotifications.map((n) => ({ ...n, read: true }));
   return res.json({ success: true });
 });
@@ -1017,7 +1018,7 @@ router.post('/notifications/read-all', authUser, requireRole('corporate'), async
 // Corporate portal: Employees
 // ---------------------------------------------------------------------------
 
-router.get('/employees', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/employees', authCorporate, async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   const department = String(req.query.department || '').trim();
   const corporateId = req.user?.corporateId || req.user?.organization_id;
@@ -1127,7 +1128,7 @@ router.get('/employees', authUser, requireRole('corporate'), async (req, res) =>
 });
 
 // Health Risk Assessment employees endpoint
-router.get('/health-risk/employees', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/health-risk/employees', authCorporate, async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   try {
     let employees = [];
@@ -1198,7 +1199,7 @@ router.get('/health-risk/employees', authUser, requireRole('corporate'), async (
   }
 });
 
-router.post('/employees', authUser, requireRole('corporate'), async (req, res) => {
+router.post('/employees', authCorporate, async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
 
@@ -1245,7 +1246,7 @@ router.post('/employees', authUser, requireRole('corporate'), async (req, res) =
   }
 });
 
-router.put('/employees/:id', authUser, requireRole('corporate'), async (req, res) => {
+router.put('/employees/:id', authCorporate, async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
   const { businessUnit, department, designation, joiningDate } = req.body || {};
@@ -1264,7 +1265,7 @@ router.put('/employees/:id', authUser, requireRole('corporate'), async (req, res
   }
 });
 
-router.delete('/employees/:id', authUser, requireRole('corporate'), async (req, res) => {
+router.delete('/employees/:id', authCorporate, async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
 
@@ -1282,7 +1283,7 @@ router.delete('/employees/:id', authUser, requireRole('corporate'), async (req, 
 });
 
 // Bulk upload employees from CSV/Excel — persists to DB
-router.post('/employees/bulk-upload', authUser, requireRole('corporate'), async (req, res) => {
+router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
 
@@ -1348,7 +1349,7 @@ router.post('/employees/bulk-upload', authUser, requireRole('corporate'), async 
 });
 
 // Download employee template CSV
-router.get('/employees/download-template', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/employees/download-template', authCorporate, async (req, res) => {
   const csvHeader = 'employeeId,name,businessUnit,department,designation,joiningDate\n';
   const csvSample = 'EMP001,John Doe,Technology BU,Engineering,Software Engineer,2024-01-15\n';
   const csvTemplate = csvHeader + csvSample;
@@ -1368,14 +1369,14 @@ let corporateBusinessUnits = [
   { id: 'BU004', name: 'Corporate Services', head: 'Nina Patel', employeeCount: 45, healthScore: 75, checkupCompletion: 83, budget: '$100,000', region: 'HQ', description: 'Shared services and support functions' },
 ];
 
-router.get('/business-units', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/business-units', authCorporate, async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   let units = [...corporateBusinessUnits];
   if (q) units = units.filter((u) => [u.name, u.head, u.region].some((f) => String(f || '').toLowerCase().includes(q)));
   return res.json({ success: true, data: { businessUnits: units } });
 });
 
-router.post('/business-units', authUser, requireRole('corporate'), async (req, res) => {
+router.post('/business-units', authCorporate, async (req, res) => {
   const { name, head, employeeCount, healthScore, checkupCompletion, budget, region, description } = req.body || {};
   if (!name) return res.status(400).json({ success: false, message: 'name is required' });
   const created = {
@@ -1393,7 +1394,7 @@ router.post('/business-units', authUser, requireRole('corporate'), async (req, r
   return res.status(201).json({ success: true, data: { businessUnit: created } });
 });
 
-router.put('/business-units/:id', authUser, requireRole('corporate'), async (req, res) => {
+router.put('/business-units/:id', authCorporate, async (req, res) => {
   const { id } = req.params;
   const idx = corporateBusinessUnits.findIndex((u) => u.id === id);
   if (idx === -1) return res.status(404).json({ success: false, message: 'Business unit not found' });
@@ -1401,7 +1402,7 @@ router.put('/business-units/:id', authUser, requireRole('corporate'), async (req
   return res.json({ success: true, data: { businessUnit: corporateBusinessUnits[idx] } });
 });
 
-router.delete('/business-units/:id', authUser, requireRole('corporate'), async (req, res) => {
+router.delete('/business-units/:id', authCorporate, async (req, res) => {
   const { id } = req.params;
   const before = corporateBusinessUnits.length;
   corporateBusinessUnits = corporateBusinessUnits.filter((u) => u.id !== id);
@@ -1413,7 +1414,7 @@ router.delete('/business-units/:id', authUser, requireRole('corporate'), async (
 // Corporate portal: Departments
 // ---------------------------------------------------------------------------
 
-router.get('/departments', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/departments', authCorporate, async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   let departments = [...corporateDepartments];
   if (q) {
@@ -1424,7 +1425,7 @@ router.get('/departments', authUser, requireRole('corporate'), async (req, res) 
   return res.json({ success: true, data: { departments } });
 });
 
-router.post('/departments', authUser, requireRole('corporate'), async (req, res) => {
+router.post('/departments', authCorporate, async (req, res) => {
   const { name, manager, employeeCount, healthScore, checkupCompletion, budget, location, description } = req.body || {};
   if (!name) return res.status(400).json({ success: false, message: 'name is required' });
   const created = {
@@ -1442,7 +1443,7 @@ router.post('/departments', authUser, requireRole('corporate'), async (req, res)
   return res.status(201).json({ success: true, data: { department: created } });
 });
 
-router.put('/departments/:id', authUser, requireRole('corporate'), async (req, res) => {
+router.put('/departments/:id', authCorporate, async (req, res) => {
   const { id } = req.params;
   const idx = corporateDepartments.findIndex((d) => d.id === id);
   if (idx === -1) return res.status(404).json({ success: false, message: 'Department not found' });
@@ -1450,7 +1451,7 @@ router.put('/departments/:id', authUser, requireRole('corporate'), async (req, r
   return res.json({ success: true, data: { department: corporateDepartments[idx] } });
 });
 
-router.delete('/departments/:id', authUser, requireRole('corporate'), async (req, res) => {
+router.delete('/departments/:id', authCorporate, async (req, res) => {
   const { id } = req.params;
   const before = corporateDepartments.length;
   corporateDepartments = corporateDepartments.filter((d) => d.id !== id);
@@ -1462,11 +1463,11 @@ router.delete('/departments/:id', authUser, requireRole('corporate'), async (req
 // Corporate portal: Reports
 // ---------------------------------------------------------------------------
 
-router.get('/reports', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/reports', authCorporate, async (req, res) => {
   return res.json({ success: true, data: { reports: corporateReports } });
 });
 
-router.post('/reports/generate', authUser, requireRole('corporate'), async (req, res) => {
+router.post('/reports/generate', authCorporate, async (req, res) => {
   const { type, period, format } = req.body || {};
   const now = new Date();
   const created = {
@@ -1484,14 +1485,14 @@ router.post('/reports/generate', authUser, requireRole('corporate'), async (req,
   return res.status(201).json({ success: true, data: { report: created } });
 });
 
-router.get('/reports/:id/preview', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/reports/:id/preview', authCorporate, async (req, res) => {
   const { id } = req.params;
   const report = corporateReports.find((r) => r.id === id);
   if (!report) return res.status(404).json({ success: false, message: 'Report not found' });
   return res.json({ success: true, data: { report } });
 });
 
-router.get('/reports/:id/download', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/reports/:id/download', authCorporate, async (req, res) => {
   const { id } = req.params;
   const report = corporateReports.find((r) => r.id === id);
   if (!report) return res.status(404).json({ success: false, message: 'Report not found' });
@@ -1520,16 +1521,16 @@ router.get('/reports/:id/download', authUser, requireRole('corporate'), async (r
 // Corporate portal: Risk monitor alert configuration
 // ---------------------------------------------------------------------------
 
-router.get('/risk-monitor/alerts', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/risk-monitor/alerts', authCorporate, async (req, res) => {
   return res.json({ success: true, data: { config: corporateRiskAlertsConfig } });
 });
 
-router.put('/risk-monitor/alerts', authUser, requireRole('corporate'), async (req, res) => {
+router.put('/risk-monitor/alerts', authCorporate, async (req, res) => {
   corporateRiskAlertsConfig = { ...corporateRiskAlertsConfig, ...(req.body || {}) };
   return res.json({ success: true, data: { config: corporateRiskAlertsConfig } });
 });
 
-router.get('/risk-monitor/export', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/risk-monitor/export', authCorporate, async (req, res) => {
   // Minimal export: employees list with risk-related fields if present
   const rows = corporateEmployees.map((e) => ({
     employeeId: e.employeeId,
@@ -1548,7 +1549,7 @@ router.get('/risk-monitor/export', authUser, requireRole('corporate'), async (re
 // Corporate portal: Complaints
 // ---------------------------------------------------------------------------
 
-router.get('/complaints', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/complaints', authCorporate, async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   const status = String(req.query.status || '').trim();
   let complaints = [...corporateComplaints];
@@ -1561,7 +1562,7 @@ router.get('/complaints', authUser, requireRole('corporate'), async (req, res) =
   return res.json({ success: true, data: { complaints } });
 });
 
-router.post('/complaints', authUser, requireRole('corporate'), async (req, res) => {
+router.post('/complaints', authCorporate, async (req, res) => {
   const { category, subject, description, priority, employeeName, employeeId } = req.body || {};
   if (!category || !subject || !description) {
     return res.status(400).json({ success: false, message: 'category, subject, and description are required' });
@@ -1585,7 +1586,7 @@ router.post('/complaints', authUser, requireRole('corporate'), async (req, res) 
   return res.status(201).json({ success: true, data: { complaint: created } });
 });
 
-router.put('/complaints/:id', authUser, requireRole('corporate'), async (req, res) => {
+router.put('/complaints/:id', authCorporate, async (req, res) => {
   const { id } = req.params;
   const idx = corporateComplaints.findIndex((c) => c.id === id);
   if (idx === -1) return res.status(404).json({ success: false, message: 'Complaint not found' });
@@ -1599,11 +1600,11 @@ router.put('/complaints/:id', authUser, requireRole('corporate'), async (req, re
 // Corporate portal: Billing
 // ---------------------------------------------------------------------------
 
-router.get('/billing/history', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/billing/history', authCorporate, async (req, res) => {
   return res.json({ success: true, data: { invoices: corporateBillingHistory } });
 });
 
-router.get('/billing/invoices/:id/download', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/billing/invoices/:id/download', authCorporate, async (req, res) => {
   const { id } = req.params;
   const invoice = corporateBillingHistory.find((inv) => inv.id === id);
   if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
@@ -1618,7 +1619,7 @@ router.get('/billing/invoices/:id/download', authUser, requireRole('corporate'),
 // Corporate portal: Claims management
 // ---------------------------------------------------------------------------
 
-router.get('/claims/management', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/claims/management', authCorporate, async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   const status = String(req.query.status || '').trim();
   let claims = [...corporateClaims];
@@ -1633,7 +1634,7 @@ router.get('/claims/management', authUser, requireRole('corporate'), async (req,
   return res.json({ success: true, data: { claims } });
 });
 
-router.put('/claims/management/:id', authUser, requireRole('corporate'), async (req, res) => {
+router.put('/claims/management/:id', authCorporate, async (req, res) => {
   const { id } = req.params;
   const idx = corporateClaims.findIndex((c) => c.id === id);
   if (idx === -1) return res.status(404).json({ success: false, message: 'Claim not found' });
@@ -1642,7 +1643,7 @@ router.put('/claims/management/:id', authUser, requireRole('corporate'), async (
   return res.json({ success: true, data: { claim: next } });
 });
 
-router.get('/claims/management/:id/download', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/claims/management/:id/download', authCorporate, async (req, res) => {
   const { id } = req.params;
   const claim = corporateClaims.find((c) => c.id === id);
   if (!claim) return res.status(404).json({ success: false, message: 'Claim not found' });
@@ -1833,7 +1834,7 @@ if (wellnessActivities.length === 0) {
 
 // Base wellness-calendar route — redirect to activities summary so the aggregator
 // router's /:id catch-all doesn't intercept it and crash with a type-cast error.
-router.get('/wellness-calendar', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/wellness-calendar', authCorporate, async (req, res) => {
   try {
     res.json({
       success: true,
@@ -1850,7 +1851,7 @@ router.get('/wellness-calendar', authUser, requireRole('corporate'), async (req,
 });
 
 // Get wellness calendar activities
-router.get('/wellness-calendar/activities', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/wellness-calendar/activities', authCorporate, async (req, res) => {
   try {
     const corporateId = req.user?.corporateId || req.user?.organization_id;
     const rows = await postgresSequelize.query(
@@ -2095,11 +2096,11 @@ let corporateSettings = {
   }
 };
 
-router.get('/settings', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/settings', authCorporate, async (req, res) => {
   res.json({ success: true, data: { settings: corporateSettings } });
 });
 
-router.put('/settings', authUser, requireRole('corporate'), async (req, res) => {
+router.put('/settings', authCorporate, async (req, res) => {
   try {
     const updates = req.body;
     corporateSettings = { ...corporateSettings, ...updates };
@@ -2115,7 +2116,7 @@ router.put('/settings', authUser, requireRole('corporate'), async (req, res) => 
 // ---------------------------------------------------------------------------
 let corporateAppointments = [];
 
-router.post('/appointments', authUser, requireRole('corporate'), async (req, res) => {
+router.post('/appointments', authCorporate, async (req, res) => {
   try {
     const { employeeId, employeeName, department, appointmentType, doctorName, facility, date, time, notes } = req.body;
     
@@ -2154,18 +2155,18 @@ router.post('/appointments', authUser, requireRole('corporate'), async (req, res
   }
 });
 
-router.get('/appointments', authUser, requireRole('corporate'), getCorporateAppointments);
+router.get('/appointments', authCorporate, getCorporateAppointments);
 
 // ---------------------------------------------------------------------------
 // Challenges Routes (for gamification)
 // ---------------------------------------------------------------------------
 let corporateChallenges = [];
 
-router.get('/challenges', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/challenges', authCorporate, async (req, res) => {
   res.json({ success: true, data: { challenges: corporateChallenges } });
 });
 
-router.post('/challenges', authUser, requireRole('corporate'), async (req, res) => {
+router.post('/challenges', authCorporate, async (req, res) => {
   try {
     const { title, description, type, target, unit, startDate, endDate, rewards } = req.body;
 
@@ -2205,7 +2206,7 @@ router.post('/challenges', authUser, requireRole('corporate'), async (req, res) 
   }
 });
 
-router.put('/challenges/:id', authUser, requireRole('corporate'), async (req, res) => {
+router.put('/challenges/:id', authCorporate, async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
@@ -2271,7 +2272,7 @@ router.get('/benefits/bookings', authUser, async (req, res) => {
 // ---------------------------------------------------------------------------
 // Employee Details Route
 // ---------------------------------------------------------------------------
-router.get('/employees/:id', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/employees/:id', authCorporate, async (req, res) => {
   try {
     const { id } = req.params;
     const employee = corporateEmployees.find(e => e.id === id || e.employeeId === id);
@@ -2287,7 +2288,7 @@ router.get('/employees/:id', authUser, requireRole('corporate'), async (req, res
 // ---------------------------------------------------------------------------
 // Health Calendar Routes
 // ---------------------------------------------------------------------------
-router.get('/health-calendar/events', authUser, requireRole('corporate'), async (req, res) => {
+router.get('/health-calendar/events', authCorporate, async (req, res) => {
   try {
     const corporateId = req.user?.corporateId || req.user?.organization_id;
     const rows = await postgresSequelize.query(
@@ -2306,7 +2307,7 @@ router.get('/health-calendar/events', authUser, requireRole('corporate'), async 
   }
 });
 
-router.post('/health-calendar/events', authUser, requireRole('corporate'), async (req, res) => {
+router.post('/health-calendar/events', authCorporate, async (req, res) => {
   try {
     const corporateId = req.user?.corporateId || req.user?.organization_id;
     const { title, description, type, date, time, location, participants, notes } = req.body;

@@ -2,6 +2,7 @@ import express from 'express';
 import { TPA } from '../models/tpa.model.intelligent.js';
 import { Corporate } from '../models/insurance-company.model.intelligent.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import { authTPA } from '../middleware/tpa.middleware.js';
 import jwt from 'jsonwebtoken';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import heritageTPA from '../services/heritage-tpa.service.js';
@@ -438,7 +439,7 @@ router.post('/login', authLimiter, async (req, res) => {
  * TPA Profile
  * GET /api/tpa/profile
  */
-router.get('/profile', authUser, requireRole('tpa'), async (req, res) => {
+router.get('/profile', authTPA, async (req, res) => {
   try {
     const tpa = await TPA.findByPk(req.user.id, {
       attributes: { exclude: ['password'] }
@@ -469,7 +470,7 @@ router.get('/profile', authUser, requireRole('tpa'), async (req, res) => {
  * Onboard Corporate (TPA creates corporate record)
  * POST /api/tpa/corporates
  */
-router.post('/corporates', authUser, requireRole('tpa'), async (req, res) => {
+router.post('/corporates', authTPA, async (req, res) => {
   try {
     const {
       companyName,
@@ -553,7 +554,7 @@ router.post('/corporates', authUser, requireRole('tpa'), async (req, res) => {
  * List Corporates (onboarded by this TPA)
  * GET /api/tpa/corporates
  */
-router.get('/corporates', authUser, requireRole('tpa'), async (req, res) => {
+router.get('/corporates', authTPA, async (req, res) => {
   try {
     const { status, page = 1, limit = 20 } = req.query;
 
@@ -593,7 +594,7 @@ router.get('/corporates', authUser, requireRole('tpa'), async (req, res) => {
  * GET /api/tpa/dashboard
  * Get TPA dashboard statistics
  */
-router.get('/dashboard', authUser, requireRole('tpa'), async (req, res) => {
+router.get('/dashboard', authTPA, async (req, res) => {
   try {
     // Mock stats - replace with actual database queries later
     const stats = {
@@ -622,7 +623,7 @@ router.get('/dashboard', authUser, requireRole('tpa'), async (req, res) => {
  * GET /api/tpa/claims
  * Get claims list
  */
-router.get('/claims', authUser, requireRole('tpa'), async (req, res) => {
+router.get('/claims', authTPA, async (req, res) => {
   try {
     const { status, page = 1, limit = 20 } = req.query;
 

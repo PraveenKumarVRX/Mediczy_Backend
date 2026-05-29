@@ -486,6 +486,26 @@ if (process.env.NODE_ENV !== 'test') {
   initializeDataRetentionScheduler();
 }
 
+// Purge expired portal refresh tokens daily at 03:30 (runs after data-retention window)
+if (process.env.NODE_ENV !== 'test') {
+  import('./services/token-revocation.service.js').then(({ purgeExpiredTokens }) => {
+    const PURGE_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 h
+    // Initial run offset to 03:30 local; subsequent runs every 24 h
+    const now = new Date();
+    const next330 = new Date(now);
+    next330.setHours(3, 30, 0, 0);
+    if (next330 <= now) next330.setDate(next330.getDate() + 1);
+    const initialDelay = next330 - now;
+    setTimeout(() => {
+      purgeExpiredTokens().then((n) => console.log(`[token-purge] Purged ${n} expired tokens`)).catch(() => {});
+      setInterval(() => {
+        purgeExpiredTokens().then((n) => console.log(`[token-purge] Purged ${n} expired tokens`)).catch(() => {});
+      }, PURGE_INTERVAL_MS);
+    }, initialDelay);
+    console.log(`[token-purge] Scheduled: first run at 03:30, then every 24 h`);
+  }).catch((err) => console.warn('[token-purge] Could not schedule purge:', err.message));
+}
+
 // ==================== SECURITY MIDDLEWARE ====================
 
 // 1. Helmet - Security Headers (XSS, HSTS, etc.)

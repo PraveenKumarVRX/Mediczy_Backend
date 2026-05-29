@@ -51,8 +51,15 @@ async function ensureTable() {
   }
 }
 
-// Bootstrap on module load (non-blocking)
-ensureTable().catch(() => {});
+// Bootstrap on module load (non-blocking).
+// If the pool has no password configured, ensureTable() will fail; we log a
+// warning so ops can see the issue rather than silently failing open.
+ensureTable().catch((err) => {
+  console.error(
+    '[token-revocation] WARN: Table bootstrap failed — isTokenRevoked() will ' +
+    'fail-open (return false) until DB is available. Cause:', err.message
+  );
+});
 
 // ─── Issue a token pair for a portal ─────────────────────────────────────────
 /**
