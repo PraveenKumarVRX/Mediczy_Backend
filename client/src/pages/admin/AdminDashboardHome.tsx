@@ -3,14 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import AdminLayout from '@/components/layout/AdminLayout';
 import api from '@/utils/api';
-import { 
-  Users, 
-  Stethoscope, 
-  FlaskConical, 
-  Pill, 
-  Building2, 
-  TrendingUp, 
-  ArrowRight, 
+import {
+  Users,
+  Stethoscope,
+  FlaskConical,
+  Pill,
+  Building2,
+  Building,
+  Hospital,
+  TrendingUp,
+  ArrowRight,
   Crown,
   CheckCircle2,
   Plus,
@@ -62,11 +64,10 @@ interface PaymentAnalytics {
 
 interface ARAnalytics {
   totalAR: number;
-  current: number;
-  days30: number;
-  days60: number;
-  days90: number;
-  over90: number;
+  current: number;   // 0–30 days
+  days30: number;    // 31–60 days
+  days60: number;    // 61–90 days
+  over90: number;    // >90 days
   dso: number;
   arTurnover: number;
 }
@@ -195,7 +196,6 @@ const AdminDashboardHome = () => {
           current: 0,
           days30: 0,
           days60: 0,
-          days90: 0,
           over90: 0,
           dso: 0,
           arTurnover: 0
@@ -238,7 +238,7 @@ const AdminDashboardHome = () => {
         paidInvoices: 0, unpaidInvoices: 0, partiallyPaid: 0
       });
       setArAnalytics({
-        totalAR: 0, current: 0, days30: 0, days60: 0, days90: 0, over90: 0, dso: 0, arTurnover: 0
+        totalAR: 0, current: 0, days30: 0, days60: 0, over90: 0, dso: 0, arTurnover: 0
       });
       
       // Set error state for UI display
@@ -267,26 +267,26 @@ const AdminDashboardHome = () => {
       border: 'border-green-500/20',
       pattern: 'radial-gradient(circle at 0% 0%, rgba(34, 197, 94, 0.05) 0%, transparent 50%)'
     },
-    { 
-      icon: Building2, 
-      label: 'Hospitals', 
-      value: stats?.hospitals || 0, 
-      color: 'text-red-500', 
+    {
+      icon: Hospital,
+      label: 'Hospitals',
+      value: stats?.hospitals || 0,
+      color: 'text-red-500',
       bg: 'bg-gradient-to-br from-red-500/10 to-pink-500/10',
       border: 'border-red-500/20',
       pattern: 'radial-gradient(circle at 100% 0%, rgba(239, 68, 68, 0.05) 0%, transparent 50%)'
     },
-    { 
-      icon: FlaskConical, 
-      label: 'Labs', 
-      value: stats?.labs || 0, 
-      color: 'text-purple-500', 
+    {
+      icon: FlaskConical,
+      label: 'Labs',
+      value: stats?.labs || 0,
+      color: 'text-purple-500',
       bg: 'bg-gradient-to-br from-purple-500/10 to-violet-500/10',
       border: 'border-purple-500/20',
       pattern: 'radial-gradient(circle at 100% 0%, rgba(147, 51, 234, 0.05) 0%, transparent 50%)'
     },
-    { 
-      icon: Building2, 
+    {
+      icon: Building,
       label: 'Clinics', 
       value: stats?.clinics || 0, 
       color: 'text-pink-500', 
@@ -347,7 +347,7 @@ const AdminDashboardHome = () => {
                     paidInvoices: 268, unpaidInvoices: 58, partiallyPaid: 16
                   });
                   setArAnalytics({
-                    totalAR: 1450000, current: 680000, days30: 420000, days60: 230000, days90: 85000,
+                    totalAR: 1450000, current: 680000, days30: 420000, days60: 230000,
                     over90: 35000, dso: 42, arTurnover: 8.5
                   });
                   setLoading(false);

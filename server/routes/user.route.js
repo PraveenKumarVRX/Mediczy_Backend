@@ -45,6 +45,17 @@ const buildSignupVerificationKey = (email, phoneNumber) => {
   return `signup:verify:${normalizeEmail(email)}:${normalizePhone(phoneNumber)}`;
 };
 
+const MEMBERSHIP_RENEWAL_EXEMPT_EMAILS = new Set(
+  String(process.env.MEMBERSHIP_RENEWAL_EXEMPT_EMAILS || 'user@mediczy.com')
+    .split(',')
+    .map((email) => String(email || '').trim().toLowerCase())
+    .filter(Boolean)
+);
+
+const isMembershipRenewalExemptEmail = (email) => {
+  return MEMBERSHIP_RENEWAL_EXEMPT_EMAILS.has(normalizeEmail(email));
+};
+
 const isLoopbackRequest = (req) => {
   const host = String(req.hostname || '').toLowerCase();
   const ip = String(req.ip || '').toLowerCase();
@@ -1459,7 +1470,8 @@ router.post(
         });
       }
 
-      if (user.status !== 'active' || user.isActive === false) {
+      const isRenewalExemptUser = isMembershipRenewalExemptEmail(user.email);
+      if ((user.status !== 'active' || user.isActive === false) && !isRenewalExemptUser) {
         await auditLoginAttempt(req, user.id, user.email, false, 'Inactive user attempted OTP login');
         const details = await buildInactiveAccountContext(user.id);
         return res.status(403).json({
@@ -1472,6 +1484,11 @@ router.post(
             : 'Account is inactive. Please contact support.',
           details
         });
+      }
+
+      if (isRenewalExemptUser && user.status !== 'active') {
+        await userModel.update({ status: 'active' }, { where: { id: user.id } });
+        user.status = 'active';
       }
 
       // Generate JWT Token

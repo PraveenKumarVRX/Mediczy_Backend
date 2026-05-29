@@ -101,6 +101,13 @@ interface NavGroup {
   items: NavItem[];
 }
 
+interface Notification {
+  id: number;
+  title: string;
+  time: string;
+  unread: boolean;
+}
+
 const AdminLayout = ({ children }: AdminLayoutProps) => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -127,16 +134,12 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
   });
 
   const adminData = JSON.parse(localStorage.getItem('adminData') || '{}');
-  const adminName = adminData?.firstName 
+  const adminName = adminData?.firstName
     ? `${adminData.firstName} ${adminData.lastName || ''}`.trim()
     : adminData?.email?.split('@')[0] || 'Admin';
-  const adminEmail = adminData?.email || 'admin@mediczy.com';
-  
-  const notifications = [
-    { id: 1, title: 'New provider request', time: '5m ago', unread: true },
-    { id: 2, title: '2 invoices need review', time: '30m ago', unread: true },
-    { id: 3, title: 'Security audit passed', time: 'Today', unread: false },
-  ];
+  const adminEmail = adminData?.email || 'admin@mediqzy.com';
+
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const unreadCount = notifications.filter(n => n.unread).length;
 
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
@@ -148,6 +151,35 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
     communication: false,
     system: true,
   });
+
+  // Auth gate — redirect to login if no valid session token present
+  useEffect(() => {
+    const adminToken = localStorage.getItem('adminToken');
+    const teamToken = localStorage.getItem('teamToken');
+    if (!adminToken && !teamToken) {
+      navigate('/admin/login');
+    }
+  }, [navigate]);
+
+  // Fetch real notifications from API
+  useEffect(() => {
+    const token = localStorage.getItem('adminToken');
+    if (!token) return;
+    api.get('/notifications?limit=5')
+      .then(({ data }) => {
+        if (data.success && Array.isArray(data.notifications)) {
+          setNotifications(
+            data.notifications.slice(0, 5).map((n: any) => ({
+              id: n.id,
+              title: n.title || n.message || 'Notification',
+              time: n.createdAt ? new Date(n.createdAt).toLocaleString() : '',
+              unread: !n.isRead,
+            }))
+          );
+        }
+      })
+      .catch(() => {}); // notifications are non-critical
+  }, []);
 
   // Persist collapsed state
   useEffect(() => {
@@ -333,6 +365,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
         { icon: Truck, label: 'Medivac', path: '/admin/medivac', color: 'text-red-600', bg: 'bg-red-600/10' },
         { icon: Heart, label: 'NGO', path: '/admin/ngo', color: 'text-pink-600', bg: 'bg-pink-600/10' },
         { icon: Landmark, label: 'PSU', path: '/admin/psu', color: 'text-orange-600', bg: 'bg-orange-600/10' },
+        { icon: Briefcase, label: 'Brokers', path: '/admin/brokers', color: 'text-blue-500', bg: 'bg-blue-500/10' },
       ]
     },
     {
@@ -839,7 +872,10 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
                   <DropdownMenuItem disabled>No notifications</DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-center justify-center text-blue-600 dark:text-blue-400">
+                <DropdownMenuItem
+                  className="text-center justify-center text-blue-600 dark:text-blue-400"
+                  onClick={() => navigate('/admin/activity-log')}
+                >
                   View all notifications
                 </DropdownMenuItem>
               </DropdownMenuContent>

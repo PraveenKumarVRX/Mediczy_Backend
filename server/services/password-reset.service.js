@@ -63,6 +63,10 @@ class PasswordResetService {
     return false;
   }
 
+  shouldBlockInactiveDuringPasswordReset() {
+    return String(process.env.PASSWORD_RESET_BLOCK_INACTIVE_ACCOUNTS || 'false').toLowerCase() === 'true';
+  }
+
   /**
    * Request password reset with OTP
    * Sends OTP via Email, SMS, and WhatsApp
@@ -124,7 +128,7 @@ class PasswordResetService {
         };
       }
 
-      if (this.isAccountInactive(account)) {
+      if (this.shouldBlockInactiveDuringPasswordReset() && this.isAccountInactive(account)) {
         return {
           success: false,
           code: 'ACCOUNT_INACTIVE',
@@ -445,7 +449,7 @@ class PasswordResetService {
         };
       }
 
-      if (this.isAccountInactive(account)) {
+      if (this.shouldBlockInactiveDuringPasswordReset() && this.isAccountInactive(account)) {
         return {
           success: false,
           code: 'ACCOUNT_INACTIVE',
@@ -563,7 +567,7 @@ class PasswordResetService {
         };
       }
 
-      if (this.isAccountInactive(account)) {
+      if (this.shouldBlockInactiveDuringPasswordReset() && this.isAccountInactive(account)) {
         return {
           success: false,
           code: 'ACCOUNT_INACTIVE',

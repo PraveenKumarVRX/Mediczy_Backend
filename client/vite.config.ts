@@ -5,6 +5,10 @@ import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  test: {
+    environment: 'jsdom',
+    globals: true,
+  },
   server: {
     // Bind to all interfaces for browser access
     host: "0.0.0.0",

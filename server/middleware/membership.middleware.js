@@ -2,6 +2,18 @@ import { UserPlan } from '../models/postgres/membershipPlan.model.postgres.js';
 import { Op } from 'sequelize';
 import { auditAccountStatusTransition } from './audit.middleware.js';
 
+const MEMBERSHIP_RENEWAL_EXEMPT_EMAILS = new Set(
+  String(process.env.MEMBERSHIP_RENEWAL_EXEMPT_EMAILS || 'user@mediczy.com')
+    .split(',')
+    .map((email) => String(email || '').trim().toLowerCase())
+    .filter(Boolean)
+);
+
+const isMembershipRenewalExemptUser = (user) => {
+  const email = String(user?.email || '').trim().toLowerCase();
+  return MEMBERSHIP_RENEWAL_EXEMPT_EMAILS.has(email);
+};
+
 /**
  * Middleware to validate user has an active membership plan
  * Sets user status to inactive if no valid membership found
@@ -50,6 +62,38 @@ export const validateMembership = async (req, res, next) => {
         success: false,
         message: 'User not authenticated' 
       });
+    }
+
+    // Testing account exception: never expire due to membership renewal policy.
+    if (isMembershipRenewalExemptUser(req.user)) {
+      if (req.user.status !== 'active') {
+        const userModel = await import('../models/user.model.intelligent.js');
+        await userModel.default.update(
+          { status: 'active' },
+          { where: { id: userId } }
+        );
+        await auditAccountStatusTransition(req, {
+          userId,
+          userEmail: req.user?.email,
+          fromStatus: req.user?.status || 'unknown',
+          toStatus: 'active',
+          reasonCode: 'RENEWAL_EXEMPT_TEST_USER',
+          reason: 'Membership renewal exemption for testing account',
+          source: 'validateMembership',
+        });
+        req.user.status = 'active';
+      }
+
+      req.userMembership = {
+        planId: null,
+        status: 'active',
+        startDate: null,
+        endDate: null,
+        autoRenew: true,
+        daysRemaining: Number.MAX_SAFE_INTEGER,
+        renewalExempt: true,
+      };
+      return next();
     }
 
     // Find active membership plan for user
@@ -241,6 +285,39 @@ export const checkMembershipExpiry = async (req, res, next) => {
 export const syncUserStatusWithMembership = async (userId) => {
   try {
     const currentDate = new Date().toISOString().split('T')[0];
+    const userModel = await import('../models/user.model.intelligent.js');
+    const currentUser = await userModel.default.findOne({
+      where: { id: userId },
+      attributes: ['status', 'email']
+    });
+
+    if (isMembershipRenewalExemptUser(currentUser)) {
+      if (currentUser?.status !== 'active') {
+        await userModel.default.update(
+          { status: 'active' },
+          { where: { id: userId } }
+        );
+        await auditAccountStatusTransition(
+          {
+            user: { id: userId, role: 'system', email: currentUser?.email || null },
+            ip: 'system',
+            headers: {},
+            method: 'SYSTEM',
+            originalUrl: '/system/membership-sync',
+          },
+          {
+            userId,
+            userEmail: currentUser?.email || null,
+            fromStatus: currentUser?.status || 'unknown',
+            toStatus: 'active',
+            reasonCode: 'RENEWAL_EXEMPT_TEST_USER',
+            reason: 'Membership renewal exemption for testing account',
+            source: 'syncUserStatusWithMembership',
+          }
+        );
+      }
+      return { success: true, status: 'active', hasActivePlan: true, renewalExempt: true };
+    }
     
     const activePlan = await UserPlan.findOne({
       where: {
@@ -251,8 +328,6 @@ export const syncUserStatusWithMembership = async (userId) => {
       }
     });
 
-    const userModel = await import('../models/user.model.intelligent.js');
-    
     if (activePlan) {
       // Has valid membership - ensure active
       const previousStatus = await userModel.default.findOne({

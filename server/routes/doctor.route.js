@@ -28,6 +28,16 @@ import {
 
 const router = express.Router();
 
+const MEMBERSHIP_RENEWAL_EXEMPT_EMAILS = new Set(
+  String(process.env.MEMBERSHIP_RENEWAL_EXEMPT_EMAILS || 'user@mediczy.com')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean)
+);
+
+const isMembershipRenewalExemptEmail = (email) =>
+  MEMBERSHIP_RENEWAL_EXEMPT_EMAILS.has(String(email || '').trim().toLowerCase());
+
 console.log('🔷 [doctor.route.js] Module loaded');
 console.log('🔷 signInDoctor type:', typeof signInDoctor);
 
@@ -2889,10 +2899,21 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     const consultationFee = Number(appointment.consultationFee ?? appointment.paymentAmount ?? 0);
     const isNominalOrFreeConsultation = Number.isFinite(consultationFee) && consultationFee <= 1;
 
+    let isMembershipRenewalExemptUser = false;
+    if (isMembershipRenewalExemptEmail(appointment?.patient?.email)) {
+      isMembershipRenewalExemptUser = true;
+    } else if (appointment?.userId) {
+      const patient = await User.findByPk(appointment.userId, {
+        attributes: ['id', 'email']
+      });
+      isMembershipRenewalExemptUser = isMembershipRenewalExemptEmail(patient?.email);
+    }
+
     if (
       ['online', 'video'].includes(appointment.consultationType) &&
       !isPaymentSettled &&
-      !isNominalOrFreeConsultation
+      !isNominalOrFreeConsultation &&
+      !isMembershipRenewalExemptUser
     ) {
       // Check if user has an active membership plan
       const activePlan = await UserPlan.findOne({

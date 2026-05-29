@@ -12,6 +12,17 @@ import Assistant from "../models/assistant.model.intelligent.js";
 import { UserPlan, MembershipPlan } from "../models/membershipPlan.model.intelligent.js";
 import postgresSequelize from "../db/postgres-sequelize.js";
 
+const MEMBERSHIP_RENEWAL_EXEMPT_EMAILS = new Set(
+  String(process.env.MEMBERSHIP_RENEWAL_EXEMPT_EMAILS || 'user@mediczy.com')
+    .split(',')
+    .map((email) => String(email || '').trim().toLowerCase())
+    .filter(Boolean)
+);
+
+const isMembershipRenewalExemptEmail = (email) => {
+  return MEMBERSHIP_RENEWAL_EXEMPT_EMAILS.has(String(email || '').trim().toLowerCase());
+};
+
 const buildInactiveAccountContext = async (userId) => {
   try {
     const latestPlan = await UserPlan.findOne({
@@ -441,8 +452,10 @@ export async function signInUser(req, res) {
       return res.status(401).json({ success: false, message: "Invalid email or password" }); // Unauthorized
     }
 
+    const isRenewalExemptUser = isMembershipRenewalExemptEmail(user.email);
+
     // Account guard for suspended/inactive users
-    if (user.status !== 'active' || user.isActive === false) {
+    if ((user.status !== 'active' || user.isActive === false) && !isRenewalExemptUser) {
       await auditLoginAttempt(req, user.id, loginIdentifier, false, 'Inactive user attempted login');
       const details = await buildInactiveAccountContext(user.id);
       return res.status(403).json({
@@ -455,6 +468,11 @@ export async function signInUser(req, res) {
           : "Account is inactive. Please contact support.",
         details
       });
+    }
+
+    if (isRenewalExemptUser && user.status !== 'active') {
+      await userModel.update({ status: 'active' }, { where: { id: user.id } });
+      user.status = 'active';
     }
 
     // Role guard from unified user table - prevents cross-portal login by role

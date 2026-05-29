@@ -73,6 +73,9 @@ interface Appointment {
   reason?: string;
   notes?: string;
   paymentStatus: string;
+  paymentStatusEffective?: string;
+  isMembershipRenewalExemptUser?: boolean;
+  isVideoPaymentEligible?: boolean;
   createdAt: string;
 }
 
@@ -100,19 +103,23 @@ const getDoctorCallState = (apt: Appointment) => {
     };
   }
 
-  const paymentStatus = normalizeStatus(apt.paymentStatus || "");
-  const consultationFee = Number(apt.consultationFee ?? 0);
-  const isNominalOrFreeConsultation = Number.isFinite(consultationFee) && consultationFee <= 1;
-  if (
-    paymentStatus &&
-    !["paid", "credit", "free", "complimentary", "coupon"].includes(paymentStatus) &&
-    !isNominalOrFreeConsultation
-  ) {
-    return {
-      show: true,
-      enabled: false,
-      reason: "Awaiting payment or active membership for this patient.",
-    };
+  const isPaymentEligible = apt.isVideoPaymentEligible === true;
+  if (!isPaymentEligible) {
+    const paymentStatus = normalizeStatus(apt.paymentStatusEffective || apt.paymentStatus || "");
+    const consultationFee = Number(apt.consultationFee ?? 0);
+    const isNominalOrFreeConsultation = Number.isFinite(consultationFee) && consultationFee <= 1;
+    if (
+      paymentStatus &&
+      !["paid", "credit", "free", "complimentary", "coupon"].includes(paymentStatus) &&
+      !isNominalOrFreeConsultation &&
+      !apt.isMembershipRenewalExemptUser
+    ) {
+      return {
+        show: true,
+        enabled: false,
+        reason: "Awaiting payment or active membership for this patient.",
+      };
+    }
   }
 
   const appointmentDateTime = new Date(`${apt.appointmentDate} ${apt.appointmentTime || "00:00"}`);
@@ -408,6 +415,9 @@ const DoctorAppointments = () => {
     const cfg = statusCfg(ds);
     const initials = getInitials(apt.patientName);
     const color = avatarColor(apt.id);
+    const displayPaymentStatus = normalizeStatus(apt.paymentStatusEffective || apt.paymentStatus || "");
+    const isPaymentSettled = ["paid", "credit", "free", "complimentary", "coupon"].includes(displayPaymentStatus);
+    const paymentLabel = apt.isMembershipRenewalExemptUser && !isPaymentSettled ? "Membership" : (isPaymentSettled ? "Paid" : "Pending");
 
     return (
       <div
@@ -457,8 +467,8 @@ const DoctorAppointments = () => {
               <span className="inline-flex items-center gap-1 text-xs bg-gray-50 dark:bg-gray-800 px-2.5 py-1 rounded-lg">
                 <CreditCard className="h-3 w-3 text-gray-500" />
                 <span className="font-medium text-gray-900 dark:text-gray-100">₹{apt.consultationFee}</span>
-                <span className={`ml-0.5 font-semibold ${apt.paymentStatus === "paid" ? "text-emerald-600" : "text-amber-500"}`}>
-                  · {apt.paymentStatus === "paid" ? "Paid" : "Pending"}
+                <span className={`ml-0.5 font-semibold ${isPaymentSettled ? "text-emerald-600" : "text-amber-500"}`}>
+                  · {paymentLabel}
                 </span>
               </span>
             )}
