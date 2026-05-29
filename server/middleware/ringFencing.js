@@ -640,6 +640,16 @@ const PUBLIC_ENDPOINTS = [
   '/api/insurance-company/login',
   '/api/insurance-company/corporate/login',
   '/api/hospital-insurance/auth/login',
+  // TPA portal — QA-BUG-001: was missing, caused 401 NO_TOKEN on login
+  '/api/tpa/login',
+  '/api/tpa/register',
+  // Aggregator portal — QA-BUG-002: was missing, caused 401 NO_TOKEN on login
+  '/api/aggregator-auth/login',
+  '/api/aggregator-auth/register',
+  // Clinic role-specific logins — QA-BUG-003: paths not listed, only /api/clinic/login was
+  '/api/clinic/doctor-login',
+  '/api/clinic/nurse-login',
+  '/api/clinic/assistant-login',
   '/api/hospital-insurance/auth/verify',
   '/api/hospital-insurance/auth/logout',
   '/api/broker-integrations/health',

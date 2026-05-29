@@ -1,5 +1,5 @@
 import express from 'express';
-import { body } from 'express-validator';
+import { body, validationResult } from 'express-validator';
 import { createHash } from 'crypto';
 import { randomUUID } from 'crypto';
 import userModel from '../models/user.model.intelligent.js';
@@ -189,9 +189,15 @@ async function revokeAllUserTokens(userId) {
 // ─── Team login ───────────────────────────────────────────────────────────────
 router.post('/login', authLimiter, [
   body('email').isEmail().withMessage('Must be a valid email'),
-  body('password').isLength({ min: 8 }).withMessage('Password required'),
+  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
 ], async (req, res) => {
   try {
+    // QA-BUG-005: validators were defined but result never checked
+    const valErrors = validationResult(req);
+    if (!valErrors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: valErrors.array() });
+    }
+
     const ip = req.ip || req.socket?.remoteAddress || 'unknown';
     const email = (req.body.email || '').trim().toLowerCase();
     const password = req.body.password || '';

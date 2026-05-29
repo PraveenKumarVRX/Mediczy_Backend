@@ -1865,14 +1865,20 @@ router.put("/profile", authUser, async (req, res) => {
  * @access  Public
  */
 const forgotPasswordValidators = [
-  body("email").optional().isEmail().withMessage("Must be a valid email"),
+  body("email").optional().isEmail().normalizeEmail().withMessage("Must be a valid email"),
   body("phone").optional().matches(/^\+?[1-9]\d{1,14}$/).withMessage("Invalid phone format"),
-  body("userType").optional().isIn(['user', 'doctor']).withMessage("User type must be 'user' or 'doctor'")
+  body("userType").optional().isIn(['user', 'doctor', 'team']).withMessage("User type must be 'user', 'doctor', or 'team'")
 ];
 
 const forgotPasswordHandler = async (req, res) => {
   try {
     const { email, phone, userType = 'user' } = req.body;
+
+    // QA-BUG-006: validators were optional so invalid email slipped through
+    const valErrors = validationResult(req);
+    if (!valErrors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: valErrors.array() });
+    }
 
     // Require at least email or phone
     if (!email && !phone) {

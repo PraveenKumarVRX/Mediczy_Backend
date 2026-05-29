@@ -32,7 +32,7 @@ router.post('/login', authLimiter, async (req, res) => {
     // Find ambulance by email - select only needed fields for faster query
     const ambulance = await Ambulance.findOne({
       where: { email: normalizedEmail },
-      attributes: ['id', 'providerName', 'email', 'password', 'phone', 'emergencyPhone', 'vehicleNumber', 'tenant_id'],
+      attributes: ['id', 'providerName', 'email', 'password', 'phone', 'emergencyPhone', 'vehicleNumber'],
       raw: true
     });
 
@@ -57,12 +57,7 @@ router.post('/login', authLimiter, async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      {
-        id: ambulance.id,
-        email: ambulance.email,
-        type: 'ambulance',
-        tenant_id: ambulance.tenant_id
-      },
+      { id: ambulance.id, email: ambulance.email, role: 'ambulance', type: 'ambulance' },
       JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
@@ -74,13 +69,10 @@ router.post('/login', authLimiter, async (req, res) => {
       token,
       ambulance: {
         id: ambulance.id,
-        name: ambulance.name,
+        providerName: ambulance.providerName,
         email: ambulance.email,
         phone: ambulance.phone,
-        license_number: ambulance.license_number,
-        vehicles: ambulance.vehicles,
-        tenant_id: ambulance.tenant_id
-      }
+      },
     });
   } catch (error) {
     console.error('Ambulance login error:', error);
