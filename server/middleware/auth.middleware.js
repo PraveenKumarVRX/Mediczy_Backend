@@ -11,50 +11,23 @@ import DoctorPostgres from "../models/postgres/doctor.model.postgres.js";
 import NursePostgres from "../models/postgres/nurse.model.postgres.js";
 import AssistantPostgres from "../models/postgres/doctor-assistant.model.postgres.js";
 import { validateMembership, checkMembershipExpiry } from "./membership.middleware.js";
+// Centralized role constants — single source of truth (no local duplicates)
+import {
+  TENANT_BYPASS_ROLES,
+  ORG_ADMIN_ROLES,
+  CLINIC_STAFF_ROLES,
+  HOSPITAL_ROLES,
+  ROLE_ALIASES,
+  normalizeRole,
+} from "../config/roles.config.js";
+import { isTokenRevoked } from "../services/token-revocation.service.js";
 
 const DEV_TOKEN_ALLOWLIST = new Set(["dev-user-token", "dev-doctor-token", "dev-corporate-token"]);
-const ALLOW_DEV_TOKENS = ["development", "test"].includes(process.env.NODE_ENV);
-
-const TENANT_BYPASS_ROLES = new Set(["admin", "super_admin", "system_admin", "platform_admin", "doctor"]);
-
-// Organization admin roles
-const ORG_ADMIN_ROLES = new Set([
-  "hospital_admin", "clinic_admin", "lab_admin", "pharmacy_admin",
-  "tpa_admin", "psu_admin", "ngo_admin", "insurer_admin",
-  "corporate_admin", "homecare_admin", "ambulance_admin"
-]);
-
-// Clinic staff roles that should map to specific authorization handling
-const CLINIC_STAFF_ROLES = new Set([
-  "doctor", "doctor_assistant", "receptionist", "nurse", "staff"
-]);
-
-// Hospital roles that should be recognized by the auth middleware
-const HOSPITAL_ROLES = new Set([
-  "hospital", "hospital_admin", "hospital_staff", "hospital_doctor"
-]);
-
-const ROLE_ALIASES = {
-  system_admin: "admin",
-  super_admin: "admin",
-  platform_admin: "admin",
-  corporate_admin: "corporate",
-  hospital_admin: "hospital",
-  hospital_staff: "hospital",
-  hospital_doctor: "hospital",
-  clinic_admin: "clinic",
-  lab_admin: "lab",
-  pharmacy_admin: "pharmacy",
-  tpa_admin: "tpa",
-  psu_admin: "psu",
-  ngo_admin: "ngo",
-  insurer_admin: "insurer",
-  homecare_admin: "homecare",
-  ambulance_admin: "ambulance",
-  doctor_assistant: "assistant"
-};
-
-const normalizeRole = (role) => ROLE_ALIASES[role] || role;
+// Dev tokens: only accepted in explicit non-production environments with explicit opt-in env var.
+const ALLOW_DEV_TOKENS =
+  process.env.NODE_ENV !== "production" &&
+  ["development", "test"].includes(process.env.NODE_ENV) &&
+  process.env.ALLOW_DEV_TOKENS === "true";
 
 const toPlainObject = (record) => {
   if (!record) return null;
@@ -190,6 +163,12 @@ export const authUser = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
+
+    // JTI revocation check — covers all portals whose login handlers store the JTI
+    if (decoded.jti && await isTokenRevoked(decoded.jti)) {
+      return res.status(401).json({ message: "Token has been revoked" });
+    }
+
     // Doctor role: fetch full profile from DB BEFORE tenant bypass
     // (ensures firstName/lastName are populated for video call display names)
     if (decoded.role === "doctor") {
@@ -197,14 +176,16 @@ export const authUser = async (req, res, next) => {
         DoctorPostgres,
         doctorModel,
         decoded.id,
-        {
-          attributes: { exclude: ["password"] },
-        }
+        { attributes: { exclude: ["password"] } }
       );
 
       if (!doctor) {
-        console.log("❌ Doctor not found for ID:", decoded.id);
         return res.status(401).json({ message: "doctor not found" });
+      }
+
+      // Status re-check — prevents suspended doctors continuing mid-session
+      if (doctor.status && doctor.status !== "active") {
+        return res.status(403).json({ message: "Doctor account is inactive or suspended" });
       }
 
       req.user = { ...doctor, id: doctor.id || decoded.id, role: "doctor" };
@@ -216,19 +197,34 @@ export const authUser = async (req, res, next) => {
       return next();
     }
 
-    // Admins/team bypass tenant restrictions (but mismatch is logged)
-    // Note: doctors are handled above to ensure full DB profile is loaded
+    // Admins/team: DB re-check to prevent revoked admins continuing on valid JWT
     if (decoded.isAdmin || decoded.isTeam || TENANT_BYPASS_ROLES.has(decoded.role)) {
+      const adminUser = await safeFindByPk(
+        UserPostgres,
+        userModel,
+        decoded.id,
+        { attributes: ["id", "email", "role", "isAdmin", "isTeam", "status", "isActive", "firstName", "lastName", "tenantId", "tenant_id", "metadata", "organization_id"] }
+      );
+
+      if (!adminUser) {
+        return res.status(401).json({ message: "Admin/team account not found" });
+      }
+
+      if (adminUser.status !== "active" || adminUser.isActive === false) {
+        return res.status(403).json({ message: "Account is inactive or suspended" });
+      }
+
       req.user = {
-        id: decoded.id,
-        email: decoded.email,
-        role: decoded.role || (decoded.isAdmin ? "admin" : (decoded.isTeam ? "team" : "user")),
-        firstName: decoded.firstName || "System",
-        lastName: decoded.lastName || "User",
-        isAdmin: decoded.isAdmin || false,
-        isTeam: decoded.isTeam || false,
-        tenantId: decoded.tenantId || null,
-        tenant_id: decoded.tenantId || null,
+        ...adminUser,
+        id: adminUser.id || decoded.id,
+        email: adminUser.email || decoded.email,
+        role: adminUser.role || decoded.role || (decoded.isAdmin ? "admin" : "team"),
+        firstName: adminUser.firstName || decoded.firstName || "System",
+        lastName: adminUser.lastName || decoded.lastName || "User",
+        isAdmin: adminUser.isAdmin || decoded.isAdmin || false,
+        isTeam: adminUser.isTeam || decoded.isTeam || false,
+        tenantId: decoded.tenantId || adminUser.tenantId || adminUser.tenant_id || adminUser.organization_id || null,
+        tenant_id: decoded.tenantId || adminUser.tenant_id || adminUser.organization_id || null,
       };
       req.userRole = decoded.isTeam ? "team" : (decoded.isAdmin ? "admin" : decoded.role);
       return next();
@@ -238,8 +234,15 @@ export const authUser = async (req, res, next) => {
       const nurse = await safeFindByPk(NursePostgres, nurseModel, decoded.id);
 
       if (!nurse) {
-        console.log("❌ Nurse not found for ID:", decoded.id);
         return res.status(401).json({ message: "nurse not found" });
+      }
+
+      // isActive + status re-check
+      if (nurse.status && nurse.status !== "active") {
+        return res.status(403).json({ message: "Nurse account is inactive" });
+      }
+      if (nurse.isActive === false) {
+        return res.status(403).json({ message: "Nurse account is disabled" });
       }
 
       req.user = { ...nurse, role: "nurse" };
@@ -259,16 +262,20 @@ export const authUser = async (req, res, next) => {
       );
 
       if (!assistant) {
-        console.log("❌ Assistant not found for ID:", decoded.id);
         return res.status(401).json({ message: "assistant not found" });
+      }
+
+      // Status re-check
+      if (assistant.status && assistant.status !== "active") {
+        return res.status(403).json({ message: "Assistant account is inactive" });
+      }
+      if (assistant.isActive === false) {
+        return res.status(403).json({ message: "Assistant account is disabled" });
       }
 
       req.user = { ...assistant, role: "assistant" };
       req.userRole = "assistant";
-      const tenantBinding = bindTenantContext(
-        req,
-        resolveTenantFromEntity(assistant)
-      );
+      const tenantBinding = bindTenantContext(req, resolveTenantFromEntity(assistant));
       if (!tenantBinding.ok) {
         return res.status(tenantBinding.status).json(tenantBinding.body);
       }

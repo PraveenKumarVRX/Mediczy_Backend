@@ -210,27 +210,45 @@ router.post(
         });
       }
 
-      // Check if aggregator is active
+      // Account status guard (status + isActive + isVerified)
       if (aggregator.status !== 'active') {
         await auditLoginAttempt({
-          userId: aggregator.id,
-          userType: 'aggregator',
-          action: 'login',
-          ipAddress: req.ip,
-          success: false,
-          reason: `Account status: ${aggregator.status}`,
+          userId: aggregator.id, userType: 'aggregator', action: 'login',
+          ipAddress: req.ip, success: false, reason: `Account status: ${aggregator.status}`,
         });
         return res.status(403).json({
           success: false,
           message: `Your account is currently ${aggregator.status}. Please contact support.`,
         });
       }
+      if (aggregator.isActive === false) {
+        await auditLoginAttempt({
+          userId: aggregator.id, userType: 'aggregator', action: 'login',
+          ipAddress: req.ip, success: false, reason: 'Account disabled (isActive=false)',
+        });
+        return res.status(403).json({
+          success: false,
+          message: 'Your account has been disabled. Contact support.',
+        });
+      }
+      if (!aggregator.isVerified) {
+        await auditLoginAttempt({
+          userId: aggregator.id, userType: 'aggregator', action: 'login',
+          ipAddress: req.ip, success: false, reason: 'Account not verified',
+        });
+        return res.status(403).json({
+          success: false,
+          message: 'Your account is pending verification. Please wait for approval.',
+          code: 'ACCOUNT_UNVERIFIED',
+        });
+      }
 
-      // Generate JWT token
-      const token = jwt.sign(
+      // Issue token pair with JTI (enables revocation + device fingerprint)
+      const { issuePortalTokenPair } = await import('../services/token-revocation.service.js');
+      const deviceFp = req.headers['x-device-fingerprint'] || null;
+      const { accessToken: token } = await issuePortalTokenPair(
         { id: aggregator.id, email: aggregator.email, role: 'aggregator' },
-        JWT_CONFIG.SECRET,
-        { expiresIn: '7d' }
+        { portal: 'aggregator', deviceFp }
       );
 
       // Audit log

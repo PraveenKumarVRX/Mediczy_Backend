@@ -213,8 +213,8 @@ router.post('/login', authLimiter, [
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
-    // --- active status check ---
-    if (user.status && user.status !== 'active') {
+    // --- active status check (both status string and isActive flag) ---
+    if ((user.status && user.status !== 'active') || user.isActive === false) {
       await auditLoginAttempt(req, user.id, email, false, 'Account inactive');
       return res.status(403).json({ success: false, message: 'Account is inactive. Contact admin.' });
     }
@@ -302,9 +302,21 @@ router.post('/login', authLimiter, [
       designation: user.designation || 'Healthcare Staff',
       department: user.department || 'Healthcare Operations',
       permissions: storedPermissions || [
-        'User Management', 'Doctor Management', 'Appointment Management',
-        'Patient Reports', 'Chat Dashboard Access', 'Hospital Management',
-        'Pharmacy Management', 'Health Plans Access'
+        'User Management',
+        'Doctor Management',
+        'Appointment Management',
+        'Patient Reports',
+        'Analytics Access',
+        'Chat Dashboard Access',
+        'Hospital Management',
+        'Clinic Management',
+        'Lab Management',
+        'Pharmacy Management',
+        'Health Plans Access',
+        'Corporate Management',
+        'Broker Management',
+        'Support Tickets',
+        'Audit Access',
       ],
       modules: storedModules || null
     };
@@ -2644,6 +2656,62 @@ router.patch('/registered-doctors/:id/reject', authTeam, async (req, res) => {
   } catch (err) {
     console.error('[Team] reject doctor error:', err);
     return res.status(500).json({ success: false, message: 'Failed to reject doctor' });
+  }
+});
+
+// ─── Module snapshot stats (real counts for team module pages) ────────────────
+router.get('/module-stats', authTeam, async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+
+    const safeCount = async (sql, opts) => {
+      try {
+        const [rows] = await postgresSequelize.query(sql, opts);
+        return parseInt(rows[0]?.count || rows[0]?.cnt || 0);
+      } catch { return null; }
+    };
+
+    const [
+      usersTotal, usersActive,
+      doctorsTotal, doctorsPending,
+      hospitalsTotal, labsTotal,
+      clinicsTotal, pharmaciesTotal,
+      brokersTotal, corporatesTotal,
+      appointmentsToday,
+    ] = await Promise.all([
+      safeCount('SELECT COUNT(*) AS count FROM users'),
+      safeCount("SELECT COUNT(*) AS count FROM users WHERE status = 'active'"),
+      safeCount('SELECT COUNT(*) AS count FROM doctors'),
+      safeCount("SELECT COUNT(*) AS count FROM doctors WHERE status IN ('pending','review')"),
+      safeCount('SELECT COUNT(*) AS count FROM hospitals'),
+      safeCount('SELECT COUNT(*) AS count FROM labs'),
+      safeCount('SELECT COUNT(*) AS count FROM provider_clinics'),
+      safeCount('SELECT COUNT(*) AS count FROM pharmacies'),
+      safeCount('SELECT COUNT(*) AS count FROM insurance_brokers'),
+      safeCount('SELECT COUNT(*) AS count FROM corporates'),
+      safeCount(
+        'SELECT COUNT(*) AS count FROM appointments WHERE "appointmentDate" = :today',
+        { replacements: { today }, type: postgresSequelize.QueryTypes.SELECT }
+      ),
+    ]);
+
+    res.json({
+      success: true,
+      stats: {
+        users:        { total: usersTotal,      active: usersActive },
+        doctors:      { total: doctorsTotal,     pendingVerification: doctorsPending },
+        hospitals:    { total: hospitalsTotal },
+        labs:         { total: labsTotal },
+        clinics:      { total: clinicsTotal },
+        pharmacies:   { total: pharmaciesTotal },
+        brokers:      { total: brokersTotal },
+        corporates:   { total: corporatesTotal },
+        appointments: { today: appointmentsToday },
+      },
+    });
+  } catch (err) {
+    console.error('[Team] module-stats error:', err.message);
+    res.status(500).json({ success: false, message: 'Failed to fetch module stats' });
   }
 });
 

@@ -384,27 +384,27 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
+    // Account status guard before password (avoids timing oracle on inactive accounts)
+    if (tpa.status !== 'active') {
+      await auditLoginAttempt(req, tpa.id, normalizedEmail, false, 'TPA inactive');
+      return res.status(403).json({ success: false, message: 'TPA account is not active' });
+    }
+    if (tpa.isActive === false) {
+      await auditLoginAttempt(req, tpa.id, normalizedEmail, false, 'TPA disabled (isActive=false)');
+      return res.status(403).json({ success: false, message: 'TPA account has been disabled' });
+    }
+
     const isPasswordValid = await tpa.comparePassword(password);
     if (!isPasswordValid) {
       await auditLoginAttempt(req, tpa.id, normalizedEmail, false, 'Invalid password');
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
-      });
+      return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
-    if (tpa.status !== 'active') {
-      await auditLoginAttempt(req, tpa.id, normalizedEmail, false, 'TPA inactive');
-      return res.status(403).json({
-        success: false,
-        message: 'TPA account is not active'
-      });
-    }
-
-    const token = jwt.sign(
+    const { issuePortalTokenPair } = await import('../services/token-revocation.service.js');
+    const deviceFp = req.headers['x-device-fingerprint'] || null;
+    const { accessToken: token } = await issuePortalTokenPair(
       { id: tpa.id, email: tpa.email, role: 'tpa' },
-      JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
+      { portal: 'tpa', deviceFp }
     );
 
     await auditLoginAttempt(req, tpa.id, normalizedEmail, true);

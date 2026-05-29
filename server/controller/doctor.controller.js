@@ -594,9 +594,18 @@ export async function signInDoctor(req, res) {
     console.log('💚 [signInDoctor] Doctor object keys:', doctor ? Object.keys(doctor.dataValues || doctor) : 'null');
 
     if (!doctor) {
-      console.log('💚 [signInDoctor] No doctor found, returning 401');
       await auditLoginAttempt(req, null, normalizedEmail, false, 'Doctor not found');
       return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    // Account status guard — checked before password to prevent timing oracle
+    if (doctor.status && doctor.status !== 'active') {
+      await auditLoginAttempt(req, doctor.id, normalizedEmail, false, `Doctor inactive: ${doctor.status}`);
+      return res.status(403).json({ message: "Doctor account is inactive or suspended. Contact support." });
+    }
+    if (doctor.isActive === false) {
+      await auditLoginAttempt(req, doctor.id, normalizedEmail, false, 'Doctor disabled (isActive=false)');
+      return res.status(403).json({ message: "Doctor account has been disabled. Contact support." });
     }
 
     // CROSS-ROLE GUARD: Prevent patient/user accounts from using doctor login endpoint
@@ -635,10 +644,13 @@ export async function signInDoctor(req, res) {
         });
       }
 
-      console.log('💚 [signInDoctor] About to generate token...');
-      // Generate authentication token
-      const token = doctor.generateAuthToken();
-      console.log('💚 [signInDoctor] Token generated successfully');
+      // Generate access token with JTI for revocation support
+      const { issuePortalTokenPair } = await import('../services/token-revocation.service.js');
+      const deviceFp = req.headers['x-device-fingerprint'] || null;
+      const { accessToken: token } = await issuePortalTokenPair(
+        { id: doctor.id, email: doctor.email, role: 'doctor' },
+        { portal: 'doctor', deviceFp }
+      );
 
       // Update online status
       await doctor.update({
@@ -647,7 +659,6 @@ export async function signInDoctor(req, res) {
         lastActivityAt: new Date()
       });
 
-      // Respond with doctor data & token
       await auditLoginAttempt(req, doctor.id, normalizedEmail, true);
       return res.status(200).json({
         message: "Login successful",

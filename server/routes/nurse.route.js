@@ -93,43 +93,37 @@ router.post('/login', authLimiter, [
 
     if (!nurse) {
       await auditLoginAttempt(req, null, normalizedEmail, false, 'Nurse not found');
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
-      });
+      return res.status(401).json({ success: false, message: 'Invalid email or password' });
+    }
+
+    // Account status guards (status + isActive) — checked before password
+    if (nurse.status && nurse.status !== 'active') {
+      await auditLoginAttempt(req, nurse.id, normalizedEmail, false, `Nurse inactive: ${nurse.status}`);
+      return res.status(403).json({ success: false, message: 'Nurse account is inactive or suspended' });
+    }
+    if (nurse.isActive === false) {
+      await auditLoginAttempt(req, nurse.id, normalizedEmail, false, 'Nurse disabled (isActive=false)');
+      return res.status(403).json({ success: false, message: 'Nurse account has been disabled' });
     }
 
     // Verify password
     if (!nurse.comparePassword) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials - password verification not configured'
-      });
+      return res.status(401).json({ success: false, message: 'Password verification not configured' });
     }
     const isPasswordValid = await nurse.comparePassword(password);
-
     if (!isPasswordValid) {
       await auditLoginAttempt(req, nurse.id, normalizedEmail, false, 'Invalid password');
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
-      });
+      return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
-    // Update last login
     if (nurse.update) await nurse.update({ lastLoginAt: new Date() });
 
-    // Generate JWT token
-    const token = jwt.sign(
-      {
-        id: nurse.id,
-        nurseId: nurse.id,
-        email: nurse.email,
-        role: 'nurse',
-        userType: 'nurse'
-      },
-      JWT_CONFIG.SECRET,
-      { expiresIn: '8h' }
+    // Issue token pair with JTI (enables revocation + device fingerprint limit)
+    const { issuePortalTokenPair } = await import('../services/token-revocation.service.js');
+    const deviceFp = req.headers['x-device-fingerprint'] || null;
+    const { accessToken: token } = await issuePortalTokenPair(
+      { id: nurse.id, nurseId: nurse.id, email: nurse.email, role: 'nurse', userType: 'nurse' },
+      { portal: 'nurse', deviceFp }
     );
 
     await auditLoginAttempt(req, nurse.id, normalizedEmail, true);
@@ -167,57 +161,18 @@ router.post('/login', authLimiter, [
 // Get nurse profile
 router.get('/profile', authNurse, async (req, res) => {
   try {
-    let nurse;
+    const nurse = await Nurse.findByPk(req.nurse.id, {
+      attributes: { exclude: ['password'] }
+    });
 
-    // Handle test nurse
-    if (req.nurse.id === 'nurse_001') {
-      nurse = {
-        id: 'nurse_001',
-        email: 'nurse@mediczy.com',
-        firstName: 'Sarah',
-        lastName: 'Johnson',
-        department: 'Emergency Department',
-        specialty: 'Emergency Care',
-        shift: 'Morning',
-        licenseNumber: 'RN-123456',
-        assignedWard: 'Emergency Ward',
-        qualifications: 'BSN, Registered Nurse, ACLS Certified',
-        phoneNumber: '+1-555-0101',
-        emergencyContact: '+1-555-0102',
-        permissions: [
-          'View Patients',
-          'Record Vitals',
-          'Medication Administration',
-          'View Appointments',
-          'Patient Notes',
-          'Lab Results View',
-          'Emergency Response'
-        ]
-      };
-    } else {
-      nurse = await Nurse.findByPk(req.nurse.id, {
-        attributes: { exclude: ['password'] }
-      });
-
-      if (!nurse) {
-        return res.status(404).json({
-          success: false,
-          message: 'Nurse not found'
-        });
-      }
+    if (!nurse) {
+      return res.status(404).json({ success: false, message: 'Nurse not found' });
     }
 
-    res.status(200).json({
-      success: true,
-      nurse
-    });
+    res.status(200).json({ success: true, nurse });
   } catch (error) {
     console.error('Get nurse profile error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
   }
 });
 
@@ -225,14 +180,6 @@ router.get('/profile', authNurse, async (req, res) => {
 router.put('/profile', authNurse, async (req, res) => {
   try {
     const { firstName, lastName, phoneNumber, emergencyContact } = req.body;
-
-    if (req.nurse.id === 'nurse_001') {
-      return res.status(200).json({
-        success: true,
-        message: 'Test nurse profile updated (mock)',
-        nurse: { firstName, lastName, phoneNumber, emergencyContact }
-      });
-    }
 
     const nurse = await Nurse.findByPk(req.nurse.id);
 

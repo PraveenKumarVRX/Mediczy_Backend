@@ -85,7 +85,7 @@ export const clinicStaffLogin = async (req, res) => {
           attributes: ['id', 'uid', 'name', 'slug', 'type', 'status', 'phone']
         }
       ],
-      attributes: ['id', 'email', 'password', 'firstName', 'lastName', 'phoneNumber', 'role', 'status', 'organization_id', 'permissions', 'scope', 'metadata']
+      attributes: ['id', 'email', 'password', 'firstName', 'lastName', 'phoneNumber', 'role', 'status', 'isActive', 'organization_id', 'permissions', 'scope', 'metadata']
     });
 
     if (!staff) {
@@ -93,6 +93,15 @@ export const clinicStaffLogin = async (req, res) => {
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials or staff not found'
+      });
+    }
+
+    // isActive guard — rejects accounts disabled via the boolean flag
+    if (staff.isActive === false) {
+      await auditLoginAttempt(req, staff.id, email, false, 'Staff account disabled (isActive=false)');
+      return res.status(403).json({
+        success: false,
+        message: 'Your account has been disabled. Contact your clinic administrator.',
       });
     }
 
