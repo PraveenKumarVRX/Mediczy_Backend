@@ -373,40 +373,29 @@ router.post('/google/fetch', auth, async (req, res) => {
     for (const bucket of activityData.bucket || []) {
       const date = new Date(parseInt(bucket.startTimeMillis)).toLocaleDateString('en-CA');
 
-      const findVal = (typeName, intOrFp = 'intVal') => {
-        const ds = (bucket.dataset || []).find(d =>
-          d.dataSourceId?.includes(typeName) || d.dataSourceId?.includes(typeName.replace('com.google.', ''))
-        );
-        // fallback: match by position of the aggregateBy order
-        const dsAlt = (bucket.dataset || []).find((_, i) => {
-          const order = ['step_count', 'calories', 'distance', 'active_minutes', 'heart_rate'];
-          return ds === undefined && d.dataSourceId?.includes(order[i] || '');
-        });
-        const target = ds || dsAlt;
-        if (!target?.point?.length) return 0;
-        const v = target.point[0]?.value?.[0];
-        return v ? (v[intOrFp] ?? v.fpVal ?? v.intVal ?? 0) : 0;
-      };
-
-      // More robust: iterate datasets and match by type name in dataSourceId
       let steps = 0, calories = 0, distance = 0, activeMinutes = 0;
       let hrMin = 0, hrMax = 0, hrAvg = 0;
 
       for (const ds of (bucket.dataset || [])) {
         const src = ds.dataSourceId || '';
         const pt  = ds.point?.[0];
-        const v0  = pt?.value?.[0];
-        if (!v0) continue;
-        const num = v0.intVal ?? v0.fpVal ?? 0;
+        if (!pt) continue;
+        const vals = pt.value || [];
 
-        if (src.includes('step_count'))    steps         = Math.round(num);
-        if (src.includes('calories'))      calories      = Math.round(num);
-        if (src.includes('distance'))      distance      = Math.round(num * 100) / 100;
-        if (src.includes('active_minutes'))activeMinutes = Math.round(num);
-        if (src.includes('heart_rate')) {
-          hrAvg = Math.round(v0.fpVal ?? 0);
-          hrMin = Math.round(pt?.value?.[1]?.fpVal ?? 0);
-          hrMax = Math.round(pt?.value?.[2]?.fpVal ?? 0);
+        if (src.includes('step_count') || src.includes('steps')) {
+          steps = Math.round(vals[0]?.intVal ?? vals[0]?.fpVal ?? 0);
+        } else if (src.includes('calories')) {
+          calories = Math.round(vals[0]?.fpVal ?? vals[0]?.intVal ?? 0);
+        } else if (src.includes('distance')) {
+          distance = Math.round((vals[0]?.fpVal ?? vals[0]?.intVal ?? 0) * 100) / 100;
+        } else if (src.includes('active_minutes') || src.includes('move_minutes')) {
+          activeMinutes = Math.round(vals[0]?.intVal ?? vals[0]?.fpVal ?? 0);
+        } else if (src.includes('heart_rate')) {
+          // Google Fit heart_rate aggregate returns: [avg, min, max] in value array
+          // Each entry is {fpVal: number} — guard each index defensively
+          hrAvg = Math.round(vals[0]?.fpVal ?? vals[0]?.intVal ?? 0);
+          hrMin = vals.length > 1 ? Math.round(vals[1]?.fpVal ?? vals[1]?.intVal ?? 0) : 0;
+          hrMax = vals.length > 2 ? Math.round(vals[2]?.fpVal ?? vals[2]?.intVal ?? 0) : 0;
         }
       }
 
@@ -453,7 +442,9 @@ router.post('/google/fetch', auth, async (req, res) => {
               updatedAt:  new Date(),
             });
             savedCount++;
-          } catch { /* skip individual row errors */ }
+          } catch (upsertErr) {
+            console.error('[GoogleFit] upsert failed for', row.dataType, row.recordedAt, upsertErr.message);
+          }
         }
       }
     }

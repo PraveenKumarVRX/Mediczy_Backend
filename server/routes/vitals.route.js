@@ -9,9 +9,40 @@ import { QueryTypes } from 'sequelize';
 
 const router = express.Router();
 
+// Clinical valid ranges — NEWS2 / NICE guidelines
+const VITAL_RANGES = {
+  temperature:     { min: 32,  max: 43   },   // °C (hypothermia to dangerous hyperthermia)
+  heartRate:       { min: 20,  max: 300  },   // bpm
+  pulse:           { min: 20,  max: 300  },
+  respiratoryRate: { min: 4,   max: 60   },   // breaths/min
+  spo2:            { min: 50,  max: 100  },   // %
+  bpSystolic:      { min: 40,  max: 300  },   // mmHg
+  bpDiastolic:     { min: 20,  max: 200  },
+  bloodGlucose:    { min: 1,   max: 60   },   // mmol/L (or 18–1100 mg/dL)
+  weight:          { min: 0.5, max: 700  },   // kg
+  height:          { min: 20,  max: 250  },   // cm
+};
+
+function validateVitalRanges(body) {
+  const errors = [];
+  for (const [field, { min, max }] of Object.entries(VITAL_RANGES)) {
+    const val = body[field];
+    if (val === undefined || val === null) continue;
+    const n = Number(val);
+    if (isNaN(n) || n < min || n > max) {
+      errors.push(`${field} must be between ${min} and ${max}`);
+    }
+  }
+  return errors;
+}
+
 // POST /api/v1/vitals
 router.post('/', authUser, async (req, res) => {
   try {
+    const rangeErrors = validateVitalRanges(req.body);
+    if (rangeErrors.length) {
+      return res.status(400).json({ success: false, message: 'Vital sign validation failed', errors: rangeErrors });
+    }
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const record = await saveVitals({ ...req.body, organizationId, recordedBy: req.user.id });
     res.status(201).json({ success: true, data: record });

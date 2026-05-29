@@ -10,7 +10,8 @@ const router = express.Router();
  */
 router.post("/sync", authUser, async (req, res) => {
   try {
-    const userId = req.userId;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
     const { healthData, date } = req.body;
 
     if (!healthData || !date) {
@@ -83,8 +84,14 @@ router.post("/sync", authUser, async (req, res) => {
  */
 router.post("/sync-batch", authUser, async (req, res) => {
   try {
-    const userId = req.userId;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
     const { healthDataArray } = req.body;
+
+    // Cap batch size to prevent DoS
+    if (Array.isArray(healthDataArray) && healthDataArray.length > 90) {
+      return res.status(400).json({ success: false, message: 'Maximum 90 days per batch' });
+    }
 
     if (!healthDataArray || !Array.isArray(healthDataArray)) {
       return res.status(400).json({
@@ -166,7 +173,7 @@ router.post("/sync-batch", authUser, async (req, res) => {
  */
 router.get("/status", authUser, async (req, res) => {
   try {
-    const userId = req.userId;
+    const userId = req.user?.id;
 
     // Get the most recent Apple Health sync
     const recentSync = await FitnessData.findOne({
@@ -216,8 +223,10 @@ router.get("/status", authUser, async (req, res) => {
  */
 router.get("/summary", authUser, async (req, res) => {
   try {
-    const userId = req.userId;
-    const { days = 7 } = req.query;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const rawDays = parseInt(req.query.days) || 7;
+    const days = Math.min(Math.max(rawDays, 1), 365); // cap 1-365
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - parseInt(days));
@@ -289,7 +298,7 @@ router.get("/summary", authUser, async (req, res) => {
  */
 router.delete("/disconnect", authUser, async (req, res) => {
   try {
-    const userId = req.userId;
+    const userId = req.user?.id;
 
     // Delete all Apple Health records for user
     const deleted = await FitnessData.destroy({
