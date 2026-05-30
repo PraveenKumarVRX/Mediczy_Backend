@@ -49,6 +49,84 @@ const localAlertState = new Map();
 const localMessages = new Map();
 const MAX_CACHE_ENTRIES = 1000; // Limit to prevent memory leak
 
+const toFiniteNumber = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+const normalizeClinicLocationPayload = (practice = {}, existingClinicAddress = '', existingClinicAddressJson = {}) => {
+  const nextJson = (existingClinicAddressJson && typeof existingClinicAddressJson === 'object')
+    ? { ...existingClinicAddressJson }
+    : {};
+
+  const incomingJson = (practice.clinicAddress_json && typeof practice.clinicAddress_json === 'object')
+    ? practice.clinicAddress_json
+    : {};
+
+  Object.assign(nextJson, incomingJson);
+
+  const clinicAddress =
+    (typeof practice.clinicAddress === 'string' && practice.clinicAddress.trim()) ||
+    (typeof practice.practiceAddress === 'string' && practice.practiceAddress.trim()) ||
+    (typeof existingClinicAddress === 'string' ? existingClinicAddress : '');
+
+  const placeId =
+    practice.placeId ||
+    practice.place_id ||
+    practice.googlePlaceId ||
+    practice.google_place_id ||
+    incomingJson.placeId ||
+    incomingJson.place_id ||
+    incomingJson.googlePlaceId ||
+    incomingJson.google_place_id;
+
+  if (placeId) {
+    const normalizedPlaceId = String(placeId).trim();
+    nextJson.placeId = normalizedPlaceId;
+    nextJson.place_id = normalizedPlaceId;
+    nextJson.googlePlaceId = normalizedPlaceId;
+    nextJson.google_place_id = normalizedPlaceId;
+    nextJson.source = nextJson.source || 'google_places';
+    nextJson.provider = nextJson.provider || 'google_places';
+    nextJson.verificationStatus = 'verified';
+    nextJson.verifiedAt = new Date().toISOString();
+  }
+
+  const lat =
+    toFiniteNumber(practice.latitude) ??
+    toFiniteNumber(practice.lat) ??
+    toFiniteNumber(practice.practiceLatitude) ??
+    toFiniteNumber(incomingJson.latitude) ??
+    toFiniteNumber(incomingJson.lat);
+
+  const lng =
+    toFiniteNumber(practice.longitude) ??
+    toFiniteNumber(practice.lng) ??
+    toFiniteNumber(practice.lon) ??
+    toFiniteNumber(practice.practiceLongitude) ??
+    toFiniteNumber(incomingJson.longitude) ??
+    toFiniteNumber(incomingJson.lng) ??
+    toFiniteNumber(incomingJson.lon);
+
+  if (lat !== null) {
+    nextJson.latitude = lat;
+    nextJson.lat = lat;
+  }
+  if (lng !== null) {
+    nextJson.longitude = lng;
+    nextJson.lng = lng;
+  }
+
+  if (practice.practiceCity && !nextJson.city) nextJson.city = practice.practiceCity;
+  if (practice.practiceState && !nextJson.state) nextJson.state = practice.practiceState;
+  if (practice.practiceZipCode && !nextJson.pincode) nextJson.pincode = practice.practiceZipCode;
+
+  return {
+    clinicAddress,
+    clinicAddress_json: nextJson
+  };
+};
+
 // Cleanup old entries every 30 minutes
 setInterval(() => {
   if (localAlertState.size > MAX_CACHE_ENTRIES) {
@@ -875,6 +953,22 @@ router.put("/settings", authDoctor, async (req, res) => {
 
     // Update practice fields with special handling for JSONB fields
     if (practice) {
+      const normalizedLocation = normalizeClinicLocationPayload(
+        practice,
+        doctor.clinicAddress,
+        doctor.clinicAddress_json
+      );
+
+      if (normalizedLocation.clinicAddress !== undefined) {
+        doctor.clinicAddress = normalizedLocation.clinicAddress;
+        updatedFields.push('clinicAddress');
+      }
+
+      if (normalizedLocation.clinicAddress_json !== undefined) {
+        doctor.clinicAddress_json = normalizedLocation.clinicAddress_json;
+        updatedFields.push('clinicAddress_json');
+      }
+
       // Handle simple fields
       if (practice.consultationFee !== undefined) {
         doctor.consultationFee = practice.consultationFee;

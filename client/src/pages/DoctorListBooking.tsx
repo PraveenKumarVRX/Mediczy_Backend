@@ -161,6 +161,8 @@ const DEFAULT_CLINIC = {
   state: "India",
 };
 
+const PUBLISHABLE_DOCTOR_LIMIT = 569;
+
 const toNumber = (value: any, fallback: number) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -605,7 +607,7 @@ const DoctorListBooking = () => {
 
       // If primary strict-QC fetch succeeded, honor it even when the result is empty.
       if (primaryFetchSucceeded) {
-        setDoctors(primaryDoctors);
+        setDoctors(primaryDoctors.slice(0, PUBLISHABLE_DOCTOR_LIMIT));
         return;
       }
 

@@ -961,7 +961,7 @@ app.get('/health', async (req, res) => {
       ])
     );
 
-    const criticalHealthy = Boolean(dbStates.postgres);
+    const criticalHealthy = Boolean(dbStates.postgresSequelize || dbStates.postgres);
 
     const healthCheck = {
       status: criticalHealthy ? 'healthy' : 'degraded',
@@ -1012,7 +1012,7 @@ app.get('/api/health', async (req, res) => {
       ])
     );
 
-    const criticalHealthy = Boolean(dbStates.postgres);
+    const criticalHealthy = Boolean(dbStates.postgresSequelize || dbStates.postgres);
 
     const healthCheck = {
       status: criticalHealthy ? 'healthy' : 'degraded',

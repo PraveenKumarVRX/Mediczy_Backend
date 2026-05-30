@@ -61,7 +61,14 @@ const CITUS_TABLES = [
 ];
 
 function buildConfig() {
-  const connectionString = process.env.POSTGRES_URI || process.env.PG_URI;
+  const hasPrimaryDiscreteConfig = Boolean(
+    process.env.POSTGRES_PRIMARY_HOST ||
+    process.env.POSTGRES_PRIMARY_PORT ||
+    process.env.POSTGRES_PRIMARY_DATABASE ||
+    process.env.POSTGRES_PRIMARY_USER ||
+    process.env.POSTGRES_PRIMARY_PASSWORD
+  );
+  const connectionString = process.env.POSTGRES_PRIMARY_URI || (!hasPrimaryDiscreteConfig ? (process.env.POSTGRES_URI || process.env.PG_URI) : undefined);
   if (connectionString) {
     return {
       connectionString,
@@ -75,11 +82,11 @@ function buildConfig() {
   }
 
   return {
-    host: process.env.POSTGRES_HOST || process.env.PG_HOST || '127.0.0.1',
-    port: parseInt(process.env.POSTGRES_PORT || process.env.PG_PORT || '5432', 10),
-    database: process.env.POSTGRES_DATABASE || process.env.PG_DATABASE || 'mediczy_ai',
-    user: process.env.POSTGRES_USER || process.env.PG_USER || 'mediczy_ai',
-    password: process.env.POSTGRES_PASSWORD || process.env.PG_PASSWORD || 'change_me',
+    host: process.env.POSTGRES_PRIMARY_HOST || process.env.POSTGRES_HOST || process.env.PG_HOST || '127.0.0.1',
+    port: parseInt(process.env.POSTGRES_PRIMARY_PORT || process.env.POSTGRES_PORT || process.env.PG_PORT || '5432', 10),
+    database: process.env.POSTGRES_PRIMARY_DATABASE || process.env.POSTGRES_DATABASE || process.env.PG_DATABASE || 'mediczy_ai',
+    user: process.env.POSTGRES_PRIMARY_USER || process.env.POSTGRES_USER || process.env.PG_USER || 'mediczy_helper',
+    password: process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.PG_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || 'change_me',
     // Connection pool limits (reduced to prevent connection exhaustion)
     max: parseInt(process.env.POSTGRES_POOL_MAX || process.env.PG_POOL_MAX || '5', 10),
     min: parseInt(process.env.POSTGRES_POOL_MIN || process.env.PG_POOL_MIN || '1', 10),

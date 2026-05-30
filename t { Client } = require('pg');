@@ -1,0 +1,6 @@
+  id  |   firstName    | lastName |     specialization     |                             email                             | phoneNumber | createdAt 
+------+----------------+----------+------------------------+---------------------------------------------------------------+-------------+-----------
+ 1464 | Krishnamoorthy | Pillai   | Critical Care Medicine | krishnamoorthy.pillai.vijaya.17@chedoctors.mediczy.internal   | 4424817777  | 
+ 1644 | Krishnamoorthy | Pillai   | Critical Care Medicine | krishnamoorthy.pillai.saveetha.17@chedoctors.mediczy.internal | 4426800000  | 
+(2 rows)
+

@@ -5,6 +5,41 @@ import { Doctor } from '../models/index.js';
 
 const router = express.Router();
 
+const toFiniteNumber = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+const hasGoogleVerifiedClinicLocation = (doctor) => {
+  const clinicAddress = typeof doctor?.clinicAddress === 'string' ? doctor.clinicAddress.trim() : '';
+  const clinicAddressJson = doctor?.clinicAddress_json && typeof doctor.clinicAddress_json === 'object'
+    ? doctor.clinicAddress_json
+    : {};
+
+  const hasAddress = clinicAddress.length > 0 || Object.keys(clinicAddressJson).length > 0;
+  if (!hasAddress) return false;
+
+  const placeId =
+    clinicAddressJson.placeId ||
+    clinicAddressJson.place_id ||
+    clinicAddressJson.googlePlaceId ||
+    clinicAddressJson.google_place_id ||
+    '';
+
+  const provider = String(clinicAddressJson.provider || clinicAddressJson.source || '').toLowerCase();
+  const verificationStatus = String(clinicAddressJson.verificationStatus || '').toLowerCase();
+
+  const hasCoordinates =
+    toFiniteNumber(clinicAddressJson.lat ?? clinicAddressJson.latitude) !== null &&
+    toFiniteNumber(clinicAddressJson.lng ?? clinicAddressJson.longitude ?? clinicAddressJson.lon) !== null;
+
+  return (
+    Boolean(String(placeId).trim()) ||
+    (provider.startsWith('google') && verificationStatus === 'verified') ||
+    (provider.startsWith('google') && hasCoordinates)
+  );
+};
+
 /**
  * @route   GET /api/doctor-settings/appointment-config
  * @desc    Get doctor's appointment configuration
@@ -142,6 +177,13 @@ router.put('/appointment-config', authUser, [
       onlineConsultationFee,
       inPersonConsultationFee
     } = req.body;
+
+    if (inPersonConsultationEnabled === true && !hasGoogleVerifiedClinicLocation(doctor)) {
+      return res.status(400).json({
+        success: false,
+        message: 'In-person consultation requires a clinic address verified by Google Places. Please select your clinic from Google autocomplete and save profile first.'
+      });
+    }
 
     // Validate weekly schedule structure
     if (weeklySchedule) {

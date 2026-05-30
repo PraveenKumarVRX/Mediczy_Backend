@@ -34,6 +34,8 @@ const OPTIONAL_ENV_VARS = {
   PGVECTOR_IVFFLAT_LISTS: { default: '100', description: 'IVFFlat list count for PGVector index' },
   VECTOR_NAMESPACE: { default: 'default', description: 'Default namespace for embeddings' },
   VECTOR_STORE_TYPE: { default: 'pgvector', description: 'Vector database backend type' },
+  DISALLOW_REMOTE_DB: { default: 'false', description: 'When true, refuse startup unless PostgreSQL host is local-only' },
+  ALLOWED_LOCAL_DB_HOSTS: { default: 'localhost,127.0.0.1,::1', description: 'Comma-separated hosts allowed when DISALLOW_REMOTE_DB=true' },
   
   // Feature Flags
   DISABLE_KAFKA: { default: 'false', description: 'Disable Kafka integration' },
@@ -48,6 +50,36 @@ const OPTIONAL_ENV_VARS = {
   VECTOR_DB_URL: { default: 'http://localhost:8001', description: 'Vector DB URL' },
   INTELLIGENT_DB_URL: { default: 'http://localhost:5005', description: 'Intelligent DB service URL' },
 };
+
+const normalizeHost = (value = '') => value.trim().toLowerCase().replace(/^\[(.*)\]$/, '$1');
+
+const parseLocalHostAllowlist = () => {
+  const raw = process.env.ALLOWED_LOCAL_DB_HOSTS || 'localhost,127.0.0.1,::1';
+  return new Set(
+    raw
+      .split(',')
+      .map((entry) => normalizeHost(entry))
+      .filter(Boolean)
+  );
+};
+
+const getConfiguredPostgresHost = () => {
+  const postgresUri = process.env.POSTGRES_URI || process.env.PG_URI || '';
+  if (postgresUri.trim()) {
+    try {
+      return normalizeHost(new URL(postgresUri).hostname);
+    } catch {
+      // Fall through to discrete host vars if URI is invalid
+    }
+  }
+
+  const directHost = normalizeHost(process.env.POSTGRES_HOST || process.env.PG_HOST || '');
+  if (directHost) return directHost;
+
+  return '';
+};
+
+const isUnixSocketPath = (host = '') => host.startsWith('/');
 
 export function validateEnvironment() {
   const errors = [];
@@ -68,6 +100,21 @@ export function validateEnvironment() {
   const postgresConfigSet = process.env.POSTGRES_HOST && process.env.POSTGRES_USER && process.env.POSTGRES_PASSWORD && process.env.POSTGRES_DATABASE;
   if (!postgresUri && !postgresConfigSet) {
     errors.push('❌ Missing PostgreSQL configuration (set POSTGRES_URI or POSTGRES_HOST/USER/PASSWORD/DATABASE).');
+  }
+
+  if (process.env.DISALLOW_REMOTE_DB === 'true') {
+    const configuredHost = getConfiguredPostgresHost();
+    const allowedHosts = parseLocalHostAllowlist();
+
+    if (!configuredHost) {
+      errors.push('❌ DISALLOW_REMOTE_DB=true but PostgreSQL host could not be resolved from POSTGRES_HOST/POSTGRES_URI.');
+    } else if (!isUnixSocketPath(configuredHost) && !allowedHosts.has(configuredHost)) {
+      errors.push(
+        `❌ Remote DB blocked by DISALLOW_REMOTE_DB=true. Current host '${configuredHost}' is not in ALLOWED_LOCAL_DB_HOSTS.`
+      );
+    } else {
+      console.log(`✅ Database host guard: local-only host '${configuredHost}' allowed`);
+    }
   }
 
   if (process.env.CITUS_ENABLED === 'true' && !process.env.CITUS_WORKERS) {

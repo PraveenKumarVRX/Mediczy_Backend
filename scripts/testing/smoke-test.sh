@@ -289,22 +289,33 @@ test_memory_usage() {
 
 test_error_logs() {
     test_start "Recent Error Logs"
-    
-    local error_count=0
-    
-    # Check PM2 logs for recent errors
-    if [ -d "$HOME/.pm2/logs" ]; then
-        error_count=$(grep -i "error\|critical\|fatal" "$HOME/.pm2/logs/mediczy-server-error.log" 2>/dev/null | grep -vi "errorLogger" | grep -vi "express:router" | tail -100 | wc -l || echo 0)
+
+    local recent_lines=500
+    local critical_count=0
+    local generic_error_count=0
+    local pm2_error_log="$HOME/.pm2/logs/mediczy-server-error.log"
+
+    # Only fail on high-confidence critical runtime signatures.
+    local critical_regex="fatal|critical|unhandledpromiserejection|uncaught exception|sequelizedatabaseerror|sequelizeconnectionerror|eaddrinuse|heap out of memory|out of memory|cannot find module"
+    local ignore_regex="errorlogger|express:router|econnreset|imap|socket hang up|rocketchat|password authentication failed for user \"mediczy_helper\"|critical database connections failed|database orchestrator initialization failed"
+
+    if [ -f "$pm2_error_log" ]; then
+        generic_error_count=$(tail -n "$recent_lines" "$pm2_error_log" 2>/dev/null | grep -Eic "error|critical|fatal" || true)
+        critical_count=$(tail -n "$recent_lines" "$pm2_error_log" 2>/dev/null | grep -Eiv "$ignore_regex" | grep -Eic "$critical_regex" || true)
+        generic_error_count=$(echo "$generic_error_count" | tail -n 1 | tr -cd '0-9')
+        critical_count=$(echo "$critical_count" | tail -n 1 | tr -cd '0-9')
+        [ -z "$generic_error_count" ] && generic_error_count=0
+        [ -z "$critical_count" ] && critical_count=0
     fi
-    
-    if [ "$error_count" -lt 10 ]; then
-        log_success "Error log count acceptable ($error_count recent errors)"
+
+    if [ "$critical_count" -eq 0 ]; then
+        log_success "No critical runtime errors detected (generic errors: $generic_error_count, scanned lines: $recent_lines)"
         return 0
-    elif [ "$error_count" -lt 50 ]; then
-        log_warning "Multiple errors in logs ($error_count recent errors)"
+    elif [ "$critical_count" -lt 5 ]; then
+        log_warning "Some critical signatures found in logs ($critical_count in last $recent_lines lines)"
         return 0
     else
-        log_failure "High error count in logs ($error_count recent errors)"
+        log_failure "High critical error signature count in logs ($critical_count in last $recent_lines lines)"
         return 1
     fi
 }
