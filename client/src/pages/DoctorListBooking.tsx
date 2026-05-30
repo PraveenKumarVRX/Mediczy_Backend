@@ -686,7 +686,9 @@ const DoctorListBooking = () => {
     }
 
     if (consultationTypeFilter === "online") {
-      filtered = filtered.filter((doctor) => doctor.supportsOnline !== false);
+      filtered = filtered.filter(
+        (doctor) => doctor.supportsOnline !== false && doctor.availability?.status === "Available"
+      );
     } else if (consultationTypeFilter === "inPerson") {
       filtered = filtered.filter((doctor) => doctor.supportsInPerson);
     }
@@ -1443,8 +1445,8 @@ const DoctorListBooking = () => {
               <CardContent className="p-4 flex items-center gap-3">
                 <Video className="h-5 w-5 text-blue-600" />
                 <div>
-                  <p className="text-xs text-muted-foreground">Online consultation</p>
-                  <p className="text-lg font-semibold">{filteredDoctors.filter((doctor) => doctor.supportsOnline !== false).length}</p>
+                  <p className="text-xs text-muted-foreground">Online now</p>
+                  <p className="text-lg font-semibold">{filteredDoctors.filter((doctor) => doctor.availability?.status === "Available").length}</p>
                 </div>
               </CardContent>
             </Card>
@@ -1512,7 +1514,7 @@ const DoctorListBooking = () => {
                   consultationTypeFilter === "online" ? "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300" : "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
                 )}>
                   {consultationTypeFilter === "online" ? (
-                    <><Video className="h-3.5 w-3.5" /> Showing online-capable doctors — fee shown is the video rate</>
+                    <><Video className="h-3.5 w-3.5" /> Showing currently online doctors — fee shown is the video rate</>
                   ) : (
                     <><Building2 className="h-3.5 w-3.5" /> Showing clinic doctors — fee shown is the in-person rate</>
                   )}
