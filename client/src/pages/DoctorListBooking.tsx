@@ -577,7 +577,9 @@ const DoctorListBooking = () => {
     try {
       setLoading(true);
       let primaryDoctors: Doctor[] = [];
+      let primaryFetchSucceeded = false;
       const availableDoctorParams: Record<string, any> = {};
+      availableDoctorParams.strictQc = true;
 
       if (consultationTypeFilter === "online") {
         availableDoctorParams.consultationType = "online";
@@ -596,59 +598,31 @@ const DoctorListBooking = () => {
 
       try {
         primaryDoctors = await fetchAllDoctorsFromApi("/doctors/available", availableDoctorParams);
+        primaryFetchSucceeded = true;
       } catch (error) {
         console.warn("Primary doctor list unavailable, falling back to /doctors:", error);
       }
 
-      if (primaryDoctors.length) {
+      // If primary strict-QC fetch succeeded, honor it even when the result is empty.
+      if (primaryFetchSucceeded) {
         setDoctors(primaryDoctors);
         return;
       }
 
-      let secondaryDoctors: Doctor[] = [];
-      try {
-        secondaryDoctors = await fetchAllDoctorsFromApi("/doctors", { limit: 100 });
-      } catch (error) {
-        console.warn("Secondary doctor list failed:", error);
-      }
-
-      if (secondaryDoctors.length) {
-        setDoctors(secondaryDoctors);
-        toast({
-          title: "Loaded live doctors",
-          description: "Showing doctor profiles directly from the database.",
-        });
-        return;
-      }
-
-      // Third fallback: masterdata providers list
-      try {
-        const masterRes = await api.get("/masterdata/doctors", { params: { limit: 50 } });
-        const masterList = Array.isArray(masterRes.data?.data) ? masterRes.data.data : [];
-        const normalizedMaster = masterList.map(normalizeMasterDoctor).filter(Boolean);
-        if (normalizedMaster.length) {
-          setDoctors(normalizedMaster);
-          toast({
-            title: "Showing provider network doctors",
-            description: "Loaded doctors from the master provider directory.",
-          });
-          return;
-        }
-      } catch (e) {
-        console.error("Master data doctors fetch failed:", e);
-      }
-
-      setDoctors(mockDoctors);
+      // Do not fall back to non-strict datasets. Empty state is safer than showing wrong doctors.
+      setDoctors([]);
       toast({
-        title: "Showing test doctors",
-        description: "No live doctor profiles were returned. Displaying demo doctors instead.",
+        title: "Live doctors unavailable",
+        description: "Could not load strict QC doctor list right now.",
+        variant: "destructive",
       });
     } catch (error) {
       console.error("Error fetching doctors:", error);
-      setDoctors(mockDoctors);
+      setDoctors([]);
       toast({
-        title: "Info",
-        description: "Using sample doctor data",
+        title: "Live doctors unavailable",
+        description: "Could not load strict QC doctor list right now.",
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
