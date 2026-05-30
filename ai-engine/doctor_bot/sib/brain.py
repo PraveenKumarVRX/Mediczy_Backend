@@ -28,6 +28,8 @@ logger = logging.getLogger("sib.brain")
 # ─── Module-level singletons (one-time cost) ─────────────────────────────────
 
 _groq_client = None          # Groq SDK client — created once
+_openai_client = None        # OpenAI SDK client — created once
+_gemini_model = None         # Gemini GenerativeModel — created once
 _isha_session = None         # httpx.Client with keep-alive for iSHA GPU
 
 # ─── LLM response cache ───────────────────────────────────────────────────────
@@ -91,6 +93,25 @@ def _get_groq_client():
         from groq import Groq
         _groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
     return _groq_client
+
+
+def _get_openai_client():
+    """Return singleton OpenAI client (instantiated once)."""
+    global _openai_client
+    if _openai_client is None:
+        from openai import OpenAI
+        _openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+    return _openai_client
+
+
+def _get_gemini_model():
+    """Return singleton Gemini GenerativeModel (instantiated once)."""
+    global _gemini_model
+    if _gemini_model is None:
+        import google.generativeai as genai
+        genai.configure(api_key=os.environ.get("GEMINI_API_KEY", ""))
+        _gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+    return _gemini_model
 
 
 def _get_isha_session() -> "httpx.Client":
@@ -301,7 +322,8 @@ class SyntheticIntelligenceBrain:
         lower = prompt.lower()
         return any(kw in lower for kw in keywords)
 
-    def llm_reasoning(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
+    def llm_reasoning(self, prompt: str, system_prompt: Optional[str] = None,
+                      user_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Primary LLM reasoning with 5-tier fallback.
 
@@ -312,12 +334,13 @@ class SyntheticIntelligenceBrain:
         4. OpenAI gpt-3.5-turbo        — cloud fallback 2
         5. Gemini 1.5-flash            — cloud fallback 3
 
-        Results are cached for 5 minutes to avoid redundant LLM calls.
+        user_id is required for cache isolation — each patient's cache is keyed separately
+        so Patient A never receives Patient B's cached clinical response.
         """
         start_time = time.time()
 
-        # Fast path: return cached result for identical prompts
-        cached = _cache_get(prompt, system_prompt)
+        # Fast path: return cached result for identical (user, prompt) pairs
+        cached = _cache_get(prompt, system_prompt, user_id)
         if cached:
             logger.debug("LLM cache hit")
             return cached
@@ -328,7 +351,7 @@ class SyntheticIntelligenceBrain:
             result["provider"] = LLMProvider.LLAMA_LOCAL.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
             logger.info(f"✅ iSHA node1 inference: {result['latency_ms']}ms model={result.get('model','?')}")
-            _cache_set(prompt, system_prompt, result)
+            _cache_set(prompt, system_prompt, result, user_id)
             return result
         except Exception as e:
             logger.warning(f"⚠️ iSHA node1 failed: {e}")
@@ -340,7 +363,7 @@ class SyntheticIntelligenceBrain:
             result["provider"] = LLMProvider.ISHA_INC.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
             logger.info(f"✅ iSHA node2 ({node2_model}): {result['latency_ms']}ms")
-            _cache_set(prompt, system_prompt, result)
+            _cache_set(prompt, system_prompt, result, user_id)
             return result
         except Exception as e:
             logger.warning(f"⚠️ iSHA node2 failed: {e}")
@@ -351,7 +374,7 @@ class SyntheticIntelligenceBrain:
             result["provider"] = LLMProvider.GROQ.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
             logger.info(f"✅ Groq fallback: {result['latency_ms']}ms")
-            _cache_set(prompt, system_prompt, result)
+            _cache_set(prompt, system_prompt, result, user_id)
             return result
         except Exception as e:
             logger.warning(f"⚠️ Groq failed: {e}")
@@ -362,7 +385,7 @@ class SyntheticIntelligenceBrain:
             result["provider"] = LLMProvider.OPENAI.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
             logger.info(f"✅ OpenAI fallback: {result['latency_ms']}ms")
-            _cache_set(prompt, system_prompt, result)
+            _cache_set(prompt, system_prompt, result, user_id)
             return result
         except Exception as e:
             logger.warning(f"⚠️ OpenAI failed: {e}")
@@ -373,7 +396,7 @@ class SyntheticIntelligenceBrain:
             result["provider"] = LLMProvider.GEMINI.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
             logger.info(f"✅ Gemini fallback: {result['latency_ms']}ms")
-            _cache_set(prompt, system_prompt, result)
+            _cache_set(prompt, system_prompt, result, user_id)
             return result
         except Exception as e:
             logger.error(f"❌ All LLM providers failed: {e}")
@@ -485,9 +508,8 @@ class SyntheticIntelligenceBrain:
         return {"answer": data["choices"][0]["message"]["content"], "model": data.get("model", model)}
 
     def _openai_inference(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
-        """OpenAI gpt-3.5-turbo — cloud fallback 2."""
-        from openai import OpenAI
-        client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+        """OpenAI gpt-3.5-turbo — cloud fallback 2 (singleton client)."""
+        client = _get_openai_client()
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -498,10 +520,8 @@ class SyntheticIntelligenceBrain:
         return {"answer": response.choices[0].message.content, "model": "gpt-3.5-turbo"}
 
     def _gemini_inference(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
-        """Gemini 1.5-flash — cloud fallback 3."""
-        import google.generativeai as genai
-        genai.configure(api_key=self.gemini_api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        """Gemini 1.5-flash — cloud fallback 3 (singleton model)."""
+        model = _get_gemini_model()
         full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
         response = model.generate_content(full_prompt)
         return {"answer": response.text, "model": "gemini-1.5-flash"}
@@ -766,10 +786,10 @@ class SyntheticIntelligenceBrain:
         patient_id = data.get("patient_id")
         patient_data = data.get("patient_data", {})
         include_summary = data.get("include_summary", False)
-        
+
         # Retrieve relevant context from EHR
         retrieved = self.ehr_bot.retrieve(query, patient_id=patient_id)
-        
+
         # Build context-enriched prompt
         context = "\n".join([chunk["text"] for chunk in retrieved.get("chunks", [])])
         enriched_prompt = f"""Based on the following medical context:
@@ -779,11 +799,12 @@ class SyntheticIntelligenceBrain:
 User Query: {query}
 
 Please provide a helpful, medically accurate response."""
-        
-        # LLM reasoning
+
+        # LLM reasoning — pass patient_id for per-patient cache isolation
         llm_result = self.llm_reasoning(
             enriched_prompt,
-            system_prompt="You are Dr. iSHA, a helpful medical AI assistant. Provide accurate, empathetic medical guidance."
+            system_prompt="You are Dr. iSHA, a helpful medical AI assistant. Provide accurate, empathetic medical guidance.",
+            user_id=patient_id,
         )
         
         # Risk assessment if patient data provided
@@ -883,16 +904,18 @@ Please provide a helpful, medically accurate response."""
         result = self.risk_bot.evaluate(patient_data)
         
         if include_recommendations:
-            # Generate recommendations using LLM
+            # Generate recommendations using LLM — pass patient_id for cache isolation
+            patient_id = data.get("patient_id") or data.get("patient_data", {}).get("patient_id")
             risk_summary = f"""Patient Risk Assessment:
 - Cardiovascular Risk: {result.get('cardio_risk', 'N/A')}
 - Treatment Priority: {result.get('treatment_priority', 'N/A')}
 - Framingham Score: {result.get('framingham_score', 'N/A')}%
 - ASCVD Score: {result.get('ascvd_score', 'N/A')}%"""
-            
+
             rec_result = self.llm_reasoning(
                 f"Based on this risk assessment, provide brief lifestyle and treatment recommendations:\n\n{risk_summary}",
-                system_prompt="You are a medical AI. Provide concise, actionable health recommendations."
+                system_prompt="You are a medical AI. Provide concise, actionable health recommendations.",
+                user_id=patient_id,
             )
             result["recommendations"] = rec_result.get("answer")
         

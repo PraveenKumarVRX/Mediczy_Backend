@@ -1044,7 +1044,9 @@ const DoctorListBooking = () => {
                 </div>
                 <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-700/50 px-3 py-1.5 rounded-full">
                   <MapPin className="h-4 w-4 text-slate-500" />
-                  <span className="text-slate-700 dark:text-slate-300">{doctor.clinic.city}</span>
+                  <span className="text-slate-700 dark:text-slate-300">
+                    {consultationTypeFilter === "online" ? "Anywhere" : doctor.clinic.city}
+                  </span>
                 </div>
                   {consultationTypeFilter === "inPerson" && Number.isFinite(doctor.distanceKm as number) && (
                     <div className="flex items-center gap-1.5 bg-green-50 dark:bg-green-900/20 px-3 py-1.5 rounded-full">
