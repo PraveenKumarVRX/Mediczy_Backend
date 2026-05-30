@@ -394,7 +394,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/lab/dashboard',
       '/api/lab/tests',
       '/api/lab/results',
-      '/api/lab/reports'
+      '/api/lab/reports',
+      '/api/ai/vision'
     ],
     tokenField: 'labId'
   },
@@ -510,6 +511,13 @@ const resolveUserType = (decoded) => {
   return USER_TYPE_ALIASES[rawType] || rawType;
 };
 
+const normalizePathPrefix = (path) => path.replace(/\/+$/, '');
+
+const isPathAllowed = (requestPath, allowedPath) => {
+  const normalizedAllowed = normalizePathPrefix(allowedPath);
+  return requestPath === normalizedAllowed || requestPath.startsWith(`${normalizedAllowed}/`);
+};
+
 // Public endpoints that don't require authentication
 const PUBLIC_ENDPOINTS = [
   '/health',
@@ -540,11 +548,17 @@ const PUBLIC_ENDPOINTS = [
   '/api/users/login/send-otp',
   '/api/users/login/verify-otp',
   '/api/users/forgot-password',
+  '/api/users/forgot-password/request',
   '/api/users/verify-reset-otp',
+  '/api/users/forgot-password/verify',
   '/api/users/reset-password',
+  '/api/users/forgot-password/reset',
   '/api/users/forgot-password',
+  '/api/users/forgot-password/request',
   '/api/users/verify-reset-otp',
+  '/api/users/forgot-password/verify',
   '/api/users/reset-password',
+  '/api/users/forgot-password/reset',
   '/api/doctors/login',
   '/api/doctors/register',
   '/api/doctors/send-email-otp',
@@ -626,6 +640,16 @@ const PUBLIC_ENDPOINTS = [
   '/api/insurance-company/login',
   '/api/insurance-company/corporate/login',
   '/api/hospital-insurance/auth/login',
+  // TPA portal — QA-BUG-001: was missing, caused 401 NO_TOKEN on login
+  '/api/tpa/login',
+  '/api/tpa/register',
+  // Aggregator portal — QA-BUG-002: was missing, caused 401 NO_TOKEN on login
+  '/api/aggregator-auth/login',
+  '/api/aggregator-auth/register',
+  // Clinic role-specific logins — QA-BUG-003: paths not listed, only /api/clinic/login was
+  '/api/clinic/doctor-login',
+  '/api/clinic/nurse-login',
+  '/api/clinic/assistant-login',
   '/api/hospital-insurance/auth/verify',
   '/api/hospital-insurance/auth/logout',
   '/api/broker-integrations/health',
@@ -639,8 +663,8 @@ const PUBLIC_ENDPOINTS = [
   '/oauth',  // OAuth 2.0 SSO endpoints (Rocket.Chat integration)
   '/api/otp',
   '/api/masterdata', // Public read-only provider data (hospitals, labs, clinics)
-  '/api/medical-ai/test', // AI medical consultation test endpoint (for demos and testing)
   '/api/medical-ai/health', // Medical AI health check (public monitoring)
+  '/api/medical-ai/languages', // Supported languages list (public — no PHI)
   '/api/medical-ai/instant-triage-call', // Emergency triage endpoint - accessible without authentication
   '/api/tts', // Text-to-Speech for emergency triage (Eleven Labs)
   '/api/membership/plans', // Public membership plans listing
@@ -782,8 +806,8 @@ const ringFencingMiddleware = (req, res, next) => {
     }
 
     // Check if user has access to this endpoint
-    const hasPathAccess = permissions.allowedPaths.some(allowedPath =>
-      requestPath.startsWith(allowedPath)
+    const hasPathAccess = permissions.allowedPaths.some((allowedPath) =>
+      isPathAllowed(requestPath, allowedPath)
     );
 
     if (!hasPathAccess) {

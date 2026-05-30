@@ -50,6 +50,8 @@ const CLAIM_TYPES = [
   { key: 'maternity', label: 'Maternity', icon: Heart, color: 'from-rose-600 to-rose-800', desc: 'Pregnancy & childbirth' },
 ];
 
+const MOTION_STAGGER = 0.08;
+
 export default function ClaimsExpress() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<'active' | 'history' | 'file'>('active');
@@ -133,7 +135,7 @@ export default function ClaimsExpress() {
     <MainLayout>
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
             <Zap className="h-6 w-6 text-amber-400" /> Claims Express
@@ -146,8 +148,23 @@ export default function ClaimsExpress() {
         </Button>
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mb-6">
+        <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
+          <p className="text-xs font-semibold text-amber-300">Step 1: Select filing mode</p>
+          <p className="text-[11px] text-slate-400">Choose scan, upload, or manual based on document readiness.</p>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
+          <p className="text-xs font-semibold text-amber-300">Step 2: Submit complete docs</p>
+          <p className="text-[11px] text-slate-400">Provide bills and prescription details to avoid info-needed loops.</p>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
+          <p className="text-xs font-semibold text-amber-300">Step 3: Monitor outcomes</p>
+          <p className="text-[11px] text-slate-400">Track review milestones till approval and settlement.</p>
+        </div>
+      </div>
+
       {/* Quick Stats */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
+      <div className="grid grid-cols-3 gap-3 mb-6">
         {[
           { label: 'Active Claims', value: activeClaims.filter(c => !['settled', 'rejected'].includes(c.status)).length.toString(), color: 'text-blue-400' },
           { label: 'Pending Amount', value: `₹${(totalClaimed / 1000).toFixed(0)}K`, color: 'text-amber-400' },
@@ -161,8 +178,8 @@ export default function ClaimsExpress() {
       </div>
 
       {/* AI Tip */}
-      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-r from-amber-600/10 to-orange-600/5 border border-amber-500/20 rounded-xl p-3 mb-5 flex items-center gap-3">
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}
+        className="bg-gradient-to-r from-amber-600/10 to-orange-600/5 border border-amber-500/20 rounded-xl p-3 mb-6 flex items-center gap-3">
         <Brain className="h-5 w-5 text-amber-400 flex-shrink-0" />
         <p className="text-xs text-slate-300">
           <span className="font-semibold text-amber-400">AI Tip:</span> Your pending pharmacy claim needs the original prescription. Upload it to get ₹2,800 settled in 2 days.
@@ -170,7 +187,7 @@ export default function ClaimsExpress() {
       </motion.div>
 
       {/* Tab Navigation */}
-      <div className="flex gap-1 bg-slate-800/50 rounded-xl p-1 mb-5">
+      <div className="flex gap-1 bg-slate-800/50 rounded-xl p-1 mb-6">
         {([
           { key: 'active', label: 'Active Claims', icon: Clock },
           { key: 'history', label: 'History', icon: FileText },
@@ -186,6 +203,32 @@ export default function ClaimsExpress() {
         ))}
       </div>
 
+      <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3 mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3 transition-all duration-300">
+        <div>
+          <p className="text-xs font-semibold text-amber-300">Next Best Action</p>
+          <p className="text-[11px] text-slate-400">
+            {tab === 'active'
+              ? 'Open claims marked info-needed first to avoid payout delays.'
+              : 'Use history to compare approved ratios before filing similar future claims.'}
+          </p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <Button size="sm" className="bg-amber-600 hover:bg-amber-500 border-0" onClick={() => setShowNewClaim(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1" /> File Claim
+          </Button>
+          {tab !== 'active' && (
+            <Button size="sm" variant="outline" className="border-white/10 text-slate-300" onClick={() => setTab('active')}>
+              Track Active
+            </Button>
+          )}
+          {tab !== 'history' && (
+            <Button size="sm" variant="outline" className="border-white/10 text-slate-300" onClick={() => setTab('history')}>
+              View History
+            </Button>
+          )}
+        </div>
+      </div>
+
       <AnimatePresence mode="wait">
         {/* Active Claims */}
         {tab === 'active' && (
@@ -196,7 +239,7 @@ export default function ClaimsExpress() {
               const StIcon = st.icon;
               return (
                 <motion.div key={claim.id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.1 }}
+                  transition={{ delay: i * MOTION_STAGGER, duration: 0.25 }}
                   onClick={() => setSelectedClaim(claim)}
                   className="cursor-pointer">
                   <Card className="!p-0 border-white/[0.06] bg-slate-900/50 hover:border-white/[0.12] transition-all">
@@ -280,7 +323,7 @@ export default function ClaimsExpress() {
               const st = STATUS_CONFIG[claim.status] || STATUS_CONFIG.draft;
               return (
                 <motion.div key={claim.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.05 }}>
+                  transition={{ delay: i * 0.05, duration: 0.22 }}>
                   <Card className="!p-0 border-white/[0.06] bg-slate-900/50">
                     <CardContent className="p-3 flex items-center gap-3">
                       <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${CLAIM_TYPES.find(t => t.key === claim.type)?.color || 'from-slate-600 to-slate-800'} flex items-center justify-center flex-shrink-0`}>

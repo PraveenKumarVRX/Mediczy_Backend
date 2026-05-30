@@ -32,9 +32,10 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 import os
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -69,18 +70,45 @@ print_config()
 # FASTAPI APP
 # =============================================================================
 
+_DEBUG = os.getenv("SCRIBE_DEBUG", "false").lower() == "true"
+_SCRIBE_TOKEN = os.getenv("SCRIBE_TOKEN", "")  # required in production
+
 app = FastAPI(
     title="Mediczy Offline AI Scribe",
     description="Hospital-grade, fully offline medical scribe for Indian hospitals",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if _DEBUG else None,
+    redoc_url="/redoc" if _DEBUG else None,
 )
 
-# CORS (restrictive for hospital security)
+# ── Auth middleware ────────────────────────────────────────────────────────────
+# Shared-secret check on every request except /api/scribe/health and /.
+# Token is passed as the X-Scribe-Token header by the Node.js proxy.
+_OPEN_PATHS = {"/", "/api/scribe/health", "/api/scribe/languages", "/api/scribe/templates"}
+
+class ScribeAuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path in _OPEN_PATHS:
+            return await call_next(request)
+        if not _SCRIBE_TOKEN:
+            # Token not configured — log warning once and allow (dev mode)
+            logger.warning("SCRIBE_TOKEN not set — running without auth. Set it in production.")
+            return await call_next(request)
+        token = request.headers.get("X-Scribe-Token", "")
+        if token != _SCRIBE_TOKEN:
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+        return await call_next(request)
+
+app.add_middleware(ScribeAuthMiddleware)
+
+# ── CORS — restrict to configured hospital origins ─────────────────────────────
+_cors_origins = [o.strip() for o in os.getenv(
+    "SCRIBE_CORS_ORIGINS", "http://localhost:8888"
+).split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure for specific hospital domains in production
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
@@ -185,6 +213,7 @@ JOB_DIR = Path(os.getenv("SCRIBE_JOB_DIR", "/tmp/mediczy-scribe-jobs"))
 JOB_DIR.mkdir(parents=True, exist_ok=True)
 JOBS: Dict[str, Dict[str, Any]] = {}
 JOB_RETENTION_SECONDS = int(os.getenv("SCRIBE_JOB_RETENTION_SECONDS", "86400"))
+MAX_CONCURRENT_JOBS = int(os.getenv("SCRIBE_MAX_CONCURRENT_JOBS", "20"))
 
 MEDICAL_TERMS = {
     "fever", "pain", "cough", "cold", "vomiting", "diabetes", "hypertension",
@@ -751,22 +780,23 @@ async def full_pipeline(
         # Step 2: Normalize
         normalized = normalize_medical_text(transcription["text"])
         
-        # Step 3: Generate document
+        # Step 3: Generate document — wrapped in asyncio.to_thread so LLM
+        # CPU inference (10-60s) never blocks the uvicorn event loop.
         llm = get_llm_engine()
         patient_info = {
             "name": patient_name,
             "age": patient_age,
             "gender": patient_gender,
         }
-        
+
         if document_type == "prescription":
-            result = llm.format_prescription(normalized.normalized_text, patient_info)
+            result = await asyncio.to_thread(llm.format_prescription, normalized.normalized_text, patient_info)
         elif document_type == "opd_notes":
-            result = llm.format_opd_notes(normalized.normalized_text, patient_info)
+            result = await asyncio.to_thread(llm.format_opd_notes, normalized.normalized_text, patient_info)
         elif document_type == "discharge_summary":
-            result = llm.format_discharge_summary(normalized.normalized_text, patient_info)
+            result = await asyncio.to_thread(llm.format_discharge_summary, normalized.normalized_text, patient_info)
         elif document_type == "ipd_notes":
-            result = llm.format_ipd_notes(normalized.normalized_text, patient_info)
+            result = await asyncio.to_thread(llm.format_ipd_notes, normalized.normalized_text, patient_info)
         else:
             raise HTTPException(400, f"Unknown document type: {document_type}")
         
@@ -911,6 +941,9 @@ async def create_full_pipeline_job(
 ):
     """Create an async audio-to-document job for longer recordings."""
     _cleanup_old_jobs()
+    active_jobs = sum(1 for j in JOBS.values() if j.get("status") in ("queued", "running"))
+    if active_jobs >= MAX_CONCURRENT_JOBS:
+        raise HTTPException(429, f"Too many concurrent jobs ({active_jobs}/{MAX_CONCURRENT_JOBS}). Try again shortly.")
     allowed_extensions = [".wav", ".mp3", ".m4a", ".ogg", ".webm"]
     file_ext = Path(file.filename or "audio.wav").suffix.lower() or ".wav"
     if file_ext not in allowed_extensions:

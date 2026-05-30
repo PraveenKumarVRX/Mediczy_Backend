@@ -6,9 +6,11 @@
 set -e
 
 # Configuration
-PROD_SERVER="ubuntu@13.234.17.52"
+PROD_SERVER="ubuntu@13.127.125.93"
 PROD_PATH="/home/ubuntu/Mediczy"
 SSH_KEY="$HOME/.ssh/mediqzy.pem"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 echo "═══════════════════════════════════════════════════"
 echo "🚀 Mediczy Production Deployment - OAuth 2.0"
@@ -46,10 +48,21 @@ echo "✅ Backup created and old ones cleaned"
 
 # Step 4: Pull latest code
 echo "[4/6] Pulling latest code..."
-ssh -i "$SSH_KEY" "$PROD_SERVER" "cd '$PROD_PATH' && git fetch origin main && git pull origin main && echo 'Code updated'" || {
-  echo "⚠️  Code update had issues, continuing..."
-}
-echo "✅ Code pulled"
+DEPLOY_SOURCE="git"
+if ssh -i "$SSH_KEY" "$PROD_SERVER" "cd '$PROD_PATH' && git fetch origin main && git pull origin main && echo 'Code updated'"; then
+  echo "✅ Code pulled via git"
+else
+  echo "⚠️  Git pull failed on server, using rsync fallback for server code..."
+  rsync -az --delete -e "ssh -i $SSH_KEY" \
+    --exclude node_modules \
+    --exclude .env \
+    --exclude .env.* \
+    "$REPO_ROOT/server/" "$PROD_SERVER:$PROD_PATH/server/" && DEPLOY_SOURCE="rsync" || {
+      echo "❌ Rsync fallback failed"
+      exit 1
+    }
+  echo "✅ Code synced via rsync fallback"
+fi
 
 # Step 5: Install dependencies
 echo "[5/6] Installing dependencies..."
@@ -80,15 +93,15 @@ echo "════════════════════════�
 echo ""
 echo "📊 Summary:"
 echo "  ✅ Code committed to main branch"
-echo "  ✅ Latest code pulled from GitHub"
+echo "  ✅ Latest code deployed via $DEPLOY_SOURCE"
 echo "  ✅ Dependencies installed"
 echo "  ✅ Services restarted with PM2"
 echo "  ✅ OAuth endpoints verified"
 echo ""
 echo "🔗 Production URLs:"
 echo "  • API: https://app.mediqzy.com (via nginx)"
-echo "  • Backend: http://13.234.17.52:8888"
-echo "  • OAuth: http://13.234.17.52:8888/oauth/"
+echo "  • Backend: http://13.127.125.93:8888"
+echo "  • OAuth: http://13.127.125.93:8888/oauth/"
 echo ""
 echo "📋 To rollback:"
 echo "  ssh -i $SSH_KEY $PROD_SERVER"

@@ -200,13 +200,72 @@ Lab.prototype.comparePassword = async function(candidatePassword) {
 };
 
 Lab.prototype.generateAuthToken = function() {
+  const metadata = this.metadata || {};
+
+  const normalizeList = (value) => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value.filter(Boolean).map((v) => String(v));
+    if (typeof value === 'string') {
+      return value
+        .split(/[\s,]+/)
+        .map((v) => v.trim())
+        .filter(Boolean);
+    }
+    return [];
+  };
+
+  const baseScopes = ['labs.read', 'labs.write'];
+  const explicitScopes = [
+    ...normalizeList(metadata.scopes),
+    ...normalizeList(metadata.permissions),
+  ];
+
+  const roleSignals = [
+    ...normalizeList(metadata.roles),
+    ...normalizeList(metadata.role),
+    ...normalizeList(metadata.userRole),
+    ...normalizeList(metadata.teamRole),
+    ...normalizeList(metadata.departmentRole),
+    ...normalizeList(this.department),
+  ].map((value) => value.toLowerCase());
+
+  const billingKeywords = ['billing', 'finance', 'accounts', 'revenue', 'payment'];
+  const hasBillingSignal =
+    Boolean(metadata.billingOpsAccess) ||
+    Boolean(metadata.billingAccess) ||
+    roleSignals.some((signal) => billingKeywords.some((keyword) => signal.includes(keyword))) ||
+    explicitScopes.some((scope) => billingKeywords.some((keyword) => String(scope).toLowerCase().includes(keyword)));
+
+  const billingScopes = hasBillingSignal
+    ? [
+        'labs.billing.read',
+        'labs.billing.write',
+        'labs.billing.view',
+        'labs.billing.manage',
+        'labs.finance.read',
+        'labs.finance.write',
+      ]
+    : [];
+
+  const scopes = Array.from(new Set([...baseScopes, ...explicitScopes, ...billingScopes]));
+
+  const tenantId =
+    metadata.tenant_id ||
+    metadata.tenantId ||
+    process.env.DEFAULT_TENANT_ID ||
+    process.env.TENANT_ID ||
+    null;
+
   const payload = {
     id: this.id,
+    user_id: this.id,
     email: this.email,
     role: 'lab',
     labName: this.name,
     isVerified: this.isVerified,
-    department: this.department || 'pathology'
+    department: this.department || 'pathology',
+    scopes,
+    ...(tenantId ? { tenant_id: tenantId } : {})
   };
   
   return jwt.sign(payload, JWT_CONFIG.SECRET, {

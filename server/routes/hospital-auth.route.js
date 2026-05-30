@@ -131,6 +131,7 @@ async function issueTokenPair(payload, { deviceFp } = {}) {
     );
   } catch (err) {
     console.error('[hospital-auth] Failed to store refresh token:', err.message);
+    throw err;
   }
   return { accessToken, refreshToken, jti };
 }
@@ -168,6 +169,16 @@ function extractSubdomainFromHost(req) {
   return null;
 }
 
+const normalizeCapabilities = (...sources) => {
+  for (const source of sources) {
+    if (Array.isArray(source)) return source.filter(Boolean);
+    if (source && typeof source === 'object') {
+      return Object.entries(source).filter(([, enabled]) => enabled === true).map(([key]) => key);
+    }
+  }
+  return undefined;
+};
+
 const buildHospitalTokenPayload = ({ hospital, tenant, user }) => {
   if (tenant && user) {
     return {
@@ -182,7 +193,8 @@ const buildHospitalTokenPayload = ({ hospital, tenant, user }) => {
       hospitalName: tenant.name,
       hospital_slug: tenant.slug,
       subdomain: tenant.subdomain,
-      custom_domain: tenant.custom_domain
+      custom_domain: tenant.custom_domain,
+      capabilities: normalizeCapabilities(user.metadata?.capabilities, tenant.metadata?.capabilities, tenant.features)
     };
   }
 
@@ -195,7 +207,8 @@ const buildHospitalTokenPayload = ({ hospital, tenant, user }) => {
       hospital_id: hospital.id,
       hospitalId: hospital.id,
       hospitalName: hospital.hospitalName || hospital.name,
-      tenant_id: hospital.tenantId || null
+      tenant_id: hospital.tenantId || null,
+      capabilities: normalizeCapabilities(hospital.metadata?.capabilities, hospital.features)
     };
   }
 
@@ -309,6 +322,15 @@ export const hospitalLogin = async (req, res) => {
     }
 
     const normalizedEmail = normalizeEmail(email);
+    const hostSubdomain = extractSubdomainFromHost(req);
+
+    if (hostSubdomain) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Generic hospital login blocked on subdomain ' + hostSubdomain);
+      return res.status(403).json({
+        success: false,
+        message: 'Use the tenant-scoped hospital login endpoint for this request origin'
+      });
+    }
 
     // — Lockout check
     const lockStatus = await checkLockout(normalizedEmail);
@@ -329,6 +351,7 @@ export const hospitalLogin = async (req, res) => {
         where: {
           email: normalizedEmail,
           status: 'active',
+          isActive: { [Op.ne]: false }, // P0-A: must not be explicitly disabled
           [Op.or]: [
             { organization_type: 'hospital' },
             { role: { [Op.in]: ['hospital_admin', 'doctor', 'staff', 'nurse', 'insurance_coordinator', 'billing', 'receptionist', 'ceo', 'coo', 'ms', 'medical_superintendent', 'cmo', 'chief_medical_officer'] } }
@@ -424,10 +447,11 @@ export const hospitalLogin = async (req, res) => {
 
     if (hospital.status !== 'active') {
       await auditLoginAttempt(req, hospital.id, normalizedEmail, false, 'Hospital inactive');
-      return res.status(403).json({
-        success: false,
-        message: 'Hospital account is not active'
-      });
+      return res.status(403).json({ success: false, message: 'Hospital account is not active' });
+    }
+    if (hospital.isActive === false) {
+      await auditLoginAttempt(req, hospital.id, normalizedEmail, false, 'Hospital disabled (isActive=false)');
+      return res.status(403).json({ success: false, message: 'Hospital account has been disabled' });
     }
 
     const tokenPayload = buildHospitalTokenPayload({ hospital });
@@ -944,11 +968,12 @@ export const hospitalVerify = async (req, res) => {
     // We key the access token's jti against the refresh_tokens table that tracks the session.
     if (decoded.jti) {
       const { rows } = await sharedPool.query(
-        'SELECT revoked FROM hospital_refresh_tokens WHERE jti = $1',
+        'SELECT revoked FROM hospital_refresh_tokens WHERE jti = $1 AND expires_at > NOW()',
         [decoded.jti]
       );
-      // If the session record exists and is revoked (e.g. logout, admin revocation), reject.
-      if (rows.length && rows[0].revoked) {
+      // Access tokens must map to an active persisted session. Missing rows are rejected
+      // so token issuance/storage failures cannot create bearer-only sessions.
+      if (!rows.length || rows[0].revoked) {
         return res.status(401).json({ success: false, message: 'Session revoked' });
       }
     }

@@ -61,6 +61,86 @@ const doctorMediaMimeTypes = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 ];
 
+const toFiniteNumber = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+const normalizeClinicLocationUpdate = (payload = {}, existingDoctor = null) => {
+  const nextPayload = { ...payload };
+  const existingJson = (existingDoctor?.clinicAddress_json && typeof existingDoctor.clinicAddress_json === 'object')
+    ? existingDoctor.clinicAddress_json
+    : {};
+  const incomingJson = (payload.clinicAddress_json && typeof payload.clinicAddress_json === 'object')
+    ? payload.clinicAddress_json
+    : {};
+
+  const clinicAddressJson = { ...existingJson, ...incomingJson };
+
+  const placeId =
+    payload.placeId ||
+    payload.place_id ||
+    payload.googlePlaceId ||
+    payload.google_place_id ||
+    incomingJson.placeId ||
+    incomingJson.place_id ||
+    incomingJson.googlePlaceId ||
+    incomingJson.google_place_id;
+
+  if (placeId) {
+    const normalizedPlaceId = String(placeId).trim();
+    clinicAddressJson.placeId = normalizedPlaceId;
+    clinicAddressJson.place_id = normalizedPlaceId;
+    clinicAddressJson.googlePlaceId = normalizedPlaceId;
+    clinicAddressJson.google_place_id = normalizedPlaceId;
+    clinicAddressJson.source = clinicAddressJson.source || 'google_places';
+    clinicAddressJson.provider = clinicAddressJson.provider || 'google_places';
+    clinicAddressJson.verificationStatus = 'verified';
+    clinicAddressJson.verifiedAt = new Date().toISOString();
+  }
+
+  const lat =
+    toFiniteNumber(payload.latitude) ??
+    toFiniteNumber(payload.lat) ??
+    toFiniteNumber(payload.practiceLatitude) ??
+    toFiniteNumber(incomingJson.latitude) ??
+    toFiniteNumber(incomingJson.lat);
+  const lng =
+    toFiniteNumber(payload.longitude) ??
+    toFiniteNumber(payload.lng) ??
+    toFiniteNumber(payload.lon) ??
+    toFiniteNumber(payload.practiceLongitude) ??
+    toFiniteNumber(incomingJson.longitude) ??
+    toFiniteNumber(incomingJson.lng) ??
+    toFiniteNumber(incomingJson.lon);
+
+  if (lat !== null) {
+    clinicAddressJson.latitude = lat;
+    clinicAddressJson.lat = lat;
+  }
+  if (lng !== null) {
+    clinicAddressJson.longitude = lng;
+    clinicAddressJson.lng = lng;
+  }
+
+  if (payload.practiceCity && !clinicAddressJson.city) clinicAddressJson.city = payload.practiceCity;
+  if (payload.practiceState && !clinicAddressJson.state) clinicAddressJson.state = payload.practiceState;
+  if (payload.practiceZipCode && !clinicAddressJson.pincode) clinicAddressJson.pincode = payload.practiceZipCode;
+
+  if (Object.keys(clinicAddressJson).length > 0) {
+    nextPayload.clinicAddress_json = clinicAddressJson;
+  }
+
+  if (!nextPayload.clinicAddress) {
+    const fallbackAddress = payload.practiceAddress || existingDoctor?.clinicAddress;
+    if (typeof fallbackAddress === 'string' && fallbackAddress.trim()) {
+      nextPayload.clinicAddress = fallbackAddress.trim();
+    }
+  }
+
+  return nextPayload;
+};
+
 // ==========================================================================
 // DOCTOR LISTING & SEARCH
 // ==========================================================================
@@ -75,6 +155,7 @@ router.get('/available', [
   query('specialization').optional().notEmpty(),
   query('city').optional().notEmpty(),
   query('consultationType').optional().isIn(['online', 'walkIn', 'homeVisit']),
+  query('strictQc').optional().isBoolean(),
   query('isVerified').optional().isBoolean(),
   query('isOnline').optional().isBoolean(),
   query('page').optional().isInt({ min: 1 }),
@@ -86,6 +167,7 @@ router.get('/available', [
       specialization,
       city,
       consultationType,
+      strictQc,
       isVerified,
       isOnline,
       page = 1,
@@ -95,6 +177,52 @@ router.get('/available', [
     const whereClause = {
       status: 'active'
     };
+
+    const onlineCapabilityLiteral = `("isOnline" = true)`;
+
+    const hasAddressLiteral = `(
+      ("clinicAddress" IS NOT NULL AND BTRIM("clinicAddress") <> '')
+      OR COALESCE("clinicAddress_json", '{}'::jsonb) <> '{}'::jsonb
+    )`;
+
+    const googleVerifiedLocationLiteral = `(
+      COALESCE(
+        "clinicAddress_json"->>'placeId',
+        "clinicAddress_json"->>'place_id',
+        "clinicAddress_json"->>'googlePlaceId',
+        "clinicAddress_json"->>'google_place_id',
+        ''
+      ) <> ''
+      OR (
+        COALESCE("clinicAddress_json"->>'source', '') ILIKE 'google%'
+        AND COALESCE("clinicAddress_json"->>'verificationStatus', '') IN ('verified', 'VERIFIED')
+      )
+      OR (
+        COALESCE("clinicAddress_json"->>'provider', '') ILIKE 'google%'
+        AND (("clinicAddress_json" ? 'lat') OR ("clinicAddress_json" ? 'latitude'))
+        AND (("clinicAddress_json" ? 'lng') OR ("clinicAddress_json" ? 'longitude') OR ("clinicAddress_json" ? 'lon'))
+      )
+    )`;
+
+    const inPersonCapabilityLiteral = `(
+      ${hasAddressLiteral}
+      AND ${googleVerifiedLocationLiteral}
+    )`;
+
+    const strictQcLiteral = `(
+      COALESCE(
+        NULLIF("clinicAddress_json"->>'city', ''),
+        NULLIF(metadata->'web_scraped'->'address'->>'city', ''),
+        NULLIF(metadata->'web_scraped'->>'city', ''),
+        ''
+      ) <> ''
+      AND
+      COALESCE(
+        NULLIF("clinicAddress_json"->>'state', ''),
+        NULLIF(metadata->'web_scraped'->'address'->>'state', ''),
+        ''
+      ) <> ''
+    )`;
 
     if (specialization) {
       whereClause.specialization = specialization;
@@ -120,6 +248,40 @@ router.get('/available', [
         { lastName: { [sequelize.Sequelize.Op.iLike]: `%${search}%` } },
         { specialization: { [sequelize.Sequelize.Op.iLike]: `%${search}%` } }
       ];
+    }
+
+    const strictQcEnabled = strictQc !== 'false';
+
+    if (strictQcEnabled) {
+      if (!whereClause[sequelize.Sequelize.Op.and]) {
+        whereClause[sequelize.Sequelize.Op.and] = [];
+      }
+      whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(strictQcLiteral));
+    }
+
+    if (consultationType) {
+      const normalizedConsultationType = String(consultationType).toLowerCase();
+
+      if (normalizedConsultationType === 'online') {
+        if (!whereClause[sequelize.Sequelize.Op.and]) {
+          whereClause[sequelize.Sequelize.Op.and] = [];
+        }
+        whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(onlineCapabilityLiteral));
+      }
+
+      if (
+        normalizedConsultationType === 'inperson' ||
+        normalizedConsultationType === 'in-person' ||
+        normalizedConsultationType === 'walkin' ||
+        normalizedConsultationType === 'walk-in' ||
+        normalizedConsultationType === 'homevisit' ||
+        normalizedConsultationType === 'home-visit'
+      ) {
+        if (!whereClause[sequelize.Sequelize.Op.and]) {
+          whereClause[sequelize.Sequelize.Op.and] = [];
+        }
+        whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(inPersonCapabilityLiteral));
+      }
     }
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -239,6 +401,37 @@ router.get('/', [
     // Build where clause
     const whereClause = {};
 
+    const onlineCapabilityLiteral = `("isOnline" = true)`;
+
+    const hasAddressLiteral = `(
+      ("clinicAddress" IS NOT NULL AND BTRIM("clinicAddress") <> '')
+      OR COALESCE("clinicAddress_json", '{}'::jsonb) <> '{}'::jsonb
+    )`;
+
+    const googleVerifiedLocationLiteral = `(
+      COALESCE(
+        "clinicAddress_json"->>'placeId',
+        "clinicAddress_json"->>'place_id',
+        "clinicAddress_json"->>'googlePlaceId',
+        "clinicAddress_json"->>'google_place_id',
+        ''
+      ) <> ''
+      OR (
+        COALESCE("clinicAddress_json"->>'source', '') ILIKE 'google%'
+        AND COALESCE("clinicAddress_json"->>'verificationStatus', '') IN ('verified', 'VERIFIED')
+      )
+      OR (
+        COALESCE("clinicAddress_json"->>'provider', '') ILIKE 'google%'
+        AND (("clinicAddress_json" ? 'lat') OR ("clinicAddress_json" ? 'latitude'))
+        AND (("clinicAddress_json" ? 'lng') OR ("clinicAddress_json" ? 'longitude') OR ("clinicAddress_json" ? 'lon'))
+      )
+    )`;
+
+    const inPersonCapabilityLiteral = `(
+      ${hasAddressLiteral}
+      AND ${googleVerifiedLocationLiteral}
+    )`;
+
     if (specialization) {
       whereClause.specialization = specialization;
     }
@@ -258,6 +451,31 @@ router.get('/', [
         { lastName: { [sequelize.Sequelize.Op.iLike]: `%${search}%` } },
         { specialization: { [sequelize.Sequelize.Op.iLike]: `%${search}%` } }
       ];
+    }
+
+    if (consultationType) {
+      const normalizedConsultationType = String(consultationType).toLowerCase();
+
+      if (normalizedConsultationType === 'online') {
+        if (!whereClause[sequelize.Sequelize.Op.and]) {
+          whereClause[sequelize.Sequelize.Op.and] = [];
+        }
+        whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(onlineCapabilityLiteral));
+      }
+
+      if (
+        normalizedConsultationType === 'inperson' ||
+        normalizedConsultationType === 'in-person' ||
+        normalizedConsultationType === 'walkin' ||
+        normalizedConsultationType === 'walk-in' ||
+        normalizedConsultationType === 'homevisit' ||
+        normalizedConsultationType === 'home-visit'
+      ) {
+        if (!whereClause[sequelize.Sequelize.Op.and]) {
+          whereClause[sequelize.Sequelize.Op.and] = [];
+        }
+        whereClause[sequelize.Sequelize.Op.and].push(sequelize.literal(inPersonCapabilityLiteral));
+      }
     }
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -562,8 +780,10 @@ router.put('/profile', authUser, [
       });
     }
 
+    const normalizedPayload = normalizeClinicLocationUpdate(req.body, doctor);
+
     // Update profile using the model's update method
-    const updatedDoctor = await doctorModel.update(req.user.id, req.body);
+    const updatedDoctor = await doctorModel.update(req.user.id, normalizedPayload);
 
     const { password, ...doctorProfile } = updatedDoctor;
 

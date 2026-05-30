@@ -605,7 +605,8 @@ class WhisperSTT:
         if translate:
             cmd.append("--translate")
         
-        # Run whisper.cpp
+        # Run whisper.cpp — always clean up temp file regardless of outcome
+        output_file = Path(f"{output_prefix}.txt")
         try:
             timeout_seconds = 300
             try:
@@ -623,32 +624,30 @@ class WhisperSTT:
                 text=True,
                 timeout=timeout_seconds,
             )
-            
-            if result.returncode == 0:
-                # Read output text file
-                output_file = Path(f"{output_prefix}.txt")
-                if output_file.exists():
-                    text = output_file.read_text().strip()
-                    output_file.unlink()  # Clean up
-                    return {
-                        "success": True,
-                        "text": text,
-                        "language": language,
-                        "model_used": model_path.name,
-                    }
-            
+
+            if result.returncode == 0 and output_file.exists():
+                text = output_file.read_text().strip()
+                return {
+                    "success": True,
+                    "text": text,
+                    "language": language,
+                    "model_used": model_path.name,
+                }
+
             return {
                 "success": False,
-                "error": result.stderr,
+                "error": result.stderr or f"whisper-cli exited {result.returncode}",
                 "text": "",
             }
-            
+
         except subprocess.TimeoutExpired:
             return {
                 "success": False,
                 "error": "Transcription timeout",
                 "text": "",
             }
+        finally:
+            output_file.unlink(missing_ok=True)
     
     def detect_language(self, audio_path: str) -> Dict[str, Any]:
         """
@@ -734,31 +733,28 @@ class AudioProcessor:
                 "-acodec", "pcm_s16le",
                 output_path,
             ]
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                timeout=60,
-            )
-            
-            if result.returncode == 0 and Path(output_path).exists():
+            result = subprocess.run(cmd, capture_output=True, timeout=60)
+            out = Path(output_path)
+            if result.returncode == 0 and out.exists() and out.stat().st_size > 44:
                 return output_path
-        except:
-            pass
-        
+            logger.warning("ffmpeg conversion failed (rc=%d): %s", result.returncode, result.stderr[:200])
+        except Exception as e:
+            logger.warning("ffmpeg conversion error: %s", e)
+
         # Try pydub as fallback
         try:
             from pydub import AudioSegment
-            
             audio = AudioSegment.from_file(input_path)
             audio = audio.set_frame_rate(self.sample_rate)
             audio = audio.set_channels(self.channels)
             audio.export(output_path, format="wav")
-            
-            return output_path
-        except:
-            pass
-        
+            out = Path(output_path)
+            if out.exists() and out.stat().st_size > 44:
+                return output_path
+            logger.warning("pydub produced an empty or header-only WAV file")
+        except Exception as e:
+            logger.warning("pydub conversion error: %s", e)
+
         raise RuntimeError("Could not convert audio. Install ffmpeg or pydub.")
     
     def get_duration(self, audio_path: str) -> float:
@@ -788,25 +784,24 @@ class AudioProcessor:
         """
         try:
             from pydub import AudioSegment
-            
+
             audio = AudioSegment.from_wav(audio_path)
             duration_ms = len(audio)
             chunk_ms = chunk_duration * 1000
-            
+
             chunks = []
             for i, start in enumerate(range(0, duration_ms, chunk_ms)):
                 end = min(start + chunk_ms, duration_ms)
                 chunk = audio[start:end]
-                
                 chunk_path = tempfile.mktemp(suffix=f"_chunk{i}.wav")
                 chunk.export(chunk_path, format="wav")
                 chunks.append(chunk_path)
-            
+
             return chunks
         except ImportError:
             pass
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("pydub chunking failed: %s", e)
 
         # Fallback: ffmpeg-based segmentation when pydub isn't available
         try:
@@ -822,15 +817,20 @@ class AudioProcessor:
                 "-acodec", "pcm_s16le",
                 output_pattern,
             ]
-
             result = subprocess.run(cmd, capture_output=True, timeout=120)
             if result.returncode == 0:
                 chunks = sorted([str(path) for path in chunks_dir.glob("chunk_*.wav")])
                 if chunks:
                     return chunks
-        except Exception:
-            pass
+            logger.warning("ffmpeg chunking failed (rc=%d): %s", result.returncode, result.stderr[:200])
+        except Exception as e:
+            logger.warning("ffmpeg chunking error: %s", e)
 
+        # Both chunking strategies failed — process as single file with a clear warning
+        logger.warning(
+            "Audio chunking unavailable (install pydub or ffmpeg). "
+            "Processing %s as a single file — long recordings may truncate.", audio_path
+        )
         return [audio_path]
 
 

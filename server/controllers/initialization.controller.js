@@ -104,6 +104,11 @@ class InitializationController {
       // Payment reminder automation
       console.log('💰 Starting payment reminder automation...');
       await import('../services/payment-reminder-cron.service.js');
+
+      // Lab critical value escalation automation
+      console.log('🚨 Starting lab critical alert escalation automation...');
+      const { default: labCriticalAlertCronService } = await import('../services/lab-critical-alert-cron.service.js');
+      labCriticalAlertCronService.start();
       
       // Follow-up appointment automation (Phase 2)
       console.log('📅 Starting follow-up automation...');

@@ -4,18 +4,64 @@
  */
 
 import express from 'express';
-import { adminAuthMiddleware } from '../middleware/admin.middleware.js';
+import { authTeam } from '../middleware/team.middleware.js';
 import { Coupon, CouponUsage } from '../models/index.js';
 import { Op } from 'sequelize';
 
 const router = express.Router();
 
+const requireOpsTeamMember = (req, res, next) => {
+  const teamUser = req.teamUser;
+
+  if (!teamUser) {
+    return res.status(401).json({
+      success: false,
+      message: 'Team authentication required'
+    });
+  }
+
+  if (teamUser.isAdmin || ['admin', 'super_admin'].includes((teamUser.role || '').toLowerCase())) {
+    return next();
+  }
+
+  const permissions = Array.isArray(teamUser.permissions) ? teamUser.permissions : [];
+  const hasCouponPermission = permissions.includes('coupons.manage');
+
+  if (!hasCouponPermission) {
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied. coupons.manage permission is required.'
+    });
+  }
+
+  next();
+};
+
+const normalizeAssignedUserIds = (value) => {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value
+      .map((id) => parseInt(id, 10))
+      .filter((id) => Number.isInteger(id) && id > 0);
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((id) => parseInt(id.trim(), 10))
+      .filter((id) => Number.isInteger(id) && id > 0);
+  }
+
+  return [];
+};
+
 /**
  * @route   GET /api/coupons
- * @desc    Get all coupons (Admin only)
- * @access  Private/Admin
+ * @desc    Get all coupons (Ops team only)
+ * @access  Private/Team Ops
  */
-router.get('/', adminAuthMiddleware, async (req, res) => {
+router.get('/', authTeam, requireOpsTeamMember, async (req, res) => {
   try {
     const { search, status, corporateId } = req.query;
     
@@ -64,10 +110,10 @@ router.get('/', adminAuthMiddleware, async (req, res) => {
 
 /**
  * @route   GET /api/coupons/stats
- * @desc    Get coupon statistics (Admin only)
- * @access  Private/Admin
+ * @desc    Get coupon statistics (Ops team only)
+ * @access  Private/Team Ops
  */
-router.get('/stats', adminAuthMiddleware, async (req, res) => {
+router.get('/stats', authTeam, requireOpsTeamMember, async (req, res) => {
   try {
     const totalCoupons = await Coupon.count();
     const activeCoupons = await Coupon.count({
@@ -104,10 +150,10 @@ router.get('/stats', adminAuthMiddleware, async (req, res) => {
 
 /**
  * @route   POST /api/coupons
- * @desc    Create new coupon (Admin only)
- * @access  Private/Admin
+ * @desc    Create new coupon (Ops team only)
+ * @access  Private/Team Ops
  */
-router.post('/', adminAuthMiddleware, async (req, res) => {
+router.post('/', authTeam, requireOpsTeamMember, async (req, res) => {
   try {
     const {
       code,
@@ -121,7 +167,9 @@ router.post('/', adminAuthMiddleware, async (req, res) => {
       corporateId,
       corporateName,
       description,
-      termsAndConditions
+      termsAndConditions,
+      assignedUserIds,
+      metadata
     } = req.body;
     
     // Validate required fields
@@ -141,6 +189,8 @@ router.post('/', adminAuthMiddleware, async (req, res) => {
       });
     }
     
+    const normalizedAssignedUserIds = normalizeAssignedUserIds(assignedUserIds);
+
     const coupon = await Coupon.create({
       code: code.toUpperCase(),
       type,
@@ -154,9 +204,13 @@ router.post('/', adminAuthMiddleware, async (req, res) => {
       corporateName: corporateName || null,
       description: description || null,
       termsAndConditions: termsAndConditions || null,
-      createdBy: req.admin.id,
+      createdBy: req.teamUser.id,
       isActive: true,
-      usageCount: 0
+      usageCount: 0,
+      metadata: {
+        ...(metadata || {}),
+        ...(normalizedAssignedUserIds.length ? { assignedUserIds: normalizedAssignedUserIds } : {})
+      }
     });
     
     res.status(201).json({
@@ -176,13 +230,15 @@ router.post('/', adminAuthMiddleware, async (req, res) => {
 
 /**
  * @route   PUT /api/coupons/:id
- * @desc    Update coupon (Admin only)
- * @access  Private/Admin
+ * @desc    Update coupon (Ops team only)
+ * @access  Private/Team Ops
  */
-router.put('/:id', adminAuthMiddleware, async (req, res) => {
+router.put('/:id', authTeam, requireOpsTeamMember, async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body;
+    const updates = { ...req.body };
+    const normalizedAssignedUserIds = normalizeAssignedUserIds(updates.assignedUserIds);
+    delete updates.assignedUserIds;
     
     const coupon = await Coupon.findByPk(id);
     if (!coupon) {
@@ -200,7 +256,23 @@ router.put('/:id', adminAuthMiddleware, async (req, res) => {
       });
     }
     
-    await coupon.update(updates);
+    const nextMetadata = {
+      ...(coupon.metadata || {}),
+      ...(updates.metadata || {})
+    };
+
+    if (req.body.assignedUserIds !== undefined) {
+      if (normalizedAssignedUserIds.length) {
+        nextMetadata.assignedUserIds = normalizedAssignedUserIds;
+      } else {
+        delete nextMetadata.assignedUserIds;
+      }
+    }
+
+    await coupon.update({
+      ...updates,
+      metadata: nextMetadata
+    });
     
     res.json({
       success: true,
@@ -219,10 +291,10 @@ router.put('/:id', adminAuthMiddleware, async (req, res) => {
 
 /**
  * @route   DELETE /api/coupons/:id
- * @desc    Delete coupon (Admin only)
- * @access  Private/Admin
+ * @desc    Delete coupon (Ops team only)
+ * @access  Private/Team Ops
  */
-router.delete('/:id', adminAuthMiddleware, async (req, res) => {
+router.delete('/:id', authTeam, requireOpsTeamMember, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -260,10 +332,10 @@ router.delete('/:id', adminAuthMiddleware, async (req, res) => {
 
 /**
  * @route   GET /api/coupons/:id/usage
- * @desc    Get coupon usage history (Admin only)
- * @access  Private/Admin
+ * @desc    Get coupon usage history (Ops team only)
+ * @access  Private/Team Ops
  */
-router.get('/:id/usage', adminAuthMiddleware, async (req, res) => {
+router.get('/:id/usage', authTeam, requireOpsTeamMember, async (req, res) => {
   try {
     const { id } = req.params;
     

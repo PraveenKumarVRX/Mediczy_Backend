@@ -94,6 +94,37 @@ function isIdentifierValid(value: string): boolean {
   return isEmail || isPhone;
 }
 
+function getInactiveAccountResolution(error: any): {
+  title: string;
+  description: string;
+  nextPath?: string;
+} {
+  const details = error?.response?.data?.details;
+  const reasonCode = details?.reasonCode;
+
+  if (reasonCode === 'MEMBERSHIP_EXPIRED') {
+    const expiredOn = details?.expiredOn ? ` (expired on ${details.expiredOn})` : '';
+    return {
+      title: 'Membership expired',
+      description: `Your plan has expired${expiredOn}. Renew now to continue.`,
+      nextPath: '/my-plans',
+    };
+  }
+
+  if (reasonCode === 'NO_ACTIVE_MEMBERSHIP') {
+    return {
+      title: 'No active membership',
+      description: 'Choose a plan to reactivate your account access.',
+      nextPath: '/choose-plan',
+    };
+  }
+
+  return {
+    title: 'Account inactive',
+    description: error?.response?.data?.message || 'Please contact support for account help.',
+  };
+}
+
 // Resend cooldown timer hook
 function useResendTimer(initial = 30) {
   const [seconds, setSeconds] = useState(0);
@@ -230,9 +261,27 @@ const Login = () => {
         const planRes = await api.get('/membership/my/current');
         const hasNoPlan = planRes?.status === 200 && planRes?.data?.userPlan === null;
         if (hasNoPlan) { navigate('/choose-plan', { replace: true }); return; }
-      } catch {}
+      } catch {
+        toast({
+          variant: 'destructive',
+          title: 'Plan status unavailable',
+          description: 'You are signed in, but we could not verify membership right now.',
+        });
+      }
       setTimeout(() => navigate("/", { replace: true }), 800);
     } catch (error: any) {
+      if (error?.response?.data?.code === 'ACCOUNT_INACTIVE') {
+        const resolution = getInactiveAccountResolution(error);
+        toast({
+          variant: 'destructive',
+          title: resolution.title,
+          description: resolution.description,
+        });
+        if (resolution.nextPath) {
+          navigate(resolution.nextPath, { replace: true });
+        }
+        return;
+      }
       toast({
         variant: "destructive",
         title: "Verification failed",
@@ -278,10 +327,28 @@ const Login = () => {
             const planRes = await api.get('/membership/my/current');
             const hasNoPlan = planRes?.status === 200 && planRes?.data?.userPlan === null;
             if (hasNoPlan) { navigate('/choose-plan', { replace: true }); return; }
-          } catch {}
+          } catch {
+            toast({
+              variant: 'destructive',
+              title: 'Plan status unavailable',
+              description: 'You are signed in, but we could not verify membership right now.',
+            });
+          }
           setTimeout(() => navigate("/", { replace: true }), 800);
         },
         onError: (error) => {
+          if ((error as any)?.response?.data?.code === 'ACCOUNT_INACTIVE') {
+            const resolution = getInactiveAccountResolution(error as any);
+            toast({
+              variant: 'destructive',
+              title: resolution.title,
+              description: resolution.description,
+            });
+            if (resolution.nextPath) {
+              navigate(resolution.nextPath, { replace: true });
+            }
+            return;
+          }
           toast({
             variant: "destructive",
             title: "Sign in failed",
@@ -588,7 +655,7 @@ const Login = () => {
 
                     <div className="flex justify-end">
                       <Link
-                        to="/forgot-password?type=user"
+                        to="/user/forgot-password"
                         className="text-xs text-primary hover:text-primary/80 font-medium transition-colors"
                       >
                         Forgot password?

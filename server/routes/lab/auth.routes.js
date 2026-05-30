@@ -4,6 +4,8 @@ import { JWT_CONFIG } from '../../config/auth.config.js';
 import Lab from '../../models/postgres/lab.model.postgres.js';
 import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
+import { authLab } from '../../middleware/authLab.middleware.js';
+import pool from '../../db/pgPool.js';
 import bcrypt from 'bcryptjs';
 import {
   createUploadMiddleware, registerLimiter,
@@ -11,6 +13,25 @@ import {
 } from '../shared/registrationHelpers.js';
 
 const router = express.Router();
+
+const ensureLabPortalStateTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS lab_portal_state (
+      id BIGSERIAL PRIMARY KEY,
+      lab_id INTEGER NOT NULL,
+      state_key VARCHAR(120) NOT NULL,
+      state_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (lab_id, state_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_lab_portal_state_lab ON lab_portal_state(lab_id);
+  `);
+};
+
+ensureLabPortalStateTable().catch((err) => {
+  console.error('[lab_portal_state] init error:', err.message);
+});
 
 /**
  * POST /api/lab/login
@@ -112,6 +133,65 @@ router.get('/verify', async (req, res) => {
       success: false,
       message: 'Invalid or expired token'
     });
+  }
+});
+
+/**
+ * GET /api/lab/state/:key
+ * Read persisted portal state bucket for authenticated lab.
+ */
+router.get('/state/:key', authLab, async (req, res) => {
+  try {
+    const key = String(req.params.key || '').trim();
+    if (!key) {
+      return res.status(400).json({ success: false, message: 'State key is required' });
+    }
+
+    const row = await pool.query(
+      `SELECT state_data, updated_at
+       FROM lab_portal_state
+       WHERE lab_id = $1 AND state_key = $2`,
+      [req.lab.id, key]
+    );
+
+    return res.json({
+      success: true,
+      key,
+      data: row.rows[0]?.state_data ?? null,
+      updatedAt: row.rows[0]?.updated_at ?? null,
+    });
+  } catch (error) {
+    console.error('Lab state get error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch lab state' });
+  }
+});
+
+/**
+ * PUT /api/lab/state/:key
+ * Upsert persisted portal state bucket for authenticated lab.
+ */
+router.put('/state/:key', authLab, async (req, res) => {
+  try {
+    const key = String(req.params.key || '').trim();
+    if (!key) {
+      return res.status(400).json({ success: false, message: 'State key is required' });
+    }
+    if (typeof req.body?.data === 'undefined') {
+      return res.status(400).json({ success: false, message: 'State data is required' });
+    }
+
+    await pool.query(
+      `INSERT INTO lab_portal_state (lab_id, state_key, state_data)
+       VALUES ($1, $2, $3::jsonb)
+       ON CONFLICT (lab_id, state_key)
+       DO UPDATE SET state_data = EXCLUDED.state_data, updated_at = NOW()`,
+      [req.lab.id, key, JSON.stringify(req.body.data)]
+    );
+
+    return res.json({ success: true, key, message: 'Lab state saved' });
+  } catch (error) {
+    console.error('Lab state put error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to save lab state' });
   }
 });
 

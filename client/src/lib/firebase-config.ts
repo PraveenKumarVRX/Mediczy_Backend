@@ -296,23 +296,27 @@ export const initializeFirebaseMessaging = async () => {
 // Send FCM token to server
 const sendTokenToServer = async (token: string) => {
   try {
+    if (!token || token.length < 80 || token.startsWith('test-') || token.includes('placeholder')) {
+      console.warn('⚠️ Skipping FCM registration: token does not look like a Firebase registration token');
+      return;
+    }
+
     const userId = localStorage.getItem('userId');
     const userType = localStorage.getItem('userType');
     const authToken = localStorage.getItem('token');
-    
+
     console.log('📤 Sending FCM token to server:', { userId, userType, hasAuthToken: !!authToken });
-    
+
     if (!userId || !userType) {
       console.warn('⚠️ Cannot register FCM token: userId or userType not found in localStorage');
-      console.log('   Available localStorage keys:', Object.keys(localStorage));
       return;
     }
-    
+
     if (!authToken) {
       console.warn('⚠️ Cannot register FCM token: No auth token found');
       return;
     }
-    
+
     const response = await api.post(
       '/fcm/register-token',
       {
@@ -327,7 +331,14 @@ const sendTokenToServer = async (token: string) => {
       }
     );
     console.log('✅ FCM token registered successfully:', response.data);
-  } catch (error) {
+  } catch (error: any) {
+    const status = error?.response?.status;
+    const message = error?.response?.data?.message || error?.message || 'Unknown FCM registration error';
+    if (status === 400 && message === 'Invalid FCM token') {
+      localStorage.removeItem('fcmToken');
+      console.warn('⚠️ FCM token rejected by server and cleared from localStorage. It will be refreshed on the next permission flow.');
+      return;
+    }
     console.error('❌ Error sending FCM token to server:', error);
   }
 };

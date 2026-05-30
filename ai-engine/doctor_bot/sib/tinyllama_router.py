@@ -347,15 +347,9 @@ class TinyLlamaRouter:
         Uses the stored chunk metadata for keyword matching.
         """
         try:
-            import pickle
-            base_dir = Path(__file__).resolve().parent.parent
-            metadata_path = base_dir / "embeddings" / "chunk_metadata.pkl"
-            
-            if not metadata_path.exists():
-                return []
-            
-            with open(metadata_path, 'rb') as f:
-                chunks = pickle.load(f)
+            import json as _json_safe
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                chunks = _json_safe.load(f)  # json is safe; was pickle (arbitrary code exec risk)
             
             # Extract keywords from query
             query_lower = query.lower()
@@ -556,8 +550,8 @@ Return JSON with:
                 json_end = response.rfind('}') + 1
                 json_str = response[json_match:json_end]
                 return json.loads(json_str)
-        except:
-            pass
+        except (json.JSONDecodeError, ValueError) as _json_err:
+            logger.debug("JSON parse failed for LLM response: %s — using text fallback", _json_err)
         
         # Fallback: extract intent from text
         response_lower = response.lower()

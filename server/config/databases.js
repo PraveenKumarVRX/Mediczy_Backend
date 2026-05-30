@@ -3,7 +3,9 @@ import { promisify } from 'util';
 import dotenv from 'dotenv';
 import { connectPostgres, closePostgres, getPool as getPostgresPool } from '../db/postgres.js';
 
-dotenv.config();
+if (process.env.NODE_ENV !== 'production' || process.env.DOTENV_IN_PROD === 'true') {
+  dotenv.config();
+}
 
 const execPromise = promisify(exec);
 

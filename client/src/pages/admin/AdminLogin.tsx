@@ -25,7 +25,9 @@ const AdminLogin = () => {
       ? {
           id: adminUser.id,
           email: adminUser.email,
-          role: adminUser.role || adminUser.type || 'admin'
+          role: adminUser.role || adminUser.type || 'admin',
+          firstName: adminUser.firstName || null,
+          lastName: adminUser.lastName || null,
         }
       : null;
 
@@ -228,7 +230,7 @@ const AdminLogin = () => {
                           required
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
-                          placeholder="Admin@mediczy.com"
+                          placeholder="admin@mediqzy.com"
                           className="h-11 bg-white border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-blue-500/20 transition-all pl-4 text-gray-900 font-medium placeholder:text-slate-500 autofill:bg-white autofill:text-gray-900"
                         />
                         <Shield className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -251,7 +253,6 @@ const AdminLogin = () => {
                           placeholder="••••••••"
                           className="h-11 bg-white border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-blue-500/20 transition-all pr-12 pl-4 text-gray-900 font-medium placeholder:text-slate-500 autofill:bg-white autofill:text-gray-900"
                         />
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}

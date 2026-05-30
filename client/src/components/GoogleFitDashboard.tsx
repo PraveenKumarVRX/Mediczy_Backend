@@ -52,15 +52,16 @@ const GOOGLE_FIT_SCOPES = [
 // ─── Main component ────────────────────────────────────────────────────────────
 
 const GoogleFitDashboard: React.FC = () => {
-  const [connected, setConnected]     = useState(false);
-  const [lastSync, setLastSync]       = useState<string | null>(null);
-  const [loading, setLoading]         = useState(false);
-  const [syncing, setSyncing]         = useState(false);
-  const [error, setError]             = useState<string | null>(null);
-  const [dailyData, setDailyData]     = useState<DailyFitness[]>([]);
-  const [summary, setSummary]         = useState<FitSummary | null>(null);
-  const [activeTab, setActiveTab]     = useState('overview');
-  const [scopeError, setScopeError]   = useState(false);
+  const [connected, setConnected]         = useState(false);
+  const [lastSync, setLastSync]           = useState<string | null>(null);
+  const [loading, setLoading]             = useState(false);
+  const [syncing, setSyncing]             = useState(false);
+  const [error, setError]                 = useState<string | null>(null);
+  const [syncWarning, setSyncWarning]     = useState<string | null>(null);
+  const [dailyData, setDailyData]         = useState<DailyFitness[]>([]);
+  const [summary, setSummary]             = useState<FitSummary | null>(null);
+  const [activeTab, setActiveTab]         = useState('overview');
+  const [scopeError, setScopeError]       = useState(false);
 
   // ── Check connection status on mount ──────────────────────────────────────
   const checkStatus = useCallback(async () => {
@@ -77,12 +78,20 @@ const GoogleFitDashboard: React.FC = () => {
   const fetchAndSync = useCallback(async (googleAccessToken: string, days = 7) => {
     setSyncing(true);
     setError(null);
+    setSyncWarning(null);
     try {
       const { data } = await api.post('/fitness/google/fetch', { googleAccessToken, days });
       setDailyData(data.dailyData || []);
       setSummary(data.summary || null);
       setConnected(true);
       setLastSync(new Date().toISOString());
+      // Surface partial sync failures as a non-blocking warning
+      if (data.partialFailure && data.failedCount > 0) {
+        setSyncWarning(
+          `${data.savedCount} data point${data.savedCount !== 1 ? 's' : ''} saved successfully, ` +
+          `but ${data.failedCount} could not be stored. Your charts may show gaps — try syncing again.`
+        );
+      }
     } catch (err: any) {
       const msg = err?.response?.data?.error || err.message || 'Sync failed';
       if (msg.includes('permission denied') || msg.includes('403')) {
@@ -283,6 +292,16 @@ const GoogleFitDashboard: React.FC = () => {
         <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
           <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
           <p className="text-xs text-amber-700">{error}</p>
+        </div>
+      )}
+      {syncWarning && (
+        <div className="flex items-start gap-2 rounded-lg bg-yellow-50 border border-yellow-200 px-3 py-2">
+          <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-xs text-yellow-800 font-medium">Partial sync</p>
+            <p className="text-xs text-yellow-700 mt-0.5">{syncWarning}</p>
+          </div>
+          <button onClick={() => setSyncWarning(null)} className="text-yellow-500 hover:text-yellow-700 text-xs ml-2">✕</button>
         </div>
       )}
 

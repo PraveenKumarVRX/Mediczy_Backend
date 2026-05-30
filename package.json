@@ -9,8 +9,12 @@
     "start": "./scripts/development/dev-start.sh",
     "build": "npm run build --prefix client",
     "test:sanity-smoke:canonical": "bash ./scripts/testing/run-canonical-sanity-smoke.sh",
+    "test:lab-flow-regression": "bash ./scripts/testing/lab-flow-regression.sh",
     "test:whatsapp-sib-auth-smoke": "npm run test:whatsapp-sib-auth-smoke --prefix server",
-    "test:rag-refresh-audit": "npm run test:rag-refresh-audit --prefix server"
+    "test:rag-refresh-audit": "npm run test:rag-refresh-audit --prefix server",
+    "test:doctor-assistant-nav-regression": "npm run test:doctor-assistant-nav-regression --prefix server",
+    "test:user-login-security-regression": "npm run test:user-login-security-regression --prefix server",
+    "test:index-appointments-fallback-regression": "npm run e2e:index-appointments-fallback --prefix client"
   },
   "dependencies": {
     "@google/generative-ai": "^0.22.0",

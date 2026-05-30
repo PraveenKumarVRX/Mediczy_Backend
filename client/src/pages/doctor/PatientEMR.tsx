@@ -354,6 +354,65 @@ export default function PatientEMR() {
     setIsAppointmentDialogOpen(true);
   };
 
+  const handlePrintEMR = () => {
+    if (!selectedPatient) {
+      toast({
+        title: 'No patient selected',
+        description: 'Please select a patient to print records',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    window.print();
+  };
+
+  const handleExportEMR = () => {
+    if (!selectedPatient) {
+      toast({
+        title: 'No patient selected',
+        description: 'Please select a patient to export records',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const exportPayload = {
+      patient: {
+        id: selectedPatient.id,
+        name: `${selectedPatient.firstName || ''} ${selectedPatient.lastName || ''}`.trim(),
+        email: selectedPatient.email,
+        phoneNumber: selectedPatient.phoneNumber,
+        dateOfBirth: selectedPatient.dateOfBirth,
+        gender: selectedPatient.gender,
+        bloodGroup: selectedPatient.bloodGroup,
+      },
+      vitals: mockVitals,
+      prescriptions: mockPrescriptions,
+      labReports: filteredLabReports,
+      appointments: mockAppointments,
+      exportedAt: new Date().toISOString(),
+    };
+
+    const blob = new Blob([JSON.stringify(exportPayload, null, 2)], {
+      type: 'application/json',
+    });
+
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `emr-${selectedPatient.id}-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(url);
+
+    toast({
+      title: 'Export complete',
+      description: 'Patient EMR exported successfully',
+    });
+  };
+
   // Filter lab reports based on filter
   const filteredLabReports = mockLabReports.filter(report => {
     if (labFilter.status !== 'all' && report.status !== labFilter.status) return false;
@@ -500,11 +559,11 @@ export default function PatientEMR() {
                         )}
                       </div>
                       <div className="flex gap-2">
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" size="sm" onClick={handlePrintEMR}>
                           <Printer className="w-4 h-4 mr-1" />
                           Print
                         </Button>
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" size="sm" onClick={handleExportEMR}>
                           <Download className="w-4 h-4 mr-1" />
                           Export
                         </Button>

@@ -54,6 +54,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import api from "@/utils/api";
 import { getToken } from "@/hooks/auth";
+import { trackEvent } from "@/utils/telemetry";
 import veepooService, { VeepooService, VEEPOO_SERVICE_UUID, VEEPOO_WRITE_UUID, VEEPOO_NOTIFY_UUID } from "@/services/ble/VeepooService";
 import fireBolttService, { FireBolttService, FIREBOLTT_SERVICE_UUID } from "@/services/ble/FireBolttService";
 import { healthSyncScheduler } from "@/services/health/HealthSyncScheduler";
@@ -127,6 +128,26 @@ const Index = () => {
   const [upcomingAppointments, setUpcomingAppointments] = useState<any[]>([]);
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [appointmentsLoadError, setAppointmentsLoadError] = useState(false);
+  const [membershipNotice, setMembershipNotice] = useState<null | {
+    level: 'warning' | 'danger';
+    title: string;
+    description: string;
+    ctaLabel: string;
+    ctaLink: string;
+    secondaryCtaLabel?: string;
+    secondaryCtaLink?: string;
+  }>(null);
+
+  useEffect(() => {
+    if (!membershipNotice) return;
+    trackEvent('membership_notice_impression', {
+      level: membershipNotice.level,
+      title: membershipNotice.title,
+      ctaLink: membershipNotice.ctaLink,
+      secondaryCtaLink: membershipNotice.secondaryCtaLink || null,
+    });
+  }, [membershipNotice]);
 
   // Health Tip of the Day — personalized based on user's health profile
   const healthTips = useMemo(() => {
@@ -504,6 +525,7 @@ const Index = () => {
   useEffect(() => {
     fetchDashboardData();
     fetchHealthStats(); // Fetch real health data from backend
+    fetchMembershipStatus();
     
     // Load connected devices from localStorage and fix any with wrong types
     const storedDevices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
@@ -548,6 +570,7 @@ const Index = () => {
     try {
       const token = getToken();
       const isPatient = userType === "user" && !!currentUser;
+      setAppointmentsLoadError(false);
 
       if (token && isPatient) {
         // Try to fetch real appointments for authenticated patients
@@ -561,7 +584,8 @@ const Index = () => {
             : [];
           setUpcomingAppointments(list.slice(0, 3));
         } else {
-          setUpcomingAppointments(getSampleAppointments());
+          setUpcomingAppointments([]);
+          setAppointmentsLoadError(true);
         }
       } else {
         // Unauthenticated visitors see sample content without hitting protected APIs
@@ -575,8 +599,75 @@ const Index = () => {
       ]);
     } catch (err) {
       console.error("Error fetching dashboard data:", err);
+      setUpcomingAppointments([]);
+      setAppointmentsLoadError(true);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchMembershipStatus = async () => {
+    try {
+      const token = getToken();
+      const isPatient = userType === "user" && !!currentUser;
+      if (!token || !isPatient) {
+        setMembershipNotice(null);
+        return;
+      }
+
+      const response = await api.get('/membership/my/current');
+      const userPlan = response?.data?.userPlan;
+
+      if (!userPlan) {
+        setMembershipNotice({
+          level: 'danger',
+          title: 'No active membership plan',
+          description: 'Your account needs an active plan to keep all services available.',
+          ctaLabel: 'Choose Plan',
+          ctaLink: '/choose-plan',
+          secondaryCtaLabel: 'Get Help',
+          secondaryCtaLink: '/help',
+        });
+        return;
+      }
+
+      const endDate = userPlan?.endDate ? new Date(`${userPlan.endDate}T23:59:59.999`) : null;
+      if (!endDate || Number.isNaN(endDate.getTime())) {
+        setMembershipNotice(null);
+        return;
+      }
+
+      const msRemaining = endDate.getTime() - Date.now();
+      const daysRemaining = Math.ceil(msRemaining / (1000 * 60 * 60 * 24));
+
+      if (daysRemaining <= 0) {
+        setMembershipNotice({
+          level: 'danger',
+          title: 'Membership expired',
+          description: `Your membership expired on ${userPlan.endDate}. Renew now to restore uninterrupted access.`,
+          ctaLabel: 'Renew Plan',
+          ctaLink: '/my-plans',
+          secondaryCtaLabel: 'Contact Support',
+          secondaryCtaLink: '/contact-us',
+        });
+        return;
+      }
+
+      if (daysRemaining <= 7) {
+        setMembershipNotice({
+          level: 'warning',
+          title: `Membership expires in ${daysRemaining} day${daysRemaining > 1 ? 's' : ''}`,
+          description: 'Renew in advance to avoid account interruption.',
+          ctaLabel: 'Renew Early',
+          ctaLink: '/my-plans',
+        });
+        return;
+      }
+
+      setMembershipNotice(null);
+    } catch (error) {
+      console.log('Could not fetch membership status:', error);
+      setMembershipNotice(null);
     }
   };
 
@@ -2310,6 +2401,51 @@ const Index = () => {
         </Card>
 
         {/* Essentials: Wallet, Payments, HRA, Membership, Diary */}
+        {membershipNotice && (
+          <Card className={`border ${membershipNotice.level === 'danger' ? 'border-red-200/80 dark:border-red-700/50' : 'border-amber-200/80 dark:border-amber-700/50'} bg-white dark:bg-slate-800/50`}>
+            <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <p className={`font-semibold ${membershipNotice.level === 'danger' ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
+                  {membershipNotice.title}
+                </p>
+                <p className="text-sm text-slate-600 dark:text-slate-300">{membershipNotice.description}</p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Link to={membershipNotice.ctaLink}>
+                  <Button
+                    variant={membershipNotice.level === 'danger' ? 'destructive' : 'outline'}
+                    onClick={() =>
+                      trackEvent('membership_notice_cta_click', {
+                        level: membershipNotice.level,
+                        title: membershipNotice.title,
+                        ctaLink: membershipNotice.ctaLink,
+                      })
+                    }
+                  >
+                    {membershipNotice.ctaLabel}
+                  </Button>
+                </Link>
+                {membershipNotice.secondaryCtaLabel && membershipNotice.secondaryCtaLink && (
+                  <Link to={membershipNotice.secondaryCtaLink}>
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        trackEvent('membership_notice_secondary_cta_click', {
+                          level: membershipNotice.level,
+                          title: membershipNotice.title,
+                          ctaLink: membershipNotice.secondaryCtaLink,
+                        })
+                      }
+                    >
+                      {membershipNotice.secondaryCtaLabel}
+                    </Button>
+                  </Link>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold text-slate-800 dark:text-white">Essentials</h2>
@@ -2389,10 +2525,23 @@ const Index = () => {
                       <Calendar className="w-12 h-12 text-slate-300 dark:text-slate-500" />
                     </div>
                   </div>
-                  <p className="text-slate-500 dark:text-slate-400 mb-4">No upcoming appointments</p>
-                  <Link to="/doctors">
-                    <Button size="sm" className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-sm">Book Now</Button>
-                  </Link>
+                  <p className="text-slate-500 dark:text-slate-400 mb-4">
+                    {appointmentsLoadError ? 'Could not load appointments right now.' : 'No upcoming appointments'}
+                  </p>
+                  {appointmentsLoadError ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={fetchDashboardData}
+                      className="border-teal-200 text-teal-700 hover:bg-teal-50 dark:border-teal-700 dark:text-teal-300"
+                    >
+                      Retry
+                    </Button>
+                  ) : (
+                    <Link to="/doctors">
+                      <Button size="sm" className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-sm">Book Now</Button>
+                    </Link>
+                  )}
                 </div>
               )}
             </CardContent>

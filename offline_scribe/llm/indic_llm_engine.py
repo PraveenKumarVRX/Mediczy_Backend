@@ -124,9 +124,10 @@ class IndicLLMEngine:
                 "text": ""
             }
         
-        # Use defaults if not specified
-        max_tokens = max_tokens or GENERATION_CONFIG["max_tokens"]
-        temperature = temperature or GENERATION_CONFIG["temperature"]
+        # Use defaults if not specified — note: `or` is intentionally avoided for temperature
+        # because temperature=0 (fully deterministic) is a valid, falsy value.
+        max_tokens = max_tokens if max_tokens is not None else GENERATION_CONFIG["max_tokens"]
+        temperature = temperature if temperature is not None else GENERATION_CONFIG["temperature"]
         # Common stop sequences for instruction-tuned models
         stop_sequences = stop_sequences or ["\n\n\n", "###", "<end_of_turn>", "<start_of_turn>user", "<start_of_turn>model"]
         
@@ -239,15 +240,17 @@ RULES:
         user_prompt = f"""<start_of_turn>user
 You are a medical documentation assistant for Indian hospitals. Convert consultation transcript into structured OPD notes. Fill in only what is mentioned.
 
-EXAMPLE:
-TRANSCRIPT: 28M, headache 2 days, no fever. BP 130/80, pulse 76. Tension headache. Tab Combiflam BD 3 days. Review if worsens.
-CHIEF COMPLAINT: Headache for 2 days
-HISTORY: No fever, no vomiting mentioned
-VITALS: BP: 130/80 mmHg, Pulse: 76/min
-EXAMINATION: Not documented
-DIAGNOSIS: Tension headache
-PLAN: Tab Combiflam BD for 3 days
-FOLLOW-UP: Review if condition worsens
+SAFETY RULE: The example below is for FORMAT ONLY. Never copy drug names, diagnoses, findings, or vitals from the example into your output. Use ONLY what is in the TRANSCRIPT section.
+
+EXAMPLE FORMAT:
+TRANSCRIPT: [doctor dictation goes here]
+CHIEF COMPLAINT: [from transcript only]
+HISTORY: [from transcript only]
+VITALS: [from transcript only]
+EXAMINATION: [from transcript only]
+DIAGNOSIS: [from transcript only]
+PLAN: [from transcript only]
+FOLLOW-UP: [from transcript only]
 
 NOW EXTRACT:
 TRANSCRIPT: {transcript}<end_of_turn>
@@ -270,17 +273,17 @@ CHIEF COMPLAINT:"""
         user_prompt = f"""<start_of_turn>user
 You are a medical documentation assistant. Convert this discharge dictation into a structured discharge summary. Fill in only what is mentioned.
 
-EXAMPLE:
-TRANSCRIPT: 55M admitted 5 days with pneumonia. Fever resolved day 3. CXR showed right lobe consolidation. Given IV Augmentin 5 days, changed to oral. SpO2 98% on room air at discharge. Continue Tab Augmentin 625mg BD 5 days, Tab Dolo 650 SOS. Avoid cold exposure. Follow up 1 week.
-ADMISSION DIAGNOSIS: Pneumonia, right lobe
-HOSPITAL COURSE: Fever resolved on day 3. Treated with IV Augmentin for 5 days then switched to oral. SpO2 improved to 98% on room air.
-INVESTIGATIONS: CXR - right lobe consolidation
-CONDITION AT DISCHARGE: Stable, afebrile, SpO2 98%
-DISCHARGE MEDICATIONS:
-1. Augmentin (Amoxicillin-Clavulanate) | 625mg | Twice daily | 5 days
-2. Dolo (Paracetamol) | 650mg | As needed | -
-ADVICE: Avoid cold exposure
-FOLLOW-UP: 1 week
+SAFETY RULE: The example below is for FORMAT ONLY. Never copy drug names, diagnoses, findings, or any clinical data from the example into your output. Use ONLY what is in the TRANSCRIPT section.
+
+EXAMPLE FORMAT:
+TRANSCRIPT: [doctor dictation goes here]
+ADMISSION DIAGNOSIS: [from transcript only]
+HOSPITAL COURSE: [from transcript only]
+INVESTIGATIONS: [from transcript only]
+CONDITION AT DISCHARGE: [from transcript only]
+DISCHARGE MEDICATIONS: [from transcript only — name | dose | frequency | duration]
+ADVICE: [from transcript only]
+FOLLOW-UP: [from transcript only]
 
 NOW EXTRACT:
 TRANSCRIPT: {transcript}<end_of_turn>
@@ -315,12 +318,14 @@ RULES:
         user_prompt = f"""<start_of_turn>user
 You are a medical documentation assistant. Convert this IPD round dictation into SOAP progress notes. Fill in only what is mentioned.
 
-EXAMPLE:
-TRANSCRIPT: Patient better today. Fever settled. BP 120/80, pulse 80, temp 98.6F, SpO2 98%. Continue current medicines. Check CBC tomorrow.
-SUBJECTIVE: Patient reports improvement, fever has settled
-OBJECTIVE: Vitals: BP 120/80 mmHg, Pulse 80/min, Temp 98.6°F, SpO2 98%
-ASSESSMENT: Improving
-PLAN: Continue current medications, CBC tomorrow
+SAFETY RULE: The example below is for FORMAT ONLY. Never copy vitals, drug names, or clinical findings from the example into your output. Use ONLY what is in the TRANSCRIPT section.
+
+EXAMPLE FORMAT:
+TRANSCRIPT: [doctor dictation goes here]
+SUBJECTIVE: [from transcript only]
+OBJECTIVE: [from transcript only]
+ASSESSMENT: [from transcript only]
+PLAN: [from transcript only]
 
 NOW EXTRACT:
 TRANSCRIPT: {transcript}<end_of_turn>

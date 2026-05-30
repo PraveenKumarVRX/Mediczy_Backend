@@ -28,6 +28,16 @@ import {
 
 const router = express.Router();
 
+const MEMBERSHIP_RENEWAL_EXEMPT_EMAILS = new Set(
+  String(process.env.MEMBERSHIP_RENEWAL_EXEMPT_EMAILS || 'user@mediczy.com')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean)
+);
+
+const isMembershipRenewalExemptEmail = (email) =>
+  MEMBERSHIP_RENEWAL_EXEMPT_EMAILS.has(String(email || '').trim().toLowerCase());
+
 console.log('🔷 [doctor.route.js] Module loaded');
 console.log('🔷 signInDoctor type:', typeof signInDoctor);
 
@@ -2493,19 +2503,24 @@ router.post("/triage/cases/:caseId/accept", authDoctor, async (req, res) => {
     const doctorId = req.doctor.id;
     const { caseId } = req.params;
 
-    const appointment = await Appointment.findByPk(caseId);
+    // Only allow the assigned doctor to accept, or accept unassigned cases
+    const appointment = await Appointment.findOne({
+      where: {
+        id: caseId,
+        [Op.or]: [{ doctorId: null }, { doctorId: doctorId }],
+      },
+    });
     if (!appointment) {
-      return res.status(404).json({
+      // Either not found, or already assigned to a different doctor
+      const exists = await Appointment.findByPk(caseId);
+      return res.status(exists ? 403 : 404).json({
         success: false,
-        message: 'Triage case not found'
+        message: exists ? 'This triage case is assigned to another doctor' : 'Triage case not found',
       });
     }
 
     // Assign doctor and update status
-    await appointment.update({
-      doctorId,
-      status: 'in_progress'
-    });
+    await appointment.update({ doctorId, status: 'in_progress' });
 
     // Notify patient that doctor has accepted
     try {
@@ -2558,17 +2573,17 @@ router.post("/triage/cases/:caseId/respond", authDoctor, async (req, res) => {
     const { caseId } = req.params;
     const { action, notes } = req.body;
 
-    const appointment = await Appointment.findByPk(caseId, {
-      include: [{
-        model: User,
-        as: 'patient'
-      }]
+    // Verify doctor owns or is assigned to this triage case
+    const appointment = await Appointment.findOne({
+      where: { id: caseId, doctorId },
+      include: [{ model: User, as: 'patient' }],
     });
 
     if (!appointment) {
-      return res.status(404).json({
+      const exists = await Appointment.findByPk(caseId);
+      return res.status(exists ? 403 : 404).json({
         success: false,
-        message: 'Triage case not found'
+        message: exists ? 'You are not assigned to this triage case' : 'Triage case not found',
       });
     }
 
@@ -2883,8 +2898,28 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     }
 
     // Check if payment is completed (if required)
-    // Allow if: payment is marked as paid OR user has active membership plan
-    if (['online', 'video'].includes(appointment.consultationType) && appointment.paymentStatus !== 'paid') {
+    // Allow if: payment is settled, consultation fee is nominal/free, or user has active membership plan.
+    const normalizedPaymentStatus = String(appointment.paymentStatus || '').toLowerCase();
+    const isPaymentSettled = ['paid', 'credit'].includes(normalizedPaymentStatus);
+    const consultationFee = Number(appointment.consultationFee ?? appointment.paymentAmount ?? 0);
+    const isNominalOrFreeConsultation = Number.isFinite(consultationFee) && consultationFee <= 1;
+
+    let isMembershipRenewalExemptUser = false;
+    if (isMembershipRenewalExemptEmail(appointment?.patient?.email)) {
+      isMembershipRenewalExemptUser = true;
+    } else if (appointment?.userId) {
+      const patient = await User.findByPk(appointment.userId, {
+        attributes: ['id', 'email']
+      });
+      isMembershipRenewalExemptUser = isMembershipRenewalExemptEmail(patient?.email);
+    }
+
+    if (
+      ['online', 'video'].includes(appointment.consultationType) &&
+      !isPaymentSettled &&
+      !isNominalOrFreeConsultation &&
+      !isMembershipRenewalExemptUser
+    ) {
       // Check if user has an active membership plan
       const activePlan = await UserPlan.findOne({
         where: {
@@ -3136,18 +3171,24 @@ router.post("/triage/accept-call", authDoctor, async (req, res) => {
       return res.status(400).json({ success: false, message: 'appointmentId is required' });
     }
 
-    const appointment = await Appointment.findByPk(appointmentId);
+    // Claim unassigned appointment OR verify already assigned to this doctor.
+    // Using findOne with WHERE avoids the race condition where two doctors
+    // simultaneously pass the findByPk + check pattern.
+    const appointment = await Appointment.findOne({
+      where: {
+        id: appointmentId,
+        [Op.or]: [{ doctorId: null }, { doctorId: doctorId }],
+      },
+    });
 
     if (!appointment) {
-      return res.status(404).json({ success: false, message: 'Appointment not found' });
+      const exists = await Appointment.findByPk(appointmentId);
+      return res.status(exists ? 403 : 404).json({
+        success: false,
+        message: exists ? 'This call is assigned to another doctor' : 'Appointment not found',
+      });
     }
 
-    // Allow the assigned doctor, OR auto-assign if no doctor is assigned yet
-    if (appointment.doctorId && appointment.doctorId !== doctorId) {
-      return res.status(403).json({ success: false, message: 'This call is assigned to another doctor' });
-    }
-
-    // Update appointment status and assign doctor if not already assigned
     const updatePayload = { status: 'in-progress' };
     if (!appointment.doctorId) updatePayload.doctorId = doctorId;
 
@@ -3233,20 +3274,20 @@ router.post("/triage/reject-call", authDoctor, async (req, res) => {
     const { appointmentId, reason } = req.body;
     const doctorId = req.doctor.id;
 
-    const appointment = await Appointment.findByPk(appointmentId);
+    // Filter at query level — only returns the appointment if this doctor owns it
+    const appointment = await Appointment.findOne({ where: { id: appointmentId, doctorId } });
 
     if (!appointment) {
-      return res.status(404).json({ success: false, message: 'Appointment not found' });
+      const exists = await Appointment.findByPk(appointmentId);
+      return res.status(exists ? 403 : 404).json({
+        success: false,
+        message: exists ? 'You are not assigned to this call' : 'Appointment not found',
+      });
     }
 
-    if (appointment.doctorId !== doctorId) {
-      return res.status(403).json({ success: false, message: 'Unauthorized' });
-    }
-
-    // Update appointment status
     await appointment.update({
       status: 'cancelled',
-      notes: `Doctor declined: ${reason || 'No reason provided'}`
+      notes: `Doctor declined: ${reason || 'No reason provided'}`,
     });
 
     // Notify patient via hybrid notification (Socket.IO + FCM)

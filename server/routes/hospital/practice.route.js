@@ -98,6 +98,7 @@ const verifyHospitalToken = (req, res, next) => {
     req.tenantId = decoded.tenant_id || decoded.hospital_id || decoded.id;
     req.userId = decoded.id;
     req.userRole = role;
+    req.capabilities = Array.isArray(decoded.capabilities) ? decoded.capabilities : undefined;
 
     return next();
   } catch (error) {
@@ -357,6 +358,14 @@ router.get('/', verifyHospitalToken, async (req, res) => {
   res.json({ success: true, data: practice });
 });
 
+router.get('/capabilities', verifyHospitalToken, async (req, res) => {
+  return res.json({ success: true, capabilities: req.capabilities || [], data: req.capabilities || [] });
+});
+
+router.get('/plan/capabilities', verifyHospitalToken, async (req, res) => {
+  return res.json({ success: true, capabilities: req.capabilities || [], data: req.capabilities || [] });
+});
+
 router.get('/summary', verifyHospitalToken, async (req, res) => {
   const state = await readState();
   const practice = getPractice(state, req.hospitalId, req.hospitalName);
@@ -378,11 +387,11 @@ router.get('/analytics/stats', verifyHospitalToken, async (req, res) => {
   try {
     const state = await readState();
     const practice = getPractice(state, req.hospitalId, req.hospitalName);
-    const pendingClaims = await InsuranceClaim.count({
-      where: {
-        status: { [Op.in]: ['pending', 'submitted', 'query'] }
-      }
-    }).catch(() => 0);
+    const claimScope = {
+      status: { [Op.in]: ['pending', 'submitted', 'query'] },
+      [Op.or]: [{ organizationId: req.hospitalId }, { hospitalId: req.hospitalId }]
+    };
+    const pendingClaims = await InsuranceClaim.count({ where: claimScope }).catch(() => 0);
 
     return res.json({
       success: true,
@@ -1963,7 +1972,10 @@ router.get('/beds/occupancy', verifyHospitalToken, async (req, res) => {
 router.get('/claims/pending', verifyHospitalToken, async (req, res) => {
   try {
     const claims = await InsuranceClaim.findAll({
-      where: { status: { [Op.in]: ['pending', 'submitted', 'query'] } },
+      where: {
+        status: { [Op.in]: ['pending', 'submitted', 'query'] },
+        [Op.or]: [{ organizationId: req.hospitalId }, { hospitalId: req.hospitalId }]
+      },
       attributes: ['id', 'claimNumber', 'claimAmount', 'status', 'submittedAt', 'createdAt'],
       order: [['submittedAt', 'DESC']],
       limit: 20

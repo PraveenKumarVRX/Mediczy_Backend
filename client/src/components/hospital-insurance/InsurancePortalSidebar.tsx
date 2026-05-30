@@ -39,7 +39,7 @@ import {
   Activity,
   Landmark,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 interface MenuItem {
   name: string;
@@ -54,12 +54,28 @@ interface MenuSection {
   defaultOpen?: boolean;
 }
 
+const DEFAULT_COLLAPSED_SECTIONS = [
+  'Tasks & Escalations',
+  'Patient Flow',
+  'Communication',
+  'Documents',
+  'Reconciliation',
+  'Reports & Analytics',
+  'Payer Management',
+  'Hospital Profile',
+  'Inventory',
+  'Compliance',
+  'Schedule',
+  'System',
+];
+
 const InsurancePortalSidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { slug } = useParams<{ slug: string }>();
   const base = `/hospital/${slug || localStorage.getItem('hospitalInsuranceSlug') || 'hospital'}/insurance`;
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const currentPath = location.pathname + location.search;
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set(DEFAULT_COLLAPSED_SECTIONS));
 
   const toggleSection = (title: string) => {
     setCollapsedSections(prev => {
@@ -204,10 +220,12 @@ const InsurancePortalSidebar = () => {
     },
   ];
 
-  const isActive = (href: string) => {
-    const path = location.pathname + location.search;
-    return path === href || location.pathname === href;
-  };
+  const isActive = (href: string) => currentPath === href || location.pathname === href;
+
+  const visibleMenuSections = useMemo(() => menuSections.map((section) => ({
+    ...section,
+    isCollapsed: collapsedSections.has(section.title) && !section.items.some((item) => isActive(item.href)),
+  })), [collapsedSections, currentPath, base]);
 
   return (
     <div
@@ -236,8 +254,8 @@ const InsurancePortalSidebar = () => {
 
       {/* Navigation */}
       <nav className="relative z-10 flex-1 overflow-y-auto py-2 px-2.5" style={{ scrollbarWidth: 'none' }}>
-        {menuSections.map((section) => {
-          const isCollapsed = collapsedSections.has(section.title);
+        {visibleMenuSections.map((section) => {
+          const isCollapsed = section.isCollapsed;
           return (
             <div key={section.title} className="mb-0.5">
               <button

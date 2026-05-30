@@ -192,66 +192,72 @@ class SIBControlLayer extends EventEmitter {
    */
   async processDecision(decision) {
     const startTime = Date.now();
-    
+    // Define before try so catch block can always reference them safely
+    const decisionId = decision.decisionId || `decision_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    decision = { ...decision, decisionId };
+
     try {
       // 1. Kill switch check
       if (this.killSwitchActive) {
         throw new Error('Kill switch active - all AI decisions blocked');
       }
-      
+
       // 2. Validate decision structure
       this.validateDecision(decision);
-      
+
       // 3. Check circuit breaker
       if (this.isCircuitBreakerOpen(decision.type)) {
         throw new Error(`Circuit breaker open for ${decision.type}`);
       }
-      
+
       // 4. Rate limit check
       if (!this.checkRateLimit(decision.type)) {
         throw new Error(`Rate limit exceeded for ${decision.type}`);
       }
-      
+
       // 5. Confidence threshold check
       if (!this.meetsConfidenceThreshold(decision)) {
         throw new Error(`Confidence ${decision.confidence} below threshold for ${decision.type}`);
       }
-      
+
       // 6. Policy enforcement
       if (!this.passesPolicy(decision)) {
         throw new Error(`Decision violates safety policy: ${decision.type}`);
       }
-      
+
       // 7. Human approval check
       if (this.requiresHumanApproval(decision.type)) {
         return await this.requestHumanApproval(decision);
       }
-      
+
       // 8. Log decision (for auditability)
       this.logDecision({
         ...decision,
+        decisionId,
         status: 'approved',
         timestamp: new Date().toISOString()
       });
-      
+
       // 9. Execute via BullMQ (motor system)
       const result = await this.executeDecision(decision);
-      
+
       // 10. Publish decision to Kafka (observability)
       await this.publishDecisionEvent(decision, result);
-      
+
       // 11. Update metrics
       this.updateMetrics(decision, result, Date.now() - startTime);
-      
+
       return {
         success: true,
+        decisionId,
         decision,
         result,
         executionTime: Date.now() - startTime
       };
-      
+
     } catch (error) {
-      // Log failure
+      const processingTime = Date.now() - startTime;
+
       this.logDecision({
         ...decision,
         decisionId,
@@ -259,22 +265,14 @@ class SIBControlLayer extends EventEmitter {
         error: error.message,
         timestamp: new Date().toISOString()
       });
-      
-      // Update database record
-      if (dbRecord) {
-        await dbRecord.reject('system', error.message).catch(err => console.error('DB error:', err));
-      }
-      
-      // Record metrics
-      const processingTime = Date.now() - startTime;
+
       sibMetrics.recordDecision(decision.type, 'rejected', decision.confidence, processingTime);
       sibMetrics.recordRejection(decision.type, error.message.substring(0, 50));
-      
-      // Trip circuit breaker if too many failures
+
       this.recordFailure(decision.type);
-      
-      console.error(`❌ SIB decision rejected:`, error.message);
-      
+
+      console.error(`❌ SIB decision rejected [${decisionId}]:`, error.message);
+
       return {
         success: false,
         decisionId,
@@ -572,20 +570,41 @@ class SIBControlLayer extends EventEmitter {
   }
 
   /**
-   * Log decision for audit trail
+   * Log decision for audit trail — in-memory ring buffer + async DB persistence.
    */
   logDecision(decision) {
-    this.decisionLog.push({
-      ...decision,
-      timestamp: decision.timestamp || new Date().toISOString()
-    });
-    
-    // Keep last 1000 decisions in memory
+    const entry = { ...decision, timestamp: decision.timestamp || new Date().toISOString() };
+
+    // In-memory ring buffer (fast, synchronous)
+    this.decisionLog.push(entry);
     if (this.decisionLog.length > 1000) {
       this.decisionLog.shift();
     }
-    
-    // TODO: Persist to database for long-term audit
+
+    // Async DB persistence — fire-and-forget; errors are logged but never thrown
+    this._persistDecisionLog(entry).catch(err =>
+      console.error('SIB audit log DB write failed:', err.message)
+    );
+  }
+
+  /**
+   * Persist a single decision log entry to the SIBDecision table.
+   */
+  async _persistDecisionLog(entry) {
+    try {
+      await SIBDecision.create({
+        decisionId:  entry.decisionId || `log_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+        type:        entry.type       || 'system_event',
+        confidence:  typeof entry.confidence === 'number' ? entry.confidence : 0,
+        reasoning:   entry.reasoning  || entry.reason || entry.type || 'audit',
+        data:        entry.data       || {},
+        context:     entry.context    || {},
+        status:      entry.status     || 'logged',
+      });
+    } catch (err) {
+      // Swallow — log table write failures must never break the decision pipeline
+      console.error('SIB audit log persistence error:', err.message);
+    }
   }
 
   /**

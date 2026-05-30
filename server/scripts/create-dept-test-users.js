@@ -4,7 +4,7 @@
 const bcrypt = require('bcryptjs');
 const { Sequelize, DataTypes } = require('sequelize');
 
-const sequelize = new Sequelize(process.env.DB_NAME || 'mediczy_ai', process.env.DB_USER || 'mediczy_helper', process.env.DB_PASS || 'Mediczy2024Helper', {
+const sequelize = new Sequelize(process.env.DB_NAME || 'mediczy_ai', process.env.DB_USER || 'mediczy_helper', process.env.DB_PASS || (process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || undefined), {
   host: process.env.DB_HOST || '127.0.0.1',
   dialect: 'postgres',
   logging: false,

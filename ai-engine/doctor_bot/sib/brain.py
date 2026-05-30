@@ -28,36 +28,62 @@ logger = logging.getLogger("sib.brain")
 # ─── Module-level singletons (one-time cost) ─────────────────────────────────
 
 _groq_client = None          # Groq SDK client — created once
+_openai_client = None        # OpenAI SDK client — created once
+_gemini_model = None         # Gemini GenerativeModel — created once
 _isha_session = None         # httpx.Client with keep-alive for iSHA GPU
 
 # ─── LLM response cache ───────────────────────────────────────────────────────
-_llm_cache: Dict[str, tuple] = {}    # key → (result_dict, timestamp)
-_LLM_CACHE_TTL = 300                  # seconds; clinical answers expire in 5 min
+# ─── Thread-safe LLM response cache ─────────────────────────────────────────
+# SHA-256 keyed; user_id isolated so Patient A never sees Patient B's answer.
+# Sensitive clinical queries are never cached (see _is_sensitive_query).
+import threading as _threading
+
+_llm_cache: Dict[str, tuple] = {}
+_llm_cache_lock = _threading.Lock()
+_LLM_CACHE_TTL = 300  # 5 minutes
+
+# Query patterns that MUST NOT be cached (patient-specific or high-stakes)
+_SKIP_CACHE_PATTERNS = (
+    "chest pain", "emergency", "heart attack", "stroke", "unconscious",
+    "bleeding", "suicide", "overdose", "anaphylaxis", "cardiac",
+)
 
 
-def _cache_key(prompt: str, system: Optional[str]) -> str:
-    raw = f"{system or ''}|||{prompt}"
-    return hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()
+def _is_sensitive_query(prompt: str) -> bool:
+    p = prompt.lower()
+    return any(kw in p for kw in _SKIP_CACHE_PATTERNS)
 
 
-def _cache_get(prompt: str, system: Optional[str]) -> Optional[Dict]:
-    key = _cache_key(prompt, system)
-    entry = _llm_cache.get(key)
-    if entry and (time.time() - entry[1]) < _LLM_CACHE_TTL:
-        return {**entry[0], "cached": True}
-    if entry:
-        del _llm_cache[key]
+def _cache_key(prompt: str, system: Optional[str], user_id: Optional[str] = None) -> str:
+    """SHA-256 cache key with user isolation — prevents cross-patient PHI leakage."""
+    raw = f"{user_id or 'anon'}|||{system or ''}|||{prompt}"
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _cache_get(prompt: str, system: Optional[str], user_id: Optional[str] = None) -> Optional[Dict]:
+    if _is_sensitive_query(prompt):
+        return None  # Never serve cached answers for high-stakes queries
+    key = _cache_key(prompt, system, user_id)
+    with _llm_cache_lock:
+        entry = _llm_cache.get(key)
+        if entry and (time.time() - entry[1]) < _LLM_CACHE_TTL:
+            return {**entry[0], "cached": True}
+        if entry:
+            del _llm_cache[key]
     return None
 
 
-def _cache_set(prompt: str, system: Optional[str], result: Dict) -> None:
-    key = _cache_key(prompt, system)
-    _llm_cache[key] = (result, time.time())
-    if len(_llm_cache) > 512:
-        now = time.time()
-        expired = [k for k, (_, ts) in list(_llm_cache.items()) if now - ts > _LLM_CACHE_TTL]
-        for k in expired:
-            _llm_cache.pop(k, None)
+def _cache_set(prompt: str, system: Optional[str], result: Dict, user_id: Optional[str] = None) -> None:
+    if _is_sensitive_query(prompt):
+        return  # Do not cache sensitive clinical responses
+    key = _cache_key(prompt, system, user_id)
+    with _llm_cache_lock:
+        _llm_cache[key] = (result, time.time())
+        if len(_llm_cache) > 512:
+            now = time.time()
+            expired = [k for k, (_, ts) in list(_llm_cache.items()) if now - ts > _LLM_CACHE_TTL]
+            for k in expired:
+                _llm_cache.pop(k, None)
 
 
 def _get_groq_client():
@@ -67,6 +93,25 @@ def _get_groq_client():
         from groq import Groq
         _groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
     return _groq_client
+
+
+def _get_openai_client():
+    """Return singleton OpenAI client (instantiated once)."""
+    global _openai_client
+    if _openai_client is None:
+        from openai import OpenAI
+        _openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+    return _openai_client
+
+
+def _get_gemini_model():
+    """Return singleton Gemini GenerativeModel (instantiated once)."""
+    global _gemini_model
+    if _gemini_model is None:
+        import google.generativeai as genai
+        genai.configure(api_key=os.environ.get("GEMINI_API_KEY", ""))
+        _gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+    return _gemini_model
 
 
 def _get_isha_session() -> "httpx.Client":
@@ -277,7 +322,8 @@ class SyntheticIntelligenceBrain:
         lower = prompt.lower()
         return any(kw in lower for kw in keywords)
 
-    def llm_reasoning(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
+    def llm_reasoning(self, prompt: str, system_prompt: Optional[str] = None,
+                      user_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Primary LLM reasoning with 5-tier fallback.
 
@@ -288,12 +334,13 @@ class SyntheticIntelligenceBrain:
         4. OpenAI gpt-3.5-turbo        — cloud fallback 2
         5. Gemini 1.5-flash            — cloud fallback 3
 
-        Results are cached for 5 minutes to avoid redundant LLM calls.
+        user_id is required for cache isolation — each patient's cache is keyed separately
+        so Patient A never receives Patient B's cached clinical response.
         """
         start_time = time.time()
 
-        # Fast path: return cached result for identical prompts
-        cached = _cache_get(prompt, system_prompt)
+        # Fast path: return cached result for identical (user, prompt) pairs
+        cached = _cache_get(prompt, system_prompt, user_id)
         if cached:
             logger.debug("LLM cache hit")
             return cached
@@ -304,7 +351,7 @@ class SyntheticIntelligenceBrain:
             result["provider"] = LLMProvider.LLAMA_LOCAL.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
             logger.info(f"✅ iSHA node1 inference: {result['latency_ms']}ms model={result.get('model','?')}")
-            _cache_set(prompt, system_prompt, result)
+            _cache_set(prompt, system_prompt, result, user_id)
             return result
         except Exception as e:
             logger.warning(f"⚠️ iSHA node1 failed: {e}")
@@ -316,7 +363,7 @@ class SyntheticIntelligenceBrain:
             result["provider"] = LLMProvider.ISHA_INC.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
             logger.info(f"✅ iSHA node2 ({node2_model}): {result['latency_ms']}ms")
-            _cache_set(prompt, system_prompt, result)
+            _cache_set(prompt, system_prompt, result, user_id)
             return result
         except Exception as e:
             logger.warning(f"⚠️ iSHA node2 failed: {e}")
@@ -327,7 +374,7 @@ class SyntheticIntelligenceBrain:
             result["provider"] = LLMProvider.GROQ.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
             logger.info(f"✅ Groq fallback: {result['latency_ms']}ms")
-            _cache_set(prompt, system_prompt, result)
+            _cache_set(prompt, system_prompt, result, user_id)
             return result
         except Exception as e:
             logger.warning(f"⚠️ Groq failed: {e}")
@@ -338,7 +385,7 @@ class SyntheticIntelligenceBrain:
             result["provider"] = LLMProvider.OPENAI.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
             logger.info(f"✅ OpenAI fallback: {result['latency_ms']}ms")
-            _cache_set(prompt, system_prompt, result)
+            _cache_set(prompt, system_prompt, result, user_id)
             return result
         except Exception as e:
             logger.warning(f"⚠️ OpenAI failed: {e}")
@@ -349,7 +396,7 @@ class SyntheticIntelligenceBrain:
             result["provider"] = LLMProvider.GEMINI.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
             logger.info(f"✅ Gemini fallback: {result['latency_ms']}ms")
-            _cache_set(prompt, system_prompt, result)
+            _cache_set(prompt, system_prompt, result, user_id)
             return result
         except Exception as e:
             logger.error(f"❌ All LLM providers failed: {e}")
@@ -461,9 +508,8 @@ class SyntheticIntelligenceBrain:
         return {"answer": data["choices"][0]["message"]["content"], "model": data.get("model", model)}
 
     def _openai_inference(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
-        """OpenAI gpt-3.5-turbo — cloud fallback 2."""
-        from openai import OpenAI
-        client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+        """OpenAI gpt-3.5-turbo — cloud fallback 2 (singleton client)."""
+        client = _get_openai_client()
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -474,10 +520,8 @@ class SyntheticIntelligenceBrain:
         return {"answer": response.choices[0].message.content, "model": "gpt-3.5-turbo"}
 
     def _gemini_inference(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
-        """Gemini 1.5-flash — cloud fallback 3."""
-        import google.generativeai as genai
-        genai.configure(api_key=self.gemini_api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        """Gemini 1.5-flash — cloud fallback 3 (singleton model)."""
+        model = _get_gemini_model()
         full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
         response = model.generate_content(full_prompt)
         return {"answer": response.text, "model": "gemini-1.5-flash"}
@@ -569,37 +613,48 @@ class SyntheticIntelligenceBrain:
     async def _hardcoded_route(
         self, request_type: str, data: Dict[str, Any], start_time: float
     ) -> Dict[str, Any]:
-        """Original static routing — used when Qwen planner is unavailable."""
+        """
+        Static routing fallback — used when QwenPlanner is unavailable.
+
+        All synchronous _handle_* methods are wrapped with asyncio.to_thread()
+        so they never block the uvicorn event loop.  Without this, a single
+        60-second LLM call would freeze ALL concurrent requests.
+        """
+        logger.warning("⚠️ QwenPlanner fallback active — hardcoded routing for: %s", request_type)
+
         if request_type == RequestType.CHAT.value:
-            return self._handle_chat(data)
+            return await asyncio.to_thread(self._handle_chat, data)
         elif request_type == RequestType.QUERY.value:
-            return self._handle_query(data)
+            return await asyncio.to_thread(self._handle_query, data)
         elif request_type == RequestType.EHR_UPLOAD.value:
-            return self._handle_ehr_upload(data)
+            return await asyncio.to_thread(self._handle_ehr_upload, data)
         elif request_type == RequestType.TASK.value:
-            return self._handle_task(data)
+            return await asyncio.to_thread(self._handle_task, data)
         elif request_type == RequestType.NOTIFY.value:
-            return self._handle_notification(data)
+            return await asyncio.to_thread(self._handle_notification, data)
         elif request_type == RequestType.INSURANCE.value:
-            return self._handle_insurance(data)
+            return await asyncio.to_thread(self._handle_insurance, data)
         elif request_type == RequestType.RISK.value:
-            return self._handle_risk(data)
+            return await asyncio.to_thread(self._handle_risk, data)
         elif request_type == RequestType.SUMMARIZE.value:
-            return self._handle_summarize(data)
+            return await asyncio.to_thread(self._handle_summarize, data)
         elif request_type == RequestType.WEB_SEARCH.value:
-            return await self._handle_web_search(data)
+            return await self._handle_web_search(data)  # already async
         elif request_type == RequestType.AGENT_QUERY.value:
-            return self.query_with_agent(
+            return await asyncio.to_thread(
+                self.query_with_agent,
                 data.get("query", ""),
                 data.get("context", data.get("patient_data", {}))
             )
         elif request_type == RequestType.KNOWLEDGE_SEARCH.value:
-            return self.search_knowledge(data.get("query", ""), data.get("category", "all"))
+            return await asyncio.to_thread(
+                self.search_knowledge, data.get("query", ""), data.get("category", "all")
+            )
         elif request_type == RequestType.SYMPTOM_CHECK.value:
             symptoms = data.get("symptoms", [])
             if isinstance(symptoms, str):
                 symptoms = [symptoms]
-            return self.classify_symptoms(symptoms, data.get("context", {}))
+            return await asyncio.to_thread(self.classify_symptoms, symptoms, data.get("context", {}))
         elif request_type == RequestType.TRIAGE.value:
             complaint = data.get("chief_complaint") or data.get("complaint") or ""
             symptoms = data.get("symptoms", [])
@@ -609,14 +664,18 @@ class SyntheticIntelligenceBrain:
                 complaint = symptoms
             vitals = data.get("vital_signs") or data.get("vitals") or {}
             ctx = {"age": data.get("patient_age"), **(data.get("context") or {})}
-            return self.triage_patient(complaint, vitals, ctx)
+            return await asyncio.to_thread(self.triage_patient, complaint, vitals, ctx)
         elif request_type == RequestType.DRUG_CHECK.value:
             meds = data.get("drugs") or data.get("medications") or []
             if isinstance(meds, str):
                 meds = [meds]
-            return self.check_drug_interactions(meds, data.get("patient_conditions", []))
+            return await asyncio.to_thread(
+                self.check_drug_interactions, meds, data.get("patient_conditions", [])
+            )
         elif request_type == RequestType.HYBRID_SEARCH.value:
-            return self.hybrid_search(data.get("query", ""), data.get("k", 5), data.get("method", "hybrid"))
+            return await asyncio.to_thread(
+                self.hybrid_search, data.get("query", ""), data.get("k", 5), data.get("method", "hybrid")
+            )
         else:
             return {
                 "error": f"Unknown request type: {request_type}",
@@ -727,10 +786,10 @@ class SyntheticIntelligenceBrain:
         patient_id = data.get("patient_id")
         patient_data = data.get("patient_data", {})
         include_summary = data.get("include_summary", False)
-        
+
         # Retrieve relevant context from EHR
         retrieved = self.ehr_bot.retrieve(query, patient_id=patient_id)
-        
+
         # Build context-enriched prompt
         context = "\n".join([chunk["text"] for chunk in retrieved.get("chunks", [])])
         enriched_prompt = f"""Based on the following medical context:
@@ -740,11 +799,12 @@ class SyntheticIntelligenceBrain:
 User Query: {query}
 
 Please provide a helpful, medically accurate response."""
-        
-        # LLM reasoning
+
+        # LLM reasoning — pass patient_id for per-patient cache isolation
         llm_result = self.llm_reasoning(
             enriched_prompt,
-            system_prompt="You are Dr. iSHA, a helpful medical AI assistant. Provide accurate, empathetic medical guidance."
+            system_prompt="You are Dr. iSHA, a helpful medical AI assistant. Provide accurate, empathetic medical guidance.",
+            user_id=patient_id,
         )
         
         # Risk assessment if patient data provided
@@ -844,16 +904,18 @@ Please provide a helpful, medically accurate response."""
         result = self.risk_bot.evaluate(patient_data)
         
         if include_recommendations:
-            # Generate recommendations using LLM
+            # Generate recommendations using LLM — pass patient_id for cache isolation
+            patient_id = data.get("patient_id") or data.get("patient_data", {}).get("patient_id")
             risk_summary = f"""Patient Risk Assessment:
 - Cardiovascular Risk: {result.get('cardio_risk', 'N/A')}
 - Treatment Priority: {result.get('treatment_priority', 'N/A')}
 - Framingham Score: {result.get('framingham_score', 'N/A')}%
 - ASCVD Score: {result.get('ascvd_score', 'N/A')}%"""
-            
+
             rec_result = self.llm_reasoning(
                 f"Based on this risk assessment, provide brief lifestyle and treatment recommendations:\n\n{risk_summary}",
-                system_prompt="You are a medical AI. Provide concise, actionable health recommendations."
+                system_prompt="You are a medical AI. Provide concise, actionable health recommendations.",
+                user_id=patient_id,
             )
             result["recommendations"] = rec_result.get("answer")
         
@@ -1191,12 +1253,16 @@ Please provide a helpful, medically accurate response."""
         logger.info("🔄 SIB state reset")
 
 
-# Singleton instance
+# Thread-safe singleton (double-check lock pattern)
 _sib_instance: Optional[SyntheticIntelligenceBrain] = None
+_sib_lock = _threading.Lock()
+
 
 def get_sib() -> SyntheticIntelligenceBrain:
-    """Get or create the SIB singleton instance"""
+    """Return the SIB singleton — thread-safe, initialised exactly once."""
     global _sib_instance
     if _sib_instance is None:
-        _sib_instance = SyntheticIntelligenceBrain()
+        with _sib_lock:
+            if _sib_instance is None:
+                _sib_instance = SyntheticIntelligenceBrain()
     return _sib_instance

@@ -34,26 +34,41 @@ const InsurancePortalLogin = () => {
 
   useEffect(() => {
     const token = localStorage.getItem('hospitalInsuranceToken');
-    if (token) {
-      // Validate expiry before trusting the token
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        if (payload?.exp && Date.now() >= payload.exp * 1000) {
-          localStorage.removeItem('hospitalInsuranceToken');
-          setIsCheckingAuth(false);
-          return;
-        }
-      } catch {
-        localStorage.removeItem('hospitalInsuranceToken');
-        setIsCheckingAuth(false);
-        return;
-      }
-      const slug = localStorage.getItem('hospitalInsuranceSlug') || 'hospital';
-      goToDashboard(slug);
+    if (!token) {
+      setIsCheckingAuth(false);
       return;
     }
 
-    setIsCheckingAuth(false);
+    const clearInsuranceSession = () => {
+      localStorage.removeItem('hospitalInsuranceToken');
+      localStorage.removeItem('hospitalInsuranceData');
+      localStorage.removeItem('hospitalInsuranceSlug');
+      localStorage.removeItem('token');
+      localStorage.removeItem('userType');
+    };
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload?.exp && Date.now() >= payload.exp * 1000) {
+        clearInsuranceSession();
+        setIsCheckingAuth(false);
+        return;
+      }
+    } catch {
+      clearInsuranceSession();
+      setIsCheckingAuth(false);
+      return;
+    }
+
+    api.get('/hospital-insurance/auth/verify', { headers: { Authorization: `Bearer ${token}` }, skipAuth: true } as any)
+      .then(() => {
+        const slug = localStorage.getItem('hospitalInsuranceSlug') || 'hospital';
+        goToDashboard(slug);
+      })
+      .catch(() => {
+        clearInsuranceSession();
+        setIsCheckingAuth(false);
+      });
   }, [navigate]);
 
   const onSubmit = async (e: React.FormEvent) => {

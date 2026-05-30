@@ -391,25 +391,25 @@ smokeTest('Database connection configuration exists', () => {
 log.section('PHASE 6: Documentation Checks');
 
 warningCheck('Implementation guide exists', () => {
-  if (!fileExists('SMARTHEALTH_RN_API_CREDENTIALS_IMPLEMENTATION.md')) {
+  if (!fileExists('SMARTHEALTH_RN_API_CREDENTIALS_IMPLEMENTATION.md') && !fileExists('docs/patient/SMARTHEALTH_RN_API_CREDENTIALS_IMPLEMENTATION.md')) {
     throw new Error('Implementation guide not found');
   }
 });
 
 warningCheck('Deployment guide exists', () => {
-  if (!fileExists('SMARTHEALTH_RN_API_CREDENTIALS_DEPLOYMENT_GUIDE.md')) {
+  if (!fileExists('SMARTHEALTH_RN_API_CREDENTIALS_DEPLOYMENT_GUIDE.md') && !fileExists('docs/patient/SMARTHEALTH_RN_API_CREDENTIALS_DEPLOYMENT_GUIDE.md')) {
     throw new Error('Deployment guide not found');
   }
 });
 
 warningCheck('Super admin quick reference exists', () => {
-  if (!fileExists('SMARTHEALTH_RN_SUPER_ADMIN_QUICK_REFERENCE.md')) {
+  if (!fileExists('SMARTHEALTH_RN_SUPER_ADMIN_QUICK_REFERENCE.md') && !fileExists('docs/patient/SMARTHEALTH_RN_SUPER_ADMIN_QUICK_REFERENCE.md')) {
     throw new Error('Super admin guide not found');
   }
 });
 
 warningCheck('Security enhancement document exists', () => {
-  if (!fileExists('SMARTHEALTH_RN_API_CREDENTIALS_SECURITY_ENHANCEMENT.md')) {
+  if (!fileExists('SMARTHEALTH_RN_API_CREDENTIALS_SECURITY_ENHANCEMENT.md') && !fileExists('docs/patient/SMARTHEALTH_RN_API_CREDENTIALS_SECURITY_ENHANCEMENT.md')) {
     throw new Error('Security enhancement document not found');
   }
 });

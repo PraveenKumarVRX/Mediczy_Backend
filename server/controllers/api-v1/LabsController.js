@@ -182,3 +182,176 @@ export const initiatePayment = asyncHandler(async (req, res) => {
   );
   res.json(booking);
 });
+
+/**
+ * GET /labs/bookings/:bookingId/payment
+ * Retrieve payment state/details for booking
+ */
+export const getPayment = asyncHandler(async (req, res) => {
+  const payment = await labsService.getPayment(req.tenantId, req.params.bookingId);
+  res.json(payment);
+});
+
+/**
+ * PUT /labs/bookings/:bookingId/payment
+ * Update payment status for booking
+ */
+export const updatePaymentStatus = asyncHandler(async (req, res) => {
+  const booking = await labsService.updatePaymentStatus(
+    req.tenantId,
+    req.params.bookingId,
+    req.body
+  );
+  res.json(booking);
+});
+
+/**
+ * GET /labs/billing/work-queue
+ * List bookings pending finance action
+ */
+export const listBillingWorkQueue = asyncHandler(async (req, res) => {
+  const result = await labsService.listBillingWorkQueue(req.tenantId, {
+    page: parseInt(req.query.page, 10) || 1,
+    limit: parseInt(req.query.limit, 10) || 20,
+    paymentStatus: req.query.payment_status,
+    search: req.query.search
+  });
+  res.json(result);
+});
+
+/**
+ * GET /labs/billing/centralized-summary
+ * Aggregated centralized billing view for hospital-linked labs
+ */
+export const getCentralizedBillingSummary = asyncHandler(async (req, res) => {
+  const summary = await labsService.getCentralizedBillingSummary(req.tenantId, {
+    from: req.query.from,
+    to: req.query.to,
+    groupBy: req.query.group_by || 'partner'
+  });
+  res.json(summary);
+});
+
+/**
+ * POST /labs/bookings/:bookingId/ip-credit/apply
+ * Apply IP credit to booking and add ledger debit entry
+ */
+export const applyIpCredit = asyncHandler(async (req, res) => {
+  const result = await labsService.applyIpCredit(req.tenantId, req.params.bookingId, {
+    ...req.body,
+    acted_by: req.userId
+  });
+  res.json(result);
+});
+
+/**
+ * POST /labs/bookings/:bookingId/ip-credit/settle
+ * Settle IP credit and add ledger credit entry
+ */
+export const settleIpCredit = asyncHandler(async (req, res) => {
+  const result = await labsService.settleIpCredit(req.tenantId, req.params.bookingId, {
+    ...req.body,
+    acted_by: req.userId
+  });
+  res.json(result);
+});
+
+/**
+ * GET /labs/ip-credit/ledger
+ * Retrieve IP credit ledger entries
+ */
+export const listIpCreditLedger = asyncHandler(async (req, res) => {
+  const result = await labsService.listIpCreditLedger(req.tenantId, {
+    page: parseInt(req.query.page, 10) || 1,
+    limit: parseInt(req.query.limit, 10) || 20,
+    userId: req.query.user_id,
+    bookingId: req.query.booking_id
+  });
+  res.json(result);
+});
+
+/**
+ * POST /labs/home-collection/jobs
+ * Create a home collection operation job from an existing home-collection booking
+ */
+export const createHomeCollectionJob = asyncHandler(async (req, res) => {
+  const { booking_id, scheduled_date, scheduled_slot, pickup_address, notes } = req.body;
+  const job = await labsService.createHomeCollectionJob(req.tenantId, booking_id, {
+    scheduled_date,
+    scheduled_slot,
+    pickup_address,
+    notes,
+    actor_id: req.userId,
+    actor_role: req.role,
+    actor_name: req.userName
+  });
+  res.status(201).json(job);
+});
+
+/**
+ * GET /labs/home-collection/jobs
+ * List home collection jobs with optional filters
+ */
+export const listHomeCollectionJobs = asyncHandler(async (req, res) => {
+  const result = await labsService.listHomeCollectionJobs(req.tenantId, {
+    page: parseInt(req.query.page, 10) || 1,
+    limit: parseInt(req.query.limit, 10) || 20,
+    status: req.query.status,
+    scheduledDate: req.query.scheduled_date,
+    phlebotomistId: req.query.phlebotomist_id
+  });
+  res.json(result);
+});
+
+/**
+ * GET /labs/home-collection/jobs/:jobId
+ * Get home collection job details
+ */
+export const getHomeCollectionJob = asyncHandler(async (req, res) => {
+  const job = await labsService.getHomeCollectionJob(req.tenantId, req.params.jobId);
+  res.json(job);
+});
+
+/**
+ * POST /labs/home-collection/jobs/:jobId/assign
+ * Assign phlebotomist to a home collection job
+ */
+export const assignHomeCollectionPhlebotomist = asyncHandler(async (req, res) => {
+  const { phlebotomist_id, phlebotomist_name, phlebotomist_phone } = req.body;
+  const job = await labsService.assignPhlebotomist(req.tenantId, req.params.jobId, {
+    phlebotomist_id,
+    phlebotomist_name,
+    phlebotomist_phone,
+    actor_id: req.userId,
+    actor_role: req.role,
+    actor_name: req.userName
+  });
+  res.json(job);
+});
+
+/**
+ * PUT /labs/home-collection/jobs/:jobId/status
+ * Progress home collection state machine
+ */
+export const updateHomeCollectionJobStatus = asyncHandler(async (req, res) => {
+  const { status, proof_of_collection, handover_details, notes } = req.body;
+  const job = await labsService.updateHomeCollectionJobStatus(req.tenantId, req.params.jobId, {
+    status,
+    proof_of_collection,
+    handover_details,
+    notes,
+    actor_id: req.userId,
+    actor_role: req.role,
+    actor_name: req.userName
+  });
+  res.json(job);
+});
+
+/**
+ * GET /labs/home-collection/jobs/:jobId/events
+ * View immutable home collection events timeline
+ */
+export const listHomeCollectionEvents = asyncHandler(async (req, res) => {
+  const events = await labsService.listHomeCollectionEvents(req.tenantId, req.params.jobId);
+  res.json({ data: events });
+});

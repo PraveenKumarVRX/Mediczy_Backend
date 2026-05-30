@@ -7,8 +7,9 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Initialize Firebase Admin SDK only if credentials are properly configured
-let messaging = null;          // patient app  (mysmarthealth-b5695)
-let doctorMessaging = null;    // doctor app   (doctorapp-6c768)
+let messaging = null;          // patient/mobile default app
+let doctorMessaging = null;    // doctor app
+let webMessaging = null;       // web app, if configured separately
 let isFirebaseInitialized = false;
 
 // ── Service-account file locators ─────────────────────────────────────────────
@@ -31,6 +32,19 @@ const findDoctorServiceAccountFile = () => {
     process.env.GOOGLE_APPLICATION_CREDENTIALS_DOCTOR,
     resolve(__dirname, '../../config/firebase-service-account-doctor.json'),
     resolve(__dirname, '../config/firebase-service-account-doctor.json'),
+  ].filter(Boolean);
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+  return null;
+};
+
+// Optional separate service account for browser/web FCM project.
+const findWebServiceAccountFile = () => {
+  const candidates = [
+    process.env.GOOGLE_APPLICATION_CREDENTIALS_WEB,
+    resolve(__dirname, '../../config/firebase-service-account-web.json'),
+    resolve(__dirname, '../config/firebase-service-account-web.json'),
   ].filter(Boolean);
   for (const p of candidates) {
     if (existsSync(p)) return p;
@@ -106,6 +120,28 @@ if (shouldInitializeFirebase()) {
         '  and save it as: config/firebase-service-account-doctor.json'
       );
     }
+
+
+    // ── Web Firebase app (separate browser project, if configured) ───────────
+    const webSaFile = findWebServiceAccountFile();
+    if (webSaFile) {
+      try {
+        const wsa = JSON.parse(readFileSync(webSaFile, 'utf8'));
+        const webApp = admin.initializeApp(
+          { credential: admin.credential.cert(wsa), projectId: wsa.project_id },
+          'web-app'
+        );
+        webMessaging = webApp.messaging();
+        console.log(`Firebase (web) initialized from: ${webSaFile} [project: ${wsa.project_id}]`);
+      } catch (wErr) {
+        console.warn('Firebase web app init failed:', wErr.message);
+      }
+    } else {
+      console.warn(
+        '[Firebase] Web-app service account not found. Browser FCM tokens must use the default Firebase project,\n' +
+        '  or you must provide config/firebase-service-account-web.json / GOOGLE_APPLICATION_CREDENTIALS_WEB.'
+      );
+    }
   } catch (error) {
     console.warn('Firebase Admin SDK initialization failed:', error.message);
     console.warn('Push notifications will be disabled. Please configure Firebase credentials to enable.');
@@ -120,9 +156,16 @@ if (shouldInitializeFirebase()) {
  * Falls back to the default (patient) instance when the doctor instance is absent.
  * @param {'doctor'|'patient'|string} [userType]
  */
-function getMessaging(userType) {
+function getMessaging(userType, deviceType) {
   if (userType === 'doctor' && doctorMessaging) return doctorMessaging;
+  if ((deviceType === 'web' || deviceType === 'mobile-web') && webMessaging) return webMessaging;
   return messaging;
+}
+
+function hasMessagingFor(userType, deviceType) {
+  if (userType === 'doctor') return !!doctorMessaging;
+  if (deviceType === 'web' || deviceType === 'mobile-web') return !!webMessaging;
+  return !!messaging;
 }
 
 // FCM notification types
@@ -140,12 +183,12 @@ const FCM_NOTIFICATION_TYPES = {
  * @param {object} data - Additional data to send with notification
  * @param {string} [userType] - 'doctor' or 'patient' — selects the correct Firebase app
  */
-const sendPushNotification = async (token, notification, data = {}, userType) => {
+const sendPushNotification = async (token, notification, data = {}, userType, deviceType) => {
   if (!isFirebaseInitialized || !messaging) {
     console.warn('Firebase not initialized. Cannot send push notification.');
     return Promise.resolve(null);
   }
-  const fcm = getMessaging(userType);
+  const fcm = getMessaging(userType, deviceType);
 
   try {
     // FCM requires ALL data values to be strings — coerce everything
@@ -321,7 +364,7 @@ const sendMulticastNotification = async (tokens, notification, data = {}) => {
  * @param {string} recipientToken - FCM token of call recipient
  * @param {object} callData - Video call information
  */
-const sendVideoCallNotification = async (recipientToken, callData) => {
+const sendVideoCallNotification = async (recipientToken, callData, userType, deviceType) => {
   const notification = {
     title: '📞 Incoming Video Call',
     body: `${callData.callerName} is calling you`,
@@ -339,7 +382,7 @@ const sendVideoCallNotification = async (recipientToken, callData) => {
     clickAction: 'answer_call'
   };
 
-  return sendPushNotification(recipientToken, notification, data);
+  return sendPushNotification(recipientToken, notification, data, userType, deviceType);
 };
 
 /**
@@ -347,7 +390,7 @@ const sendVideoCallNotification = async (recipientToken, callData) => {
  * @param {string} recipientToken - FCM token of doctor
  * @param {object} callData - Triage call information
  */
-const sendTriageCallNotification = async (recipientToken, callData) => {
+const sendTriageCallNotification = async (recipientToken, callData, userType, deviceType) => {
   const notification = {
     title: '🚨 Emergency Triage Call',
     body: `${callData.patientName} needs urgent medical attention`,
@@ -369,7 +412,7 @@ const sendTriageCallNotification = async (recipientToken, callData) => {
     clickAction: 'answer_triage_call'
   };
 
-  return sendPushNotification(recipientToken, notification, data);
+  return sendPushNotification(recipientToken, notification, data, userType, deviceType);
 };
 
 /**
@@ -377,7 +420,7 @@ const sendTriageCallNotification = async (recipientToken, callData) => {
  * @param {string} recipientToken - FCM token of patient
  * @param {object} acceptData - Call acceptance data
  */
-const sendCallAcceptedNotification = async (recipientToken, acceptData) => {
+const sendCallAcceptedNotification = async (recipientToken, acceptData, userType, deviceType) => {
   const notification = {
     title: '✅ Doctor Accepted Your Call',
     body: `${acceptData.doctorName} is joining the video call`,
@@ -393,7 +436,7 @@ const sendCallAcceptedNotification = async (recipientToken, acceptData) => {
     clickAction: 'join_call'
   };
 
-  return sendPushNotification(recipientToken, notification, data);
+  return sendPushNotification(recipientToken, notification, data, userType, deviceType);
 };
 
 /**
@@ -401,7 +444,7 @@ const sendCallAcceptedNotification = async (recipientToken, acceptData) => {
  * @param {string} recipientToken - FCM token of patient
  * @param {object} rejectData - Call rejection data
  */
-const sendCallRejectedNotification = async (recipientToken, rejectData) => {
+const sendCallRejectedNotification = async (recipientToken, rejectData, userType, deviceType) => {
   const notification = {
     title: '❌ Call Not Available',
     body: rejectData.reason || 'Doctor is currently unavailable',
@@ -415,7 +458,7 @@ const sendCallRejectedNotification = async (recipientToken, rejectData) => {
     clickAction: 'try_again'
   };
 
-  return sendPushNotification(recipientToken, notification, data);
+  return sendPushNotification(recipientToken, notification, data, userType, deviceType);
 };
 
 /**
@@ -523,7 +566,7 @@ const sendDoctorCallingNotification = async (recipientToken, callData) => {
  * @param {string} recipientToken - FCM token of message recipient
  * @param {object} messageData - Message information
  */
-const sendMessageNotification = async (recipientToken, messageData) => {
+const sendMessageNotification = async (recipientToken, messageData, userType, deviceType) => {
   const notification = {
     title: `💬 New Message from ${messageData.senderName}`,
     body: messageData.message.length > 100 
@@ -541,7 +584,7 @@ const sendMessageNotification = async (recipientToken, messageData) => {
     clickAction: 'open_chat'
   };
 
-  return sendPushNotification(recipientToken, notification, data);
+  return sendPushNotification(recipientToken, notification, data, userType, deviceType);
 };
 
 /**
@@ -549,7 +592,7 @@ const sendMessageNotification = async (recipientToken, messageData) => {
  * @param {string} recipientToken - FCM token of recipient
  * @param {object} appointmentData - Appointment information
  */
-const sendAppointmentNotification = async (recipientToken, appointmentData) => {
+const sendAppointmentNotification = async (recipientToken, appointmentData, userType, deviceType) => {
   const notification = {
     title: '📅 Appointment Reminder',
     body: `Your appointment with ${appointmentData.doctorName} is ${appointmentData.timeUntil}`,
@@ -565,7 +608,7 @@ const sendAppointmentNotification = async (recipientToken, appointmentData) => {
     clickAction: 'view_appointment'
   };
 
-  return sendPushNotification(recipientToken, notification, data);
+  return sendPushNotification(recipientToken, notification, data, userType, deviceType);
 };
 
 /**
@@ -573,7 +616,7 @@ const sendAppointmentNotification = async (recipientToken, appointmentData) => {
  * @param {string} recipientToken - FCM token of recipient
  * @param {object} systemData - System notification data
  */
-const sendSystemNotification = async (recipientToken, systemData) => {
+const sendSystemNotification = async (recipientToken, systemData, userType, deviceType) => {
   const notification = {
     title: systemData.title,
     body: systemData.message,
@@ -588,7 +631,7 @@ const sendSystemNotification = async (recipientToken, systemData) => {
     ...(systemData.extraData || {})
   };
 
-  return sendPushNotification(recipientToken, notification, data);
+  return sendPushNotification(recipientToken, notification, data, userType, deviceType);
 };
 
 /**
@@ -619,21 +662,27 @@ function getNotificationActions(type) {
  * Validate FCM token
  * @param {string} token - FCM token to validate
  */
-const validateToken = async (token) => {
+const validateToken = async (token, userType, deviceType) => {
   if (!isFirebaseInitialized || !messaging) {
     console.warn('Firebase not initialized. Cannot validate token.');
     return false;
   }
 
+  const fcm = getMessaging(userType, deviceType);
+  if (!fcm) {
+    console.warn(`Firebase messaging not available for userType=${userType || 'unknown'} deviceType=${deviceType || 'unknown'}.`);
+    return false;
+  }
+
   try {
-    // Try to send a test message to validate token
+    // Firebase Admin validates a token by sending a dry-run message.
+    // dryRun is the second argument to send(); it is not part of the message payload.
     const testMessage = {
       token,
-      data: { test: 'true' },
-      dry_run: true // Don't actually send the message
+      data: { test: 'true' }
     };
-    
-    await messaging.send(testMessage);
+
+    await fcm.send(testMessage, true);
     return true;
   } catch (error) {
     console.error('Invalid FCM token:', error);
@@ -655,5 +704,7 @@ export {
   sendSystemNotification,
   validateToken,
   FCM_NOTIFICATION_TYPES,
+  getMessaging,
+  hasMessagingFor,
   isFirebaseInitialized
 };

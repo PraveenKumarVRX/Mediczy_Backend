@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import GoogleFitDashboard from "@/components/GoogleFitDashboard";
+import HealthConnectDashboard from "@/components/HealthConnectDashboard";
 import AppleHealthDashboard from "@/components/AppleHealthDashboard";
 import DrISHAChat from "@/components/DrISHAChat";
 import { drIshaAPI } from "@/services/drIsha";
@@ -277,12 +277,13 @@ const HealthTracker = () => {
         }
       } catch (error: any) {
         console.error("Error loading fitness summary:", error);
-        
-        // Check if it's an authentication error
-        if (error?.response?.status === 401) {
+        const status = error?.response?.status;
+        if (status === 401) {
           setFitnessError("Please log in to view your health data");
-        } else if (error?.response?.status === 404) {
+        } else if (status === 404) {
           setFitnessError("No fitness data available. Connect your fitness device or manually log activities.");
+        } else if (status === 500) {
+          setFitnessError("Health data service is temporarily unavailable. Your data is safe — please try again in a moment.");
         } else {
           setFitnessError(
             error?.response?.data?.error || "Failed to load fitness data. Please try again later."
@@ -547,8 +548,31 @@ const HealthTracker = () => {
     }
   };
 
+  // Compute health score from real data (0-100).
+  // Each pillar contributes up to 20 points; defaults to "—" when no data yet.
+  const computedHealthScore = (() => {
+    if (!todayActivity && !fitnessData) return null;
+    let score = 0;
+    const a = todayActivity || {};
+    const avgSteps = fitnessData?.weeklyAverage || 0;
+    // Steps (20 pts): 10 000 step goal
+    score += Math.min(20, Math.round(((avgSteps || a.steps || 0) / 10000) * 20));
+    // Exercise minutes (20 pts): 30 min/day goal
+    score += Math.min(20, Math.round(((a.exercise_minutes || 0) / 30) * 20));
+    // Sleep (20 pts): 7-8 h optimal
+    const sleep = parseFloat(a.sleep_hours) || 0;
+    score += sleep >= 7 && sleep <= 9 ? 20 : sleep >= 6 ? 14 : sleep >= 5 ? 8 : 0;
+    // Heart rate (20 pts): 60-100 bpm resting normal
+    const hr = a.heart_rate || 0;
+    score += hr === 0 ? 10 : hr >= 60 && hr <= 100 ? 20 : hr >= 50 && hr <= 110 ? 14 : 6;
+    // SpO2 (20 pts): ≥95 good, ≥90 acceptable
+    const spo2 = a.spo2 || 0;
+    score += spo2 === 0 ? 10 : spo2 >= 95 ? 20 : spo2 >= 90 ? 12 : 4;
+    return Math.min(100, Math.round(score));
+  })();
+
   return (
-    // <MainLayout>
+    <MainLayout>
       <div className="space-y-8 animate-in fade-in duration-700">
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
@@ -848,7 +872,7 @@ const HealthTracker = () => {
                   </TabsList>
 
                   <TabsContent value="google">
-                    <GoogleFitDashboard />
+                    <HealthConnectDashboard />
                   </TabsContent>
 
                   <TabsContent value="apple">
@@ -1044,7 +1068,9 @@ const HealthTracker = () => {
                         }}
                       />
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-2xl font-bold text-teal-600 dark:text-teal-400">85</span>
+                        <span className="text-2xl font-bold text-teal-600 dark:text-teal-400">
+                          {computedHealthScore !== null ? computedHealthScore : '—'}
+                        </span>
                       </div>
                     </div>
                     <p className="text-sm text-slate-500 dark:text-slate-400">Overall Health Score</p>
@@ -1111,7 +1137,7 @@ const HealthTracker = () => {
           </div>
         )}
       </div>
-    // </MainLayout>
+    </MainLayout>
   );
 };
 

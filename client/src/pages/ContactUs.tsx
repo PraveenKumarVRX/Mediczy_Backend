@@ -83,10 +83,37 @@ const ContactUs = () => {
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-4xl">
-      {/* Header */}
-      <div className="mb-8">
+      <div className="rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50 via-sky-50 to-blue-50 p-5 md:p-6 mb-8 shadow-sm transition-all duration-300">
         <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Contact Us</h1>
-        <p className="text-sm text-slate-500 mt-1">We're here to help. Reach us through any of the channels below.</p>
+        <p className="text-sm text-slate-600 mt-1">Reach the right support channel quickly for care, billing, or account help.</p>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mt-5">
+          <div className="rounded-lg border border-teal-200 bg-white/80 px-3 py-2">
+            <p className="text-xs font-semibold text-teal-700">Step 1: Pick channel</p>
+            <p className="text-[11px] text-slate-600">Choose phone, email, WhatsApp, or in-app live support.</p>
+          </div>
+          <div className="rounded-lg border border-teal-200 bg-white/80 px-3 py-2">
+            <p className="text-xs font-semibold text-teal-700">Step 2: Share details</p>
+            <p className="text-[11px] text-slate-600">Include order, appointment, or policy reference for faster assistance.</p>
+          </div>
+          <div className="rounded-lg border border-teal-200 bg-white/80 px-3 py-2">
+            <p className="text-xs font-semibold text-teal-700">Step 3: Escalate if needed</p>
+            <p className="text-[11px] text-slate-600">Use Help tickets for tracked resolution and SLA visibility.</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-teal-200 bg-teal-50/70 p-3 mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-3 transition-all duration-300">
+        <div>
+          <p className="text-xs font-semibold text-teal-700">Next Best Action</p>
+          <p className="text-[11px] text-slate-600">For urgent care-blocking issues, call support first, then raise a trackable ticket in Help.</p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <Button size="sm" variant="outline" onClick={() => window.location.href = "tel:1800XXXXXXX"}>
+            <Phone className="w-3.5 h-3.5 mr-1" /> Call Support
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => navigate("/help")}>Raise Ticket</Button>
+        </div>
       </div>
 
       {/* Support channels */}

@@ -7,11 +7,11 @@ Uses OpenStreetMap Nominatim (free, no key) to:
   - Update the address JSONB in PostgreSQL
 """
 
-import json, time, re, psycopg2, urllib.request, urllib.parse
+import os, json, time, re, psycopg2, urllib.request, urllib.parse
 
 # ── DB ─────────────────────────────────────────────────────────────────────────
 DB = dict(host="127.0.0.1", port=5432, dbname="mediczy_ai",
-          user="mediczy_helper", password="Mediczy2024Helper")
+          user="mediczy_helper", password=os.getenv("POSTGRES_PASSWORD") or os.getenv("DB_PASSWORD") or os.getenv("DB_PASS"))
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 HEADERS = {"User-Agent": "Mediczy-LabEnrichment/1.0 (admin@mediczy.com)"}

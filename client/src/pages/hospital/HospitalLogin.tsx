@@ -60,8 +60,7 @@ const HospitalLogin = () => {
 
       const loginAttempts = subdomain
         ? [
-            { endpoint: '/hospital/auth/login', body: { email, password } },
-            { endpoint: '/hospital/login', body: { email, password } },
+            { endpoint: '/hospital/auth/login-tenant', body: { email, password } },
             { endpoint: '/hospital/auth/login/v2', body: { email, password, subdomain } },
             { endpoint: '/hospital/login/v2', body: { email, password, subdomain } },
           ]
@@ -116,6 +115,9 @@ const HospitalLogin = () => {
       navigate(ROLE_ROUTES[role] || '/hospital/dashboard');
     } catch (err: any) {
       console.error('Hospital login error:', err);
+      if (err?.response?.status === 429) {
+        setError('Too many login attempts. Please wait 15 minutes and try again.');
+      } else
       if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
         setError('Request timeout. Please check your connection and try again.');
       } else {

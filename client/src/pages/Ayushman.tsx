@@ -1,4 +1,3 @@
-import MainLayout from "@/components/layout/MainLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { 
@@ -17,21 +16,15 @@ import {
   Languages,
   Loader2,
   Search as SearchIcon,
+  Sparkles,
+  ShieldCheck,
+  ArrowRight,
 } from "lucide-react";
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { toast } from "sonner";
-import api from "@/utils/api";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -251,35 +244,88 @@ const Ayushman = () => {
     return (used / total) * 100;
   };
 
+  const steps = [
+    {
+      id: 1,
+      title: 'Verify beneficiary',
+      done: isVerified,
+      helper: 'Use card, mobile, and DOB for secure lookup.'
+    },
+    {
+      id: 2,
+      title: 'Find empaneled hospitals',
+      done: isVerified && filteredHospitals.length > 0,
+      helper: 'Search by specialty, location, and accessibility.'
+    },
+    {
+      id: 3,
+      title: 'Track claims & balance',
+      done: isVerified && recentClaims.length > 0,
+      helper: 'Understand approved vs processing claim amounts.'
+    }
+  ];
+
   return (
-    // <MainLayout>
       <div className="container py-6 space-y-6 bg-slate-50 dark:bg-slate-900 min-h-screen">
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Ayushman Bharat</h1>
+        <motion.section
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl bg-gradient-to-r from-cyan-700 via-sky-700 to-blue-700 p-6 md:p-7 text-white shadow-2xl"
+        >
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold tracking-wide mb-3">
+                <Sparkles className="h-3.5 w-3.5" />
+                PM-JAY Guided Assistance
+              </div>
+              <h1 className="text-2xl md:text-3xl font-bold">Ayushman Bharat</h1>
+              <p className="text-sky-100 mt-1">Verify, discover hospitals, and track claims with confidence.</p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
+                <SelectTrigger className="w-[120px] bg-white/10 border-white/25 text-white">
+                  <Languages className="h-4 w-4 mr-2 text-cyan-200" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+                  <SelectItem value="en" className="text-slate-800 dark:text-white">English</SelectItem>
+                  <SelectItem value="hi" className="text-slate-800 dark:text-white">हिंदी</SelectItem>
+                  <SelectItem value="bn" className="text-slate-800 dark:text-white">বাংলা</SelectItem>
+                  <SelectItem value="te" className="text-slate-800 dark:text-white">తెలుగు</SelectItem>
+                  <SelectItem value="ta" className="text-slate-800 dark:text-white">தமிழ்</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => speak("Welcome to Ayushman Bharat")}
+                className="border-white/30 bg-white/10 text-white hover:bg-white/20"
+              >
+                <Volume className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+            {steps.map((step) => (
+              <div key={step.id} className={`rounded-lg px-3 py-2 border ${step.done ? 'bg-emerald-500/25 border-emerald-300/40' : 'bg-white/10 border-white/20'}`}>
+                <p className="text-sm font-semibold">Step {step.id}: {step.title}</p>
+                <p className="text-xs text-sky-100">{step.helper}</p>
+              </div>
+            ))}
+          </div>
+        </motion.section>
+
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
+            <ShieldCheck className="h-4 w-4 text-teal-500" />
+            Secure verification with beneficiary details
           </div>
           <div className="flex items-center gap-2">
-            <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
-              <SelectTrigger className="w-[100px] bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white">
-                <Languages className="h-4 w-4 mr-2 text-teal-500" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-                <SelectItem value="en" className="text-slate-800 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700">English</SelectItem>
-                <SelectItem value="hi" className="text-slate-800 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700">हिंदी</SelectItem>
-                <SelectItem value="bn" className="text-slate-800 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700">বাংলা</SelectItem>
-                <SelectItem value="te" className="text-slate-800 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700">తెలుగు</SelectItem>
-                <SelectItem value="ta" className="text-slate-800 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700">தமிழ்</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => speak("Welcome to Ayushman Bharat")}
-              className="border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700"
-            >
-              <Volume className="h-4 w-4 text-teal-500" />
-            </Button>
+            <Badge variant="outline" className="border-teal-200 text-teal-700 bg-teal-50 dark:bg-teal-950/20 dark:text-teal-300">
+              PM-JAY Benefits Navigator
+            </Badge>
           </div>
         </div>
 
@@ -329,6 +375,7 @@ const Ayushman = () => {
               >
                 {loading.verification && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Verify Details
+                {!loading.verification && <ArrowRight className="ml-2 h-4 w-4" />}
               </Button>
             </CardContent>
           </Card>
@@ -401,6 +448,7 @@ const Ayushman = () => {
                   <Building2 className="h-5 w-5 text-teal-500" />
                   Find Nearby Hospitals
                 </CardTitle>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Search empaneled facilities by hospital name or specialty.</p>
               </CardHeader>
               <CardContent>
                 <div className="relative mb-4">

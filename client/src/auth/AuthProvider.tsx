@@ -430,6 +430,12 @@ export const AuthProvider = ({ children }) => {
 
     const isPublicRoute = [
       "/login", 
+      "/forgot-password",
+      "/user/forgot-password",
+      "/doctor/forgot-password",
+      "/team/forgot-password",
+      "/reset-password",
+      "/oauth-callback",
       "/register", 
       "/doc-register",
       "/doctor-login",

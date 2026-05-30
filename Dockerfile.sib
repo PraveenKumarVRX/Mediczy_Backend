@@ -1,0 +1,97 @@
+# =============================================================================
+# Dockerfile.sib
+# Multi-stage build for the SIB (Synthetic Intelligence Brain) FastAPI service
+# Source: ai-engine/doctor_bot/
+#
+# Excluded from build context (.dockerignore):
+#   __pycache__/
+#   **/__pycache__/
+#   *.pyc
+#   *.pyo
+#   ai-engine/doctor_bot/cache/
+#   ai-engine/doctor_bot/logs/
+#   ai-engine/doctor_bot/data/
+#   node_modules/
+#   client/
+#   .git/
+# =============================================================================
+
+# =============================================================================
+# Stage 1: Builder — install Python dependencies into a clean prefix
+# =============================================================================
+FROM python:3.11-slim AS builder
+
+# Prevent .pyc files and enable unbuffered stdout for docker logs
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install OS-level build deps needed by some pip packages (e.g. psycopg2, lxml)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      gcc \
+      g++ \
+      libpq-dev \
+      libffi-dev \
+      libxml2-dev \
+      libxslt-dev \
+      curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first — leverages Docker layer cache
+COPY ai-engine/doctor_bot/requirements.txt .
+
+# Install all Python dependencies to /install prefix so we can COPY selectively
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# Download spaCy model needed by medspacy (cached in layer)
+RUN pip install --no-cache-dir --prefix=/install \
+    "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1.tar.gz" \
+    || true   # Non-fatal: model can be downloaded at first run if network available
+
+# =============================================================================
+# Stage 2: Runtime — minimal image, no build tools
+# =============================================================================
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    # Transformers / sentence-transformers model cache → EFS mount point
+    TRANSFORMERS_CACHE=/app/.cache/transformers \
+    HF_HOME=/app/.cache/transformers \
+    SENTENCE_TRANSFORMERS_HOME=/app/.cache/transformers \
+    PORT=8001
+
+# Install minimal runtime OS deps (no build tools)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libpq5 \
+      libxml2 \
+      libxslt1.1 \
+      curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy installed Python packages from builder stage
+COPY --from=builder /install /usr/local
+
+# Copy application source
+COPY ai-engine/doctor_bot/ .
+
+# Create cache directory — will be overridden by EFS mount in ECS
+RUN mkdir -p /app/.cache/transformers
+
+# Create non-root user for security
+RUN addgroup --system sib && adduser --system --ingroup sib sib \
+    && chown -R sib:sib /app
+USER sib
+
+EXPOSE 8001
+
+# Health check — ALB and ECS will use /health endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:8001/health || exit 1
+
+# 2 workers: balanced for 2 vCPU (ECS task def: 2048 CPU units)
+# Increase to 4 for production if CPU headroom allows
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]

@@ -47,10 +47,12 @@ const LabLogin = () => {
     localStorage.setItem('token', token);
     localStorage.setItem('userType', 'lab');
     if (labProfile) {
+      const resolvedName = labProfile.name || labProfile.labName || 'Lab';
       localStorage.setItem('labData', JSON.stringify({
         id: labProfile.id,
         email: labProfile.email,
-        name: labProfile.name || labProfile.labName,
+        name: resolvedName,
+        labName: resolvedName,
         license: labProfile.licenseNumber,
         department: labProfile.department || 'pathology',
       }));
@@ -84,6 +86,9 @@ const LabLogin = () => {
     } catch (err: any) {
       console.error('Lab login error:', err);
       if (err?.response?.data?.pending) { setIsPending(true); return; }
+      if (err?.response?.status === 429) {
+        setError('Too many login attempts. Please wait 15 minutes and try again.');
+      } else
       if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
         setError('Request timeout. Please check your connection and try again.');
       } else {

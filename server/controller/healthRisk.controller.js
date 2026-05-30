@@ -1,5 +1,4 @@
 import healthRiskAssessmentModel from '../models/healthRiskAssessment.model.intelligent.js';
-import { JWT_CONFIG } from '../config/auth.config.js';
 import {
   MAX_THEORETICAL_SCORE,
   RISK_SCORE_BANDS,
@@ -17,9 +16,40 @@ const resolveAdminName = (user) => {
   return user.email || user.id || null;
 };
 
+// Maps DB model fields to the API response shape expected by consumers
+const serializeAssessment = (record) => {
+  const scores = record.scores || {};
+  const meta = record.metadata || {};
+  return {
+    id: record.id,
+    userId: record.userId,
+    assessmentType: record.assessmentType,
+    // Canonical field names consumed by frontend
+    score: scores.totalScore ?? 0,
+    totalScore: scores.totalScore ?? 0,
+    riskLevel: record.riskLevel ?? 'Unknown',
+    riskBandLabel: record.riskLevel ?? 'Unknown',
+    completionPct: scores.completionPct ?? 0,
+    sectionBreakdown: scores.sectionBreakdown ?? [],
+    band: scores.band ?? null,
+    responses: record.responses ?? {},
+    // Metadata
+    memberName: meta.memberName ?? null,
+    memberSegment: meta.memberSegment ?? null,
+    notes: meta.notes ?? null,
+    flags: meta.flags ?? [],
+    createdByName: meta.createdByName ?? null,
+    bayesianInference: meta.bayesianInference ?? null,
+    // Timestamps
+    assessedAt: record.createdAt,
+    createdAt: record.createdAt,
+  };
+};
+
 export const getMemberHealthRiskHistory = async (req, res) => {
   const { memberId } = req.params;
-  const limit = Number.parseInt(req.query.limit ?? '12', 10);
+  const limit = Number.parseInt(req.query.limit ?? '20', 10);
+  const offset = Number.parseInt(req.query.offset ?? '0', 10);
 
   if (!memberId) {
     return res.status(400).json({ success: false, message: 'memberId parameter is required' });
@@ -27,28 +57,35 @@ export const getMemberHealthRiskHistory = async (req, res) => {
 
   try {
     const { rows, count } = await healthRiskAssessmentModel.findAndCountAll({
-      where: { memberId },
+      where: { userId: memberId },          // FIX: was `memberId`, model column is `userId`
       order: [['createdAt', 'DESC']],
-      limit: Number.isNaN(limit) ? 12 : Math.max(1, limit)
+      limit: Number.isNaN(limit) ? 20 : Math.max(1, Math.min(100, limit)),
+      offset: Number.isNaN(offset) ? 0 : Math.max(0, offset)
     });
 
     const history = rows.map((entry) => ({
       id: entry.id,
       date: entry.createdAt,
-      score: entry.totalScore,
-      band: entry.riskBandLabel,
-      completionPct: entry.completionPct,
-      createdBy: entry.createdByName,
-      notes: entry.notes,
-      bayesianInference: entry.bayesianInference || null
+      score: entry.scores?.totalScore ?? 0,
+      totalScore: entry.scores?.totalScore ?? 0,
+      band: entry.riskLevel ?? 'Unknown',
+      riskLevel: entry.riskLevel ?? 'Unknown',
+      completionPct: entry.scores?.completionPct ?? 0,
+      createdBy: entry.metadata?.createdByName ?? null,
+      notes: entry.metadata?.notes ?? null,
+      bayesianInference: entry.metadata?.bayesianInference ?? null,
+      assessedAt: entry.createdAt,
     }));
 
     return res.json({
       success: true,
       memberId,
       total: count,
+      limit,
+      offset,
+      hasMore: offset + rows.length < count,
       history,
-      latestAssessment: rows[0] || null,
+      latestAssessment: rows[0] ? serializeAssessment(rows[0]) : null,
       meta: {
         maxScore: MAX_THEORETICAL_SCORE,
         totalQuestions: TOTAL_QUESTIONS,
@@ -81,55 +118,62 @@ export const createHealthRiskAssessment = async (req, res) => {
 
   try {
     const scoring = calculateRiskScore(responses);
-    let bayesianInference = null;
-    let bayesianEvidence = [];
 
-    try {
-      const { evidence, states } = deriveEvidenceStates(scoring.sectionBreakdown);
-      bayesianEvidence = evidence;
-      if (Object.keys(states).length > 0) {
-        const inference = await runBayesianInference(states);
-        bayesianInference = {
-          ...inference,
-          evidence,
-          generatedAt: new Date().toISOString()
-        };
-      }
-    } catch (bayesError) {
-      console.warn('Bayesian inference capture failed:', bayesError.message);
-    }
-
+    // Save assessment immediately — do NOT block on Bayesian inference
     const assessment = await healthRiskAssessmentModel.create({
-      memberId,
-      memberName,
-      memberSegment: memberSegment || null,
-      memberSnapshot: memberSnapshot || null,
+      userId: memberId,                       // FIX: was `memberId`, model column is `userId`
+      assessmentType: 'comprehensive',
       responses,
-      sectionBreakdown: scoring.sectionBreakdown,
-      totalScore: scoring.totalScore,
-      completionPct: scoring.completionPct,
-      riskBandLabel: scoring.band.label,
-      riskBandDescription: scoring.band.description,
-      riskBandColor: scoring.band.color,
-      notes,
-      flags,
-      bayesianInference,
-      createdById: req.user?.id || null,
-      createdByName: resolveAdminName(req.user),
-      createdByEmail: req.user?.email || null
+      scores: {
+        totalScore: Math.max(0, Math.min(MAX_THEORETICAL_SCORE, scoring.totalScore)),
+        completionPct: scoring.completionPct,
+        sectionBreakdown: scoring.sectionBreakdown,
+        band: scoring.band,
+      },
+      riskLevel: scoring.band.label,          // FIX: maps to model's `riskLevel` column
+      metadata: {
+        memberName,
+        memberSegment: memberSegment || null,
+        memberSnapshot: memberSnapshot || null,
+        notes,
+        flags,
+        bayesianInference: null,              // populated async below
+        createdById: req.user?.id || null,
+        createdByName: resolveAdminName(req.user),
+        createdByEmail: req.user?.email || null,
+      }
+    });
+
+    // Run Bayesian inference async — does NOT block the HTTP response
+    setImmediate(async () => {
+      try {
+        const { evidence, states } = deriveEvidenceStates(scoring.sectionBreakdown);
+        if (Object.keys(states).length > 0) {
+          const inference = await runBayesianInference(states);
+          const bayesianInference = { ...inference, evidence, generatedAt: new Date().toISOString() };
+          await healthRiskAssessmentModel.update(
+            {
+              metadata: {
+                ...assessment.metadata,
+                bayesianInference
+              }
+            },
+            { where: { id: assessment.id } }
+          );
+        }
+      } catch (bayesError) {
+        console.warn('Async Bayesian inference failed:', bayesError.message);
+      }
     });
 
     return res.status(201).json({
       success: true,
-      assessment: {
-        ...assessment,
-        bayesianInference: assessment.bayesianInference || bayesianInference,
-        bayesianEvidence
-      },
+      assessment: serializeAssessment(assessment),
       meta: {
         maxScore: MAX_THEORETICAL_SCORE,
         totalQuestions: TOTAL_QUESTIONS,
-        bands: RISK_SCORE_BANDS
+        bands: RISK_SCORE_BANDS,
+        bayesianStatus: 'computing'   // tells frontend to poll if needed
       }
     });
   } catch (error) {

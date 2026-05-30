@@ -11,6 +11,8 @@
 import intentClassifier from '../utils/intentClassifier.js';
 import { ExampleBotlets } from '../schemas/botlet.schema.js';
 
+const SIB_API_URL = process.env.SIB_API_URL || 'http://localhost:8001';
+
 /**
  * ROUTING PSEUDOCODE
  * 
@@ -479,43 +481,78 @@ class BotletRouter {
   }
 
   /**
-   * Route query to specific botlet
+   * Route query to specific botlet by calling the SIB FastAPI.
+   * Maps botlet type → SIB request_type and dispatches the request.
    */
   async routeToBotlet(botlet, query, classification, userContext, sessionId) {
-    console.log(`[BotletRouter] Routing to botlet: ${botlet.id}`);
+    console.log(`[BotletRouter] Routing to botlet: ${botlet.id} (${botlet.type})`);
 
-    // Track session
     if (sessionId && this.config.stickySessionsEnabled) {
       this.activeSessionMap.set(sessionId, botlet.id);
     }
 
-    // Increment session count
     botlet.currentSessions++;
 
     try {
-      // Simulate botlet processing (in real implementation, this calls the actual botlet)
-      const response = {
-        success: true,
-        botletId: botlet.id,
-        botletName: botlet.name,
-        intent: classification.primary.name,
-        confidence: classification.primary.confidence,
-        message: `Handled by ${botlet.name}`,
-        timestamp: new Date().toISOString()
+      // Map botlet type → SIB request_type
+      const typeMap = {
+        triage:      'triage',
+        scheduler:   'task',
+        consultant:  'chat',
+        insurance:   'insurance',
+        risk:        'risk',
+        summarizer:  'summarize',
+        search:      'web_search',
+        ehr:         'ehr_upload',
+        notify:      'notify',
+      };
+      const requestType = typeMap[botlet.type] || 'chat';
+
+      const payload = {
+        request_type: requestType,
+        data: {
+          message:    query,
+          query:      query,
+          patient_id: userContext.patientId || userContext.userId,
+          user_id:    userContext.userId,
+          intent:     classification.primary?.name,
+          context:    userContext,
+        },
       };
 
-      // Update metrics
+      const res = await fetch(`${SIB_API_URL}/process`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(payload),
+        signal:  AbortSignal.timeout(this.config.routingTimeout),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`SIB returned ${res.status}: ${errText.slice(0, 200)}`);
+      }
+
+      const sibResponse = await res.json();
+
       this.updateMetrics(botlet.id, true);
 
-      return response;
+      return {
+        success:    true,
+        botletId:   botlet.id,
+        botletName: botlet.name,
+        intent:     classification.primary?.name,
+        confidence: classification.primary?.confidence,
+        answer:     sibResponse.answer || sibResponse.chat_answer,
+        data:       sibResponse,
+        timestamp:  new Date().toISOString(),
+      };
 
     } catch (error) {
-      console.error(`[BotletRouter] Botlet ${botlet.id} error:`, error);
+      console.error(`[BotletRouter] Botlet ${botlet.id} error:`, error.message);
       this.updateMetrics(botlet.id, false);
       throw error;
 
     } finally {
-      // Decrement session count
       botlet.currentSessions--;
     }
   }

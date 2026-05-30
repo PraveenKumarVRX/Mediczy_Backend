@@ -17,6 +17,30 @@ import { Op } from 'sequelize';
 
 const router = express.Router();
 
+const MEMBERSHIP_RENEWAL_EXEMPT_EMAILS = new Set(
+  String(process.env.MEMBERSHIP_RENEWAL_EXEMPT_EMAILS || 'user@mediczy.com')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean)
+);
+
+const isMembershipRenewalExemptEmail = (email) =>
+  MEMBERSHIP_RENEWAL_EXEMPT_EMAILS.has(String(email || '').trim().toLowerCase());
+
+const isMembershipRenewalExemptUser = async ({ userId, email }) => {
+  if (isMembershipRenewalExemptEmail(email)) {
+    return true;
+  }
+  if (!userId) {
+    return false;
+  }
+
+  const user = await userModel.findByPk(userId, {
+    attributes: ['id', 'email']
+  });
+  return isMembershipRenewalExemptEmail(user?.email);
+};
+
 /**
  * Helper function to find appointment by ID or meetingId
  * Handles both numeric IDs and timestamp-based meetingId patterns
@@ -1379,10 +1403,20 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
       });
     }
 
-    // Check payment status - allow emergency triage on credit
-    const isPaymentValid = appointment.paymentStatus === 'paid' || 
-                           appointment.paymentStatus === 'credit' ||
-                           isEmergencyTriage;
+    // Check payment status - allow emergency triage and nominal/free consults.
+    const normalizedPaymentStatus = String(appointment.paymentStatus || '').toLowerCase();
+    const isPaymentSettled = normalizedPaymentStatus === 'paid' || normalizedPaymentStatus === 'credit';
+    const consultationFee = Number(appointment.consultationFee ?? appointment.paymentAmount ?? 0);
+    const isNominalOrFreeConsultation = Number.isFinite(consultationFee) && consultationFee <= 1;
+    const isMembershipRenewalExempt = await isMembershipRenewalExemptUser({
+      userId: appointment.userId,
+      email: req.user?.email
+    });
+    const isPaymentValid =
+      isPaymentSettled ||
+      isEmergencyTriage ||
+      isNominalOrFreeConsultation ||
+      isMembershipRenewalExempt;
 
     if (!isPaymentValid) {
       // Check if user has an active membership plan
@@ -1615,8 +1649,17 @@ router.get('/my-appointments', authUser, async (req, res) => {
       cancelled: []
     };
 
+    const patientIsMembershipRenewalExempt = isMembershipRenewalExemptEmail(req.user?.email);
+
     appointments.forEach(apt => {
       const aptDateTime = new Date(`${apt.appointmentDate}T${apt.appointmentTime}`);
+      const normalizedPaymentStatus = String(apt.paymentStatus || '').toLowerCase();
+      const consultationFee = Number(apt.consultationFee ?? apt.paymentAmount ?? 0);
+      const isNominalOrFreeConsultation = Number.isFinite(consultationFee) && consultationFee <= 1;
+      const isVideoPaymentEligible =
+        ['paid', 'credit'].includes(normalizedPaymentStatus) ||
+        isNominalOrFreeConsultation ||
+        patientIsMembershipRenewalExempt;
       const aptData = {
         id: apt.id,
         doctorName: apt.doctorName,
@@ -1626,9 +1669,16 @@ router.get('/my-appointments', authUser, async (req, res) => {
         consultationType: apt.consultationType,
         status: apt.status,
         paymentStatus: apt.paymentStatus,
+        isMembershipRenewalExemptUser: patientIsMembershipRenewalExempt,
+        paymentStatusEffective:
+          !['paid', 'credit'].includes(normalizedPaymentStatus) && patientIsMembershipRenewalExempt
+            ? 'credit'
+            : apt.paymentStatus,
         consultationFee: apt.consultationFee,
         meetingLink: apt.status === 'confirmed' ? apt.meetingLink : null,
-        canJoinVideo: apt.status === 'confirmed' && apt.paymentStatus === 'paid',
+        canJoinVideo:
+          apt.status === 'confirmed' &&
+          isVideoPaymentEligible,
         createdAt: apt.createdAt
       };
 
@@ -1705,7 +1755,29 @@ router.get('/doctor/appointments', authUser, async (req, res) => {
 
     const today = now.toISOString().split('T')[0];
 
+    const patientIds = [...new Set(appointments.map((apt) => apt.userId).filter(Boolean))];
+    const patientRows = patientIds.length
+      ? await userModel.findAll({
+          attributes: ['id', 'email'],
+          where: { id: { [Op.in]: patientIds } }
+        })
+      : [];
+    const exemptPatientIds = new Set(
+      patientRows
+        .filter((user) => isMembershipRenewalExemptEmail(user.email))
+        .map((user) => Number(user.id))
+    );
+
     appointments.forEach(apt => {
+      const normalizedPaymentStatus = String(apt.paymentStatus || '').toLowerCase();
+      const consultationFee = Number(apt.consultationFee ?? apt.paymentAmount ?? 0);
+      const isNominalOrFreeConsultation = Number.isFinite(consultationFee) && consultationFee <= 1;
+      const isMembershipRenewalExempt = exemptPatientIds.has(Number(apt.userId));
+      const isVideoPaymentEligible =
+        ['paid', 'credit'].includes(normalizedPaymentStatus) ||
+        isNominalOrFreeConsultation ||
+        isMembershipRenewalExempt;
+
       const aptData = {
         id: apt.id,
         patientName: apt.patientName,
@@ -1715,10 +1787,17 @@ router.get('/doctor/appointments', authUser, async (req, res) => {
         consultationType: apt.consultationType,
         status: apt.status,
         paymentStatus: apt.paymentStatus,
+        isMembershipRenewalExemptUser: isMembershipRenewalExempt,
+        paymentStatusEffective:
+          !['paid', 'credit'].includes(normalizedPaymentStatus) && isMembershipRenewalExempt
+            ? 'credit'
+            : apt.paymentStatus,
         symptoms: apt.symptoms,
         reason: apt.reason,
         meetingLink: apt.meetingLink,
-        canStartVideo: apt.status === 'confirmed' && apt.paymentStatus === 'paid'
+        canStartVideo:
+          apt.status === 'confirmed' &&
+          isVideoPaymentEligible
       };
 
       if (apt.status === 'pending') {

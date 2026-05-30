@@ -222,8 +222,8 @@ You: "A month of unexplained fatigue can sometimes point to things like anaemia,
                 from medspacy.ner import TargetMatcher
                 target_matcher = TargetMatcher(self._nlp)
                 self._nlp.add_pipe("medspacy_target_matcher")
-            except:
-                pass
+            except Exception as _nlp_err:
+                logger.warning("MedSpaCy TargetMatcher not added: %s — NER may be incomplete", _nlp_err)
             
             logger.info("✅ MedSpaCy loaded with clinical NER")
         except ImportError:
@@ -231,8 +231,8 @@ You: "A month of unexplained fatigue can sometimes point to things like anaemia,
                 import spacy
                 self._nlp = spacy.load("en_core_web_sm")
                 logger.info("✅ SpaCy fallback loaded")
-            except:
-                logger.warning("⚠️ No NLP model available")
+            except Exception as _spacy_err:
+                logger.error("Critical: No NLP model loaded (MedSpaCy and SpaCy failed): %s. NER disabled.", _spacy_err)
                 self._nlp = None
         
         return self._nlp
@@ -374,8 +374,8 @@ You: "A month of unexplained fatigue can sometimes point to things like anaemia,
                 from sentence_transformers import SentenceTransformer
                 self._embed_model = SentenceTransformer("all-MiniLM-L6-v2")
                 logger.info("✅ MiniLM fallback loaded")
-            except:
-                logger.warning(f"⚠️ No embedding model available: {e}")
+            except Exception as _emb_err:
+                logger.error("No embedding model available (ClinicalBERT and MiniLM both failed): %s", _emb_err)
                 self._embed_model = None
         
         return self._embed_model
@@ -1048,8 +1048,11 @@ Thank you for sharing your health concern with me.
         import requests
 
         isha_url = os.environ.get("ISHA_AI_URL", "https://ai.isha.buzz")
-        username = os.environ.get("ISHA_AUTH_USERNAME", "admin")
-        password = os.environ.get("ISHA_AUTH_PASSWORD", "admin123")
+        username = os.environ.get("ISHA_AUTH_USERNAME")
+        password = os.environ.get("ISHA_AUTH_PASSWORD")
+        if not username or not password:
+            logger.error("ISHA_AUTH_USERNAME or ISHA_AUTH_PASSWORD not set — iSHA backend unavailable")
+            return None
 
         # Return cached token if still valid (with 5-minute buffer)
         if hasattr(self, '_isha_token') and self._isha_token:

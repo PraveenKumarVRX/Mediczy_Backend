@@ -2084,7 +2084,15 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
             lastName: lastName || '',
             companyName: corporate.companyName,
             employeeId,
-            department
+            department,
+            planName: emp.planName || emp.insurancePlan || emp.plan || corporate.packageType || "Nijacart Employee Health Plan",
+            coverageAmount: emp.coverageAmount || emp.sumInsured || emp.sum_insured || emp.coverage,
+            planStartDate: emp.planStartDate || emp.startDate || emp.coverageStartDate,
+            planEndDate: emp.planEndDate || emp.endDate || emp.coverageEndDate,
+            planValidity: emp.planValidity || emp.validity,
+            planBenefits: emp.planBenefits || emp.benefits,
+            sponsor: emp.sponsor || emp.employerContribution,
+            copay: emp.copay || emp.employeeShare
           }, temporaryPassword).catch(err => {
             console.error(`Failed to send welcome email to employee ${normalizedEmail}:`, err.message);
           });
@@ -2127,6 +2135,7 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
   try {
     const numericCorporateId = req.resolvedCorporate.id;
 
+    const { limit: qLimit = 1000, offset: qOffset = 0 } = req.query;
     const employees = await postgresSequelize.query(`
       SELECT u.id, u.email, u."firstName", u."lastName", u."phoneNumber",
              u.address_city, u.address_state, u."address_zipCode",
@@ -2144,13 +2153,15 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
         WHERE "userId" = u.id AND corporate_id = :corporateId AND status = 'active'
         ORDER BY "validTo" DESC LIMIT 1
       ) uhp ON true
-      WHERE ua."entityType" = 'corporate' 
+      WHERE ua."entityType" = 'corporate'
         AND ua."entityId" = :corporateId
         AND ua.role = 'employee'
       ORDER BY u."firstName"
+      LIMIT :limit OFFSET :offset
     `, {
-      replacements: { corporateId: numericCorporateId },
-      type: postgresSequelize.QueryTypes.SELECT
+      replacements: { corporateId: numericCorporateId, limit: Math.min(parseInt(qLimit) || 1000, 2000), offset: parseInt(qOffset) || 0 },
+      type: postgresSequelize.QueryTypes.SELECT,
+      benchmark: true,
     });
     
     return res.json({
@@ -5217,6 +5228,109 @@ router.delete('/security/blocked-ips/:ip', authUser, requireRole('admin'), async
   } catch (err) {
     console.error('[Admin Security] unblockIP error:', err);
     return res.status(500).json({ success: false, message: 'Failed to unblock IP' });
+  }
+});
+
+// ─── Team Privilege Management (admin portal) ────────────────────────────────
+
+/** GET /api/admin/team-members — list all team members with their permissions */
+router.get('/team-members', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const { page = 1, limit = 50, search = '' } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
+
+    const { Op } = await import('sequelize');
+    const where = {
+      [Op.or]: [
+        { isTeam: true },
+        { membershipType: 'team' },
+        { role: 'team' },
+      ],
+    };
+    if (search) {
+      where[Op.and] = [
+        {
+          [Op.or]: [
+            { email: { [Op.iLike]: `%${search}%` } },
+            { firstName: { [Op.iLike]: `%${search}%` } },
+            { lastName: { [Op.iLike]: `%${search}%` } },
+          ],
+        },
+      ];
+    }
+
+    const { count, rows } = await userModel.findAndCountAll({
+      where,
+      attributes: ['id', 'email', 'firstName', 'lastName', 'role', 'status', 'isActive', 'metadata', 'createdAt'],
+      limit: Number(limit),
+      offset,
+      order: [['firstName', 'ASC'], ['email', 'ASC']],
+    });
+
+    const members = rows.map((u) => {
+      let metadata = {};
+      try { metadata = u.metadata ? JSON.parse(u.metadata) : {}; } catch (_) {}
+      return {
+        id: u.id,
+        email: u.email,
+        firstName: u.firstName || '',
+        lastName: u.lastName || '',
+        role: u.role,
+        status: u.status,
+        isActive: u.isActive !== false,
+        permissions: Array.isArray(metadata.permissions) ? metadata.permissions : [],
+        editableModules: Array.isArray(metadata.editableModules) ? metadata.editableModules : [],
+        deletableModules: Array.isArray(metadata.deletableModules) ? metadata.deletableModules : [],
+        privilegesUpdatedAt: metadata.privilegesUpdatedAt || null,
+      };
+    });
+
+    res.json({ success: true, members, total: count, page: Number(page), limit: Number(limit) });
+  } catch (err) {
+    console.error('[admin/team-members] error:', err.message);
+    res.status(500).json({ success: false, message: 'Failed to fetch team members' });
+  }
+});
+
+/** PUT /api/admin/team-members/:id/privileges — set permissions for a team member */
+router.put('/team-members/:id/privileges', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { permissions, editableModules, deletableModules } = req.body;
+
+    const user = await userModel.findByPk(id, {
+      attributes: ['id', 'email', 'firstName', 'lastName', 'isTeam', 'membershipType', 'role', 'metadata'],
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Team member not found' });
+    }
+
+    let metadata = {};
+    try { metadata = user.metadata ? JSON.parse(user.metadata) : {}; } catch (_) {}
+
+    if (Array.isArray(permissions))      metadata.permissions      = permissions;
+    if (Array.isArray(editableModules))  metadata.editableModules  = editableModules;
+    if (Array.isArray(deletableModules)) metadata.deletableModules = deletableModules;
+    metadata.privilegesUpdatedAt = new Date().toISOString();
+    metadata.privilegesUpdatedBy = req.user?.id;
+
+    await user.update({ metadata: JSON.stringify(metadata) });
+
+    res.json({
+      success: true,
+      message: 'Privileges updated',
+      member: {
+        id: user.id,
+        email: user.email,
+        permissions: metadata.permissions || [],
+        editableModules: metadata.editableModules || [],
+        deletableModules: metadata.deletableModules || [],
+      },
+    });
+  } catch (err) {
+    console.error('[admin/team-privileges] error:', err.message);
+    res.status(500).json({ success: false, message: 'Failed to update privileges' });
   }
 });
 

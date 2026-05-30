@@ -467,7 +467,7 @@ const DoctorLogin = () => {
 
                 <div className="flex justify-end">
                   <Link
-                    to="/forgot-password?type=doctor"
+                    to="/doctor/forgot-password"
                     className="text-xs text-blue-600 hover:text-blue-500 font-medium transition-colors"
                   >
                     Forgot password?

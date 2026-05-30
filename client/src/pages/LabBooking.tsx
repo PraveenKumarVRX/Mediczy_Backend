@@ -10,7 +10,9 @@ import {
   Loader2,
   FlaskConical,
   FileText,
-  CheckCircle2
+  CheckCircle2,
+  ShieldCheck,
+  Sparkles
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -287,16 +289,41 @@ const LabBooking = () => {
   }
 
   const totalFee = calculateTotalFee();
+  const bookingSteps = [
+    { id: 1, label: 'Choose tests', done: selectedTests.length > 0 },
+    { id: 2, label: 'Pick slot', done: Boolean(selectedDate && selectedTime) },
+    { id: 3, label: 'Confirm booking', done: false }
+  ];
 
   return (
     <MainLayout>
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-3xl font-bold mb-8">
-            Book Lab Appointment
-          </h1>
+          <div className="mb-8 rounded-2xl bg-gradient-to-r from-cyan-700 via-sky-700 to-blue-700 p-6 md:p-7 text-white shadow-2xl">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-medium mb-3">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Fast, certified diagnostics
+                </div>
+                <h1 className="text-2xl md:text-3xl font-bold mb-1">Book Lab Appointment</h1>
+                <p className="text-sky-100 text-sm md:text-base">Schedule trusted tests with transparent pricing and quick slots.</p>
+              </div>
+              <div className="rounded-xl bg-white/10 px-4 py-3 backdrop-blur-sm">
+                <p className="text-xs text-sky-100">Current test total</p>
+                <p className="text-2xl font-bold">₹{totalFee}</p>
+              </div>
+            </div>
+            <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {bookingSteps.map((step) => (
+                <div key={step.id} className={`rounded-lg px-3 py-2 text-sm border ${step.done ? 'bg-emerald-500/20 border-emerald-300/40 text-emerald-50' : 'bg-white/10 border-white/20 text-sky-50'}`}>
+                  <span className="font-semibold">Step {step.id}:</span> {step.label}
+                </div>
+              ))}
+            </div>
+          </div>
 
-          <Card className="p-6 mb-8">
+          <Card className="p-6 mb-8 shadow-lg border-slate-200/80">
             <div className="flex items-start gap-6">
               <div className="w-20 h-20 rounded-lg bg-primary/10 flex items-center justify-center">
                 <FlaskConical className="h-10 w-10 text-primary" />
@@ -324,13 +351,17 @@ const LabBooking = () => {
                         Accredited
                       </Badge>
                     )}
+                    <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                      <ShieldCheck className="h-3 w-3 mr-1" />
+                      Safe sample handling
+                    </Badge>
                   </div>
                 )}
               </div>
             </div>
           </Card>
 
-          <Card className="p-6 mb-8">
+          <Card className="p-6 mb-8 shadow-lg border-slate-200/80">
             <h3 className="text-lg font-semibold mb-4">Service Type</h3>
             <RadioGroup value={serviceType} onValueChange={setServiceType}>
               <div className="flex items-center space-x-2 p-3 border rounded-lg">
@@ -350,7 +381,7 @@ const LabBooking = () => {
             </RadioGroup>
           </Card>
 
-          <Card className="p-6 mb-8">
+          <Card className="p-6 mb-8 shadow-lg border-slate-200/80">
             <h3 className="text-lg font-semibold mb-4">Select Tests</h3>
             <div className="space-y-2">
               {availableTests.map((test) => (
@@ -389,7 +420,7 @@ const LabBooking = () => {
           </Card>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <Card className="p-6">
+            <Card className="p-6 shadow-lg border-slate-200/80">
               <div className="flex items-center gap-2 mb-4">
                 <Calendar className="h-5 w-5 text-primary" />
                 <h3 className="text-lg font-semibold">Select Date</h3>
@@ -411,7 +442,7 @@ const LabBooking = () => {
               </div>
             </Card>
 
-            <Card className="p-6">
+            <Card className="p-6 shadow-lg border-slate-200/80">
               <div className="flex items-center gap-2 mb-4">
                 <Clock className="h-5 w-5 text-primary" />
                 <h3 className="text-lg font-semibold">Select Time</h3>
@@ -443,7 +474,7 @@ const LabBooking = () => {
             </Card>
           </div>
 
-          <Card className="p-6 mb-8">
+          <Card className="p-6 mb-8 shadow-lg border-slate-200/80">
             <h3 className="text-lg font-semibold mb-4">Additional Information</h3>
             <div className="space-y-4">
               <div>

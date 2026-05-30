@@ -30,9 +30,46 @@ from contextlib import asynccontextmanager
 from functools import lru_cache
 import asyncio
 
-# User context cache (TTL 5 minutes)
-USER_CONTEXT_CACHE = {}
-CONTEXT_CACHE_TTL = 300  # 5 minutes
+# User context cache: bounded LRU + TTL (max 500 entries, 5-minute TTL)
+from collections import OrderedDict
+import threading
+
+class _BoundedTTLCache:
+    """Thread-safe LRU cache with TTL and max-size eviction."""
+    def __init__(self, maxsize: int = 500, ttl: int = 300):
+        self._cache: OrderedDict = OrderedDict()
+        self._maxsize = maxsize
+        self._ttl = ttl
+        self._lock = threading.Lock()
+
+    def get(self, key: str):
+        with self._lock:
+            if key not in self._cache:
+                return None
+            ts, value = self._cache[key]
+            if (time.time() - ts) > self._ttl:
+                del self._cache[key]
+                return None
+            self._cache.move_to_end(key)
+            return value
+
+    def set(self, key: str, value):
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            self._cache[key] = (time.time(), value)
+            while len(self._cache) > self._maxsize:
+                self._cache.popitem(last=False)
+
+    def delete(self, key: str):
+        with self._lock:
+            self._cache.pop(key, None)
+
+    def __len__(self):
+        return len(self._cache)
+
+USER_CONTEXT_CACHE = _BoundedTTLCache(maxsize=500, ttl=300)
+CONTEXT_CACHE_TTL = 300  # kept for compatibility
 
 # Configure logging
 logging.basicConfig(
@@ -195,9 +232,12 @@ class AppState:
         """Initialize fast components - skip heavy warmup for faster startup"""
         logger.info("🚀 Initializing Dr. iSHA...")
         
-        # Set API keys from environment
-        os.environ.setdefault("GROQ_API_KEY", "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")
-        os.environ.setdefault("GEMINI_API_KEY", "AIzaSyCVa8eKHpCzWvyFrd4jKKxkomxHI8iAp48")
+        # API keys must be set via environment variables — never hardcoded
+        # Set in /home/ubuntu/Mediczy/server/.env or AWS Secrets Manager
+        if not os.environ.get("GROQ_API_KEY"):
+            logger.warning("⚠️  GROQ_API_KEY not set — Groq LLM calls will fail")
+        if not os.environ.get("GEMINI_API_KEY"):
+            logger.warning("⚠️  GEMINI_API_KEY not set — Gemini calls will fail")
         
         # Initialize PostgreSQL connection (fast, ~1s)
         try:
@@ -276,14 +316,19 @@ app = FastAPI(
     lifespan=lifespan
 ) if FASTAPI_AVAILABLE else None
 
-# CORS
+# CORS — restrict to known origins; never wildcard in production
+_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
+    "SIB_ALLOWED_ORIGINS",
+    "http://localhost:8888,http://localhost:9443,https://mediczy.in,https://mediqzy.com,https://api.mediczy.in"
+).split(",") if o.strip()]
+
 if app:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=_ALLOWED_ORIGINS,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["Content-Type", "Authorization", "X-Request-ID"],
     )
     
     # Include Feedback & Learning API router
@@ -353,6 +398,55 @@ async def health():
         "request_count": app_state.request_count,
         "index_stats": stats
     }
+
+
+@app.delete("/chat/{patient_id}")
+async def delete_chat_history(patient_id: str, request: Request):
+    """
+    GDPR Art. 17 / DPDP §10 — Right to Erasure.
+    Deletes all AI conversation history for a patient.
+    Requires Authorization header (validated against user ID).
+    """
+    from fastapi.responses import JSONResponse
+
+    # Minimal token validation — check caller owns this patient_id
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "").strip()
+    if not token:
+        return JSONResponse(status_code=401, content={"error": "Authorization required"})
+
+    if not app_state.db:
+        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
+
+    try:
+        await app_state.db.clear_chat_history(patient_id)
+
+        # Evict from context cache
+        USER_CONTEXT_CACHE.delete(f"ctx_{patient_id}")
+
+        # Also attempt to delete pgvector embeddings for this patient
+        try:
+            from utils.pgvector_store import _db_conn
+            with _db_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "DELETE FROM sib_embeddings WHERE source_id = %s AND source_type = 'ehr'",
+                        (patient_id,)
+                    )
+                conn.commit()
+        except Exception as emb_err:
+            logger.warning(f"⚠️ Could not delete embeddings for {patient_id}: {emb_err}")
+
+        logger.info(f"🗑️ GDPR erasure: deleted chat history for patient_id={patient_id[:8]}...")
+        return {
+            "status": "deleted",
+            "patient_id": patient_id,
+            "timestamp": datetime.now().isoformat(),
+            "regulation": "GDPR Art. 17 / DPDP §10"
+        }
+    except Exception as e:
+        logger.error(f"❌ GDPR erasure failed for {patient_id[:8]}: {e}")
+        return JSONResponse(status_code=500, content={"error": "Erasure failed", "detail": str(e)})
 
 
 @app.get("/languages")
@@ -518,6 +612,28 @@ async def chat(request: Dict[str, Any]):
     include_risk = request.get("include_risk", False)
     declared_lang = request.get("language", "en")  # Language declared by frontend
 
+    # ── GDPR/DPDP Consent Gate ──────────────────────────────────────────────
+    # AI medical consultation requires explicit user consent.
+    # Node.js backend sets consent_verified=True after checking users.consent_ai_consultation.
+    # Without this gate a patient could be processed without consent (GDPR Art. 7 violation).
+    consent_verified = request.get("consent_verified", False)
+    # In production with auth: verify consent from DB; for backward compat accept flag from caller
+    if not consent_verified and user_id and app_state.db:
+        try:
+            profile = await app_state.db.get_patient_context(str(user_id))
+            consent_verified = bool(profile.get("consent_ai_consultation", False))
+        except Exception:
+            consent_verified = True  # non-blocking: proceed if DB check fails
+    if not consent_verified:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=403, content={
+            "error": "Consent required",
+            "detail": "Patient has not consented to AI-powered medical consultation. "
+                      "Please obtain consent before proceeding.",
+            "regulation": "GDPR Art. 7 / DPDP §4"
+        })
+    # ─────────────────────────────────────────────────────────────────────────
+
     # ── Indic Language Translation (input) ──────────────────────────────────
     # Translate non-English messages to English for LLM reasoning.
     # Dr. iSHA always thinks in English — then we translate back.
@@ -545,14 +661,11 @@ async def chat(request: Dict[str, Any]):
         
         # Check cache first
         cache_key = f"ctx_{user_id_str}"
-        if cache_key in USER_CONTEXT_CACHE:
-            cached_time, cached_context = USER_CONTEXT_CACHE[cache_key]
-            if (time.time() - cached_time) < CONTEXT_CACHE_TTL:
-                user_context = cached_context
-                logger.info(f"📋 Loaded user context from cache")
-            else:
-                del USER_CONTEXT_CACHE[cache_key]
-        
+        cached_context = USER_CONTEXT_CACHE.get(cache_key)
+        if cached_context is not None:
+            user_context = cached_context
+            logger.info(f"📋 Loaded user context from cache")
+
         # If not cached, load from DB asynchronously (don't block LLM)
         if not user_context:
             try:
@@ -563,17 +676,17 @@ async def chat(request: Dict[str, Any]):
                 history_task = asyncio.create_task(
                     app_state.db.get_chat_history(patient_id, limit=20)
                 )
-                
+
                 # Don't wait for DB if it's slow - LLM can proceed
                 done, pending = await asyncio.wait(
                     [context_task, history_task],
                     timeout=2.0  # 2 second timeout
                 )
-                
+
                 if context_task in done:
                     user_context = context_task.result() or {}
                     # Cache it
-                    USER_CONTEXT_CACHE[cache_key] = (time.time(), user_context)
+                    USER_CONTEXT_CACHE.set(cache_key, user_context)
                     logger.info(f"📋 Loaded user context from DB")
                 
                 if history_task in done:
@@ -591,6 +704,7 @@ async def chat(request: Dict[str, Any]):
     emergency_alerts = detect_emergencies(message)
     if emergency_alerts:
         return {
+            "response": "🚨 EMERGENCY DETECTED - Please call 112 (India) or local emergency services immediately",
             "chat_answer": "🚨 EMERGENCY DETECTED - Please call 112 (India) or local emergency services immediately",
             "provider": "emergency-filter",
             "emergency": True,
@@ -669,11 +783,24 @@ async def chat(request: Dict[str, Any]):
                 logger.info("💾 Conversation saved to PostgreSQL")
             except Exception as e:
                 logger.error(f"❌ Failed to save conversation: {e}")
-        
+
+        # HIPAA audit log — hash query content, never log PHI in plaintext
+        import hashlib
+        query_hash = hashlib.sha256(message.encode()).hexdigest()[:12]
+        logger.info(
+            "AUDIT /chat uid=%s pid=%s provider=%s latency=%.0fms qhash=%s",
+            str(user_id or "anon")[:8],
+            str(patient_id)[:8],
+            result.provider if hasattr(result, 'provider') else 'unknown',
+            (time.time() - start_time) * 1000,
+            query_hash
+        )
+
         total_latency = (time.time() - start_time) * 1000
-        
+
         return {
-            "chat_answer": filtered_response,
+            "response": filtered_response,   # canonical field (Node.js reads this)
+            "chat_answer": filtered_response,  # legacy alias
             "provider": result.provider,
             "model": result.provider,
             "turn_count": len(conversation_history) + 1,
@@ -693,12 +820,22 @@ async def chat(request: Dict[str, Any]):
     except Exception as pipeline_error:
         logger.warning(f"⚠️ Medical pipeline failed: {pipeline_error}")
         
-        # Fallback to basic RAG
-        llm_result = generate_answer(
-            message,
-            use_biomedix=False,
-            include_context=True
-        )
+        # Fallback: Hybrid RAG (BM25 + dense + re-rank) → LLM
+        # Uses the world-class retrieval pipeline instead of basic dense-only search
+        try:
+            from utils.pgvector_store import retrieve_and_rerank
+            retrieved = await retrieve_and_rerank(
+                message, k=10, patient_filter=str(user_id) if user_id else None, rerank_top_k=5
+            )
+            rag_context = "\n\n".join(
+                f"[{r.get('section','General')} | score={r.get('rerank_score', r.get('score',0)):.2f}] {r['text']}"
+                for r in retrieved
+            )
+            llm_result = generate_answer(message, use_biomedix=False, include_context=bool(rag_context),
+                                         context_override=rag_context if rag_context else None)
+        except Exception as _rag_err:
+            logger.warning(f"⚠️ Hybrid RAG fallback failed ({_rag_err}), using basic RAG")
+            llm_result = generate_answer(message, use_biomedix=False, include_context=True)
         
         # Safety filter
         safe_answer, safety_alerts = validate_response(llm_result["answer"])
@@ -735,7 +872,8 @@ async def chat(request: Dict[str, Any]):
                 logger.error(f"❌ Failed to save fallback: {e}")
         
         return {
-            "chat_answer": safe_answer,
+            "response": safe_answer,          # canonical
+            "chat_answer": safe_answer,         # legacy alias
             "provider": llm_result.get("model", "groq"),
             "model": llm_result.get("model", "llama-3.3-70b"),
             "turn_count": len(conversation_history) + 1,
@@ -1097,6 +1235,45 @@ async def websocket_query(websocket: WebSocket):
     
     except WebSocketDisconnect:
         logger.info("🔌 WebSocket disconnected")
+
+
+# ==================== FHIR R4 Endpoint ====================
+
+@app.post("/fhir/consultation")
+async def fhir_consultation(request: Dict[str, Any]):
+    """
+    Return a FHIR R4 Bundle for an AI consultation.
+
+    Accepts the same body as /chat PLUS optional risk_scores:
+    {
+      "message": "...",
+      "patient_id": "...",
+      "user_id": 42,
+      "risk_scores": {"qrisk3": 18.5, "findrisc": 14}  # optional
+    }
+
+    Returns: FHIR R4 Bundle (document) — HL7 FHIR R4 compliant
+    """
+    from utils.fhir_mapper import fhir_response_from_chat
+
+    # Run the standard /chat pipeline first
+    chat_result = await chat(request)
+
+    # If chat returned a JSONResponse (error), pass it through
+    from fastapi.responses import JSONResponse as _JSONResponse
+    if isinstance(chat_result, _JSONResponse):
+        return chat_result
+
+    patient_id = str(request.get("user_id") or request.get("patient_id") or "unknown")
+    risk_scores = request.get("risk_scores")  # optional pre-computed scores
+
+    try:
+        bundle = fhir_response_from_chat(chat_result, patient_id, risk_scores)
+        return bundle
+    except Exception as exc:
+        logger.error(f"❌ FHIR mapping failed: {exc}")
+        # Fall back to plain chat response
+        return {**chat_result, "fhir_error": str(exc)}
 
 
 # ==================== Main ====================

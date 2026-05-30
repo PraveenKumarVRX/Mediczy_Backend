@@ -38,7 +38,7 @@ const pool = process.env.DATABASE_URL
       port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
       database: process.env.POSTGRES_DATABASE || 'mediczy_ai',
       user: process.env.POSTGRES_USER || 'mediczy_helper',
-      password: process.env.POSTGRES_PASSWORD || 'Mediczy2024Helper',
+      password: process.env.POSTGRES_PASSWORD || (process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || undefined),
       ssl: pgSsl,
     });
 

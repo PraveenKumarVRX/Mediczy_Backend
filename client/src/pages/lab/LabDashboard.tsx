@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import LabLayout from '@/components/lab/LabLayout';
 import { cn } from '@/lib/utils';
+import api from '@/utils/api';
 
 const LabDashboard = () => {
   const navigate = useNavigate();
@@ -114,24 +115,6 @@ const LabDashboard = () => {
     status: 'Processing' | 'Sample Collected' | 'Pending Collection';
   };
 
-  function readJson<T>(key: string, fallback: T): T {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return fallback;
-      return JSON.parse(raw) as T;
-    } catch {
-      return fallback;
-    }
-  }
-
-  function writeJson<T>(key: string, value: T) {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // ignore
-    }
-  }
-
   const formatWhen = (value?: string) => {
     if (!value) return '—';
     if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -155,6 +138,12 @@ const LabDashboard = () => {
   const [bills, setBills] = useState<BillItem[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [criticalSummary, setCriticalSummary] = useState({
+    open_count: 0,
+    escalated_count: 0,
+    acknowledged_count: 0,
+    overdue_open_count: 0,
+  });
   
   // Test Catalog state - moved to top level to comply with React Rules of Hooks
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -172,13 +161,15 @@ const LabDashboard = () => {
       const form = new FormData();
       form.append('image', pathologyImage);
       form.append('sourceType', 'pathology');
-      const response = await fetch('/api/ai/vision/analyze', { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('labToken') || ''}` }, body: form });
-      const payload = await response.json();
-      setPathologyResult(payload.analysis ?? null);
+      const { data } = await api.post('/ai/vision/analyze', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setPathologyResult(data?.analysis ?? null);
     } finally { setPathologyLoading(false); }
   };
 
   useEffect(() => {
+    let mounted = true;
     const token = localStorage.getItem('labToken');
     const data = localStorage.getItem('labData');
 
@@ -195,21 +186,97 @@ const LabDashboard = () => {
       }
     }
 
-    // Refresh dashboard datasets whenever route changes (so dashboard reflects actions
-    // performed in orders/samples/reports pages during this session).
-    setOrders(readJson<LabOrder[]>('lab.orders', []));
-    setSamples(readJson<LabSample[]>('lab.samples', []));
-    setReports(readJson<ReportItem[]>('lab.reports', []));
-    setBills(readJson<BillItem[]>('lab.bills', []));
-    setInventory(readJson<InventoryItem[]>('lab.inventory', []));
-    setNotifications(readJson<NotificationItem[]>('lab.notifications', []));
+    const loadState = async () => {
+      const keys = [
+        'lab.orders',
+        'lab.samples',
+        'lab.reports',
+        'lab.bills',
+        'lab.inventory',
+        'lab.notifications',
+      ] as const;
 
-    setLoading(false);
+      try {
+        const responses = await Promise.all(
+          keys.map((k) => api.get(`/lab/state/${encodeURIComponent(k)}`).catch(() => null))
+        );
+
+        if (!mounted) return;
+
+        const getRemote = <T,>(idx: number): T | null => {
+          const payload = responses[idx]?.data;
+          if (payload?.success && payload?.data !== null) return payload.data as T;
+          return null;
+        };
+
+        setOrders(getRemote<LabOrder[]>(0) ?? []);
+        setSamples(getRemote<LabSample[]>(1) ?? []);
+        setReports(getRemote<ReportItem[]>(2) ?? []);
+        setBills(getRemote<BillItem[]>(3) ?? []);
+        setInventory(getRemote<InventoryItem[]>(4) ?? []);
+        setNotifications(getRemote<NotificationItem[]>(5) ?? []);
+      } catch {
+        if (!mounted) return;
+        setOrders([]);
+        setSamples([]);
+        setReports([]);
+        setBills([]);
+        setInventory([]);
+        setNotifications([]);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    loadState();
+    return () => {
+      mounted = false;
+    };
   }, [navigate, location.pathname]);
 
   useEffect(() => {
-    writeJson('lab.notifications', notifications);
+    const token = localStorage.getItem('labToken');
+    if (!token) return;
+
+    const timer = setTimeout(() => {
+      api.put(`/lab/state/${encodeURIComponent('lab.notifications')}`, { data: notifications }).catch(() => {});
+    }, 250);
+
+    return () => clearTimeout(timer);
   }, [notifications]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadCriticalSummary = async () => {
+      try {
+        const res = await api.get('/lab/ris/critical-alerts/summary');
+        if (!mounted) return;
+        const summary = res?.data?.summary || {};
+        setCriticalSummary({
+          open_count: Number(summary.open_count) || 0,
+          escalated_count: Number(summary.escalated_count) || 0,
+          acknowledged_count: Number(summary.acknowledged_count) || 0,
+          overdue_open_count: Number(summary.overdue_open_count) || 0,
+        });
+      } catch {
+        if (!mounted) return;
+        setCriticalSummary({
+          open_count: 0,
+          escalated_count: 0,
+          acknowledged_count: 0,
+          overdue_open_count: 0,
+        });
+      }
+    };
+
+    loadCriticalSummary();
+    const timer = setInterval(loadCriticalSummary, 60_000);
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
+  }, []);
 
   // All useMemo hooks MUST be called before any early returns (React Rules of Hooks)
   const today = new Date().toISOString().slice(0, 10);
@@ -435,6 +502,53 @@ const LabDashboard = () => {
     return tests;
   }, [selectedCategory, searchQuery]);
 
+  const canAccessBillingOps = useMemo(() => {
+    const billingHints = ['billing', 'finance', 'accounts', 'revenue', 'payment'];
+    const hasHint = (value: unknown) => {
+      if (typeof value !== 'string') return false;
+      const normalized = value.toLowerCase();
+      return billingHints.some((hint) => normalized.includes(hint));
+    };
+
+    const token = localStorage.getItem('labToken');
+    let tokenClaims: any = null;
+    try {
+      if (token) tokenClaims = JSON.parse(atob(token.split('.')[1]));
+    } catch {
+      tokenClaims = null;
+    }
+
+    const roles = [
+      ...(Array.isArray(labData?.roles) ? labData.roles : []),
+      ...(Array.isArray(tokenClaims?.roles) ? tokenClaims.roles : []),
+      labData?.role,
+      tokenClaims?.role,
+      labData?.department,
+      tokenClaims?.department,
+    ].filter(Boolean);
+
+    const scopes = [
+      ...(Array.isArray(labData?.permissions) ? labData.permissions : []),
+      ...(Array.isArray(labData?.scopes) ? labData.scopes : []),
+      ...(Array.isArray(tokenClaims?.permissions) ? tokenClaims.permissions : []),
+      ...(Array.isArray(tokenClaims?.scopes) ? tokenClaims.scopes : []),
+      tokenClaims?.scope,
+    ]
+      .filter(Boolean)
+      .flatMap((entry: unknown) =>
+        typeof entry === 'string' ? entry.split(/[\s,]+/) : [entry]
+      )
+      .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+
+    const hasRoleSignal = roles.some((value) => hasHint(String(value)) || String(value).toLowerCase().includes('admin'));
+    const hasScopeSignal = scopes.some((value) => hasHint(value) || value.toLowerCase().includes('lab:billing'));
+
+    // Backward compatibility: when no role/scope metadata is present, keep Billing Ops visible.
+    if (roles.length === 0 && scopes.length === 0) return true;
+
+    return hasRoleSignal || hasScopeSignal;
+  }, [labData]);
+
   // Quick actions with modern design matching doctor dashboard
   const quickActions = [
     { 
@@ -469,7 +583,15 @@ const LabDashboard = () => {
       bgColor: 'bg-orange-500/10 dark:bg-orange-500/20',
       iconColor: 'text-orange-500',
     },
-  ];
+    {
+      title: 'Billing Ops',
+      description: 'Open billing operations console',
+      icon: Receipt,
+      link: '/lab/billing-ops',
+      bgColor: 'bg-cyan-500/10 dark:bg-cyan-500/20',
+      iconColor: 'text-cyan-500',
+    },
+  ].filter((action) => action.link !== '/lab/billing-ops' || canAccessBillingOps);
 
   // Loading state check - placed after all hooks per React Rules of Hooks
   if (loading) {
@@ -576,6 +698,34 @@ const LabDashboard = () => {
     const isSonology  = dept === 'sonology'  || dept === 'combined';
     const isPathology = dept === 'pathology' || dept === 'combined';
 
+    const triggerOverdueEscalation = async () => {
+      try {
+        const res = await api.post('/lab/ris/critical-alerts/escalate-overdue');
+        const escalatedCount = Number(res?.data?.escalatedCount) || 0;
+        toast({
+          title: 'Escalation run complete',
+          description: escalatedCount > 0
+            ? `${escalatedCount} overdue alert(s) escalated.`
+            : 'No overdue critical alerts found.',
+        });
+
+        const summaryRes = await api.get('/lab/ris/critical-alerts/summary');
+        const summary = summaryRes?.data?.summary || {};
+        setCriticalSummary({
+          open_count: Number(summary.open_count) || 0,
+          escalated_count: Number(summary.escalated_count) || 0,
+          acknowledged_count: Number(summary.acknowledged_count) || 0,
+          overdue_open_count: Number(summary.overdue_open_count) || 0,
+        });
+      } catch {
+        toast({
+          title: 'Escalation failed',
+          description: 'Unable to run overdue critical alert escalation.',
+          variant: 'destructive',
+        });
+      }
+    };
+
     return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Hero Banner */}
@@ -620,14 +770,14 @@ const LabDashboard = () => {
           
           <div className="flex gap-3 flex-wrap">
             {isRadiology && (
-              <Link to="/lab/imaging">
+              <Link to="/lab/ris">
                 <Button className={cn("bg-gradient-to-r text-white shadow-lg border-0", deptCfg.gradient)}>
                   <ScanLine className="w-4 h-4 mr-2" />RIS Worklist
                 </Button>
               </Link>
             )}
             {isSonology && (
-              <Link to="/lab/sonology">
+              <Link to="/lab/ris">
                 <Button className={cn("bg-gradient-to-r text-white shadow-lg border-0", deptCfg.gradient)}>
                   <Waves className="w-4 h-4 mr-2" />Sonology
                 </Button>
@@ -685,6 +835,41 @@ const LabDashboard = () => {
         ))}
       </div>
 
+      <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-500" />
+            Critical Value Monitor
+          </CardTitle>
+          <CardDescription>Live counters from RIS critical-value workflow</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="rounded-xl border border-red-200/80 dark:border-red-800/40 bg-red-50/60 dark:bg-red-950/20 p-3">
+              <div className="text-xs text-slate-600 dark:text-slate-300">Open</div>
+              <div className="text-xl font-semibold text-red-600 dark:text-red-400">{criticalSummary.open_count}</div>
+            </div>
+            <div className="rounded-xl border border-amber-200/80 dark:border-amber-800/40 bg-amber-50/60 dark:bg-amber-950/20 p-3">
+              <div className="text-xs text-slate-600 dark:text-slate-300">Overdue Open</div>
+              <div className="text-xl font-semibold text-amber-600 dark:text-amber-400">{criticalSummary.overdue_open_count}</div>
+            </div>
+            <div className="rounded-xl border border-orange-200/80 dark:border-orange-800/40 bg-orange-50/60 dark:bg-orange-950/20 p-3">
+              <div className="text-xs text-slate-600 dark:text-slate-300">Escalated</div>
+              <div className="text-xl font-semibold text-orange-600 dark:text-orange-400">{criticalSummary.escalated_count}</div>
+            </div>
+            <div className="rounded-xl border border-emerald-200/80 dark:border-emerald-800/40 bg-emerald-50/60 dark:bg-emerald-950/20 p-3">
+              <div className="text-xs text-slate-600 dark:text-slate-300">Acknowledged</div>
+              <div className="text-xl font-semibold text-emerald-600 dark:text-emerald-400">{criticalSummary.acknowledged_count}</div>
+            </div>
+          </div>
+          <div className="mt-3 flex justify-end">
+            <Button size="sm" variant="outline" onClick={triggerOverdueEscalation}>
+              Run Overdue Escalation
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Department-specific panel */}
       {isRadiology && (
         <div>
@@ -693,10 +878,10 @@ const LabDashboard = () => {
             Radiology Worklist
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[{title:'CT Scan Orders', icon:Monitor, link:'/lab/imaging', bg:'bg-indigo-500/10', ic:'text-indigo-500', desc:'Computed Tomography'},
-              {title:'MRI Studies', icon:Brain, link:'/lab/imaging', bg:'bg-purple-500/10', ic:'text-purple-500', desc:'Magnetic Resonance'},
-              {title:'X-Ray Queue', icon:ScanLine, link:'/lab/imaging', bg:'bg-blue-500/10', ic:'text-blue-500', desc:'Plain Radiography'},
-              {title:'Upload Images', icon:Upload, link:'/lab/imaging', bg:'bg-teal-500/10', ic:'text-teal-500', desc:'DICOM / JPEG / PDF'},
+            {[{title:'CT Scan Orders', icon:Monitor, link:'/lab/ris', bg:'bg-indigo-500/10', ic:'text-indigo-500', desc:'Computed Tomography'},
+              {title:'MRI Studies', icon:Brain, link:'/lab/ris', bg:'bg-purple-500/10', ic:'text-purple-500', desc:'Magnetic Resonance'},
+              {title:'X-Ray Queue', icon:ScanLine, link:'/lab/ris', bg:'bg-blue-500/10', ic:'text-blue-500', desc:'Plain Radiography'},
+              {title:'Upload Images', icon:Upload, link:'/lab/ris', bg:'bg-teal-500/10', ic:'text-teal-500', desc:'DICOM / JPEG / PDF'},
             ].map((a, i) => (
               <Link key={i} to={a.link} className="group">
                 <Card className="h-full bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-indigo-200 dark:hover:border-indigo-500/50 hover:shadow-lg transition-all">
@@ -719,10 +904,10 @@ const LabDashboard = () => {
             Sonology Worklist
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[{title:'USG Abdomen', icon:Waves, link:'/lab/sonology', bg:'bg-teal-500/10', ic:'text-teal-500', desc:'Abdominal Ultrasound'},
-              {title:'Echo Studies', icon:Heart, link:'/lab/sonology', bg:'bg-rose-500/10', ic:'text-rose-500', desc:'Echocardiography'},
-              {title:'Obstetric USG', icon:Baby, link:'/lab/sonology', bg:'bg-pink-500/10', ic:'text-pink-500', desc:'OB/GYN Ultrasound'},
-              {title:'Upload Study', icon:Image, link:'/lab/sonology', bg:'bg-cyan-500/10', ic:'text-cyan-500', desc:'Images & Reports'},
+            {[{title:'USG Abdomen', icon:Waves, link:'/lab/ris', bg:'bg-teal-500/10', ic:'text-teal-500', desc:'Abdominal Ultrasound'},
+              {title:'Echo Studies', icon:Heart, link:'/lab/ris', bg:'bg-rose-500/10', ic:'text-rose-500', desc:'Echocardiography'},
+              {title:'Obstetric USG', icon:Baby, link:'/lab/ris', bg:'bg-pink-500/10', ic:'text-pink-500', desc:'OB/GYN Ultrasound'},
+              {title:'Upload Study', icon:Image, link:'/lab/ris', bg:'bg-cyan-500/10', ic:'text-cyan-500', desc:'Images & Reports'},
             ].map((a, i) => (
               <Link key={i} to={a.link} className="group">
                 <Card className="h-full bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-teal-200 dark:hover:border-teal-500/50 hover:shadow-lg transition-all">

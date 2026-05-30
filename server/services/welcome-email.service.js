@@ -416,8 +416,33 @@ export async function sendCorporateWelcomeEmail(corporateData, temporaryPassword
   }
 }
 
+function formatCorporateEmployeePlan(employeeData = {}) {
+  const planName = employeeData.planName || employeeData.insurancePlan || employeeData.packageType || "Nijacart Employee Health Plan";
+  const coverageAmount = employeeData.coverageAmount || employeeData.sumInsured || employeeData.sum_insured || employeeData.coverage || "As per corporate plan eligibility";
+  const startDate = employeeData.planStartDate || employeeData.startDate || employeeData.coverageStartDate || "";
+  const endDate = employeeData.planEndDate || employeeData.endDate || employeeData.coverageEndDate || "";
+  const validity = employeeData.planValidity || employeeData.validity || ([startDate, endDate].filter(Boolean).join(" to ") || "Active as per Nijacart HR policy");
+  const sponsor = employeeData.sponsor || employeeData.employerContribution || "Nijacart sponsored corporate health benefit";
+  const copay = employeeData.copay || employeeData.employeeShare || "As per approved plan terms";
+  const benefits = Array.isArray(employeeData.planBenefits)
+    ? employeeData.planBenefits
+    : String(employeeData.planBenefits || employeeData.benefits || "Doctor consultations, lab tests, health records, pharmacy benefits, care navigation")
+        .split(/[|,;]\s*/)
+        .map(item => item.trim())
+        .filter(Boolean);
+
+  return { planName, coverageAmount, validity, sponsor, copay, benefits };
+}
+
+function renderPlanBenefitsList(benefits = []) {
+  return benefits.map(benefit => `<li style="padding: 6px 0; color: #374151;">${benefit}</li>`).join("");
+}
+
 export async function sendCorporateEmployeeWelcomeEmail(employeeData, temporaryPassword) {
   const { email, firstName, lastName, companyName, employeeId, department } = employeeData;
+  const plan = formatCorporateEmployeePlan(employeeData);
+  const planBenefitsHtml = renderPlanBenefitsList(plan.benefits);
+  const planBenefitsText = plan.benefits.join(", " );
 
   const msg = {
     to: email,
@@ -434,7 +459,7 @@ export async function sendCorporateEmployeeWelcomeEmail(employeeData, temporaryP
         <div style="background-color: white; padding: 40px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
           <h2 style="color: #0f766e; margin-bottom: 20px;">Dear ${firstName} ${lastName},</h2>
           <p style="font-size: 16px; line-height: 1.6; color: #374151;">
-            Your employee health account has been created by <strong>${companyName}</strong> on the Mediqzy platform. You can now access healthcare benefits, book appointments, and manage your health records.
+            Your employee health account has been activated under the <strong>${companyName}</strong> corporate health program on Mediqzy. Your plan details and login credentials are below.
           </p>
           <div style="background-color: #f0fdfa; border-left: 4px solid #0f766e; padding: 20px; margin: 25px 0; border-radius: 5px;">
             <h3 style="color: #0f766e; margin-top: 0;">Your Account Details</h3>
@@ -444,6 +469,20 @@ export async function sendCorporateEmployeeWelcomeEmail(employeeData, temporaryP
               <li style="padding: 8px 0; border-bottom: 1px solid #ccfbf1;"><strong>Employee ID:</strong> ${employeeId || '—'}</li>
               <li style="padding: 8px 0;"><strong>Department:</strong> ${department || '—'}</li>
             </ul>
+          </div>
+          <div style="background-color: #eef2ff; border-left: 4px solid #4f46e5; padding: 20px; margin: 25px 0; border-radius: 5px;">
+            <h3 style="color: #4338ca; margin-top: 0;">Your Health Plan Details</h3>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+              <li style="padding: 8px 0; border-bottom: 1px solid #c7d2fe;"><strong>Plan:</strong> ${plan.planName}</li>
+              <li style="padding: 8px 0; border-bottom: 1px solid #c7d2fe;"><strong>Coverage:</strong> ${plan.coverageAmount}</li>
+              <li style="padding: 8px 0; border-bottom: 1px solid #c7d2fe;"><strong>Validity:</strong> ${plan.validity}</li>
+              <li style="padding: 8px 0; border-bottom: 1px solid #c7d2fe;"><strong>Sponsor:</strong> ${plan.sponsor}</li>
+              <li style="padding: 8px 0;"><strong>Employee Share / Co-pay:</strong> ${plan.copay}</li>
+            </ul>
+            <div style="margin-top: 16px; background: #ffffff; border: 1px solid #e0e7ff; border-radius: 8px; padding: 14px 16px;">
+              <p style="margin: 0 0 8px; color: #4338ca; font-weight: bold;">Included benefits</p>
+              <ul style="margin: 0; padding-left: 18px;">${planBenefitsHtml}</ul>
+            </div>
           </div>
           <div style="background-color: #fef3c7; border: 2px solid #fbbf24; padding: 20px; margin: 25px 0; border-radius: 8px;">
             <h3 style="color: #92400e; margin-top: 0;">🔐 Your Login Credentials</h3>
@@ -483,7 +522,7 @@ export async function sendCorporateEmployeeWelcomeEmail(employeeData, temporaryP
   // Apply custom template override if configured
   const customTplEmp = await getCustomTemplate('corporate_employee_welcome');
   if (customTplEmp) {
-    const vars = { '{{firstName}}': firstName, '{{lastName}}': lastName, '{{email}}': email, '{{companyName}}': companyName, '{{temporaryPassword}}': temporaryPassword };
+    const vars = { "{{firstName}}": firstName, "{{lastName}}": lastName, "{{email}}": email, "{{companyName}}": companyName, "{{employeeId}}": employeeId || "", "{{department}}": department || "", "{{temporaryPassword}}": temporaryPassword, "{{loginUrl}}": "https://app.mediqzy.com/login", "{{planName}}": plan.planName, "{{coverageAmount}}": plan.coverageAmount, "{{planValidity}}": plan.validity, "{{planSponsor}}": plan.sponsor, "{{planCopay}}": plan.copay, "{{planBenefits}}": planBenefitsText };
     msg.subject = renderTemplate(customTplEmp.subject, vars);
     msg.html = renderTemplate(customTplEmp.html_content, vars);
   }

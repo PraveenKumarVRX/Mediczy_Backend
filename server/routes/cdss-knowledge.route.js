@@ -21,6 +21,7 @@ import { authUser, requireRole } from '../middleware/auth.middleware.js';
 
 const router = Router();
 const adminOnly = [authUser, requireRole('admin')];
+const doctorOrAdmin = [authUser, requireRole(['doctor', 'admin'])];
 
 /**
  * POST /cdss/knowledge/query
@@ -77,7 +78,17 @@ router.get('/health', async (req, res) => {
     const health = await cdssService.getHealth();
     res.json(health);
   } catch (error) {
-    res.status(500).json({ status: 'error', error: error.message });
+    console.error('[CDSS API] Health check degraded:', error);
+    res.status(200).json({
+      status: 'degraded',
+      providers: {
+        sib: false,
+        groq: Boolean(process.env.GROQ_API_KEY),
+        knowledgeBase: true
+      },
+      error: error.message,
+      lastCheck: new Date().toISOString()
+    });
   }
 });
 
@@ -330,7 +341,7 @@ router.post('/search', authUser, async (req, res) => {
  * GET /cdss/knowledge/stats
  * Get statistics about the knowledge base
  */
-router.get('/stats', ...adminOnly, async (req, res) => {
+router.get('/stats', ...doctorOrAdmin, async (req, res) => {
   try {
     const stats = await pdfKnowledgeService.getStats('cdss_knowledge');
     res.json({ success: true, ...stats });

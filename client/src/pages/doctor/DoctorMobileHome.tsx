@@ -45,7 +45,6 @@ import {
   Activity,
   DollarSign,
   Siren,
-  Mic,
   BrainCircuit,
 } from "lucide-react";
 
@@ -71,7 +70,7 @@ const QUICK_ACTIONS = [
   { label: "Patients",       icon: Users,      path: "/doctor/patients",           bg: "bg-blue-500/15",   icon_color: "text-blue-500",    ring: "ring-blue-400/30" },
   { label: "Health Mon.",    icon: HeartPulse, path: "/doctor/health-monitoring",  bg: "bg-pink-500/15",   icon_color: "text-pink-500",    ring: "ring-pink-400/30" },
   { label: "Analytics",      icon: BarChart3,  path: "/doctor/analytics",          bg: "bg-amber-500/15",  icon_color: "text-amber-500",   ring: "ring-amber-400/30" },
-  { label: "AI Scribe",      icon: Mic,        path: "/doctor/assist",             bg: "bg-emerald-500/15",icon_color: "text-emerald-500", ring: "ring-emerald-400/30" },
+  { label: "Webinars",       icon: FileText,   path: "/doctor/webinars",           bg: "bg-emerald-500/15",icon_color: "text-emerald-500", ring: "ring-emerald-400/30" },
 ];
 
 // ────────────────────────────────────────────────────────────────────────────

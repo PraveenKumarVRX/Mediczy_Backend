@@ -21,6 +21,11 @@
     "test-encryption": "node scripts/test-encryption.js",
     "encrypt-data": "node scripts/encrypt-existing-data.js",
     "hash:nurse-passwords": "node scripts/hash-nurse-passwords.js"
+    ,"fix:qa-login-blockers": "node scripts/qa/fix-portal-login-blockers.mjs"
+    ,"fix:qa-login-blockers:ssm": "node scripts/ssm-env-loader.mjs scripts/qa/fix-portal-login-blockers.mjs"
+    ,"test:doctor-assistant-nav-regression": "node scripts/qa/doctor-assistant-navigation-regression.mjs"
+    ,"test:user-login-security-regression": "node scripts/qa/user-login-security-regression.mjs"
+    ,"test:consultation-membership-exemption": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand __tests__/consultation-membership-exemption.test.js"
   },
   "keywords": [],
   "author": "",

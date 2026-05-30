@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -146,6 +147,7 @@ const buildApiPayload = (config: Partial<SMTPConfig>) => {
 };
 
 const TeamSettings: React.FC = () => {
+  const [searchParams] = useSearchParams();
   const [smtpConfigs, setSMTPConfigs] = useState<SMTPConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [testingConfig, setTestingConfig] = useState<string | null>(null);
@@ -434,7 +436,7 @@ const TeamSettings: React.FC = () => {
           </div>
         </div>
 
-        <Tabs defaultValue="smtp" className="space-y-6">
+        <Tabs defaultValue={searchParams.get('tab') ?? 'smtp'} className="space-y-6">
           <TabsList>
             <TabsTrigger value="smtp" className="gap-2">
               <Mail className="h-4 w-4" />

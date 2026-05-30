@@ -2,6 +2,8 @@ import express from 'express';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 import { authUser } from '../middleware/auth.middleware.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
+import { auditHealthAccess } from '../middleware/audit.middleware.js';
 
 const router = express.Router();
 
@@ -40,8 +42,19 @@ async function ensureTable() {
   tableReady = true;
 }
 
+const VALID_SLEEP_QUALITY = new Set(['poor', 'fair', 'good', 'excellent']);
+
+function validateRange(name, val, min, max) {
+  if (val === undefined || val === null) return null;
+  const n = Number(val);
+  if (isNaN(n) || n < min || n > max) {
+    throw new Error(`${name} must be between ${min} and ${max}`);
+  }
+  return n;
+}
+
 // ── POST /api/activity-tracker/log — Log or update today's activity ──
-router.post('/log', authUser, async (req, res) => {
+router.post('/log', authLimiter, authUser, auditHealthAccess('ACTIVITY_LOG_WRITE'), async (req, res) => {
   try {
     await ensureTable();
     const userId = req.user.id;
@@ -51,6 +64,28 @@ router.post('/log', authUser, async (req, res) => {
       heartRate, bpSystolic, bpDiastolic, spo2, temperature,
       weight, bloodSugar, notes
     } = req.body;
+
+    // ── Input validation ──────────────────────────────────────────────────────
+    try {
+      validateRange('steps', steps, 0, 100000);
+      validateRange('stairs', stairs, 0, 10000);
+      validateRange('caloriesBurned', caloriesBurned, 0, 20000);
+      validateRange('caloriesConsumed', caloriesConsumed, 0, 20000);
+      validateRange('exerciseMinutes', exerciseMinutes, 0, 1440);
+      validateRange('sleepHours', sleepHours, 0, 24);
+      validateRange('heartRate', heartRate, 30, 250);
+      validateRange('bpSystolic', bpSystolic, 50, 300);
+      validateRange('bpDiastolic', bpDiastolic, 30, 200);
+      validateRange('spo2', spo2, 50, 100);
+      validateRange('temperature', temperature, 30, 45);
+      validateRange('weight', weight, 1, 500);
+      validateRange('bloodSugar', bloodSugar, 20, 800);
+      if (sleepQuality && !VALID_SLEEP_QUALITY.has(sleepQuality)) {
+        throw new Error("sleepQuality must be poor|fair|good|excellent");
+      }
+    } catch (validationErr) {
+      return res.status(400).json({ success: false, error: validationErr.message });
+    }
 
     const targetDate = date || new Date().toISOString().split('T')[0];
 
@@ -117,7 +152,7 @@ router.post('/log', authUser, async (req, res) => {
 });
 
 // ── GET /api/activity-tracker/today — Get today's activity ──
-router.get('/today', authUser, async (req, res) => {
+router.get('/today', authUser, auditHealthAccess('ACTIVITY_LOG_READ'), async (req, res) => {
   try {
     await ensureTable();
     const [rows] = await postgresSequelize.query(`
@@ -135,15 +170,16 @@ router.get('/today', authUser, async (req, res) => {
 router.get('/history', authUser, async (req, res) => {
   try {
     await ensureTable();
-    const { days = 30, startDate, endDate } = req.query;
+    const { startDate, endDate } = req.query;
+    const safeDays = Math.min(Math.max(parseInt(req.query.days) || 30, 1), 365);
 
     let query, replacements;
     if (startDate && endDate) {
-      query = `SELECT * FROM daily_activity WHERE user_id = :userId AND date BETWEEN :startDate AND :endDate ORDER BY date DESC`;
+      query = `SELECT * FROM daily_activity WHERE user_id = :userId AND date BETWEEN :startDate AND :endDate ORDER BY date DESC LIMIT 500`;
       replacements = { userId: req.user.id, startDate, endDate };
     } else {
       query = `SELECT * FROM daily_activity WHERE user_id = :userId AND date >= CURRENT_DATE - :days::int ORDER BY date DESC`;
-      replacements = { userId: req.user.id, days: parseInt(days) };
+      replacements = { userId: req.user.id, days: safeDays };
     }
 
     const rows = await postgresSequelize.query(query, {

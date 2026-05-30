@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -16,7 +15,6 @@ import {
   MessageSquare, RefreshCw, FileCheck
 } from 'lucide-react';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
-import { useHospitalAuth } from '@/hooks/useHospitalAuth';
 import api from '@/utils/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -68,19 +66,19 @@ interface DashboardStats {
 
 // ─── Static navigation modules (plan-agnostic for now) ────────────────────────
 const quickModules = [
-  { title: 'Practice Management', description: 'Appointments, OPD/IPD, Staff scheduling', icon: BriefcaseMedical, color: 'from-blue-500 to-blue-600', route: '/hospital/practice-management' },
-  { title: 'Corporate Management', description: 'Manage corporate tie-ups and employee benefits', icon: Building, color: 'from-teal-500 to-teal-600', route: '/hospital/corporate-management' },
-  { title: 'Insurance Payer Management', description: 'TPA, Insurance companies, MoU, Schedule of charges', icon: Shield, color: 'from-blue-500 to-blue-600', route: '/hospital/insurance-payer-management' },
-  { title: 'Insurance Billing', description: 'Claims, pre-auth, settlements', icon: CreditCard, color: 'from-amber-500 to-amber-600', route: '/hospital/insurance-claims?tab=claims' },
-  { title: 'Medical Records (MRD)', description: 'File management, retrieval, audit', icon: FolderOpen, color: 'from-purple-500 to-purple-600', route: '/hospital/mrd' },
-  { title: 'Electronic Health Records', description: 'Patient charts, clinical docs', icon: FileHeart, color: 'from-emerald-500 to-emerald-600', route: '/hospital/ehr' },
-  { title: 'Discharge Summary', description: 'Generate and manage discharge summaries', icon: FileText, color: 'from-rose-500 to-rose-600', route: '/hospital/discharge-summary' },
-  { title: 'IP Sheets', description: 'Inpatient monitoring and charts', icon: ClipboardList, color: 'from-violet-500 to-violet-600', route: '/hospital/ip-sheets' },
-  { title: 'Lab Test Orders', description: 'Order lab tests, manage results', icon: FlaskConical, color: 'from-cyan-500 to-cyan-600', route: '/hospital/lab-order' },
-  { title: 'Imaging Orders', description: 'Order imaging tests, radiology', icon: Scan, color: 'from-indigo-500 to-indigo-600', route: '/hospital/imaging-order' },
-  { title: 'Prescription Creator', description: 'Create and manage prescriptions', icon: Pill, color: 'from-orange-500 to-orange-600', route: '/hospital/prescription-creator' },
-  { title: 'Procedure Scheduler', description: 'Schedule medical procedures', icon: Stethoscope, color: 'from-pink-500 to-pink-600', route: '/hospital/procedure-adder' },
-  { title: 'Team Chat', description: 'Internal messaging for staff & partners (RocketChat)', icon: MessageSquare, color: 'from-purple-500 to-purple-600', route: '/hospital/team-chat' },
+  { title: 'Practice Management', description: 'Appointments, OPD/IPD, Staff scheduling', icon: BriefcaseMedical, color: 'from-blue-500 to-blue-600', route: '/hospital/practice-management', capability: 'practice_management' },
+  { title: 'Corporate Management', description: 'Manage corporate tie-ups and employee benefits', icon: Building, color: 'from-teal-500 to-teal-600', route: '/hospital/corporate-management', capability: 'corporate_management' },
+  { title: 'Insurance Payer Management', description: 'TPA, Insurance companies, MoU, Schedule of charges', icon: Shield, color: 'from-blue-500 to-blue-600', route: '/hospital/insurance-payer-management', capability: 'insurance_billing' },
+  { title: 'Insurance Billing', description: 'Claims, pre-auth, settlements', icon: CreditCard, color: 'from-amber-500 to-amber-600', route: '/hospital/insurance-claims?tab=claims', capability: 'insurance_billing' },
+  { title: 'Medical Records (MRD)', description: 'File management, retrieval, audit', icon: FolderOpen, color: 'from-purple-500 to-purple-600', route: '/hospital/mrd', capability: 'mrd' },
+  { title: 'Electronic Health Records', description: 'Patient charts, clinical docs', icon: FileHeart, color: 'from-emerald-500 to-emerald-600', route: '/hospital/ehr', capability: 'ehr' },
+  { title: 'Discharge Summary', description: 'Generate and manage discharge summaries', icon: FileText, color: 'from-rose-500 to-rose-600', route: '/hospital/discharge-summary', capability: 'discharge_summary' },
+  { title: 'IP Sheets', description: 'Inpatient monitoring and charts', icon: ClipboardList, color: 'from-violet-500 to-violet-600', route: '/hospital/ip-sheets', capability: 'ip_sheets' },
+  { title: 'Lab Test Orders', description: 'Order lab tests, manage results', icon: FlaskConical, color: 'from-cyan-500 to-cyan-600', route: '/hospital/lab-order', capability: 'lab_reports' },
+  { title: 'Imaging Orders', description: 'Order imaging tests, radiology', icon: Scan, color: 'from-indigo-500 to-indigo-600', route: '/hospital/imaging-order', capability: 'imaging' },
+  { title: 'Prescription Creator', description: 'Create and manage prescriptions', icon: Pill, color: 'from-orange-500 to-orange-600', route: '/hospital/prescription-creator', capability: 'prescriptions' },
+  { title: 'Procedure Scheduler', description: 'Schedule medical procedures', icon: Stethoscope, color: 'from-pink-500 to-pink-600', route: '/hospital/procedure-adder', capability: 'procedures' },
+  { title: 'Team Chat', description: 'Internal messaging for staff & partners (RocketChat)', icon: MessageSquare, color: 'from-purple-500 to-purple-600', route: '/hospital/team-chat', capability: 'communication' },
 ];
 
 const ihxInsuranceFunctions = [
@@ -115,7 +113,24 @@ const StatSkeleton = () => (
 // ─── Component ────────────────────────────────────────────────────────────────
 const HospitalDashboard = () => {
   const navigate = useNavigate();
-  const { hospitalData } = useHospitalAuth();
+  const { data: capabilities } = useQuery<string[] | undefined>({
+    queryKey: ['hospital-dashboard-capabilities'],
+    queryFn: async () => {
+      const res = await api.get('/hospital/capabilities');
+      const rows = res.data?.capabilities ?? res.data?.data;
+      return Array.isArray(rows) && rows.length > 0 ? rows : undefined;
+    },
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+  const isModuleAccessible = (capability?: string) => !capability || !capabilities || capabilities.includes(capability);
+
+  const handleKeyboardNavigate = (event: React.KeyboardEvent<HTMLDivElement>, route: string) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      navigate(route);
+    }
+  };
 
   const tryApiGet = async <T,>(
     endpoints: string[],
@@ -174,6 +189,7 @@ const HospitalDashboard = () => {
   const {
     data: admissions = [],
     isLoading: admissionsLoading,
+    isError: admissionsError,
   } = useQuery<Admission[]>({
     queryKey: ['hospital-recent-admissions'],
     queryFn: async () =>
@@ -205,6 +221,7 @@ const HospitalDashboard = () => {
   const {
     data: bedOccupancy = [],
     isLoading: bedsLoading,
+    isError: bedsError,
   } = useQuery<BedOccupancy[]>({
     queryKey: ['hospital-beds-occupancy'],
     queryFn: async () =>
@@ -247,6 +264,7 @@ const HospitalDashboard = () => {
   const {
     data: claims = [],
     isLoading: claimsLoading,
+    isError: claimsError,
   } = useQuery<Claim[]>({
     queryKey: ['hospital-pending-claims'],
     queryFn: async () =>
@@ -340,11 +358,15 @@ const HospitalDashboard = () => {
 
       {/* Quick Access Modules */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {quickModules.map((module, index) => (
+        {quickModules.filter((module) => isModuleAccessible(module.capability)).map((module, index) => (
           <Card
             key={index}
             className="cursor-pointer bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-teal-200 dark:hover:border-teal-500/50 hover:shadow-xl hover:shadow-teal-500/10 transition-all transform hover:-translate-y-1 group"
             onClick={() => navigate(module.route)}
+            role="button"
+            tabIndex={0}
+            aria-label={`Open ${module.title}`}
+            onKeyDown={(event) => handleKeyboardNavigate(event, module.route)}
           >
             <CardContent className="pt-6">
               <div className={`bg-gradient-to-br ${module.color} p-4 rounded-xl w-fit mb-4 shadow-lg transition-transform duration-300 group-hover:scale-110`}>
@@ -369,11 +391,15 @@ const HospitalDashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-        {ihxInsuranceFunctions.map((item, index) => (
+        {ihxInsuranceFunctions.filter((item) => isModuleAccessible(item.capability)).map((item, index) => (
           <Card
             key={index}
             className="cursor-pointer bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-teal-200 dark:hover:border-teal-500/50 hover:shadow-lg hover:shadow-teal-500/10 transition-all transform hover:-translate-y-1 group"
             onClick={() => navigate(item.route)}
+            role="button"
+            tabIndex={0}
+            aria-label={`Open ${item.title}`}
+            onKeyDown={(event) => handleKeyboardNavigate(event, item.route)}
           >
             <CardContent className="pt-5">
               <div className={`bg-gradient-to-br ${item.color} p-3 rounded-lg w-fit mb-3 shadow-md transition-transform duration-300 group-hover:scale-105`}>
@@ -405,6 +431,11 @@ const HospitalDashboard = () => {
             {admissionsLoading ? (
               <div className="space-y-3">
                 {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
+              </div>
+            ) : admissionsError ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/10 p-3 flex items-start gap-2 text-amber-700 dark:text-amber-400 text-sm">
+                <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                Could not load recent admissions. Please try again.
               </div>
             ) : admissions.length === 0 ? (
               <p className="text-sm text-slate-400 text-center py-8">No recent admissions data available.</p>
@@ -446,6 +477,11 @@ const HospitalDashboard = () => {
           <CardContent className="space-y-6">
             {bedsLoading ? (
               Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)
+            ) : bedsError ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/10 p-3 flex items-start gap-2 text-amber-700 dark:text-amber-400 text-sm">
+                <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                Could not load bed occupancy. Please refresh.
+              </div>
             ) : bedOccupancy.length === 0 ? (
               <p className="text-sm text-slate-400 text-center py-4">No bed data available.</p>
             ) : (
@@ -455,7 +491,7 @@ const HospitalDashboard = () => {
                     <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{ward.department}</span>
                     <span className="text-sm text-slate-500 dark:text-slate-400">{ward.occupied}/{ward.total}</span>
                   </div>
-                  <Progress value={(ward.occupied / ward.total) * 100} className="h-2" />
+                  <Progress value={ward.total > 0 ? (ward.occupied / ward.total) * 100 : 0} className="h-2" />
                 </div>
               ))
             )}
@@ -482,6 +518,11 @@ const HospitalDashboard = () => {
           {claimsLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28 w-full rounded-xl" />)}
+            </div>
+          ) : claimsError ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/10 p-3 flex items-start gap-2 text-amber-700 dark:text-amber-400 text-sm">
+              <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              Could not load pending claims. Please try again.
             </div>
           ) : claims.length === 0 ? (
             <p className="text-sm text-slate-400 text-center py-6">No pending claims data available.</p>

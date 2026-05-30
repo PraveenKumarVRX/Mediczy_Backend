@@ -9,7 +9,7 @@ const { Client } = pg;
 async function createCareUser() {
   const client = new Client({
     user: process.env.POSTGRES_USER || 'mediczy_helper',
-    password: process.env.POSTGRES_PASSWORD || 'Mediczy2024Helper',
+    password: process.env.POSTGRES_PASSWORD || (process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || undefined),
     host: process.env.POSTGRES_HOST || '127.0.0.1',
     port: process.env.POSTGRES_PORT || 5432,
     database: process.env.POSTGRES_DATABASE || 'mediczy_ai'

@@ -196,10 +196,21 @@ export const computeBayesianRisk = (
 
   const alerts = evidence.filter((item) => item.state === 'adverse');
 
-  const estimatedScore =
+  const rawEstimatedScore =
     posterior.low * SCORE_ESTIMATES.low +
     posterior.elevated * SCORE_ESTIMATES.elevated +
     posterior.critical * SCORE_ESTIMATES.critical;
+
+  // Clamp to valid score range; guard against NaN from edge-case posterior
+  const estimatedScore = Number.isFinite(rawEstimatedScore)
+    ? Math.max(0, Math.min(299, Math.round(rawEstimatedScore)))
+    : SCORE_ESTIMATES[prediction];
+
+  // Invariant: posterior values must sum to 1.0 ±0.001
+  const posteriorSum = posterior.low + posterior.elevated + posterior.critical;
+  if (Math.abs(posteriorSum - 1) > 0.001) {
+    console.warn('[bayesian-risk] posterior sum deviation:', posteriorSum);
+  }
 
   return {
     posterior,

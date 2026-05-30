@@ -16,6 +16,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import type { ComponentType } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
+import TeamGuard from "@/auth/TeamGuard";
 
 // ─── Critical-path — always in the initial bundle ───────────────────────────
 import Index            from "@/pages/Index";
@@ -142,6 +143,9 @@ const DoctorVoiceScribe        = lazy(() => import("@/pages/doctor/DoctorVoiceSc
 const DoctorCalculators        = lazy(() => import("@/pages/doctor/DoctorCalculators"));
 const DoctorVoiceAssistant     = lazy(() => import("@/pages/doctor/DoctorVoiceAssistant"));
 const DoctorMessaging          = lazy(() => import("@/pages/doctor/DoctorMessaging"));
+const DoctorWebinarDashboard   = lazy(() => import("@/pages/doctor/DoctorWebinarDashboard"));
+const WebinarListPage          = lazy(() => import("@/pages/webinar/WebinarListPage"));
+const WebinarRoomPage          = lazy(() => import("@/pages/webinar/WebinarRoomPage"));
 
 // ─── Admin ───────────────────────────────────────────────────────────────────
 const AdminLogin               = lazy(() => import("@/pages/admin/AdminLogin"));
@@ -370,6 +374,7 @@ const LabOrdersPage        = lazyNamed(_LabModulePages, "LabOrdersPage");
 const LabPatientsPage      = lazyNamed(_LabModulePages, "LabPatientsPage");
 const LabAppointmentsPage  = lazyNamed(_LabModulePages, "LabAppointmentsPage");
 const LabQueuePage         = lazyNamed(_LabModulePages, "LabQueuePage");
+const LabHomeCollectionOpsPage = lazyNamed(_LabModulePages, "LabHomeCollectionOpsPage");
 const LabSamplesPage       = lazyNamed(_LabModulePages, "LabSamplesPage");
 const LabProcessingPage    = lazyNamed(_LabModulePages, "LabProcessingPage");
 const LabResultsPage       = lazyNamed(_LabModulePages, "LabResultsPage");
@@ -377,6 +382,7 @@ const LabReportsPage       = lazyNamed(_LabModulePages, "LabReportsPage");
 const LabInventoryPage     = lazyNamed(_LabModulePages, "LabInventoryPage");
 const LabBillingPage       = lazyNamed(_LabModulePages, "LabBillingPage");
 const LabPaymentsPage      = lazyNamed(_LabModulePages, "LabPaymentsPage");
+const LabBillingOpsPage    = lazyNamed(_LabModulePages, "LabBillingOpsPage");
 const LabAnalyticsPage     = lazyNamed(_LabModulePages, "LabAnalyticsPage");
 const LabStaffPage         = lazyNamed(_LabModulePages, "LabStaffPage");
 const LabNotificationsPage = lazyNamed(_LabModulePages, "LabNotificationsPage");
@@ -880,6 +886,9 @@ const AppRoutes = () => {
         <Route path="/login"           element={<Login />} />
         <Route path="/change-password" element={<ChangePassword />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/user/forgot-password" element={<ForgotPassword initialUserType="user" lockUserType />} />
+        <Route path="/doctor/forgot-password" element={<ForgotPassword initialUserType="doctor" lockUserType />} />
+        <Route path="/team/forgot-password" element={<ForgotPassword initialUserType="team" lockUserType />} />
         <Route path="/reset-password"  element={<ResetPassword />} />
         <Route path="/oauth-callback"  element={<OAuthCallback />} />
         <Route path="/register"        element={<Register />} />
@@ -919,6 +928,12 @@ const AppRoutes = () => {
         <Route path="/doctor/assistant"           element={<DoctorVoiceAssistant />} />
         <Route path="/doctor/messages"            element={<DoctorMessaging />} />
         <Route path="/doctor/imaging"             element={<DoctorImaging />} />
+        <Route path="/doctor/webinars"            element={<DoctorWebinarDashboard />} />
+        <Route path="/doctor/webinar/:webinarId/host" element={<WebinarRoomPage isHost={true} />} />
+
+        {/* ── Webinars ───────────────────────────────────────────────── */}
+        <Route path="/webinars"                   element={<WebinarListPage />} />
+        <Route path="/webinar/:webinarId"         element={<WebinarRoomPage />} />
 
         {/* ── Hospital ────────────────────────────────────────────────── */}
         <Route path="/hospital/register"                   element={<HospitalRegister />} />
@@ -979,11 +994,14 @@ const AppRoutes = () => {
         <Route path="/clinic/support"       element={<ClinicSupportPage />} />
 
         {/* ── Lab ─────────────────────────────────────────────────────── */}
+        <Route path="/lab"                 element={<Navigate to="/lab/dashboard" replace />} />
         <Route path="/lab/login"           element={<LabLogin />} />
         <Route path="/lab/register"        element={<LabRegister />} />
         <Route path="/lab/dashboard"       element={<LabDashboard />} />
         <Route path="/lab/test-catalog"    element={<LabDashboard />} />
         <Route path="/lab/ris"             element={<LabRIS />} />
+        <Route path="/lab/imaging"         element={<LabRIS />} />
+        <Route path="/lab/sonology"        element={<LabRIS />} />
         <Route path="/lab/orders"          element={<LabOrdersPage />} />
         <Route path="/lab/orders/new"      element={<LabOrdersPage />} />
         <Route path="/lab/patients"        element={<LabPatientsPage />} />
@@ -992,6 +1010,7 @@ const AppRoutes = () => {
         <Route path="/lab/appointments/new" element={<LabAppointmentsPage />} />
         <Route path="/lab/queue"           element={<LabQueuePage />} />
         <Route path="/lab/queue/new"       element={<LabQueuePage />} />
+        <Route path="/lab/home-collection" element={<LabHomeCollectionOpsPage />} />
         <Route path="/lab/samples"         element={<LabSamplesPage />} />
         <Route path="/lab/samples/new"     element={<LabSamplesPage />} />
         <Route path="/lab/processing"      element={<LabProcessingPage />} />
@@ -1004,6 +1023,7 @@ const AppRoutes = () => {
         <Route path="/lab/inventory/new"   element={<LabInventoryPage />} />
         <Route path="/lab/billing"         element={<LabBillingPage />} />
         <Route path="/lab/billing/new"     element={<LabBillingPage />} />
+        <Route path="/lab/billing-ops"     element={<LabBillingOpsPage />} />
         <Route path="/lab/payments"        element={<LabPaymentsPage />} />
         <Route path="/lab/payments/new"    element={<LabPaymentsPage />} />
         <Route path="/lab/analytics"       element={<LabAnalyticsPage />} />
@@ -1125,34 +1145,68 @@ const AppRoutes = () => {
         <Route path="/crm/senders"             element={<CRMSendersPage />} />
         <Route path="/crm/suppressions"        element={<CRMSuppressionsPage />} />
 
-        {/* ── Team ────────────────────────────────────────────────────── */}
+        {/* ── Team (public) ───────────────────────────────────────────── */}
         <Route path="/team/login"                    element={<TeamLogin />} />
-        <Route path="/team/dashboard"                element={<TeamDashboard />} />
-        <Route path="/team/profile"                  element={<TeamProfile />} />
-        <Route path="/team/directory"                element={<TeamDirectory />} />
-        <Route path="/team/reports"                  element={<TeamReports />} />
-        <Route path="/team/tools"                    element={<TeamTools />} />
-        <Route path="/team/pharmacy-edit"            element={<TeamPharmacyEdit />} />
-        <Route path="/team/user-management"          element={<TeamEmployeeManagement />} />
-        <Route path="/team/doctor-management"        element={<TeamDoctorManagement />} />
-        <Route path="/team/corporate-management"     element={<TeamCorporateManagement />} />
-        <Route path="/team/corporate-health-booking" element={<CorporateHealthBooking />} />
-        <Route path="/team/hospital-management"      element={<TeamHospitalManagementPage />} />
-        <Route path="/team/clinic-management"        element={<MainLayout><TeamClinicList /></MainLayout>} />
-        <Route path="/team/lab-management"           element={<TeamLabManagementPage />} />
-        <Route path="/team/pharmacy-management"      element={<TeamPharmacyManagementPage />} />
-        <Route path="/team/chat-analytics"           element={<TeamChatAnalyticsPage />} />
-        <Route path="/team/support-tickets"          element={<MainLayout><TeamTicketManager /></MainLayout>} />
-        <Route path="/team/appointments"             element={<TeamAppointmentsPage />} />
-        <Route path="/team/chat"                     element={<TeamChatDashboardPage />} />
-        <Route path="/team/whatsapp"                 element={<WhatsAppCommunication />} />
-        <Route path="/team/whatsapp-templates"          element={<WhatsAppTemplates />} />
-        <Route path="/team/whatsapp-inbox"           element={<WhatsAppInbox />} />
-        <Route path="/team/rc-omnichannel"           element={<RocketChatOmnichannel />} />
-        <Route path="/team/health-plans"             element={<TeamHealthPlans />} />
-        <Route path="/team/broker-management"        element={<TeamBrokerManagement />} />
-        <Route path="/team/activity"                 element={<TeamActivityLogsPage />} />
-        <Route path="/team/settings"                 element={<TeamSettings />} />
+
+        {/* ── Team (any authenticated team member) ────────────────────── */}
+        <Route path="/team/dashboard"
+          element={<TeamGuard><TeamDashboard /></TeamGuard>} />
+        <Route path="/team/email-inbox"
+          element={<TeamGuard><TeamDashboard initialTab="emails" /></TeamGuard>} />
+        <Route path="/team/profile"
+          element={<TeamGuard><TeamProfile /></TeamGuard>} />
+
+        {/* ── Team (permission-gated modules) ─────────────────────────── */}
+        <Route path="/team/directory"
+          element={<TeamGuard permission="User Management"><TeamDirectory /></TeamGuard>} />
+        <Route path="/team/user-management"
+          element={<TeamGuard permission="User Management"><TeamEmployeeManagement /></TeamGuard>} />
+        <Route path="/team/doctor-management"
+          element={<TeamGuard permission="Doctor Management"><TeamDoctorManagement /></TeamGuard>} />
+        <Route path="/team/corporate-management"
+          element={<TeamGuard permission="Corporate Management"><TeamCorporateManagement /></TeamGuard>} />
+        <Route path="/team/corporate-health-booking"
+          element={<TeamGuard permission="Corporate Management"><CorporateHealthBooking /></TeamGuard>} />
+        <Route path="/team/hospital-management"
+          element={<TeamGuard permission="Hospital Management"><TeamHospitalManagementPage /></TeamGuard>} />
+        <Route path="/team/clinic-management"
+          element={<TeamGuard permission="Clinic Management"><MainLayout><TeamClinicList /></MainLayout></TeamGuard>} />
+        <Route path="/team/lab-management"
+          element={<TeamGuard permission="Lab Management"><TeamLabManagementPage /></TeamGuard>} />
+        <Route path="/team/pharmacy-management"
+          element={<TeamGuard permission="Pharmacy Management"><TeamPharmacyManagementPage /></TeamGuard>} />
+        <Route path="/team/pharmacy-edit"
+          element={<TeamGuard permission="Pharmacy Management"><TeamPharmacyEdit /></TeamGuard>} />
+        <Route path="/team/appointments"
+          element={<TeamGuard permission="Appointment Management"><TeamAppointmentsPage /></TeamGuard>} />
+        <Route path="/team/chat"
+          element={<TeamGuard permission="Chat Dashboard Access"><TeamChatDashboardPage /></TeamGuard>} />
+        <Route path="/team/whatsapp"
+          element={<TeamGuard permission="Chat Dashboard Access"><WhatsAppCommunication /></TeamGuard>} />
+        <Route path="/team/whatsapp-templates"
+          element={<TeamGuard permission="Chat Dashboard Access"><WhatsAppTemplates /></TeamGuard>} />
+        <Route path="/team/whatsapp-inbox"
+          element={<TeamGuard permission="Chat Dashboard Access"><WhatsAppInbox /></TeamGuard>} />
+        <Route path="/team/rc-omnichannel"
+          element={<TeamGuard permission="Chat Dashboard Access"><RocketChatOmnichannel /></TeamGuard>} />
+        <Route path="/team/chat-analytics"
+          element={<TeamGuard permission="Chat Dashboard Access"><TeamChatAnalyticsPage /></TeamGuard>} />
+        <Route path="/team/support-tickets"
+          element={<TeamGuard permission="Support Tickets"><MainLayout><TeamTicketManager /></MainLayout></TeamGuard>} />
+        <Route path="/team/health-plans"
+          element={<TeamGuard permission="Health Plans Access"><TeamHealthPlans /></TeamGuard>} />
+        <Route path="/team/broker-management"
+          element={<TeamGuard permission="Broker Management"><TeamBrokerManagement /></TeamGuard>} />
+        <Route path="/team/reports"
+          element={<TeamGuard permission={["Patient Reports", "Analytics Access"]}><TeamReports /></TeamGuard>} />
+
+        {/* ── Team (admin-only) ────────────────────────────────────────── */}
+        <Route path="/team/activity"
+          element={<TeamGuard permission="Audit Access"><TeamActivityLogsPage /></TeamGuard>} />
+        <Route path="/team/tools"
+          element={<TeamGuard adminOnly><TeamTools /></TeamGuard>} />
+        <Route path="/team/settings"
+          element={<TeamGuard adminOnly><TeamSettings /></TeamGuard>} />
 
         {/* ── Admin ───────────────────────────────────────────────────── */}
         <Route path="/admin/login"               element={<AdminLogin />} />

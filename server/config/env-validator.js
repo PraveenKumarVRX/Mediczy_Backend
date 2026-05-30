@@ -6,7 +6,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Load .env from project root (parent of server directory)
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+if (process.env.NODE_ENV !== 'production' || process.env.DOTENV_IN_PROD === 'true') {
+  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+}
 
 const REQUIRED_ENV_VARS = {
   // Security

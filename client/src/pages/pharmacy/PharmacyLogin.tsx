@@ -96,6 +96,9 @@ const PharmacyLogin = () => {
     } catch (err: any) {
       console.error('Pharmacy login error:', err);
       if (err?.response?.data?.pending) { setIsPending(true); return; }
+      if (err?.response?.status === 429) {
+        setError('Too many login attempts. Please wait 15 minutes and try again.');
+      } else
       if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
         setError('Request timeout. Please check your connection and try again.');
       } else {

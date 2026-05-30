@@ -55,6 +55,18 @@ class PasswordResetService {
     }
   }
 
+  isAccountInactive(account) {
+    if (!account) return false;
+    const normalizedStatus = String(account.status || '').toLowerCase();
+    if (normalizedStatus && normalizedStatus !== 'active') return true;
+    if (account.isActive === false) return true;
+    return false;
+  }
+
+  shouldBlockInactiveDuringPasswordReset() {
+    return String(process.env.PASSWORD_RESET_BLOCK_INACTIVE_ACCOUNTS || 'false').toLowerCase() === 'true';
+  }
+
   /**
    * Request password reset with OTP
    * Sends OTP via Email, SMS, and WhatsApp
@@ -116,7 +128,15 @@ class PasswordResetService {
         };
       }
 
-      const includeOtp = process.env.NODE_ENV === 'development' || process.env.OTP_DEBUG_RESPONSE === 'true';
+      if (this.shouldBlockInactiveDuringPasswordReset() && this.isAccountInactive(account)) {
+        return {
+          success: false,
+          code: 'ACCOUNT_INACTIVE',
+          message: 'This account is inactive. Please contact support or your HR administrator to activate your account before resetting password.',
+          nextStep: 'Activate account and retry forgot password.'
+        };
+      }
+
       // Generate OTP for password reset
       // IMPORTANT: Key the OTP by the identifier the user used to request (email OR phone),
       // not always email. This ensures the verify lookup matches the storage key.
@@ -139,10 +159,6 @@ class PasswordResetService {
         expiresIn: '10 minutes',
         deliveryChannels: deliveryResults
       };
-
-      if (includeOtp) {
-        responseData.otp = otp.code;
-      }
 
       return {
         success: true,
@@ -433,6 +449,15 @@ class PasswordResetService {
         };
       }
 
+      if (this.shouldBlockInactiveDuringPasswordReset() && this.isAccountInactive(account)) {
+        return {
+          success: false,
+          code: 'ACCOUNT_INACTIVE',
+          message: 'This account is inactive. Please contact support or your HR administrator to activate your account before resetting password.',
+          nextStep: 'Activate account and retry forgot password.'
+        };
+      }
+
       // Generate password reset token
       const resetToken = crypto.randomBytes(32).toString('hex');
       const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
@@ -539,6 +564,14 @@ class PasswordResetService {
         return {
           success: false,
           message: 'Invalid or expired reset token'
+        };
+      }
+
+      if (this.shouldBlockInactiveDuringPasswordReset() && this.isAccountInactive(account)) {
+        return {
+          success: false,
+          code: 'ACCOUNT_INACTIVE',
+          message: 'This account is inactive. Please contact support or your HR administrator to activate your account before logging in with a new password.'
         };
       }
 

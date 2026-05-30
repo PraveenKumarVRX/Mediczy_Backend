@@ -8,6 +8,51 @@
 
 ## MAIN TEST ACCOUNTS
 
+## QA STABLE ACCOUNTS (Auth + AI Scribe Regression)
+
+Use these accounts for deterministic portal login checks when manual QA reports invalid credentials or cross-portal 429 behavior.
+
+| Portal | Email | Password | API Login Endpoint |
+|---|---|---|---|
+| Doctor | doctor@mediczy.com | Doctor123 | /api/doctors/login |
+| Lab | qa.lab@mediczy.com | QaLab@123 | /api/lab/login |
+| Pharmacy | qa.pharmacy@mediczy.com | QaPharm@123 | /api/pharmacy/login |
+| Nurse | qa.nurse@mediczy.com | QaNurse@123 | /api/nurse/login |
+| Hospital | qa.hospital@mediczy.com | QaHosp@123 | /api/hospital/auth/login |
+
+### Regenerate QA Accounts / Clear Local Throttle Keys
+
+Run from server folder:
+
+```bash
+npm run fix:qa-login-blockers:ssm
+```
+
+This command will:
+- upsert active/verified QA accounts for lab, pharmacy, nurse, and hospital,
+- reset QA passwords to the values above,
+- clear localhost Redis auth/rate-limit keys used during QA.
+
+### AI Scribe Endpoint Contract (Important)
+
+For /api/ai/scribe/generate-prescription, send consultationNotes (not notes).
+
+Working request:
+
+```bash
+curl -X POST http://127.0.0.1:8888/api/ai/scribe/generate-prescription \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <doctor_token>" \
+  -d '{
+    "consultationNotes":"Patient with fever and cough for 3 days. advised paracetamol 650 mg three times daily after food for 3 days.",
+    "diagnosis":"Viral fever",
+    "saveToDatabase": false,
+    "language":"en"
+  }'
+```
+
+If consultationNotes is missing, API returns 400 with code NOTES_REQUIRED.
+
 ### 1. 👤 Patient / Regular User
 ```
 📧 Email: user@mediczy.com

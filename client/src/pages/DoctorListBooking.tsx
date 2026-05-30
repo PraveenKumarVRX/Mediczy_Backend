@@ -102,7 +102,13 @@ interface Doctor {
   verified: boolean;
   supportsOnline: boolean;
   supportsInPerson: boolean;
+  distanceKm?: number | null;
   socialLinks?: { facebook?: string; instagram?: string; youtube?: string };
+}
+
+interface UserCoordinates {
+  lat: number;
+  lng: number;
 }
 
 const specializations = [
@@ -271,6 +277,36 @@ const groupSlotsByTimeOfDay = (slots: any[]) => {
   return { morning, afternoon, evening };
 };
 
+const normalizeExternalUrl = (value?: string) => {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return "";
+    }
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+};
+
+const buildYoutubeSubscribeUrl = (value?: string) => {
+  const normalized = normalizeExternalUrl(value);
+  if (!normalized) return "";
+
+  try {
+    const parsed = new URL(normalized);
+    parsed.searchParams.set("sub_confirmation", "1");
+    return parsed.toString();
+  } catch {
+    return normalized;
+  }
+};
+
 const normalizeDoctorFromApi = (doctor: any): Doctor => {
   const clinicInfo = parseClinicInfo(doctor?.clinicAddress);
   const languages = toArray(doctor?.languages, ["English"]);
@@ -291,8 +327,17 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
 
   const rawOnlineFee = doctor?.onlineConsultationFee ?? doctor?.consultationFee ?? null;
   const rawInPersonFee = doctor?.inPersonConsultationFee ?? null;
+  const hasClinicAddress =
+    typeof doctor?.clinicAddress === "string"
+      ? doctor.clinicAddress.trim().length > 0
+      : Boolean(doctor?.clinicAddress && Object.keys(doctor.clinicAddress || {}).length > 0);
   const supportsOnline = rawOnlineFee != null || Boolean(doctor?.isOnline);
-  const supportsInPerson = rawInPersonFee != null || Boolean(doctor?.clinicAddress);
+  const supportsInPerson = rawInPersonFee != null || hasClinicAddress;
+  const socialLinks = {
+    facebook: normalizeExternalUrl(doctor?.socialLinks?.facebook),
+    instagram: normalizeExternalUrl(doctor?.socialLinks?.instagram),
+    youtube: normalizeExternalUrl(doctor?.socialLinks?.youtube),
+  };
 
   return {
     _id: String(fallbackId),
@@ -319,7 +364,8 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
     verified: Boolean(doctor?.isVerified),
     supportsOnline,
     supportsInPerson,
-    socialLinks: doctor?.socialLinks || {},
+    distanceKm: Number.isFinite(Number(doctor?.distanceKm)) ? Number(doctor.distanceKm) : null,
+    socialLinks,
   } as Doctor;
 };
 
@@ -362,6 +408,7 @@ const normalizeMasterDoctor = (doc: any): Doctor => {
     verified: Boolean(doc?.isVerified ?? true),
     supportsOnline: true,
     supportsInPerson: Boolean(doc?.clinic_name || doc?.address),
+    distanceKm: null,
   };
 };
 
@@ -373,7 +420,7 @@ const DoctorListBooking = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSpecialization, setSelectedSpecialization] = useState<string>("");
   const [selectedLocation, setSelectedLocation] = useState<string>("");
-  const [sortBy, setSortBy] = useState<string>("experience");
+  const [sortBy, setSortBy] = useState<string>("recommended");
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [consultationType, setConsultationType] = useState<"online" | "inPerson">("online");
@@ -388,6 +435,8 @@ const DoctorListBooking = () => {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [userType, setUserType] = useState<string | null>(() => getUserType());
   const [monthAvailability, setMonthAvailability] = useState<Record<string, boolean>>({});
+  const [userCoordinates, setUserCoordinates] = useState<UserCoordinates | null>(null);
+  const [locationDetectionAttempted, setLocationDetectionAttempted] = useState(false);
   
   // Health Coins payment states
   const [paymentMethod, setPaymentMethod] = useState<"inr" | "hc">("inr");
@@ -415,11 +464,35 @@ const DoctorListBooking = () => {
 
   useEffect(() => {
     fetchDoctors();
-  }, []);
+  }, [consultationTypeFilter, userCoordinates]);
 
   useEffect(() => {
     filterDoctors();
   }, [doctors, searchTerm, selectedSpecialization, selectedLocation, sortBy, consultationTypeFilter]);
+
+  useEffect(() => {
+    if (consultationTypeFilter !== "inPerson") return;
+    if (userCoordinates) return;
+    if (locationDetectionAttempted) return;
+    if (typeof window === "undefined" || !window.navigator?.geolocation) {
+      setLocationDetectionAttempted(true);
+      return;
+    }
+
+    setLocationDetectionAttempted(true);
+    window.navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserCoordinates({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+      },
+      () => {
+        // Keep graceful fallback when user declines location access.
+      },
+      { enableHighAccuracy: false, timeout: 6000 }
+    );
+  }, [consultationTypeFilter, userCoordinates, locationDetectionAttempted]);
 
   const categorizedDoctors = useMemo(() => {
     const categories = specializations.map((spec) => {
@@ -461,65 +534,95 @@ const DoctorListBooking = () => {
     return apiDoctors.map(normalizeDoctorFromApi).filter(Boolean);
   };
 
+  const fetchAllDoctorsFromApi = async (path: string, params?: Record<string, any>) => {
+    const baseParams = { ...(params || {}) };
+    const initialResponse = await api.get(path, { params: { ...baseParams, page: 1 } });
+
+    const getDoctorsFromPayload = (payload: any) => {
+      const rows = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload?.doctors)
+        ? payload.doctors
+        : Array.isArray(payload?.data?.doctors)
+        ? payload.data.doctors
+        : Array.isArray(payload?.data?.rows)
+        ? payload.data.rows
+        : Array.isArray(payload?.data?.data)
+        ? payload.data.data
+        : [];
+      return rows.map(normalizeDoctorFromApi).filter(Boolean);
+    };
+
+    const combinedDoctors = getDoctorsFromPayload(initialResponse.data);
+    const totalPages = Number(initialResponse.data?.pagination?.pages || 1);
+
+    if (totalPages <= 1) {
+      return combinedDoctors;
+    }
+
+    const pageRequests: Promise<any>[] = [];
+    for (let page = 2; page <= totalPages; page += 1) {
+      pageRequests.push(api.get(path, { params: { ...baseParams, page } }));
+    }
+
+    const pageResponses = await Promise.all(pageRequests);
+    pageResponses.forEach((res) => {
+      combinedDoctors.push(...getDoctorsFromPayload(res.data));
+    });
+
+    return combinedDoctors;
+  };
+
   const fetchDoctors = async () => {
     try {
       setLoading(true);
       let primaryDoctors: Doctor[] = [];
+      let primaryFetchSucceeded = false;
+      const availableDoctorParams: Record<string, any> = {};
+      availableDoctorParams.strictQc = true;
+
+      if (consultationTypeFilter === "online") {
+        availableDoctorParams.consultationType = "online";
+        availableDoctorParams.sort = "online_first";
+      } else if (consultationTypeFilter === "inPerson") {
+        availableDoctorParams.consultationType = "inPerson";
+        availableDoctorParams.sort = userCoordinates ? "nearest" : "experience";
+      }
+
+      availableDoctorParams.limit = 100;
+
+      if (userCoordinates) {
+        availableDoctorParams.userLat = userCoordinates.lat;
+        availableDoctorParams.userLng = userCoordinates.lng;
+      }
+
       try {
-        primaryDoctors = await fetchDoctorsFromApi("/doctors/available");
+        primaryDoctors = await fetchAllDoctorsFromApi("/doctors/available", availableDoctorParams);
+        primaryFetchSucceeded = true;
       } catch (error) {
         console.warn("Primary doctor list unavailable, falling back to /doctors:", error);
       }
 
-      if (primaryDoctors.length) {
+      // If primary strict-QC fetch succeeded, honor it even when the result is empty.
+      if (primaryFetchSucceeded) {
         setDoctors(primaryDoctors);
         return;
       }
 
-      let secondaryDoctors: Doctor[] = [];
-      try {
-        secondaryDoctors = await fetchDoctorsFromApi("/doctors", { limit: 100 });
-      } catch (error) {
-        console.warn("Secondary doctor list failed:", error);
-      }
-
-      if (secondaryDoctors.length) {
-        setDoctors(secondaryDoctors);
-        toast({
-          title: "Loaded live doctors",
-          description: "Showing doctor profiles directly from the database.",
-        });
-        return;
-      }
-
-      // Third fallback: masterdata providers list
-      try {
-        const masterRes = await api.get("/masterdata/doctors", { params: { limit: 50 } });
-        const masterList = Array.isArray(masterRes.data?.data) ? masterRes.data.data : [];
-        const normalizedMaster = masterList.map(normalizeMasterDoctor).filter(Boolean);
-        if (normalizedMaster.length) {
-          setDoctors(normalizedMaster);
-          toast({
-            title: "Showing provider network doctors",
-            description: "Loaded doctors from the master provider directory.",
-          });
-          return;
-        }
-      } catch (e) {
-        console.error("Master data doctors fetch failed:", e);
-      }
-
-      setDoctors(mockDoctors);
+      // Do not fall back to non-strict datasets. Empty state is safer than showing wrong doctors.
+      setDoctors([]);
       toast({
-        title: "Showing test doctors",
-        description: "No live doctor profiles were returned. Displaying demo doctors instead.",
+        title: "Live doctors unavailable",
+        description: "Could not load strict QC doctor list right now.",
+        variant: "destructive",
       });
     } catch (error) {
       console.error("Error fetching doctors:", error);
-      setDoctors(mockDoctors);
+      setDoctors([]);
       toast({
-        title: "Info",
-        description: "Using sample doctor data",
+        title: "Live doctors unavailable",
+        description: "Could not load strict QC doctor list right now.",
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
@@ -557,9 +660,11 @@ const DoctorListBooking = () => {
     }
 
     if (consultationTypeFilter === "online") {
-      filtered = filtered.filter(doctor => doctor.supportsOnline !== false);
+      filtered = filtered.filter(
+        (doctor) => doctor.supportsOnline !== false && doctor.availability?.status === "Available"
+      );
     } else if (consultationTypeFilter === "inPerson") {
-      filtered = filtered.filter(doctor => doctor.supportsInPerson || !!doctor.clinic?.address);
+      filtered = filtered.filter((doctor) => doctor.supportsInPerson);
     }
 
     if (selectedLocation) {
@@ -571,15 +676,86 @@ const DoctorListBooking = () => {
       });
     }
 
-    // Sort doctors
+    const parseLocationMatchScore = (doctor: Doctor) => {
+      if (!selectedLocation.trim()) return 0;
+      const query = selectedLocation.trim().toLowerCase();
+      const city = doctor.clinic?.city?.toLowerCase?.() || "";
+      const state = doctor.clinic?.state?.toLowerCase?.() || "";
+      if (city === query || state === query) return 2;
+      if (city.includes(query) || state.includes(query)) return 1;
+      return 0;
+    };
+
+    const distanceScore = (doctor: Doctor) =>
+      Number.isFinite(doctor.distanceKm as number) ? (doctor.distanceKm as number) : Number.POSITIVE_INFINITY;
+
+    const onlineRank = (doctor: Doctor) => {
+      const status = doctor.availability?.status || "Away";
+      const explicitlyAvailable = status === "Available";
+      const supportsOnlineNow = doctor.supportsOnline !== false;
+      return explicitlyAvailable || supportsOnlineNow ? 1 : 0;
+    };
+
+    const inPersonRank = (doctor: Doctor) => {
+      return doctor.supportsInPerson || Boolean(doctor.clinic?.address) ? 1 : 0;
+    };
+
+    const compareRecommended = (a: Doctor, b: Doctor) => {
+      if (consultationTypeFilter === "online") {
+        const onlineDiff = onlineRank(b) - onlineRank(a);
+        if (onlineDiff !== 0) return onlineDiff;
+      } else if (consultationTypeFilter === "inPerson") {
+        const inPersonDiff = inPersonRank(b) - inPersonRank(a);
+        if (inPersonDiff !== 0) return inPersonDiff;
+
+        const locDiff = parseLocationMatchScore(b) - parseLocationMatchScore(a);
+        if (locDiff !== 0) return locDiff;
+
+        const byDistance = distanceScore(a) - distanceScore(b);
+        if (Number.isFinite(byDistance) && byDistance !== 0) return byDistance;
+      }
+
+      const verifiedDiff = Number(b.verified) - Number(a.verified);
+      if (verifiedDiff !== 0) return verifiedDiff;
+
+      return b.experience - a.experience;
+    };
+
     filtered.sort((a, b) => {
+      const consultationBiasDiff =
+        consultationTypeFilter === "online"
+          ? onlineRank(b) - onlineRank(a)
+          : consultationTypeFilter === "inPerson"
+          ? inPersonRank(b) - inPersonRank(a)
+          : 0;
+
+      if (consultationBiasDiff !== 0) {
+        return consultationBiasDiff;
+      }
+
       switch (sortBy) {
+        case "available": {
+          const byAvailability = onlineRank(b) - onlineRank(a);
+          if (byAvailability !== 0) return byAvailability;
+          return b.experience - a.experience;
+        }
+        case "nearest": {
+          const byLocationMatch = parseLocationMatchScore(b) - parseLocationMatchScore(a);
+          if (byLocationMatch !== 0) return byLocationMatch;
+          const byDistance = distanceScore(a) - distanceScore(b);
+          if (Number.isFinite(byDistance) && byDistance !== 0) return byDistance;
+          return b.experience - a.experience;
+        }
         case "experience":
           return b.experience - a.experience;
-        case "fee":
-          return a.consultationFee.online - b.consultationFee.online;
+        case "fee": {
+          const aFee = consultationTypeFilter === "inPerson" ? a.consultationFee.inPerson : a.consultationFee.online;
+          const bFee = consultationTypeFilter === "inPerson" ? b.consultationFee.inPerson : b.consultationFee.online;
+          return aFee - bFee;
+        }
+        case "recommended":
         default:
-          return 0;
+          return compareRecommended(a, b);
       }
     });
 
@@ -824,6 +1000,15 @@ const DoctorListBooking = () => {
                   <SpecIcon className={cn("h-4 w-4", getSpecializationColor(doctor.specialization))} />
                   <span className="text-slate-600 dark:text-slate-400 font-medium">{doctor.specialization}</span>
                 </div>
+                <div className="flex items-center gap-2 mt-2">
+                  {doctor.supportsOnline && doctor.supportsInPerson ? (
+                    <Badge className="rounded-full bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300 border-0">Online + Clinic</Badge>
+                  ) : doctor.supportsOnline ? (
+                    <Badge className="rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-0">Online only</Badge>
+                  ) : doctor.supportsInPerson ? (
+                    <Badge className="rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 border-0">Clinic available</Badge>
+                  ) : null}
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-4 mb-4">
@@ -833,8 +1018,16 @@ const DoctorListBooking = () => {
                 </div>
                 <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-700/50 px-3 py-1.5 rounded-full">
                   <MapPin className="h-4 w-4 text-slate-500" />
-                  <span className="text-slate-700 dark:text-slate-300">{doctor.clinic.city}</span>
+                  <span className="text-slate-700 dark:text-slate-300">
+                    {consultationTypeFilter === "online" ? "Anywhere" : doctor.clinic.city}
+                  </span>
                 </div>
+                  {consultationTypeFilter === "inPerson" && Number.isFinite(doctor.distanceKm as number) && (
+                    <div className="flex items-center gap-1.5 bg-green-50 dark:bg-green-900/20 px-3 py-1.5 rounded-full">
+                      <MapPin className="h-4 w-4 text-green-600" />
+                      <span className="text-slate-700 dark:text-slate-300">{doctor.distanceKm} km away</span>
+                    </div>
+                  )}
               </div>
 
               <div className="flex items-center gap-2 mb-3 text-sm text-gray-500 dark:text-gray-400">
@@ -887,7 +1080,7 @@ const DoctorListBooking = () => {
                   )}
                   {doctor.socialLinks.youtube && (
                     <a
-                      href={`${doctor.socialLinks.youtube}?sub_confirmation=1`}
+                      href={buildYoutubeSubscribeUrl(doctor.socialLinks.youtube)}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}
@@ -1214,6 +1407,36 @@ const DoctorListBooking = () => {
         </div>
 
         <div className="container mx-auto px-4 py-6">
+          <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Card className="border-slate-200/80 dark:border-slate-700/60 bg-white/90 dark:bg-slate-800/70">
+              <CardContent className="p-4 flex items-center gap-3">
+                <Shield className="h-5 w-5 text-emerald-600" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Verified profiles</p>
+                  <p className="text-lg font-semibold">{filteredDoctors.filter((doctor) => doctor.verified).length}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-slate-200/80 dark:border-slate-700/60 bg-white/90 dark:bg-slate-800/70">
+              <CardContent className="p-4 flex items-center gap-3">
+                <Video className="h-5 w-5 text-blue-600" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Online now</p>
+                  <p className="text-lg font-semibold">{filteredDoctors.filter((doctor) => doctor.availability?.status === "Available").length}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-slate-200/80 dark:border-slate-700/60 bg-white/90 dark:bg-slate-800/70">
+              <CardContent className="p-4 flex items-center gap-3">
+                <Building2 className="h-5 w-5 text-green-600" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Clinic visit available</p>
+                  <p className="text-lg font-semibold">{filteredDoctors.filter((doctor) => doctor.supportsInPerson).length}</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           {userType === "doctor" && (
             <div className="mb-4 rounded-xl border border-yellow-200 bg-yellow-50 text-yellow-800 px-4 py-3 text-sm">
               Doctor accounts cannot book appointments from the patient view. Please sign in as a patient to book.
@@ -1267,7 +1490,7 @@ const DoctorListBooking = () => {
                   consultationTypeFilter === "online" ? "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300" : "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300"
                 )}>
                   {consultationTypeFilter === "online" ? (
-                    <><Video className="h-3.5 w-3.5" /> Showing online-capable doctors — fee shown is the video rate</>
+                    <><Video className="h-3.5 w-3.5" /> Showing currently online doctors — fee shown is the video rate</>
                   ) : (
                     <><Building2 className="h-3.5 w-3.5" /> Showing clinic doctors — fee shown is the in-person rate</>
                   )}
@@ -1321,12 +1544,35 @@ const DoctorListBooking = () => {
             </p>
             
             <div className="flex items-center gap-3">
+              {consultationTypeFilter === "inPerson" && !userCoordinates && (
+                <Badge variant="outline" className="rounded-full px-3 py-1 text-xs">
+                  Enable location for nearest ranking
+                </Badge>
+              )}
               <Select value={sortBy} onValueChange={setSortBy}>
                 <SelectTrigger className="w-[180px] rounded-full">
                   <SlidersHorizontal className="h-4 w-4 mr-2" />
                   <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="recommended">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-teal-500" />
+                      Recommended
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="available">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-blue-500" />
+                      Available Now
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="nearest">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-green-500" />
+                      Nearest First
+                    </div>
+                  </SelectItem>
                   <SelectItem value="experience">
                     <div className="flex items-center gap-2">
                       <Award className="h-4 w-4 text-blue-500" />

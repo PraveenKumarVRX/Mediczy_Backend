@@ -185,6 +185,48 @@ export const auditLoginAttempt = async (req, userId, email, success, errorMessag
 };
 
 /**
+ * Audit account status transitions (e.g., active -> inactive)
+ */
+export const auditAccountStatusTransition = async (
+  req,
+  {
+    userId,
+    userEmail,
+    fromStatus,
+    toStatus,
+    reasonCode,
+    reason,
+    source,
+    extra = {},
+  }
+) => {
+  try {
+    await AuditLog.logEvent({
+      userId,
+      userType: req?.user?.role || 'system',
+      userEmail: userEmail || req?.user?.email || null,
+      action: 'ACCOUNT_STATUS_CHANGED',
+      resourceType: 'User',
+      resourceId: String(userId),
+      req,
+      status: 'SUCCESS',
+      isPII: true,
+      dataFields: {
+        fromStatus,
+        toStatus,
+        reasonCode,
+        reason,
+        source,
+        ...extra,
+      },
+      purpose: 'Account lifecycle governance and membership compliance',
+    });
+  } catch (error) {
+    console.error('Account status transition audit failed:', error);
+  }
+};
+
+/**
  * Audit consent actions
  */
 export const auditConsent = async (req, userId, consentType, action) => {
@@ -281,5 +323,51 @@ function sanitizeForAudit(data) {
   
   return sanitized;
 }
+
+/**
+ * auditHealthAccess — HIPAA / DPDP / GDPR compliant audit for health data.
+ *
+ * Records every read and write of PHI (Protected Health Information) so that:
+ *  - Access logs are available for compliance audits
+ *  - Unusual patterns (e.g., bulk reads) can be detected
+ *  - Data breaches can be investigated with a full timeline
+ *
+ * Usage (as route-level middleware):
+ *   router.post('/log', authUser, auditHealthAccess('ACTIVITY_LOG_WRITE'), ...)
+ *   router.get('/today', authUser, auditHealthAccess('ACTIVITY_LOG_READ'), ...)
+ *
+ * @param {string} action  — descriptive action label, e.g. 'VITALS_WRITE'
+ * @param {object} [opts]
+ * @param {string} [opts.resourceType]  — override resource type label
+ */
+export const auditHealthAccess = (action, { resourceType = 'HealthData' } = {}) => {
+  return async (req, res, next) => {
+    // Fire-and-forget — never block the request on an audit write failure
+    const userId   = req.user?.id  || req.user?.userId || null;
+    const userEmail = req.user?.email || null;
+    const userType  = req.user?.role  || req.userRole || 'user';
+    const resourceId = req.params?.id || req.params?.user_id || req.params?.userId || null;
+
+    AuditLog.logEvent({
+      userId,
+      userType,
+      userEmail,
+      action,
+      resourceType,
+      resourceId: resourceId ? String(resourceId) : null,
+      req,
+      status: 'SUCCESS',
+      isPII: true,
+      dataFields: {
+        method: req.method,
+        path: req.originalUrl,
+      },
+    }).catch((err) => {
+      console.error('[health-audit] Failed to write audit log:', err.message);
+    });
+
+    next();
+  };
+};
 
 export default auditMiddleware;

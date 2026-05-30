@@ -226,10 +226,9 @@ const TeamLogin = () => {
                     onChange={handleChange}
                     required
                     placeholder="Enter your password"
-                    className="h-12 pl-12 pr-12 bg-background/50 border-border/50 focus:border-purple-500/50 focus:ring-purple-500/20 transition-all duration-300"
+                    className="h-12 pl-4 pr-12 bg-background/50 border-border/50 focus:border-purple-500/50 focus:ring-purple-500/20 transition-all duration-300"
                     disabled={loading}
                   />
-                  <Shield className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
@@ -242,7 +241,7 @@ const TeamLogin = () => {
                 </div>
                 <div className="text-right">
                   <Link
-                    to="/forgot-password?type=team"
+                    to="/team/forgot-password"
                     className="text-xs text-purple-600 hover:text-purple-700 hover:underline transition-colors"
                   >
                     Forgot password?
@@ -295,7 +294,7 @@ const TeamLogin = () => {
                 </Link>
                 <span className="text-muted-foreground">•</span>
                 <Link
-                  to="/doctor-login"
+                  to="/doctor/login"
                   className="text-green-600 hover:text-green-700 hover:underline transition-colors flex items-center gap-1"
                 >
                   <Activity className="h-3 w-3" />
@@ -306,7 +305,7 @@ const TeamLogin = () => {
             <div className="text-center text-xs text-muted-foreground">
               Trouble signing in?{' '}
               <a
-                href="mailto:support@mediczy.com?subject=Team%20Portal%20Login%20Help"
+                href="mailto:support@mediqzy.com?subject=Team%20Portal%20Login%20Help"
                 className="font-semibold underline underline-offset-2 hover:text-purple-600"
               >
                 Contact support

@@ -6,6 +6,7 @@ import {
   sendAppointmentNotification,
   sendSystemNotification,
   validateToken,
+  hasMessagingFor,
   isFirebaseInitialized
 } from '../utils/firebase-admin.js';
 import { FCMToken } from '../services/notification.service.js';
@@ -30,11 +31,18 @@ router.post('/register-token', authUser, async (req, res) => {
       });
     }
 
-    // Validate the FCM token if Firebase is initialized
-    // Skip validation if explicitly requested (for testing) or if token looks like a real FCM token
-    const shouldValidate = isFirebaseInitialized && !skipValidation && fcmToken.length > 100;
+    if (typeof fcmToken !== 'string' || fcmToken.length < 80 || fcmToken.length > 4096 || /\s/.test(fcmToken)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Malformed FCM token'
+      });
+    }
+
+    // Validate the FCM token if Firebase is initialized and a matching Firebase app is configured.
+    // Web/mobile tokens can belong to different Firebase projects, so validation must route by device/user type.
+    const shouldValidate = isFirebaseInitialized && !skipValidation && hasMessagingFor(userType, deviceType);
     if (shouldValidate) {
-      const isValidToken = await validateToken(fcmToken);
+      const isValidToken = await validateToken(fcmToken, userType, deviceType);
       if (!isValidToken) {
         return res.status(400).json({
           success: false,
@@ -133,7 +141,7 @@ router.post('/send-video-call', authUser, async (req, res) => {
     }
 
     // Send video call notification
-    const response = await sendVideoCallNotification(tokenRecord.token, callData);
+    const response = await sendVideoCallNotification(tokenRecord.token, callData, tokenRecord.userType, tokenRecord.deviceType);
 
     res.json({
       success: true,
@@ -178,7 +186,7 @@ router.post('/send-message', authUser, async (req, res) => {
     }
 
     // Send message notification
-    const response = await sendMessageNotification(tokenRecord.token, messageData);
+    const response = await sendMessageNotification(tokenRecord.token, messageData, tokenRecord.userType, tokenRecord.deviceType);
 
     res.json({
       success: true,
@@ -223,7 +231,7 @@ router.post('/send-appointment', authUser, async (req, res) => {
     }
 
     // Send appointment notification
-    const response = await sendAppointmentNotification(tokenRecord.token, appointmentData);
+    const response = await sendAppointmentNotification(tokenRecord.token, appointmentData, tokenRecord.userType, tokenRecord.deviceType);
 
     res.json({
       success: true,
@@ -268,7 +276,7 @@ router.post('/send-system', authUser, async (req, res) => {
     }
 
     // Send system notification
-    const response = await sendSystemNotification(tokenRecord.token, systemData);
+    const response = await sendSystemNotification(tokenRecord.token, systemData, tokenRecord.userType, tokenRecord.deviceType);
 
     res.json({
       success: true,
@@ -354,7 +362,7 @@ router.post('/test', authUser, async (req, res) => {
       category: 'test'
     };
 
-    const response = await sendSystemNotification(tokenRecord.token, systemData);
+    const response = await sendSystemNotification(tokenRecord.token, systemData, tokenRecord.userType, tokenRecord.deviceType);
 
     res.json({
       success: true,

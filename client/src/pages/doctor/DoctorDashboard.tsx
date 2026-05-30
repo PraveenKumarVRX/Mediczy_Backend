@@ -67,9 +67,10 @@ const DoctorDashboard = () => {
   useEffect(() => {
     const storedUserType = localStorage.getItem('userType');
     const doctorToken = localStorage.getItem('doctorToken');
+    const isDoctorContext = storedUserType === 'doctor' || userType === 'doctor';
     
-    // If not a doctor, redirect to appropriate page
-    if (storedUserType !== 'doctor' && userType !== 'doctor' && !doctorToken) {
+    // Allow access only for doctor context with a doctor token.
+    if (!isDoctorContext || !doctorToken) {
       if (storedUserType === 'user' || !storedUserType) {
         navigate('/', { replace: true });
       } else if (storedUserType === 'clinic') {
@@ -192,20 +193,29 @@ const DoctorDashboard = () => {
   });
 
   // Fetch alerts
-  const { data: alerts, refetch: refetchAlerts, isRefetching: isAlertsRefetching } = useQuery({
+  const { data: alertsPayload, refetch: refetchAlerts, isRefetching: isAlertsRefetching } = useQuery({
     queryKey: ['doctor-alerts'],
     queryFn: async () => {
       try {
         const response = await api.get('/doctors/alerts');
         setIsUsingFallbackAlerts(false);
-        return response.data.alerts || [];
+        return {
+          alerts: response.data.alerts || [],
+          unreadCount: response.data.unreadCount ?? 0,
+        };
       } catch (err) {
         setIsUsingFallbackAlerts(true);
-        return [];
+        return {
+          alerts: [],
+          unreadCount: 0,
+        };
       }
     },
     staleTime: 5 * 60 * 1000,
   });
+
+  const alerts = alertsPayload?.alerts || [];
+  const unreadAlertsCount = alertsPayload?.unreadCount ?? 0;
 
   const getGreeting = () => {
     const hour = currentTime.getHours();
@@ -287,25 +297,25 @@ const DoctorDashboard = () => {
   const displayStats = [
     {
       title: "Total Patients",
-      value: stats?.totalPatients || "124",
+      value: stats?.totalPatients ?? "124",
       icon: Users,
-      trend: stats?.patientGrowth || 12,
+      trend: stats?.patientGrowth ?? 12,
       trendLabel: "vs last month",
       bgColor: "bg-blue-500/10",
       iconColor: "text-blue-500",
     },
     {
       title: "Today's Appointments",
-      value: stats?.todayAppointments || "8",
+      value: stats?.todayAppointments ?? "8",
       icon: CalendarCheck,
       trend: null,
-      trendLabel: `${stats?.completedToday || 5} completed`,
+      trendLabel: `${stats?.completedToday ?? 5} completed`,
       bgColor: "bg-teal-500/10",
       iconColor: "text-teal-500",
     },
     {
       title: "Revenue",
-      value: `₹${((stats?.revenue || 24500) / 1000).toFixed(1)}K`,
+      value: `₹${((stats?.revenue ?? 24500) / 1000).toFixed(1)}K`,
       icon: DollarSign,
       trend: 15,
       trendLabel: "vs last month",
@@ -455,6 +465,7 @@ const DoctorDashboard = () => {
     { label: "Patients",      icon: Users,         link: "/doctor/patients",       bgColor: "bg-teal-500/10",      iconColor: "text-teal-600 dark:text-teal-400" },
     { label: "Prescriptions", icon: Pill,          link: "/doctor/prescriptions",  bgColor: "bg-purple-500/10",    iconColor: "text-purple-600 dark:text-purple-400" },
     { label: "Video Call",    icon: Video,         link: "/doctor/video",          bgColor: "bg-blue-500/10",      iconColor: "text-blue-600 dark:text-blue-400" },
+    { label: "Webinars",      icon: CalendarCheck, link: "/doctor/webinars",       bgColor: "bg-indigo-500/10",    iconColor: "text-indigo-600 dark:text-indigo-400" },
     { label: "Health Mon.",   icon: HeartPulse,    link: "/doctor/health-monitoring", bgColor: "bg-red-500/10",   iconColor: "text-red-500" },
     { label: "Analytics",     icon: BarChart3,     link: "/doctor/analytics",      bgColor: "bg-cyan-500/10",      iconColor: "text-cyan-600 dark:text-cyan-400" },
     { label: "Billing",       icon: Wallet,        link: "/doctor/billing",        bgColor: "bg-emerald-500/10",   iconColor: "text-emerald-600 dark:text-emerald-400" },
@@ -518,7 +529,7 @@ const DoctorDashboard = () => {
                     </span>
                     <span className="flex items-center gap-0.5 text-xs text-amber-300 font-medium">
                       <Star className="w-3 h-3 fill-amber-300" />
-                      {stats?.rating || "4.8"}
+                      {stats?.rating ?? "4.8"}
                     </span>
                   </div>
                 </div>
@@ -537,7 +548,7 @@ const DoctorDashboard = () => {
                 <Link to="/doctor/alerts">
                   <div className="relative p-2.5 rounded-xl bg-white/8 hover:bg-white/15 border border-white/10 hover:border-white/20 transition-all cursor-pointer">
                     <Bell className="w-4 h-4 text-white/60" />
-                    {alerts && alerts.length > 0 && (
+                    {unreadAlertsCount > 0 && (
                       <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full" />
                     )}
                   </div>
@@ -843,19 +854,19 @@ const DoctorDashboard = () => {
                   <div>
                     <div className="flex justify-between text-xs mb-1.5">
                       <span className="text-slate-500 dark:text-slate-400 font-medium">Response Rate</span>
-                      <span className="font-bold text-slate-700 dark:text-slate-200">{stats?.responseRate || 95}%</span>
+                      <span className="font-bold text-slate-700 dark:text-slate-200">{stats?.responseRate ?? 95}%</span>
                     </div>
-                    <Progress value={stats?.responseRate || 95} className="h-2 rounded-full" />
+                    <Progress value={stats?.responseRate ?? 95} className="h-2 rounded-full" />
                   </div>
                   <div>
                     <div className="flex justify-between text-xs mb-1.5">
                       <span className="text-slate-500 dark:text-slate-400 font-medium">Rating</span>
                       <span className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1">
                         <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                        {stats?.rating || 4.8}
+                        {stats?.rating ?? 4.8}
                       </span>
                     </div>
-                    <Progress value={((stats?.rating || 4.8) / 5) * 100} className="h-2 rounded-full" />
+                    <Progress value={((stats?.rating ?? 4.8) / 5) * 100} className="h-2 rounded-full" />
                   </div>
                 </div>
               </div>
@@ -868,9 +879,9 @@ const DoctorDashboard = () => {
                   <Bell className="w-4 h-4 text-amber-500" />
                   Alerts
                 </h2>
-                {alerts && alerts.length > 0 && (
+                {unreadAlertsCount > 0 && (
                   <span className="text-[10px] font-bold bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 px-2 py-0.5 rounded-full">
-                    {alerts.length} new
+                    {unreadAlertsCount} new
                   </span>
                 )}
               </div>
@@ -960,7 +971,7 @@ const DoctorDashboard = () => {
                     stroke="url(#heroGrad)"
                     strokeWidth="8"
                     strokeLinecap="round"
-                    strokeDasharray={`${(stats?.responseRate || 95) * 2.513} 251.3`}
+                    strokeDasharray={`${(stats?.responseRate ?? 95) * 2.513} 251.3`}
                     className="transition-all duration-1000"
                   />
                   <defs>
@@ -971,7 +982,7 @@ const DoctorDashboard = () => {
                   </defs>
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-3xl font-extrabold">{stats?.responseRate || 95}%</span>
+                  <span className="text-3xl font-extrabold">{stats?.responseRate ?? 95}%</span>
                   <span className="text-[9px] text-slate-400 uppercase tracking-wider">Response</span>
                 </div>
               </div>
@@ -986,8 +997,8 @@ const DoctorDashboard = () => {
               {[
                 { label: "Total Patients",    value: stats?.totalPatients ?? 0,       trend: `+${stats?.patientGrowth || 0}%`,       up: true  },
                 { label: "Consultations",     value: stats?.totalConsultations ?? 0,  trend: stats?.consultationGrowth !== undefined ? `${stats.consultationGrowth >= 0 ? '+' : ''}${stats.consultationGrowth}%` : '—', up: (stats?.consultationGrowth ?? 0) >= 0 },
-                { label: "Pending",           value: stats?.pendingAppointments || 3, trend: "review",                               up: false },
-                { label: "Revenue (Month)",   value: `₹${((stats?.revenue || 24500)/1000).toFixed(1)}K`, trend: "+15%",             up: true  },
+                { label: "Pending",           value: stats?.pendingAppointments ?? 3, trend: "review",                               up: false },
+                { label: "Revenue (Month)",   value: `₹${((stats?.revenue ?? 24500)/1000).toFixed(1)}K`, trend: "+15%",             up: true  },
                 { label: "Completed Today",   value: completedCount,               trend: `of ${totalToday}`,                      up: true  },
               ].map((item, i) => (
                 <div key={i} className="bg-white/8 rounded-xl px-3 py-2.5 border border-white/10">

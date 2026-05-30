@@ -29,6 +29,8 @@ interface DicomViewerProps {
   tokenOverride?: string;
   /** Override the default /api/lab/ris API base (e.g. /api/doctors/ris-referred) */
   apiBaseOverride?: string;
+  /** Use a fully-qualified or relative file URL instead of `${apiBase}/file/${studyId}` */
+  fileUrlOverride?: string;
 }
 
 interface CornerstoneLib {
@@ -72,6 +74,7 @@ const DicomViewer: React.FC<DicomViewerProps> = ({
   onClose,
   tokenOverride,
   apiBaseOverride,
+  fileUrlOverride,
 }) => {
   const viewerRef  = useRef<HTMLDivElement>(null);
   const resolvedApiBase = apiBaseOverride || API_BASE;
@@ -86,7 +89,7 @@ const DicomViewer: React.FC<DicomViewerProps> = ({
   const [csError, setCsError]         = useState<string | null>(null);
   const [loaded, setLoaded]           = useState(false);
 
-  const fileUrl = `${resolvedApiBase}/file/${studyId}`;
+  const fileUrl = fileUrlOverride || `${resolvedApiBase}/file/${studyId}`;
   const token   = tokenOverride || localStorage.getItem('labToken') || '';
 
   /* ── Load cornerstone libs lazily ─────────────────────────────────────── */

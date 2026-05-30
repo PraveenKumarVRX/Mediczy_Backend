@@ -52,9 +52,54 @@ import {
   BayesianRiskResult,
   computeBayesianRisk,
 } from '@/lib/bayesian-risk';
+import {
+  ClinicalScores,
+  ClinicalEnginesInput,
+  computeAllClinicalScores,
+  computeTrajectory,
+  AssessmentDataPoint,
+  TrajectoryResult,
+} from '@/lib/clinical-engines';
 import api from '@/utils/api';
 import { useAuth } from '@/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
+
+// ── Typed assessment record returned by /history ─────────────────────────────
+interface HealthAssessmentRecord {
+  id: number;
+  score: number;
+  riskLevel: string;
+  riskFactors?: string[];
+  assessedAt: string;
+  age?: number;
+  bmi?: number | null;
+  whr?: number | null;
+  risk_level?: string;
+  assessed_at?: string;
+  periods?: {
+    daily: boolean; weekly: boolean; monthly: boolean;
+    quarterly: boolean; halfYearly: boolean; annual: boolean;
+  };
+  birthdayMonth?: number;
+  clinicalScores?: ClinicalScores;
+}
+
+// ── Clinical lab / advanced inputs ───────────────────────────────────────────
+interface ClinicalLabInputs {
+  ethnicity: 'south_asian' | 'white' | 'black' | 'chinese' | 'other';
+  sbp: string;
+  totalCholesterol_mmol: string;
+  hdlCholesterol_mmol: string;
+  hba1c_percent: string;
+  creatinine_mgdL: string;
+  urineACR_mgmmol: string;
+  snoresLoudly: boolean;
+  daytimeSleepiness: boolean;
+  observedApneas: boolean;
+  neckCm: string;
+  familyPrematureCVD: boolean;
+  atrialFibrillation: boolean;
+}
 
 // Questions that should be auto-calculated
 const AUTO_CALCULATED_QUESTIONS = ['bmi', 'whr', 'neck', 'body_fat', 'age', 'gender'];
@@ -266,6 +311,160 @@ const BayesianBar = ({ result }: { result: BayesianRiskResult }) => {
   );
 };
 
+// ─── Clinical Scores Dashboard ──────────────────────────────────────────────
+const ClinicalScoresDashboard = ({ scores, trajectory }: { scores: ClinicalScores; trajectory: TrajectoryResult | null }) => {
+  const cvColor = scores.qrisk3?.riskCategory === 'high' ? 'text-red-600' : scores.qrisk3?.riskCategory === 'intermediate' ? 'text-amber-600' : 'text-emerald-600';
+  const dmColor = scores.findrisc?.riskCategory === 'very_high' || scores.findrisc?.riskCategory === 'high' ? 'text-red-600' : scores.findrisc?.riskCategory === 'moderate' ? 'text-amber-600' : 'text-emerald-600';
+  const osaColor = scores.stopBang?.riskCategory === 'high' ? 'text-red-600' : scores.stopBang?.riskCategory === 'intermediate' ? 'text-amber-600' : 'text-emerald-600';
+  const compositeColor = scores.compositeRisk.level === 'very_high' || scores.compositeRisk.level === 'high' ? 'text-red-600' : scores.compositeRisk.level === 'moderate' ? 'text-amber-600' : 'text-emerald-600';
+
+  const trendIcon = trajectory
+    ? trajectory.trend === 'improving' ? <TrendingDown className="h-3.5 w-3.5 text-emerald-500" />
+    : trajectory.trend === 'worsening' ? <TrendingUp className="h-3.5 w-3.5 text-red-500" />
+    : <Minus className="h-3.5 w-3.5 text-slate-400" />
+    : null;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-violet-500" />
+        <span className="text-sm font-bold text-slate-800 dark:text-white">Clinical Risk Engines</span>
+        <Badge variant="outline" className="text-[9px] border-violet-300 text-violet-600">Evidence-Based</Badge>
+      </div>
+
+      {/* Composite Risk */}
+      <div className={cn('flex items-center justify-between rounded-xl p-3 border',
+        scores.compositeRisk.level === 'very_high' ? 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-700' :
+        scores.compositeRisk.level === 'high' ? 'bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-700' :
+        scores.compositeRisk.level === 'moderate' ? 'bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-700' :
+        'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-700'
+      )}>
+        <div>
+          <p className="text-[11px] text-muted-foreground font-medium">Composite Clinical Risk</p>
+          <p className={cn('text-lg font-black capitalize', compositeColor)}>
+            {scores.compositeRisk.level.replace('_', ' ')}
+          </p>
+        </div>
+        <div className="text-right">
+          <span className={cn('text-3xl font-black', compositeColor)}>{scores.compositeRisk.score}</span>
+          <span className="text-[10px] text-muted-foreground">/100</span>
+        </div>
+      </div>
+
+      {/* Urgent Flags */}
+      {scores.compositeRisk.urgentFlags.length > 0 && (
+        <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 p-2.5 space-y-1">
+          <p className="text-[10px] font-bold text-red-700 dark:text-red-400 uppercase tracking-wide">Urgent Flags</p>
+          {scores.compositeRisk.urgentFlags.map((flag, i) => (
+            <p key={i} className="text-[11px] text-red-700 dark:text-red-300 flex items-start gap-1.5">
+              <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" /> {flag}
+            </p>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        {/* QRISK3-SA */}
+        {scores.qrisk3 && (
+          <div className="rounded-xl border p-3 bg-white dark:bg-slate-800 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">QRISK3-SA</p>
+              {scores.qrisk3.statin_indicated && <Badge className="text-[9px] bg-amber-100 text-amber-700 border-amber-300">Statin indicated</Badge>}
+            </div>
+            <p className={cn('text-3xl font-black', cvColor)}>{scores.qrisk3.tenYearRisk}%</p>
+            <p className="text-[10px] text-muted-foreground">10-yr CV risk</p>
+            <div className="flex items-center gap-1">
+              <HeartPulse className="h-3 w-3 text-slate-400" />
+              <p className="text-[10px] text-slate-600 dark:text-slate-400">Heart age: <strong>{scores.qrisk3.heartAge}y</strong></p>
+            </div>
+            {scores.qrisk3.southAsianMultiplier > 1 && (
+              <p className="text-[9px] text-violet-600 dark:text-violet-400">SA ×{scores.qrisk3.southAsianMultiplier}</p>
+            )}
+            <Badge variant="outline" className={cn('text-[9px]', cvColor === 'text-red-600' ? 'border-red-300' : cvColor === 'text-amber-600' ? 'border-amber-300' : 'border-emerald-300')}>
+              {scores.qrisk3.riskCategory.charAt(0).toUpperCase() + scores.qrisk3.riskCategory.slice(1)} risk
+            </Badge>
+          </div>
+        )}
+
+        {/* FINDRISC */}
+        {scores.findrisc && (
+          <div className="rounded-xl border p-3 bg-white dark:bg-slate-800 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">FINDRISC</p>
+              {scores.findrisc.icmrAdjusted && <Badge className="text-[9px] bg-violet-100 text-violet-700 border-violet-300">ICMR</Badge>}
+            </div>
+            <p className={cn('text-3xl font-black', dmColor)}>{scores.findrisc.tenYearDiabetesRisk_percent}%</p>
+            <p className="text-[10px] text-muted-foreground">10-yr DM risk</p>
+            <Progress value={(scores.findrisc.score / 26) * 100} className="h-1.5" />
+            <p className="text-[10px] text-slate-600 dark:text-slate-400">Score: {scores.findrisc.score}/26</p>
+            <Badge variant="outline" className={cn('text-[9px]', dmColor === 'text-red-600' ? 'border-red-300' : dmColor === 'text-amber-600' ? 'border-amber-300' : 'border-emerald-300')}>
+              {scores.findrisc.interpretation}
+            </Badge>
+          </div>
+        )}
+
+        {/* STOP-BANG */}
+        {scores.stopBang && (
+          <div className="rounded-xl border p-3 bg-white dark:bg-slate-800 space-y-1.5">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">STOP-BANG</p>
+            <div className="flex items-end gap-1">
+              <p className={cn('text-3xl font-black', osaColor)}>{scores.stopBang.score}</p>
+              <p className="text-sm text-muted-foreground mb-1">/8</p>
+            </div>
+            <p className="text-[10px] text-muted-foreground">Sleep apnea risk</p>
+            <div className="flex gap-0.5 flex-wrap">
+              {Object.entries(scores.stopBang.components).map(([k, v]) => (
+                <span key={k} className={cn('text-[10px] font-bold rounded px-1', v ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-400')}>
+                  {k}
+                </span>
+              ))}
+            </div>
+            <Badge variant="outline" className={cn('text-[9px]', osaColor === 'text-red-600' ? 'border-red-300' : osaColor === 'text-amber-600' ? 'border-amber-300' : 'border-emerald-300')}>
+              {scores.stopBang.riskCategory.charAt(0).toUpperCase() + scores.stopBang.riskCategory.slice(1)} OSA risk
+            </Badge>
+          </div>
+        )}
+
+        {/* CKD-EPI */}
+        {scores.ckdEpi && (
+          <div className="rounded-xl border p-3 bg-white dark:bg-slate-800 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">CKD-EPI 2021</p>
+              {scores.ckdEpi.needsNephrologistReferral && <Badge className="text-[9px] bg-red-100 text-red-700 border-red-300">Refer</Badge>}
+            </div>
+            <p className={cn('text-2xl font-black', scores.ckdEpi.eGFR < 45 ? 'text-red-600' : scores.ckdEpi.eGFR < 60 ? 'text-amber-600' : 'text-emerald-600')}>
+              {scores.ckdEpi.eGFR}
+            </p>
+            <p className="text-[10px] text-muted-foreground">eGFR mL/min/1.73m²</p>
+            <p className="text-[10px] font-semibold text-slate-700 dark:text-slate-300">{scores.ckdEpi.ckdStage}: {scores.ckdEpi.ckdStageName}</p>
+            {scores.ckdEpi.acrCategory && <p className="text-[10px] text-slate-500">ACR: {scores.ckdEpi.acrCategory}</p>}
+            <p className="text-[10px] text-slate-500">CV risk ×{scores.ckdEpi.cvRiskMultiplier}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Trajectory */}
+      {trajectory && (
+        <div className="rounded-xl border p-3 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Risk Trajectory</p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              {trendIcon}
+              <p className="text-sm font-semibold capitalize text-slate-700 dark:text-slate-300">{trajectory.trend}</p>
+              {trajectory.riskEscalationWarning && <Badge className="text-[9px] bg-red-100 text-red-700">Escalating</Badge>}
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-0.5">{trajectory.recommendation}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] text-muted-foreground">90-day forecast</p>
+            <p className="text-lg font-black text-slate-700 dark:text-slate-300">{trajectory.projectedScoreIn90Days}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ─── Section completion indicators ──────────────────────────────────────────
 const SectionDots = ({ sections, responses: resp }: { sections: typeof healthRiskSections; responses: RiskResponses }) => (
   <div className="flex gap-1.5 flex-wrap">
@@ -289,12 +488,22 @@ const UserHealthRiskAssessment = () => {
   const { currentUser } = useAuth();
   const { toast } = useToast();
   const [responses, setResponses] = useState<RiskResponses>({});
-  const [savedAssessments, setSavedAssessments] = useState<any[]>([]);
+  const [savedAssessments, setSavedAssessments] = useState<HealthAssessmentRecord[]>([]);
   const [serverRecs, setServerRecs] = useState<string[]>([]);
-  const [historyData, setHistoryData] = useState<any>(null);
+  const [historyData, setHistoryData] = useState<Record<string, unknown> | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('weekly');
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [clinicalScores, setClinicalScores] = useState<ClinicalScores | null>(null);
+  const [trajectory, setTrajectory] = useState<TrajectoryResult | null>(null);
+  const [showClinicalInputs, setShowClinicalInputs] = useState(false);
+  const [clinicalInputs, setClinicalInputs] = useState<ClinicalLabInputs>({
+    ethnicity: 'south_asian',
+    sbp: '', totalCholesterol_mmol: '', hdlCholesterol_mmol: '',
+    hba1c_percent: '', creatinine_mgdL: '', urineACR_mgmmol: '',
+    snoresLoudly: false, daytimeSleepiness: false, observedApneas: false,
+    neckCm: '', familyPrematureCVD: false, atrialFibrillation: false,
+  });
   
   // Measurement inputs for auto-calculation
   const [measurements, setMeasurements] = useState<Measurements>(() => {
@@ -390,14 +599,15 @@ const UserHealthRiskAssessment = () => {
   // Load profile data on mount
   useEffect(() => {
     if (currentUser) {
-      const profile = currentUser as any;
+      const profile = currentUser as { height?: number; weight?: number; age?: number; dateOfBirth?: string; gender?: string };
       setMeasurements(prev => ({
         ...prev,
-        height: profile.height?.toString() || prev.height,
-        weight: profile.weight?.toString() || prev.weight,
-        age: profile.age?.toString() || (profile.dateOfBirth ? 
-          Math.floor((Date.now() - new Date(profile.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)).toString() : prev.age),
-        gender: profile.gender || prev.gender,
+        height: profile.height?.toString() ?? prev.height,
+        weight: profile.weight?.toString() ?? prev.weight,
+        age: profile.age?.toString() ?? (profile.dateOfBirth
+          ? Math.floor((Date.now() - new Date(profile.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)).toString()
+          : prev.age),
+        gender: (profile.gender as Measurements['gender']) ?? prev.gender,
       }));
     }
   }, [currentUser]);
@@ -417,20 +627,30 @@ const UserHealthRiskAssessment = () => {
     if (!currentUser?.id) return;
     try {
       setLoading(true);
-      const res = await api.get('/health-assessment/history');
+      const res = await api.get('/health-assessment/history', { params: { limit: 50, offset: 0 } });
       if (res.data?.success) {
-        setHistoryData(res.data);
-        setSavedAssessments(res.data.assessments || []);
+        setHistoryData(res.data as Record<string, unknown>);
+        const records: HealthAssessmentRecord[] = res.data.assessments || [];
+        setSavedAssessments(records);
+        // Compute trajectory from stored history
+        const histPoints: AssessmentDataPoint[] = records.map((a) => ({
+          assessedAt: a.assessedAt,
+          score: a.score,
+          riskLevel: a.riskLevel,
+          bmi: a.bmi ?? undefined,
+          clinicalScores: a.clinicalScores ?? undefined,
+        }));
+        setTrajectory(computeTrajectory(histPoints));
       }
-    } catch (error) {
+    } catch {
       // Fallback: try the single-assessment endpoint
       try {
         const res = await api.get('/health-assessment');
         if (res.data?.assessment) {
-          setSavedAssessments([res.data.assessment]);
+          setSavedAssessments([res.data.assessment as HealthAssessmentRecord]);
         }
-      } catch (_) {
-        console.log('No previous assessments found');
+      } catch {
+        // No previous assessments found — silent
       }
     } finally {
       setLoading(false);
@@ -550,6 +770,45 @@ const UserHealthRiskAssessment = () => {
 
     try {
       setSubmitting(true);
+      // Compute clinical scores client-side for instant display
+      const clinicalInput: ClinicalEnginesInput = {
+        age: ageVal,
+        sex: measurements.gender === 'male' ? 'male' : 'female',
+        ethnicity: clinicalInputs.ethnicity,
+        bmi: calculatedValues.bmi.value > 0 ? calculatedValues.bmi.value : undefined,
+        waistCm: parseFloat(measurements.waist) || undefined,
+        neckCircumferenceCm: clinicalInputs.neckCm ? parseFloat(clinicalInputs.neckCm) : undefined,
+        sbp: clinicalInputs.sbp ? parseFloat(clinicalInputs.sbp) : undefined,
+        bpTreated: responses.hx_hypertension === 'controlled' || responses.hx_hypertension === 'uncontrolled',
+        smoking: (() => {
+          const s = responses.smoking;
+          if (s === 'never') return 'never';
+          if (s === 'occasional') return 'light';
+          if (s === 'regular_lt10') return 'moderate';
+          if (s === 'heavy_gte10') return 'heavy';
+          return 'never';
+        })() as ClinicalEnginesInput['smoking'],
+        diabetes: responses.hx_diabetes !== undefined && responses.hx_diabetes !== 'none' ? 'type2' : 'none',
+        hypertension: responses.hx_hypertension !== undefined && responses.hx_hypertension !== 'none',
+        atrialFibrillation: clinicalInputs.atrialFibrillation,
+        familyHistoryPrematureCVD: clinicalInputs.familyPrematureCVD,
+        familyDiabetes: responses.fh_diabetes === 'yes' ? 'first_degree' : 'none',
+        physicalActivityMinPerDay: responses.activity === '150_mod' ? 60 : responses.activity === '75_150_mod' ? 40 : responses.activity === 'lt75' ? 15 : 0,
+        eatsVegetablesFruitsDaily: responses.food === 'balanced',
+        bpMedication: responses.hx_hypertension === 'controlled',
+        historyHighGlucose: responses.hx_diabetes !== undefined && responses.hx_diabetes !== 'none',
+        snoresLoudly: clinicalInputs.snoresLoudly,
+        daytimeSleepiness: clinicalInputs.daytimeSleepiness,
+        observedApneas: clinicalInputs.observedApneas,
+        hba1c_percent: clinicalInputs.hba1c_percent ? parseFloat(clinicalInputs.hba1c_percent) : undefined,
+        totalCholesterol_mmol: clinicalInputs.totalCholesterol_mmol ? parseFloat(clinicalInputs.totalCholesterol_mmol) : undefined,
+        hdlCholesterol_mmol: clinicalInputs.hdlCholesterol_mmol ? parseFloat(clinicalInputs.hdlCholesterol_mmol) : undefined,
+        serumCreatinine_mgdL: clinicalInputs.creatinine_mgdL ? parseFloat(clinicalInputs.creatinine_mgdL) : undefined,
+        urineACR_mgmmol: clinicalInputs.urineACR_mgmmol ? parseFloat(clinicalInputs.urineACR_mgmmol) : undefined,
+      };
+      const newClinicalScores = computeAllClinicalScores(clinicalInput);
+      setClinicalScores(newClinicalScores);
+
       const payload = {
         age: ageVal,
         gender: measurements.gender,
@@ -574,6 +833,20 @@ const UserHealthRiskAssessment = () => {
         sleep_hours: responses.sleep_hours ? parseFloat(String(responses.sleep_hours)) : 7,
         diet_quality: responses.diet_quality || 'fair',
         responses,
+        // Clinical inputs sent to backend for persistence
+        ethnicity: clinicalInputs.ethnicity,
+        sbp: clinicalInputs.sbp || undefined,
+        neck_cm: clinicalInputs.neckCm || undefined,
+        snores_loudly: clinicalInputs.snoresLoudly ? 'yes' : 'no',
+        daytime_sleepiness: clinicalInputs.daytimeSleepiness ? 'yes' : 'no',
+        observed_apneas: clinicalInputs.observedApneas ? 'yes' : 'no',
+        hba1c: clinicalInputs.hba1c_percent || undefined,
+        total_chol_mmol: clinicalInputs.totalCholesterol_mmol || undefined,
+        hdl_mmol: clinicalInputs.hdlCholesterol_mmol || undefined,
+        creatinine_mgdl: clinicalInputs.creatinine_mgdL || undefined,
+        urine_acr: clinicalInputs.urineACR_mgmmol || undefined,
+        af: clinicalInputs.atrialFibrillation ? 'yes' : 'no',
+        family_heart_disease_premature: clinicalInputs.familyPrematureCVD ? 'yes' : 'no',
       };
 
       const res = await api.post('/health-assessment/save', payload);
@@ -601,12 +874,9 @@ const UserHealthRiskAssessment = () => {
           localStorage.removeItem('hra_measurements_draft');
         } catch {}
       }
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: error?.response?.data?.message || 'Failed to save assessment',
-      });
+    } catch (error: unknown) {
+      const msg = (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Failed to save assessment';
+      toast({ variant: 'destructive', title: 'Error', description: msg });
     } finally {
       setSubmitting(false);
     }
@@ -832,6 +1102,130 @@ const UserHealthRiskAssessment = () => {
               </CardContent>
             </Card>
 
+            {/* Clinical Lab Values — Optional Advanced Section */}
+            <Card className="border-violet-200/70 dark:border-violet-700/40">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2 text-slate-800 dark:text-white text-base">
+                    <FlaskConical className="h-4 w-4 text-violet-500" />
+                    Lab Values &amp; Advanced Inputs
+                    <Badge variant="outline" className="text-[9px] border-violet-300 text-violet-600">Unlocks QRISK3 / FINDRISC / STOP-BANG / CKD-EPI</Badge>
+                  </CardTitle>
+                  <Button variant="ghost" size="sm" onClick={() => setShowClinicalInputs(p => !p)} className="text-violet-600 hover:text-violet-700 text-xs">
+                    {showClinicalInputs ? 'Hide' : 'Add Lab Values'}
+                  </Button>
+                </div>
+                <CardDescription className="text-[11px]">Optional. Enables validated clinical algorithms calibrated for South Asian populations.</CardDescription>
+              </CardHeader>
+              {showClinicalInputs && (
+                <CardContent className="space-y-4">
+                  {/* Ethnicity */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs font-medium">Ethnicity</Label>
+                      <select
+                        value={clinicalInputs.ethnicity}
+                        onChange={(e) => setClinicalInputs(p => ({ ...p, ethnicity: e.target.value as ClinicalLabInputs['ethnicity'] }))}
+                        className="mt-1 w-full text-sm rounded-md border border-input bg-background px-3 py-2 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                      >
+                        <option value="south_asian">South Asian (Indian/Pakistani/Sri Lankan)</option>
+                        <option value="white">White / European</option>
+                        <option value="black">Black / Afro-Caribbean</option>
+                        <option value="chinese">East Asian / Chinese</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Systolic BP (mmHg)</Label>
+                      <Input type="number" placeholder="e.g. 130" value={clinicalInputs.sbp} min={60} max={250}
+                        onChange={(e) => setClinicalInputs(p => ({ ...p, sbp: e.target.value }))} className="mt-1 text-sm" />
+                    </div>
+                  </div>
+                  {/* Lipids */}
+                  <div>
+                    <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">Lipid Panel (optional, improves QRISK3 accuracy)</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-xs">Total Cholesterol (mmol/L)</Label>
+                        <Input type="number" placeholder="e.g. 5.2" step="0.1" value={clinicalInputs.totalCholesterol_mmol}
+                          onChange={(e) => setClinicalInputs(p => ({ ...p, totalCholesterol_mmol: e.target.value }))} className="mt-1 text-sm" />
+                      </div>
+                      <div>
+                        <Label className="text-xs">HDL Cholesterol (mmol/L)</Label>
+                        <Input type="number" placeholder="e.g. 1.3" step="0.1" value={clinicalInputs.hdlCholesterol_mmol}
+                          onChange={(e) => setClinicalInputs(p => ({ ...p, hdlCholesterol_mmol: e.target.value }))} className="mt-1 text-sm" />
+                      </div>
+                    </div>
+                  </div>
+                  {/* Metabolic */}
+                  <div>
+                    <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">Metabolic Panel (improves FINDRISC)</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-xs">HbA1c (%)</Label>
+                        <Input type="number" placeholder="e.g. 5.8" step="0.1" value={clinicalInputs.hba1c_percent}
+                          onChange={(e) => setClinicalInputs(p => ({ ...p, hba1c_percent: e.target.value }))} className="mt-1 text-sm" />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Serum Creatinine (mg/dL)</Label>
+                        <Input type="number" placeholder="e.g. 0.9" step="0.01" value={clinicalInputs.creatinine_mgdL}
+                          onChange={(e) => setClinicalInputs(p => ({ ...p, creatinine_mgdL: e.target.value }))} className="mt-1 text-sm" />
+                        <p className="text-[10px] text-muted-foreground mt-0.5">Enables CKD-EPI eGFR calculation</p>
+                      </div>
+                      <div>
+                        <Label className="text-xs">Urine ACR (mg/mmol)</Label>
+                        <Input type="number" placeholder="e.g. 2.5" step="0.1" value={clinicalInputs.urineACR_mgmmol}
+                          onChange={(e) => setClinicalInputs(p => ({ ...p, urineACR_mgmmol: e.target.value }))} className="mt-1 text-sm" />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Neck Circumference (cm)</Label>
+                        <Input type="number" placeholder="e.g. 38" value={clinicalInputs.neckCm}
+                          onChange={(e) => setClinicalInputs(p => ({ ...p, neckCm: e.target.value }))} className="mt-1 text-sm" />
+                        <p className="text-[10px] text-muted-foreground mt-0.5">Used in STOP-BANG scoring</p>
+                      </div>
+                    </div>
+                  </div>
+                  {/* STOP-BANG sleep questions */}
+                  <div>
+                    <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">Sleep &amp; OSA Screening (STOP-BANG)</p>
+                    <div className="grid grid-cols-1 gap-2">
+                      {[
+                        { key: 'snoresLoudly' as const, label: 'S — Do you snore loudly (heard through closed door)?' },
+                        { key: 'daytimeSleepiness' as const, label: 'T — Do you often feel tired, fatigued or sleepy during the day?' },
+                        { key: 'observedApneas' as const, label: 'O — Has anyone observed you stop breathing during sleep?' },
+                      ].map(({ key, label }) => (
+                        <label key={key} className="flex items-center gap-2.5 cursor-pointer rounded-lg border p-2.5 hover:bg-violet-50 dark:hover:bg-violet-900/10 transition-colors">
+                          <input type="checkbox" checked={clinicalInputs[key]}
+                            onChange={(e) => setClinicalInputs(p => ({ ...p, [key]: e.target.checked }))}
+                            className="rounded border-slate-300 accent-violet-600 h-4 w-4"
+                          />
+                          <span className="text-xs text-slate-700 dark:text-slate-300">{label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Cardiac history */}
+                  <div>
+                    <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">Cardiac History (improves QRISK3)</p>
+                    <div className="grid grid-cols-1 gap-2">
+                      {[
+                        { key: 'familyPrematureCVD' as const, label: 'Family member had heart attack before age 55 (men) or 65 (women)?' },
+                        { key: 'atrialFibrillation' as const, label: 'Diagnosed with atrial fibrillation (AF/AFib)?' },
+                      ].map(({ key, label }) => (
+                        <label key={key} className="flex items-center gap-2.5 cursor-pointer rounded-lg border p-2.5 hover:bg-violet-50 dark:hover:bg-violet-900/10 transition-colors">
+                          <input type="checkbox" checked={clinicalInputs[key]}
+                            onChange={(e) => setClinicalInputs(p => ({ ...p, [key]: e.target.checked }))}
+                            className="rounded border-slate-300 accent-violet-600 h-4 w-4"
+                          />
+                          <span className="text-xs text-slate-700 dark:text-slate-300">{label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+
             {/* Progress + Risk Score */}
             <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-teal-200 dark:hover:border-teal-500/50 transition-colors overflow-hidden">
               <CardHeader className="pb-3">
@@ -865,6 +1259,14 @@ const UserHealthRiskAssessment = () => {
                   <>
                     <Separator />
                     <BayesianBar result={bayesianResult} />
+                  </>
+                )}
+
+                {/* Clinical Scores Dashboard */}
+                {clinicalScores && (
+                  <>
+                    <Separator />
+                    <ClinicalScoresDashboard scores={clinicalScores} trajectory={trajectory} />
                   </>
                 )}
 

@@ -12,7 +12,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Production server details
-PROD_SERVER="ubuntu@13.234.17.52"
+PROD_SERVER="ubuntu@13.127.125.93"
 PROD_PATH="/home/ubuntu/Mediczy"
 SSH_KEY="$HOME/.ssh/mediqzy.pem"
 
@@ -160,7 +160,7 @@ echo -e "  • Services: Restarted with PM2"
 echo -e "  • Backup: Created on production server"
 echo ""
 echo -e "${YELLOW}💡 Next Steps:${NC}"
-echo -e "  1. Verify API health: curl http://13.234.17.52:8888/v1/health"
+echo -e "  1. Verify API health: curl http://13.127.125.93:8888/v1/health"
 echo -e "  2. Monitor logs: ssh -i $SSH_KEY $PROD_SERVER 'cd $PROD_PATH && pm2 logs'"
 echo -e "  3. Check metrics: ssh -i $SSH_KEY $PROD_SERVER 'cd $PROD_PATH && pm2 monit'"
 echo ""

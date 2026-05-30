@@ -68,7 +68,7 @@ export const clinicStaffLogin = async (req, res) => {
       });
     }
 
-    // Find staff by email and role
+    // Find staff by email and role (QA-BUG-003b: removed broken Tenant include; clinic verified separately below)
     const staff = await User.findOne({
       where: {
         email,
@@ -76,16 +76,7 @@ export const clinicStaffLogin = async (req, res) => {
         organization_type: 'clinic',
         status: 'active'
       },
-      include: [
-        {
-          model: Tenant,
-          as: 'organization',
-          where: { status: 'active' },
-          required: true,
-          attributes: ['id', 'uid', 'name', 'slug', 'type', 'status', 'phone']
-        }
-      ],
-      attributes: ['id', 'email', 'password', 'firstName', 'lastName', 'phoneNumber', 'role', 'status', 'organization_id', 'permissions', 'scope', 'metadata']
+      attributes: ['id', 'email', 'password', 'firstName', 'lastName', 'phoneNumber', 'role', 'status', 'isActive', 'organization_id', 'permissions', 'scope', 'metadata']
     });
 
     if (!staff) {
@@ -93,6 +84,15 @@ export const clinicStaffLogin = async (req, res) => {
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials or staff not found'
+      });
+    }
+
+    // isActive guard — rejects accounts disabled via the boolean flag
+    if (staff.isActive === false) {
+      await auditLoginAttempt(req, staff.id, email, false, 'Staff account disabled (isActive=false)');
+      return res.status(403).json({
+        success: false,
+        message: 'Your account has been disabled. Contact your clinic administrator.',
       });
     }
 
@@ -200,23 +200,9 @@ export const doctorLogin = async (req, res) => {
       });
     }
 
-    // Find doctor
+    // Find doctor (QA-BUG-003b: include removed — clinic verified via Tenant.findByPk below)
     const doctor = await User.findOne({
-      where: {
-        email,
-        role: 'doctor',
-        organization_type: 'clinic',
-        status: 'active'
-      },
-      include: [
-        {
-          model: Tenant,
-          as: 'organization',
-          where: { status: 'active' },
-          required: true,
-          attributes: ['id', 'uid', 'name', 'slug', 'type', 'status', 'phone']
-        }
-      ]
+      where: { email, role: 'doctor', organization_type: 'clinic', status: 'active' }
     });
 
     if (!doctor) {
@@ -312,23 +298,9 @@ export const nurseLogin = async (req, res) => {
       });
     }
 
-    // Find nurse
+    // Find nurse (QA-BUG-003b: include removed)
     const nurse = await User.findOne({
-      where: {
-        email,
-        role: 'nurse',
-        organization_type: 'clinic',
-        status: 'active'
-      },
-      include: [
-        {
-          model: Tenant,
-          as: 'organization',
-          where: { status: 'active' },
-          required: true,
-          attributes: ['id', 'uid', 'name', 'slug', 'type', 'status', 'phone']
-        }
-      ]
+      where: { email, role: 'nurse', organization_type: 'clinic', status: 'active' }
     });
 
     if (!nurse) {
@@ -425,21 +397,8 @@ export const assistantLogin = async (req, res) => {
 
     // Find assistant
     const assistant = await User.findOne({
-      where: {
-        email,
-        role: 'doctor_assistant',
-        organization_type: 'clinic',
-        status: 'active'
-      },
-      include: [
-        {
-          model: Tenant,
-          as: 'organization',
-          where: { status: 'active' },
-          required: true,
-          attributes: ['id', 'uid', 'name', 'slug', 'type', 'status', 'phone']
-        }
-      ]
+      // QA-BUG-003b: include removed
+      where: { email, role: 'doctor_assistant', organization_type: 'clinic', status: 'active' }
     });
 
     if (!assistant) {

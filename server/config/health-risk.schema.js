@@ -5,7 +5,7 @@ export const RISK_SCORE_BANDS = [
   { label: 'Low Risk', min: 0, max: 50, color: 'text-emerald-500', description: 'Maintain current lifestyle and monitoring cadence.' },
   { label: 'Moderate Risk', min: 51, max: 100, color: 'text-amber-500', description: 'Flag for quarterly follow-ups and coaching nudges.' },
   { label: 'High Risk', min: 101, max: 150, color: 'text-orange-500', description: 'Escalate to care team for targeted intervention.' },
-  { label: 'Severe Risk', min: 151, max: 999, color: 'text-red-600', description: 'Immediate medical review and escalation protocol.' },
+  { label: 'Severe Risk', min: 151, max: 299, color: 'text-red-600', description: 'Immediate medical review and escalation protocol.' },
 ];
 
 export const MAX_THEORETICAL_SCORE = 300;

@@ -3,8 +3,8 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
-import { ThemeProvider } from "./utils/theme.provider";
 import { GoogleOAuthProvider } from "@react-oauth/google";
+import { ThemeProvider } from "./utils/theme.provider";
 import { AuthProvider } from "./auth/AuthProvider";
 import { SocketProvider } from "@/context/SocketContext";
 import { DebugProvider } from "@/contexts/DebugContext";
@@ -20,7 +20,7 @@ const App = () => (
       <GoogleOAuthProvider
         clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}
         onScriptLoadError={() => {
-          if (process.env.NODE_ENV === 'development') {
+          if (import.meta.env.DEV) {
             console.error("Google Script failed to load");
           }
         }}

@@ -41,7 +41,7 @@ const TeamTools = () => {
       description: 'Get help from our team',
       icon: HelpCircle,
       color: 'text-green-600',
-      action: () => window.location.href = 'mailto:support@mediczy.com'
+      action: () => window.location.href = 'mailto:support@mediqzy.com'
     },
     {
       title: 'Phone Support',
@@ -55,7 +55,7 @@ const TeamTools = () => {
       description: 'Send us an email',
       icon: Mail,
       color: 'text-orange-600',
-      action: () => window.location.href = 'mailto:support@mediczy.com'
+      action: () => window.location.href = 'mailto:support@mediqzy.com'
     }
   ];
 
@@ -274,7 +274,7 @@ const TeamTools = () => {
                 <BookOpen className="h-4 w-4 mr-2" />
                 View Documentation
               </Button>
-              <Button variant="outline" onClick={() => window.location.href = 'mailto:support@mediczy.com'}>
+              <Button variant="outline" onClick={() => window.location.href = 'mailto:support@mediqzy.com'}>
                 <MessageSquare className="h-4 w-4 mr-2" />
                 Contact Support
               </Button>

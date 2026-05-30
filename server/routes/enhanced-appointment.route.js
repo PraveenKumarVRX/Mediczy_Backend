@@ -15,6 +15,16 @@ import tenantPartnerService from '../services/tenant-partner.service.js';
 
 const router = express.Router();
 
+const MEMBERSHIP_RENEWAL_EXEMPT_EMAILS = new Set(
+  String(process.env.MEMBERSHIP_RENEWAL_EXEMPT_EMAILS || 'user@mediczy.com')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean)
+);
+
+const isMembershipRenewalExemptEmail = (email) =>
+  MEMBERSHIP_RENEWAL_EXEMPT_EMAILS.has(String(email || '').trim().toLowerCase());
+
 
 const normalizeSymptoms = (value) => {
   if (!value) return [];
@@ -899,6 +909,19 @@ router.get('/doctor-appointments', authUser, [
       ]
     });
 
+    const patientIds = [...new Set(doctorAppointments.map((apt) => apt.userId).filter(Boolean))];
+    const patientRows = patientIds.length
+      ? await userModel.findAll({
+          attributes: ['id', 'email'],
+          where: { id: { [Op.in]: patientIds } }
+        })
+      : [];
+    const exemptPatientIds = new Set(
+      patientRows
+        .filter((user) => isMembershipRenewalExemptEmail(user.email))
+        .map((user) => Number(user.id))
+    );
+
     // Normalize shape and add enhanced details for doctor view
     const enhancedAppointments = doctorAppointments.map(aptModel => {
       const apt = aptModel.toJSON();
@@ -923,6 +946,13 @@ router.get('/doctor-appointments', authUser, [
 
       const symptomsValue = Array.isArray(apt.symptoms) ? apt.symptoms.join(', ') : apt.symptoms;
       const consultationFee = Number(apt.paymentAmount || 0);
+      const normalizedPaymentStatus = String(apt.paymentStatus || '').toLowerCase();
+      const isNominalOrFreeConsultation = Number.isFinite(consultationFee) && consultationFee <= 1;
+      const isMembershipRenewalExemptUser = exemptPatientIds.has(Number(apt.userId));
+      const isVideoPaymentEligible =
+        ['paid', 'credit'].includes(normalizedPaymentStatus) ||
+        isNominalOrFreeConsultation ||
+        isMembershipRenewalExemptUser;
 
       return {
         ...apt,
@@ -935,6 +965,12 @@ router.get('/doctor-appointments', authUser, [
         clinicAddress,
         symptoms: symptomsValue,
         consultationFee,
+        isMembershipRenewalExemptUser,
+        paymentStatusEffective:
+          !['paid', 'credit'].includes(normalizedPaymentStatus) && isMembershipRenewalExemptUser
+            ? 'credit'
+            : apt.paymentStatus,
+        isVideoPaymentEligible,
         statusBadge: getStatusBadge(apt.status),
         timeUntilAppointment: getTimeUntilAppointment(apt.appointmentDate, timeSlot),
         canStart: apt.status === 'scheduled' && canStartConsultation({

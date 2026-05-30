@@ -123,6 +123,7 @@ const NetworkHospitals: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedCity, setSelectedCity] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'distance' | 'rating'>('distance');
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedHospitalDetails, setSelectedHospitalDetails] = useState<NetworkHospital | null>(null);
 
@@ -194,7 +195,12 @@ const NetworkHospitals: React.FC = () => {
       hospital.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       hospital.specialities.some(spec => spec.toLowerCase().includes(searchTerm.toLowerCase())) ||
       hospital.city.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    )
+    .sort((a, b) => {
+      if (sortBy === 'rating') return b.rating - a.rating;
+      const parseDistance = (distance: string) => parseFloat((distance || '').replace(/[^\d.]/g, '')) || Number.MAX_SAFE_INTEGER;
+      return parseDistance(a.distance) - parseDistance(b.distance);
+    });
 
   return (
     <MainLayout>
@@ -244,6 +250,15 @@ const NetworkHospitals: React.FC = () => {
               </option>
             ))}
           </select>
+          <select
+            className="flex h-10 rounded-xl border border-input bg-background px-3 py-2 text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-blue-500"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as 'distance' | 'rating')}
+            aria-label="Sort hospitals"
+          >
+            <option value="distance">Nearest first</option>
+            <option value="rating">Top rated first</option>
+          </select>
         </div>
 
         {/* Type Filter */}
@@ -265,6 +280,18 @@ const NetworkHospitals: React.FC = () => {
           })}
         </div>
       </motion.div>
+
+      {(selectedType !== 'all' || selectedCity !== 'all' || searchTerm.trim() || sortBy !== 'distance') && (
+        <motion.div variants={item} className="flex flex-wrap gap-2">
+          {selectedType !== 'all' && <Badge variant="secondary">Type: {selectedType.replace('_', ' ')}</Badge>}
+          {selectedCity !== 'all' && <Badge variant="secondary">City: {selectedCity}</Badge>}
+          {searchTerm.trim() && <Badge variant="secondary">Search: {searchTerm}</Badge>}
+          <Badge variant="outline">Sort: {sortBy === 'distance' ? 'Nearest' : 'Top rated'}</Badge>
+          <Button size="sm" variant="ghost" onClick={() => { setSelectedType('all'); setSelectedCity('all'); setSearchTerm(''); setSortBy('distance'); }}>
+            Reset filters
+          </Button>
+        </motion.div>
+      )}
 
       {/* Stats */}
       <motion.div variants={item} className="grid md:grid-cols-4 gap-4">

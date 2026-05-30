@@ -1567,13 +1567,13 @@ Immediate assistance required!`;
       console.error('Backend SOS notification failed:', error);
     }
     
-    // Also try to send to local emergency contacts (family)
+    // Also try to prepare local fallback alerts for emergency contacts (family).
     for (const contact of emergencyContacts) {
       try {
-        // In demo mode, just show toast
+        // Do not claim external SMS delivery here; this is local fallback UX.
         toast({
-          title: `📲 SOS Sent to ${contact.name}`,
-          description: `Emergency alert sent to ${contact.relationship}`,
+          title: `📲 SOS Alert Prepared for ${contact.name}`,
+          description: `Local fallback alert for ${contact.relationship}. Please call directly if urgent.`,
         });
         notifiedContacts.push(contact.name);
       } catch (error) {
@@ -1875,18 +1875,18 @@ ${visionSummary || 'No vision analysis data'}
     const sosMessage = `EMERGENCY SOS ALERT!\nLocation: https://www.google.com/maps?q=${userLocation.lat},${userLocation.lng}\nThis person needs immediate assistance!`;
     
     try {
-      // Show dummy success messages for each contact
+      // Local fallback only: keep users informed without implying real SMS dispatch.
       for (const contact of emergencyContacts) {
         toast({
-          title: "SOS Message Sent",
-          description: `Emergency message sent to ${contact.name} (Demo Mode)`,
+          title: "SOS Alert Prepared",
+          description: `Local emergency alert queued for ${contact.name}. External SMS delivery depends on configured channels.`,
         });
       }
     } catch (error) {
-      console.error('Error in demo SMS:', error);
+      console.error('Error preparing local SOS alerts:', error);
       toast({
-        title: "Demo Mode",
-        description: "SMS would be sent in production mode",
+        title: "SOS Alert Limited",
+        description: "Could not queue local contact alerts. Please call emergency contacts directly.",
       });
     }
   };

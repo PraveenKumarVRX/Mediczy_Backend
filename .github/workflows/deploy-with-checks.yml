@@ -12,26 +12,41 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      
+
       - name: Deploy to server
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            set -e
             cd /home/ubuntu/Mediczy
             git pull origin main
+            echo "✓ Code updated"
+
+            # Rebuild client bundle so UI changes are never shipped stale
+            cd client
+            npm ci --prefer-offline
+            npm run build
+            cd ..
+            echo "✓ Client bundle rebuilt"
+
+            # Restart backend
             pm2 restart mediczy-server
             echo "✓ Backend restarted"
-      
-      - name: Post-deployment verification
+
+      - name: Post-deployment health check
         run: |
           echo "⏳ Waiting for server to start..."
-          sleep 10
-          echo "✓ Testing API endpoint..."
-          curl -f https://app.mediqzy.com/health || echo"⚠️  Health check failed"
-      
+          for i in 1 2 3 4 5; do
+            sleep 6
+            echo "  Attempt $i/5..."
+            curl -sf https://app.mediqzy.com/health && echo "✓ Health check passed" && exit 0 || true
+          done
+          echo "⚠️  Health check failed after 5 attempts"
+          exit 1
+
       - name: Notify on success
         if: success()
         run: |
@@ -39,12 +54,10 @@ jobs:
           echo "║   ✓ Deployment Successful!            ║"
           echo "╚════════════════════════════════════════╝"
           echo ""
-          echo "Deployed changes:"
-          echo "  • API credentials route fixes"
-          echo "  • Frontend UI components"
-          echo ""
-          echo "Access: https://app.mediqzy.com/admin/api-credentials"
-      
+          echo "  Branch: ${GITHUB_REF_NAME}"
+          echo "  Commit: ${GITHUB_SHA::8}"
+          echo "  Access: https://app.mediqzy.com"
+
       - name: Notify on failure
         if: failure()
         run: |

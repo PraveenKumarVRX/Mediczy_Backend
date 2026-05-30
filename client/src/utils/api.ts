@@ -241,6 +241,24 @@ api.interceptors.response.use(
       }
     }
 
+    // Lab 401 — clear stale token and redirect to lab login
+    if (
+      error.response?.status === 401 &&
+      typeof window !== "undefined" &&
+      getUserType() === "lab"
+    ) {
+      const hadToken = window.localStorage.getItem("labToken");
+      if (hadToken) {
+        window.localStorage.removeItem("labToken");
+        window.localStorage.removeItem("token");
+        window.localStorage.removeItem("userType");
+        window.localStorage.removeItem("labData");
+        if (!window.location.pathname.startsWith("/lab/login")) {
+          window.location.href = "/lab/login";
+        }
+      }
+    }
+
     // Regular user 401 — clear stale token and redirect to login
     if (
       error.response?.status === 401 &&

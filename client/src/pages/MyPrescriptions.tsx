@@ -188,16 +188,36 @@ const MyPrescriptions = () => {
   return (
     <MainLayout>
       <div className="container mx-auto p-6 space-y-6">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center gap-2">
-              <FileText className="h-8 w-8 text-blue-600" />
-              My Prescriptions
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              View and download your medical prescriptions
-            </p>
+        <div className="rounded-2xl border border-blue-200/70 bg-gradient-to-r from-blue-50 via-indigo-50 to-cyan-50 p-5 md:p-6 shadow-sm transition-all duration-300">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-blue-600/10 px-3 py-1 text-xs font-semibold text-blue-700 mb-3">
+                <Stethoscope className="h-3.5 w-3.5" />
+                Clinical Records Vault
+              </div>
+              <h1 className="text-3xl font-bold flex items-center gap-2">
+                <FileText className="h-8 w-8 text-blue-600" />
+                My Prescriptions
+              </h1>
+              <p className="text-slate-600 mt-1">
+                View, verify, and download doctor-issued prescriptions in one timeline.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mt-5">
+            <div className="rounded-lg border border-blue-200 bg-white/80 px-3 py-2">
+              <p className="text-xs font-semibold text-blue-700">Step 1: Review diagnosis</p>
+              <p className="text-[11px] text-slate-600">Open each Rx and validate doctor notes and follow-up dates.</p>
+            </div>
+            <div className="rounded-lg border border-blue-200 bg-white/80 px-3 py-2">
+              <p className="text-xs font-semibold text-blue-700">Step 2: Track validity</p>
+              <p className="text-[11px] text-slate-600">Monitor expiring prescriptions before refill or claims use.</p>
+            </div>
+            <div className="rounded-lg border border-blue-200 bg-white/80 px-3 py-2">
+              <p className="text-xs font-semibold text-blue-700">Step 3: Download securely</p>
+              <p className="text-[11px] text-slate-600">Keep PDFs ready for pharmacy orders and insurance submissions.</p>
+            </div>
           </div>
         </div>
 
@@ -271,6 +291,21 @@ const MyPrescriptions = () => {
               <SelectItem value="cancelled">Cancelled</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3 transition-all duration-300">
+          <div>
+            <p className="text-xs font-semibold text-blue-700">Next Best Action</p>
+            <p className="text-[11px] text-slate-600">Shortlist active prescriptions first, then open details to verify dosage and follow-up.</p>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <Button size="sm" variant="outline" onClick={() => { setSearchQuery(""); setFilterStatus("all"); }}>
+              Reset Filters
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setFilterStatus("issued")}>
+              Show Active Only
+            </Button>
+          </div>
         </div>
 
         {/* Prescriptions List */}

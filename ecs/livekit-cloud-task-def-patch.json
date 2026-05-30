@@ -1,0 +1,45 @@
+{
+  "_comment": "Patch these blocks into the mediczy-app ECS task definition to use LiveKit Cloud while keeping LiveKit Cloud token server OFF.",
+  "_livekitCloud": {
+    "projectId": "p_5plkzn8qpro",
+    "projectUrl": "wss://msh-kw9tvxa9.livekit.cloud",
+    "apiUrl": "https://msh-kw9tvxa9.livekit.cloud",
+    "tokenServer": "ECS backend /api/video/livekit/token"
+  },
+  "_instructions": [
+    "Store LIVEKIT_API_KEY and LIVEKIT_API_SECRET in SSM Parameter Store as SecureString values.",
+    "LIVEKIT_URL is the WebSocket URL returned to browsers and mobile clients.",
+    "LIVEKIT_API_URL is the HTTPS host used by server-side RoomServiceClient diagnostics/status calls.",
+    "Merge environmentPatch entries into the mediczy-app container environment array.",
+    "Merge secretsPatch entries into the mediczy-app container secrets array.",
+    "Register a new mediczy-app task definition revision and update the ECS service."
+  ],
+  "environmentPatch": [
+    {
+      "name": "LIVEKIT_URL",
+      "value": "wss://msh-kw9tvxa9.livekit.cloud"
+    },
+    {
+      "name": "LIVEKIT_API_URL",
+      "value": "https://msh-kw9tvxa9.livekit.cloud"
+    },
+    {
+      "name": "LIVEKIT_MEET_URL",
+      "value": "https://msh-kw9tvxa9.livekit.cloud"
+    }
+  ],
+  "secretsPatch": [
+    {
+      "name": "LIVEKIT_API_KEY",
+      "valueFrom": "arn:aws:ssm:ap-south-1:480664947830:parameter/mediczy/prod/LIVEKIT_API_KEY"
+    },
+    {
+      "name": "LIVEKIT_API_SECRET",
+      "valueFrom": "arn:aws:ssm:ap-south-1:480664947830:parameter/mediczy/prod/LIVEKIT_API_SECRET"
+    }
+  ],
+  "ssmCommands": [
+    "aws ssm put-parameter --region ap-south-1 --name /mediczy/prod/LIVEKIT_API_KEY --type SecureString --value <paste-api-key> --overwrite",
+    "aws ssm put-parameter --region ap-south-1 --name /mediczy/prod/LIVEKIT_API_SECRET --type SecureString --value <paste-api-secret> --overwrite"
+  ]
+}

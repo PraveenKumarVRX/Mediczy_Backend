@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import whatsAppUserContextService from '../services/whatsapp-user-context.service.js';
 import { authUser, authUserOptional } from '../middleware/auth.middleware.js';
 import { createRateLimiter } from '../middleware/rateLimiter.middleware.js';
@@ -8,27 +9,94 @@ import doctorModel from '../models/doctor.model.intelligent.js';
 import { User } from '../models/user.model.intelligent.js';
 import { buildLiveKitJoinData } from '../utils/videoProvider.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
+import { mlog, mwarn, merr } from '../utils/medical-ai-logger.js';
 
 const router = express.Router();
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
 const SIB_DOCTOR_NAME = 'Dr. iSHA';
 
-// Rate limiter for emergency triage calls — strict to prevent abuse
-// 3 calls per 15 min per IP (unauthenticated) or per user (authenticated)
+// HMAC-based session ID — prevents user ID enumeration via session token
+const SESSION_SECRET = process.env.SESSION_HMAC_SECRET || process.env.JWT_SECRET || 'mediczy-session-hmac';
+function buildSessionId(userId, prefix = 'mediczy') {
+  const hmac = crypto.createHmac('sha256', SESSION_SECRET).update(String(userId)).digest('hex').slice(0, 16);
+  return `${prefix}_${hmac}`;
+}
+function ownsSession(sessionId, userId) {
+  if (!sessionId || !userId) return false;
+  // Accept both HMAC-based IDs and legacy mediczy_<userId> IDs for backwards compat
+  const hmacId = buildSessionId(userId);
+  const legacyId = `mediczy_${userId}`;
+  return sessionId.startsWith(hmacId) || sessionId.startsWith(legacyId) || sessionId.startsWith(`test_${userId}`);
+}
+
+// Rate limiter for feedback (20 per hour per user — prevent spam)
+const feedbackLimiter = createRateLimiter('api', {
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  message: 'Too many feedback submissions.',
+  skipSuccessfulRequests: true
+});
+
+// Allowlist for AI-driven navigation redirects — prevents phishing via crafted LLM responses
+const SAFE_REDIRECT_PATHS = new Set([
+  '/emergency', '/patient/appointments', '/patient/doctors',
+  '/patient/dashboard', '/patient/health', '/doctor/dashboard',
+]);
+function validateRedirectUrl(url) {
+  if (!url) return null;
+  // Internal relative paths only
+  if (url.startsWith('/') && !url.startsWith('//')) {
+    const path = url.split('?')[0];
+    if (SAFE_REDIRECT_PATHS.has(path) || path.startsWith('/patient/doctors?')) return url;
+  }
+  return null; // discard unsafe urls
+}
+
+// Rate limiter for non-emergency consultations (30 req/min per user)
+const consultLimiter = createRateLimiter('api', {
+  windowMs: 60 * 1000,
+  max: 30,
+  message: 'Too many consultation requests. Please wait a moment before asking again.',
+  skipSuccessfulRequests: false
+});
+
+// Rate limiter for emergency triage calls — 3 per 15 min per IP
 const emergencyTriageLimiter = createRateLimiter('api', {
-  windowMs: 15 * 60 * 1000,  // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 3,
   message: 'Emergency call rate limit reached. Please wait before trying again.',
   skipSuccessfulRequests: false
 });
 
-const extractSibResponse = (sibData) => (
-  sibData?.response
-  || sibData?.primary_response
-  || sibData?.chat_answer
-  || sibData?.message
-  || sibData?.result
-);
+// Input validation for medical queries
+function validateMedicalQuery(query) {
+  if (!query || typeof query !== 'string') return 'Medical query is required';
+  const trimmed = query.trim();
+  if (trimmed.length === 0) return 'Query cannot be empty';
+  if (trimmed.length > 2000) return 'Query too long (max 2000 characters)';
+  // Detect obvious prompt injection patterns
+  const injectionPatterns = [
+    /\bignore\b.{0,30}\b(previous|above|system|instructions?)\b/i,
+    /\bforget\b.{0,20}\b(context|everything|above)\b/i,
+    /^system:/im,
+    /\byou are (now|actually|really)\b/i,
+  ];
+  if (injectionPatterns.some(p => p.test(trimmed))) {
+    return 'Invalid request. Please ask a direct health question.';
+  }
+  return null;
+}
+
+const extractSibResponse = (sibData) => {
+  const raw = sibData?.response
+    || sibData?.primary_response
+    || sibData?.chat_answer
+    || sibData?.message
+    || sibData?.result;
+  const text = typeof raw === 'string' ? raw.trim() : String(raw ?? '').trim();
+  if (!text) throw new Error('SIB returned an empty response');
+  return text;
+};
 
 const buildSibConsultation = (sibData, { sessionId, language }) => {
   const responseText = extractSibResponse(sibData);
@@ -45,33 +113,36 @@ const buildSibConsultation = (sibData, { sessionId, language }) => {
   };
 
   const confidence = sibData?.confidence ?? sibData?.ai_assessment?.confidence;
-  if (typeof confidence === 'number') {
-    payload.confidence = confidence;
+  if (typeof confidence === 'number') payload.confidence = confidence;
+
+  // Forward intent-related fields from SIB — validate redirectUrl to prevent phishing
+  if (sibData?.intentType) payload.intentType = String(sibData.intentType);
+  if (sibData?.redirectUrl) {
+    const safe = validateRedirectUrl(sibData.redirectUrl);
+    if (safe) payload.redirectUrl = safe;
+    // silently drop unsafe redirectUrls — do NOT forward them to client
   }
+  if (sibData?.suggestedSpecialist) payload.suggestedSpecialist = String(sibData.suggestedSpecialist);
+  if (sibData?.specialization)      payload.specialization      = String(sibData.specialization);
 
   return payload;
 };
 
 /**
  * @route   POST /api/medical-ai/test
- * @desc    Test medical AI functionality without authentication
- * @access  Public
+ * @desc    Test medical AI functionality (authenticated — dev/staging only)
+ * @access  Private
  */
-router.post('/test', async (req, res) => {
+router.post('/test', authUser, async (req, res) => {
   try {
     const { query, language = 'en', userContext = {} } = req.body;
 
-    if (!query) {
-      return res.status(400).json({
-        success: false,
-        error: 'Medical query is required'
-      });
-    }
+    const queryError = validateMedicalQuery(query);
+    if (queryError) return res.status(400).json({ success: false, error: queryError });
 
-    // Test user context
-    const testSessionId = 'test_' + Date.now();
+    const testSessionId = `test_${req.user.id}_${Date.now()}`;
     const testUserContext = {
-      userId: 'test-user-' + Date.now(),
+      userId: req.user.id,
       age: userContext.age || 30,
       gender: userContext.gender || 'unspecified',
       medicalHistory: userContext.medicalHistory || [],
@@ -79,18 +150,22 @@ router.post('/test', async (req, res) => {
       ...userContext
     };
 
-    console.log('Testing Medical AI with query:', query);
+    mlog('Medical AI test', { userId: req.user.id, lang: language });
 
-    const sibResponse = await fetch(`${SIB_URL}/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        patient_id: testSessionId,
-        message: query,
-        language,
-        patient_data: testUserContext
-      })
-    });
+    const testController = new AbortController();
+    const testTimeout = setTimeout(() => testController.abort(), 20000);
+    let sibResponse;
+    try {
+      sibResponse = await fetch(`${SIB_URL}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: testController.signal,
+        body: JSON.stringify({ patient_id: testSessionId, message: query, language, patient_data: testUserContext })
+      });
+    } catch (fe) {
+      if (fe.name === 'AbortError') return res.status(504).json({ success: false, error: 'Test timed out', test: true });
+      throw fe;
+    } finally { clearTimeout(testTimeout); }
 
     if (!sibResponse.ok) {
       const errorText = await sibResponse.text().catch(() => '');
@@ -126,7 +201,7 @@ router.post('/test', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Medical AI test error:', error);
+    merr("Medical AI test error", { error: error?.message });
     res.status(500).json({
       success: false,
       error: error.message || 'Medical AI service temporarily unavailable',
@@ -140,27 +215,23 @@ router.post('/test', async (req, res) => {
  * @desc    Medical consultation with Dr. Isha
  * @access  Private
  */
-router.post('/consult', authUser, async (req, res) => {
+router.post('/consult', authUser, consultLimiter, async (req, res) => {
   try {
     const { query, language = 'en', userContext = {}, sessionId: requestedSessionId } = req.body;
     const isEmergencyMode = Boolean(userContext?.emergencyMode);
 
-    if (!query) {
-      return res.status(400).json({
-        success: false,
-        error: 'Medical query is required'
-      });
-    }
+    const queryError = validateMedicalQuery(query);
+    if (queryError) return res.status(400).json({ success: false, error: queryError });
 
     // Use provided session ID if present to preserve memory
-    const sessionId = requestedSessionId || userContext.sessionId || `mediczy_${req.user.id}`;
+    const sessionId = requestedSessionId || userContext.sessionId || buildSessionId(req.user.id);
 
     let dbContext = null;
     if (!isEmergencyMode) {
       try {
         dbContext = await whatsAppUserContextService.getFullUserContextByUserId(req.user.id);
       } catch (contextError) {
-        console.warn('⚠️ Failed to load user context for Dr. iSHA:', contextError.message);
+        mwarn("User context load failed", { error: contextError.message });
       }
     }
 
@@ -186,6 +257,10 @@ router.post('/consult', authUser, async (req, res) => {
           patient_id: sessionId,
           message: query,
           language,
+          // Forward up to 15 conversation turns for context continuity
+          history: Array.isArray(userContext?.conversationHistory)
+            ? userContext.conversationHistory.slice(-15)
+            : [],
           patient_data: {
             ...enhancedContext,
             channel: 'web',
@@ -207,33 +282,60 @@ router.post('/consult', authUser, async (req, res) => {
       clearTimeout(timeoutHandle);
     }
 
-    if (!sibResponse.ok) {
-      const errorText = await sibResponse.text().catch(() => '');
-      return res.status(503).json({
-        success: false,
-        error: 'SIB request failed',
-        details: errorText || `HTTP ${sibResponse.status}`,
-        provider: 'sib-fastapi'
-      });
+    let consultation;
+    if (sibResponse.ok) {
+      const sibData = await sibResponse.json();
+      try {
+        consultation = buildSibConsultation(sibData, { sessionId, language });
+      } catch (emptyErr) {
+        // SIB returned empty — fall through to LLM fallback
+        mwarn('SIB empty response, trying LLM fallback', { userId: req.user.id });
+        consultation = null;
+      }
+    } else {
+      const errText = await sibResponse.text().catch(() => '');
+      mwarn('SIB non-OK, trying LLM fallback', { status: sibResponse.status, userId: req.user.id });
+      consultation = null;
     }
 
-    const sibData = await sibResponse.json();
-    const consultation = buildSibConsultation(sibData, {
-      sessionId,
-      language
-    });
-
-    if (!consultation.response) {
-      return res.status(502).json({
-        success: false,
-        error: 'SIB response missing content',
-        provider: 'sib-fastapi'
-      });
+    // LLM fallback when SIB is unavailable or returned empty
+    if (!consultation) {
+      try {
+        const llmResult = await llmProvider.chat({
+          messages: [
+            { role: 'system', content: 'You are Dr. iSHA, a helpful medical AI assistant. Answer concisely and clearly. Never provide specific drug doses. Always recommend consulting a doctor for diagnosis.' },
+            { role: 'user', content: query }
+          ],
+          maxTokens: 512,
+          temperature: 0.3,
+        });
+        const fallbackText = llmResult?.content || llmResult?.text || llmResult?.response;
+        if (!fallbackText) throw new Error('LLM fallback also returned empty');
+        consultation = {
+          success: true,
+          response: String(fallbackText).trim(),
+          primary_response: String(fallbackText).trim(),
+          doctor: SIB_DOCTOR_NAME,
+          sessionId,
+          timestamp: new Date().toISOString(),
+          language,
+          provider: `llm-fallback:${llmResult?.provider || 'groq'}`,
+          model: llmResult?.model || 'fallback',
+          fallbackUsed: true,
+        };
+      } catch (llmErr) {
+        merr('Both SIB and LLM fallback failed', { error: llmErr?.message, userId: req.user.id });
+        return res.status(503).json({
+          success: false,
+          error: 'Medical AI service temporarily unavailable. Please try again shortly.',
+          retryAfterSeconds: 30,
+        });
+      }
     }
 
     res.json(consultation);
   } catch (error) {
-    console.error('Medical consultation API error:', error);
+    merr("Medical consultation error", { error: error?.message });
     res.status(500).json({
       success: false,
       error: 'Medical consultation service temporarily unavailable'
@@ -248,64 +350,63 @@ router.post('/consult', authUser, async (req, res) => {
  */
 router.post('/analyze-symptoms', authUser, async (req, res) => {
   try {
-    const { 
-      symptoms, 
-      description, 
-      language = 'en', 
+    const {
+      symptoms,
+      description,
+      language = 'en',
       severity = 'moderate',
       duration = ''
     } = req.body;
 
     if (!symptoms || !Array.isArray(symptoms) || symptoms.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Symptoms array is required'
-      });
+      return res.status(400).json({ success: false, error: 'Symptoms array is required' });
+    }
+    if (symptoms.length > 20) {
+      return res.status(400).json({ success: false, error: 'Too many symptoms (max 20)' });
+    }
+    // Validate the free-text description for injection patterns
+    if (description) {
+      const descError = validateMedicalQuery(description);
+      if (descError) return res.status(400).json({ success: false, error: descError });
     }
 
-    const sessionId = req.body.sessionId || `mediczy_symptoms_${req.user.id}_${Date.now()}`;
+    const sessionId = req.body.sessionId || buildSessionId(req.user.id, "mediczy_symptoms");
     const symptomsText = Array.isArray(symptoms) ? symptoms.join(', ') : symptoms;
     const analysisPrompt = `I am experiencing the following symptoms: ${symptomsText}. ${description || ''}. Duration: ${duration || 'not specified'}. Severity: ${severity || 'moderate'}.`;
 
-    const sibResponse = await fetch(`${SIB_URL}/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        patient_id: sessionId,
-        message: analysisPrompt,
-        language,
-        patient_data: {
-          userId: req.user.id,
-          symptoms,
-          description,
-          severity,
-          duration
-        }
-      })
-    });
-
-    if (!sibResponse.ok) {
-      const errorText = await sibResponse.text().catch(() => '');
-      return res.status(503).json({
-        success: false,
-        error: 'SIB request failed',
-        details: errorText || `HTTP ${sibResponse.status}`,
-        provider: 'sib-fastapi'
+    const asController = new AbortController();
+    const asTimeout = setTimeout(() => asController.abort(), 25000);
+    let sibData = null;
+    try {
+      const sibResponse = await fetch(`${SIB_URL}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: asController.signal,
+        body: JSON.stringify({
+          patient_id: sessionId,
+          message: analysisPrompt,
+          language,
+          patient_data: { userId: req.user.id, symptoms, description, severity, duration }
+        })
       });
+      if (sibResponse.ok) sibData = await sibResponse.json();
+    } catch (fe) {
+      if (fe.name !== 'AbortError') throw fe;
+    } finally { clearTimeout(asTimeout); }
+
+    let analysis;
+    if (sibData) {
+      try { analysis = buildSibConsultation(sibData, { sessionId, language }); } catch { analysis = null; }
     }
-
-    const sibData = await sibResponse.json();
-    const analysis = buildSibConsultation(sibData, {
-      sessionId,
-      language
-    });
-
-    if (!analysis.response) {
-      return res.status(502).json({
-        success: false,
-        error: 'SIB response missing content',
-        provider: 'sib-fastapi'
-      });
+    if (!analysis) {
+      try {
+        const lr = await llmProvider.chat({ messages: [{ role: 'system', content: 'You are Dr. iSHA, a symptom analysis assistant.' }, { role: 'user', content: analysisPrompt }], maxTokens: 512, temperature: 0.3 });
+        const t = lr?.content || lr?.text || '';
+        if (!t) throw new Error('empty');
+        analysis = { success: true, response: t.trim(), primary_response: t.trim(), doctor: SIB_DOCTOR_NAME, sessionId, timestamp: new Date().toISOString(), language, provider: 'llm-fallback', model: lr?.model || 'fallback', fallbackUsed: true };
+      } catch {
+        return res.status(503).json({ success: false, error: 'Symptom analysis service temporarily unavailable', retryAfterSeconds: 30 });
+      }
     }
 
     res.json({
@@ -316,7 +417,7 @@ router.post('/analyze-symptoms', authUser, async (req, res) => {
       duration
     });
   } catch (error) {
-    console.error('Symptom analysis API error:', error);
+    merr("Symptom analysis error", { error: error?.message });
     res.status(500).json({
       success: false,
       error: 'Symptom analysis service temporarily unavailable'
@@ -356,30 +457,57 @@ Please provide an emergency triage assessment including:
 4. Recommended actions while waiting for help
 5. Any follow-up questions to assess severity`;
 
-    const sibResponse = await fetch(`${SIB_URL}/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: emergencyPrompt,
-        language,
-        patient_id: String(req.user.id),
-        user_id: req.user.id,
-        include_risk: true,
-        context_type: 'emergency_triage'
-      })
-    });
-
-    if (!sibResponse.ok) {
-      const errorText = await sibResponse.text().catch(() => '');
-      return res.status(503).json({
-        success: false,
-        error: 'SIB request failed',
-        details: errorText || `HTTP ${sibResponse.status}`,
-        provider: 'sib-fastapi'
+    // 20-second hard timeout on emergency triage
+    const etController = new AbortController();
+    const etTimeout = setTimeout(() => etController.abort(), 20000);
+    let sibResult = null;
+    try {
+      const sibResponse = await fetch(`${SIB_URL}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: etController.signal,
+        body: JSON.stringify({
+          message: emergencyPrompt,
+          language,
+          patient_id: String(req.user.id),
+          user_id: req.user.id,
+          include_risk: true,
+          context_type: 'emergency_triage'
+        })
       });
-    }
+      if (sibResponse.ok) sibResult = await sibResponse.json();
+      else mwarn('SIB non-OK for emergency triage, using LLM fallback', { status: sibResponse.status });
+    } catch (fetchErr) {
+      if (fetchErr.name === 'AbortError') mwarn('SIB timeout on emergency triage, using LLM fallback', {});
+      else mwarn('SIB fetch error on emergency triage', { error: fetchErr.message });
+    } finally { clearTimeout(etTimeout); }
 
-    const sibResult = await sibResponse.json();
+    // LLM fallback if SIB unavailable
+    if (!sibResult) {
+      try {
+        const llmRes = await llmProvider.chat({
+          messages: [
+            { role: 'system', content: 'You are an emergency medical triage assistant. Assess urgency level (CRITICAL/HIGH/MODERATE/LOW), whether to call an ambulance, and immediate actions. Be concise and direct.' },
+            { role: 'user', content: emergencyPrompt }
+          ],
+          maxTokens: 400,
+          temperature: 0.2,
+        });
+        const fallbackText = llmRes?.content || llmRes?.text || '';
+        if (fallbackText) {
+          sibResult = { response: fallbackText, provider: 'llm-fallback' };
+        }
+      } catch (llmErr) {
+        merr('All providers failed for emergency triage', { error: llmErr?.message });
+        return res.status(500).json({
+          success: false,
+          error: 'Emergency triage service unavailable',
+          urgencyLevel: 'UNKNOWN',
+          requiresImmediateAttention: true,
+          fallbackAdvice: 'If experiencing severe symptoms, call 112 or seek immediate medical attention.',
+        });
+      }
+    }
     sibUsed = true;
     
     // Parse urgency from response (look for keywords)
@@ -424,17 +552,11 @@ Please provide an emergency triage assessment including:
     };
 
     // Log emergency triage attempts for audit
-    console.log(`🚨 Emergency triage requested by user ${req.user.id}:`, {
-      symptoms,
-      description,
-      urgencyLevel: triage.urgencyLevel,
-      sibUsed,
-      timestamp: new Date().toISOString()
-    });
+    mlog("Emergency triage completed", { userId: req.user.id, urgencyLevel: triage?.urgencyLevel });
 
     res.json(triage);
   } catch (error) {
-    console.error('Emergency triage API error:', error);
+    merr("Emergency triage error", { error: error?.message });
     res.status(500).json({
       success: false,
       error: 'Emergency triage service temporarily unavailable',
@@ -490,16 +612,7 @@ router.post('/emergency-sos', authUser, async (req, res) => {
       });
     };
     
-    console.log(`🚨 EMERGENCY SOS from user ${userId}:`, {
-      reason,
-      urgencyLevel,
-      location,
-      visionAnalysis: visionAnalysis ? {
-        distressLevel: visionAnalysis.distressLevel,
-        consciousnessLevel: visionAnalysis.consciousnessLevel
-      } : null,
-      timestamp: new Date().toISOString()
-    });
+    mlog("Emergency SOS initiated", { userId });
 
     // Build emergency notification content
     const sosTitle = `🚨 EMERGENCY SOS ALERT - ${urgencyLevel.toUpperCase()}`;
@@ -560,7 +673,7 @@ This is an automated emergency alert from Mediczy.
           });
           notifiedContacts.push({ type: 'doctor', name: `Dr. ${doctor.firstName} ${doctor.lastName}`, method: 'push' });
         } catch (pushError) {
-          console.error('Push notification to doctor failed:', pushError.message);
+          merr("Push notification failed", { error: pushError.message });
         }
 
         // Send email to doctor
@@ -574,11 +687,11 @@ This is an automated emergency alert from Mediczy.
             notifiedContacts.push({ type: 'doctor', name: `Dr. ${doctor.firstName} ${doctor.lastName}`, method: 'email' });
           }
         } catch (emailError) {
-          console.error('Email to doctor failed:', emailError.message);
+          merr("Email notification failed", { error: emailError.message });
         }
       }
     } catch (doctorError) {
-      console.error('Doctor notification error:', doctorError.message);
+      merr("Doctor notification error", { error: doctorError.message });
       errors.push('doctor_notification_failed');
     }
 
@@ -609,7 +722,7 @@ This is an automated emergency alert from Mediczy.
             }
           }
         } catch (orgError) {
-          console.error('Organization lookup skipped:', orgError.message);
+          mwarn("Org lookup skipped", { error: orgError.message });
         }
       }
 
@@ -619,11 +732,11 @@ This is an automated emergency alert from Mediczy.
           // Placeholder for HR notification when organization HR contacts are implemented
           notifiedContacts.push({ type: 'hr', name: 'HR Department', method: 'email' });
         } catch (hrError) {
-          console.error('HR notification error:', hrError.message);
+          merr("HR notification error", { error: hrError.message });
         }
       }
     } catch (orgError) {
-      console.error('Organization/HR notification error:', orgError.message);
+      mwarn("Org/HR notification error", { error: orgError.message });
       errors.push('organization_notification_failed');
     }
 
@@ -638,18 +751,13 @@ This is an automated emergency alert from Mediczy.
           );
           notifiedContacts.push({ type: contact.type || 'family', name: contact.name, method: 'email' });
         } catch (contactError) {
-          console.error(`Contact ${contact.name} notification error:`, contactError.message);
+          mwarn("Contact notification error", { error: contactError.message });
         }
       }
     }
 
     // Log SOS event for audit
-    console.log(`✅ SOS notifications sent:`, {
-      userId,
-      notifiedCount: notifiedContacts.length,
-      contacts: notifiedContacts,
-      errors
-    });
+    mlog("SOS notifications sent", { userId });
 
     res.json({
       success: true,
@@ -660,7 +768,7 @@ This is an automated emergency alert from Mediczy.
     });
 
   } catch (error) {
-    console.error('Emergency SOS API error:', error);
+    merr("Emergency SOS error", { error: error?.message });
     res.status(500).json({
       success: false,
       error: 'Failed to send emergency SOS alerts',
@@ -733,7 +841,7 @@ router.get('/triage-doctors', authUser, async (req, res) => {
         : 'No emergency doctors currently online. AI triage will continue to assist you.'
     });
   } catch (error) {
-    console.error('Triage doctors fetch error:', error);
+    merr("Triage doctors fetch error", { error: error?.message });
     res.status(500).json({
       success: false,
       error: 'Failed to fetch available triage doctors',
@@ -769,7 +877,7 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
         userId = user.id;
       } else {
         // Create temporary guest emergency record
-        console.log(`📱 Emergency call from unregistered (guest): ${guestEmail}`);
+        mlog("Guest emergency call", { ip: guestIp });
         userId = null; // Will handle as guest user
       }
     } else if (userId) {
@@ -783,7 +891,7 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
       }
     } else {
       // Emergency without auth and without guest email - still allow but with restrictions
-      console.log('⚠️ Emergency call from completely anonymous user');
+      mlog("Anonymous emergency call");
       userId = null;
     }
     
@@ -829,7 +937,7 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
     } else {
       // Guest users (unauthenticated) — allow but track by IP to prevent abuse
       const guestIp = req.ip || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 'unknown';
-      console.log(`⚠️ Emergency access for guest user from IP: ${guestIp}`);
+      mlog("Emergency guest access", { ip: guestIp });
       
       // Check how many guest emergency appointments were created from this IP in last 24h
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -913,7 +1021,7 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
         balanceAfter: parseFloat(hcWallet.balance) - hcRequired
       });
       
-      console.log(`✅ Deducted ${hcRequired} HC from user ${user.id} for emergency consultation`);
+      mlog("HC deducted", { userId: user.id, hc: hcRequired });
     }
     
     // Get patient info from user or request body (for guests)
@@ -968,7 +1076,7 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
       }, {
         where: { id: user.id }
       });
-      console.log(`✅ Emergency credit used for user ${user.id}. Credits: ${creditsUsed + 1}/${creditLimit}, Pending: ₹${(pendingAmount + consultationFee).toFixed(2)}`);
+      mlog("Emergency credit used", { userId: user.id });
     }
 
     // LiveKit URLs (tokenized when config is available)
@@ -998,7 +1106,7 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
         doctor: doctorLivekit
       };
     } catch (error) {
-      console.warn('LiveKit token generation failed, falling back to meet URL:', error.message);
+      mwarn("LiveKit token failed, using fallback", { error: error.message });
     }
 
     // Send real-time socket notification to doctor (WhatsApp-style call notification)
@@ -1019,9 +1127,9 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
       };
       
       const socketSent = emitTriageCallRequest(doctor.id, callData);
-      console.log(socketSent ? '✅ Socket notification sent to doctor' : '⚠️ Doctor not connected to socket');
+      mlog(socketSent ? "Socket notified doctor" : "Doctor not on socket");
     } catch (socketError) {
-      console.warn('Socket notification failed:', socketError.message);
+      mwarn("Socket notification failed", { error: socketError.message });
     }
 
     // Notify doctor via notification service (fallback)
@@ -1048,7 +1156,7 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
         channels: ['push', 'in-app']
       });
     } catch (notifyError) {
-      console.warn('Doctor notification failed:', notifyError.message);
+      mwarn("Doctor notification failed", { error: notifyError.message });
     }
 
     res.json({
@@ -1093,7 +1201,7 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
       }`
     });
   } catch (error) {
-    console.error('Instant triage call error:', error);
+    merr("Instant triage call error", { error: error?.message });
     res.status(500).json({
       success: false,
       error: 'Failed to create instant consultation',
@@ -1131,7 +1239,7 @@ router.post('/intent-escalation', authUser, async (req, res) => {
       ...escalationResult
     });
   } catch (error) {
-    console.error('Intent escalation error:', error);
+    merr("Intent escalation error", { error: error?.message });
     res.status(500).json({
       success: false,
       error: 'Failed to escalate intent'
@@ -1144,6 +1252,33 @@ router.post('/intent-escalation', authUser, async (req, res) => {
  * @desc    Check Medical AI service health
  * @access  Public
  */
+
+/**
+ * @route   GET /api/medical-ai/languages
+ * @desc    Supported languages for Dr. iSHA
+ * @access  Public
+ */
+router.get('/languages', (_req, res) => {
+  res.json({
+    success: true,
+    supported_languages: [
+      { code: 'en', name: 'English',    nativeName: 'English'    },
+      { code: 'hi', name: 'Hindi',      nativeName: 'हिंदी'        },
+      { code: 'ta', name: 'Tamil',      nativeName: 'தமிழ்'       },
+      { code: 'te', name: 'Telugu',     nativeName: 'తెలుగు'       },
+      { code: 'kn', name: 'Kannada',    nativeName: 'ಕನ್ನಡ'       },
+      { code: 'ml', name: 'Malayalam',  nativeName: 'മലയാളം'      },
+      { code: 'gu', name: 'Gujarati',   nativeName: 'ગુજરાતી'      },
+      { code: 'mr', name: 'Marathi',    nativeName: 'मराठी'        },
+      { code: 'bn', name: 'Bengali',    nativeName: 'বাংলা'        },
+      { code: 'pa', name: 'Punjabi',    nativeName: 'ਪੰਜਾਬੀ'       },
+      { code: 'ur', name: 'Urdu',       nativeName: 'اردو'         },
+    ],
+    default: 'en',
+    provider: 'sib-fastapi',
+  });
+});
+
 router.get('/health', async (req, res) => {
   try {
     const sibResponse = await fetch(`${SIB_URL}/health`);
@@ -1182,7 +1317,7 @@ router.delete('/session/:sessionId', authUser, async (req, res) => {
     const { sessionId } = req.params;
     
     // Verify session belongs to user
-    if (!sessionId.includes(req.user.id)) {
+    if (!ownsSession(sessionId, req.user.id)) {
       return res.status(403).json({
         success: false,
         error: 'Unauthorized to clear this session'
@@ -1210,7 +1345,7 @@ router.delete('/session/:sessionId', authUser, async (req, res) => {
       provider: 'sib-fastapi'
     });
   } catch (error) {
-    console.error('Clear session API error:', error);
+    merr("Clear session error", { error: error?.message });
     res.status(500).json({
       success: false,
       error: 'Failed to clear session'
@@ -1228,7 +1363,7 @@ router.get('/session/:sessionId', authUser, async (req, res) => {
     const { sessionId } = req.params;
     
     // Verify session belongs to user
-    if (!sessionId.includes(req.user.id)) {
+    if (!ownsSession(sessionId, req.user.id)) {
       return res.status(403).json({
         success: false,
         error: 'Unauthorized to access this session'
@@ -1259,7 +1394,7 @@ router.get('/session/:sessionId', authUser, async (req, res) => {
       lastInteractionAt: lastEntry?.timestamp || null
     });
   } catch (error) {
-    console.error('Get session API error:', error);
+    merr("Get session error", { error: error?.message });
     res.status(500).json({
       success: false,
       error: 'Failed to retrieve session information'
@@ -1310,7 +1445,7 @@ router.post('/conversation-history', authUser, async (req, res) => {
       message: 'Conversation history retrieved successfully'
     });
   } catch (error) {
-    console.error('Conversation history API error:', error);
+    merr("Conversation history error", { error: error?.message });
     res.status(500).json({
       success: false,
       error: 'Failed to retrieve conversation history'
@@ -1323,18 +1458,12 @@ router.post('/conversation-history', authUser, async (req, res) => {
  * @desc    Submit feedback on AI response
  * @access  Private
  */
-router.post('/feedback', authUser, async (req, res) => {
+router.post('/feedback', authUser, feedbackLimiter, async (req, res) => {
   try {
     const { sessionId, rating, feedback, responseHelpful } = req.body;
 
     // Log feedback for improvement
-    console.log(`📝 Medical AI feedback from user ${req.user.id}:`, {
-      sessionId,
-      rating,
-      feedback,
-      responseHelpful,
-      timestamp: new Date().toISOString()
-    });
+    mlog("Feedback received", { userId: req.user.id });
 
     // In production, store this in database for AI improvement
     res.json({
@@ -1342,7 +1471,7 @@ router.post('/feedback', authUser, async (req, res) => {
       message: 'Feedback submitted successfully'
     });
   } catch (error) {
-    console.error('Feedback API error:', error);
+    merr("Feedback API error", { error: error?.message });
     res.status(500).json({
       success: false,
       error: 'Failed to submit feedback'
@@ -1371,7 +1500,7 @@ router.get('/doctors', authUser, async (req, res) => {
       specialization: specialization || 'all'
     });
   } catch (error) {
-    console.error('Get doctors API error:', error);
+    merr("Get doctors error", { error: error?.message });
     res.status(500).json({
       success: false,
       error: 'Failed to retrieve doctors'
@@ -1409,7 +1538,7 @@ router.get('/doctors/:doctorId/slots', authUser, async (req, res) => {
     try {
       weeklySchedule = doctor.weeklySchedule ? JSON.parse(doctor.weeklySchedule) : null;
     } catch (e) {
-      console.warn('Could not parse doctor weekly schedule:', e.message);
+      mwarn("Doctor schedule parse error", { error: e.message });
     }
     
     // Generate slots based on doctor's configured slot duration
@@ -1498,7 +1627,7 @@ router.get('/doctors/:doctorId/slots', authUser, async (req, res) => {
       bookedCount: bookedTimes.length
     });
   } catch (error) {
-    console.error('Get doctor slots API error:', error);
+    merr("Get doctor slots error", { error: error?.message });
     res.status(500).json({
       success: false,
       error: 'Failed to retrieve available slots'
@@ -1667,7 +1796,7 @@ router.post('/book-appointment', authUser, async (req, res) => {
       aiResponse: confirmationMessage
     });
   } catch (error) {
-    console.error('Chatbot booking API error:', error);
+    merr("Chatbot booking error", { error: error?.message });
     res.status(500).json({
       success: false,
       error: 'Failed to book appointment. Please try again.'
@@ -1711,7 +1840,7 @@ router.get('/my-appointments', authUser, async (req, res) => {
       count: appointments.length
     });
   } catch (error) {
-    console.error('Get appointments API error:', error);
+    merr("Get appointments error", { error: error?.message });
     res.status(500).json({
       success: false,
       error: 'Failed to retrieve appointments'
@@ -1746,7 +1875,7 @@ router.post('/analyze-report', authUser, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Invalid image format. Use JPEG, PNG, GIF, or WebP.' });
     }
 
-    console.log(`[Patient Report Analysis] User ${req.user.id} - ${mimeType} - ${Math.round(image.length / 1024)}KB`);
+    mlog("Report analysis started", { userId: req.user.id, mimeType });
 
     const patientPrompt = `You are a compassionate medical AI assistant helping a patient understand their medical report.
 
@@ -1825,7 +1954,7 @@ Patient's question: ${query}`;
       };
     }
 
-    console.log(`[Patient Report Analysis] ✅ Complete for user ${req.user.id}`);
+    mlog("Report analysis complete", { userId: req.user.id });
 
     res.json({
       success: true,
@@ -1843,7 +1972,7 @@ Patient's question: ${query}`;
     });
 
   } catch (error) {
-    console.error('[Patient Report Analysis] ❌ Error:', error);
+    merr("Report analysis error", { error: error?.message });
     res.status(500).json({
       success: false,
       error: 'Report analysis failed. Please try again.'
@@ -1955,7 +2084,7 @@ Please provide:
 Keep advice practical, specific, and rooted in clinical nutrition principles. Be warm and encouraging as Dr. iSHA always is.`;
 
     // ── Call Dr. iSHA (SIB) ───────────────────────────────────────────────
-    const sessionId = `diet_plan_${req.user.id}_${Date.now()}`;
+    const sessionId = buildSessionId(req.user.id, "diet_plan");
     const controller = new AbortController();
     const timeoutHandle = setTimeout(() => controller.abort(), 40000);
 
@@ -2032,7 +2161,7 @@ Keep advice practical, specific, and rooted in clinical nutrition principles. Be
     });
 
   } catch (error) {
-    console.error('[Dr. iSHA Diet Plan] ❌ Error:', error);
+    merr("Diet plan error", { error: error?.message });
     res.status(500).json({ success: false, error: 'Dr. iSHA diet recommendation failed. Please try again.' });
   }
 });
@@ -2106,7 +2235,7 @@ router.get('/health-summary', authUser, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('[Health Summary] ❌ Error:', error);
+    merr("Health summary error", { error: error?.message });
     res.status(500).json({ success: false, error: 'Failed to generate health summary.' });
   }
 });

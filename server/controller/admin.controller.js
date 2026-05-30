@@ -129,12 +129,23 @@ export const adminLogin = async (req, res) => {
       await auditLoginAttempt(req, null, email, false, 'Admin not found');
       return res.status(401).json({ message: 'Invalid credentials' });
     }
-    
+
+    // Account status guard — reject before password check to avoid timing oracle
+    if (adminUser.status !== 'active' || adminUser.isActive === false) {
+      logFailedAttempt(clientIP, email, 'Inactive admin attempted login');
+      await auditLoginAttempt(req, adminUser.id, email, false, 'Admin account inactive or suspended');
+      return res.status(403).json({
+        success: false,
+        message: 'Admin account is inactive or suspended. Contact platform support.',
+        code: 'ACCOUNT_INACTIVE',
+      });
+    }
+
     // Verify password
     console.log('🔍 Verifying password...');
     const isPasswordValid = await adminUser.comparePassword(password);
     console.log('🔍 Password valid:', isPasswordValid);
-    
+
     if (isPasswordValid) {
       // Update last login
       await adminUser.update({ 

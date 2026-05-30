@@ -55,6 +55,8 @@ import {
   Briefcase,
   HelpCircle,
   Phone,
+  Mail,
+  LayoutTemplate,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -136,6 +138,8 @@ const teamSidebarItems: SidebarItem[] = [
   { icon: Calendar, label: "Appointments", path: "/team/appointments", category: "Operations" },
   { icon: MessageSquare, label: "Chat Dashboard", path: "/admin/chat", category: "Support" },
   { icon: Ticket, label: "Support Tickets", path: "/team/support-tickets", category: "Support" },
+  { icon: Mail, label: "Email Inbox", path: "/team/email-inbox", category: "Support" },
+  { icon: LayoutTemplate, label: "Welcome Emails", path: "/team/settings?tab=email-templates", category: "Support" },
   { icon: MessageSquare, label: "WhatsApp Inbox", path: "/team/whatsapp-inbox", category: "Support" },
   { icon: MessageSquare, label: "RC Omnichannel", path: "/team/rc-omnichannel", category: "Support" },
   { icon: Pill, label: "Pharmacies", path: "/team/pharmacy-management", category: "Management" },
