@@ -224,7 +224,7 @@ module.exports = {
         N8N_PROTOCOL: 'http',
         N8N_HOST: 'localhost',
         GENERIC_TIMEZONE: 'Asia/Kolkata',
-        N8N_ENCRYPTION_KEY: 'C6l9z3FSU3zJsUop9TL57bJZk/LB7Vzo',
+        N8N_ENCRYPTION_KEY: process.env.N8N_ENCRYPTION_KEY,
         N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: 'false'
       },
       error_file: '/tmp/n8n-error.log',

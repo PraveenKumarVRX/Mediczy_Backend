@@ -9,6 +9,9 @@
 import express from 'express';
 import fetch from 'node-fetch';
 import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import { File } from 'buffer';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import logger from '../config/logger.js';
@@ -17,8 +20,31 @@ import llmProvider from '../services/ai-brain/llm-provider.js';
 const router = express.Router();
 const ambientSessions = new Map();
 const requireScribeAccess = requireRole(['doctor', 'assistant', 'nurse', 'team', 'admin', 'hospital']);
+const MAX_AMBIENT_SESSIONS = 50;
+const AMBIENT_SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+const AMBIENT_CHUNK_DIR = path.join(os.tmpdir(), 'mediczy-ambient-chunks');
+fs.mkdirSync(AMBIENT_CHUNK_DIR, { recursive: true });
+
+// Evict sessions older than TTL to prevent unbounded Map growth
+function _evictExpiredSessions() {
+    const cutoff = Date.now() - AMBIENT_SESSION_TTL_MS;
+    for (const [id, session] of ambientSessions) {
+        if (new Date(session.createdAt).getTime() < cutoff) {
+            _cleanupSessionFiles(session);
+            ambientSessions.delete(id);
+        }
+    }
+}
+
+function _cleanupSessionFiles(session) {
+    for (const chunkPath of (session.chunkPaths || [])) {
+        try { fs.unlinkSync(chunkPath); } catch {}
+    }
+}
 
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
+const OFFLINE_SCRIBE_URL = process.env.SCRIBE_API_URL || 'http://localhost:8006';
+const OFFLINE_SCRIBE_TOKEN = process.env.SCRIBE_TOKEN || '';
 const SCRIBE_LLM_CASCADE = ['sib-bimedix', 'isha', 'groq', 'openai'];
 const SCRIBE_DISCLAIMER = 'AI-assisted clinical draft. Final responsibility and verification must be completed by the treating clinician.';
 
@@ -524,6 +550,29 @@ router.post('/normalize', authUser, requireScribeAccess, async (req, res) => {
         if (!text) {
             return res.status(400).json({ error: 'Text is required', help: 'Provide "text" in request body' });
         }
+
+        // Proxy to the Python offline scribe normalizer (full Indian medical normalization).
+        // Falls back to the 5-rule stub if the scribe service is unreachable.
+        try {
+            const scribeRes = await fetch(`${OFFLINE_SCRIBE_URL}/api/scribe/normalize`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Scribe-Token': OFFLINE_SCRIBE_TOKEN,
+                },
+                body: JSON.stringify({ text, language }),
+                signal: AbortSignal.timeout(10000),
+            });
+            if (scribeRes.ok) {
+                const data = await scribeRes.json();
+                return res.json(data);
+            }
+            logger.warn('Offline scribe normalize returned non-OK status', { status: scribeRes.status });
+        } catch (proxyErr) {
+            logger.warn('Offline scribe unreachable for normalize, using basic fallback', { error: proxyErr.message });
+        }
+
+        // Basic fallback (5-rule stub)
         const normalized = String(text)
             .replace(/\btwice daily\b/gi, 'BD')
             .replace(/\bonce daily\b/gi, 'OD')
@@ -535,9 +584,10 @@ router.post('/normalize', authUser, requireScribeAccess, async (req, res) => {
             original_text: text,
             normalized_text: normalized,
             changes: normalized === text ? [] : [{ type: 'basic_medical_normalization' }],
-            confidence: 0.75,
+            confidence: 0.6,
             language,
-            processing_time: 0
+            processing_time: 0,
+            source: 'basic_fallback'
         });
     } catch (error) {
         logger.error('AI Scribe normalization failed:', { error: error.message, userId: req.user?.id });
@@ -630,6 +680,10 @@ router.post('/discharge', authUser, requireScribeAccess, (req, res) => {
 // ===================================
 
 router.post('/sessions', authUser, requireScribeAccess, async (req, res) => {
+    _evictExpiredSessions();
+    if (ambientSessions.size >= MAX_AMBIENT_SESSIONS) {
+        return res.status(429).json({ success: false, message: 'Too many active ambient sessions. Please finalize or wait.' });
+    }
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     ambientSessions.set(id, {
         id,
@@ -637,7 +691,8 @@ router.post('/sessions', authUser, requireScribeAccess, async (req, res) => {
         language: normalizeLanguage(req.body.language || 'auto'),
         documentType: mapDocumentTypeForBackend(req.body.document_type || 'opd-notes'),
         patientContext: req.body.patient_context || {},
-        chunks: [],
+        chunkPaths: [],   // disk paths instead of in-memory buffers
+        chunkCount: 0,
         createdAt: new Date().toISOString()
     });
     res.status(201).json({ success: true, sessionId: id });
@@ -651,22 +706,28 @@ router.post('/sessions/:id/chunks', authUser, requireScribeAccess, upload.single
     if (!req.file) {
         return res.status(400).json({ success: false, message: 'Upload audio chunk with field name "audio"' });
     }
-    session.chunks.push(req.file.buffer);
-    return res.status(202).json({ success: true, chunkCount: session.chunks.length });
+    // Write chunk buffer to disk immediately — never held in Node.js RAM
+    const chunkPath = path.join(AMBIENT_CHUNK_DIR, `${req.params.id}_${session.chunkCount}.webm`);
+    fs.writeFileSync(chunkPath, req.file.buffer);
+    session.chunkPaths.push(chunkPath);
+    session.chunkCount++;
+    return res.status(202).json({ success: true, chunkCount: session.chunkCount });
 });
 
 router.post('/sessions/:id/finalize', authUser, requireScribeAccess, async (req, res) => {
-    try {
-        const session = ambientSessions.get(req.params.id);
-        if (!session || session.ownerId !== req.user?.id) {
-            return res.status(404).json({ success: false, message: 'Ambient session not found' });
-        }
-        if (!session.chunks.length) {
-            return res.status(400).json({ success: false, message: 'No audio chunks uploaded' });
-        }
+    const session = ambientSessions.get(req.params.id);
+    if (!session || session.ownerId !== req.user?.id) {
+        return res.status(404).json({ success: false, message: 'Ambient session not found' });
+    }
+    if (!session.chunkPaths.length) {
+        return res.status(400).json({ success: false, message: 'No audio chunks uploaded' });
+    }
 
+    try {
+        // Concatenate chunk files from disk — avoids holding all audio in RAM at once
+        const chunks = session.chunkPaths.map(p => fs.readFileSync(p));
         const audioFile = {
-            buffer: Buffer.concat(session.chunks),
+            buffer: Buffer.concat(chunks),
             originalname: 'ambient-session.webm',
             mimetype: 'audio/webm'
         };
@@ -693,10 +754,13 @@ router.post('/sessions/:id/finalize', authUser, requireScribeAccess, async (req,
             ai_badge: true,
             disclaimer: SCRIBE_DISCLAIMER
         };
+        _cleanupSessionFiles(session);
         ambientSessions.delete(req.params.id);
         return res.json({ success: true, sessionId: req.params.id, result });
     } catch (error) {
         logger.error('Ambient scribe finalize failed:', { error: error.message, userId: req.user?.id });
+        _cleanupSessionFiles(session);
+        ambientSessions.delete(req.params.id);
         return res.status(500).json({ success: false, message: error.message });
     }
 });
