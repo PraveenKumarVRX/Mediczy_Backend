@@ -340,6 +340,19 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
     instagram: normalizeExternalUrl(doctor?.socialLinks?.instagram),
     youtube: normalizeExternalUrl(doctor?.socialLinks?.youtube),
   };
+  const apiAvailabilityStatus = doctor?.availability?.status;
+  const normalizedAvailabilityStatus: "Available" | "Busy" | "Away" =
+    apiAvailabilityStatus === "Available" || apiAvailabilityStatus === "Busy" || apiAvailabilityStatus === "Away"
+      ? apiAvailabilityStatus
+      : doctor?.isOnline
+      ? "Available"
+      : doctor?.isAvailable
+      ? "Busy"
+      : "Away";
+  const nextAvailableSlot =
+    doctor?.availability?.nextAvailableSlot ||
+    doctor?.nextAvailableSlot ||
+    (normalizedAvailabilityStatus === "Available" ? "Available now" : "Slots update hourly");
 
   return {
     _id: String(fallbackId),
@@ -356,9 +369,8 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
       inPerson: inPersonFee,
     },
     availability: {
-      status: doctor?.isOnline ? "Available" : doctor?.isAvailable ? "Busy" : "Away",
-      nextAvailableSlot:
-        doctor?.nextAvailableSlot || (doctor?.isOnline ? "Available now" : "Slots update hourly"),
+      status: normalizedAvailabilityStatus,
+      nextAvailableSlot,
     },
     clinic: clinicInfo,
     phoneNumber: doctor?.phoneNumber || "",
@@ -457,6 +469,9 @@ const DoctorListBooking = () => {
     if (!value) return false;
     return DOCTOR_ID_REGEX.test(value) || DOCTOR_PUBLIC_ID_REGEX.test(value);
   };
+
+  const isDoctorOnlineNow = (doctor: Doctor) =>
+    doctor.isLive === true && doctor.supportsOnline !== false && doctor.availability?.status === "Available";
 
   useEffect(() => {
     const handler = () => setUserType(getUserType());
@@ -662,9 +677,7 @@ const DoctorListBooking = () => {
     }
 
     if (consultationTypeFilter === "online") {
-      filtered = filtered.filter(
-        (doctor) => doctor.supportsOnline !== false && doctor.availability?.status === "Available"
-      );
+      filtered = filtered.filter((doctor) => isDoctorOnlineNow(doctor));
     } else if (consultationTypeFilter === "inPerson") {
       filtered = filtered.filter((doctor) => doctor.supportsInPerson);
     }
@@ -692,10 +705,7 @@ const DoctorListBooking = () => {
       Number.isFinite(doctor.distanceKm as number) ? (doctor.distanceKm as number) : Number.POSITIVE_INFINITY;
 
     const onlineRank = (doctor: Doctor) => {
-      const status = doctor.availability?.status || "Away";
-      const explicitlyAvailable = status === "Available";
-      const supportsOnlineNow = doctor.supportsOnline !== false;
-      return explicitlyAvailable || supportsOnlineNow ? 1 : 0;
+      return isDoctorOnlineNow(doctor) ? 1 : 0;
     };
 
     const inPersonRank = (doctor: Doctor) => {
@@ -1424,7 +1434,7 @@ const DoctorListBooking = () => {
                 <Video className="h-5 w-5 text-blue-600" />
                 <div>
                   <p className="text-xs text-muted-foreground">Online now</p>
-                  <p className="text-lg font-semibold">{filteredDoctors.filter((doctor) => doctor.availability?.status === "Available").length}</p>
+                  <p className="text-lg font-semibold">{filteredDoctors.filter((doctor) => isDoctorOnlineNow(doctor)).length}</p>
                 </div>
               </CardContent>
             </Card>
