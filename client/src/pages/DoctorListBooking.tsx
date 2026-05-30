@@ -579,7 +579,7 @@ const DoctorListBooking = () => {
       let primaryDoctors: Doctor[] = [];
       let primaryFetchSucceeded = false;
       const availableDoctorParams: Record<string, any> = {};
-      availableDoctorParams.strictQc = true;
+      availableDoctorParams["strictQc"] = "true";
 
       if (consultationTypeFilter === "online") {
         availableDoctorParams.consultationType = "online";
