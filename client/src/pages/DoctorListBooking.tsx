@@ -79,6 +79,7 @@ interface Doctor {
   lastName: string;
   profileImage?: string;
   isLive?: boolean;
+  isAvailableNow?: boolean;
   specialization: string;
   experience: number;
   education: string[];
@@ -333,7 +334,9 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
     typeof doctor?.clinicAddress === "string"
       ? doctor.clinicAddress.trim().length > 0
       : Boolean(doctor?.clinicAddress && Object.keys(doctor.clinicAddress || {}).length > 0);
-  const supportsOnline = rawOnlineFee != null || Boolean(doctor?.isOnline);
+  const apiSupportsOnline = doctor?.isOnline === true;
+  const apiAvailableNow = doctor?.isAvailable === true || doctor?.availability?.status === "Available";
+  const supportsOnline = rawOnlineFee != null || apiSupportsOnline;
   const supportsInPerson = rawInPersonFee != null || hasClinicAddress;
   const socialLinks = {
     facebook: normalizeExternalUrl(doctor?.socialLinks?.facebook),
@@ -344,9 +347,9 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
   const normalizedAvailabilityStatus: "Available" | "Busy" | "Away" =
     apiAvailabilityStatus === "Available" || apiAvailabilityStatus === "Busy" || apiAvailabilityStatus === "Away"
       ? apiAvailabilityStatus
-      : doctor?.isOnline
+      : apiAvailableNow
       ? "Available"
-      : doctor?.isAvailable
+      : apiSupportsOnline
       ? "Busy"
       : "Away";
   const nextAvailableSlot =
@@ -357,6 +360,7 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
   return {
     _id: String(fallbackId),
     isLive: hasLiveId,
+    isAvailableNow: apiAvailableNow,
     firstName: doctor?.firstName || "Doctor",
     lastName: doctor?.lastName || "",
     profileImage: doctor?.profileImage || "",
@@ -471,7 +475,7 @@ const DoctorListBooking = () => {
   };
 
   const isDoctorOnlineNow = (doctor: Doctor) =>
-    doctor.isLive === true && doctor.supportsOnline !== false && doctor.availability?.status === "Available";
+    doctor.isLive === true && doctor.isAvailableNow === true && doctor.supportsOnline !== false;
 
   useEffect(() => {
     const handler = () => setUserType(getUserType());
