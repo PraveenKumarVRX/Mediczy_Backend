@@ -160,6 +160,7 @@ import healthDiaryRouter from './routes/health-diary.route.js';
 import healthIntelligenceRouter from './routes/health-intelligence.route.js';
 import sibControlRouter from './routes/sib-control.route.js';
 import sibChatbotsRouter from './routes/sib-chatbots.route.js';
+import providerNetworkBotRouter from './routes/provider-network-bot.route.js';
 import { ringFencingMiddleware } from './middleware/ringFencing.js';
 import publicReportRouter from './routes/public-report.route.js';
 import onlineConsultationRouter from './routes/online-consultation.route.js';
@@ -1226,6 +1227,7 @@ app.use("/api/health-diary", healthDiaryRouter); // Patient health journal and d
 app.use("/api/health-intelligence", healthIntelligenceRouter); // Dr. iSHA Health Intelligence Dashboard
 app.use("/api/sib", sibControlRouter); // SIB Control Layer - AI decision management, kill switch, approvals
 app.use("/api/sib-chatbots", sibChatbotsRouter); // SIB Chatbots - Admin dashboard AI chatbots (Health, Appointment, Emergency)
+app.use('/api/provider-network-bot', providerNetworkBotRouter); // Provider directory bot: ingest, QC, publish to SmartHealth network
 app.use("/api/health", healthRouter); // Unified health metrics endpoint
 app.use("/api/consultation", onlineConsultationRouter); // Online consultation booking flow
 app.use("/api/myupchar", myupcharRouter); // myUpchar Live Consult API proxy
@@ -1259,6 +1261,7 @@ app.use('/api/module-access', moduleAccessRouter); // Public endpoint for checki
 app.use('/api/admin/roles', roleRouter); // Role management with CRUD + module access
 app.use('/api/roles', roleRouter); // User-facing role endpoints (check own roles/modules)
 app.use('/api/team', teamRouter);
+app.use('/api/team/provider-network-bot', providerNetworkBotRouter);
 app.use('/api/team/emails', teamEmailRouter); // Team email inbox with AI processing
 app.use('/api/team/welcome-email-templates', welcomeEmailTemplatesRouter); // Welcome email template customization
 app.use('/api/email-settings', authUser, emailSettingsRouter); // User SMTP/IMAP configuration settings

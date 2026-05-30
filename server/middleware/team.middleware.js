@@ -37,11 +37,34 @@ export const authTeam = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Access denied. Team member privileges required.' });
     }
 
-    // DB status re-check — prevents revoked/suspended accounts from continuing
-    const user = await userModel.findOne({
-      where: { id: decoded.id },
-      attributes: ['id', 'email', 'role', 'status', 'isAdmin', 'isTeam', 'membershipType', 'metadata', 'organization_id']
-    });
+    // DB status re-check — prevents revoked/suspended accounts from continuing.
+    // Fallback to pgPool when Sequelize points to an unavailable/local DB.
+    let user = null;
+    try {
+      user = await userModel.findOne({
+        where: { id: decoded.id },
+        attributes: ['id', 'email', 'role', 'status', 'isAdmin', 'isTeam', 'membershipType', 'metadata', 'organization_id']
+      });
+    } catch (dbErr) {
+      console.warn('[TeamAuth] Sequelize user lookup failed, falling back to pgPool:', dbErr.message);
+      try {
+        const { rows } = await sharedPool.query(
+          `SELECT id, email, role, status,
+                  COALESCE("isAdmin", FALSE) AS "isAdmin",
+                  COALESCE("isTeam", FALSE) AS "isTeam",
+                  "membershipType",
+                  metadata,
+                  organization_id
+             FROM users
+            WHERE id = $1
+            LIMIT 1`,
+          [decoded.id]
+        );
+        user = rows[0] || null;
+      } catch (fallbackErr) {
+        console.error('[TeamAuth] pgPool fallback failed:', fallbackErr.message);
+      }
+    }
 
     if (!user) {
       return res.status(401).json({ success: false, message: 'User not found' });

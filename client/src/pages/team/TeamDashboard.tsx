@@ -83,6 +83,16 @@ const QUICK_ACTIONS = [
     permissionGuard: null, // always visible
   },
   {
+    title: "Provider Network",
+    description: "Ingest, QC and publish provider directory",
+    icon: Building2,
+    color: "bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border-cyan-500/20",
+    iconColor: "text-cyan-600",
+    link: "/team/provider-network",
+    pattern: "radial-gradient(circle at 100% 50%, rgba(6, 182, 212, 0.05) 0%, transparent 50%)",
+    permissionGuard: null,
+  },
+  {
     title: "Corporate Management",
     description: "Manage corporate accounts",
     icon: Building2,

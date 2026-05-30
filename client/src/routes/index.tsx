@@ -262,6 +262,7 @@ const TeamSettings             = lazy(() => import("@/pages/team/TeamSettings"))
 const TeamHealthPlans          = lazy(() => import("@/pages/team/TeamHealthPlans"));
 const TeamBrokerManagement     = lazy(() => import("@/pages/team/TeamBrokerManagement"));
 const TeamDoctorManagement     = lazy(() => import("@/pages/team/TeamDoctorManagement"));
+const TeamProviderNetwork      = lazy(() => import("@/pages/team/TeamProviderNetwork"));
 
 const _TeamModulePages = () => import("@/pages/team/TeamModulePages");
 const TeamUserManagementPage     = lazyNamed(_TeamModulePages, "TeamUserManagementPage");
@@ -1155,6 +1156,8 @@ const AppRoutes = () => {
           element={<TeamGuard><TeamDashboard initialTab="emails" /></TeamGuard>} />
         <Route path="/team/profile"
           element={<TeamGuard><TeamProfile /></TeamGuard>} />
+        <Route path="/team/provider-network"
+          element={<TeamGuard><TeamProviderNetwork /></TeamGuard>} />
 
         {/* ── Team (permission-gated modules) ─────────────────────────── */}
         <Route path="/team/directory"
