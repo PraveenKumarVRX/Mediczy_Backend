@@ -18,6 +18,7 @@ import MedicalRecord from '../../models/postgres/medicalRecord.model.postgres.js
 import EHRRecord from '../../models/postgres/ehrRecord.model.postgres.js';
 import VitalSign from '../../models/postgres/vitalSign.model.postgres.js';
 import n8nService from '../../services/n8n.service.js';
+import { enforceInsurancePolicyStandards } from '../../services/insurance-policy-standards.service.js';
 import { evaluateVitalsAndAlert, ensureClinicalIntelligenceTables } from '../../services/clinical-intelligence.service.js';
 
 const router = express.Router();
@@ -2717,27 +2718,63 @@ router.get('/insurance/policies', verifyHospitalToken, async (req, res) => {
 router.post('/insurance/policies', verifyHospitalToken, async (req, res) => {
   try {
     const organizationId = req.hospitalId;
-    const { patientId, policyNumber, insuranceProvider, planName, coverageAmount, deductible, copay, validFrom, validUpto } = req.body;
+    const {
+      patientId,
+      policyNumber,
+      insuranceProvider,
+      planName,
+      coverageAmount,
+      deductible,
+      copay,
+      validFrom,
+      validUpto,
+      eCardAvailable
+    } = req.body;
 
     if (!patientId || !policyNumber || !insuranceProvider || !coverageAmount) {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
+    const standardization = enforceInsurancePolicyStandards({
+      policyNumber,
+      planName,
+      policyType: planName,
+      startDate: validFrom,
+      endDate: validUpto,
+      requestedECardAvailable: eCardAvailable,
+      autoAssignStartDate: false,
+      autoAssignEndDate: true
+    });
+
+    if (!standardization.valid) {
+      return res.status(400).json({ success: false, message: standardization.message });
+    }
+
+    const normalized = standardization.normalized;
+
     const policy = await InsurancePolicy.create({
       patientId,
-      policyNumber,
+      policyNumber: normalized.policyNumber,
       insuranceProvider,
       planName,
       coverageAmount,
       remainingAmount: coverageAmount,
       deductible,
       copay,
-      validFrom,
-      validUpto,
+      validFrom: normalized.validFrom,
+      validUpto: normalized.validUpto,
       organizationId
     });
 
-    res.status(201).json({ success: true, message: 'Policy created successfully', data: policy });
+    res.status(201).json({
+      success: true,
+      message: 'Policy created successfully',
+      data: {
+        ...policy.toJSON(),
+        eCardApplicable: normalized.eCardApplicable,
+        eCardAvailable: normalized.eCardAvailable
+      }
+    });
   } catch (error) {
     console.error('Error creating policy:', error);
     if (error.name === 'SequelizeUniqueConstraintError') {

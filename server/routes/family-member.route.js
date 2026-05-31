@@ -7,7 +7,7 @@ import express from 'express';
 import { randomUUID } from 'crypto';
 import FamilyMember from '../models/postgres/family-member.model.postgres.js';
 import { authUser } from '../middleware/auth.middleware.js';
-import { validateFamilyMemberAddition, getFamilyMemberLimits } from '../services/family-member-validation.service.js';
+import { inferFamilyMemberAttributes, validateFamilyMemberAddition, getFamilyMemberLimits } from '../services/family-member-validation.service.js';
 
 const router = express.Router();
 
@@ -105,6 +105,7 @@ router.post('/', authUser, async (req, res) => {
       firstName,
       lastName,
       relationship,
+      relationshipHint,
       dateOfBirth,
       gender,
       phoneNumber,
@@ -119,15 +120,23 @@ router.post('/', authUser, async (req, res) => {
     } = req.body;
     
     // Validate required fields
-    if (!firstName || !lastName || !relationship || !gender) {
+    if (!firstName || !lastName) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields: firstName, lastName, relationship, gender'
+        message: 'Missing required fields: firstName, lastName'
+      });
+    }
+
+    const inferred = inferFamilyMemberAttributes({ relationship, relationshipHint, gender });
+    if (!inferred.relationship) {
+      return res.status(400).json({
+        success: false,
+        message: 'Relationship is required (or provide relationshipHint for AI inference)'
       });
     }
 
     // Validate family member addition based on membership type
-    const validation = await validateFamilyMemberAddition(req.user.id, relationship);
+    const validation = await validateFamilyMemberAddition(req.user.id, inferred.relationship);
     
     if (!validation.allowed) {
       return res.status(403).json({
@@ -154,9 +163,9 @@ router.post('/', authUser, async (req, res) => {
       userId: req.user.id,
       firstName,
       lastName,
-      relationship: relationship.toLowerCase(),
+      relationship: inferred.relationship,
       dateOfBirth,
-      gender,
+      gender: inferred.gender,
       phoneNumber,
       email,
       bloodType,
@@ -165,14 +174,20 @@ router.post('/', authUser, async (req, res) => {
       chronicConditions: chronicConditions || [],
       abhaHealthId,
       medicalHistory: medicalHistory || {},
-      emergencyContact: emergencyContact || {}
+      emergencyContact: emergencyContact || {},
+      metadata: {
+        aiInference: inferred.aiInference,
+        aiInferenceVersion: 'family-member-v1',
+        aiInferredAt: new Date().toISOString()
+      }
     });
     
     res.status(201).json({
       success: true,
       message: 'Family member added successfully',
       data: familyMember,
-      remaining: validation.remaining
+      remaining: validation.remaining,
+      aiInference: inferred.aiInference
     });
   } catch (error) {
     console.error('Create family member error:', error);
@@ -208,6 +223,7 @@ router.put('/:id', authUser, async (req, res) => {
       firstName,
       lastName,
       relationship,
+      relationshipHint,
       dateOfBirth,
       gender,
       phoneNumber,
@@ -221,6 +237,19 @@ router.put('/:id', authUser, async (req, res) => {
       emergencyContact,
       profileImage
     } = req.body;
+
+    const inferred = inferFamilyMemberAttributes({
+      relationship: relationship || familyMember.relationship,
+      relationshipHint,
+      gender: gender || familyMember.gender
+    });
+
+    if (!inferred.relationship) {
+      return res.status(400).json({
+        success: false,
+        message: 'Relationship is required'
+      });
+    }
     
     // Check if ABHA ID already exists (excluding current member)
     if (abhaHealthId && abhaHealthId !== familyMember.abhaHealthId) {
@@ -239,9 +268,9 @@ router.put('/:id', authUser, async (req, res) => {
     await familyMember.update({
       firstName: firstName || familyMember.firstName,
       lastName: lastName || familyMember.lastName,
-      relationship: relationship || familyMember.relationship,
+      relationship: inferred.relationship,
       dateOfBirth: dateOfBirth !== undefined ? dateOfBirth : familyMember.dateOfBirth,
-      gender: gender || familyMember.gender,
+      gender: inferred.gender,
       phoneNumber: phoneNumber !== undefined ? phoneNumber : familyMember.phoneNumber,
       email: email !== undefined ? email : familyMember.email,
       bloodType: bloodType !== undefined ? bloodType : familyMember.bloodType,
@@ -251,13 +280,20 @@ router.put('/:id', authUser, async (req, res) => {
       abhaHealthId: abhaHealthId !== undefined ? abhaHealthId : familyMember.abhaHealthId,
       medicalHistory: medicalHistory !== undefined ? medicalHistory : familyMember.medicalHistory,
       emergencyContact: emergencyContact !== undefined ? emergencyContact : familyMember.emergencyContact,
-      profileImage: profileImage !== undefined ? profileImage : familyMember.profileImage
+      profileImage: profileImage !== undefined ? profileImage : familyMember.profileImage,
+      metadata: {
+        ...(familyMember.metadata || {}),
+        aiInference: inferred.aiInference,
+        aiInferenceVersion: 'family-member-v1',
+        aiInferredAt: new Date().toISOString()
+      }
     });
     
     res.json({
       success: true,
       message: 'Family member updated successfully',
-      data: familyMember
+      data: familyMember,
+      aiInference: inferred.aiInference
     });
   } catch (error) {
     console.error('Update family member error:', error);

@@ -41,11 +41,35 @@ interface FamilyMember {
   email?: string;
   bloodType?: string;
   abhaHealthId?: string;
+  metadata?: {
+    aiInference?: {
+      relationshipInferred?: boolean;
+      genderInferred?: boolean;
+      confidence?: number;
+    };
+  };
 }
 interface FamilyLimits {
   membershipType: string;
+  planSlug?: string | null;
+  planName?: string | null;
+  source?: string;
+  componentBenefits?: {
+    insurance?: {
+      enabled?: boolean;
+      maxMembers?: number;
+      allowedRelations?: string[];
+    };
+    opWellness?: {
+      enabled?: boolean;
+      maxMembers?: number;
+      allowedRelations?: string[];
+    };
+  } | null;
   maxMembers: number;
-  currentCount: number;
+  currentCount?: number;
+  currentMembers?: number;
+  remaining?: number;
   canAddMore: boolean;
   allowedRelations: string[];
 }
@@ -650,6 +674,10 @@ const ProfileEnhanced = () => {
           <TabsContent value="family" className="space-y-6">
             {/* Plan limits banner */}
             {familyLimits && (
+              (() => {
+                const usedCount = familyLimits.currentCount ?? familyLimits.currentMembers ?? 0;
+                const remainingSlots = familyLimits.remaining ?? Math.max(0, familyLimits.maxMembers - usedCount);
+                return (
               <Card className="border-0 bg-gradient-to-r from-teal-50 to-blue-50 dark:from-teal-950/30 dark:to-blue-950/30">
                 <CardContent className="pt-4 pb-4">
                   <div className="flex items-center justify-between flex-wrap gap-3">
@@ -658,9 +686,9 @@ const ProfileEnhanced = () => {
                         <Crown className="w-5 h-5 text-teal-600 dark:text-teal-300" />
                       </div>
                       <div>
-                        <p className="font-semibold capitalize">{familyLimits.membershipType} Plan</p>
+                        <p className="font-semibold capitalize">{familyLimits.planName || familyLimits.membershipType} Plan</p>
                         <p className="text-sm text-slate-500">
-                          {familyLimits.currentCount} / {familyLimits.maxMembers === 0 ? "0 (upgrade needed)" : familyLimits.maxMembers} members used
+                          {usedCount} / {familyLimits.maxMembers === 0 ? "0 (upgrade needed)" : familyLimits.maxMembers} members used
                         </p>
                       </div>
                     </div>
@@ -668,11 +696,11 @@ const ProfileEnhanced = () => {
                       <div className="text-right">
                         <div className="flex gap-1 mb-1">
                           {Array.from({ length: Math.max(familyLimits.maxMembers, 1) }).map((_, i) => (
-                            <div key={i} className={`w-4 h-4 rounded-full ${i < familyLimits.currentCount ? "bg-teal-500" : "bg-slate-200 dark:bg-slate-700"}`} />
+                            <div key={i} className={`w-4 h-4 rounded-full ${i < usedCount ? "bg-teal-500" : "bg-slate-200 dark:bg-slate-700"}`} />
                           ))}
                         </div>
                         <p className="text-xs text-slate-400">
-                          {familyLimits.maxMembers === 0 ? "Upgrade to Family plan for family members" : `${familyLimits.maxMembers - familyLimits.currentCount} slots remaining`}
+                          {familyLimits.maxMembers === 0 ? "Upgrade to Family plan for family members" : `${remainingSlots} slots remaining`}
                         </p>
                       </div>
                       {familyLimits.maxMembers === 0 && (
@@ -690,8 +718,26 @@ const ProfileEnhanced = () => {
                       ))}
                     </div>
                   )}
+
+                  {(familyLimits.componentBenefits?.insurance?.enabled || familyLimits.componentBenefits?.opWellness?.enabled) && (
+                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-slate-500">Corporate components:</span>
+                      {familyLimits.componentBenefits?.insurance?.enabled && (
+                        <Badge variant="secondary" className="text-xs bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200">
+                          Insurance
+                        </Badge>
+                      )}
+                      {familyLimits.componentBenefits?.opWellness?.enabled && (
+                        <Badge variant="secondary" className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
+                          OP + Wellness
+                        </Badge>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
+                );
+              })()
             )}
 
             <Card>
@@ -734,6 +780,11 @@ const ProfileEnhanced = () => {
                           <p className="font-medium text-slate-900 dark:text-slate-100">{member.firstName} {member.lastName}</p>
                           <div className="flex items-center gap-2 mt-0.5">
                             <Badge variant="outline" className="capitalize text-xs">{member.relationship}</Badge>
+                            {(member.metadata?.aiInference?.relationshipInferred || member.metadata?.aiInference?.genderInferred) && (
+                              <Badge className="text-[10px] bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200" variant="secondary">
+                                AI inferred
+                              </Badge>
+                            )}
                             {member.dateOfBirth && <span className="text-xs text-slate-400">{calcAge(member.dateOfBirth)} yrs</span>}
                             {member.bloodType && <span className="text-xs text-red-500 font-medium">{member.bloodType}</span>}
                           </div>
@@ -1131,7 +1182,14 @@ const ProfileEnhanced = () => {
         </DialogContent>
       </Dialog>
 
-      <FamilyMemberDialog open={familyDialogOpen} onOpenChange={setFamilyDialogOpen} member={editingMember} onSuccess={fetchFamilyMembers} />
+      <FamilyMemberDialog
+        open={familyDialogOpen}
+        onOpenChange={setFamilyDialogOpen}
+        member={editingMember}
+        onSuccess={fetchFamilyMembers}
+        allowedRelations={familyLimits?.allowedRelations || []}
+        canAddMore={familyLimits?.canAddMore ?? true}
+      />
       <MalwareWarningDialog open={malwareWarning.open} onClose={() => setMalwareWarning({ open: false })} threat={malwareWarning.threat} fileName={malwareWarning.fileName} />
     </>
   );

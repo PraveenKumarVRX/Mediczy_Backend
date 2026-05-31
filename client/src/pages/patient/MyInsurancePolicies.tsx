@@ -17,6 +17,10 @@ import {
   Clock, RefreshCw, ShieldCheck, Info,
 } from "lucide-react";
 import api from "@/utils/api";
+import {
+  INSURANCE_POLICY_CATEGORIES,
+  DEFAULT_INSURANCE_POLICY_CATEGORY
+} from "@/constants/insurancePolicyCategories";
 
 interface PersonalPolicy {
   id: string;
@@ -33,12 +37,6 @@ interface PersonalPolicy {
   documentUrl: string | null;
   createdAt: string;
 }
-
-const POLICY_TYPES = [
-  "Health Insurance", "Family Floater", "Critical Illness", "Senior Citizen",
-  "Group Health", "Accident Insurance", "Term Life", "Mediclaim",
-  "CGHS", "ESIC", "Ayushman Bharat / PMJAY", "Other",
-];
 
 const FREQUENCIES = [
   { value: "monthly", label: "Monthly" },
@@ -77,7 +75,7 @@ const MyInsurancePolicies = () => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const [form, setForm] = useState({
-    insurerName: "", policyNumber: "", policyType: "Health Insurance",
+    insurerName: "", policyNumber: "", policyType: DEFAULT_INSURANCE_POLICY_CATEGORY,
     coverageAmount: "", premiumAmount: "", premiumFrequency: "annual",
     startDate: "", endDate: "", membersName: "", notes: "",
   });
@@ -95,7 +93,7 @@ const MyInsurancePolicies = () => {
   useEffect(() => { load(); }, []);
 
   const resetForm = () => {
-    setForm({ insurerName: "", policyNumber: "", policyType: "Health Insurance", coverageAmount: "", premiumAmount: "", premiumFrequency: "annual", startDate: "", endDate: "", membersName: "", notes: "" });
+    setForm({ insurerName: "", policyNumber: "", policyType: DEFAULT_INSURANCE_POLICY_CATEGORY, coverageAmount: "", premiumAmount: "", premiumFrequency: "annual", startDate: "", endDate: "", membersName: "", notes: "" });
     setSelectedFile(null);
     if (fileRef.current) fileRef.current.value = "";
   };
@@ -338,8 +336,15 @@ const MyInsurancePolicies = () => {
                 <Label>Policy Type</Label>
                 <Select value={form.policyType} onValueChange={v => setForm(f => ({ ...f, policyType: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{POLICY_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                  <SelectContent>
+                    {INSURANCE_POLICY_CATEGORIES.map(({ value, label }) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
+                <p className="text-[11px] text-slate-500">
+                  Standard categories only. E-card availability is determined by policy type.
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label>Coverage Amount (₹)</Label>

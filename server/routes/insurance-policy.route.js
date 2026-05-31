@@ -12,6 +12,7 @@ import {
   PolicyMember
 } from '../models/insurance-policy.model.intelligent.js';
 import PolicyRuleEngine from '../services/policy-rule-engine.service.js';
+import { enforceInsurancePolicyStandards } from '../services/insurance-policy-standards.service.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
@@ -46,12 +47,36 @@ router.post('/policies', authUser, requireRole(['admin', 'insurance_company']), 
       networkConfig,
       exclusions,
       addons,
-      termsAndConditions
+      termsAndConditions,
+      metadata,
+      eCardAvailable
     } = req.body;
+
+    const standardization = enforceInsurancePolicyStandards({
+      policyNumber,
+      policyName,
+      policyType,
+      startDate: policyStartDate,
+      endDate: policyEndDate,
+      requestedECardAvailable: eCardAvailable,
+      metadata,
+      autoAssignStartDate: false,
+      autoAssignEndDate: true
+    });
+
+    if (!standardization.valid) {
+      await t.rollback();
+      return res.status(400).json({
+        success: false,
+        message: standardization.message
+      });
+    }
+
+    const normalized = standardization.normalized;
     
     // Create policy
     const policy = await InsurancePolicy.create({
-      policyNumber,
+      policyNumber: normalized.policyNumber,
       policyName,
       insuranceCompanyId,
       brokerId,
@@ -60,8 +85,8 @@ router.post('/policies', authUser, requireRole(['admin', 'insurance_company']), 
       policyType,
       sumInsured,
       premium,
-      policyStartDate,
-      policyEndDate,
+      policyStartDate: normalized.policyStartDate,
+      policyEndDate: normalized.policyEndDate,
       status: 'draft',
       coverageConfig: coverageConfig || {},
       limits: limits || {},
@@ -69,7 +94,8 @@ router.post('/policies', authUser, requireRole(['admin', 'insurance_company']), 
       networkConfig: networkConfig || {},
       exclusions: exclusions || {},
       addons: addons || [],
-      termsAndConditions
+      termsAndConditions,
+      metadata: normalized.metadata
     }, { transaction: t });
     
     // Create default policy rules
@@ -214,8 +240,45 @@ router.put('/policies/:id', authUser, requireRole(['admin', 'insurance_company']
         message: 'Policy not found'
       });
     }
+
+    const policyNumber = req.body.policyNumber ?? policy.policyNumber;
+    const policyName = req.body.policyName ?? policy.policyName;
+    const policyType = req.body.policyType ?? policy.policyType;
+    const policyStartDate = req.body.policyStartDate ?? policy.policyStartDate;
+    const policyEndDate = req.body.policyEndDate ?? policy.policyEndDate;
+    const metadata = req.body.metadata ?? policy.metadata;
+    const eCardAvailable = req.body.eCardAvailable ?? req.body.ecardAvailable;
+
+    const standardization = enforceInsurancePolicyStandards({
+      policyNumber,
+      policyName,
+      policyType,
+      startDate: policyStartDate,
+      endDate: policyEndDate,
+      requestedECardAvailable: eCardAvailable,
+      metadata,
+      autoAssignStartDate: false,
+      autoAssignEndDate: false
+    });
+
+    if (!standardization.valid) {
+      return res.status(400).json({
+        success: false,
+        message: standardization.message
+      });
+    }
+
+    const normalized = standardization.normalized;
+
+    const updatePayload = {
+      ...req.body,
+      policyNumber: normalized.policyNumber,
+      policyStartDate: normalized.policyStartDate,
+      policyEndDate: normalized.policyEndDate,
+      metadata: normalized.metadata
+    };
     
-    await policy.update(req.body);
+    await policy.update(updatePayload);
     
     res.json({
       success: true,
