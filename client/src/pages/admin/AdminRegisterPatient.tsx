@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
@@ -5,6 +6,12 @@ import PatientRegistrationForm from '@/components/PatientRegistrationForm';
 
 const AdminRegisterPatient = () => {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!localStorage.getItem('adminToken')) {
+      navigate('/admin/login', { replace: true });
+    }
+  }, [navigate]);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4">
