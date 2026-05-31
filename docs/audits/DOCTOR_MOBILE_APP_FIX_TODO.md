@@ -4,7 +4,9 @@ Last updated: 2026-05-31
 
 Status summary:
 - Code-level audit fixes: Completed.
-- Remaining work: Production infrastructure/credentials provisioning and live push smoke validation.
+- Production Firebase credentials: Present and loaded for both patient + doctor projects.
+- Production push smoke (server-side): Completed for doctor and patient routes with accepted FCM message IDs.
+- Remaining work: Device-level delivery proof capture for release evidence.
 
 ## Security
 
@@ -19,7 +21,12 @@ Status summary:
 - [ ] D-SEC-4: Provision doctor Firebase service account in production and validate doctor push notifications end-to-end.
 	- Code readiness: supports separate doctor Firebase credentials via `config/firebase-service-account-doctor.json` or `FIREBASE_SERVICE_ACCOUNT_DOCTOR_JSON` / `GOOGLE_APPLICATION_CREDENTIALS_DOCTOR`.
 	- Verification readiness: `/api/firebase/status` now exposes channel readiness (`patient`, `doctor`, `web`) and `/api/firebase/test-notification` accepts `userType`/`deviceType`.
-	- Blocker: production credential material is not stored in repository and must be provisioned by DevOps/SRE.
+	- Production verification (2026-05-31):
+		- `config/firebase-service-account-doctor.json` exists on production host.
+		- Runtime module check reports: `initialized=true`, `patient=true`, `doctor=true`, `web=false`.
+		- Doctor push send accepted by FCM: `projects/doctorapp-6c768/messages/0:1780259066795157%7c3143137c314313`.
+		- Patient push send accepted by FCM: `projects/mysmarthealth-b5695/messages/0:1780259067038387%0eb4d28c0eb4d28c`.
+	- Remaining blocker: real-device receipt evidence (screenshot + delivery confirmation) not yet captured in this run.
 
 ## Quality and Reliability
 
@@ -44,16 +51,17 @@ Status summary:
 ## Follow-Up Verification
 
 - [x] Run API regression tests for doctor app auth, my-patients, prescriptions, and offline-scribe role access.
-- [ ] Run a production/staging smoke checklist for doctor push notifications after service account provisioning.
+- [x] Run production smoke for server-side push routing after service account provisioning (doctor + patient FCM sends accepted).
+- [ ] Capture real-device delivery evidence for doctor push smoke run.
 
 ## External Ops Handoff (Required to Close Remaining Items)
 
-- [ ] Add/rotate production doctor Firebase service account credentials in secure secret store.
-- [ ] Mount or inject `firebase-service-account-doctor.json` (or equivalent env-based credentials) in production runtime.
-- [ ] Restart doctor API service and verify Firebase initialization endpoints/health logs.
+- [ ] Add/rotate production doctor Firebase service account credentials in secure secret store (rotation status not validated in this run).
+- [x] Mount or inject `firebase-service-account-doctor.json` (or equivalent env-based credentials) in production runtime.
+- [x] Restart doctor API service and verify Firebase initialization endpoints/health logs.
 - [ ] Register a fresh doctor app FCM token from production doctor build.
-- [ ] Trigger doctor-targeted push path and verify delivery receipt on real device.
-- [ ] Trigger patient-targeted push path to confirm no regression in default Firebase app routing.
+- [x] Trigger doctor-targeted push path (FCM accepted) and confirm project routing.
+- [x] Trigger patient-targeted push path (FCM accepted) to confirm no regression in default Firebase app routing.
 - [ ] Capture evidence (timestamped logs + screenshot + request IDs) and attach to release ticket.
 
 Closure criteria:
