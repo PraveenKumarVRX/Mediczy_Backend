@@ -98,7 +98,7 @@ const sidebarItems: SidebarItem[] = [
   // Medical Records
   { icon: FlaskRound, label: "Lab Tests", path: "/patient/lab-tests", category: "Records" },
   { icon: FileStack, label: "My Reports", path: "/patient/my-reports", category: "Records" },
-  { icon: FileSearch, label: "Scan & Share Reports", path: "/reposts", category: "Records" },
+  { icon: FileSearch, label: "AI Report Scanner", path: "/report-scanner", category: "Records" },
   
   // Services & Support
   { icon: Award, label: "Ayushman", path: "/ayushman", category: "Services" },
@@ -498,6 +498,62 @@ export function Sidebar() {
                     <span>{item.label}</span>
                   </Link>
                 ))}
+
+                {/* Family Section */}
+                {items.some(item => item.category === 'Family') && (
+                  <>
+                    <div className="px-3 py-2 mt-4">
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Family</p>
+                    </div>
+                    {items.filter(item => item.category === 'Family').map((item) => (
+                      <Link
+                        key={item.path}
+                        to={item.path}
+                        className={cn(
+                          "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                          location.pathname === item.path
+                            ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
+                            : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
+                        )}
+                        onClick={handleNavClick}
+                      >
+                        <item.icon className={cn(
+                          "h-4 w-4 transition-colors",
+                          location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
+                        )} />
+                        <span>{item.label}</span>
+                      </Link>
+                    ))}
+                  </>
+                )}
+
+                {/* Support Section */}
+                {items.some(item => item.category === 'Support') && (
+                  <>
+                    <div className="px-3 py-2 mt-4">
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Support</p>
+                    </div>
+                    {items.filter(item => item.category === 'Support').map((item) => (
+                      <Link
+                        key={item.path}
+                        to={item.path}
+                        className={cn(
+                          "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                          location.pathname === item.path
+                            ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
+                            : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
+                        )}
+                        onClick={handleNavClick}
+                      >
+                        <item.icon className={cn(
+                          "h-4 w-4 transition-colors",
+                          location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
+                        )} />
+                        <span>{item.label}</span>
+                      </Link>
+                    ))}
+                  </>
+                )}
               </>
             )}
             
@@ -648,7 +704,10 @@ export function Sidebar() {
       {/* Overlay for mobile - appears when sidebar is open */}
       <div
         id="sidebar-overlay"
-        className="fixed inset-0 bg-black/50 opacity-0 pointer-events-none transition-opacity duration-300 md:hidden z-30"
+        className={cn(
+          "fixed inset-0 bg-black/50 transition-opacity duration-300 md:hidden z-30",
+          (isOpen && !isDesktop) ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        )}
         onClick={toggleSidebar}
         aria-hidden="true"
       ></div>

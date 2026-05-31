@@ -63,7 +63,6 @@ const NurseBooking          = lazy(() => import("@/pages/NurseBooking"));
 const LabBooking            = lazy(() => import("@/pages/LabBooking"));
 const HomecareBooking       = lazy(() => import("@/pages/HomecareBooking"));
 const HealthFeedPage        = lazy(() => import("@/pages/HealthFeedPage"));
-const RepostsPage           = lazy(() => import("@/pages/Reposts"));
 const MyPlans               = lazy(() => import("@/pages/MyPlans"));
 const ChoosePlan            = lazy(() => import("@/pages/user/ChoosePlan"));
 const MyMembershipCard      = lazy(() => import("@/pages/user/MyMembershipCard"));
@@ -91,7 +90,6 @@ const NetworkClinics        = lazy(() => import("@/pages/patient/NetworkClinics"
 const TeamClinicList        = lazy(() => import("@/pages/team/TeamClinicList"));
 const TeamTicketManager     = lazy(() => import("@/pages/team/TeamTicketManager"));
 const BuyInsurance          = lazy(() => import("@/pages/patient/BuyInsurance"));
-const ClaimsManagement      = lazy(() => import("@/pages/patient/ClaimsManagement"));
 const AIHealthAnalysis      = lazy(() => import("@/pages/patient/AIHealthAnalysis"));
 const EmployeeGamification  = lazy(() => import("@/pages/patient/EmployeeGamification"));
 const EmployeeWellnessCalendar = lazy(() => import("@/pages/patient/EmployeeWellnessCalendar"));
@@ -1679,7 +1677,7 @@ const AppRoutes = () => {
         <Route path="/ai-doctor"             element={<MainLayout><AiDoctor /></MainLayout>} />
         <Route path="/ayushman"              element={<MainLayout><Ayushman /></MainLayout>} />
         <Route path="/health-feed"           element={<MainLayout><HealthFeedPage /></MainLayout>} />
-        <Route path="/reposts"               element={<MainLayout><RepostsPage /></MainLayout>} />
+        <Route path="/reposts"               element={<Navigate to="/report-scanner" replace />} />
         <Route path="/consultation/:doctorId" element={<ConsultationBooking />} />
         <Route path="/nurse-booking/:nurseId" element={<NurseBooking />} />
         <Route path="/lab-booking/:labId"     element={<LabBooking />} />
@@ -1706,7 +1704,7 @@ const AppRoutes = () => {
         <Route path="/patient/network-hospitals"  element={<MainLayout><NetworkHospitals /></MainLayout>} />
         <Route path="/patient/network-clinics"   element={<MainLayout><NetworkClinics /></MainLayout>} />
         <Route path="/patient/buy-insurance"      element={<MainLayout><BuyInsurance /></MainLayout>} />
-        <Route path="/patient/claims"             element={<ClaimsExpress />} />
+        <Route path="/patient/claims"             element={<Navigate to="/claims-express" replace />} />
         <Route path="/patient/ai-health-analysis" element={<MainLayout><AIHealthAnalysis /></MainLayout>} />
         <Route path="/patient/wellness-challenges" element={<WellnessRewards />} />
         <Route path="/wellness-challenges"        element={<WellnessRewards />} />

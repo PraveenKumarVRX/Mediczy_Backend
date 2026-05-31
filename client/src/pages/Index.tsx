@@ -285,6 +285,7 @@ const Index = () => {
   }>>([]);
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
   const [pairingProgress, setPairingProgress] = useState(0);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
   const [connectedDevices, setConnectedDevices] = useState<Array<{
     id: string;
     name: string;
@@ -507,6 +508,23 @@ const Index = () => {
       setConnectedDevices(prev =>
         prev.map(d => d.id === deviceId ? { ...d, status: 'connected' } : d)
       );
+    }
+  };
+
+  const syncAllDevices = async () => {
+    if (connectedDevices.length === 0 || isSyncingAll) return;
+    setIsSyncingAll(true);
+    try {
+      for (const device of connectedDevices) {
+        await syncDevice(device.id);
+      }
+      if (window.healthSyncScheduler) {
+        await window.healthSyncScheduler.performSync();
+      }
+    } catch (error) {
+      console.error('[Sync] Error syncing all devices:', error);
+    } finally {
+      setIsSyncingAll(false);
     }
   };
 
@@ -769,24 +787,24 @@ const Index = () => {
       highlights: ["Real-time vitals", "Device integration", "AI health insights"],
     },
     {
-      title: "Doctor Consultations",
-      description: "Find doctors, book appointments, and connect instantly",
-      icon: Stethoscope,
-      color: "info-gradient",
-      borderColor: "border-info/20",
-      iconColor: "text-info",
-      link: "/doctors",
-      highlights: ["Search specialists", "Video & clinic visits", "Instant booking"],
+      title: "Claims Express",
+      description: "File and track insurance claims with guided workflows",
+      icon: Zap,
+      color: "warning-gradient",
+      borderColor: "border-warning/20",
+      iconColor: "text-warning",
+      link: "/claims-express",
+      highlights: ["Quick filing", "Live status tracking", "Reduced rework"],
     },
     {
-      title: "AI Health Assistant",
-      description: "Get instant health insights powered by AI",
-      icon: Brain,
+      title: "AI Report Scanner",
+      description: "Scan reports and extract actionable insights instantly",
+      icon: FileText,
       color: "secondary-gradient",
       borderColor: "border-secondary/20",
       iconColor: "text-secondary",
-      link: "/ai-doctor",
-      highlights: ["Symptom analysis", "Health recommendations", "24/7 availability"],
+      link: "/report-scanner",
+      highlights: ["Document OCR", "AI interpretation", "Share-ready outputs"],
     },
     {
       title: "Diet & Nutrition",
@@ -842,24 +860,24 @@ const Index = () => {
       badge: "Available 24/7",
     },
     {
-      title: "My Appointments",
-      icon: CalendarCheck,
-      color: "success-gradient",
-      border: "border-success/20",
-      iconColor: "text-success",
-      link: "/appointments",
-      description: "View Appointments",
-      badge: upcomingAppointments.length > 0 ? `${upcomingAppointments.length} upcoming` : null,
+      title: "Claims Express",
+      icon: Zap,
+      color: "warning-gradient",
+      border: "border-warning/20",
+      iconColor: "text-warning",
+      link: "/claims-express",
+      description: "File & Track Claims",
+      badge: "Fast Filing",
     },
     {
-      title: "AI Doctor",
-      icon: Bot,
-      color: "secondary-gradient",
-      border: "border-secondary/20",
-      iconColor: "text-secondary",
-      link: "/ai-doctor",
-      description: "Instant Health Advice",
-      badge: "24/7",
+      title: "Scan Report",
+      icon: FileText,
+      color: "info-gradient",
+      border: "border-info/20",
+      iconColor: "text-info",
+      link: "/report-scanner",
+      description: "AI Report Analysis",
+      badge: "Smart OCR",
     },
   ];
 
@@ -2043,9 +2061,14 @@ const Index = () => {
                   <Bluetooth className="w-4 h-4 mr-2" />
                   Pair New Device
                 </Button>
-                <Button variant="outline" className="border-teal-500/30 text-teal-400 hover:bg-teal-500/10">
+                <Button
+                  variant="outline"
+                  className="border-teal-500/30 text-teal-400 hover:bg-teal-500/10"
+                  onClick={syncAllDevices}
+                  disabled={connectedDevices.length === 0 || isSyncingAll}
+                >
                   <RefreshCw className="w-4 h-4 mr-2" />
-                  Sync All
+                  {isSyncingAll ? 'Syncing...' : 'Sync All'}
                 </Button>
               </div>
             </div>
@@ -2624,7 +2647,7 @@ const Index = () => {
                   <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
                     <Sparkles className="h-5 w-5" />
                   </div>
-                  <span className="text-[11px] font-semibold text-center leading-tight">AI Health</span>
+                  <span className="text-[11px] font-semibold text-center leading-tight">AI Health Dashboard</span>
                 </Link>
                 <Link to="/family-hub" className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-white/10 hover:bg-white/20 transition-all active:scale-95 backdrop-blur-sm">
                   <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
