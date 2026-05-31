@@ -1320,7 +1320,7 @@ class IntelligentDatabaseAdapter {
                     isAdmin: true
                   },
                   jwtSecret,
-                  { expiresIn: '8h', issuer: 'mediczy-admin' }
+                  { expiresIn: '15m', issuer: 'mediczy-admin' }
                 );
               },
               updateLastLogin: async (adminId) => {
@@ -1392,7 +1392,7 @@ class IntelligentDatabaseAdapter {
                     permissions: ['read', 'write', 'delete', 'manage_users', 'manage_doctors', 'view_analytics']
                   },
                   jwtSecret,
-                  { expiresIn: '8h', issuer: 'mediczy-admin' }
+                  { expiresIn: '15m', issuer: 'mediczy-admin' }
                 );
               }
             };

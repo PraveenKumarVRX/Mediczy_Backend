@@ -2,7 +2,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import XLSX from 'xlsx';
+import XLSX from '../utils/excel-compat.js';
 
 const DENTAL_FILE = path.resolve('server/db/Master Data/Clinics/Dental Clinics/Clove dental 2.xlsx');
 const POLY_FILE = path.resolve('server/db/Master Data/Clinics/Poly Clinics/clinics list.xlsx');
@@ -79,8 +79,8 @@ function mapPoly(row, index) {
 }
 
 async function main() {
-  const dentalWb = XLSX.readFile(DENTAL_FILE);
-  const polyWb = XLSX.readFile(POLY_FILE);
+  const dentalWb = await XLSX.readFile(DENTAL_FILE);
+  const polyWb = await XLSX.readFile(POLY_FILE);
   const dentalRows = XLSX.utils.sheet_to_json(dentalWb.Sheets[dentalWb.SheetNames[0]], { defval: '' });
   const polyRows = XLSX.utils.sheet_to_json(polyWb.Sheets[polyWb.SheetNames[0]], { defval: '' });
 

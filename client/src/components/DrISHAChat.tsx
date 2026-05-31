@@ -185,13 +185,13 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
 
         setMessages(prev => [...prev, assistantMessage]);
 
+        // ===== INTELLIGENT INTENT HANDLING =====
+        const response_data = response.data;
+
         // Update adaptive follow-up chips based on response context
         if (response_data?.suggestedFollowUps && Array.isArray(response_data.suggestedFollowUps)) {
           setSuggestedFollowUps(response_data.suggestedFollowUps.slice(0, 5));
         }
-
-        // ===== INTELLIGENT INTENT HANDLING =====
-        const response_data = response.data;
 
         // Safe navigation — only follow redirectUrls that start with '/' (internal paths)
         // The backend already validates these; we double-check client-side

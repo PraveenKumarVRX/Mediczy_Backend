@@ -3,6 +3,15 @@ import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
 
+// ── Required environment variable validation ────────────────────────────────
+const REQUIRED_ENV_VARS = ['VITE_API_URL', 'VITE_GOOGLE_CLIENT_ID'] as const;
+for (const key of REQUIRED_ENV_VARS) {
+  if (!import.meta.env[key]) {
+    console.error(`[startup] Missing required environment variable: ${key}. Some features may not work.`);
+  }
+}
+// ───────────────────────────────────────────────────────────────────────────
+
 // ── Stale chunk recovery ───────────────────────────────────────────────────
 // After a new deployment, the browser may have cached the old HTML which
 // references JS chunks that no longer exist on the CDN. Vite throws a
@@ -43,11 +52,34 @@ createRoot(document.getElementById("root")!).render(
 // Enhanced Service Worker Registration with better error handling
 if ('serviceWorker' in navigator && window.isSecureContext) {
   window.addEventListener('load', () => {
+    const SW_VERSION = 'v20';
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
+
     Promise.all([
       // Register main service worker
-      navigator.serviceWorker.register('/serviceWorker.js')
+      navigator.serviceWorker.register(`/serviceWorker.js?${SW_VERSION}`)
         .then((registration) => {
           console.log('✅ Main ServiceWorker registered:', registration.scope);
+
+          registration.update();
+          if (registration.waiting) {
+            registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+          }
+          registration.addEventListener('updatefound', () => {
+            const newWorker = registration.installing;
+            if (!newWorker) return;
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                newWorker.postMessage({ type: 'SKIP_WAITING' });
+              }
+            });
+          });
+
           return registration;
         })
         .catch((error) => {

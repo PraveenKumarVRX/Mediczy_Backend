@@ -4,6 +4,7 @@ if (process.env.NODE_ENV !== 'production' || process.env.DOTENV_IN_PROD === 'tru
   dotenv.config();
 }
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
@@ -160,6 +161,7 @@ import healthDiaryRouter from './routes/health-diary.route.js';
 import healthIntelligenceRouter from './routes/health-intelligence.route.js';
 import sibControlRouter from './routes/sib-control.route.js';
 import sibChatbotsRouter from './routes/sib-chatbots.route.js';
+import providerNetworkBotRouter from './routes/provider-network-bot.route.js';
 import { ringFencingMiddleware } from './middleware/ringFencing.js';
 import publicReportRouter from './routes/public-report.route.js';
 import onlineConsultationRouter from './routes/online-consultation.route.js';
@@ -282,6 +284,7 @@ import { initializeDataRetentionScheduler } from './services/dataRetention.servi
 
 // Import multi-tenant middleware
 import { extractTenant } from './middleware/tenant.middleware.js';
+import { rlsContextMiddleware } from './middleware/rls-context.middleware.js';
 
 const app = express();
 
@@ -618,7 +621,7 @@ app.use(cors({
     return callback(null, false);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Cookie'],
   credentials: true,
   optionsSuccessStatus: 200,
   preflightContinue: false
@@ -744,6 +747,7 @@ app.use(express.json({
   }
 }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
+app.use(cookieParser());
 
 app.use((err, req, res, next) => {
   if (err?.type === 'entity.too.large') {
@@ -849,6 +853,10 @@ app.use(requestLogger);
 
 // 8. Multi-Tenant Context Extraction
 app.use(extractTenant);
+
+// 8a. Row-Level Security context — sets app.current_org_id / app.current_user_id
+//     Must run after extractTenant so req.user is available for authenticated routes
+app.use(rlsContextMiddleware);
 
 // 9. Activity Logging (Track all user activities with timestamps)
 app.use((req, res, next) => {
@@ -961,7 +969,7 @@ app.get('/health', async (req, res) => {
       ])
     );
 
-    const criticalHealthy = Boolean(dbStates.postgres);
+    const criticalHealthy = Boolean(dbStates.postgresSequelize || dbStates.postgres);
 
     const healthCheck = {
       status: criticalHealthy ? 'healthy' : 'degraded',
@@ -1012,7 +1020,7 @@ app.get('/api/health', async (req, res) => {
       ])
     );
 
-    const criticalHealthy = Boolean(dbStates.postgres);
+    const criticalHealthy = Boolean(dbStates.postgresSequelize || dbStates.postgres);
 
     const healthCheck = {
       status: criticalHealthy ? 'healthy' : 'degraded',
@@ -1226,6 +1234,7 @@ app.use("/api/health-diary", healthDiaryRouter); // Patient health journal and d
 app.use("/api/health-intelligence", healthIntelligenceRouter); // Dr. iSHA Health Intelligence Dashboard
 app.use("/api/sib", sibControlRouter); // SIB Control Layer - AI decision management, kill switch, approvals
 app.use("/api/sib-chatbots", sibChatbotsRouter); // SIB Chatbots - Admin dashboard AI chatbots (Health, Appointment, Emergency)
+app.use('/api/provider-network-bot', providerNetworkBotRouter); // Provider directory bot: ingest, QC, publish to SmartHealth network
 app.use("/api/health", healthRouter); // Unified health metrics endpoint
 app.use("/api/consultation", onlineConsultationRouter); // Online consultation booking flow
 app.use("/api/myupchar", myupcharRouter); // myUpchar Live Consult API proxy
@@ -1259,6 +1268,7 @@ app.use('/api/module-access', moduleAccessRouter); // Public endpoint for checki
 app.use('/api/admin/roles', roleRouter); // Role management with CRUD + module access
 app.use('/api/roles', roleRouter); // User-facing role endpoints (check own roles/modules)
 app.use('/api/team', teamRouter);
+app.use('/api/team/provider-network-bot', providerNetworkBotRouter);
 app.use('/api/team/emails', teamEmailRouter); // Team email inbox with AI processing
 app.use('/api/team/welcome-email-templates', welcomeEmailTemplatesRouter); // Welcome email template customization
 app.use('/api/email-settings', authUser, emailSettingsRouter); // User SMTP/IMAP configuration settings
@@ -1501,6 +1511,9 @@ app.use('/api/admin/communication', communicationRouter); // Admin communication
 // Token Management Routes (refresh, revoke)
 import authTokenRouter from './routes/auth.token.route.js';
 app.use('/api/auth', authTokenRouter); // Token refresh and revocation endpoints
+
+import dataExportRouter from './routes/data-export.route.js';
+app.use('/api/users/data', dataExportRouter);     // DPDPA data export & erasure
 
 // Universal Auth Routes (logout, session-info for all user types)
 // Temporarily disabled - requires ringFencing middleware

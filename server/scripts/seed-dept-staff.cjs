@@ -7,7 +7,7 @@
  *   node scripts/seed-dept-staff.cjs
  */
 
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 const { Sequelize } = require('sequelize');
 
 const DB_NAME = process.env.DB_NAME || 'mediczy_ai';

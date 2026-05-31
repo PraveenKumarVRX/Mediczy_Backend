@@ -1,5 +1,6 @@
 import { Op } from 'sequelize';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { maskPhi } from '../utils/phi-masker.js';
 
 let intelligentDB = null;
 let auditLogsTableEnsured = false;
@@ -98,9 +99,9 @@ const buildLogPayload = (params) => {
     action,
     resourceType,
     resourceId,
-    dataFields,
-    changesBefore,
-    changesAfter,
+    dataFields: maskPhi(dataFields || {}),
+    changesBefore: maskPhi(changesBefore || {}),
+    changesAfter: maskPhi(changesAfter || {}),
     ipAddress: req?.ip || req?.connection?.remoteAddress,
     userAgent: req?.headers?.['user-agent'],
     method: req?.method,

@@ -27,6 +27,29 @@ const MEMBERSHIP_RENEWAL_EXEMPT_EMAILS = new Set(
 const isMembershipRenewalExemptEmail = (email) =>
   MEMBERSHIP_RENEWAL_EXEMPT_EMAILS.has(String(email || '').trim().toLowerCase());
 
+const cleanDoctorToken = (value) =>
+  String(value || '')
+    .replace(/^(dr\.?|doctor)\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const toNameCase = (value) =>
+  String(value || '')
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => {
+      if (part.length === 1) return part.toUpperCase();
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+    })
+    .join(' ');
+
+const formatDoctorDisplayName = ({ firstName, lastName }) => {
+  const first = cleanDoctorToken(firstName);
+  const last = cleanDoctorToken(lastName);
+  const fullName = toNameCase([first, last].filter(Boolean).join(' '));
+  return fullName ? `Dr ${fullName}` : 'Dr';
+};
+
 const isMembershipRenewalExemptUser = async ({ userId, email }) => {
   if (isMembershipRenewalExemptEmail(email)) {
     return true;
@@ -134,7 +157,7 @@ router.get('/doctors', async (req, res) => {
       count: filteredDoctors.length,
       doctors: filteredDoctors.map(doc => ({
         id: doc.id,
-        name: `${doc.prefix || 'Dr.'} ${doc.firstName} ${doc.lastName}`,
+        name: formatDoctorDisplayName({ firstName: doc.firstName, lastName: doc.lastName }),
         email: doc.email,
         phone: doc.phoneNumber,
         profileImage: doc.profileImage,
@@ -181,7 +204,7 @@ router.get('/doctors/:id', async (req, res) => {
       success: true,
       doctor: {
         id: doctor.id,
-        name: `${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}`,
+        name: formatDoctorDisplayName({ firstName: doctor.firstName, lastName: doctor.lastName }),
         email: doctor.email,
         phone: doctor.phoneNumber,
         profileImage: doctor.profileImage,
@@ -277,7 +300,7 @@ router.get('/doctors/:id/slots', async (req, res) => {
       success: true,
       date,
       doctorId: parseInt(doctorId),
-      doctorName: `${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}`,
+      doctorName: formatDoctorDisplayName({ firstName: doctor.firstName, lastName: doctor.lastName }),
       slots: allSlots,
       availableCount: allSlots.filter(s => s.available).length,
       consultationFee: doctor.onlineConsultationFee || doctor.consultationFees?.online || 500
@@ -439,7 +462,7 @@ router.post('/book', authUser, [
       patientEmail: patient.email,
       patientPhone: patient.phoneNumber || patient.phone || '',
       doctorId: doctor.id,
-      doctorName: `${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}`,
+      doctorName: formatDoctorDisplayName({ firstName: doctor.firstName, lastName: doctor.lastName }),
       specialization: doctor.specialization,
       appointmentDate,
       appointmentTime,

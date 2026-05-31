@@ -2,6 +2,11 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
+import { execSync } from "child_process";
+
+const buildHash = (() => {
+  try { return execSync('git rev-parse --short HEAD').toString().trim(); } catch { return Date.now().toString(); }
+})();
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -70,8 +75,8 @@ export default defineConfig(({ mode }) => ({
   },
   // Optimize for development stability
   define: {
-    // Prevent global object access issues
     global: 'globalThis',
+    __SW_CACHE_VERSION__: JSON.stringify(buildHash),
   },
   optimizeDeps: {
     // Pre-bundle dependencies to reduce initial load

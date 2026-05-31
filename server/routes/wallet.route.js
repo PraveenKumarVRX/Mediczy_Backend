@@ -13,6 +13,15 @@ import { Op } from 'sequelize';
 
 const router = express.Router();
 
+const COUPON_SCOPES = {
+  COINS_PURCHASE: 'COINS_PURCHASE',
+  HEALTH_CHECKUP: 'HEALTH_CHECKUP',
+  PHARMACY_PURCHASE: 'PHARMACY_PURCHASE',
+  CONSULTATION: 'CONSULTATION'
+};
+
+const DEFAULT_COUPON_SCOPE = COUPON_SCOPES.COINS_PURCHASE;
+
 const parseAssignedUserIds = (coupon) => {
   const metadata = coupon?.metadata || {};
   const ids = metadata.assignedUserIds;
@@ -39,6 +48,37 @@ const isCouponEligibleForUser = (coupon, userId) => {
   const assignedUserIds = parseAssignedUserIds(coupon);
   if (!assignedUserIds.length) return true;
   return assignedUserIds.includes(parseInt(userId, 10));
+};
+
+const parseCouponScopes = (coupon) => {
+  const rawScopes = coupon?.metadata?.scopes;
+
+  if (!rawScopes) {
+    return [DEFAULT_COUPON_SCOPE];
+  }
+
+  const scopes = Array.isArray(rawScopes)
+    ? rawScopes
+    : String(rawScopes)
+        .split(',')
+        .map((item) => item.trim().toUpperCase())
+        .filter(Boolean);
+
+  const allowed = new Set(Object.values(COUPON_SCOPES));
+  const normalized = scopes.filter((scope) => allowed.has(scope));
+
+  return normalized.length ? normalized : [DEFAULT_COUPON_SCOPE];
+};
+
+const normalizeRequestedScope = (scope) => {
+  const value = String(scope || DEFAULT_COUPON_SCOPE).toUpperCase();
+  const allowed = new Set(Object.values(COUPON_SCOPES));
+  return allowed.has(value) ? value : null;
+};
+
+const isCouponEligibleForScope = (coupon, scope) => {
+  const scopes = parseCouponScopes(coupon);
+  return scopes.includes(scope);
 };
 
 /**
@@ -356,6 +396,14 @@ router.get('/rewards', authUser, async (req, res) => {
  */
 router.get('/my-coupons', authUser, async (req, res) => {
   try {
+    const scope = req.query.scope ? normalizeRequestedScope(req.query.scope) : null;
+    if (req.query.scope && !scope) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid scope. Allowed: COINS_PURCHASE, HEALTH_CHECKUP, PHARMACY_PURCHASE, CONSULTATION'
+      });
+    }
+
     const now = new Date();
     const coupons = await Coupon.findAll({
       where: {
@@ -371,6 +419,10 @@ router.get('/my-coupons', authUser, async (req, res) => {
 
     for (const coupon of coupons) {
       if (!isCouponEligibleForUser(coupon, req.user.id)) {
+        continue;
+      }
+
+      if (scope && !isCouponEligibleForScope(coupon, scope)) {
         continue;
       }
 
@@ -391,6 +443,7 @@ router.get('/my-coupons', authUser, async (req, res) => {
       }
 
       const assignedUserIds = parseAssignedUserIds(coupon);
+      const scopes = parseCouponScopes(coupon);
 
       eligibleCoupons.push({
         id: coupon.id,
@@ -404,7 +457,9 @@ router.get('/my-coupons', authUser, async (req, res) => {
         maxUsagePerUser: coupon.maxUsagePerUser,
         userUsage,
         remainingForUser,
-        isPersonalized: assignedUserIds.length > 0
+        isPersonalized: assignedUserIds.length > 0,
+        scopes,
+        primaryScope: scopes[0]
       });
     }
 
@@ -428,12 +483,20 @@ router.get('/my-coupons', authUser, async (req, res) => {
  */
 router.post('/validate-coupon', authUser, async (req, res) => {
   try {
-    const { code, packageId } = req.body;
+    const { code, packageId, scope: rawScope, orderAmount } = req.body;
     
     if (!code) {
       return res.status(400).json({
         success: false,
         message: 'Coupon code is required'
+      });
+    }
+
+    const scope = normalizeRequestedScope(rawScope || DEFAULT_COUPON_SCOPE);
+    if (!scope) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid scope. Allowed: COINS_PURCHASE, HEALTH_CHECKUP, PHARMACY_PURCHASE, CONSULTATION'
       });
     }
     
@@ -458,6 +521,13 @@ router.post('/validate-coupon', authUser, async (req, res) => {
       return res.status(403).json({
         success: false,
         message: 'This coupon is not assigned to your account'
+      });
+    }
+
+    if (!isCouponEligibleForScope(coupon, scope)) {
+      return res.status(400).json({
+        success: false,
+        message: `This coupon is not valid for ${scope}`
       });
     }
     
@@ -486,6 +556,7 @@ router.post('/validate-coupon', authUser, async (req, res) => {
     
     // Get package if specified
     let pkg = null;
+    const normalizedOrderAmount = Number(orderAmount || 0);
     if (packageId !== undefined) {
       pkg = HEALTH_COINS_PRICING.packages[packageId];
       
@@ -497,15 +568,23 @@ router.post('/validate-coupon', authUser, async (req, res) => {
         });
       }
     }
+
+    if (coupon.type === 'PERCENTAGE' && !pkg && normalizedOrderAmount > 0 && normalizedOrderAmount < Number(coupon.minPurchase || 0)) {
+      return res.status(400).json({
+        success: false,
+        message: `Minimum order of ₹${coupon.minPurchase} required for this coupon`
+      });
+    }
     
     // Calculate discount/bonus
+    const baseAmount = pkg ? pkg.price : (normalizedOrderAmount > 0 ? normalizedOrderAmount : 0);
     let discount = 0;
     let bonusHC = 0;
-    let finalPrice = pkg ? pkg.price : 0;
+    let finalPrice = baseAmount;
     
-    if (coupon.type === 'PERCENTAGE' && pkg) {
-      discount = (pkg.price * coupon.value) / 100;
-      finalPrice = pkg.price - discount;
+    if (coupon.type === 'PERCENTAGE' && baseAmount > 0) {
+      discount = (baseAmount * coupon.value) / 100;
+      finalPrice = baseAmount - discount;
     } else if (coupon.type === 'FIXED_HC') {
       bonusHC = coupon.value;
     } else if (coupon.type === 'FREE_HC') {
@@ -520,6 +599,8 @@ router.post('/validate-coupon', authUser, async (req, res) => {
         code: coupon.code,
         type: coupon.type,
         value: coupon.value,
+        scope,
+        scopes: parseCouponScopes(coupon),
         description: coupon.description,
         discount,
         bonusHC,
@@ -588,6 +669,13 @@ router.post('/create-order', authUser, async (req, res) => {
         return res.status(403).json({
           success: false,
           message: 'This coupon is not assigned to your account'
+        });
+      }
+
+      if (!isCouponEligibleForScope(coupon, COUPON_SCOPES.COINS_PURCHASE)) {
+        return res.status(400).json({
+          success: false,
+          message: 'This coupon is not valid for coin purchases'
         });
       }
       
@@ -753,6 +841,17 @@ router.post('/verify-payment', authUser, async (req, res) => {
       });
       
       if (coupon) {
+        if (!isCouponEligibleForUser(coupon, req.user.id) || !isCouponEligibleForScope(coupon, COUPON_SCOPES.COINS_PURCHASE)) {
+          coupon = null;
+        }
+
+        if (!coupon) {
+          return res.status(400).json({
+            success: false,
+            message: 'This coupon is not valid for this user or purchase type'
+          });
+        }
+
         // Apply coupon bonus
         if (coupon.type === 'PERCENTAGE') {
           discount = (pkg.price * coupon.value) / 100;
@@ -861,6 +960,10 @@ router.post('/redeem-free-coupon', authUser, async (req, res) => {
 
     if (!isCouponEligibleForUser(coupon, req.user.id)) {
       return res.status(403).json({ success: false, message: 'This coupon is not assigned to your account' });
+    }
+
+    if (!isCouponEligibleForScope(coupon, COUPON_SCOPES.COINS_PURCHASE)) {
+      return res.status(400).json({ success: false, message: 'This coupon is not valid for coin purchases' });
     }
 
     // Only FREE_HC coupons can be redeemed for free

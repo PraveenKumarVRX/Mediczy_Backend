@@ -69,6 +69,7 @@ interface SidebarItem {
   path: string;
   category?: string;
   adminOnly?: boolean; // Flag for admin-only items
+  permission?: string | string[];
 }
 
 const sidebarItems: SidebarItem[] = [
@@ -86,8 +87,8 @@ const sidebarItems: SidebarItem[] = [
   { icon: Gift, label: "Wellness & Rewards", path: "/wellness-rewards", category: "Health" },
   { icon: CalendarDays, label: "Wellness Calendar", path: "/wellness-calendar", category: "Health" },
   { icon: Apple, label: "Diet Plans", path: "/diet", category: "Health" },
-  { icon: Bot, label: "AI Doctor", path: "/ai-doctor", category: "Health" },
-  { icon: Watch, label: "Watch Analytics", path: "/patient/watch-analytics", category: "Health" },
+  { icon: Bot, label: "AI Assistant", path: "/ai-doctor", category: "Health" },
+  { icon: Watch, label: "Wearables Analytics", path: "/patient/watch-analytics", category: "Health" },
   
   // Appointments & Consultations
   { icon: CalendarCheck, label: "My Appointments", path: "/appointments", category: "Appointments" },
@@ -124,30 +125,60 @@ const sidebarItems: SidebarItem[] = [
 
 const teamSidebarItems: SidebarItem[] = [
   { icon: Home, label: "Dashboard", path: "/team/dashboard" },
-  { icon: Users, label: "Team Directory", path: "/team/directory" },
-  { icon: BarChart3, label: "Reports", path: "/team/reports" },
-  { icon: Activity, label: "System Tools", path: "/team/tools" },
-  { icon: Users, label: "User Management", path: "/team/user-management", category: "Management" },
-  { icon: Stethoscope, label: "Doctors", path: "/team/doctor-management", category: "Management" },
-  { icon: Building2, label: "Corporate Management", path: "/team/corporate-management", category: "Management" },
-  { icon: Briefcase, label: "Broker Management", path: "/team/broker-management", category: "Management" },
-  { icon: FlaskConical, label: "Corporate Health Booking", path: "/team/corporate-health-booking", category: "Management" },
-  { icon: Building2, label: "Hospital Management", path: "/team/hospital-management", category: "Management" },
-  { icon: Building, label: "Clinic Management", path: "/team/clinic-management", category: "Management" },
-  { icon: FlaskConical, label: "Lab Management", path: "/team/lab-management", category: "Management" },
-  { icon: Calendar, label: "Appointments", path: "/team/appointments", category: "Operations" },
-  { icon: MessageSquare, label: "Chat Dashboard", path: "/admin/chat", category: "Support" },
-  { icon: Ticket, label: "Support Tickets", path: "/team/support-tickets", category: "Support" },
+  { icon: Users, label: "Team Directory", path: "/team/directory", permission: "User Management" },
+  { icon: BarChart3, label: "Reports", path: "/team/reports", permission: ["Patient Reports", "Analytics Access"] },
+  { icon: Activity, label: "System Tools", path: "/team/tools", adminOnly: true },
+  { icon: Users, label: "User Management", path: "/team/user-management", category: "Management", permission: "User Management" },
+  { icon: Stethoscope, label: "Doctors", path: "/team/doctor-management", category: "Management", permission: "Doctor Management" },
+  { icon: Building2, label: "Corporate Management", path: "/team/corporate-management", category: "Management", permission: "Corporate Management" },
+  { icon: Database, label: "Provider Network", path: "/team/provider-network", category: "Management", permission: "Corporate Management" },
+  { icon: Briefcase, label: "Broker Management", path: "/team/broker-management", category: "Management", permission: "Broker Management" },
+  { icon: FlaskConical, label: "Corporate Health Booking", path: "/team/corporate-health-booking", category: "Management", permission: "Corporate Management" },
+  { icon: Crown, label: "User Plan Customization", path: "/team/user-plan-customization", category: "Management", permission: "Corporate Management" },
+  { icon: Building2, label: "Hospital Management", path: "/team/hospital-management", category: "Management", permission: "Hospital Management" },
+  { icon: Building, label: "Clinic Management", path: "/team/clinic-management", category: "Management", permission: "Clinic Management" },
+  { icon: FlaskConical, label: "Lab Management", path: "/team/lab-management", category: "Management", permission: "Lab Management" },
+  { icon: Calendar, label: "Appointments", path: "/team/appointments", category: "Operations", permission: "Appointment Management" },
+  { icon: MessageSquare, label: "Chat Dashboard", path: "/team/chat", category: "Support", permission: "Chat Dashboard Access" },
+  { icon: Ticket, label: "Support Tickets", path: "/team/support-tickets", category: "Support", permission: "Support Tickets" },
   { icon: Mail, label: "Email Inbox", path: "/team/email-inbox", category: "Support" },
-  { icon: LayoutTemplate, label: "Welcome Emails", path: "/team/settings?tab=email-templates", category: "Support" },
-  { icon: MessageSquare, label: "WhatsApp Inbox", path: "/team/whatsapp-inbox", category: "Support" },
-  { icon: MessageSquare, label: "RC Omnichannel", path: "/team/rc-omnichannel", category: "Support" },
-  { icon: Pill, label: "Pharmacies", path: "/team/pharmacy-management", category: "Management" },
-  { icon: Heart, label: "Health Plans", path: "/team/health-plans", category: "Business" },
-  { icon: Ticket, label: "Coupons", path: "/admin/coupons", category: "Finance" },
-  { icon: Database, label: "Activity Logs", path: "/team/activity", category: "Security" },
-  { icon: Settings, label: "Settings", path: "/team/settings", category: "Administration" },
+  { icon: LayoutTemplate, label: "Welcome Emails", path: "/team/settings?tab=email-templates", category: "Support", adminOnly: true },
+  { icon: MessageSquare, label: "WhatsApp Inbox", path: "/team/whatsapp-inbox", category: "Support", permission: "Chat Dashboard Access" },
+  { icon: MessageSquare, label: "RC Omnichannel", path: "/team/rc-omnichannel", category: "Support", permission: "Chat Dashboard Access" },
+  { icon: Pill, label: "Pharmacies", path: "/team/pharmacy-management", category: "Management", permission: "Pharmacy Management" },
+  { icon: Heart, label: "Health Plans", path: "/team/health-plans", category: "Business", permission: "Health Plans Access" },
+  { icon: ShieldCheck, label: "Plan Governance", path: "/team/plan-governance", category: "Security", permission: "Audit Access" },
+  { icon: Database, label: "Activity Logs", path: "/team/activity", category: "Security", permission: "Audit Access" },
+  { icon: Settings, label: "Settings", path: "/team/settings", category: "Administration", adminOnly: true },
 ];
+
+const readStoredTeamUser = () => {
+  try {
+    const raw = localStorage.getItem('teamUserData');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const hasSidebarPermission = (user: any, required?: string | string[]) => {
+  if (!required) return true;
+  const permissions = Array.isArray(user?.permissions) ? user.permissions : [];
+  const requiredList = Array.isArray(required) ? required : [required];
+  return requiredList.some((req) =>
+    permissions.some((permission: string) =>
+      permission.toLowerCase().includes(req.toLowerCase()) ||
+      req.toLowerCase().includes(permission.toLowerCase())
+    )
+  );
+};
+
+const isTeamAdmin = (user: any) => (
+  user?.isAdmin === true ||
+  String(user?.role || '').toLowerCase() === 'admin' ||
+  String(user?.role || '').toLowerCase() === 'super admin' ||
+  String(user?.role || '').toLowerCase() === 'super_admin'
+);
 
 export function Sidebar() {
   const location = useLocation();
@@ -178,8 +209,7 @@ export function Sidebar() {
     }
     setIsAdmin(userIsAdmin);
     
-    const isTeamRoute = location.pathname.startsWith('/team') || 
-                       (location.pathname.startsWith('/admin') && !!teamToken);
+    const isTeamRoute = location.pathname.startsWith('/team');
     const isNurseRoute = location.pathname.startsWith('/nurse');
     const isAssistantRoute = location.pathname.startsWith('/assistant');
     setIsTeamUser(!!teamToken && isTeamRoute);
@@ -253,7 +283,14 @@ export function Sidebar() {
   ];
 
   const getSidebarItems = () => {
-    if (isTeamUser) return teamSidebarItems;
+    if (isTeamUser) {
+      const teamUser = readStoredTeamUser();
+      const teamAdmin = isTeamAdmin(teamUser);
+      return teamSidebarItems.filter((item) => {
+        if (item.adminOnly) return teamAdmin;
+        return teamAdmin || hasSidebarPermission(teamUser, item.permission);
+      });
+    }
     if (isNurseUser) return nurseSidebarItems;
     if (isAssistantUser) return assistantSidebarItems;
     

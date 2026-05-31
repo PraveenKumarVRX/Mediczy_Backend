@@ -1,5 +1,3 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import dotenv from 'dotenv';
 import { connectPostgres, closePostgres, getPool as getPostgresPool } from '../db/postgres.js';
 
@@ -7,20 +5,16 @@ if (process.env.NODE_ENV !== 'production' || process.env.DOTENV_IN_PROD === 'tru
   dotenv.config();
 }
 
-const execPromise = promisify(exec);
-
 // ============================================================================
-// DATABASE ARCHITECTURE (PostgreSQL Primary)
+// DATABASE ARCHITECTURE (PostgreSQL Primary + DuckDB Analytics)
 // ============================================================================
-// PostgreSQL - PRIMARY DATABASE (Relational, JSONB, Full-text search)
-// DuckDB     - ANALYTICS ENGINE (OLAP, Reporting, Data Warehouse)
+// PostgreSQL — PRIMARY DATABASE  (OLTP: CRUD, ACID, JSONB, full-text, pgvector)
+// DuckDB     — ANALYTICS ENGINE  (OLAP: dashboards, reports, aggregations)
 // ============================================================================
 
 // ============================
-// 1. POSTGRESQL (Primary Database)
+// 1. POSTGRESQL
 // ============================
-// Purpose: All application data - users, appointments, medical records, JSONB docs
-// Use Cases: CRUD, transactions, JSONB, full-text search, relationships
 
 let postgresPool = null;
 
@@ -37,44 +31,84 @@ export const initPostgres = async () => {
 
 export const getPostgres = () => postgresPool || getPostgresPool();
 
-// Aliases for backward compatibility
 export const initPostgresHelper = initPostgres;
 export const getPostgresHelper = getPostgres;
 
 // ============================
-// 3. DUCKDB (Analytics Engine)
+// 2. DUCKDB — Native Node.js binding (NOT shell exec)
 // ============================
-// Purpose: Analytics, reporting, data warehouse, complex aggregations
-// Use Cases: OLAP queries, business intelligence, historical data analysis
+// Using the native duckdb npm package for:
+//   - Zero shell-injection risk (no exec/execFile)
+//   - ~50-100ms saved per query (no child process spawn)
+//   - Persistent in-process connection
 
 const DUCKDB_PATH = process.env.DUCKDB_PATH || './data/analytics.duckdb';
 
+let _duckdb = null;
+let _duckdbConn = null;
+
+async function getDuckDBModule() {
+  // Dynamic import so the app still starts if duckdb isn't installed
+  try {
+    const mod = await import('duckdb');
+    return mod.default ?? mod;
+  } catch {
+    return null;
+  }
+}
+
 export const initDuckDB = async () => {
   try {
-    // Create data directory if it doesn't exist
-    await execPromise('mkdir -p ./data');
-    
-    // Test DuckDB connection via CLI
-    const { stdout } = await execPromise(`duckdb ${DUCKDB_PATH} "SELECT 'DuckDB Connected' as status"`);
-    
-    console.log('✅ DuckDB (Analytics Engine) initialized successfully');
-    return DUCKDB_PATH;
+    const DuckDB = await getDuckDBModule();
+    if (!DuckDB) throw new Error('duckdb package not available');
+
+    await import('fs').then(({ mkdirSync }) => mkdirSync('./data', { recursive: true }));
+
+    _duckdb = new DuckDB.Database(DUCKDB_PATH, { access_mode: 'READ_WRITE' });
+    _duckdbConn = _duckdb.connect();
+
+    // Smoke-test
+    await executeDuckDBQuery("SELECT 'DuckDB Connected' AS status");
+
+    console.log('✅ DuckDB (Analytics Engine) initialized via native binding');
+    return _duckdbConn;
   } catch (error) {
     console.error('❌ DuckDB initialization failed:', error.message);
     throw error;
   }
 };
 
-// Execute DuckDB query via CLI (for analytics/reporting)
-export const executeDuckDBQuery = async (query) => {
-  try {
-    const { stdout } = await execPromise(`duckdb ${DUCKDB_PATH} "${query}"`);
-    return stdout;
-  } catch (error) {
-    console.error('DuckDB query error:', error.message);
-    throw error;
+/**
+ * Execute a DuckDB query safely via the native Node binding.
+ * @param {string}  sql    Parameterized SQL string
+ * @param {Array}   params Positional parameters ($1, $2 …)
+ * @returns {Promise<Array>} Result rows
+ */
+export const executeDuckDBQuery = (sql, params = []) => {
+  if (!_duckdbConn) {
+    return Promise.reject(new Error('DuckDB not initialized — call initDuckDB() first'));
   }
+  return new Promise((resolve, reject) => {
+    _duckdbConn.all(sql, ...params, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows ?? []);
+    });
+  });
 };
+
+export const closeDuckDB = () =>
+  new Promise((resolve) => {
+    if (_duckdb) {
+      _duckdb.close(() => {
+        _duckdb = null;
+        _duckdbConn = null;
+        console.log('✅ DuckDB closed');
+        resolve();
+      });
+    } else {
+      resolve();
+    }
+  });
 
 // ============================
 // DATABASE USAGE GUIDELINES
@@ -93,11 +127,10 @@ export const DATABASE_USAGE = {
       'Chatbot session history (JSONB)',
       'Audit trails and contextual logs',
       'Transactional operations (ACID)',
-      'Full-text search'
+      'Full-text search',
     ],
-    operations: ['INSERT', 'UPDATE', 'DELETE', 'SELECT', 'JOIN', 'TRANSACTION', 'JSONB', 'CTE']
+    operations: ['INSERT', 'UPDATE', 'DELETE', 'SELECT', 'JOIN', 'TRANSACTION', 'JSONB', 'CTE'],
   },
-  
   DuckDB: {
     useCases: [
       'Business intelligence dashboards',
@@ -107,10 +140,10 @@ export const DATABASE_USAGE = {
       'Performance metrics',
       'Historical data analysis',
       'Complex aggregations',
-      'Data export for ML/AI'
+      'Data export for ML/AI',
     ],
-    operations: ['SELECT', 'GROUP BY', 'WINDOW FUNCTIONS', 'OLAP QUERIES']
-  }
+    operations: ['SELECT', 'GROUP BY', 'WINDOW FUNCTIONS', 'OLAP QUERIES'],
+  },
 };
 
 // ============================
@@ -118,52 +151,39 @@ export const DATABASE_USAGE = {
 // ============================
 
 export const initAllDatabases = async () => {
-  console.log('🔄 Initializing database architecture...\n');
-  
-  const results = {
-    postgres: false,
-    duckdb: false
-  };
+  console.log('🔄 Initializing database architecture…\n');
+
+  const results = { postgres: false, duckdb: false };
 
   try {
-    // Initialize PostgreSQL (Primary)
     await initPostgres();
     results.postgres = true;
-  } catch (error) {
-    console.error('⚠️  PostgreSQL initialization failed, continuing...');
+  } catch {
+    console.error('⚠️  PostgreSQL initialization failed, continuing…');
   }
 
   try {
-    // Initialize DuckDB (Analytics)
     await initDuckDB();
     results.duckdb = true;
-  } catch (error) {
-    console.error('⚠️  DuckDB initialization failed, continuing...');
+  } catch {
+    console.error('⚠️  DuckDB initialization failed, continuing…');
   }
 
   console.log('\n📊 Database Architecture Status:');
   console.log(`   PostgreSQL (Primary):    ${results.postgres ? '✅' : '❌'}`);
-  console.log(`   DuckDB     (Analytics):  ${results.duckdb ? '✅' : '❌'}\n`);
-
-  if (results.postgres && results.duckdb) {
-    console.log('🎉 All databases initialized successfully!\n');
-  } else {
-    console.warn('⚠️  Some databases failed to initialize\n');
-  }
+  console.log(`   DuckDB     (Analytics):  ${results.duckdb  ? '✅' : '❌'}\n`);
 
   return results;
 };
 
-// Graceful shutdown
 export const closeAllDatabases = async () => {
-  console.log('Closing all database connections...');
-  
+  console.log('Closing all database connections…');
   if (postgresPool) {
     await closePostgres();
     postgresPool = null;
     console.log('✅ PostgreSQL closed');
   }
-  
+  await closeDuckDB();
   console.log('✅ All databases closed');
 };
 
@@ -175,6 +195,7 @@ export default {
   getPostgres,
   getPostgresHelper,
   executeDuckDBQuery,
+  closeDuckDB,
   closeAllDatabases,
-  DATABASE_USAGE
+  DATABASE_USAGE,
 };

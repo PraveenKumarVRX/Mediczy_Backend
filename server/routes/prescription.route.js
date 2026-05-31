@@ -17,6 +17,7 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 import AuditLog from '../models/auditLog.model.intelligent.js';
 import n8nService from '../services/n8n.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -497,10 +498,11 @@ router.post('/', authDoctor, [
       }
     }
 
-    // Create prescription
-    const prescription = await Prescription.create({
+    const prescriptionPayload = {
       appointmentId,
       patientId: patientUserId,
+      organization_id: doctor.organization_id || doctor.hospitalId || req.user?.organization_id || null,
+      tenant_id: doctor.organization_id || doctor.hospitalId || req.user?.organization_id || null,
       ...patientData,
       doctorId: doctor.id,
       doctorName: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
@@ -536,14 +538,28 @@ router.post('/', authDoctor, [
       validityDays: validityDays || 30,
       notes,
       status: 'draft'
-    });
+    };
 
-    // Update appointment with prescription reference if provided
-    if (appointmentId) {
-      await Appointment.update(
-        { prescription: prescription.prescriptionId },
-        { where: { id: appointmentId } }
-      );
+    const transaction = await postgresSequelize.transaction();
+    let prescription;
+    try {
+      await req.setSequelizeRlsContext?.(transaction);
+      prescription = await Prescription.create(prescriptionPayload, { transaction });
+
+      // Update appointment with prescription reference if provided
+      if (appointmentId) {
+        await Appointment.update(
+          { prescription: prescription.prescriptionId },
+          { where: { id: appointmentId }, transaction }
+        );
+      }
+
+      await transaction.commit();
+    } catch (txError) {
+      if (!transaction.finished) {
+        await transaction.rollback();
+      }
+      throw txError;
     }
 
     // Audit logging for prescription creation (HIPAA compliance)
@@ -871,15 +887,20 @@ router.get('/doctor/issued', authDoctor, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Doctor ID not found' });
     }
 
-    const prescriptions = await Prescription.findAll({
+    const page  = Math.max(0, parseInt(req.query.page  || '0',  10));
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit || '20', 10)));
+
+    const { count: total, rows: prescriptions } = await Prescription.findAndCountAll({
       where: { doctorId },
       order: [['createdAt', 'DESC']],
-      limit: 100
+      limit,
+      offset: page * limit,
     });
 
     res.json({
       success: true,
       count: prescriptions.length,
+      pagination: { total, page, limit, pages: Math.ceil(total / limit) },
       prescriptions: prescriptions.map(p => ({
         id: p.id,
         prescriptionId: p.prescriptionId,
@@ -1423,23 +1444,30 @@ router.get('/:id/pdf', async (req, res) => {
     // Generate HTML
     const html = renderPrescriptionHTML(prescription);
 
-    // Try to use html-pdf-node for PDF generation
+    // Generate PDF using Puppeteer directly to avoid vulnerable wrapper dependencies.
     try {
-      const htmlPdf = await import('html-pdf-node');
+      const puppeteer = await import('puppeteer');
+      const browser = await puppeteer.default.launch({
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      });
+      let pdfBuffer;
 
-      const options = {
-        format: 'A4',
-        printBackground: true,
-        margin: {
-          top: '10mm',
-          right: '10mm',
-          bottom: '10mm',
-          left: '10mm'
-        }
-      };
-
-      const file = { content: html };
-      const pdfBuffer = await htmlPdf.default.generatePdf(file, options);
+      try {
+        const page = await browser.newPage();
+        await page.setContent(html, { waitUntil: 'networkidle0' });
+        pdfBuffer = await page.pdf({
+          format: 'A4',
+          printBackground: true,
+          margin: {
+            top: '10mm',
+            right: '10mm',
+            bottom: '10mm',
+            left: '10mm'
+          }
+        });
+      } finally {
+        await browser.close();
+      }
 
       // Save PDF to uploads directory
       const fs = await import('fs');

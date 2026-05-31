@@ -3,7 +3,7 @@ import { body, validationResult } from 'express-validator';
 import userModel from '../models/user.model.intelligent.js';
 import Appointment from '../models/appointment.model.intelligent.js';
 import Doctor from '../models/doctor.model.intelligent.js';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import { authUser } from '../middleware/auth.middleware.js';
 import { authTeam } from '../middleware/team.middleware.js';
 import { authNurse } from '../routes/nurse.route.js';

@@ -321,7 +321,7 @@ router.post('/register', async (req, res) => {
     const token = jwt.sign(
       { id: tpa.id, email: tpa.email, role: 'tpa' },
       JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     res.status(201).json({

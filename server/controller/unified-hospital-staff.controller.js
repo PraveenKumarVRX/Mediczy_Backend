@@ -20,7 +20,7 @@ import Tenant from '../models/postgres/tenant.model.postgres.js';
 import { validationResult } from 'express-validator';
 import { Op } from 'sequelize';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
@@ -260,7 +260,7 @@ export const doctorSignup = async (req, res) => {
         hospital_slug: hospital.slug
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     console.log('✅ Doctor registered successfully:', doctor.id);
@@ -390,7 +390,7 @@ export const doctorLogin = async (req, res) => {
         hospital_slug: hospital.slug
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     // Update last login
@@ -531,7 +531,7 @@ export const nurseSignup = async (req, res) => {
         hospital_slug: hospital.slug
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     console.log('✅ Nurse registered successfully:', nurse.id);
@@ -653,7 +653,7 @@ export const nurseLogin = async (req, res) => {
         hospital_slug: hospital.slug
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     await nurse.update({
@@ -791,7 +791,7 @@ export const assistantSignup = async (req, res) => {
         hospital_slug: hospital.slug
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     console.log('✅ Assistant registered successfully:', assistant.id);
@@ -913,7 +913,7 @@ export const assistantLogin = async (req, res) => {
         hospital_slug: hospital.slug
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     await assistant.update({
@@ -1051,7 +1051,7 @@ export const insuranceCoordinatorSignup = async (req, res) => {
         hospital_slug: hospital.slug
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     console.log('✅ Insurance coordinator registered successfully:', coordinator.id);
@@ -1173,7 +1173,7 @@ export const insuranceCoordinatorLogin = async (req, res) => {
         hospital_slug: hospital.slug
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     await coordinator.update({
@@ -1269,7 +1269,7 @@ const makeDeptHandlers = (roleKey, displayName) => {
       const token = jwt.sign(
         { id: staff.id, email: staff.email, role: staff.role, userType: 'hospital', tokenType: 'access', organization_id: staff.organization_id, hospital_id: hospital.id, hospitalId: hospital.id, hospital_name: hospital.name, hospital_slug: hospital.slug },
         JWT_SECRET,
-        { expiresIn: '7d' }
+        { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
       );
 
       console.log(`✅ ${displayName} signup successful:`, staff.id);
@@ -1332,7 +1332,7 @@ const makeDeptHandlers = (roleKey, displayName) => {
       const token = jwt.sign(
         { id: staff.id, email: staff.email, role: staff.role, userType: 'hospital', tokenType: 'access', organization_id: staff.organization_id, hospital_id: staff.organization_id, hospitalId: staff.organization_id, hospital_name: hospital?.name, hospital_slug: hospital?.slug },
         JWT_SECRET,
-        { expiresIn: '7d' }
+        { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
       );
 
       await staff.update({ metadata: { ...staff.metadata, last_login: new Date().toISOString(), login_source: 'web_portal' } });

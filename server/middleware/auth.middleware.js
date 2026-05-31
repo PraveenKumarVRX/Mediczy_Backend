@@ -1,4 +1,5 @@
 import userModel from "../models/user.model.intelligent.js";
+import { COOKIE_NAMES } from "../config/cookies.config.js";
 import doctorModel from "../models/doctor.model.intelligent.js";
 import nurseModel from "../models/nurse.model.intelligent.js";
 import assistantModel from "../models/assistant.model.intelligent.js";
@@ -104,7 +105,11 @@ export const authUser = async (req, res, next) => {
     return next();
   }
 
-  const token = req.headers.authorization?.split(" ")[1];
+  // Accept token from httpOnly cookie (web) or Authorization header (mobile/API clients).
+  // Cookie takes precedence so XSS-extracted header tokens cannot override a cookie session.
+  const token =
+    req.cookies?.[COOKIE_NAMES.ACCESS] ||
+    req.headers.authorization?.split(" ")[1];
 
   if (!token) {
     return res.status(401).json({ message: "unauthorized token" });
@@ -203,14 +208,14 @@ export const authUser = async (req, res, next) => {
         UserPostgres,
         userModel,
         decoded.id,
-        { attributes: ["id", "email", "role", "isAdmin", "isTeam", "status", "isActive", "firstName", "lastName", "tenantId", "tenant_id", "metadata", "organization_id"] }
+        { attributes: ["id", "email", "role", "isAdmin", "isTeam", "status", "firstName", "lastName", "tenant_id", "metadata", "organization_id"] }
       );
 
       if (!adminUser) {
         return res.status(401).json({ message: "Admin/team account not found" });
       }
 
-      if (adminUser.status !== "active" || adminUser.isActive === false) {
+      if (adminUser.status !== "active") {
         return res.status(403).json({ message: "Account is inactive or suspended" });
       }
 
@@ -491,7 +496,9 @@ export const authUser = async (req, res, next) => {
  * both authenticated and guest access (e.g. emergency triage).
  */
 export const authUserOptional = async (req, _res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
+  const token =
+    req.cookies?.[COOKIE_NAMES.ACCESS] ||
+    req.headers.authorization?.split(' ')[1];
   if (!token) return next();                       // no token → continue as guest
 
   try {

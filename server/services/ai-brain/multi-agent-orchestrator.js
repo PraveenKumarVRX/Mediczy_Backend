@@ -20,6 +20,7 @@
  */
 
 import pool from '../../db/pgPool.js';
+import { maskPhi } from '../../utils/phi-masker.js';
 import llmProvider from './llm-provider.js';
 import ragPipeline from './rag-pipeline.js';
 import { getToolDefinitions, execute as executeTool } from './tools/loader.js';
@@ -43,6 +44,8 @@ import cognitiveRouter, { TIERS } from './cognitive-router.js';
 import { recordTelemetry } from './evaluation-engine.js';
 
 const MAX_AGENT_ITERATIONS = 8;
+// Hard wall-clock limit for any agent run — prevents indefinite hangs on patient-facing requests
+const AGENT_RUN_TIMEOUT_MS = parseInt(process.env.AGENT_RUN_TIMEOUT_MS || '30000', 10);
 
 // ─── DB Setup ─────────────────────────────────────────────────────────────────
 
@@ -494,7 +497,7 @@ Combine them into a single coherent, well-structured response.
  * @param {string}  [options.forceAgent]      - Force a specific agent (bypasses planner, still checks permissions)
  * @returns {{ response, agentsUsed, taskPlan, totalTokens, latencyMs, identity }}
  */
-export async function process({ message, req, conversationId, contextMessages = [], forceAgent }) {
+export async function processRequest({ message, req, conversationId, contextMessages = [], forceAgent }) {
   await ensureDb();
   const runStart = Date.now();
 
@@ -533,9 +536,16 @@ export async function process({ message, req, conversationId, contextMessages = 
 
   console.log(`[MultiAgent] Plan: intent=${plan.intent}, tasks=${plan.tasks.length}, agents=${plan.tasks.map(t => t.agentId).join(',')} (role=${identity.role})`);
 
-  // 4. Execute task graph
-  const agentResults = await executeGraph(plan, identity, contextMessages);
-  const totalTokens  = agentResults.reduce((s, r) => s + (r.tokens || 0), 0);
+  // 4. Execute task graph — enforce hard wall-clock timeout
+  const timeoutError = new Error(`Agent run exceeded ${AGENT_RUN_TIMEOUT_MS}ms limit`);
+  timeoutError.code = 'AGENT_TIMEOUT';
+  timeoutError.status = 504;
+
+  const agentResults = await Promise.race([
+    executeGraph(plan, identity, contextMessages),
+    new Promise((_, rej) => setTimeout(() => rej(timeoutError), AGENT_RUN_TIMEOUT_MS)),
+  ]);
+  const totalTokens = agentResults.reduce((s, r) => s + (r.tokens || 0), 0);
 
   // 5. Aggregate
   const finalResponse = await aggregateResults(agentResults, message, identity);
@@ -609,6 +619,9 @@ function _tierToProvider(tier) {
 }
 
 async function _auditLog(data) {
+  // Mask PHI before persisting audit record
+  const safePlan = maskPhi(data.taskPlan);
+
   await pool.query(
     `INSERT INTO ai_agent_runs
        (user_id, org_id, role, input_message, task_plan, agents_used,
@@ -619,7 +632,7 @@ async function _auditLog(data) {
       data.orgId,
       data.role,
       data.inputMessage?.substring(0, 2000),
-      JSON.stringify(data.taskPlan),
+      JSON.stringify(safePlan),
       data.agentsUsed,
       data.finalResponse?.substring(0, 5000),
       data.status,
@@ -659,4 +672,6 @@ export async function getRunHistory(userId, limit = 20) {
   return rows;
 }
 
-export default { process, listAvailableAgents, getRunHistory };
+export { processRequest as process };
+
+export default { process: processRequest, listAvailableAgents, getRunHistory };

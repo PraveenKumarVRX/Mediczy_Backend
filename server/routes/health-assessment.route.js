@@ -339,9 +339,27 @@ router.post('/save', authUser, async (req, res) => {
       hip: hip ? parseFloat(hip) : null,
       bmi: bmi ? parseFloat(bmi) : null,
       whr: whr ? parseFloat(whr) : null,
-      smoking: smoking || 'never',
-      alcohol: alcohol || 'none',
-      exercise_frequency: exercise_frequency || 'sedentary',
+      smoking: (() => {
+        if (!smoking) return 'never';
+        if (['current', 'occasional', 'regular_lt10', 'heavy_gte10'].includes(smoking)) return 'current';
+        if (smoking === 'former') return 'former';
+        return 'never';
+      })(),
+      alcohol: (() => {
+        if (!alcohol) return 'none';
+        if (alcohol === 'occasionally' || alcohol === 'occasional') return 'occasionally';
+        if (alcohol === 'weekly' || alcohol === 'moderate') return 'weekly';
+        if (alcohol === 'daily' || alcohol === 'heavy_daily' || alcohol === 'binge') return 'daily';
+        return 'none';
+      })(),
+      exercise_frequency: (() => {
+        if (!exercise_frequency) return 'sedentary';
+        if (['active', 'moderate', 'light', 'sedentary'].includes(exercise_frequency)) return exercise_frequency;
+        if (exercise_frequency === '150_mod') return 'active';
+        if (exercise_frequency === '75_150_mod') return 'moderate';
+        if (exercise_frequency === 'lt75') return 'light';
+        return 'sedentary';
+      })(),
       hypertension: hypertension || 'no',
       diabetes: diabetes || 'no',
       heart_disease: heart_disease || 'no',
@@ -378,7 +396,7 @@ router.post('/save', authUser, async (req, res) => {
       diabetes: assessmentData.diabetes === 'yes' ? 'type2' : 'none',
       hypertension: assessmentData.hypertension === 'yes',
       atrialFibrillation: req.body.af === 'yes',
-      familyHistoryPrematureCVD: req.body.family_heart_disease === 'yes',
+      familyHistoryPrematureCVD: req.body.family_heart_disease_premature === 'yes' || req.body.family_heart_disease === 'yes',
       familyDiabetes: req.body.family_diabetes === 'yes' ? 'first_degree' : 'none',
       physicalActivityMinPerDay: (() => {
         switch (assessmentData.exercise_frequency) {

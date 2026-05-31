@@ -15,7 +15,7 @@ const isTokenExpired = (token: string | null): boolean => {
   if (!token) return true;
   try {
     const payload = JSON.parse(atob(token.split('.')[1]));
-    if (!payload?.exp) return false; // no expiry claim — treat as valid
+    if (!payload?.exp) return true; // no expiry claim — treat as expired/invalid (fail closed)
     return Date.now() >= payload.exp * 1000;
   } catch {
     return true; // malformed token
@@ -97,9 +97,9 @@ export const AuthProvider = ({ children }) => {
       return data;
     },
     enabled: !!authState.token && authState.userType === "user",
-    staleTime: Infinity, // Don't refetch unless token changes
+    staleTime: 5 * 60 * 1000, // 5 minutes — reflects plan upgrades and account changes
     retry: false,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
     refetchOnMount: false,
   });
 
@@ -112,9 +112,9 @@ export const AuthProvider = ({ children }) => {
       return data?.doctor || data;
     },
     enabled: !!authState.token && authState.userType === "doctor",
-    staleTime: Infinity, // Don't refetch unless token changes
+    staleTime: 5 * 60 * 1000, // 5 minutes — reflects plan upgrades and account changes
     retry: false,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
     refetchOnMount: false,
   });
 
@@ -187,8 +187,8 @@ export const AuthProvider = ({ children }) => {
     if (isAdminRoute) {
       const isAdminLoginRoute = location.pathname === '/admin/login';
 
-      if (!isAdminLoginRoute && !adminToken && !teamToken) {
-        console.log('🚫 Admin route without admin/team token, redirecting to admin login');
+      if (!isAdminLoginRoute && !adminToken) {
+        console.log('🚫 Admin route without admin token, redirecting to admin login');
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate('/admin/login', { replace: true });
         return;

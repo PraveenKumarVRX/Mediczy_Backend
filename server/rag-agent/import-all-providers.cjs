@@ -5,7 +5,7 @@
  * Processes hospitals, clinics, doctors, and labs with pincode mapping
  */
 
-const XLSX = require('xlsx');
+const XLSX = require('../utils/excel-compat.cjs');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
@@ -124,7 +124,7 @@ class MasterDataImporter {
 
         for (const file of MASTER_DATA_FILES.hospitals) {
             const filePath = path.join(__dirname, file);
-            const workbook = XLSX.readFile(filePath);
+            const workbook = await XLSX.readFile(filePath);
             const data = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
 
             console.log(`\n📄 File: ${path.basename(file)}`);
@@ -142,7 +142,7 @@ class MasterDataImporter {
 
         for (const file of MASTER_DATA_FILES.labs) {
             const filePath = path.join(__dirname, file);
-            const workbook = XLSX.readFile(filePath);
+            const workbook = await XLSX.readFile(filePath);
             const data = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
 
             console.log(`\n📄 File: ${path.basename(file)}`);
@@ -160,7 +160,7 @@ class MasterDataImporter {
 
         for (const file of MASTER_DATA_FILES.clinics) {
             const filePath = path.join(__dirname, file);
-            const workbook = XLSX.readFile(filePath);
+            const workbook = await XLSX.readFile(filePath);
             const data = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
 
             console.log(`\n📄 File: ${path.basename(file)}`);
@@ -178,7 +178,7 @@ class MasterDataImporter {
 
         for (const file of MASTER_DATA_FILES.doctors) {
             const filePath = path.join(__dirname, file);
-            const workbook = XLSX.readFile(filePath);
+            const workbook = await XLSX.readFile(filePath);
             const data = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
 
             console.log(`\n📄 File: ${path.basename(file)}`);

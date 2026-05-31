@@ -23,7 +23,7 @@ export const USER_DASHBOARD_UX_META: UserDashboardUxMeta[] = [
   { path: "/wellness-calendar", category: "Health", title: "Wellness Calendar", subtitle: "Planned wellness actions with smart reminders.", uxTier: "Good", uxScore: 77 },
   { path: "/diet", category: "Health", title: "Diet Plans", subtitle: "Structured meal guidance for your health goals.", uxTier: "Good", uxScore: 79 },
   { path: "/ai-doctor", category: "Health", title: "AI Doctor", subtitle: "Guided AI interactions with clinical safety boundaries.", uxTier: "Good", uxScore: 80 },
-  { path: "/patient/watch-analytics", category: "Health", title: "Watch Analytics", subtitle: "Wearable-driven trend intelligence and alerts.", uxTier: "Good", uxScore: 81 },
+  { path: "/patient/watch-analytics", category: "Health", title: "Wearables Analytics", subtitle: "Wearable-driven trend intelligence and alerts.", uxTier: "Good", uxScore: 81 },
 
   { path: "/appointments", category: "Appointments", title: "My Appointments", subtitle: "Upcoming bookings, status, and preparation details.", uxTier: "Good", uxScore: 85 },
   { path: "/doctors", category: "Appointments", title: "Find & Book Doctor", subtitle: "Discover trusted clinicians and book with confidence.", uxTier: "Good", uxScore: 86 },
@@ -42,7 +42,7 @@ export const USER_DASHBOARD_UX_META: UserDashboardUxMeta[] = [
   { path: "/membership-card", category: "Finance", title: "My Membership Card", subtitle: "Portable identity for care and benefits access.", uxTier: "Good", uxScore: 79 },
   { path: "/benefits", category: "Finance", title: "Smart Benefits", subtitle: "Discover and apply personalized benefits fast.", uxTier: "Good", uxScore: 80 },
   { path: "/claims-express", category: "Finance", title: "Claims Express", subtitle: "Submit and track claims with reduced friction.", uxTier: "Good", uxScore: 81 },
-  { path: "/billing/orders", category: "Finance", title: "Order History", subtitle: "Billing history with complete status visibility.", uxTier: "Good", uxScore: 82 },
+  { path: "/billing/orders", category: "Finance", title: "Order History", subtitle: "Order history temporarily unavailable — API migration pending.", uxTier: "Needs Work", uxScore: 0 },
   { path: "/billing/invoices", category: "Finance", title: "My Invoices", subtitle: "Invoices with clear totals and downloadable records.", uxTier: "Good", uxScore: 82 },
   { path: "/my-insurance", category: "Finance", title: "My Insurance", subtitle: "Policy coverage, utilization, and claims view.", uxTier: "Good", uxScore: 80 },
 

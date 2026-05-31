@@ -7,7 +7,7 @@ import sharedPool from '../db/pgPool.js';
  * Verify CRM member authentication.
  * - Validates tokenType === 'access'
  * - DB re-checks user status (not just trusting the JWT)
- * - JTI revocation check against crm_refresh_tokens
+ * - JTI revocation check against unified refresh-token store (with legacy fallback)
  */
 export const authCRM = async (req, res, next) => {
   try {
@@ -55,10 +55,18 @@ export const authCRM = async (req, res, next) => {
     if (decoded.jti) {
       try {
         const pool = sharedPool;
-        const { rows } = await pool.query(
-          `SELECT revoked FROM crm_refresh_tokens WHERE jti = $1`,
+        let { rows } = await pool.query(
+          `SELECT revoked FROM api_v2_refresh_tokens WHERE jti = $1 LIMIT 1`,
           [decoded.jti]
         );
+        if (!rows.length) {
+          // Backward-compat for tokens issued before unified storage.
+          const legacy = await pool.query(
+            `SELECT revoked FROM crm_refresh_tokens WHERE jti = $1 LIMIT 1`,
+            [decoded.jti]
+          );
+          rows = legacy.rows;
+        }
         if (rows.length > 0 && rows[0].revoked) {
           return res.status(401).json({ success: false, message: 'Token has been revoked' });
         }

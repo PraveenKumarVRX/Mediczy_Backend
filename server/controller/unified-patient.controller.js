@@ -14,7 +14,7 @@ import { validationResult } from 'express-validator';
 import { Op } from 'sequelize';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
@@ -183,7 +183,7 @@ export const unifiedPatientSignup = async (req, res) => {
         clinic_slug: clinic.slug
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     console.log('✅ Patient registered successfully:', patient.id);
@@ -310,7 +310,7 @@ export const unifiedPatientLogin = async (req, res) => {
         clinic_slug: clinic.slug
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     // Update last login

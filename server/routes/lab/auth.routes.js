@@ -6,7 +6,7 @@ import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
 import { authLab } from '../../middleware/authLab.middleware.js';
 import pool from '../../db/pgPool.js';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import {
   createUploadMiddleware, registerLimiter,
   uploadDocuments, uploadIdCard, sendAdminLeadEmail, addOtpRoutes,

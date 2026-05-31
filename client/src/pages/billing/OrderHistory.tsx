@@ -84,7 +84,14 @@ const OrderHistory = () => {
       const response = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/billing/orders`, { headers: { Authorization: `Bearer ${token}` }, params });
       if (response.data.success) { setOrders(response.data.data.orders); setTotalOrders(response.data.data.pagination.total); }
     } catch (error: any) {
-      toast({ title: 'Error', description: 'Failed to load orders', variant: 'destructive' });
+      const is500 = error?.response?.status === 500;
+      toast({
+        title: is500 ? 'Order history temporarily unavailable' : 'Error',
+        description: is500
+          ? 'Order history is being set up. Please check back soon.'
+          : 'Failed to load orders',
+        variant: 'destructive',
+      });
     } finally { setLoading(false); }
   };
 

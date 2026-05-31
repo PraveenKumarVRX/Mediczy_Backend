@@ -144,6 +144,16 @@ export default function Wallet() {
     return `+${offer.value} bonus HC`;
   };
 
+  const scopeLabel = (scope: string) => {
+    const labels: Record<string, string> = {
+      COINS_PURCHASE: 'Coins',
+      HEALTH_CHECKUP: 'Health Checkup',
+      PHARMACY_PURCHASE: 'Pharmacy',
+      CONSULTATION: 'Consultation'
+    };
+    return labels[scope] || scope;
+  };
+
   if (loading) {
     return (
       <div className="container mx-auto p-6">
@@ -374,6 +384,9 @@ export default function Wallet() {
                         <span className="font-semibold text-sm tracking-wide">{offer.code}</span>
                         <Badge variant="secondary" className="text-[10px]">{couponSummary(offer)}</Badge>
                         {offer.isPersonalized && <Badge className="bg-amber-600 text-white text-[10px]">For You</Badge>}
+                        {Array.isArray(offer.scopes) && offer.scopes.slice(0, 2).map((scope: string) => (
+                          <Badge key={`${offer.code}-${scope}`} variant="outline" className="text-[10px]">{scopeLabel(scope)}</Badge>
+                        ))}
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">{offer.description || 'Apply this code while buying coins'}</p>
                       <div className="mt-1 text-[11px] text-muted-foreground flex items-center gap-2">
@@ -384,12 +397,30 @@ export default function Wallet() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => {
-                        setPrefillCouponCode(offer.code);
-                        setShowPurchaseDialog(true);
+                      onClick={async () => {
+                        const canUseForCoins = !Array.isArray(offer.scopes) || offer.scopes.includes('COINS_PURCHASE');
+                        if (canUseForCoins) {
+                          setPrefillCouponCode(offer.code);
+                          setShowPurchaseDialog(true);
+                          return;
+                        }
+
+                        try {
+                          await navigator.clipboard.writeText(offer.code);
+                          toast({
+                            title: 'Coupon Copied',
+                            description: `${offer.code} copied. Use it at ${scopeLabel(offer.primaryScope || offer.scopes?.[0] || 'checkout')}.`
+                          });
+                        } catch {
+                          toast({
+                            title: 'Copy failed',
+                            description: `Use code ${offer.code} at ${scopeLabel(offer.primaryScope || offer.scopes?.[0] || 'checkout')}.`,
+                            variant: 'destructive'
+                          });
+                        }
                       }}
                     >
-                      Apply
+                      {(!Array.isArray(offer.scopes) || offer.scopes.includes('COINS_PURCHASE')) ? 'Apply' : 'Copy'}
                     </Button>
                   </div>
                 </div>
@@ -397,7 +428,8 @@ export default function Wallet() {
             </div>
           ) : (
             <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-              No active offers are assigned to your account right now.
+              <p>No active offers are assigned to your account right now.</p>
+              <p className="mt-2">Please contact your care team to assign eligible coupons.</p>
             </div>
           )}
         </CardContent>

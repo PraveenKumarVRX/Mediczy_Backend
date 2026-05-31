@@ -8,7 +8,7 @@ import Tenant from '../models/postgres/tenant.model.postgres.js';
 import { validationResult } from 'express-validator';
 import { Op } from 'sequelize';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
@@ -144,7 +144,7 @@ export const patientSignup = async (req, res) => {
         type: 'clinic_patient'
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     res.status(201).json({
@@ -563,7 +563,7 @@ export const patientLogin = async (req, res) => {
         last_name: patient.lastName
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     console.log('✅ Patient login successful:', { email: normalizedEmail, clinic_name: clinic.name });

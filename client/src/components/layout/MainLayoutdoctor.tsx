@@ -159,14 +159,6 @@ const MainLayoutdoctor = ({ children }) => {
     }
   }, [location.pathname]);
 
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/serviceWorker.js');
-      });
-    }
-  }, []);
-
   const { toast } = useToast();
   const { setTheme, theme } = useTheme();
   const navigate = useNavigate();
@@ -589,7 +581,7 @@ const MainLayoutdoctor = ({ children }) => {
         </div>
         <div className="container mx-auto p-6 pb-20 md:pb-6 bg-slate-50 dark:bg-slate-950 min-h-[calc(100vh-4rem)]">{children}</div>
       </main>
-      {/* Floating iSHA Assistant button */}
+      {/* Floating iSHA Voice Assistant — doctor-focused clinical tools */}
       <Link
         to="/doctor/assistant"
         className="fixed bottom-6 right-6 z-50 w-16 h-16 rounded-full overflow-hidden shadow-xl hover:shadow-2xl hover:shadow-blue-500/50 transition-all duration-200 hover:scale-110 ring-2 ring-blue-400/60 hover:ring-blue-300"

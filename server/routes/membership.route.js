@@ -163,6 +163,15 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
     if(!plan || !plan.isActive) return res.status(404).json({ message:'Plan not available' });
 
     const planType = plan.planType || 'primary';
+    const planPrice = parseFloat(plan.discountedPrice || plan.price || 0);
+
+    // Paid plans require a Razorpay payment ID — prevent free activation of paid plans
+    if (planPrice > 0 && !req.body.razorpay_payment_id) {
+      return res.status(400).json({
+        message: 'Payment required. Use POST /api/membership-plans/enroll with a verified paymentId.',
+        code: 'PAYMENT_REQUIRED'
+      });
+    }
     
     // For primary plans, prevent multiple active subscriptions
     if (planType === 'primary') {

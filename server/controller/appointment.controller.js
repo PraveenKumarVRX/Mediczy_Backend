@@ -185,6 +185,8 @@ export const createAppointment = async (req, res) => {
     let consultationFee = 500;
     const transaction = await postgresSequelize.transaction();
     try {
+      await req.setSequelizeRlsContext?.(transaction);
+
       user = await User.findByPk(userId, {
         transaction,
         lock: transaction.LOCK.UPDATE
@@ -312,7 +314,7 @@ export const createAppointment = async (req, res) => {
       consultationFee = Number(consultationFee || 500);
 
       // Auto-assign organization_id from doctor's organization
-      const organizationId = doctor.organization_id || doctor.hospitalId || req.userTenantId || null;
+      const organizationId = doctor.organization_id || doctor.hospitalId || req.user?.organization_id || req.userTenantId || null;
       const organizationType = doctor.organization_type || (doctor.hospitalId ? 'hospital' : null);
 
       // Create appointment

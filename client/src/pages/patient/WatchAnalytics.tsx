@@ -435,7 +435,7 @@ const WatchAnalytics: React.FC = () => {
               <Watch className="w-8 h-8 text-teal-400" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold">{device?.name ?? 'Smart Watch'}</h1>
+              <h1 className="text-2xl font-bold">{device?.name ?? 'Smart Wearables'}</h1>
               <div className="flex items-center gap-3 mt-1">
                 <span className="flex items-center gap-1 text-xs text-teal-300">
                   <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse" />
@@ -476,7 +476,7 @@ const WatchAnalytics: React.FC = () => {
               </div>
               <div>
                 <p className="text-sm font-medium text-white">Auto-Sync</p>
-                <p className="text-xs text-slate-400">Automatically sync health data from your watch</p>
+                <p className="text-xs text-slate-400">Automatically sync health data from your wearables</p>
               </div>
             </div>
             <div className="flex items-center gap-4">

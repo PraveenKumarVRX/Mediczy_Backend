@@ -3,7 +3,7 @@ import { body } from 'express-validator';
 import Nurse from '../models/nurse.model.intelligent.js';
 import { buildLiveKitJoinData } from '../utils/videoProvider.js';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import Medication from '../models/medication.model.intelligent.js';
 import PatientNote from '../models/patientNote.model.intelligent.js';
 import VitalsRecord from '../models/vitalsRecord.model.intelligent.js';

@@ -1,6 +1,6 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import multer from 'multer';
 import { Sequelize } from 'sequelize';
 import nodemailer from 'nodemailer';
@@ -190,7 +190,7 @@ router.post('/login', authLimiter, async (req, res) => {
         role: 'clinic'
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     console.log('✅ Clinic login successful:', clinic.hospital_name);

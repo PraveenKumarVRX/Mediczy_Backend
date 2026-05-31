@@ -113,7 +113,7 @@ class DrIshaAPI {
       const isEmergencyMode = Boolean((userContext as any)?.emergencyMode);
       const requestTimeout = isEmergencyMode ? 20000 : 45000;
       
-      console.log('🏥 Dr. iSHA Consult Request:', {
+      if (import.meta.env.DEV) console.log('🏥 Dr. iSHA Consult Request:', {
         query: query.substring(0, 50) + '...',
         language,
         sessionId,
@@ -134,7 +134,7 @@ class DrIshaAPI {
         }
       );
 
-      console.log('✅ Dr. iSHA Response Success:', {
+      if (import.meta.env.DEV) console.log('✅ Dr. iSHA Response Success:', {
         status: response.status,
         hasData: !!response.data,
         success: response.data?.success

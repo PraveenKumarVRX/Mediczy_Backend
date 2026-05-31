@@ -188,7 +188,7 @@ router.post('/login', authLimiter, async (req, res) => {
         tenant_id: pharmacy.tenant_id
       },
       JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     await auditLoginAttempt(req, pharmacy.id, normalizedEmail, true);

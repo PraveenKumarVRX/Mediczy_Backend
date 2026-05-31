@@ -3,7 +3,7 @@ import { useRef, useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Bot, Send, User, Mic, MicOff, Paperclip, Stethoscope, Heart, ThermometerSun, Pill, Activity, Globe2, Sparkles, X, FileText, Image as ImageIcon, Volume2, VolumeX, Loader2 } from "lucide-react";
+import { Bot, Send, User, Mic, MicOff, Paperclip, Stethoscope, Heart, ThermometerSun, Pill, Activity, Globe2, AlertTriangle, X, FileText, Image as ImageIcon, Volume2, VolumeX, Loader2, RotateCcw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
@@ -22,13 +22,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import MainLayout from "@/components/layout/MainLayout";
 import { useAuth } from '@/auth/AuthProvider';
 import { orchestratorAPI } from '@/services/orchestrator';
 import api from "@/utils/api";
 
 // Auth helper
 const getAuthToken = () => localStorage.getItem('token');
+const PROMPT_USAGE_STORAGE_KEY = 'ai_doctor_prompt_usage_v1';
+const LATENCY_METRICS_STORAGE_KEY = 'ai_doctor_latency_metrics_v1';
 
 // Types
 interface Language {
@@ -74,6 +75,16 @@ const translations: Record<string, Record<string, string>> = {
     wellness: "General Wellness",
     medications: "Medication Info",
     emergency: "Emergency Signs",
+    clearChat: "New Chat",
+    whatICanHelpWith: "What I can help with",
+    capability1: "Symptom triage and risk signals",
+    capability2: "Medication and interaction guidance",
+    capability3: "Wellness coaching and prevention",
+    suggestedPrompts: "Try one of these",
+    prompt1: "I have fever and cough for 2 days. What should I do?",
+    prompt2: "Can you help me understand my blood test report?",
+    prompt3: "Is it safe to take paracetamol with my current meds?",
+    prompt4: "What are red-flag symptoms for chest pain?",
   },
   es: {
     title: "Dr. iSHA",
@@ -86,6 +97,16 @@ const translations: Record<string, Record<string, string>> = {
     wellness: "Bienestar General",
     medications: "Info Medicamentos",
     emergency: "Signos de Emergencia",
+    clearChat: "Nuevo Chat",
+    whatICanHelpWith: "En qué puedo ayudarte",
+    capability1: "Triaje de síntomas y señales de riesgo",
+    capability2: "Guía de medicamentos e interacciones",
+    capability3: "Bienestar y prevención",
+    suggestedPrompts: "Prueba una de estas",
+    prompt1: "Tengo fiebre y tos desde hace 2 días. ¿Qué debo hacer?",
+    prompt2: "¿Puedes ayudarme a entender mi análisis de sangre?",
+    prompt3: "¿Es seguro tomar paracetamol con mis medicamentos actuales?",
+    prompt4: "¿Cuáles son síntomas de alarma en dolor de pecho?",
   },
   hi: {
     title: "डॉ. iSHA",
@@ -98,6 +119,16 @@ const translations: Record<string, Record<string, string>> = {
     wellness: "सामान्य कल्याण",
     medications: "दवा जानकारी",
     emergency: "आपातकालीन संकेत",
+    clearChat: "नई चैट",
+    whatICanHelpWith: "मैं किसमें मदद कर सकती हूं",
+    capability1: "लक्षण ट्रायज और जोखिम संकेत",
+    capability2: "दवा और इंटरैक्शन मार्गदर्शन",
+    capability3: "वेलनेस और रोकथाम सलाह",
+    suggestedPrompts: "इनमें से एक चुनें",
+    prompt1: "मुझे 2 दिनों से बुखार और खांसी है। क्या करूं?",
+    prompt2: "क्या आप मेरी ब्लड टेस्ट रिपोर्ट समझा सकती हैं?",
+    prompt3: "क्या मेरी मौजूदा दवाओं के साथ पैरासिटामोल सुरक्षित है?",
+    prompt4: "सीने में दर्द के खतरनाक संकेत क्या हैं?",
   },
   ar: {
     title: "د. iSHA",
@@ -110,6 +141,16 @@ const translations: Record<string, Record<string, string>> = {
     wellness: "العافية العامة",
     medications: "معلومات الأدوية",
     emergency: "علامات الطوارئ",
+    clearChat: "محادثة جديدة",
+    whatICanHelpWith: "كيف يمكنني المساعدة",
+    capability1: "فرز الأعراض وإشارات الخطر",
+    capability2: "إرشادات الأدوية والتداخلات",
+    capability3: "العافية والوقاية",
+    suggestedPrompts: "جرّب أحد هذه",
+    prompt1: "لدي حمى وسعال منذ يومين. ماذا أفعل؟",
+    prompt2: "هل يمكنك مساعدتي في فهم تحليل الدم؟",
+    prompt3: "هل من الآمن تناول الباراسيتامول مع أدويتي الحالية؟",
+    prompt4: "ما علامات الخطر لألم الصدر؟",
   },
   zh: {
     title: "iSHA医生",
@@ -122,6 +163,16 @@ const translations: Record<string, Record<string, string>> = {
     wellness: "一般健康",
     medications: "药物信息",
     emergency: "紧急情况",
+    clearChat: "新对话",
+    whatICanHelpWith: "我可以帮你什么",
+    capability1: "症状分诊与风险信号",
+    capability2: "用药与相互作用建议",
+    capability3: "健康管理与预防建议",
+    suggestedPrompts: "试试这些问题",
+    prompt1: "我发烧咳嗽两天了，我该怎么办？",
+    prompt2: "你可以帮我看懂血液检查报告吗？",
+    prompt3: "我现在的药物下服用对乙酰氨基酚安全吗？",
+    prompt4: "胸痛的危险信号有哪些？",
   },
 };
 
@@ -153,7 +204,7 @@ const commonSymptoms: Record<string, Symptom[]> = {
     { id: 'cough', label: 'खांसी', icon: '😷', description: 'लगातार खांसी' },
     { id: 'fatigue', label: 'थकान', icon: '😴', description: 'थकान या कमजोरी' },
     { id: 'nausea', label: 'मतली', icon: '🤢', description: 'उबकाई आना' },
-    { id: 'pain', label: 'शरीर में दर्द', icon: '��', description: 'मांसपेशियों या जोड़ों में दर्द' },
+    { id: 'pain', label: 'शरीर में दर्द', icon: '💪', description: 'मांसपेशियों या जोड़ों में दर्द' },
     { id: 'breathing', label: 'सांस की समस्या', icon: '🫁', description: 'सांस लेने में कठिनाई' },
     { id: 'stomach', label: 'पेट की समस्या', icon: '🤰', description: 'पाचन संबंधी समस्या' },
   ],
@@ -171,6 +222,9 @@ const AiDoctor = () => {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [isTTSLoading, setIsTTSLoading] = useState(false);
+  const [loadingElapsedSeconds, setLoadingElapsedSeconds] = useState(0);
+  const [sessionPromptClicks, setSessionPromptClicks] = useState(0);
+  const [sessionMessagesSent, setSessionMessagesSent] = useState(0);
   
   // Refs
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -178,6 +232,7 @@ const AiDoctor = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
+  const metricsSessionIdRef = useRef(`ai_doc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
 
   // Auth
   const { currentUser } = useAuth();
@@ -204,6 +259,113 @@ const AiDoctor = () => {
 
   // Get symptoms for current language
   const getSymptoms = () => commonSymptoms[currentLanguage.code] || commonSymptoms.en;
+
+  const getPromptUsageMap = () => {
+    try {
+      const raw = localStorage.getItem(PROMPT_USAGE_STORAGE_KEY);
+      if (!raw) return {} as Record<string, number>;
+      const parsed = JSON.parse(raw);
+      return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, number> : {};
+    } catch {
+      return {} as Record<string, number>;
+    }
+  };
+
+  const trackPromptClick = (prompt: string) => {
+    try {
+      const usage = getPromptUsageMap();
+      usage[prompt] = (usage[prompt] || 0) + 1;
+      localStorage.setItem(PROMPT_USAGE_STORAGE_KEY, JSON.stringify(usage));
+    } catch {
+      // Ignore localStorage failures and keep UX responsive.
+    }
+    setSessionPromptClicks((prev) => prev + 1);
+  };
+
+  const emitMetric = useCallback(async (eventType: string, payload: Record<string, any> = {}, latencyMs?: number) => {
+    try {
+      const auth = getAuthToken();
+      if (!auth) return;
+
+      await api.post(
+        '/ai/ai-doctor/metrics',
+        {
+          eventType,
+          sessionId: metricsSessionIdRef.current,
+          language: currentLanguage.code,
+          pagePath: '/ai-doctor',
+          latencyMs: typeof latencyMs === 'number' ? latencyMs : null,
+          payload,
+        },
+        {
+          headers: { Authorization: `Bearer ${auth}` },
+        }
+      );
+    } catch {
+      // Telemetry should never block UX.
+    }
+  }, [currentLanguage.code]);
+
+  const trackLatencyMetric = (latencyMs: number) => {
+    try {
+      const raw = localStorage.getItem(LATENCY_METRICS_STORAGE_KEY);
+      const current = raw ? JSON.parse(raw) : {};
+      const count = Number(current.count || 0) + 1;
+      const totalMs = Number(current.totalMs || 0) + latencyMs;
+      const minMs = current.minMs ? Math.min(Number(current.minMs), latencyMs) : latencyMs;
+      const maxMs = current.maxMs ? Math.max(Number(current.maxMs), latencyMs) : latencyMs;
+
+      localStorage.setItem(
+        LATENCY_METRICS_STORAGE_KEY,
+        JSON.stringify({
+          count,
+          totalMs,
+          minMs,
+          maxMs,
+          avgMs: Math.round(totalMs / count),
+          lastMs: latencyMs,
+          updatedAt: Date.now(),
+        })
+      );
+    } catch {
+      // Ignore localStorage failures and keep UX responsive.
+    }
+  };
+
+  const getSuggestedPrompts = () => {
+    const basePrompts = [
+      t('prompt1'),
+      t('prompt2'),
+      t('prompt3'),
+      t('prompt4'),
+    ];
+
+    const usage = getPromptUsageMap();
+    return [...basePrompts].sort((a, b) => (usage[b] || 0) - (usage[a] || 0));
+  };
+
+  const getLoadingStatus = () => {
+    if (loadingElapsedSeconds < 4) return 'Looking into your question...';
+    if (loadingElapsedSeconds < 8) return 'Analyzing your symptoms...';
+    return 'Almost ready...';
+  };
+
+  const promptAssistRate = sessionMessagesSent > 0
+    ? Math.round((sessionPromptClicks / sessionMessagesSent) * 100)
+    : 0;
+
+  useEffect(() => {
+    if (!isLoading) {
+      setLoadingElapsedSeconds(0);
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setLoadingElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [isLoading]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -472,6 +634,21 @@ const AiDoctor = () => {
     inputRef.current?.focus();
   };
 
+  const startNewChat = () => {
+    stopSpeaking();
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
+    setMessages([]);
+    setInput("");
+    setUploadedFile(null);
+    setSelectedSymptoms([]);
+    setShowSymptomDialog(false);
+    void emitMetric('new_chat', { hadMessages: messages.length > 0 });
+    toast.success('Started a new chat');
+  };
+
   // Submit message
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -510,6 +687,14 @@ const AiDoctor = () => {
     setMessages(prev => [...prev, userMessage]);
     setInput("");
     setUploadedFile(null);
+    setSessionMessagesSent((prev) => prev + 1);
+    const requestStart = Date.now();
+    void emitMetric('message_submit', {
+      messageLength: messageText.length,
+      hasAttachment: !!uploadedFile,
+      promptAssistClicks: sessionPromptClicks,
+    });
+    setLoadingElapsedSeconds(0);
     setIsLoading(true);
 
     try {
@@ -523,15 +708,13 @@ const AiDoctor = () => {
         }
       );
 
-      console.log('🔍 Chat Response Debug:', {
-        success: response.success,
-        hasData: !!response.data,
-        dataKeys: response.data ? Object.keys(response.data) : [],
-        primaryResponse: response.data?.primary_response?.substring(0, 50),
-        error: response.error
-      });
-
       if (response.success && response.data?.primary_response) {
+        const latencyMs = Date.now() - requestStart;
+        trackLatencyMetric(latencyMs);
+        void emitMetric('response_success', {
+          responseLength: response.data.primary_response.length,
+        }, latencyMs);
+
         const messageId = 'assistant_' + Date.now();
         const assistantMessage: Message = {
           role: "assistant",
@@ -540,13 +723,6 @@ const AiDoctor = () => {
           id: messageId
         };
         setMessages(prev => [...prev, assistantMessage]);
-        
-        // Auto-speak the response (for shorter responses)
-        if (response.data.primary_response.length < 1000) {
-          setTimeout(() => {
-            speakMessage(messageId, response.data.primary_response);
-          }, 500);
-        }
       } else {
         // Check if authentication error
         if (response.status === 401 || response.error?.requiresLogin) {
@@ -570,6 +746,10 @@ const AiDoctor = () => {
     } catch (error) {
       console.error('AI request error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const latencyMs = Date.now() - requestStart;
+      void emitMetric('response_error', {
+        message: errorMessage.slice(0, 240),
+      }, latencyMs);
       
       // Check if it's an authentication error
       if (error.response?.status === 401 || errorMessage.includes('token')) {
@@ -605,66 +785,113 @@ const AiDoctor = () => {
   };
 
   return (
-    <MainLayout>
-      <div className="fixed inset-0 top-16 bottom-16 md:bottom-0 md:left-64 flex flex-col bg-slate-50 dark:bg-slate-900">
+      <div className="h-[calc(100vh-4rem)] min-h-[620px] w-full bg-[radial-gradient(circle_at_top,_rgba(20,184,166,0.12),_transparent_45%),linear-gradient(180deg,_#f8fafc_0%,_#eef6f7_100%)] dark:bg-[radial-gradient(circle_at_top,_rgba(45,212,191,0.12),_transparent_45%),linear-gradient(180deg,_#0f172a_0%,_#111827_100%)]">
+        <div className="mx-auto h-full w-full max-w-5xl px-2 py-2 md:px-4 md:py-4">
+          <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-teal-100/70 bg-white/90 shadow-[0_24px_80px_-40px_rgba(15,23,42,0.45)] backdrop-blur dark:border-slate-700 dark:bg-slate-900/80">
         {/* Header - Fixed at top */}
-        <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center shadow-lg">
-              <Stethoscope className="w-5 h-5 md:w-6 md:h-6 text-white" />
+        <div className="flex-shrink-0 border-b border-slate-200/80 bg-white/80 px-3 py-3 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-800/80 md:px-5 md:py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-500 flex items-center justify-center shadow-lg md:h-12 md:w-12">
+                <Stethoscope className="h-5 w-5 text-white md:h-6 md:w-6" />
+              </div>
+              <div>
+                <h1 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-white md:text-xl">{t('title')}</h1>
+                <p className="text-xs text-slate-600 dark:text-slate-300 md:text-sm">{t('subtitle')}</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg md:text-xl font-bold text-slate-800 dark:text-white">{t('title')}</h1>
-              <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400">{t('subtitle')}</p>
+
+            <div className="flex items-center gap-2">
+              {messages.length > 0 && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="hidden gap-1.5 border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600 md:inline-flex"
+                    onClick={startNewChat}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <span>{t('clearChat')}</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    aria-label={t('clearChat')}
+                    className="h-8 w-8 border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600 md:hidden"
+                    onClick={startNewChat}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
+
+              <span className="hidden rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:border-emerald-700/60 dark:bg-emerald-900/20 dark:text-emerald-300 md:inline-flex">
+                AI Assistant Active
+              </span>
+
+              {/* Language Selector */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-2 border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600">
+                    <Globe2 className="h-4 w-4" />
+                    <span>{currentLanguage.flag}</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="bg-white border-slate-200 dark:bg-slate-800 dark:border-slate-700">
+                  {languages.map((lang) => (
+                    <DropdownMenuItem
+                      key={lang.code}
+                      onClick={() => setCurrentLanguage(lang)}
+                      className="gap-2"
+                    >
+                      <span>{lang.flag}</span>
+                      <span>{lang.name}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
-          
-          {/* Language Selector */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2 border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-600">
-                <Globe2 className="h-4 w-4" />
-                <span>{currentLanguage.flag}</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-              {languages.map((lang) => (
-                <DropdownMenuItem
-                  key={lang.code}
-                  onClick={() => setCurrentLanguage(lang)}
-                  className="gap-2"
-                >
-                  <span>{lang.flag}</span>
-                  <span>{lang.name}</span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-200 md:text-xs">
+            <span>For urgent concerns, call emergency services. This assistant is for guidance only.</span>
+            <a href="/doctors" className="shrink-0 font-semibold underline underline-offset-2 hover:no-underline">
+              See a real doctor →
+            </a>
+          </div>
+
+          <div className="mt-2 hidden md:flex flex-wrap items-center gap-1.5 text-[11px] md:text-xs">
+            <span className="font-medium text-slate-700 dark:text-slate-300">{t('whatICanHelpWith')}:</span>
+            <span className="rounded-full bg-teal-50 px-2 py-1 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300">{t('capability1')}</span>
+            <span className="rounded-full bg-teal-50 px-2 py-1 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300">{t('capability2')}</span>
+            <span className="rounded-full bg-teal-50 px-2 py-1 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300">{t('capability3')}</span>
+          </div>
         </div>
 
         {/* Chat Area - Fills remaining space */}
         <div className="flex-1 overflow-hidden flex flex-col">
-          <ScrollArea className="flex-1 h-0 px-4 py-2" ref={scrollAreaRef}>
+          <ScrollArea className="flex-1 h-0 px-3 py-3 md:px-5" ref={scrollAreaRef}>
             {/* Welcome Message */}
             {messages.length === 0 && (
-              <div className="min-h-full flex flex-col items-center justify-center py-6 px-2">
+              <div className="min-h-full flex flex-col items-center justify-center py-6 px-1 md:px-2">
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="text-center w-full max-w-sm"
+                  className="text-center w-full max-w-xl"
                 >
-                  <div className="w-16 h-16 md:w-20 md:h-20 mx-auto mb-4 md:mb-6 rounded-full bg-gradient-to-br from-teal-500/20 to-teal-600/20 dark:from-teal-400/20 dark:to-teal-500/20 flex items-center justify-center">
-                    <Heart className="w-8 h-8 md:w-10 md:h-10 text-teal-500 dark:text-teal-400 animate-pulse" />
+                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-100 to-emerald-100 dark:from-teal-500/20 dark:to-emerald-500/20 md:mb-6 md:h-20 md:w-20">
+                    <Heart className="h-8 w-8 text-teal-600 animate-pulse dark:text-teal-400 md:h-10 md:w-10" />
                   </div>
                   
-                  <h2 className="text-xl md:text-2xl font-semibold mb-2 text-slate-800 dark:text-white">{t('title')}</h2>
-                  <p className="text-sm md:text-base text-slate-600 dark:text-slate-400 mb-6">{t('greeting')}</p>
+                  <h2 className="mb-2 text-xl font-semibold tracking-tight text-slate-900 dark:text-white md:text-3xl">{t('title')}</h2>
+                  <p className="mx-auto mb-6 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-300 md:text-base">{t('greeting')}</p>
                   
                   {/* Quick Actions */}
-                  <div className="grid grid-cols-2 gap-2 md:gap-3">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">{t('quickActions')}</p>
+                  <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-3">
                     <Button
                       variant="outline"
-                      className="h-auto py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
+                      className="h-auto rounded-xl py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
                       onClick={() => handleQuickAction('symptoms')}
                     >
                       <ThermometerSun className="h-4 w-4 md:h-5 md:w-5 text-orange-500" />
@@ -672,7 +899,7 @@ const AiDoctor = () => {
                     </Button>
                     <Button
                       variant="outline"
-                      className="h-auto py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
+                      className="h-auto rounded-xl py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
                       onClick={() => handleQuickAction('wellness')}
                     >
                       <Activity className="h-4 w-4 md:h-5 md:w-5 text-teal-500" />
@@ -680,7 +907,7 @@ const AiDoctor = () => {
                     </Button>
                     <Button
                       variant="outline"
-                      className="h-auto py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
+                      className="h-auto rounded-xl py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
                       onClick={() => handleQuickAction('medications')}
                     >
                       <Pill className="h-4 w-4 md:h-5 md:w-5 text-teal-600" />
@@ -688,10 +915,10 @@ const AiDoctor = () => {
                     </Button>
                     <Button
                       variant="outline"
-                      className="h-auto py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
+                      className="h-auto rounded-xl py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
                       onClick={() => handleQuickAction('emergency')}
                     >
-                      <Sparkles className="h-4 w-4 md:h-5 md:w-5 text-red-500" />
+                      <AlertTriangle className="h-4 w-4 md:h-5 md:w-5 text-red-500" />
                       <span className="text-xs md:text-sm">{t('emergency')}</span>
                     </Button>
                   </div>
@@ -700,7 +927,7 @@ const AiDoctor = () => {
             )}
 
             {/* Messages */}
-            <div className="space-y-3 md:space-y-4 max-w-3xl mx-auto">
+            <div className="mx-auto max-w-3xl space-y-3 md:space-y-4">
               <AnimatePresence>
                 {messages.map((message, index) => (
                   <motion.div
@@ -730,7 +957,7 @@ const AiDoctor = () => {
                     {/* Message Bubble */}
                     <div className="flex flex-col gap-1 max-w-[85%] md:max-w-[80%]">
                       <div className={cn(
-                        "rounded-2xl px-3 py-2 md:px-4 md:py-3",
+                        "rounded-2xl px-3 py-2.5 md:px-4 md:py-3",
                         message.role === "user"
                           ? "bg-teal-500 text-white rounded-tr-sm"
                           : "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-tl-sm"
@@ -809,6 +1036,9 @@ const AiDoctor = () => {
                       <span className="w-2 h-2 bg-teal-500 dark:bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                       <span className="w-2 h-2 bg-teal-500 dark:bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                     </div>
+                    <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                      {getLoadingStatus()} {loadingElapsedSeconds > 0 ? `(${loadingElapsedSeconds}s)` : ''}
+                    </p>
                   </div>
                 </motion.div>
               )}
@@ -816,10 +1046,10 @@ const AiDoctor = () => {
           </ScrollArea>
 
           {/* Input Area - Fixed at bottom */}
-          <div className="flex-shrink-0 border-t border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-3 md:p-4">
+          <div className="flex-shrink-0 border-t border-slate-200/80 bg-white/90 px-3 py-3 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-800/90 md:px-5 md:py-4">
             {/* Attached File Preview */}
             {uploadedFile && (
-              <div className="mb-2 flex items-center gap-2 bg-slate-100 dark:bg-slate-700/50 rounded-lg px-3 py-2">
+              <div className="mb-2 flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 dark:bg-slate-700/50">
                 {uploadedFile.type.startsWith('image/') ? (
                   <ImageIcon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
                 ) : (
@@ -837,14 +1067,15 @@ const AiDoctor = () => {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="flex gap-2 items-center">
+            <form onSubmit={handleSubmit} className="flex items-center gap-2 md:gap-3">
               {/* Action Buttons */}
-              <div className="flex-shrink-0 flex gap-1">
+              <div className="flex flex-shrink-0 gap-1">
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 md:h-10 md:w-10 rounded-full text-slate-500 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20"
+                  aria-label="Open symptom selector"
+                  className="h-9 w-9 rounded-full text-slate-500 hover:bg-teal-50 hover:text-teal-600 dark:text-slate-400 dark:hover:bg-teal-900/20 dark:hover:text-teal-400 md:h-10 md:w-10"
                   onClick={() => setShowSymptomDialog(true)}
                 >
                   <Activity className="h-4 w-4 md:h-5 md:w-5" />
@@ -853,7 +1084,8 @@ const AiDoctor = () => {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 md:h-10 md:w-10 rounded-full text-slate-500 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20"
+                  aria-label="Attach file"
+                  className="h-9 w-9 rounded-full text-slate-500 hover:bg-teal-50 hover:text-teal-600 dark:text-slate-400 dark:hover:bg-teal-900/20 dark:hover:text-teal-400 md:h-10 md:w-10"
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <Paperclip className="h-4 w-4 md:h-5 md:w-5" />
@@ -879,7 +1111,7 @@ const AiDoctor = () => {
                   placeholder={isListening ? "🎤 Listening..." : t('placeholder')}
                   disabled={isLoading}
                   className={cn(
-                    "pr-10 md:pr-12 h-10 rounded-full bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 focus-visible:ring-1 focus-visible:ring-teal-500 focus-visible:border-teal-500 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500",
+                    "h-10 rounded-full border border-slate-200 bg-slate-100 pr-10 text-sm text-slate-800 placeholder:text-slate-400 focus-visible:border-teal-500 focus-visible:ring-1 focus-visible:ring-teal-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:placeholder:text-slate-500 md:pr-12",
                     currentLanguage.rtl && "text-right",
                     isListening && "border-red-500 ring-1 ring-red-500"
                   )}
@@ -889,8 +1121,9 @@ const AiDoctor = () => {
                   type="button"
                   variant="ghost"
                   size="icon"
+                  aria-label={isListening ? "Stop voice input" : "Start voice input"}
                   className={cn(
-                    "absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 md:h-8 md:w-8 rounded-full transition-all text-slate-500 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400",
+                    "absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 rounded-full text-slate-500 transition-all hover:text-teal-600 dark:text-slate-400 dark:hover:text-teal-400 md:h-8 md:w-8",
                     isListening && "text-red-500 bg-red-500/10 animate-pulse"
                   )}
                   onClick={toggleListening}
@@ -907,12 +1140,46 @@ const AiDoctor = () => {
               <Button
                 type="submit"
                 size="icon"
-                className="flex-shrink-0 h-9 w-9 md:h-10 md:w-10 rounded-full bg-teal-500 hover:bg-teal-600 text-white disabled:bg-slate-300 dark:disabled:bg-slate-600"
+                aria-label="Send message"
+                className="h-9 w-9 flex-shrink-0 rounded-full bg-teal-500 text-white hover:bg-teal-600 disabled:bg-slate-300 dark:disabled:bg-slate-600 md:h-10 md:w-10"
                 disabled={isLoading || (!input.trim() && !uploadedFile)}
               >
                 <Send className="h-4 w-4 md:h-5 md:w-5" />
               </Button>
             </form>
+
+            {messages.length === 0 && !isLoading && (
+              <div className="mt-2">
+                <div className="mb-1">
+                  <p className="text-[11px] font-medium text-slate-600 dark:text-slate-300 md:text-xs">{t('suggestedPrompts')}</p>
+                </div>
+                <div className="flex gap-1.5 overflow-x-auto pb-1">
+                  {getSuggestedPrompts().map((prompt, idx) => (
+                    <Button
+                      key={idx}
+                      type="button"
+                      variant="outline"
+                      className="h-auto whitespace-nowrap rounded-full border-slate-200 bg-white px-3 py-1.5 text-[11px] text-slate-700 hover:border-teal-300 hover:bg-teal-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:border-teal-600 dark:hover:bg-teal-900/20 md:text-xs"
+                      onClick={() => {
+                        trackPromptClick(prompt);
+                        void emitMetric('prompt_click', {
+                          prompt,
+                          rank: idx + 1,
+                        });
+                        setInput(prompt);
+                        inputRef.current?.focus();
+                      }}
+                    >
+                      {prompt}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <p className="mt-2 text-center text-[11px] text-slate-500 dark:text-slate-400 md:text-xs">
+              Avoid sharing passwords or payment data. Press Enter to send.
+            </p>
           </div>
         </div>
 
@@ -962,8 +1229,9 @@ const AiDoctor = () => {
             </div>
           </DialogContent>
         </Dialog>
+          </div>
+        </div>
       </div>
-    </MainLayout>
   );
 };
 

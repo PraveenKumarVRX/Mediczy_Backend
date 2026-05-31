@@ -2,7 +2,9 @@ import orchestrator from "../db/orchestrator.js";
 import intelligence from "../db/intelligence.js";
 import { validateEnvironment } from "../config/env-validator.js";
 import workers from "../workers/index.js";
-import { connectKafkaProducer, connectKafkaConsumer } from "../config/kafka.js";
+import { connectKafkaProducer, connectKafkaConsumer, ensureTopics, KAFKA_TOPICS } from "../config/kafka.js";
+import { initDuckDBEtl, runNightlyETL, startKafkaETLConsumer } from "../services/duckdb-etl.service.js";
+import { startAllKafkaConsumers } from "../services/kafka-consumers.service.js";
 import scheduleDeviceMonitoring from "../scripts/device-monitoring-cron.js";
 import scheduleAppointmentAutoCancel from "../scripts/appointment-auto-cancel-cron.js";
 
@@ -67,11 +69,27 @@ class InitializationController {
     try {
       console.log('📡 Connecting to Kafka...');
       await connectKafkaProducer();
-      await connectKafkaConsumer();
-      console.log('✅ Kafka connected successfully');
+      // Ensure all topic definitions exist (idempotent, skips existing topics)
+      await ensureTopics();
+      // Start all domain Kafka consumers
+      await startAllKafkaConsumers();
+      console.log('✅ Kafka producer connected, topics verified, consumers started');
     } catch (error) {
       console.error('❌ Kafka initialization failed:', error.message);
-      console.error('⚠️  Video streaming events may be unavailable');
+      console.error('⚠️  Running with in-memory event fallback');
+    }
+  }
+
+  async initializeDuckDBEtl() {
+    try {
+      console.log('🦆 Initializing DuckDB ETL pipeline...');
+      await initDuckDBEtl();
+      // Start Kafka consumer for near-real-time ETL updates
+      await startKafkaETLConsumer();
+      console.log('✅ DuckDB ETL pipeline ready');
+    } catch (error) {
+      console.error('❌ DuckDB ETL initialization failed:', error.message);
+      console.error('⚠️  Analytics dashboards will be unavailable');
     }
   }
 
@@ -180,6 +198,41 @@ class InitializationController {
         agentContextBridge.cleanupExpired().catch(e => console.error('[AgentCtx] Cleanup error:', e.message));
       }, 60 * 60 * 1000); // every hour
 
+      // Scheduler dependency for cron-based jobs
+      const { default: nodeCron } = await import('node-cron');
+
+      // Doctor slot auto-generation — runs at 01:00 every day
+      // Generates concrete availability slots 30 days ahead for all active doctors
+      console.log('📅 Scheduling doctor slot auto-generation...');
+      nodeCron.schedule('0 1 * * *', async () => {
+        console.log('📅 Doctor slot auto-generation starting...');
+        try {
+          const { getPool } = await import('../db/postgres.js');
+          const pool = getPool();
+          const { rows: doctors } = await pool.query(
+            `SELECT id FROM doctors WHERE status = 'active' AND EXISTS (
+              SELECT 1 FROM doctor_schedules WHERE doctor_id = doctors.id AND is_active = TRUE
+            ) LIMIT 500`
+          );
+          for (const doc of doctors) {
+            await pool.query(
+              `SELECT generate_doctor_slots($1, CURRENT_DATE + 1, CURRENT_DATE + 31)`,
+              [doc.id]
+            ).catch(() => {});
+          }
+          console.log(`✅ Doctor slots generated for ${doctors.length} doctors`);
+        } catch (e) {
+          console.error('[SlotGen] Error:', e.message);
+        }
+      }, { timezone: 'Asia/Kolkata' });
+
+      // DuckDB nightly ETL — runs at 02:00 every day
+      console.log('🦆 Scheduling DuckDB nightly ETL sync...');
+      nodeCron.schedule('0 2 * * *', async () => {
+        console.log('🦆 DuckDB nightly ETL starting...');
+        await runNightlyETL().catch(e => console.error('[DuckDB ETL] Nightly sync error:', e.message));
+      }, { timezone: 'Asia/Kolkata' });
+
       console.log('✅ All cron jobs and automation services initialized successfully');
     } catch (error) {
       console.error('❌ Cron jobs initialization failed:', error.message);
@@ -204,6 +257,9 @@ class InitializationController {
 
     // 3. Initialize Kafka
     await this.initializeKafka();
+
+    // 3a. Initialize DuckDB ETL (analytics pipeline)
+    await this.initializeDuckDBEtl();
 
     // 4. Initialize cron jobs (only on cluster instance 0 to prevent duplicates)
     const instanceId = process.env.NODE_APP_INSTANCE;

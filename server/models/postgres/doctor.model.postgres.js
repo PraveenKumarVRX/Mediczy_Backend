@@ -573,7 +573,7 @@ Doctor.prototype.generateAuthToken = function () {
       organization_id: this.organization_id
     },
     JWT_CONFIG.SECRET,
-    { expiresIn: '7d' }
+    { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
   );
 };
 

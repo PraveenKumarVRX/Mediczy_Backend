@@ -1,6 +1,6 @@
 import { DataTypes } from 'sequelize';
 import { JWT_CONFIG } from '../../config/auth.config.js';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import postgresSequelize from '../../db/postgres-sequelize.js';
 import { generateUniqueId } from '../../utils/uniqueIdGenerator.js';
@@ -269,7 +269,7 @@ Lab.prototype.generateAuthToken = function() {
   };
   
   return jwt.sign(payload, JWT_CONFIG.SECRET, {
-    expiresIn: '7d'
+    expiresIn: process.env.JWT_ACCESS_TTL || '15m'
   });
 };
 

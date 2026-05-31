@@ -82,22 +82,7 @@ class OrchestratorAPI {
    */
   getAuthHeaders() {
     const token = localStorage.getItem('token');
-    
-    // Debug logging
-    console.log('🔑 Auth Headers Debug:', {
-      hasToken: !!token,
-      tokenLength: token?.length || 0,
-      tokenPreview: token ? token.substring(0, 20) + '...' : 'NO TOKEN',
-      localStorage: {
-        token: !!localStorage.getItem('token'),
-        userType: localStorage.getItem('userType'),
-      }
-    });
-    
-    if (!token) {
-      console.warn('⚠️ No authentication token found in localStorage');
-    }
-    
+
     return {
       'Content-Type': 'application/json',
       'Authorization': token ? `Bearer ${token}` : '',
@@ -143,12 +128,6 @@ class OrchestratorAPI {
     try {
       const sessionId = this.getSessionId();
       
-      console.log('🧠 Dr. iSHA Brain Consult:', {
-        query: query.substring(0, 50) + '...',
-        language,
-        sessionId,
-      });
-
       // Prepend language instruction if not English
       const langInstruction = language !== 'en'
         ? `[Respond in ${language === 'hi' ? 'Hindi' : language === 'es' ? 'Spanish' : language === 'ar' ? 'Arabic' : language === 'zh' ? 'Chinese' : 'English'}]\n`
@@ -166,15 +145,6 @@ class OrchestratorAPI {
           timeout: 60000, // 60s timeout for agentic loops (may use multiple tools)
         }
       );
-
-      console.log('✅ Brain Response:', {
-        success: response.data?.success,
-        provider: response.data?.provider,
-        model: response.data?.model,
-        toolsUsed: response.data?.toolsUsed?.length || 0,
-        iterations: response.data?.iterations,
-        latencyMs: response.data?.latencyMs,
-      });
 
       if (response.data?.success && response.data?.response) {
         const transformedData = {

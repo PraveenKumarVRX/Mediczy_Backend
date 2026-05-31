@@ -136,7 +136,7 @@ router.post('/login', authLimiter, async (req, res) => {
         companyName: company.companyName
       },
       JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     await auditLoginAttempt(req, company.id, normalizedEmail, true);
@@ -458,7 +458,7 @@ router.post('/corporate/login', authLimiter, async (req, res) => {
         corporateName: corporate.corporateName
       },
       JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     await auditLoginAttempt(req, corporate.id, normalizedEmail, true);

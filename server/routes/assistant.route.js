@@ -2,7 +2,7 @@ import express from 'express';
 import { body } from 'express-validator';
 import Assistant from '../models/assistant.model.intelligent.js';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
@@ -125,7 +125,7 @@ router.post('/login', authLimiter, [
         canManagePatients: assistant.canManagePatients
       },
       JWT_CONFIG.SECRET,
-      { expiresIn: '8h' }
+      { expiresIn: '15m' }
     );
 
     await auditLoginAttempt(req, assistant.id, normalizedEmail, true);

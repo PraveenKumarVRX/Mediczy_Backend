@@ -217,7 +217,8 @@ class DatabaseOrchestrator {
     }
 
     // Test all connections
-    const [postgres, duck, redis] = await Promise.allSettled([
+    const [postgresSequelize, postgres, duck, redis] = await Promise.allSettled([
+      this.testPostgresSequelizeDB(),
       this.testPostgresDB(),
       this.testDuckDB(),
       this.testRedis()
@@ -226,6 +227,7 @@ class DatabaseOrchestrator {
     const postgresHealthy = postgres.status === 'fulfilled' && postgres.value.success;
     const postgresMetadata = postgresHealthy ? postgres.value.metadata || {} : {};
     this.healthStatus = {
+      postgresSequelize: postgresSequelize.status === 'fulfilled' && postgresSequelize.value.success,
       postgres: postgresHealthy,
       pgvector: !!postgresMetadata.pgvector,
       citus: !!postgresMetadata.citus,
@@ -243,6 +245,18 @@ class DatabaseOrchestrator {
   async testPostgresDB() {
     try {
       return await testPostgres();
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  }
+
+  async testPostgresSequelizeDB() {
+    try {
+      if (!this.connections.postgresSequelize) {
+        return { success: false, message: 'Sequelize connection not initialized' };
+      }
+      await this.connections.postgresSequelize.authenticate();
+      return { success: true, message: 'PostgreSQL Sequelize connection successful' };
     } catch (error) {
       return { success: false, message: error.message };
     }

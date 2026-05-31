@@ -1,22 +1,35 @@
 /**
  * Simplified DuckDB Database Connector
- * Fixed version to resolve startup issues
+ * Optional dependency-safe version to avoid hard startup failures.
  */
 
-import duckdb from 'duckdb';
 import { promisify } from 'util';
 import dotenv from 'dotenv';
 import path from 'path';
-import fs from 'fs';
 
 dotenv.config();
 
 let db = null;
 let connection = null;
 let isConnected = false;
+let duckdbModule = null;
 
 const DB_PATH = process.env.DUCKDB_PATH || path.join(process.cwd(), 'data', 'analytics.duckdb');
-const DB_MEMORY = process.env.DUCKDB_MEMORY === 'true' || true; // Default to memory for stability
+const DB_MEMORY = process.env.DUCKDB_MEMORY !== 'false'; // Default true for stability
+
+async function getDuckDBModule() {
+  if (duckdbModule) {
+    return duckdbModule;
+  }
+
+  try {
+    const imported = await import('duckdb');
+    duckdbModule = imported.default || imported;
+    return duckdbModule;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Connect to DuckDB database
@@ -28,10 +41,15 @@ export async function connectDuckDB() {
   }
 
   try {
-    // Always use in-memory database for better stability during development
-    console.log('🦆 Initializing DuckDB (in-memory mode)...');
+    const DuckDB = await getDuckDBModule();
+    if (!DuckDB) {
+      console.warn('⚠️  DuckDB package is not installed. Analytics DB features are disabled.');
+      return null;
+    }
+
+    console.log(`🦆 Initializing DuckDB (${DB_MEMORY ? 'in-memory' : DB_PATH})...`);
     
-    db = new duckdb.Database(':memory:', (err) => {
+    db = new DuckDB.Database(DB_MEMORY ? ':memory:' : DB_PATH, (err) => {
       if (err) {
         console.warn('⚠️  DuckDB initialization warning:', err.message);
         // Don't throw - continue with degraded functionality
@@ -129,8 +147,8 @@ export async function closeDuckDB() {
 export function getDuckDBStatus() {
   return {
     connected: isConnected,
-    mode: 'in-memory',
-    version: duckdb.version || 'unknown'
+    mode: DB_MEMORY ? 'in-memory' : 'file',
+    version: duckdbModule?.version || 'unavailable'
   };
 }
 

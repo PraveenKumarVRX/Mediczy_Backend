@@ -48,7 +48,8 @@ router.post('/chat', auth, validateBody(aiChatRequestSchema), async (req, res) =
   try {
     const { message, symptoms, sessionId } = req.body;
     const userInput = message || symptoms;
-    const highRisk  = isHighRisk(userInput);
+    // Check both message and symptoms — client could omit symptoms but embed risk terms in message
+    const highRisk  = isHighRisk([message, symptoms].filter(Boolean).join(' '));
     const auditId   = randomUUID();
 
     // Fire-and-forget audit (PHI-safe: we only store a hash hint, not raw text)

@@ -31,7 +31,6 @@ import { BRAND, getShortRoleLabel } from "@/config/brand";
 import VideoCallNotification from "@/components/notifications/VideoCallNotification";
 import { useSocketConnection } from "@/hooks/useSocketConnection";
 import { PageTransition } from "@/components/PageTransition";
-import FloatingDrISHA from "@/components/FloatingDrISHA";
 import ChatApplet from "@/components/chat/ChatApplet";
 import GlobalSearch from "@/components/GlobalSearch";
 import aiHealthServices from "@/services/aiHealthServices";
@@ -63,23 +62,6 @@ const MainLayout = ({ children }: MainLayoutProps) => {
   // Initialize socket connection for notifications
   useSocketConnection();
   
-  // Register service worker
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        const swUrl = `${window.location.origin}/serviceWorker.js`;
-        navigator.serviceWorker.register(swUrl).then(
-          (registration) => {
-            console.log('ServiceWorker registration successful');
-          },
-          (err) => {
-            console.log('ServiceWorker registration failed: ', err);
-          }
-        );
-      });
-    }
-  }, []);
-
   const { toast } = useToast();
   const { setTheme, theme } = useTheme();
   const navigate = useNavigate();
@@ -92,7 +74,7 @@ const MainLayout = ({ children }: MainLayoutProps) => {
   // Check if user is a team member
   const teamToken = localStorage.getItem('teamToken');
   const teamUser = teamToken ? JSON.parse(localStorage.getItem('teamUserData') || '{}') : null;
-  const isTeamUser = !!teamToken && (location.pathname.startsWith('/team') || location.pathname.startsWith('/admin'));
+  const isTeamUser = !!teamToken && location.pathname.startsWith('/team');
 
   // Check if user is an admin
   const adminToken = localStorage.getItem('adminToken');
@@ -270,13 +252,6 @@ const MainLayout = ({ children }: MainLayoutProps) => {
   const unreadCount = notifications.filter(n => !n.read).length;
   const uxMeta = useMemo(() => getUserDashboardUxMeta(location.pathname), [location.pathname]);
   const showUserUxStrip = !isTeamUser && !isNurseRoute && !isAssistantRoute && !isAdminUser;
-
-  const tierClassName =
-    uxMeta.uxTier === "Worldclass"
-      ? "text-emerald-600 bg-emerald-50 border-emerald-200"
-      : uxMeta.uxTier === "Good"
-      ? "text-sky-700 bg-sky-50 border-sky-200"
-      : "text-amber-700 bg-amber-50 border-amber-200";
 
   return (
     <div className="flex min-h-screen w-full">
@@ -463,14 +438,6 @@ const MainLayout = ({ children }: MainLayoutProps) => {
                   <h1 className="text-lg md:text-xl font-semibold text-slate-900 dark:text-white">{uxMeta.title}</h1>
                   <p className="text-sm text-slate-600 dark:text-slate-300">{uxMeta.subtitle}</p>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${tierClassName}`}>
-                    UX Tier: {uxMeta.uxTier}
-                  </span>
-                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                    UX Score: {uxMeta.uxScore}/100
-                  </span>
-                </div>
               </div>
             </section>
           )}
@@ -485,9 +452,6 @@ const MainLayout = ({ children }: MainLayoutProps) => {
       {/* Video Call Notification System */}
       <VideoCallNotification />
       
-      {/* Floating AI Doctor Assistant - hidden for team portal */}
-      {!isTeamUser && <FloatingDrISHA />}
-
       {/* Team Chat Communication Module */}
       {isTeamUser && <ChatApplet />}
 

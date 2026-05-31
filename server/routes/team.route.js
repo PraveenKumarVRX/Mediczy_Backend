@@ -6,7 +6,7 @@ import userModel from '../models/user.model.intelligent.js';
 import jwt from 'jsonwebtoken';
 import { InsuranceBroker } from '../models/insurance-broker.model.intelligent.js';
 import { Op } from 'sequelize';
-import { authTeam, requireModule, attachAccessLevel } from '../middleware/team.middleware.js';
+import { authTeam, requireModule, requirePermission, attachAccessLevel } from '../middleware/team.middleware.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
@@ -24,9 +24,20 @@ import { generateAssistedEmailDraft, analyzeEmailCommunication } from '../servic
 const router = express.Router();
 
 // ─── Token constants ─────────────────────────────────────────────────────────
-const ACCESS_TOKEN_TTL  = '8h';
+const ACCESS_TOKEN_TTL  = '15m';
 const REFRESH_TOKEN_TTL = '30d';
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const REFRESH_SCOPE = 'team';
+const TEAM_PUBLIC_PROFILE_PERMISSIONS = [];
+const parseMetadata = (value) => {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  try { return JSON.parse(value); } catch (_) { return {}; }
+};
+const isTeamAccount = (user = {}, metadata = {}) => Boolean(
+  user.isAdmin || user.isTeam || user.role === 'team' || user.role === 'team_member' ||
+  user.role === 'team_lead' || user.membershipType === 'team' || metadata.isTeam === true
+);
 const LOCKOUT_WINDOW_MIN = 15;
 const LOCKOUT_MAX_ATTEMPTS = 10;
 
@@ -35,6 +46,25 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
   try {
     const pool = sharedPool;
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS api_v2_refresh_tokens (
+        id             BIGSERIAL   PRIMARY KEY,
+        jti            UUID        NOT NULL UNIQUE,
+        user_id        INTEGER     NOT NULL,
+        role           VARCHAR(50) NOT NULL,
+        token_hash     VARCHAR(64) NOT NULL,
+        expires_at     TIMESTAMPTZ NOT NULL,
+        revoked        BOOLEAN     NOT NULL DEFAULT FALSE,
+        revoked_at     TIMESTAMPTZ,
+        replaced_by_jti UUID,
+        ip_address     TEXT,
+        user_agent     TEXT,
+        created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_user_role ON api_v2_refresh_tokens(user_id, role);
+      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_expires_at ON api_v2_refresh_tokens(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_revoked ON api_v2_refresh_tokens(revoked);
+
       CREATE TABLE IF NOT EXISTS team_refresh_tokens (
         id         BIGSERIAL   PRIMARY KEY,
         jti        UUID        NOT NULL UNIQUE,
@@ -157,10 +187,10 @@ async function issueTokenPair(payload, ip) {
   const expiresAt  = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
 
   await pool.query(
-    `INSERT INTO team_refresh_tokens
-       (jti, user_id, token_hash, expires_at, ip_address)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [jti, payload.id, tokenHash, expiresAt, ip]
+    `INSERT INTO api_v2_refresh_tokens
+       (jti, user_id, role, token_hash, expires_at, ip_address)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [jti, payload.id, REFRESH_SCOPE, tokenHash, expiresAt, ip]
   );
 
   return { accessToken, refreshToken, jti };
@@ -169,20 +199,20 @@ async function issueTokenPair(payload, ip) {
 async function revokeRefreshToken(jti) {
   const pool = sharedPool;
   await pool.query(
-    `UPDATE team_refresh_tokens
+    `UPDATE api_v2_refresh_tokens
         SET revoked = TRUE, revoked_at = NOW()
-      WHERE jti = $1`,
-    [jti]
+      WHERE jti = $1 AND role = $2`,
+    [jti, REFRESH_SCOPE]
   );
 }
 
 async function revokeAllUserTokens(userId) {
   const pool = sharedPool;
   await pool.query(
-    `UPDATE team_refresh_tokens
+    `UPDATE api_v2_refresh_tokens
         SET revoked = TRUE, revoked_at = NOW()
-      WHERE user_id = $1 AND revoked = FALSE`,
-    [userId]
+      WHERE user_id = $1 AND role = $2 AND revoked = FALSE`,
+    [userId, REFRESH_SCOPE]
   );
 }
 
@@ -227,7 +257,7 @@ router.post('/login', authLimiter, [
 
     // --- role guard (tenant-safe: must be team member of this org) ---
     let metadata = {};
-    try { metadata = user.metadata ? JSON.parse(user.metadata) : {}; } catch (_) { metadata = {}; }
+    metadata = parseMetadata(user.metadata)
 
     const hasTeamAccess = Boolean(
       user.isAdmin || user.isTeam ||
@@ -307,24 +337,16 @@ router.post('/login', authLimiter, [
       role: user.role || 'team',
       designation: user.designation || 'Healthcare Staff',
       department: user.department || 'Healthcare Operations',
-      permissions: storedPermissions || [
-        'User Management',
-        'Doctor Management',
-        'Appointment Management',
-        'Patient Reports',
-        'Analytics Access',
-        'Chat Dashboard Access',
-        'Hospital Management',
-        'Clinic Management',
-        'Lab Management',
-        'Pharmacy Management',
-        'Health Plans Access',
-        'Corporate Management',
-        'Broker Management',
-        'Support Tickets',
-        'Audit Access',
-      ],
-      modules: storedModules || null
+      isAdmin: user.isAdmin || false,
+      isActive: user.status === 'active',
+      accessLevel: metadata.accessLevel || 'view',
+      canView: metadata.canView !== false,
+      canEdit: metadata.canEdit === true || metadata.accessLevel === 'edit' || metadata.accessLevel === 'full',
+      canDelete: metadata.canDelete === true || metadata.accessLevel === 'full',
+      permissions: Array.isArray(storedPermissions) ? storedPermissions : TEAM_PUBLIC_PROFILE_PERMISSIONS,
+      modules: storedModules || null,
+      editableModules: Array.isArray(metadata.editableModules) ? metadata.editableModules : [],
+      deletableModules: Array.isArray(metadata.deletableModules) ? metadata.deletableModules : []
     };
 
     return res.status(200).json({
@@ -369,8 +391,8 @@ router.post('/auth/refresh', async (req, res) => {
     const pool = sharedPool;
     const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
     const { rows } = await pool.query(
-      `SELECT * FROM team_refresh_tokens WHERE jti = $1`,
-      [decoded.jti]
+      `SELECT * FROM api_v2_refresh_tokens WHERE jti = $1 AND role = $2`,
+      [decoded.jti, REFRESH_SCOPE]
     );
 
     if (!rows.length || rows[0].revoked || rows[0].token_hash !== tokenHash) {
@@ -386,7 +408,10 @@ router.post('/auth/refresh', async (req, res) => {
     }
 
     let metadata = {};
-    try { metadata = user.metadata ? JSON.parse(user.metadata) : {}; } catch (_) { metadata = {}; }
+    metadata = parseMetadata(user.metadata)
+    if (!isTeamAccount(user, metadata)) {
+      return res.status(403).json({ success: false, message: 'Team access has been revoked' });
+    }
 
     const ip = req.ip || req.socket?.remoteAddress || 'unknown';
     const payload = {
@@ -444,12 +469,8 @@ router.put('/profile', authTeam, async (req, res) => {
       department: user.department || 'Healthcare Operations',
       designation: user.designation || 'Healthcare Staff',
       role: user.role || 'Team Member',
-      permissions: [
-        'User Management', 'Doctor Management', 'Appointment Management',
-        'Patient Reports', 'Chat Dashboard Access', 'Hospital Management',
-        'Pharmacy Management', 'Health Plans Access'
-      ],
-      isActive: user.isActive
+      permissions: Array.isArray(parseMetadata(user.metadata).permissions) ? parseMetadata(user.metadata).permissions : TEAM_PUBLIC_PROFILE_PERMISSIONS,
+      isActive: user.status !== 'inactive' && user.status !== 'suspended' && user.status !== 'deleted'
     };
 
     res.status(200).json({
@@ -467,7 +488,7 @@ router.put('/profile', authTeam, async (req, res) => {
 });
 
 // Team directory endpoint (tenant-scoped + paginated)
-router.get('/directory', authTeam, async (req, res) => {
+router.get('/directory', authTeam, requirePermission('User Management'), async (req, res) => {
   try {
     const teamUser = req.teamUser;
     const { page = 1, limit = 50, department, search } = req.query;
@@ -479,7 +500,7 @@ router.get('/directory', authTeam, async (req, res) => {
     // Tenant scope: if tenantId is set, caller only sees members in the same org
     if (teamUser.tenantId) {
       // Filter by organizationId column if it exists; gracefully degrades
-      where.organizationId = teamUser.tenantId;
+      where.organization_id = teamUser.tenantId;
     }
 
     const { count, rows: users } = await userModel.findAndCountAll({
@@ -492,7 +513,7 @@ router.get('/directory', authTeam, async (req, res) => {
     const members = users
       .map(user => {
         let metadata = {};
-        try { metadata = user.metadata ? JSON.parse(user.metadata) : {}; } catch (_) { metadata = {}; }
+        metadata = parseMetadata(user.metadata)
 
         const role = user.role || metadata.role || 'team';
         const isTeamMember = role === 'team' || user.membershipType === 'team' || metadata.isTeam === true;
@@ -551,7 +572,7 @@ router.get('/profile', authTeam, attachAccessLevel, async (req, res) => {
       where: { id: teamUser.id },
       attributes: ['metadata']
     });
-    const baseMeta = (() => { try { return baseUser?.metadata ? JSON.parse(baseUser.metadata) : {}; } catch (_) { return {}; } })();
+    const baseMeta = parseMetadata(baseUser?.metadata);
     permissions = baseMeta.permissions || [];
     modules = baseMeta.grantedModules || null;
 
@@ -757,7 +778,7 @@ router.post('/verify-access', authTeam, attachAccessLevel, async (req, res) => {
 });
 
 // Admin endpoint to update team member privileges
-router.put('/privileges/:teamUserId', authTeam, async (req, res) => {
+router.put('/privileges/:teamUserId', authTeam, requirePermission('User Management'), async (req, res) => {
   try {
     const { teamUserId } = req.params;
     const { editableModules, deletableModules, permissions } = req.body;
@@ -806,7 +827,7 @@ router.put('/privileges/:teamUserId', authTeam, async (req, res) => {
 // ============== TEAM USERS MANAGEMENT ==============
 
 // Create new team user/member
-router.post('/users', authTeam, [
+router.post('/users', authTeam, requirePermission('User Management'), [
   body('firstName').notEmpty().withMessage('First name is required'),
   body('lastName').notEmpty().withMessage('Last name is required'),
   body('email').isEmail().withMessage('Valid email is required'),
@@ -884,7 +905,7 @@ router.post('/users', authTeam, [
 });
 
 // List all team users (tenant-scoped + paginated)
-router.get('/users', authTeam, async (req, res) => {
+router.get('/users', authTeam, requirePermission('User Management'), async (req, res) => {
   try {
     const teamUser = req.teamUser;
     const { department, role, status, page = 1, limit = 50 } = req.query;
@@ -893,7 +914,7 @@ router.get('/users', authTeam, async (req, res) => {
     const where = { membershipType: 'team', status: status || 'active' };
     if (department) where.department = department;
     if (role)       where.role = role;
-    if (teamUser.tenantId) where.organizationId = teamUser.tenantId;
+    if (teamUser.tenantId) where.organization_id = teamUser.tenantId;
 
     const { count, rows: users } = await userModel.findAndCountAll({
       where,
@@ -937,7 +958,7 @@ router.get('/users', authTeam, async (req, res) => {
 // ============== TEAM DOCTORS MANAGEMENT ==============
 
 // Create/Add new doctor to team
-router.post('/doctors', authTeam, [
+router.post('/doctors', authTeam, requirePermission('Doctor Management'), [
   body('firstName').notEmpty().withMessage('First name is required'),
   body('lastName').notEmpty().withMessage('Last name is required'),
   body('email').isEmail().withMessage('Valid email is required'),
@@ -1017,7 +1038,7 @@ router.post('/doctors', authTeam, [
 });
 
 // List team doctors
-router.get('/doctors', authTeam, async (req, res) => {
+router.get('/doctors', authTeam, requirePermission('Doctor Management'), async (req, res) => {
   try {
     const { specialization, status } = req.query;
     const where = { role: 'doctor', status: status || 'active' };
@@ -1077,7 +1098,7 @@ router.get('/doctors', authTeam, async (req, res) => {
 // ============== TEAM PHARMACIES MANAGEMENT ==============
 
 // Add pharmacy to team
-router.post('/pharmacies', authTeam, [
+router.post('/pharmacies', authTeam, requirePermission('Pharmacy Management'), [
   body('name').notEmpty().withMessage('Pharmacy name is required'),
   body('email').isEmail().withMessage('Valid email is required'),
   body('phone').notEmpty().withMessage('Phone number is required'),
@@ -1162,7 +1183,7 @@ router.post('/pharmacies', authTeam, [
 });
 
 // List team pharmacies
-router.get('/pharmacies', authTeam, async (req, res) => {
+router.get('/pharmacies', authTeam, requirePermission('Pharmacy Management'), async (req, res) => {
   try {
     const { city, state, status } = req.query;
     const where = { role: 'pharmacy', status: status || 'active' };
@@ -1221,19 +1242,32 @@ router.get('/pharmacies', authTeam, async (req, res) => {
 
 // ─── Appointments ─────────────────────────────────────────────────────────────
 // Create team appointment (DB-persisted)
-router.post('/appointments', authTeam, [
+router.post('/appointments', authTeam, requirePermission('Appointment Management'), [
   body('doctorId').notEmpty().withMessage('Doctor ID is required'),
   body('patientEmail').isEmail().withMessage('Valid patient email is required'),
   body('appointmentDate').notEmpty().withMessage('Appointment date is required'),
   body('appointmentTime').notEmpty().withMessage('Appointment time is required'),
 ], async (req, res) => {
   try {
+    const valErrors = validationResult(req);
+    if (!valErrors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: valErrors.array() });
+    }
+
     const { doctorId, patientEmail, appointmentDate, appointmentTime, notes, type = 'consultation' } = req.body;
     const teamUser = req.teamUser;
 
     const doctor = await userModel.findOne({ where: { id: doctorId, role: 'doctor' } });
     if (!doctor) {
       return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+    if (teamUser.tenantId && doctor.organization_id && Number(doctor.organization_id) !== Number(teamUser.tenantId)) {
+      return res.status(403).json({ success: false, message: 'Doctor is outside your tenant scope' });
+    }
+
+    const patient = await userModel.findOne({ where: { email: String(patientEmail).trim().toLowerCase() } });
+    if (!patient) {
+      return res.status(404).json({ success: false, message: 'Patient not found' });
     }
 
     const pool = sharedPool;
@@ -1271,7 +1305,7 @@ router.post('/appointments', authTeam, [
 });
 
 // List team appointments (DB-backed, tenant-scoped)
-router.get('/appointments', authTeam, async (req, res) => {
+router.get('/appointments', authTeam, requirePermission('Appointment Management'), async (req, res) => {
   try {
     const { doctorId, status, fromDate, toDate, page = 1, limit = 50 } = req.query;
     const teamUser = req.teamUser;
@@ -1282,7 +1316,7 @@ router.get('/appointments', authTeam, async (req, res) => {
     let idx = 1;
 
     if (teamUser.tenantId) {
-      conditions.push(`(ta.tenant_id = $${idx} OR ta.tenant_id IS NULL)`);
+      conditions.push(`ta.tenant_id = $${idx}`);
       params.push(teamUser.tenantId);
       idx++;
     }
@@ -1296,7 +1330,7 @@ router.get('/appointments', authTeam, async (req, res) => {
     params.push(parseInt(limit), offset);
     const pool = sharedPool;
     const { rows } = await pool.query(
-      `SELECT ta.*, u.first_name || ' ' || u.last_name AS doctor_name
+      `SELECT ta.*, u."firstName" || ' ' || u."lastName" AS doctor_name
          FROM team_appointments ta
          LEFT JOIN users u ON u.id = ta.doctor_id
          ${where}
@@ -1352,7 +1386,7 @@ router.post('/logout', authTeam, async (req, res) => {
  *   "rocketchatUsername": "parinitha_smarthealth"
  * }
  */
-router.post('/link-to-rocketchat', authTeam, async (req, res) => {
+router.post('/link-to-rocketchat', authTeam, requirePermission('Chat Dashboard Access'), async (req, res) => {
   try {
     const { teamUserId, rocketchatUserId, rocketchatUsername } = req.body;
 
@@ -1434,7 +1468,7 @@ router.post('/link-to-rocketchat', authTeam, async (req, res) => {
  *   }
  * }
  */
-router.get('/:id/rocketchat-agent', authTeam, async (req, res) => {
+router.get('/:id/rocketchat-agent', authTeam, requirePermission('Chat Dashboard Access'), async (req, res) => {
   try {
     const teamUser = await userModel.findOne({
       where: { id: req.params.id, role: 'team' }
@@ -1489,7 +1523,7 @@ router.get('/:id/rocketchat-agent', authTeam, async (req, res) => {
  * 
  * Returns all team users currently linked to RocketChat agents
  */
-router.get('/agents/list', authTeam, async (req, res) => {
+router.get('/agents/list', authTeam, requirePermission('Chat Dashboard Access'), async (req, res) => {
   try {
     const teamUsers = await userModel.findAll({
       where: { role: 'team', status: 'active' }
@@ -1542,7 +1576,7 @@ router.get('/agents/list', authTeam, async (req, res) => {
  * - "users" scope: only end-user (patient) actions
  * - default (all): everything
  */
-router.get('/activity-logs', authTeam, async (req, res) => {
+router.get('/activity-logs', authTeam, requirePermission('Audit Access'), async (req, res) => {
   try {
     const {
       page = 1,
@@ -1621,7 +1655,7 @@ router.get('/activity-logs', authTeam, async (req, res) => {
  * GET /api/team/activity-stats
  * Aggregate stats for the activity dashboard.
  */
-router.get('/activity-stats', authTeam, async (req, res) => {
+router.get('/activity-stats', authTeam, requirePermission('Audit Access'), async (req, res) => {
   try {
     const logs = global.activityLogs || [];
     const now = Date.now();
@@ -1665,7 +1699,7 @@ router.get('/activity-stats', authTeam, async (req, res) => {
 
 // ─── Broker Management ───────────────────────────────────────────────────────
 
-router.get('/brokers', authTeam, async (req, res) => {
+router.get('/brokers', authTeam, requirePermission('Broker Management'), async (req, res) => {
   try {
     const { search = '', status = 'all', limit = 50, offset = 0 } = req.query;
     const where = {};
@@ -1692,7 +1726,7 @@ router.get('/brokers', authTeam, async (req, res) => {
   }
 });
 
-router.get('/brokers/:id', authTeam, async (req, res) => {
+router.get('/brokers/:id', authTeam, requirePermission('Broker Management'), async (req, res) => {
   try {
     const broker = await InsuranceBroker.findByPk(req.params.id, {
       attributes: { exclude: ['password'] },
@@ -1705,7 +1739,7 @@ router.get('/brokers/:id', authTeam, async (req, res) => {
   }
 });
 
-router.put('/brokers/:id', authTeam, async (req, res) => {
+router.put('/brokers/:id', authTeam, requirePermission('Broker Management'), async (req, res) => {
   try {
     const broker = await InsuranceBroker.findByPk(req.params.id);
     if (!broker) return res.status(404).json({ success: false, message: 'Broker not found' });
@@ -1927,7 +1961,7 @@ const _logTeamCommunication = async ({
   );
 };
 
-router.post('/communications/send', authTeam, async (req, res) => {
+router.post('/communications/send', authTeam, requirePermission('Corporate Management'), async (req, res) => {
   try {
     const {
       channel,
@@ -2248,7 +2282,7 @@ router.post('/communications/send', authTeam, async (req, res) => {
   }
 });
 
-router.post("/communications/ai-draft", authTeam, async (req, res) => {
+router.post("/communications/ai-draft", authTeam, requirePermission('Corporate Management'), async (req, res) => {
   try {
     const teamUserId = req.teamUser?.id || req.user?.id;
     const corporateId = req.body?.corporateId ? parseInt(String(req.body.corporateId), 10) : null;
@@ -2272,7 +2306,7 @@ router.post("/communications/ai-draft", authTeam, async (req, res) => {
   }
 });
 
-router.post("/communications/ai-monitor", authTeam, async (req, res) => {
+router.post("/communications/ai-monitor", authTeam, requirePermission('Corporate Management'), async (req, res) => {
   try {
     const teamUserId = req.teamUser?.id || req.user?.id;
     const corporateId = req.body?.corporateId ? parseInt(String(req.body.corporateId), 10) : null;
@@ -2303,7 +2337,7 @@ router.post("/communications/ai-monitor", authTeam, async (req, res) => {
   }
 });
 
-router.get("/communications/ai-dashboard", authTeam, async (req, res) => {
+router.get("/communications/ai-dashboard", authTeam, requirePermission('Corporate Management'), async (req, res) => {
   try {
     const teamUserId = req.teamUser?.id || req.user?.id;
     const corporateId = req.query?.corporateId ? parseInt(String(req.query.corporateId), 10) : null;
@@ -2344,7 +2378,7 @@ router.get("/communications/ai-dashboard", authTeam, async (req, res) => {
   }
 });
 
-router.get('/communications/logs', authTeam, async (req, res) => {
+router.get('/communications/logs', authTeam, requirePermission('Corporate Management'), async (req, res) => {
   try {
     const teamUserId = req.teamUser?.id || req.user?.id;
     const {
@@ -2411,7 +2445,7 @@ router.get('/communications/logs', authTeam, async (req, res) => {
   }
 });
 
-router.get('/communications/analytics', authTeam, async (req, res) => {
+router.get('/communications/analytics', authTeam, requirePermission('Corporate Management'), async (req, res) => {
   try {
     const teamUserId = req.teamUser?.id || req.user?.id;
     const { corporateId, days = 30 } = req.query;
@@ -2487,7 +2521,7 @@ router.get('/communications/analytics', authTeam, async (req, res) => {
 });
 
 // List all registered doctors (with search + status filter)
-router.get('/registered-doctors', authTeam, async (req, res) => {
+router.get('/registered-doctors', authTeam, requirePermission('Doctor Management'), async (req, res) => {
   try {
     const { search = '', status = 'all', limit = 50, offset = 0 } = req.query;
     const where = {};
@@ -2526,7 +2560,7 @@ router.get('/registered-doctors', authTeam, async (req, res) => {
 });
 
 // Get single doctor detail
-router.get('/registered-doctors/:id', authTeam, async (req, res) => {
+router.get('/registered-doctors/:id', authTeam, requirePermission('Doctor Management'), async (req, res) => {
   try {
     const doctor = await doctorModel.findByPk(req.params.id, {
       attributes: { exclude: ['password', 'passwordResetToken'] },
@@ -2540,7 +2574,7 @@ router.get('/registered-doctors/:id', authTeam, async (req, res) => {
 });
 
 // Activate doctor account
-router.patch('/registered-doctors/:id/activate', authTeam, async (req, res) => {
+router.patch('/registered-doctors/:id/activate', authTeam, requirePermission('Doctor Management'), async (req, res) => {
   try {
     const doctor = await doctorModel.findByPk(req.params.id);
     if (!doctor) return res.status(404).json({ success: false, message: 'Doctor not found' });
@@ -2596,7 +2630,7 @@ router.patch('/registered-doctors/:id/activate', authTeam, async (req, res) => {
 });
 
 // Delete doctor account
-router.delete('/registered-doctors/:id', authTeam, async (req, res) => {
+router.delete('/registered-doctors/:id', authTeam, requirePermission('Doctor Management'), async (req, res) => {
   try {
     const doctor = await doctorModel.findByPk(req.params.id);
     if (!doctor) return res.status(404).json({ success: false, message: 'Doctor not found' });
@@ -2610,7 +2644,7 @@ router.delete('/registered-doctors/:id', authTeam, async (req, res) => {
 });
 
 // Reject doctor account
-router.patch('/registered-doctors/:id/reject', authTeam, async (req, res) => {
+router.patch('/registered-doctors/:id/reject', authTeam, requirePermission('Doctor Management'), async (req, res) => {
   try {
     const doctor = await doctorModel.findByPk(req.params.id);
     if (!doctor) return res.status(404).json({ success: false, message: 'Doctor not found' });
@@ -2666,7 +2700,7 @@ router.patch('/registered-doctors/:id/reject', authTeam, async (req, res) => {
 });
 
 // ─── Module snapshot stats (real counts for team module pages) ────────────────
-router.get('/module-stats', authTeam, async (req, res) => {
+router.get('/module-stats', authTeam, requirePermission(['Dashboard Access', 'Analytics Access', 'Patient Reports']), async (req, res) => {
   try {
     const today = new Date().toISOString().split('T')[0];
 
@@ -2722,7 +2756,7 @@ router.get('/module-stats', authTeam, async (req, res) => {
 });
 
 // ─── AI Text Generation ───────────────────────────────────────────────────────
-router.post('/ai/generate', authTeam, async (req, res) => {
+router.post('/ai/generate', authTeam, requirePermission('Corporate Management'), async (req, res) => {
   try {
     const { prompt, maxTokens = 400, temperature = 0.7 } = req.body;
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length < 5) {

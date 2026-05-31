@@ -259,6 +259,84 @@ async function sendDoctorConfirmationEmail(doctor, docs) {
     const agreementId = docs.agreement?.agreementId || 'N/A';
     const signedAt    = docs.agreement?.signedAt ? new Date(docs.agreement.signedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : submittedAt;
 
+
+const toFiniteNumber = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+const enrichDoctorLocationFromPayload = (payload = {}) => {
+  const next = { ...payload };
+  const clinicAddressJson = (payload.clinicAddress_json && typeof payload.clinicAddress_json === 'object')
+    ? { ...payload.clinicAddress_json }
+    : {};
+
+  const clinicAddress =
+    (typeof payload.clinicAddress === 'string' && payload.clinicAddress.trim()) ||
+    (typeof payload.practiceAddress === 'string' && payload.practiceAddress.trim()) ||
+    '';
+
+  if (clinicAddress) {
+    next.clinicAddress = clinicAddress;
+  }
+
+  const placeId =
+    payload.placeId ||
+    payload.place_id ||
+    payload.googlePlaceId ||
+    payload.google_place_id ||
+    clinicAddressJson.placeId ||
+    clinicAddressJson.place_id ||
+    clinicAddressJson.googlePlaceId ||
+    clinicAddressJson.google_place_id;
+
+  if (placeId) {
+    const normalizedPlaceId = String(placeId).trim();
+    clinicAddressJson.placeId = normalizedPlaceId;
+    clinicAddressJson.place_id = normalizedPlaceId;
+    clinicAddressJson.googlePlaceId = normalizedPlaceId;
+    clinicAddressJson.google_place_id = normalizedPlaceId;
+    clinicAddressJson.source = clinicAddressJson.source || 'google_places';
+    clinicAddressJson.provider = clinicAddressJson.provider || 'google_places';
+    clinicAddressJson.verificationStatus = 'verified';
+    clinicAddressJson.verifiedAt = new Date().toISOString();
+  }
+
+  const lat =
+    toFiniteNumber(payload.practiceLatitude) ??
+    toFiniteNumber(payload.latitude) ??
+    toFiniteNumber(payload.lat) ??
+    toFiniteNumber(clinicAddressJson.latitude) ??
+    toFiniteNumber(clinicAddressJson.lat);
+
+  const lng =
+    toFiniteNumber(payload.practiceLongitude) ??
+    toFiniteNumber(payload.longitude) ??
+    toFiniteNumber(payload.lng) ??
+    toFiniteNumber(payload.lon) ??
+    toFiniteNumber(clinicAddressJson.longitude) ??
+    toFiniteNumber(clinicAddressJson.lng) ??
+    toFiniteNumber(clinicAddressJson.lon);
+
+  if (lat !== null) {
+    clinicAddressJson.latitude = lat;
+    clinicAddressJson.lat = lat;
+  }
+  if (lng !== null) {
+    clinicAddressJson.longitude = lng;
+    clinicAddressJson.lng = lng;
+  }
+
+  if (payload.practiceCity && !clinicAddressJson.city) clinicAddressJson.city = payload.practiceCity;
+  if (payload.practiceState && !clinicAddressJson.state) clinicAddressJson.state = payload.practiceState;
+  if (payload.practiceZipCode && !clinicAddressJson.pincode) clinicAddressJson.pincode = payload.practiceZipCode;
+
+  if (Object.keys(clinicAddressJson).length > 0) {
+    next.clinicAddress_json = clinicAddressJson;
+  }
+
+  return next;
+};
     // Build submitted-documents list
     const docLabels = { idProof: 'ID Proof', addressProof: 'Address Proof', medicalDegree: 'Medical Degree', councilCertificate: 'Council Certificate' };
     const docRows = Object.entries(docLabels)
@@ -472,11 +550,12 @@ export async function registerDoctor(req, res) {
     // isVerified defaults to false — manual activation required
     // Map socialMedia → socialLinks (frontend key vs model field)
     const { socialMedia, ...restBody } = req.body;
+    const normalizedBody = enrichDoctorLocationFromPayload(restBody);
     const socialLinks = socialMedia || restBody.socialLinks || {};
     // Coerce empty-string optional unique fields to null so PostgreSQL unique constraints
     // don't block subsequent registrations (empty string ≠ NULL in Postgres UNIQUE index).
-    if (restBody.registrationNumber === '') restBody.registrationNumber = null;
-    const newDoctor = await doctorModel.create({ ...restBody, socialLinks, isVerified: false });
+    if (normalizedBody.registrationNumber === '') normalizedBody.registrationNumber = null;
+    const newDoctor = await doctorModel.create({ ...normalizedBody, socialLinks, isVerified: false });
 
     // Send registration alert to support (fire-and-forget)
     const docsPayload = req.body.documents || {};
@@ -647,7 +726,7 @@ export async function signInDoctor(req, res) {
       // Generate access token with JTI for revocation support
       const { issuePortalTokenPair } = await import('../services/token-revocation.service.js');
       const deviceFp = req.headers['x-device-fingerprint'] || null;
-      const { accessToken: token } = await issuePortalTokenPair(
+      const { accessToken: token, refreshToken } = await issuePortalTokenPair(
         { id: doctor.id, email: doctor.email, role: 'doctor' },
         { portal: 'doctor', deviceFp }
       );
@@ -663,6 +742,8 @@ export async function signInDoctor(req, res) {
       return res.status(200).json({
         message: "Login successful",
         token,
+        refreshToken,    // 30-day refresh token — store securely (Keychain/Keystore)
+        expiresIn: 900,  // access token TTL in seconds (15 minutes)
         doctor: {
           id: doctor.id,
           firstName: doctor.firstName,
@@ -865,7 +946,35 @@ export const getAvailableDoctors = async (req, res) => {
 
     const supportsInPersonConsultation = (doctor) => {
       const clinicAddress = typeof doctor?.clinicAddress === 'string' ? doctor.clinicAddress.trim() : '';
-      return doctor?.inPersonConsultationFee != null || clinicAddress.length > 0;
+
+      const clinicAddressJson = doctor?.clinicAddress_json && typeof doctor.clinicAddress_json === 'object'
+        ? doctor.clinicAddress_json
+        : {};
+
+      const hasStructuredAddress = Object.keys(clinicAddressJson).length > 0;
+
+      const googlePlaceId =
+        clinicAddressJson.placeId ||
+        clinicAddressJson.place_id ||
+        clinicAddressJson.googlePlaceId ||
+        clinicAddressJson.google_place_id ||
+        '';
+
+      const provider = String(clinicAddressJson.provider || clinicAddressJson.source || '').toLowerCase();
+      const verificationStatus = String(clinicAddressJson.verificationStatus || '').toLowerCase();
+
+      const hasCoordinates =
+        parseCoordinate(clinicAddressJson.lat ?? clinicAddressJson.latitude) !== null &&
+        parseCoordinate(clinicAddressJson.lng ?? clinicAddressJson.longitude ?? clinicAddressJson.lon) !== null;
+
+      const isGoogleVerified =
+        Boolean(String(googlePlaceId).trim()) ||
+        (provider.startsWith('google') && verificationStatus === 'verified') ||
+        (provider.startsWith('google') && hasCoordinates);
+
+      const hasAddress = clinicAddress.length > 0 || hasStructuredAddress;
+
+      return hasAddress && isGoogleVerified;
     };
 
     // Find doctors matching the criteria using Sequelize

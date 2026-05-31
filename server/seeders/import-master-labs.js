@@ -7,7 +7,7 @@
 import ExcelJS from 'exceljs';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import Lab from '../models/postgres/lab.model.postgres.js';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 
 /**
  * Generate email from lab name and location

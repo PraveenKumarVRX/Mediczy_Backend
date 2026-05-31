@@ -5,7 +5,7 @@
 
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import Lab from '../models/postgres/lab.model.postgres.js';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 
 /**
  * Common Lab Test Categories

@@ -1,5 +1,6 @@
 import express from 'express';
 import { randomUUID } from 'crypto';
+import { createHash } from 'crypto';
 import { Hospital } from '../models/hospital.model.intelligent.js';
 import { Corporate } from '../models/insurance-company.model.intelligent.js';
 import Tenant from '../models/postgres/tenant.model.postgres.js';
@@ -23,6 +24,7 @@ const PASSWORD_MIN_LEN = 8;
 // ─── Access / Refresh token lifetimes ─────────────────────────────────────────
 const ACCESS_TOKEN_TTL  = '15m';   // short-lived JWT
 const REFRESH_TOKEN_TTL = '30d';   // stored server-side, supports rotation
+const REFRESH_SCOPE = 'hospital';
 const LOCKOUT_MAX_ATTEMPTS = 10;   // failed logins before 15-min lockout
 const LOCKOUT_WINDOW_MIN   = 15;
 
@@ -30,6 +32,25 @@ const LOCKOUT_WINDOW_MIN   = 15;
 (async () => {
   try {
     await sharedPool.query(`
+      CREATE TABLE IF NOT EXISTS api_v2_refresh_tokens (
+        id             BIGSERIAL   PRIMARY KEY,
+        jti            UUID        NOT NULL UNIQUE,
+        user_id        INTEGER     NOT NULL,
+        role           VARCHAR(50) NOT NULL,
+        token_hash     VARCHAR(64) NOT NULL,
+        expires_at     TIMESTAMPTZ NOT NULL,
+        revoked        BOOLEAN     NOT NULL DEFAULT FALSE,
+        revoked_at     TIMESTAMPTZ,
+        replaced_by_jti UUID,
+        ip_address     TEXT,
+        user_agent     TEXT,
+        created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_user_role ON api_v2_refresh_tokens(user_id, role);
+      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_expires_at ON api_v2_refresh_tokens(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_revoked ON api_v2_refresh_tokens(revoked);
+
       CREATE TABLE IF NOT EXISTS hospital_refresh_tokens (
         jti         UUID PRIMARY KEY,
         user_id     TEXT        NOT NULL,
@@ -104,7 +125,7 @@ async function clearFailedAttempts(email) {
 // ─── Token issuance & revocation ──────────────────────────────────────────────
 /**
  * Issue an access token (15 m) + refresh token (30 d).
- * The refresh token JTI is stored in hospital_refresh_tokens.
+ * The refresh token JTI is stored in api_v2_refresh_tokens under role='hospital'.
  * @param {object} payload - JWT claims (without exp/jti)
  * @param {{ deviceFp?: string }} opts
  * @returns {{ accessToken, refreshToken, jti }}
@@ -122,12 +143,21 @@ async function issueTokenPair(payload, { deviceFp } = {}) {
     { expiresIn: REFRESH_TOKEN_TTL }
   );
 
+  const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   try {
     await sharedPool.query(
-      `INSERT INTO hospital_refresh_tokens (jti, user_id, tenant_id, expires_at, device_fp)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [jti, String(payload.id || payload.hospital_id), payload.tenant_id || null, expiresAt, deviceFp || null]
+      `INSERT INTO api_v2_refresh_tokens (jti, user_id, role, token_hash, expires_at, ip_address, user_agent)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        jti,
+        payload.id || payload.hospital_id,
+        REFRESH_SCOPE,
+        tokenHash,
+        expiresAt,
+        null,
+        deviceFp || null,
+      ]
     );
   } catch (err) {
     console.error('[hospital-auth] Failed to store refresh token:', err.message);
@@ -139,8 +169,8 @@ async function issueTokenPair(payload, { deviceFp } = {}) {
 async function revokeRefreshToken(jti) {
   try {
     await sharedPool.query(
-      'UPDATE hospital_refresh_tokens SET revoked = TRUE WHERE jti = $1',
-      [jti]
+      'UPDATE api_v2_refresh_tokens SET revoked = TRUE, revoked_at = NOW(), updated_at = NOW() WHERE jti = $1 AND role = $2',
+      [jti, REFRESH_SCOPE]
     );
   } catch { /* non-fatal */ }
 }
@@ -148,8 +178,8 @@ async function revokeRefreshToken(jti) {
 async function revokeAllUserTokens(userId) {
   try {
     await sharedPool.query(
-      'UPDATE hospital_refresh_tokens SET revoked = TRUE WHERE user_id = $1 AND revoked = FALSE',
-      [String(userId)]
+      'UPDATE api_v2_refresh_tokens SET revoked = TRUE, revoked_at = NOW(), updated_at = NOW() WHERE user_id = $1 AND role = $2 AND revoked = FALSE',
+      [Number(userId), REFRESH_SCOPE]
     );
   } catch { /* non-fatal */ }
 }
@@ -272,7 +302,7 @@ export const hospitalRegister = async (req, res) => {
     const token = jwt.sign(
       { id: hospital.id, email: hospital.email, role: 'hospital' },
       JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     res.status(201).json({
@@ -758,9 +788,11 @@ export const hospitalRefresh = async (req, res) => {
     }
 
     // Verify against server-side allowlist
+    const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
     const { rows } = await sharedPool.query(
-      'SELECT * FROM hospital_refresh_tokens WHERE jti = $1 AND revoked = FALSE AND expires_at > NOW()',
-      [decoded.jti]
+      `SELECT * FROM api_v2_refresh_tokens
+       WHERE jti = $1 AND role = $2 AND revoked = FALSE AND expires_at > NOW()`,
+      [decoded.jti, REFRESH_SCOPE]
     );
 
     if (!rows.length) {
@@ -768,6 +800,9 @@ export const hospitalRefresh = async (req, res) => {
     }
 
     const stored = rows[0];
+    if (stored.token_hash !== tokenHash) {
+      return res.status(401).json({ success: false, message: 'Refresh token mismatch' });
+    }
 
     // Revoke the old refresh token immediately (rotation)
     await revokeRefreshToken(decoded.jti);
@@ -968,8 +1003,9 @@ export const hospitalVerify = async (req, res) => {
     // We key the access token's jti against the refresh_tokens table that tracks the session.
     if (decoded.jti) {
       const { rows } = await sharedPool.query(
-        'SELECT revoked FROM hospital_refresh_tokens WHERE jti = $1 AND expires_at > NOW()',
-        [decoded.jti]
+        `SELECT revoked FROM api_v2_refresh_tokens
+         WHERE jti = $1 AND role = $2 AND expires_at > NOW()`,
+        [decoded.jti, REFRESH_SCOPE]
       );
       // Access tokens must map to an active persisted session. Missing rows are rejected
       // so token issuance/storage failures cannot create bearer-only sessions.

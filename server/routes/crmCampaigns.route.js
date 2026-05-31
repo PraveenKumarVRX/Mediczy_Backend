@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import XLSX from 'xlsx';
+import XLSX from '../utils/excel-compat.js';
 import crypto from 'crypto';
 import { Queue } from 'bullmq';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
@@ -268,7 +268,7 @@ router.get('/lists/:id', async (req, res) => {
 });
 router.post('/lists/:id/import', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'file is required' });
-  const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+  const workbook = await XLSX.read(req.file.buffer, { type: 'buffer' });
   const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: '' });
   let valid=0, duplicate=0; const errors=[];
   const bucket = getUploadsBucket();
@@ -583,7 +583,7 @@ router.delete('/suppressions/:email', authCRM, async (req, res) => {
 router.post('/suppressions/import', authCRM, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'File required' });
-    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const wb = await XLSX.read(req.file.buffer, { type: 'buffer' });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
     let added = 0, skipped = 0;

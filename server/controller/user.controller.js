@@ -3,6 +3,8 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 import userModel, { generateAuthTokenForUser, User } from "../models/user.model.intelligent.js";
 import jwt from "jsonwebtoken";
 import { auditLoginAttempt } from "../middleware/audit.middleware.js";
+import { issueRefreshToken } from "../services/auth-token.service.js";
+import { setAuthCookies } from "../config/cookies.config.js";
 import Consent from "../models/consent.model.intelligent.js";
 import intelligentDb from "../utils/intelligentDbClient.js";
 import { col, fn, where as sequelizeWhere } from "sequelize";
@@ -575,6 +577,25 @@ export async function signInUser(req, res) {
     // Generate authentication token including userId, userType, role for ring-fencing
     const token = generateAuthTokenForUser(user);
 
+    // Issue a refresh token (stored in Redis, 7-day TTL) for silent session renewal.
+    // Fire-and-forget: refresh token failure must not block the login response.
+    let refreshToken = null;
+    try {
+      refreshToken = await issueRefreshToken(user);
+    } catch (rtErr) {
+      console.warn('[login] Refresh token issuance failed (non-fatal):', rtErr.message);
+    }
+
+    // Set httpOnly cookies for web clients. Mobile apps continue to use the
+    // token/refreshToken fields in the response body (Authorization header flow).
+    if (refreshToken) {
+      setAuthCookies(res, token, refreshToken);
+    } else {
+      // Access-only cookie when refresh token unavailable
+      const { ACCESS_COOKIE_OPTIONS, COOKIE_NAMES } = await import('../config/cookies.config.js');
+      res.cookie(COOKIE_NAMES.ACCESS, token, ACCESS_COOKIE_OPTIONS);
+    }
+
     // Audit successful login
     await auditLoginAttempt(req, user.id, loginIdentifier, true);
 
@@ -585,11 +606,14 @@ export async function signInUser(req, res) {
     }
     const requirePasswordChange = !!(userMeta && userMeta.requirePasswordChange === true);
 
-    // Respond with user data & token
+    // Respond with user data & tokens.
+    // `token` and `refreshToken` are included for backward-compatible mobile clients
+    // that store tokens in Keychain/Keystore rather than relying on cookies.
     return res.status(200).json({
       success: true,
       message: "Login successful",
       token,
+      refreshToken,
       requirePasswordChange,
       user: {
         id: user.id,

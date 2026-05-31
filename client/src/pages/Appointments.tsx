@@ -9,11 +9,18 @@ import QuickAppointmentModal from "@/components/QuickAppointmentModal";
 import DoctorCallNotification from "@/components/DoctorCallNotification";
 import { drIshaAPI } from "@/services/drIsha";
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
-import api from "@/utils/api";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/auth/AuthProvider";
+import { appointmentsService } from "@/services/appointments.service";
+import {
+  useAppointmentAnalytics,
+  useCancelAppointment,
+  useEnhancedAppointments,
+  useJoinAppointmentVideo,
+  useRescheduleAppointment,
+} from "@/hooks/useAppointments";
+import type { PatientAppointment } from "@/types/appointments";
 import {
   Calendar,
   Clock,
@@ -35,34 +42,7 @@ import {
   Zap
 } from "lucide-react";
 
-interface Appointment {
-  id: string;
-  backendId?: number;
-  meetingLink?: string;
-  roomId?: string;
-  meetingId?: string;
-  paymentStatus?: string;
-  doctor: {
-    id?: string;
-    name: string;
-    specialty: string;
-    profileImage?: string;
-  };
-  date: string;
-  time: string;
-  location: string;
-  consultationType: "online" | "walkin";
-  channel: "video" | "phone" | "in-person";
-  clinicName?: string;
-  clinicAddress?: string;
-  status: 'upcoming' | 'completed' | 'cancelled' | 'rescheduled';
-  originalStatus?: string; // The actual status from DB (scheduled, no-show, expired, etc.)
-  symptoms?: string;
-  notes?: string;
-  reminderEnabled: boolean;
-  estimatedDuration: number;
-  fee: number;
-}
+type Appointment = PatientAppointment;
 
 interface SmartSuggestion {
   id: string;
@@ -149,160 +129,17 @@ const Appointments = () => {
     appointmentTime?: string;
   } | null>(null);
 
-  const { data: analytics } = useQuery({
-    queryKey: ["appointmentAnalytics"],
-    queryFn: async () => {
-      const { data } = await api.get("/appointments/analytics/basic");
-      return (data as any).analytics || data;
-    },
-  });
+  const patientUserId = currentUser?.id || currentUser?._id;
+  const joinVideoMutation = useJoinAppointmentVideo();
+  const cancelMutation = useCancelAppointment(patientUserId);
+  const rescheduleMutation = useRescheduleAppointment();
 
-  // Fetch enhanced appointments from backend and map into local shape
-  const { data: backendAppointments = [], isLoading, error: appointmentsError } = useQuery({
-    queryKey: ["enhancedAppointments"],
-    staleTime: 0, // Always consider data stale
-    refetchOnMount: true, // Refetch when component mounts
-    refetchOnWindowFocus: true, // Refetch when user returns to tab
-    queryFn: async () => {
-      console.log("📅 Fetching appointments...");
-      const { data } = await api.get("/enhanced-appointments/my-appointments?limit=500");
-      console.log("📅 Appointments response:", data);
-      const list = (data as any).appointments || data;
-      if (!Array.isArray(list)) {
-        console.log("📅 Not an array, returning empty:", list);
-        return [];
-      }
-      console.log("📅 Found appointments:", list.length);
-      if (list.length > 0) {
-        console.log("📅 First appointment raw data:", list[0]);
-      }
-
-      return list.map((apt: any) => {
-        const rawDate = apt.appointmentDate ?? apt.date;
-        const rawTime = apt.appointmentTime ?? apt.time;
-        
-        // DEBUG: Log Feb 20 appointments
-        if (rawDate === '2026-02-20') {
-          console.log('📅 Processing Feb 20 appointment:', {
-            id: apt.id,
-            rawDate,
-            rawTime,
-            status: apt.status
-          });
-        }
-        
-        return {
-        id: String(apt.id ?? apt.appointmentId ?? apt._id ?? crypto.randomUUID()),
-        backendId: parseBackendId(apt.id ?? apt.appointmentId ?? apt.appointment_id),
-        doctor: {
-          id: apt.doctorId ?? apt.doctor_id ?? apt.doctor?._id ?? apt.doctor?.id,
-          name:
-            apt.doctorName ??
-            (apt.doctor
-              ? [apt.doctor.firstName, apt.doctor.lastName].filter(Boolean).join(" ")
-              : "Doctor"),
-          specialty: apt.specialization ?? apt.doctor?.specialization ?? "",
-          profileImage: apt.doctorProfileImage ?? apt.doctor?.profileImage,
-        },
-        meetingLink: apt.meetingLink ?? apt.meeting_link,
-        roomId: apt.roomId ?? apt.videoRoomId ?? apt.meetingId ?? apt.meeting_id,
-        meetingId: apt.meetingId ?? apt.meeting_id,
-        date: rawDate,
-        time: rawTime,
-        consultationType:
-          apt.consultationType === "walkin" || apt.consultationType === "in-person"
-            ? "walkin"
-            : "online",
-        channel:
-          apt.channel === "phone" || apt.consultationType === "audio"
-            ? "phone"
-            : apt.consultationType === "in-person"
-              ? "in-person"
-              : "video",
-        clinicName:
-          apt.clinicName ??
-          apt.clinic?.name ??
-          (apt.consultationType === "walkin" || apt.consultationType === "in-person"
-            ? apt.location
-            : undefined),
-        clinicAddress:
-          apt.clinicAddress ??
-          apt.clinic?.address ??
-          (apt.consultationType === "walkin" || apt.consultationType === "in-person"
-            ? apt.location
-            : undefined),
-        location:
-          apt.consultationType === "walkin" || apt.consultationType === "in-person"
-            ? (apt.location ?? apt.clinic?.address ?? "Clinic / Hospital")
-            : "Online",
-        status: (() => {
-          // Determine if this is a past appointment
-          const rawDate = apt.appointmentDate || apt.date;
-          
-          // DEBUG: Extra logging for Feb 20
-          if (rawDate === '2026-02-20') {
-            console.log('🔍 Feb 20 in status calc - BEFORE date parsing:', {
-              id: apt.id,
-              rawDate,
-              rawDateType: typeof rawDate,
-              now: new Date().toISOString(),
-              nowLocal: new Date().toString()
-            });
-          }
-          
-          // Parse date and normalize to midnight local time to avoid timezone issues
-          const appointmentDate = new Date(rawDate);
-          appointmentDate.setHours(0, 0, 0, 0);
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const isPast = appointmentDate < today;
-
-          // Debug logging for first few appointments
-          if (apt.id < 5 || rawDate?.includes('2026-02-20')) {
-            console.log('📅 Status calculation:', {
-              id: apt.id,
-              rawDate,
-              appointmentDate: appointmentDate.toISOString(),
-              appointmentDateValueOf: appointmentDate.valueOf(),
-              today: today.toISOString(),
-              todayValueOf: today.valueOf(),
-              isPast,
-              originalStatus: apt.status,
-              willBeUpcoming: !isPast && (apt.status === "scheduled" || apt.status === "confirmed" || apt.status === "pending")
-            });
-          }
-
-          // Keep original status for display, but categorize for filtering
-          const originalStatus = apt.status || 'scheduled';
-
-          if (apt.status === "cancelled") {
-            return "cancelled";
-          }
-          // Future appointments are upcoming
-          if (!isPast && (originalStatus === "scheduled" || originalStatus === "confirmed" || originalStatus === "pending")) {
-            return "upcoming";
-          }
-          // Past appointments go to history with their original status
-          return "completed"; // This is the filter category
-        })(),
-        // Keep the original status for display
-        originalStatus: apt.status || 'scheduled',
-        paymentStatus: apt.paymentStatus,
-        symptoms: apt.symptoms,
-        notes: apt.notes,
-        reminderEnabled: true,
-        estimatedDuration: Number(apt.estimatedDuration) || 30,
-        fee: Number(
-          apt.consultationFee ??
-          apt.serviceTierPrice ??
-          apt.serviceTier?.price ??
-          0
-        ) || 0,
-      };
-      }) as Appointment[];
-    },
-    retry: 1,
-  });
+  const { data: analytics } = useAppointmentAnalytics();
+  const {
+    data: backendAppointments = [],
+    isLoading,
+    error: appointmentsError,
+  } = useEnhancedAppointments();
 
   const handleSuggestionAction = (suggestion: SmartSuggestion) => {
     if (suggestion.type === 'reschedule') {
@@ -619,7 +456,7 @@ const Appointments = () => {
     return sorted;
   };
 
-  const handleJoinCall = (appointment: Appointment) => {
+  const handleJoinCall = async (appointment: Appointment) => {
     const backendStatus = (appointment.originalStatus || '').toLowerCase();
     if (!['confirmed', 'in-progress'].includes(backendStatus)) {
       toast({
@@ -667,23 +504,24 @@ const Appointments = () => {
       return;
     }
 
-    api
-      .get(`/consultation/video/join/${appointmentId}`)
-      .then((response) => {
-        const resolvedRoomId = response.data?.video?.meetingId || roomId;
-        navigate(`/video-consultation?room=${encodeURIComponent(resolvedRoomId)}&appointmentId=${encodeURIComponent(String(appointmentId))}`);
-        toast({
-          title: "Joining Video Call",
-          description: `Connecting to consultation with ${appointment.doctor.name || "Doctor"}`,
-        });
-      })
-      .catch((error: any) => {
-        toast({
-          title: "Cannot Join Yet",
-          description: error.response?.data?.message || "Video consultation is not available right now.",
-          variant: "destructive",
-        });
+    try {
+      const response = await joinVideoMutation.mutateAsync(appointmentId);
+      if (!response.success) {
+        throw new Error(response.message || "Video consultation is not available right now.");
+      }
+      const resolvedRoomId = response.video?.meetingId || response.video?.roomId || roomId;
+      navigate(`/video-consultation?room=${encodeURIComponent(resolvedRoomId)}&appointmentId=${encodeURIComponent(String(appointmentId))}`);
+      toast({
+        title: "Joining Video Call",
+        description: `Connecting to consultation with ${appointment.doctor.name || "Doctor"}`,
       });
+    } catch (error: any) {
+      toast({
+        title: "Cannot Join Yet",
+        description: error?.response?.data?.message || error?.message || "Video consultation is not available right now.",
+        variant: "destructive",
+      });
+    }
   };
 
   const getJoinCallState = (appointment: Appointment) => {
@@ -750,7 +588,7 @@ const Appointments = () => {
 
     setActionLoadingId(appointment.id);
     try {
-      await api.patch(`/appointments/${appointment.backendId}/cancel`);
+      await cancelMutation.mutateAsync(appointment.backendId);
       setAppointments((prev) =>
         prev.map((apt) =>
           apt.id === appointment.id ? { ...apt, status: "cancelled" } : apt
@@ -810,7 +648,8 @@ const Appointments = () => {
 
     setActionLoadingId(appointment.id);
     try {
-      await api.patch(`/appointments/${appointment.backendId}/reschedule`, {
+      await rescheduleMutation.mutateAsync({
+        appointmentId: appointment.backendId,
         appointmentDate,
         appointmentTime,
       });
@@ -1166,7 +1005,7 @@ const Appointments = () => {
                                 return;
                               }
                               try {
-                                const { data } = await api.get(`/prescriptions/appointment/${appointment.backendId}`);
+                                const data = await appointmentsService.getPrescriptionForAppointment(appointment.backendId);
                                 if (data.success && data.prescription) {
                                   // Navigate to my prescriptions page
                                   navigate(`/my-prescriptions?highlight=${data.prescription.id}`);

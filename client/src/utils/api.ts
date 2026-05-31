@@ -72,7 +72,7 @@ const resolveTenantId = (): string | undefined => {
 const api = axios.create({
   baseURL: resolveBaseURL(),
   timeout: 30000, // 30 second timeout (video call initiation needs time for LiveKit + notifications)
-  withCredentials: false, // Disable credentials for CORS
+  withCredentials: true, // Send httpOnly auth cookies on every request (web sessions)
 });
 
 // Attach token dynamically to every request
@@ -105,7 +105,7 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// ── Team token auto-refresh on 401 ──────────────────────────────────────────
+// ── Shared refresh state — one in-flight refresh across all user types ───────
 let _isRefreshing = false;
 let _refreshQueue: Array<(token: string) => void> = [];
 
@@ -259,21 +259,82 @@ api.interceptors.response.use(
       }
     }
 
-    // Regular user 401 — clear stale token and redirect to login
+    // Patient/user 401 — attempt silent token refresh before redirecting to login.
+    // The server sets httpOnly cookies, so the refresh call goes out with withCredentials:true
+    // and the cookie is rotated transparently. The refreshToken in localStorage is a fallback
+    // for environments where the cookie path scoping prevents automatic sending.
     if (
       error.response?.status === 401 &&
+      !originalRequest._retry &&
       typeof window !== "undefined" &&
       (getUserType() === "user" || getUserType() === "individual" || !getUserType())
     ) {
-      const hadToken = window.localStorage.getItem("token");
-      if (hadToken) {
+      const refreshToken = window.localStorage.getItem("refreshToken");
+
+      // If no refresh token at all, fall through to hard redirect
+      if (!refreshToken) {
         window.localStorage.removeItem("token");
         window.localStorage.removeItem("userId");
         window.localStorage.removeItem("userData");
         window.localStorage.removeItem("userType");
+        window.localStorage.removeItem("refreshToken");
         if (!window.location.pathname.startsWith("/login")) {
           window.location.href = "/login";
         }
+        return Promise.reject(error);
+      }
+
+      originalRequest._retry = true;
+
+      // Queue concurrent requests while refresh is in-flight
+      if (_isRefreshing) {
+        return new Promise<string>((resolve) => {
+          _refreshQueue.push(resolve);
+        }).then((newToken) => {
+          (originalRequest as any).headers = {
+            ...(originalRequest.headers || {}),
+            Authorization: `Bearer ${newToken}`,
+          };
+          return api(originalRequest);
+        });
+      }
+
+      _isRefreshing = true;
+      try {
+        // withCredentials:true sends the msz_refresh httpOnly cookie automatically;
+        // the body refreshToken is a belt-and-suspenders fallback.
+        const { data } = await axios.post(
+          `${api.defaults.baseURL}/auth/refresh`,
+          { refreshToken },
+          { skipAuth: true, withCredentials: true } as any
+        );
+        if (data.success && data.accessToken) {
+          window.localStorage.setItem("token", data.accessToken);
+          if (data.refreshToken) {
+            window.localStorage.setItem("refreshToken", data.refreshToken);
+          }
+          _refreshQueue.forEach((cb) => cb(data.accessToken));
+          _refreshQueue = [];
+          (originalRequest as any).headers = {
+            ...(originalRequest.headers || {}),
+            Authorization: `Bearer ${data.accessToken}`,
+          };
+          return api(originalRequest);
+        }
+      } catch {
+        // Refresh failed — clean up and redirect
+      } finally {
+        _isRefreshing = false;
+      }
+
+      // Refresh returned no token or threw — clear everything and force re-login
+      window.localStorage.removeItem("token");
+      window.localStorage.removeItem("userId");
+      window.localStorage.removeItem("userData");
+      window.localStorage.removeItem("userType");
+      window.localStorage.removeItem("refreshToken");
+      if (!window.location.pathname.startsWith("/login")) {
+        window.location.href = "/login";
       }
     }
 

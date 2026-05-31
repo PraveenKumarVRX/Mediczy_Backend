@@ -4,6 +4,7 @@
  */
 
 import express from 'express';
+import { randomUUID } from 'crypto';
 import FamilyMember from '../models/postgres/family-member.model.postgres.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import { validateFamilyMemberAddition, getFamilyMemberLimits } from '../services/family-member-validation.service.js';
@@ -345,7 +346,7 @@ router.post('/:id/insurances', authUser, async (req, res) => {
     }
 
     const policy = {
-      id: Date.now().toString(),
+      id: randomUUID(),
       insurerName,
       policyNumber,
       policyType: policyType || 'individual',

@@ -1,6 +1,7 @@
 import express from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { Op } from 'sequelize';
+import healthDiaryService from '../services/health-diary.service.js';
 import { validateBody, validateQuery } from '../validationSchemas/validateRequest.middleware.js';
 import {
   createAppointmentSchema,
@@ -536,11 +537,30 @@ router.post(
       // Update appointment
       await appointment.update({
         status: 'completed',
-        notes: duration 
+        notes: duration
           ? `Consultation completed (${duration})`
           : notes || 'Consultation completed',
         prescription: prescription?.prescriptionId
       });
+
+      // Auto-log consultation to patient's health diary (fire-and-forget)
+      if (appointment.userId) {
+        setImmediate(async () => {
+          try {
+            await healthDiaryService.logConsultation(appointment.userId, {
+              id: appointment.id,
+              doctorId: appointment.doctorId,
+              doctorName: appointment.doctorName || 'Doctor',
+              consultationType: appointment.consultationType || 'General',
+              status: 'completed',
+              scheduledTime: appointment.scheduledTime,
+              duration
+            });
+          } catch (e) {
+            console.error('Health diary auto-log (appointment complete):', e.message);
+          }
+        });
+      }
 
       return res.status(200).json({
         success: true,

@@ -66,7 +66,7 @@ router.post('/login', authLimiter, async (req, res) => {
         type: 'homecare'
       },
       JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     await auditLoginAttempt(req, homecare.id, normalizedEmail, true);

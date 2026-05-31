@@ -210,18 +210,21 @@ router.get('/available', [
     )`;
 
     const strictQcLiteral = `(
-      COALESCE(
-        NULLIF("clinicAddress_json"->>'city', ''),
-        NULLIF(metadata->'web_scraped'->'address'->>'city', ''),
-        NULLIF(metadata->'web_scraped'->>'city', ''),
-        ''
-      ) <> ''
-      AND
-      COALESCE(
-        NULLIF("clinicAddress_json"->>'state', ''),
-        NULLIF(metadata->'web_scraped'->'address'->>'state', ''),
-        ''
-      ) <> ''
+      ${onlineCapabilityLiteral}
+      OR (
+        COALESCE(
+          NULLIF("clinicAddress_json"->>'city', ''),
+          NULLIF(metadata->'web_scraped'->'address'->>'city', ''),
+          NULLIF(metadata->'web_scraped'->>'city', ''),
+          ''
+        ) <> ''
+        AND
+        COALESCE(
+          NULLIF("clinicAddress_json"->>'state', ''),
+          NULLIF(metadata->'web_scraped'->'address'->>'state', ''),
+          ''
+        ) <> ''
+      )
     )`;
 
     if (specialization) {
@@ -558,7 +561,7 @@ router.post('/register', [
         userType: 'doctor'
       },
       JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     res.status(201).json({
@@ -678,7 +681,7 @@ router.post('/login', authLimiter, async (req, res) => {
           role: 'doctor'
         },
         JWT_CONFIG.SECRET,
-        { expiresIn: '7d' }
+        { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
       );
 
     await auditLoginAttempt(req, doctor.id, normalizedIdentifier, true);

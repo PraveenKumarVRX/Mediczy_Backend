@@ -20,6 +20,10 @@ import { getPostgresPool } from '../db/postgres.js';
 const PLATFORM_DOMAIN = process.env.PLATFORM_DOMAIN || 'mediqzy.com';
 const PLATFORM_ROUTES = ['/api/platform', '/api/admin', '/api/auth'];
 const PUBLIC_ROUTES = ['/api/health', '/api/v2/health', '/api/mobile/health'];
+const LOCAL_HOSTS = (process.env.ALLOWED_LOCAL_DB_HOSTS || 'localhost,127.0.0.1,::1')
+  .split(',')
+  .map((h) => h.trim().toLowerCase())
+  .filter(Boolean);
 
 // =============================================================================
 // DOMAIN RESOLVER MIDDLEWARE
@@ -72,6 +76,16 @@ export async function domainResolver(req, res, next) {
     // Method 3: Parse domain from Host header
     const host = req.headers.host || '';
     const hostname = host.split(':')[0]; // Remove port if present
+
+    // In isolated local/staging runs, avoid remote tenant-domain lookups for loopback hosts.
+    if (LOCAL_HOSTS.includes(String(hostname).toLowerCase())) {
+      req.tenantContext = {
+        resolved: false,
+        domain: hostname,
+        localBypass: true,
+      };
+      return next();
+    }
 
     // Check if it's a subdomain of platform domain
     if (hostname.endsWith(`.${PLATFORM_DOMAIN}`)) {

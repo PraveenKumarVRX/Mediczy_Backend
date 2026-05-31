@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "/api";
-console.log("Auth Base URL:", BASE_URL);
 
 const ROLE_TOKEN_KEYS: Record<string, string> = {
   user: "token",
@@ -40,6 +39,7 @@ export const clearAuthTokens = () => {
     "userId",
     "userData",
     "fcmToken",
+    "refreshToken",   // Patient/user refresh token for silent session renewal
   ]);
 
   keysToClear.forEach((key) => localStorage.removeItem(key));
@@ -250,10 +250,18 @@ const login = async ({ credentials, loginType }: { credentials: any; loginType: 
   }
   
   setAuthData(data.token, loginType, userId);
-  
+
+  // Store refresh token for silent session renewal (patient/user role).
+  // The server also sets httpOnly cookies, but storing the refresh token in
+  // localStorage lets the axios interceptor call /api/auth/refresh on 401.
+  if (data.refreshToken) {
+    localStorage.setItem("refreshToken", data.refreshToken);
+  }
+
   // Return data in a consistent format
   return {
     token: data.token,
+    refreshToken: data.refreshToken ?? null,
     requirePasswordChange: data.requirePasswordChange === true,
     user:
       loginType === "user" ||
@@ -316,12 +324,19 @@ export const useRegister = () => {
   });
 };
 
-// useLogout (Remains the Same)
 export const useLogout = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      await Promise.resolve(); // Mimic async behavior
+      // Tell the server to revoke the refresh token and clear httpOnly cookies.
+      // Fire-and-forget — local cleanup must happen regardless of server response.
+      try {
+        await api.post("/auth/logout", {
+          refreshToken: localStorage.getItem("refreshToken"),
+        }, { skipAuth: true } as any);
+      } catch {
+        // Non-fatal: proceed with client-side cleanup even if the server call fails
+      }
       clearAuthTokens();
       window.dispatchEvent(new CustomEvent('authChange'));
       queryClient.setQueryData(["currentUser"], null);

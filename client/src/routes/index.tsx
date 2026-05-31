@@ -260,8 +260,11 @@ const CorporateHealthBooking   = lazy(() => import("@/pages/team/CorporateHealth
 const TeamEmployeeManagement   = lazy(() => import("@/pages/team/TeamEmployeeManagement"));
 const TeamSettings             = lazy(() => import("@/pages/team/TeamSettings"));
 const TeamHealthPlans          = lazy(() => import("@/pages/team/TeamHealthPlans"));
+const TeamUserPlanCustomization = lazy(() => import("@/pages/team/TeamUserPlanCustomization"));
+const TeamPlanGovernance       = lazy(() => import("@/pages/team/TeamPlanGovernance"));
 const TeamBrokerManagement     = lazy(() => import("@/pages/team/TeamBrokerManagement"));
 const TeamDoctorManagement     = lazy(() => import("@/pages/team/TeamDoctorManagement"));
+const TeamProviderNetwork      = lazy(() => import("@/pages/team/TeamProviderNetwork"));
 
 const _TeamModulePages = () => import("@/pages/team/TeamModulePages");
 const TeamUserManagementPage     = lazyNamed(_TeamModulePages, "TeamUserManagementPage");
@@ -1155,6 +1158,8 @@ const AppRoutes = () => {
           element={<TeamGuard><TeamDashboard initialTab="emails" /></TeamGuard>} />
         <Route path="/team/profile"
           element={<TeamGuard><TeamProfile /></TeamGuard>} />
+        <Route path="/team/provider-network"
+          element={<TeamGuard permission="Corporate Management"><TeamProviderNetwork /></TeamGuard>} />
 
         {/* ── Team (permission-gated modules) ─────────────────────────── */}
         <Route path="/team/directory"
@@ -1195,6 +1200,10 @@ const AppRoutes = () => {
           element={<TeamGuard permission="Support Tickets"><MainLayout><TeamTicketManager /></MainLayout></TeamGuard>} />
         <Route path="/team/health-plans"
           element={<TeamGuard permission="Health Plans Access"><TeamHealthPlans /></TeamGuard>} />
+        <Route path="/team/user-plan-customization"
+          element={<TeamGuard permission="Corporate Management"><TeamUserPlanCustomization /></TeamGuard>} />
+        <Route path="/team/plan-governance"
+          element={<TeamGuard permission="Audit Access"><TeamPlanGovernance /></TeamGuard>} />
         <Route path="/team/broker-management"
           element={<TeamGuard permission="Broker Management"><TeamBrokerManagement /></TeamGuard>} />
         <Route path="/team/reports"

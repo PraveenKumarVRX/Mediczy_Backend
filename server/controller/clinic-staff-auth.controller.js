@@ -134,7 +134,7 @@ export const clinicStaffLogin = async (req, res) => {
         last_name: staff.last_name
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     console.log(`✅ Staff login successful:`, { role, email, clinic_name: clinic.name });
@@ -238,7 +238,7 @@ export const doctorLogin = async (req, res) => {
         type: 'clinic_staff'
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     console.log('✅ Doctor login successful:', { email, clinic_name: clinic.name });
@@ -336,7 +336,7 @@ export const nurseLogin = async (req, res) => {
         type: 'clinic_staff'
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     console.log('✅ Nurse login successful:', { email, clinic_name: clinic.name });
@@ -434,7 +434,7 @@ export const assistantLogin = async (req, res) => {
         type: 'clinic_staff'
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     console.log('✅ Doctor Assistant login successful:', { email, clinic_name: clinic.name });

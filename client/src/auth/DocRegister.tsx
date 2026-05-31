@@ -496,7 +496,10 @@ const DocRegister = () => {
         setEmailOtp(o => ({ ...o, sent: true, sending: false, timer: 60, code: "" }));
         toast({ title: "OTP sent", description: `Check your inbox at ${email}` });
       } else {
-        setEmailOtp(o => ({ ...o, sending: false, error: data.message || "Failed to send" }));
+        const rawMsg = data.message || data.error?.message || "Failed to send";
+        const retryAfter = data.error?.retryAfter ? Math.ceil(Number(data.error.retryAfter) / 60) : null;
+        const errorMsg = retryAfter ? `Too many attempts. Please wait ${retryAfter} min and try again.` : rawMsg;
+        setEmailOtp(o => ({ ...o, sending: false, error: errorMsg }));
       }
     } catch {
       setEmailOtp(o => ({ ...o, sending: false, error: "Network error — try again" }));
@@ -538,7 +541,10 @@ const DocRegister = () => {
         setPhoneOtp(o => ({ ...o, sent: true, sending: false, timer: 60, code: "" }));
         toast({ title: "OTP sent", description: `WhatsApp verification code sent to ${phone}` });
       } else {
-        setPhoneOtp(o => ({ ...o, sending: false, error: data.message || "Failed to send" }));
+        const rawMsg = data.message || data.error?.message || "Failed to send";
+        const retryAfter = data.error?.retryAfter ? Math.ceil(Number(data.error.retryAfter) / 60) : null;
+        const errorMsg = retryAfter ? `Too many attempts. Please wait ${retryAfter} min and try again.` : rawMsg;
+        setPhoneOtp(o => ({ ...o, sending: false, error: errorMsg }));
       }
     } catch {
       setPhoneOtp(o => ({ ...o, sending: false, error: "Network error — try again" }));

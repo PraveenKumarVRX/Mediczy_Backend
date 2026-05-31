@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -33,9 +33,6 @@ import {
   Coins,
   Wallet,
   Building2,
-  Youtube,
-  Instagram,
-  Facebook
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +46,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
@@ -68,7 +66,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { format, addDays, isBefore, startOfDay, parse } from "date-fns";
 import { cn } from "@/lib/utils";
-import api from "@/utils/api";
+import { doctorBookingService } from "@/services/doctor-booking.service";
+import { appointmentQueryKeys } from "@/hooks/useAppointments";
 import MainLayout from "@/components/layout/MainLayout";
 import { getToken, getUserType } from "@/hooks/auth";
 import walletService, { HCCalculation } from "@/services/wallet.service";
@@ -79,6 +78,7 @@ interface Doctor {
   lastName: string;
   profileImage?: string;
   isLive?: boolean;
+  isAvailableNow?: boolean;
   specialization: string;
   experience: number;
   education: string[];
@@ -160,6 +160,8 @@ const DEFAULT_CLINIC = {
   city: "Multi-city",
   state: "India",
 };
+
+const PUBLISHABLE_DOCTOR_LIMIT = 569;
 
 const toNumber = (value: any, fallback: number) => {
   const parsed = Number(value);
@@ -255,6 +257,8 @@ const toDisplayTime = (value: string) => {
   return format(parsed, "hh:mm a");
 };
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // Group slots by time of day
 const groupSlotsByTimeOfDay = (slots: any[]) => {
   const morning: any[] = [];
@@ -294,19 +298,6 @@ const normalizeExternalUrl = (value?: string) => {
   }
 };
 
-const buildYoutubeSubscribeUrl = (value?: string) => {
-  const normalized = normalizeExternalUrl(value);
-  if (!normalized) return "";
-
-  try {
-    const parsed = new URL(normalized);
-    parsed.searchParams.set("sub_confirmation", "1");
-    return parsed.toString();
-  } catch {
-    return normalized;
-  }
-};
-
 const normalizeDoctorFromApi = (doctor: any): Doctor => {
   const clinicInfo = parseClinicInfo(doctor?.clinicAddress);
   const languages = toArray(doctor?.languages, ["English"]);
@@ -331,17 +322,36 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
     typeof doctor?.clinicAddress === "string"
       ? doctor.clinicAddress.trim().length > 0
       : Boolean(doctor?.clinicAddress && Object.keys(doctor.clinicAddress || {}).length > 0);
-  const supportsOnline = rawOnlineFee != null || Boolean(doctor?.isOnline);
+  const apiSupportsOnline = doctor?.isOnline === true;
+  const apiAvailableNow =
+    doctor?.isAvailable === true ||
+    doctor?.availability?.status === "Available" ||
+    apiSupportsOnline;
+  const supportsOnline = rawOnlineFee != null || apiSupportsOnline;
   const supportsInPerson = rawInPersonFee != null || hasClinicAddress;
   const socialLinks = {
     facebook: normalizeExternalUrl(doctor?.socialLinks?.facebook),
     instagram: normalizeExternalUrl(doctor?.socialLinks?.instagram),
     youtube: normalizeExternalUrl(doctor?.socialLinks?.youtube),
   };
+  const apiAvailabilityStatus = doctor?.availability?.status;
+  const normalizedAvailabilityStatus: "Available" | "Busy" | "Away" =
+    apiAvailabilityStatus === "Available" || apiAvailabilityStatus === "Busy" || apiAvailabilityStatus === "Away"
+      ? apiAvailabilityStatus
+      : apiAvailableNow
+      ? "Available"
+      : apiSupportsOnline
+      ? "Busy"
+      : "Away";
+  const nextAvailableSlot =
+    doctor?.availability?.nextAvailableSlot ||
+    doctor?.nextAvailableSlot ||
+    (normalizedAvailabilityStatus === "Available" ? "Available now" : "Slots update hourly");
 
   return {
     _id: String(fallbackId),
     isLive: hasLiveId,
+    isAvailableNow: apiAvailableNow,
     firstName: doctor?.firstName || "Doctor",
     lastName: doctor?.lastName || "",
     profileImage: doctor?.profileImage || "",
@@ -354,9 +364,8 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
       inPerson: inPersonFee,
     },
     availability: {
-      status: doctor?.isOnline ? "Available" : doctor?.isAvailable ? "Busy" : "Away",
-      nextAvailableSlot:
-        doctor?.nextAvailableSlot || (doctor?.isOnline ? "Available now" : "Slots update hourly"),
+      status: normalizedAvailabilityStatus,
+      nextAvailableSlot,
     },
     clinic: clinicInfo,
     phoneNumber: doctor?.phoneNumber || "",
@@ -437,6 +446,7 @@ const DoctorListBooking = () => {
   const [monthAvailability, setMonthAvailability] = useState<Record<string, boolean>>({});
   const [userCoordinates, setUserCoordinates] = useState<UserCoordinates | null>(null);
   const [locationDetectionAttempted, setLocationDetectionAttempted] = useState(false);
+  const lastRateLimitToastAt = useRef(0);
   
   // Health Coins payment states
   const [paymentMethod, setPaymentMethod] = useState<"inr" | "hc">("inr");
@@ -455,6 +465,10 @@ const DoctorListBooking = () => {
     if (!value) return false;
     return DOCTOR_ID_REGEX.test(value) || DOCTOR_PUBLIC_ID_REGEX.test(value);
   };
+
+  const isDoctorOnlineNow = (doctor: Doctor) =>
+    doctor.supportsOnline !== false &&
+    (doctor.isAvailableNow === true || doctor.availability?.status === "Available");
 
   useEffect(() => {
     const handler = () => setUserType(getUserType());
@@ -519,16 +533,16 @@ const DoctorListBooking = () => {
   }, [filteredDoctors]);
 
   const fetchDoctorsFromApi = async (path: string, params?: Record<string, any>) => {
-    const response = await api.get(path, params ? { params } : undefined);
-    const apiDoctors = Array.isArray(response.data?.data)
+    const responseData = await doctorBookingService.getDoctors(path, params);
+    const apiDoctors = Array.isArray(responseData?.data)
       ? response.data.data
-      : Array.isArray(response.data?.doctors)
+      : Array.isArray(responseData?.doctors)
       ? response.data.doctors
-      : Array.isArray(response.data?.data?.doctors)
+      : Array.isArray(responseData?.data?.doctors)
       ? response.data.data.doctors
-      : Array.isArray(response.data?.data?.rows)
+      : Array.isArray(responseData?.data?.rows)
       ? response.data.data.rows
-      : Array.isArray(response.data?.data?.data)
+      : Array.isArray(responseData?.data?.data)
       ? response.data.data.data
       : [];
     return apiDoctors.map(normalizeDoctorFromApi).filter(Boolean);
@@ -536,7 +550,7 @@ const DoctorListBooking = () => {
 
   const fetchAllDoctorsFromApi = async (path: string, params?: Record<string, any>) => {
     const baseParams = { ...(params || {}) };
-    const initialResponse = await api.get(path, { params: { ...baseParams, page: 1 } });
+    const initialResponseData = await doctorBookingService.getDoctors(path, { ...baseParams, page: 1 });
 
     const getDoctorsFromPayload = (payload: any) => {
       const rows = Array.isArray(payload?.data)
@@ -553,8 +567,8 @@ const DoctorListBooking = () => {
       return rows.map(normalizeDoctorFromApi).filter(Boolean);
     };
 
-    const combinedDoctors = getDoctorsFromPayload(initialResponse.data);
-    const totalPages = Number(initialResponse.data?.pagination?.pages || 1);
+    const combinedDoctors = getDoctorsFromPayload(initialResponseData);
+    const totalPages = Number(initialResponseData?.pagination?.pages || 1);
 
     if (totalPages <= 1) {
       return combinedDoctors;
@@ -562,15 +576,33 @@ const DoctorListBooking = () => {
 
     const pageRequests: Promise<any>[] = [];
     for (let page = 2; page <= totalPages; page += 1) {
-      pageRequests.push(api.get(path, { params: { ...baseParams, page } }));
+      pageRequests.push(doctorBookingService.getDoctors(path, { ...baseParams, page }));
     }
 
     const pageResponses = await Promise.all(pageRequests);
-    pageResponses.forEach((res) => {
-      combinedDoctors.push(...getDoctorsFromPayload(res.data));
+    pageResponses.forEach((payload) => {
+      combinedDoctors.push(...getDoctorsFromPayload(payload));
     });
 
     return combinedDoctors;
+  };
+
+  const isRateLimitedError = (error: any) =>
+    Number(error?.response?.status || error?.status) === 429;
+
+  const fetchDoctorsWithRetry = async (path: string, params?: Record<string, any>) => {
+    const retryDelays = [800, 1600];
+    for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+      try {
+        return await fetchDoctorsFromApi(path, params);
+      } catch (error) {
+        if (!isRateLimitedError(error) || attempt === retryDelays.length) {
+          throw error;
+        }
+        await sleep(retryDelays[attempt]);
+      }
+    }
+    return [] as Doctor[];
   };
 
   const fetchDoctors = async () => {
@@ -579,17 +611,17 @@ const DoctorListBooking = () => {
       let primaryDoctors: Doctor[] = [];
       let primaryFetchSucceeded = false;
       const availableDoctorParams: Record<string, any> = {};
-      availableDoctorParams.strictQc = true;
+      availableDoctorParams["strictQc"] = "true";
 
       if (consultationTypeFilter === "online") {
         availableDoctorParams.consultationType = "online";
         availableDoctorParams.sort = "online_first";
       } else if (consultationTypeFilter === "inPerson") {
-        availableDoctorParams.consultationType = "inPerson";
         availableDoctorParams.sort = userCoordinates ? "nearest" : "experience";
       }
 
-      availableDoctorParams.limit = 100;
+      // Use larger page sizes for broad/in-clinic discovery; keep online tighter.
+      availableDoctorParams.limit = consultationTypeFilter === "online" ? 40 : 100;
 
       if (userCoordinates) {
         availableDoctorParams.userLat = userCoordinates.lat;
@@ -597,15 +629,30 @@ const DoctorListBooking = () => {
       }
 
       try {
-        primaryDoctors = await fetchAllDoctorsFromApi("/doctors/available", availableDoctorParams);
+        primaryDoctors = await queryClient.fetchQuery({
+          queryKey: ["doctors", "available", availableDoctorParams],
+          queryFn: () => fetchDoctorsWithRetry("/doctors/available", availableDoctorParams),
+          staleTime: 60_000,
+        });
         primaryFetchSucceeded = true;
       } catch (error) {
         console.warn("Primary doctor list unavailable, falling back to /doctors:", error);
+        if (isRateLimitedError(error)) {
+          const now = Date.now();
+          if (now - lastRateLimitToastAt.current > 10000) {
+            lastRateLimitToastAt.current = now;
+            toast({
+              title: "Server is busy",
+              description: "Too many requests right now. Retrying with reduced load...",
+              variant: "default",
+            });
+          }
+        }
       }
 
       // If primary strict-QC fetch succeeded, honor it even when the result is empty.
       if (primaryFetchSucceeded) {
-        setDoctors(primaryDoctors);
+        setDoctors(primaryDoctors.slice(0, PUBLISHABLE_DOCTOR_LIMIT));
         return;
       }
 
@@ -660,14 +707,12 @@ const DoctorListBooking = () => {
     }
 
     if (consultationTypeFilter === "online") {
-      filtered = filtered.filter(
-        (doctor) => doctor.supportsOnline !== false && doctor.availability?.status === "Available"
-      );
+      filtered = filtered.filter((doctor) => isDoctorOnlineNow(doctor));
     } else if (consultationTypeFilter === "inPerson") {
       filtered = filtered.filter((doctor) => doctor.supportsInPerson);
     }
 
-    if (selectedLocation) {
+    if (selectedLocation && consultationTypeFilter !== "online") {
       const loc = selectedLocation.toLowerCase();
       filtered = filtered.filter(doctor => {
         const city = doctor.clinic?.city?.toLowerCase?.() || '';
@@ -690,10 +735,7 @@ const DoctorListBooking = () => {
       Number.isFinite(doctor.distanceKm as number) ? (doctor.distanceKm as number) : Number.POSITIVE_INFINITY;
 
     const onlineRank = (doctor: Doctor) => {
-      const status = doctor.availability?.status || "Away";
-      const explicitlyAvailable = status === "Available";
-      const supportsOnlineNow = doctor.supportsOnline !== false;
-      return explicitlyAvailable || supportsOnlineNow ? 1 : 0;
+      return isDoctorOnlineNow(doctor) ? 1 : 0;
     };
 
     const inPersonRank = (doctor: Doctor) => {
@@ -839,8 +881,10 @@ const DoctorListBooking = () => {
       const checkDate = addDays(today, i);
       try {
         const dateParam = format(checkDate, 'yyyy-MM-dd');
-        const { data } = await api.get(`/doctors/${doctorId}/user-slots`, {
-          params: { date: dateParam }
+        const data = await queryClient.fetchQuery({
+          queryKey: ["doctorSlots", doctorId, dateParam],
+          queryFn: () => doctorBookingService.getDoctorSlots(doctorId, { date: dateParam }),
+          staleTime: 60_000,
         });
         
         // Check if this date has any available slots
@@ -873,8 +917,10 @@ const DoctorListBooking = () => {
       
       try {
         const dateParam = format(date, 'yyyy-MM-dd');
-        const { data } = await api.get(`/doctors/${doctorId}/user-slots`, {
-          params: { date: dateParam }
+        const data = await queryClient.fetchQuery({
+          queryKey: ["doctorSlots", doctorId, dateParam],
+          queryFn: () => doctorBookingService.getDoctorSlots(doctorId, { date: dateParam }),
+          staleTime: 60_000,
         });
         
         if (data && !data.isOff) {
@@ -903,8 +949,10 @@ const DoctorListBooking = () => {
     setLoadingSlots(true);
     try {
       const dateParam = date ? format(date, 'yyyy-MM-dd') : undefined;
-      const { data } = await api.get(`/doctors/${doctorId}/user-slots`, {
-        params: dateParam ? { date: dateParam } : {}
+      const data = await queryClient.fetchQuery({
+        queryKey: ["doctorSlots", doctorId, dateParam || "default"],
+        queryFn: () => doctorBookingService.getDoctorSlots(doctorId, dateParam ? { date: dateParam } : undefined),
+        staleTime: 60_000,
       });
       
       setDoctorSlots(data);
@@ -1030,69 +1078,10 @@ const DoctorListBooking = () => {
                   )}
               </div>
 
-              <div className="flex items-center gap-2 mb-3 text-sm text-gray-500 dark:text-gray-400">
+              <div className="flex items-center gap-2 mb-4 text-sm text-gray-500 dark:text-gray-400">
                 <Languages className="h-4 w-4" />
                 <span>Speaks: {doctor.languages.join(", ")}</span>
               </div>
-
-              {doctor.phoneNumber && (
-                <div className="flex items-center gap-2 mb-3 text-sm">
-                  <Phone className="h-4 w-4 text-green-500" />
-                  <a
-                    href={`tel:${doctor.phoneNumber}`}
-                    className="text-green-700 dark:text-green-400 font-medium hover:underline"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {doctor.phoneNumber}
-                  </a>
-                  <span className="text-slate-400 text-xs">(Hospital reception)</span>
-                </div>
-              )}
-
-              {/* Social links */}
-              {(doctor.socialLinks?.facebook || doctor.socialLinks?.instagram || doctor.socialLinks?.youtube) && (
-                <div className="flex items-center gap-2 mb-3">
-                  {doctor.socialLinks.facebook && (
-                    <a
-                      href={doctor.socialLinks.facebook}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      title="Facebook Page"
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#1877F2]/10 text-[#1877F2] text-xs font-medium hover:bg-[#1877F2]/20 transition-colors"
-                    >
-                      <Facebook className="h-3.5 w-3.5" />
-                      Follow
-                    </a>
-                  )}
-                  {doctor.socialLinks.instagram && (
-                    <a
-                      href={doctor.socialLinks.instagram}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      title="Instagram Page"
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#E1306C]/10 text-[#E1306C] text-xs font-medium hover:bg-[#E1306C]/20 transition-colors"
-                    >
-                      <Instagram className="h-3.5 w-3.5" />
-                      Follow
-                    </a>
-                  )}
-                  {doctor.socialLinks.youtube && (
-                    <a
-                      href={buildYoutubeSubscribeUrl(doctor.socialLinks.youtube)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      title="YouTube Channel — click to subscribe"
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#FF0000]/10 text-[#FF0000] text-xs font-medium hover:bg-[#FF0000]/20 transition-colors"
-                    >
-                      <Youtube className="h-3.5 w-3.5" />
-                      Subscribe
-                    </a>
-                  )}
-                </div>
-              )}
 
               <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-700">
                 <div className="flex items-center gap-6">
@@ -1234,11 +1223,11 @@ const DoctorListBooking = () => {
       };
 
       // First, create the appointment
-      const response = await api.post("/mobile/appointments", bookingData);
-      const appointmentId = response.data?.appointment?.id;
+      const response = await doctorBookingService.createMobileAppointment(bookingData);
+      const appointmentId = response.appointment?.id || response.data?.appointment?.id;
 
       // Invalidate appointments query to refresh the list
-      queryClient.invalidateQueries({ queryKey: ["enhancedAppointments"] });
+      queryClient.invalidateQueries({ queryKey: appointmentQueryKeys.enhanced });
 
       // If paying with Health Coins, process HC payment
       if (paymentMethod === "hc" && appointmentId && hcCalculation?.canPay) {
@@ -1248,10 +1237,7 @@ const DoctorListBooking = () => {
           toast({
             title: "Success! Paid with Health Coins",
             description: `Appointment booked and paid ${hcPaymentResult.payment.hcPaid} HC. New balance: ${hcPaymentResult.payment.newBalance} HC`,
-            action: {
-              label: "View my bookings",
-              onClick: () => navigate("/my-bookings"),
-            },
+            action: <ToastAction altText="View my bookings" onClick={() => navigate("/my-bookings")}>View my bookings</ToastAction>,
           });
 
           setShowBookingModal(false);
@@ -1413,7 +1399,7 @@ const DoctorListBooking = () => {
                 <Shield className="h-5 w-5 text-emerald-600" />
                 <div>
                   <p className="text-xs text-muted-foreground">Verified profiles</p>
-                  <p className="text-lg font-semibold">{filteredDoctors.filter((doctor) => doctor.verified).length}</p>
+                  <p className="text-lg font-semibold">{doctors.filter((doctor) => doctor.verified).length}</p>
                 </div>
               </CardContent>
             </Card>
@@ -1422,7 +1408,7 @@ const DoctorListBooking = () => {
                 <Video className="h-5 w-5 text-blue-600" />
                 <div>
                   <p className="text-xs text-muted-foreground">Online now</p>
-                  <p className="text-lg font-semibold">{filteredDoctors.filter((doctor) => doctor.availability?.status === "Available").length}</p>
+                  <p className="text-lg font-semibold">{doctors.filter((doctor) => isDoctorOnlineNow(doctor)).length}</p>
                 </div>
               </CardContent>
             </Card>
@@ -1431,7 +1417,7 @@ const DoctorListBooking = () => {
                 <Building2 className="h-5 w-5 text-green-600" />
                 <div>
                   <p className="text-xs text-muted-foreground">Clinic visit available</p>
-                  <p className="text-lg font-semibold">{filteredDoctors.filter((doctor) => doctor.supportsInPerson).length}</p>
+                  <p className="text-lg font-semibold">{doctors.filter((doctor) => doctor.supportsInPerson).length}</p>
                 </div>
               </CardContent>
             </Card>
@@ -2644,54 +2630,5 @@ const DoctorListBooking = () => {
     </MainLayout>
   );
 };
-
-// Mock data for development
-const mockDoctors: Doctor[] = [
-  {
-    _id: "1",
-    firstName: "Sarah",
-    lastName: "Johnson",
-    profileImage: "",
-    specialization: "Cardiology",
-    experience: 12,
-    education: ["MBBS", "MD Cardiology"],
-    languages: ["English", "Hindi"],
-    consultationFee: { online: 800, inPerson: 1200 },
-    availability: { status: "Available", nextAvailableSlot: "Today 2:00 PM" },
-    clinic: { name: "Heart Care Center", address: "123 Medical Street", city: "Mumbai", state: "Maharashtra" },
-    services: ["Heart Disease", "Hypertension", "ECG"],
-    verified: true
-  },
-  {
-    _id: "2",
-    firstName: "Rajesh",
-    lastName: "Kumar",
-    profileImage: "",
-    specialization: "General Medicine",
-    experience: 8,
-    education: ["MBBS", "MD General Medicine"],
-    languages: ["English", "Hindi", "Bengali"],
-    consultationFee: { online: 500, inPerson: 800 },
-    availability: { status: "Available", nextAvailableSlot: "Tomorrow 10:00 AM" },
-    clinic: { name: "City General Hospital", address: "456 Health Avenue", city: "Delhi", state: "Delhi" },
-    services: ["General Check-up", "Diabetes", "Fever"],
-    verified: true
-  },
-  {
-    _id: "3",
-    firstName: "Priya",
-    lastName: "Sharma",
-    profileImage: "",
-    specialization: "Dermatology",
-    experience: 6,
-    education: ["MBBS", "MD Dermatology"],
-    languages: ["English", "Hindi"],
-    consultationFee: { online: 700, inPerson: 1000 },
-    availability: { status: "Available", nextAvailableSlot: "Today 4:30 PM" },
-    clinic: { name: "Skin Care Clinic", address: "789 Beauty Lane", city: "Bangalore", state: "Karnataka" },
-    services: ["Acne Treatment", "Skin Allergies", "Hair Loss"],
-    verified: true
-  }
-].map((doctor) => ({ ...doctor, isLive: doctor.isLive ?? false }));
 
 export default DoctorListBooking;

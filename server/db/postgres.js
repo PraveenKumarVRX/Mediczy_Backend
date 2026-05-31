@@ -34,6 +34,9 @@ const PGVECTOR_IVFFLAT_LISTS = parseInt(
   process.env.PGVECTOR_IVFFLAT_LISTS || '100',
   10
 );
+const PGVECTOR_INDEX_TYPE = (process.env.PGVECTOR_INDEX_TYPE || 'hnsw').toLowerCase();
+const PGVECTOR_HNSW_M = parseInt(process.env.PGVECTOR_HNSW_M || '16', 10);
+const PGVECTOR_HNSW_EF_CONSTRUCTION = parseInt(process.env.PGVECTOR_HNSW_EF_CONSTRUCTION || '64', 10);
 
 // Citus Configuration (Distributed PostgreSQL)
 const CITUS_ENABLED = process.env.CITUS_ENABLED === 'true';
@@ -61,11 +64,18 @@ const CITUS_TABLES = [
 ];
 
 function buildConfig() {
-  const connectionString = process.env.POSTGRES_URI || process.env.PG_URI;
+  const hasPrimaryDiscreteConfig = Boolean(
+    process.env.POSTGRES_PRIMARY_HOST ||
+    process.env.POSTGRES_PRIMARY_PORT ||
+    process.env.POSTGRES_PRIMARY_DATABASE ||
+    process.env.POSTGRES_PRIMARY_USER ||
+    process.env.POSTGRES_PRIMARY_PASSWORD
+  );
+  const connectionString = process.env.POSTGRES_PRIMARY_URI || (!hasPrimaryDiscreteConfig ? (process.env.POSTGRES_URI || process.env.PG_URI) : undefined);
   if (connectionString) {
     return {
       connectionString,
-      max: parseInt(process.env.POSTGRES_POOL_MAX || process.env.PG_POOL_MAX || '10', 10),
+      max: parseInt(process.env.POSTGRES_POOL_MAX || process.env.PG_POOL_MAX || '50', 10),
       idleTimeoutMillis: 30000,
       application_name: process.env.POSTGRES_APP_NAME || 'mediczy_helper',
       ssl: process.env.POSTGRES_SSL === 'true' || process.env.PG_SSL === 'true'
@@ -75,14 +85,14 @@ function buildConfig() {
   }
 
   return {
-    host: process.env.POSTGRES_HOST || process.env.PG_HOST || '127.0.0.1',
-    port: parseInt(process.env.POSTGRES_PORT || process.env.PG_PORT || '5432', 10),
-    database: process.env.POSTGRES_DATABASE || process.env.PG_DATABASE || 'mediczy_ai',
-    user: process.env.POSTGRES_USER || process.env.PG_USER || 'mediczy_ai',
-    password: process.env.POSTGRES_PASSWORD || process.env.PG_PASSWORD || 'change_me',
+    host: process.env.POSTGRES_PRIMARY_HOST || process.env.POSTGRES_HOST || process.env.PG_HOST || '127.0.0.1',
+    port: parseInt(process.env.POSTGRES_PRIMARY_PORT || process.env.POSTGRES_PORT || process.env.PG_PORT || '5432', 10),
+    database: process.env.POSTGRES_PRIMARY_DATABASE || process.env.POSTGRES_DATABASE || process.env.PG_DATABASE || 'mediczy_ai',
+    user: process.env.POSTGRES_PRIMARY_USER || process.env.POSTGRES_USER || process.env.PG_USER || 'mediczy_helper',
+    password: process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.PG_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || 'change_me',
     // Connection pool limits (reduced to prevent connection exhaustion)
-    max: parseInt(process.env.POSTGRES_POOL_MAX || process.env.PG_POOL_MAX || '5', 10),
-    min: parseInt(process.env.POSTGRES_POOL_MIN || process.env.PG_POOL_MIN || '1', 10),
+    max: parseInt(process.env.POSTGRES_POOL_MAX || process.env.PG_POOL_MAX || '50', 10),
+    min: parseInt(process.env.POSTGRES_POOL_MIN || process.env.PG_POOL_MIN || '5', 10),
     // Timeout settings (aggressive to prevent hanging)
     idleTimeoutMillis: 10000,  // Release idle connections after 10 seconds
     statement_timeout: 30000,  // Kill queries after 30 seconds
@@ -260,6 +270,22 @@ async function ensureVectorIndex(client) {
 
   try {
     const opClass = getVectorOperatorClass();
+    if (PGVECTOR_INDEX_TYPE === 'hnsw') {
+      try {
+        await client.query(
+          `CREATE INDEX IF NOT EXISTS medical_embeddings_vector_idx
+           ON medical_embeddings
+           USING hnsw (vector ${opClass})
+           WITH (m = ${PGVECTOR_HNSW_M}, ef_construction = ${PGVECTOR_HNSW_EF_CONSTRUCTION})`
+        );
+        vectorIndexCreated = true;
+        console.log('✅ PostgreSQL: PGVector HNSW index ensured');
+        return;
+      } catch (hnswErr) {
+        console.warn('⚠️  PGVector HNSW unavailable, falling back to IVFFlat:', hnswErr.message);
+      }
+    }
+
     await client.query(
       `CREATE INDEX IF NOT EXISTS medical_embeddings_vector_idx
        ON medical_embeddings
@@ -370,6 +396,9 @@ export function getPostgresPool() {
   }
   return pool;
 }
+
+// Backward compatibility for modules that still import getPool.
+export const getPool = getPostgresPool;
 
 export async function closePostgres() {
   if (pool) {

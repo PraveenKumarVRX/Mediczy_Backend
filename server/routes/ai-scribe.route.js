@@ -101,6 +101,56 @@ router.post('/generate-prescription', authDoctor, async (req, res) => {
       });
     }
 
+    const doctorId = req.doctor.id || req.doctor.dataValues?.id || req.doctor._id;
+
+    // Ownership guard: when appointmentId is provided, ensure the appointment belongs to this doctor.
+    let authorizedAppointment = null;
+    if (appointmentId) {
+      authorizedAppointment = await Appointment.findByPk(appointmentId);
+      if (!authorizedAppointment) {
+        return sendErrorResponse(404, {
+          success: false,
+          message: 'Appointment not found',
+          code: 'APPOINTMENT_NOT_FOUND'
+        });
+      }
+
+      if (Number(authorizedAppointment.doctorId) !== Number(doctorId)) {
+        return sendErrorResponse(403, {
+          success: false,
+          message: 'You are not authorized to generate a prescription for this appointment',
+          code: 'APPOINTMENT_ACCESS_DENIED'
+        });
+      }
+
+      if (patientId && Number(authorizedAppointment.userId) !== Number(patientId)) {
+        return sendErrorResponse(400, {
+          success: false,
+          message: 'patientId does not match appointment patient',
+          code: 'PATIENT_APPOINTMENT_MISMATCH'
+        });
+      }
+    }
+
+    // Ownership guard: when patientId is provided without appointmentId,
+    // ensure the doctor has at least one appointment relationship with that patient.
+    if (patientId && !appointmentId) {
+      const relationshipCount = await Appointment.count({
+        where: {
+          doctorId,
+          userId: Number(patientId)
+        }
+      });
+
+      if (!relationshipCount) {
+        return sendErrorResponse(403, {
+          success: false,
+          message: 'No appointment relationship with this patient',
+          code: 'PATIENT_ACCESS_DENIED'
+        });
+      }
+    }
+
     // ── Indic Language: translate consultation to English for LLM ───────────
     // The AI prompt is always in English for best extraction quality.
     // If the doctor dictated in Hindi, Tamil, Telugu, etc., we translate first.
@@ -294,7 +344,6 @@ Generate the prescription JSON:`;
       try {
         // Get doctor info
         const doctor = req.doctor;
-        const doctorId = doctor.id || doctor.dataValues?.id || doctor._id;
 
         // Get patient info if patientId is provided
         let patientData = {
@@ -324,10 +373,7 @@ Generate the prescription JSON:`;
         }
 
         // Get appointment if appointmentId is provided
-        let appointment = null;
-        if (appointmentId) {
-          appointment = await Appointment.findByPk(appointmentId);
-        }
+        const appointment = authorizedAppointment;
 
         // Generate prescription ID
         const prescriptionNumber = `RX${Date.now()}${Math.floor(Math.random() * 1000)}`;

@@ -14,10 +14,18 @@ import { connectPostgres } from './postgres.js';
 dotenv.config();
 
 const VECTOR_STORE_TYPE = (process.env.VECTOR_STORE_TYPE || 'pgvector').toLowerCase();
+
+// Dimension is fixed at 768 — matches @xenova/transformers LaBSE / sentence-transformers.
+// If you switch to OpenAI ada-002 set PGVECTOR_DIMENSION=1536 and re-embed all vectors.
 const VECTOR_DIMENSION = parseInt(
   process.env.PGVECTOR_DIMENSION || process.env.VECTOR_DIMENSION || '768',
   10
 );
+
+if (![768, 1536, 384].includes(VECTOR_DIMENSION)) {
+  console.warn(`⚠️  VectorDB: Unusual PGVECTOR_DIMENSION=${VECTOR_DIMENSION}. Supported: 384 (MiniLM), 768 (LaBSE), 1536 (OpenAI ada-002)`);
+}
+
 const VECTOR_DISTANCE = (process.env.PGVECTOR_DISTANCE || process.env.VECTOR_DISTANCE || 'cosine').toLowerCase();
 const DEFAULT_VECTOR_NAMESPACE = process.env.VECTOR_NAMESPACE || 'default';
 

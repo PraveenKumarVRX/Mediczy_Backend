@@ -22,7 +22,7 @@ import { randomBytes } from 'crypto';
 import nodemailer from 'nodemailer';
 import twilio from 'twilio';
 import OTP from '../../models/otp.model.intelligent.js';
-import { authLimiter, otpLimiter } from '../../middleware/rateLimiter.middleware.js';
+import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
 import emailService from '../../services/emailService.js';
 import { EmailLog } from '../../models/email.model.js';
 
@@ -70,6 +70,22 @@ export const registerLimiter = rateLimit({
   handler: (_, res) =>
     res.status(429).json({ success: false, message: 'Too many registration attempts. Please try again in an hour.' }),
   skipSuccessfulRequests: true,
+});
+
+// Per-email/phone OTP limiter for registration — 5 per 15 min per identifier
+const otpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  keyGenerator: (req) => {
+    const email = req.body?.email?.toLowerCase().trim();
+    const phone = req.body?.phone?.replace(/\s+/g, '');
+    const rawIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || '0.0.0.0';
+    const ip = ipKeyGenerator(rawIp);
+    return `otp:reg:${email || phone || ip}`;
+  },
+  handler: (_, res) =>
+    res.status(429).json({ success: false, message: 'Too many OTP requests. Please wait 15 minutes before trying again.' }),
+  skipSuccessfulRequests: false,
 });
 
 // ── Magic bytes validator ─────────────────────────────────────────────────────

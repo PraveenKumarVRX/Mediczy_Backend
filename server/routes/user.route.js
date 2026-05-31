@@ -71,12 +71,8 @@ const isLoopbackRequest = (req) => {
     forwarded.includes('::1');
 };
 
-const shouldIncludeOtpInResponse = (req) => {
-  return process.env.NODE_ENV === 'development' &&
-    process.env.OTP_DEBUG_RESPONSE === 'true' &&
-    process.env.ALLOW_LOCAL_OTP_ECHO === 'true' &&
-    isLoopbackRequest(req);
-};
+// OTPs must never be returned in API responses — retrieve from server logs for testing.
+const shouldIncludeOtpInResponse = (_req) => false;
 
 const buildInactiveAccountContext = async (userId) => {
   try {
@@ -2511,7 +2507,7 @@ router.post('/my-insurances', authUser, async (req, res) => {
     }
 
     const newPolicy = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       insurerName,
       policyNumber,
       policyType: policyType || 'Health',
