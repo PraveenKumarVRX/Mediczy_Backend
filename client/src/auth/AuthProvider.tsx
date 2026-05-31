@@ -187,8 +187,8 @@ export const AuthProvider = ({ children }) => {
     if (isAdminRoute) {
       const isAdminLoginRoute = location.pathname === '/admin/login';
 
-      if (!isAdminLoginRoute && !adminToken && !teamToken) {
-        console.log('🚫 Admin route without admin/team token, redirecting to admin login');
+      if (!isAdminLoginRoute && !adminToken) {
+        console.log('🚫 Admin route without admin token, redirecting to admin login');
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate('/admin/login', { replace: true });
         return;

@@ -208,7 +208,7 @@ export const authUser = async (req, res, next) => {
         UserPostgres,
         userModel,
         decoded.id,
-        { attributes: ["id", "email", "role", "isAdmin", "isTeam", "status", "firstName", "lastName", "tenantId", "tenant_id", "metadata", "organization_id"] }
+        { attributes: ["id", "email", "role", "isAdmin", "isTeam", "status", "firstName", "lastName", "tenant_id", "metadata", "organization_id"] }
       );
 
       if (!adminUser) {

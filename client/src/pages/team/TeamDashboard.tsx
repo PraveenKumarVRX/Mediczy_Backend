@@ -103,6 +103,16 @@ const QUICK_ACTIONS = [
     permissionGuard: /corporate/i,
   },
   {
+    title: "User Plan Customization",
+    description: "Customize and assign user benefits by hierarchy",
+    icon: Crown,
+    color: "bg-gradient-to-br from-teal-500/10 to-cyan-500/10 border-teal-500/20",
+    iconColor: "text-teal-600",
+    link: "/team/user-plan-customization",
+    pattern: "radial-gradient(circle at 30% 30%, rgba(13, 148, 136, 0.05) 0%, transparent 50%)",
+    permissionGuard: /corporate|plan|membership/i,
+  },
+  {
     title: "Team Directory",
     description: "View team members",
     icon: Users,
@@ -201,6 +211,16 @@ const QUICK_ACTIONS = [
     link: "/team/health-plans",
     pattern: "radial-gradient(circle at 50% 50%, rgba(245, 158, 11, 0.05) 0%, transparent 50%)",
     permissionGuard: /health plan|plan/i,
+  },
+  {
+    title: "Plan Governance",
+    description: "Review approvals and audit trail",
+    icon: Shield,
+    color: "bg-gradient-to-br from-slate-500/10 to-cyan-500/10 border-slate-500/20",
+    iconColor: "text-slate-600",
+    link: "/team/plan-governance",
+    pattern: "radial-gradient(circle at 70% 30%, rgba(71, 85, 105, 0.05) 0%, transparent 50%)",
+    permissionGuard: /audit|compliance|corporate/i,
   },
   {
     title: "Doctor Management",

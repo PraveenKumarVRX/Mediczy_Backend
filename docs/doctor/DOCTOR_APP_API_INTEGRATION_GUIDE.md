@@ -3829,40 +3829,33 @@ The doctor app (`MSH_D_App`) uses Firebase project **`doctorapp-6c768`** with se
 
 ## Appendix C: Test Credentials (Development / Staging)
 
-These credentials are verified against the production API and can be used for integration testing.
-
-> ⚠️ **Do not commit these credentials to public repositories.**
+> 🔒 **Credentials have been removed from this document for security.** Retrieve staging/test credentials from the team's secrets manager (Vault / AWS Secrets Manager). Do not store credentials in documentation files.
 
 ### Patient Account
 
 | Field | Value |
 |-------|-------|
-| Email | `user@mediczy.com` |
-| Password | `User123` |
+| Email | `<retrieve from secrets manager>` |
+| Password | `<retrieve from secrets manager>` |
 | Login endpoint | `POST /api/auth/login` |
-| Patient ID | `19` |
-| Display name | Test User |
+| Patient ID | `<see staging DB>` |
 
 ### Doctor Account
 
 | Field | Value |
 |-------|-------|
-| Email | `doctor@mediczy.com` |
-| Password | `Doctor123` |
+| Email | `<retrieve from secrets manager>` |
+| Password | `<retrieve from secrets manager>` |
 | Login endpoint | `POST /api/doctors/login` |
-| Doctor ID | `70` |
-| Display name | Nandita Agarwal (General Physician) |
-| Hospital | Mediczy Test Hospital |
+| Doctor ID | `<see staging DB>` |
 
 ### Security / Staff Account
 
 | Field | Value |
 |-------|-------|
-| Email | `security@mediczy.com` |
-| Password | `Security@123` |
+| Email | `<retrieve from secrets manager>` |
+| Password | `<retrieve from secrets manager>` |
 | Login endpoint | `POST /api/hospital/staff/security/login` |
-| Staff ID | `4883` |
-| Login URL | `https://app.mediqzy.com/security/login` |
 
 ### E2E Appointment Notification Test Flow
 

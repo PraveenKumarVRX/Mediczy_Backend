@@ -20,6 +20,7 @@ import llmProvider from '../services/ai-brain/llm-provider.js';
 const router = express.Router();
 const ambientSessions = new Map();
 const requireScribeAccess = requireRole(['doctor', 'assistant', 'nurse', 'team', 'admin', 'hospital']);
+const DOCTOR_ONLY_DOCUMENT_TYPES = new Set(['prescription']);
 const MAX_AMBIENT_SESSIONS = 50;
 const AMBIENT_SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 const AMBIENT_CHUNK_DIR = path.join(os.tmpdir(), 'mediczy-ambient-chunks');
@@ -40,6 +41,28 @@ function _cleanupSessionFiles(session) {
     for (const chunkPath of (session.chunkPaths || [])) {
         try { fs.unlinkSync(chunkPath); } catch {}
     }
+}
+
+function getNormalizedUserRole(req) {
+    return String(req.userRole || req.user?.role || '').trim().toLowerCase();
+}
+
+function enforceDoctorOnlyDocumentAccess(req, res, documentType) {
+    const normalizedType = String(documentType || '').trim().toLowerCase();
+    if (!DOCTOR_ONLY_DOCUMENT_TYPES.has(normalizedType)) {
+        return true;
+    }
+
+    if (getNormalizedUserRole(req) !== 'doctor') {
+        res.status(403).json({
+            success: false,
+            code: 'DOCTOR_ONLY_DOCUMENT_TYPE',
+            message: `Only doctor accounts can generate ${normalizedType} documents.`
+        });
+        return false;
+    }
+
+    return true;
 }
 
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
@@ -644,6 +667,7 @@ async function handleTextDocumentGeneration(req, res, documentType) {
  * @access  Protected (Doctor/Staff)
  */
 router.post('/prescription', authUser, requireScribeAccess, (req, res) => {
+    if (!enforceDoctorOnlyDocumentAccess(req, res, 'prescription')) return;
     return handleTextDocumentGeneration(req, res, 'prescription');
 });
 
@@ -684,12 +708,15 @@ router.post('/sessions', authUser, requireScribeAccess, async (req, res) => {
     if (ambientSessions.size >= MAX_AMBIENT_SESSIONS) {
         return res.status(429).json({ success: false, message: 'Too many active ambient sessions. Please finalize or wait.' });
     }
+    const requestedDocumentType = mapDocumentTypeForBackend(req.body.document_type || 'opd-notes');
+    if (!enforceDoctorOnlyDocumentAccess(req, res, requestedDocumentType)) return;
+
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     ambientSessions.set(id, {
         id,
         ownerId: req.user?.id,
         language: normalizeLanguage(req.body.language || 'auto'),
-        documentType: mapDocumentTypeForBackend(req.body.document_type || 'opd-notes'),
+        documentType: requestedDocumentType,
         patientContext: req.body.patient_context || {},
         chunkPaths: [],   // disk paths instead of in-memory buffers
         chunkCount: 0,
@@ -785,6 +812,7 @@ router.post('/full-pipeline', authUser, requireScribeAccess, upload.single('audi
 
         const language = normalizeLanguage(req.body.language || 'auto');
         const documentType = mapDocumentTypeForBackend(req.body.document_type || 'prescription');
+        if (!enforceDoctorOnlyDocumentAccess(req, res, documentType)) return;
         let patientContext = {};
         try {
             patientContext = req.body.patient_context ? JSON.parse(req.body.patient_context) : {};
@@ -866,6 +894,18 @@ router.post('/batch', authUser, requireScribeAccess, async (req, res) => {
         }
         if (items.length > 10) {
             return res.status(400).json({ error: 'Maximum 10 items per batch' });
+        }
+
+        const doctorOnlyRequested = items.some((item) => {
+            const docType = mapDocumentTypeForBackend(item.document_type || 'prescription');
+            return DOCTOR_ONLY_DOCUMENT_TYPES.has(docType);
+        });
+        if (doctorOnlyRequested && getNormalizedUserRole(req) !== 'doctor') {
+            return res.status(403).json({
+                success: false,
+                code: 'DOCTOR_ONLY_DOCUMENT_TYPE',
+                message: 'Only doctor accounts can generate prescription documents in batch requests.'
+            });
         }
 
         const results = [];

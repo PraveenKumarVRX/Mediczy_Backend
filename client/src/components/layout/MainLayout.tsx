@@ -74,7 +74,7 @@ const MainLayout = ({ children }: MainLayoutProps) => {
   // Check if user is a team member
   const teamToken = localStorage.getItem('teamToken');
   const teamUser = teamToken ? JSON.parse(localStorage.getItem('teamUserData') || '{}') : null;
-  const isTeamUser = !!teamToken && (location.pathname.startsWith('/team') || location.pathname.startsWith('/admin'));
+  const isTeamUser = !!teamToken && location.pathname.startsWith('/team');
 
   // Check if user is an admin
   const adminToken = localStorage.getItem('adminToken');

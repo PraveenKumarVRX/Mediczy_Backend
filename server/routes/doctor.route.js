@@ -2070,6 +2070,33 @@ router.post('/my-patients/cohort-search', authDoctor, async (req, res) => {
 
 // ─── My-Patients: Update, Record Vitals, Add History ─────────────────────────
 
+const hasDoctorPatientRelationship = async (doctorId, patientId) => {
+  const normalizedDoctorId = Number(doctorId);
+  const normalizedPatientId = Number(patientId);
+
+  if (!Number.isInteger(normalizedDoctorId) || !Number.isInteger(normalizedPatientId)) {
+    return false;
+  }
+
+  const appointmentCount = await Appointment.count({
+    where: {
+      doctorId: normalizedDoctorId,
+      userId: normalizedPatientId,
+      status: { [Op.notIn]: ['cancelled'] }
+    }
+  });
+
+  if (appointmentCount > 0) {
+    return true;
+  }
+
+  const patient = await User.findByPk(normalizedPatientId, {
+    attributes: ['id', 'primaryDoctorId']
+  });
+
+  return Number(patient?.primaryDoctorId) === normalizedDoctorId;
+};
+
 /**
  * @route   PUT /api/doctors/my-patients/:patientId
  * @desc    Update patient profile fields (doctor-created patients only)
@@ -2078,19 +2105,27 @@ router.post('/my-patients/cohort-search', authDoctor, async (req, res) => {
 router.put('/my-patients/:patientId', authDoctor, async (req, res) => {
   try {
     const { patientId } = req.params;
-    const { firstName, lastName, phone, email, age, gender, bloodGroup, city, allergies } = req.body;
+
+    // IDOR guard — verify this doctor has an appointment relationship with the patient
+    const hasRelationship = await hasDoctorPatientRelationship(req.doctor.id, patientId);
+    if (!hasRelationship) {
+      return res.status(403).json({ success: false, message: 'No appointment relationship with this patient' });
+    }
+
+    const { firstName, lastName, phone, phoneNumber, email, age, gender, bloodGroup, city, allergies } = req.body;
+    const resolvedPhone = phone || phoneNumber;
 
     const [rowsUpdated] = await User.update(
       {
-        ...(firstName !== undefined && { firstName }),
-        ...(lastName  !== undefined && { lastName }),
-        ...(phone     !== undefined && { phoneNumber: phone }),
-        ...(email     !== undefined && { email }),
-        ...(age       !== undefined && { age }),
-        ...(gender    !== undefined && { gender }),
-        ...(bloodGroup!== undefined && { bloodGroup }),
-        ...(city      !== undefined && { city }),
-        ...(allergies !== undefined && { allergies }),
+        ...(firstName    !== undefined && { firstName }),
+        ...(lastName     !== undefined && { lastName }),
+        ...(resolvedPhone!== undefined && { phoneNumber: resolvedPhone }),
+        ...(email        !== undefined && { email }),
+        ...(age          !== undefined && { age }),
+        ...(gender       !== undefined && { gender }),
+        ...(bloodGroup   !== undefined && { bloodGroup }),
+        ...(city         !== undefined && { city }),
+        ...(allergies    !== undefined && { allergies }),
       },
       { where: { id: patientId } }
     );
@@ -2114,7 +2149,36 @@ router.put('/my-patients/:patientId', authDoctor, async (req, res) => {
 router.post('/my-patients/:patientId/vitals', authDoctor, async (req, res) => {
   try {
     const { patientId } = req.params;
-    const { bp, heartRate, temperature, spo2, weight, height, bloodGlucose, notes } = req.body;
+
+    // IDOR guard
+    const hasRelationship = await hasDoctorPatientRelationship(req.doctor.id, patientId);
+    if (!hasRelationship) {
+      return res.status(403).json({ success: false, message: 'No appointment relationship with this patient' });
+    }
+
+    const { bp, heartRate, temperature, spo2, weight, height, bloodGlucose, notes, temperatureUnit = 'F' } = req.body;
+
+    // Range validation
+    const validationErrors = [];
+    if (bp !== undefined && bp !== null && !/^\d{2,3}\/\d{2,3}$/.test(String(bp))) {
+      validationErrors.push('bp must be in format "120/80"');
+    }
+    if (heartRate !== undefined && heartRate !== null) {
+      const hr = Number(heartRate);
+      if (!Number.isInteger(hr) || hr < 20 || hr > 300) validationErrors.push('heartRate must be an integer between 20 and 300');
+    }
+    if (temperature !== undefined && temperature !== null) {
+      const t = Number(temperature);
+      const tF = temperatureUnit === 'C' ? t * 9/5 + 32 : t;
+      if (isNaN(tF) || tF < 95 || tF > 108) validationErrors.push('temperature is out of valid range (95–108°F / 35–42.2°C)');
+    }
+    if (spo2 !== undefined && spo2 !== null) {
+      const s = Number(spo2);
+      if (!Number.isInteger(s) || s < 0 || s > 100) validationErrors.push('spo2 must be an integer between 0 and 100');
+    }
+    if (validationErrors.length) {
+      return res.status(422).json({ success: false, message: 'Invalid vitals values', errors: validationErrors });
+    }
 
     const [rows] = await User.sequelize.query(
       `INSERT INTO patient_vitals
@@ -2140,7 +2204,7 @@ router.post('/my-patients/:patientId/vitals', authDoctor, async (req, res) => {
     console.error('Record vitals error:', error);
     // Table may not exist yet — return success so mobile UX doesn't break
     if (error.original?.code === '42P01' || error.message?.includes('does not exist')) {
-      return res.status(200).json({ success: true, message: 'Vitals recorded (pending migration)', vitals: req.body });
+      return res.status(503).json({ success: false, code: 'VITALS_TABLE_NOT_READY', message: 'Vitals service is being set up. Please try again shortly.' });
     }
     res.status(500).json({ success: false, message: 'Failed to record vitals', error: error.message });
   }
@@ -2155,6 +2219,12 @@ router.post('/my-patients/:patientId/history', authDoctor, async (req, res) => {
   try {
     const { patientId } = req.params;
     const { condition, diagnosis, notes, date } = req.body;
+
+    // IDOR guard
+    const hasRelationship = await hasDoctorPatientRelationship(req.doctor.id, patientId);
+    if (!hasRelationship) {
+      return res.status(403).json({ success: false, message: 'No appointment relationship with this patient' });
+    }
 
     const [rows] = await User.sequelize.query(
       `INSERT INTO patient_history
@@ -2171,7 +2241,7 @@ router.post('/my-patients/:patientId/history', authDoctor, async (req, res) => {
   } catch (error) {
     console.error('Add history error:', error);
     if (error.original?.code === '42P01' || error.message?.includes('does not exist')) {
-      return res.status(200).json({ success: true, message: 'History recorded (pending migration)', history: req.body });
+      return res.status(503).json({ success: false, code: 'HISTORY_TABLE_NOT_READY', message: 'History service is being set up. Please try again shortly.' });
     }
     res.status(500).json({ success: false, message: 'Failed to add history', error: error.message });
   }
@@ -4093,6 +4163,12 @@ router.get('/my-patients/:patientId/profile', authDoctor, async (req, res) => {
     const { patientId } = req.params;
     const doctorId = req.doctor.id;
 
+    // IDOR guard
+    const hasRelationship = await hasDoctorPatientRelationship(doctorId, patientId);
+    if (!hasRelationship) {
+      return res.status(403).json({ success: false, message: 'No appointment relationship with this patient' });
+    }
+
     const patient = await User.findOne({
       where: { id: parseInt(patientId) },
       attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'dateOfBirth', 'gender', 'bloodType', 'address_street', 'address_city', 'address_state', 'address_country', 'createdAt']
@@ -4117,6 +4193,15 @@ router.get('/my-patients/:patientId/profile', authDoctor, async (req, res) => {
     console.error('Patient profile error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch patient profile', error: error.message });
   }
+});
+
+// Alias: GET /api/doctors/patients/:patientId → same handler as /my-patients/:patientId/profile
+// Documented in DOCTOR_APP_API_REFERENCE.md §8.4 but the canonical URL uses /my-patients/
+router.get('/patients/:patientId', authDoctor, (req, res, next) => {
+  req.params.patientId = req.params.patientId;
+  // Re-dispatch to the my-patients profile handler by forwarding the request
+  req.url = `/my-patients/${req.params.patientId}/profile`;
+  router.handle(req, res, next);
 });
 
 /**
@@ -4168,6 +4253,12 @@ router.get('/my-patients/:patientId/vitals-history', authDoctor, async (req, res
   try {
     const { patientId } = req.params;
     const { limit = 20 } = req.query;
+
+    // IDOR guard
+    const hasRelationship = await hasDoctorPatientRelationship(req.doctor.id, patientId);
+    if (!hasRelationship) {
+      return res.status(403).json({ success: false, message: 'No appointment relationship with this patient' });
+    }
 
     // Try to get from patient_vitals table
     let vitals = [];

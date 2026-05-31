@@ -15,7 +15,7 @@ export interface TeamHeaders {
  * Get authorization headers for team requests
  */
 export const getTeamHeaders = (): TeamHeaders => {
-  const token = localStorage.getItem('teamToken') || localStorage.getItem('token');
+  const token = localStorage.getItem('teamToken');
   return {
     Authorization: `Bearer ${token}`
   };

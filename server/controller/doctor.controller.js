@@ -726,7 +726,7 @@ export async function signInDoctor(req, res) {
       // Generate access token with JTI for revocation support
       const { issuePortalTokenPair } = await import('../services/token-revocation.service.js');
       const deviceFp = req.headers['x-device-fingerprint'] || null;
-      const { accessToken: token } = await issuePortalTokenPair(
+      const { accessToken: token, refreshToken } = await issuePortalTokenPair(
         { id: doctor.id, email: doctor.email, role: 'doctor' },
         { portal: 'doctor', deviceFp }
       );
@@ -742,6 +742,8 @@ export async function signInDoctor(req, res) {
       return res.status(200).json({
         message: "Login successful",
         token,
+        refreshToken,    // 30-day refresh token — store securely (Keychain/Keystore)
+        expiresIn: 900,  // access token TTL in seconds (15 minutes)
         doctor: {
           id: doctor.id,
           firstName: doctor.firstName,

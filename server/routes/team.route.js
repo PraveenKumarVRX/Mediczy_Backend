@@ -337,8 +337,16 @@ router.post('/login', authLimiter, [
       role: user.role || 'team',
       designation: user.designation || 'Healthcare Staff',
       department: user.department || 'Healthcare Operations',
+      isAdmin: user.isAdmin || false,
+      isActive: user.status === 'active',
+      accessLevel: metadata.accessLevel || 'view',
+      canView: metadata.canView !== false,
+      canEdit: metadata.canEdit === true || metadata.accessLevel === 'edit' || metadata.accessLevel === 'full',
+      canDelete: metadata.canDelete === true || metadata.accessLevel === 'full',
       permissions: Array.isArray(storedPermissions) ? storedPermissions : TEAM_PUBLIC_PROFILE_PERMISSIONS,
-      modules: storedModules || null
+      modules: storedModules || null,
+      editableModules: Array.isArray(metadata.editableModules) ? metadata.editableModules : [],
+      deletableModules: Array.isArray(metadata.deletableModules) ? metadata.deletableModules : []
     };
 
     return res.status(200).json({
@@ -2692,7 +2700,7 @@ router.patch('/registered-doctors/:id/reject', authTeam, requirePermission('Doct
 });
 
 // ─── Module snapshot stats (real counts for team module pages) ────────────────
-router.get('/module-stats', authTeam, requirePermission(['Analytics Access', 'Patient Reports']), async (req, res) => {
+router.get('/module-stats', authTeam, requirePermission(['Dashboard Access', 'Analytics Access', 'Patient Reports']), async (req, res) => {
   try {
     const today = new Date().toISOString().split('T')[0];
 

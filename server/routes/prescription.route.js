@@ -887,15 +887,20 @@ router.get('/doctor/issued', authDoctor, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Doctor ID not found' });
     }
 
-    const prescriptions = await Prescription.findAll({
+    const page  = Math.max(0, parseInt(req.query.page  || '0',  10));
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit || '20', 10)));
+
+    const { count: total, rows: prescriptions } = await Prescription.findAndCountAll({
       where: { doctorId },
       order: [['createdAt', 'DESC']],
-      limit: 100
+      limit,
+      offset: page * limit,
     });
 
     res.json({
       success: true,
       count: prescriptions.length,
+      pagination: { total, page, limit, pages: Math.ceil(total / limit) },
       prescriptions: prescriptions.map(p => ({
         id: p.id,
         prescriptionId: p.prescriptionId,

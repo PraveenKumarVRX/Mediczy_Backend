@@ -438,9 +438,9 @@ export const TeamChatAnalyticsPage = createModulePage("chatAnalytics");
 export const TeamSupportTicketsPage = createModulePage("supportTickets");
 export const TeamAppointmentsPage = () => {
   const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ["team-lab-bookings"],
+    queryKey: ["team-appointments"],
     queryFn: async () => {
-      const { data } = await api.get("/labs/team-bookings?limit=50");
+      const { data } = await api.get("/team/appointments?limit=50");
       return data;
     },
   });
@@ -460,8 +460,8 @@ export const TeamAppointmentsPage = () => {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">Team</p>
-            <h1 className="text-3xl font-semibold mt-1">Lab Appointments</h1>
-            <p className="text-muted-foreground mt-1">Lab appointments booked by you via the quick booking flow</p>
+            <h1 className="text-3xl font-semibold mt-1">Appointments</h1>
+            <p className="text-muted-foreground mt-1">Team-created appointments for your assigned organization</p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
@@ -480,8 +480,8 @@ export const TeamAppointmentsPage = () => {
           <Card>
             <CardContent className="py-16 text-center space-y-3">
               <FlaskConical className="h-10 w-10 text-muted-foreground mx-auto" />
-              <p className="text-muted-foreground">No lab appointments booked yet.</p>
-              <p className="text-sm text-muted-foreground">Use the \"Book New Appointment\" button to book lab tests for employees.</p>
+              <p className="text-muted-foreground">No appointments found.</p>
+              <p className="text-sm text-muted-foreground">Use Corporate Booking or appointment tools to create new appointments.</p>
             </CardContent>
           </Card>
         ) : (
@@ -489,7 +489,7 @@ export const TeamAppointmentsPage = () => {
             <CardHeader>
               <CardTitle className="text-base text-muted-foreground flex items-center gap-2">
                 <Calendar className="h-4 w-4" />
-                {data?.total ?? appointments.length} appointment{appointments.length !== 1 ? "s" : ""}
+                {data?.total ?? data?.count ?? appointments.length} appointment{appointments.length !== 1 ? "s" : ""}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
@@ -499,10 +499,10 @@ export const TeamAppointmentsPage = () => {
                     <tr className="border-b border-white/5 text-muted-foreground text-xs uppercase">
                       <th className="px-4 py-3 text-left">#</th>
                       <th className="px-4 py-3 text-left">Patient / Employee</th>
-                      <th className="px-4 py-3 text-left">Lab</th>
+                      <th className="px-4 py-3 text-left">Provider</th>
                       <th className="px-4 py-3 text-left">Date &amp; Time</th>
-                      <th className="px-4 py-3 text-left">Service / Package</th>
-                      <th className="px-4 py-3 text-left">Fee</th>
+                      <th className="px-4 py-3 text-left">Reason</th>
+                      <th className="px-4 py-3 text-left">Created By</th>
                       <th className="px-4 py-3 text-left">Status</th>
                     </tr>
                   </thead>
@@ -514,27 +514,27 @@ export const TeamAppointmentsPage = () => {
                           <div className="flex items-center gap-2">
                             <User className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                             <div>
-                              <p className="font-medium">{apt.patientName}</p>
-                              {apt.patientPhone && <p className="text-xs text-muted-foreground">{apt.patientPhone}</p>}
+                              <p className="font-medium">{apt.patientName || apt.patient_name || "Patient"}</p>
+                              {(apt.patientPhone || apt.patient_phone || apt.patient_email) && <p className="text-xs text-muted-foreground">{apt.patientPhone || apt.patient_phone || apt.patient_email}</p>}
                             </div>
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <p className="font-medium">{apt.labName}</p>
-                          {apt.labAddress?.city && <p className="text-xs text-muted-foreground">{apt.labAddress.city}</p>}
+                          <p className="font-medium">{apt.doctor_name || apt.doctorName || apt.labName || "Provider"}</p>
+                          {apt.doctor_id && <p className="text-xs text-muted-foreground">Doctor ID: {apt.doctor_id}</p>}
                         </td>
                         <td className="px-4 py-3">
-                          <p>{apt.appointmentDate}</p>
-                          <p className="text-xs text-muted-foreground">{apt.appointmentTime}</p>
+                          <p>{apt.appointmentDate || apt.appointment_date}</p>
+                          <p className="text-xs text-muted-foreground">{apt.appointmentTime || apt.appointment_time}</p>
                         </td>
                         <td className="px-4 py-3">
                           <Badge variant="outline" className="text-xs capitalize">
-                            {apt.serviceType || "checkup"}
+                            {apt.reason || apt.serviceType || "appointment"}
                           </Badge>
-                          {apt.testType && <p className="text-xs text-muted-foreground mt-1">{apt.testType}</p>}
+                          {apt.notes && <p className="text-xs text-muted-foreground mt-1">{apt.notes}</p>}
                         </td>
                         <td className="px-4 py-3">
-                          {apt.totalFee ? <span>₹{apt.totalFee}</span> : <span className="text-muted-foreground">—</span>}
+                          {apt.created_by ? <span>{apt.created_by}</span> : <span className="text-muted-foreground">-</span>}
                         </td>
                         <td className="px-4 py-3">
                           <Badge variant="outline" className={`text-xs capitalize ${statusColor(apt.status)}`}>

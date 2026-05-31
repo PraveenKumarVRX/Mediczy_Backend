@@ -42,7 +42,14 @@ const TeamLogin = () => {
     api.get('/team/auth/verify', {
       headers: { Authorization: `Bearer ${token}` }
     })
-      .then(() => navigate('/team/dashboard'))
+      .then((response) => {
+        establishTeamSession(
+          token,
+          localStorage.getItem('teamRefreshToken') || undefined,
+          response.data?.teamUser
+        );
+        navigate('/team/dashboard');
+      })
       .catch(() => {
         // Token invalid/expired — clear and show login form
         localStorage.removeItem('teamToken');
@@ -77,7 +84,17 @@ const TeamLogin = () => {
         lastName: teamUser.lastName,
         role: teamUser.role,
         department: teamUser.department,
-        isActive: teamUser.isActive
+        designation: teamUser.designation,
+        isActive: teamUser.isActive !== false,
+        isAdmin: teamUser.isAdmin === true,
+        accessLevel: teamUser.accessLevel || 'view',
+        canView: teamUser.canView !== false,
+        canEdit: teamUser.canEdit === true,
+        canDelete: teamUser.canDelete === true,
+        permissions: Array.isArray(teamUser.permissions) ? teamUser.permissions : [],
+        modules: teamUser.modules || null,
+        editableModules: Array.isArray(teamUser.editableModules) ? teamUser.editableModules : [],
+        deletableModules: Array.isArray(teamUser.deletableModules) ? teamUser.deletableModules : []
       }));
     } else {
       localStorage.removeItem('teamUserData');

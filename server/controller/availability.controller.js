@@ -5,6 +5,27 @@ import Appointment from '../models/appointment.model.intelligent.js';
 import Doctor from '../models/doctor.model.intelligent.js';
 import { Op } from 'sequelize';
 
+const resolveAuthenticatedDoctorId = (req) => {
+  const role = String(req.userRole || req.user?.role || '').toLowerCase();
+  if (role !== 'doctor') return null;
+
+  const candidateIds = [
+    req.user?.doctorId,
+    req.user?.id,
+    req.user?.dataValues?.doctorId,
+    req.user?.dataValues?.id,
+  ];
+
+  for (const value of candidateIds) {
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+    if (Number.isInteger(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+
+  return null;
+};
+
 /**
  * Get doctor's availability schedule
  * GET /api/doctors/:doctorId/availability
@@ -125,10 +146,14 @@ export const setDoctorAvailability = async (req, res) => {
     }
 
     const { doctorId } = req.params;
-    const authenticatedUserId = req.user.id;
+    const authenticatedDoctorId = resolveAuthenticatedDoctorId(req);
+
+    if (!authenticatedDoctorId) {
+      return res.status(403).json({ message: 'Only doctors can set availability' });
+    }
 
     // Check if authenticated user is the doctor
-    if (parseInt(doctorId) !== authenticatedUserId) {
+    if (parseInt(doctorId) !== authenticatedDoctorId) {
       return res.status(403).json({ 
         message: 'You can only set your own availability' 
       });
@@ -203,10 +228,14 @@ export const updateDoctorAvailability = async (req, res) => {
     }
 
     const { doctorId, scheduleId } = req.params;
-    const authenticatedUserId = req.user.id;
+    const authenticatedDoctorId = resolveAuthenticatedDoctorId(req);
+
+    if (!authenticatedDoctorId) {
+      return res.status(403).json({ message: 'Only doctors can update availability' });
+    }
 
     // Check if authenticated user is the doctor
-    if (parseInt(doctorId) !== authenticatedUserId) {
+    if (parseInt(doctorId) !== authenticatedDoctorId) {
       return res.status(403).json({ 
         message: 'You can only update your own availability' 
       });
@@ -246,10 +275,14 @@ export const updateDoctorAvailability = async (req, res) => {
 export const deleteDoctorAvailability = async (req, res) => {
   try {
     const { doctorId, scheduleId } = req.params;
-    const authenticatedUserId = req.user.id;
+    const authenticatedDoctorId = resolveAuthenticatedDoctorId(req);
+
+    if (!authenticatedDoctorId) {
+      return res.status(403).json({ message: 'Only doctors can delete availability' });
+    }
 
     // Check if authenticated user is the doctor
-    if (parseInt(doctorId) !== authenticatedUserId) {
+    if (parseInt(doctorId) !== authenticatedDoctorId) {
       return res.status(403).json({ 
         message: 'You can only delete your own availability' 
       });
@@ -287,11 +320,15 @@ export const deleteDoctorAvailability = async (req, res) => {
 export const bulkSetAvailability = async (req, res) => {
   try {
     const { doctorId } = req.params;
-    const authenticatedUserId = req.user.id;
+    const authenticatedDoctorId = resolveAuthenticatedDoctorId(req);
     const { schedules } = req.body;
 
+    if (!authenticatedDoctorId) {
+      return res.status(403).json({ message: 'Only doctors can set availability' });
+    }
+
     // Check if authenticated user is the doctor
-    if (parseInt(doctorId) !== authenticatedUserId) {
+    if (parseInt(doctorId) !== authenticatedDoctorId) {
       return res.status(403).json({ 
         message: 'You can only set your own availability' 
       });
