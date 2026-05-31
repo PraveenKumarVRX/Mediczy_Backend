@@ -53,6 +53,11 @@ Status summary:
 - [x] Run API regression tests for doctor app auth, my-patients, prescriptions, and offline-scribe role access.
 - [x] Run production smoke for server-side push routing after service account provisioning (doctor + patient FCM sends accepted).
 - [ ] Capture real-device delivery evidence for doctor push smoke run.
+- [x] Run authenticated doctor-account probe (`doctor@mediczy.com`) for push path readiness.
+	- Login and doctor profile auth verified (`/api/doctors/login` + `/api/doctors/profile` = 200).
+	- `/api/fcm/test` for that doctor returned `Recipient FCM token not found`.
+	- Latest stored token for this doctor (`fcm_tokens.id=897`) is inactive and FCM rejected it as `messaging/registration-token-not-registered`.
+	- Required unblock: doctor must re-open production doctor app and re-register a fresh FCM token.
 
 ## External Ops Handoff (Required to Close Remaining Items)
 
