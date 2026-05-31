@@ -3,11 +3,42 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 import userModel from '../models/user.model.intelligent.js';
 import sharedPool from '../db/pgPool.js';
 
+const parseMetadata = (value) => {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  try { return JSON.parse(value); } catch (_) { return {}; }
+};
+
+const normalize = (value) => String(value || '').trim().toLowerCase();
+
+const hasNamedPermission = (permissions = [], required) => {
+  const reqs = Array.isArray(required) ? required : [required];
+  const normalizedPermissions = permissions.map(normalize).filter(Boolean);
+  return reqs.some((req) => {
+    const needle = normalize(req);
+    return normalizedPermissions.some((permission) =>
+      permission === needle ||
+      permission.includes(needle) ||
+      needle.includes(permission)
+    );
+  });
+};
+
+const isTeamAccount = (user = {}, metadata = {}) => Boolean(
+  user.isAdmin ||
+  user.isTeam ||
+  user.role === 'team' ||
+  user.role === 'team_member' ||
+  user.role === 'team_lead' ||
+  user.membershipType === 'team' ||
+  metadata.isTeam === true
+);
+
 /**
  * Verify team member authentication.
  * - Validates tokenType === 'access'
  * - DB re-checks user status (not just trusting the JWT)
- * - JTI revocation check against team_refresh_tokens
+ * - JTI revocation check against unified refresh-token store (with legacy fallback)
  */
 export const authTeam = async (req, res, next) => {
   try {
@@ -52,7 +83,7 @@ export const authTeam = async (req, res, next) => {
           `SELECT id, email, role, status,
                   COALESCE("isAdmin", FALSE) AS "isAdmin",
                   COALESCE("isTeam", FALSE) AS "isTeam",
-                  "membershipType",
+                   membership_type AS "membershipType",
                   metadata,
                   organization_id
              FROM users
@@ -74,24 +105,33 @@ export const authTeam = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Account inactive. Contact admin.' });
     }
 
+    const metadata = parseMetadata(user.metadata);
+    if (!isTeamAccount(user, metadata)) {
+      return res.status(403).json({ success: false, message: 'Team access has been revoked.' });
+    }
+
     // JTI revocation check (only for tokens that carry a jti)
     if (decoded.jti) {
       try {
         const pool = sharedPool;
-        const { rows } = await pool.query(
-          `SELECT revoked FROM team_refresh_tokens WHERE jti = $1`,
+        let { rows } = await pool.query(
+          `SELECT revoked FROM api_v2_refresh_tokens WHERE jti = $1 LIMIT 1`,
           [decoded.jti]
         );
+        if (!rows.length) {
+          // Backward-compat for access tokens issued before unification.
+          const legacy = await pool.query(
+            `SELECT revoked FROM team_refresh_tokens WHERE jti = $1 LIMIT 1`,
+            [decoded.jti]
+          );
+          rows = legacy.rows;
+        }
         // If we find the JTI and it is revoked, deny
         if (rows.length > 0 && rows[0].revoked) {
           return res.status(401).json({ success: false, message: 'Token has been revoked' });
         }
       } catch (_) { /* table might not exist yet on first boot — safe to continue */ }
     }
-
-    // Parse metadata for editableModules / deletableModules
-    let metadata = {};
-    try { metadata = user.metadata ? JSON.parse(user.metadata) : {}; } catch (_) { metadata = {}; }
 
     const permissions = Array.isArray(metadata.permissions)
       ? metadata.permissions.filter((permission) => typeof permission === 'string' && permission.trim().length > 0)
@@ -107,6 +147,7 @@ export const authTeam = async (req, res, next) => {
       department: metadata.department || null,
       designation: metadata.designation || null,
       permissions,
+      grantedModules: metadata.grantedModules || [],
       editableModules:  metadata.editableModules  || [],
       deletableModules: metadata.deletableModules || []
     };
@@ -173,9 +214,20 @@ export const requirePermission = (permissionName) => {
       return next();
     }
 
-    next(); // extend with DB-backed permission check as needed
+    if (!hasNamedPermission(teamUser.permissions || [], permissionName)) {
+      const required = Array.isArray(permissionName) ? permissionName.join(' or ') : permissionName;
+      return res.status(403).json({
+        success: false,
+        message: `Permission denied. ${required} access required.`,
+        code: 'TEAM_PERMISSION_DENIED'
+      });
+    }
+
+    next();
   };
 };
+
+export const requireAnyPermission = requirePermission;
 
 /**
  * Block write operations if user lacks edit access for a module.

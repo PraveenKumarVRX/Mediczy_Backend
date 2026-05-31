@@ -1,9 +1,9 @@
 # Mediqzy — Doctor Mobile App API Integration Guide
 
-> **Version:** 2.4 · **Last Updated:** 2026-05-09  
-> **Base URL (Production):** `https://api.mediqzy.com`  
+> **Version:** 2.5 · **Last Updated:** 2026-05-30  
+> **Base URL (Production):** `https://app.mediqzy.com/api`  
 > **WebSocket URL:** `https://app.mediqzy.com` (path: `/socket.io`)  
-> **LiveKit URL:** `wss://video.mediqzy.com`
+> **LiveKit URL:** `wss://msh-kw9tvxa9.livekit.cloud` *(LiveKit Cloud)*
 
 ---
 
@@ -47,11 +47,12 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **2.5** | 2026-05-30 | LiveKit migrated to LiveKit Cloud — `wss://msh-kw9tvxa9.livekit.cloud` (was `wss://video.mediqzy.com`); doctor registration OTP (email + WhatsApp) verified working — rate limiter changed from IP-based to per-email/phone (5 per 15 min); API routing fixed — `app.mediqzy.com/api` now proxied directly to PM2 server, no longer routes through ALB |
 | **2.4** | 2026-05-09 | Section 8.1 `medications` marked as required (was incorrectly optional); `prescriptionNumber` removed from response examples (field does not exist — use `prescriptionId`); `prescriptionId` format corrected to `RX-XXXXXXXX-XXXXX`; Section 8.4 description corrected (route returns all prescriptions, not issued-only); Section 8.14 added for `GET /api/prescriptions/appointment/:appointmentId`; all prescription endpoints smoke-tested and confirmed working |
 | **2.3** | 2026-05-10 | Section 11 rewritten with correct doctor chat endpoints (`/api/doctor/chat/*`); Section 13 AI Scribe paths corrected to `/api/ai/scribe/generate-prescription`, `/api/ai/scribe/autocomplete`, `/api/ai/scribe/scribe`, `/api/ai/scribe/reference/:type`; Section 15 clinical notes path corrected from `soap-notes` to `notes`, sub-endpoints added; Appendix A.3 flow corrected; backend `revenue-insights.route.js` ESM require() bug fixed; `GET /api/doctors/patients` address column bug fixed |
 | **2.2** | 2026-05-09 | Section 2.1 updated with social media link fields (`socialMedia` object) in registration payload; Section 3.1/3.2 updated with `socialLinks` field in profile response/update; Section 12 expanded with Firebase dual-app architecture, SenderId mismatch root cause, `mismatched-credential` auto-deactivation, and FCM token hygiene guidance; Appendix B FCM section rewritten with sender ID table and dual-SA setup instructions |
 | **2.1** | 2026-05-01 | Section 9 expanded with patient update, vitals & history routes; Section 18 expanded with AI triage image analysis; Sections 6.7–6.8 added for mobile SetTimeSlots weekly schedule flow; New Section 27 (Remote Health Monitoring); New Section 28 (Lab Imaging / RIS-Referred); Appendix A flows A.6–A.9 added; Appendix B mobile notes updated; Base URL corrected to `https://app.mediqzy.com/api`; all endpoints smoke-tested and verified |
-| **2.0** | 2026-04-09 | Section 21 (Alerts) rewritten with full DB-backed notification API detail; Section 12 updated with alert polling guidance; Appendix C (test credentials) added; Base URL corrected to `https://api.mediqzy.com`; valid `consultationType` values clarified |
+| **2.0** | 2026-04-09 | Section 21 (Alerts) rewritten with full DB-backed notification API detail; Section 12 updated with alert polling guidance; Appendix C (test credentials) added; Base URL corrected to `https://app.mediqzy.com/api`; valid `consultationType` values clarified |
 | 1.0 | 2026-03-10 | Initial release |
 
 ---
@@ -61,9 +62,9 @@
 ### Base Configuration
 
 ```
-Production API:   https://api.mediqzy.com
+Production API:   https://app.mediqzy.com/api
 WebSocket:        https://app.mediqzy.com  (path: /socket.io)
-LiveKit Server:   wss://video.mediqzy.com
+LiveKit Server:   wss://msh-kw9tvxa9.livekit.cloud
 ```
 
 ### Request Headers
@@ -588,7 +589,7 @@ Returns all appointments for the authenticated doctor.
       "reason": "Follow-up",
       "paymentStatus": "paid",
       "paymentAmount": 500,
-      "meetingLink": "https://video.mediqzy.com/room/apt-101-abc123",
+      "meetingLink": "https://msh-kw9tvxa9.livekit.cloud/room/apt-101-abc123",
       "rating": null,
       "createdAt": "2026-03-10T08:00:00.000Z",
       "updatedAt": "2026-03-10T08:30:00.000Z"
@@ -741,7 +742,7 @@ Doctor initiates a video call to the patient. Sends push notification and Socket
 {
   "success": true,
   "message": "Call initiated",
-  "meetingLink": "https://video.mediqzy.com/room/apt-101-abc123",
+  "meetingLink": "https://msh-kw9tvxa9.livekit.cloud/room/apt-101-abc123",
   "roomData": { /* room details */ }
 }
 ```
@@ -1622,7 +1623,7 @@ Authorization: Bearer <token>
   "success": true,
   "roomToken": "eyJ...",
   "roomId": "apt-101-abc123",
-  "roomUrl": "wss://video.mediqzy.com",
+  "roomUrl": "wss://msh-kw9tvxa9.livekit.cloud",
   "expiresAt": "2026-03-10T16:00:00.000Z",
   "iceServers": [
     { "urls": "stun:stun.l.google.com:19302" },
@@ -1655,15 +1656,15 @@ Authorization: Bearer <token>
 {
   "success": true,
   "token": "<livekit-jwt>",
-  "serverUrl": "wss://video.mediqzy.com",
+  "serverUrl": "wss://msh-kw9tvxa9.livekit.cloud",
   "roomName": "apt-101-abc123",
   "video": {
     "meetingId": "apt-101-abc123",
-    "meetingLink": "https://video.mediqzy.com/room/apt-101-abc123",
-    "joinUrl": "https://video.mediqzy.com/room/apt-101-abc123",
+    "meetingLink": "https://msh-kw9tvxa9.livekit.cloud/room/apt-101-abc123",
+    "joinUrl": "https://msh-kw9tvxa9.livekit.cloud/room/apt-101-abc123",
     "livekit": {
       "token": "<livekit-jwt>",
-      "serverUrl": "wss://video.mediqzy.com",
+      "serverUrl": "wss://msh-kw9tvxa9.livekit.cloud",
       "roomName": "apt-101-abc123"
     }
   },
@@ -1696,7 +1697,7 @@ Lazy-creates room if it doesn't exist. For appointments, verifies the user is ei
     "videoToken": "<livekit-jwt>",
     "livekit": {
       "token": "<livekit-jwt>",
-      "serverUrl": "wss://video.mediqzy.com",
+      "serverUrl": "wss://msh-kw9tvxa9.livekit.cloud",
       "roomName": "apt-101-abc123"
     },
     "iceServers": [ /* STUN/TURN servers */ ]
@@ -3780,7 +3781,7 @@ The doctor app (`MSH_D_App`) uses Firebase project **`doctorapp-6c768`** with se
 ### Video Call Integration
 
 - Use **LiveKit SDK** for Android/iOS
-- Server URL: `wss://video.mediqzy.com`
+- Server URL: `wss://msh-kw9tvxa9.livekit.cloud`
 - Get room token from API, then connect via LiveKit SDK
 - Handle incoming call notifications via FCM + Socket.IO `video-call-invitation` event
 

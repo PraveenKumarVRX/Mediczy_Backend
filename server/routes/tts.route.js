@@ -7,6 +7,7 @@
 
 import express from 'express';
 import fetch from 'node-fetch';
+import { authUser } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
 
@@ -95,7 +96,7 @@ async function createOpenAiTtsResponse(text, signal) {
  * POST /api/tts/speak
  * Convert text to speech using ElevenLabs, then OpenAI TTS fallback.
  */
-router.post("/speak", async (req, res) => {
+router.post("/speak", authUser, async (req, res) => {
   try {
     const { text, voiceId, model = "eleven_turbo_v2_5" } = req.body;
 

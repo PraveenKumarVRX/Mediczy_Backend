@@ -2,18 +2,18 @@
 
 Complete API reference for integrating video consultation features into mobile applications.
 
-**Last Updated:** February 18, 2026
+**Last Updated:** 2026-05-30
 
 ---
 
 ## 🌐 Environment URLs
 
-| Environment      | Base URL                      | Purpose                       |
-| ---------------- | ----------------------------- | ----------------------------- |
-| **Production**   | `https://app.mediqzy.com`     | Live users, real transactions |
-| **UAT**          | `http://16.112.137.160`       | User Acceptance Testing       |
-| **Staging**      | `https://staging.mediqzy.com` | Testing before production     |
-| **Video Server** | `wss://video.mediqzy.com`     | LiveKit video (shared)        |
+| Environment      | Base URL                                    | Purpose                       |
+| ---------------- | ------------------------------------------- | ----------------------------- |
+| **Production**   | `https://app.mediqzy.com`                   | Live users, real transactions |
+| **UAT**          | `http://16.112.137.160`                     | User Acceptance Testing       |
+| **Staging**      | `https://staging.mediqzy.com`               | Testing before production     |
+| **Video Server** | `wss://msh-kw9tvxa9.livekit.cloud`          | LiveKit Cloud (production)    |
 
 > ⚠️ **IMPORTANT:** Use the base domain WITHOUT `/api` suffix. All endpoints include the full path.
 >
@@ -415,7 +415,7 @@ Content-Type: application/json
     "status": "confirmed",
     "paymentStatus": "paid",
     "meetingId": "apt-456-1738022400",
-    "meetingLink": "https://video.mediqzy.com/rooms/apt-456-1738022400",
+    "meetingLink": "https://msh-kw9tvxa9.livekit.cloud/rooms/apt-456-1738022400",
     "amount": 500,
     "createdAt": "2026-01-27T10:00:00.000Z"
   },
@@ -572,11 +572,11 @@ Content-Type: application/json
   "success": true,
   "data": {
     "meetingId": "apt-456",
-    "serverUrl": "wss://video.mediqzy.com",
+    "serverUrl": "wss://msh-kw9tvxa9.livekit.cloud",
     "token": "eyJhbGciOiJIUzI1NiJ9...",
     "roomName": "apt-456",
-    "meetUrl": "https://video.mediqzy.com/rooms/apt-456",
-    "joinUrl": "https://video.mediqzy.com/rooms/apt-456?access_token=...",
+    "meetUrl": "https://msh-kw9tvxa9.livekit.cloud/rooms/apt-456",
+    "joinUrl": "https://msh-kw9tvxa9.livekit.cloud/rooms/apt-456?access_token=...",
     "expiresAt": "2026-02-03T07:00:00.000Z"
   }
 }
@@ -622,7 +622,7 @@ Content-Type: application/json
   "success": true,
   "data": {
     "token": "eyJhbGciOiJIUzI1NiJ9...<long-lived-token>",
-    "serverUrl": "wss://video.mediqzy.com",
+    "serverUrl": "wss://msh-kw9tvxa9.livekit.cloud",
     "identity": "patient-123",
     "displayName": "John Doe",
     "roomAgnostic": true,
@@ -686,7 +686,7 @@ Content-Type: application/json
 {
   "success": true,
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "serverUrl": "wss://video.mediqzy.com",
+  "serverUrl": "wss://msh-kw9tvxa9.livekit.cloud",
   "roomName": "apt-456",
   "participantName": "John Doe",
   "expiresAt": "2026-01-28T12:00:00.000Z"
@@ -735,7 +735,7 @@ Content-Type: application/json
   },
   "video": {
     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "serverUrl": "wss://video.mediqzy.com",
+    "serverUrl": "wss://msh-kw9tvxa9.livekit.cloud",
     "provider": "livekit"
   }
 }
@@ -1087,7 +1087,7 @@ socket.on("doctor-initiated-call", (data) => {
   //   appointmentId: 456,
   //   doctorName: "Dr. Nandita Agarwal",
   //   doctorId: 70,
-  //   meetingLink: "https://video.mediqzy.com/rooms/apt-456",
+  //   meetingLink: "https://msh-kw9tvxa9.livekit.cloud/rooms/apt-456",
   //   callInitiatedAt: "2026-01-28T10:00:00.000Z",
   //   appointmentDate: "2026-01-28",
   //   appointmentTime: "10:00 AM"
@@ -1632,7 +1632,7 @@ All API responses follow a consistent error format:
 3. **Token Refresh**: Implement token refresh mechanism
 4. **Rate Limiting**: Respect API rate limits (100 requests/minute)
 5. **Input Validation**: Validate all user inputs before sending to API
-6. **WebRTC Security**: Use secure WebRTC connections with TURN/STUN servers
+6. **WebRTC Security**: LiveKit Cloud manages TURN/STUN — no self-hosted TURN configuration required
 
 ---
 
@@ -1646,20 +1646,20 @@ import axios from "axios";
 // Environment configuration for React Native
 const ENVIRONMENTS = {
   development: {
-    API_URL: "http://localhost:8000",
-    VIDEO_URL: "wss://video.mediqzy.com",
+    API_URL: "http://localhost:8888",
+    VIDEO_URL: "wss://msh-kw9tvxa9.livekit.cloud",
   },
   uat: {
-    API_URL: "http://16.112.137.160",
-    VIDEO_URL: "wss://video.mediqzy.com",
+    API_URL: "https://app.mediqzy.com",
+    VIDEO_URL: "wss://msh-kw9tvxa9.livekit.cloud",
   },
   staging: {
-    API_URL: "https://staging.mediqzy.com",
-    VIDEO_URL: "wss://video.mediqzy.com",
+    API_URL: "https://app.mediqzy.com",
+    VIDEO_URL: "wss://msh-kw9tvxa9.livekit.cloud",
   },
   production: {
     API_URL: "https://app.mediqzy.com",
-    VIDEO_URL: "wss://video.mediqzy.com",
+    VIDEO_URL: "wss://msh-kw9tvxa9.livekit.cloud",
   },
 };
 
@@ -1740,20 +1740,20 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 // Environment configuration
 const ENVIRONMENTS = {
   development: {
-    API_URL: "http://localhost:8000",
-    VIDEO_URL: "wss://video.mediqzy.com",
+    API_URL: "http://localhost:8888",
+    VIDEO_URL: "wss://msh-kw9tvxa9.livekit.cloud",
   },
   uat: {
-    API_URL: "http://16.112.137.160",
-    VIDEO_URL: "wss://video.mediqzy.com",
+    API_URL: "https://app.mediqzy.com",
+    VIDEO_URL: "wss://msh-kw9tvxa9.livekit.cloud",
   },
   staging: {
-    API_URL: "https://staging.mediqzy.com",
-    VIDEO_URL: "wss://video.mediqzy.com",
+    API_URL: "https://app.mediqzy.com",
+    VIDEO_URL: "wss://msh-kw9tvxa9.livekit.cloud",
   },
   production: {
     API_URL: "https://app.mediqzy.com",
-    VIDEO_URL: "wss://video.mediqzy.com",
+    VIDEO_URL: "wss://msh-kw9tvxa9.livekit.cloud",
   },
 };
 

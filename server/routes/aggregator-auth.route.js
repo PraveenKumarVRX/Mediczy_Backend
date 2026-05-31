@@ -8,7 +8,7 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import { InsuranceBroker, AuditLog } from '../models/index.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import { authAggregator } from '../middleware/aggregator.middleware.js';
@@ -120,7 +120,7 @@ router.post(
       const token = jwt.sign(
         { id: aggregator.id, email: aggregator.email, role: 'aggregator' },
         JWT_CONFIG.SECRET,
-        { expiresIn: '7d' }
+        { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
       );
 
       // Audit log

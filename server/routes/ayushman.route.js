@@ -2,6 +2,7 @@ import express from 'express';
 import puppeteer from 'puppeteer';
 import { validateAadhaar, isValidMobile } from '../utils/validation.js';
 import axios from 'axios';
+import { authUser } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
 
@@ -290,7 +291,7 @@ router.get('/claims', async (req, res) => {
 });
 
 // Ayushman card download endpoint
-router.post('/download', async (req, res) => {
+router.post('/download', authUser, async (req, res) => {
   try {
     const { aadhaarNumber, mobileNumber } = req.body;
 
@@ -337,7 +338,7 @@ router.post('/download', async (req, res) => {
 });
 
 // Ayushman card status check endpoint
-router.post('/check-status', async (req, res) => {
+router.post('/check-status', authUser, async (req, res) => {
   let browser = null;
   try {
     const { aadhaarNumber, mobileNumber } = req.body;
@@ -562,7 +563,7 @@ router.get('/eligibility', async (req, res) => {
 });
 
 // Get e-card
-router.get('/e-card', async (req, res) => {
+router.get('/e-card', authUser, async (req, res) => {
   try {
     // Redirect to official e-card portal
     res.redirect('https://mera.pmjay.gov.in/search/login');

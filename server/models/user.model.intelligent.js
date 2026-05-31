@@ -354,7 +354,7 @@ export const generateAuthTokenForUser = (userInstance) => {
   };
 
   const token = jwt.sign(payload, JWT_CONFIG.SECRET, {
-    expiresIn: '7d'
+    expiresIn: process.env.JWT_ACCESS_TTL || '15m'
   });
 
   return token.replace(/[\r\n]+/g, '');

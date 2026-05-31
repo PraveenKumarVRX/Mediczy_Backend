@@ -8,6 +8,7 @@ import { HealthDiary, EHRRecord } from '../models/postgres/ehr.model.postgres.js
 import { Prescription } from '../models/index.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import { Op } from 'sequelize';
+import healthDiaryService from '../services/health-diary.service.js';
 
 const router = express.Router();
 
@@ -387,6 +388,247 @@ router.post('/log-symptom', authUser, async (req, res) => {
       message: 'Failed to log symptom',
       error: error.message
     });
+  }
+});
+
+/**
+ * @route   GET /api/health-diary/sources
+ * @desc    Return status of all auto-logging data sources
+ * @access  Private
+ */
+router.get('/sources', authUser, async (req, res) => {
+  try {
+    const userId = parseInt(req.user?.id || req.user?.dataValues?.id || req.user?._id);
+
+    // Count diary entries per source type
+    const typeCounts = await HealthDiary.findAll({
+      where: { userId },
+      attributes: ['entryType', [HealthDiary.sequelize.fn('COUNT', HealthDiary.sequelize.col('id')), 'count'],
+        [HealthDiary.sequelize.fn('MAX', HealthDiary.sequelize.col('createdAt')), 'lastAt']],
+      group: ['entryType'],
+      raw: true
+    });
+
+    const countMap = {};
+    typeCounts.forEach(r => { countMap[r.entryType] = { count: parseInt(r.count), lastAt: r.lastAt }; });
+
+    const sources = [
+      {
+        id: 'ai_consult',
+        name: 'Dr. iSHA (AI)',
+        description: 'Auto-logged from every AI health consultation',
+        icon: 'brain',
+        status: 'active',
+        entryTypes: ['ai_consultation'],
+        count: countMap['ai_consultation']?.count || 0,
+        lastSync: countMap['ai_consultation']?.lastAt || null,
+      },
+      {
+        id: 'appointments',
+        name: 'Doctor Consultations',
+        description: 'Auto-logged when appointments are booked and completed',
+        icon: 'stethoscope',
+        status: 'active',
+        entryTypes: ['consultation', 'appointment'],
+        count: (countMap['consultation']?.count || 0) + (countMap['appointment']?.count || 0),
+        lastSync: countMap['consultation']?.lastAt || countMap['appointment']?.lastAt || null,
+      },
+      {
+        id: 'prescriptions',
+        name: 'Prescriptions & Medications',
+        description: 'Auto-logged when prescriptions are issued',
+        icon: 'pill',
+        status: 'active',
+        entryTypes: ['prescription', 'medication'],
+        count: (countMap['prescription']?.count || 0) + (countMap['medication']?.count || 0),
+        lastSync: countMap['prescription']?.lastAt || null,
+      },
+      {
+        id: 'lab',
+        name: 'Lab Tests & Reports',
+        description: 'Auto-logged from uploaded reports and lab orders',
+        icon: 'activity',
+        status: 'active',
+        entryTypes: ['lab_test', 'lab_result'],
+        count: (countMap['lab_test']?.count || 0) + (countMap['lab_result']?.count || 0),
+        lastSync: countMap['lab_result']?.lastAt || countMap['lab_test']?.lastAt || null,
+      },
+      {
+        id: 'vitals',
+        name: 'Remote Health Monitoring',
+        description: 'Vitals from wearables and manual readings',
+        icon: 'heart',
+        status: 'active',
+        entryTypes: ['vital', 'device_reading'],
+        count: (countMap['vital']?.count || 0) + (countMap['device_reading']?.count || 0),
+        lastSync: countMap['vital']?.lastAt || countMap['device_reading']?.lastAt || null,
+      },
+      {
+        id: 'ehr',
+        name: 'EHR / EMR Records',
+        description: 'Synced from electronic health records and uploaded reports',
+        icon: 'file-text',
+        status: 'active',
+        entryTypes: ['diagnosis'],
+        count: countMap['diagnosis']?.count || 0,
+        lastSync: countMap['diagnosis']?.lastAt || null,
+      },
+      {
+        id: 'hra',
+        name: 'Health Risk Assessment',
+        description: 'Periodic AI-powered health risk analysis',
+        icon: 'shield',
+        status: 'active',
+        entryTypes: ['note'],
+        count: 0,
+        lastSync: null,
+      },
+      {
+        id: 'manual',
+        name: 'Manual Entries',
+        description: 'Events you log yourself (mood, sleep, diet, symptoms)',
+        icon: 'edit',
+        status: 'active',
+        entryTypes: ['mood', 'sleep', 'diet', 'note', 'symptom'],
+        count: ['mood', 'sleep', 'diet', 'note', 'symptom'].reduce((s, t) => s + (countMap[t]?.count || 0), 0),
+        lastSync: null,
+      },
+    ];
+
+    res.json({ success: true, sources });
+  } catch (error) {
+    console.error('Sources error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch sources', error: error.message });
+  }
+});
+
+/**
+ * @route   POST /api/health-diary/sync
+ * @desc    Pull unlogged records from appointments, prescriptions, EHR and write them to the diary
+ * @access  Private
+ */
+router.post('/sync', authUser, async (req, res) => {
+  try {
+    const userId = parseInt(req.user?.id || req.user?.dataValues?.id || req.user?._id);
+    const synced = { appointments: 0, prescriptions: 0, ehr: 0, total: 0 };
+
+    // ── 1. Sync completed appointments ─────────────────────────────────────
+    try {
+      const { Appointment } = await import('../models/index.js');
+      const alreadyLinked = new Set(
+        (await HealthDiary.findAll({
+          where: { userId, linkedRecordType: 'appointment' },
+          attributes: ['linkedRecordId'],
+          raw: true
+        })).map(r => String(r.linkedRecordId))
+      );
+
+      const completedAppts = await Appointment.findAll({
+        where: { userId, status: { [Op.in]: ['completed', 'scheduled', 'confirmed'] } },
+        order: [['scheduledTime', 'DESC']],
+        limit: 50
+      });
+
+      for (const appt of completedAppts) {
+        if (alreadyLinked.has(String(appt.id))) continue;
+        await healthDiaryService.logConsultation(userId, {
+          id: appt.id,
+          doctorId: appt.doctorId,
+          doctorName: appt.doctorName || appt.doctor?.name || 'Doctor',
+          consultationType: appt.consultationType || 'General',
+          status: appt.status,
+          scheduledTime: appt.scheduledTime,
+          duration: appt.duration
+        });
+        synced.appointments++;
+      }
+    } catch (apptErr) {
+      console.warn('Appointment sync partial failure:', apptErr.message);
+    }
+
+    // ── 2. Sync prescriptions ───────────────────────────────────────────────
+    try {
+      const alreadyLinked = new Set(
+        (await HealthDiary.findAll({
+          where: { userId, linkedRecordType: 'prescription' },
+          attributes: ['linkedRecordId'],
+          raw: true
+        })).map(r => String(r.linkedRecordId))
+      );
+
+      const prescriptions = await Prescription.findAll({
+        where: { patientId: userId },
+        order: [['createdAt', 'DESC']],
+        limit: 50
+      });
+
+      for (const rx of prescriptions) {
+        if (alreadyLinked.has(String(rx.id))) continue;
+        await healthDiaryService.logPrescription(userId, {
+          id: rx.id,
+          doctorId: rx.doctorId,
+          doctorName: rx.doctorName || 'Doctor',
+          medications: rx.medications || [],
+          diagnosis: rx.diagnosis,
+          prescriptionDate: rx.createdAt
+        });
+        synced.prescriptions++;
+      }
+    } catch (rxErr) {
+      console.warn('Prescription sync partial failure:', rxErr.message);
+    }
+
+    // ── 3. Sync EHR records ─────────────────────────────────────────────────
+    try {
+      const alreadyLinked = new Set(
+        (await HealthDiary.findAll({
+          where: { userId, linkedRecordType: 'ehr' },
+          attributes: ['linkedRecordId'],
+          raw: true
+        })).map(r => String(r.linkedRecordId))
+      );
+
+      const ehrRecords = await EHRRecord.findAll({
+        where: { patientId: userId },
+        order: [['createdAt', 'DESC']],
+        limit: 30
+      });
+
+      for (const ehr of ehrRecords) {
+        if (alreadyLinked.has(String(ehr.id))) continue;
+        await healthDiaryService.logHealthEvent({
+          userId,
+          entryType: ehr.recordType === 'diagnosis' ? 'diagnosis' : 'consultation',
+          title: ehr.summary || ehr.recordType || 'EHR Record',
+          description: ehr.notes || '',
+          data: {
+            ehrId: ehr.id,
+            recordType: ehr.recordType,
+            provider: ehr.provider,
+            source: 'ehr_sync'
+          },
+          linkedRecordId: ehr.id,
+          linkedRecordType: 'ehr',
+          timestamp: ehr.recordDate || ehr.createdAt
+        });
+        synced.ehr++;
+      }
+    } catch (ehrErr) {
+      console.warn('EHR sync partial failure:', ehrErr.message);
+    }
+
+    synced.total = synced.appointments + synced.prescriptions + synced.ehr;
+
+    res.json({
+      success: true,
+      message: synced.total > 0
+        ? `Synced ${synced.total} new event${synced.total !== 1 ? 's' : ''} from your health records`
+        : 'Your diary is already up to date',
+      synced
+    });
+  } catch (error) {
+    console.error('Sync error:', error);
+    res.status(500).json({ success: false, message: 'Sync failed', error: error.message });
   }
 });
 

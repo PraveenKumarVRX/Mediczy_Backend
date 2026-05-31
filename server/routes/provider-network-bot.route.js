@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
-import * as XLSX from 'xlsx';
-import { authTeam } from '../middleware/team.middleware.js';
+import XLSX from '../utils/excel-compat.js';
+import { authTeam, requirePermission } from '../middleware/team.middleware.js';
 import pool from '../db/pgPool.js';
 import { createHash } from 'crypto';
 
 const router = Router();
+const requireProviderNetworkAccess = requirePermission(['Corporate Management', 'Provider Network']);
 
 router.get('/_self-check', authTeam, async (req, res) => {
   if (process.env.NODE_ENV === 'production') {
@@ -438,7 +439,7 @@ function providerFingerprint(provider) {
   return createHash('sha256').update(key).digest('hex');
 }
 
-router.post('/ingest/manual', authTeam, async (req, res) => {
+router.post('/ingest/manual', authTeam, requireProviderNetworkAccess, async (req, res) => {
   try {
     const providers = Array.isArray(req.body?.providers) ? req.body.providers : [];
     if (!providers.length) {
@@ -462,14 +463,14 @@ router.post('/ingest/manual', authTeam, async (req, res) => {
   }
 });
 
-router.post('/ingest/excel', authTeam, async (req, res) => {
+router.post('/ingest/excel', authTeam, requireProviderNetworkAccess, async (req, res) => {
   try {
     const file = req.files?.file;
     if (!file || !file.data) {
       return res.status(400).json({ success: false, error: 'Excel file is required as form-data field `file`' });
     }
 
-    const workbook = XLSX.read(file.data, { type: 'buffer' });
+    const workbook = await XLSX.read(file.data, { type: 'buffer' });
     const firstSheetName = workbook.SheetNames[0];
     if (!firstSheetName) {
       return res.status(400).json({ success: false, error: 'Excel contains no sheets' });
@@ -498,7 +499,7 @@ router.post('/ingest/excel', authTeam, async (req, res) => {
   }
 });
 
-router.post('/ingest/web', authTeam, async (req, res) => {
+router.post('/ingest/web', authTeam, requireProviderNetworkAccess, async (req, res) => {
   try {
     const urls = Array.isArray(req.body?.urls) ? req.body.urls : [];
     const providerType = normalizeProviderType(req.body?.provider_type || 'other');
@@ -557,7 +558,7 @@ router.post('/ingest/web', authTeam, async (req, res) => {
   }
 });
 
-router.post('/qc/:batchId', authTeam, async (req, res) => {
+router.post('/qc/:batchId', authTeam, requireProviderNetworkAccess, async (req, res) => {
   try {
     const { batchId } = req.params;
     const summary = await runQc(batchId);
@@ -568,7 +569,7 @@ router.post('/qc/:batchId', authTeam, async (req, res) => {
   }
 });
 
-router.post('/publish/:batchId', authTeam, async (req, res) => {
+router.post('/publish/:batchId', authTeam, requireProviderNetworkAccess, async (req, res) => {
   try {
     const { batchId } = req.params;
     const force = req.body?.force === true;
@@ -680,7 +681,7 @@ router.post('/publish/:batchId', authTeam, async (req, res) => {
   }
 });
 
-router.get('/batches/:batchId', authTeam, async (req, res) => {
+router.get('/batches/:batchId', authTeam, requireProviderNetworkAccess, async (req, res) => {
   try {
     const { batchId } = req.params;
     const { rows: batchRows } = await pool.query(

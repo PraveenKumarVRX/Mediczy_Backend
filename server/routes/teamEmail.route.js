@@ -1,7 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { Readable } from 'stream';
-import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import { authTeam } from '../middleware/team.middleware.js';
 import inboundEmailService from '../services/inboundEmailService.js';
 import emailService from '../services/emailService.js';
 import { Op } from 'sequelize';
@@ -128,13 +128,19 @@ const resolveTeamMemberId = async (user) => {
   return user?.id;
 };
 
+const findOwnedEmail = async (req) => {
+  const teamMemberId = await resolveTeamMemberId(req.teamUser || req.user);
+  if (!teamMemberId) return null;
+  return EmailInbox.findOne({ where: { id: req.params.id, teamMemberId } });
+};
+
 /**
  * GET /api/team/emails/inbox
  * Get team member's email inbox
  */
-router.get('/inbox', authUser, async (req, res) => {
+router.get('/inbox', authTeam, async (req, res) => {
   try {
-    const teamMemberId = await resolveTeamMemberId(req.user);
+    const teamMemberId = await resolveTeamMemberId(req.teamUser || req.user);
     const { page = 1, limit = 20, unreadOnly = false, search = '', folder = 'inbox' } = req.query;
 
     const inbox = await inboundEmailService.getInbox(teamMemberId, {
@@ -163,9 +169,9 @@ router.get('/inbox', authUser, async (req, res) => {
  * GET /api/team/emails/stats
  * Get email statistics
  */
-router.get('/stats', authUser, async (req, res) => {
+router.get('/stats', authTeam, async (req, res) => {
   try {
-    const teamMemberId = await resolveTeamMemberId(req.user);
+    const teamMemberId = await resolveTeamMemberId(req.teamUser || req.user);
 
     const stats = {
       total: await EmailInbox.count({ where: { teamMemberId } }),
@@ -209,9 +215,9 @@ router.get('/stats', authUser, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** GET /api/team/emails/templates – list all templates for the current user */
-router.get('/templates', authUser, async (req, res) => {
+router.get('/templates', authTeam, async (req, res) => {
   try {
-    const teamMemberId = await resolveTeamMemberId(req.user);
+    const teamMemberId = await resolveTeamMemberId(req.teamUser || req.user);
     const templates = await TeamEmailTemplate.findAll({
       where: { teamMemberId },
       order: [['createdAt', 'DESC']],
@@ -223,9 +229,9 @@ router.get('/templates', authUser, async (req, res) => {
 });
 
 /** POST /api/team/emails/templates – create a new template */
-router.post('/templates', authUser, async (req, res) => {
+router.post('/templates', authTeam, async (req, res) => {
   try {
-    const teamMemberId = await resolveTeamMemberId(req.user);
+    const teamMemberId = await resolveTeamMemberId(req.teamUser || req.user);
     const { name, subject, body, category = 'general', isShared = false } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'Template name is required' });
     const template = await TeamEmailTemplate.create({ teamMemberId, name, subject, body, category, isShared });
@@ -236,9 +242,9 @@ router.post('/templates', authUser, async (req, res) => {
 });
 
 /** PUT /api/team/emails/templates/:id – update a template */
-router.put('/templates/:id', authUser, async (req, res) => {
+router.put('/templates/:id', authTeam, async (req, res) => {
   try {
-    const teamMemberId = await resolveTeamMemberId(req.user);
+    const teamMemberId = await resolveTeamMemberId(req.teamUser || req.user);
     const template = await TeamEmailTemplate.findOne({ where: { id: req.params.id, teamMemberId } });
     if (!template) return res.status(404).json({ success: false, message: 'Template not found' });
     const { name, subject, body, category, isShared } = req.body;
@@ -250,9 +256,9 @@ router.put('/templates/:id', authUser, async (req, res) => {
 });
 
 /** DELETE /api/team/emails/templates/:id – delete a template */
-router.delete('/templates/:id', authUser, async (req, res) => {
+router.delete('/templates/:id', authTeam, async (req, res) => {
   try {
-    const teamMemberId = await resolveTeamMemberId(req.user);
+    const teamMemberId = await resolveTeamMemberId(req.teamUser || req.user);
     const template = await TeamEmailTemplate.findOne({ where: { id: req.params.id, teamMemberId } });
     if (!template) return res.status(404).json({ success: false, message: 'Template not found' });
     await template.destroy();
@@ -270,9 +276,9 @@ router.delete('/templates/:id', authUser, async (req, res) => {
  * POST /api/team/emails/:id/bot-reply
  * Generate an AI-suggested reply for an email using Groq.
  */
-router.post('/:id/bot-reply', authUser, async (req, res) => {
+router.post('/:id(\\d+)/bot-reply', authTeam, async (req, res) => {
   try {
-    const teamMemberId = await resolveTeamMemberId(req.user);
+    const teamMemberId = await resolveTeamMemberId(req.teamUser || req.user);
     const email = await EmailInbox.findOne({ where: { id: req.params.id, teamMemberId } });
     if (!email) return res.status(404).json({ success: false, message: 'Email not found' });
 
@@ -299,9 +305,9 @@ router.post('/:id/bot-reply', authUser, async (req, res) => {
  * POST /api/team/emails/:id/ai-ticket
  * Use AI to suggest ticket fields from an email.
  */
-router.post('/:id/ai-ticket', authUser, async (req, res) => {
+router.post('/:id(\\d+)/ai-ticket', authTeam, async (req, res) => {
   try {
-    const teamMemberId = await resolveTeamMemberId(req.user);
+    const teamMemberId = await resolveTeamMemberId(req.teamUser || req.user);
     const email = await EmailInbox.findOne({ where: { id: req.params.id, teamMemberId } });
     if (!email) return res.status(404).json({ success: false, message: 'Email not found' });
 
@@ -331,9 +337,9 @@ router.post('/:id/ai-ticket', authUser, async (req, res) => {
  * GET /api/team/emails/:id
  * Get single email details
  */
-router.get('/:id', authUser, async (req, res) => {
+router.get('/:id(\\d+)', authTeam, async (req, res) => {
   try {
-    const teamMemberId = await resolveTeamMemberId(req.user);
+    const teamMemberId = await resolveTeamMemberId(req.teamUser || req.user);
     const email = await EmailInbox.findOne({
       where: {
         id: req.params.id,
@@ -372,9 +378,12 @@ router.get('/:id', authUser, async (req, res) => {
  * PUT /api/team/emails/:id/mark-read
  * Mark email as read
  */
-router.put('/:id/mark-read', authUser, async (req, res) => {
+router.put('/:id(\\d+)/mark-read', authTeam, async (req, res) => {
   try {
-    await inboundEmailService.markAsRead(req.params.id);
+    const email = await findOwnedEmail(req);
+    if (!email) return res.status(404).json({ success: false, message: 'Email not found' });
+
+    await inboundEmailService.markAsRead(email.id);
 
     res.json({
       success: true,
@@ -393,9 +402,12 @@ router.put('/:id/mark-read', authUser, async (req, res) => {
  * PUT /api/team/emails/:id/toggle-star
  * Star/unstar email
  */
-router.put('/:id/toggle-star', authUser, async (req, res) => {
+router.put('/:id(\\d+)/toggle-star', authTeam, async (req, res) => {
   try {
-    const email = await inboundEmailService.toggleStar(req.params.id);
+    const ownedEmail = await findOwnedEmail(req);
+    if (!ownedEmail) return res.status(404).json({ success: false, message: 'Email not found' });
+
+    const email = await inboundEmailService.toggleStar(ownedEmail.id);
 
     res.json({
       success: true,
@@ -415,9 +427,12 @@ router.put('/:id/toggle-star', authUser, async (req, res) => {
  * DELETE /api/team/emails/:id
  * Delete email
  */
-router.delete('/:id', authUser, async (req, res) => {
+router.delete('/:id(\\d+)', authTeam, async (req, res) => {
   try {
-    await inboundEmailService.deleteEmail(req.params.id);
+    const email = await findOwnedEmail(req);
+    if (!email) return res.status(404).json({ success: false, message: 'Email not found' });
+
+    await inboundEmailService.deleteEmail(email.id);
 
     res.json({
       success: true,
@@ -436,7 +451,7 @@ router.delete('/:id', authUser, async (req, res) => {
  * POST /api/team/emails/:id/label
  * Add label to email
  */
-router.post('/:id/label', authUser, async (req, res) => {
+router.post('/:id(\\d+)/label', authTeam, async (req, res) => {
   try {
     const { label } = req.body;
 
@@ -447,7 +462,10 @@ router.post('/:id/label', authUser, async (req, res) => {
       });
     }
 
-    const email = await inboundEmailService.addLabel(req.params.id, label);
+    const ownedEmail = await findOwnedEmail(req);
+    if (!ownedEmail) return res.status(404).json({ success: false, message: 'Email not found' });
+
+    const email = await inboundEmailService.addLabel(ownedEmail.id, label);
 
     res.json({
       success: true,
@@ -467,9 +485,9 @@ router.post('/:id/label', authUser, async (req, res) => {
  * GET /api/team/emails/priority/:level
  * Get emails by priority
  */
-router.get('/priority/:level', authUser, async (req, res) => {
+router.get('/priority/:level', authTeam, async (req, res) => {
   try {
-    const teamMemberId = await resolveTeamMemberId(req.user);
+    const teamMemberId = await resolveTeamMemberId(req.teamUser || req.user);
     const emails = await EmailInbox.findAll({
       where: {
         teamMemberId,
@@ -497,11 +515,11 @@ router.get('/priority/:level', authUser, async (req, res) => {
  * POST /api/team/emails/send
  * Send email using user's configured SMTP settings
  */
-router.post('/send', authUser, optionalAttachUpload, async (req, res) => {
+router.post('/send', authTeam, optionalAttachUpload, async (req, res) => {
   try {
     const { to, cc, bcc, subject, htmlContent, textContent } = req.body;
-    const authUserId = req.user.id;
-    const teamMemberId = await resolveTeamMemberId(req.user);
+    const authUserId = (req.teamUser || req.user)?.id;
+    const teamMemberId = await resolveTeamMemberId(req.teamUser || req.user);
     const emailAttachments = (req.files || []).map(f => ({
       filename: f.originalname,
       content: f.buffer,
@@ -608,14 +626,14 @@ router.post('/send', authUser, optionalAttachUpload, async (req, res) => {
  * POST /api/team/emails/sync
  * Manually sync emails from configured inbox
  */
-router.post('/sync', authUser, async (req, res) => {
+router.post('/sync', authTeam, async (req, res) => {
   try {
-    console.log('📧 SYNC ENDPOINT - User:', { id: req.user?.id, role: req.user?.role, type: typeof req.user });
-    const authUserId = req.user?.id;
-    const teamMemberId = await resolveTeamMemberId(req.user);
+    console.log('📧 SYNC ENDPOINT - User:', { id: req.teamUser?.id || req.user?.id, role: req.teamUser?.role || req.user?.role, type: typeof (req.teamUser || req.user) });
+    const authUserId = (req.teamUser || req.user)?.id;
+    const teamMemberId = await resolveTeamMemberId(req.teamUser || req.user);
     
     if (!authUserId || !teamMemberId) {
-      console.error('❌ SYNC: No user ID found in req.user');
+      console.error('❌ SYNC: No user ID found in team auth context');
       return res.status(401).json({
         success: false,
         message: 'Not authenticated'
@@ -720,9 +738,9 @@ router.post('/sync', authUser, async (req, res) => {
  *   – save health reports from lab-domain emails
  *   – update employee real email addresses
  */
-router.post('/process-all', authUser, async (req, res) => {
+router.post('/process-all', authTeam, async (req, res) => {
   try {
-    const teamMemberId = await resolveTeamMemberId(req.user);
+    const teamMemberId = await resolveTeamMemberId(req.teamUser || req.user);
     const { limit = 500 } = req.body;
 
     const stats = await batchProcessInbox(teamMemberId, { limit: parseInt(limit) });
@@ -742,9 +760,9 @@ router.post('/process-all', authUser, async (req, res) => {
  * POST /api/team/emails/:id/process
  * Process a single email through the full pipeline.
  */
-router.post('/:id/process', authUser, async (req, res) => {
+router.post('/:id(\\d+)/process', authTeam, async (req, res) => {
   try {
-    const teamMemberId = await resolveTeamMemberId(req.user);
+    const teamMemberId = await resolveTeamMemberId(req.teamUser || req.user);
 
     const email = await EmailInbox.findOne({
       where: { id: req.params.id, teamMemberId },

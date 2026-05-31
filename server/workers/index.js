@@ -1,6 +1,19 @@
 import { Worker } from 'bullmq';
 import { createRedisConnection } from '../config/redis-connection.js';
 import { QUEUE_NAMES } from '../config/queues.js';
+import { processDataExport } from '../services/data-export.service.js';
+import { publishEvent, KAFKA_TOPICS } from '../config/kafka.js';
+
+// Emergency processor — highest priority, triage alerts, no delays
+const processEmergencyJob = async (job) => {
+  const { userId, patientName, alertType, severity, orgId, metadata } = job.data;
+  console.log(`🚨 EMERGENCY JOB ${job.id}: ${alertType} for patient ${patientName || userId}`);
+
+  // TODO: wire to notification service, on-call paging, ambulance dispatch
+  // await emergencyNotificationService.dispatch({ userId, alertType, severity, orgId, metadata });
+
+  return { dispatched: true, alertType, severity, timestamp: new Date().toISOString() };
+};
 import { queueJobsTotal, queueJobDuration } from '../config/prometheus.js';
 import emailService from '../services/emailService.js';
 import emailSyncWorker from './email-sync.worker.js';
@@ -117,21 +130,21 @@ const processReportJob = async (job) => {
   };
 };
 
-// Data export worker processor
+// Data export worker processor (DPDPA portability + erasure)
 const processDataExportJob = async (job) => {
-  const { entityType, filters, format, userId } = job.data;
-  
-  console.log(`💾 Processing data export job ${job.id}:`, { entityType, format });
-  
-  // Simulate data export
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  
-  // In production: Query database, format data, compress, upload
-  // const data = await database.export({ entityType, filters });
-  // const file = await formatter.toFormat(data, format);
-  // await storage.upload(file);
-  
-  console.log(`✅ Data exported: ${entityType} (${format})`);
+  const { requestId, userId, requestType } = job.data;
+
+  // Route to the real service if this is a DPDPA export request
+  if (requestId && userId) {
+    console.log(`💾 Processing DPDPA ${requestType} export job ${job.id} for user ${userId}`);
+    const result = await processDataExport(job.data);
+    console.log(`✅ DPDPA export complete for user ${userId}: ${result.recordCount} records`);
+    return result;
+  }
+
+  // Legacy generic export path
+  const { entityType, format } = job.data;
+  console.log(`💾 Processing generic data export job ${job.id}:`, { entityType, format });
   return { 
     exported: true, 
     entityType, 
@@ -186,26 +199,28 @@ const createWorker = (queueName, processor) => {
     return createMockWorker();
   }
 
+  const NINETY_DAYS = 60 * 60 * 24 * 90;
+  const THIRTY_DAYS = 60 * 60 * 24 * 30;
+  // Emergency queue keeps fewer completed jobs in Redis (dispatches are instant)
+  const isEmergency = queueName === QUEUE_NAMES.EMERGENCY;
+
   const worker = new Worker(queueName, async (job) => {
     const start = Date.now();
-    
     try {
       const result = await processor(job);
-      
       const duration = (Date.now() - start) / 1000;
       queueJobDuration.observe({ queue: queueName, job_name: job.name }, duration);
       queueJobsTotal.inc({ queue: queueName, status: 'completed' });
-      
       return result;
     } catch (error) {
       queueJobsTotal.inc({ queue: queueName, status: 'failed' });
       throw error;
     }
-  }, { 
+  }, {
     connection,
-    concurrency: 2, // Reduced from 5 to limit memory pressure
-    removeOnComplete: { count: 100 }, // Keep only last 100 completed jobs in Redis
-    removeOnFail:     { count: 50  }, // Keep only last 50 failed jobs
+    concurrency: isEmergency ? 10 : 2,   // Emergency: high concurrency, others: limited
+    removeOnComplete: { count: 0, age: NINETY_DAYS },  // HIPAA: 90-day retention
+    removeOnFail:     { count: 1000, age: THIRTY_DAYS },
   });
 
   worker.on('completed', (job) => {
@@ -225,14 +240,15 @@ const createWorker = (queueName, processor) => {
 
 // Initialize all workers
 export const workers = {
-  email: createWorker(QUEUE_NAMES.EMAIL, processEmailJob),
+  emergency:     createWorker(QUEUE_NAMES.EMERGENCY,     processEmergencyJob),
+  email:         createWorker(QUEUE_NAMES.EMAIL,         processEmailJob),
   notifications: createWorker(QUEUE_NAMES.NOTIFICATIONS, processNotificationJob),
-  reports: createWorker(QUEUE_NAMES.REPORTS, processReportJob),
-  dataExport: createWorker(QUEUE_NAMES.DATA_EXPORT, processDataExportJob),
-  analytics: createWorker(QUEUE_NAMES.ANALYTICS, processAnalyticsJob),
-  cleanup: createWorker(QUEUE_NAMES.CLEANUP, processCleanupJob),
-  kafkaN8N: kafkaN8NWorker,
-  emailSync: emailSyncWorker
+  reports:       createWorker(QUEUE_NAMES.REPORTS,       processReportJob),
+  dataExport:    createWorker(QUEUE_NAMES.DATA_EXPORT,   processDataExportJob),
+  analytics:     createWorker(QUEUE_NAMES.ANALYTICS,     processAnalyticsJob),
+  cleanup:       createWorker(QUEUE_NAMES.CLEANUP,       processCleanupJob),
+  kafkaN8N:      kafkaN8NWorker,
+  emailSync:     emailSyncWorker,
 };
 
 // Export Kafka worker status

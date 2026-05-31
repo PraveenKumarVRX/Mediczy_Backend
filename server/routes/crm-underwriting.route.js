@@ -16,7 +16,7 @@ import sharedPool from '../db/pgPool.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 import { getS3Client, getUploadsBucket } from '../services/s3-presign.service.js';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
-import XLSX from 'xlsx';
+import XLSX from '../utils/excel-compat.js';
 
 const router = express.Router();
 
@@ -197,7 +197,7 @@ async function extractAndCacheFileText(file) {
       } catch { text = ''; }
     } else if (mime.includes('spreadsheet') || mime.includes('excel') || name.endsWith('.xlsx') || name.endsWith('.xls')) {
       try {
-        const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+        const wb = await XLSX.read(buffer, { type: 'buffer', cellDates: true });
         const lines = [];
         for (const sheetName of wb.SheetNames) {
           const ws = wb.Sheets[sheetName];

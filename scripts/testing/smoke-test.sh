@@ -10,6 +10,14 @@
 ##############################################################################
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Preserve explicit caller-provided overrides before loading .env.testing defaults.
+CLI_BASE_URL="${BASE_URL:-}"
+CLI_TEST_USER_EMAIL="${TEST_USER_EMAIL:-}"
+CLI_TEST_USER_PASSWORD="${TEST_USER_PASSWORD:-}"
+CLI_TEST_DOCTOR_EMAIL="${TEST_DOCTOR_EMAIL:-}"
+CLI_TEST_DOCTOR_PASSWORD="${TEST_DOCTOR_PASSWORD:-}"
+CLI_TEST_ADMIN_EMAIL="${TEST_ADMIN_EMAIL:-}"
+CLI_TEST_ADMIN_PASSWORD="${TEST_ADMIN_PASSWORD:-}"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/load-testing-env.sh" || true
 
@@ -27,6 +35,15 @@ TEST_DOCTOR_EMAIL="${TEST_DOCTOR_EMAIL:-doctor@mediczy.com}"
 TEST_DOCTOR_PASSWORD="${TEST_DOCTOR_PASSWORD:-Doctor123}"
 TEST_ADMIN_EMAIL="${TEST_ADMIN_EMAIL:-admin@mediczy.com}"
 TEST_ADMIN_PASSWORD="${TEST_ADMIN_PASSWORD:-SecureAdmin123}"
+
+# Re-apply explicit caller-provided values after loading defaults.
+[ -n "$CLI_BASE_URL" ] && BASE_URL="$CLI_BASE_URL"
+[ -n "$CLI_TEST_USER_EMAIL" ] && TEST_USER_EMAIL="$CLI_TEST_USER_EMAIL"
+[ -n "$CLI_TEST_USER_PASSWORD" ] && TEST_USER_PASSWORD="$CLI_TEST_USER_PASSWORD"
+[ -n "$CLI_TEST_DOCTOR_EMAIL" ] && TEST_DOCTOR_EMAIL="$CLI_TEST_DOCTOR_EMAIL"
+[ -n "$CLI_TEST_DOCTOR_PASSWORD" ] && TEST_DOCTOR_PASSWORD="$CLI_TEST_DOCTOR_PASSWORD"
+[ -n "$CLI_TEST_ADMIN_EMAIL" ] && TEST_ADMIN_EMAIL="$CLI_TEST_ADMIN_EMAIL"
+[ -n "$CLI_TEST_ADMIN_PASSWORD" ] && TEST_ADMIN_PASSWORD="$CLI_TEST_ADMIN_PASSWORD"
 
 # Counters
 TOTAL_TESTS=0

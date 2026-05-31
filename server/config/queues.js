@@ -9,6 +9,7 @@ export const QUEUE_NAMES = {
   DATA_EXPORT: 'data-export-queue',
   ANALYTICS: 'analytics-queue',
   CLEANUP: 'cleanup-queue',
+  EMERGENCY: 'emergency-queue',    // highest priority — triage, critical alerts
 };
 
 const isTest = process.env.NODE_ENV === 'test';
@@ -37,18 +38,20 @@ if (isTest) {
     dataExport: mockQueue,
     analytics: mockQueue,
     cleanup: mockQueue,
+    emergency: mockQueue,
   };
   console.log('✅ BullMQ queues mocked for test mode');
 } else {
   // Redis connection for BullMQ
   connection = createRedisConnection();
   queues = {
-    email: new Queue(QUEUE_NAMES.EMAIL, { connection }),
+    email:        new Queue(QUEUE_NAMES.EMAIL,        { connection }),
     notifications: new Queue(QUEUE_NAMES.NOTIFICATIONS, { connection }),
-    reports: new Queue(QUEUE_NAMES.REPORTS, { connection }),
-    dataExport: new Queue(QUEUE_NAMES.DATA_EXPORT, { connection }),
-    analytics: new Queue(QUEUE_NAMES.ANALYTICS, { connection }),
-    cleanup: new Queue(QUEUE_NAMES.CLEANUP, { connection }),
+    reports:      new Queue(QUEUE_NAMES.REPORTS,      { connection }),
+    dataExport:   new Queue(QUEUE_NAMES.DATA_EXPORT,  { connection }),
+    analytics:    new Queue(QUEUE_NAMES.ANALYTICS,    { connection }),
+    cleanup:      new Queue(QUEUE_NAMES.CLEANUP,      { connection }),
+    emergency:    new Queue(QUEUE_NAMES.EMERGENCY,    { connection }),
   };
   console.log('✅ BullMQ queues initialized');
 }
@@ -62,19 +65,37 @@ export const addJob = async (queueName, jobName, data, options = {}) => {
     throw new Error(`Queue ${queueName} not found`);
   }
 
+  const NINETY_DAYS = 60 * 60 * 24 * 90;
+  const THIRTY_DAYS = 60 * 60 * 24 * 30;
+
   const defaultOptions = {
     attempts: 3,
     backoff: {
       type: 'exponential',
       delay: 2000,
     },
-    removeOnComplete: true,
-    removeOnFail: false,
+    // Retain completed jobs for 90 days (HIPAA audit trail requirement)
+    removeOnComplete: { count: 0, age: NINETY_DAYS },
+    // Retain last 1000 failed jobs for 30 days for debugging
+    removeOnFail: { count: 1000, age: THIRTY_DAYS },
   };
 
   const job = await queue.add(jobName, data, { ...defaultOptions, ...options });
   console.log(`📋 Job added to ${queueName}: ${jobName} (ID: ${job.id})`);
   return job;
+};
+
+// Helper to dispatch emergency/triage alert (highest priority, no delay)
+export const dispatchEmergencyAlert = async (data) => {
+  const queue = queues.emergency;
+  if (!queue) throw new Error('Emergency queue not initialized');
+  return queue.add('emergency-alert', data, {
+    priority: 1,              // BullMQ: 1 = highest
+    attempts: 5,
+    backoff: { type: 'fixed', delay: 500 },
+    removeOnComplete: { count: 0, age: 60 * 60 * 24 * 90 },
+    removeOnFail:     { count: 1000 },
+  });
 };
 
 // Helper to add delayed job

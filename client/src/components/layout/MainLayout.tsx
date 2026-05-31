@@ -31,7 +31,6 @@ import { BRAND, getShortRoleLabel } from "@/config/brand";
 import VideoCallNotification from "@/components/notifications/VideoCallNotification";
 import { useSocketConnection } from "@/hooks/useSocketConnection";
 import { PageTransition } from "@/components/PageTransition";
-import FloatingDrISHA from "@/components/FloatingDrISHA";
 import ChatApplet from "@/components/chat/ChatApplet";
 import GlobalSearch from "@/components/GlobalSearch";
 import aiHealthServices from "@/services/aiHealthServices";
@@ -63,23 +62,6 @@ const MainLayout = ({ children }: MainLayoutProps) => {
   // Initialize socket connection for notifications
   useSocketConnection();
   
-  // Register service worker
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        const swUrl = `${window.location.origin}/serviceWorker.js`;
-        navigator.serviceWorker.register(swUrl).then(
-          (registration) => {
-            console.log('ServiceWorker registration successful');
-          },
-          (err) => {
-            console.log('ServiceWorker registration failed: ', err);
-          }
-        );
-      });
-    }
-  }, []);
-
   const { toast } = useToast();
   const { setTheme, theme } = useTheme();
   const navigate = useNavigate();
@@ -470,9 +452,6 @@ const MainLayout = ({ children }: MainLayoutProps) => {
       {/* Video Call Notification System */}
       <VideoCallNotification />
       
-      {/* Floating AI Doctor Assistant - hidden for team portal */}
-      {!isTeamUser && <FloatingDrISHA />}
-
       {/* Team Chat Communication Module */}
       {isTeamUser && <ChatApplet />}
 

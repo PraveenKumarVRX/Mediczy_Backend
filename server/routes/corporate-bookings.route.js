@@ -16,6 +16,7 @@ import { postgresSequelize } from '../db/postgres-sequelize.js';
 import emailServiceModule from '../services/emailService.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
+import { requireCorporateAccess } from '../middleware/corporateTenant.js';
 
 // ──────────────────────────────────────────────
 // Reports are stored in MinIO via uploadToMinio service
@@ -67,10 +68,55 @@ function requireTeamOrAdmin(req, res, next) {
   return next();
 }
 
+async function assertCorporateAccessForId(req, res, corporateId) {
+  const role = req.user?.role;
+  const isAdmin = req.user?.isAdmin === true || role === 'admin' || role === 'super_admin';
+  if (isAdmin) return true;
+
+  const isTeam = req.user?.isTeam === true || ['team', 'team_member', 'team_lead'].includes(role);
+  if (!isTeam) {
+    res.status(403).json({ success: false, message: 'Team or admin access required' });
+    return false;
+  }
+
+  const [row] = await postgresSequelize.query(
+    `SELECT 1 FROM user_associations
+     WHERE "userId" = :userId
+       AND "entityType" = 'corporate'
+       AND "entityId" = :corporateId
+       AND status = 'active'
+     LIMIT 1`,
+    { replacements: { userId: req.user.id, corporateId: parseInt(corporateId) }, type: postgresSequelize.QueryTypes.SELECT }
+  );
+
+  if (!row) {
+    res.status(403).json({ success: false, message: 'Access denied – you are not assigned to this corporate' });
+    return false;
+  }
+  return true;
+}
+
 // ──────────────────────────────────────────────
 // Helper: Send email using team user's SMTP config from email_settings
 // Falls back to global email_configs (id=1) if no team config found
 // ──────────────────────────────────────────────
+async function assertEmployeeInCorporate(employeeId, corporateId) {
+  const sql = [
+    "SELECT 1 FROM user_associations",
+    "WHERE \"userId\" = :employeeId",
+    "AND \"entityType\" = \x27corporate\x27",
+    "AND \"entityId\" = :corporateId",
+    "AND role = \x27employee\x27",
+    "AND status = \x27active\x27",
+    "LIMIT 1"
+  ].join(" ");
+  const [row] = await postgresSequelize.query(sql, {
+    replacements: { employeeId: parseInt(employeeId), corporateId: parseInt(corporateId) },
+    type: postgresSequelize.QueryTypes.SELECT
+  });
+  return !!row;
+}
+
 async function sendCorporateEmail(teamUserId, { to, subject, html }) {
   // Try team user's email_settings first (e.g. care@mysmarthealth.in)
   const [cfg] = await postgresSequelize.query(
@@ -93,7 +139,7 @@ async function sendCorporateEmail(teamUserId, { to, subject, html }) {
       connectionTimeout: 10000,
       greetingTimeout: 5000,
       socketTimeout: 15000,
-      tls: { rejectUnauthorized: false, minVersion: 'TLSv1.2' }
+      tls: { rejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false', minVersion: 'TLSv1.2' }
     });
 
     const fromAddr = `"${cfg.display_name || 'Mediqzy Care'}" <${cfg.email}>`;
@@ -117,7 +163,7 @@ async function sendCorporateEmail(teamUserId, { to, subject, html }) {
 // GET /api/corporate-bookings/employees
 // Search corporate employees for booking autocomplete
 // ──────────────────────────────────────────────
-router.get('/employees', authUser, requireTeamOrAdmin, async (req, res) => {
+router.get('/employees', authUser, requireTeamOrAdmin, requireCorporateAccess, async (req, res) => {
   try {
     const { search = '', corporateId } = req.query;
     if (!corporateId) return res.status(400).json({ success: false, message: 'corporateId is required' });
@@ -222,7 +268,7 @@ router.get('/my-corporate', authUser, requireTeamOrAdmin, async (req, res) => {
 // Returns the packages assigned to a specific employee for a corporate,
 // including benefit availability (usedAt = null → available)
 // ──────────────────────────────────────────────
-router.get('/employee-eligibility', authUser, requireTeamOrAdmin, async (req, res) => {
+router.get('/employee-eligibility', authUser, requireTeamOrAdmin, requireCorporateAccess, async (req, res) => {
   try {
     const { employeeId, corporateId } = req.query;
 
@@ -280,7 +326,7 @@ router.get('/employee-eligibility', authUser, requireTeamOrAdmin, async (req, re
 // GET /api/corporate-bookings/labs
 // Fetch labs assigned to a corporate for the booking dropdown
 // ──────────────────────────────────────────────
-router.get('/labs', authUser, requireTeamOrAdmin, async (req, res) => {
+router.get('/labs', authUser, requireTeamOrAdmin, requireCorporateAccess, async (req, res) => {
   try {
     const { corporateId, search = '' } = req.query;
     if (!corporateId) return res.status(400).json({ success: false, message: 'corporateId is required' });
@@ -327,7 +373,7 @@ router.get('/labs', authUser, requireTeamOrAdmin, async (req, res) => {
 // Primary source: user_health_packages (team-created via admin UI)
 // Fallback:       membership_plans (legacy organisation plans)
 // ──────────────────────────────────────────────
-router.get('/packages', authUser, requireTeamOrAdmin, async (req, res) => {
+router.get('/packages', authUser, requireTeamOrAdmin, requireCorporateAccess, async (req, res) => {
   try {
     const { corporateId } = req.query;
     if (!corporateId) return res.status(400).json({ success: false, message: 'corporateId is required' });
@@ -403,7 +449,7 @@ router.get('/packages', authUser, requireTeamOrAdmin, async (req, res) => {
 // Book a health checkup for an Equitas employee
 // Sends email + WhatsApp to employee
 // ──────────────────────────────────────────────
-router.post('/health-checkup', authUser, requireTeamOrAdmin, async (req, res) => {
+router.post('/health-checkup', authUser, requireTeamOrAdmin, requireCorporateAccess, async (req, res) => {
   const {
     employeeId,          // user.id of the employee
     labId,               // lab.id
@@ -443,6 +489,10 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, async (req, res) =>
     if (!employee) {
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
+    if (!(await assertEmployeeInCorporate(employeeId, corporateId))) {
+      return res.status(403).json({ success: false, message: "Employee is not assigned to this corporate" });
+    }
+
 
     // ── 2. Generate unique order number ───────────────────────────
     const orderNumber = `CHK-${corporateId}-${Date.now()}`;
@@ -584,7 +634,7 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, async (req, res) =>
 // GET /api/corporate-bookings/history
 // List past corporate health checkup bookings
 // ──────────────────────────────────────────────
-router.get('/history', authUser, requireTeamOrAdmin, async (req, res) => {
+router.get('/history', authUser, requireTeamOrAdmin, requireCorporateAccess, async (req, res) => {
   try {
     const { corporateId, page = 1, limit = 50 } = req.query;
     if (!corporateId) return res.status(400).json({ success: false, message: 'corporateId is required' });
@@ -656,6 +706,7 @@ router.post(
   authUser,
   requireTeamOrAdmin,
   reportUpload.array('reports', 10),        // up to 10 files per request
+  requireCorporateAccess,
   async (req, res) => {
     const {
       employeeId,
@@ -689,6 +740,10 @@ router.post(
         { replacements: { empId: parseInt(employeeId) }, type: postgresSequelize.QueryTypes.SELECT }
       );
       if (!employee) return res.status(404).json({ success: false, message: 'Employee not found' });
+      if (!(await assertEmployeeInCorporate(employeeId, corporateId))) {
+        return res.status(403).json({ success: false, message: "Employee is not assigned to this corporate" });
+      }
+
 
       const employeeFullName = `${employee.firstName} ${employee.lastName}`.trim();
       const displayDate = new Date(reportDate).toLocaleDateString('en-IN', {
@@ -841,7 +896,7 @@ router.post(
 // Merges manually-uploaded corporate_health_reports with auto-processed
 // email reports from the reports table (both linked to the same corporate).
 // ──────────────────────────────────────────────
-router.get('/reports', authUser, requireTeamOrAdmin, async (req, res) => {
+router.get('/reports', authUser, requireTeamOrAdmin, requireCorporateAccess, async (req, res) => {
   try {
     const { corporateId, employeeId, page = 1, limit = 50 } = req.query;
     if (!corporateId) return res.status(400).json({ success: false, message: 'corporateId is required' });
@@ -969,6 +1024,7 @@ router.post('/reports/:id/share', authUser, requireTeamOrAdmin, async (req, res)
     );
 
     if (!row) return res.status(404).json({ success: false, message: 'Report not found' });
+    if (!(await assertCorporateAccessForId(req, res, row.corporate_id))) return;
 
     const employeeFullName = `${row.firstName} ${row.lastName}`.trim();
     const displayDate = new Date(row.report_date).toLocaleDateString('en-IN', {

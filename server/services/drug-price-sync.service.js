@@ -12,7 +12,7 @@
 
 import cron from 'node-cron';
 import axios from 'axios';
-import * as XLSX from 'xlsx';
+import XLSX from '../utils/excel-compat.js';
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -75,7 +75,7 @@ async function syncFromNPPA() {
   try {
     log.push('Downloading NPPA ceiling prices...');
     const filePath = await downloadFile(NPPA_URL, 'nppa_ceiling.xlsx');
-    const wb = XLSX.readFile(filePath);
+    const wb = await XLSX.readFile(filePath);
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
@@ -114,7 +114,7 @@ async function syncFromJanAushadhi() {
   try {
     log.push('Downloading Jan Aushadhi product list...');
     const filePath = await downloadFile(JAN_AUSHADHI_URL, 'jan_aushadhi.xlsx');
-    const wb = XLSX.readFile(filePath);
+    const wb = await XLSX.readFile(filePath);
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
@@ -177,7 +177,7 @@ export async function syncFromUploadedFile(buffer, originalName) {
   let updated = 0;
 
   try {
-    const wb = XLSX.read(buffer, { type: 'buffer' });
+    const wb = await XLSX.read(buffer, { type: 'buffer' });
     const sheet = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 

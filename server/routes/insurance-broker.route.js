@@ -136,7 +136,7 @@ router.post('/login', authLimiter, async (req, res) => {
         businessType: broker.businessType
       },
       JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     await auditLoginAttempt(req, broker.id, normalizedEmail, true);

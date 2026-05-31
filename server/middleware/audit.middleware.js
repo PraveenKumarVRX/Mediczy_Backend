@@ -1,4 +1,5 @@
 import AuditLog from '../models/auditLog.model.intelligent.js';
+import { maskPhi } from '../utils/phi-masker.js';
 
 /**
  * Audit Middleware
@@ -310,18 +311,18 @@ function extractResourceId(params) {
   return params?.id || params?.userId || params?.doctorId || null;
 }
 
-function sanitizeForAudit(data) {
+export function sanitizeForAudit(data) {
   if (!data) return null;
-  
-  // Remove sensitive fields from audit logs
+
+  // Remove high-risk secrets and then deep-mask remaining PHI fields.
   const sanitized = { ...data };
   delete sanitized.password;
   delete sanitized.passwordHash;
   delete sanitized.token;
   delete sanitized.refreshToken;
   delete sanitized.secretKey;
-  
-  return sanitized;
+
+  return maskPhi(sanitized);
 }
 
 /**

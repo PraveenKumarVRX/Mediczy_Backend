@@ -2,7 +2,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import XLSX from 'xlsx';
+import XLSX from '../utils/excel-compat.js';
 
 const SOURCE_FILE = path.resolve('server/db/Master Data/Labs/labs list.xlsx');
 const OUTPUT_DIR = '/tmp/rag_cache/all_providers/labs';
@@ -62,7 +62,7 @@ function mapRowToProfile(row, index) {
 }
 
 async function main() {
-  const workbook = XLSX.readFile(SOURCE_FILE);
+  const workbook = await XLSX.readFile(SOURCE_FILE);
   const sheetName = workbook.SheetNames[0];
   const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
 

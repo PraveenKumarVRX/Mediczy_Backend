@@ -59,7 +59,7 @@ router.post('/login', authLimiter, async (req, res) => {
     const token = jwt.sign(
       { id: ambulance.id, email: ambulance.email, role: 'ambulance', type: 'ambulance' },
       JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     await auditLoginAttempt(req, ambulance.id, normalizedEmail, true);

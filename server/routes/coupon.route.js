@@ -56,6 +56,122 @@ const normalizeAssignedUserIds = (value) => {
   return [];
 };
 
+const COUPON_SCOPES = {
+  COINS_PURCHASE: 'COINS_PURCHASE',
+  HEALTH_CHECKUP: 'HEALTH_CHECKUP',
+  PHARMACY_PURCHASE: 'PHARMACY_PURCHASE',
+  CONSULTATION: 'CONSULTATION'
+};
+
+const SAMPLE_COUPON_DEFINITIONS = [
+  {
+    code: 'COINBOOST20',
+    type: 'PERCENTAGE',
+    value: 20,
+    minPurchase: 100,
+    description: '20% off on Health Coins purchase',
+    scopes: [COUPON_SCOPES.COINS_PURCHASE]
+  },
+  {
+    code: 'CHECKUP15',
+    type: 'PERCENTAGE',
+    value: 15,
+    minPurchase: 499,
+    description: '15% off on health checkups',
+    scopes: [COUPON_SCOPES.HEALTH_CHECKUP]
+  },
+  {
+    code: 'PHARM10',
+    type: 'PERCENTAGE',
+    value: 10,
+    minPurchase: 299,
+    description: '10% off on pharmacy purchases',
+    scopes: [COUPON_SCOPES.PHARMACY_PURCHASE]
+  },
+  {
+    code: 'CONSULT25',
+    type: 'PERCENTAGE',
+    value: 25,
+    minPurchase: 199,
+    description: '25% off on doctor consultations',
+    scopes: [COUPON_SCOPES.CONSULTATION]
+  }
+];
+
+const normalizeScopes = (value) => {
+  const allowed = new Set(Object.values(COUPON_SCOPES));
+  const list = Array.isArray(value)
+    ? value
+    : String(value || '')
+        .split(',')
+        .map((item) => item.trim().toUpperCase())
+        .filter(Boolean);
+
+  const normalized = list.filter((scope) => allowed.has(scope));
+  return normalized.length ? normalized : [COUPON_SCOPES.COINS_PURCHASE];
+};
+
+const assignSampleCouponsToUser = async (targetUserId, createdBy) => {
+  const uid = parseInt(targetUserId, 10);
+  const now = new Date();
+  const validUntil = new Date(now.getTime() + (90 * 24 * 60 * 60 * 1000));
+
+  const upserted = [];
+
+  for (const definition of SAMPLE_COUPON_DEFINITIONS) {
+    const couponCode = `${definition.code}U${uid}`;
+    const existing = await Coupon.findOne({ where: { code: couponCode } });
+
+    if (!existing) {
+      const created = await Coupon.create({
+        code: couponCode,
+        type: definition.type,
+        value: definition.value,
+        minPurchase: definition.minPurchase,
+        maxUsage: 100000,
+        maxUsagePerUser: 5,
+        usageCount: 0,
+        validFrom: now,
+        validUntil,
+        isActive: true,
+        corporateName: 'Mediqzy Promo',
+        description: definition.description,
+        createdBy,
+        metadata: {
+          scopes: definition.scopes,
+          assignedUserIds: [uid],
+          sample: true,
+          sampleBaseCode: definition.code
+        }
+      });
+      upserted.push(created);
+      continue;
+    }
+
+    const assignedUserIds = normalizeAssignedUserIds(existing?.metadata?.assignedUserIds);
+    const mergedAssigned = assignedUserIds.includes(uid) ? assignedUserIds : [...assignedUserIds, uid];
+    const mergedScopes = Array.from(new Set([...normalizeScopes(existing?.metadata?.scopes), ...definition.scopes]));
+
+    await existing.update({
+      isActive: true,
+      validUntil: existing.validUntil < now ? validUntil : existing.validUntil,
+      description: existing.description || definition.description,
+      createdBy: existing.createdBy || createdBy,
+      metadata: {
+        ...(existing.metadata || {}),
+        scopes: mergedScopes,
+        assignedUserIds: mergedAssigned,
+        sample: true,
+        sampleBaseCode: definition.code
+      }
+    });
+
+    upserted.push(existing);
+  }
+
+  return upserted;
+};
+
 /**
  * @route   GET /api/coupons
  * @desc    Get all coupons (Ops team only)
@@ -143,6 +259,45 @@ router.get('/stats', authTeam, requireOpsTeamMember, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch statistics',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/coupons/sample/assign
+ * @desc    Assign sample coupon set to a user (Ops team only)
+ * @access  Private/Team Ops
+ */
+router.post('/sample/assign', authTeam, requireOpsTeamMember, async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const targetUserId = parseInt(userId, 10);
+
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid userId is required'
+      });
+    }
+
+    const coupons = await assignSampleCouponsToUser(targetUserId, req.teamUser.id);
+
+    return res.json({
+      success: true,
+      message: `Sample coupons assigned to user ${targetUserId}`,
+      coupons: coupons.map((coupon) => ({
+        id: coupon.id,
+        code: coupon.code,
+        description: coupon.description,
+        scopes: normalizeScopes(coupon?.metadata?.scopes)
+      }))
+    });
+  } catch (error) {
+    console.error('Error assigning sample coupons:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to assign sample coupons',
       error: error.message
     });
   }

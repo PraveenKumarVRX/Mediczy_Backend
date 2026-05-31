@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "/api";
-console.log("Auth Base URL:", BASE_URL);
 
 const ROLE_TOKEN_KEYS: Record<string, string> = {
   user: "token",

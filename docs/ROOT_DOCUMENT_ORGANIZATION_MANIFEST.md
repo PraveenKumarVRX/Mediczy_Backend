@@ -9,6 +9,7 @@ Moved count: 345
 - docs/ai
 - docs/api
 - docs/architecture
+- docs/audits
 - docs/communications
 - docs/deployment
 - docs/doctor
@@ -19,6 +20,13 @@ Moved count: 345
 - docs/security
 - docs/testing
 - docs/misc
+
+## Audit Reports (docs/audits/)
+
+| File | Scope | Date | Open findings |
+|---|---|---|---|
+| `MOBILE_APP_API_AUDIT.md` | Patient mobile app — API integration guide v2.7 | 2026-05-31 | 27 (5× P0, 6× P1, 13× P2, 3× P3) |
+| `WEB_APP_CLIENT_AUDIT.md` | Patient web app — React/TS client `client/src/` | 2026-05-31 | 15 (3× P0, 6× P1, 6× P2) |
 
 ## Moved Files
 

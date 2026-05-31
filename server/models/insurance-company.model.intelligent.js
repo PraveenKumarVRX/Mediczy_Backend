@@ -5,7 +5,7 @@
 
 import { DataTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 
 // ============================================================================
 // INSURANCE COMPANY MODEL

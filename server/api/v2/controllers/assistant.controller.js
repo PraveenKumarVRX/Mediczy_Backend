@@ -20,19 +20,25 @@ class AssistantController {
     
     const result = await AssistantService.authenticate(email, password, tenantId);
     
-    // Generate JWT token
-    const { generateToken, generateRefreshToken } = await import('../auth.utils.js');
+    // Generate JWT token pair with refresh-token persistence
+    const { issueTokenPair } = await import('../auth.utils.js');
     
-    const accessToken = generateToken({
-      id: result.assistant.id,
-      email: result.assistant.email,
-      name: result.assistant.name,
-      linkedDoctorId: result.assistant.linked_doctor_id,
-      permissions: result.permissions,
-      tenantId
-    }, 'assistant');
-    
-    const refreshToken = generateRefreshToken(result.assistant.id, 'assistant');
+    const { accessToken, refreshToken } = await issueTokenPair(
+      {
+        id: result.assistant.id,
+        userId: result.assistant.id,
+        email: result.assistant.email,
+        name: result.assistant.name,
+        linkedDoctorId: result.assistant.linked_doctor_id,
+        permissions: result.permissions,
+        tenantId
+      },
+      'assistant',
+      {
+        ipAddress: req.ip || req.socket?.remoteAddress || null,
+        userAgent: req.headers['user-agent'] || null,
+      }
+    );
     
     ApiResponse.success(res, {
       message: 'Login successful',
@@ -41,7 +47,7 @@ class AssistantController {
         permissions: result.permissions,
         accessToken,
         refreshToken,
-        expiresIn: '8h'
+        expiresIn: '15m'
       }
     });
   });

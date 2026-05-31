@@ -89,9 +89,9 @@ router.get('/', (req, res) => {
 
 import { 
   authenticate, 
-  generateToken, 
-  generateRefreshToken,
-  refreshAccessToken 
+  issueTokenPair,
+  refreshAccessToken,
+  revokeAllUserRefreshTokens
 } from './auth.utils.js';
 import { validateRequest } from './validators/index.js';
 import { loginSchema } from './validators/assistant.validator.js';
@@ -135,17 +135,22 @@ router.post('/auth/login', authLimiter, validateRequest(loginSchema), asyncHandl
     });
   }
   
-  // Generate tokens
-  const accessToken = generateToken({
-    id: user.id,
-    userId: user.id,
-    email: user.email,
-    name: user.name,
-    permissions: user.permissions,
-    tenantId: user.tenant_id || 'default'
-  }, role);
-  
-  const refreshToken = generateRefreshToken(user.id, role);
+  // Generate tokens with persistent refresh-token store
+  const { accessToken, refreshToken } = await issueTokenPair(
+    {
+      id: user.id,
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      permissions: user.permissions,
+      tenantId: user.tenant_id || 'default'
+    },
+    role,
+    {
+      ipAddress: req.ip || req.socket?.remoteAddress || null,
+      userAgent: req.headers['user-agent'] || null,
+    }
+  );
   
   // Remove sensitive data
   delete user.password;
@@ -157,7 +162,7 @@ router.post('/auth/login', authLimiter, validateRequest(loginSchema), asyncHandl
       user,
       accessToken,
       refreshToken,
-      expiresIn: '8h'
+      expiresIn: '15m'
     }
   });
 }));
@@ -172,7 +177,10 @@ router.post('/auth/refresh', asyncHandler(async (req, res) => {
     });
   }
   
-  const result = await refreshAccessToken(refreshToken);
+  const result = await refreshAccessToken(refreshToken, {
+    ipAddress: req.ip || req.socket?.remoteAddress || null,
+    userAgent: req.headers['user-agent'] || null,
+  });
   
   res.json({
     success: true,
@@ -181,11 +189,19 @@ router.post('/auth/refresh', asyncHandler(async (req, res) => {
 }));
 
 router.post('/auth/logout', authenticate(), (req, res) => {
-  // In a real app, invalidate the refresh token in database/Redis
-  res.json({
-    success: true,
-    message: 'Logged out successfully'
-  });
+  return revokeAllUserRefreshTokens(req.userId, req.userRole)
+    .then(() => {
+      res.json({
+        success: true,
+        message: 'Logged out successfully'
+      });
+    })
+    .catch(() => {
+      res.status(500).json({
+        success: false,
+        error: { code: 'LOGOUT_FAILED', message: 'Failed to revoke refresh tokens' }
+      });
+    });
 });
 
 // ============== Assistant Routes (V2 - Enterprise Pattern) ==============

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   Box,
   Button,
@@ -12,40 +12,72 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-} from '@mui/material';
-import axios from '@/utils/api';
+} from "@mui/material";
+import axios from "@/utils/api";
+
+type AyushmanFormData = {
+  aadhaarNumber: string;
+  mobileNumber: string;
+  captchaCode: string;
+};
+
+type AyushmanStatusResult = {
+  status?: string;
+  beneficiaryName?: string;
+  cardNumber?: string;
+  eligibilityStatus?: string;
+  familyMembers?: string[];
+  additionalInfo?: string;
+};
+
+type StatusResponse = {
+  requiresCaptcha?: boolean;
+  captchaPath?: string;
+  data?: AyushmanStatusResult;
+};
+
+type ApiError = {
+  response?: {
+    data?: {
+      message?: string;
+    };
+  };
+};
+
+const getErrorMessage = (error: unknown, fallback: string) =>
+  (error as ApiError | undefined)?.response?.data?.message || fallback;
 
 const AyushmanStatus = () => {
-  const [formData, setFormData] = useState({
-    aadhaarNumber: '',
-    mobileNumber: '',
-    captchaCode: '',
+  const [formData, setFormData] = useState<AyushmanFormData>({
+    aadhaarNumber: "",
+    mobileNumber: "",
+    captchaCode: "",
   });
 
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<AyushmanStatusResult | null>(null);
   const [showCaptcha, setShowCaptcha] = useState(false);
-  const [captchaImage, setCaptchaImage] = useState('');
+  const [captchaImage, setCaptchaImage] = useState("");
 
-  const handleInputChange = (e) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+    setError("");
     setResult(null);
 
     try {
-      const response = await axios.post('/ayushman/check-status', {
+      const response = await axios.post<StatusResponse>("/ayushman/check-status", {
         aadhaarNumber: formData.aadhaarNumber,
-        mobileNumber: formData.mobileNumber
+        mobileNumber: formData.mobileNumber,
       });
 
       if (response.data.requiresCaptcha) {
@@ -54,9 +86,9 @@ const AyushmanStatus = () => {
         return;
       }
 
-      setResult(response.data.data);
+      setResult(response.data.data ?? null);
     } catch (error) {
-      setError(error.response?.data?.message || 'Failed to check status. Please try again.');
+      setError(getErrorMessage(error, "Failed to check status. Please try again."));
     } finally {
       setLoading(false);
     }
@@ -64,24 +96,24 @@ const AyushmanStatus = () => {
 
   const handleCaptchaSubmit = async () => {
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
-      const response = await axios.post('/api/ayushman/submit-captcha', {
-        ...formData
+      const response = await axios.post<StatusResponse>("/api/ayushman/submit-captcha", {
+        ...formData,
       });
 
-      setResult(response.data.data);
+      setResult(response.data.data ?? null);
       setShowCaptcha(false);
     } catch (error) {
-      setError(error.response?.data?.message || 'Failed to verify captcha. Please try again.');
+      setError(getErrorMessage(error, "Failed to verify captcha. Please try again."));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Box sx={{ maxWidth: 600, mx: 'auto', p: 3 }}>
+    <Box sx={{ maxWidth: 600, mx: "auto", p: 3 }}>
       <Typography variant="h4" gutterBottom>
         Check Ayushman Card Status
       </Typography>
@@ -121,7 +153,7 @@ const AyushmanStatus = () => {
               disabled={loading}
               sx={{ mt: 2 }}
             >
-              {loading ? <CircularProgress size={24} /> : 'Check Status'}
+              {loading ? <CircularProgress size={24} /> : "Check Status"}
             </Button>
           </form>
         </CardContent>
@@ -147,31 +179,25 @@ const AyushmanStatus = () => {
             )}
 
             {result.beneficiaryName && (
-              <Typography gutterBottom>
-                Name: {result.beneficiaryName}
-              </Typography>
+              <Typography gutterBottom>Name: {result.beneficiaryName}</Typography>
             )}
 
             {result.cardNumber && (
-              <Typography gutterBottom>
-                Card Number: {result.cardNumber}
-              </Typography>
+              <Typography gutterBottom>Card Number: {result.cardNumber}</Typography>
             )}
 
             {result.eligibilityStatus && (
-              <Typography gutterBottom>
-                Eligibility: {result.eligibilityStatus}
-              </Typography>
+              <Typography gutterBottom>Eligibility: {result.eligibilityStatus}</Typography>
             )}
 
-            {result.familyMembers?.length > 0 && (
+            {result.familyMembers && result.familyMembers.length > 0 && (
               <>
                 <Typography variant="subtitle1" gutterBottom>
                   Family Members:
                 </Typography>
                 {result.familyMembers.map((member, index) => (
-                  <Typography key={index} sx={{ pl: 2 }}>
-                    • {member}
+                  <Typography key={`${member}-${index}`} sx={{ pl: 2 }}>
+                    - {member}
                   </Typography>
                 ))}
               </>
@@ -206,7 +232,7 @@ const AyushmanStatus = () => {
         <DialogActions>
           <Button onClick={() => setShowCaptcha(false)}>Cancel</Button>
           <Button onClick={handleCaptchaSubmit} variant="contained" disabled={loading}>
-            {loading ? <CircularProgress size={24} /> : 'Submit'}
+            {loading ? <CircularProgress size={24} /> : "Submit"}
           </Button>
         </DialogActions>
       </Dialog>
@@ -214,4 +240,4 @@ const AyushmanStatus = () => {
   );
 };
 
-export default AyushmanStatus; 
+export default AyushmanStatus;

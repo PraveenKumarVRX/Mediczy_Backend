@@ -5,7 +5,7 @@
  * Processes lab data with intelligent task management
  */
 
-const XLSX = require('xlsx');
+const XLSX = require('../utils/excel-compat.cjs');
 const fs = require('fs').promises;
 const path = require('path');
 
@@ -41,7 +41,7 @@ class LabImporter {
         console.log('📂 Loading lab data from Excel...');
         
         const filePath = path.join(__dirname, LAB_FILE);
-        const workbook = XLSX.readFile(filePath);
+        const workbook = await XLSX.readFile(filePath);
         const sheetName = workbook.SheetNames[0];
         const data = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
         

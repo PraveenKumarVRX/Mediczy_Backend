@@ -1,26 +1,6 @@
 module.exports = {
   apps: [
-    // LiveKit SFU Video Server (Ports 7880/7881)
-    {
-      name: 'livekit',
-      script: '/usr/local/bin/livekit-server',
-      args: '--config /home/ubuntu/livekit-config.yaml',
-      cwd: '/home/ubuntu',
-      interpreter: 'none',
-      instances: 1,
-      exec_mode: 'fork',
-      autorestart: true,
-      watch: false,
-      kill_timeout: 8000,       // 8s to fully release ports 7880/7881
-      restart_delay: 5000,      // 5s between restart attempts
-      max_restarts: 5,
-      min_uptime: '10s',
-      error_file: '/home/ubuntu/.pm2/logs/livekit-error.log',
-      out_file: '/home/ubuntu/.pm2/logs/livekit-out.log',
-      merge_logs: true,
-      time: true,
-      log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
-    },
+    // LiveKit — migrated to LiveKit Cloud (msh-kw9tvxa9.livekit.cloud) 2026-05-30
 
     // Production server - cluster mode (uses all CPU cores)
     {
@@ -73,16 +53,41 @@ module.exports = {
       script: 'worker-wrapper.cjs',
       cwd: '/home/ubuntu/Mediczy/server',
       interpreter: 'node',
-      instances: 1,
+      instances: 2,        // Two worker processes — isolated from API process
       exec_mode: 'fork',
       autorestart: true,
       max_memory_restart: '1G',
       env: {
-        NODE_ENV: 'production'
+        NODE_ENV: 'production',
+        AWS_REGION: 'ap-south-1',
+        SSM_PARAM_PATH: '/mediczy/prod',
       },
       error_file: '../logs/mediczy-worker-error.log',
       out_file: '../logs/mediczy-worker-out.log',
       time: true
+    },
+    // NestJS — strangler-fig (runs alongside Express on port 8001)
+    {
+      name: 'mediczy-nestjs',
+      script: 'scripts/ssm-env-loader.mjs',
+      args: 'dist/main.js',
+      cwd: '/home/ubuntu/Mediczy/nestjs-app',
+      interpreter: 'node',
+      instances: 1,
+      exec_mode: 'cluster',
+      autorestart: true,
+      max_memory_restart: '2G',
+      env: {
+        NODE_ENV: 'production',
+        AWS_REGION: 'ap-south-1',
+        SSM_PARAM_PATH: '/mediczy/prod',
+        NESTJS_PORT: '8001',
+      },
+      error_file: '../logs/mediczy-nestjs-error.log',
+      out_file: '../logs/mediczy-nestjs-out.log',
+      log_file: '../logs/mediczy-nestjs-combined.log',
+      time: true,
+      merge_logs: true,
     },
     {
       name: 'llm-orchestrator',
@@ -138,12 +143,13 @@ module.exports = {
       env: {
         GROQ_API_KEY: process.env.GROQ_API_KEY,
         GEMINI_API_KEY: process.env.GEMINI_API_KEY,
-        POSTGRES_HOST: process.env.POSTGRES_HOST || '127.0.0.1',
-        POSTGRES_PORT: process.env.POSTGRES_PORT || '5432',
-        POSTGRES_DATABASE: process.env.POSTGRES_DATABASE || 'mediczy_ai',
-        POSTGRES_DB: process.env.POSTGRES_DATABASE || 'mediczy_ai',
-        POSTGRES_USER: process.env.POSTGRES_USER || 'mediczy_helper',
-        POSTGRES_PASSWORD: process.env.POSTGRES_PASSWORD || (process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || undefined),
+        POSTGRES_HOST: 'mediczy-uat.cloqkwiey4k0.ap-south-1.rds.amazonaws.com',
+        POSTGRES_PORT: '5432',
+        POSTGRES_DATABASE: 'mediczy_ai',
+        POSTGRES_DB: 'mediczy_ai',
+        POSTGRES_USER: 'mediczy_helper',
+        POSTGRES_PASSWORD: 'Mediczy2024Helper',
+        POSTGRES_SSL: 'true',
         DUCKDB_ENABLED: 'true',
         DUCKDB_PATH: ':memory:',
         PGVECTOR_DIMENSION: process.env.PGVECTOR_DIMENSION || '1536',
@@ -156,27 +162,6 @@ module.exports = {
       },
       error_file: '/home/ubuntu/Mediczy/ai-engine/doctor_bot/logs/sib-error.log',
       out_file: '/home/ubuntu/Mediczy/ai-engine/doctor_bot/logs/sib-out.log',
-      merge_logs: true,
-      time: true,
-      log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
-    },
-    // MiroTalk SFU Video Server (Port 3010)
-    {
-      name: 'mirotalk-sfu',
-      script: 'node',
-      args: 'app/src/Server.js',
-      cwd: '/home/ubuntu/mirotalk-sfu',
-      instances: 1,
-      exec_mode: 'fork',
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '500M',
-      env: {
-        NODE_ENV: 'production',
-        PORT: '3010'
-      },
-      error_file: '/home/ubuntu/Mediczy/logs/mirotalk-error.log',
-      out_file: '/home/ubuntu/Mediczy/logs/mirotalk-out.log',
       merge_logs: true,
       time: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
@@ -206,11 +191,13 @@ module.exports = {
         EXECUTIONS_DATA_SAVE_ON_SUCCESS: 'all',
         EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: 'true',
         DB_TYPE: 'postgresdb',
-        DB_POSTGRESDB_HOST: 'localhost',
+        DB_POSTGRESDB_HOST: 'mediczy-uat.cloqkwiey4k0.ap-south-1.rds.amazonaws.com',
         DB_POSTGRESDB_PORT: '5432',
         DB_POSTGRESDB_DATABASE: 'mediczy_ai',
         DB_POSTGRESDB_USER: 'mediczy_helper',
-        DB_POSTGRESDB_PASSWORD: process.env.DB_POSTGRESDB_PASSWORD,
+        DB_POSTGRESDB_PASSWORD: 'Mediczy2024Helper',
+        DB_POSTGRESDB_SSL_ENABLED: 'true',
+        DB_POSTGRESDB_SSL_REJECT_UNAUTHORIZED: 'false',
         DB_POSTGRESDB_SCHEMA: 'n8n',
         MEDICZY_API_URL: 'http://localhost:8000/api',
         MEDICZY_WEBHOOK_SECRET: process.env.MEDICZY_WEBHOOK_SECRET,

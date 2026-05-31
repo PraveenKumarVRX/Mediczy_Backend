@@ -1,11 +1,12 @@
 # Mediczy — Patient Mobile App API Guide
 
-> **Version:** 2.6 | **Last Updated:** May 14, 2026
+> **Version:** 2.7 | **Last Updated:** 2026-05-30
 
 - **Base URL:** `https://app.mediqzy.com/api`
 - **Auth:** `Authorization: Bearer <jwt-token>` (JWT, expires 7 days)
 - **Content-Type:** `application/json`
 - **Socket.IO:** `wss://app.mediqzy.com` — path `/socket.io`
+- **LiveKit:** `wss://msh-kw9tvxa9.livekit.cloud` *(LiveKit Cloud)*
 - **Rate Limits:** Global 300 req/15 min · Auth 10 req/15 min · AI 60 req/15 min
 
 > `🔐` = Requires authentication | `(Public)` = No auth required
@@ -96,7 +97,7 @@ POST /api/auth/login
   }
 }
 ```
-> Store the `token` securely (Keychain/Keystore). Include it in all subsequent requests as `Authorization: Bearer <token>`. Token expires in 7 days.
+> Store the `token` securely (Keychain/Keystore). Include it in all subsequent requests as `Authorization: Bearer <token>`. Token expires in **30 days**. Use the refresh token endpoint (`POST /api/v2/auth/refresh`) to obtain a new access token silently before expiry.
 
 ### 1.2 Login (OTP — Email)
 ```
@@ -163,7 +164,7 @@ Body: { "corporateId": 1, "employeeId": "EMP-001" }
 POST /api/users/register/send-otp  (Public)
 Body: { "email": "new@example.com", "phoneNumber": "+919876543210", "firstName": "John" }
 ```
-> OTP sent to email (required) and WhatsApp (optional). In dev/test mode, OTPs are returned in the response body under `data.emailOtp` and `data.whatsappOtp`.
+> OTP sent to email (required) and WhatsApp (optional). OTPs are never included in the response body — retrieve from server logs during development.
 
 #### Step 4 — Verify email OTP
 ```
@@ -777,8 +778,8 @@ GET /api/prescriptions/patient                           🔐  My prescriptions
 GET /api/prescriptions/my/all                            🔐  All my prescriptions
 GET /api/prescriptions/:id                               🔐  Prescription detail
 GET /api/prescriptions/appointment/:appointmentId        🔐  By appointment
-GET /api/prescriptions/:id/html                          (Public)  HTML view
-GET /api/prescriptions/:id/pdf                           (Public)  PDF download
+GET /api/prescriptions/:id/html                          🔐  HTML view (or ?token=<share-jwt> for link sharing)
+GET /api/prescriptions/:id/pdf                           🔐  PDF download (or ?token=<share-jwt> for link sharing)
 GET /api/prescriptions/:id/share/whatsapp                🔐  Share via WhatsApp
 ```
 > Prescriptions are created by doctors post-consultation. Patients can only view/download/share.
@@ -1193,8 +1194,11 @@ POST /api/billing/orders  🔐  Pharmacy order (shortcut — creates order + lin
 ```
 
 ### 14.2 Read Orders
+
+> ⚠️ **`GET /api/billing/orders` is temporarily unavailable (returns 500 — DB migration pending).** Use `GET /api/billing/orders/pharmacy/history` for pharmacy order history. Do not build against the base list endpoint until this notice is removed.
+
 ```
-GET  /api/billing/orders                     🔐  ?status&page&limit
+GET  /api/billing/orders                     🔐  ?status&page&limit  ⚠️ 500 — migration pending
 GET  /api/billing/orders/:orderId            🔐  Basic order detail
 GET  /api/billing/orders/:orderId/detailed   🔐  Full: items, payments, timeline, tracking, invoice, addresses
 POST /api/billing/orders/:orderId/reorder    🔐  Duplicate a previous pharmacy order
@@ -1226,9 +1230,9 @@ GET  /api/billing/stats         🔐
 
 ## 15. Membership Plans
 
-Two route groups serve membership:
-- `/api/membership` — subscribe, upgrade, usage tracking (`membership.route.js`)
-- `/api/membership-plans` — enroll by slug, referrals, card image (`membership-plans.route.js`)
+Two route groups serve membership. **Use `/api/membership-plans/enroll` (§15.4) as the canonical subscribe path.** `POST /api/membership/subscribe/:planId` (§15.3) is **deprecated — use only for internal/admin tooling**.
+- `/api/membership` — upgrade, usage tracking (`membership.route.js`)
+- `/api/membership-plans` — enroll, referrals, card image — **primary path** (`membership-plans.route.js`)
 
 ### 15.1 Browse Plans
 ```
@@ -1466,6 +1470,8 @@ Body: {
 
 ## 16. AI Medical Features
 
+> **Canonical AI endpoint:** Always use `POST /api/medical-ai/consult` (§16.1) for all Dr. iSHA interactions. The rule-based endpoint `POST /api/ai-health/dr-isha/consult` and legacy `POST /api/ai/working-medical-consult` are **deprecated — Sunset: 2026-11-01** and will be removed.
+
 ### 16.1 AI Consultation (Dr. iSHA) — Primary
 ```
 POST /api/medical-ai/consult  🔐
@@ -1573,7 +1579,7 @@ Body: {
   "doctor": { "id": 70, "name": "Dr. Sharma", "specialization": "Cardiology" },
   "videoCall": {
     "roomId": "triage_abc123_1714046400000",
-    "patientJoinUrl": "https://video.mediqzy.com/rooms/triage_abc123...",
+    "patientJoinUrl": "https://msh-kw9tvxa9.livekit.cloud/rooms/triage_abc123...",
     "livekit": { "patient": { "token": "eyJ...", "serverUrl": "wss://..." } }
   },
   "billing": {
@@ -1695,7 +1701,7 @@ POST /api/ai/translate                    🔐  Body: { "text": "...", "targetLa
 POST /api/ai/text-to-speech              🔐  Body: { "text": "...", "voice": "alloy" }
 GET  /api/ai/voices                       🔐  Available TTS voices
 POST /api/ai/feedback                     🔐  AI feedback submission
-POST /api/ai/analyze-image               (Public)  Image analysis
+POST /api/ai/analyze-image               🔐  Image analysis
 ```
 
 ---
@@ -2398,7 +2404,7 @@ Body: { "token": "<firebase-fcm-token>" }
 ## 25. Text-to-Speech
 
 ```
-POST /api/tts/speak          (Public)  Text-to-speech
+POST /api/tts/speak          🔐  Text-to-speech
      Body: { "text": "Your next appointment is tomorrow", "language": "en", "voice": "default" }
      → Returns: audio/mpeg stream
 
@@ -2568,9 +2574,9 @@ GET /api/places/nearby?lat=19.076&lng=72.877&type=hospital (Public)
 GET  /api/ayushman/details              (Public)  ABHA details
 GET  /api/ayushman/hospitals             (Public)  ABHA hospitals
 GET  /api/ayushman/eligibility           (Public)  Check eligibility
-GET  /api/ayushman/e-card                (Public)  Get e-card
-POST /api/ayushman/check-status          (Public)  Check status
-POST /api/ayushman/download              (Public)  Download ABHA card
+GET  /api/ayushman/e-card                🔐  Get e-card
+POST /api/ayushman/check-status          🔐  Check status
+POST /api/ayushman/download              🔐  Download ABHA card
 ```
 
 ---
@@ -3031,8 +3037,9 @@ socket.on("authenticated", (data) => {
 | AI Image analysis | 10 requests | 15 minutes |
 
 ### Token Handling
-- Token expires in **7 days**
-- On 401 response → redirect to login
+- Patient access token expires in **30 days**
+- Social login (Google/Facebook) tokens also expire in **30 days**
+- On 401 response → attempt silent refresh via `POST /api/v2/auth/refresh` → on refresh failure, redirect to login
 - Store token securely (iOS Keychain / Android Keystore)
 - Include in every request: `Authorization: Bearer <token>`
 
@@ -3137,11 +3144,37 @@ socket.on("authenticated", (data) => {
 4. Login → Store token in secure storage
 5. All API calls include `Authorization: Bearer <token>`
 
+### Token Refresh Flow
+1. Store both `accessToken` and `refreshToken` in secure storage (Keychain/Keystore) on login
+2. On any `401` response → call `POST /api/v2/auth/refresh` with body `{ "refreshToken": "<stored-refresh-token>" }`
+3. Queue all in-flight requests while refresh is in progress
+4. On success → store new `accessToken` + `refreshToken` → retry all queued requests
+5. On refresh failure (refresh token expired/revoked) → clear all tokens → navigate to login
+
+```js
+// Refresh endpoint
+POST /api/v2/auth/refresh
+Body: { "refreshToken": "<stored-refresh-token>" }
+Response: { "accessToken": "eyJ...", "refreshToken": "eyJ..." }
+```
+
+### Push Notification Deep-Link Routing
+
+Handle incoming FCM notifications by `type` field and navigate accordingly:
+
+| `type` | Navigate to | Required params |
+|---|---|---|
+| `video_call` | `/consultation/:appointmentId/video` | `appointmentId`, `roomName` |
+| `appointment_reminder` | `/appointments/:appointmentId` | `appointmentId` |
+| `chat_message` | `/consultation/:appointmentId/chat` | `appointmentId`, `roomId` |
+| `prescription` | `/prescriptions/:prescriptionId` | `prescriptionId` |
+| `system` | `/notifications` | — |
+
 ### Push Notification Flow
 1. Initialize Firebase in mobile app
 2. Get FCM token from Firebase
 3. Call `POST /api/fcm/register-token` with device info
-4. Handle incoming notifications by `type` field
+4. Handle incoming notifications by `type` field using the routing table above
 5. On token refresh → re-register
 6. On logout → call `POST /api/fcm/remove-token`
 

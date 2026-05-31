@@ -3,7 +3,7 @@ import { body, validationResult } from 'express-validator';
 import { createHash, randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
-import XLSX from 'xlsx';
+import XLSX from '../utils/excel-compat.js';
 import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import userModel from '../models/user.model.intelligent.js';
 import { authCRM } from '../middleware/crm.middleware.js';
@@ -107,9 +107,10 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 
 const router = express.Router();
 
 // ─── Token constants ─────────────────────────────────────────────────────────
-const ACCESS_TOKEN_TTL  = '8h';
+const ACCESS_TOKEN_TTL  = '15m';
 const REFRESH_TOKEN_TTL = '30d';
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const REFRESH_SCOPE = 'crm';
 const LOCKOUT_WINDOW_MIN = 15;
 const LOCKOUT_MAX_ATTEMPTS = 10;
 
@@ -118,6 +119,25 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
   try {
     const pool = sharedPool;
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS api_v2_refresh_tokens (
+        id             BIGSERIAL   PRIMARY KEY,
+        jti            UUID        NOT NULL UNIQUE,
+        user_id        INTEGER     NOT NULL,
+        role           VARCHAR(50) NOT NULL,
+        token_hash     VARCHAR(64) NOT NULL,
+        expires_at     TIMESTAMPTZ NOT NULL,
+        revoked        BOOLEAN     NOT NULL DEFAULT FALSE,
+        revoked_at     TIMESTAMPTZ,
+        replaced_by_jti UUID,
+        ip_address     TEXT,
+        user_agent     TEXT,
+        created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_user_role ON api_v2_refresh_tokens(user_id, role);
+      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_expires_at ON api_v2_refresh_tokens(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_revoked ON api_v2_refresh_tokens(revoked);
+
       CREATE TABLE IF NOT EXISTS crm_refresh_tokens (
         id         BIGSERIAL   PRIMARY KEY,
         jti        UUID        NOT NULL UNIQUE,
@@ -564,9 +584,9 @@ async function issueTokenPair(payload, ip) {
   const expiresAt  = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
 
   await pool.query(
-    `INSERT INTO crm_refresh_tokens (jti, user_id, token_hash, expires_at, ip_address)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [jti, payload.id, tokenHash, expiresAt, ip]
+    `INSERT INTO api_v2_refresh_tokens (jti, user_id, role, token_hash, expires_at, ip_address)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [jti, payload.id, REFRESH_SCOPE, tokenHash, expiresAt, ip]
   );
 
   return { accessToken, refreshToken, jti };
@@ -574,16 +594,19 @@ async function issueTokenPair(payload, ip) {
 
 async function revokeRefreshToken(jti) {
   await sharedPool.query(
-    `UPDATE crm_refresh_tokens SET revoked = TRUE, revoked_at = NOW() WHERE jti = $1`,
-    [jti]
+    `UPDATE api_v2_refresh_tokens
+        SET revoked = TRUE, revoked_at = NOW()
+      WHERE jti = $1 AND role = $2`,
+    [jti, REFRESH_SCOPE]
   );
 }
 
 async function revokeAllUserTokens(userId) {
   await sharedPool.query(
-    `UPDATE crm_refresh_tokens SET revoked = TRUE, revoked_at = NOW()
-     WHERE user_id = $1 AND revoked = FALSE`,
-    [userId]
+    `UPDATE api_v2_refresh_tokens
+        SET revoked = TRUE, revoked_at = NOW()
+      WHERE user_id = $1 AND role = $2 AND revoked = FALSE`,
+    [userId, REFRESH_SCOPE]
   );
 }
 
@@ -719,8 +742,8 @@ router.post('/auth/refresh', async (req, res) => {
     const pool = sharedPool;
     const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
     const { rows } = await pool.query(
-      `SELECT * FROM crm_refresh_tokens WHERE jti = $1`,
-      [decoded.jti]
+      `SELECT * FROM api_v2_refresh_tokens WHERE jti = $1 AND role = $2`,
+      [decoded.jti, REFRESH_SCOPE]
     );
 
     if (!rows.length || rows[0].revoked || rows[0].token_hash !== tokenHash) {
@@ -1576,7 +1599,7 @@ router.post('/rfqs/:id/upload-members', authCRM, upload.single('file'), async (r
 
     if (!req.file) return res.status(400).json({ success: false, message: 'Excel file required' });
 
-    const workbook = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+    const workbook = await XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
     // Find the member-list sheet (the one with many rows, not the RFQ slip)
     let memberSheet = null;
     let memberSheetName = '';
@@ -1706,7 +1729,7 @@ router.post('/rfqs/upload-excel', authCRM, upload.single('file'), async (req, re
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'Excel file required' });
 
-    const workbook = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+    const workbook = await XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
 
     // Classify each sheet: member sheet = >150 rows; everything else = RFQ/benefits data
     let memberSheet = null, memberSheetName = '';
@@ -2031,7 +2054,7 @@ Return ONLY JSON.`;
     let rawContent = '';
 
     if (isExcel) {
-      const workbook = XLSX.read(fileBuffer, { type: 'buffer', cellDates: true });
+      const workbook = await XLSX.read(fileBuffer, { type: 'buffer', cellDates: true });
       let memberSheet = null, memberSheetName = '';
       const rfqSheets = [];
       for (const name of workbook.SheetNames) {
@@ -2431,7 +2454,7 @@ async function parseSupplementalInputs(files = [], additionalContext = '') {
       // ── Excel / CSV ──────────────────────────────────────────────────────
       if (mime.includes('spreadsheet') || mime.includes('excel') || mime.includes('csv')
         || name.match(/\.(xlsx?|csv)$/i)) {
-        const wb = XLSX.read(file.buffer, { type: 'buffer' });
+        const wb = await XLSX.read(file.buffer, { type: 'buffer' });
         const sheetLines = [];
         for (const sn of wb.SheetNames.slice(0, 5)) {
           const json = XLSX.utils.sheet_to_json(wb.Sheets[sn], { defval: '' });
@@ -3621,7 +3644,7 @@ router.post('/rfqs/:id/upload-claims', authCRM, upload.single('file'), async (re
     if (!rfqCheck.rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
     if (!req.file) return res.status(400).json({ success: false, message: 'Claims Excel/CSV file required' });
 
-    const workbook = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+    const workbook = await XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
     // Find claims sheet — typically the largest sheet or one with "claim" in name
     let claimsSheet = null;
     let claimsSheetName = '';

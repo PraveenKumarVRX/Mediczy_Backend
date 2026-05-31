@@ -21,14 +21,24 @@ const { Pool } = pg;
 let _pool = null;
 
 function buildPoolConfig() {
+  const targetDatabase = process.env.POSTGRES_DATABASE || process.env.PG_DATABASE || process.env.DB_NAME || '';
+  const isolatedLocalRun =
+    process.env.POSTGRES_FORCE_LOCAL === 'true' ||
+    process.env.DISALLOW_REMOTE_DB === 'true' ||
+    /migration_staging/i.test(targetDatabase);
+
   const hasPrimaryDiscreteConfig = Boolean(
-    process.env.POSTGRES_PRIMARY_HOST ||
-    process.env.POSTGRES_PRIMARY_PORT ||
-    process.env.POSTGRES_PRIMARY_DATABASE ||
-    process.env.POSTGRES_PRIMARY_USER ||
-    process.env.POSTGRES_PRIMARY_PASSWORD
+    !isolatedLocalRun && (
+      process.env.POSTGRES_PRIMARY_HOST ||
+      process.env.POSTGRES_PRIMARY_PORT ||
+      process.env.POSTGRES_PRIMARY_DATABASE ||
+      process.env.POSTGRES_PRIMARY_USER ||
+      process.env.POSTGRES_PRIMARY_PASSWORD
+    )
   );
-  const connectionString = process.env.POSTGRES_PRIMARY_URI || (!hasPrimaryDiscreteConfig ? (process.env.POSTGRES_URI || process.env.PG_URI) : undefined);
+  const connectionString = !isolatedLocalRun
+    ? (process.env.POSTGRES_PRIMARY_URI || (!hasPrimaryDiscreteConfig ? (process.env.POSTGRES_URI || process.env.PG_URI) : undefined))
+    : undefined;
   const ssl = process.env.POSTGRES_SSL === 'true'
     ? { rejectUnauthorized: false }
     : false;
@@ -44,11 +54,24 @@ function buildPoolConfig() {
   }
 
   return {
-    host: process.env.POSTGRES_PRIMARY_HOST || process.env.POSTGRES_HOST || process.env.PG_HOST || process.env.DB_HOST || '127.0.0.1',
-    port: parseInt(process.env.POSTGRES_PRIMARY_PORT || process.env.POSTGRES_PORT || process.env.PG_PORT || process.env.DB_PORT || '5432', 10),
-    database: process.env.POSTGRES_PRIMARY_DATABASE || process.env.POSTGRES_DATABASE || process.env.PG_DATABASE || process.env.DB_NAME || 'mediczy_ai',
-    user: process.env.POSTGRES_PRIMARY_USER || process.env.POSTGRES_USER || process.env.PG_USER || process.env.DB_USER || 'mediczy_helper',
-    password: process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.PG_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS,
+    host: isolatedLocalRun
+      ? (process.env.POSTGRES_HOST || process.env.PG_HOST || process.env.DB_HOST || process.env.POSTGRES_PRIMARY_HOST || '127.0.0.1')
+      : (process.env.POSTGRES_PRIMARY_HOST || process.env.POSTGRES_HOST || process.env.PG_HOST || process.env.DB_HOST || '127.0.0.1'),
+    port: parseInt(
+      isolatedLocalRun
+        ? (process.env.POSTGRES_PORT || process.env.PG_PORT || process.env.DB_PORT || process.env.POSTGRES_PRIMARY_PORT || '5432')
+        : (process.env.POSTGRES_PRIMARY_PORT || process.env.POSTGRES_PORT || process.env.PG_PORT || process.env.DB_PORT || '5432'),
+      10
+    ),
+    database: isolatedLocalRun
+      ? (process.env.POSTGRES_DATABASE || process.env.PG_DATABASE || process.env.DB_NAME || process.env.POSTGRES_PRIMARY_DATABASE || 'mediczy_ai')
+      : (process.env.POSTGRES_PRIMARY_DATABASE || process.env.POSTGRES_DATABASE || process.env.PG_DATABASE || process.env.DB_NAME || 'mediczy_ai'),
+    user: isolatedLocalRun
+      ? (process.env.POSTGRES_USER || process.env.PG_USER || process.env.DB_USER || process.env.POSTGRES_PRIMARY_USER || 'mediczy_helper')
+      : (process.env.POSTGRES_PRIMARY_USER || process.env.POSTGRES_USER || process.env.PG_USER || process.env.DB_USER || 'mediczy_helper'),
+    password: isolatedLocalRun
+      ? (process.env.POSTGRES_PASSWORD || process.env.PG_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || process.env.POSTGRES_PRIMARY_PASSWORD)
+      : (process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.PG_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS),
     max: parseInt(process.env.POSTGRES_POOL_MAX || process.env.PG_POOL_MAX || process.env.DB_POOL_MAX || '20', 10),
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,

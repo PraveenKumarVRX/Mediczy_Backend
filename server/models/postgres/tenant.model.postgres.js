@@ -386,7 +386,7 @@ const generateAggregatorUID = () => {
 };
 
 // Hooks for password hashing and aggregator UID generation
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 
 Tenant.beforeCreate(async (tenant) => {
   if (tenant.admin_password) {

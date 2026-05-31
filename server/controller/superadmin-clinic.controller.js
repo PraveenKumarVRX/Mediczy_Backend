@@ -216,7 +216,7 @@ export const createClinicWithAdmin = async (req, res) => {
         type: 'clinic_admin'
       },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
     );
 
     console.log('✅ Clinic creation successful:', clinic_name);

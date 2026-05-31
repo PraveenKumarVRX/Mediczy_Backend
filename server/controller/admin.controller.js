@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes, Op } from 'sequelize';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
+import XLSX from '../utils/excel-compat.js';
 
 // Production-level rate limiting store (would be Redis in production cluster)
 const loginAttempts = new Map();
@@ -164,7 +165,7 @@ export const adminLogin = async (req, res) => {
           loginTime: new Date().toISOString()
         },
         JWT_CONFIG.SECRET,
-        { expiresIn: '8h' }
+        { expiresIn: '15m' }
       );
       
       // Clear any failed attempts on successful login
@@ -577,7 +578,6 @@ export const getDashboardStats = async (req, res) => {
     const { postgresSequelize } = await import('../db/postgres-sequelize.js');
     const fs = (await import('fs/promises')).default;
     const path = (await import('path')).default;
-    const XLSX = (await import('xlsx')).default;
     const { fileURLToPath } = await import('url');
     
     const __filename = fileURLToPath(import.meta.url);
@@ -647,7 +647,7 @@ export const getDashboardStats = async (req, res) => {
       
       // Get doctors count from Excel
       const doctorsFile = path.join(__dirname, '..', 'db', 'Master Data', 'Doctors Data', 'Doctors List 624.xlsx');
-      const workbook = XLSX.readFile(doctorsFile);
+      const workbook = await XLSX.readFile(doctorsFile);
       const sheetName = workbook.SheetNames[0];
       const doctors = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
       doctorCountMaster = doctors.length;

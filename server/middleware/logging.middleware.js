@@ -6,6 +6,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { maskPhi } from '../utils/phi-masker.js';
 
 /**
  * Log levels
@@ -360,8 +361,10 @@ export const auditLogger = (action, options = {}) => {
           requestId: req.requestId
         };
 
+        const safeAuditLog = maskPhi(auditLog);
+
         // In production, send to audit log service
-        console.log('[AUDIT]', JSON.stringify(auditLog));
+        console.log('[AUDIT]', JSON.stringify(safeAuditLog));
       }
       
       return originalSend.call(this, body);

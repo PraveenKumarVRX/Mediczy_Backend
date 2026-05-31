@@ -7,7 +7,7 @@
  */
 
 const { Sequelize, DataTypes } = require('sequelize');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 const axios = require('axios');
 
 // Database connection

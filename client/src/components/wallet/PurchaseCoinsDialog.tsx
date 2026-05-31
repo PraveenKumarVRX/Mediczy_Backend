@@ -46,6 +46,8 @@ interface AvailableCoupon {
   validUntil: string;
   remainingForUser: number;
   isPersonalized: boolean;
+  scopes?: string[];
+  primaryScope?: string;
 }
 
 // Fallback packages matching server's health-coins.config.js
@@ -103,7 +105,9 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess, prefillCoup
   const fetchAvailableCoupons = async () => {
     setLoadingAvailableCoupons(true);
     try {
-      const response = await api.get('/wallet/my-coupons');
+      const response = await api.get('/wallet/my-coupons', {
+        params: { scope: 'COINS_PURCHASE' }
+      });
       if (response.data?.success) {
         setAvailableCoupons(response.data.coupons || []);
       }
@@ -131,7 +135,8 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess, prefillCoup
     try {
       const response = await api.post('/wallet/validate-coupon', {
         code: couponCode,
-        packageId: selectedPackage
+        packageId: selectedPackage,
+        scope: 'COINS_PURCHASE'
       });
 
       if (response.data.success) {

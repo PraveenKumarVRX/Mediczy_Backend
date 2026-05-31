@@ -60,7 +60,7 @@ router.post('/login', authLimiter, async (req, res) => {
     } else {
       // bcrypt fallback
       try {
-        const bcrypt = await import('bcryptjs');
+        const bcrypt = await import('bcrypt');
         const storedHash = plain.password || plain.passwordHash || plain.hashedPassword;
         if (storedHash) {
           passwordValid = await bcrypt.default.compare(password, storedHash);

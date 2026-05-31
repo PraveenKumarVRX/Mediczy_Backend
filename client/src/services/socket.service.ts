@@ -13,7 +13,7 @@ class SocketService {
 
   connect(userId: number, userType: 'user' | 'doctor', fcmToken?: string) {
     if (this.socket?.connected) {
-      console.log('Socket already connected');
+      if (import.meta.env.DEV) console.log('Socket already connected');
       return this.socket;
     }
 
@@ -21,7 +21,7 @@ class SocketService {
     this.userType = userType;
     this.fcmToken = fcmToken || null;
 
-    console.log('🔌 Connecting to Socket.IO server:', SOCKET_URL);
+    if (import.meta.env.DEV) console.log('🔌 Connecting to Socket.IO server:', SOCKET_URL);
     
     this.socket = io(SOCKET_URL, {
       transports: ['websocket'],
@@ -34,13 +34,13 @@ class SocketService {
     });
 
     this.socket.on('connect', () => {
-      console.log('✅ Socket connected:', this.socket?.id);
+      if (import.meta.env.DEV) console.log('✅ Socket connected:', this.socket?.id);
       this.reconnectAttempts = 0;
       this.emitUserConnect();
     });
 
     this.socket.on('disconnect', (reason) => {
-      console.log('❌ Socket disconnected:', reason);
+      if (import.meta.env.DEV) console.log('❌ Socket disconnected:', reason);
     });
 
     this.socket.on('connect_error', (error) => {
@@ -69,13 +69,13 @@ class SocketService {
       ...(this.fcmToken && { fcmToken: this.fcmToken })
     };
 
-    console.log('📡 Emitting user-connect:', userData);
+    if (import.meta.env.DEV) console.log('📡 Emitting user-connect:', userData);
     this.socket.emit('user-connect', userData);
   }
 
   disconnect() {
     if (this.socket) {
-      console.log('Disconnecting socket...');
+      if (import.meta.env.DEV) console.log('Disconnecting socket...');
       this.socket.disconnect();
       this.socket = null;
       this.userId = null;

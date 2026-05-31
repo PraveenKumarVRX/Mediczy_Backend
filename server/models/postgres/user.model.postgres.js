@@ -54,7 +54,7 @@ const User = sequelize.define('User', {
     allowNull: false
   },
   dateOfBirth: {
-    type: DataTypes.DATE,
+    type: DataTypes.DATEONLY,
     allowNull: false
   },
   gender: {
@@ -407,8 +407,7 @@ const User = sequelize.define('User', {
         };
       }
       
-      // Update search vector (will be replaced by trigger in production)
-      await updateSearchVector(user);
+      // search_vector is maintained by DB trigger (migration 021-fts-triggers.sql)
     },
     
     beforeUpdate: async (user) => {
@@ -428,30 +427,10 @@ const User = sequelize.define('User', {
         };
       }
       
-      // Update search vector
-      if (user.changed('firstName') || user.changed('lastName') || user.changed('email')) {
-        await updateSearchVector(user);
-      }
+      // search_vector maintained by DB trigger — no JS update needed
     }
   }
 });
-
-/**
- * Update full-text search vector
- */
-async function updateSearchVector(user) {
-  // Combine searchable fields
-  const searchText = [
-    user.firstName,
-    user.lastName,
-    user.email,
-    user.phoneNumber
-  ].filter(Boolean).join(' ');
-  
-  // This is a placeholder - in production, use PostgreSQL trigger
-  // For now, we'll use a raw query after the record is saved
-  user.search_vector = searchText;
-}
 
 /**
  * Instance Methods
@@ -504,12 +483,10 @@ User.prototype.generateAuthToken = function() {
     organization_id: this.organization_id,
     organization_type: this.organization_type,
     tenant_id: this.tenant_id,
-    department_id: this.department_id,
-    permissions: this.permissions || [],
-    scope: this.scope || {}
+    department_id: this.department_id
   };
-  
-  return jwt.sign(payload, JWT_CONFIG.SECRET, { expiresIn: '7d' });
+
+  return jwt.sign(payload, JWT_CONFIG.SECRET, { expiresIn: process.env.JWT_ACCESS_TTL || '15m' });
 };
 
 // Get public profile (exclude sensitive data)
@@ -533,10 +510,11 @@ User.prototype.toPublicJSON = function() {
 
 // Full-text search
 User.findBySearch = async function(query, options = {}) {
+  const safeQuery = String(query || '').trim();
+  if (!safeQuery) return [];
+
   return await User.findAll({
-    where: sequelize.literal(
-      `search_vector @@ plainto_tsquery('english', '${query}')`
-    ),
+    where: sequelize.literal(`search_vector @@ plainto_tsquery('english', ${sequelize.escape(safeQuery)})`),
     ...options
   });
 };
@@ -549,12 +527,11 @@ User.findByOrganization = async function(organization_id, options = {}) {
   });
 };
 
-// Find with allergies
+// Find with allergies — uses ANY() to avoid string interpolation
 User.findWithAllergies = async function(allergies, options = {}) {
   return await User.findAll({
-    where: sequelize.literal(
-      `allergies && ARRAY[${allergies.map(a => `'${a}'`).join(',')}]`
-    ),
+    where: sequelize.literal(`allergies && ARRAY[:...allergyList]::varchar[]`),
+    replacements: { allergyList: allergies },
     ...options
   });
 };

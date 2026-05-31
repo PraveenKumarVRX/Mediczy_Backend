@@ -20,6 +20,7 @@
 
 import sharedPool from '../db/pgPool.js';
 import { randomUUID } from 'crypto';
+import { createHash } from 'crypto';
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../config/auth.config.js';
 
@@ -28,6 +29,7 @@ const MAX_TOKENS_PER_DEVICE = parseInt(process.env.MAX_REFRESH_TOKENS_PER_DEVICE
 
 // ─── One-time table bootstrap ─────────────────────────────────────────────────
 let _tableReady = false;
+let _unifiedTableReady = false;
 async function ensureTable() {
   if (_tableReady) return;
   try {
@@ -51,6 +53,35 @@ async function ensureTable() {
   }
 }
 
+async function ensureUnifiedTable() {
+  if (_unifiedTableReady) return;
+  try {
+    await sharedPool.query(`
+      CREATE TABLE IF NOT EXISTS api_v2_refresh_tokens (
+        id             BIGSERIAL   PRIMARY KEY,
+        jti            UUID        NOT NULL UNIQUE,
+        user_id        INTEGER     NOT NULL,
+        role           VARCHAR(50) NOT NULL,
+        token_hash     VARCHAR(64) NOT NULL,
+        expires_at     TIMESTAMPTZ NOT NULL,
+        revoked        BOOLEAN     NOT NULL DEFAULT FALSE,
+        revoked_at     TIMESTAMPTZ,
+        replaced_by_jti UUID,
+        ip_address     TEXT,
+        user_agent     TEXT,
+        created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_user_role ON api_v2_refresh_tokens(user_id, role);
+      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_expires_at ON api_v2_refresh_tokens(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_revoked ON api_v2_refresh_tokens(revoked);
+    `);
+    _unifiedTableReady = true;
+  } catch (err) {
+    console.error('[token-revocation] unified table bootstrap error:', err.message);
+  }
+}
+
 // Bootstrap on module load (non-blocking).
 // If the pool has no password configured, ensureTable() will fail; we log a
 // warning so ops can see the issue rather than silently failing open.
@@ -70,17 +101,18 @@ ensureTable().catch((err) => {
  * @param {object}  opts
  * @param {string}  opts.portal  - Portal identifier ('doctor', 'nurse', 'lab', etc.)
  * @param {string}  [opts.deviceFp] - Device fingerprint header value
- * @param {string}  [opts.accessTtl='8h']
+ * @param {string}  [opts.accessTtl='15m']
  * @param {string}  [opts.refreshTtl='30d']
  * @returns {{ accessToken, refreshToken, jti }}
  */
 export async function issuePortalTokenPair(payload, {
   portal,
   deviceFp = null,
-  accessTtl = '8h',
+  accessTtl = '15m',
   refreshTtl = '30d',
 } = {}) {
   await ensureTable();
+  await ensureUnifiedTable();
 
   const jti = randomUUID();
   const userId = String(payload.id || payload.userId || payload.doctorId || payload.labId || '');
@@ -100,12 +132,25 @@ export async function issuePortalTokenPair(payload, {
     { expiresIn: refreshTtl }
   );
 
+  const refreshTokenHash = createHash('sha256').update(refreshToken).digest('hex');
+
   try {
     await sharedPool.query(
       `INSERT INTO portal_refresh_tokens (jti, user_id, portal, device_fp, expires_at)
        VALUES ($1, $2, $3, $4, $5)`,
       [jti, userId, portal, deviceFp || null, expiresAt]
     );
+
+    // Compatibility migration: also persist in unified table when user id is numeric.
+    const numericUserId = Number(userId);
+    if (Number.isInteger(numericUserId) && numericUserId > 0) {
+      await sharedPool.query(
+        `INSERT INTO api_v2_refresh_tokens (jti, user_id, role, token_hash, expires_at, user_agent)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (jti) DO NOTHING`,
+        [jti, numericUserId, portal, refreshTokenHash, expiresAt, deviceFp || null]
+      ).catch(() => {});
+    }
 
     // Per-device limit: revoke oldest tokens over the cap for this user+portal+device
     if (MAX_TOKENS_PER_DEVICE > 0) {
@@ -124,7 +169,12 @@ export async function issuePortalTokenPair(payload, {
 /** Mark a single JTI as revoked. */
 export async function revokeToken(jti) {
   await ensureTable();
+  await ensureUnifiedTable();
   try {
+    await sharedPool.query(
+      `UPDATE api_v2_refresh_tokens SET revoked = TRUE, revoked_at = NOW(), updated_at = NOW() WHERE jti = $1`,
+      [jti]
+    ).catch(() => {});
     await sharedPool.query(
       `UPDATE portal_refresh_tokens SET revoked = TRUE WHERE jti = $1`,
       [jti]
@@ -146,7 +196,17 @@ export async function revokeToken(jti) {
 /** Revoke all active tokens for a user on a portal (e.g., on password change). */
 export async function revokeAllForUser(userId, portal = null) {
   await ensureTable();
+  await ensureUnifiedTable();
   try {
+    const apiParams = [Number(userId)];
+    const apiRoleClause = portal ? ` AND role = $2` : '';
+    if (portal) apiParams.push(portal);
+    await sharedPool.query(
+      `UPDATE api_v2_refresh_tokens SET revoked = TRUE, revoked_at = NOW(), updated_at = NOW()
+       WHERE user_id = $1 AND revoked = FALSE${apiRoleClause}`,
+      apiParams
+    ).catch(() => {});
+
     const params = [String(userId)];
     const portalClause = portal ? ` AND portal = $2` : '';
     if (portal) params.push(portal);
@@ -167,7 +227,15 @@ export async function revokeAllForUser(userId, portal = null) {
 export async function isTokenRevoked(jti) {
   if (!jti) return false;
   await ensureTable();
+  await ensureUnifiedTable();
   try {
+    // Check unified table first (Team/CRM/Hospital/API-v2)
+    const apiV2 = await sharedPool.query(
+      `SELECT revoked FROM api_v2_refresh_tokens WHERE jti = $1 LIMIT 1`,
+      [jti]
+    ).catch(() => ({ rows: [] }));
+    if (apiV2.rows.length > 0 && apiV2.rows[0].revoked) return true;
+
     // Check shared table
     const { rows } = await sharedPool.query(
       `SELECT revoked FROM portal_refresh_tokens WHERE jti = $1 LIMIT 1`,
@@ -228,10 +296,14 @@ async function enforceDeviceLimit(userId, portal, deviceFp) {
 // ─── Purge expired tokens (call from a scheduled job) ────────────────────────
 export async function purgeExpiredTokens() {
   await ensureTable();
+  await ensureUnifiedTable();
   try {
     const { rowCount } = await sharedPool.query(
       `DELETE FROM portal_refresh_tokens WHERE expires_at < NOW()`
     );
+    await sharedPool.query(
+      `DELETE FROM api_v2_refresh_tokens WHERE expires_at < NOW()`
+    ).catch(() => {});
     return rowCount;
   } catch (err) {
     console.error('[token-revocation] purge error:', err.message);

@@ -64,17 +64,17 @@ const parseLocalHostAllowlist = () => {
 };
 
 const getConfiguredPostgresHost = () => {
+  const directHost = normalizeHost(process.env.POSTGRES_HOST || process.env.PG_HOST || '');
+  if (directHost) return directHost;
+
   const postgresUri = process.env.POSTGRES_URI || process.env.PG_URI || '';
   if (postgresUri.trim()) {
     try {
       return normalizeHost(new URL(postgresUri).hostname);
     } catch {
-      // Fall through to discrete host vars if URI is invalid
+      // Fall through if URI is invalid
     }
   }
-
-  const directHost = normalizeHost(process.env.POSTGRES_HOST || process.env.PG_HOST || '');
-  if (directHost) return directHost;
 
   return '';
 };

@@ -4,6 +4,7 @@ if (process.env.NODE_ENV !== 'production' || process.env.DOTENV_IN_PROD === 'tru
   dotenv.config();
 }
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
@@ -283,6 +284,7 @@ import { initializeDataRetentionScheduler } from './services/dataRetention.servi
 
 // Import multi-tenant middleware
 import { extractTenant } from './middleware/tenant.middleware.js';
+import { rlsContextMiddleware } from './middleware/rls-context.middleware.js';
 
 const app = express();
 
@@ -619,7 +621,7 @@ app.use(cors({
     return callback(null, false);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Cookie'],
   credentials: true,
   optionsSuccessStatus: 200,
   preflightContinue: false
@@ -745,6 +747,7 @@ app.use(express.json({
   }
 }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
+app.use(cookieParser());
 
 app.use((err, req, res, next) => {
   if (err?.type === 'entity.too.large') {
@@ -850,6 +853,10 @@ app.use(requestLogger);
 
 // 8. Multi-Tenant Context Extraction
 app.use(extractTenant);
+
+// 8a. Row-Level Security context — sets app.current_org_id / app.current_user_id
+//     Must run after extractTenant so req.user is available for authenticated routes
+app.use(rlsContextMiddleware);
 
 // 9. Activity Logging (Track all user activities with timestamps)
 app.use((req, res, next) => {
@@ -1504,6 +1511,9 @@ app.use('/api/admin/communication', communicationRouter); // Admin communication
 // Token Management Routes (refresh, revoke)
 import authTokenRouter from './routes/auth.token.route.js';
 app.use('/api/auth', authTokenRouter); // Token refresh and revocation endpoints
+
+import dataExportRouter from './routes/data-export.route.js';
+app.use('/api/users/data', dataExportRouter);     // DPDPA data export & erasure
 
 // Universal Auth Routes (logout, session-info for all user types)
 // Temporarily disabled - requires ringFencing middleware

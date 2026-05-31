@@ -619,6 +619,7 @@ const UserHealthRiskAssessment = () => {
   const completionPct = Math.round((Object.keys(responses).length / totalQuestions) * 100);
   const totalScore = calculateRiskScore(responses);
   const scoreBand = resolveScoreBand(totalScore);
+  const latestAssessment = savedAssessments[0];
   const sectionBreakdown = useMemo(() => summarizeSections(responses), [responses]);
   const bayesianResult = useMemo(() => computeBayesianRisk(sectionBreakdown), [sectionBreakdown]);
 
@@ -818,20 +819,72 @@ const UserHealthRiskAssessment = () => {
         hip: parseFloat(measurements.hip) || undefined,
         bmi: calculatedValues.bmi.value > 0 ? parseFloat(calculatedValues.bmi.value.toFixed(2)) : undefined,
         whr: calculatedValues.whr.value > 0 ? parseFloat(calculatedValues.whr.value.toFixed(3)) : undefined,
-        smoking: responses.smoking || 'never',
-        alcohol: responses.alcohol || 'none',
-        exercise_frequency: responses.exercise_frequency || 'sedentary',
-        hypertension: responses.hypertension || 'no',
-        diabetes: responses.diabetes || 'no',
-        heart_disease: responses.heart_disease || 'no',
-        cholesterol: responses.cholesterol || 'no',
-        mental_health: responses.mental_health || 'normal',
-        family_heart_disease: responses.family_heart_disease || 'no',
-        family_diabetes: responses.family_diabetes || 'no',
-        family_cancer: responses.family_cancer || 'no',
-        stress_level: responses.stress_level ? parseInt(String(responses.stress_level)) : 5,
-        sleep_hours: responses.sleep_hours ? parseFloat(String(responses.sleep_hours)) : 7,
-        diet_quality: responses.diet_quality || 'fair',
+        smoking: (() => {
+          switch (responses.smoking) {
+            case 'occasional':
+            case 'regular_lt10':
+            case 'heavy_gte10':
+              return 'current';
+            default:
+              return 'never';
+          }
+        })(),
+        alcohol: (() => {
+          switch (responses.alcohol) {
+            case 'occasional': return 'occasionally';
+            case 'moderate': return 'weekly';
+            case 'heavy_daily':
+            case 'binge':
+              return 'daily';
+            default:
+              return 'none';
+          }
+        })(),
+        exercise_frequency: (() => {
+          switch (responses.activity) {
+            case '150_mod': return 'active';
+            case '75_150_mod': return 'moderate';
+            case 'lt75': return 'light';
+            default: return 'sedentary';
+          }
+        })(),
+        hypertension: responses.hx_hypertension && responses.hx_hypertension !== 'none' ? 'yes' : 'no',
+        diabetes: responses.hx_diabetes && responses.hx_diabetes !== 'none' ? 'yes' : 'no',
+        heart_disease: responses.hx_heart && responses.hx_heart !== 'none' ? 'yes' : 'no',
+        cholesterol: responses.hx_cholesterol && responses.hx_cholesterol !== 'none' ? 'yes' : 'no',
+        mental_health: (() => {
+          switch (responses.mental_depression) {
+            case 'managed': return 'stressed';
+            case 'unmanaged': return 'depressed';
+            default: return 'normal';
+          }
+        })(),
+        family_heart_disease: responses.fh_heart === 'yes' ? 'yes' : 'no',
+        family_diabetes: responses.fh_diabetes === 'yes' ? 'yes' : 'no',
+        family_cancer: responses.fh_cancer === 'yes' ? 'yes' : 'no',
+        stress_level: (() => {
+          switch (responses.stress) {
+            case 'low': return 3;
+            case 'moderate': return 6;
+            case 'high': return 9;
+            default: return 5;
+          }
+        })(),
+        sleep_hours: (() => {
+          switch (responses.sleep) {
+            case '7_8': return 7.5;
+            case '5_6': return 5.5;
+            case 'lt5_gt9': return 4.5;
+            default: return 7;
+          }
+        })(),
+        diet_quality: (() => {
+          switch (responses.food) {
+            case 'balanced': return 'good';
+            case 'fastfood_1_2': return 'fair';
+            default: return 'poor';
+          }
+        })(),
         responses,
         // Clinical inputs sent to backend for persistence
         ethnicity: clinicalInputs.ethnicity,
@@ -910,17 +963,17 @@ const UserHealthRiskAssessment = () => {
                   <Activity className="h-3.5 w-3.5 text-teal-300" />
                   <span className="text-xs font-medium">{savedAssessments.length} Assessment{savedAssessments.length > 1 ? 's' : ''}</span>
                 </div>
-                {savedAssessments[0]?.risk_level && (
+                {(latestAssessment?.riskLevel || latestAssessment?.risk_level) && (
                   <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-1.5">
                     <Shield className="h-3.5 w-3.5 text-teal-300" />
-                    <span className="text-xs font-medium">Latest: {savedAssessments[0].risk_level}</span>
+                    <span className="text-xs font-medium">Latest: {latestAssessment?.riskLevel || latestAssessment?.risk_level}</span>
                   </div>
                 )}
-                {savedAssessments[0]?.assessed_at && (
+                {(latestAssessment?.assessedAt || latestAssessment?.assessed_at) && (
                   <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-1.5">
                     <Clock className="h-3.5 w-3.5 text-teal-300" />
                     <span className="text-xs font-medium">
-                      {new Date(savedAssessments[0].assessed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      {new Date((latestAssessment?.assessedAt || latestAssessment?.assessed_at) as string).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                     </span>
                   </div>
                 )}

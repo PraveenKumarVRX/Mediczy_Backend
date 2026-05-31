@@ -4,11 +4,44 @@ import dotenv from 'dotenv';
 import healthDiaryService from '../services/health-diary.service.js';
 import rateLimit from 'express-rate-limit';
 import llmProvider from '../services/ai-brain/llm-provider.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { QueryTypes } from 'sequelize';
 
 // Load environment variables
 dotenv.config();
 
 const router = express.Router();
+
+let aiDoctorMetricsTableReady = false;
+
+async function ensureAiDoctorMetricsTable() {
+  if (aiDoctorMetricsTableReady) return;
+
+  await postgresSequelize.query(`
+    CREATE TABLE IF NOT EXISTS ai_doctor_metrics (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT,
+      tenant_id BIGINT,
+      event_type VARCHAR(64) NOT NULL,
+      session_id VARCHAR(128),
+      language_code VARCHAR(16),
+      page_path VARCHAR(120) DEFAULT '/ai-doctor',
+      latency_ms INTEGER,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      ip_address VARCHAR(64),
+      user_agent TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ai_doctor_metrics_user_created
+      ON ai_doctor_metrics (user_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_ai_doctor_metrics_event_created
+      ON ai_doctor_metrics (event_type, created_at DESC);
+  `);
+
+  aiDoctorMetricsTableReady = true;
+}
 
 // SIB FastAPI Configuration (SOLE AI SOURCE)
 const SIB_BASE_URL = process.env.SIB_URL || 'http://localhost:8001';
@@ -121,6 +154,154 @@ const aiRouteLimiter = rateLimit({
 });
 
 router.use(aiRouteLimiter);
+
+// Lightweight KPI ingestion endpoint for AI Doctor UX analytics
+router.post('/ai-doctor/metrics', auth, async (req, res) => {
+  try {
+    await ensureAiDoctorMetricsTable();
+
+    const {
+      eventType,
+      sessionId = null,
+      language = 'en',
+      pagePath = '/ai-doctor',
+      latencyMs = null,
+      payload = {},
+    } = req.body || {};
+
+    if (!eventType || typeof eventType !== 'string' || eventType.length > 64) {
+      return res.status(400).json({ success: false, message: 'eventType is required (max 64 chars).' });
+    }
+
+    if (sessionId && (typeof sessionId !== 'string' || sessionId.length > 128)) {
+      return res.status(400).json({ success: false, message: 'sessionId must be <= 128 chars.' });
+    }
+
+    if (typeof language !== 'string' || language.length > 16) {
+      return res.status(400).json({ success: false, message: 'language must be <= 16 chars.' });
+    }
+
+    if (typeof pagePath !== 'string' || pagePath.length > 120) {
+      return res.status(400).json({ success: false, message: 'pagePath must be <= 120 chars.' });
+    }
+
+    if (latencyMs !== null && (!Number.isFinite(latencyMs) || latencyMs < 0 || latencyMs > 600000)) {
+      return res.status(400).json({ success: false, message: 'latencyMs must be between 0 and 600000.' });
+    }
+
+    if (payload && typeof payload !== 'object') {
+      return res.status(400).json({ success: false, message: 'payload must be a JSON object.' });
+    }
+
+    await postgresSequelize.query(
+      `
+        INSERT INTO ai_doctor_metrics (
+          user_id,
+          tenant_id,
+          event_type,
+          session_id,
+          language_code,
+          page_path,
+          latency_ms,
+          payload,
+          ip_address,
+          user_agent
+        ) VALUES (
+          :userId,
+          :tenantId,
+          :eventType,
+          :sessionId,
+          :language,
+          :pagePath,
+          :latencyMs,
+          :payload::jsonb,
+          :ipAddress,
+          :userAgent
+        )
+      `,
+      {
+        replacements: {
+          userId: req.user?.id || null,
+          tenantId: req.user?.tenantId || null,
+          eventType,
+          sessionId,
+          language,
+          pagePath,
+          latencyMs,
+          payload: JSON.stringify(payload || {}),
+          ipAddress: req.ip || null,
+          userAgent: req.headers['user-agent'] || null,
+        },
+      }
+    );
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('[AI Doctor Metrics] Ingestion error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to ingest AI Doctor metric.' });
+  }
+});
+
+// User-level summary endpoint for quick product KPI visibility
+router.get('/ai-doctor/metrics/summary', auth, async (req, res) => {
+  try {
+    await ensureAiDoctorMetricsTable();
+
+    const userId = req.user?.id || null;
+    const days = Math.min(30, Math.max(1, parseInt(req.query.days || '7', 10)));
+
+    const [summary] = await postgresSequelize.query(
+      `
+        SELECT
+          COUNT(*)::int AS total_events,
+          COUNT(*) FILTER (WHERE event_type = 'message_submit')::int AS messages_sent,
+          COUNT(*) FILTER (WHERE event_type = 'prompt_click')::int AS prompt_clicks,
+          COUNT(*) FILTER (WHERE event_type = 'response_success')::int AS response_success,
+          ROUND(AVG(latency_ms) FILTER (WHERE event_type = 'response_success' AND latency_ms IS NOT NULL), 0)::int AS avg_latency_ms,
+          MAX(latency_ms) FILTER (WHERE event_type = 'response_success' AND latency_ms IS NOT NULL)::int AS max_latency_ms
+        FROM ai_doctor_metrics
+        WHERE user_id = :userId
+          AND created_at >= NOW() - (:days || ' days')::interval
+      `,
+      {
+        replacements: { userId, days },
+        type: QueryTypes.SELECT,
+      }
+    );
+
+    const topPrompts = await postgresSequelize.query(
+      `
+        SELECT
+          payload->>'prompt' AS prompt,
+          COUNT(*)::int AS clicks
+        FROM ai_doctor_metrics
+        WHERE user_id = :userId
+          AND event_type = 'prompt_click'
+          AND created_at >= NOW() - (:days || ' days')::interval
+          AND payload ? 'prompt'
+        GROUP BY payload->>'prompt'
+        ORDER BY clicks DESC
+        LIMIT 5
+      `,
+      {
+        replacements: { userId, days },
+        type: QueryTypes.SELECT,
+      }
+    );
+
+    return res.json({
+      success: true,
+      data: {
+        periodDays: days,
+        summary: summary || {},
+        topPrompts,
+      },
+    });
+  } catch (error) {
+    console.error('[AI Doctor Metrics] Summary error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch AI Doctor metrics summary.' });
+  }
+});
 
 // Helper function to validate command response
 const validateCommandResponse = (result) => {
@@ -505,7 +686,7 @@ Respond in JSON format:
   }
 });
 
-router.post('/analyze-image', async (req, res) => {
+router.post('/analyze-image', auth, async (req, res) => {
   try {
     const { image, language } = req.body;
 

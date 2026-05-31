@@ -2,7 +2,7 @@ import express from 'express';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import XLSX from 'xlsx';
+import XLSX from '../utils/excel-compat.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import pool from '../db/pgPool.js';
 
@@ -483,7 +483,7 @@ router.get('/doctors', async (req, res) => {
         
         // Read from Excel file
         const doctorsFile = path.join(__dirname, '..', 'db', 'Master Data', 'Doctors Data', 'Doctors List 624.xlsx');
-        const workbook = XLSX.readFile(doctorsFile);
+        const workbook = await XLSX.readFile(doctorsFile);
         const sheetName = workbook.SheetNames[0];
         let doctors = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
         
@@ -588,7 +588,7 @@ router.get('/stats', async (req, res) => {
         // Read doctors from Excel
         let doctorCount = 0;
         try {
-            const workbook = XLSX.readFile(doctorsFile);
+            const workbook = await XLSX.readFile(doctorsFile);
             const sheetName = workbook.SheetNames[0];
             const doctors = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
             doctorCount = doctors.length;
@@ -735,7 +735,7 @@ router.get('/areas', async (req, res) => {
 router.get('/specialties', async (req, res) => {
     try {
         const doctorsFile = path.join(__dirname, '..', 'db', 'Master Data', 'Doctors Data', 'Doctors List 624.xlsx');
-        const workbook = XLSX.readFile(doctorsFile);
+        const workbook = await XLSX.readFile(doctorsFile);
         const sheetName = workbook.SheetNames[0];
         const doctors = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
         

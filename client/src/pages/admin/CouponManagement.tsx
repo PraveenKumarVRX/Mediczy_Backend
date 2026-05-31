@@ -46,6 +46,7 @@ export default function CouponManagement() {
   const [editingCoupon, setEditingCoupon] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [sampleAssignUserId, setSampleAssignUserId] = useState('');
 
   // Form state
   const [formData, setFormData] = useState({
@@ -156,6 +157,37 @@ export default function CouponManagement() {
     }
   });
 
+  // Assign sample coupons mutation (team-only)
+  const assignSampleMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      const response = await api.post('/coupons/sample/assign', { userId });
+      return response.data;
+    },
+    onSuccess: (data) => {
+      const assignedCodes = Array.isArray(data?.coupons)
+        ? data.coupons.map((coupon: any) => coupon.code).join(', ')
+        : '';
+
+      toast({
+        title: 'Sample Coupons Assigned',
+        description: assignedCodes
+          ? `Assigned: ${assignedCodes}`
+          : 'Sample coupons were assigned successfully.',
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['admin-coupons'] });
+      queryClient.invalidateQueries({ queryKey: ['coupon-stats'] });
+      setSampleAssignUserId('');
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Assignment Failed',
+        description: error.response?.data?.message || 'Failed to assign sample coupons',
+        variant: 'destructive',
+      });
+    }
+  });
+
   const resetForm = () => {
     setFormData({
       code: '',
@@ -218,6 +250,20 @@ export default function CouponManagement() {
   };
 
   const coupons = couponsData?.coupons || [];
+
+  const handleAssignSampleCoupons = () => {
+    const userId = parseInt(sampleAssignUserId, 10);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      toast({
+        title: 'Invalid User ID',
+        description: 'Enter a valid positive numeric user ID.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    assignSampleMutation.mutate(userId);
+  };
 
   return (
     <AdminLayout>
@@ -316,6 +362,40 @@ export default function CouponManagement() {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Team Sample Coupon Assignment */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Coins className="h-5 w-5 text-emerald-600" />
+            Assign Sample Coupons
+          </CardTitle>
+          <CardDescription>
+            Team users can assign predefined sample coupon bundles to a specific user ID.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+            <div className="w-full sm:max-w-xs">
+              <Label htmlFor="sample-assign-user-id">Target User ID</Label>
+              <Input
+                id="sample-assign-user-id"
+                type="number"
+                min="1"
+                placeholder="e.g. 123"
+                value={sampleAssignUserId}
+                onChange={(e) => setSampleAssignUserId(e.target.value)}
+              />
+            </div>
+            <Button
+              onClick={handleAssignSampleCoupons}
+              disabled={assignSampleMutation.isPending || !sampleAssignUserId.trim()}
+            >
+              {assignSampleMutation.isPending ? 'Assigning...' : 'Assign Sample Coupons'}
+            </Button>
           </div>
         </CardContent>
       </Card>

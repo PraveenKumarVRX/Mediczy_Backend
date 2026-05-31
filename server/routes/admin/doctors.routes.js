@@ -2,7 +2,7 @@ import express from 'express';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import XLSX from 'xlsx';
+import XLSX from '../../utils/excel-compat.js';
 import { authUser, requireRole } from '../../middleware/auth.middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -19,7 +19,7 @@ const TELECONSULTATION_DOCTORS_FILE = path.join(__dirname, '..', '..', 'db', 'Ma
 
 async function readDoctorsFile() {
     try {
-        const workbook = XLSX.readFile(DOCTORS_FILE);
+        const workbook = await XLSX.readFile(DOCTORS_FILE);
         const sheetName = workbook.SheetNames[0];
         return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
     } catch (error) {
@@ -30,7 +30,7 @@ async function readDoctorsFile() {
 
 async function readTeleconsultationDoctorsFile() {
     try {
-        const workbook = XLSX.readFile(TELECONSULTATION_DOCTORS_FILE);
+        const workbook = await XLSX.readFile(TELECONSULTATION_DOCTORS_FILE);
         const sheetName = workbook.SheetNames[0];
         return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
     } catch (error) {
@@ -49,7 +49,7 @@ async function writeDoctorsFile(doctors) {
         const workbook = XLSX.utils.book_new();
         const worksheet = XLSX.utils.json_to_sheet(doctors);
         XLSX.utils.book_append_sheet(workbook, worksheet, 'Doctors');
-        XLSX.writeFile(workbook, DOCTORS_FILE);
+        await XLSX.writeFile(workbook, DOCTORS_FILE);
     } catch (error) {
         console.error('Error writing doctors file:', error);
         throw error;
@@ -61,7 +61,7 @@ async function writeTeleDoctorsFile(doctors) {
         const workbook = XLSX.utils.book_new();
         const worksheet = XLSX.utils.json_to_sheet(doctors);
         XLSX.utils.book_append_sheet(workbook, worksheet, 'Doctors');
-        XLSX.writeFile(workbook, TELECONSULTATION_DOCTORS_FILE);
+        await XLSX.writeFile(workbook, TELECONSULTATION_DOCTORS_FILE);
     } catch (error) {
         console.error('Error writing teleconsultation doctors file:', error);
         throw error;

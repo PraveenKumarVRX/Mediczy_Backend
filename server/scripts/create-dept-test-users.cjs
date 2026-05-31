@@ -1,7 +1,7 @@
 // Create or update department test users for login endpoint testing
 // Usage: node server/scripts/create-dept-test-users.cjs
 
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 const { Sequelize } = require('sequelize');
 
 const sequelize = new Sequelize(process.env.DB_NAME || 'mediczy_ai', process.env.DB_USER || 'mediczy_helper', process.env.DB_PASS || (process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || undefined), {
