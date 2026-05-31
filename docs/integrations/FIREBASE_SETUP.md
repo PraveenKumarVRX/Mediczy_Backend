@@ -98,6 +98,42 @@ FIREBASE_PRIVATE_KEY=your_private_key
 FIREBASE_CLIENT_EMAIL=your_client_email
 # OR
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/serviceAccountKey.json
+
+# Optional JSON-secret injection (plain JSON or base64-encoded JSON)
+FIREBASE_SERVICE_ACCOUNT_JSON={...}
+
+# Optional dedicated Firebase project for doctor app tokens (recommended)
+GOOGLE_APPLICATION_CREDENTIALS_DOCTOR=/path/to/firebase-service-account-doctor.json
+# OR JSON secret variant
+FIREBASE_SERVICE_ACCOUNT_DOCTOR_JSON={...}
+
+# Optional dedicated Firebase project for web app tokens
+GOOGLE_APPLICATION_CREDENTIALS_WEB=/path/to/firebase-service-account-web.json
+# OR JSON secret variant
+FIREBASE_SERVICE_ACCOUNT_WEB_JSON={...}
+```
+
+### Runtime Status and Verification
+
+Use Firebase status endpoints to confirm which notification channels are ready:
+
+```bash
+curl -s http://localhost:8888/api/firebase/status
+```
+
+The response now includes `channels.patient`, `channels.doctor`, and `channels.web` booleans.
+
+To send a targeted doctor push test notification:
+
+```bash
+curl -X POST http://localhost:8888/api/firebase/test-notification \
+   -H 'Content-Type: application/json' \
+   -d '{
+      "token": "<doctor-fcm-token>",
+      "title": "Doctor Push Test",
+      "message": "Firebase doctor channel test",
+      "userType": "doctor"
+   }'
 ```
 
 ## 🚀 Testing Push Notifications

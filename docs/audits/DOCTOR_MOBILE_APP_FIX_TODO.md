@@ -17,7 +17,8 @@ Status summary:
 	- `GET /api/doctors/my-patients/:patientId/vitals-history`
 - [x] D-SEC-3: Redact Appendix C credentials from integration guide.
 - [ ] D-SEC-4: Provision doctor Firebase service account in production and validate doctor push notifications end-to-end.
-	- Code readiness: supports separate doctor Firebase credentials via `config/firebase-service-account-doctor.json`.
+	- Code readiness: supports separate doctor Firebase credentials via `config/firebase-service-account-doctor.json` or `FIREBASE_SERVICE_ACCOUNT_DOCTOR_JSON` / `GOOGLE_APPLICATION_CREDENTIALS_DOCTOR`.
+	- Verification readiness: `/api/firebase/status` now exposes channel readiness (`patient`, `doctor`, `web`) and `/api/firebase/test-notification` accepts `userType`/`deviceType`.
 	- Blocker: production credential material is not stored in repository and must be provisioned by DevOps/SRE.
 
 ## Quality and Reliability
