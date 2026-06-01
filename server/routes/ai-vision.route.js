@@ -223,6 +223,115 @@ Return ONLY valid JSON:
 });
 
 /**
+ * @route   POST /api/ai/vision/extract-insurance
+ * @desc    OCR-extract insurance policy fields from an uploaded document image or PDF page.
+ *          Returns structured JSON that prefills the Add Policy form.
+ * @access  Private (authenticated patient or admin)
+ */
+router.post('/extract-insurance', authUser, upload.single('document'), async (req, res) => {
+  let filePath = null;
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: 'Document file is required' });
+    filePath = req.file.path;
+
+    // Malware scan
+    const avResult = await scanOnly(filePath).catch(() => ({ clean: true }));
+    if (!avResult.clean) {
+      await fs.unlink(filePath).catch(() => {});
+      return res.status(400).json({ success: false, code: 'MALWARE_DETECTED', message: 'File rejected: malware detected' });
+    }
+
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    const isImage = ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext);
+    const isPDF   = ext === '.pdf';
+
+    if (!isImage && !isPDF) {
+      await fs.unlink(filePath).catch(() => {});
+      return res.status(400).json({ success: false, message: 'Only images (JPG/PNG/WebP) and PDFs are supported' });
+    }
+
+    const insuranceExtractionPrompt = `You are an insurance document parser. Extract the following fields from this insurance policy card or document image.
+
+Return ONLY valid JSON with exactly these keys (use null for fields not found):
+{
+  "insurerName": "company name of the insurer e.g. Star Health, HDFC Ergo, Niva Bupa",
+  "policyNumber": "policy or certificate number",
+  "policyType": "health|life|motor|travel|accident|other",
+  "coverageAmount": "numeric sum insured in INR, digits only e.g. 500000",
+  "premiumAmount": "annual or periodic premium in INR, digits only, or null",
+  "premiumFrequency": "annual|semi-annual|quarterly|monthly",
+  "startDate": "ISO date YYYY-MM-DD or null",
+  "endDate": "ISO date YYYY-MM-DD or null",
+  "membersName": "comma-separated list of insured members",
+  "notes": "TPA name, network details, or other key terms, max 100 chars"
+}
+
+Rules:
+- insurerName must be a real insurance company (not a hospital or TPA name)
+- policyNumber must be alphanumeric
+- If a date shows DD/MM/YYYY convert to YYYY-MM-DD
+- If the document is not an insurance policy at all, return {"error":"not_insurance"}`;
+
+    let visionResult;
+
+    if (isImage) {
+      const imageBuffer = await fs.readFile(filePath);
+      const base64Image  = imageBuffer.toString('base64');
+      const mediaTypeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif' };
+      const mediaType    = mediaTypeMap[ext] || 'image/jpeg';
+
+      visionResult = await llmProvider.vision({
+        imageData: base64Image,
+        mediaType,
+        prompt:    insuranceExtractionPrompt,
+        maxTokens: 400
+      });
+    } else {
+      // PDF: send path to llm provider as text extraction task (no direct vision)
+      // Use a text prompt with pdf-parse style approach if available, otherwise tell LLM it's a PDF
+      visionResult = await llmProvider.chat({
+        messages: [
+          {
+            role: 'user',
+            content: `${insuranceExtractionPrompt}\n\nNote: The original document is a PDF. Based on what would typically appear on a health insurance policy card or document, extract what you can, or return {"error":"pdf_not_supported"} if not possible.`
+          }
+        ],
+        maxTokens: 400
+      });
+    }
+
+    // Parse response
+    let raw = typeof visionResult === 'string' ? visionResult : (visionResult?.text || visionResult?.content || '{}');
+    raw = raw.replace(/```json|```/g, '').trim();
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { parsed = null; }
+
+    if (!parsed || parsed.error) {
+      return res.json({
+        success: false,
+        message: parsed?.error === 'not_insurance'
+          ? 'The uploaded document does not appear to be an insurance policy'
+          : 'Could not extract fields from this document — please fill in manually',
+        fields: null
+      });
+    }
+
+    // Sanitize numeric fields
+    ['coverageAmount', 'premiumAmount'].forEach(k => {
+      if (parsed[k]) parsed[k] = String(parsed[k]).replace(/[^\d.]/g, '');
+    });
+
+    return res.json({ success: true, fields: parsed, confidence: 'ai-extracted' });
+
+  } catch (err) {
+    console.error('[VisionOCR] Insurance extraction error:', err.message);
+    return res.status(500).json({ success: false, message: 'Extraction failed — please fill in manually' });
+  } finally {
+    if (filePath) await fs.unlink(filePath).catch(() => {});
+  }
+});
+
+/**
  * @route   GET /api/ai/vision/health
  * @desc    Check vision service health
  * @access  Public

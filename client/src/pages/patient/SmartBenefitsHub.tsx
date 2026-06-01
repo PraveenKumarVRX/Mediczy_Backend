@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSmartBenefits } from '@/hooks/patient/useSmartBenefits';
 import { useNavigate, Link } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -254,54 +255,18 @@ export default function SmartBenefitsHub() {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const [tab, setTab] = useState<'benefits' | 'claims' | 'family' | 'network'>('benefits');
-  const [plans, setPlans] = useState<BenefitPlan[]>([]);
-  const [family, setFamily] = useState<FamilyMember[]>([]);
-  const [claims, setClaims] = useState<Claim[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showECard, setShowECard] = useState(false);
   const [eCardPlan, setECardPlan] = useState<BenefitPlan | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<BenefitPlan | null>(null);
   const [networkSearch, setNetworkSearch] = useState('');
-  const [claimsDataStatus, setClaimsDataStatus] = useState<'live' | 'unavailable'>('unavailable');
 
-  useEffect(() => {
-    loadBenefitsData();
-  }, []);
+  // ── Data loading delegated to hook ──────────────────────────────────────
+  const {
+    plans: rawPlans, family, claims, loading, claimsDataStatus, refresh: loadBenefitsData
+  } = useSmartBenefits();
 
-  const loadBenefitsData = async () => {
-    setLoading(true);
-    let apiPlans: BenefitPlan[] = [];
-    let claimsApiReachable = false;
-    try {
-      const token = getToken();
-      if (token) {
-        const [benefitsRes, claimsRes] = await Promise.all([
-          api.get('/employee/benefits').catch(() => null),
-          api.get('/employee/claims').catch(() => null),
-        ]);
-        apiPlans = Array.isArray(benefitsRes?.data?.plans) ? benefitsRes.data.plans : [];
-        if (Array.isArray(claimsRes?.data?.claims)) {
-          claimsApiReachable = true;
-          setClaims(claimsRes.data.claims);
-        }
-      }
-    } catch { /* graceful fallback */ }
-
-    setPlans(mergeExpectedBenefitPlans(apiPlans));
-
-    if (family.length === 0) {
-      setFamily([
-        { id: '1', name: currentUser?.firstName || 'You', relation: 'Self', age: 32, gender: 'M', covered: true, healthScore: 82, eCardId: 'EC-2026-001' },
-        { id: '2', name: 'Priya', relation: 'Spouse', age: 29, gender: 'F', covered: true, healthScore: 88, eCardId: 'EC-2026-002' },
-        { id: '3', name: 'Aarav', relation: 'Child', age: 5, gender: 'M', covered: true, healthScore: 95, eCardId: 'EC-2026-003' },
-        { id: '4', name: 'Ananya', relation: 'Child', age: 2, gender: 'F', covered: true, healthScore: 97, eCardId: 'EC-2026-004' },
-      ]);
-    }
-
-    setClaimsDataStatus(claimsApiReachable ? 'live' : 'unavailable');
-
-    setLoading(false);
-  };
+  // Apply local merge for expected plan display (preserves existing UX)
+  const plans = mergeExpectedBenefitPlans(rawPlans);
 
   const totalSumInsured = plans.reduce((s, p) => s + p.sumInsured, 0);
   const totalUtilized = plans.reduce((s, p) => s + p.utilized, 0);
