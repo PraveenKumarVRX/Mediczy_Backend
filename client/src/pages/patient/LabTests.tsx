@@ -178,9 +178,10 @@ const LabTests = () => {
     search: fetchLabs, fetchCorpLabs: fetchMyCorpLabs,
   } = useLabSearch();
 
-  // ── Remaining local state (not yet extracted) ────────────────────────────
+  // ── Remaining local state ─────────────────────────────────────────────────
   const [isBooking, setIsBooking] = useState(false);
   const [labSearchQuery, setLabSearchQuery] = useState('');
+  const [collectionType, setCollectionType] = useState<'home' | 'lab' | ''>('');
   
   // bookingForm and catalog-local state
   const [bookingForm, setBookingForm] = useState({
