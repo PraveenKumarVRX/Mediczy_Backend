@@ -17,6 +17,8 @@
 
 import pool from '../db/pgPool.js';
 import llmProvider from './ai-brain/llm-provider.js';
+import interpretabilityService from './ai-interpretability.service.js';
+import qualityGates from './ai-quality-gates.service.js';
 
 // ─── Built-in Critical Drug Interactions Database ───────────
 // Source: WHO Essential Medicines + FDA major interaction alerts
@@ -218,17 +220,57 @@ class DrugInteractionChecker {
       ? `No interactions detected among ${allDrugs.length} medications.`
       : `Found ${interactions.length} interaction(s): ${interactions.filter(i => i.severity === 'contraindicated').length} contraindicated, ${interactions.filter(i => i.severity === 'major').length} major, ${interactions.filter(i => i.severity === 'moderate').length} moderate.`;
 
+    // ── Confidence score: how complete is the patient context? ──────────────
+    const confidence = interpretabilityService.computeConfidenceScore(
+      {
+        prescriptions:      drugNames.length,
+        report_lab_values:  conditions.length,
+        vitals:             false,
+        labs:               false
+      },
+      { chronicConditions: conditions, allergies }
+    );
+
+    // ── SaMD Quality Gate (Class III — highest risk) ──────────────────────
+    let llmRecommendationText = '';
+    try {
+      // Extract last LLM recommendation from llm interactions if available
+      const llmInts = interactions.filter(i => i.source === 'llm-analysis');
+      llmRecommendationText = llmInts.map(i => i.effect).join(' ');
+    } catch { /* non-blocking */ }
+
+    const gateResult = await qualityGates.checkDrugInteraction({
+      patientId,
+      drugs:        allDrugs,
+      interactions,
+      recommendation: llmRecommendationText,
+      patient:      { chronicConditions: conditions, allergies, gender: null, age: null }
+    });
+
+    if (gateResult.hasBlockers) {
+      console.warn(`[DrugInteraction] Gate BLOCKED for patient ${patientId}: ${gateResult.blockers.map(b => b.code).join(', ')}`);
+    }
+    await qualityGates.logGateResult(gateResult, { source: 'drug_interaction', drugCount: allDrugs.length });
+
     const elapsed = Date.now() - startTime;
-    console.log(`[DrugInteraction] Checked ${allDrugs.length} drugs in ${elapsed}ms: ${interactions.length} interactions found`);
+    console.log(`[DrugInteraction] Checked ${allDrugs.length} drugs in ${elapsed}ms: ${interactions.length} interactions found | gate=${gateResult.severity}`);
 
     return {
       interactions,
       summary,
-      severity: maxSeverity,
-      safe: interactions.length === 0,
-      drugsChecked: allDrugs,
+      severity:          maxSeverity,
+      safe:              interactions.length === 0 && !gateResult.hasBlockers,
+      drugsChecked:      allDrugs,
       conditionsChecked: conditions,
-      allergiesChecked: allergies,
+      allergiesChecked:  allergies,
+      confidence:        { score: confidence.score, tier: confidence.tier, missingSources: confidence.missingSources },
+      qualityGate: {
+        passed:          gateResult.passed,
+        severity:        gateResult.severity,
+        blockers:        gateResult.blockers,
+        warnings:        gateResult.warnings,
+        requiredActions: gateResult.requiredActions
+      },
       latencyMs: elapsed
     };
   }

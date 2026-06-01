@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { FileText, Upload, Download, Eye, Trash2, Calendar, Search, File, FileImage, FilePlus, FolderOpen, HardDrive } from 'lucide-react';
 import MainLayout from '@/components/layout/MainLayout';
+import { useToast } from '@/hooks/use-toast';
+import { downloadReport, previewReport } from '@/utils/reportActions';
 
 interface Document {
   id: string;
@@ -19,12 +21,14 @@ interface Document {
   uploadedBy: string;
   tags: string[];
   description?: string;
+  fileUrl?: string;
 }
 
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
 const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
 
 const UploadedDocuments: React.FC = () => {
+  const { toast } = useToast();
   const [documents, setDocuments] = useState<Document[]>([
     { id: '1', name: 'Blood Test Report - Dec 2024', type: 'lab_report', fileType: 'PDF', size: '2.3 MB', uploadDate: new Date('2024-12-15'), uploadedBy: 'Self', tags: ['Blood Test', 'Routine Checkup'], description: 'Comprehensive blood test results' },
     { id: '2', name: 'Prescription - Dr. Kumar', type: 'prescription', fileType: 'PDF', size: '1.1 MB', uploadDate: new Date('2024-12-20'), uploadedBy: 'Dr. Rajesh Kumar', tags: ['Antibiotics', 'Follow-up'] },
@@ -85,6 +89,38 @@ const UploadedDocuments: React.FC = () => {
   const handleDelete = (id: string) => {
     if (confirm('Are you sure you want to delete this document?')) {
       setDocuments(documents.filter(doc => doc.id !== id));
+    }
+  };
+
+  const handlePreviewDocument = async (doc: Document) => {
+    try {
+      await previewReport({
+        reportId: undefined,
+        fileName: doc.name,
+        fallbackUrl: doc.fileUrl,
+      });
+    } catch {
+      toast({
+        title: 'Preview unavailable',
+        description: 'This document has no preview URL yet. Please upload a linked file.',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleDownloadDocument = async (doc: Document) => {
+    try {
+      await downloadReport({
+        reportId: undefined,
+        fileName: doc.name,
+        fallbackUrl: doc.fileUrl,
+      });
+    } catch {
+      toast({
+        title: 'Download unavailable',
+        description: 'This document has no downloadable file linked yet.',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -253,10 +289,10 @@ const UploadedDocuments: React.FC = () => {
                           <div>By: {doc.uploadedBy}</div>
                         </div>
                         <div className="flex gap-2 pt-2">
-                          <Button variant="outline" size="sm" className="flex-1 dark:border-slate-600 dark:text-slate-300" aria-label={`View ${doc.name}`}>
+                          <Button variant="outline" size="sm" className="flex-1 dark:border-slate-600 dark:text-slate-300" aria-label={`View ${doc.name}`} onClick={() => handlePreviewDocument(doc)}>
                             <Eye className="mr-2 h-4 w-4" /> View
                           </Button>
-                          <Button variant="outline" size="sm" className="dark:border-slate-600 dark:text-slate-300" aria-label={`Download ${doc.name}`}>
+                          <Button variant="outline" size="sm" className="dark:border-slate-600 dark:text-slate-300" aria-label={`Download ${doc.name}`} onClick={() => handleDownloadDocument(doc)}>
                             <Download className="h-4 w-4" />
                           </Button>
                           <Button variant="outline" size="sm" onClick={() => handleDelete(doc.id)} className="hover:bg-red-50 dark:hover:bg-red-900/20 dark:border-slate-600" aria-label={`Delete ${doc.name}`}>

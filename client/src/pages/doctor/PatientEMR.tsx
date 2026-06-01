@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import MainLayout from '@/components/layout/MainLayoutdoctor';
+import RiskScoreExplanation from '@/components/ai/RiskScoreExplanation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,7 +58,8 @@ import {
   ClipboardList,
   Syringe,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  Brain
 } from 'lucide-react';
 import api from '@/utils/api';
 import { useQuery } from '@tanstack/react-query';
@@ -599,6 +601,10 @@ export default function PatientEMR() {
                       <Calendar className="w-4 h-4" />
                       <span className="hidden md:inline">History</span>
                     </TabsTrigger>
+                    <TabsTrigger value="ai-explanation" className="gap-1">
+                      <Brain className="w-4 h-4" />
+                      <span className="hidden md:inline">AI Insights</span>
+                    </TabsTrigger>
                   </TabsList>
 
                   {/* Overview Tab */}
@@ -970,6 +976,35 @@ export default function PatientEMR() {
                             </div>
                           ))}
                         </div>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  {/* AI Insights Tab — SHAP + Counterfactuals + Confidence */}
+                  <TabsContent value="ai-explanation" className="mt-4">
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                            <Brain className="w-5 h-5 text-blue-600" />
+                          </div>
+                          <div>
+                            <CardTitle className="text-base">AI Risk Score Explanation</CardTitle>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                              Post-hoc SHAP attribution · Nearest counterfactual · Data confidence
+                            </p>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        {selectedPatient?.id ? (
+                          <RiskScoreExplanation
+                            patientId={selectedPatient.id}
+                            mode="doctor"
+                          />
+                        ) : (
+                          <p className="text-sm text-slate-500 text-center py-8">Select a patient to view AI explanation</p>
+                        )}
                       </CardContent>
                     </Card>
                   </TabsContent>

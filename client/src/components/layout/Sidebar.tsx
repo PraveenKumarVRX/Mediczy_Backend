@@ -126,7 +126,7 @@ const sidebarItems: SidebarItem[] = [
 const teamSidebarItems: SidebarItem[] = [
   { icon: Home, label: "Dashboard", path: "/team/dashboard" },
   { icon: Users, label: "Team Directory", path: "/team/directory", permission: "User Management" },
-  { icon: BarChart3, label: "Reports", path: "/team/reports", permission: ["Patient Reports", "Analytics Access"] },
+  { icon: BarChart3, label: "Reports", path: "/team/reports", permission: ["Patient Reports", "Analytics Access", "Reports Access"] },
   { icon: Activity, label: "System Tools", path: "/team/tools", adminOnly: true },
   { icon: Users, label: "User Management", path: "/team/user-management", category: "Management", permission: "User Management" },
   { icon: Stethoscope, label: "Doctors", path: "/team/doctor-management", category: "Management", permission: "Doctor Management" },
@@ -147,8 +147,8 @@ const teamSidebarItems: SidebarItem[] = [
   { icon: MessageSquare, label: "RC Omnichannel", path: "/team/rc-omnichannel", category: "Support", permission: "Chat Dashboard Access" },
   { icon: Pill, label: "Pharmacies", path: "/team/pharmacy-management", category: "Management", permission: "Pharmacy Management" },
   { icon: Heart, label: "Health Plans", path: "/team/health-plans", category: "Business", permission: "Health Plans Access" },
-  { icon: ShieldCheck, label: "Plan Governance", path: "/team/plan-governance", category: "Security", permission: "Audit Access" },
-  { icon: Database, label: "Activity Logs", path: "/team/activity", category: "Security", permission: "Audit Access" },
+  { icon: ShieldCheck, label: "Plan Governance", path: "/team/plan-governance", category: "Security", permission: ["Audit Access", "Audit Logs"] },
+  { icon: Database, label: "Activity Logs", path: "/team/activity", category: "Security", permission: ["Audit Access", "Audit Logs"] },
   { icon: Settings, label: "Settings", path: "/team/settings", category: "Administration", adminOnly: true },
 ];
 

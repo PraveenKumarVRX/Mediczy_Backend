@@ -86,12 +86,42 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
     }
 
     // Compress + encrypt + upload to MinIO
-    const result = await uploadEncryptedReport({
-      buffer: req.file.buffer,
-      originalName: req.file.originalname,
-      mimeType: req.file.mimetype,
-      keyPrefix: `uploads/reports/${userId}`,
-    });
+    // If MinIO is unavailable, fall back to local storage so uploads do not fail hard.
+    let result;
+    let storageWarning = null;
+    try {
+      result = await uploadEncryptedReport({
+        buffer: req.file.buffer,
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        keyPrefix: `uploads/reports/${userId}`,
+      });
+    } catch (storageError) {
+      const uploadDir = path.join(__dirname, '../../uploads/reports');
+      await fsPromises.mkdir(uploadDir, { recursive: true });
+
+      const safeName = (req.file.originalname || 'report')
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .slice(0, 100);
+      const fallbackFileName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`;
+      const fallbackPath = path.join(uploadDir, fallbackFileName);
+      await fsPromises.writeFile(fallbackPath, req.file.buffer);
+
+      console.error('⚠️ MinIO upload failed, switched to local fallback:', storageError.message);
+
+      storageWarning = 'Primary object storage unavailable. Saved to local fallback storage.';
+      result = {
+        key: fallbackFileName,
+        url: null,
+        bucket: null,
+        encryption: null,
+        compressionMethod: 'none',
+        storedMimeType: req.file.mimetype,
+        originalSize: req.file.size,
+        compressedSize: req.file.size,
+        size: req.file.size,
+      };
+    }
 
     const savedReport = await Report.create({
       userId,
@@ -118,6 +148,8 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
         compressedSize: result.compressedSize,
         encryptedSize: result.size,
         bucket: result.bucket,
+        fallbackStorage: !result.bucket,
+        storageWarning,
       }
     });
 
@@ -190,6 +222,7 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
     return res.status(201).json({
       success: true,
       message: 'Report uploaded successfully',
+      warning: storageWarning,
       data: savedReport
     });
   } catch (error) {
@@ -341,8 +374,12 @@ router.delete('/:id', authUser, async (req, res) => {
     if (hardDelete === 'true') {
       // Hard delete - remove file and database record
       try {
-        if (report.filePath && fs.existsSync(report.filePath)) {
-          await fsPromises.unlink(report.filePath);
+        if (report.filePath) {
+          const uploadDir = path.join(__dirname, '../../uploads/reports');
+          const localPath = path.join(uploadDir, path.basename(report.filePath));
+          if (fs.existsSync(localPath)) {
+            await fsPromises.unlink(localPath);
+          }
         }
       } catch (err) {
         console.error('Error deleting file:', err);

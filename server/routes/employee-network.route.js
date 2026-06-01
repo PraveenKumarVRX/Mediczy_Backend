@@ -382,7 +382,7 @@ router.get('/claims', authUser, async (req, res) => {
       hospital: row.insurance_provider || undefined,
       date: toISODate(row.submitted_date || row.created_at) || toISODate(new Date()),
       member: 'Self',
-      documents: Array.isArray(row.documents) ? row.documents.length : 0,
+      documents: Array.isArray(row.documents) ? row.documents : [],
       timeline: []
     }));
 
@@ -396,6 +396,120 @@ router.get('/claims', authUser, async (req, res) => {
   } catch (err) {
     console.error('GET /claims error:', err);
     return res.status(500).json({ success: false, message: 'Server error', error: err.message });
+  }
+});
+
+/**
+ * POST /api/employee/claims
+ * Creates a new employee insurance claim from ClaimsExpress flow.
+ */
+router.post('/claims', authUser, async (req, res) => {
+  try {
+    const corp = await getUserCorporate(req.user.id);
+    if (!corp) {
+      return res.status(403).json({
+        success: false,
+        message: 'Claims filing is available only for corporate employees'
+      });
+    }
+
+    const {
+      type,
+      amount,
+      hospital,
+      date,
+      claimType,
+      diagnosis,
+      notes,
+      documents
+    } = req.body || {};
+
+    const claimAmount = Number(amount);
+    if (!Number.isFinite(claimAmount) || claimAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid claim amount is required' });
+    }
+
+    const claimLabel = String(type || claimType || 'opd').slice(0, 100);
+    const provider = String(hospital || '').trim().slice(0, 200) || 'Provider not specified';
+    const submittedDate = toISODate(date) || toISODate(new Date());
+    const claimNumber = `CLM-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const docs = Array.isArray(documents)
+      ? documents.filter((d) => typeof d === 'string').slice(0, 20)
+      : [];
+
+    const organizationId = Number(
+      req.user.organization_id || req.user.organizationId || corp.corporateId
+    );
+
+    const [insertResult] = await postgresSequelize.query(
+      `INSERT INTO insurance_claims (
+          claim_number,
+          patient_id,
+          organization_id,
+          claim_type,
+          status,
+          claim_amount,
+          insurance_provider,
+          diagnosis,
+          notes,
+          documents,
+          submitted_date,
+          created_at,
+          updated_at
+       ) VALUES (
+          :claimNumber,
+          :patientId,
+          :organizationId,
+          :claimType,
+          'submitted',
+          :claimAmount,
+          :provider,
+          :diagnosis,
+          :notes,
+          :documents,
+          :submittedDate,
+          NOW(),
+          NOW()
+       )
+       RETURNING id, claim_number, claim_type, status, claim_amount, insurance_provider, submitted_date, created_at, documents`,
+      {
+        replacements: {
+          claimNumber,
+          patientId: req.user.id,
+          organizationId,
+          claimType: claimLabel,
+          claimAmount,
+          provider,
+          diagnosis: diagnosis ? String(diagnosis).slice(0, 500) : null,
+          notes: notes ? String(notes).slice(0, 1000) : null,
+          documents: JSON.stringify(docs),
+          submittedDate,
+        }
+      }
+    );
+
+    const row = Array.isArray(insertResult) ? insertResult[0] : insertResult;
+    if (!row) {
+      return res.status(500).json({ success: false, message: 'Claim persisted but response payload was empty' });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: 'Claim filed successfully',
+      claim: {
+        id: String(row.id),
+        claimNumber: row.claim_number,
+        type: row.claim_type,
+        amount: Number(row.claim_amount || 0),
+        status: normalizeClaimStatus(row.status),
+        hospital: row.insurance_provider || undefined,
+        date: toISODate(row.submitted_date || row.created_at) || toISODate(new Date()),
+        documents: Array.isArray(row.documents) ? row.documents : docs,
+      }
+    });
+  } catch (err) {
+    console.error('POST /claims error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to file claim', error: err.message });
   }
 });
 

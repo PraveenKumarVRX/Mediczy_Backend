@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FlaskConical, Calendar, MapPin, Download, Plus, Search, Filter, Loader2, ShoppingCart, Trash2, X, Navigation, Building2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -169,6 +169,8 @@ const LabTests = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCartDialog, setShowCartDialog] = useState(false);
   const [showCheckoutDialog, setShowCheckoutDialog] = useState(false);
+  const checkoutInFlightRef = useRef(false);
+  const [lastCheckoutKey, setLastCheckoutKey] = useState<string | null>(null);
   
   const [bookingForm, setBookingForm] = useState({
     testName: '',
@@ -184,6 +186,53 @@ const LabTests = () => {
   const [selectedTest, setSelectedTest] = useState<AvailableTest | null>(null);
   const [searchCategory, setSearchCategory] = useState<string>('all');
   const [testSearchTerm, setTestSearchTerm] = useState('');
+
+  const buildCheckoutKey = () => {
+    const cartFingerprint = cart
+      .map((item) => item.test.id)
+      .sort()
+      .join('|');
+    return [
+      localStorage.getItem('userId') || localStorage.getItem('userEmail') || 'anon',
+      bookingForm.appointmentDate || 'no-date',
+      collectionType || 'no-collection',
+      selectedLab?.id || 'no-lab',
+      cartFingerprint,
+      getCartTotal().toString(),
+    ].join('::');
+  };
+
+  const verifyRazorpayPaymentWithRetry = async ({
+    orderId,
+    razorpayOrderId,
+    razorpayPaymentId,
+    razorpaySignature,
+    idempotencyKey,
+  }: {
+    orderId: string;
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+    idempotencyKey: string;
+  }) => {
+    let lastError: any = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await api.post('/billing/payments/razorpay/verify', {
+          orderId,
+          razorpayOrderId,
+          razorpayPaymentId,
+          razorpaySignature,
+        }, {
+          headers: { 'X-Idempotency-Key': `${idempotencyKey}-verify-${attempt}` }
+        });
+        return true;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw lastError;
+  };
 
   // Cart API functions
   const fetchCart = async () => {
@@ -1052,13 +1101,25 @@ const LabTests = () => {
                             toast({ title: 'Please select a lab', variant: 'destructive' });
                             return;
                           }
+
+                          const checkoutKey = buildCheckoutKey();
+                          if (checkoutInFlightRef.current) {
+                            toast({ title: 'Checkout already in progress', description: 'Please wait for the current request to finish.' });
+                            return;
+                          }
+                          if (lastCheckoutKey === checkoutKey) {
+                            toast({ title: 'Duplicate checkout blocked', description: 'This booking request was already submitted.' });
+                            return;
+                          }
                           
+                          checkoutInFlightRef.current = true;
                           setIsBooking(true);
                           try {
                             const token = localStorage.getItem('token');
                             if (!token) {
                               toast({ title: 'Please login to continue', variant: 'destructive' });
                               setIsBooking(false);
+                              checkoutInFlightRef.current = false;
                               return;
                             }
 
@@ -1069,10 +1130,12 @@ const LabTests = () => {
                                 testType: mapTestToType(item.test.category),
                                 testName: item.test.name,
                                 appointmentDate: bookingForm.appointmentDate,
-                                notes: `${collectionType === 'home' ? '[Home Collection] ' : `[Lab: ${selectedLab?.name}] `}${bookingForm.notes}`,
+                                notes: `${collectionType === 'home' ? '[Home Collection] ' : `[Lab: ${selectedLab?.name}] `}${bookingForm.notes} [Req:${checkoutKey}]`,
                                 urgency: 'routine'
                               };
-                              const response = await api.post('/lab-tests', requestBody);
+                              const response = await api.post('/lab-tests', requestBody, {
+                                headers: { 'X-Idempotency-Key': `${checkoutKey}-${item.test.id}` }
+                              });
                               if (!response.data?.success) {
                                 toast({ 
                                   title: 'Booking failed', 
@@ -1084,6 +1147,8 @@ const LabTests = () => {
                               }
                             }
                             if (hasError) return;
+
+                            setLastCheckoutKey(checkoutKey);
 
                             const totalAmount = getCartTotal();
 
@@ -1097,6 +1162,8 @@ const LabTests = () => {
                                 discount: 0,
                                 currency: 'INR',
                                 notes: `Lab tests: ${cart.map(i => i.test.name).join(', ')}`
+                              }, {
+                                headers: { 'X-Idempotency-Key': `${checkoutKey}-order` }
                               });
                               if (orderRes.data?.success && orderRes.data?.data?.order?.id) {
                                 orderId = orderRes.data.data.order.id;
@@ -1117,6 +1184,8 @@ const LabTests = () => {
                                 orderId,
                                 amount: totalAmount,
                                 currency: 'INR'
+                              }, {
+                                headers: { 'X-Idempotency-Key': `${checkoutKey}-payment-create` }
                               });
 
                               if (!payRes.data?.success) {
@@ -1143,11 +1212,12 @@ const LabTests = () => {
                                   theme: { color: '#14b8a6' },
                                   handler: async function (response: any) {
                                     try {
-                                      await api.post('/billing/payments/razorpay/verify', {
+                                      await verifyRazorpayPaymentWithRetry({
                                         orderId,
                                         razorpayOrderId: response.razorpay_order_id,
                                         razorpayPaymentId: response.razorpay_payment_id,
-                                        razorpaySignature: response.razorpay_signature
+                                        razorpaySignature: response.razorpay_signature,
+                                        idempotencyKey: checkoutKey,
                                       });
                                       toast({ title: 'Payment Successful! 🎉', description: `${cart.length} test(s) booked and payment confirmed.` });
                                       resolve();
@@ -1188,6 +1258,7 @@ const LabTests = () => {
                             toast({ title: 'Checkout failed', description: error.message || 'Please try again', variant: 'destructive' });
                           } finally {
                             setIsBooking(false);
+                            checkoutInFlightRef.current = false;
                           }
                         }}
                         title={!bookingForm.appointmentDate ? 'Select an appointment date first' : (collectionType === 'lab' && !selectedLab ? 'Select a lab first' : '')}

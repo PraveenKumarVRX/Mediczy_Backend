@@ -248,15 +248,27 @@ export async function recordTelemetry(data) {
 // ─── Optimization Trigger (called by self-learning pipeline) ─────────────────
 
 /**
- * Analyze telemetry → adjust routing weights and cognitive tier thresholds.
+ * Analyze telemetry → identify routing weight and threshold changes.
  * Called every 4h by self-learning pipeline.
  *
- * Returns a summary of changes made.
+ * IMPORTANT — SaMD PCCP compliance: this function now operates in DRY-RUN mode
+ * by default. It identifies what SHOULD change but does NOT apply changes
+ * autonomously. The self-learning pipeline routes proposed changes through
+ * AIModelGovernanceService.proposeChange() for medical director approval.
+ *
+ * Pass applyImmediately=true ONLY for non-clinical routing (cost/latency) changes
+ * that have been pre-approved in the PCCP. Clinical accuracy threshold changes
+ * always require human approval regardless.
+ *
+ * @param {boolean} applyImmediately - If false (default), returns proposed changes only
+ * @returns {{ changes, proposedChanges, appliedChanges, timestamp }}
  */
-export async function triggerOptimization() {
+export async function triggerOptimization({ applyImmediately = false } = {}) {
   await ensureDb();
-  const changes = [];
-  const MIN_SAMPLE = 20;  // minimum observations before changing anything
+  const changes           = [];   // all detected changes (informational)
+  const proposedChanges   = [];   // changes requiring governance approval
+  const appliedChanges    = [];   // changes auto-applied (pre-approved, non-clinical)
+  const MIN_SAMPLE = 20;
 
   try {
     // ── 1. Route performance per (route × domain × task_type) ─────────────
@@ -277,13 +289,21 @@ export async function triggerOptimization() {
       ORDER BY avg_score DESC
     `);
 
-    // Synthesize cross-route performance: if SLM consistently out-performs LLM
-    // for a specific (domain, task_type), record it for weight adjustment.
     for (const row of routeStats) {
       const scoreRate = parseFloat(row.avg_score);
       if (scoreRate > 0.85) {
         changes.push({ type: 'high_performer', route: row.route_used, domain: row.domain, taskType: row.task_type, score: scoreRate });
       } else if (scoreRate < 0.45) {
+        // Clinical accuracy below threshold — always requires approval (SaMD PCCP §4.2)
+        proposedChanges.push({
+          component:      'cognitive-router',
+          changeType:     'routing_update',
+          description:    `Route '${row.route_used}' has low success rate (${(scoreRate * 100).toFixed(1)}%) for ${row.domain}/${row.task_type}`,
+          previousConfig: { route: row.route_used, domain: row.domain, taskType: row.task_type },
+          newConfig:      { action: 'deprioritize', successRate: scoreRate },
+          rationale:      `${row.total} observations over 7 days, avg success rate ${(scoreRate * 100).toFixed(1)}%`,
+          riskAssessment: 'moderate'
+        });
         changes.push({ type: 'low_performer', route: row.route_used, domain: row.domain, taskType: row.task_type, score: scoreRate });
       }
     }
@@ -302,28 +322,60 @@ export async function triggerOptimization() {
     `);
 
     for (const row of tierStats) {
-      const total    = parseInt(row.total);
-      const srate    = total > 0 ? parseInt(row.successes) / total : null;
+      const total = parseInt(row.total);
+      const srate = total > 0 ? parseInt(row.successes) / total : null;
       if (srate === null || total < MIN_SAMPLE) continue;
 
       const tier = row.cognitive_tier;
+
       if (tier === 'reflex' && srate < 0.65) {
-        // SLM underperforming — raise reflex floor (harder to qualify for SLM)
-        await updateThreshold('reflex_min_score', 65);
-        changes.push({ type: 'threshold_raise', threshold: 'reflex_min_score', reason: `reflex success=${srate.toFixed(2)}` });
+        // SLM underperforming — threshold raise requires governance approval
+        proposedChanges.push({
+          component:      'cognitive-router',
+          changeType:     'threshold_change',
+          description:    `Raise reflex_min_score threshold — SLM success rate is ${(srate * 100).toFixed(1)}% (below 65% floor)`,
+          previousConfig: { threshold: 'reflex_min_score', value: 'current' },
+          newConfig:      { threshold: 'reflex_min_score', value: 65 },
+          rationale:      `${total} observations in 24h, success rate ${(srate * 100).toFixed(1)}%`,
+          riskAssessment: 'moderate'
+        });
+        changes.push({ type: 'threshold_raise_proposed', threshold: 'reflex_min_score', reason: `reflex success=${srate.toFixed(2)}` });
       }
+
       if (tier === 'reflex' && srate > 0.90) {
-        // SLM over-performing — lower floor (let more go to SLM = save cost)
-        await updateThreshold('reflex_min_score', 40);
-        changes.push({ type: 'threshold_lower', threshold: 'reflex_min_score', reason: `reflex success=${srate.toFixed(2)}` });
+        // Cost optimization (non-clinical) — can be auto-applied if applyImmediately
+        if (applyImmediately) {
+          await updateThreshold('reflex_min_score', 40);
+          appliedChanges.push({ threshold: 'reflex_min_score', value: 40 });
+        } else {
+          proposedChanges.push({
+            component:      'cognitive-router',
+            changeType:     'threshold_change',
+            description:    `Lower reflex_min_score to route more queries to SLM — success rate ${(srate * 100).toFixed(1)}% (cost optimization)`,
+            previousConfig: { threshold: 'reflex_min_score', value: 'current' },
+            newConfig:      { threshold: 'reflex_min_score', value: 40 },
+            rationale:      `SLM performing well at ${(srate * 100).toFixed(1)}% — lowering threshold reduces cloud API cost`,
+            riskAssessment: 'low'
+          });
+        }
+        changes.push({ type: 'threshold_lower_proposed', threshold: 'reflex_min_score', reason: `reflex success=${srate.toFixed(2)}` });
       }
+
       if (tier === 'standard' && srate < 0.60) {
-        await updateThreshold('standard_success_floor', 0.70);
-        changes.push({ type: 'threshold_raise', threshold: 'standard_success_floor', reason: `standard success=${srate.toFixed(2)}` });
+        proposedChanges.push({
+          component:      'cognitive-router',
+          changeType:     'threshold_change',
+          description:    `Raise standard_success_floor — standard tier success rate ${(srate * 100).toFixed(1)}% is below threshold`,
+          previousConfig: { threshold: 'standard_success_floor', value: 'current' },
+          newConfig:      { threshold: 'standard_success_floor', value: 0.70 },
+          rationale:      `${total} observations in 24h, success rate ${(srate * 100).toFixed(1)}%`,
+          riskAssessment: 'moderate'
+        });
+        changes.push({ type: 'threshold_raise_proposed', threshold: 'standard_success_floor', reason: `standard success=${srate.toFixed(2)}` });
       }
     }
 
-    // ── 3. Cost trend reporting ────────────────────────────────────────────
+    // ── 3. Cost trend reporting (read-only, no threshold change) ──────────
     const { rows: costRows } = await pool.query(`
       SELECT
         route_used,
@@ -337,12 +389,12 @@ export async function triggerOptimization() {
     const llmUsage = parseInt(costRows.find(r => r.route_used === 'llm')?.avg_tokens || 0);
     changes.push({ type: 'cost_snapshot', slm_avg_tokens: slmUsage, llm_avg_tokens: llmUsage });
 
-    console.log(`[EvalEngine] Optimization complete: ${changes.length} changes`);
-    return { changes, timestamp: new Date().toISOString() };
+    console.log(`[EvalEngine] Optimization analysis: ${changes.length} observations, ${proposedChanges.length} changes proposed for governance review, ${appliedChanges.length} auto-applied`);
+    return { changes, proposedChanges, appliedChanges, timestamp: new Date().toISOString() };
 
   } catch (err) {
     console.error('[EvalEngine] Optimization error:', err.message);
-    return { error: err.message, changes };
+    return { error: err.message, changes, proposedChanges, appliedChanges };
   }
 }
 

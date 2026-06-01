@@ -18,6 +18,8 @@ import cron from 'node-cron';
 import pool from '../db/pgPool.js';
 import llmProvider from './ai-brain/llm-provider.js';
 import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
+import interpretabilityService from './ai-interpretability.service.js';
+import qualityGates from './ai-quality-gates.service.js';
 
 class HealthRiskScoreCron {
   constructor() {
@@ -85,25 +87,60 @@ class HealthRiskScoreCron {
       let updated = 0;
       let created = 0;
 
+      let gateBlocked = 0;
+
       for (const patient of patients) {
         try {
           const score = await this.computePatientScore(patient);
-          
-          // Upsert into ai_health_risk_scores
+
+          // ── SaMD Quality Gate ────────────────────────────────────────────
+          // Build confidence score before persisting
+          const confidence = interpretabilityService.computeConfidenceScore(score.dataSources, patient);
+          const gateResult = await qualityGates.checkRiskScore({
+            patientId:       patient.patient_id,
+            overall:         score.overall,
+            subscores:       score.subscores,
+            riskLevel:       score.riskLevel,
+            recommendations: score.recommendations,
+            confidence,
+            dataSources:     score.dataSources,
+            patient
+          });
+
+          if (gateResult.hasBlockers) {
+            gateBlocked++;
+            console.warn(`[HealthRisk] Gate BLOCKED for patient ${patient.patient_id}: ${gateResult.blockers.map(b => b.code).join(', ')}`);
+            await qualityGates.logGateResult(gateResult, { source: 'health_risk_cron' });
+            continue; // skip persisting a score that failed quality gates
+          }
+
+          // ── SHAP interpretability bundle ─────────────────────────────────
+          const explanation = interpretabilityService.buildRiskScoreExplanation(
+            patient, score.subscores, score.dataSources
+          );
+
+          // Upsert into ai_health_risk_scores (now with interpretability columns)
           const result = await db.query(`
-            INSERT INTO ai_health_risk_scores 
-              (patient_id, overall_score, risk_level, subscores, risk_factors, recommendations, data_sources, model_version, valid_until, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW() + INTERVAL '6 hours', NOW())
+            INSERT INTO ai_health_risk_scores
+              (patient_id, overall_score, risk_level, subscores, risk_factors, recommendations,
+               data_sources, model_version, shap_values, feature_attributions, counterfactuals,
+               confidence_score, data_completeness, valid_until, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW() + INTERVAL '6 hours', NOW())
             ON CONFLICT (patient_id) DO UPDATE SET
-              overall_score = EXCLUDED.overall_score,
-              risk_level = EXCLUDED.risk_level,
-              subscores = EXCLUDED.subscores,
-              risk_factors = EXCLUDED.risk_factors,
-              recommendations = EXCLUDED.recommendations,
-              data_sources = EXCLUDED.data_sources,
-              model_version = EXCLUDED.model_version,
-              valid_until = EXCLUDED.valid_until,
-              updated_at = NOW()
+              overall_score        = EXCLUDED.overall_score,
+              risk_level           = EXCLUDED.risk_level,
+              subscores            = EXCLUDED.subscores,
+              risk_factors         = EXCLUDED.risk_factors,
+              recommendations      = EXCLUDED.recommendations,
+              data_sources         = EXCLUDED.data_sources,
+              model_version        = EXCLUDED.model_version,
+              shap_values          = EXCLUDED.shap_values,
+              feature_attributions = EXCLUDED.feature_attributions,
+              counterfactuals      = EXCLUDED.counterfactuals,
+              confidence_score     = EXCLUDED.confidence_score,
+              data_completeness    = EXCLUDED.data_completeness,
+              valid_until          = EXCLUDED.valid_until,
+              updated_at           = NOW()
             RETURNING (xmax = 0) as is_insert
           `, [
             patient.patient_id,
@@ -113,11 +150,21 @@ class HealthRiskScoreCron {
             JSON.stringify(score.riskFactors),
             JSON.stringify(score.recommendations),
             JSON.stringify(score.dataSources),
-            'v2-bayesian'
+            'v2-bayesian',
+            JSON.stringify(explanation.shap),
+            JSON.stringify(explanation.shap.ranked),
+            JSON.stringify(explanation.counterfactual),
+            confidence.score,
+            confidence.percent
           ]);
 
           if (result.rows[0]?.is_insert) created++;
           else updated++;
+
+          // Log gate warnings (non-blocking) for clinician review dashboard
+          if (gateResult.hasWarnings) {
+            await qualityGates.logGateResult(gateResult, { source: 'health_risk_cron', riskLevel: score.riskLevel });
+          }
 
         } catch (patientErr) {
           console.error(`[HealthRisk] Error for patient ${patient.patient_id}:`, patientErr.message);
@@ -125,8 +172,8 @@ class HealthRiskScoreCron {
       }
 
       const elapsed = Date.now() - startTime;
-      console.log(`✅ [HealthRisk] Completed: ${created} created, ${updated} updated in ${elapsed}ms`);
-      tick('ai_health_risk', { created, updated, patients: patients.length, elapsedMs: elapsed });
+      console.log(`✅ [HealthRisk] Completed: ${created} created, ${updated} updated, ${gateBlocked} gate-blocked in ${elapsed}ms`);
+      tick('ai_health_risk', { created, updated, gateBlocked, patients: patients.length, elapsedMs: elapsed });
 
     } catch (error) {
       tickError('ai_health_risk', error.message);

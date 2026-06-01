@@ -420,6 +420,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
       items: [
         { icon: BrainCircuit, label: 'AI Analytics', path: '/admin/ai-analytics', color: 'text-violet-500', bg: 'bg-violet-500/10', highlight: true },
         { icon: Shield, label: 'AI Guard', path: '/admin/ai-guard', color: 'text-red-500', bg: 'bg-red-500/10', badge: 'New' },
+        { icon: Shield, label: 'AI Governance', path: '/admin/ai-governance', color: 'text-blue-600', bg: 'bg-blue-500/10', badge: 'SaMD' },
       ]
     },
     {

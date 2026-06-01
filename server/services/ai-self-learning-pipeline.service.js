@@ -19,6 +19,7 @@ import cron from 'node-cron';
 import pool from '../db/pgPool.js';
 import llmProvider from './ai-brain/llm-provider.js';
 import { triggerOptimization } from './ai-brain/evaluation-engine.js';
+import governanceService from './ai-model-governance.service.js';
 import { v4 as uuidv4 } from 'uuid';
 import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
 
@@ -85,17 +86,34 @@ class SelfLearningPipeline {
       // Stage 5: Update quality metrics
       await this.updateQualityMetrics(db);
 
-      // Stage 6: Route optimization — evolve scoring weights + tier thresholds
-      // This is the self-improving AI OS layer: routing model learns from telemetry
-      const optimizationResult = await triggerOptimization().catch(err => {
+      // Stage 6: Route optimization — analyze telemetry and PROPOSE changes for governance review
+      // SaMD PCCP compliance: no autonomous model modifications without human approval.
+      // triggerOptimization() now runs in dry-run mode — returns proposed changes only.
+      const optimizationResult = await triggerOptimization({ applyImmediately: false }).catch(err => {
         console.warn('[SelfLearn] Optimization stage error:', err.message);
-        return { changes: [], error: err.message };
+        return { changes: [], proposedChanges: [], appliedChanges: [], error: err.message };
       });
-      const optimizationChanges = optimizationResult.changes?.length || 0;
+
+      // Route proposed changes through governance for medical director approval
+      let governanceProposed = 0;
+      if (optimizationResult.proposedChanges?.length > 0) {
+        for (const proposed of optimizationResult.proposedChanges) {
+          try {
+            await governanceService.proposeChange(proposed);
+            governanceProposed++;
+          } catch (gErr) {
+            console.warn('[SelfLearn] Failed to log governance proposal:', gErr.message);
+          }
+        }
+        console.log(`📋 [SelfLearn] ${governanceProposed} routing changes submitted for governance review`);
+      }
+
+      const optimizationChanges = (optimizationResult.changes?.length || 0);
+      const appliedChanges      = (optimizationResult.appliedChanges?.length || 0);
 
       const elapsed = Date.now() - startTime;
-      console.log(`✅ [SelfLearn] Pipeline complete: ${scored} scored, ${patterns.length} patterns, ${insights} insights, ${applied} applied, ${optimizationChanges} routing optimizations in ${elapsed}ms`);
-      tick('ai_self_learning', { scored, patterns: patterns.length, insights, applied, routingChanges: optimizationChanges, elapsedMs: elapsed });
+      console.log(`✅ [SelfLearn] Pipeline complete: ${scored} scored, ${patterns.length} patterns, ${insights} insights, ${applied} applied, ${governanceProposed} routing changes proposed for review (${appliedChanges} auto-applied), ${optimizationChanges} observations in ${elapsed}ms`);
+      tick('ai_self_learning', { scored, patterns: patterns.length, insights, applied, governanceProposed, routingChanges: appliedChanges, elapsedMs: elapsed });
 
     } catch (error) {
       tickError('ai_self_learning', error.message);

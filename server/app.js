@@ -51,6 +51,7 @@ import medicalAIRouter from "./routes/medical-ai.route.js";
 import aiHealthRouter from "./routes/ai-health.route.js";
 import aiVisionRouter from "./routes/ai-vision.route.js";
 import aiScribeRouter from "./routes/ai-scribe.route.js";
+import aiGovernanceRouter from "./routes/ai-governance.route.js";
 import scribeRouter from "./routes/scribe.js";
 import offlineScribeRouter from "./routes/offline-scribe.route.js";
 import voiceAssistantRouter from "./routes/voice-assistant.route.js";
@@ -1247,6 +1248,7 @@ app.use("/api/activity-tracker", activityTrackerRouter); // Daily activity: step
 app.use("/api/apple-health", appleHealthRouter); // Apple HealthKit integration for iOS
 app.use("/api/ai", aiRouter);
 app.use("/api/medical-ai", medicalAIRouter);
+app.use("/api/ai-governance", authUser, aiGovernanceRouter); // SaMD governance: model cards, PCCP, drift, quality gates
 app.use("/api/ai-health", aiHealthRouter); // AI health assistant, diet plans, Dr. ISHA
 app.use("/api/v3/ai-brain", authUser, aiBrainRouter); // AI Brain intelligence layer (agentic LLM + RAG + 15 tools)
 app.use("/api/v3/ai-intelligence", authUser, aiIntelligenceRouter); // Drug interactions, insurance, triage, risk scores, insights
