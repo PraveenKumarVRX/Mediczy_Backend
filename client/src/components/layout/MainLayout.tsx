@@ -29,7 +29,6 @@ import {
 } from "@/components/ui/tooltip";
 import { BRAND, getShortRoleLabel } from "@/config/brand";
 import VideoCallNotification from "@/components/notifications/VideoCallNotification";
-import { useSocketConnection } from "@/hooks/useSocketConnection";
 import { PageTransition } from "@/components/PageTransition";
 import ChatApplet from "@/components/chat/ChatApplet";
 import GlobalSearch from "@/components/GlobalSearch";
@@ -59,9 +58,8 @@ const MainLayout = ({ children }: MainLayoutProps) => {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const videoCall = useVideoCall();
 
-  // Initialize socket connection for notifications
-  useSocketConnection();
-  
+  // Socket is managed by SocketProvider (App.tsx) — do not create a second connection here
+
   const { toast } = useToast();
   const { setTheme, theme } = useTheme();
   const navigate = useNavigate();

@@ -665,27 +665,34 @@ const Diet = () => {
         dailyCalories: (personalizedPlan || dietPlans[goal])?.dailyCalories,
         dietaryPreference,
         cuisineRegion,
+      }, {
+        timeout: 10000, // 10s fast-fail — falls through to client-side plan gracefully
       });
       if (data.success) {
         setDrIshaRec({ recommendation: data.recommendation, healthProfile: data.healthProfile });
       }
-    } catch (err) {
-      console.error('Dr. iSHA diet fetch failed:', err);
+    } catch (err: any) {
+      // Timeout or network error — client-side plan is already displayed; no console noise in prod
+      if (import.meta.env.DEV) console.warn('Dr. iSHA diet unavailable (using local plan):', err?.code ?? err?.message);
     } finally {
       setDrIshaLoading(false);
     }
   };
 
+  // Debounced effect — only re-fetches after user stops changing inputs for 800ms
   useEffect(() => {
     const hasWeight = Boolean(weight);
     const hasHeight = heightUnit === "cm" ? Boolean(height) : Boolean(feet || inches);
-    if (!hasWeight || !hasHeight) {
-      return;
-    }
+    if (!hasWeight || !hasHeight) return;
 
     handlePlanChange(selectedPlan as "weight_loss" | "weight_gain" | "maintenance");
     fetchBackendDiet(selectedPlan);
-    fetchDrIshaRec(selectedPlan);
+
+    const timer = setTimeout(() => {
+      fetchDrIshaRec(selectedPlan);
+    }, 800);
+
+    return () => clearTimeout(timer);
   }, [weight, height, feet, inches, heightUnit, age, gender, activityLevel, selectedPlan, dietaryPreference, cuisineRegion]);
 
   const bmi = calculateBMI();
