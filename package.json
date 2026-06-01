@@ -14,7 +14,8 @@
     "test:rag-refresh-audit": "npm run test:rag-refresh-audit --prefix server",
     "test:doctor-assistant-nav-regression": "npm run test:doctor-assistant-nav-regression --prefix server",
     "test:user-login-security-regression": "npm run test:user-login-security-regression --prefix server",
-    "test:index-appointments-fallback-regression": "npm run e2e:index-appointments-fallback --prefix client"
+    "test:index-appointments-fallback-regression": "npm run e2e:index-appointments-fallback --prefix client",
+    "ops:activate-subscription": "npm run ops:activate-subscription --prefix server --"
   },
   "dependencies": {
     "@google/generative-ai": "^0.22.0",

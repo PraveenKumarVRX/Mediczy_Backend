@@ -81,18 +81,32 @@ function strongBuyingSignal(replyText = "") {
 
 export async function generateAssistedEmailDraft(input = {}) {
   const { entity = {}, intent = 'follow_up', tone = 'professional', context = {}, previousMessages = [] } = input;
+  const currentSubject = String(context?.currentSubject || '').trim();
+  const currentMessage = String(context?.currentMessage || '').trim();
+  const hasCurrentDraft = Boolean(currentSubject || currentMessage);
+  const assistMode = String(context?.assistMode || 'augment').toLowerCase();
 
-  const ai = await aiJSON(
-    `You are Mediqzy's AI email assistant for B2B healthcare sales and corporate health benefits.
-Write practical emails that a sales/user team can approve quickly.
+  const systemPrompt = `You are Mediqzy's AI email copilot for B2B healthcare sales and corporate health benefits.
+Your role is to ASSIST and AUGMENT team-written drafts, not override user intent.
+${hasCurrentDraft ? 'A current draft is provided. Improve that draft while preserving key intent, facts, placeholders, and call-to-action direction.' : 'No current draft provided. Create a practical first draft.'}
+If placeholders appear, preserve them exactly (for example: {{companyName}}, {{contactPerson}}, {{employeeCount}}, {{industry}}, {{packageType}}).
 Return ONLY valid JSON:
-{"subject":"string","preheader":"string","body":"plain text email, 120-180 words","cta":"string","tone":"string","recommendedSendTime":"string","followUpAfterHours":integer,"pipelineStageSuggestion":"string","revenueAngle":"string","approvalRequired":boolean,"reasons":["..."]}`,
-    `Draft an email.
+{"subject":"string","preheader":"string","body":"plain text email, 120-180 words","cta":"string","tone":"string","recommendedSendTime":"string","followUpAfterHours":integer,"pipelineStageSuggestion":"string","revenueAngle":"string","approvalRequired":boolean,"reasons":["..."]}`;
+
+  const userPrompt = `Draft an email.
 Intent: ${intent}
 Tone: ${tone}
+Assist mode: ${assistMode}
 Entity: ${JSON.stringify(entity)}
 Context: ${JSON.stringify(context)}
-Previous messages: ${JSON.stringify(previousMessages.slice(-5))}`,
+Existing subject: ${currentSubject || 'N/A'}
+Existing message:
+${currentMessage || 'N/A'}
+Previous messages: ${JSON.stringify(previousMessages.slice(-5))}`;
+
+  const ai = await aiJSON(
+    systemPrompt,
+    userPrompt,
     1000,
   );
 

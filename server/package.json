@@ -28,7 +28,8 @@
     "test:consultation-membership-exemption": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand __tests__/consultation-membership-exemption.test.js",
     "test:rls-coverage": "node scripts/qa/verify-rls-coverage.mjs",
     "test:uuid-shadow-parity": "node scripts/qa/verify-uuid-shadow-parity.mjs",
-    "backfill:phi-encryption": "node scripts/qa/backfill-phi-encryption.mjs"
+    "backfill:phi-encryption": "node scripts/qa/backfill-phi-encryption.mjs",
+    "ops:activate-subscription": "node scripts/admin/activate-user-subscription.mjs"
   },
   "keywords": [],
   "author": "",

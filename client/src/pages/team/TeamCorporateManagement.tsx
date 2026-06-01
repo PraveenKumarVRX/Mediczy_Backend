@@ -220,6 +220,57 @@ const defaultBenefits = [
   { id: 'b14', name: 'Physiotherapy', category: 'Therapy', description: 'Physical rehabilitation', isIncluded: false, limit: '10 sessions per year' },
   { id: 'b15', name: 'Vision Care', category: 'Vision', description: 'Eye exams and glasses', isIncluded: false, limit: '₹5000 per year' },
 ];
+
+const defaultPlanFeatures: Record<string, boolean> = {
+  opd: true,
+  ipd: true,
+  maternity: false,
+  dental: false,
+  pharmacy: true,
+  diagnostics: true,
+  homecare: false,
+  ambulance: true,
+  wellness: true,
+  mentalHealth: false,
+  healthCalendar: false,
+  pharmacyDiscount: false,
+  webinars: false,
+  labDiscount: false,
+  discountCoupons: false,
+  gymMembership: false,
+  wellnessMembership: false,
+  wellnessPackageDiscounts: false,
+};
+
+const planFeatureLabels: Record<string, string> = {
+  opd: 'OPD',
+  ipd: 'IPD',
+  maternity: 'Maternity',
+  dental: 'Dental',
+  pharmacy: 'Pharmacy',
+  diagnostics: 'Diagnostics',
+  homecare: 'Homecare Services',
+  ambulance: 'Ambulance',
+  wellness: 'Wellness',
+  mentalHealth: 'Mental Health',
+  healthCalendar: 'Health Calendar',
+  pharmacyDiscount: 'Pharmacy Discount',
+  webinars: 'Webinars',
+  labDiscount: 'Lab Discount',
+  discountCoupons: 'Discount Coupons',
+  gymMembership: 'Gym Membership',
+  wellnessMembership: 'Wellness Membership',
+  wellnessPackageDiscounts: 'Wellness Package Discounts',
+};
+
+const getPlanFeatureLabel = (key: string) =>
+  planFeatureLabels[key] || key.replace(/([A-Z])/g, ' $1').trim();
+
+const mergePlanFeatures = (features?: Record<string, boolean>) => ({
+  ...defaultPlanFeatures,
+  ...(features || {}),
+});
+
 const industries = [
   'Information Technology', 'Banking & Finance', 'Healthcare', 'Manufacturing',
   'Retail', 'Education', 'Consulting', 'Telecommunications', 'Real Estate', 'Other'
@@ -515,7 +566,7 @@ const TeamCorporateManagement = () => {
     planName: '', planType: 'Standard', description: '', validFrom: '', validTo: '',
     totalEmployees: '', premiumPerEmployee: '', status: 'Active', currency: 'INR',
     benefits: [...defaultBenefits],
-    features: { opd: true, ipd: true, maternity: false, dental: false, pharmacy: true, diagnostics: true, homecare: false, ambulance: true, wellness: true, mentalHealth: false },
+    features: mergePlanFeatures(),
     coverage: { sumInsured: '', roomRent: 'Single Room', icuRent: '2% of Sum Insured', prePolicyMedical: '30 days', postPolicyMedical: '60 days' },
     healthPackageIds: [] as string[],
   });
@@ -530,18 +581,7 @@ const TeamCorporateManagement = () => {
     status: 'Active',
     currency: 'INR',
     benefits: [...defaultBenefits],
-    features: {
-      opd: true,
-      ipd: true,
-      maternity: false,
-      dental: false,
-      pharmacy: true,
-      diagnostics: true,
-      homecare: false,
-      ambulance: true,
-      wellness: true,
-      mentalHealth: false,
-    },
+    features: mergePlanFeatures(),
     coverage: {
       sumInsured: '',
       roomRent: 'Single Room',
@@ -658,6 +698,45 @@ const TeamCorporateManagement = () => {
     };
   };
 
+  const fitCopyToChannelLimits = (text: string, wordLimit: number, charLimit: number) => {
+    const limitedByWords = clampWords(text, wordLimit);
+    const limitedByChars = clampChars(limitedByWords.text, charLimit);
+    return {
+      text: limitedByChars.text,
+      truncated: limitedByWords.truncated || limitedByChars.truncated,
+    };
+  };
+
+  const extractJsonObject = (text: string) => {
+    const trimmed = (text || '').trim();
+    if (!trimmed) return null;
+
+    const direct = trimmed.match(/^\s*\{[\s\S]*\}\s*$/);
+    if (direct?.[0]) {
+      try { return JSON.parse(direct[0]); } catch (_) { /* no-op */ }
+    }
+
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenced?.[1]) {
+      try { return JSON.parse(fenced[1].trim()); } catch (_) { /* no-op */ }
+    }
+
+    const firstObj = trimmed.match(/\{[\s\S]*\}/);
+    if (firstObj?.[0]) {
+      try { return JSON.parse(firstObj[0]); } catch (_) { /* no-op */ }
+    }
+    return null;
+  };
+
+  const stripAiTemplateFraming = (text: string) => {
+    const lines = (text || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => !/^(here(?:'s| is)|below is|template name:|category:|note:|final template:|body:|message:|email body:)/i.test(line));
+    return lines.join('\n').trim();
+  };
+
   const lintTemplateCopy = (channel: CommunicationChannel, subject: string, content: string) => {
     const blocking: string[] = [];
     const warnings: string[] = [];
@@ -729,15 +808,30 @@ const TeamCorporateManagement = () => {
   const parseAiTemplateOutput = (text: string) => {
     const trimmed = (text || '').trim();
     if (!trimmed) return { subject: '', content: '' };
+
+    const maybeJson = extractJsonObject(trimmed);
+    if (maybeJson && typeof maybeJson === 'object') {
+      const subject = String((maybeJson.subject ?? maybeJson.title ?? '') || '').trim();
+      const rawBody = String((maybeJson.body ?? maybeJson.content ?? maybeJson.message ?? '') || '').trim();
+      return {
+        subject,
+        content: stripAiTemplateFraming(rawBody),
+      };
+    }
+
     if (communicationChannel !== 'email') {
-      return { subject: '', content: trimmed };
+      return { subject: '', content: stripAiTemplateFraming(trimmed) };
     }
     const lines = trimmed.split('\n');
     const subjectLine = lines.find((l: string) => l.toLowerCase().startsWith('subject:'));
-    const body = lines.filter((l: string) => !l.toLowerCase().startsWith('subject:')).join('\n').trim();
+    const body = lines
+      .filter((l: string) => !l.toLowerCase().startsWith('subject:'))
+      .join('\n')
+      .replace(/^body:\s*/i, '')
+      .trim();
     return {
       subject: subjectLine ? subjectLine.replace(/^subject:\s*/i, '').trim() : '',
-      content: body || trimmed,
+      content: stripAiTemplateFraming(body || trimmed),
     };
   };
 
@@ -756,23 +850,25 @@ Template name: "${nameHint}" | Category: ${categoryHint}
 Objective: ${objectiveHint} | Tone: ${aiTemplateConfig.tone} | CTA: ${ctaHint}
 Use these exact placeholders where appropriate: {{companyName}}, {{contactPerson}}, {{employeeCount}}, {{industry}}, {{packageType}}
 ${aiTemplateConfig.customInstruction ? `Additional instruction: ${aiTemplateConfig.customInstruction}` : ''}
-${communicationChannel === 'email' ? 'Also suggest a subject line on the first line starting with "Subject: "' : ''}
-    Keep it warm, professional, and action-oriented. Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the body.`;
+${communicationChannel === 'email'
+  ? `Return only this format:\nSubject: <subject line>\nBody: <body text>`
+  : 'Return only the message body text.'}
+Do not add intros, explanations, markdown, code fences, or signatures unless explicitly requested.
+Keep it warm, professional, and action-oriented. Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the body.`;
 
       const res = await api.post('/team/ai/generate', { prompt, maxTokens: 300 });
       const text: string = res.data?.data?.content || res.data?.content || '';
       if (!text) throw new Error('No content returned');
 
       const parsed = parseAiTemplateOutput(text);
-      const limitedByWords = clampWords(parsed.content, templateWordLimit);
-      const limited = clampChars(limitedByWords.text, templateCharLimit);
+      const limited = fitCopyToChannelLimits(parsed.content, templateWordLimit, templateCharLimit);
       setCommunicationDraft(prev => ({
         ...prev,
         subject: communicationChannel === 'email' ? (parsed.subject || prev.subject) : prev.subject,
         content: limited.text,
       }));
-      if (limitedByWords.truncated || limited.truncated) {
-        toast({ title: 'AI content trimmed', description: `Content exceeded ${templateWordLimit} words and was trimmed for ${communicationChannel.toUpperCase()}.` });
+      if (limited.truncated) {
+        toast({ title: 'AI content trimmed', description: `Content was auto-fitted to ${templateWordLimit} words and ${templateCharLimit} characters for ${communicationChannel.toUpperCase()}.` });
       }
       toast({ title: 'AI template generated', description: 'Review and edit before saving.' });
     } catch (err: any) {
@@ -797,14 +893,17 @@ ${template.content}
 Edit instruction: ${aiTemplateConfig.editInstruction || 'Improve clarity, readability, and CTA strength.'}
 Tone: ${aiTemplateConfig.tone} | Objective: ${aiTemplateConfig.objective.replace(/_/g, ' ')} | CTA: ${aiTemplateConfig.cta.replace(/_/g, ' ')}
 Preserve placeholders exactly if present: {{companyName}}, {{contactPerson}}, {{corporateId}}, {{employeeCount}}, {{industry}}, {{packageType}}
-${communicationChannel === 'email' ? 'Return subject in first line as "Subject: ..." and then body.' : 'Return message body only.'}`;
+${communicationChannel === 'email'
+  ? `Return only this format:\nSubject: <subject line>\nBody: <body text>`
+  : 'Return only the message body text.'}
+Do not add intros, explanations, markdown, code fences, or signatures unless explicitly requested.
+Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the body.`;
 
       const res = await api.post('/team/ai/generate', { prompt, maxTokens: 350 });
       const text: string = res.data?.data?.content || res.data?.content || '';
       if (!text) throw new Error('No content returned');
       const parsed = parseAiTemplateOutput(text);
-      const limitedByWords = clampWords(parsed.content, templateWordLimit);
-      const limited = clampChars(limitedByWords.text, templateCharLimit);
+      const limited = fitCopyToChannelLimits(parsed.content, templateWordLimit, templateCharLimit);
 
       const next: Record<CommunicationChannel, CommunicationTemplate[]> = {
         ...communicationTemplates,
@@ -828,8 +927,8 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
           content: limited.text || prev.content,
         }));
       }
-      if (limitedByWords.truncated || limited.truncated) {
-        toast({ title: 'AI content trimmed', description: `Edited template exceeded ${templateWordLimit} words and was trimmed.` });
+      if (limited.truncated) {
+        toast({ title: 'AI content trimmed', description: `Edited template was auto-fitted to ${templateWordLimit} words and ${templateCharLimit} characters.` });
       }
       toast({ title: 'Template AI-edited', description: 'Existing template updated with AI improvements.' });
     } catch (err: any) {
@@ -844,21 +943,27 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
       toast({ variant: 'destructive', title: 'Missing fields', description: 'Template name and content are required.' });
       return;
     }
-    if (templateHasBlockingLint) {
+
+    const fitted = fitCopyToChannelLimits(communicationDraft.content || '', templateWordLimit, templateCharLimit);
+    const nextDraft = {
+      ...communicationDraft,
+      subject: communicationChannel === 'email' ? (communicationDraft.subject || '').trim() : communicationDraft.subject,
+      content: fitted.text,
+    };
+    const nextLint = lintTemplateCopy(communicationChannel, nextDraft.subject || '', nextDraft.content || '');
+
+    if (nextLint.blocking.length > 0) {
       toast({
         variant: 'destructive',
         title: 'Template validation failed',
-        description: templateCopyLint.blocking[0],
+        description: nextLint.blocking[0],
       });
       return;
     }
-    if (!templateDraftWithinLimit) {
-      toast({
-        variant: 'destructive',
-        title: 'Template too long',
-        description: `${communicationChannel.toUpperCase()} templates must be within ${templateWordLimit} words (current: ${templateDraftWordCount}).`,
-      });
-      return;
+
+    if (fitted.truncated) {
+      setCommunicationDraft(nextDraft);
+      toast({ title: 'Template auto-trimmed', description: `${communicationChannel.toUpperCase()} template was fitted to ${templateWordLimit} words and ${templateCharLimit} characters.` });
     }
 
     if (editingCommunicationTemplateId) {
@@ -868,10 +973,10 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
           template.id === editingCommunicationTemplateId
             ? {
                 ...template,
-                name: communicationDraft.name,
-                category: communicationDraft.category || 'General',
-                subject: communicationChannel === 'email' ? communicationDraft.subject : undefined,
-                content: communicationDraft.content,
+                name: nextDraft.name,
+                category: nextDraft.category || 'General',
+                subject: communicationChannel === 'email' ? nextDraft.subject : undefined,
+                content: nextDraft.content,
               }
             : template
         ),
@@ -887,10 +992,10 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
       [communicationChannel]: [
         {
           id: `${communicationChannel}-${Date.now()}`,
-          name: communicationDraft.name,
-          category: communicationDraft.category || 'General',
-          subject: communicationChannel === 'email' ? communicationDraft.subject : undefined,
-          content: communicationDraft.content,
+          name: nextDraft.name,
+          category: nextDraft.category || 'General',
+          subject: communicationChannel === 'email' ? nextDraft.subject : undefined,
+          content: nextDraft.content,
         },
         ...communicationTemplates[communicationChannel],
       ],
@@ -1098,6 +1203,15 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
     return token ? { Authorization: `Bearer ${token}` } : undefined;
   };
 
+  const mergeAssistiveMessage = (currentMessage: string, aiMessage: string) => {
+    const current = (currentMessage || '').trim();
+    const suggestion = (aiMessage || '').trim();
+    if (!suggestion) return current;
+    if (!current) return suggestion;
+    if (current === suggestion) return current;
+    return `${current}\n\n---\nAI Suggestion:\n${suggestion}`;
+  };
+
   const generateAiCommunicationDraft = async () => {
     if (!selectedCorporate?.id) return;
     setAiCommunicationLoading(true);
@@ -1109,6 +1223,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
         intent: communicationChannel === "email" ? "corporate_plan_follow_up" : "corporate_short_outreach",
         tone: "professional",
         context: {
+          assistMode: "augment",
           recipientMode: communicationRecipientMode,
           employeeCount: selectedCorporate.employeeCount,
           packageType: selectedCorporate.packageType,
@@ -1120,12 +1235,12 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
       if (draft) {
         setCommunicationComposer((prev) => ({
           ...prev,
-          subject: communicationChannel === "email" ? (draft.subject || prev.subject) : prev.subject,
-          message: draft.message || draft.body || prev.message,
+          subject: communicationChannel === "email" ? (prev.subject || draft.subject || '') : prev.subject,
+          message: mergeAssistiveMessage(prev.message, draft.message || draft.body || ''),
         }));
         setAiCommunicationDraftId(data?.data?.id || null);
         storeAiDraftAsTemplate(draft, data?.data?.id || null);
-        toast({ title: "AI draft stored", description: "Draft added to the composer and Template Library." });
+        toast({ title: "AI assist applied", description: "Your draft was preserved and AI suggestions were added. Template saved to the library." });
         await fetchCommunicationInsights();
       }
     } catch (error: any) {
@@ -1457,7 +1572,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
             totalEmployees: metadata.totalEmployees || 0,
             validFrom: metadata.validFrom || '',
             validTo: metadata.validTo || '',
-            features,
+            features: mergePlanFeatures(features),
             coverage: metadata.coverage || {},
             healthPackageIds: metadata.healthPackageIds || [],
           };
@@ -1504,7 +1619,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
       status: plan.status || 'Active',
       currency: plan.currency || 'INR',
       benefits: [...defaultBenefits],
-      features: plan.features || { opd: true, ipd: true, maternity: false, dental: false, pharmacy: true, diagnostics: true, homecare: false, ambulance: true, wellness: true, mentalHealth: false },
+      features: mergePlanFeatures(plan.features),
       coverage: plan.coverage || { sumInsured: '', roomRent: 'Single Room', icuRent: '2% of Sum Insured', prePolicyMedical: '30 days', postPolicyMedical: '60 days' },
       healthPackageIds: plan.healthPackageIds || [],
     });
@@ -1764,9 +1879,11 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
       });
       
       if (response.data?.data) {
+        const sortedCorporates = sortCorporatesForList(response.data.data);
         setCorporates(response.data.data);
-        if (response.data.data.length > 0 && !selectedCorporate) {
-          setSelectedCorporate(response.data.data[0]);
+        if (sortedCorporates.length > 0 && !selectedCorporate) {
+          const firstVisibleCorporate = sortedCorporates.find((corp) => normalizeCorporateStatus(corp.status) !== 'inactive') || sortedCorporates[0];
+          setSelectedCorporate(firstVisibleCorporate);
         }
       }
     } catch (error) {
@@ -2642,10 +2759,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
         status: 'Active',
         currency: 'INR',
         benefits: [...defaultBenefits],
-        features: {
-          opd: true, ipd: true, maternity: false, dental: false, pharmacy: true,
-          diagnostics: true, homecare: false, ambulance: true, wellness: true, mentalHealth: false,
-        },
+        features: mergePlanFeatures(),
         coverage: {
           sumInsured: '', roomRent: 'Single Room', icuRent: '2% of Sum Insured',
           prePolicyMedical: '30 days', postPolicyMedical: '60 days',
@@ -2674,15 +2788,37 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
   };
 
   const normalizeText = (value?: string) => (value || '').replace(/\s+/g, ' ').trim();
+  const normalizeCorporateStatus = (value?: string) => (value || '').toLowerCase().trim();
+  const getCorporateCreatedTime = (corp: Corporate) => {
+    const createdTime = corp.createdAt ? new Date(corp.createdAt).getTime() : NaN;
+    return Number.isFinite(createdTime) ? createdTime : 0;
+  };
+  const sortCorporatesForList = (items: Corporate[]) => {
+    const statusRank: Record<string, number> = { active: 0, pending: 1, suspended: 2, inactive: 3 };
+    return [...items].sort((a, b) => {
+      const aStatus = normalizeCorporateStatus(a.status);
+      const bStatus = normalizeCorporateStatus(b.status);
+      const statusDiff = (statusRank[aStatus] ?? 2) - (statusRank[bStatus] ?? 2);
+      if (statusDiff !== 0) return statusDiff;
+
+      const dateDiff = getCorporateCreatedTime(b) - getCorporateCreatedTime(a);
+      if (dateDiff !== 0) return dateDiff;
+
+      return Number(b.id || 0) - Number(a.id || 0);
+    });
+  };
   const looksSuspiciousText = (value?: string) => {
     const v = (value || '').toLowerCase();
     return /drop\s+table|truncate\s+table|delete\s+from|--|;|\/\*|\*\//.test(v);
   };
 
-  // Filter corporates
-  const filteredCorporates = corporates.filter((corp) => {
+  // Filter corporates. The default view hides inactive records and sorts active corporates newest-first.
+  const filteredCorporates = sortCorporatesForList(corporates.filter((corp) => {
     const q = searchTerm.trim().toLowerCase();
-    const statusMatch = corporateStatusFilter === 'all' || (corp.status || '').toLowerCase() === corporateStatusFilter;
+    const status = normalizeCorporateStatus(corp.status);
+    const statusMatch = corporateStatusFilter === 'all'
+      ? status !== 'inactive'
+      : status === corporateStatusFilter;
     if (!statusMatch) return false;
     if (!q) return true;
     return [
@@ -2695,7 +2831,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
     ]
       .filter(Boolean)
       .some((v) => String(v).toLowerCase().includes(q));
-  });
+  }));
 
   const visibleTemplates = communicationTemplates[communicationChannel].filter((template) => {
     const q = templateLibrarySearch.trim().toLowerCase();
@@ -2759,11 +2895,11 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
               <CardTitle className="text-base text-foreground">Select Corporate</CardTitle>
               <div className="flex items-center gap-2">
                 <Select value={corporateStatusFilter} onValueChange={(value) => setCorporateStatusFilter(value as any)}>
-                  <SelectTrigger className="w-36 bg-card">
+                  <SelectTrigger className="w-44 bg-card">
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="all">All Active Statuses</SelectItem>
                     <SelectItem value="active">Active</SelectItem>
                     <SelectItem value="inactive">Inactive</SelectItem>
                     <SelectItem value="pending">Pending</SelectItem>
@@ -3293,8 +3429,8 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                                 {Object.entries(plan.features)
                                   .filter(([, v]) => v)
                                   .map(([k]) => (
-                                    <Badge key={k} variant="outline" className="text-xs capitalize">
-                                      {k.replace(/([A-Z])/g, ' $1').trim()}
+                                    <Badge key={k} variant="outline" className="text-xs">
+                                      {getPlanFeatureLabel(k)}
                                     </Badge>
                                   ))}
                               </div>
@@ -3352,7 +3488,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                         <RefreshCw className={`mr-2 h-4 w-4 ${communicationLogsLoading ? 'animate-spin' : ''}`} />Refresh Data
                       </Button>
                       <Button onClick={generateAiCommunicationDraft} disabled={aiCommunicationLoading}>
-                        <Brain className="mr-2 h-4 w-4" />{aiCommunicationLoading ? 'Drafting...' : 'AI Draft & Store'}
+                        <Brain className="mr-2 h-4 w-4" />{aiCommunicationLoading ? 'Assisting...' : 'AI Assist & Store'}
                       </Button>
                     </div>
                   </div>
@@ -6068,7 +6204,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                           setNewPlan({ ...newPlan, features: { ...newPlan.features, [key]: checked } })
                         }
                       />
-                      <Label className="capitalize text-sm">{key.replace(/([A-Z])/g, ' $1').trim()}</Label>
+                      <Label className="text-sm">{getPlanFeatureLabel(key)}</Label>
                     </div>
                   ))}
                 </div>
@@ -6236,8 +6372,8 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                     <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Features</div>
                     <div className="flex flex-wrap gap-2">
                       {Object.entries(editingPlan.features).filter(([,v]) => v).map(([k]) => (
-                        <Badge key={k} variant="secondary" className="capitalize">
-                          {k.replace(/([A-Z])/g, ' $1').trim()}
+                        <Badge key={k} variant="secondary">
+                          {getPlanFeatureLabel(k)}
                         </Badge>
                       ))}
                     </div>
@@ -6382,7 +6518,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                   {Object.entries(editPlanForm.features).map(([key, value]) => (
                     <div key={key} className="flex items-center space-x-2 p-3 border rounded-lg">
                       <Switch checked={value as boolean} onCheckedChange={(checked) => setEditPlanForm({ ...editPlanForm, features: { ...editPlanForm.features, [key]: checked } })} />
-                      <Label className="capitalize text-sm">{key.replace(/([A-Z])/g, ' $1').trim()}</Label>
+                      <Label className="text-sm">{getPlanFeatureLabel(key)}</Label>
                     </div>
                   ))}
                 </div>

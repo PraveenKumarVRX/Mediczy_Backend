@@ -6,13 +6,7 @@
 export const HEALTH_COINS_REWARDS = {
   // Daily Activities
   DAILY_LOGIN: 1,                    // Login to app daily
-  DAILY_LOGIN_STREAK_BONUS: {        // Bonus for consecutive days
-    7: 5,    // 7 days streak = 5 HC bonus
-    14: 10,  // 14 days = 10 HC
-    30: 25,  // 30 days = 25 HC
-    60: 50,  // 60 days = 50 HC
-    90: 100  // 90 days = 100 HC
-  },
+  DAILY_LOGIN_STREAK_BONUS: {},      // Disabled: daily login must remain strictly 1 HC/day
   
   // Fitness Activities
   STEPS_PER_100: 1,                  // 1 HC per 100 steps (max 10 per day = 1000 steps)
@@ -61,8 +55,8 @@ export const HEALTH_COINS_PRICING = {
   HC_TO_INR_RATE: 1,
   
   // Bonus when paying with HC (percentage extra value)
-  // e.g., 10 means 10% bonus - 100 HC gives ₹110 value
-  HC_PAYMENT_BONUS_PERCENT: 10,
+  // Consultation payments are exact conversion (no bonus/discount)
+  HC_PAYMENT_BONUS_PERCENT: 0,
   
   // Spending (Health Coins to services)
   services: {
@@ -84,7 +78,7 @@ export const HEALTH_COINS_PRICING = {
     // Full payment with HC (includes bonus)
     CONSULTATION_FULL_PAYMENT: {
       enabled: true,
-      bonusPercent: 10  // 10% bonus when paying fully with HC
+      bonusPercent: 0  // Exact conversion when paying fully with HC
     }
   }
 };

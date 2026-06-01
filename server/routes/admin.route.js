@@ -402,7 +402,7 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), attachTenant
             AND cta.team_member_id = :userId
           WHERE (ua.id IS NOT NULL OR cta.id IS NOT NULL OR c."assignedTo" = :userId
             ${scopeCondition})
-          ORDER BY c."companyName" ASC
+          ORDER BY CASE LOWER(COALESCE(c.status, 'active')) WHEN 'active' THEN 0 WHEN 'pending' THEN 1 WHEN 'suspended' THEN 2 WHEN 'inactive' THEN 3 ELSE 2 END, c."createdAt" DESC NULLS LAST, c.id DESC
         `, {
           replacements: scopeReplacements,
           type: postgresSequelize.QueryTypes.SELECT
@@ -420,7 +420,7 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), attachTenant
       // Admin users: Get all corporates from database
       try {
         const allResult = await postgresSequelize.query(`
-          SELECT * FROM corporates ORDER BY "companyName" ASC
+          SELECT * FROM corporates ORDER BY CASE LOWER(COALESCE(status, 'active')) WHEN 'active' THEN 0 WHEN 'pending' THEN 1 WHEN 'suspended' THEN 2 WHEN 'inactive' THEN 3 ELSE 2 END, "createdAt" DESC NULLS LAST, id DESC
         `, {
           type: postgresSequelize.QueryTypes.SELECT
         });

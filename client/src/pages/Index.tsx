@@ -258,7 +258,7 @@ const Index = () => {
   const todayTip = healthTips[todayTipIndex];
 
   // Gamification / Streak Data
-  const [streakData] = useState(() => {
+  const [streakData, setStreakData] = useState(() => {
     const stored = JSON.parse(localStorage.getItem('healthStreak') || '{}');
     return {
       currentStreak: stored.currentStreak || 0,
@@ -271,6 +271,31 @@ const Index = () => {
       badges: stored.badges || [],
     };
   });
+
+  const fetchStreakWalletData = async () => {
+    try {
+      const response = await api.get('/wallet');
+      const wallet = response?.data?.data;
+      if (!wallet) return;
+
+      setStreakData((prev) => {
+        const next = {
+          ...prev,
+          currentStreak: wallet.streakDays ?? prev.currentStreak,
+          longestStreak: Math.max(prev.longestStreak || 0, wallet.streakDays || 0),
+          healthCoins: Math.round(wallet.balance ?? prev.healthCoins ?? 0),
+          // Keep dashboard level/xp predictable while aligning source to wallet totals.
+          level: Math.max(1, Math.floor((wallet.totalEarned ?? 0) / 1000) + 1),
+          xp: Math.round(wallet.totalEarned ?? prev.xp ?? 0),
+          todayCheckedIn: !!wallet.todayActivity?.dailyLoginRewarded,
+        };
+        localStorage.setItem('healthStreak', JSON.stringify(next));
+        return next;
+      });
+    } catch (error) {
+      // Dashboard should continue rendering with cached streak data.
+    }
+  };
   
   // Bluetooth Pairing State
   const [showPairingModal, setShowPairingModal] = useState(false);
@@ -544,6 +569,7 @@ const Index = () => {
     fetchDashboardData();
     fetchHealthStats(); // Fetch real health data from backend
     fetchMembershipStatus();
+    fetchStreakWalletData();
     
     // Load connected devices from localStorage and fix any with wrong types
     const storedDevices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');

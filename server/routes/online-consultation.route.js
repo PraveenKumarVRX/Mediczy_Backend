@@ -439,9 +439,11 @@ router.post('/book', authUser, [
     let meetingDetails = null;
     let paymentDetails = null;
     let hcPaymentResult = null;
+    const normalizedPaymentMethod = String(paymentMethod || '').toLowerCase();
+    const isHealthCoinsPayment = ['hc', 'health_coins', 'healthcoins'].includes(normalizedPaymentMethod);
 
     // If paying with HC immediately, verify and process payment
-    if (paymentMethod === 'hc') {
+    if (isHealthCoinsPayment) {
       const canPayResult = await healthCoinsService.canPayWithHC(patientId, consultationFee);
       
       if (!canPayResult.canPay) {
@@ -476,7 +478,7 @@ router.post('/book', authUser, [
     });
 
     // Process HC payment immediately after appointment creation if requested
-    if (paymentMethod === 'hc') {
+    if (isHealthCoinsPayment) {
       try {
         // Process HC payment
         hcPaymentResult = await healthCoinsService.payForAppointment(
@@ -544,7 +546,7 @@ router.post('/book', authUser, [
 
     // Send notification to doctor about new appointment request
     try {
-      if (paymentMethod === 'hc' && hcPaymentResult) {
+      if (isHealthCoinsPayment && hcPaymentResult) {
         // Appointment is confirmed and paid - send payment confirmation
         appointment.meetingLink = meetingLink;
         await notificationService.notifyPaymentReceived(appointment, doctor);
@@ -559,7 +561,7 @@ router.post('/book', authUser, [
 
     const responseData = {
       success: true,
-      message: paymentMethod === 'hc' && hcPaymentResult
+      message: isHealthCoinsPayment && hcPaymentResult
         ? `Appointment booked and paid successfully! Paid ${hcPaymentResult.hcPaid} HC for ₹${consultationFee} consultation.`
         : 'Appointment request sent to doctor. Waiting for confirmation.',
       appointment: {

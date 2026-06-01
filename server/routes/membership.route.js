@@ -3,10 +3,117 @@ import { body, param } from 'express-validator';
 import { Op } from 'sequelize';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { MembershipPlan, UserPlan } from '../models/postgres/membershipPlan.model.postgres.js';
+import { Coupon, CouponUsage } from '../models/index.js';
 import paymentService from '../services/payment.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 
 const router = express.Router();
+
+const COUPON_SCOPES = {
+  COINS_PURCHASE: 'COINS_PURCHASE',
+  HEALTH_CHECKUP: 'HEALTH_CHECKUP',
+  PHARMACY_PURCHASE: 'PHARMACY_PURCHASE',
+  CONSULTATION: 'CONSULTATION',
+  GYM_MEMBERSHIP: 'GYM_MEMBERSHIP'
+};
+
+const parseAssignedUserIds = (coupon) => {
+  const ids = coupon?.metadata?.assignedUserIds;
+  if (!ids) return [];
+
+  if (Array.isArray(ids)) {
+    return ids
+      .map((id) => parseInt(id, 10))
+      .filter((id) => Number.isInteger(id) && id > 0);
+  }
+
+  if (typeof ids === 'string') {
+    return ids
+      .split(',')
+      .map((id) => parseInt(id.trim(), 10))
+      .filter((id) => Number.isInteger(id) && id > 0);
+  }
+
+  return [];
+};
+
+const isCouponEligibleForUser = (coupon, userId) => {
+  const assignedUserIds = parseAssignedUserIds(coupon);
+  if (!assignedUserIds.length) return true;
+  return assignedUserIds.includes(parseInt(userId, 10));
+};
+
+const parseCouponScopes = (coupon) => {
+  const rawScopes = coupon?.metadata?.scopes;
+  if (!rawScopes) return [COUPON_SCOPES.COINS_PURCHASE];
+
+  const scopes = Array.isArray(rawScopes)
+    ? rawScopes
+    : String(rawScopes)
+        .split(',')
+        .map((item) => item.trim().toUpperCase())
+        .filter(Boolean);
+
+  const allowed = new Set(Object.values(COUPON_SCOPES));
+  const normalized = scopes.filter((scope) => allowed.has(scope));
+  return normalized.length ? normalized : [COUPON_SCOPES.COINS_PURCHASE];
+};
+
+const isCouponEligibleForScope = (coupon, scope) => parseCouponScopes(coupon).includes(scope);
+
+const validateCouponForOrder = async ({ code, userId, scope, amount }) => {
+  if (!code) return null;
+
+  const coupon = await Coupon.findOne({
+    where: {
+      code: String(code).trim().toUpperCase(),
+      isActive: true,
+      validFrom: { [Op.lte]: new Date() },
+      validUntil: { [Op.gte]: new Date() }
+    }
+  });
+
+  if (!coupon) {
+    throw new Error('Invalid or expired coupon code');
+  }
+
+  if (!isCouponEligibleForUser(coupon, userId)) {
+    throw new Error('This coupon is not assigned to your account');
+  }
+
+  if (!isCouponEligibleForScope(coupon, scope)) {
+    throw new Error(`This coupon is not valid for ${scope}`);
+  }
+
+  if (coupon.usageCount >= coupon.maxUsage) {
+    throw new Error('Coupon usage limit exceeded');
+  }
+
+  const userUsage = await CouponUsage.count({
+    where: { couponId: coupon.id, userId }
+  });
+
+  if (userUsage >= coupon.maxUsagePerUser) {
+    throw new Error('You have already used this coupon the maximum number of times');
+  }
+
+  if (coupon.type !== 'PERCENTAGE') {
+    throw new Error('This coupon type is not supported for membership payments');
+  }
+
+  const minPurchase = Number(coupon.minPurchase || 0);
+  if (amount < minPurchase) {
+    throw new Error(`Minimum order of ₹${minPurchase} required for this coupon`);
+  }
+
+  const discount = Math.max(0, (Number(amount) * Number(coupon.value || 0)) / 100);
+
+  return {
+    coupon,
+    discount,
+    scope
+  };
+};
 
 // ── Build appliedLimits from a plan's coverageDetails ─────────────────────────
 function buildAppliedLimits(plan) {
@@ -250,13 +357,35 @@ router.post('/payment-order', authUser, [
   body('planName').notEmpty()
 ], async (req, res) => {
   try {
-    const { amount, planId, planName } = req.body;
+    const { amount, planId, planName, couponCode, scope = COUPON_SCOPES.GYM_MEMBERSHIP } = req.body;
+    const numericAmount = Number(amount || 0);
+    const selectedScope = String(scope || COUPON_SCOPES.GYM_MEMBERSHIP).toUpperCase();
+
+    let couponValidation = null;
+    if (couponCode) {
+      couponValidation = await validateCouponForOrder({
+        code: couponCode,
+        userId: req.user.id,
+        scope: selectedScope,
+        amount: numericAmount
+      });
+    }
+
+    const discount = couponValidation ? Number(couponValidation.discount || 0) : 0;
+    const finalAmount = Math.max(0, numericAmount - discount);
+
     const receipt = `plan${planId}_u${req.user.id}_${Date.now()}`.slice(0, 40);
     const orderResult = await paymentService.createOrder({
-      amount,
+      amount: finalAmount,
       currency: 'INR',
       receipt,
-      notes: { planId: String(planId), userId: String(req.user.id), planName }
+      notes: {
+        planId: String(planId),
+        userId: String(req.user.id),
+        planName,
+        scope: selectedScope,
+        ...(couponValidation ? { couponCode: couponValidation.coupon.code } : {})
+      }
     });
     if (!orderResult.success) {
       return res.status(500).json({ message: 'Failed to create payment order', error: orderResult.error });
@@ -270,10 +399,24 @@ router.post('/payment-order', authUser, [
         amountInPaise: orderResult.order.amount
       },
       gatewayConfig,
-      transaction: { description: `Upgrade to ${planName}` }
+      transaction: { description: `Upgrade to ${planName}` },
+      pricing: {
+        amount: numericAmount,
+        discount,
+        finalAmount,
+        couponCode: couponValidation?.coupon?.code || null,
+        scope: selectedScope
+      }
     });
   } catch (e) {
     console.error('Payment order error:', e);
+    if (e.message && (
+      e.message.includes('coupon') ||
+      e.message.includes('Coupon') ||
+      e.message.includes('Minimum order')
+    )) {
+      return res.status(400).json({ message: e.message });
+    }
     res.status(500).json({ message: 'Payment order creation failed', error: e.message });
   }
 });
@@ -345,7 +488,24 @@ router.post('/upgrade/:newPlanId', authUser, [ param('newPlanId').isInt() ], asy
     
     // Calculate new plan price
     const newPlanPrice = parseFloat(newPlan.discountedPrice || newPlan.price || 0);
-    const amountDue = Math.max(0, newPlanPrice - proratedRefund);
+    const baseAmountDue = Math.max(0, newPlanPrice - proratedRefund);
+
+    const { couponCode, scope = COUPON_SCOPES.GYM_MEMBERSHIP } = req.body;
+    const selectedScope = String(scope || COUPON_SCOPES.GYM_MEMBERSHIP).toUpperCase();
+
+    let couponValidation = null;
+    let couponDiscount = 0;
+    if (couponCode && baseAmountDue > 0) {
+      couponValidation = await validateCouponForOrder({
+        code: couponCode,
+        userId: req.user.id,
+        scope: selectedScope,
+        amount: baseAmountDue
+      });
+      couponDiscount = Math.min(baseAmountDue, Number(couponValidation.discount || 0));
+    }
+
+    const amountDue = Math.max(0, baseAmountDue - couponDiscount);
 
     // Verify payment when amount is due
     const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
@@ -398,10 +558,29 @@ router.post('/upgrade/:newPlanId', authUser, [ param('newPlanId').isInt() ], asy
         previousPlanName: currentPlan.name,
         proratedRefund,
         originalPrice: newPlanPrice,
+        couponCode: couponValidation?.coupon?.code || null,
+        couponDiscount,
         appliedLimits: buildAppliedLimits(newPlan),
         usage: { benefitINR: { pharmacyINR: 0, homeCareINR: 0, ambulanceINR: 0 }, teleConsult: {} }
       }
     });
+
+    if (couponValidation?.coupon) {
+      await CouponUsage.create({
+        couponId: couponValidation.coupon.id,
+        couponCode: couponValidation.coupon.code,
+        userId: req.user.id,
+        hcPurchased: 0,
+        hcBonus: 0,
+        discountAmount: couponDiscount,
+        amountPaid: amountDue,
+        paymentId: razorpay_payment_id || `GYM_MEMBERSHIP_${Date.now()}`
+      });
+
+      await couponValidation.coupon.update({
+        usageCount: Number(couponValidation.coupon.usageCount || 0) + 1
+      });
+    }
 
     // Send WhatsApp plan activation confirmation on upgrade
     try {
@@ -435,7 +614,9 @@ router.post('/upgrade/:newPlanId', authUser, [ param('newPlanId').isInt() ], asy
         name: newPlan.name,
         tier: newTier,
         originalPrice: newPlanPrice,
-        amountDue
+        amountDue,
+        couponDiscount,
+        couponCode: couponValidation?.coupon?.code || null
       },
       userPlan: newUserPlan
     });
