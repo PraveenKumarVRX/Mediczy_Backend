@@ -24,7 +24,7 @@ import { generateAssistedEmailDraft, analyzeEmailCommunication } from '../servic
 const router = express.Router();
 
 // ─── Token constants ─────────────────────────────────────────────────────────
-const ACCESS_TOKEN_TTL  = '15m';
+const ACCESS_TOKEN_TTL  = '4h'; // Extended from 15m — team users need longer sessions; refresh token (30d) handles revocation
 const REFRESH_TOKEN_TTL = '30d';
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const REFRESH_SCOPE = 'team';

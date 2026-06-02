@@ -63,6 +63,7 @@ import {
 } from 'lucide-react';
 import api from '@/utils/api';
 import { useNavigate } from 'react-router-dom';
+import CorporateWelcomeEmailBatchDialog, { WelcomeEmailDraft } from './CorporateWelcomeEmailBatchDialog';
 
 interface Corporate {
   id: number;
@@ -190,6 +191,7 @@ interface CorporatePlan {
 
 type CommunicationChannel = 'email' | 'whatsapp' | 'sms';
 type CommunicationRecipientMode = 'individual' | 'selected' | 'bulk';
+type WelcomeEmailMode = 'draft' | 'send' | 'skip';
 
 interface CommunicationTemplate {
   id: string;
@@ -458,7 +460,11 @@ const TeamCorporateManagement = () => {
   const [showAddHRDialog, setShowAddHRDialog] = useState(false);
   const [showAddEmployeeDialog, setShowAddEmployeeDialog] = useState(false);
   const [showCredentialsDialog, setShowCredentialsDialog] = useState(false);
-  const [newEmployeeCredentials, setNewEmployeeCredentials] = useState<{name: string; email: string; password: string} | null>(null);
+  const [newEmployeeCredentials, setNewEmployeeCredentials] = useState<{name: string; email: string; password: string; emailStatus: "queued" | "skipped" | "draft" | "not_applicable"} | null>(null);
+  const [employeeWelcomeEmailMode, setEmployeeWelcomeEmailMode] = useState<WelcomeEmailMode>("draft");
+  const [welcomeEmailDrafts, setWelcomeEmailDrafts] = useState<WelcomeEmailDraft[]>([]);
+  const [showWelcomeEmailBatchDialog, setShowWelcomeEmailBatchDialog] = useState(false);
+  const [sendingWelcomeEmailBatch, setSendingWelcomeEmailBatch] = useState(false);
   const [showViewEmployeeDialog, setShowViewEmployeeDialog] = useState(false);
   const [showEditEmployeeDialog, setShowEditEmployeeDialog] = useState(false);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
@@ -503,6 +509,7 @@ const TeamCorporateManagement = () => {
     qcLog: { row: number; employeeId: string; name: string; email: string; issues: string[] }[];
   } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [bulkWelcomeEmailMode, setBulkWelcomeEmailMode] = useState<WelcomeEmailMode>("draft");
   const [showUploadReport, setShowUploadReport] = useState(false);
   
   // Corporate form
@@ -1877,7 +1884,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       const response = await api.get('/admin/corporates', {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
-      
+
       if (response.data?.data) {
         const sortedCorporates = sortCorporatesForList(response.data.data);
         setCorporates(response.data.data);
@@ -1886,12 +1893,20 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
           setSelectedCorporate(firstVisibleCorporate);
         }
       }
-    } catch (error) {
+    } catch (error: any) {
+      // 401 = token expired or session invalid — redirect to team login instead of error toast
+      if (error?.response?.status === 401) {
+        localStorage.removeItem('teamToken');
+        localStorage.removeItem('teamRefreshToken');
+        localStorage.removeItem('teamUserData');
+        navigate('/team/login', { state: { expired: true } });
+        return;
+      }
       console.error('Failed to fetch corporates:', error);
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Failed to load corporate data'
+        description: 'Failed to load corporate data. Please refresh the page.'
       });
     } finally {
       setLoading(false);
@@ -2134,6 +2149,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         phoneNumber: newEmployee.phone,
         employeeId: newEmployee.employeeId,
         department: newEmployee.department,
+        designation: newEmployee.designation,
         gender: newEmployee.gender,
         city: newEmployee.workCity || undefined,
         state: newEmployee.workState || undefined
@@ -2141,7 +2157,9 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       
       const response = await api.post(`/admin/corporate-employees`, {
         corporateId: selectedCorporate.id,
-        employees: [employeeData]
+        employees: [employeeData],
+        sendWelcomeEmail: employeeWelcomeEmailMode !== "skip",
+        welcomeEmailMode: employeeWelcomeEmailMode
       }, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
@@ -2163,12 +2181,19 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       setEmpIdStatus('idle');
       fetchEmployees(selectedCorporate.id);
 
-      if (created?.isNewUser && created?.temporaryPassword) {
-        // Show credentials to team member
+      const preparedDrafts = buildWelcomeEmailDraftsFromCreated(created ? [created] : [], newEmployee.name);
+      if (preparedDrafts.length > 0) {
+        addPreparedWelcomeEmailDrafts(preparedDrafts);
+        toast({
+          title: "Welcome Email Draft Prepared",
+          description: "Review and edit the welcome email before sending it."
+        });
+      } else if (created?.isNewUser && created?.temporaryPassword) {
         setNewEmployeeCredentials({
           name: newEmployee.name,
           email: newEmployee.email,
-          password: created.temporaryPassword
+          password: created.temporaryPassword,
+          emailStatus: created.emailStatus || (employeeWelcomeEmailMode === "send" ? "queued" : "skipped")
         });
         setShowCredentialsDialog(true);
       } else {
@@ -2185,6 +2210,60 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         title: 'Error',
         description: error.response?.data?.message || 'Failed to add employee'
       });
+    }
+  };
+
+  const buildWelcomeEmailDraftsFromCreated = (created: any[], fallbackName = "") => {
+    return created
+      .filter((item) => item?.isNewUser && item?.welcomeEmailDraft)
+      .map((item, index) => ({
+        id: `${item.userId || item.email || index}-${Date.now()}-${index}`,
+        to: item.welcomeEmailDraft.to || item.email,
+        employeeName: fallbackName || item.name || item.email,
+        subject: item.welcomeEmailDraft.subject || "Welcome to Employee Health Portal",
+        html: item.welcomeEmailDraft.html || "",
+        status: "draft" as const,
+      }));
+  };
+
+  const addPreparedWelcomeEmailDrafts = (drafts: WelcomeEmailDraft[]) => {
+    if (drafts.length === 0) return;
+    setWelcomeEmailDrafts((current) => [...current, ...drafts]);
+    setShowWelcomeEmailBatchDialog(true);
+  };
+
+  const handleSendWelcomeEmailBatch = async (draftsToSend: WelcomeEmailDraft[]) => {
+    if (!selectedCorporate || draftsToSend.length === 0) return;
+
+    setSendingWelcomeEmailBatch(true);
+    const sendingIds = new Set(draftsToSend.map((draft) => draft.id));
+    setWelcomeEmailDrafts((current) => current.map((draft) => sendingIds.has(draft.id) ? { ...draft, status: "sending", error: undefined } : draft));
+
+    try {
+      const token = localStorage.getItem("teamToken");
+      const { data } = await api.post("/admin/corporate-employee-welcome-emails/send", {
+        corporateId: selectedCorporate.id,
+        emails: draftsToSend.map((draft) => ({ to: draft.to, subject: draft.subject, html: draft.html }))
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+
+      const sent = new Set((data.results?.sent || []).map((item: any) => String(item.to).toLowerCase()));
+      const failed = new Map((data.results?.failed || []).map((item: any) => [String(item.to).toLowerCase(), item.reason || "Failed to send"]));
+
+      setWelcomeEmailDrafts((current) => current.map((draft) => {
+        if (!sendingIds.has(draft.id)) return draft;
+        const to = draft.to.toLowerCase();
+        if (sent.has(to)) return { ...draft, status: "sent", error: undefined };
+        return { ...draft, status: "failed", error: String(failed.get(to) || "Failed to send") };
+      }));
+
+      toast({ title: "Welcome Email Batch", description: data.message || "Batch send completed." });
+    } catch (error: any) {
+      setWelcomeEmailDrafts((current) => current.map((draft) => sendingIds.has(draft.id) ? { ...draft, status: "failed", error: error.response?.data?.message || "Failed to send" } : draft));
+      toast({ variant: "destructive", title: "Email Batch Failed", description: error.response?.data?.message || "Failed to send welcome emails" });
+    } finally {
+      setSendingWelcomeEmailBatch(false);
     }
   };
 
@@ -2374,7 +2453,9 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       const token = localStorage.getItem('teamToken');
       const { data } = await api.post('/admin/corporate-employees', {
         corporateId: selectedCorporate.id,
-        employees: employeeList
+        employees: employeeList,
+        sendWelcomeEmail: bulkWelcomeEmailMode !== "skip",
+        welcomeEmailMode: bulkWelcomeEmailMode
       }, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
@@ -2386,6 +2467,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       const serverQcRows = new Set(serverQc.map((q: any) => q.row));
       const mergedQc = [...serverQc, ...clientQcLog.filter(q => !serverQcRows.has(q.row))];
       setBulkUploadResults({ created, failed, qcLog: mergedQc });
+      addPreparedWelcomeEmailDrafts(buildWelcomeEmailDraftsFromCreated(created));
       
       // Close the upload dialog and show the report popup
       setShowBulkUploadDialog(false);
@@ -3201,10 +3283,10 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                         <TableCell>2 hours ago</TableCell>
                         <TableCell>
                           <div className="flex gap-2">
-                            <Button variant="ghost" size="sm">
+                            <Button variant="ghost" size="sm" disabled title="Not available yet">
                               <Key className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="sm">
+                            <Button variant="ghost" size="sm" disabled title="Not available yet">
                               <Edit className="h-4 w-4" />
                             </Button>
                           </div>
@@ -4572,7 +4654,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                                           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleAssignNetwork({ id: lab.id, name: lab.name, type: 'lab', city: lab.city })}>
                                             <Users className="h-3 w-3 mr-1" />Assign
                                           </Button>
-                                          <Button variant="ghost" size="sm">
+                                          <Button variant="ghost" size="sm" disabled title="Not available yet">
                                             <Trash2 className="h-4 w-4 text-red-500" />
                                           </Button>
                                         </div>
@@ -4681,7 +4763,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                                           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleAssignNetwork({ id: hospital.id, name: hospital.name, type: 'hospital', city: hospital.city })}>
                                             <Users className="h-3 w-3 mr-1" />Assign
                                           </Button>
-                                          <Button variant="ghost" size="sm">
+                                          <Button variant="ghost" size="sm" disabled title="Not available yet">
                                             <Trash2 className="h-4 w-4 text-red-500" />
                                           </Button>
                                         </div>
@@ -4790,7 +4872,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                                           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleAssignNetwork({ id: clinic.id, name: clinic.name, type: 'clinic', city: clinic.city })}>
                                             <Users className="h-3 w-3 mr-1" />Assign
                                           </Button>
-                                          <Button variant="ghost" size="sm">
+                                          <Button variant="ghost" size="sm" disabled title="Not available yet">
                                             <Trash2 className="h-4 w-4 text-red-500" />
                                           </Button>
                                         </div>
@@ -5093,6 +5175,20 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                 </div>
               </div>
             </div>
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                <Label htmlFor="employee-welcome-email-mode" className="text-sm font-medium">Welcome email handling</Label>
+                <Select value={employeeWelcomeEmailMode} onValueChange={(value) => setEmployeeWelcomeEmailMode(value as WelcomeEmailMode)}>
+                  <SelectTrigger id="employee-welcome-email-mode">
+                    <SelectValue placeholder="Choose email handling" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="draft">Prepare batch for review</SelectItem>
+                    <SelectItem value="send">Send immediately</SelectItem>
+                    <SelectItem value="skip">Do not send</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Draft mode lets the team edit the subject, recipient, and HTML before sending credentials.</p>
+              </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowAddEmployeeDialog(false)}>Cancel</Button>
               <Button onClick={handleAddEmployee} disabled={empIdStatus === 'duplicate'}>Add Employee</Button>
@@ -5147,7 +5243,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                 </div>
                 <div className="flex items-start gap-2 rounded-md bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-800 p-3 text-sm text-amber-800 dark:text-amber-400">
                   <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                  <p>A welcome email with these credentials has been sent to <strong>{newEmployeeCredentials.email}</strong>. The employee should change this password on first login.</p>
+                  <p>{newEmployeeCredentials.emailStatus === "skipped" ? <>Welcome email was not sent. Share these credentials manually with <strong>{newEmployeeCredentials.email}</strong>.</> : <>A welcome email with these credentials has been queued for <strong>{newEmployeeCredentials.email}</strong>. The employee should change this password on first login.</>}</p>
                 </div>
               </div>
             )}
@@ -6385,7 +6481,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                     <div className="grid grid-cols-2 gap-2">
                       {Object.entries(editingPlan.coverage).filter(([k, v]) => k !== 'sumInsured' && v).map(([k, v]) => (
                         <div key={k} className="p-2 border rounded">
-                          <div className="text-xs text-muted-foreground capitalize">{k.replace(/([A-Z])/g, ' $1').trim()}</div>
+                          <div className="text-xs text-muted-foreground capitalize">{getPlanFeatureLabel(k)}</div>
                           <div className="text-sm font-medium">{String(v)}</div>
                         </div>
                       ))}
@@ -6700,6 +6796,8 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
               const successPct = total > 0 ? Math.round((bulkUploadResults.created.length / total) * 100) : 0;
               const newUsers = bulkUploadResults.created.filter((e: any) => e.isNewUser).length;
               const linked = bulkUploadResults.created.filter((e: any) => !e.isNewUser).length;
+              const emailQueued = bulkUploadResults.created.filter((e: any) => e.emailStatus === 'queued').length;
+              const emailSkipped = bulkUploadResults.created.filter((e: any) => e.emailStatus === 'skipped').length;
               const qcLog = bulkUploadResults.qcLog || [];
 
               const downloadErrorLog = () => {
@@ -6768,6 +6866,8 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                       <div className="text-sm text-green-700 dark:text-green-400 space-y-0.5">
                         {newUsers > 0 && <p>• {newUsers} new user account{newUsers > 1 ? 's' : ''} created &amp; activated</p>}
                         {linked > 0 && <p>• {linked} existing user{linked > 1 ? 's' : ''} linked &amp; activated</p>}
+                        {emailQueued > 0 && <p>• {emailQueued} welcome email{emailQueued > 1 ? 's' : ''} queued</p>}
+                        {emailSkipped > 0 && <p>• {emailSkipped} welcome email{emailSkipped > 1 ? 's' : ''} skipped by operator choice</p>}
                       </div>
                     </div>
                   )}
@@ -6918,6 +7018,21 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                     </div>
                   ))}
                 </div>
+              </div>
+
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                <Label htmlFor="bulk-welcome-email-mode" className="text-sm font-medium">Welcome email handling</Label>
+                <Select value={bulkWelcomeEmailMode} onValueChange={(value) => setBulkWelcomeEmailMode(value as WelcomeEmailMode)}>
+                  <SelectTrigger id="bulk-welcome-email-mode">
+                    <SelectValue placeholder="Choose email handling" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="draft">Prepare batch for review</SelectItem>
+                    <SelectItem value="send">Send immediately</SelectItem>
+                    <SelectItem value="skip">Do not send</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Existing users will only be linked. New users can be prepared as editable email drafts before sending.</p>
               </div>
 
               <div className="border-2 border-dashed rounded-lg p-6 text-center">
@@ -7164,6 +7279,15 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CorporateWelcomeEmailBatchDialog
+        open={showWelcomeEmailBatchDialog}
+        drafts={welcomeEmailDrafts}
+        sending={sendingWelcomeEmailBatch}
+        onOpenChange={setShowWelcomeEmailBatchDialog}
+        onDraftsChange={setWelcomeEmailDrafts}
+        onSendSelected={handleSendWelcomeEmailBatch}
+      />
 
       {/* Delete Corporate Confirmation Dialog */}
       <Dialog open={showDeleteCorporateDialog} onOpenChange={setShowDeleteCorporateDialog}>

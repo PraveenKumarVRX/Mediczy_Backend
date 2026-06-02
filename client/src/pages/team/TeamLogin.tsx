@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,12 +22,14 @@ import { clearAuthTokens } from '@/hooks/auth';
 
 const TeamLogin = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const sessionExpired = (location.state as any)?.expired === true;
   const [formData, setFormData] = useState({
     email: '',
     password: ''
   });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(sessionExpired ? 'Your session has expired. Please sign in again.' : '');
   const [showPassword, setShowPassword] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
