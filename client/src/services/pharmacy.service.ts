@@ -8,12 +8,6 @@ const getAuthHeader = () => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
-// Get pharmacy data from localStorage
-const getPharmacyData = () => {
-  const data = localStorage.getItem('pharmacyData');
-  return data ? JSON.parse(data) : null;
-};
-
 const pharmacyService = {
   // ============ Authentication ============
   login: async (credentials: { email: string; password: string }) => {
@@ -49,15 +43,9 @@ const pharmacyService = {
   batches: {
     // Get all batches
     getAll: async (params?: { limit?: number; offset?: number }) => {
-      const pharmacyData = getPharmacyData();
-      const pharmacyId = pharmacyData?.pharmacyId;
-
       const response = await api.get(`${API_URL}/pharmacy/batches`, {
         headers: getAuthHeader(),
-        params: {
-          pharmacyId,
-          ...params,
-        },
+        params,
       });
       return response.data;
     },
@@ -73,15 +61,9 @@ const pharmacyService = {
       sellingPrice?: number;
       supplier?: string;
     }) => {
-      const pharmacyData = getPharmacyData();
-      const pharmacyId = pharmacyData?.pharmacyId;
-
       const response = await api.post(
         `${API_URL}/pharmacy/batches`,
-        {
-          ...batchData,
-          pharmacyId,
-        },
+        batchData,
         {
           headers: getAuthHeader(),
         }
@@ -117,24 +99,17 @@ const pharmacyService = {
   analytics: {
     // Get dashboard analytics
     getDashboard: async () => {
-      const pharmacyData = getPharmacyData();
-      const pharmacyId = pharmacyData?.pharmacyId;
-
       const response = await api.get(`${API_URL}/pharmacy/analytics/dashboard`, {
         headers: getAuthHeader(),
-        params: { pharmacyId },
       });
       return response.data;
     },
 
     // Get sales analytics
     getSales: async (days: number = 30) => {
-      const pharmacyData = getPharmacyData();
-      const pharmacyId = pharmacyData?.pharmacyId;
-
       const response = await api.get(`${API_URL}/pharmacy/analytics/sales`, {
         headers: getAuthHeader(),
-        params: { pharmacyId, days },
+        params: { days },
       });
       return response.data;
     },
@@ -144,27 +119,18 @@ const pharmacyService = {
   inventory: {
     // Get all medicines
     getMedicines: async (params?: { search?: string; category?: string; limit?: number; offset?: number }) => {
-      const pharmacyData = getPharmacyData();
-      const pharmacyId = pharmacyData?.pharmacyId;
-
       const response = await api.get(`${API_URL}/pharmacy/inventory`, {
         headers: getAuthHeader(),
-        params: {
-          pharmacyId,
-          ...params,
-        },
+        params,
       });
       return response.data;
     },
 
     // Get low stock items
     getLowStock: async () => {
-      const pharmacyData = getPharmacyData();
-      const pharmacyId = pharmacyData?.pharmacyId;
-
-      const response = await api.get(`${API_URL}/pharmacy/inventory/low-stock`, {
+      const response = await api.get(`${API_URL}/pharmacy/inventory`, {
         headers: getAuthHeader(),
-        params: { pharmacyId },
+        params: { lowStock: 'true' },
       });
       return response.data;
     },
@@ -180,15 +146,9 @@ const pharmacyService = {
       minStockLevel?: number;
       maxStockLevel?: number;
     }) => {
-      const pharmacyData = getPharmacyData();
-      const pharmacyId = pharmacyData?.pharmacyId;
-
       const response = await api.post(
         `${API_URL}/pharmacy/inventory`,
-        {
-          ...medicineData,
-          pharmacyId,
-        },
+        medicineData,
         {
           headers: getAuthHeader(),
         }
@@ -213,15 +173,9 @@ const pharmacyService = {
   sales: {
     // Get all sales
     getAll: async (params?: { startDate?: string; endDate?: string; limit?: number; offset?: number }) => {
-      const pharmacyData = getPharmacyData();
-      const pharmacyId = pharmacyData?.pharmacyId;
-
-      const response = await api.get(`${API_URL}/pharmacy/sales`, {
+      const response = await api.get(`${API_URL}/pharmacy/transactions`, {
         headers: getAuthHeader(),
-        params: {
-          pharmacyId,
-          ...params,
-        },
+        params,
       });
       return response.data;
     },
@@ -239,15 +193,9 @@ const pharmacyService = {
       totalAmount: number;
       paymentMethod: string;
     }) => {
-      const pharmacyData = getPharmacyData();
-      const pharmacyId = pharmacyData?.pharmacyId;
-
       const response = await api.post(
-        `${API_URL}/pharmacy/sales`,
-        {
-          ...saleData,
-          pharmacyId,
-        },
+        `${API_URL}/pharmacy/transactions`,
+        saleData,
         {
           headers: getAuthHeader(),
         }
@@ -257,7 +205,7 @@ const pharmacyService = {
 
     // Get sale details
     getById: async (saleId: number) => {
-      const response = await api.get(`${API_URL}/pharmacy/sales/${saleId}`, {
+      const response = await api.get(`${API_URL}/pharmacy/transactions/${saleId}`, {
         headers: getAuthHeader(),
       });
       return response.data;
@@ -268,15 +216,9 @@ const pharmacyService = {
   prescriptions: {
     // Get all prescriptions
     getAll: async (params?: { status?: string; limit?: number; offset?: number }) => {
-      const pharmacyData = getPharmacyData();
-      const pharmacyId = pharmacyData?.pharmacyId;
-
       const response = await api.get(`${API_URL}/pharmacy/prescriptions`, {
         headers: getAuthHeader(),
-        params: {
-          pharmacyId,
-          ...params,
-        },
+        params,
       });
       return response.data;
     },
@@ -293,10 +235,14 @@ const pharmacyService = {
     },
 
     // Update prescription status
-    updateStatus: async (prescriptionId: number, status: string) => {
-      const response = await api.patch(
+    updateStatus: async (
+      prescriptionId: number,
+      status: string,
+      options?: { pharmacistReviewConfirmed?: boolean; notes?: string; rejectedReason?: string }
+    ) => {
+      const response = await api.put(
         `${API_URL}/pharmacy/prescriptions/${prescriptionId}/status`,
-        { status },
+        { status, ...(options || {}) },
         {
           headers: getAuthHeader(),
         }
@@ -309,15 +255,9 @@ const pharmacyService = {
   customers: {
     // Get all customers
     getAll: async (params?: { search?: string; limit?: number; offset?: number }) => {
-      const pharmacyData = getPharmacyData();
-      const pharmacyId = pharmacyData?.pharmacyId;
-
       const response = await api.get(`${API_URL}/pharmacy/customers`, {
         headers: getAuthHeader(),
-        params: {
-          pharmacyId,
-          ...params,
-        },
+        params,
       });
       return response.data;
     },
@@ -329,15 +269,9 @@ const pharmacyService = {
       email?: string;
       address?: string;
     }) => {
-      const pharmacyData = getPharmacyData();
-      const pharmacyId = pharmacyData?.pharmacyId;
-
       const response = await api.post(
         `${API_URL}/pharmacy/customers`,
-        {
-          ...customerData,
-          pharmacyId,
-        },
+        customerData,
         {
           headers: getAuthHeader(),
         }
@@ -348,6 +282,128 @@ const pharmacyService = {
     // Get customer details
     getById: async (customerId: number) => {
       const response = await api.get(`${API_URL}/pharmacy/customers/${customerId}`, {
+        headers: getAuthHeader(),
+      });
+      return response.data;
+    },
+  },
+  // ============ Purchase Orders ============
+  purchaseOrders: {
+    getAll: async (params?: { limit?: number; offset?: number }) => {
+      const response = await api.get(`${API_URL}/pharmacy/purchase-orders`, {
+        headers: getAuthHeader(),
+        params,
+      });
+      return response.data;
+    },
+    create: async (orderData: {
+      supplier?: string;
+      items: Array<{ medicineId: number; quantity: number; unitPrice: number }>;
+      expectedDeliveryDate?: string;
+      notes?: string;
+    }) => {
+      const response = await api.post(`${API_URL}/pharmacy/purchase-orders`, orderData, {
+        headers: getAuthHeader(),
+      });
+      return response.data;
+    },
+    receive: async (orderId: number) => {
+      const response = await api.post(`${API_URL}/pharmacy/purchase-orders/${orderId}/receive`, {}, {
+        headers: getAuthHeader(),
+      });
+      return response.data;
+    },
+  },
+
+  // ============ Stock Alerts ============
+  stockAlerts: {
+    getAll: async (params?: { limit?: number; offset?: number }) => {
+      const response = await api.get(`${API_URL}/pharmacy/stock-alerts`, {
+        headers: getAuthHeader(),
+        params,
+      });
+      return response.data;
+    },
+    create: async (alertData: {
+      medicineId: number;
+      quantity: number;
+      supplier?: string;
+      priority?: string;
+      notes?: string;
+    }) => {
+      const response = await api.post(`${API_URL}/pharmacy/stock-alerts`, alertData, {
+        headers: getAuthHeader(),
+      });
+      return response.data;
+    },
+  },
+
+
+  // ============ Returns / Refunds ============
+  returns: {
+    getAll: async (params?: { limit?: number; offset?: number }) => {
+      const response = await api.get(`${API_URL}/pharmacy/returns`, {
+        headers: getAuthHeader(),
+        params,
+      });
+      return response.data;
+    },
+    create: async (returnData: {
+      transactionId: number;
+      reason?: string;
+      items: Array<{ medicineId: number; quantity: number; price: number }>;
+    }) => {
+      const response = await api.post(`${API_URL}/pharmacy/returns`, returnData, {
+        headers: getAuthHeader(),
+      });
+      return response.data;
+    },
+  },
+
+  // ============ Compliance ============
+  compliance: {
+    getAuditLogs: async (params?: { limit?: number; offset?: number; action?: string; resourceType?: string }) => {
+      const response = await api.get(`${API_URL}/pharmacy/compliance/audit-logs`, {
+        headers: getAuthHeader(),
+        params,
+      });
+      return response.data;
+    },
+    getDispensingReport: async (params?: { startDate?: string; endDate?: string }) => {
+      const response = await api.get(`${API_URL}/pharmacy/compliance/dispensing-report`, {
+        headers: getAuthHeader(),
+        params,
+      });
+      return response.data;
+    },
+  },
+
+  // ============ Invoices ============
+  invoices: {
+    getAll: async (params?: { limit?: number; offset?: number }) => {
+      const response = await api.get(`${API_URL}/pharmacy/invoices`, {
+        headers: getAuthHeader(),
+        params,
+      });
+      return response.data;
+    },
+    getById: async (invoiceId: number) => {
+      const response = await api.get(`${API_URL}/pharmacy/invoices/${invoiceId}`, {
+        headers: getAuthHeader(),
+      });
+      return response.data;
+    },
+    create: async (invoiceData: {
+      transactionId?: number;
+      customerId?: number;
+      items: Array<{ medicineId: number; quantity: number; price: number }>;
+      totalAmount: number;
+      taxAmount?: number;
+      discountAmount?: number;
+      paymentMethod?: string;
+      notes?: string;
+    }) => {
+      const response = await api.post(`${API_URL}/pharmacy/invoices`, invoiceData, {
         headers: getAuthHeader(),
       });
       return response.data;

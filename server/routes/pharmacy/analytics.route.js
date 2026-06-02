@@ -4,8 +4,11 @@
 
 import express from 'express';
 import { db } from '../../db/index.js';
+import { requirePharmacyAuth } from '../../middleware/pharmacyAuth.middleware.js';
 
 const router = express.Router();
+
+router.use(requirePharmacyAuth);
 
 /**
  * GET /api/pharmacy/analytics/dashboard
@@ -13,7 +16,7 @@ const router = express.Router();
  */
 router.get('/dashboard', async (req, res) => {
   try {
-    const { pharmacyId } = req.query;
+    const pharmacyId = req.pharmacyId;
 
     // Total sales today
     const salesQuery = `
@@ -84,7 +87,9 @@ router.get('/dashboard', async (req, res) => {
  */
 router.get('/sales', async (req, res) => {
   try {
-    const { pharmacyId, days = 30 } = req.query;
+    const { days = 30 } = req.query;
+    const pharmacyId = req.pharmacyId;
+    const safeDays = Math.min(365, Math.max(1, parseInt(days, 10) || 30));
 
     const query = `
       SELECT 
@@ -92,12 +97,12 @@ router.get('/sales', async (req, res) => {
         COUNT(*) as transaction_count,
         COALESCE(SUM(total_amount), 0) as daily_sales
       FROM pharmacy_transactions
-      WHERE pharmacy_id = $1 AND created_at >= NOW() - INTERVAL '${days} days'
+      WHERE pharmacy_id = $1 AND created_at >= NOW() - ($2::int * INTERVAL '1 days')
       GROUP BY DATE(created_at)
       ORDER BY date DESC;
     `;
 
-    const result = await db.query(query, [pharmacyId]);
+    const result = await db.query(query, [pharmacyId, safeDays]);
 
     res.json({
       success: true,

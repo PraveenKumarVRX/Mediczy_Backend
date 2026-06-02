@@ -1,0 +1,730 @@
+import express from 'express';
+
+export const createDoctorTriageRouter = ({
+  authDoctor,
+  Appointment,
+  User,
+  Doctor,
+  UserPlan,
+  Op,
+  isMembershipRenewalExemptEmail,
+  ensureMeetingInfo,
+  getProviderLabel,
+  buildLiveKitJoinData,
+}) => {
+  const router = express.Router();
+
+  // --- Triage: AI Image Analysis ---
+  router.post('/triage/:caseId/analyze-image', authDoctor, async (req, res) => {
+    try {
+      const { caseId } = req.params;
+      let caseData = null;
+      try {
+        const [rows] = await User.sequelize.query(
+          'SELECT * FROM triage_cases WHERE id = :caseId LIMIT 1',
+          { replacements: { caseId }, type: User.sequelize.QueryTypes.SELECT }
+        );
+        caseData = rows;
+      } catch {
+        // table may not exist
+      }
+
+      const assessment = {
+        severity: caseData?.severity || 'unknown',
+        diagnosis: caseData?.chief_complaint
+          ? `Chief complaint: ${caseData.chief_complaint}. Visual analysis received - clinical correlation recommended.`
+          : 'Image received for analysis. Clinical correlation required.',
+        recommendations: [
+          'Perform physical examination',
+          'Review vital signs trend',
+          'Consider imaging or lab workup based on presentation',
+        ],
+        summary: 'AI image analysis logged. Please correlate with clinical findings.',
+      };
+
+      res.json({ success: true, analysis: assessment });
+    } catch (error) {
+      console.error('Triage analyze image error:', error);
+      res.status(500).json({ success: false, message: 'Analysis failed', error: error.message });
+    }
+  });
+
+  router.get('/triage/cases', authDoctor, async (req, res) => {
+    try {
+      const doctorId = req.doctor.id;
+      const { status } = req.query;
+
+      const whereConditions = {
+        [Op.or]: [{ doctorId: null }, { doctorId }],
+        sourceChannel: 'emergency_triage',
+      };
+
+      if (status && status !== 'all') {
+        if (status === 'pending') {
+          whereConditions.status = { [Op.in]: ['pending', 'scheduled'] };
+        } else if (status === 'in_progress') {
+          whereConditions.status = { [Op.in]: ['in_progress', 'confirmed'] };
+        } else if (status === 'resolved') {
+          whereConditions.status = { [Op.in]: ['completed', 'cancelled'] };
+        }
+      }
+
+      const triageAppointments = await Appointment.findAll({
+        where: whereConditions,
+        order: [['createdAt', 'DESC']],
+        limit: 50,
+      });
+
+      const triageCases = triageAppointments.map((apt) => {
+        const notesJson = apt.notes_json
+          ? (typeof apt.notes_json === 'string' ? JSON.parse(apt.notes_json) : apt.notes_json)
+          : {};
+
+        let age = 0;
+        if (apt.patientDetails && apt.patientDetails.dateOfBirth) {
+          const dob = new Date(apt.patientDetails.dateOfBirth);
+          const today = new Date();
+          age = today.getFullYear() - dob.getFullYear();
+        }
+
+        let triageStatus = 'pending';
+        if (apt.status === 'in_progress' || apt.status === 'confirmed') triageStatus = 'in_review';
+        if (apt.status === 'completed') triageStatus = 'resolved';
+        if (apt.status === 'cancelled') triageStatus = 'resolved';
+
+        return {
+          id: apt.id.toString(),
+          patientId: apt.userId,
+          patientName: apt.patientName || 'Unknown Patient',
+          patientAge: age,
+          patientGender: (apt.patientDetails && apt.patientDetails.gender) || 'Unknown',
+          patientPhone: apt.patientPhone || '',
+          patientLocation: (apt.patientDetails && apt.patientDetails.address) || notesJson.location || '',
+          symptoms: apt.symptoms || notesJson.symptoms || 'Not specified',
+          description: apt.reason || notesJson.description || '',
+          urgencyLevel: notesJson.urgencyLevel || 'URGENT',
+          aiAssessment: notesJson.aiAssessment || null,
+          aiRecommendation: notesJson.aiRecommendation || null,
+          vitalSigns: notesJson.vitalSigns || null,
+          status: triageStatus,
+          createdAt: apt.createdAt,
+          appointmentId: apt.id,
+          videoRoomId: apt.meetingId || notesJson.roomId || null,
+          notes: apt.notes || null,
+        };
+      });
+
+      res.json({ success: true, count: triageCases.length, cases: triageCases });
+    } catch (error) {
+      console.error('Get triage cases error:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch triage cases', error: error.message });
+    }
+  });
+
+  router.get('/triage/stats', authDoctor, async (req, res) => {
+    try {
+      const doctorId = req.doctor.id;
+      const baseWhere = {
+        sourceChannel: 'emergency_triage',
+        [Op.or]: [{ doctorId: null }, { doctorId }],
+      };
+
+      const [total, pending, inProgress, resolved] = await Promise.all([
+        Appointment.count({ where: baseWhere }),
+        Appointment.count({ where: { ...baseWhere, status: { [Op.in]: ['pending', 'scheduled'] } } }),
+        Appointment.count({ where: { ...baseWhere, status: { [Op.in]: ['in_progress', 'confirmed'] } } }),
+        Appointment.count({ where: { ...baseWhere, status: { [Op.in]: ['completed', 'cancelled'] } } }),
+      ]);
+
+      const allTriageCases = await Appointment.findAll({
+        where: { ...baseWhere, status: { [Op.in]: ['pending', 'scheduled', 'in_progress', 'confirmed'] } },
+        attributes: ['notes_json'],
+      });
+
+      let immediate = 0;
+      let urgent = 0;
+      allTriageCases.forEach((apt) => {
+        try {
+          const notes = apt.notes_json
+            ? (typeof apt.notes_json === 'string' ? JSON.parse(apt.notes_json) : apt.notes_json)
+            : {};
+          if (notes.urgencyLevel === 'IMMEDIATE') immediate += 1;
+          if (notes.urgencyLevel === 'URGENT') urgent += 1;
+        } catch {
+          // ignore malformed notes
+        }
+      });
+
+      res.json({
+        success: true,
+        stats: { total, pending, inProgress, resolved, immediate, urgent },
+      });
+    } catch (error) {
+      console.error('Get triage stats error:', error);
+      res.status(500).json({ success: false, message: 'Failed to fetch triage stats', error: error.message });
+    }
+  });
+
+  router.post('/triage/cases/:caseId/accept', authDoctor, async (req, res) => {
+    try {
+      const doctorId = req.doctor.id;
+      const { caseId } = req.params;
+
+      const appointment = await Appointment.findOne({
+        where: { id: caseId, [Op.or]: [{ doctorId: null }, { doctorId }] },
+      });
+      if (!appointment) {
+        const exists = await Appointment.findByPk(caseId);
+        return res.status(exists ? 403 : 404).json({
+          success: false,
+          message: exists ? 'This triage case is assigned to another doctor' : 'Triage case not found',
+        });
+      }
+
+      await appointment.update({ doctorId, status: 'in_progress' });
+
+      try {
+        const notificationService = (await import('../../services/notification.service.js')).default;
+        await notificationService.sendNotification({
+          userId: appointment.userId,
+          userType: 'user',
+          type: 'triage_accepted',
+          title: 'Doctor Reviewing Your Case',
+          message: `Dr. ${req.doctor.firstName} ${req.doctor.lastName} is now reviewing your triage request.`,
+          data: {
+            appointmentId: appointment.id,
+            doctorId,
+            doctorName: `${req.doctor.firstName} ${req.doctor.lastName}`,
+          },
+          channels: ['push', 'socket'],
+        });
+      } catch (notifyError) {
+        console.warn('Patient notification failed:', notifyError.message);
+      }
+
+      res.json({
+        success: true,
+        message: 'Triage case accepted',
+        appointment: { id: appointment.id, status: 'in_progress', doctorId },
+      });
+    } catch (error) {
+      console.error('Accept triage case error:', error);
+      res.status(500).json({ success: false, message: 'Failed to accept triage case', error: error.message });
+    }
+  });
+
+  router.post('/triage/cases/:caseId/respond', authDoctor, async (req, res) => {
+    try {
+      const doctorId = req.doctor.id;
+      const { caseId } = req.params;
+      const { action, notes } = req.body;
+
+      const appointment = await Appointment.findOne({
+        where: { id: caseId, doctorId },
+        include: [{ model: User, as: 'patient' }],
+      });
+
+      if (!appointment) {
+        const exists = await Appointment.findByPk(caseId);
+        return res.status(exists ? 403 : 404).json({
+          success: false,
+          message: exists ? 'You are not assigned to this triage case' : 'Triage case not found',
+        });
+      }
+
+      let newStatus = 'completed';
+      let notificationTitle = '';
+      let notificationMessage = '';
+
+      switch (action) {
+        case 'prescribe':
+          notificationTitle = 'Prescription Ready';
+          notificationMessage = `Dr. ${req.doctor.firstName} has prescribed medication for you. ${notes || ''}`;
+          break;
+        case 'schedule_appointment':
+          newStatus = 'scheduled';
+          notificationTitle = 'Appointment Scheduled';
+          notificationMessage = `Dr. ${req.doctor.firstName} has scheduled a follow-up appointment. ${notes || ''}`;
+          break;
+        case 'refer_hospital':
+          notificationTitle = 'Hospital Referral';
+          notificationMessage = `Dr. ${req.doctor.firstName} recommends hospital visit. ${notes || ''}`;
+          break;
+        case 'call_ambulance':
+          notificationTitle = 'Emergency - Ambulance Called';
+          notificationMessage = `URGENT: Ambulance has been requested. ${notes || ''}`;
+          break;
+        case 'self_care':
+          notificationTitle = 'Self-Care Instructions';
+          notificationMessage = `Dr. ${req.doctor.firstName} has provided self-care instructions. ${notes || ''}`;
+          break;
+        case 'escalate':
+          newStatus = 'in_progress';
+          notificationTitle = 'Specialist Referral';
+          notificationMessage = `Your case has been escalated to a specialist. ${notes || ''}`;
+          break;
+        default:
+          notificationTitle = 'Triage Response';
+          notificationMessage = notes || 'Doctor has responded to your triage request.';
+      }
+
+      const existingNotes = appointment.notes
+        ? (typeof appointment.notes === 'string' ? JSON.parse(appointment.notes) : appointment.notes)
+        : {};
+      await appointment.update({
+        status: newStatus,
+        doctorNotes: notes,
+        notes: JSON.stringify({
+          ...existingNotes,
+          doctorResponse: {
+            action,
+            notes,
+            respondedAt: new Date().toISOString(),
+            respondedBy: doctorId,
+          },
+        }),
+      });
+
+      try {
+        const notificationService = (await import('../../services/notification.service.js')).default;
+        await notificationService.sendNotification({
+          userId: appointment.userId ?? appointment.patientId,
+          userType: 'user',
+          type: 'triage_response',
+          title: notificationTitle,
+          message: notificationMessage,
+          data: {
+            appointmentId: appointment.id,
+            action,
+            doctorId,
+            doctorName: `${req.doctor.firstName} ${req.doctor.lastName}`,
+          },
+          channels: ['push', 'socket', 'sms'],
+        });
+      } catch (notifyError) {
+        console.warn('Patient notification failed:', notifyError.message);
+      }
+
+      res.json({
+        success: true,
+        message: 'Response sent successfully',
+        appointment: { id: appointment.id, status: newStatus, action },
+      });
+    } catch (error) {
+      console.error('Respond to triage case error:', error);
+      res.status(500).json({ success: false, message: 'Failed to respond to triage case', error: error.message });
+    }
+  });
+
+  router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req, res) => {
+    try {
+      const { appointmentId } = req.params;
+      const doctorId = req.doctor.id;
+      const normalizedDoctorId = String(doctorId || '').trim();
+      const doctorIdCandidates = new Set();
+
+      if (doctorId !== undefined && doctorId !== null) {
+        doctorIdCandidates.add(doctorId);
+        doctorIdCandidates.add(normalizedDoctorId);
+        if (/^\d+$/.test(normalizedDoctorId)) {
+          doctorIdCandidates.add(Number.parseInt(normalizedDoctorId, 10));
+        }
+      }
+
+      if (req.doctor?.email) {
+        try {
+          const linkedDoctorUser = await User.findOne({
+            where: { email: req.doctor.email, role: 'doctor' },
+            attributes: ['id'],
+          });
+
+          if (linkedDoctorUser?.id !== undefined && linkedDoctorUser?.id !== null) {
+            const linkedUserId = String(linkedDoctorUser.id).trim();
+            doctorIdCandidates.add(linkedDoctorUser.id);
+            doctorIdCandidates.add(linkedUserId);
+            if (/^\d+$/.test(linkedUserId)) {
+              doctorIdCandidates.add(Number.parseInt(linkedUserId, 10));
+            }
+          }
+        } catch (doctorLookupError) {
+          console.warn('Could not resolve linked doctor user ID for initiate-call:', doctorLookupError?.message || doctorLookupError);
+        }
+      }
+
+      const doctorWhere = { [Op.in]: Array.from(doctorIdCandidates) };
+      const normalizedAppointmentId = String(appointmentId || '').trim();
+      const isNumericAppointmentId = /^\d+$/.test(normalizedAppointmentId);
+      const numericAppointmentId = isNumericAppointmentId ? Number.parseInt(normalizedAppointmentId, 10) : NaN;
+      const isSafeIntId = Number.isSafeInteger(numericAppointmentId) && numericAppointmentId > 0 && numericAppointmentId <= 2147483647;
+      const isLongNumericId = isNumericAppointmentId && normalizedAppointmentId.length > 10;
+
+      let appointment = null;
+      const includeModels = [
+        { model: User, as: 'patient', attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber'] },
+        { model: Doctor, as: 'doctor', attributes: ['id', 'firstName', 'lastName', 'prefix', 'specialization'] },
+      ];
+
+      if (isLongNumericId) {
+        const candidateMeetingIds = [normalizedAppointmentId, `apt-${normalizedAppointmentId}`];
+        appointment = await Appointment.findOne({ where: { doctorId: doctorWhere, meetingId: candidateMeetingIds }, include: includeModels });
+        if (!appointment) {
+          const meetingIdToken = `room=${normalizedAppointmentId}`;
+          const meetingIdTokenWithPrefix = `room=apt-${normalizedAppointmentId}`;
+          appointment = await Appointment.findOne({
+            where: {
+              doctorId: doctorWhere,
+              meetingLink: { [Op.or]: [{ [Op.iLike]: `%${meetingIdToken}%` }, { [Op.iLike]: `%${meetingIdTokenWithPrefix}%` }] },
+            },
+            include: includeModels,
+          });
+        }
+      } else {
+        if (isSafeIntId) {
+          appointment = await Appointment.findOne({ where: { id: numericAppointmentId, doctorId: doctorWhere }, include: includeModels });
+        }
+        if (!appointment) {
+          const candidateMeetingIds = [normalizedAppointmentId, `apt-${normalizedAppointmentId}`];
+          appointment = await Appointment.findOne({ where: { doctorId: doctorWhere, meetingId: candidateMeetingIds }, include: includeModels });
+        }
+        if (!appointment) {
+          const meetingIdToken = `room=${normalizedAppointmentId}`;
+          const meetingIdTokenWithPrefix = `room=apt-${normalizedAppointmentId}`;
+          appointment = await Appointment.findOne({
+            where: {
+              doctorId: doctorWhere,
+              meetingLink: { [Op.or]: [{ [Op.iLike]: `%${meetingIdToken}%` }, { [Op.iLike]: `%${meetingIdTokenWithPrefix}%` }] },
+            },
+            include: includeModels,
+          });
+        }
+      }
+
+      if (!appointment) {
+        return res.status(404).json({ success: false, message: 'Appointment not found or you are not authorized' });
+      }
+
+      const normalizedAppointmentStatus = String(appointment.status || '').toLowerCase().replace(/_/g, '-');
+      if (!['confirmed', 'scheduled', 'accepted', 'in-progress'].includes(normalizedAppointmentStatus)) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot initiate call. Appointment status is ${appointment.status}. Only confirmed/scheduled/in-progress appointments can be started.`,
+          currentStatus: appointment.status,
+        });
+      }
+
+      const normalizedPaymentStatus = String(appointment.paymentStatus || '').toLowerCase();
+      const isPaymentSettled = ['paid', 'credit'].includes(normalizedPaymentStatus);
+      const consultationFee = Number(appointment.consultationFee ?? appointment.paymentAmount ?? 0);
+      const isNominalOrFreeConsultation = Number.isFinite(consultationFee) && consultationFee <= 1;
+
+      let isMembershipRenewalExemptUser = false;
+      if (isMembershipRenewalExemptEmail(appointment?.patient?.email)) {
+        isMembershipRenewalExemptUser = true;
+      } else if (appointment?.userId) {
+        const patient = await User.findByPk(appointment.userId, { attributes: ['id', 'email'] });
+        isMembershipRenewalExemptUser = isMembershipRenewalExemptEmail(patient?.email);
+      }
+
+      if (
+        ['online', 'video'].includes(appointment.consultationType)
+        && !isPaymentSettled
+        && !isNominalOrFreeConsultation
+        && !isMembershipRenewalExemptUser
+      ) {
+        const activePlan = await UserPlan.findOne({
+          where: {
+            userId: appointment.userId,
+            status: 'active',
+            startDate: { [Op.lte]: new Date() },
+            endDate: { [Op.gte]: new Date() },
+          },
+        });
+
+        if (!activePlan) {
+          return res.status(402).json({
+            success: false,
+            message: 'Payment required before starting video consultation. Please pay now or use a membership plan.',
+            paymentStatus: appointment.paymentStatus,
+            suggestion: 'You can pay with Health Coins or subscribe to a membership plan',
+          });
+        }
+      }
+
+      const appointmentDateStr = String(appointment.appointmentDate || '').slice(0, 10);
+      const appointmentTimeStr = String(appointment.appointmentTime || '00:00:00');
+      const dateParts = appointmentDateStr.split('-').map(Number);
+      const timeRawParts = appointmentTimeStr.split(':');
+      const hour = Number(timeRawParts[0]);
+      const minute = Number(timeRawParts[1]);
+      const second = timeRawParts.length > 2 ? Number(timeRawParts[2]) : 0;
+
+      const isValidDate = dateParts.length === 3 && Number.isFinite(dateParts[0]) && Number.isFinite(dateParts[1]) && Number.isFinite(dateParts[2]);
+      const isValidTime = Number.isFinite(hour) && Number.isFinite(minute) && Number.isFinite(second) && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 && second >= 0 && second <= 59;
+
+      if (!isValidDate || !isValidTime) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid appointment date/time. Unable to initiate call.',
+          appointmentDate: appointmentDateStr,
+          appointmentTime: appointmentTimeStr,
+        });
+      }
+
+      const [year, month, day] = dateParts;
+      const appointmentStartUTC = new Date(Date.UTC(year, month - 1, day, hour, minute, second) - (5 * 60 + 30) * 60 * 1000);
+      const nowUTC = new Date();
+      const minutesUntilStart = (appointmentStartUTC.getTime() - nowUTC.getTime()) / (1000 * 60);
+
+      if (minutesUntilStart > 15) {
+        return res.status(400).json({
+          success: false,
+          message: 'Call can be initiated only 15 minutes before appointment time.',
+          appointmentDate: appointmentDateStr,
+          appointmentTime: appointmentTimeStr,
+          minutesUntilStart: Math.ceil(minutesUntilStart),
+        });
+      }
+
+      const meetingInfo = ensureMeetingInfo(appointment);
+      let { meetingId, meetingLink, meetingDetails, provider } = meetingInfo;
+
+      await appointment.update({
+        status: 'in-progress',
+        meetingId,
+        meetingLink,
+        meetingDetails,
+        callInitiatedBy: 'doctor',
+        callInitiatedAt: new Date(),
+      });
+
+      const doctorName = appointment.doctor
+        ? `${appointment.doctor.prefix || 'Dr.'} ${appointment.doctor.firstName} ${appointment.doctor.lastName}`
+        : appointment.doctorName || 'Your Doctor';
+
+      const patientName = appointment.patient
+        ? `${appointment.patient.firstName} ${appointment.patient.lastName}`
+        : appointment.patientName;
+
+      try {
+        const notificationService = (await import('../../services/notification.service.js')).default;
+        await notificationService.send({
+          userId: appointment.userId,
+          userType: 'patient',
+          type: 'consultation_started',
+          title: `${doctorName} is calling`,
+          message: 'Your doctor has started the video consultation. Tap to join now!',
+          variables: { doctorName, appointmentId: appointment.id, meetingLink },
+          data: {
+            appointmentId: appointment.id,
+            meetingLink,
+            action: 'join_call',
+            callInitiatedAt: new Date().toISOString(),
+          },
+          actionUrl: meetingLink,
+          channels: ['push', 'in-app'],
+          priority: 'urgent',
+        });
+      } catch (notifError) {
+        console.error('Failed to send patient notification:', notifError);
+      }
+
+      let socketDelivered = false;
+      try {
+        const io = req.app.get('io');
+        if (io) {
+          const targetRoom = `user-${String(appointment.userId)}`;
+          const room = io.sockets.adapter.rooms.get(targetRoom);
+          const roomSize = room ? room.size : 0;
+
+          io.to(targetRoom).emit('doctor-initiated-call', {
+            appointmentId: appointment.id,
+            doctorName,
+            doctorId,
+            meetingLink,
+            callInitiatedAt: new Date().toISOString(),
+            appointmentDate: appointment.appointmentDate,
+            appointmentTime: appointment.appointmentTime,
+          });
+
+          socketDelivered = roomSize > 0;
+        }
+      } catch (socketError) {
+        console.error('Failed to emit socket event:', socketError);
+      }
+
+      const videoPayload = {
+        meetingLink,
+        meetingId,
+        platform: getProviderLabel(provider),
+      };
+
+      if (provider === 'livekit') {
+        try {
+          const livekitData = await buildLiveKitJoinData({
+            meetingId,
+            identity: `doctor-${doctorId}`,
+            name: doctorName,
+          });
+          videoPayload.livekit = livekitData;
+          videoPayload.joinUrl = livekitData.joinUrl;
+          if (!videoPayload.meetingLink) {
+            videoPayload.meetingLink = livekitData.meetUrl;
+          }
+        } catch (livekitError) {
+          console.error('LiveKit join data failed:', livekitError);
+          videoPayload.warning = 'LiveKit token generation failed. Using meeting link only.';
+        }
+      }
+
+      res.json({
+        success: true,
+        message: socketDelivered
+          ? 'Call initiated successfully. Patient has been notified.'
+          : 'Call initiated. Patient may not have received real-time notification (not online). They can still join via the appointment link.',
+        patientOnline: socketDelivered,
+        video: { ...videoPayload },
+        appointment: {
+          id: appointment.id,
+          status: 'in-progress',
+          patientName,
+          callInitiatedBy: 'doctor',
+          callInitiatedAt: new Date(),
+        },
+      });
+    } catch (error) {
+      console.error('Initiate call error:', {
+        message: error?.message,
+        name: error?.name,
+        sql: error?.parent?.sql,
+        parameters: error?.parent?.parameters,
+      });
+      res.status(500).json({ success: false, message: 'Failed to initiate call', error: error.message });
+    }
+  });
+
+  router.post('/triage/accept-call', authDoctor, async (req, res) => {
+    try {
+      const { appointmentId } = req.body;
+      const doctorId = req.doctor.id;
+
+      if (!appointmentId) {
+        return res.status(400).json({ success: false, message: 'appointmentId is required' });
+      }
+
+      const appointment = await Appointment.findOne({
+        where: {
+          id: appointmentId,
+          [Op.or]: [{ doctorId: null }, { doctorId }],
+        },
+      });
+
+      if (!appointment) {
+        const exists = await Appointment.findByPk(appointmentId);
+        return res.status(exists ? 403 : 404).json({
+          success: false,
+          message: exists ? 'This call is assigned to another doctor' : 'Appointment not found',
+        });
+      }
+
+      const updatePayload = { status: 'in-progress' };
+      if (!appointment.doctorId) updatePayload.doctorId = doctorId;
+
+      let roomId = appointment.meetingId;
+      if (!roomId) {
+        const cryptoModule = await import('crypto');
+        roomId = `triage_${cryptoModule.randomBytes(8).toString('hex')}_${Date.now()}`;
+        updatePayload.meetingId = roomId;
+      }
+
+      await appointment.update(updatePayload);
+
+      let doctorLivekit = null;
+      let patientLivekit = null;
+      try {
+        const doctorName = `Dr. ${req.doctor.firstName} ${req.doctor.lastName}`.trim();
+        [doctorLivekit, patientLivekit] = await Promise.all([
+          buildLiveKitJoinData({ meetingId: roomId, identity: `doctor-${doctorId}`, name: doctorName }),
+          buildLiveKitJoinData({
+            meetingId: roomId,
+            identity: `user-${appointment.userId || appointment.patientId || 'guest'}`,
+            name: appointment.patientName || 'Patient',
+          }),
+        ]);
+      } catch (lkErr) {
+        return res.status(503).json({
+          success: false,
+          message: 'Video service unavailable. Please retry in a moment.',
+          error: lkErr.message,
+        });
+      }
+
+      const { emitCallAccepted } = await import('../../chat/chathandler.controller.js');
+      const acceptData = {
+        appointmentId: appointment.id,
+        doctorName: `Dr. ${req.doctor.firstName} ${req.doctor.lastName}`,
+        roomId,
+        joinUrl: patientLivekit.joinUrl,
+        livekitToken: patientLivekit.token,
+        livekitServerUrl: patientLivekit.serverUrl,
+        timestamp: new Date().toISOString(),
+      };
+
+      const notificationResult = await emitCallAccepted(appointment.userId, acceptData);
+
+      res.json({
+        success: true,
+        appointment: { id: appointment.id, status: 'in-progress', roomId },
+        livekit: {
+          serverUrl: doctorLivekit.serverUrl,
+          token: doctorLivekit.token,
+          roomName: doctorLivekit.roomName,
+        },
+        notification: notificationResult,
+      });
+    } catch (error) {
+      console.error('Accept call error:', error);
+      res.status(500).json({ success: false, message: 'Failed to accept call' });
+    }
+  });
+
+  router.post('/triage/reject-call', authDoctor, async (req, res) => {
+    try {
+      const { appointmentId, reason } = req.body;
+      const doctorId = req.doctor.id;
+
+      const appointment = await Appointment.findOne({ where: { id: appointmentId, doctorId } });
+      if (!appointment) {
+        const exists = await Appointment.findByPk(appointmentId);
+        return res.status(exists ? 403 : 404).json({
+          success: false,
+          message: exists ? 'You are not assigned to this call' : 'Appointment not found',
+        });
+      }
+
+      await appointment.update({
+        status: 'cancelled',
+        notes: `Doctor declined: ${reason || 'No reason provided'}`,
+      });
+
+      const { emitCallRejected } = await import('../../chat/chathandler.controller.js');
+      const rejectData = {
+        appointmentId: appointment.id,
+        reason: reason || 'Doctor is unavailable',
+        timestamp: new Date().toISOString(),
+      };
+
+      const notificationResult = await emitCallRejected(appointment.userId, rejectData);
+
+      res.json({
+        success: true,
+        message: 'Call rejected successfully',
+        notification: notificationResult,
+      });
+    } catch (error) {
+      console.error('Reject call error:', error);
+      res.status(500).json({ success: false, message: 'Failed to reject call' });
+    }
+  });
+
+  return router;
+};

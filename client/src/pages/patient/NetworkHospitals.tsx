@@ -9,6 +9,8 @@ import { useToast } from '@/hooks/use-toast';
 import { MapPin, Phone, Clock, Star, Navigation, Search, Filter, Building2, Hospital, CheckCircle } from 'lucide-react';
 import MainLayout from '@/components/layout/MainLayout';
 import api from '@/utils/api';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineError } from '@/components/ui/inline-error';
 
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
 const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
@@ -37,6 +39,7 @@ const NetworkHospitals: React.FC = () => {
 
   const [hospitals, setHospitals] = useState<NetworkHospital[]>(seededHospitals);
   const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
   const [dataSource, setDataSource] = useState<'api' | 'unavailable'>('unavailable');
 
   useEffect(() => {
@@ -44,6 +47,7 @@ const NetworkHospitals: React.FC = () => {
 
     const loadHospitals = async () => {
       setIsLoading(true);
+      setFetchError(false);
       try {
         const res = await api.get('/hospitals', { params: { page: 1, limit: 100 } });
         const rows = Array.isArray(res?.data?.data) ? res.data.data : [];
@@ -80,6 +84,7 @@ const NetworkHospitals: React.FC = () => {
         if (mounted) {
           setHospitals(seededHospitals);
           setDataSource('unavailable');
+          setFetchError(true);
         }
       } finally {
         if (mounted) setIsLoading(false);
@@ -295,22 +300,43 @@ const NetworkHospitals: React.FC = () => {
             {dataSource === 'api' ? 'Live Directory' : 'Directory Limited'}
           </Badge>
         </div>
-        {filteredHospitals.length === 0 ? (
-          <Card className="dark:bg-slate-800/50 dark:border-slate-700/60">
-            <CardContent className="text-center py-12">
-              <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mx-auto mb-4">
-                <Hospital className="h-8 w-8 text-slate-400" />
-              </div>
-              <p className="text-lg font-medium text-slate-700 dark:text-slate-300">
-                {dataSource === 'api' ? 'No hospitals found' : 'Hospital directory unavailable'}
-              </p>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                {dataSource === 'api'
-                  ? 'Try adjusting your search or filters'
-                  : 'We could not load network providers right now. Please retry shortly.'}
-              </p>
-            </CardContent>
-          </Card>
+        {fetchError ? (
+          <InlineError
+            message="Couldn't load hospitals."
+            onRetry={() => {
+              const stored = hospitals;
+              setFetchError(false);
+              setIsLoading(true);
+              api.get('/hospitals', { params: { page: 1, limit: 100 } })
+                .then(res => {
+                  const rows = Array.isArray(res?.data?.data) ? res.data.data : [];
+                  if (rows.length > 0) {
+                    setHospitals(rows.map((row: any, idx: number) => {
+                      const inferredType = String(row.entity_type || row.type || 'hospital').toLowerCase();
+                      return {
+                        id: String(row.id || `h-${idx}`),
+                        name: row.name || row.hospital_name || 'Hospital',
+                        type: inferredType.includes('diagnostic') ? 'diagnostic_center' : inferredType.includes('pharmacy') ? 'pharmacy' : inferredType.includes('clinic') ? 'clinic' : 'hospital',
+                        address: row.address || '', city: row.city || 'Unknown city', state: row.state || 'Unknown state',
+                        distance: '—', phone: row.phone || row.mobile || 'N/A', rating: 4.2, reviews: 0,
+                        specialities: [row.entity_type || 'General Care'].filter(Boolean),
+                        facilities: [row.is_spn ? 'SPN Network' : 'Network Facility'],
+                        availability: 'open_now', insurance_accepted: true, cashless: true,
+                      } as NetworkHospital;
+                    }));
+                    setDataSource('api');
+                  } else { setFetchError(true); }
+                })
+                .catch(() => setFetchError(true))
+                .finally(() => setIsLoading(false));
+            }}
+          />
+        ) : filteredHospitals.length === 0 ? (
+          <EmptyState
+            icon={Building2}
+            title="No hospitals found"
+            description="No in-network hospitals match your search. Try a different city or name."
+          />
         ) : (
           filteredHospitals.map((hospital, idx) => (
             <motion.div key={hospital.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.05, duration: 0.3 }}>

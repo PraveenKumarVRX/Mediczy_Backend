@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useLocation } from "react-router-dom";
 import api from "@/utils/api";
@@ -506,6 +506,49 @@ export const AuthProvider = ({ children }) => {
     setAuthState(prev => ({ ...prev, hasCheckedAuth: false }));
   }, [location.pathname]);
 
+  // ── Proactive session expiry warning ────────────────────────────────────
+  const [sessionWarning, setSessionWarning] = useState<"warn" | "dismissed" | null>(null);
+  const [refreshingSession, setRefreshingSession] = useState(false);
+  const expiryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const token = authState.token;
+    if (!token || authState.userType !== "user") return;
+
+    // Clear previous timer
+    if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current);
+    setSessionWarning(null);
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (!payload.exp) return;
+      const msUntilExpiry = payload.exp * 1000 - Date.now();
+      const msUntilWarn   = msUntilExpiry - 5 * 60 * 1000; // warn 5 min before
+      if (msUntilWarn <= 0) return;
+      expiryTimerRef.current = setTimeout(() => setSessionWarning("warn"), msUntilWarn);
+    } catch {}
+
+    return () => { if (expiryTimerRef.current) clearTimeout(expiryTimerRef.current); };
+  }, [authState.token, authState.userType]);
+
+  const handleStaySignedIn = async () => {
+    setRefreshingSession(true);
+    try {
+      const refreshToken = localStorage.getItem("refreshToken");
+      const { data } = await api.post("/auth/refresh", { refreshToken }, { skipAuth: true } as any);
+      if (data.success && data.accessToken) {
+        localStorage.setItem("token", data.accessToken);
+        if (data.refreshToken) localStorage.setItem("refreshToken", data.refreshToken);
+        refreshAuth();
+        setSessionWarning("dismissed");
+      }
+    } catch {
+      // Refresh failed — let the natural 401 flow handle it
+    } finally {
+      setRefreshingSession(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center w-screen h-[100vh]">
@@ -516,15 +559,41 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider
-      value={{ 
-        currentUser, 
+      value={{
+        currentUser,
         currentDoctor,
         currentCorporate,
-        userType: authState.userType, 
+        userType: authState.userType,
         isLoading,
         refreshAuth
       }}
     >
+      {/* Session expiry warning — sticky bottom bar, patient portal only */}
+      {sessionWarning === "warn" && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="fixed bottom-16 md:bottom-0 left-0 right-0 z-50 flex items-center justify-between gap-3 bg-amber-600 text-white px-4 py-3 shadow-lg text-sm"
+        >
+          <span className="font-medium">🔒 Your session expires in 5 minutes.</span>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleStaySignedIn}
+              disabled={refreshingSession}
+              className="bg-white text-amber-700 hover:bg-amber-50 font-semibold px-3 py-1 rounded-lg text-xs transition-colors disabled:opacity-60"
+            >
+              {refreshingSession ? "Refreshing…" : "Stay signed in"}
+            </button>
+            <button
+              onClick={() => setSessionWarning("dismissed")}
+              aria-label="Dismiss session warning"
+              className="text-amber-200 hover:text-white text-lg leading-none"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
       {children}
     </AuthContext.Provider>
   );

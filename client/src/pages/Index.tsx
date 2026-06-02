@@ -105,15 +105,17 @@ const Index = () => {
 
   const userName = currentUser?.firstName || "Guest";
   const [healthStats, setHealthStats] = useState({
-    steps: 6542,
+    steps: 0,
     stepsGoal: 10000,
-    heartRate: 72,
-    sleep: 7.2,
-    water: 5,
+    heartRate: 0,
+    sleep: 0,
+    water: 0,
     waterGoal: 8,
-    calories: 1850,
+    calories: 0,
     caloriesGoal: 2200,
   });
+  const [healthStatsLoaded, setHealthStatsLoaded] = useState(false);
+  const [healthStatsUpdatedAt, setHealthStatsUpdatedAt] = useState<Date | null>(null);
   const [healthinessScore, setHealthinessScore] = useState({
     score: 78,
     trend: 'up' as 'up' | 'down' | 'stable',
@@ -732,17 +734,17 @@ const Index = () => {
       if (data.latest) {
         setHealthStats(prev => ({
           ...prev,
-          steps: data.latest.steps?.value || prev.steps,
-          heartRate: data.latest.heart_rate?.value || prev.heartRate,
-          sleep: data.latest.sleep?.value ? data.latest.sleep.value / 3600 : prev.sleep, // Convert seconds to hours
-          // Keep goals as is
+          steps:     data.latest.steps?.value      ?? prev.steps,
+          heartRate: data.latest.heart_rate?.value ?? prev.heartRate,
+          sleep:     data.latest.sleep?.value ? data.latest.sleep.value / 3600 : prev.sleep,
+          water:     data.latest.water?.value      ?? prev.water,
+          calories:  data.latest.calories?.value   ?? prev.calories,
         }));
-
-        console.log('✅ Health stats updated from backend');
+        setHealthStatsLoaded(true);
+        setHealthStatsUpdatedAt(new Date());
       }
-    } catch (error) {
-      console.log('Could not fetch health stats:', error);
-      // Keep using default/cached values
+    } catch {
+      // API not available — leave stats at zero so UI shows empty state, not fake numbers
     }
   };
 
@@ -1696,7 +1698,35 @@ const Index = () => {
         )}
 
         {/* Health Stats Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Today's Health</p>
+            <div className="flex items-center gap-2">
+              {healthStatsUpdatedAt && (
+                <span className="text-xs text-slate-400 dark:text-slate-500">
+                  Updated {Math.round((Date.now() - healthStatsUpdatedAt.getTime()) / 60000) < 1
+                    ? 'just now'
+                    : `${Math.round((Date.now() - healthStatsUpdatedAt.getTime()) / 60000)}m ago`}
+                </span>
+              )}
+              <button
+                onClick={fetchHealthStats}
+                aria-label="Refresh health stats"
+                className="text-slate-400 hover:text-teal-500 dark:hover:text-teal-400 transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+          {!healthStatsLoaded ? (
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-6 text-center">
+              <Activity className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">No health data yet</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 mb-3">Connect a wearable or log your vitals to see your daily stats here.</p>
+              <a href="/patient/device-integration" className="text-xs text-teal-600 dark:text-teal-400 font-semibold underline underline-offset-2">Connect a device →</a>
+            </div>
+          ) : (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {healthMetrics.map((metric, index) => (
             <Card key={index} className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-teal-200 dark:hover:border-teal-500/50 hover:shadow-lg hover:shadow-teal-500/5 transition-all duration-300 overflow-hidden group">
               <CardContent className="p-4">
@@ -1731,6 +1761,8 @@ const Index = () => {
               </CardContent>
             </Card>
           ))}
+          </div>
+          )}
         </div>
 
         {/* Health Tip of the Day + Streak Widget */}

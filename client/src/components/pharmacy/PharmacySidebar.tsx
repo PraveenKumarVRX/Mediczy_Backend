@@ -17,6 +17,7 @@ import {
   Calendar,
   BarChart3,
   Truck,
+  LifeBuoy,
 } from 'lucide-react';
 
 const PharmacySidebar = () => {
@@ -61,6 +62,7 @@ const PharmacySidebar = () => {
       items: [
         { name: 'Analytics', href: '/pharmacy/analytics', icon: BarChart3 },
         { name: 'Settings', href: '/pharmacy/settings', icon: Settings },
+        { name: 'Support', href: '/pharmacy/support', icon: LifeBuoy },
       ],
     },
   ];

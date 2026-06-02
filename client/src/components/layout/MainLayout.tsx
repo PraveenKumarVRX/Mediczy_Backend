@@ -251,10 +251,26 @@ const MainLayout = ({ children }: MainLayoutProps) => {
   const uxMeta = useMemo(() => getUserDashboardUxMeta(location.pathname), [location.pathname]);
   const showUserUxStrip = !isTeamUser && !isNurseRoute && !isAssistantRoute && !isAdminUser;
 
+  // ── Privacy banner — shown once per session for patient users ──────────
+  const [showPrivacyBanner, setShowPrivacyBanner] = useState(() =>
+    !isTeamUser && !isAdminUser && !sessionStorage.getItem('privacyBannerDismissed')
+  );
+  const dismissPrivacyBanner = () => {
+    sessionStorage.setItem('privacyBannerDismissed', '1');
+    setShowPrivacyBanner(false);
+  };
+
   return (
     <div className="flex min-h-screen w-full">
-      {/* Overlay when Sidebar is open on mobile */}
-        <Sidebar />
+      {/* Skip-to-content (accessibility) */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[200] focus:bg-white focus:dark:bg-slate-900 focus:px-4 focus:py-2 focus:rounded-lg focus:shadow-lg focus:text-teal-700 focus:font-semibold focus:text-sm"
+      >
+        Skip to main content
+      </a>
+
+      <Sidebar />
 
       {/* Main Content */}
       <main className="flex-1 w-full overflow-auto md:ml-64 bg-gradient-to-br from-slate-50 via-white to-slate-50/80 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800">
@@ -427,7 +443,27 @@ const MainLayout = ({ children }: MainLayoutProps) => {
             </div>
           </div>
         </header>
-        <div className="p-6 pb-20 md:pb-6 space-y-4">
+        <div id="main-content" className="p-6 pb-20 md:pb-6 space-y-4">
+          {/* Privacy banner — one-time per session */}
+          {showPrivacyBanner && showUserUxStrip && (
+            <div
+              role="banner"
+              className="flex items-start gap-3 rounded-xl border border-teal-200 dark:border-teal-800/50 bg-teal-50 dark:bg-teal-950/20 px-4 py-3 text-sm"
+            >
+              <span className="text-teal-600 dark:text-teal-400 shrink-0 mt-0.5">🔒</span>
+              <p className="text-teal-700 dark:text-teal-300 flex-1">
+                Your health data is encrypted and stored securely. We never sell your personal information.{" "}
+                <a href="/privacy" className="underline underline-offset-2 font-medium">Privacy policy</a>
+              </p>
+              <button
+                onClick={dismissPrivacyBanner}
+                aria-label="Dismiss privacy notice"
+                className="text-teal-500 hover:text-teal-700 dark:hover:text-teal-200 shrink-0 text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
+          )}
           {showUserUxStrip && (
             <section className="worldclass-panel rounded-2xl p-4 md:p-5 border">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">

@@ -1,5 +1,5 @@
 // Version: 2.1.0 - Numeric Corporate ID Conversion Ready
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -187,6 +187,34 @@ interface CorporatePlan {
   features?: Record<string, boolean>;
   coverage?: Record<string, any>;
   healthPackageIds?: string[];
+}
+
+interface WelcomeEmailTemplatePreset {
+  id: string;
+  name: string;
+  subject: string;
+  html: string;
+}
+
+interface WelcomeDeliveryRecord {
+  id: number;
+  corporateId: number;
+  userId: number;
+  employeeId: string | null;
+  recipientEmail: string;
+  subject: string | null;
+  idempotencyKey: string;
+  requestScope: string;
+  status: 'prepared' | 'queued' | 'sent' | 'failed' | 'rolled_back' | string;
+  attempts: number;
+  errorMessage: string | null;
+  metadata: Record<string, any>;
+  createdBy: number | null;
+  createdAt: string;
+  updatedAt: string;
+  userEmail?: string | null;
+  userFirstName?: string | null;
+  userLastName?: string | null;
 }
 
 type CommunicationChannel = 'email' | 'whatsapp' | 'sms';
@@ -394,6 +422,7 @@ const TeamCorporateManagement = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const welcomeDeliveryAuditRef = useRef<HTMLDivElement | null>(null);
   
   // State
   const [loading, setLoading] = useState(true);
@@ -465,6 +494,38 @@ const TeamCorporateManagement = () => {
   const [welcomeEmailDrafts, setWelcomeEmailDrafts] = useState<WelcomeEmailDraft[]>([]);
   const [showWelcomeEmailBatchDialog, setShowWelcomeEmailBatchDialog] = useState(false);
   const [sendingWelcomeEmailBatch, setSendingWelcomeEmailBatch] = useState(false);
+  const [sendingExistingWelcomeEmail, setSendingExistingWelcomeEmail] = useState(false);
+  const [selectedEmployeeIdsForWelcome, setSelectedEmployeeIdsForWelcome] = useState<string[]>([]);
+  const [welcomeEmployeeSearch, setWelcomeEmployeeSearch] = useState('');
+  const [welcomeEmployeeSelectionMode, setWelcomeEmployeeSelectionMode] = useState<'selected' | 'all'>('selected');
+  const [selectedWelcomeTemplateId, setSelectedWelcomeTemplateId] = useState('standard-welcome');
+  const [savedWelcomeEmailTemplates, setSavedWelcomeEmailTemplates] = useState<WelcomeEmailTemplatePreset[]>([]);
+  const [savingWelcomeTemplate, setSavingWelcomeTemplate] = useState(false);
+  const [preparingWelcomeEmployeeDrafts, setPreparingWelcomeEmployeeDrafts] = useState(false);
+  const [welcomeDeliveries, setWelcomeDeliveries] = useState<WelcomeDeliveryRecord[]>([]);
+  const [welcomeDeliveriesLoading, setWelcomeDeliveriesLoading] = useState(false);
+  const [welcomeDeliveryFilters, setWelcomeDeliveryFilters] = useState({
+    status: 'all',
+    requestScope: 'all',
+    employeeId: '',
+    recipient: '',
+    from: '',
+    to: '',
+  });
+  const [welcomeDeliverySummary, setWelcomeDeliverySummary] = useState({
+    total: 0,
+    sent: 0,
+    queued: 0,
+    failed: 0,
+    rolledBack: 0,
+    prepared: 0,
+  });
+  const [welcomeDeliveryPagination, setWelcomeDeliveryPagination] = useState({
+    limit: 20,
+    offset: 0,
+    total: 0,
+  });
+  const [resendingWelcomeDeliveryId, setResendingWelcomeDeliveryId] = useState<number | null>(null);
   const [showViewEmployeeDialog, setShowViewEmployeeDialog] = useState(false);
   const [showEditEmployeeDialog, setShowEditEmployeeDialog] = useState(false);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
@@ -1112,6 +1173,31 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     );
   });
 
+  const filteredWelcomeEmployees = useMemo(() => {
+    const q = welcomeEmployeeSearch.trim().toLowerCase();
+    if (!q) return employees;
+
+    return employees.filter((employee) => (
+      employee.name?.toLowerCase().includes(q)
+      || employee.email?.toLowerCase().includes(q)
+      || employee.employeeId?.toLowerCase().includes(q)
+      || employee.department?.toLowerCase().includes(q)
+      || employee.designation?.toLowerCase().includes(q)
+    ));
+  }, [employees, welcomeEmployeeSearch]);
+
+  const filteredWelcomeTotalPages = Math.max(1, Math.ceil(filteredWelcomeEmployees.length / EMP_PAGE_SIZE));
+
+  useEffect(() => {
+    setEmpCurrentPage(1);
+  }, [welcomeEmployeeSearch]);
+
+  useEffect(() => {
+    if (empCurrentPage > filteredWelcomeTotalPages) {
+      setEmpCurrentPage(filteredWelcomeTotalPages);
+    }
+  }, [empCurrentPage, filteredWelcomeTotalPages]);
+
   const communicationSummary = communicationAnalytics?.summary || {};
   const communicationTotal = Number(communicationSummary.total || 0);
   const communicationSent = Number(communicationSummary.sent || 0);
@@ -1406,6 +1492,12 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     }
   }, [activeTab, selectedCorporate?.id, communicationChannel]);
 
+  useEffect(() => {
+    if (activeTab === 'employees' && selectedCorporate?.id) {
+      fetchWelcomeDeliveryHistory({ resetOffset: true });
+    }
+  }, [activeTab, selectedCorporate?.id]);
+
   // Debounced Employee ID duplicate check against already-loaded employees
   useEffect(() => {
     const id = newEmployee.employeeId.trim();
@@ -1419,6 +1511,18 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     }, 400);
     return () => clearTimeout(t);
   }, [newEmployee.employeeId, employees]);
+
+  const duplicateEmployeeForNewId = (() => {
+    const id = newEmployee.employeeId.trim().toLowerCase();
+    if (!id) return undefined;
+    return employees.find((employee) => employee.employeeId?.toLowerCase() === id);
+  })();
+
+  const resetNewEmployeeForm = () => {
+    setNewEmployee({ employeeId: '', name: '', email: '', phone: '', gender: '', department: '', designation: '', joiningDate: '', workCity: '', workState: '' });
+    setEmpIdStatus('idle');
+  };
+
   const [labPartners, setLabPartners] = useState<LabPartner[]>([]);
   const [hospitalPartners, setHospitalPartners] = useState<HospitalPartner[]>([]);
   const [clinicPartners, setClinicPartners] = useState<ClinicPartner[]>([]);
@@ -1439,6 +1543,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
   // Fetch corporates
   useEffect(() => {
     fetchCorporates();
+    loadWelcomeEmailTemplateLibrary();
   }, []);
 
   // Fetch employees, packages, plans, and network partners when corporate is selected
@@ -1504,6 +1609,189 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     } catch (error) {
       console.error('Failed to fetch employees:', error);
       setEmployees([]);
+    }
+  };
+
+  const fetchWelcomeDeliveryHistory = async (opts?: {
+    resetOffset?: boolean;
+    nextOffset?: number;
+    filtersOverride?: Partial<typeof welcomeDeliveryFilters>;
+  }) => {
+    if (!selectedCorporate?.id) return;
+
+    const targetOffset = typeof opts?.nextOffset === 'number'
+      ? Math.max(opts.nextOffset, 0)
+      : (opts?.resetOffset ? 0 : welcomeDeliveryPagination.offset);
+    const effectiveFilters = {
+      ...welcomeDeliveryFilters,
+      ...(opts?.filtersOverride || {}),
+    };
+
+    try {
+      setWelcomeDeliveriesLoading(true);
+      const params: Record<string, any> = {
+        corporateId: selectedCorporate.id,
+        limit: welcomeDeliveryPagination.limit,
+        offset: targetOffset,
+      };
+
+      if (effectiveFilters.status !== 'all') params.status = effectiveFilters.status;
+      if (effectiveFilters.requestScope !== 'all') params.requestScope = effectiveFilters.requestScope;
+      if (effectiveFilters.employeeId.trim()) params.employeeId = effectiveFilters.employeeId.trim();
+      if (effectiveFilters.recipient.trim()) params.recipient = effectiveFilters.recipient.trim();
+      if (effectiveFilters.from) params.from = effectiveFilters.from;
+      if (effectiveFilters.to) params.to = effectiveFilters.to;
+
+      const response = await api.get('/admin/corporate-employee-welcome-emails/deliveries', {
+        params,
+        headers: teamAuthHeaders(),
+      });
+
+      const rows = response.data?.deliveries || [];
+      const summary = response.data?.summary || {};
+      setWelcomeDeliveries(rows);
+      setWelcomeDeliverySummary({
+        total: Number(summary.total || 0),
+        sent: Number(summary.sent || 0),
+        queued: Number(summary.queued || 0),
+        failed: Number(summary.failed || 0),
+        rolledBack: Number(summary.rolledBack || 0),
+        prepared: Number(summary.prepared || 0),
+      });
+      setWelcomeDeliveryPagination((prev) => ({
+        ...prev,
+        offset: targetOffset,
+        total: Number(summary.total || 0),
+      }));
+    } catch (error) {
+      console.error('Failed to fetch welcome delivery history:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Delivery history unavailable',
+        description: 'Could not load welcome email delivery logs right now.',
+      });
+    } finally {
+      setWelcomeDeliveriesLoading(false);
+    }
+  };
+
+  const resetWelcomeDeliveryFilters = () => {
+    setWelcomeDeliveryFilters({
+      status: 'all',
+      requestScope: 'all',
+      employeeId: '',
+      recipient: '',
+      from: '',
+      to: '',
+    });
+    fetchWelcomeDeliveryHistory({ resetOffset: true });
+  };
+
+  const exportWelcomeDeliveryRows = () => {
+    if (welcomeDeliveries.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'No records to export',
+        description: 'Load delivery records before exporting CSV.',
+      });
+      return;
+    }
+
+    const esc = (value: any) => {
+      const text = String(value ?? '');
+      if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+        return `"${text.replace(/"/g, '""')}"`;
+      }
+      return text;
+    };
+
+    const header = [
+      'Created At', 'Updated At', 'Status', 'Recipient Email', 'Employee ID', 'User Name', 'User Email',
+      'Attempts', 'Request Scope', 'Idempotency Key', 'Error Message', 'Delivery ID'
+    ];
+
+    const lines = welcomeDeliveries.map((row) => {
+      const userName = [row.userFirstName || '', row.userLastName || ''].join(' ').trim();
+      return [
+        row.createdAt,
+        row.updatedAt,
+        row.status,
+        row.recipientEmail,
+        row.employeeId || '',
+        userName,
+        row.userEmail || '',
+        row.attempts,
+        row.requestScope,
+        row.idempotencyKey,
+        row.errorMessage || '',
+        row.id,
+      ].map(esc).join(',');
+    });
+
+    const csv = [header.join(','), ...lines].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `welcome_delivery_audit_${selectedCorporate?.id || 'corporate'}.csv`;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const openWelcomeDeliveryAuditForEmployee = (employee: Employee) => {
+    const nextFilters = {
+      ...welcomeDeliveryFilters,
+      employeeId: employee.employeeId || '',
+      recipient: '',
+      status: 'all',
+      requestScope: 'all',
+    };
+    setWelcomeDeliveryFilters(nextFilters);
+    setActiveTab('employees');
+
+    fetchWelcomeDeliveryHistory({ resetOffset: true, filtersOverride: nextFilters });
+
+    // Delay slightly so state updates and audit card layout are settled before scrolling.
+    setTimeout(() => {
+      welcomeDeliveryAuditRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
+  };
+
+  const handleResendWelcomeFromDelivery = async (row: WelcomeDeliveryRecord) => {
+    if (!selectedCorporate) return;
+    if (!row.userId && !row.employeeId) {
+      toast({
+        variant: 'destructive',
+        title: 'Cannot resend',
+        description: 'This audit row has no user or employee identifier.',
+      });
+      return;
+    }
+
+    setResendingWelcomeDeliveryId(row.id);
+    try {
+      await api.post('/admin/corporate-employee-welcome-emails/resend', {
+        corporateId: selectedCorporate.id,
+        userId: row.userId || undefined,
+        employeeId: row.employeeId || undefined,
+        welcomeEmailMode: 'send',
+      }, {
+        headers: teamAuthHeaders(),
+      });
+
+      toast({
+        title: 'Welcome email resent',
+        description: `A fresh welcome email was triggered for ${row.recipientEmail}.`,
+      });
+      await fetchWelcomeDeliveryHistory();
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Resend failed',
+        description: error?.response?.data?.message || 'Could not resend welcome email from this audit row.',
+      });
+    } finally {
+      setResendingWelcomeDeliveryId(null);
     }
   };
 
@@ -1777,6 +2065,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     try {
       const token = localStorage.getItem('teamToken');
       await api.put(`/admin/corporate-calendar/${editingEvent.id}`, {
+        corporateId: selectedCorporate?.id,
         title: eventForm.title,
         description: eventForm.description,
         eventType: eventForm.eventType,
@@ -1806,6 +2095,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     try {
       const token = localStorage.getItem('teamToken');
       await api.delete(`/admin/corporate-calendar/${eventId}`, {
+        params: { corporateId: selectedCorporate?.id },
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       toast({ title: 'Event Deleted' });
@@ -2138,10 +2428,6 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     try {
       const token = localStorage.getItem('teamToken');
       // Prepare employee data in the format expected by the backend
-      if (!newEmployee.gender) {
-        toast({ variant: 'destructive', title: 'Validation Error', description: 'Gender is required.' });
-        return;
-      }
       const employeeData = {
         firstName: newEmployee.name.split(' ')[0] || newEmployee.name,
         lastName: newEmployee.name.split(' ').slice(1).join(' ') || '',
@@ -2150,7 +2436,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         employeeId: newEmployee.employeeId,
         department: newEmployee.department,
         designation: newEmployee.designation,
-        gender: newEmployee.gender,
+        gender: newEmployee.gender || undefined,
         city: newEmployee.workCity || undefined,
         state: newEmployee.workState || undefined
       };
@@ -2177,8 +2463,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       }
 
       setShowAddEmployeeDialog(false);
-      setNewEmployee({ employeeId: '', name: '', email: '', phone: '', gender: '', department: '', designation: '', joiningDate: '', workCity: '', workState: '' });
-      setEmpIdStatus('idle');
+      resetNewEmployeeForm();
       fetchEmployees(selectedCorporate.id);
 
       const preparedDrafts = buildWelcomeEmailDraftsFromCreated(created ? [created] : [], newEmployee.name);
@@ -2215,7 +2500,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
 
   const buildWelcomeEmailDraftsFromCreated = (created: any[], fallbackName = "") => {
     return created
-      .filter((item) => item?.isNewUser && item?.welcomeEmailDraft)
+      .filter((item) => item?.welcomeEmailDraft)
       .map((item, index) => ({
         id: `${item.userId || item.email || index}-${Date.now()}-${index}`,
         to: item.welcomeEmailDraft.to || item.email,
@@ -2243,7 +2528,14 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       const token = localStorage.getItem("teamToken");
       const { data } = await api.post("/admin/corporate-employee-welcome-emails/send", {
         corporateId: selectedCorporate.id,
-        emails: draftsToSend.map((draft) => ({ to: draft.to, subject: draft.subject, html: draft.html }))
+        emails: draftsToSend.map((draft) => ({
+          to: draft.to,
+          subject: draft.subject,
+          html: draft.html,
+          userId: draft.userId,
+          employeeId: draft.employeeId,
+          temporaryPassword: draft.temporaryPassword,
+        }))
       }, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
@@ -2264,6 +2556,375 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       toast({ variant: "destructive", title: "Email Batch Failed", description: error.response?.data?.message || "Failed to send welcome emails" });
     } finally {
       setSendingWelcomeEmailBatch(false);
+    }
+  };
+
+  const escapeHtml = (value: string) =>
+    String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+  const welcomeEmailTemplates: WelcomeEmailTemplatePreset[] = [
+    {
+      id: 'standard-welcome',
+      name: 'Corporate employee welcome_sigin',
+      subject: 'Welcome to My SmartHealth',
+      html: `<div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.5;">
+  <p>Dear {{employeeName}},</p>
+
+  <p><strong>Welcome to My SmartHealth!</strong></p>
+
+  <p>We're excited to partner with you on your health and wellness journey through the My SmartHealth Corporate Wellness Program, specially curated for Ninjacart employees.</p>
+
+  <p>Your account is now ready to use.</p>
+
+  <h3 style="margin: 18px 0 8px; color: #0A6EBD;">Login Credentials</h3>
+  <p><strong>Username:</strong> {{email}}<br/>
+  <strong>Password:</strong> [Temporary Password]</p>
+
+  <h3 style="margin: 18px 0 8px; color: #0A6EBD;">Download the My SmartHealth App</h3>
+  <p><strong>Android:</strong> <a href="https://play.google.com/store/apps/details?id=com.mysmarthealth" target="_blank" rel="noopener noreferrer">https://play.google.com/store/apps/details?id=com.mysmarthealth</a></p>
+  <p><strong>iPhone (iOS):</strong> <a href="https://apps.apple.com/in/app/smart-health/id6757312276" target="_blank" rel="noopener noreferrer">https://apps.apple.com/in/app/smart-health/id6757312276</a></p>
+
+  <h3 style="margin: 18px 0 8px; color: #0A6EBD;">Your Wellness Benefits</h3>
+  <ul>
+    <li>Doctor Teleconsultations</li>
+    <li>Psychologist Consultations</li>
+    <li>Health and Wellness Camps</li>
+    <li>Expert-led Wellness Webinars</li>
+    <li>Digital Health Records - Anytime, Anywhere</li>
+  </ul>
+
+  <h3 style="margin: 18px 0 8px; color: #0A6EBD;">What's Coming This Year?</h3>
+  <ul>
+    <li><strong>June 2026</strong> - General Health Checkup Camp</li>
+    <li><strong>September 2026</strong> - Eye Health Camp</li>
+    <li><strong>October 2026</strong> - Mental Health Awareness Webinar</li>
+    <li><strong>December 2026</strong> - Dental Checkup Camp</li>
+    <li><strong>March 2027</strong> - Ergonomics Camp and Women's Health Webinar</li>
+  </ul>
+
+  <p>We encourage you to download the app, complete your profile, and start exploring the wellness services available to you.</p>
+
+  <p>Your health matters, and we're here to support you every step of the way.</p>
+
+  <p>For any assistance with login, appointments, or wellness services, feel free to reach out to us.</p>
+
+  <p><strong>WhatsApp Support:</strong> 7826911911</p>
+
+  <p>Best Regards,<br/>
+  <strong>Team My SmartHealth</strong></p>
+</div>`,
+    },
+    {
+      id: 'short-welcome',
+      name: 'Short Welcome',
+      subject: 'You are onboarded - {{companyName}}',
+      html: `<div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.5;">
+  <p>Hello {{employeeName}},</p>
+  <p>You are now onboarded to SmartHealth under {{companyName}}.</p>
+  <p>Employee ID: {{employeeId}}</p>
+  <p>Regards,<br/>Team SmartHealth</p>
+</div>`,
+    },
+    {
+      id: 'benefits-first',
+      name: 'Benefits First',
+      subject: 'Your SmartHealth benefits are ready - {{companyName}}',
+      html: `<div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.5;">
+  <p>Hi {{employeeName}},</p>
+  <p>Welcome to SmartHealth at {{companyName}}. Your healthcare benefits are now active.</p>
+  <ul>
+    <li>Corporate wellness access</li>
+    <li>Preventive care and consultations</li>
+    <li>Digital report and claims support</li>
+  </ul>
+  <p>Employee ID: {{employeeId}}</p>
+  <p>Regards,<br/>Team SmartHealth</p>
+</div>`,
+    },
+  ];
+
+  const allWelcomeEmailTemplates: WelcomeEmailTemplatePreset[] = [
+    ...welcomeEmailTemplates,
+    ...savedWelcomeEmailTemplates.filter(
+      (saved) => !welcomeEmailTemplates.some((preset) => preset.id === saved.id)
+    ),
+  ];
+
+  const loadWelcomeEmailTemplateLibrary = async () => {
+    const token = localStorage.getItem('teamToken');
+    try {
+      const response = await api.get('/team/welcome-email-templates', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      const payload = response.data?.data || {};
+      const templates = Array.isArray(payload.templates) ? payload.templates : [];
+      const mappedSavedTemplates: WelcomeEmailTemplatePreset[] = templates.map((template: any) => ({
+        id: `saved-${template.id}`,
+        name: template.name || `Saved Template ${template.id}`,
+        subject: template.subject || '',
+        html: template.htmlContent || '',
+      }));
+
+      setSavedWelcomeEmailTemplates(mappedSavedTemplates);
+
+      const assignedTemplateId = payload.assignments?.corporate_employee_welcome?.templateId;
+      if (assignedTemplateId) {
+        setSelectedWelcomeTemplateId(`saved-${assignedTemplateId}`);
+      }
+    } catch (error: any) {
+      console.error('Failed to load welcome templates:', error?.response?.data || error?.message || error);
+      setSavedWelcomeEmailTemplates([]);
+    }
+  };
+
+  const handleSaveEditedWelcomeTemplate = async ({ name, subject, html }: { name: string; subject: string; html: string }) => {
+    const templateName = name.trim();
+    if (!templateName || !subject.trim() || !html.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Template not saved',
+        description: 'Template name, subject, and body are required.',
+      });
+      return;
+    }
+
+    const token = localStorage.getItem('teamToken');
+    setSavingWelcomeTemplate(true);
+    try {
+      const createResponse = await api.post(
+        '/team/welcome-email-templates',
+        {
+          name: templateName,
+          subject,
+          htmlContent: html,
+        },
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        }
+      );
+
+      const createdId = createResponse.data?.data?.id;
+      if (createdId) {
+        await api.put(
+          '/team/welcome-email-templates/assign',
+          {
+            eventType: 'corporate_employee_welcome',
+            templateId: createdId,
+          },
+          {
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          }
+        );
+      }
+
+      await loadWelcomeEmailTemplateLibrary();
+      if (createdId) {
+        setSelectedWelcomeTemplateId(`saved-${createdId}`);
+      }
+
+      toast({
+        title: 'Template saved',
+        description: 'Edited subject and body are now available as a reusable template.',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Save failed',
+        description: error?.response?.data?.message || 'Unable to save template right now.',
+      });
+    } finally {
+      setSavingWelcomeTemplate(false);
+    }
+  };
+
+  const applyWelcomeTemplatePlaceholders = (template: string, employee: Employee, temporaryPassword = '') => {
+    const loginIdentifier = employee.email || employee.employeeId || '-';
+    const replacements: Record<string, string> = {
+      employeeName: employee.name || `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || 'Employee',
+      firstName: employee.firstName || (employee.name || '').split(' ')[0] || 'Employee',
+      lastName: employee.lastName || '',
+      employeeId: employee.employeeId || '-',
+      email: employee.email || '-',
+      username: loginIdentifier,
+      userId: loginIdentifier,
+      loginIdentifier,
+      temporaryPassword,
+      password: temporaryPassword,
+      department: employee.department || 'your assigned team',
+      designation: employee.designation || 'your role',
+      companyName: selectedCorporate?.companyName || 'Your company',
+      corporateId: selectedCorporate?.uniqueId || String(selectedCorporate?.id || '-'),
+    };
+
+    let rendered = template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => escapeHtml(replacements[key] || ''));
+    const literalReplacements: Record<string, string> = {
+      '[Employee Email ID / Mobile Number]': loginIdentifier,
+      '[Username]': loginIdentifier,
+      '[User ID]': loginIdentifier,
+      '[Temporary Password]': temporaryPassword,
+      '[Password]': temporaryPassword,
+      '[Employee ID]': employee.employeeId || '-',
+    };
+    Object.entries(literalReplacements).forEach(([token, value]) => {
+      rendered = rendered.split(token).join(escapeHtml(value || ''));
+    });
+    return rendered;
+  };
+
+  const getWelcomeEmployeeTargets = (mode: 'selected' | 'all' | 'single' = welcomeEmployeeSelectionMode, singleEmployeeId?: string) => {
+    if (mode === 'single') {
+      if (!singleEmployeeId) return [];
+      return employees.filter((employee) => employee.id === singleEmployeeId && employee.email);
+    }
+
+    if (mode === 'all') {
+      return employees.filter((employee) => employee.email);
+    }
+
+    const selected = new Set(selectedEmployeeIdsForWelcome);
+    return employees.filter((employee) => selected.has(employee.id) && employee.email);
+  };
+
+  const handlePrepareOrSendEmployeeWelcomeEmails = async (
+    sendImmediately: boolean,
+    mode: 'selected' | 'all' | 'single' = welcomeEmployeeSelectionMode,
+    singleEmployeeId?: string
+  ) => {
+    if (!selectedCorporate) return;
+
+    const targets = getWelcomeEmployeeTargets(mode, singleEmployeeId);
+    if (targets.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'No employees selected',
+        description: mode === 'all'
+          ? 'No employees with valid email were found.'
+          : mode === 'single'
+            ? 'Select a valid employee with email to continue.'
+          : 'Select one or more employees with email to continue.'
+      });
+      return;
+    }
+
+    const template = allWelcomeEmailTemplates.find((item) => item.id === selectedWelcomeTemplateId) || allWelcomeEmailTemplates[0];
+    setPreparingWelcomeEmployeeDrafts(true);
+
+    try {
+      const preparedTargets: Array<{ employee: Employee; temporaryPassword: string }> = [];
+      const failedTargets: string[] = [];
+
+      for (const employee of targets) {
+        try {
+          const { data } = await api.post('/admin/corporate-employee-welcome-emails/resend', {
+            corporateId: selectedCorporate.id,
+            employeeId: employee.employeeId,
+            userId: employee.id,
+            welcomeEmailMode: 'draft',
+          }, {
+            headers: teamAuthHeaders(),
+          });
+
+          const temporaryPassword = data?.result?.temporaryPassword;
+          if (!temporaryPassword) {
+            failedTargets.push(employee.email || employee.employeeId || employee.id);
+            continue;
+          }
+
+          preparedTargets.push({ employee, temporaryPassword });
+        } catch {
+          failedTargets.push(employee.email || employee.employeeId || employee.id);
+        }
+      }
+
+      if (preparedTargets.length === 0) {
+        toast({
+          variant: 'destructive',
+          title: 'Password generation failed',
+          description: 'Could not generate temporary passwords for the selected employees.',
+        });
+        return;
+      }
+
+      const draftTimestamp = Date.now();
+      const drafts: WelcomeEmailDraft[] = preparedTargets.map(({ employee, temporaryPassword }, index) => ({
+        id: `prepared-${employee.id}-${draftTimestamp}-${index}`,
+        to: employee.email,
+        userId: employee.id,
+        employeeId: employee.employeeId,
+        temporaryPassword,
+        employeeName: employee.name || `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || employee.email,
+        subject: applyWelcomeTemplatePlaceholders(template.subject, employee, temporaryPassword),
+        html: applyWelcomeTemplatePlaceholders(template.html, employee, temporaryPassword),
+        status: 'draft',
+      }));
+
+      if (failedTargets.length > 0) {
+        toast({
+          variant: 'destructive',
+          title: 'Some employees skipped',
+          description: `Temporary passwords were not generated for ${failedTargets.length} employee${failedTargets.length === 1 ? '' : 's'}.`,
+        });
+      }
+
+      if (sendImmediately) {
+        setWelcomeEmailDrafts((current) => [...current, ...drafts]);
+        await handleSendWelcomeEmailBatch(drafts);
+        toast({
+          title: 'Welcome emails queued',
+          description: `Attempted immediate send for ${drafts.length} employee${drafts.length === 1 ? '' : 's'}.`
+        });
+        return;
+      }
+
+      addPreparedWelcomeEmailDrafts(drafts);
+      toast({
+        title: 'Welcome drafts prepared',
+        description: `${drafts.length} draft${drafts.length === 1 ? '' : 's'} added for review.`
+      });
+    } finally {
+      setPreparingWelcomeEmployeeDrafts(false);
+    }
+  };
+
+  const handleExistingEmployeeWelcomeEmail = async () => {
+    if (!selectedCorporate || !duplicateEmployeeForNewId) return;
+
+    const mode = employeeWelcomeEmailMode === "send" ? "send" : "draft";
+    setSendingExistingWelcomeEmail(true);
+
+    try {
+      const token = localStorage.getItem("teamToken");
+      const { data } = await api.post("/admin/corporate-employee-welcome-emails/resend", {
+        corporateId: selectedCorporate.id,
+        employeeId: duplicateEmployeeForNewId.employeeId,
+        userId: duplicateEmployeeForNewId.id,
+        welcomeEmailMode: mode,
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      const result = data?.result;
+      if (mode === "send") {
+        toast({ title: "Welcome Email Sent", description: data?.message || `A fresh welcome email was sent to ${duplicateEmployeeForNewId.email}.` });
+      } else {
+        const drafts = buildWelcomeEmailDraftsFromCreated(result ? [result] : [], duplicateEmployeeForNewId.name);
+        addPreparedWelcomeEmailDrafts(drafts);
+        toast({ title: "Welcome Email Draft Prepared", description: "Review and edit the resent welcome email before sending it." });
+      }
+
+      setShowAddEmployeeDialog(false);
+      resetNewEmployeeForm();
+      fetchEmployees(selectedCorporate.id);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Welcome Email Failed", description: error.response?.data?.message || "Failed to prepare welcome email" });
+    } finally {
+      setSendingExistingWelcomeEmail(false);
     }
   };
 
@@ -3185,7 +3846,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                 </Card>
               </div>
 
-              <Card>
+              <Card ref={welcomeDeliveryAuditRef}>
                 <CardHeader>
                   <CardTitle>Corporate Details</CardTitle>
                 </CardHeader>
@@ -3241,6 +3902,223 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                       </div>
                     </div>
                   </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <CardTitle>Welcome Delivery Audit</CardTitle>
+                      <CardDescription>
+                        Track prepared, sent, failed, and rolled-back welcome email attempts with idempotency visibility.
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fetchWelcomeDeliveryHistory()}
+                        disabled={welcomeDeliveriesLoading}
+                      >
+                        <RefreshCw className={`h-4 w-4 mr-2 ${welcomeDeliveriesLoading ? 'animate-spin' : ''}`} />
+                        Refresh
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={exportWelcomeDeliveryRows}
+                        disabled={welcomeDeliveries.length === 0}
+                      >
+                        <FileSpreadsheet className="h-4 w-4 mr-2" />
+                        Export CSV
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+                    <Badge variant="outline" className="justify-center py-2">Total: {welcomeDeliverySummary.total}</Badge>
+                    <Badge className="justify-center py-2 bg-green-100 text-green-800">Sent: {welcomeDeliverySummary.sent}</Badge>
+                    <Badge className="justify-center py-2 bg-blue-100 text-blue-800">Queued: {welcomeDeliverySummary.queued}</Badge>
+                    <Badge className="justify-center py-2 bg-red-100 text-red-800">Failed: {welcomeDeliverySummary.failed}</Badge>
+                    <Badge className="justify-center py-2 bg-amber-100 text-amber-800">Rolled Back: {welcomeDeliverySummary.rolledBack}</Badge>
+                    <Badge className="justify-center py-2 bg-slate-100 text-slate-800">Prepared: {welcomeDeliverySummary.prepared}</Badge>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                    <div className="space-y-1">
+                      <Label>Status</Label>
+                      <Select
+                        value={welcomeDeliveryFilters.status}
+                        onValueChange={(value) => setWelcomeDeliveryFilters((prev) => ({ ...prev, status: value }))}
+                      >
+                        <SelectTrigger><SelectValue placeholder="All statuses" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          <SelectItem value="prepared">Prepared</SelectItem>
+                          <SelectItem value="queued">Queued</SelectItem>
+                          <SelectItem value="sent">Sent</SelectItem>
+                          <SelectItem value="failed">Failed</SelectItem>
+                          <SelectItem value="rolled_back">Rolled Back</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Scope</Label>
+                      <Select
+                        value={welcomeDeliveryFilters.requestScope}
+                        onValueChange={(value) => setWelcomeDeliveryFilters((prev) => ({ ...prev, requestScope: value }))}
+                      >
+                        <SelectTrigger><SelectValue placeholder="All scopes" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          <SelectItem value="batch_send">Batch Send</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Employee ID</Label>
+                      <Input
+                        value={welcomeDeliveryFilters.employeeId}
+                        onChange={(event) => setWelcomeDeliveryFilters((prev) => ({ ...prev, employeeId: event.target.value }))}
+                        placeholder="e.g. NC25654"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Recipient</Label>
+                      <Input
+                        value={welcomeDeliveryFilters.recipient}
+                        onChange={(event) => setWelcomeDeliveryFilters((prev) => ({ ...prev, recipient: event.target.value }))}
+                        placeholder="email contains"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>From</Label>
+                      <Input
+                        type="date"
+                        value={welcomeDeliveryFilters.from}
+                        onChange={(event) => setWelcomeDeliveryFilters((prev) => ({ ...prev, from: event.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>To</Label>
+                      <Input
+                        type="date"
+                        value={welcomeDeliveryFilters.to}
+                        onChange={(event) => setWelcomeDeliveryFilters((prev) => ({ ...prev, to: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" onClick={() => fetchWelcomeDeliveryHistory({ resetOffset: true })} disabled={welcomeDeliveriesLoading}>
+                      Apply Filters
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={resetWelcomeDeliveryFilters} disabled={welcomeDeliveriesLoading}>
+                      Reset
+                    </Button>
+                  </div>
+
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Employee</TableHead>
+                        <TableHead>Recipient</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Attempts</TableHead>
+                        <TableHead>Idempotency</TableHead>
+                        <TableHead>Error</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {welcomeDeliveriesLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Loading delivery history...</TableCell>
+                        </TableRow>
+                      ) : welcomeDeliveries.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No delivery records found for current filters.</TableCell>
+                        </TableRow>
+                      ) : (
+                        welcomeDeliveries.map((row) => {
+                          const userName = `${row.userFirstName || ''} ${row.userLastName || ''}`.trim();
+                          return (
+                            <TableRow key={row.id}>
+                              <TableCell className="text-xs text-muted-foreground">{new Date(row.createdAt).toLocaleString()}</TableCell>
+                              <TableCell>
+                                <div className="font-medium">{row.employeeId || '-'}</div>
+                                <div className="text-xs text-muted-foreground">{userName || row.userEmail || '-'}</div>
+                              </TableCell>
+                              <TableCell>{row.recipientEmail}</TableCell>
+                              <TableCell>
+                                <Badge className={`${
+                                  row.status === 'sent'
+                                    ? 'bg-green-100 text-green-800'
+                                    : row.status === 'queued'
+                                      ? 'bg-blue-100 text-blue-800'
+                                      : row.status === 'rolled_back'
+                                        ? 'bg-amber-100 text-amber-800'
+                                        : row.status === 'failed'
+                                          ? 'bg-red-100 text-red-800'
+                                          : 'bg-slate-100 text-slate-800'
+                                }`}>
+                                  {row.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{row.attempts}</TableCell>
+                              <TableCell className="text-xs max-w-[220px] truncate" title={row.idempotencyKey}>{row.idempotencyKey}</TableCell>
+                              <TableCell className="text-xs max-w-[280px] truncate" title={row.errorMessage || ''}>{row.errorMessage || '-'}</TableCell>
+                              <TableCell>
+                                {(row.status === 'failed' || row.status === 'rolled_back') && (row.userId || row.employeeId) ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleResendWelcomeFromDelivery(row)}
+                                    disabled={resendingWelcomeDeliveryId === row.id || welcomeDeliveriesLoading}
+                                  >
+                                    <Send className="h-3.5 w-3.5 mr-1" />
+                                    {resendingWelcomeDeliveryId === row.id ? 'Resending...' : 'Resend'}
+                                  </Button>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">-</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+
+                  {welcomeDeliverySummary.total > 0 && (
+                    <div className="flex items-center justify-between text-sm text-muted-foreground">
+                      <span>
+                        Showing {Math.min(welcomeDeliveryPagination.offset + 1, welcomeDeliverySummary.total)}-
+                        {Math.min(welcomeDeliveryPagination.offset + welcomeDeliveryPagination.limit, welcomeDeliverySummary.total)} of {welcomeDeliverySummary.total}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={welcomeDeliveryPagination.offset === 0 || welcomeDeliveriesLoading}
+                          onClick={() => fetchWelcomeDeliveryHistory({ nextOffset: welcomeDeliveryPagination.offset - welcomeDeliveryPagination.limit })}
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={welcomeDeliveryPagination.offset + welcomeDeliveryPagination.limit >= welcomeDeliverySummary.total || welcomeDeliveriesLoading}
+                          onClick={() => fetchWelcomeDeliveryHistory({ nextOffset: welcomeDeliveryPagination.offset + welcomeDeliveryPagination.limit })}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -3318,6 +4196,10 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                         <Upload className="h-4 w-4 mr-2" />
                         Bulk Upload
                       </Button>
+                      <Button variant="outline" onClick={() => setShowWelcomeEmailBatchDialog(true)} title="Prepare, review, edit, and send welcome email drafts">
+                        <Mail className="h-4 w-4 mr-2" />
+                        Welcome Emails{welcomeEmailDrafts.length > 0 ? " (" + welcomeEmailDrafts.length + ")" : ""}
+                      </Button>
                       <Button variant="outline" onClick={downloadTemplate}>
                         <Download className="h-4 w-4 mr-2" />
                         Download Template
@@ -3330,9 +4212,51 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                   </div>
                 </CardHeader>
                 <CardContent>
+                  <div className="mb-4 rounded-lg border bg-slate-50/60 dark:bg-slate-900/30 p-3 space-y-3">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium">Welcome Email Campaign</p>
+                        <p className="text-xs text-muted-foreground">
+                          Select employees below, then open Welcome Emails to prepare, review, and send from one workflow.
+                        </p>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {selectedEmployeeIdsForWelcome.length} selected of {employees.length}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="space-y-1 md:col-span-2">
+                        <Label>Find employee for welcome email</Label>
+                        <Input
+                          value={welcomeEmployeeSearch}
+                          onChange={(event) => setWelcomeEmployeeSearch(event.target.value)}
+                          placeholder="Search by employee ID, name, email, department, or designation"
+                        />
+                      </div>
+                      <div className="text-xs text-muted-foreground flex items-end">
+                        {filteredWelcomeEmployees.length} matched employee{filteredWelcomeEmployees.length === 1 ? '' : 's'}
+                      </div>
+                    </div>
+                  </div>
+
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-[44px]">
+                          <Checkbox
+                            checked={filteredWelcomeEmployees.length > 0 && filteredWelcomeEmployees.every((employee) => selectedEmployeeIdsForWelcome.includes(employee.id))}
+                            onCheckedChange={(checked) => {
+                              const filteredIds = filteredWelcomeEmployees.map((employee) => employee.id);
+                              if (checked === true) {
+                                setSelectedEmployeeIdsForWelcome((current) => Array.from(new Set([...current, ...filteredIds])));
+                              } else {
+                                setSelectedEmployeeIdsForWelcome((current) => current.filter((id) => !filteredIds.includes(id)));
+                              }
+                            }}
+                            aria-label="Select all employees"
+                          />
+                        </TableHead>
                         <TableHead>Employee ID</TableHead>
                         <TableHead>Name</TableHead>
                         <TableHead>Email</TableHead>
@@ -3343,15 +4267,29 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {employees.length === 0 ? (
+                      {filteredWelcomeEmployees.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                            No employees found. Click "Add Employee" or "Bulk Upload" to add employees.
+                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                            {employees.length === 0
+                              ? 'No employees found. Click "Add Employee" or "Bulk Upload" to add employees.'
+                              : 'No employees match this search. Try employee ID (for example NC25654).'}
                           </TableCell>
                         </TableRow>
                       ) : (
-                        employees.slice((empCurrentPage - 1) * EMP_PAGE_SIZE, empCurrentPage * EMP_PAGE_SIZE).map((emp) => (
+                        filteredWelcomeEmployees.slice((empCurrentPage - 1) * EMP_PAGE_SIZE, empCurrentPage * EMP_PAGE_SIZE).map((emp) => (
                           <TableRow key={emp.id}>
+                            <TableCell>
+                              <Checkbox
+                                checked={selectedEmployeeIdsForWelcome.includes(emp.id)}
+                                onCheckedChange={(checked) => {
+                                  setSelectedEmployeeIdsForWelcome((current) => {
+                                    if (checked === true) return [...new Set([...current, emp.id])];
+                                    return current.filter((id) => id !== emp.id);
+                                  });
+                                }}
+                                aria-label={`Select ${emp.name}`}
+                              />
+                            </TableCell>
                             <TableCell>{emp.employeeId}</TableCell>
                             <TableCell className="font-medium">{emp.name}</TableCell>
                             <TableCell>{emp.email}</TableCell>
@@ -3370,6 +4308,9 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                             </TableCell>
                             <TableCell>
                               <div className="flex gap-2">
+                                <Button variant="ghost" size="sm" onClick={() => openWelcomeDeliveryAuditForEmployee(emp)} title="View welcome email delivery audit for this employee">
+                                  <Clock className="h-4 w-4" />
+                                </Button>
                                 <Button variant="ghost" size="sm" onClick={() => {
                                   setViewingEmployee(emp);
                                   setShowViewEmployeeDialog(true);
@@ -3406,13 +4347,13 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                       )}
                     </TableBody>
                   </Table>
-                  {employees.length > 0 && (
+                  {filteredWelcomeEmployees.length > 0 && (
                     <div className="flex items-center justify-between px-2 py-3 border-t text-sm text-muted-foreground">
                       <span>
-                        Showing {Math.min((empCurrentPage - 1) * EMP_PAGE_SIZE + 1, employees.length)}–{Math.min(empCurrentPage * EMP_PAGE_SIZE, employees.length)} of {employees.length} employees
+                        Showing {Math.min((empCurrentPage - 1) * EMP_PAGE_SIZE + 1, filteredWelcomeEmployees.length)}–{Math.min(empCurrentPage * EMP_PAGE_SIZE, filteredWelcomeEmployees.length)} of {filteredWelcomeEmployees.length} matched employees
                       </span>
                       <div className="flex items-center gap-2">
-                        <span>Page {empCurrentPage} of {Math.ceil(employees.length / EMP_PAGE_SIZE)}</span>
+                        <span>Page {empCurrentPage} of {filteredWelcomeTotalPages}</span>
                         <Button
                           variant="outline"
                           size="sm"
@@ -3424,7 +4365,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                         <Button
                           variant="outline"
                           size="sm"
-                          disabled={empCurrentPage >= Math.ceil(employees.length / EMP_PAGE_SIZE)}
+                          disabled={empCurrentPage >= filteredWelcomeTotalPages}
                           onClick={() => setEmpCurrentPage(p => p + 1)}
                         >
                           Next
@@ -3491,7 +4432,6 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                             </p>
                             {plan.totalEmployees ? (
                               <p className="text-sm text-muted-foreground">
-                                <Users className="h-3 w-3 inline mr-1" />
                                 {plan.enrolled} / {plan.totalEmployees} enrolled
                               </p>
                             ) : (
@@ -5084,9 +6024,14 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                     </span>
                   </div>
                   {empIdStatus === 'duplicate' && (
-                    <p className="text-xs text-red-500 flex items-center gap-1">
-                      <AlertCircle className="h-3 w-3" /> Employee ID already exists in this corporate
-                    </p>
+                    <div className="text-xs text-amber-700 space-y-1">
+                      <p className="flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3" /> Employee ID already exists in this corporate.
+                      </p>
+                      {duplicateEmployeeForNewId && (
+                        <p>Existing employee: {duplicateEmployeeForNewId.name} &lt;{duplicateEmployeeForNewId.email}&gt;</p>
+                      )}
+                    </div>
                   )}
                   {empIdStatus === 'ok' && (
                     <p className="text-xs text-green-600">Employee ID is available</p>
@@ -5120,7 +6065,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Gender *</Label>
+                  <Label>Gender</Label>
                   <Select value={newEmployee.gender} onValueChange={(v) => setNewEmployee({...newEmployee, gender: v})}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select gender" />
@@ -5187,10 +6132,20 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                     <SelectItem value="skip">Do not send</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">Draft mode lets the team edit the subject, recipient, and HTML before sending credentials.</p>
+                <p className="text-xs text-muted-foreground">Only name and email are needed for a welcome email. Gender and department are optional employee profile fields; duplicate employees can receive a fresh password and welcome email again.</p>
               </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowAddEmployeeDialog(false)}>Cancel</Button>
+              {empIdStatus === 'duplicate' && duplicateEmployeeForNewId && (
+                <Button variant="outline" onClick={handleExistingEmployeeWelcomeEmail} disabled={sendingExistingWelcomeEmail}>
+                  <Mail className="h-4 w-4 mr-2" />
+                  {sendingExistingWelcomeEmail
+                    ? 'Preparing...'
+                    : employeeWelcomeEmailMode === 'send'
+                      ? 'Send Welcome Email Again'
+                      : 'Prepare Welcome Email Again'}
+                </Button>
+              )}
               <Button onClick={handleAddEmployee} disabled={empIdStatus === 'duplicate'}>Add Employee</Button>
             </DialogFooter>
           </DialogContent>
@@ -7284,9 +8239,32 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         open={showWelcomeEmailBatchDialog}
         drafts={welcomeEmailDrafts}
         sending={sendingWelcomeEmailBatch}
+        savingTemplate={savingWelcomeTemplate}
+        preparing={preparingWelcomeEmployeeDrafts}
+        employees={employees.map((employee) => ({ id: employee.id, employeeId: employee.employeeId, name: employee.name, email: employee.email }))}
+        selectedEmployeeIds={selectedEmployeeIdsForWelcome}
+        onSelectedEmployeeIdsChange={setSelectedEmployeeIdsForWelcome}
+        templateOptions={allWelcomeEmailTemplates.map((template) => ({ id: template.id, name: template.name }))}
+        selectedTemplateId={selectedWelcomeTemplateId}
+        onSelectedTemplateChange={setSelectedWelcomeTemplateId}
+        onPrepareFromEmployees={({ mode, singleEmployeeId, sendImmediately }) => {
+          if (mode === 'selected' || mode === 'all') {
+            setWelcomeEmployeeSelectionMode(mode);
+          }
+          handlePrepareOrSendEmployeeWelcomeEmails(sendImmediately, mode, singleEmployeeId);
+        }}
         onOpenChange={setShowWelcomeEmailBatchDialog}
         onDraftsChange={setWelcomeEmailDrafts}
         onSendSelected={handleSendWelcomeEmailBatch}
+        onSaveTemplate={handleSaveEditedWelcomeTemplate}
+        onPrepareSingle={() => {
+          setEmployeeWelcomeEmailMode("draft");
+          setShowAddEmployeeDialog(true);
+        }}
+        onPrepareBulk={() => {
+          setBulkWelcomeEmailMode("draft");
+          setShowBulkUploadDialog(true);
+        }}
       />
 
       {/* Delete Corporate Confirmation Dialog */}

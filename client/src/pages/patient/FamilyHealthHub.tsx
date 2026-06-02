@@ -27,6 +27,8 @@ import {
   Bell, FileText, TrendingUp, Star, MapPin, Video, MessageSquare,
   Sparkles, Crown, Award, Syringe, Dna, Eye, Bone, Zap, Loader2
 } from 'lucide-react';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineError } from '@/components/ui/inline-error';
 import api from '@/utils/api';
 import { useAuth } from '@/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
@@ -71,6 +73,7 @@ export default function FamilyHealthHub() {
   const [adding, setAdding] = useState(false);
   const [aiInsights, setAiInsights] = useState<Record<string, { summary: string; tips: string[] } | null>>({});
   const [loadingInsight, setLoadingInsight] = useState<string | null>(null);
+  const [familyFetchError, setFamilyFetchError] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -163,6 +166,7 @@ export default function FamilyHealthHub() {
 
   const loadFamilyData = async () => {
     setLoading(true);
+    setFamilyFetchError(false);
     try {
       const res = await api.get('/family-members');
       if (res?.data?.success && Array.isArray(res.data.data)) {
@@ -171,7 +175,7 @@ export default function FamilyHealthHub() {
         return;
       }
     } catch {
-      // fall through to demo data
+      setFamilyFetchError(true);
     }
     // Demo fallback
     setMembers([
@@ -338,6 +342,18 @@ export default function FamilyHealthHub() {
 
       {/* ─── Family Members Carousel ─────────────────────────────────────── */}
       <div className="px-4 sm:px-6 mb-6">
+        {familyFetchError && (
+          <InlineError message="Couldn't load family members." onRetry={() => loadFamilyData()} className="mb-4" />
+        )}
+        {!loading && !familyFetchError && members.length === 0 && (
+          <EmptyState
+            icon={Users}
+            title="Just you for now"
+            description="Add family members to track everyone's health in one place."
+            action={{ label: 'Add a family member', onClick: () => setShowAddMember(true) }}
+            className="mb-4"
+          />
+        )}
         <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 sm:-mx-6 sm:px-6 snap-x">
           {members.map((member, i) => (
             <motion.div key={member.id} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}

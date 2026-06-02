@@ -97,8 +97,6 @@ const DoctorVideoConsultation = () => {
   // Room and meeting state
   const roomFromUrl = searchParams.get('room') || "";
   const appointmentIdFromUrl = searchParams.get('appointmentId') || "";
-  const lkTokenFromUrl = searchParams.get('lkToken') || "";
-  const lkServerFromUrl = searchParams.get('lkServer') || "";
   const [roomId, setRoomId] = useState(roomFromUrl);
   const [activeTab, setActiveTab] = useState("upcoming");
   const [copiedLink, setCopiedLink] = useState(false);
@@ -570,24 +568,35 @@ const DoctorVideoConsultation = () => {
       }
       autoJoinAttemptRef.current = appointmentIdFromUrl;
 
-      // If LiveKit token was passed directly (e.g., from emergency accept), use it immediately
-      if (lkTokenFromUrl && lkServerFromUrl) {
-        setLiveKitConnection({
-          serverUrl: lkServerFromUrl,
-          token: lkTokenFromUrl,
-          roomName: roomFromUrl || `apt-${appointmentIdFromUrl}`,
-        });
-        setIsInCall(true);
-        setConnectionStatus('connecting');
-        setTimeout(() => setConnectionStatus('connected'), 3000);
-        return;
+      // Use short-lived handoff token from sessionStorage (never URL query params).
+      try {
+        const rawHandoff = sessionStorage.getItem('doctorLivekitHandoff');
+        if (rawHandoff) {
+          const handoff = JSON.parse(rawHandoff);
+          const isMatchingAppointment = String(handoff?.appointmentId || '') === String(appointmentIdFromUrl);
+          const isFresh = Number(handoff?.expiresAt || 0) > Date.now();
+          if (isMatchingAppointment && isFresh && handoff?.token && handoff?.serverUrl) {
+            setLiveKitConnection({
+              serverUrl: handoff.serverUrl,
+              token: handoff.token,
+              roomName: handoff.roomId || roomFromUrl || `apt-${appointmentIdFromUrl}`,
+            });
+            sessionStorage.removeItem('doctorLivekitHandoff');
+            setIsInCall(true);
+            setConnectionStatus('connecting');
+            setTimeout(() => setConnectionStatus('connected'), 3000);
+            return;
+          }
+        }
+      } catch {
+        // non-fatal
       }
       const timer = setTimeout(() => {
         initiateVideoCall({ id: appointmentIdFromUrl, patient: '', time: '', duration: '', type: 'video', status: 'in-progress' } as Consultation);
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [appointmentIdFromUrl, currentDoctor, isInCall, liveKitConnection, lkTokenFromUrl, lkServerFromUrl, roomFromUrl, initiateVideoCall]);
+  }, [appointmentIdFromUrl, currentDoctor, isInCall, liveKitConnection, roomFromUrl, initiateVideoCall]);
 
   // Cleanup on unmount
   useEffect(() => {

@@ -32,6 +32,9 @@ import MainLayout from '@/components/layout/MainLayout';
 import api from '@/utils/api';
 import { getToken } from '@/hooks/auth';
 import { useToast } from '@/hooks/use-toast';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineError } from '@/components/ui/inline-error';
+import { StatusTimeline } from '@/components/ui/status-timeline';
 
 // ─── Status Utils ────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon: typeof Clock }> = {
@@ -54,6 +57,13 @@ const CLAIM_TYPES = [
 ];
 
 const MOTION_STAGGER = 0.08;
+
+const getClaimSteps = (claim: any) => [
+  { label: 'Claim Submitted', date: claim.date ? new Date(claim.date).toLocaleDateString('en-IN') : undefined, status: 'completed' as const },
+  { label: 'Under Review', status: claim.status === 'under_review' ? 'active' as const : claim.status === 'approved' || claim.status === 'settled' ? 'completed' as const : 'pending' as const },
+  { label: 'Decision', status: claim.status === 'approved' || claim.status === 'settled' ? 'completed' as const : claim.status === 'rejected' ? 'failed' as const : claim.status === 'under_review' ? 'pending' as const : 'pending' as const },
+  { label: 'Payment', status: claim.status === 'settled' ? 'completed' as const : 'pending' as const },
+];
 
 interface ClaimsApiItem {
   id?: string | number;
@@ -405,19 +415,16 @@ export default function ClaimsExpress() {
                 </CardContent>
               </Card>
             )}
-            {!isClaimsLoading && activeClaims.length === 0 && (
-              <Card className="!p-0 border-white/[0.06] bg-slate-900/50">
-                <CardContent className="p-6 text-center">
-                  <p className="text-sm text-slate-300 font-semibold">
-                    {dataSource === 'api' ? 'No active claims' : 'Claims feed unavailable'}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {dataSource === 'api'
-                      ? 'File a new claim to start tracking status here.'
-                      : 'We could not load your claims right now. Please retry in a few minutes.'}
-                  </p>
-                </CardContent>
-              </Card>
+            {!isClaimsLoading && dataSource === 'unavailable' && (
+              <InlineError message="Couldn't load claims." onRetry={() => loadClaims()} className="mb-2" />
+            )}
+            {!isClaimsLoading && dataSource === 'api' && activeClaims.length === 0 && (
+              <EmptyState
+                icon={Shield}
+                title="No claims filed"
+                description="Your insurance claims will appear here once submitted."
+                action={{ label: 'File a claim', onClick: () => setShowNewClaim(true) }}
+              />
             )}
             {activeClaims.map((claim, i) => {
               const st = STATUS_CONFIG[claim.status] || STATUS_CONFIG.draft;
@@ -821,26 +828,7 @@ export default function ClaimsExpress() {
                   {/* Timeline */}
                   <div>
                     <h4 className="text-xs font-semibold text-slate-400 mb-2">Tracking Timeline</h4>
-                    <div className="space-y-0">
-                      {selectedClaim.timeline?.map((step: any, si: number) => (
-                        <div key={si} className="flex gap-3">
-                          <div className="flex flex-col items-center">
-                            <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
-                              step.done ? 'bg-emerald-500' : step.active ? 'bg-amber-500' : 'bg-slate-700'
-                            }`}>
-                              {step.done ? <CheckCircle className="h-3 w-3 text-white" /> : <div className="w-1.5 h-1.5 rounded-full bg-slate-400" />}
-                            </div>
-                            {si < selectedClaim.timeline.length - 1 && (
-                              <div className={`w-0.5 h-6 ${step.done ? 'bg-emerald-500' : 'bg-slate-700'}`} />
-                            )}
-                          </div>
-                          <div className="pb-4">
-                            <p className={`text-xs font-medium ${step.done || step.active ? 'text-white' : 'text-slate-500'}`}>{step.step}</p>
-                            <p className="text-[10px] text-slate-500">{step.date}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <StatusTimeline steps={getClaimSteps(selectedClaim)} className="mt-2" />
                   </div>
                 </div>
               </>

@@ -171,11 +171,13 @@ const Login = () => {
   const [loginMode, setLoginMode] = useState<LoginMode>("password");
   const [otpStep, setOtpStep] = useState<OtpStep>("input");
   const [otpIdentifier, setOtpIdentifier] = useState('');
+  const [otpDeliveredTo, setOtpDeliveredTo] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState(false);
   const [identifierValue, setIdentifierValue] = useState('');
+  const [failedAttempts, setFailedAttempts] = useState(0);
   const { seconds: resendSeconds, start: startResendTimer, canResend } = useResendTimer(30);
 
   useEffect(() => {
@@ -220,9 +222,14 @@ const Login = () => {
         { skipAuth: true } as any
       );
       if (data?.success) {
+        // Mask identifier for display: sh****@gmail.com or ****7890
+        const id = otpIdentifier.trim();
+        const masked = id.includes('@')
+          ? id.slice(0, 2) + '****' + id.slice(id.indexOf('@'))
+          : id.slice(0, 2) + '****' + id.slice(-4);
+        setOtpDeliveredTo(masked);
         setOtpStep("verify");
         startResendTimer();
-        toast({ title: "OTP sent", description: data?.message || "Check your inbox" });
       } else {
         throw new Error(data?.message || "Failed to send OTP");
       }
@@ -337,6 +344,7 @@ const Login = () => {
           setTimeout(() => navigate("/", { replace: true }), 800);
         },
         onError: (error) => {
+          setFailedAttempts(n => n + 1);
           if ((error as any)?.response?.data?.code === 'ACCOUNT_INACTIVE') {
             const resolution = getInactiveAccountResolution(error as any);
             toast({
@@ -349,10 +357,14 @@ const Login = () => {
             }
             return;
           }
+          const status = (error as any)?.response?.status;
+          let description = "We couldn't find an account with those details. Check your email or reset your password.";
+          if (status === 500) description = "Something went wrong on our end. Please try again in a moment.";
+          else if (!navigator.onLine) description = "No connection. Check your internet and try again.";
           toast({
             variant: "destructive",
             title: "Sign in failed",
-            description: (error as any)?.response?.data?.message || "Invalid credentials. Please try again.",
+            description,
           });
         },
       }
@@ -653,10 +665,18 @@ const Login = () => {
                       )}
                     />
 
-                    <div className="flex justify-end">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      {failedAttempts >= 2 && (
+                        <p className="text-xs text-slate-500">
+                          Having trouble?{" "}
+                          <Link to="/user/forgot-password" className="text-primary font-semibold underline underline-offset-2">
+                            Reset your password
+                          </Link>
+                        </p>
+                      )}
                       <Link
                         to="/user/forgot-password"
-                        className="text-xs text-primary hover:text-primary/80 font-medium transition-colors"
+                        className="ml-auto text-xs text-primary hover:text-primary/80 font-medium transition-colors"
                       >
                         Forgot password?
                       </Link>
@@ -777,7 +797,10 @@ const Login = () => {
                         </div>
                         <p className="font-semibold text-slate-900">Enter verification code</p>
                         <p className="text-xs text-slate-500">
-                          Sent to <span className="font-semibold text-slate-700">{otpIdentifier}</span>
+                          6-digit code sent to{" "}
+                          <span className="font-semibold text-slate-700">
+                            {otpDeliveredTo || otpIdentifier}
+                          </span>
                         </p>
                       </div>
 

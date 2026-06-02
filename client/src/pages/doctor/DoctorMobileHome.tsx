@@ -231,7 +231,18 @@ export default function DoctorMobileHome() {
       const roomId = r.data.appointment?.roomId || r.data.appointment?.meetingId;
       const lk = r.data.livekit;
       if (lk?.token && lk?.serverUrl) {
-        navigate(`/doctor/video?room=${encodeURIComponent(String(roomId))}&appointmentId=${apptId}&lkToken=${encodeURIComponent(lk.token)}&lkServer=${encodeURIComponent(lk.serverUrl)}`);
+        try {
+          sessionStorage.setItem('doctorLivekitHandoff', JSON.stringify({
+            appointmentId: String(apptId),
+            roomId: String(roomId || ''),
+            token: lk.token,
+            serverUrl: lk.serverUrl,
+            expiresAt: Date.now() + 2 * 60 * 1000,
+          }));
+        } catch {
+          // non-fatal
+        }
+        navigate(`/doctor/video?room=${encodeURIComponent(String(roomId))}&appointmentId=${apptId}`);
       } else if (roomId) {
         navigate(`/doctor/video?room=${encodeURIComponent(String(roomId))}&appointmentId=${apptId}`);
       }

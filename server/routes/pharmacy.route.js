@@ -11,6 +11,7 @@ import { Pharmacy } from '../models/index.js';
 import sharedPool from '../db/pgPool.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
+import { requirePharmacyAuth } from '../middleware/pharmacyAuth.middleware.js';
 import {
   createUploadMiddleware, registerLimiter,
   uploadDocuments, uploadIdCard, sendAdminLeadEmail, addOtpRoutes,
@@ -18,15 +19,12 @@ import {
 
 const pharmUploadFields = createUploadMiddleware('contactIdCard');
 
-sharedPool.query(`ALTER TABLE pharmacies ALTER COLUMN "licenseNumber" DROP NOT NULL`).catch(() => {});
-
 
 import dashboardRouter from './pharmacy/dashboard.routes.js';
 import inventoryRouter from './pharmacy/inventory.routes.js';
 import posRouter from './pharmacy/pos.routes.js';
-import prescriptionsRouter from './pharmacy/prescriptions.routes.js';
+import prescriptionsRouter from './pharmacy/prescriptions.route.js';
 import transactionsRouter from './pharmacy/transactions.route.js';
-import prescriptionsDetailRouter from './pharmacy/prescriptions.route.js';
 import stockRouter from './pharmacy/stock.route.js';
 import customersRouter from './pharmacy/customers.route.js';
 import batchesRouter from './pharmacy/batches.route.js';
@@ -34,6 +32,8 @@ import purchaseOrdersRouter from './pharmacy/purchase-orders.route.js';
 import stockAlertsRouter from './pharmacy/stock-alerts.route.js';
 import invoicesRouter from './pharmacy/invoices.route.js';
 import analyticsRouter from './pharmacy/analytics.route.js';
+import returnsRouter from './pharmacy/returns.route.js';
+import complianceRouter from './pharmacy/compliance.route.js';
 
 const router = express.Router();
 
@@ -43,7 +43,7 @@ router.use('/inventory', inventoryRouter);
 router.use('/pos', posRouter);
 router.use('/prescriptions', prescriptionsRouter);
 router.use('/transactions', transactionsRouter);
-router.use('/prescriptions-detail', prescriptionsDetailRouter);
+router.use('/prescriptions-detail', prescriptionsRouter);
 router.use('/stock', stockRouter);
 router.use('/customers', customersRouter);
 router.use('/batches', batchesRouter);
@@ -51,6 +51,8 @@ router.use('/purchase-orders', purchaseOrdersRouter);
 router.use('/stock-alerts', stockAlertsRouter);
 router.use('/invoices', invoicesRouter);
 router.use('/analytics', analyticsRouter);
+router.use('/returns', returnsRouter);
+router.use('/compliance', complianceRouter);
 
 /**
  * GET /api/pharmacy/medicines
@@ -118,6 +120,47 @@ router.get('/medicines', async (req, res) => {
   } catch (error) {
     console.error('[Pharmacy] Medicine search error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to search medicines' });
+  }
+});
+
+/**
+ * GET /api/pharmacy/medicines/:id/alternatives
+ * Returns similar medicines by generic_name + form when a medicine is out of stock.
+ */
+router.get('/medicines/:id/alternatives', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const idNum = parseInt(id, 10);
+    if (!idNum) return res.status(400).json({ success: false, message: 'Invalid medicine ID' });
+
+    // Fetch the source medicine first
+    const sourceResult = await sharedPool.query(
+      `SELECT id, generic_name, form, category FROM pharmacy_medicines WHERE id = $1 LIMIT 1`,
+      [idNum]
+    );
+    if (!sourceResult.rows.length) {
+      return res.status(404).json({ success: false, message: 'Medicine not found' });
+    }
+
+    const source = sourceResult.rows[0];
+
+    // Find alternatives: same generic_name + form, excluding source, in-stock first
+    const altResult = await sharedPool.query(
+      `SELECT id, name, brand_name, generic_name, strength, form, category, mrp, unit_price,
+              pack_size, manufacturer, in_stock
+       FROM pharmacy_medicines
+       WHERE id != $1
+         AND generic_name ILIKE $2
+         AND form ILIKE $3
+       ORDER BY in_stock DESC NULLS LAST, mrp ASC
+       LIMIT 5`,
+      [idNum, source.generic_name || '%', source.form || '%']
+    );
+
+    res.json({ success: true, alternatives: altResult.rows, sourceId: idNum });
+  } catch (error) {
+    console.error('[Pharmacy] Alternatives error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to find alternatives' });
   }
 });
 
@@ -198,6 +241,7 @@ router.post('/login', authLimiter, async (req, res) => {
       token,
       pharmacy: {
         id: pharmacy.id,
+        pharmacyId: pharmacy.id,
         name: pharmacy.name,
         email: pharmacy.email,
         phone: pharmacy.phone,
@@ -281,15 +325,9 @@ router.post('/register', registerLimiter, pharmUploadFields, async (req, res) =>
  * GET /api/pharmacy/profile
  * Get pharmacy profile
  */
-router.get('/profile', async (req, res) => {
+router.get('/profile', requirePharmacyAuth, async (req, res) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    if (!token) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
-
-    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
-    const pharmacy = await Pharmacy.findByPk(decoded.id);
+    const pharmacy = await Pharmacy.findByPk(req.pharmacyId);
 
     if (!pharmacy) {
       return res.status(404).json({ success: false, message: 'Pharmacy not found' });
@@ -301,15 +339,73 @@ router.get('/profile', async (req, res) => {
         id: pharmacy.id,
         name: pharmacy.name,
         email: pharmacy.email,
-        phone: pharmacy.phone,
-        type: pharmacy.type,
-        license_number: pharmacy.license_number,
+        phone: pharmacy.phoneNumber,
+        phoneNumber: pharmacy.phoneNumber,
+        licenseNumber: pharmacy.licenseNumber,
+        license_number: pharmacy.licenseNumber,
+        gstNumber: pharmacy.gstNumber,
         address: pharmacy.address,
+        operatingHours: pharmacy.operatingHours,
+        metadata: pharmacy.metadata,
         status: pharmacy.status
       }
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch profile', error: error.message });
+  }
+});
+
+/**
+ * PUT /api/pharmacy/profile
+ * Update pharmacy profile for the authenticated pharmacy
+ */
+router.put('/profile', requirePharmacyAuth, async (req, res) => {
+  try {
+    const pharmacy = await Pharmacy.findByPk(req.pharmacyId);
+
+    if (!pharmacy) {
+      return res.status(404).json({ success: false, message: 'Pharmacy not found' });
+    }
+
+    const allowedUpdates = {};
+    const { name, phoneNumber, phone, licenseNumber, gstNumber, address, operatingHours, expiryAlertDays, lowStockThreshold, notes } = req.body || {};
+
+    if (typeof name === 'string') allowedUpdates.name = name.trim();
+    if (typeof phoneNumber === 'string' || typeof phone === 'string') allowedUpdates.phoneNumber = String(phoneNumber || phone).trim();
+    if (typeof licenseNumber === 'string') allowedUpdates.licenseNumber = licenseNumber.trim();
+    if (typeof gstNumber === 'string') allowedUpdates.gstNumber = gstNumber.trim();
+    if (address && typeof address === 'object') allowedUpdates.address = address;
+    if (operatingHours && typeof operatingHours === 'object') allowedUpdates.operatingHours = operatingHours;
+
+    const metadata = { ...(pharmacy.metadata || {}) };
+    if (expiryAlertDays !== undefined) metadata.expiryAlertDays = Number(expiryAlertDays) || 30;
+    if (lowStockThreshold !== undefined) metadata.lowStockThreshold = Number(lowStockThreshold) || 50;
+    if (typeof notes === 'string') metadata.notes = notes;
+    allowedUpdates.metadata = metadata;
+
+    await pharmacy.update(allowedUpdates);
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      pharmacy: {
+        id: pharmacy.id,
+        name: pharmacy.name,
+        email: pharmacy.email,
+        phone: pharmacy.phoneNumber,
+        phoneNumber: pharmacy.phoneNumber,
+        licenseNumber: pharmacy.licenseNumber,
+        license_number: pharmacy.licenseNumber,
+        gstNumber: pharmacy.gstNumber,
+        address: pharmacy.address,
+        operatingHours: pharmacy.operatingHours,
+        metadata: pharmacy.metadata,
+        status: pharmacy.status
+      }
+    });
+  } catch (error) {
+    console.error('Pharmacy profile update error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update profile', error: error.message });
   }
 });
 

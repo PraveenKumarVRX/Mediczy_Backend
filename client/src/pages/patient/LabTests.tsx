@@ -3,7 +3,9 @@ import { useLabCart } from '@/hooks/patient/useLabCart';
 import { useLabBookings } from '@/hooks/patient/useLabBookings';
 import { useLabSearch } from '@/hooks/patient/useLabSearch';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FlaskConical, Calendar, MapPin, Download, Plus, Search, Filter, Loader2, ShoppingCart, Trash2, X, Navigation, Building2 } from 'lucide-react';
+import { FlaskConical, Calendar, MapPin, Download, Plus, Search, Filter, Loader2, ShoppingCart, Trash2, X, Navigation, Building2, FlaskRound } from 'lucide-react';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineError } from '@/components/ui/inline-error';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -168,6 +170,8 @@ const LabTests = () => {
     searchTerm, setSearchTerm,
     refresh: fetchMyLabTests,
   } = useLabBookings();
+
+  const [labFetchError, setLabFetchError] = useState(false);
 
   const {
     labs, corpLabs, loading: isLabsLoading, corpLoading: isCorpLoading,
@@ -372,10 +376,17 @@ const LabTests = () => {
   };
 
   // Fetch data on mount — instrumented with telemetry
+  const refetchLabTests = () => {
+    setLabFetchError(false);
+    fetchMyLabTests().catch(() => setLabFetchError(true));
+  };
+
   useEffect(() => {
     const mark = telemetry.startMark('LabTests');
-    Promise.all([fetchMyLabTests(), fetchCart()])
-      .finally(() => telemetry.endMark(mark));
+    Promise.all([
+      fetchMyLabTests().catch(() => setLabFetchError(true)),
+      fetchCart(),
+    ]).finally(() => telemetry.endMark(mark));
   }, []);
 
   // Fetch labs when collection type is "lab" and search query changes
@@ -1343,6 +1354,9 @@ const LabTests = () => {
         {/* My Booked Tests */}
         <motion.div variants={item}>
         <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">My Lab Tests ({filteredTests.length})</h2>
+        {labFetchError && (
+          <InlineError message="Couldn't load lab tests." onRetry={refetchLabTests} className="mb-4" />
+        )}
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-teal-600 dark:text-teal-400" />
@@ -1425,18 +1439,13 @@ const LabTests = () => {
         </div>
         )}
 
-        {!isLoading && filteredTests.length === 0 && (
-          <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
-            <CardContent className="py-12">
-              <div className="text-center">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center">
-                  <FlaskConical className="h-8 w-8 text-slate-400" />
-                </div>
-                <p className="text-slate-500 dark:text-slate-400">No lab tests found</p>
-                <p className="text-sm text-slate-400 mt-2">Book a lab test to get started</p>
-              </div>
-            </CardContent>
-          </Card>
+        {!isLoading && !labFetchError && filteredTests.length === 0 && (
+          <EmptyState
+            icon={FlaskRound}
+            title="No lab tests yet"
+            description="Book your first test and get results directly here."
+            action={{ label: 'Book a test', onClick: () => setShowBookDialog(true) }}
+          />
         )}
         </motion.div>
       </motion.div>

@@ -23,7 +23,6 @@ import {
   FilePlus2,
   Radio,
   BrainCircuit,
-  HeartPulse,
   ChevronDown,
   ChevronRight,
   ChevronLeft,
@@ -109,7 +108,6 @@ const doctorNavItems: NavItem[] = [
   
   // Monitoring
   { icon: Radio, label: "Remote Monitoring", path: "/doctor/remote-monitoring", category: "Monitoring", highlight: true },
-  { icon: HeartPulse, label: "Vital Alerts", path: "/doctor/alerts", category: "Monitoring" },
   
   // Management
   { icon: Briefcase, label: "Services", path: "/doctor/services", category: "Management", highlight: true },

@@ -293,6 +293,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/plans',
       '/api/coupons',  // Team members can manage coupons
       '/api/membership',  // Membership plans admin (team can manage plans)
+      '/api/org-membership-plans',  // Team plan approvals and audit logs
       '/api/activity-log',
       '/api/chat',
       '/api/email-settings',  // Team members can configure email settings
@@ -837,9 +838,26 @@ const ringFencingMiddleware = (req, res, next) => {
       decoded.labId || decoded.pharmacyId || decoded.tpaId ||
       decoded.psuId || decoded.insurerId || decoded.ngoId;
 
-    // Admin bypass - admins can access any resource
+    // Admin bypass - admins can access any resource.
+    // All admin/team bypasses are explicitly audit-logged with caller identity.
     if (userType === 'admin' || userType === 'team') {
-      console.log(`✅ Ring-fencing: ${userType} (admin bypass) accessing ${requestPath}`);
+      const isSensitive = /\/(password|security|sessions|delete|account|billing|payment|token|secret)/i.test(requestPath);
+      console.log(
+        `[ring-fence-bypass] type=${userType} userId=${authenticatedUserId} ` +
+        `method=${req.method} path=${requestPath}` +
+        (isSensitive ? ' ⚠️  SENSITIVE_ROUTE' : '')
+      );
+      // Write to structured audit log for HIPAA compliance on sensitive routes
+      if (isSensitive && req.auditLog) {
+        req.auditLog({
+          action:   'ADMIN_SENSITIVE_ACCESS',
+          actorId:  authenticatedUserId,
+          actorType: userType,
+          resource: requestPath,
+          method:   req.method,
+          ip:       req.ip,
+        });
+      }
       return next();
     }
 
@@ -1137,6 +1155,36 @@ const extractAndValidateUserId = (req, res, next) => {
   }
 
   next();
+};
+
+/**
+ * Route-group middleware: enforces doctor-patient relationship on every route
+ * inside the group without requiring each handler to call verifyPatientRelationship.
+ *
+ * Usage in a router file:
+ *
+ *   import express from 'express';
+ *   import { withPatientRelationship } from '../middleware/ringFencing.js';
+ *   import AppointmentModel from '../models/appointment.model.intelligent.js';
+ *
+ *   const router = express.Router();
+ *
+ *   // All routes below this line automatically enforce doctor-patient relationship
+ *   router.use(withPatientRelationship(AppointmentModel));
+ *
+ *   router.get('/:patientId/records', ...);   // protected automatically
+ *   router.post('/:patientId/notes', ...);    // protected automatically
+ *
+ * The middleware is a no-op when:
+ *   - The caller is not a doctor/nurse (ring-fencing already handled access)
+ *   - req.requirePatientRelationshipCheck was not set by ring-fencing (no patient ID in URL)
+ *   - The caller is an admin (already bypassed in ring-fencing)
+ */
+export const withPatientRelationship = (relationshipModel) => {
+  if (!relationshipModel) {
+    throw new Error('[withPatientRelationship] relationshipModel is required');
+  }
+  return verifyPatientRelationship(relationshipModel);
 };
 
 export {

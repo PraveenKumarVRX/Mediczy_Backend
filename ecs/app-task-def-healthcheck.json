@@ -6,7 +6,7 @@
     "3. Add the 'volumes' array to the top-level task definition JSON.",
     "4. Re-register: aws ecs register-task-definition --cli-input-json file://app-task-def-full.json --region ap-south-1",
     "5. Force redeploy: aws ecs update-service --cluster control-plane-cluster --service mediczy-app --task-definition mediczy-app:<new-rev> --force-new-deployment --region ap-south-1",
-    "6. Apply ecs/livekit-cloud-task-def-patch.json to the same mediczy-app container so prod tokens point to LiveKit Cloud."
+    "6. Apply ecs/livekit-cloud-task-def-patch.json to the same mediczy-app container so prod tokens point to your LiveKit server."
   ],
   "containerPatch": {
     "healthCheck": {

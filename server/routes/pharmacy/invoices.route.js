@@ -4,8 +4,11 @@
 
 import express from 'express';
 import { db } from '../../db/index.js';
+import { requirePharmacyAuth } from '../../middleware/pharmacyAuth.middleware.js';
 
 const router = express.Router();
+
+router.use(requirePharmacyAuth);
 
 /**
  * POST /api/pharmacy/invoices
@@ -14,7 +17,6 @@ const router = express.Router();
 router.post('/', async (req, res) => {
   try {
     const {
-      pharmacyId,
       transactionId,
       customerId,
       items, // [{medicineId, quantity, price}]
@@ -24,6 +26,7 @@ router.post('/', async (req, res) => {
       paymentMethod,
       notes
     } = req.body;
+    const pharmacyId = req.pharmacyId;
 
     if (!items || items.length === 0) {
       return res.status(400).json({
@@ -90,12 +93,13 @@ router.post('/', async (req, res) => {
 router.get('/:invoiceId', async (req, res) => {
   try {
     const { invoiceId } = req.params;
+    const pharmacyId = req.pharmacyId;
 
     const invoiceQuery = `
-      SELECT * FROM pharmacy_invoices WHERE id = $1;
+      SELECT * FROM pharmacy_invoices WHERE id = $1 AND pharmacy_id = $2;
     `;
 
-    const invoiceResult = await db.query(invoiceQuery, [invoiceId]);
+    const invoiceResult = await db.query(invoiceQuery, [invoiceId, pharmacyId]);
 
     if (invoiceResult.rows.length === 0) {
       return res.status(404).json({
@@ -139,7 +143,8 @@ router.get('/:invoiceId', async (req, res) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const { pharmacyId, limit = 50, offset = 0 } = req.query;
+    const { limit = 50, offset = 0 } = req.query;
+    const pharmacyId = req.pharmacyId;
 
     const query = `
       SELECT i.*, c.name as customer_name

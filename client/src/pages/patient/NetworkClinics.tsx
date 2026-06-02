@@ -11,6 +11,8 @@ import {
   Navigation, ChevronLeft, ChevronRight, Loader2
 } from 'lucide-react';
 import MainLayout from '@/components/layout/MainLayout';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineError } from '@/components/ui/inline-error';
 
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
 const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
@@ -50,6 +52,7 @@ const NetworkClinics: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [selectedType, setSelectedType] = useState('');
@@ -60,6 +63,7 @@ const NetworkClinics: React.FC = () => {
 
   const fetchClinics = useCallback(async (currentPage = 1) => {
     setLoading(true);
+    setFetchError(false);
     try {
       const params = new URLSearchParams({
         limit: String(LIMIT),
@@ -81,6 +85,7 @@ const NetworkClinics: React.FC = () => {
       }
     } catch (err) {
       toast({ title: 'Error', description: 'Failed to connect to server', variant: 'destructive' });
+      setFetchError(true);
     } finally {
       setLoading(false);
     }
@@ -188,21 +193,17 @@ const NetworkClinics: React.FC = () => {
           <Loader2 className="h-8 w-8 animate-spin text-teal-500" />
           <span className="ml-3 text-slate-500 dark:text-slate-400">Loading clinics...</span>
         </div>
+      ) : fetchError ? (
+        <InlineError
+          message="Couldn't load clinics."
+          onRetry={() => fetchClinics(page)}
+        />
       ) : clinics.length === 0 ? (
-        <Card className="dark:bg-slate-800/50 dark:border-slate-700/60">
-          <CardContent className="text-center py-12">
-            <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mx-auto mb-4">
-              <Building2 className="h-8 w-8 text-slate-400" />
-            </div>
-            <p className="text-lg font-medium text-slate-700 dark:text-slate-300">No clinics found</p>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Try a different search term or clear the filter</p>
-            {search && (
-              <Button variant="outline" className="mt-4" onClick={() => { setSearchInput(''); setSearch(''); }}>
-                Clear search
-              </Button>
-            )}
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={Building2}
+          title="No clinics found"
+          description="No in-network clinics match your search. Try a different area."
+        />
       ) : (
         <motion.div variants={item} className="space-y-4">
           {clinics.map((clinic, idx) => (

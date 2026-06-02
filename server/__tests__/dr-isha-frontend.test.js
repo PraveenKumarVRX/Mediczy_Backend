@@ -2,7 +2,7 @@
  * Frontend unit tests for Dr. ISHA service layer and chat component logic.
  * Tests client-side logic that doesn't require a browser.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from '@jest/globals';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // drIsha.ts auth token logic (mirrored here for unit testing)

@@ -28,6 +28,8 @@ import api from '@/utils/api';
 import { healthSyncScheduler } from '@/services/health/HealthSyncScheduler';
 import veepooService from '@/services/ble/VeepooService';
 import fireBolttService from '@/services/ble/FireBolttService';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineError } from '@/components/ui/inline-error';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface HealthMetric {
@@ -203,6 +205,7 @@ const MetricCard: React.FC<{
 const WatchAnalytics: React.FC = () => {
   const [data, setData] = useState<HealthData>(emptyData());
   const [device, setDevice] = useState<ConnectedDevice | null>(null);
+  const [fetchError, setFetchError] = useState(false);
   const [autoSync, setAutoSync] = useState(false);
   const [syncInterval, setSyncIntervalState] = useState(30);
   const [syncing, setSyncing] = useState(false);
@@ -240,6 +243,7 @@ const WatchAnalytics: React.FC = () => {
     if (stored.length > 0) setDevice(stored[0]);
 
     try {
+      setFetchError(false);
       const res = await api.get('/health-data/summary');
       const d   = res.data;
       const latest = d.latest ?? {};
@@ -308,6 +312,8 @@ const WatchAnalytics: React.FC = () => {
             steps:     { ...prev.steps, value: c.steps },
           }));
         } catch {}
+      } else {
+        setFetchError(true);
       }
     }
   }, []);
@@ -508,6 +514,22 @@ const WatchAnalytics: React.FC = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* ── Error / No-device states ──────────────────────────────────────── */}
+      {fetchError && (
+        <InlineError
+          message="Couldn't load your wearable data."
+          onRetry={() => loadData()}
+        />
+      )}
+      {!fetchError && !device && (
+        <EmptyState
+          icon={Watch}
+          title="No wearable connected"
+          description="Connect a fitness tracker to see your health trends."
+          action={{ label: 'Connect a device', href: '/patient/device-integration' }}
+        />
+      )}
 
       {/* ── Activity Rings ────────────────────────────────────────────────── */}
       <Card className="bg-slate-800/60 border-slate-700/50">

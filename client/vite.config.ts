@@ -98,14 +98,31 @@ export default defineConfig(({ mode }) => ({
     cssCodeSplit: true,
     reportCompressedSize: false, // Disable to save memory
     rollupOptions: {
-      // Optimize for memory-constrained environments  
       maxParallelFileOps: 2,
       output: {
         entryFileNames: 'assets/[name]-[hash].js',
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash].[ext]',
-        // Reduce chunk size for better memory usage
         compact: true,
+        // Split heavy rarely-used libraries out of the main bundle.
+        // DICOM/Cornerstone alone is ~1.4 MB — only needed when viewing imaging.
+        manualChunks(id) {
+          if (id.includes('cornerstoneWADOImageLoader') || id.includes('cornerstoneTools') || id.includes('cornerstone-core')) {
+            return 'vendor-dicom';
+          }
+          if (id.includes('livekit-client')) {
+            return 'vendor-video';
+          }
+          if (id.includes('jspdf') || id.includes('html2canvas')) {
+            return 'vendor-pdf';
+          }
+          if (id.includes('recharts') || id.includes('generateCategoricalChart')) {
+            return 'vendor-charts';
+          }
+          if (id.includes('exceljs')) {
+            return 'vendor-excel';
+          }
+        },
       }
     }
   },

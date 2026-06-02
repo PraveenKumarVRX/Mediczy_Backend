@@ -6,22 +6,74 @@ import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 dotenv.config();
 
-// Zoho SMTP transporter (uses existing SMTP_* env vars)
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtppro.zoho.in',
-  port: parseInt(process.env.SMTP_PORT || '465'),
-  secure: true,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASSWORD,
-  },
-});
+async function resolveSmtpConfig() {
+  const fallbackPort = parseInt(process.env.SMTP_PORT || '465', 10);
+  const fallbackConfig = {
+    host: process.env.SMTP_HOST || 'smtppro.zoho.in',
+    port: fallbackPort,
+    secure: fallbackPort === 465,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASSWORD || process.env.SMTP_PASS,
+    },
+    fromName: process.env.EMAIL_FROM_NAME || 'Mediqzy Team',
+    fromEmail: process.env.SMTP_FROM || process.env.EMAIL_FROM || process.env.SMTP_USER,
+  };
+
+  try {
+    const rows = await postgresSequelize.query(
+      `SELECT host, port, username, password, "fromEmail", "fromName"
+       FROM email_configs
+       WHERE "isActive" = true
+       ORDER BY "isDefault" DESC, id ASC
+       LIMIT 1`,
+      { type: postgresSequelize.QueryTypes.SELECT }
+    );
+
+    const cfg = rows?.[0];
+    if (!cfg || !cfg.username || !cfg.password) {
+      return fallbackConfig;
+    }
+
+    const dbPort = parseInt(String(cfg.port || '465'), 10);
+    return {
+      host: cfg.host || fallbackConfig.host,
+      port: Number.isNaN(dbPort) ? fallbackConfig.port : dbPort,
+      secure: (Number.isNaN(dbPort) ? fallbackConfig.port : dbPort) === 465,
+      auth: {
+        user: cfg.username,
+        pass: cfg.password,
+      },
+      fromName: cfg.fromName || fallbackConfig.fromName,
+      fromEmail: cfg.fromEmail || cfg.username || fallbackConfig.fromEmail,
+    };
+  } catch {
+    return fallbackConfig;
+  }
+}
+
+async function createSmtpTransport() {
+  const smtp = await resolveSmtpConfig();
+  return {
+    smtp,
+    transporter: nodemailer.createTransport({
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.secure,
+      auth: {
+        user: smtp.auth.user,
+        pass: smtp.auth.pass,
+      },
+    }),
+  };
+}
 
 // Normalize SendGrid-style msg object → nodemailer format and send
 async function sendMail(msg) {
+  const { smtp, transporter } = await createSmtpTransport();
   const from = typeof msg.from === 'object'
-    ? `"${msg.from.name}" <${process.env.SMTP_USER}>`
-    : (process.env.SMTP_USER || msg.from);
+    ? `"${msg.from.name || smtp.fromName}" <${smtp.fromEmail || smtp.auth.user}>`
+    : (msg.from || `"${smtp.fromName}" <${smtp.fromEmail || smtp.auth.user}>`);
   return transporter.sendMail({
     from,
     to: msg.to,
@@ -35,15 +87,27 @@ async function sendMail(msg) {
  * Uses email_event_assignments to find the assigned template_id, then fetches its content.
  * Returns { subject, html_content } if found, otherwise null (use default).
  */
-async function getCustomTemplate(eventType) {
+async function getCustomTemplate(eventType, options = {}) {
+  const { teamUserId } = options;
   try {
+    const sql = [
+      'SELECT wet.subject, wet.html_content',
+      'FROM email_event_assignments eea',
+      'JOIN welcome_email_templates wet ON wet.id = eea.template_id',
+      'WHERE eea.event_type = :eventType'
+    ];
+    const replacements = { eventType };
+
+    if (teamUserId) {
+      sql.push('  AND eea.team_user_id = :teamUserId');
+      replacements.teamUserId = teamUserId;
+    }
+
+    sql.push('ORDER BY eea.updated_at DESC LIMIT 1');
+
     const rows = await postgresSequelize.query(
-      `SELECT wet.subject, wet.html_content
-       FROM email_event_assignments eea
-       JOIN welcome_email_templates wet ON wet.id = eea.template_id
-       WHERE eea.event_type = :eventType
-       ORDER BY eea.updated_at DESC LIMIT 1`,
-      { replacements: { eventType }, type: postgresSequelize.QueryTypes.SELECT }
+      sql.join('\n'),
+      { replacements, type: postgresSequelize.QueryTypes.SELECT }
     );
     return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
   } catch {
@@ -67,8 +131,9 @@ function renderTemplate(template, values) {
  * Export for test-send from the API route
  */
 export async function sendTestEmail({ to, subject, html }) {
+  const { smtp, transporter } = await createSmtpTransport();
   return transporter.sendMail({
-    from: `"Mediqzy Team" <${process.env.SMTP_USER}>`,
+    from: `"${smtp.fromName}" <${smtp.fromEmail || smtp.auth.user}>`,
     to,
     subject,
     html
@@ -438,11 +503,12 @@ function renderPlanBenefitsList(benefits = []) {
   return benefits.map(benefit => `<li style="padding: 6px 0; color: #374151;">${benefit}</li>`).join("");
 }
 
-export async function sendCorporateEmployeeWelcomeEmail(employeeData, temporaryPassword) {
+export async function buildCorporateEmployeeWelcomeEmail(employeeData, temporaryPassword, options = {}) {
   const { email, firstName, lastName, companyName, employeeId, department } = employeeData;
   const plan = formatCorporateEmployeePlan(employeeData);
   const planBenefitsHtml = renderPlanBenefitsList(plan.benefits);
   const planBenefitsText = plan.benefits.join(", " );
+  const loginIdentifier = email || employeeId || "";
 
   const msg = {
     to: email,
@@ -520,22 +586,77 @@ export async function sendCorporateEmployeeWelcomeEmail(employeeData, temporaryP
   };
 
   // Apply custom template override if configured
-  const customTplEmp = await getCustomTemplate('corporate_employee_welcome');
+  const customTplEmp = await getCustomTemplate('corporate_employee_welcome', options);
   if (customTplEmp) {
-    const vars = { "{{firstName}}": firstName, "{{lastName}}": lastName, "{{email}}": email, "{{companyName}}": companyName, "{{employeeId}}": employeeId || "", "{{department}}": department || "", "{{temporaryPassword}}": temporaryPassword, "{{loginUrl}}": "https://app.mediqzy.com/login", "{{planName}}": plan.planName, "{{coverageAmount}}": plan.coverageAmount, "{{planValidity}}": plan.validity, "{{planSponsor}}": plan.sponsor, "{{planCopay}}": plan.copay, "{{planBenefits}}": planBenefitsText };
+    const vars = {
+      "{{firstName}}": firstName,
+      "{{lastName}}": lastName,
+      "{{email}}": email,
+      "{{companyName}}": companyName,
+      "{{employeeId}}": employeeId || "",
+      "{{department}}": department || "",
+      "{{temporaryPassword}}": temporaryPassword,
+      "{{password}}": temporaryPassword,
+      "{{username}}": loginIdentifier,
+      "{{userId}}": loginIdentifier,
+      "{{loginIdentifier}}": loginIdentifier,
+      "{{loginUrl}}": "https://app.mediqzy.com/login",
+      "{{planName}}": plan.planName,
+      "{{coverageAmount}}": plan.coverageAmount,
+      "{{planValidity}}": plan.validity,
+      "{{planSponsor}}": plan.sponsor,
+      "{{planCopay}}": plan.copay,
+      "{{planBenefits}}": planBenefitsText,
+
+      // Support legacy or manually-written bracket placeholders from HTML editors.
+      "[First Name]": firstName,
+      "[Last Name]": lastName,
+      "[Employee Name]": `${firstName || ""} ${lastName || ""}`.trim(),
+      "[Employee Email ID / Mobile Number]": loginIdentifier,
+      "[Username]": loginIdentifier,
+      "[User ID]": loginIdentifier,
+      "[Employee ID]": employeeId || "",
+      "[Temporary Password]": temporaryPassword,
+      "[Password]": temporaryPassword,
+      "[Company Name]": companyName,
+      "[Department]": department || "",
+      "[Login URL]": "https://app.mediqzy.com/login"
+    };
     msg.subject = renderTemplate(customTplEmp.subject, vars);
     msg.html = renderTemplate(customTplEmp.html_content, vars);
   }
 
+  return msg;
+}
+
+export async function sendCorporateEmployeeWelcomeEmail(employeeData, temporaryPassword, options = {}) {
+  const msg = await buildCorporateEmployeeWelcomeEmail(employeeData, temporaryPassword, options);
   try {
     await sendMail(msg);
-    console.log(`✅ Welcome email sent to corporate employee: ${email}`);
-    return { success: true, message: 'Welcome email sent successfully' };
+    console.log("Welcome email sent to corporate employee: " + msg.to);
+    return { success: true, message: "Welcome email sent successfully" };
   } catch (error) {
-    console.error('❌ Error sending corporate employee welcome email:', error);
+    console.error("Error sending corporate employee welcome email:", error);
     throw error;
   }
 }
+
+export async function sendPreparedCorporateEmployeeWelcomeEmail({ to, subject, html }) {
+  if (!to || !subject || !html) {
+    throw new Error("to, subject and html are required");
+  }
+  await sendMail({
+    to,
+    from: {
+      email: process.env.SENDGRID_FROM_EMAIL || "noreply@mediqzy.com",
+      name: "Mediqzy Corporate Health"
+    },
+    subject,
+    html
+  });
+  return { success: true, message: "Welcome email sent successfully" };
+}
+
 
 /**
  * Send welcome email to team/staff user
@@ -630,6 +751,8 @@ export default {
   sendDoctorWelcomeEmail,
   sendHospitalWelcomeEmail,
   sendCorporateWelcomeEmail,
+  buildCorporateEmployeeWelcomeEmail,
   sendCorporateEmployeeWelcomeEmail,
+  sendPreparedCorporateEmployeeWelcomeEmail,
   sendTeamWelcomeEmail
 };

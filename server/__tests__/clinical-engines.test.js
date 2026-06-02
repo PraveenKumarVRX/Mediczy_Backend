@@ -3,7 +3,7 @@
  * Validates QRISK3-SA, FINDRISC, STOP-BANG, CKD-EPI 2021
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from '@jest/globals';
 import {
   computeQRISK3SA,
   computeFINDRISC,

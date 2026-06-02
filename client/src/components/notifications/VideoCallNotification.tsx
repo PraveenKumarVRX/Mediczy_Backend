@@ -403,8 +403,19 @@ export default function VideoCallNotification() {
         });
         const lk = resp.data?.livekit;
         if (lk?.token && lk?.serverUrl) {
+          try {
+            sessionStorage.setItem('doctorLivekitHandoff', JSON.stringify({
+              appointmentId: String(notification.appointmentId),
+              roomId: String(notification.roomId || ''),
+              token: lk.token,
+              serverUrl: lk.serverUrl,
+              expiresAt: Date.now() + 2 * 60 * 1000,
+            }));
+          } catch {
+            // non-fatal
+          }
           navigate(
-            `/doctor/video?room=${notification.roomId}&appointmentId=${notification.appointmentId}&lkToken=${encodeURIComponent(lk.token)}&lkServer=${encodeURIComponent(lk.serverUrl)}`
+            `/doctor/video?room=${notification.roomId}&appointmentId=${notification.appointmentId}`
           );
           setNotification(null);
           return;

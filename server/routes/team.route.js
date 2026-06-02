@@ -8,6 +8,7 @@ import { InsuranceBroker } from '../models/insurance-broker.model.intelligent.js
 import { Op } from 'sequelize';
 import { authTeam, requireModule, requirePermission, attachAccessLevel } from '../middleware/team.middleware.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
+import { clearAuthCookies } from '../config/cookies.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
@@ -348,6 +349,8 @@ router.post('/login', authLimiter, [
       editableModules: Array.isArray(metadata.editableModules) ? metadata.editableModules : [],
       deletableModules: Array.isArray(metadata.deletableModules) ? metadata.deletableModules : []
     };
+
+    clearAuthCookies(res);
 
     return res.status(200).json({
       success: true,

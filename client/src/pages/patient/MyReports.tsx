@@ -6,9 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import MainLayout from '@/components/layout/MainLayout';
 import api from '@/utils/api';
 import { downloadReport, previewReport } from '@/utils/reportActions';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineError } from '@/components/ui/inline-error';
 
 interface Report {
   id: string;
@@ -225,7 +226,6 @@ const MyReports = () => {
   };
 
   return (
-    <MainLayout>
     <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500 px-4 md:px-6 py-6">
       {/* Header */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
@@ -451,10 +451,22 @@ const MyReports = () => {
                     {report.reportType.replace('_', ' ')}
                   </Badge>
                 </div>
-                <CardTitle className="text-lg">{report.fileName}</CardTitle>
-                {report.description && <CardDescription>{report.description}</CardDescription>}
+                <CardTitle
+                  className="text-lg leading-snug break-words overflow-hidden [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+                  title={report.fileName}
+                >
+                  {report.fileName}
+                </CardTitle>
+                {report.description && (
+                  <CardDescription className="break-words overflow-hidden [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
+                    {report.description}
+                  </CardDescription>
+                )}
                 {report.testName && (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Test: {report.testName}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 break-words">
+                    <span className="font-medium">Test:</span>{' '}
+                    <span className="break-all">{report.testName}</span>
+                  </p>
                 )}
               </CardHeader>
               <CardContent>
@@ -500,23 +512,19 @@ const MyReports = () => {
         </div>
       )}
 
-      {filteredReports.length === 0 && (
-        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
-          <CardContent className="py-12">
-            <div className="text-center">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center">
-                <FileText className="h-8 w-8 text-slate-400" />
-              </div>
-              <p className="text-slate-500 dark:text-slate-400">No reports found</p>
-              {reportsStatus === 'unavailable' && (
-                <p className="text-xs text-amber-600 dark:text-amber-300 mt-2">Could not load reports right now. Please retry shortly.</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+      {!isLoading && reportsStatus === 'unavailable' && (
+        <InlineError message="Couldn't load your reports." onRetry={fetchReports} className="mb-4" />
+      )}
+
+      {!isLoading && reportsStatus !== 'unavailable' && filteredReports.length === 0 && (
+        <EmptyState
+          icon={FileStack}
+          title="No reports yet"
+          description="Upload your first medical report to keep all your records in one place."
+          action={{ label: 'Upload a report', onClick: () => setShowUploadDialog(true) }}
+        />
       )}
     </div>
-    </MainLayout>
   );
 };
 

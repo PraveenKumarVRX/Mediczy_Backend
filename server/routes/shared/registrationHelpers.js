@@ -25,6 +25,104 @@ import OTP from '../../models/otp.model.intelligent.js';
 import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
 import emailService from '../../services/emailService.js';
 import { EmailLog } from '../../models/email.model.js';
+import crypto from 'crypto';
+
+const parsedVerificationTicketTtl = Number.parseInt(
+  process.env.REGISTRATION_VERIFICATION_TICKET_TTL_SECONDS || '',
+  10
+);
+
+// Doctor onboarding can take time (documents, agreement, signature), so keep
+// verification proof valid long enough to complete the flow reliably.
+const VERIFICATION_TICKET_TTL_SECONDS =
+  Number.isFinite(parsedVerificationTicketTtl) && parsedVerificationTicketTtl > 0
+    ? parsedVerificationTicketTtl
+    : 4 * 60 * 60;
+
+const toBase64Url = (value) => Buffer.from(value).toString('base64url');
+
+const normalizeTicketIdentifier = (type, value) => {
+  const raw = String(value || '').trim();
+  if (type === 'email') return raw.toLowerCase();
+  if (type === 'phone') {
+    const digits = raw.replace(/\D/g, '');
+    return digits.length > 10 ? digits.slice(-10) : digits;
+  }
+  return raw;
+};
+
+const getTicketSecret = () =>
+  process.env.REGISTRATION_VERIFICATION_TICKET_SECRET
+  || process.env.JWT_SECRET
+  || process.env.SECRET_TOKEN
+  || 'registration-verification-ticket-dev-secret';
+
+const issueRegistrationVerificationTicket = ({ type, identifier, entityLabel }) => {
+  const normalizedIdentifier = normalizeTicketIdentifier(type, identifier);
+  const now = Math.floor(Date.now() / 1000);
+  const payload = {
+    v: 1,
+    type,
+    identifier: normalizedIdentifier,
+    entity: String(entityLabel || ''),
+    iat: now,
+    exp: now + VERIFICATION_TICKET_TTL_SECONDS,
+    nonce: crypto.randomBytes(8).toString('hex'),
+  };
+  const encodedPayload = toBase64Url(JSON.stringify(payload));
+  const signature = crypto
+    .createHmac('sha256', getTicketSecret())
+    .update(encodedPayload)
+    .digest('base64url');
+  return `${encodedPayload}.${signature}`;
+};
+
+const safeEquals = (a, b) => {
+  const aBuf = Buffer.from(String(a || ''));
+  const bBuf = Buffer.from(String(b || ''));
+  if (aBuf.length !== bBuf.length) return false;
+  return crypto.timingSafeEqual(aBuf, bBuf);
+};
+
+export const verifyRegistrationVerificationTicket = ({ ticket, type, identifier, entityLabel }) => {
+  try {
+    if (!ticket || typeof ticket !== 'string' || !ticket.includes('.')) {
+      return { success: false, message: 'Missing or invalid verification ticket' };
+    }
+    const [encodedPayload, signature] = ticket.split('.');
+    if (!encodedPayload || !signature) {
+      return { success: false, message: 'Malformed verification ticket' };
+    }
+    const expectedSig = crypto
+      .createHmac('sha256', getTicketSecret())
+      .update(encodedPayload)
+      .digest('base64url');
+    if (!safeEquals(signature, expectedSig)) {
+      return { success: false, message: 'Verification ticket signature mismatch' };
+    }
+
+    const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
+    const now = Math.floor(Date.now() / 1000);
+    if (!payload?.exp || now > Number(payload.exp)) {
+      return { success: false, message: 'Verification ticket expired' };
+    }
+    if (String(payload.type) !== String(type)) {
+      return { success: false, message: 'Verification ticket type mismatch' };
+    }
+    if (String(payload.entity || '') !== String(entityLabel || '')) {
+      return { success: false, message: 'Verification ticket entity mismatch' };
+    }
+
+    const expectedIdentifier = normalizeTicketIdentifier(type, identifier);
+    if (String(payload.identifier || '') !== expectedIdentifier) {
+      return { success: false, message: 'Verification ticket does not match submitted contact' };
+    }
+
+    return { success: true, payload };
+  } catch (error) {
+    return { success: false, message: 'Unable to validate verification ticket' };
+  }
+};
 
 // ── Multer ────────────────────────────────────────────────────────────────────
 const ALLOWED_MIMES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -342,7 +440,14 @@ export function addOtpRoutes(router, entityLabel, accentColor = '#0d9488') {
     if (!email || !code) return res.status(400).json({ success: false, message: 'Email and code required' });
     try {
       const result = await OTP.verify({ email, code, purpose: 'registration' });
-      if (result.success) return res.json({ success: true, message: 'Email verified successfully' });
+      if (result.success) {
+        const verificationTicket = issueRegistrationVerificationTicket({
+          type: 'email',
+          identifier: email,
+          entityLabel,
+        });
+        return res.json({ success: true, message: 'Email verified successfully', verificationTicket });
+      }
       return res.status(400).json({ success: false, message: result.message || 'Invalid or expired OTP' });
     } catch (err) {
       console.error(`${entityLabel} email OTP verify error:`, err.message);
@@ -388,7 +493,14 @@ export function addOtpRoutes(router, entityLabel, accentColor = '#0d9488') {
     if (!phone.startsWith('+')) phone = `+91${phone.replace(/^0/, '')}`;
     try {
       const result = await OTP.verify({ phone, code, purpose: 'registration' });
-      if (result.success) return res.json({ success: true, message: 'Phone verified successfully' });
+      if (result.success) {
+        const verificationTicket = issueRegistrationVerificationTicket({
+          type: 'phone',
+          identifier: phone,
+          entityLabel,
+        });
+        return res.json({ success: true, message: 'Phone verified successfully', verificationTicket });
+      }
       return res.status(400).json({ success: false, message: result.message || 'Invalid or expired OTP' });
     } catch (err) {
       console.error(`${entityLabel} phone OTP verify error:`, err.message);

@@ -2,47 +2,54 @@
  * Sanity + Security tests for Medical AI route utilities
  * Covers: safeLog, validateRedirectUrl, validateMedicalQuery, extractSibResponse, buildSibConsultation
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // medical-ai-logger
 // ─────────────────────────────────────────────────────────────────────────────
 describe('medical-ai-logger', () => {
-  let mlog, mwarn, merr, medLog;
+  let originalNodeEnv;
 
   beforeEach(async () => {
-    // Reset module to control NODE_ENV
-    vi.resetModules();
+    jest.resetModules();
+    originalNodeEnv = process.env.NODE_ENV;
+  });
+
+  afterEach(() => {
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+    jest.restoreAllMocks();
   });
 
   it('sanitizes PHI fields in production', async () => {
-    vi.stubEnv('NODE_ENV', 'production');
+    process.env.NODE_ENV = 'production';
     const mod = await import('../utils/medical-ai-logger.js');
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const spy = jest.spyOn(console, 'log').mockImplementation(() => {});
     mod.mlog('test', { symptoms: 'chest pain', userId: 42 });
     const call = spy.mock.calls[0];
     expect(call[1]).toHaveProperty('symptoms_hash');
     expect(call[1]).not.toHaveProperty('symptoms');
     expect(call[1]).toHaveProperty('userId', 42); // non-PHI passes through
     spy.mockRestore();
-    vi.unstubAllEnvs();
   });
 
   it('passes full data in development', async () => {
-    vi.stubEnv('NODE_ENV', 'development');
+    process.env.NODE_ENV = 'development';
     const mod = await import('../utils/medical-ai-logger.js');
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const spy = jest.spyOn(console, 'log').mockImplementation(() => {});
     mod.mlog('test', { symptoms: 'chest pain', userId: 42 });
     const call = spy.mock.calls[0];
     expect(call[1]).toHaveProperty('symptoms', 'chest pain');
     spy.mockRestore();
-    vi.unstubAllEnvs();
   });
 
   it('sanitizes all PHI fields: query, description, location, visionAnalysis', async () => {
-    vi.stubEnv('NODE_ENV', 'production');
+    process.env.NODE_ENV = 'production';
     const mod = await import('../utils/medical-ai-logger.js');
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const spy = jest.spyOn(console, 'log').mockImplementation(() => {});
     mod.mlog('test', {
       query: 'my heart hurts',
       description: 'sharp pain',
@@ -58,24 +65,22 @@ describe('medical-ai-logger', () => {
     expect(call[1]).toHaveProperty('query_hash');
     expect(call[1]).toHaveProperty('sessionId', 'abc123'); // non-PHI passes
     spy.mockRestore();
-    vi.unstubAllEnvs();
   });
 
   it('hash is consistent (same input → same hash)', async () => {
-    vi.stubEnv('NODE_ENV', 'production');
+    process.env.NODE_ENV = 'production';
     const mod = await import('../utils/medical-ai-logger.js');
-    const spy1 = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const spy1 = jest.spyOn(console, 'log').mockImplementation(() => {});
     mod.mlog('t', { symptoms: 'fever' });
     const hash1 = spy1.mock.calls[0][1].symptoms_hash;
     spy1.mockRestore();
 
-    const spy2 = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const spy2 = jest.spyOn(console, 'log').mockImplementation(() => {});
     mod.mlog('t', { symptoms: 'fever' });
     const hash2 = spy2.mock.calls[0][1].symptoms_hash;
     spy2.mockRestore();
 
     expect(hash1).toBe(hash2);
-    vi.unstubAllEnvs();
   });
 });
 

@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Activity, Heart, Thermometer, Droplets, Wind, Scale, TrendingUp, TrendingDown, Plus, Calendar, Clock, Download } from 'lucide-react';
 import MainLayout from '@/components/layout/MainLayout';
+import { EmptyState } from '@/components/ui/empty-state';
 
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
 const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
@@ -288,13 +289,12 @@ const VitalReports: React.FC = () => {
         <CardContent>
           <div className="space-y-4">
             {filteredVitals.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mx-auto mb-4">
-                  <Activity className="h-8 w-8 text-slate-400" />
-                </div>
-                <p className="text-lg font-medium text-slate-700 dark:text-slate-300">No vital readings recorded yet</p>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Record your first vital to start tracking</p>
-              </div>
+              <EmptyState
+                icon={Activity}
+                title="No vitals recorded"
+                description="Log your blood pressure, glucose, and other vitals to track trends over time."
+                action={{ label: 'Log vitals', href: '/health-diary' }}
+              />
             ) : (
               filteredVitals.map((vital, idx) => (
                 <motion.div key={vital.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.04, duration: 0.3 }} className="flex items-start justify-between p-4 border dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">

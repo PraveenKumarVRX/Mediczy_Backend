@@ -4,8 +4,11 @@
 
 import express from 'express';
 import { db } from '../../db/index.js';
+import { requirePharmacyAuth } from '../../middleware/pharmacyAuth.middleware.js';
 
 const router = express.Router();
+
+router.use(requirePharmacyAuth);
 
 /**
  * POST /api/pharmacy/batches
@@ -14,7 +17,6 @@ const router = express.Router();
 router.post('/', async (req, res) => {
   try {
     const {
-      pharmacyId,
       medicineId,
       batchNumber,
       quantity,
@@ -23,6 +25,7 @@ router.post('/', async (req, res) => {
       supplier,
       manufacturingDate
     } = req.body;
+    const pharmacyId = req.pharmacyId;
 
     if (!batchNumber || !medicineId || !quantity) {
       return res.status(400).json({
@@ -70,7 +73,8 @@ router.post('/', async (req, res) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const { pharmacyId, limit = 100, offset = 0 } = req.query;
+    const { limit = 100, offset = 0 } = req.query;
+    const pharmacyId = req.pharmacyId;
 
     const query = `
       SELECT b.*, m.name as medicine_name

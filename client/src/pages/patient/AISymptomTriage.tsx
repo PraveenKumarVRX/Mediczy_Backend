@@ -52,6 +52,7 @@ const AISymptomTriage: React.FC = () => {
   });
   const [result, setResult] = useState<Partial<TriageResult> | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [disclaimerDismissed, setDisclaimerDismissed] = useState(() => !!localStorage.getItem('triageDisclaimerDismissed'));
 
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -190,6 +191,24 @@ const AISymptomTriage: React.FC = () => {
               exit={{ opacity: 0, x: -20 }}
               className="space-y-4"
             >
+              {/* Disclaimer */}
+              {!disclaimerDismissed && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800 p-4 mb-4">
+                  <div className="flex items-start gap-3">
+                    <Info className="h-5 w-5 text-blue-500 mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-blue-800 dark:text-blue-200">For guidance only</p>
+                      <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                        This AI-assisted triage is for informational guidance only — it is not a medical diagnosis.
+                        Always consult a qualified doctor for medical advice.
+                      </p>
+                    </div>
+                    <button onClick={() => { localStorage.setItem('triageDisclaimerDismissed','1'); setDisclaimerDismissed(true); }}
+                      className="text-blue-400 hover:text-blue-600 text-lg leading-none shrink-0" aria-label="Dismiss">×</button>
+                  </div>
+                </div>
+              )}
+
               {/* Quick symptom chips */}
               <Card className="border-slate-200/50 dark:border-slate-700/50">
                 <CardHeader className="pb-2 px-4 pt-4">
@@ -535,6 +554,23 @@ const AISymptomTriage: React.FC = () => {
                     </div>
                   </CardContent>
                 </Card>
+              )}
+
+              {/* High-risk urgent action */}
+              {(result?.esi_level === 1 || result?.esi_level === 2) && (
+                <div className="rounded-xl border border-red-200 bg-red-50 dark:bg-red-950/20 p-4 mt-4">
+                  <p className="text-sm font-semibold text-red-700 dark:text-red-300 mb-3">
+                    🚨 Your symptoms may need urgent attention.
+                  </p>
+                  <div className="flex gap-2 flex-wrap">
+                    <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white" onClick={() => navigate('/doctors')}>
+                      Book Emergency Consultation
+                    </Button>
+                    <Button size="sm" variant="outline" className="border-red-300 text-red-600" asChild>
+                      <a href="tel:112">Call 112</a>
+                    </Button>
+                  </div>
+                </div>
               )}
 
               {/* Actions */}
