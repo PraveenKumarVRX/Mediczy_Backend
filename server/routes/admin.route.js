@@ -15,6 +15,8 @@ import Nurse from '../models/nurse.model.intelligent.js';
 import Assistant from '../models/assistant.model.intelligent.js';
 import { Op } from 'sequelize';
 import welcomeEmailService from '../services/welcome-email.service.js';
+import { findPriorBrevoWelcomeEmail, isBrevoHistoryConfigured } from '../services/brevo-transactional-history.service.js';
+import { checkQuota, recordSent, getQuotaStatus } from '../utils/emailQuota.js';
 import cimsService from '../services/cims-medicine.service.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { 
@@ -1913,6 +1915,192 @@ router.post('/corporate-users', authUser, requireRole(['admin', 'team']), async 
   }
 });
 
+/**
+ * Get Corporate HR/Admin Users
+ * GET /api/admin/corporate-users/:corporateId
+ * Lists corporate admins linked to the corporate via user_associations
+ */
+router.get('/corporate-users/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
+  try {
+    const numericCorporateId = req.resolvedCorporate.id;
+
+    const users = await postgresSequelize.query(
+      `SELECT u.id,
+              u.email,
+              u."firstName",
+              u."lastName",
+              u."phoneNumber",
+              u.status,
+              u."lastLoginAt",
+              u."createdAt",
+              ua.role AS association_role,
+              ua.status AS association_status
+         FROM users u
+         JOIN user_associations ua ON ua."userId" = u.id
+        WHERE ua."entityType" = 'corporate'
+          AND ua."entityId" = :corporateId
+          AND (u.role = 'corporate_admin' OR ua.role = 'admin')
+        ORDER BY COALESCE(u."lastLoginAt", u."updatedAt") DESC NULLS LAST,
+                 u."createdAt" DESC`,
+      {
+        replacements: { corporateId: numericCorporateId },
+        type: postgresSequelize.QueryTypes.SELECT,
+      }
+    );
+
+    return res.json({
+      success: true,
+      users: users.map((user) => ({
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        phoneNumber: user.phoneNumber || '',
+        status: user.status || user.association_status || 'active',
+        lastLoginAt: user.lastLoginAt || null,
+        createdAt: user.createdAt,
+        role: user.association_role || 'admin',
+      })),
+    });
+  } catch (error) {
+    console.error('Failed to fetch corporate users:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch corporate users',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * Update Corporate HR/Admin User
+ * PUT /api/admin/corporate-users/:corporateId/:userId
+ */
+router.put('/corporate-users/:corporateId/:userId', authUser, requireRole(['admin', 'team']), requireCorporateAccess, async (req, res) => {
+  try {
+    const corporateId = req.resolvedCorporate.id;
+    const userId = parseInt(String(req.params.userId), 10);
+    if (isNaN(userId)) {
+      return res.status(400).json({ success: false, message: 'Invalid userId' });
+    }
+
+    const { firstName, lastName, email, phoneNumber, password, status } = req.body || {};
+    const normalizedStatus = String(status || '').toLowerCase();
+    const allowedStatuses = new Set(['active', 'inactive', 'suspended', 'pending']);
+
+    const [existing] = await postgresSequelize.query(
+      `SELECT u.id, u.email
+         FROM users u
+         JOIN user_associations ua ON ua."userId" = u.id
+        WHERE u.id = :userId
+          AND ua."entityType" = 'corporate'
+          AND ua."entityId" = :corporateId
+          AND (u.role = 'corporate_admin' OR ua.role = 'admin')
+        LIMIT 1`,
+      {
+        replacements: { userId, corporateId },
+        type: postgresSequelize.QueryTypes.SELECT,
+      }
+    );
+
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Corporate HR/admin user not found' });
+    }
+
+    const updates = ['"updatedAt" = NOW()'];
+    const replacements = { userId };
+
+    if (firstName !== undefined) { updates.push('"firstName" = :firstName'); replacements.firstName = String(firstName || '').trim(); }
+    if (lastName !== undefined) { updates.push('"lastName" = :lastName'); replacements.lastName = String(lastName || '').trim(); }
+    if (phoneNumber !== undefined) { updates.push('"phoneNumber" = :phoneNumber'); replacements.phoneNumber = String(phoneNumber || '').trim(); }
+
+    if (email !== undefined) {
+      const normalizedEmail = String(email || '').toLowerCase().trim();
+      if (!normalizedEmail) {
+        return res.status(400).json({ success: false, message: 'Email cannot be empty' });
+      }
+
+      const [emailConflict] = await postgresSequelize.query(
+        `SELECT id FROM users WHERE LOWER(email) = :email AND id != :userId LIMIT 1`,
+        {
+          replacements: { email: normalizedEmail, userId },
+          type: postgresSequelize.QueryTypes.SELECT,
+        }
+      );
+
+      if (emailConflict) {
+        return res.status(409).json({ success: false, message: 'User with this email already exists' });
+      }
+
+      updates.push('email = :email');
+      replacements.email = normalizedEmail;
+    }
+
+    if (password !== undefined && String(password).trim()) {
+      const hashedPassword = await bcrypt.hash(String(password).trim(), 10);
+      updates.push('password = :password');
+      replacements.password = hashedPassword;
+    }
+
+    if (normalizedStatus) {
+      if (!allowedStatuses.has(normalizedStatus)) {
+        return res.status(400).json({ success: false, message: 'Invalid status value' });
+      }
+      updates.push('status = :status');
+      replacements.status = normalizedStatus;
+    }
+
+    await postgresSequelize.query(
+      `UPDATE users SET ${updates.join(', ')} WHERE id = :userId`,
+      {
+        replacements,
+        type: postgresSequelize.QueryTypes.UPDATE,
+      }
+    );
+
+    if (normalizedStatus) {
+      const assocStatus = normalizedStatus === 'inactive' ? 'inactive' : 'active';
+      await postgresSequelize.query(
+        `UPDATE user_associations
+            SET status = :assocStatus,
+                "updatedAt" = NOW()
+          WHERE "userId" = :userId
+            AND "entityType" = 'corporate'
+            AND "entityId" = :corporateId
+            AND role = 'admin'`,
+        {
+          replacements: { userId, corporateId, assocStatus },
+          type: postgresSequelize.QueryTypes.UPDATE,
+        }
+      );
+    }
+
+    const [updated] = await postgresSequelize.query(
+      `SELECT u.id, u.email, u."firstName", u."lastName", u."phoneNumber", u.status, u."lastLoginAt", u."createdAt"
+         FROM users u
+        WHERE u.id = :userId
+        LIMIT 1`,
+      {
+        replacements: { userId },
+        type: postgresSequelize.QueryTypes.SELECT,
+      }
+    );
+
+    return res.json({
+      success: true,
+      message: 'Corporate HR/admin updated successfully',
+      user: updated,
+    });
+  } catch (error) {
+    console.error('Failed to update corporate user:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update corporate HR/admin user',
+      error: error.message,
+    });
+  }
+});
+
 async function dispatchCorporateEmployeeWelcomeEmail({
   welcomeEmailMode = 'draft',
   welcomeEmailData,
@@ -2016,6 +2204,35 @@ async function ensureWelcomeDeliveryAuditTable() {
       `);
 
       await postgresSequelize.query(`
+        WITH ranked AS (
+          SELECT id,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY corporate_id, LOWER(recipient_email)
+                   ORDER BY CASE WHEN status = 'sent' THEN 0 ELSE 1 END, updated_at DESC, id DESC
+                 ) AS rn
+            FROM corporate_welcome_email_deliveries
+           WHERE status IN ('queued', 'sent')
+        )
+        UPDATE corporate_welcome_email_deliveries d
+           SET status = 'duplicate',
+               error_message = COALESCE(error_message, 'Duplicate active welcome delivery superseded'),
+               metadata = metadata || jsonb_build_object(
+                 'dedupedActiveRecipientAt', NOW(),
+                 'previousStatus', d.status
+               ),
+               updated_at = NOW()
+          FROM ranked r
+         WHERE d.id = r.id
+           AND r.rn > 1
+      `);
+
+      await postgresSequelize.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_corp_welcome_active_recipient
+        ON corporate_welcome_email_deliveries (corporate_id, LOWER(recipient_email))
+        WHERE status IN ('queued', 'sent')
+      `);
+
+      await postgresSequelize.query(`
         CREATE INDEX IF NOT EXISTS idx_corp_welcome_delivery_status
         ON corporate_welcome_email_deliveries (corporate_id, status, updated_at DESC)
       `);
@@ -2056,6 +2273,32 @@ async function findWelcomeDeliveryByIdempotency({
       type: postgresSequelize.QueryTypes.SELECT,
     }
   );
+  return row || null;
+}
+
+async function findActiveWelcomeDeliveryForRecipient({
+  corporateId,
+  recipientEmail,
+}) {
+  await ensureWelcomeDeliveryAuditTable();
+
+  const [row] = await postgresSequelize.query(
+    `SELECT id, status, updated_at
+       FROM corporate_welcome_email_deliveries
+      WHERE corporate_id = :corporateId
+        AND LOWER(recipient_email) = LOWER(:recipientEmail)
+        AND status IN ('queued', 'sent')
+      ORDER BY CASE WHEN status = 'sent' THEN 0 ELSE 1 END, updated_at DESC
+      LIMIT 1`,
+    {
+      replacements: {
+        corporateId,
+        recipientEmail,
+      },
+      type: postgresSequelize.QueryTypes.SELECT,
+    }
+  );
+
   return row || null;
 }
 
@@ -2130,6 +2373,50 @@ async function updateWelcomeDeliveryRecordStatus({
       type: postgresSequelize.QueryTypes.UPDATE,
     }
   );
+}
+
+async function createExternalWelcomeDeliveryFromBrevo({
+  corporateId,
+  userId,
+  employeeId,
+  recipientEmail,
+  subject,
+  actorUserId,
+  brevoMatch,
+}) {
+  const idempotencyRaw = [
+    corporateId,
+    recipientEmail,
+    brevoMatch?.messageId || brevoMatch?.uuid || brevoMatch?.date || '',
+  ].join('|');
+  const idempotencyKey = 'brevo-history-' + crypto.createHash('sha256').update(idempotencyRaw).digest('hex').slice(0, 32);
+
+  const deliveryRecord = await createWelcomeDeliveryRecord({
+    corporateId,
+    userId,
+    employeeId,
+    recipientEmail,
+    subject: subject || brevoMatch?.subject || 'Welcome email',
+    idempotencyKey,
+    createdBy: actorUserId,
+    metadata: {
+      source: 'brevo_transactional_history',
+      brevo: brevoMatch,
+    },
+  });
+
+  if (deliveryRecord?.id) {
+    await updateWelcomeDeliveryRecordStatus({
+      deliveryId: deliveryRecord.id,
+      status: 'sent',
+      metadata: {
+        externalSentAt: brevoMatch?.date || new Date().toISOString(),
+        externalProvider: 'brevo',
+      },
+    });
+  }
+
+  return deliveryRecord || null;
 }
 
 /**
@@ -2607,6 +2894,158 @@ router.post('/corporate-employee-welcome-emails/resend', authUser, requireRole([
   }
 });
 /**
+ * Bulk-prepare welcome email drafts for multiple employees in one request.
+ * POST /api/admin/corporate-employee-welcome-emails/prepare-bulk
+ * Body: { userIds: number[], corporateId }
+ * Returns: { drafts: [{ userId, email, employeeId, temporaryPassword, subject, html }] }
+ * Max 500 userIds per call. Passwords are NOT persisted — the /send endpoint finalises them.
+ */
+router.post('/corporate-employee-welcome-emails/prepare-bulk', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
+  try {
+    const corporate = req.resolvedCorporate;
+    const corporateId = corporate.id;
+    const teamUserId = req.user?.id || req.user?.userId || null;
+    const { userIds } = req.body || {};
+
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'userIds array is required' });
+    }
+    if (userIds.length > 500) {
+      return res.status(400).json({ success: false, message: 'Maximum 500 userIds per request' });
+    }
+
+    const numericIds = userIds.map(id => parseInt(String(id), 10)).filter(id => !Number.isNaN(id));
+    if (numericIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'No valid userIds provided' });
+    }
+
+    // Fetch all employees in one query
+    const employees = await postgresSequelize.query(`
+      SELECT u.id, u.email, u."firstName", u."lastName", u.employee_id,
+             u.department_name, u.metadata AS user_metadata,
+             ua.metadata AS assoc_metadata,
+             ce."employeeId" AS corporate_employee_id
+      FROM users u
+      JOIN user_associations ua ON u.id = ua."userId"
+        AND ua."entityType" = 'corporate'
+        AND ua."entityId" = :corporateId
+        AND ua.role = 'employee'
+        AND ua.status = 'active'
+      LEFT JOIN LATERAL (
+        SELECT "employeeId" FROM corporate_employees
+        WHERE "userId" = u.id AND corporate_id = :corporateId
+        ORDER BY id DESC LIMIT 1
+      ) ce ON true
+      WHERE u.id IN (:numericIds)
+    `, {
+      replacements: { corporateId, numericIds },
+      type: postgresSequelize.QueryTypes.SELECT,
+    });
+
+    // Deduplicate by userId in case of any remaining JOIN fanout
+    const seen = new Set();
+    const uniqueEmployees = employees.filter(e => {
+      if (seen.has(e.id)) return false;
+      seen.add(e.id);
+      return true;
+    });
+
+    const drafts = [];
+    const failed = [];
+    const skipped = [];
+
+    for (const employee of uniqueEmployees) {
+      try {
+        const assocMeta = typeof employee.assoc_metadata === 'string'
+          ? JSON.parse(employee.assoc_metadata || '{}')
+          : (employee.assoc_metadata || {});
+        const userMeta = typeof employee.user_metadata === 'string'
+          ? JSON.parse(employee.user_metadata || '{}')
+          : (employee.user_metadata || {});
+
+        const temporaryPassword = welcomeEmailService.generateSecurePassword();
+        const resolvedEmployeeId = employee.corporate_employee_id || employee.employee_id || assocMeta.employeeId || '';
+        const activeRecipientDelivery = await findActiveWelcomeDeliveryForRecipient({
+          corporateId,
+          userId: employee.id,
+          recipientEmail: employee.email,
+        });
+
+        if (activeRecipientDelivery) {
+          skipped.push({
+            userId: employee.id,
+            email: employee.email,
+            employeeId: resolvedEmployeeId,
+            reason: 'Welcome email already queued or sent for this recipient',
+            duplicate: true,
+            deliveryId: activeRecipientDelivery.id,
+            existingStatus: activeRecipientDelivery.status,
+          });
+          continue;
+        }
+
+        const welcomeEmailData = {
+          email: employee.email,
+          firstName: employee.firstName || assocMeta.firstName || 'Employee',
+          lastName: employee.lastName || assocMeta.lastName || '',
+          companyName: corporate.companyName,
+          employeeId: resolvedEmployeeId,
+          department: employee.department_name || assocMeta.department || '',
+          planName: assocMeta.planName || assocMeta.insurancePlan || corporate.packageType || 'Corporate Employee Health Plan',
+          coverageAmount: assocMeta.coverageAmount || assocMeta.sumInsured,
+          planStartDate: assocMeta.planStartDate,
+          planEndDate: assocMeta.planEndDate,
+          planValidity: assocMeta.planValidity,
+          planBenefits: assocMeta.planBenefits,
+          sponsor: assocMeta.sponsor,
+          copay: assocMeta.copay,
+        };
+
+        const draft = await welcomeEmailService.buildCorporateEmployeeWelcomeEmail(
+          welcomeEmailData,
+          temporaryPassword,
+          { teamUserId }
+        );
+
+        drafts.push({
+          userId: employee.id,
+          email: employee.email,
+          employeeId: resolvedEmployeeId,
+          temporaryPassword,
+          subject: draft.subject,
+          html: draft.html,
+        });
+      } catch (err) {
+        failed.push({ userId: employee.id, email: employee.email, reason: err.message });
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: drafts.length + ' draft(s) prepared' + (skipped.length > 0 ? ', ' + skipped.length + ' already sent skipped' : '') + (failed.length > 0 ? ', ' + failed.length + ' failed' : '') + '.',
+      drafts,
+      skipped,
+      failed,
+    });
+  } catch (error) {
+    console.error('Failed to bulk-prepare welcome email drafts:', error);
+    return res.status(500).json({ success: false, message: 'Failed to prepare drafts', error: error.message });
+  }
+});
+
+/**
+ * GET /api/admin/email-quota — current Brevo daily quota usage
+ */
+router.get('/email-quota', authUser, requireRole(['admin', 'team']), async (req, res) => {
+  try {
+    const status = await getQuotaStatus();
+    res.json({ success: true, quota: status, resetAt: 'midnight UTC' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
  * Send prepared corporate employee welcome emails
  * POST /api/admin/corporate-employee-welcome-emails/send
  */
@@ -2616,7 +3055,10 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
     const corporateId = corporate.id;
     const actorUserId = req.user?.id || req.user?.userId || null;
     const headerIdempotencyKey = String(req.headers['x-idempotency-key'] || '').trim();
-    const { emails } = req.body || {};
+    const { emails, provider } = req.body || {};
+    const resolvedProvider = ['ses', 'brevo'].includes(String(provider || '').toLowerCase())
+      ? String(provider).toLowerCase()
+      : 'auto';
 
     if (!Array.isArray(emails) || emails.length === 0) {
       return res.status(400).json({ success: false, message: "emails array is required" });
@@ -2626,7 +3068,7 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
       return res.status(400).json({ success: false, message: "A maximum of 500 emails can be sent in one batch" });
     }
 
-    const results = { sent: [], failed: [] };
+    const results = { sent: [], failed: [], skipped: [] };
     const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const seenBatchKeys = new Set();
 
@@ -2649,16 +3091,96 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
       });
 
       if (existingDelivery && (existingDelivery.status === 'queued' || existingDelivery.status === 'sent')) {
-        results.sent.push({
+        results.skipped.push({
           to,
           userId,
           employeeId: employeeId || null,
+          reason: 'Welcome email already queued or sent for this exact request',
+          duplicate: true,
           idempotentReplay: true,
           deliveryId: existingDelivery.id,
+          existingStatus: existingDelivery.status,
         });
         continue;
       }
 
+      const activeRecipientDelivery = to ? await findActiveWelcomeDeliveryForRecipient({
+        corporateId,
+        userId,
+        recipientEmail: to,
+      }) : null;
+
+      if (activeRecipientDelivery) {
+        results.skipped.push({
+          to,
+          userId,
+          employeeId: employeeId || null,
+          reason: 'Welcome email already queued or sent for this recipient',
+          duplicate: true,
+          deliveryId: activeRecipientDelivery.id,
+          existingStatus: activeRecipientDelivery.status,
+        });
+        continue;
+      }
+
+      if (to && EMAIL_RE.test(to) && subject && isBrevoHistoryConfigured()) {
+        try {
+          const brevoMatch = await findPriorBrevoWelcomeEmail({
+            email: to,
+            subject,
+            days: Number(process.env.BREVO_WELCOME_HISTORY_DAYS || 90),
+          });
+
+          if (brevoMatch?.found) {
+            let externalDelivery = null;
+            try {
+              externalDelivery = await createExternalWelcomeDeliveryFromBrevo({
+                corporateId,
+                userId,
+                employeeId,
+                recipientEmail: to,
+                subject,
+                actorUserId,
+                brevoMatch,
+              });
+            } catch (auditError) {
+              console.warn('[welcome-email] Brevo history audit insert skipped:', auditError?.message || auditError);
+              externalDelivery = await findActiveWelcomeDeliveryForRecipient({
+                corporateId,
+                recipientEmail: to,
+              });
+            }
+
+            results.skipped.push({
+              to,
+              userId,
+              employeeId: employeeId || null,
+              reason: 'Brevo transactional history shows this welcome email was already sent',
+              duplicate: true,
+              provider: 'brevo',
+              deliveryId: externalDelivery?.id || null,
+              existingStatus: externalDelivery?.status || 'sent',
+              brevo: {
+                date: brevoMatch.date,
+                subject: brevoMatch.subject,
+                messageId: brevoMatch.messageId,
+                uuid: brevoMatch.uuid,
+              },
+            });
+            continue;
+          }
+        } catch (brevoHistoryError) {
+          console.warn('[welcome-email] Brevo history lookup failed; send blocked for safety:', brevoHistoryError?.message || brevoHistoryError);
+          results.failed.push({
+            to,
+            userId,
+            employeeId: employeeId || null,
+            reason: 'Brevo history lookup failed; send blocked to prevent accidental resend',
+            provider: 'brevo',
+          });
+          continue;
+        }
+      }
       if (!to || !EMAIL_RE.test(to) || !subject || !html) {
         if (to) {
           deliveryRecord = await createWelcomeDeliveryRecord({
@@ -2708,6 +3230,18 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
       seenBatchKeys.add(dedupeKey);
 
       try {
+        const latestBulkQuota = await checkQuota('bulk');
+        if (!latestBulkQuota.allowed || latestBulkQuota.remaining <= 0) {
+          results.skipped.push({
+            to,
+            userId,
+            employeeId: employeeId || null,
+            reason: `Daily bulk email quota reached (${latestBulkQuota.limit}/day via Brevo). Resets at midnight UTC.`,
+            quota: latestBulkQuota,
+          });
+          continue;
+        }
+
         deliveryRecord = await createWelcomeDeliveryRecord({
           corporateId,
           userId,
@@ -2778,8 +3312,14 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
           );
         }
 
+        // Throttle: 1.2 s between emails when sending in batch to avoid SMTP spam detection.
+        // SES handles this natively; the delay mainly matters when using Brevo SMTP fallback.
+        if (results.sent.length > 0) {
+          await new Promise(resolve => setTimeout(resolve, 1200));
+        }
+
         try {
-          await welcomeEmailService.sendPreparedCorporateEmployeeWelcomeEmail({ to, subject, html });
+          await welcomeEmailService.sendPreparedCorporateEmployeeWelcomeEmail({ to, subject, html }, { provider: resolvedProvider });
           if (deliveryRecord?.id) {
             await updateWelcomeDeliveryRecordStatus({
               deliveryId: deliveryRecord.id,
@@ -2837,7 +3377,37 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
           idempotencyKey: computedIdempotencyKey,
           deliveryId: deliveryRecord?.id || null,
         });
+        await recordSent('bulk', 1);
       } catch (sendError) {
+        const dbCode = sendError?.parent?.code || sendError?.original?.code || sendError?.code;
+        const isActiveRecipientConflict = dbCode === '23505' && String(sendError?.parent?.constraint || sendError?.original?.constraint || sendError?.constraint || '').includes('uq_corp_welcome_active_recipient');
+
+        if (isActiveRecipientConflict) {
+          if (deliveryRecord?.id) {
+            await updateWelcomeDeliveryRecordStatus({
+              deliveryId: deliveryRecord.id,
+              status: 'failed',
+              errorMessage: 'Duplicate active welcome delivery blocked by database guard',
+            });
+          }
+
+          const activeDelivery = await findActiveWelcomeDeliveryForRecipient({
+            corporateId,
+            recipientEmail: to,
+          });
+
+          results.skipped.push({
+            to,
+            userId,
+            employeeId: employeeId || null,
+            reason: 'Welcome email already queued or sent for this recipient',
+            duplicate: true,
+            deliveryId: activeDelivery?.id || null,
+            existingStatus: activeDelivery?.status || null,
+          });
+          continue;
+        }
+
         results.failed.push({
           to,
           reason: sendError.message,
@@ -2849,7 +3419,7 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
 
     return res.json({
       success: results.failed.length === 0,
-      message: `Sent ${results.sent.length} emails, ${results.failed.length} failed`,
+      message: `Sent ${results.sent.length} emails, ${results.failed.length} failed, ${results.skipped.length} skipped`,
       results
     });
   } catch (error) {
@@ -3022,13 +3592,60 @@ router.get('/corporate-employee-welcome-emails/deliveries', authUser, requireRol
 
 /**
  * Get Corporate Employees
+ * GET /api/admin/corporate-employees/:corporateId/activation-stats
+ * Returns login & onboarding funnel stats for the team/HR portal dashboard.
+ */
+router.get('/corporate-employees/:corporateId/activation-stats', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
+  try {
+    const corporateId = req.resolvedCorporate.id;
+    const [rows] = await postgresSequelize.query(`
+      SELECT
+        COUNT(*)                                                                         AS total,
+        COUNT(*) FILTER (WHERE wd.status = 'sent')                                      AS welcome_sent,
+        COUNT(*) FILTER (WHERE u."lastLoginAt" IS NOT NULL)                             AS logged_in,
+        COUNT(*) FILTER (WHERE u."lastLoginAt" IS NOT NULL
+                           AND (u.metadata->>'requirePasswordChange')::boolean IS DISTINCT FROM true) AS password_changed,
+        COUNT(*) FILTER (WHERE u."lastLoginAt" >= NOW() - INTERVAL '7 days')            AS active_7d,
+        COUNT(*) FILTER (WHERE u."lastLoginAt" >= NOW() - INTERVAL '30 days')           AS active_30d
+      FROM users u
+      JOIN user_associations ua ON ua."userId" = u.id
+        AND ua."entityType" = 'corporate' AND ua."entityId" = :corporateId
+        AND ua.role = 'employee' AND ua.status = 'active'
+      LEFT JOIN LATERAL (
+        SELECT status FROM corporate_welcome_email_deliveries
+        WHERE corporate_id = :corporateId AND LOWER(recipient_email) = LOWER(u.email) AND status = 'sent'
+        LIMIT 1
+      ) wd ON true
+    `, { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT });
+
+    const stats = rows || {};
+    return res.json({
+      success: true,
+      stats: {
+        total:           parseInt(stats.total          || 0),
+        welcomeSent:     parseInt(stats.welcome_sent   || 0),
+        loggedIn:        parseInt(stats.logged_in      || 0),
+        passwordChanged: parseInt(stats.password_changed || 0),
+        active7d:        parseInt(stats.active_7d      || 0),
+        active30d:       parseInt(stats.active_30d     || 0),
+        neverLoggedIn:   parseInt(stats.total || 0) - parseInt(stats.logged_in || 0),
+        notYetOnboarded: parseInt(stats.total || 0) - parseInt(stats.welcome_sent || 0),
+      }
+    });
+  } catch (error) {
+    console.error('Activation stats error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
  * GET /api/admin/corporate-employees/:corporateId
  */
 router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
   try {
     const numericCorporateId = req.resolvedCorporate.id;
 
-    const { limit: qLimit = 1000, offset: qOffset = 0 } = req.query;
+    const { limit: qLimit = 5000, offset: qOffset = 0 } = req.query;
     const employees = await postgresSequelize.query(`
       SELECT u.id, u.email, u."firstName", u."lastName", u."phoneNumber",
              u.address_city, u.address_state, u."address_zipCode",
@@ -3037,7 +3654,13 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
              ua.metadata, ua.status, ua."startDate",
              uhp."packageId" AS "currentPackageId",
              uhp."packageName" AS "currentPackageName",
-             uhp."validTo" AS "packageValidTo"
+             uhp."validTo" AS "packageValidTo",
+             u."lastLoginAt",
+             u."lastActivityAt",
+             u."loginCount",
+             (u.metadata->>'requirePasswordChange')::boolean AS "requirePasswordChange",
+             wd.status AS "welcomeEmailStatus",
+             wd.updated_at AS "welcomeEmailSentAt"
       FROM users u
       JOIN user_associations ua ON u.id = ua."userId"
       LEFT JOIN LATERAL (
@@ -3046,13 +3669,21 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
         WHERE "userId" = u.id AND corporate_id = :corporateId AND status = 'active'
         ORDER BY "validTo" DESC LIMIT 1
       ) uhp ON true
+      LEFT JOIN LATERAL (
+        SELECT status, updated_at
+        FROM corporate_welcome_email_deliveries
+        WHERE corporate_id = :corporateId
+          AND LOWER(recipient_email) = LOWER(u.email)
+          AND status IN ('queued', 'sent')
+        ORDER BY CASE WHEN status = 'sent' THEN 0 ELSE 1 END, updated_at DESC LIMIT 1
+      ) wd ON true
       WHERE ua."entityType" = 'corporate'
         AND ua."entityId" = :corporateId
         AND ua.role = 'employee'
       ORDER BY u."firstName"
       LIMIT :limit OFFSET :offset
     `, {
-      replacements: { corporateId: numericCorporateId, limit: Math.min(parseInt(qLimit) || 1000, 2000), offset: parseInt(qOffset) || 0 },
+      replacements: { corporateId: numericCorporateId, limit: Math.min(parseInt(qLimit) || 5000, 5000), offset: parseInt(qOffset) || 0 },
       type: postgresSequelize.QueryTypes.SELECT,
       benchmark: true,
     });

@@ -1,5 +1,6 @@
 // Version: 2.1.0 - Numeric Corporate ID Conversion Ready
 import { useState, useEffect, useRef, useMemo } from 'react';
+import ExcelJS from 'exceljs';
 import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -106,6 +107,12 @@ interface Employee {
   packageValidTo?: string;
   gender?: string;
   dateOfBirth?: string;
+  lastLoginAt?: string | null;
+  lastActivityAt?: string | null;
+  loginCount?: number;
+  requirePasswordChange?: boolean;
+  welcomeEmailStatus?: string | null;
+  welcomeEmailSentAt?: string | null;
 }
 
 interface LabPartner {
@@ -217,9 +224,162 @@ interface WelcomeDeliveryRecord {
   userLastName?: string | null;
 }
 
+interface CorporateAdminUser {
+  id: number;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phoneNumber: string;
+  status: string;
+  lastLoginAt: string | null;
+  createdAt: string;
+  role: string;
+}
+
 type CommunicationChannel = 'email' | 'whatsapp' | 'sms';
 type CommunicationRecipientMode = 'individual' | 'selected' | 'bulk';
 type WelcomeEmailMode = 'draft' | 'send' | 'skip';
+
+interface EmailQuotaSnapshot {
+  used: number;
+  limit: number;
+  remaining: number;
+  allowed: boolean;
+}
+
+type BulkEmployeeField =
+  | 'firstName'
+  | 'lastName'
+  | 'email'
+  | 'phoneNumber'
+  | 'employeeId'
+  | 'department'
+  | 'designation'
+  | 'dateOfBirth'
+  | 'gender'
+  | 'city'
+  | 'state'
+  | 'pinCode'
+  | 'location'
+  | 'facility';
+
+const BULK_EMPLOYEE_FIELDS: BulkEmployeeField[] = [
+  'firstName',
+  'lastName',
+  'email',
+  'phoneNumber',
+  'employeeId',
+  'department',
+  'designation',
+  'dateOfBirth',
+  'gender',
+  'city',
+  'state',
+  'pinCode',
+  'location',
+  'facility',
+];
+
+const BULK_EMPLOYEE_HEADER_ALIASES: Record<string, BulkEmployeeField> = {
+  'first name': 'firstName',
+  firstname: 'firstName',
+  fname: 'firstName',
+  givenname: 'firstName',
+  'given name': 'firstName',
+  'employee first name': 'firstName',
+  'member first name': 'firstName',
+  'last name': 'lastName',
+  lastname: 'lastName',
+  lname: 'lastName',
+  surname: 'lastName',
+  familyname: 'lastName',
+  'family name': 'lastName',
+  'employee last name': 'lastName',
+  'member last name': 'lastName',
+  name: 'firstName',
+  'employee name': 'firstName',
+  'member name': 'firstName',
+  'full name': 'firstName',
+  email: 'email',
+  'email id': 'email',
+  emailid: 'email',
+  'email address': 'email',
+  'work email': 'email',
+  'official email': 'email',
+  'corporate email': 'email',
+  phone: 'phoneNumber',
+  phonenumber: 'phoneNumber',
+  'phone number': 'phoneNumber',
+  mobile: 'phoneNumber',
+  'mobile number': 'phoneNumber',
+  contact: 'phoneNumber',
+  'contact number': 'phoneNumber',
+  employeeid: 'employeeId',
+  'employee id': 'employeeId',
+  empid: 'employeeId',
+  'emp id': 'employeeId',
+  'employee code': 'employeeId',
+  'emp code': 'employeeId',
+  'staff id': 'employeeId',
+  'staff code': 'employeeId',
+  'associate id': 'employeeId',
+  'ninjacart id': 'employeeId',
+  department: 'department',
+  dept: 'department',
+  function: 'department',
+  'business unit': 'department',
+  vertical: 'department',
+  designation: 'designation',
+  role: 'designation',
+  'job title': 'designation',
+  title: 'designation',
+  position: 'designation',
+  grade: 'designation',
+  dateofbirth: 'dateOfBirth',
+  'date of birth': 'dateOfBirth',
+  dob: 'dateOfBirth',
+  birthdate: 'dateOfBirth',
+  gender: 'gender',
+  sex: 'gender',
+  city: 'city',
+  'work city': 'city',
+  'base city': 'city',
+  state: 'state',
+  'work state': 'state',
+  pincode: 'pinCode',
+  'pin code': 'pinCode',
+  pin: 'pinCode',
+  zip: 'pinCode',
+  'zip code': 'pinCode',
+  'postal code': 'pinCode',
+  location: 'location',
+  branch: 'location',
+  'work location': 'location',
+  'office location': 'location',
+  hub: 'location',
+  facility: 'facility',
+  'work facility': 'facility',
+  site: 'facility',
+  warehouse: 'facility',
+};
+
+const normalizeBulkHeaderKey = (header: string) =>
+  String(header || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_\-./\\]+/g, ' ')
+    .replace(/[^a-z0-9 ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const isBulkEmployeeField = (value: unknown): value is BulkEmployeeField =>
+  BULK_EMPLOYEE_FIELDS.includes(value as BulkEmployeeField);
+
+const resolveBulkHeaderField = (header: string): BulkEmployeeField | '' => {
+  const normalized = normalizeBulkHeaderKey(header);
+  if (!normalized) return '';
+  return BULK_EMPLOYEE_HEADER_ALIASES[normalized] || BULK_EMPLOYEE_HEADER_ALIASES[normalized.replace(/\s+/g, '')] || '';
+};
 
 interface CommunicationTemplate {
   id: string;
@@ -481,12 +641,16 @@ const TeamCorporateManagement = () => {
   const [savingCorporate, setSavingCorporate] = useState(false);
   const [deletingCorporate, setDeletingCorporate] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [corporateAdmins, setCorporateAdmins] = useState<CorporateAdminUser[]>([]);
+  const [corporateAdminsLoading, setCorporateAdminsLoading] = useState(false);
   const [empCurrentPage, setEmpCurrentPage] = useState(1);
   const EMP_PAGE_SIZE = 10;
 
   // Dialog states
   const [showAddCorporateDialog, setShowAddCorporateDialog] = useState(false);
   const [showAddHRDialog, setShowAddHRDialog] = useState(false);
+  const [editingHRAdmin, setEditingHRAdmin] = useState<CorporateAdminUser | null>(null);
+  const [updatingHRAdmin, setUpdatingHRAdmin] = useState(false);
   const [showAddEmployeeDialog, setShowAddEmployeeDialog] = useState(false);
   const [showCredentialsDialog, setShowCredentialsDialog] = useState(false);
   const [newEmployeeCredentials, setNewEmployeeCredentials] = useState<{name: string; email: string; password: string; emailStatus: "queued" | "skipped" | "draft" | "not_applicable"} | null>(null);
@@ -499,8 +663,10 @@ const TeamCorporateManagement = () => {
   const [welcomeEmployeeSearch, setWelcomeEmployeeSearch] = useState('');
   const [welcomeEmployeeSelectionMode, setWelcomeEmployeeSelectionMode] = useState<'selected' | 'all'>('selected');
   const [selectedWelcomeTemplateId, setSelectedWelcomeTemplateId] = useState('standard-welcome');
+  const [approvedWelcomeTemplateId, setApprovedWelcomeTemplateId] = useState<string | null>(null);
   const [savedWelcomeEmailTemplates, setSavedWelcomeEmailTemplates] = useState<WelcomeEmailTemplatePreset[]>([]);
   const [savingWelcomeTemplate, setSavingWelcomeTemplate] = useState(false);
+  const [approvingWelcomeTemplate, setApprovingWelcomeTemplate] = useState(false);
   const [preparingWelcomeEmployeeDrafts, setPreparingWelcomeEmployeeDrafts] = useState(false);
   const [welcomeDeliveries, setWelcomeDeliveries] = useState<WelcomeDeliveryRecord[]>([]);
   const [welcomeDeliveriesLoading, setWelcomeDeliveriesLoading] = useState(false);
@@ -571,7 +737,13 @@ const TeamCorporateManagement = () => {
   } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [bulkWelcomeEmailMode, setBulkWelcomeEmailMode] = useState<WelcomeEmailMode>("draft");
+  const [bulkUseAiColumnDetection, setBulkUseAiColumnDetection] = useState(true);
+  const [bulkAiColumnSummary, setBulkAiColumnSummary] = useState<string | null>(null);
   const [showUploadReport, setShowUploadReport] = useState(false);
+  const [bulkRemoveUnlisted, setBulkRemoveUnlisted] = useState(false);
+  const [syncOffboardList, setSyncOffboardList] = useState<{ id: number; name: string; email: string; employeeId: string }[]>([]);
+  const [showSyncConfirmDialog, setShowSyncConfirmDialog] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   
   // Corporate form
   const [newCorporate, setNewCorporate] = useState({
@@ -1173,6 +1345,11 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     );
   });
 
+  const hasActiveWelcomeEmailDelivery = (employee: Employee) => {
+    const status = String(employee.welcomeEmailStatus || '').toLowerCase();
+    return status === 'sent' || status === 'queued';
+  };
+
   const filteredWelcomeEmployees = useMemo(() => {
     const q = welcomeEmployeeSearch.trim().toLowerCase();
     if (!q) return employees;
@@ -1550,12 +1727,56 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
   useEffect(() => {
     if (selectedCorporate?.id) {
       fetchEmployees(selectedCorporate.id);
+      fetchCorporateAdmins(selectedCorporate.id);
       fetchHealthPackages(selectedCorporate.id);
       fetchCorporatePlans(selectedCorporate.id);
       fetchNetworkPartners(selectedCorporate.id);
       fetchWellnessEvents(selectedCorporate.id);
     }
   }, [selectedCorporate?.id]);
+
+  const normalizeStatusLabel = (status: string | null | undefined) => {
+    const normalized = String(status || '').toLowerCase();
+    if (normalized === 'active') return 'Active';
+    if (normalized === 'inactive') return 'Inactive';
+    if (normalized === 'suspended') return 'Suspended';
+    return 'Pending';
+  };
+
+  const formatLastLoginLabel = (lastLoginAt: string | null | undefined) => {
+    if (!lastLoginAt) return 'Never';
+    const dt = new Date(lastLoginAt);
+    if (Number.isNaN(dt.getTime())) return 'Never';
+    return dt.toLocaleString();
+  };
+
+  const fetchCorporateAdmins = async (corporateId: number) => {
+    try {
+      setCorporateAdminsLoading(true);
+      const token = localStorage.getItem('teamToken');
+      const numericId = parseInt(String(corporateId), 10);
+      if (isNaN(numericId)) {
+        console.error('Invalid corporate ID:', corporateId);
+        setCorporateAdmins([]);
+        return;
+      }
+
+      const response = await api.get(`/admin/corporate-users/${numericId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      if (response.data?.success && Array.isArray(response.data?.users)) {
+        setCorporateAdmins(response.data.users);
+      } else {
+        setCorporateAdmins([]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch corporate admins:', error);
+      setCorporateAdmins([]);
+    } finally {
+      setCorporateAdminsLoading(false);
+    }
+  };
 
   const fetchEmployees = async (corporateId: number) => {
     try {
@@ -1566,13 +1787,31 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         setEmployees([]);
         return;
       }
-      const response = await api.get(`/admin/corporate-employees/${numericId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined
-      });
-      
-      if (response.data?.success && response.data?.employees) {
+      const pageSize = 500;
+      let offset = 0;
+      let mergedEmployees: any[] = [];
+
+      while (true) {
+        const response = await api.get(`/admin/corporate-employees/${numericId}`, {
+          params: { limit: pageSize, offset },
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+
+        if (!response.data?.success || !Array.isArray(response.data?.employees)) {
+          mergedEmployees = [];
+          break;
+        }
+
+        const batch = response.data.employees;
+        mergedEmployees = [...mergedEmployees, ...batch];
+
+        if (batch.length < pageSize) break;
+        offset += batch.length;
+      }
+
+      if (mergedEmployees.length > 0) {
         setEmpCurrentPage(1);
-        setEmployees(response.data.employees.map((emp: any) => {
+        setEmployees(mergedEmployees.map((emp: any) => {
           const meta = emp.metadata || {};
           const firstName = emp.firstName || meta.firstName || '';
           const lastName = emp.lastName || meta.lastName || '';
@@ -1601,6 +1840,12 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
             packageValidTo: emp.packageValidTo || undefined,
             gender: emp.gender || '',
             dateOfBirth: emp.dateOfBirth || '',
+            lastLoginAt: emp.lastLoginAt || null,
+            lastActivityAt: emp.lastActivityAt || null,
+            loginCount: emp.loginCount ?? 0,
+            requirePasswordChange: emp.requirePasswordChange ?? true,
+            welcomeEmailStatus: emp.welcomeEmailStatus || null,
+            welcomeEmailSentAt: emp.welcomeEmailSentAt || null,
           };
         }));
       } else {
@@ -2343,6 +2588,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         phoneNumber: '',
         password: ''
       });
+      fetchCorporateAdmins(selectedCorporate.id);
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -2350,6 +2596,129 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         description: error.response?.data?.message || 'Failed to create HR admin'
       });
     }
+  };
+
+  const resetHRAdminForm = () => {
+    setNewHRAdmin({
+      firstName: '',
+      lastName: '',
+      email: '',
+      phoneNumber: '',
+      password: '',
+    });
+    setEditingHRAdmin(null);
+  };
+
+  const openEditHRAdminDialog = (admin: CorporateAdminUser) => {
+    setEditingHRAdmin(admin);
+    setNewHRAdmin({
+      firstName: admin.firstName || '',
+      lastName: admin.lastName || '',
+      email: admin.email || '',
+      phoneNumber: admin.phoneNumber || '',
+      password: '',
+    });
+    setShowAddHRDialog(true);
+  };
+
+  const handleUpdateHRAdmin = async () => {
+    if (!selectedCorporate || !editingHRAdmin) return;
+
+    try {
+      setUpdatingHRAdmin(true);
+      const token = localStorage.getItem('teamToken');
+      await api.put(`/admin/corporate-users/${selectedCorporate.id}/${editingHRAdmin.id}`, {
+        firstName: newHRAdmin.firstName,
+        lastName: newHRAdmin.lastName,
+        email: newHRAdmin.email,
+        phoneNumber: newHRAdmin.phoneNumber,
+        ...(newHRAdmin.password?.trim() ? { password: newHRAdmin.password.trim() } : {}),
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      toast({
+        title: 'HR Admin Updated',
+        description: `${newHRAdmin.email} updated successfully`,
+      });
+
+      setShowAddHRDialog(false);
+      resetHRAdminForm();
+      fetchCorporateAdmins(selectedCorporate.id);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to update HR admin',
+      });
+    } finally {
+      setUpdatingHRAdmin(false);
+    }
+  };
+
+  const handleDeactivateHRAdmin = async (
+    admin: CorporateAdminUser,
+    opts?: { skipConfirm?: boolean; silent?: boolean }
+  ) => {
+    if (!selectedCorporate) return;
+    if (!opts?.skipConfirm) {
+      const confirmed = window.confirm(`Deactivate HR admin ${admin.email}?`);
+      if (!confirmed) return;
+    }
+
+    try {
+      setUpdatingHRAdmin(true);
+      const token = localStorage.getItem('teamToken');
+      await api.put(`/admin/corporate-users/${selectedCorporate.id}/${admin.id}`, {
+        status: 'inactive',
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      if (!opts?.silent) {
+        toast({
+          title: 'HR Admin Deactivated',
+          description: `${admin.email} has been deactivated`,
+        });
+      }
+      fetchCorporateAdmins(selectedCorporate.id);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to deactivate HR admin',
+      });
+    } finally {
+      setUpdatingHRAdmin(false);
+    }
+  };
+
+  const handleReplaceHRAdmin = async () => {
+    const activeAdmins = corporateAdmins.filter((admin) => normalizeStatusLabel(admin.status) === 'Active');
+
+    if (activeAdmins.length === 0) {
+      resetHRAdminForm();
+      setShowAddHRDialog(true);
+      toast({
+        title: 'No Active HR Found',
+        description: 'Create a new HR admin profile.',
+      });
+      return;
+    }
+
+    const current = activeAdmins[0];
+    const confirmed = window.confirm(
+      `This will deactivate ${current.email} and open the form to create a replacement HR admin. Continue?`
+    );
+    if (!confirmed) return;
+
+    await handleDeactivateHRAdmin(current, { skipConfirm: true, silent: true });
+    resetHRAdminForm();
+    setShowAddHRDialog(true);
+    toast({
+      title: 'Current HR Deactivated',
+      description: 'Proceed to create the replacement HR admin account.',
+    });
   };
 
   // Add partners to corporate network
@@ -2517,40 +2886,104 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     setShowWelcomeEmailBatchDialog(true);
   };
 
-  const handleSendWelcomeEmailBatch = async (draftsToSend: WelcomeEmailDraft[]) => {
+  const handleSendWelcomeEmailBatch = async (draftsToSend: WelcomeEmailDraft[], provider: 'auto' | 'ses' | 'brevo' = 'auto') => {
     if (!selectedCorporate || draftsToSend.length === 0) return;
 
+    const SERVER_MAX_BATCH_SIZE = 500;
+    const REQUEST_SAFE_BATCH_SIZE = 15;
     setSendingWelcomeEmailBatch(true);
     const sendingIds = new Set(draftsToSend.map((draft) => draft.id));
     setWelcomeEmailDrafts((current) => current.map((draft) => sendingIds.has(draft.id) ? { ...draft, status: "sending", error: undefined } : draft));
 
-    try {
-      const token = localStorage.getItem("teamToken");
-      const { data } = await api.post("/admin/corporate-employee-welcome-emails/send", {
-        corporateId: selectedCorporate.id,
-        emails: draftsToSend.map((draft) => ({
-          to: draft.to,
-          subject: draft.subject,
-          html: draft.html,
-          userId: draft.userId,
-          employeeId: draft.employeeId,
-          temporaryPassword: draft.temporaryPassword,
-        }))
-      }, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined
-      });
+    const allSent = new Set<string>();
+    const allSkippedDuplicates = new Set<string>();
+    const allSkippedDeferred = new Map<string, string>();
+    const allFailed = new Map<string, string>();
+    const deferredIds = new Set<string>();
+    let quotaMessage = '';
 
-      const sent = new Set((data.results?.sent || []).map((item: any) => String(item.to).toLowerCase()));
-      const failed = new Map((data.results?.failed || []).map((item: any) => [String(item.to).toLowerCase(), item.reason || "Failed to send"]));
+    try {
+      const headers = teamAuthHeaders();
+      let bulkQuota: EmailQuotaSnapshot | null = null;
+
+      try {
+        const quotaResponse = await api.get('/admin/email-quota', { headers });
+        bulkQuota = quotaResponse.data?.quota?.bulk || null;
+      } catch {
+        bulkQuota = null;
+      }
+
+      let draftsAllowedToday = draftsToSend;
+      if (bulkQuota) {
+        const remaining = Math.max(0, Number(bulkQuota.remaining) || 0);
+        if (remaining <= 0) {
+          quotaMessage = 'Daily bulk email quota reached (' + bulkQuota.limit + '/day via Brevo). Resets at midnight UTC.';
+          draftsAllowedToday = [];
+        } else if (draftsToSend.length > remaining) {
+          const deferredCount = draftsToSend.length - remaining;
+          quotaMessage = 'Brevo daily bulk email quota allows ' + remaining + ' more email' + (remaining === 1 ? '' : 's') + ' today (' + bulkQuota.used + '/' + bulkQuota.limit + ' used). ' + deferredCount + ' email' + (deferredCount === 1 ? '' : 's') + ' left as drafts for tomorrow.';
+          draftsAllowedToday = draftsToSend.slice(0, remaining);
+          draftsToSend.slice(remaining).forEach((draft) => deferredIds.add(draft.id));
+        }
+      }
+
+      const chunkSize = Math.min(SERVER_MAX_BATCH_SIZE, REQUEST_SAFE_BATCH_SIZE);
+      for (let i = 0; i < draftsAllowedToday.length; i += chunkSize) {
+        const chunk = draftsAllowedToday.slice(i, i + chunkSize);
+        try {
+          const { data } = await api.post("/admin/corporate-employee-welcome-emails/send", {
+            corporateId: selectedCorporate.id,
+            provider,
+            emails: chunk.map((draft) => ({
+              to: draft.to,
+              subject: draft.subject,
+              html: draft.html,
+              userId: draft.userId,
+              employeeId: draft.employeeId,
+              temporaryPassword: draft.temporaryPassword,
+            }))
+          }, { headers, timeout: 90000 });
+
+          (data.results?.sent || []).forEach((item: any) => allSent.add(String(item.to).toLowerCase()));
+          (data.results?.skipped || []).forEach((item: any) => {
+            const skippedTo = String(item.to).toLowerCase();
+            if (item.duplicate) {
+              allSkippedDuplicates.add(skippedTo);
+            } else {
+              allSkippedDeferred.set(skippedTo, item.reason || 'Skipped');
+            }
+          });
+          (data.results?.failed || []).forEach((item: any) => allFailed.set(String(item.to).toLowerCase(), item.reason || "Failed to send"));
+        } catch (chunkError: any) {
+          const message = chunkError.response?.data?.message || (chunkError.code === 'ECONNABORTED' ? 'Send request timed out. Check delivery history before retrying.' : 'Chunk send failed');
+          chunk.forEach((d) => allFailed.set(d.to.toLowerCase(), message));
+
+          if (chunkError.response?.status === 429) {
+            quotaMessage = message;
+            draftsAllowedToday.slice(i + chunk.length).forEach((draft) => deferredIds.add(draft.id));
+            break;
+          }
+        }
+      }
 
       setWelcomeEmailDrafts((current) => current.map((draft) => {
         if (!sendingIds.has(draft.id)) return draft;
         const to = draft.to.toLowerCase();
-        if (sent.has(to)) return { ...draft, status: "sent", error: undefined };
-        return { ...draft, status: "failed", error: String(failed.get(to) || "Failed to send") };
+        if (allSent.has(to) || allSkippedDuplicates.has(to)) return { ...draft, status: "sent", error: undefined };
+        if (deferredIds.has(draft.id) || allSkippedDeferred.has(to)) return { ...draft, status: 'draft', error: String(allSkippedDeferred.get(to) || quotaMessage || 'Not sent yet. Daily quota reached.') };
+        return { ...draft, status: "failed", error: String(allFailed.get(to) || quotaMessage || "Failed to send") };
       }));
 
-      toast({ title: "Welcome Email Batch", description: data.message || "Batch send completed." });
+      const quotaBlockedAll = Boolean(quotaMessage && draftsAllowedToday.length === 0);
+      const duplicateSkippedCount = allSkippedDuplicates.size;
+      const deferredCount = deferredIds.size + allSkippedDeferred.size + (quotaBlockedAll ? draftsToSend.length : 0);
+      toast({
+        title: "Welcome Email Batch",
+        description: quotaMessage
+          ? (allSent.size + ' sent, ' + duplicateSkippedCount + ' already sent skipped, ' + allFailed.size + ' failed, ' + deferredCount + ' left as drafts. ' + quotaMessage)
+          : (allSent.size + ' sent' + (duplicateSkippedCount > 0 ? ', ' + duplicateSkippedCount + ' already sent skipped' : '') + (allFailed.size > 0 ? ', ' + allFailed.size + ' failed' : '') + '.'),
+        variant: allFailed.size > 0 || quotaMessage ? "destructive" : "default",
+      });
     } catch (error: any) {
       setWelcomeEmailDrafts((current) => current.map((draft) => sendingIds.has(draft.id) ? { ...draft, status: "failed", error: error.response?.data?.message || "Failed to send" } : draft));
       toast({ variant: "destructive", title: "Email Batch Failed", description: error.response?.data?.message || "Failed to send welcome emails" });
@@ -2558,7 +2991,6 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       setSendingWelcomeEmailBatch(false);
     }
   };
-
   const escapeHtml = (value: string) =>
     String(value || '')
       .replace(/&/g, '&amp;')
@@ -2577,7 +3009,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
 
   <p><strong>Welcome to My SmartHealth!</strong></p>
 
-  <p>We're excited to partner with you on your health and wellness journey through the My SmartHealth Corporate Wellness Program, specially curated for Ninjacart employees.</p>
+  <p>We're excited to partner with you on your health and wellness journey through the My SmartHealth Corporate Wellness Program, specially curated for {{companyName}} employees.</p>
 
   <p>Your account is now ready to use.</p>
 
@@ -2676,6 +3108,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       const assignedTemplateId = payload.assignments?.corporate_employee_welcome?.templateId;
       if (assignedTemplateId) {
         setSelectedWelcomeTemplateId(`saved-${assignedTemplateId}`);
+        setApprovedWelcomeTemplateId(`saved-${assignedTemplateId}`);
       }
     } catch (error: any) {
       console.error('Failed to load welcome templates:', error?.response?.data || error?.message || error);
@@ -2743,6 +3176,47 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     }
   };
 
+  const handleApproveWelcomeTemplate = async (templateId: string) => {
+    if (!templateId) return;
+    const token = localStorage.getItem('teamToken');
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+    setApprovingWelcomeTemplate(true);
+    try {
+      let savedId: number | null = null;
+
+      if (templateId.startsWith('saved-')) {
+        savedId = parseInt(templateId.replace('saved-', ''), 10);
+      } else {
+        // Built-in template — save to DB first so it can be assigned
+        const tpl = allWelcomeEmailTemplates.find(t => t.id === templateId);
+        if (!tpl) return;
+        const res = await api.post('/team/welcome-email-templates', {
+          name: tpl.name,
+          subject: tpl.subject,
+          htmlContent: tpl.html,
+        }, { headers });
+        savedId = res.data?.data?.id;
+        if (savedId) {
+          await loadWelcomeEmailTemplateLibrary();
+          setSelectedWelcomeTemplateId(`saved-${savedId}`);
+        }
+      }
+
+      if (savedId) {
+        await api.put('/team/welcome-email-templates/assign', {
+          eventType: 'corporate_employee_welcome',
+          templateId: savedId,
+        }, { headers });
+        setApprovedWelcomeTemplateId(`saved-${savedId}`);
+        toast({ title: '✅ Template approved', description: 'This template will be used for all welcome emails.' });
+      }
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Approval failed', description: err?.response?.data?.message || 'Could not save template approval.' });
+    } finally {
+      setApprovingWelcomeTemplate(false);
+    }
+  };
+
   const applyWelcomeTemplatePlaceholders = (template: string, employee: Employee, temporaryPassword = '') => {
     const loginIdentifier = employee.email || employee.employeeId || '-';
     const replacements: Record<string, string> = {
@@ -2780,15 +3254,15 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
   const getWelcomeEmployeeTargets = (mode: 'selected' | 'all' | 'single' = welcomeEmployeeSelectionMode, singleEmployeeId?: string) => {
     if (mode === 'single') {
       if (!singleEmployeeId) return [];
-      return employees.filter((employee) => employee.id === singleEmployeeId && employee.email);
+      return employees.filter((employee) => employee.id === singleEmployeeId && employee.email && !hasActiveWelcomeEmailDelivery(employee));
     }
 
     if (mode === 'all') {
-      return employees.filter((employee) => employee.email);
+      return employees.filter((employee) => employee.email && !hasActiveWelcomeEmailDelivery(employee));
     }
 
     const selected = new Set(selectedEmployeeIdsForWelcome);
-    return employees.filter((employee) => selected.has(employee.id) && employee.email);
+    return employees.filter((employee) => selected.has(employee.id) && employee.email && !hasActiveWelcomeEmailDelivery(employee));
   };
 
   const handlePrepareOrSendEmployeeWelcomeEmails = async (
@@ -2812,63 +3286,95 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       return;
     }
 
-    const template = allWelcomeEmailTemplates.find((item) => item.id === selectedWelcomeTemplateId) || allWelcomeEmailTemplates[0];
     setPreparingWelcomeEmployeeDrafts(true);
 
     try {
-      const preparedTargets: Array<{ employee: Employee; temporaryPassword: string }> = [];
+      const BULK_CHUNK = 500;
+      const allDraftRows: Array<{ userId: number; email: string; employeeId: string; temporaryPassword: string; subject: string; html: string }> = [];
+      const skippedTargets: string[] = [];
       const failedTargets: string[] = [];
 
-      for (const employee of targets) {
+      // Use bulk-prepare: one request per 500 employees instead of N sequential /resend calls
+      const employeeById = new Map(targets.map(e => [e.id, e]));
+      const userIdChunks: number[][] = [];
+      const allIds = targets.map(e => e.id).filter(Boolean);
+      for (let i = 0; i < allIds.length; i += BULK_CHUNK) {
+        userIdChunks.push(allIds.slice(i, i + BULK_CHUNK));
+      }
+
+      for (const chunk of userIdChunks) {
         try {
-          const { data } = await api.post('/admin/corporate-employee-welcome-emails/resend', {
+          const { data } = await api.post('/admin/corporate-employee-welcome-emails/prepare-bulk', {
             corporateId: selectedCorporate.id,
-            employeeId: employee.employeeId,
-            userId: employee.id,
-            welcomeEmailMode: 'draft',
-          }, {
-            headers: teamAuthHeaders(),
-          });
+            userIds: chunk,
+          }, { headers: teamAuthHeaders() });
 
-          const temporaryPassword = data?.result?.temporaryPassword;
-          if (!temporaryPassword) {
-            failedTargets.push(employee.email || employee.employeeId || employee.id);
-            continue;
+          for (const d of (data.drafts || [])) {
+            allDraftRows.push(d);
           }
-
-          preparedTargets.push({ employee, temporaryPassword });
+          for (const s of (data.skipped || [])) {
+            skippedTargets.push(s.email || String(s.userId));
+          }
+          for (const f of (data.failed || [])) {
+            failedTargets.push(f.email || String(f.userId));
+          }
         } catch {
-          failedTargets.push(employee.email || employee.employeeId || employee.id);
+          chunk.forEach(id => {
+            const emp = employeeById.get(id);
+            failedTargets.push(emp?.email || String(id));
+          });
         }
       }
 
-      if (preparedTargets.length === 0) {
+      if (allDraftRows.length === 0) {
         toast({
-          variant: 'destructive',
-          title: 'Password generation failed',
-          description: 'Could not generate temporary passwords for the selected employees.',
+          variant: skippedTargets.length > 0 && failedTargets.length === 0 ? 'default' : 'destructive',
+          title: skippedTargets.length > 0 && failedTargets.length === 0 ? 'No New Welcome Emails Needed' : 'Preparation failed',
+          description: skippedTargets.length > 0 && failedTargets.length === 0
+            ? skippedTargets.length + ' selected employee(s) already had welcome emails queued or sent.'
+            : 'Could not prepare any welcome email drafts.',
         });
         return;
       }
 
-      const draftTimestamp = Date.now();
-      const drafts: WelcomeEmailDraft[] = preparedTargets.map(({ employee, temporaryPassword }, index) => ({
-        id: `prepared-${employee.id}-${draftTimestamp}-${index}`,
-        to: employee.email,
-        userId: employee.id,
-        employeeId: employee.employeeId,
-        temporaryPassword,
-        employeeName: employee.name || `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || employee.email,
-        subject: applyWelcomeTemplatePlaceholders(template.subject, employee, temporaryPassword),
-        html: applyWelcomeTemplatePlaceholders(template.html, employee, temporaryPassword),
-        status: 'draft',
-      }));
+      // Apply the UI-selected template (with per-employee placeholders) rather than the
+      // server's default. The server only provides temporaryPassword — subject/html come
+      // from the template the user actually chose in the dialog.
+      const selectedTemplate = allWelcomeEmailTemplates.find((t) => t.id === selectedWelcomeTemplateId) || allWelcomeEmailTemplates[0];
 
-      if (failedTargets.length > 0) {
+      const draftTimestamp = Date.now();
+      const drafts: WelcomeEmailDraft[] = allDraftRows.map((row, index) => {
+        const employee = employeeById.get(row.userId);
+        // Build a minimal employee-like object for placeholder substitution when the
+        // full employee record isn't in the local state (e.g. loaded from a different page).
+        const empForPlaceholders = employee || {
+          id: row.userId,
+          email: row.email,
+          employeeId: row.employeeId,
+          name: '',
+          firstName: '',
+          lastName: '',
+        };
+        return {
+          id: `prepared-${row.userId}-${draftTimestamp}-${index}`,
+          to: row.email,
+          userId: row.userId,
+          employeeId: row.employeeId,
+          temporaryPassword: row.temporaryPassword,
+          employeeName: employee
+            ? (employee.name || `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || row.email)
+            : row.email,
+          subject: applyWelcomeTemplatePlaceholders(selectedTemplate.subject, empForPlaceholders as Employee, row.temporaryPassword),
+          html: applyWelcomeTemplatePlaceholders(selectedTemplate.html, empForPlaceholders as Employee, row.temporaryPassword),
+          status: 'draft' as const,
+        };
+      });
+
+      if (skippedTargets.length > 0 || failedTargets.length > 0) {
         toast({
-          variant: 'destructive',
-          title: 'Some employees skipped',
-          description: `Temporary passwords were not generated for ${failedTargets.length} employee${failedTargets.length === 1 ? '' : 's'}.`,
+          variant: failedTargets.length > 0 ? 'destructive' : 'default',
+          title: failedTargets.length > 0 ? 'Some employees skipped' : 'Already Sent Skipped',
+          description: (skippedTargets.length ? skippedTargets.length + ' already queued/sent skipped. ' : '') + (failedTargets.length ? failedTargets.length + ' could not be prepared.' : ''),
         });
       }
 
@@ -2877,7 +3383,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         await handleSendWelcomeEmailBatch(drafts);
         toast({
           title: 'Welcome emails queued',
-          description: `Attempted immediate send for ${drafts.length} employee${drafts.length === 1 ? '' : 's'}.`
+          description: 'Attempted immediate send for ' + drafts.length + ' employee' + (drafts.length === 1 ? '' : 's') + (skippedTargets.length ? '; ' + skippedTargets.length + ' already queued/sent skipped.' : '.')
         });
         return;
       }
@@ -2885,7 +3391,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       addPreparedWelcomeEmailDrafts(drafts);
       toast({
         title: 'Welcome drafts prepared',
-        description: `${drafts.length} draft${drafts.length === 1 ? '' : 's'} added for review.`
+        description: drafts.length + ' draft' + (drafts.length === 1 ? '' : 's') + ' added for review' + (skippedTargets.length ? '; ' + skippedTargets.length + ' already queued/sent skipped.' : '.')
       });
     } finally {
       setPreparingWelcomeEmployeeDrafts(false);
@@ -2928,158 +3434,251 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     }
   };
 
-  // Parse CSV for bulk upload
-  const parseCSV = (text: string) => {
-    const lines = text.split('\n').filter(line => line.trim());
-    if (lines.length < 2) return [];
+  const normalizeBulkEmployee = (rawEmployee: any, index: number) => {
+    if (rawEmployee.name && !rawEmployee.firstName) {
+      const nameParts = rawEmployee.name.split(' ').filter(Boolean);
+      rawEmployee.firstName = nameParts[0] || '';
+      rawEmployee.lastName = nameParts.slice(1).join(' ') || '';
+      delete rawEmployee.name;
+    }
 
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const firstName = (rawEmployee.firstName || '').trim() || (rawEmployee.employeeId || '').trim();
+    const lastName = (rawEmployee.lastName || '').trim();
+    const employeeId = (rawEmployee.employeeId || '').trim();
+    const phoneNumber = (rawEmployee.phoneNumber || '').trim();
+
+    if (!firstName && !employeeId && !phoneNumber) return null;
+
+    const baseEmail = (rawEmployee.email || '').trim();
+    const generatedEmailLocal = (employeeId || firstName || `emp${Date.now()}${index}`)
+      .toString()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '') || `emp${Date.now()}${index}`;
+    const email = baseEmail || `noemail.${generatedEmailLocal}@mediczy.in`;
+
+    return {
+      firstName: firstName || 'Employee',
+      lastName,
+      email,
+      phoneNumber,
+      employeeId,
+      department: rawEmployee.department || '',
+      designation: rawEmployee.designation || '',
+      dateOfBirth: rawEmployee.dateOfBirth || '',
+      gender: rawEmployee.gender || '',
+      city: rawEmployee.city || '',
+      state: rawEmployee.state || '',
+      pinCode: rawEmployee.pinCode || '',
+      location: rawEmployee.location || '',
+      facility: rawEmployee.facility || '',
+    };
+  };
+
+  const parseBulkEmployeeRows = (rows: string[][], aiColumnMap: Record<string, string> = {}) => {
+    const nonEmptyRows = rows.filter(row => row.some(cell => String(cell || '').trim()));
+    if (nonEmptyRows.length < 2) return [];
+
+    const sourceHeaders = nonEmptyRows[0].map(h => String(h || '').trim());
+    const headers = sourceHeaders.map((header) => {
+      const deterministicField = resolveBulkHeaderField(header);
+      if (deterministicField) return deterministicField;
+      const aiMapped = aiColumnMap[header] || aiColumnMap[normalizeBulkHeaderKey(header)];
+      if (isBulkEmployeeField(aiMapped)) return aiMapped;
+      return '';
+    });
     const employees = [];
 
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map(v => v.trim());
+    for (let i = 1; i < nonEmptyRows.length; i++) {
+      const values = nonEmptyRows[i].map(v => String(v || '').trim());
       const rawEmployee: any = {};
 
-      headers.forEach((header, index) => {
-        // Map common CSV headers to API fields
-        const headerMap: Record<string, string> = {
-          'first name': 'firstName',
-          'firstname': 'firstName',
-          'last name': 'lastName',
-          'lastname': 'lastName',
-          'name': 'name',
-          'email': 'email',
-          'email id': 'email',
-          'emailid': 'email',
-          'email address': 'email',
-          'phone': 'phoneNumber',
-          'phonenumber': 'phoneNumber',
-          'phone number': 'phoneNumber',
-          'mobile': 'phoneNumber',
-          'mobile number': 'phoneNumber',
-          'employee id': 'employeeId',
-          'employeeid': 'employeeId',
-          'emp id': 'employeeId',
-          'empid': 'employeeId',
-          'department': 'department',
-          'dept': 'department',
-          'designation': 'designation',
-          'role': 'designation',
-          'date of birth': 'dateOfBirth',
-          'dateofbirth': 'dateOfBirth',
-          'dob': 'dateOfBirth',
-          'gender': 'gender',
-          'city': 'city',
-          'work city': 'city',
-          'state': 'state',
-          'work state': 'state',
-          'pin code': 'pinCode',
-          'pincode': 'pinCode',
-          'zip': 'pinCode',
-          'zip code': 'pinCode',
-          'location': 'location',
-          'branch': 'location',
-          'work location': 'location',
-          'office location': 'location',
-          'facility': 'facility',
-          'work facility': 'facility',
-        };
-
-        const fieldName = headerMap[header] || header;
+      headers.forEach((fieldName, index) => {
+        if (!fieldName) return;
         rawEmployee[fieldName] = values[index] || '';
       });
 
-      // Derive names
-      if (rawEmployee.name && !rawEmployee.firstName) {
-        const nameParts = rawEmployee.name.split(' ').filter(Boolean);
-        rawEmployee.firstName = nameParts[0] || '';
-        rawEmployee.lastName = nameParts.slice(1).join(' ') || '';
-        delete rawEmployee.name;
-      }
-
-      const firstName = (rawEmployee.firstName || '').trim() || (rawEmployee.employeeId || '').trim();
-      const lastName = (rawEmployee.lastName || '').trim();
-      const employeeId = (rawEmployee.employeeId || '').trim();
-      const phoneNumber = (rawEmployee.phoneNumber || '').trim();
-
-      // Skip empty rows
-      if (!firstName && !employeeId && !phoneNumber) continue;
-
-      const baseEmail = (rawEmployee.email || '').trim();
-      const generatedEmailLocal = (employeeId || firstName || `emp${Date.now()}${i}`)
-        .toString()
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, '') || `emp${Date.now()}${i}`;
-      const email = baseEmail || `noemail.${generatedEmailLocal}@mediczy.in`;
-
-      const normalizedEmployee = {
-        firstName: firstName || 'Employee',
-        lastName,
-        email,
-        phoneNumber,
-        employeeId,
-        department: rawEmployee.department || '',
-        designation: rawEmployee.designation || '',
-        dateOfBirth: rawEmployee.dateOfBirth || '',
-        gender: rawEmployee.gender || '',
-        city: rawEmployee.city || '',
-        state: rawEmployee.state || '',
-        pinCode: rawEmployee.pinCode || '',
-        location: rawEmployee.location || '',
-        facility: rawEmployee.facility || '',
-      };
-
-      employees.push(normalizedEmployee);
+      const normalizedEmployee = normalizeBulkEmployee(rawEmployee, i);
+      if (normalizedEmployee) employees.push(normalizedEmployee);
     }
 
     return employees;
   };
 
-  // Internal QC validator — runs before API call, returns per-row issues
-  const runQC = (empList: any[]) => {
+  const readCSVRows = (text: string) => text.split('\n').map(line => line.split(','));
+
+  // Parse CSV for bulk upload
+  const parseCSV = (text: string) => parseBulkEmployeeRows(readCSVRows(text));
+
+  const getExcelCellText = (value: any) => {
+    if (value == null) return '';
+    if (value instanceof Date) return value.toISOString().slice(0, 10);
+    if (typeof value === 'object') {
+      if (Array.isArray(value.richText)) return value.richText.map((part: any) => part.text || '').join('');
+      if (value.text != null) return String(value.text);
+      if (value.result != null) return getExcelCellText(value.result);
+      if (value.hyperlink && value.text != null) return String(value.text);
+    }
+    return String(value);
+  };
+
+  const readExcelRows = async (file: File) => {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(await file.arrayBuffer());
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) return [];
+
+    const rows: string[][] = [];
+    worksheet.eachRow({ includeEmpty: false }, (row) => {
+      const rowValues: string[] = [];
+      for (let col = 1; col <= row.cellCount; col++) {
+        rowValues.push(getExcelCellText(row.getCell(col).value).trim());
+      }
+      rows.push(rowValues);
+    });
+
+    return rows;
+  };
+
+  const parseExcel = async (file: File) => parseBulkEmployeeRows(await readExcelRows(file));
+
+  const maskBulkSampleValue = (value: string) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) return '<email>';
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length >= 8) return `<${digits.length}-digit-number>`;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '<date-yyyy-mm-dd>';
+    return raw.slice(0, 40);
+  };
+
+  const inferBulkColumnMapWithAI = async (rows: string[][]) => {
+    const nonEmptyRows = rows.filter(row => row.some(cell => String(cell || '').trim()));
+    if (nonEmptyRows.length < 2) return {};
+
+    const headers = nonEmptyRows[0].map(h => String(h || '').trim()).filter(Boolean);
+    if (!headers.length) return {};
+
+    const sampleRows = nonEmptyRows.slice(1, 4).map((row) => {
+      const record: Record<string, string> = {};
+      headers.forEach((header, idx) => {
+        record[header] = maskBulkSampleValue(row[idx] || '');
+      });
+      return record;
+    });
+
+    const prompt = `You map messy corporate employee upload columns to canonical fields.
+Return ONLY valid JSON in this exact shape: {"mapping":{"Original Header":"canonicalField"},"confidence":0.0,"notes":"short"}
+Allowed canonicalField values: ${BULK_EMPLOYEE_FIELDS.join(', ')}, ignore
+Rules:
+- Map only columns that clearly represent an allowed field.
+- Use "ignore" for unrelated columns.
+- Do not invent fields.
+- If a full name column exists and no separate first/last names exist, map it to firstName.
+- Employee code, staff ID, associate ID, personnel number, or company ID maps to employeeId.
+- Phone/mobile/contact number maps to phoneNumber.
+- PIN, postal code, zip maps to pinCode.
+Headers: ${JSON.stringify(headers)}
+Masked sample rows: ${JSON.stringify(sampleRows)}`;
+
+    const res = await api.post('/team/ai/generate', { prompt, maxTokens: 350, temperature: 0.1 });
+    const content: string = res.data?.data?.content || res.data?.content || '';
+    const parsed = extractJsonObject(content);
+    const rawMapping = parsed?.mapping && typeof parsed.mapping === 'object' ? parsed.mapping : parsed;
+    if (!rawMapping || typeof rawMapping !== 'object') return {};
+
+    const mapping: Record<string, string> = {};
+    Object.entries(rawMapping).forEach(([header, field]) => {
+      const fieldValue = String(field || '').trim();
+      if (isBulkEmployeeField(fieldValue) || fieldValue === 'ignore') {
+        mapping[header] = fieldValue;
+        mapping[normalizeBulkHeaderKey(header)] = fieldValue;
+      }
+    });
+
+    const mappedCount = headers.filter((header) => {
+      const mapped = mapping[header] || mapping[normalizeBulkHeaderKey(header)];
+      return isBulkEmployeeField(mapped);
+    }).length;
+    setBulkAiColumnSummary(`AI mapped ${mappedCount} column${mappedCount === 1 ? '' : 's'}${parsed?.confidence != null ? ` (confidence ${parsed.confidence})` : ''}.`);
+    return mapping;
+  };
+
+  // Internal QC validator — runs before API call.
+  // Returns { passed, discarded } where discarded rows are removed from the upload.
+  // Rules:
+  //   DISCARD: missing first name, invalid email, duplicate email in file, duplicate employeeId in file
+  //   WARN (kept, logged): bad phone format, invalid gender, bad DOB format, bad pin code
+  const runQCAndFilter = (empList: any[]): {
+    passed: any[];
+    discarded: { row: number; employeeId: string; name: string; email: string; issues: string[] }[];
+    warnings: { row: number; employeeId: string; name: string; email: string; issues: string[] }[];
+  } => {
     const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const PHONE_RE = /^\d{10}$/;
-    const PIN_RE   = /^\d{6}$/;
-    const DOB_RE   = /^\d{4}-\d{2}-\d{2}$/;
     const VALID_GENDERS = ['male', 'female', 'other'];
+    const DOB_RE = /^\d{4}-\d{2}-\d{2}$/;
+
     const seenEmails = new Map<string, number>();
-    const errors: { row: number; employeeId: string; name: string; email: string; issues: string[] }[] = [];
+    const seenEmpIds = new Map<string, number>();
+
+    const passed: any[] = [];
+    const discarded: { row: number; employeeId: string; name: string; email: string; issues: string[] }[] = [];
+    const warnings: { row: number; employeeId: string; name: string; email: string; issues: string[] }[] = [];
 
     empList.forEach((emp, idx) => {
       const row = idx + 2;
-      const issues: string[] = [];
+      const fatal: string[] = [];
+      const warn: string[] = [];
 
+      // ── DISCARD rules ────────────────────────────────────────────────────────
       if (!emp.firstName || String(emp.firstName).trim() === '' || emp.firstName === 'Employee')
-        issues.push('Missing First Name');
+        fatal.push('Missing first name');
 
       const rawEmail = (emp.email || '').trim();
-      if (rawEmail && !rawEmail.includes('@mediczy.in') && !EMAIL_RE.test(rawEmail))
-        issues.push(`Invalid email format: ${rawEmail}`);
+      const isGenerated = rawEmail.includes('@mediczy.in');
+      if (rawEmail && !isGenerated && !EMAIL_RE.test(rawEmail))
+        fatal.push(`Invalid email format: ${rawEmail}`);
 
       const lowerEmail = rawEmail.toLowerCase();
-      if (lowerEmail && seenEmails.has(lowerEmail))
-        issues.push(`Duplicate email in CSV (also on row ${seenEmails.get(lowerEmail)}): ${lowerEmail}`);
-      else if (lowerEmail)
+      if (lowerEmail && !isGenerated && seenEmails.has(lowerEmail))
+        fatal.push(`Duplicate email (first seen on row ${seenEmails.get(lowerEmail)}): ${lowerEmail}`);
+      else if (lowerEmail && !isGenerated)
         seenEmails.set(lowerEmail, row);
 
-      if (emp.phoneNumber && !PHONE_RE.test(String(emp.phoneNumber).replace(/[\s\-]/g, '')))
-        issues.push(`Phone should be 10 digits: ${emp.phoneNumber}`);
+      const empIdKey = (emp.employeeId || '').trim().toLowerCase();
+      if (empIdKey && seenEmpIds.has(empIdKey))
+        fatal.push(`Duplicate Employee ID (first seen on row ${seenEmpIds.get(empIdKey)}): ${emp.employeeId}`);
+      else if (empIdKey)
+        seenEmpIds.set(empIdKey, row);
+
+      // ── WARN rules (row still passes) ────────────────────────────────────────
+      if (emp.phoneNumber && !PHONE_RE.test(String(emp.phoneNumber).replace(/[\s\-+]/g, '')))
+        warn.push(`Phone should be 10 digits: ${emp.phoneNumber}`);
 
       if (emp.gender && !VALID_GENDERS.includes(String(emp.gender).toLowerCase()))
-        issues.push(`Invalid gender (use Male/Female/Other): ${emp.gender}`);
+        warn.push(`Invalid gender (use Male/Female/Other): ${emp.gender}`);
 
       if (emp.dateOfBirth && !DOB_RE.test(emp.dateOfBirth))
-        issues.push(`Date of Birth must be YYYY-MM-DD: ${emp.dateOfBirth}`);
+        warn.push(`Date of Birth must be YYYY-MM-DD: ${emp.dateOfBirth}`);
 
       if (emp.pinCode && !/^\d{6}$/.test(String(emp.pinCode)))
-        issues.push(`Pin Code must be 6 digits: ${emp.pinCode}`);
+        warn.push(`Pin Code must be 6 digits: ${emp.pinCode}`);
 
-      if (issues.length > 0)
-        errors.push({ row, employeeId: emp.employeeId || '', name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(), email: rawEmail, issues });
+      const label = { row, employeeId: emp.employeeId || '', name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(), email: rawEmail };
+
+      if (fatal.length > 0) {
+        discarded.push({ ...label, issues: [...fatal, ...warn] });
+      } else {
+        passed.push(emp);
+        if (warn.length > 0) warnings.push({ ...label, issues: warn });
+      }
     });
 
-    return errors;
+    return { passed, discarded, warnings };
   };
+
+  // Keep old runQC alias used by the QC report display (reads from bulkUploadResults.qcLog)
+  const runQC = (empList: any[]) => runQCAndFilter(empList).warnings;
 
   // Bulk Upload Handler
   const handleBulkUpload = async () => {
@@ -3095,38 +3694,76 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     try {
       setIsUploading(true);
       setBulkUploadResults(null);
+      setBulkAiColumnSummary(null);
       
-      const text = await bulkUploadFile.text();
-      const employeeList = parseCSV(text);
+      const isExcelFile = /\.xlsx$/i.test(bulkUploadFile.name);
+      const uploadRows = isExcelFile
+        ? await readExcelRows(bulkUploadFile)
+        : readCSVRows(await bulkUploadFile.text());
+      let aiColumnMap: Record<string, string> = {};
+      if (bulkUseAiColumnDetection) {
+        try {
+          aiColumnMap = await inferBulkColumnMapWithAI(uploadRows);
+        } catch (aiError: any) {
+          setBulkAiColumnSummary('AI column detection failed; used standard parser fallback.');
+          toast({
+            title: 'AI column detection skipped',
+            description: aiError?.response?.data?.message || aiError?.message || 'Standard parser fallback was used.',
+          });
+        }
+      }
+      const employeeList = parseBulkEmployeeRows(uploadRows, aiColumnMap);
       
       if (employeeList.length === 0) {
         toast({
           variant: 'destructive',
           title: 'Empty file',
-          description: 'The CSV file contains no employee data.'
+          description: 'The uploaded file contains no employee data.'
         });
         return;
       }
 
-      // Run internal QC before sending to server
-      const clientQcLog = runQC(employeeList);
-      
+      // Run QC — discard fatal rows, warn on minor issues, deduplicate
+      const { passed: cleanList, discarded: discardedRows, warnings: warnRows } = runQCAndFilter(employeeList);
+
+      if (cleanList.length === 0) {
+        toast({
+          variant: 'destructive',
+          title: 'All rows failed QC',
+          description: `${discardedRows.length} row(s) discarded. Fix the file and re-upload.`,
+        });
+        return;
+      }
+
+      if (discardedRows.length > 0) {
+        toast({
+          title: `${discardedRows.length} row(s) discarded`,
+          description: `Missing name, invalid/duplicate email, or duplicate Employee ID. Check QC warnings in the report.`,
+          variant: 'destructive',
+        });
+      }
+
       const token = localStorage.getItem('teamToken');
       const { data } = await api.post('/admin/corporate-employees', {
         corporateId: selectedCorporate.id,
-        employees: employeeList,
+        employees: cleanList,
         sendWelcomeEmail: bulkWelcomeEmailMode !== "skip",
         welcomeEmailMode: bulkWelcomeEmailMode
       }, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        timeout: 180000
       });
-      
+
       const created = data.results?.created || [];
       const failed = data.results?.failed || [];
-      // Merge client QC + server QC (deduplicate by row)
+      // Merge: discarded rows + server QC + minor warnings
       const serverQc: any[] = data.results?.qcLog || [];
       const serverQcRows = new Set(serverQc.map((q: any) => q.row));
-      const mergedQc = [...serverQc, ...clientQcLog.filter(q => !serverQcRows.has(q.row))];
+      const mergedQc = [
+        ...discardedRows.map(d => ({ ...d, discarded: true })),
+        ...serverQc,
+        ...warnRows.filter(q => !serverQcRows.has(q.row)),
+      ];
       setBulkUploadResults({ created, failed, qcLog: mergedQc });
       addPreparedWelcomeEmailDrafts(buildWelcomeEmailDraftsFromCreated(created));
       
@@ -3134,19 +3771,186 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       setShowBulkUploadDialog(false);
       setBulkUploadFile(null);
       setShowUploadReport(true);
-      
+
       if (created.length > 0) {
         fetchEmployees(selectedCorporate.id);
       }
+
+      // Compute employees to deactivate when "remove unlisted" is on
+      if (bulkRemoveUnlisted) {
+        const uploadedEmployeeIds = new Set(
+          employeeList.map((e: any) => (e.employeeId || '').toLowerCase()).filter(Boolean)
+        );
+        const uploadedEmails = new Set(
+          employeeList
+            .map((e: any) => (e.email || '').toLowerCase())
+            .filter((em: string) => em && !em.startsWith('noemail.'))
+        );
+        const toDeactivate = employees
+          .filter((emp) => String(emp.status || 'active').toLowerCase() === 'active')
+          .filter((emp) => {
+            const empId = (emp.employeeId || '').toLowerCase();
+            const empEmail = (emp.email || '').toLowerCase();
+            const matchedById = empId && uploadedEmployeeIds.has(empId);
+            const matchedByEmail = empEmail && uploadedEmails.has(empEmail);
+            return !matchedById && !matchedByEmail;
+          })
+          .map((emp) => ({
+            id: emp.id,
+            name: emp.name || `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
+            email: emp.email || '',
+            employeeId: emp.employeeId || '',
+          }));
+        if (toDeactivate.length > 0) {
+          setSyncOffboardList(toDeactivate);
+          setShowSyncConfirmDialog(true);
+        }
+      }
     } catch (error: any) {
+      const isTimeout = error?.code === 'ECONNABORTED' || String(error?.message || '').toLowerCase().includes('timeout');
       toast({
         variant: 'destructive',
-        title: 'Upload failed',
-        description: error.response?.data?.message || 'Failed to upload employees'
+        title: isTimeout ? 'Upload still processing' : 'Upload failed',
+        description: isTimeout
+          ? 'Large employee uploads can take more than 30 seconds. Refresh the employee list before retrying to avoid duplicates.'
+          : (error.response?.data?.error || error.response?.data?.message || 'Failed to upload employees')
       });
     } finally {
       setIsUploading(false);
     }
+  };
+
+  const handleConfirmSync = async () => {
+    if (!selectedCorporate || syncOffboardList.length === 0) return;
+    setIsSyncing(true);
+    const token = localStorage.getItem('teamToken');
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+    let deactivated = 0;
+    let failed = 0;
+    for (const emp of syncOffboardList) {
+      try {
+        await api.put(`/admin/corporate-employees/${emp.id}`, {
+          status: 'inactive',
+          corporateId: selectedCorporate.id,
+        }, { headers });
+        deactivated++;
+      } catch {
+        failed++;
+      }
+    }
+    setIsSyncing(false);
+    setShowSyncConfirmDialog(false);
+    setSyncOffboardList([]);
+    fetchEmployees(selectedCorporate.id);
+    toast({
+      title: 'Sync complete',
+      description: `${deactivated} employee${deactivated !== 1 ? 's' : ''} deactivated${failed > 0 ? `, ${failed} failed` : ''}.`,
+      variant: failed > 0 ? 'destructive' : 'default',
+    });
+  };
+
+  const downloadActiveEmployeeList = async () => {
+    const activeEmployees = employees.filter((employee) => String(employee.status || 'active').toLowerCase() === 'active');
+
+    if (activeEmployees.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'No active employees',
+        description: 'There are no active employees available to export.',
+      });
+      return;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Mediqzy';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Active Employees', {
+      views: [{ state: 'frozen', ySplit: 1 }],
+    });
+
+    const columns = [
+      { header: 'Employee ID',      key: 'employeeId',    width: 16 },
+      { header: 'First Name',       key: 'firstName',     width: 16 },
+      { header: 'Last Name',        key: 'lastName',      width: 16 },
+      { header: 'Full Name',        key: 'name',          width: 22 },
+      { header: 'Email',            key: 'email',         width: 28 },
+      { header: 'Phone',            key: 'phone',         width: 16 },
+      { header: 'Gender',           key: 'gender',        width: 10 },
+      { header: 'Date of Birth',    key: 'dateOfBirth',   width: 14 },
+      { header: 'Department',       key: 'department',    width: 18 },
+      { header: 'Designation',      key: 'designation',   width: 20 },
+      { header: 'City',             key: 'city',          width: 14 },
+      { header: 'State',            key: 'state',         width: 14 },
+      { header: 'Pin Code',         key: 'pinCode',       width: 10 },
+      { header: 'Location',         key: 'location',      width: 18 },
+      { header: 'Facility',         key: 'facility',      width: 18 },
+      { header: 'Health Status',    key: 'healthStatus',  width: 14 },
+      { header: 'Plan',             key: 'plan',          width: 22 },
+      { header: 'Package Valid To', key: 'packageValidTo',width: 18 },
+      { header: 'Status',           key: 'status',        width: 10 },
+    ];
+    sheet.columns = columns;
+
+    // Bold + teal header row
+    const headerRow = sheet.getRow(1);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F766E' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+      };
+    });
+    headerRow.height = 22;
+
+    // Data rows with alternating fill
+    activeEmployees.forEach((employee, idx) => {
+      const row = sheet.addRow({
+        employeeId:    employee.employeeId    ?? '',
+        firstName:     employee.firstName     ?? '',
+        lastName:      employee.lastName      ?? '',
+        name:          employee.name          ?? '',
+        email:         employee.email         ?? '',
+        phone:         employee.phone         ?? '',
+        gender:        employee.gender        ?? '',
+        dateOfBirth:   employee.dateOfBirth   ?? '',
+        department:    employee.department    ?? '',
+        designation:   employee.designation   ?? '',
+        city:          employee.city          ?? '',
+        state:         employee.state         ?? '',
+        pinCode:       employee.pinCode       ?? '',
+        location:      employee.location      ?? '',
+        facility:      employee.facility      ?? '',
+        healthStatus:  employee.healthStatus  ?? '',
+        plan:          employee.currentPackageName || employee.insurancePlan || '',
+        packageValidTo:employee.packageValidTo ?? '',
+        status:        employee.status        ?? 'active',
+      });
+      if (idx % 2 === 1) {
+        row.eachCell((cell) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0FDFA' } };
+        });
+      }
+    });
+
+    // Auto-filter on header row
+    sheet.autoFilter = { from: 'A1', to: { row: 1, column: columns.length } };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const companySlug = (selectedCorporate?.companyName || 'corporate').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    a.href = url;
+    a.download = companySlug + '_active_employees_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+    a.click();
+    window.URL.revokeObjectURL(url);
+
+    toast({
+      title: 'Active list downloaded',
+      description: activeEmployees.length + ' active employees exported as Excel.',
+    });
   };
 
   // Download CSV Template (v2 — includes email column)
@@ -4134,10 +4938,16 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                         Create and manage login credentials for corporate HR administrators
                       </CardDescription>
                     </div>
-                    <Button onClick={() => setShowAddHRDialog(true)}>
+                    <div className="flex gap-2">
+                      <Button variant="outline" onClick={handleReplaceHRAdmin} disabled={updatingHRAdmin}>
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Replace HR
+                      </Button>
+                      <Button onClick={() => { resetHRAdminForm(); setShowAddHRDialog(true); }}>
                       <UserPlus className="h-4 w-4 mr-2" />
                       Create HR Admin
-                    </Button>
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -4153,23 +4963,44 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      <TableRow>
-                        <TableCell className="font-medium">Equitas HR Admin</TableCell>
-                        <TableCell>{selectedCorporate.email}</TableCell>
-                        <TableCell>{selectedCorporate.phoneNumber}</TableCell>
-                        <TableCell>{getStatusBadge('Active')}</TableCell>
-                        <TableCell>2 hours ago</TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button variant="ghost" size="sm" disabled title="Not available yet">
-                              <Key className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm" disabled title="Not available yet">
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
+                      {corporateAdminsLoading && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-sm text-muted-foreground">Loading HR/admin users...</TableCell>
+                        </TableRow>
+                      )}
+                      {!corporateAdminsLoading && corporateAdmins.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-sm text-muted-foreground">No HR/admin users found for this corporate.</TableCell>
+                        </TableRow>
+                      )}
+                      {!corporateAdminsLoading && corporateAdmins.map((admin) => (
+                        <TableRow key={admin.id}>
+                          <TableCell className="font-medium">{`${admin.firstName || ''} ${admin.lastName || ''}`.trim() || admin.email}</TableCell>
+                          <TableCell>{admin.email}</TableCell>
+                          <TableCell>{admin.phoneNumber || '—'}</TableCell>
+                          <TableCell>{getStatusBadge(normalizeStatusLabel(admin.status))}</TableCell>
+                          <TableCell>{formatLastLoginLabel(admin.lastLoginAt)}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button variant="ghost" size="sm" disabled title="Not available yet">
+                                <Key className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="sm" title="Edit HR admin" onClick={() => openEditHRAdminDialog(admin)}>
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title="Deactivate HR admin"
+                                onClick={() => handleDeactivateHRAdmin(admin)}
+                                disabled={updatingHRAdmin || normalizeStatusLabel(admin.status) === 'Inactive'}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
                     </TableBody>
                   </Table>
                 </CardContent>
@@ -4204,6 +5035,10 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                         <Download className="h-4 w-4 mr-2" />
                         Download Template
                       </Button>
+                      <Button variant="outline" onClick={downloadActiveEmployeeList} disabled={employees.length === 0}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Export Active List
+                      </Button>
                       <Button onClick={() => setShowAddEmployeeDialog(true)}>
                         <Plus className="h-4 w-4 mr-2" />
                         Add Employee
@@ -4212,6 +5047,56 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                   </div>
                 </CardHeader>
                 <CardContent>
+                  {/* ── App Activation Stats ──────────────────────────────── */}
+                  {(() => {
+                    const total = employees.length;
+                    const sent = employees.filter(e => e.welcomeEmailStatus === 'sent').length;
+                    const loggedIn = employees.filter(e => !!e.lastLoginAt).length;
+                    const pwdChanged = employees.filter(e => !!e.lastLoginAt && e.requirePasswordChange === false).length;
+                    const pctSent = total ? Math.round((sent / total) * 100) : 0;
+                    const pctLoggedIn = total ? Math.round((loggedIn / total) * 100) : 0;
+                    const pctPwd = total ? Math.round((pwdChanged / total) * 100) : 0;
+                    return (
+                      <div className="mb-4 rounded-lg border bg-white dark:bg-gray-900 p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-semibold">App Activation Funnel</p>
+                          <span className="text-xs text-muted-foreground">{total} active employees</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900 p-3 text-center">
+                            <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{sent}</p>
+                            <p className="text-xs text-blue-600 dark:text-blue-400">Welcome Email Sent</p>
+                            <p className="text-[10px] text-muted-foreground">{pctSent}% of total</p>
+                          </div>
+                          <div className="rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-100 dark:border-green-900 p-3 text-center">
+                            <p className="text-2xl font-bold text-green-700 dark:text-green-300">{loggedIn}</p>
+                            <p className="text-xs text-green-600 dark:text-green-400">Logged In to App</p>
+                            <p className="text-[10px] text-muted-foreground">{pctLoggedIn}% of total</p>
+                          </div>
+                          <div className="rounded-lg bg-teal-50 dark:bg-teal-950/30 border border-teal-100 dark:border-teal-900 p-3 text-center">
+                            <p className="text-2xl font-bold text-teal-700 dark:text-teal-300">{pwdChanged}</p>
+                            <p className="text-xs text-teal-600 dark:text-teal-400">Password Changed</p>
+                            <p className="text-[10px] text-muted-foreground">{pctPwd}% of total</p>
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px] text-muted-foreground">
+                            <span>Activation progress</span>
+                            <span>{loggedIn} / {total} logged in</span>
+                          </div>
+                          <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2 overflow-hidden">
+                            <div className="h-2 rounded-full bg-blue-200 dark:bg-blue-900" style={{ width: `${pctSent}%` }} />
+                            <div className="h-2 rounded-full bg-green-500 -mt-2" style={{ width: `${pctLoggedIn}%` }} />
+                          </div>
+                          <div className="flex gap-3 text-[10px] text-muted-foreground">
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-200 dark:bg-blue-900 inline-block"/>{pctSent}% email sent</span>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block"/>{pctLoggedIn}% logged in</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <div className="mb-4 rounded-lg border bg-slate-50/60 dark:bg-slate-900/30 p-3 space-y-3">
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                       <div>
@@ -4245,9 +5130,9 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                       <TableRow>
                         <TableHead className="w-[44px]">
                           <Checkbox
-                            checked={filteredWelcomeEmployees.length > 0 && filteredWelcomeEmployees.every((employee) => selectedEmployeeIdsForWelcome.includes(employee.id))}
+                            checked={filteredWelcomeEmployees.filter((employee) => !hasActiveWelcomeEmailDelivery(employee)).length > 0 && filteredWelcomeEmployees.filter((employee) => !hasActiveWelcomeEmailDelivery(employee)).every((employee) => selectedEmployeeIdsForWelcome.includes(employee.id))}
                             onCheckedChange={(checked) => {
-                              const filteredIds = filteredWelcomeEmployees.map((employee) => employee.id);
+                              const filteredIds = filteredWelcomeEmployees.filter((employee) => !hasActiveWelcomeEmailDelivery(employee)).map((employee) => employee.id);
                               if (checked === true) {
                                 setSelectedEmployeeIdsForWelcome((current) => Array.from(new Set([...current, ...filteredIds])));
                               } else {
@@ -4263,6 +5148,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                         <TableHead>Department</TableHead>
                         <TableHead>Designation</TableHead>
                         <TableHead>Health Status</TableHead>
+                        <TableHead>App Login</TableHead>
                         <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -4280,8 +5166,10 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                           <TableRow key={emp.id}>
                             <TableCell>
                               <Checkbox
-                                checked={selectedEmployeeIdsForWelcome.includes(emp.id)}
+                                checked={!hasActiveWelcomeEmailDelivery(emp) && selectedEmployeeIdsForWelcome.includes(emp.id)}
+                                disabled={hasActiveWelcomeEmailDelivery(emp)}
                                 onCheckedChange={(checked) => {
+                                  if (hasActiveWelcomeEmailDelivery(emp)) return;
                                   setSelectedEmployeeIdsForWelcome((current) => {
                                     if (checked === true) return [...new Set([...current, emp.id])];
                                     return current.filter((id) => id !== emp.id);
@@ -4305,6 +5193,41 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                               }`}>
                                 {emp.healthStatus}
                               </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {(() => {
+                                const welcomeStatus = String(emp.welcomeEmailStatus || '').toLowerCase();
+                                const sent = welcomeStatus === 'sent';
+                                const queued = welcomeStatus === 'queued';
+                                const loggedIn = !!emp.lastLoginAt;
+                                const pwdChanged = loggedIn && emp.requirePasswordChange === false;
+                                if (!sent && !queued) return <span className="text-xs text-muted-foreground">Not onboarded</span>;
+                                if (!loggedIn) return (
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+                                    {queued ? 'Email queued' : 'Email sent'}
+                                  </span>
+                                );
+                                const dt = new Date(emp.lastLoginAt!);
+                                const ago = (() => {
+                                  const s = Math.floor((Date.now() - dt.getTime()) / 1000);
+                                  if (s < 60) return 'just now';
+                                  if (s < 3600) return `${Math.floor(s/60)}m ago`;
+                                  if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+                                  return `${Math.floor(s/86400)}d ago`;
+                                })();
+                                return (
+                                  <div className="space-y-0.5">
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-green-600 dark:text-green-400">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                                      Active · {ago}
+                                    </span>
+                                    {!pwdChanged && (
+                                      <div className="text-[10px] text-amber-500">⚠ Temp password</div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </TableCell>
                             <TableCell>
                               <div className="flex gap-2">
@@ -5932,11 +6855,11 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         </Dialog>
 
         {/* Add HR Admin Dialog */}
-        <Dialog open={showAddHRDialog} onOpenChange={setShowAddHRDialog}>
+        <Dialog open={showAddHRDialog} onOpenChange={(open) => { setShowAddHRDialog(open); if (!open) resetHRAdminForm(); }}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create HR Admin Login</DialogTitle>
-              <DialogDescription className="sr-only">Create HR admin credentials</DialogDescription>
+              <DialogTitle>{editingHRAdmin ? 'Edit HR Admin' : 'Create HR Admin Login'}</DialogTitle>
+              <DialogDescription className="sr-only">Create or edit HR admin credentials</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
@@ -5975,7 +6898,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                 />
               </div>
               <div className="space-y-2">
-                <Label>Password *</Label>
+                <Label>{editingHRAdmin ? 'Password (optional)' : 'Password *'}</Label>
                 <div className="flex gap-2">
                   <Input 
                     type="text"
@@ -5993,8 +6916,10 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowAddHRDialog(false)}>Cancel</Button>
-              <Button onClick={handleCreateHRAdmin}>Create HR Admin</Button>
+              <Button variant="outline" onClick={() => { setShowAddHRDialog(false); resetHRAdminForm(); }}>Cancel</Button>
+              <Button onClick={editingHRAdmin ? handleUpdateHRAdmin : handleCreateHRAdmin} disabled={updatingHRAdmin}>
+                {editingHRAdmin ? (updatingHRAdmin ? 'Saving...' : 'Save Changes') : 'Create HR Admin'}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -7792,10 +8717,22 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                       <p className={`text-2xl font-bold ${bulkUploadResults.failed.length > 0 ? 'text-red-700 dark:text-red-300' : 'text-gray-500'}`}>{bulkUploadResults.failed.length}</p>
                       <p className={`text-xs ${bulkUploadResults.failed.length > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-500'}`}>Failed</p>
                     </div>
-                    <div className={`${qcLog.length > 0 ? 'bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800' : 'bg-gray-50 dark:bg-gray-950/30 border-gray-200 dark:border-gray-800'} border rounded-lg p-3 text-center`}>
-                      <p className={`text-2xl font-bold ${qcLog.length > 0 ? 'text-yellow-700 dark:text-yellow-300' : 'text-gray-500'}`}>{qcLog.length}</p>
-                      <p className={`text-xs ${qcLog.length > 0 ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-500'}`}>QC Warnings</p>
-                    </div>
+                    {(() => {
+                      const discarded = qcLog.filter((q: any) => q.discarded).length;
+                      const warned = qcLog.filter((q: any) => !q.discarded).length;
+                      return discarded > 0 ? (
+                        <div className="bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 border rounded-lg p-3 text-center">
+                          <p className="text-2xl font-bold text-red-700 dark:text-red-300">{discarded}</p>
+                          <p className="text-xs text-red-600 dark:text-red-400">Discarded</p>
+                          {warned > 0 && <p className="text-[10px] text-yellow-600 dark:text-yellow-400 mt-0.5">{warned} warnings</p>}
+                        </div>
+                      ) : (
+                        <div className={`${warned > 0 ? 'bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800' : 'bg-gray-50 dark:bg-gray-950/30 border-gray-200 dark:border-gray-800'} border rounded-lg p-3 text-center`}>
+                          <p className={`text-2xl font-bold ${warned > 0 ? 'text-yellow-700 dark:text-yellow-300' : 'text-gray-500'}`}>{warned}</p>
+                          <p className={`text-xs ${warned > 0 ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-500'}`}>QC Warnings</p>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Progress Bar */}
@@ -7856,30 +8793,59 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                     </div>
                   )}
 
-                  {/* QC Log */}
-                  {qcLog.length > 0 && (
-                    <div className="bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
-                      <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-2 flex items-center gap-1.5">
-                        <AlertCircle className="h-4 w-4" /> QC Warnings ({qcLog.length} rows)
-                        <span className="text-xs font-normal text-yellow-600 dark:text-yellow-400 ml-1">— employees were still activated; review &amp; correct data</span>
-                      </p>
-                      <div className="max-h-48 overflow-y-auto font-mono text-xs space-y-1.5">
-                        {qcLog.map((entry: any, idx: number) => (
-                          <div key={idx} className="border-b border-yellow-200 dark:border-yellow-700 pb-1.5 last:border-0">
-                            <span className="text-yellow-700 dark:text-yellow-300 font-semibold">Row {entry.row}</span>
-                            {entry.employeeId && <span className="text-yellow-600 dark:text-yellow-400"> [{entry.employeeId}]</span>}
-                            {entry.name && <span className="text-yellow-600 dark:text-yellow-400"> {entry.name}</span>}
-                            {entry.email && <span className="text-yellow-500 dark:text-yellow-500"> &lt;{entry.email}&gt;</span>}
-                            <ul className="ml-3 mt-0.5 space-y-0.5">
-                              {entry.issues.map((issue: string, i: number) => (
-                                <li key={i} className="text-yellow-700 dark:text-yellow-400">↳ {issue}</li>
+                  {/* QC Log — discarded rows (red) + warnings (yellow) */}
+                  {qcLog.length > 0 && (() => {
+                    const discardedEntries = qcLog.filter((q: any) => q.discarded);
+                    const warnEntries = qcLog.filter((q: any) => !q.discarded);
+                    return (
+                      <div className="space-y-2">
+                        {discardedEntries.length > 0 && (
+                          <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+                            <p className="text-sm font-medium text-red-800 dark:text-red-300 mb-2 flex items-center gap-1.5">
+                              <AlertCircle className="h-4 w-4" /> Discarded rows ({discardedEntries.length}) — not uploaded
+                            </p>
+                            <div className="max-h-48 overflow-y-auto font-mono text-xs space-y-1.5">
+                              {discardedEntries.map((entry: any, idx: number) => (
+                                <div key={idx} className="border-b border-red-200 dark:border-red-700 pb-1.5 last:border-0">
+                                  <span className="text-red-700 dark:text-red-300 font-semibold">Row {entry.row}</span>
+                                  {entry.employeeId && <span className="text-red-600 dark:text-red-400"> [{entry.employeeId}]</span>}
+                                  {entry.name && <span className="text-red-600 dark:text-red-400"> {entry.name}</span>}
+                                  {entry.email && <span className="text-red-500"> &lt;{entry.email}&gt;</span>}
+                                  <ul className="ml-3 mt-0.5 space-y-0.5">
+                                    {entry.issues.map((issue: string, i: number) => (
+                                      <li key={i} className="text-red-700 dark:text-red-400">↳ {issue}</li>
+                                    ))}
+                                  </ul>
+                                </div>
                               ))}
-                            </ul>
+                            </div>
                           </div>
-                        ))}
+                        )}
+                        {warnEntries.length > 0 && (
+                          <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+                            <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-2 flex items-center gap-1.5">
+                              <AlertCircle className="h-4 w-4" /> QC Warnings ({warnEntries.length} rows) — uploaded, review data
+                            </p>
+                            <div className="max-h-40 overflow-y-auto font-mono text-xs space-y-1.5">
+                              {warnEntries.map((entry: any, idx: number) => (
+                                <div key={idx} className="border-b border-yellow-200 dark:border-yellow-700 pb-1.5 last:border-0">
+                                  <span className="text-yellow-700 dark:text-yellow-300 font-semibold">Row {entry.row}</span>
+                                  {entry.employeeId && <span className="text-yellow-600 dark:text-yellow-400"> [{entry.employeeId}]</span>}
+                                  {entry.name && <span className="text-yellow-600 dark:text-yellow-400"> {entry.name}</span>}
+                                  {entry.email && <span className="text-yellow-500"> &lt;{entry.email}&gt;</span>}
+                                  <ul className="ml-3 mt-0.5 space-y-0.5">
+                                    {entry.issues.map((issue: string, i: number) => (
+                                      <li key={i} className="text-yellow-700 dark:text-yellow-400">↳ {issue}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               );
             })()}
@@ -7923,13 +8889,14 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
           if (!open) {
             setBulkUploadFile(null);
             setBulkUploadResults(null);
+            setBulkAiColumnSummary(null);
           }
         }}>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Bulk Upload Employees</DialogTitle>
               <DialogDescription>
-                Upload a CSV file to add multiple employees at once for {selectedCorporate?.companyName}
+                Upload a CSV or Excel file to add multiple employees at once for {selectedCorporate?.companyName}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
@@ -7945,7 +8912,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
 
               {/* Column reference */}
               <div className="rounded-lg border overflow-hidden">
-                <div className="bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">CSV Columns Reference</div>
+                <div className="bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">CSV / Excel Columns Reference</div>
                 <div className="divide-y text-xs">
                   {[
                     { col: 'Employee ID', req: false, eg: 'E00001', note: 'Unique employee identifier' },
@@ -7990,10 +8957,43 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                 <p className="text-xs text-muted-foreground">Existing users will only be linked. New users can be prepared as editable email drafts before sending.</p>
               </div>
 
+              <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="bulk-ai-column-detection"
+                    checked={bulkUseAiColumnDetection}
+                    onCheckedChange={(checked) => setBulkUseAiColumnDetection(Boolean(checked))}
+                  />
+                  <div className="space-y-1 leading-none">
+                    <Label htmlFor="bulk-ai-column-detection" className="text-sm font-medium">AI column detection</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Uses AI to map messy Excel headers to employee fields. Only headers and masked sample values are sent; upload QC still validates every row.
+                    </p>
+                    {bulkAiColumnSummary && <p className="text-xs text-muted-foreground">{bulkAiColumnSummary}</p>}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/30 p-3 space-y-2">
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="bulk-remove-unlisted"
+                    checked={bulkRemoveUnlisted}
+                    onCheckedChange={(checked) => setBulkRemoveUnlisted(Boolean(checked))}
+                  />
+                  <div className="space-y-1 leading-none">
+                    <Label htmlFor="bulk-remove-unlisted" className="text-sm font-medium">Remove employees not in this file</Label>
+                    <p className="text-xs text-muted-foreground">
+                      After upload, active employees whose Employee ID <em>and</em> email don't appear in this file will be shown for confirmation before being deactivated. Use this to sync the roster to the uploaded list.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div className="border-2 border-dashed rounded-lg p-6 text-center">
                 <input
                   type="file"
-                  accept=".csv"
+                  accept=".csv,.xlsx"
                   className="hidden"
                   id="bulk-upload-input"
                   onChange={(e) => {
@@ -8001,6 +9001,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                     if (file) {
                       setBulkUploadFile(file);
                       setBulkUploadResults(null);
+                      setBulkAiColumnSummary(null);
                     }
                   }}
                 />
@@ -8010,10 +9011,10 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                 >
                   <Upload className="h-10 w-10 text-muted-foreground" />
                   <span className="text-sm font-medium">
-                    {bulkUploadFile ? bulkUploadFile.name : 'Click to select CSV file'}
+                    {bulkUploadFile ? bulkUploadFile.name : 'Click to select CSV or Excel file'}
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    or drag and drop
+                    Supports .csv and .xlsx files
                   </span>
                 </label>
               </div>
@@ -8024,6 +9025,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                 setShowBulkUploadDialog(false);
                 setBulkUploadFile(null);
                 setBulkUploadResults(null);
+                setBulkAiColumnSummary(null);
               }}>
                 Cancel
               </Button>
@@ -8042,6 +9044,37 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                     Upload Employees
                   </>
                 )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ─── Sync Offboard Confirmation Dialog ─── */}
+        <Dialog open={showSyncConfirmDialog} onOpenChange={(open) => { if (!open && !isSyncing) { setShowSyncConfirmDialog(false); setSyncOffboardList([]); } }}>
+          <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Remove unlisted employees?</DialogTitle>
+              <DialogDescription>
+                {syncOffboardList.length} active employee{syncOffboardList.length !== 1 ? 's are' : ' is'} not in the uploaded file and will be <strong>deactivated</strong>. This cannot be undone automatically.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="max-h-60 overflow-y-auto border rounded-md divide-y text-sm">
+              {syncOffboardList.map((emp) => (
+                <div key={emp.id} className="px-3 py-2 flex items-center justify-between gap-2">
+                  <div>
+                    <span className="font-medium">{emp.name || emp.email}</span>
+                    {emp.employeeId && <span className="ml-2 text-xs text-muted-foreground">{emp.employeeId}</span>}
+                  </div>
+                  <span className="text-xs text-muted-foreground truncate">{emp.email}</span>
+                </div>
+              ))}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" disabled={isSyncing} onClick={() => { setShowSyncConfirmDialog(false); setSyncOffboardList([]); }}>
+                Cancel
+              </Button>
+              <Button variant="destructive" disabled={isSyncing} onClick={handleConfirmSync}>
+                {isSyncing ? 'Deactivating…' : `Deactivate ${syncOffboardList.length} employee${syncOffboardList.length !== 1 ? 's' : ''}`}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -8246,7 +9279,10 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         onSelectedEmployeeIdsChange={setSelectedEmployeeIdsForWelcome}
         templateOptions={allWelcomeEmailTemplates.map((template) => ({ id: template.id, name: template.name }))}
         selectedTemplateId={selectedWelcomeTemplateId}
+        approvedTemplateId={approvedWelcomeTemplateId}
+        approvingTemplate={approvingWelcomeTemplate}
         onSelectedTemplateChange={setSelectedWelcomeTemplateId}
+        onApproveTemplate={handleApproveWelcomeTemplate}
         onPrepareFromEmployees={({ mode, singleEmployeeId, sendImmediately }) => {
           if (mode === 'selected' || mode === 'all') {
             setWelcomeEmployeeSelectionMode(mode);

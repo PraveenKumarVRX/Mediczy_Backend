@@ -6,10 +6,58 @@ import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 dotenv.config();
 
+// ── AWS SES v2 transport (used when SES_ENABLED=true or AWS_REGION is set and SMTP fails) ──
+let sesClient = null;
+async function getSesClient() {
+  if (sesClient) return sesClient;
+  try {
+    const { SESv2Client } = await import('@aws-sdk/client-sesv2');
+    sesClient = new SESv2Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+    return sesClient;
+  } catch {
+    return null;
+  }
+}
+
+function isZohoHost(host) {
+  return String(host || '').toLowerCase().includes('zoho');
+}
+
+function isBrevoHost(host) {
+  const value = String(host || '').toLowerCase();
+  return value.includes('brevo') || value.includes('sendinblue');
+}
+
+async function sendViaSes(msg) {
+  const { SendEmailCommand } = await import('@aws-sdk/client-sesv2');
+  const client = await getSesClient();
+  if (!client) throw new Error('SES client unavailable');
+  const fromAddress = typeof msg.from === 'object'
+    ? `"${msg.from.name}" <${msg.from.email}>`
+    : (msg.from || `"Mediqzy Corporate Health" <hello@mysmarthealth.in>`);
+  await client.send(new SendEmailCommand({
+    FromEmailAddress: fromAddress,
+    Destination: { ToAddresses: [msg.to] },
+    Content: {
+      Simple: {
+        Subject: { Data: msg.subject, Charset: 'UTF-8' },
+        Body: { Html: { Data: msg.html, Charset: 'UTF-8' } },
+      },
+    },
+  }));
+}
+
+// SES is used when explicitly enabled or when SMTP is Zoho (which blocks bulk sends)
+function shouldUseSes() {
+  if (process.env.SES_ENABLED === 'true') return true;
+  const host = String(process.env.SMTP_HOST || '').toLowerCase();
+  return isZohoHost(host) || process.env.SES_BULK_FALLBACK !== 'false';
+}
+
 async function resolveSmtpConfig() {
   const fallbackPort = parseInt(process.env.SMTP_PORT || '465', 10);
   const fallbackConfig = {
-    host: process.env.SMTP_HOST || 'smtppro.zoho.in',
+    host: process.env.SMTP_HOST || 'smtp-relay.brevo.com',
     port: fallbackPort,
     secure: fallbackPort === 465,
     auth: {
@@ -68,9 +116,28 @@ async function createSmtpTransport() {
   };
 }
 
-// Normalize SendGrid-style msg object → nodemailer format and send
-async function sendMail(msg) {
+// Normalize SendGrid-style msg object → nodemailer format and send.
+// Prefers SES when Zoho SMTP is configured (Zoho blocks bulk sends).
+// options.provider: 'ses' | 'brevo' | 'auto' (default: auto)
+async function sendMail(msg, options = {}) {
+  const { provider = 'auto' } = options;
+  const useSes = provider === 'ses' || (provider !== 'brevo' && shouldUseSes());
+  if (useSes) {
+    try {
+      await sendViaSes(msg);
+      return;
+    } catch (sesErr) {
+      if (provider === 'ses') throw sesErr; // don't fall through if SES was explicitly chosen
+      console.warn('[email] SES failed, falling back to SMTP:', sesErr.message);
+    }
+  }
   const { smtp, transporter } = await createSmtpTransport();
+  if (isZohoHost(smtp.host)) {
+    throw new Error('Zoho SMTP is disabled for welcome emails. Use SES or Brevo SMTP.');
+  }
+  if (!isBrevoHost(smtp.host)) {
+    throw new Error(`Unsupported SMTP host for welcome emails: ${smtp.host}. Allowed: Brevo SMTP.`);
+  }
   const from = typeof msg.from === 'object'
     ? `"${msg.from.name || smtp.fromName}" <${smtp.fromEmail || smtp.auth.user}>`
     : (msg.from || `"${smtp.fromName}" <${smtp.fromEmail || smtp.auth.user}>`);
@@ -482,7 +549,7 @@ export async function sendCorporateWelcomeEmail(corporateData, temporaryPassword
 }
 
 function formatCorporateEmployeePlan(employeeData = {}) {
-  const planName = employeeData.planName || employeeData.insurancePlan || employeeData.packageType || "Nijacart Employee Health Plan";
+  const planName = employeeData.planName || employeeData.insurancePlan || employeeData.packageType || `${employeeData.companyName || 'Corporate'} Employee Health Plan`;
   const coverageAmount = employeeData.coverageAmount || employeeData.sumInsured || employeeData.sum_insured || employeeData.coverage || "As per corporate plan eligibility";
   const startDate = employeeData.planStartDate || employeeData.startDate || employeeData.coverageStartDate || "";
   const endDate = employeeData.planEndDate || employeeData.endDate || employeeData.coverageEndDate || "";
@@ -641,7 +708,7 @@ export async function sendCorporateEmployeeWelcomeEmail(employeeData, temporaryP
   }
 }
 
-export async function sendPreparedCorporateEmployeeWelcomeEmail({ to, subject, html }) {
+export async function sendPreparedCorporateEmployeeWelcomeEmail({ to, subject, html }, options = {}) {
   if (!to || !subject || !html) {
     throw new Error("to, subject and html are required");
   }
@@ -653,7 +720,7 @@ export async function sendPreparedCorporateEmployeeWelcomeEmail({ to, subject, h
     },
     subject,
     html
-  });
+  }, options);
   return { success: true, message: "Welcome email sent successfully" };
 }
 

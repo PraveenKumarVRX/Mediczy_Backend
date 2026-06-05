@@ -835,6 +835,7 @@ export const TeamActivityLogsPage = () => {
                   <SelectItem value="delete">Delete</SelectItem>
                   <SelectItem value="view">View</SelectItem>
                   <SelectItem value="export">Export</SelectItem>
+                  <SelectItem value="email">Email</SelectItem>
                 </SelectContent>
               </Select>
             </div>
