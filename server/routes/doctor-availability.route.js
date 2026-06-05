@@ -2,8 +2,17 @@ import express from 'express';
 import { body, param, query } from 'express-validator';
 import { authUser } from '../middleware/auth.middleware.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
+import {
+  normalizeWeeklyAvailability,
+  normalizeConsultationTypes,
+  normalizeWeeklySchedule,
+} from '../utils/doctorNormalizer.js';
 
 const router = express.Router();
+
+// Thin wrappers kept for local call-site readability
+const getWeeklyAvailability   = (doctor) => normalizeWeeklyAvailability(doctor?.weeklyAvailability);
+const getConsultationTypes     = (doctor) => normalizeConsultationTypes(doctor?.consultationTypes);
 
 /**
  * @route   GET /api/doctors/availability
@@ -21,9 +30,10 @@ router.get('/', authUser, async (req, res) => {
     res.json({
       success: true,
       data: {
-        weeklyAvailability: doctor.weeklyAvailability,
-        consultationTypes: doctor.consultationTypes,
-        isAvailable: doctor.isAvailable,
+        weeklyAvailability: getWeeklyAvailability(doctor),
+        weeklySchedule:     normalizeWeeklySchedule(doctor.weeklySchedule) ?? undefined,
+        consultationTypes:  getConsultationTypes(doctor),
+        isAvailable:        doctor.isAvailable,
       }
     });
   } catch (error) {
@@ -54,15 +64,16 @@ router.get('/dashboard', authUser, async (req, res) => {
     }
 
     // Calculate availability statistics
-    const weeklyAvailability = doctor.weeklyAvailability;
-    const availableDays = Object.values(weeklyAvailability).filter(day => day.isAvailable).length;
-    const totalSlots = Object.values(weeklyAvailability).reduce((total, day) => total + (day.slots?.length || 0), 0);
+    const weeklyAvailability = getWeeklyAvailability(doctor);
+    const consultationTypes = getConsultationTypes(doctor);
+    const availableDays = Object.values(weeklyAvailability).filter(day => day?.isAvailable).length;
+    const totalSlots = Object.values(weeklyAvailability).reduce((total, day) => total + (day?.slots?.length || 0), 0);
     
     // Get consultation type statistics
     const consultationStats = {
-      online: doctor.consultationTypes.online.available,
-      walkIn: doctor.consultationTypes.walkIn.available,
-      homeVisit: doctor.consultationTypes.homeVisit.available
+      online: Boolean(consultationTypes.online?.available),
+      walkIn: Boolean(consultationTypes.walkIn?.available),
+      homeVisit: Boolean(consultationTypes.homeVisit?.available)
     };
 
     res.json({
@@ -74,7 +85,7 @@ router.get('/dashboard', authUser, async (req, res) => {
           totalSlots,
           consultationTypes: consultationStats
         },
-        consultationFees: doctor.consultationTypes
+        consultationFees: consultationTypes
       }
     });
   } catch (error) {

@@ -27,6 +27,7 @@ import {
   getUploadsBucket
 } from '../services/s3-presign.service.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
+import { normalizeDoctorProfile } from '../utils/doctorNormalizer.js';
 
 const router = express.Router();
 // Ensure request bodies are parsed even if app-level parser order changes.
@@ -87,103 +88,7 @@ const toFiniteNumber = (value) => {
   return Number.isFinite(n) ? n : null;
 };
 
-const WEEK_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-
-/**
- * Normalize a raw doctor record to a consistent API shape.
- *
- * weeklySchedule has two incompatible schemas depending on which save path
- * populated the doctor row:
- *
- *   Format A (old, Title Case keys):
- *     { "Friday": { available, startTime, endTime, slots: ["09:00",...] } }
- *
- *   Format B (new, lowercase keys):
- *     { "friday": { inPerson: { isAvailable, startTime, endTime, slots },
- *                   online:   { isAvailable, startTime, endTime, slots },
- *                   isOff } }
- *
- * Canonical output always uses lowercase keys and the shape:
- *   { "friday": { isAvailable, startTime, endTime, slots,
- *                 inPerson?: {...}, online?: {...} } }
- *
- * feeStructure is derived from fee columns when it arrives as an empty object.
- * specializations is back-filled from the scalar `specialization` when empty.
- */
-function normalizeDoctorProfile(raw) {
-  if (!raw || typeof raw !== 'object') return raw;
-  const doc = typeof raw.toJSON === 'function' ? raw.toJSON() : { ...raw };
-
-  // ── weeklySchedule ──────────────────────────────────────────────────────
-  const rawSchedule = doc.weeklySchedule;
-  if (rawSchedule && typeof rawSchedule === 'object' && !Array.isArray(rawSchedule)) {
-    const normalized = {};
-    for (const day of WEEK_DAYS) {
-      const titleDay = day.charAt(0).toUpperCase() + day.slice(1);
-      const entry = rawSchedule[day] ?? rawSchedule[titleDay];
-
-      if (!entry || typeof entry !== 'object') {
-        normalized[day] = { isAvailable: false, startTime: null, endTime: null, slots: [] };
-        continue;
-      }
-
-      // Format B: has inPerson / online sub-objects
-      if (entry.inPerson !== undefined || entry.online !== undefined) {
-        const ip = entry.inPerson || {};
-        const ol = entry.online || {};
-        const isOff = entry.isOff === true;
-
-        const allStarts = [ip.startTime, ol.startTime].filter(Boolean);
-        const allEnds   = [ip.endTime,   ol.endTime  ].filter(Boolean);
-        const startTime = allStarts.length ? allStarts.reduce((a, b) => a < b ? a : b) : null;
-        const endTime   = allEnds.length   ? allEnds.reduce((a, b)   => a > b ? a : b) : null;
-
-        const slotSet = new Set([
-          ...(Array.isArray(ip.slots) ? ip.slots : []),
-          ...(Array.isArray(ol.slots) ? ol.slots : []),
-        ]);
-
-        normalized[day] = {
-          isAvailable: !isOff && (ip.isAvailable !== false || ol.isAvailable !== false),
-          startTime,
-          endTime,
-          slots: Array.from(slotSet).sort(),
-          inPerson: ip,
-          online: ol,
-        };
-      } else {
-        // Format A: { available, startTime, endTime, slots }
-        normalized[day] = {
-          isAvailable: entry.available !== false,
-          startTime:   entry.startTime  || null,
-          endTime:     entry.endTime    || null,
-          slots:       Array.isArray(entry.slots) ? entry.slots : [],
-        };
-      }
-    }
-    doc.weeklySchedule = normalized;
-  }
-
-  // ── feeStructure ────────────────────────────────────────────────────────
-  const rawFee = doc.feeStructure;
-  if (!rawFee || typeof rawFee !== 'object' || Object.keys(rawFee).length === 0) {
-    const online   = parseFloat(doc.onlineConsultationFee)   || parseFloat(doc.consultationFees) || null;
-    const inClinic = parseFloat(doc.inPersonConsultationFee) || parseFloat(doc.consultationFees) || null;
-    doc.feeStructure = {
-      online,
-      inClinic,
-      followUp:  null,
-      emergency: parseFloat(doc.emergencyFee) || null,
-    };
-  }
-
-  // ── specializations ─────────────────────────────────────────────────────
-  if (doc.specialization && (!Array.isArray(doc.specializations) || doc.specializations.length === 0)) {
-    doc.specializations = [doc.specialization];
-  }
-
-  return doc;
-}
+// normalizeDoctorProfile is imported from utils/doctorNormalizer.js above
 
 const normalizeClinicLocationUpdate = (payload = {}, existingDoctor = null) => {
   const nextPayload = { ...payload };

@@ -26,6 +26,7 @@ import intelligentDb from '../utils/intelligentDbClient.js';
 import { generateICalFile, generateDoctorICalFile, generateICalFilename } from '../utils/icalGenerator.js';
 import Doctor from '../models/doctor.model.intelligent.js';
 import { User } from '../models/user.model.intelligent.js';
+import { toArray, normalizeAppointment } from '../utils/doctorNormalizer.js';
 
 const router = express.Router();
 
@@ -516,7 +517,7 @@ router.post(
               consultationType: appointment.consultationType
             },
             diagnosis: 'To be filled by doctor',
-            chiefComplaints: appointment.symptoms || ['As discussed during consultation'],
+            chiefComplaints: toArray(appointment.symptoms).length > 0 ? toArray(appointment.symptoms) : ['As discussed during consultation'],
             medications: [],
             labTests: [],
             instructions: [
@@ -737,7 +738,7 @@ router.get(
         duration: appointment.duration || 30,
         consultationType: appointment.consultationType,
         consultationFee: appointment.consultationFee,
-        symptoms: appointment.symptoms,
+        symptoms: toArray(appointment.symptoms),
         notes: appointment.notes,
         location: appointment.location,
         meetingLink: appointment.meetingLink

@@ -14,6 +14,7 @@ import {
   getProviderLabel
 } from '../utils/videoProvider.js';
 import { Op } from 'sequelize';
+import { normalizeDoctorProfile, toArray } from '../utils/doctorNormalizer.js';
 
 const router = express.Router();
 
@@ -155,22 +156,27 @@ router.get('/doctors', async (req, res) => {
     res.json({
       success: true,
       count: filteredDoctors.length,
-      doctors: filteredDoctors.map(doc => ({
-        id: doc.id,
-        name: formatDoctorDisplayName({ firstName: doc.firstName, lastName: doc.lastName }),
-        email: doc.email,
-        phone: doc.phoneNumber,
-        profileImage: doc.profileImage,
-        specialization: doc.specialization,
-        qualifications: doc.qualifications,
-        experience: doc.experience,
-        registrationNumber: doc.registrationNumber,
-        consultationFee: doc.onlineConsultationFee || doc.consultationFees || 500,
-        bio: doc.metadata?.about || null,
-        languages: doc.languages,
-        isOnline: doc.isOnline,
-        isAvailable: doc.isOnline !== false
-      }))
+      doctors: filteredDoctors.map(raw => {
+        const doc = normalizeDoctorProfile(raw);
+        return {
+          id: doc.id,
+          name: formatDoctorDisplayName({ firstName: doc.firstName, lastName: doc.lastName }),
+          email: doc.email,
+          phone: doc.phoneNumber,
+          profileImage: doc.profileImage,
+          specialization: doc.specialization,
+          specializations: doc.specializations,
+          qualifications: doc.qualifications,
+          experience: doc.experience,
+          registrationNumber: doc.registrationNumber,
+          feeStructure: doc.feeStructure,
+          consultationFee: doc.feeStructure?.online || doc.onlineConsultationFee || doc.consultationFees || 500,
+          bio: (typeof doc.metadata === 'object' ? doc.metadata?.about : null) || null,
+          languages: doc.languages,
+          isOnline: doc.isOnline,
+          isAvailable: doc.isOnline !== false,
+        };
+      })
     });
   } catch (error) {
     console.error('Error fetching doctors:', error);
@@ -200,25 +206,29 @@ router.get('/doctors/:id', async (req, res) => {
       });
     }
 
+    const doc = normalizeDoctorProfile(doctor);
     res.json({
       success: true,
       doctor: {
-        id: doctor.id,
-        name: formatDoctorDisplayName({ firstName: doctor.firstName, lastName: doctor.lastName }),
-        email: doctor.email,
-        phone: doctor.phoneNumber,
-        profileImage: doctor.profileImage,
-        specialization: doctor.specialization,
-        qualifications: doctor.qualifications,
-        experience: doctor.experience,
-        registrationNumber: doctor.registrationNumber,
-        consultationFee: doctor.onlineConsultationFee || doctor.consultationFees || 500,
-        inPersonFee: doctor.inPersonConsultationFee || 700,
-        bio: doctor.metadata?.about || null,
-        languages: doctor.languages,
-        clinicAddress: doctor.clinicAddress,
-        isOnline: doctor.isOnline,
-        isAvailable: doctor.isOnline !== false
+        id: doc.id,
+        name: formatDoctorDisplayName({ firstName: doc.firstName, lastName: doc.lastName }),
+        email: doc.email,
+        phone: doc.phoneNumber,
+        profileImage: doc.profileImage,
+        specialization: doc.specialization,
+        specializations: doc.specializations,
+        qualifications: doc.qualifications,
+        experience: doc.experience,
+        registrationNumber: doc.registrationNumber,
+        feeStructure: doc.feeStructure,
+        consultationFee: doc.feeStructure?.online || doc.onlineConsultationFee || doc.consultationFees || 500,
+        inPersonFee: doc.feeStructure?.inClinic || doc.inPersonConsultationFee || 700,
+        bio: (typeof doc.metadata === 'object' ? doc.metadata?.about : null) || null,
+        languages: doc.languages,
+        clinicAddress: doc.clinicAddress,
+        weeklySchedule: doc.weeklySchedule,
+        isOnline: doc.isOnline,
+        isAvailable: doc.isOnline !== false,
       }
     });
   } catch (error) {
@@ -423,12 +433,11 @@ router.post('/book', authUser, [
 
     // Calculate consultation fee
     const consultationFee = consultationType === 'online'
-      ? (doctor.onlineConsultationFee || doctor.feeStructure?.online || doctor.consultationFees || 500)
-      : (doctor.inPersonConsultationFee || doctor.feeStructure?.inPerson || doctor.consultationFees || 700);
+      ? (doctor.feeStructure?.online   || doctor.onlineConsultationFee   || doctor.consultationFees || 500)
+      : (doctor.feeStructure?.inClinic || doctor.inPersonConsultationFee || doctor.consultationFees || 700);
 
-    // Normalize symptoms to array
-    const symptomsArray = symptoms 
-      ? (Array.isArray(symptoms) ? symptoms : [symptoms])
+    // Normalize symptoms to array (handles string, array, null)
+    const symptomsArray = toArray(symptoms).length > 0 ? toArray(symptoms)
       : [];
 
     // Determine initial status based on payment method
