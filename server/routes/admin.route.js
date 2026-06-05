@@ -19,12 +19,14 @@ import { findPriorBrevoWelcomeEmail, isBrevoHistoryConfigured } from '../service
 import { checkQuota, recordSent, getQuotaStatus } from '../utils/emailQuota.js';
 import cimsService from '../services/cims-medicine.service.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
-import { 
-  adminLogin, 
+import {
+  adminLogin,
+  adminRefresh,
+  adminLogout,
   adminProfile,
-  bulkUploadDoctors, 
-  bulkUploadLabs, 
-  bulkUploadPharmacies, 
+  bulkUploadDoctors,
+  bulkUploadLabs,
+  bulkUploadPharmacies,
   bulkUploadCorporates,
   getDashboardStats,
   listUsers,
@@ -259,7 +261,13 @@ router.post('/login', authLimiter, [
   body('password').isLength({ min: 4 })
 ], adminLogin);
 
-// Admin profile validation
+// Refresh — issue new access + refresh token pair (rotation, no re-login needed)
+router.post('/refresh', adminRefresh);
+
+// Logout — revoke refresh token server-side
+router.post('/logout', adminLogout);
+
+// Admin profile — rich shape matching team profile
 router.get('/profile', authUser, requireRole('admin'), adminProfile);
 
 // Protected admin endpoints

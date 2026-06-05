@@ -308,10 +308,9 @@ router.post('/login', authLimiter, [
       console.warn('[Team Login] Could not fetch assigned corporates:', err.message);
     }
 
-    // --- issue 15m access + 30d refresh token pair ---
+    // --- issue 4h access + 30d refresh token pair ---
     const payload = {
       id: user.id,
-      userId: user.id,
       email: user.email,
       role: user.role || 'team',
       userType: 'team',
@@ -420,7 +419,6 @@ router.post('/auth/refresh', async (req, res) => {
     const ip = req.ip || req.socket?.remoteAddress || 'unknown';
     const payload = {
       id: user.id,
-      userId: user.id,
       email: user.email,
       role: user.role || 'team',
       userType: 'team',
