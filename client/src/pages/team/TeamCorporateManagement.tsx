@@ -9274,7 +9274,9 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
         sending={sendingWelcomeEmailBatch}
         savingTemplate={savingWelcomeTemplate}
         preparing={preparingWelcomeEmployeeDrafts}
-        employees={employees.map((employee) => ({ id: employee.id, employeeId: employee.employeeId, name: employee.name, email: employee.email }))}
+        employees={employees
+          .filter((employee) => String(employee.status || 'active').toLowerCase() !== 'inactive')
+          .map((employee) => ({ id: employee.id, employeeId: employee.employeeId, name: employee.name, email: employee.email }))}
         selectedEmployeeIds={selectedEmployeeIdsForWelcome}
         onSelectedEmployeeIdsChange={setSelectedEmployeeIdsForWelcome}
         templateOptions={allWelcomeEmailTemplates.map((template) => ({ id: template.id, name: template.name }))}
