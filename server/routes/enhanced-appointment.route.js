@@ -55,6 +55,9 @@ const normalizeEnhancedConsultationType = (value) => {
   if (['online', 'video', 'audio', 'chat'].includes(normalized)) {
     return 'online';
   }
+  if (['review', 'follow-up', 'followup'].includes(normalized)) {
+    return 'review';
+  }
   if (['walkin', 'walk-in', 'walk_in', 'in-person', 'inperson', 'clinic'].includes(normalized)) {
     return 'walkIn';
   }
@@ -68,11 +71,51 @@ const normalizeEnhancedConsultationType = (value) => {
 const mapEnhancedConsultationTypeToDb = (requestedType) => {
   const normalized = String(requestedType || '').toLowerCase().trim();
   if (normalized === 'online') return 'online';
+  if (normalized === 'review') return 'online';
   if (normalized === 'walkin' || normalized === 'walk-in') return 'in-person';
   if (normalized === 'homevisit' || normalized === 'home-visit' || normalized === 'home_visit') return 'in-person';
   if (normalized === 'in-person' || normalized === 'inperson') return 'in-person';
   // Default to online to keep the route permissive; callers can still see requested type in metadata.
   return 'online';
+};
+
+const parseAppointmentMetadata = (value) => {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+};
+
+const findEligibleFreeReviewSourceAppointment = async ({ userId, doctorId }) => {
+  const priorAppointments = await Appointment.findAll({
+    where: {
+      userId,
+      doctorId,
+      status: {
+        [Op.notIn]: ['cancelled', 'no-show']
+      }
+    },
+    order: [
+      ['createdAt', 'DESC'],
+      ['id', 'DESC']
+    ]
+  });
+
+  return priorAppointments.find((apt) => {
+    const metadata = parseAppointmentMetadata(apt.metadata);
+    const requestedType = String(metadata?.requestedConsultationType || '').toLowerCase();
+    if (['review', 'follow-up', 'followup'].includes(requestedType)) return false;
+
+    const reviewBenefit = metadata?.reviewBenefit || {};
+    if (reviewBenefit.freeReviewUsed || reviewBenefit.freeReviewUsedAt || reviewBenefit.freeReviewAppointmentId) {
+      return false;
+    }
+
+    return true;
+  }) || null;
 };
 
 const resolveDoctorIdFromRequest = async (req) => {
@@ -224,8 +267,10 @@ router.post('/book', authUser, [
       });
     }
 
+    const effectiveConsultationType = consultationType === 'review' ? 'online' : consultationType;
+
     // Check if doctor offers this consultation type
-    if (!doctor.consultationTypes[consultationType]?.available) {
+    if (!doctor.consultationTypes[effectiveConsultationType]?.available) {
       return res.status(400).json({
         success: false,
         message: `Doctor does not offer ${consultationType} consultations`
@@ -264,7 +309,7 @@ router.post('/book', authUser, [
     const slotAvailable = dayAvailability.slots.some(slot => 
       slot.startTime <= startTime && 
       slot.endTime >= endTime && 
-      (slot.consultationType === consultationType || slot.consultationType === 'both')
+      (slot.consultationType === effectiveConsultationType || slot.consultationType === 'both')
     );
 
     if (!slotAvailable) {
@@ -351,9 +396,28 @@ router.post('/book', authUser, [
     let roomCreated = false;
     
     // Calculate fees
-    const baseFee = doctor.consultationTypes[consultationType].fee;
-    const serviceFee = Math.round(baseFee * 0.1); // 10% service fee
-    const totalFee = baseFee + serviceFee;
+    let baseFee = Number(doctor.consultationTypes[effectiveConsultationType]?.fee || 500);
+    let serviceFee = Math.round(baseFee * 0.1); // 10% service fee
+    let totalFee = baseFee + serviceFee;
+    let paymentStatus = 'pending';
+    let freeReviewApplied = false;
+    let freeReviewSourceAppointmentId = null;
+
+    if (consultationType === 'review') {
+      const eligibleSource = await findEligibleFreeReviewSourceAppointment({
+        userId: req.user.id,
+        doctorId: resolvedDoctorId
+      });
+
+      if (eligibleSource) {
+        freeReviewApplied = true;
+        freeReviewSourceAppointmentId = eligibleSource.id;
+        baseFee = 0;
+        serviceFee = 0;
+        totalFee = 0;
+        paymentStatus = 'paid';
+      }
+    }
 
     const normalizedStartTime = normalizeTimeHHMM(startTime);
     const normalizedEndTime = normalizeTimeHHMM(endTime);
@@ -395,7 +459,7 @@ router.post('/book', authUser, [
       reason: notes || null,
       notes: notes || null,
       status: 'scheduled',
-      paymentStatus: 'pending',
+      paymentStatus,
       organization_id: doctor.organization_id || doctor.hospitalId || null,
       organization_type: doctor.organization_type || (doctor.hospitalId ? 'hospital' : null),
       tenant_id: doctor.organization_id || doctor.hospitalId || null,
@@ -415,6 +479,15 @@ router.post('/book', authUser, [
         ...(corporateTenantId ? { corporateTenantId } : {}),
         requestedConsultationType,
         requestedConsultationTypeRaw: requestedConsultationTypeRaw || null,
+        freeReviewApplied,
+        freeReviewSourceAppointmentId,
+        reviewBenefit: consultationType === 'review'
+          ? undefined
+          : {
+              freeReviewEligible: true,
+              freeReviewUsed: false,
+              sourceConsultationId: null
+            },
         channel,
         preferredLanguage: preferredLanguage || null,
         emergencyContact: emergencyContact || null,
@@ -435,6 +508,27 @@ router.post('/book', authUser, [
         }
       }
     });
+
+    if (freeReviewApplied && freeReviewSourceAppointmentId) {
+      const sourceAppointment = await Appointment.findByPk(freeReviewSourceAppointmentId);
+      if (sourceAppointment) {
+        const sourceMetadata = parseAppointmentMetadata(sourceAppointment.metadata);
+        const sourceReviewBenefit = sourceMetadata.reviewBenefit || {};
+        await sourceAppointment.update({
+          metadata: {
+            ...sourceMetadata,
+            reviewBenefit: {
+              ...sourceReviewBenefit,
+              freeReviewEligible: true,
+              freeReviewUsed: true,
+              freeReviewUsedAt: new Date().toISOString(),
+              freeReviewAppointmentId: dbAppointment.id,
+              sourceConsultationId: sourceAppointment.id
+            }
+          }
+        });
+      }
+    }
 
     // PHASE 1: Generate appointment-based room ID after creation
     const meetingRoom = consultationType === 'online' ? `apt-${dbAppointment.id}` : null;
@@ -621,6 +715,7 @@ router.get('/available-slots', [
   try {
     const { doctorId, date, language } = req.query;
     const consultationType = normalizeEnhancedConsultationType(req.query.consultationType);
+    const effectiveConsultationType = consultationType === 'review' ? 'online' : consultationType;
     
     // Get doctor details
     const doctor = await doctorModel.findByPk(doctorId);
@@ -640,7 +735,7 @@ router.get('/available-slots', [
     }
 
     // Check if doctor offers this consultation type
-    if (!doctor.consultationTypes[consultationType]?.available) {
+    if (!doctor.consultationTypes[effectiveConsultationType]?.available) {
       return res.json({
         success: true,
         availableSlots: [],
@@ -682,7 +777,7 @@ router.get('/available-slots', [
 
     // Get doctor's slots for the consultation type
     const doctorSlots = dayAvailability.slots.filter(slot => 
-      slot.consultationType === consultationType || slot.consultationType === 'both'
+      slot.consultationType === effectiveConsultationType || slot.consultationType === 'both'
     );
 
     // Get booked appointments for this date (DB-backed)
@@ -701,7 +796,7 @@ router.get('/available-slots', [
       const slotTime = `${slot.startTime}-${slot.endTime}`;
       return !bookedAppointments.some(apt => apt.timeSlot === slotTime);
     }).map(slot => {
-      const consultationFee = doctor.consultationTypes[consultationType].fee;
+      const consultationFee = doctor.consultationTypes[effectiveConsultationType].fee;
       const serviceFee = Math.round(consultationFee * 0.1);
       
       return {

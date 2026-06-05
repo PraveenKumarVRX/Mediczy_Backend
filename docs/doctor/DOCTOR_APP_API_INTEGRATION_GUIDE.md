@@ -1,6 +1,6 @@
 # Mediqzy — Doctor Mobile App API Integration Guide
 
-> **Version:** 2.7 · **Last Updated:** 2026-06-05  
+> **Version:** 2.8 · **Last Updated:** 2026-06-05  
 > **Base URL (Production):** `https://app.mediqzy.com/api`  
 > **WebSocket URL:** `https://app.mediqzy.com` (path: `/socket.io`)  
 > **LiveKit URL:** `wss://msh-kw9tvxa9.livekit.cloud` *(LiveKit Cloud)*
@@ -47,6 +47,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **2.8** | 2026-06-05 | Review consultation fix: booking APIs now accept `review` (`follow-up`/`followup` aliases) and apply a one-time free review entitlement per prior new consultation for the same patient+doctor pair. |
 | **2.7** | 2026-06-05 | Enhanced scheduling compatibility update: `/api/enhanced-appointments/book` and `/api/enhanced-appointments/available-slots` now accept consultation-type aliases from mobile/web clients (`video`/`audio`/`chat`→`online`, `in-person`/`walk-in`→`walkIn`, `home-visit`→`homeVisit`) to prevent schedule failures caused by enum mismatch. |
 | **2.6** | 2026-06-05 | Added targeted doctor mobile issue smoke workflow (`scripts/qa/doctor-mobile-issue-smoke.mjs`) for live verification of status update, availability toggle, weekly schedule save, and prescription create flows; documented required env vars and expected checks. |
 | **2.5** | 2026-05-30 | LiveKit migrated to LiveKit Cloud — `wss://msh-kw9tvxa9.livekit.cloud` (was `wss://video.mediqzy.com`); doctor registration OTP (email + WhatsApp) verified working — rate limiter changed from IP-based to per-email/phone (5 per 15 min); API routing fixed — `app.mediqzy.com/api` now proxied directly to PM2 server, no longer routes through ALB |
@@ -670,10 +671,33 @@ The backend now normalizes common consultation type aliases to avoid schedule fa
 | Client Input | Normalized Internal Type |
 |---|---|
 | `online`, `video`, `audio`, `chat` | `online` |
+| `review`, `follow-up`, `followup` | `review` |
 | `walkIn`, `walkin`, `walk-in`, `in-person`, `inperson`, `clinic` | `walkIn` |
 | `homeVisit`, `home-visit`, `home_visit`, `home` | `homeVisit` |
 
 > Note: This compatibility mapping applies to `/api/enhanced-appointments/*`. The primary appointment endpoint (`POST /api/appointments`) continues to use the canonical values documented in this guide.
+
+### 5.0.1 Free Review Policy
+
+Policy for review consultations:
+
+1. Every newly booked non-review consultation creates one free-review entitlement.
+2. The first eligible `review` booking for the same patient + doctor consumes this entitlement and is auto-marked paid at zero fee.
+3. Additional review bookings (after entitlement is consumed) are billed using standard consultation pricing.
+
+Response hint on booking:
+
+```json
+{
+  "success": true,
+  "appointment": {
+    "consultationType": "review",
+    "consultationFee": 0,
+    "paymentStatus": "paid",
+    "freeReviewApplied": true
+  }
+}
+```
 
 ### 5.1 Get Doctor's Appointments
 

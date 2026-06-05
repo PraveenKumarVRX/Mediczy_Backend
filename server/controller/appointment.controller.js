@@ -70,10 +70,62 @@ const normalizeSymptoms = (value) => {
   return parts.length > 1 ? parts : [asString];
 };
 
+const normalizeRequestedConsultationType = (requestedType) => {
+  const normalized = String(requestedType || '').toLowerCase().trim();
+  if (['video', 'audio', 'chat', 'in-person'].includes(normalized)) return normalized;
+  if (['review', 'follow-up', 'followup'].includes(normalized)) return 'review';
+  return normalized;
+};
+
+const parseMetadata = (value) => {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+};
+
+const isReviewRequestType = (value) => normalizeRequestedConsultationType(value) === 'review';
+
+const findEligibleFreeReviewSourceAppointment = async ({ userId, doctorId, transaction }) => {
+  const priorAppointments = await Appointment.findAll({
+    where: {
+      userId,
+      doctorId,
+      status: {
+        [Op.notIn]: ['cancelled', 'no-show']
+      }
+    },
+    order: [
+      ['createdAt', 'DESC'],
+      ['id', 'DESC']
+    ],
+    transaction,
+    lock: transaction.LOCK.UPDATE
+  });
+
+  return priorAppointments.find((apt) => {
+    const metadata = parseMetadata(apt.metadata);
+    if (isReviewRequestType(metadata?.requestedConsultationType)) return false;
+
+    const reviewBenefit = metadata?.reviewBenefit || {};
+    if (reviewBenefit.freeReviewUsed || reviewBenefit.freeReviewUsedAt || reviewBenefit.freeReviewAppointmentId) {
+      return false;
+    }
+
+    return true;
+  }) || null;
+};
+
 const mapConsultationTypeForDb = (requestedType) => {
   const normalized = String(requestedType || '').toLowerCase();
   if (normalized === 'in-person' || normalized === 'walkin' || normalized === 'walk-in') {
     return 'in-person';
+  }
+  if (normalized === 'review' || normalized === 'follow-up' || normalized === 'followup') {
+    return 'online';
   }
   // For video/audio/chat and other online modes, Appointment model expects `online`.
   return 'online';
@@ -147,14 +199,14 @@ export const createAppointment = async (req, res) => {
       doctorId,
       appointmentDate,
       appointmentTime: rawAppointmentTime,
-      consultationType,
+      consultationType: rawConsultationType,
       symptoms,
       reason
     } = req.body;
 
     const appointmentTime = normalizeTimeHHMM(rawAppointmentTime);
     const userId = req.user.id;
-    const requestedConsultationType = consultationType;
+    const requestedConsultationType = normalizeRequestedConsultationType(rawConsultationType);
     const dbConsultationType = mapConsultationTypeForDb(requestedConsultationType);
     const normalizedSymptoms = normalizeSymptoms(symptoms);
 
@@ -183,6 +235,9 @@ export const createAppointment = async (req, res) => {
     let doctor;
     let appointment;
     let consultationFee = 500;
+    let paymentStatus = 'pending';
+    let freeReviewApplied = false;
+    let freeReviewSourceAppointmentId = null;
     const transaction = await postgresSequelize.transaction();
     try {
       await req.setSequelizeRlsContext?.(transaction);
@@ -309,9 +364,27 @@ export const createAppointment = async (req, res) => {
           case 'in-person':
             consultationFee = availability.inPersonConsultationFee;
             break;
+          case 'review':
+            consultationFee = availability.videoConsultationFee || availability.audioConsultationFee || availability.chatConsultationFee;
+            break;
         }
       }
       consultationFee = Number(consultationFee || 500);
+
+      if (requestedConsultationType === 'review') {
+        const eligibleSource = await findEligibleFreeReviewSourceAppointment({
+          userId,
+          doctorId: resolvedDoctorId,
+          transaction
+        });
+
+        if (eligibleSource) {
+          consultationFee = 0;
+          paymentStatus = 'paid';
+          freeReviewApplied = true;
+          freeReviewSourceAppointmentId = eligibleSource.id;
+        }
+      }
 
       // Auto-assign organization_id from doctor's organization
       const organizationId = doctor.organization_id || doctor.hospitalId || req.user?.organization_id || req.userTenantId || null;
@@ -333,7 +406,7 @@ export const createAppointment = async (req, res) => {
         symptoms: normalizedSymptoms,
         reason,
         status: 'scheduled',
-        paymentStatus: 'pending',
+        paymentStatus,
         organization_id: organizationId,
         organization_type: organizationType,
         tenant_id: organizationId,
@@ -343,8 +416,19 @@ export const createAppointment = async (req, res) => {
           ...(corporateTenantId ? { corporateTenantId } : {}),
           requestedConsultationType: requestedConsultationType || null,
           doctorPublicId: doctor.unique_id || null,
+          freeReviewApplied,
+          freeReviewSourceAppointmentId,
+          reviewBenefit: requestedConsultationType === 'review'
+            ? undefined
+            : {
+                freeReviewEligible: true,
+                freeReviewUsed: false,
+                sourceConsultationId: null
+              },
           channel:
-            requestedConsultationType === 'audio'
+            requestedConsultationType === 'review'
+              ? 'review'
+              : requestedConsultationType === 'audio'
               ? 'phone'
               : requestedConsultationType === 'chat'
                 ? 'chat'
@@ -354,8 +438,33 @@ export const createAppointment = async (req, res) => {
         }
       }, { transaction });
 
+      if (freeReviewApplied && freeReviewSourceAppointmentId) {
+        const sourceAppointment = await Appointment.findByPk(freeReviewSourceAppointmentId, {
+          transaction,
+          lock: transaction.LOCK.UPDATE
+        });
+
+        if (sourceAppointment) {
+          const sourceMetadata = parseMetadata(sourceAppointment.metadata);
+          const sourceReviewBenefit = sourceMetadata.reviewBenefit || {};
+          await sourceAppointment.update({
+            metadata: {
+              ...sourceMetadata,
+              reviewBenefit: {
+                ...sourceReviewBenefit,
+                freeReviewEligible: true,
+                freeReviewUsed: true,
+                freeReviewUsedAt: new Date().toISOString(),
+                freeReviewAppointmentId: appointment.id,
+                sourceConsultationId: sourceAppointment.id
+              }
+            }
+          }, { transaction });
+        }
+      }
+
       // Generate meeting link for video/audio/telemedicine consultations
-      if (['video', 'audio', 'telemedicine'].includes(requestedConsultationType)) {
+      if (['video', 'audio', 'telemedicine', 'review'].includes(requestedConsultationType)) {
         const meetingInfo = createMeetingInfo({ appointmentId: appointment.id });
         await appointment.update({
           meetingId: meetingInfo.meetingId,
@@ -389,7 +498,7 @@ export const createAppointment = async (req, res) => {
         doctorName: appointment.doctorName,
         date: appointmentDate,
         time: appointmentTime,
-        type: consultationType
+        type: requestedConsultationType
       });
     } catch (emailError) {
       console.error('Failed to send confirmation email:', emailError);
@@ -493,8 +602,8 @@ export const createAppointment = async (req, res) => {
           date: appointment.appointmentDate,
           time: appointment.appointmentTime,
           appointmentId: appointment.id,
-          consultationType: consultationType,
-          paymentStatus: 'Pending'
+            consultationType: requestedConsultationType,
+            paymentStatus: paymentStatus === 'paid' ? 'Paid' : 'Pending'
         },
         data: {
           appointmentId: appointment.id,
@@ -542,7 +651,8 @@ export const createAppointment = async (req, res) => {
         consultationType: requestedConsultationType || appointment.consultationType,
         consultationFee: Number(appointment.paymentAmount || consultationFee || 0),
         status: appointment.status,
-        paymentStatus: appointment.paymentStatus
+        paymentStatus: appointment.paymentStatus,
+        freeReviewApplied
       },
       appointment: {
         id: appointment.id,
@@ -553,7 +663,8 @@ export const createAppointment = async (req, res) => {
         consultationType: requestedConsultationType || appointment.consultationType,
         consultationFee: Number(appointment.paymentAmount || consultationFee || 0),
         status: appointment.status,
-        paymentStatus: appointment.paymentStatus
+        paymentStatus: appointment.paymentStatus,
+        freeReviewApplied
       }
     });
   } catch (error) {
