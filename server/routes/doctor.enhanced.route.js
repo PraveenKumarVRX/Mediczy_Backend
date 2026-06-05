@@ -12,7 +12,13 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import { Doctor, User } from '../models/index.js';
-import { issuePortalTokenPair, rotatePortalRefreshToken } from '../services/token-revocation.service.js';
+import {
+  issuePortalTokenPair,
+  rotatePortalRefreshToken,
+  listActivePortalSessions,
+  revokePortalSessionForUser,
+  revokeOtherPortalSessions,
+} from '../services/token-revocation.service.js';
 import tenantPartnerService from '../services/tenant-partner.service.js';
 import {
   buildDoctorMediaKeyPrefix,
@@ -23,6 +29,20 @@ import {
 import { uploadToMinio } from '../services/minio-upload.service.js';
 
 const router = express.Router();
+// Ensure request bodies are parsed even if app-level parser order changes.
+router.use(express.json());
+router.use(express.urlencoded({ extended: true }));
+
+const getCurrentAccessJti = (req) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token || !JWT_CONFIG.SECRET) return null;
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
+    return decoded?.jti || null;
+  } catch {
+    return null;
+  }
+};
 
 // Sensitive fields that must NEVER be returned in public doctor listing APIs
 const DOCTOR_SENSITIVE_FIELDS = [
@@ -871,6 +891,83 @@ router.post('/session/bootstrap', async (req, res) => {
       message: 'Session bootstrap failed',
       errorCode: 'SESSION_BOOTSTRAP_FAILED',
     });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/sessions
+ * @desc    List active doctor sessions (simple device list)
+ * @access  Private (Doctor)
+ */
+router.get('/sessions', authUser, requireRole('doctor'), async (req, res) => {
+  try {
+    const doctorId = req.user?.id;
+    const currentJti = getCurrentAccessJti(req);
+    const currentDeviceFp = req.headers['x-device-fingerprint'] || null;
+
+    const rows = await listActivePortalSessions(doctorId, 'doctor');
+    const sessions = rows.map((row, index) => ({
+      id: row.jti,
+      deviceFingerprint: row.device_fp || null,
+      isCurrentSession: Boolean((currentJti && row.jti === currentJti) || (currentDeviceFp && row.device_fp === currentDeviceFp && index === 0)),
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+    }));
+
+    return res.json({ success: true, sessions });
+  } catch (error) {
+    console.error('Doctor sessions list error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch active sessions',
+    });
+  }
+});
+
+/**
+ * @route   DELETE /api/doctors/sessions/:sessionId
+ * @desc    Logout a selected doctor device/session
+ * @access  Private (Doctor)
+ */
+router.delete('/sessions/:sessionId', authUser, requireRole('doctor'), async (req, res) => {
+  try {
+    const doctorId = req.user?.id;
+    const { sessionId } = req.params;
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'sessionId is required' });
+    }
+
+    const ok = await revokePortalSessionForUser(doctorId, 'doctor', sessionId);
+    if (!ok) {
+      return res.status(404).json({ success: false, message: 'Session not found' });
+    }
+
+    return res.json({ success: true, message: 'Session logged out successfully' });
+  } catch (error) {
+    console.error('Doctor session revoke error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to revoke session' });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/sessions/logout-others
+ * @desc    Keep current session, logout all other doctor sessions
+ * @access  Private (Doctor)
+ */
+router.post('/sessions/logout-others', authUser, requireRole('doctor'), async (req, res) => {
+  try {
+    const doctorId = req.user?.id;
+    const currentJti = getCurrentAccessJti(req);
+    const revokedCount = await revokeOtherPortalSessions(doctorId, 'doctor', currentJti);
+
+    return res.json({
+      success: true,
+      message: 'Logged out from other devices',
+      revokedCount,
+    });
+  } catch (error) {
+    console.error('Doctor logout others error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to logout other sessions' });
   }
 });
 

@@ -43,6 +43,7 @@ const parseJsonField = (value, fallback) => {
 const TIME_24H_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 const TIME_12H_REGEX = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i;
 const TIME_HHMM_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+const WEEK_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
 const parseMinutes = (time) => {
   if (!TIME_HHMM_REGEX.test(time)) return null;
@@ -153,6 +154,27 @@ const normalizeSlotEntry = (slot, targetType) => {
   };
 };
 
+const normalizeAvailabilitySlot = (slot) => {
+  if (!slot || typeof slot !== 'object') return null;
+
+  const startTime = normalizeTimeValue(slot.startTime || slot.start || slot.from || '');
+  const endTime = normalizeTimeValue(slot.endTime || slot.end || slot.to || '');
+  if (!TIME_HHMM_REGEX.test(startTime) || !TIME_HHMM_REGEX.test(endTime) || startTime >= endTime) {
+    return null;
+  }
+
+  const rawType = String(slot.consultationType || slot.type || 'both').trim().toLowerCase();
+  const consultationType = rawType === 'walkin' || rawType === 'walk-in' || rawType === 'in-person'
+    ? 'walkIn'
+    : (rawType === 'online' || rawType === 'walkin' || rawType === 'walkIn' || rawType === 'both' ? rawType : 'both');
+
+  return {
+    startTime,
+    endTime,
+    consultationType: consultationType === 'walkin' ? 'walkIn' : consultationType,
+  };
+};
+
 const doctorModel = {
   findOne: async (options = {}) => {
     const doctor = await Doctor.findOne(options);
@@ -206,6 +228,63 @@ const doctorModel = {
       homeVisitFee: doctor.homeVisitFee,
       homeVisitRadiusKm: doctor.homeVisitRadiusKm
     });
+    return deriveVerificationStatus(doctor);
+  },
+
+  updateAvailability: async (id, availabilityData = {}) => {
+    if (id === undefined || id === null || id === 'undefined' || id === '') {
+      throw new Error('Invalid doctor ID');
+    }
+
+    const doctor = await Doctor.findByPk(id);
+    if (!doctor) {
+      throw new Error('Doctor not found');
+    }
+
+    const existingWeekly = parseJsonField(doctor.weeklyAvailability, {});
+    const payload = (
+      availabilityData &&
+      typeof availabilityData === 'object' &&
+      availabilityData.weeklyAvailability &&
+      typeof availabilityData.weeklyAvailability === 'object'
+    ) ? availabilityData.weeklyAvailability : availabilityData;
+
+    const hasDayPayload = WEEK_DAYS.some((day) => payload && Object.prototype.hasOwnProperty.call(payload, day));
+    const updatedWeekly = { ...existingWeekly };
+
+    if (hasDayPayload) {
+      for (const day of WEEK_DAYS) {
+        if (!Object.prototype.hasOwnProperty.call(payload, day)) continue;
+
+        const incomingDay = payload[day] || {};
+        const existingDay = existingWeekly?.[day] || {};
+        const incomingSlots = Array.isArray(incomingDay.slots) ? incomingDay.slots : [];
+        const normalizedSlots = incomingSlots
+          .map(normalizeAvailabilitySlot)
+          .filter(Boolean);
+
+        updatedWeekly[day] = {
+          isAvailable: incomingDay.isAvailable === undefined
+            ? Boolean(existingDay.isAvailable)
+            : Boolean(incomingDay.isAvailable),
+          slots: normalizedSlots,
+        };
+      }
+    } else if (typeof payload?.isAvailable === 'boolean') {
+      for (const day of WEEK_DAYS) {
+        const existingDay = existingWeekly?.[day] || {};
+        updatedWeekly[day] = {
+          isAvailable: payload.isAvailable,
+          slots: Array.isArray(existingDay.slots) ? existingDay.slots : [],
+        };
+      }
+    } else {
+      throw new Error('Invalid availability payload');
+    }
+
+    doctor.weeklyAvailability = updatedWeekly;
+    doctor.lastActivityAt = new Date();
+    await doctor.save();
     return deriveVerificationStatus(doctor);
   },
 

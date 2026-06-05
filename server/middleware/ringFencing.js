@@ -540,6 +540,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/auth/google/callback', // Google OAuth2 callback (patient)
   '/api/auth/doctor/google', // Google OAuth2 initiation (doctor)
   '/api/auth/doctor/google/callback', // Google OAuth2 callback (doctor)
+  '/api/auth/doctor/oauth/status', // Doctor OAuth status (used by mobile/web clients)
   '/api/auth/facebook', // Facebook OAuth2 initiation (patient)
   '/api/auth/facebook/callback', // Facebook OAuth2 callback (patient)
   '/api/auth/doctor/facebook', // Facebook OAuth2 initiation (doctor)
@@ -567,6 +568,8 @@ const PUBLIC_ENDPOINTS = [
   '/api/doctors/send-phone-otp',
   '/api/doctors/verify-phone-otp',
   '/api/doctors/places-autocomplete',
+  '/api/doctors/refresh',
+  '/api/doctors/session/bootstrap',
   '/api/doctors/search', // Public doctor search
   '/api/doctors/available', // Public available doctors list
   '/api/consultation/doctors', // Public consultation doctor listing (browse/book)

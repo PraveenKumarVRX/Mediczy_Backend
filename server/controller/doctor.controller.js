@@ -970,13 +970,28 @@ export const updateDoctorStatus = async (req, res) => {
       doctorId = decoded.id || decoded._id;
     }
 
-    // Extract status from request
-    const { isOnline } = req.body;
+    // Support both legacy boolean payload and mobile-friendly status enum.
+    const requestedStatusRaw = req.body?.status;
+    const requestedStatus = typeof requestedStatusRaw === 'string'
+      ? requestedStatusRaw.trim().toLowerCase()
+      : null;
 
-    if (typeof isOnline !== "boolean") {
+    const allowedStatuses = new Set(['available', 'busy', 'offline']);
+    let resolvedStatus = null;
+    let isOnline = null;
+
+    if (requestedStatus && allowedStatuses.has(requestedStatus)) {
+      resolvedStatus = requestedStatus;
+      isOnline = requestedStatus !== 'offline';
+    } else if (typeof req.body?.isOnline === 'boolean') {
+      isOnline = req.body.isOnline;
+      resolvedStatus = isOnline ? 'available' : 'offline';
+    }
+
+    if (typeof isOnline !== 'boolean') {
       return res.status(400).json({
         success: false,
-        message: "Invalid status. Must be a boolean value.",
+        message: 'Invalid status. Use status: available|busy|offline or isOnline: boolean.',
       });
     }
 
@@ -989,10 +1004,17 @@ export const updateDoctorStatus = async (req, res) => {
       });
     }
 
+    const metadata = {
+      ...(doctor.metadata && typeof doctor.metadata === 'object' ? doctor.metadata : {}),
+      availabilityStatus: resolvedStatus,
+      availabilityUpdatedAt: new Date().toISOString(),
+    };
+
     await doctor.update({
       isOnline,
       lastActive: new Date(),
       updatedAt: new Date(),
+      metadata,
     });
 
     const updatedUser = toPlainDoctor(doctor);
@@ -1002,8 +1024,9 @@ export const updateDoctorStatus = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: `Status updated to ${isOnline ? "online" : "offline"}.`,
+      message: `Status updated to ${resolvedStatus}.`,
       data: {
+        status: resolvedStatus,
         isOnline: updatedUser.isOnline,
         lastActive: updatedUser.lastActive,
       },
