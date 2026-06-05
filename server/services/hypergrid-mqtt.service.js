@@ -150,6 +150,13 @@ export async function startMqttBroker() {
 
   // TCP server (standard MQTT)
   tcpServer = net.createServer(broker.handle);
+  tcpServer.on('error', err => {
+    if (err?.code === 'EADDRINUSE') {
+      console.warn(`[MQTT] TCP port ${MQTT_PORT} already in use. Skipping embedded broker startup for this process.`);
+      return;
+    }
+    console.error('[MQTT] TCP server error:', err.message);
+  });
   tcpServer.listen(MQTT_PORT, () =>
     console.log(`[MQTT] Broker listening on TCP :${MQTT_PORT}`)
   );

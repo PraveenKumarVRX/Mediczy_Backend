@@ -286,7 +286,9 @@ router.post('/book', authUser, [
     }
 
     // Get appointment day
-    const appointmentDay = new Date(appointmentDate).toLocaleDateString('en-US', { weekday: 'lowercase' });
+    const appointmentDay = new Date(appointmentDate)
+      .toLocaleDateString('en-US', { weekday: 'long' })
+      .toLowerCase();
     
     // Check if doctor is available on this day
     const dayAvailability = doctor.weeklyAvailability[appointmentDay];
@@ -376,7 +378,7 @@ router.post('/book', authUser, [
 
     // Get user details
     const patientInstance = await userModel.findByPk(req.user.id, {
-      attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'dateOfBirth', 'gender', 'address']
+      attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'dateOfBirth', 'gender']
     });
     if (!patientInstance) {
       return res.status(404).json({
@@ -586,6 +588,8 @@ router.post('/book', authUser, [
         totalFee,
         currency: 'INR'
       },
+      freeReviewApplied,
+      freeReviewSourceAppointmentId,
       paymentStatus: dbAppointment.paymentStatus,
       meetingDetails: {
         roomId: canonicalMeetingId,               // PHASE 3.1: Use canonical meeting ID
@@ -764,7 +768,7 @@ router.get('/available-slots', [
     }
 
     // Get day of week
-    const dayOfWeek = appointmentDate.toLocaleDateString('en-US', { weekday: 'lowercase' });
+    const dayOfWeek = appointmentDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
     const dayAvailability = doctor.weeklyAvailability[dayOfWeek];
     
     if (!dayAvailability?.isAvailable) {
@@ -786,7 +790,7 @@ router.get('/available-slots', [
         doctorId,
         appointmentDate: date,
         status: {
-          [Appointment.sequelize.Op.notIn]: ['cancelled', 'no-show']
+          [Op.notIn]: ['cancelled', 'no-show']
         }
       }
     });
@@ -794,7 +798,12 @@ router.get('/available-slots', [
     // Filter available slots and add more details
     const availableSlots = doctorSlots.filter(slot => {
       const slotTime = `${slot.startTime}-${slot.endTime}`;
-      return !bookedAppointments.some(apt => apt.timeSlot === slotTime);
+      return !bookedAppointments.some((apt) => {
+        const bookedTimeSlot = apt.timeSlot || apt.metadata?.timeSlot || null;
+        if (bookedTimeSlot && bookedTimeSlot === slotTime) return true;
+        const bookedStart = String(apt.appointmentTime || '').slice(0, 5);
+        return bookedStart === slot.startTime;
+      });
     }).map(slot => {
       const consultationFee = doctor.consultationTypes[effectiveConsultationType].fee;
       const serviceFee = Math.round(consultationFee * 0.1);
@@ -828,7 +837,7 @@ router.get('/available-slots', [
         experience: `${doctor.experienceYears} years`,
         clinicName: doctor.clinicHospitalName,
         languages: doctor.languages,
-        totalConsultations: doctor.statistics.totalConsultations,
+        totalConsultations: doctor.statistics?.totalConsultations || 0,
         profilePicture: doctor.mediaUploads?.profilePicture,
         nextAvailableDate: getNextAvailableDate(doctor.weeklyAvailability),
         consultationTypes: Object.keys(doctor.consultationTypes).filter(

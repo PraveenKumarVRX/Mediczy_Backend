@@ -13,6 +13,11 @@ const LOCAL_BASE_URL = (process.env.LOCAL_BASE_URL || 'http://127.0.0.1:8888').r
 const BASE_URL = (process.env.BASE_URL || 'https://app.mediqzy.com').replace(/\/$/, '');
 const RESTART_PM2 = ['1', 'true', 'yes'].includes((process.env.RESTART_PM2 || '').toLowerCase());
 const LOG_LINES = Number.parseInt(process.env.PM2_LOG_LINES || '120', 10);
+const DOCTOR_EMAIL = process.env.DOCTOR_EMAIL || '';
+const DOCTOR_PASSWORD = process.env.DOCTOR_PASSWORD || '';
+const RUN_REVIEW_POLICY_SMOKE = ['1', 'true', 'yes'].includes(
+  (process.env.RUN_REVIEW_POLICY_SMOKE || (DOCTOR_EMAIL && DOCTOR_PASSWORD ? 'true' : 'false')).toLowerCase()
+);
 
 function run(command, { allowFailure = false } = {}) {
   try {
@@ -89,11 +94,30 @@ function runDoctorAuthSmoke(baseUrl) {
   }
 }
 
+function runDoctorReviewPolicySmoke(baseUrl) {
+  const smokePath = path.join(__dirname, 'doctor-review-policy-smoke.mjs');
+  const result = spawnSync(process.execPath, [smokePath], {
+    cwd: serverRoot,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      BASE_URL: baseUrl,
+      DOCTOR_EMAIL,
+      DOCTOR_PASSWORD,
+    },
+  });
+
+  if (result.status !== 0) {
+    throw new Error(`Doctor review policy smoke failed with exit code ${result.status ?? 1}`);
+  }
+}
+
 async function main() {
   console.log('Doctor deploy health check starting...');
   console.log(`PM2 process: ${PM2_PROCESS}`);
   console.log(`Local base URL: ${LOCAL_BASE_URL}`);
   console.log(`Smoke base URL: ${BASE_URL}`);
+  console.log(`Review policy smoke: ${RUN_REVIEW_POLICY_SMOKE ? 'enabled' : 'skipped'}`);
 
   logStep('Checking listener ports for backend and MQTT');
   const ports = run("ss -ltnp | grep -E ':1883|:8888' || true", { allowFailure: true });
@@ -117,6 +141,12 @@ async function main() {
 
   logStep('Running doctor auth production smoke');
   runDoctorAuthSmoke(BASE_URL);
+
+  if (RUN_REVIEW_POLICY_SMOKE) {
+    assert(DOCTOR_EMAIL && DOCTOR_PASSWORD, 'DOCTOR_EMAIL and DOCTOR_PASSWORD are required for review policy smoke');
+    logStep('Running doctor review policy smoke');
+    runDoctorReviewPolicySmoke(BASE_URL);
+  }
 
   logStep('Scanning recent PM2 logs for crash signatures');
   const crashLines = run(

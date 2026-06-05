@@ -1,6 +1,6 @@
 # Mediqzy — Doctor Mobile App API Integration Guide
 
-> **Version:** 2.8 · **Last Updated:** 2026-06-05  
+> **Version:** 2.10 · **Last Updated:** 2026-06-05  
 > **Base URL (Production):** `https://app.mediqzy.com/api`  
 > **WebSocket URL:** `https://app.mediqzy.com` (path: `/socket.io`)  
 > **LiveKit URL:** `wss://msh-kw9tvxa9.livekit.cloud` *(LiveKit Cloud)*
@@ -47,6 +47,8 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **2.10** | 2026-06-05 | Deploy health script now supports integrated review-policy smoke execution in a single run (`scripts/qa/doctor-auth-deploy-health.mjs`) when `DOCTOR_EMAIL` and `DOCTOR_PASSWORD` are provided. |
+| **2.9** | 2026-06-05 | Added deploy-ready smoke command for review consultation policy validation (`scripts/qa/doctor-review-policy-smoke.mjs`) that verifies: base consultation booking succeeds, first review is free (`freeReviewApplied=true`), and second review is billable. |
 | **2.8** | 2026-06-05 | Review consultation fix: booking APIs now accept `review` (`follow-up`/`followup` aliases) and apply a one-time free review entitlement per prior new consultation for the same patient+doctor pair. |
 | **2.7** | 2026-06-05 | Enhanced scheduling compatibility update: `/api/enhanced-appointments/book` and `/api/enhanced-appointments/available-slots` now accept consultation-type aliases from mobile/web clients (`video`/`audio`/`chat`→`online`, `in-person`/`walk-in`→`walkIn`, `home-visit`→`homeVisit`) to prevent schedule failures caused by enum mismatch. |
 | **2.6** | 2026-06-05 | Added targeted doctor mobile issue smoke workflow (`scripts/qa/doctor-mobile-issue-smoke.mjs`) for live verification of status update, availability toggle, weekly schedule save, and prescription create flows; documented required env vars and expected checks. |
@@ -3985,6 +3987,40 @@ Script validates:
 - availability toggle update (`PUT /api/doctors/availability`)
 - weekly schedule save and restore (`POST /api/doctors/availability/bulk-update`)
 - prescription create and cleanup (`POST/DELETE /api/prescriptions`)
+
+Review consultation policy smoke (one free review per new consultation):
+
+```bash
+cd server
+BASE_URL=https://app.mediqzy.com \
+DOCTOR_EMAIL=<doctor_email> \
+DOCTOR_PASSWORD=<doctor_password> \
+node scripts/qa/doctor-review-policy-smoke.mjs
+```
+
+Script validates:
+- doctor login
+- candidate slot discovery from `GET /api/enhanced-appointments/available-slots`
+- base consultation booking succeeds (`POST /api/enhanced-appointments/book`)
+- first review booking is free (`fees.totalFee=0`, `freeReviewApplied=true`)
+- second review booking is billable (`fees.totalFee>0`, `freeReviewApplied=false`)
+
+Single-run deploy health + auth smoke + review policy smoke:
+
+```bash
+cd server
+RESTART_PM2=true \
+PM2_PROCESS=mediczy-server \
+BASE_URL=https://app.mediqzy.com \
+LOCAL_BASE_URL=http://127.0.0.1:8888 \
+DOCTOR_EMAIL=<doctor_email> \
+DOCTOR_PASSWORD=<doctor_password> \
+node scripts/qa/doctor-auth-deploy-health.mjs
+```
+
+Notes:
+- Review policy smoke is auto-enabled when `DOCTOR_EMAIL` and `DOCTOR_PASSWORD` are provided.
+- To explicitly disable review smoke in this flow: `RUN_REVIEW_POLICY_SMOKE=false`.
 
 ### Background Notifications
 
