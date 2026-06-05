@@ -801,17 +801,26 @@ export async function signInDoctor(req, res) {
 
     if (!doctor) {
       await auditLoginAttempt(req, null, normalizedEmail, false, 'Doctor not found');
-      return res.status(401).json({ message: "Invalid email or password" });
+      return res.status(401).json({
+        message: "Invalid email or password",
+        errorCode: "DOCTOR_NOT_FOUND",
+      });
     }
 
     // Account status guard — checked before password to prevent timing oracle
     if (doctor.status && doctor.status !== 'active') {
       await auditLoginAttempt(req, doctor.id, normalizedEmail, false, `Doctor inactive: ${doctor.status}`);
-      return res.status(403).json({ message: "Doctor account is inactive or suspended. Contact support." });
+      return res.status(403).json({
+        message: "Doctor account is inactive or suspended. Contact support.",
+        errorCode: "DOCTOR_INACTIVE",
+      });
     }
     if (doctor.isActive === false) {
       await auditLoginAttempt(req, doctor.id, normalizedEmail, false, 'Doctor disabled (isActive=false)');
-      return res.status(403).json({ message: "Doctor account has been disabled. Contact support." });
+      return res.status(403).json({
+        message: "Doctor account has been disabled. Contact support.",
+        errorCode: "DOCTOR_DISABLED",
+      });
     }
 
     // CROSS-ROLE GUARD: Prevent patient/user accounts from using doctor login endpoint
@@ -826,7 +835,8 @@ export async function signInDoctor(req, res) {
       console.log('💚 [signInDoctor] User/patient account found, blocking doctor login');
       await auditLoginAttempt(req, userRecord.id, normalizedEmail, false, 'Patient/user attempted doctor login');
       return res.status(403).json({ 
-        message: "Please use the patient login portal" 
+        message: "Please use the patient login portal",
+        errorCode: "PATIENT_PORTAL_ACCOUNT",
       });
     }
 
@@ -838,7 +848,10 @@ export async function signInDoctor(req, res) {
 
       if (!isPasswordValid) {
         await auditLoginAttempt(req, doctor.id, normalizedEmail, false, 'Invalid password');
-        return res.status(401).json({ message: "Invalid email or password" });
+        return res.status(401).json({
+          message: "Invalid email or password",
+          errorCode: "INVALID_PASSWORD",
+        });
       }
 
       // ── Manual activation gate ─────────────────────────────────────────────
@@ -847,6 +860,7 @@ export async function signInDoctor(req, res) {
         return res.status(403).json({
           message: "Your registration is under review. Our team will activate your account after document verification. Please check your email for updates.",
           pendingActivation: true,
+          errorCode: "DOCTOR_PENDING_ACTIVATION",
         });
       }
 

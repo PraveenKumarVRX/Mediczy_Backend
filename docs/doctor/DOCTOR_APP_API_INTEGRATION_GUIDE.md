@@ -120,7 +120,7 @@ When a doctor authenticates, the JWT contains:
 | Setting | Value |
 |---------|-------|
 | Algorithm | HS256 |
-| Token Expiry | 7 days |
+| Token Expiry | 15 minutes |
 | Refresh Token Expiry | 30 days |
 | Delivery | `Authorization: Bearer <token>` header |
 
@@ -222,8 +222,11 @@ No authentication required. **Rate limited: 10 attempts / 15 minutes.**
 
 ```json
 {
+  "success": true,
   "message": "Login successful",
   "token": "eyJhbGciOiJIUzI1NiIs...",
+  "refreshToken": "<refresh_token>",
+  "expiresIn": 900,
   "doctor": {
     "id": 1,
     "firstName": "John",
@@ -238,28 +241,39 @@ No authentication required. **Rate limited: 10 attempts / 15 minutes.**
 ```
 
 **Error Cases:**
-- `401` — Invalid email or password
-- `403` — "Please use the patient login portal" (cross-role guard)
+- `401` — Invalid email or password (`DOCTOR_NOT_FOUND`, `INVALID_PASSWORD`)
+- `403` — Account state or portal mismatch (`DOCTOR_INACTIVE`, `DOCTOR_DISABLED`, `DOCTOR_PENDING_ACTIVATION`, `PATIENT_PORTAL_ACCOUNT`)
 - `429` — Rate limit exceeded
 
-### 2.3 Google OAuth
+### 2.3 Social SSO (Google/Facebook) for Mobile
+
+Doctor app SSO uses browser-based OAuth + deep-link callback. The app should open:
 
 ```
-POST /api/auth/doctor/google
+GET /api/auth/doctor/google?mobile_redirect_uri=<app_scheme://oauth-callback>&state=<opaque_state>
+GET /api/auth/doctor/facebook?mobile_redirect_uri=<app_scheme://oauth-callback>&state=<opaque_state>
 ```
 
-**Request Body:**
+**Allowed default deep-link schemes:**
+- `mediqzydoctor://oauth-callback`
+- `mysmarthealth://oauth-callback`
 
-```json
-{
-  "idToken": "<google_id_token>"
-}
+After successful OAuth, backend redirects to your deep-link URI with query params:
+
+```text
+<app_scheme://oauth-callback>?token=<access_token>&refreshToken=<refresh_token>&expiresIn=900&userType=doctor&provider=google|facebook&state=<opaque_state>
+```
+
+On OAuth failure, backend redirects with:
+
+```text
+<app_scheme://oauth-callback>?error=auth_failed&provider=google|facebook&state=<opaque_state>
 ```
 
 ### 2.4 Token Refresh
 
 ```
-POST /api/auth/refresh
+POST /api/doctors/refresh
 ```
 
 **Request Body:**
@@ -276,11 +290,72 @@ POST /api/auth/refresh
 {
   "success": true,
   "token": "<new_access_token>",
-  "refreshToken": "<new_refresh_token>"
+  "refreshToken": "<new_refresh_token>",
+  "expiresIn": 900
 }
 ```
 
-### 2.5 Revoke Token / Logout
+**Error Codes:**
+- `REFRESH_TOKEN_REQUIRED` — request missing refresh token
+- `INVALID_REFRESH_TOKEN` — token invalid/expired/revoked/account ineligible
+- `TOKEN_REFRESH_FAILED` — unexpected refresh error
+
+### 2.5 Session Persistence (No Re-login UX)
+
+To avoid repeated logins in the doctor app:
+
+1. Save refresh token in secure storage after password login or social SSO.
+2. On app launch, call `POST /api/doctors/session/bootstrap` silently.
+3. Replace both token and refresh token with rotated values from bootstrap response.
+4. Attach Authorization Bearer token to all API requests.
+5. On any `401`, call `POST /api/doctors/refresh`, then retry the failed request once.
+6. If refresh fails, clear local session and show login screen.
+7. Logout should clear local tokens and call `POST /api/auth/logout` with refresh token.
+
+Recommended startup contract:
+
+```
+POST /api/doctors/session/bootstrap
+```
+
+Request:
+
+```json
+{
+  "refreshToken": "<refresh_token>",
+  "deviceFingerprint": "<stable_device_id_optional>"
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "token": "<new_access_token>",
+  "refreshToken": "<new_refresh_token>",
+  "expiresIn": 900,
+  "doctor": {
+    "id": 1748,
+    "firstName": "Dr Haripriya",
+    "lastName": "Narayana",
+    "email": "drharipriya365@gmail.com",
+    "specialization": "Obstetrics and Gynecology",
+    "isVerified": true,
+    "profilePicture": null
+  }
+}
+```
+
+Error codes:
+- `REFRESH_TOKEN_REQUIRED`
+- `INVALID_REFRESH_TOKEN`
+- `SESSION_BOOTSTRAP_FAILED`
+
+Production-ready client implementation reference:
+- `docs/doctor/snippets/doctor-worldclass-auth-client.ts` (secure storage + startup bootstrap + 401 refresh-and-retry)
+
+### 2.6 Revoke Token / Logout
 
 ```
 POST /api/auth/revoke
@@ -3754,9 +3829,9 @@ Store the JWT token securely:
 
 ### Token Expiry Handling
 
-- Token expires in **7 days**
+- Access token expires in **15 minutes**
 - Refresh token expires in **30 days**
-- On `401` response, attempt token refresh via `POST /api/auth/refresh`
+- On `401` response, attempt token refresh via `POST /api/doctors/refresh`
 - If refresh fails, redirect to login screen
 
 ### Background Notifications
