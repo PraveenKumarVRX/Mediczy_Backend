@@ -29,6 +29,9 @@ import { createDoctorMessagesRouter } from './doctor/messages.routes.js';
 import { createDoctorBillingRouter } from './doctor/billing.routes.js';
 
 const router = express.Router();
+// Ensure request bodies are parsed even if app-level parser order changes.
+router.use(express.json());
+router.use(express.urlencoded({ extended: true }));
 
 const MEMBERSHIP_RENEWAL_EXEMPT_EMAILS = new Set(
   String(process.env.MEMBERSHIP_RENEWAL_EXEMPT_EMAILS || 'user@mediczy.com')
