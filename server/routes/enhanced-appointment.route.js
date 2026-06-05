@@ -48,6 +48,23 @@ const normalizeTimeHHMM = (value = '') => {
   return trimmed;
 };
 
+const normalizeEnhancedConsultationType = (value) => {
+  const normalized = String(value || '').toLowerCase().trim();
+  if (!normalized) return null;
+
+  if (['online', 'video', 'audio', 'chat'].includes(normalized)) {
+    return 'online';
+  }
+  if (['walkin', 'walk-in', 'walk_in', 'in-person', 'inperson', 'clinic'].includes(normalized)) {
+    return 'walkIn';
+  }
+  if (['homevisit', 'home-visit', 'home_visit', 'home'].includes(normalized)) {
+    return 'homeVisit';
+  }
+
+  return null;
+};
+
 const mapEnhancedConsultationTypeToDb = (requestedType) => {
   const normalized = String(requestedType || '').toLowerCase().trim();
   if (normalized === 'online') return 'online';
@@ -143,7 +160,9 @@ router.post('/book', authUser, [
   body('doctorId').notEmpty().withMessage('Doctor ID is required'),
   body('appointmentDate').isDate().withMessage('Valid appointment date is required'),
   body('timeSlot').notEmpty().withMessage('Time slot is required'),
-  body('consultationType').isIn(['online', 'walkIn', 'homeVisit']).withMessage('Valid consultation type is required'),
+  body('consultationType')
+    .custom((value) => Boolean(normalizeEnhancedConsultationType(value)))
+    .withMessage('Valid consultation type is required'),
   body('preferredLanguage').optional().isString(),
   body('symptoms').optional().isString(),
   body('notes').optional().isString(),
@@ -152,11 +171,11 @@ router.post('/book', authUser, [
   body('insuranceDetails').optional().isObject()
 ], async (req, res) => {
   try {
-    const { 
+    const {
       doctorId, 
       appointmentDate, 
       timeSlot, 
-      consultationType, 
+      consultationType: requestedConsultationTypeRaw,
       preferredLanguage,
       symptoms, 
       notes, 
@@ -164,6 +183,8 @@ router.post('/book', authUser, [
       patientAddress,
       insuranceDetails
     } = req.body;
+
+    const consultationType = normalizeEnhancedConsultationType(requestedConsultationTypeRaw);
     
     // Get doctor details (supports both numeric ID and alphanumeric unique_id)
     const doctor = await resolveDoctorId(doctorId);
@@ -393,6 +414,7 @@ router.post('/book', authUser, [
       metadata: {
         ...(corporateTenantId ? { corporateTenantId } : {}),
         requestedConsultationType,
+        requestedConsultationTypeRaw: requestedConsultationTypeRaw || null,
         channel,
         preferredLanguage: preferredLanguage || null,
         emergencyContact: emergencyContact || null,
@@ -591,11 +613,14 @@ router.post('/book', authUser, [
 router.get('/available-slots', [
   query('doctorId').notEmpty().withMessage('Doctor ID is required'),
   query('date').isDate().withMessage('Valid date is required'),
-  query('consultationType').isIn(['online', 'walkIn', 'homeVisit']).withMessage('Valid consultation type is required'),
+  query('consultationType')
+    .custom((value) => Boolean(normalizeEnhancedConsultationType(value)))
+    .withMessage('Valid consultation type is required'),
   query('language').optional().isString()
 ], async (req, res) => {
   try {
-    const { doctorId, date, consultationType, language } = req.query;
+    const { doctorId, date, language } = req.query;
+    const consultationType = normalizeEnhancedConsultationType(req.query.consultationType);
     
     // Get doctor details
     const doctor = await doctorModel.findByPk(doctorId);
