@@ -1389,6 +1389,7 @@ app.use('/api/chat', chatRouter); // Chat system endpoints
 app.use('/api/support', supportChatRouter); // Omnichannel support chat (WhatsApp + In-App to RocketChat)
 app.use('/api/omnichannel', omnichannelJourneyRouter); // Omnichannel journey builder — multi-channel patient messaging
 app.use('/api/embeddings', embeddingsRouter); // Embeddings management via PGVector
+app.use('/api/cdss', cdssKnowledgeRouter); // CDSS mobile aliases: /query, /guidelines
 app.use('/api/cdss/knowledge', cdssKnowledgeRouter); // CDSS Knowledge base (Gale Encyclopedia, medical PDFs)
 app.use('/api/tickets', ticketsRouter); // Support ticket management system
 app.use('/api/tenants', tenantRouter); // Multi-tenant organization management

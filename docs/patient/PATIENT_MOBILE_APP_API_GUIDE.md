@@ -729,12 +729,36 @@ Body: {
 ### 7.3 Video Call
 ```
 GET  /api/consultation/video/join/:appointmentId 🔐  Join video call
-     → Returns: { "token": "<livekit-token>", "url": "wss://livekit...", "roomName": "..." }
+     → Returns appointment-scoped LiveKit credentials (see response below)
 POST /api/consultation/video/end/:appointmentId  🔐  End video call
 ```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Video consultation ready",
+  "appointmentId": 101,
+  "video": {
+    "meetingId": "apt-101-abc123ef",
+    "meetingLink": "https://msh-kw9tvxa9.livekit.cloud/room/apt-101-abc123ef",
+    "joinUrl": "https://msh-kw9tvxa9.livekit.cloud/room/apt-101-abc123ef",
+    "livekit": {
+      "token": "<livekit-jwt>",
+      "serverUrl": "wss://msh-kw9tvxa9.livekit.cloud",
+      "roomName": "apt-101-abc123ef"
+    }
+  },
+  "token": "<livekit-jwt>",
+  "serverUrl": "wss://msh-kw9tvxa9.livekit.cloud",
+  "roomName": "apt-101-abc123ef"
+}
+```
+
 **LiveKit Integration:**
-- Use LiveKit SDK (iOS/Android) with the returned token and URL
-- Room name format: `mediczy-{appointmentId}`
+- Use LiveKit SDK (iOS/Android) with `video.livekit.token` and `video.livekit.serverUrl`
+- Canonical room format: `apt-{appointmentId}-{hash}`
+- Some endpoints include compatibility fields at top-level (`token`, `serverUrl`, `roomName`) for older clients
 - Time window: 15 minutes before to 1 hour after scheduled time
 - If doctor initiates call, patient can join anytime
 
@@ -763,11 +787,28 @@ POST /api/chat/upload                       🔐  Upload file in chat
 ```
 GET  /api/video/health              (Public)  Video system health
 POST /api/video/room/token          🔐  Generate room token
-POST /api/video/livekit/token       🔐  Get LiveKit token
+GET  /api/video/livekit/token       🔐  Get LiveKit token (query)
+POST /api/video/livekit/token       🔐  Get LiveKit token (body)
 POST /api/video/room/:roomId/join   🔐  Join room
 POST /api/video/room/:roomId/leave  🔐  Leave room
 GET  /api/video/room/:roomId/status 🔐  Room status
 ```
+
+**Direct token API usage (when room is already known):**
+```http
+GET /api/video/livekit/token?roomId=apt-101-abc123ef&appointmentId=101
+Authorization: Bearer <token>
+```
+
+```http
+POST /api/video/livekit/token
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "roomName": "apt-101-abc123ef", "roomId": "apt-101-abc123ef", "appointmentId": 101 }
+```
+
+At least one of `appointmentId` or `roomId`/`roomName` is required.
 
 ---
 
@@ -1770,11 +1811,12 @@ Body: {
 
 ### 18.4 Health Risk Scores
 ```
-GET  /api/ai-intelligence/risk-score/me              🔐
+GET  /api/v3/ai-intelligence/risk-score/me           🔐
      → { "score": { "overall": 0.34, "cardiovascular": 0.22, "diabetes": 0.18, ... } }
 
-GET  /api/ai-intelligence/risk-score/:patientId      🔐  (doctors only)
+GET  /api/v3/ai-intelligence/risk-score/:patientId   🔐  (doctors only)
 ```
+> Mobile clients should use the `/api/v3/ai-intelligence/*` base path.
 
 ### 18.5 Smart Notifications
 ```
@@ -1862,6 +1904,8 @@ Returns the full question schema for building the health assessment form on the 
 ```
 POST /api/health-assessment/save  🔐
 ```
+Creates a new assessment row on each submit (history is preserved).
+
 **Body:**
 ```json
 {
@@ -1891,6 +1935,36 @@ POST /api/health-assessment/save  🔐
 }
 ```
 > Required: `age`, `gender`, `height`, `weight`. All others default gracefully.
+
+**Assessment Save Payload Contract (recommended for mobile):**
+
+| Field | Required | Type | Allowed / Notes |
+|---|---|---|---|
+| `age` | Yes | number | Integer years |
+| `gender` | Yes | string | `male` \| `female` \| `other` |
+| `height` | Yes | number | cm |
+| `weight` | Yes | number | kg |
+| `waist`, `hip`, `bmi`, `whr` | No | number | Anthropometrics |
+| `smoking` | No | string | Canonical: `never` \| `former` \| `current` |
+| `alcohol` | No | string | Canonical: `none` \| `occasionally` \| `weekly` \| `daily` |
+| `exercise_frequency` | No | string | Canonical: `sedentary` \| `light` \| `moderate` \| `active` |
+| `hypertension`, `diabetes`, `heart_disease`, `cholesterol` | No | string | `yes` \| `no` |
+| `mental_health` | No | string | `normal` \| `stressed` \| `anxious` \| `depressed` |
+| `family_heart_disease`, `family_diabetes`, `family_cancer` | No | string | `yes` \| `no` |
+| `stress_level` | No | number | 1-10 |
+| `sleep_hours` | No | number | Hours/night |
+| `diet_quality` | No | string | `poor` \| `fair` \| `good` \| `excellent` |
+| `responses` | No | object | Raw questionnaire responses preserved as metadata |
+
+**Optional Clinical Inputs (if available):**
+`ethnicity`, `neck_cm`, `sbp`, `af`, `family_heart_disease_premature`, `snores_loudly`, `daytime_sleepiness`, `observed_apneas`, `hba1c`, `total_chol_mmol`, `hdl_mmol`, `creatinine_mgdl`, `urine_acr`
+
+Optional clinical fields are used to compute richer `riskAssessment.clinicalScores` in the response.
+
+**Normalization Notes (server-side):**
+- `smoking` aliases like `occasional`, `regular_lt10`, `heavy_gte10` are normalized to `current`.
+- `alcohol` aliases like `occasional`, `moderate`, `heavy_daily`, `binge` are normalized to canonical values.
+- `exercise_frequency` aliases like `150_mod`, `75_150_mod`, `lt75` are normalized to canonical values.
 
 **Field Reference:**
 
@@ -2007,6 +2081,846 @@ Returns all assessments with period-based groupings (daily, weekly, monthly, qua
   }
 }
 ```
+
+---
+
+### 20.4A React Native Integration (Create + Fetch + Score)
+
+Use this in a React Native app (TypeScript) with Axios.
+
+```ts
+// src/services/healthFlowApi.ts
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: 'https://app.mediqzy.com',
+  timeout: 20000,
+});
+
+export const setAuthToken = (token: string) => {
+  api.defaults.headers.common.Authorization = `Bearer ${token}`;
+};
+
+export type YesNo = 'yes' | 'no';
+export type Gender = 'male' | 'female' | 'other';
+export type Smoking = 'never' | 'former' | 'current';
+export type Alcohol = 'none' | 'occasionally' | 'weekly' | 'daily';
+export type ExerciseFrequency = 'sedentary' | 'light' | 'moderate' | 'active';
+export type MentalHealth = 'normal' | 'stressed' | 'anxious' | 'depressed';
+export type DietQuality = 'poor' | 'fair' | 'good' | 'excellent';
+
+export interface SaveAssessmentPayload {
+  age: number;
+  gender: Gender;
+  height: number;
+  weight: number;
+  waist?: number;
+  hip?: number;
+  bmi?: number;
+  whr?: number;
+  smoking?: Smoking;
+  alcohol?: Alcohol;
+  exercise_frequency?: ExerciseFrequency;
+  hypertension?: YesNo;
+  diabetes?: YesNo;
+  heart_disease?: YesNo;
+  cholesterol?: YesNo;
+  mental_health?: MentalHealth;
+  family_heart_disease?: YesNo;
+  family_diabetes?: YesNo;
+  family_cancer?: YesNo;
+  stress_level?: number;
+  sleep_hours?: number;
+  diet_quality?: DietQuality;
+  responses?: Record<string, unknown>;
+
+  // Optional advanced clinical fields
+  ethnicity?: string;
+  neck_cm?: number;
+  sbp?: number;
+  af?: YesNo;
+  family_heart_disease_premature?: YesNo;
+  snores_loudly?: YesNo;
+  daytime_sleepiness?: YesNo;
+  observed_apneas?: YesNo;
+  hba1c?: number;
+  total_chol_mmol?: number;
+  hdl_mmol?: number;
+  creatinine_mgdl?: number;
+  urine_acr?: number;
+}
+
+export async function saveAssessment(payload: SaveAssessmentPayload) {
+  const { data } = await api.post('/api/health-assessment/save', payload);
+  return data;
+}
+
+export async function fetchLatestAssessment() {
+  const { data } = await api.get('/api/health-assessment/my');
+  return data;
+}
+
+export async function fetchDailyHealthScore() {
+  const { data } = await api.get('/api/health-score/today');
+  return data;
+}
+
+export async function fetchAiRiskScore() {
+  const { data } = await api.get('/api/v3/ai-intelligence/risk-score/me');
+  return data;
+}
+
+export async function runHealthFlow(payload: SaveAssessmentPayload) {
+  // 1) Save current assessment
+  const saved = await saveAssessment(payload);
+
+  // 2) Fetch latest persisted assessment (mobile-safe endpoint)
+  const latest = await fetchLatestAssessment();
+
+  // 3) Fetch daily score + AI risk score for dashboard cards
+  const [dailyScore, aiRisk] = await Promise.all([
+    fetchDailyHealthScore(),
+    fetchAiRiskScore(),
+  ]);
+
+  return { saved, latest, dailyScore, aiRisk };
+}
+```
+
+Minimal usage from a screen/service:
+
+```ts
+import { runHealthFlow, setAuthToken } from '../services/healthFlowApi';
+
+setAuthToken(accessToken);
+
+const result = await runHealthFlow({
+  age: 35,
+  gender: 'male',
+  height: 175,
+  weight: 82,
+  smoking: 'never',
+  exercise_frequency: 'moderate',
+  diabetes: 'no',
+  hypertension: 'no',
+});
+
+// result.saved         -> POST /save response (assessment + riskAssessment)
+// result.latest        -> GET /my response
+// result.dailyScore    -> GET /health-score/today response
+// result.aiRisk        -> GET /v3/ai-intelligence/risk-score/me response
+```
+
+---
+
+### 20.4B React Native + React Query Hooks
+
+If your app uses React Query, you can wrap the same endpoints with query/mutation hooks.
+
+```ts
+// src/hooks/useHealthFlow.ts
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  fetchAiRiskScore,
+  fetchDailyHealthScore,
+  fetchLatestAssessment,
+  saveAssessment,
+  type SaveAssessmentPayload,
+} from '../services/healthFlowApi';
+
+const QK = {
+  latestAssessment: ['health', 'assessment', 'latest'] as const,
+  dailyScore: ['health', 'score', 'today'] as const,
+  aiRisk: ['health', 'risk', 'ai'] as const,
+};
+
+export function useLatestAssessment(enabled = true) {
+  return useQuery({
+    queryKey: QK.latestAssessment,
+    queryFn: fetchLatestAssessment,
+    enabled,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useDailyHealthScore(enabled = true) {
+  return useQuery({
+    queryKey: QK.dailyScore,
+    queryFn: fetchDailyHealthScore,
+    enabled,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useAiRiskScore(enabled = true) {
+  return useQuery({
+    queryKey: QK.aiRisk,
+    queryFn: fetchAiRiskScore,
+    enabled,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useSaveAssessmentAndRefresh() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: SaveAssessmentPayload) => saveAssessment(payload),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: QK.latestAssessment }),
+        qc.invalidateQueries({ queryKey: QK.dailyScore }),
+        qc.invalidateQueries({ queryKey: QK.aiRisk }),
+      ]);
+    },
+  });
+}
+```
+
+```ts
+// src/screens/HealthAssessmentScreen.tsx (minimal usage)
+import React from 'react';
+import { Button, View } from 'react-native';
+import {
+  useAiRiskScore,
+  useDailyHealthScore,
+  useLatestAssessment,
+  useSaveAssessmentAndRefresh,
+} from '../hooks/useHealthFlow';
+
+export default function HealthAssessmentScreen() {
+  const latest = useLatestAssessment(true);
+  const daily = useDailyHealthScore(true);
+  const risk = useAiRiskScore(true);
+  const saveMutation = useSaveAssessmentAndRefresh();
+
+  const onSubmit = () => {
+    saveMutation.mutate({
+      age: 35,
+      gender: 'male',
+      height: 175,
+      weight: 82,
+      smoking: 'never',
+      exercise_frequency: 'moderate',
+      diabetes: 'no',
+      hypertension: 'no',
+    });
+  };
+
+  return (
+    <View>
+      <Button title="Save Assessment" onPress={onSubmit} />
+    </View>
+  );
+}
+```
+
+Recommended defaults for mobile:
+- `staleTime`: 60s for score cards.
+- Retry: keep React Query default retries for transient network issues.
+- On assessment submit success: invalidate latest assessment, daily score, and AI risk queries.
+
+---
+
+### 20.4C React Native Persistent Login + SSO (No Re-Login)
+
+Use refresh-token rotation + secure storage to keep users logged in across app restarts.
+
+Backend endpoints already available:
+- `POST /api/auth/login` -> returns `token` + `refreshToken`
+- `POST /api/auth/refresh` -> rotates and returns new `accessToken` + `refreshToken`
+- `POST /api/auth/logout` -> revoke current refresh token
+- `GET /api/users/profile` -> session check for startup restore
+
+SSO endpoints already available:
+- `GET /api/auth/google`
+- `GET /api/auth/facebook`
+- Mobile callback scheme supported: `mysmarthealth://oauth-callback`
+
+#### Recommended mobile auth policy
+
+1. Store `accessToken` + `refreshToken` in secure storage (Keychain/Keystore), never AsyncStorage.
+2. On app launch, try `/api/users/profile` with current access token.
+3. If access token is expired (401), call `/api/auth/refresh` with refresh token.
+4. Save rotated tokens after every successful refresh.
+5. Retry the original API request once after refresh.
+6. If refresh fails, clear tokens and route to login.
+
+```ts
+// src/services/authSession.ts
+import * as SecureStore from 'expo-secure-store';
+
+const ACCESS_KEY = 'auth.accessToken';
+const REFRESH_KEY = 'auth.refreshToken';
+
+export async function saveTokens(accessToken: string, refreshToken: string) {
+  await Promise.all([
+    SecureStore.setItemAsync(ACCESS_KEY, accessToken),
+    SecureStore.setItemAsync(REFRESH_KEY, refreshToken),
+  ]);
+}
+
+export async function getTokens() {
+  const [accessToken, refreshToken] = await Promise.all([
+    SecureStore.getItemAsync(ACCESS_KEY),
+    SecureStore.getItemAsync(REFRESH_KEY),
+  ]);
+  return { accessToken, refreshToken };
+}
+
+export async function clearTokens() {
+  await Promise.all([
+    SecureStore.deleteItemAsync(ACCESS_KEY),
+    SecureStore.deleteItemAsync(REFRESH_KEY),
+  ]);
+}
+```
+
+```ts
+// src/services/apiClient.ts
+import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { clearTokens, getTokens, saveTokens } from './authSession';
+
+const api = axios.create({
+  baseURL: 'https://app.mediqzy.com',
+  timeout: 20000,
+});
+
+let isRefreshing = false;
+let queue: Array<(token: string | null) => void> = [];
+
+const flushQueue = (token: string | null) => {
+  queue.forEach((cb) => cb(token));
+  queue = [];
+};
+
+api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+  const { accessToken } = await getTokens();
+  if (accessToken) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${accessToken}`;
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (res) => res,
+  async (error: AxiosError) => {
+    const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+    const status = error.response?.status;
+
+    if (status !== 401 || original?._retry) {
+      throw error;
+    }
+
+    original._retry = true;
+
+    if (isRefreshing) {
+      return new Promise((resolve, reject) => {
+        queue.push((token) => {
+          if (!token) return reject(error);
+          original.headers = original.headers || {};
+          original.headers.Authorization = `Bearer ${token}`;
+          resolve(api(original));
+        });
+      });
+    }
+
+    isRefreshing = true;
+    try {
+      const { refreshToken } = await getTokens();
+      if (!refreshToken) throw error;
+
+      const refreshRes = await axios.post('https://app.mediqzy.com/api/auth/refresh', {
+        refreshToken,
+      });
+
+      const newAccess = refreshRes.data?.accessToken;
+      const newRefresh = refreshRes.data?.refreshToken;
+      if (!newAccess || !newRefresh) throw error;
+
+      await saveTokens(newAccess, newRefresh);
+      flushQueue(newAccess);
+
+      original.headers = original.headers || {};
+      original.headers.Authorization = `Bearer ${newAccess}`;
+      return api(original);
+    } catch (refreshError) {
+      flushQueue(null);
+      await clearTokens();
+      throw refreshError;
+    } finally {
+      isRefreshing = false;
+    }
+  }
+);
+
+export default api;
+```
+
+```ts
+// src/bootstrap/restoreSession.ts
+import api from '../services/apiClient';
+import { clearTokens } from '../services/authSession';
+
+export async function restoreSession(): Promise<boolean> {
+  try {
+    await api.get('/api/users/profile');
+    return true;
+  } catch {
+    await clearTokens();
+    return false;
+  }
+}
+```
+
+#### SSO deep-link flow for RN
+
+Use your browser auth start URL with `mobile_redirect_uri`:
+
+```text
+https://app.mediqzy.com/api/auth/google?mobile_redirect_uri=mysmarthealth://oauth-callback&state=abc123
+```
+
+After login, backend redirects to your deep link with query params:
+- `token`
+- `refreshToken`
+- `provider`
+- `state` (echo)
+
+Handle the callback and persist tokens immediately:
+
+```ts
+// src/auth/handleSsoCallback.ts
+import * as Linking from 'expo-linking';
+import { saveTokens } from '../services/authSession';
+
+export async function handleSsoUrl(url: string) {
+  const parsed = Linking.parse(url);
+  const token = typeof parsed.queryParams?.token === 'string' ? parsed.queryParams.token : null;
+  const refreshToken = typeof parsed.queryParams?.refreshToken === 'string' ? parsed.queryParams.refreshToken : null;
+
+  if (token && refreshToken) {
+    await saveTokens(token, refreshToken);
+    return { success: true };
+  }
+
+  return { success: false, error: parsed.queryParams?.error || 'SSO token missing' };
+}
+```
+
+---
+
+### 20.4D Production Auth Module Template (RN)
+
+Use this pattern when you want app-wide auth state, protected navigation, and zero-friction auto-login behavior.
+
+```ts
+// src/auth/AuthContext.tsx
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import api from '../services/apiClient';
+import { clearTokens, getTokens, saveTokens } from '../services/authSession';
+
+type AuthState = {
+  bootstrapping: boolean;
+  isAuthenticated: boolean;
+  profile: any | null;
+};
+
+type AuthContextValue = AuthState & {
+  signInWithPassword: (input: { email?: string; phoneNumber?: string; password: string }) => Promise<void>;
+  signOut: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
+  onSsoTokens: (accessToken: string, refreshToken: string) => Promise<void>;
+};
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+async function fetchProfile() {
+  const res = await api.get('/api/users/profile');
+  return res.data;
+}
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [bootstrapping, setBootstrapping] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [profile, setProfile] = useState<any | null>(null);
+
+  const bootstrap = async () => {
+    try {
+      const { accessToken, refreshToken } = await getTokens();
+      if (!accessToken || !refreshToken) {
+        setIsAuthenticated(false);
+        setProfile(null);
+        return;
+      }
+
+      const me = await fetchProfile();
+      setProfile(me?.user || me?.data || null);
+      setIsAuthenticated(true);
+    } catch {
+      await clearTokens();
+      setIsAuthenticated(false);
+      setProfile(null);
+    } finally {
+      setBootstrapping(false);
+    }
+  };
+
+  useEffect(() => {
+    void bootstrap();
+  }, []);
+
+  const signInWithPassword = async (input: { email?: string; phoneNumber?: string; password: string }) => {
+    const res = await api.post('/api/auth/login', input);
+    const token = res.data?.token;
+    const refreshToken = res.data?.refreshToken;
+
+    if (!token || !refreshToken) {
+      throw new Error('Login response missing token/refreshToken');
+    }
+
+    await saveTokens(token, refreshToken);
+    const me = await fetchProfile();
+    setProfile(me?.user || me?.data || null);
+    setIsAuthenticated(true);
+  };
+
+  const signOut = async () => {
+    try {
+      const { refreshToken } = await getTokens();
+      if (refreshToken) {
+        await api.post('/api/auth/logout', { refreshToken });
+      }
+    } catch {
+      // Ignore network/logout errors; local token clear still proceeds.
+    } finally {
+      await clearTokens();
+      setProfile(null);
+      setIsAuthenticated(false);
+    }
+  };
+
+  const refreshProfile = async () => {
+    const me = await fetchProfile();
+    setProfile(me?.user || me?.data || null);
+  };
+
+  const onSsoTokens = async (accessToken: string, refreshToken: string) => {
+    await saveTokens(accessToken, refreshToken);
+    const me = await fetchProfile();
+    setProfile(me?.user || me?.data || null);
+    setIsAuthenticated(true);
+  };
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      bootstrapping,
+      isAuthenticated,
+      profile,
+      signInWithPassword,
+      signOut,
+      refreshProfile,
+      onSsoTokens,
+    }),
+    [bootstrapping, isAuthenticated, profile]
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used inside AuthProvider');
+  return ctx;
+}
+```
+
+```ts
+// src/auth/AuthGate.tsx
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { ActivityIndicator, View } from 'react-native';
+import { useAuth } from './AuthContext';
+import { AppStack } from '../navigation/AppStack';
+import { AuthStack } from '../navigation/AuthStack';
+
+export function AuthGate() {
+  const { bootstrapping, isAuthenticated } = useAuth();
+
+  if (bootstrapping) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator />
+      </View>
+    );
+  }
+
+  return (
+    <NavigationContainer>
+      {isAuthenticated ? <AppStack /> : <AuthStack />}
+    </NavigationContainer>
+  );
+}
+```
+
+```ts
+// src/auth/useRefreshScheduler.ts
+import { useEffect } from 'react';
+import axios from 'axios';
+import { getTokens, saveTokens, clearTokens } from '../services/authSession';
+
+const REFRESH_INTERVAL_MS = 10 * 60 * 1000; // Refresh every 10 minutes
+
+export function useRefreshScheduler(onAuthLost: () => void) {
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | null = null;
+    let running = false;
+
+    const tick = async () => {
+      if (running) return;
+      running = true;
+      try {
+        const { refreshToken } = await getTokens();
+        if (!refreshToken) return;
+
+        const res = await axios.post('https://app.mediqzy.com/api/auth/refresh', {
+          refreshToken,
+        });
+
+        const nextAccess = res.data?.accessToken;
+        const nextRefresh = res.data?.refreshToken;
+        if (!nextAccess || !nextRefresh) throw new Error('Invalid refresh response');
+        await saveTokens(nextAccess, nextRefresh);
+      } catch {
+        await clearTokens();
+        onAuthLost();
+      } finally {
+        running = false;
+      }
+    };
+
+    timer = setInterval(() => {
+      void tick();
+    }, REFRESH_INTERVAL_MS);
+
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [onAuthLost]);
+}
+```
+
+```ts
+// src/App.tsx
+import React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AuthProvider } from './auth/AuthContext';
+import { AuthGate } from './auth/AuthGate';
+
+const queryClient = new QueryClient();
+
+export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <AuthGate />
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+}
+```
+
+Production notes:
+- Keep logout explicit: call `/api/auth/logout` with current refresh token, then clear secure storage.
+- Keep one source of truth for auth state inside `AuthProvider`; avoid duplicated token state in screens.
+- On SSO callback success, call `onSsoTokens(accessToken, refreshToken)` and navigate into the authenticated stack.
+
+---
+
+### 20.4E Expo vs Bare RN Setup Checklist
+
+Use the same backend API flow for both, but platform wiring differs for storage and deep links.
+
+#### Expo-managed app
+
+Packages:
+- `expo-secure-store` for token storage
+- `expo-linking` for deep-link parsing
+- `expo-web-browser` (optional) for OAuth browser flow
+
+`app.json`:
+
+```json
+{
+  "expo": {
+    "scheme": "mysmarthealth",
+    "ios": {
+      "bundleIdentifier": "com.smarthealth.patient"
+    },
+    "android": {
+      "package": "com.smarthealth.patient"
+    }
+  }
+}
+```
+
+Build SSO start URL in app:
+
+```ts
+import * as Linking from 'expo-linking';
+
+const redirectUri = Linking.createURL('oauth-callback');
+// e.g. mysmarthealth://oauth-callback
+const googleSsoUrl = `https://app.mediqzy.com/api/auth/google?mobile_redirect_uri=${encodeURIComponent(redirectUri)}`;
+```
+
+#### Bare React Native app
+
+Packages:
+- `react-native-keychain` for token storage (preferred)
+- `react-native-url-polyfill` if URL parsing support is needed consistently
+
+Android intent filter (`android/app/src/main/AndroidManifest.xml`):
+
+```xml
+<activity
+  android:name=".MainActivity"
+  android:launchMode="singleTask">
+  <intent-filter>
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <category android:name="android.intent.category.BROWSABLE" />
+    <data android:scheme="mysmarthealth" android:host="oauth-callback" />
+  </intent-filter>
+</activity>
+```
+
+iOS URL type (`ios/<app>/Info.plist`):
+
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleURLSchemes</key>
+    <array>
+      <string>mysmarthealth</string>
+    </array>
+  </dict>
+</array>
+```
+
+Keychain token helper (bare RN):
+
+```ts
+import * as Keychain from 'react-native-keychain';
+
+const SERVICE = 'smarthealth-auth';
+
+export async function saveTokens(accessToken: string, refreshToken: string) {
+  await Keychain.setGenericPassword('token', JSON.stringify({ accessToken, refreshToken }), {
+    service: SERVICE,
+    accessible: Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+  });
+}
+
+export async function getTokens() {
+  const creds = await Keychain.getGenericPassword({ service: SERVICE });
+  if (!creds) return { accessToken: null, refreshToken: null };
+  const parsed = JSON.parse(creds.password);
+  return { accessToken: parsed.accessToken ?? null, refreshToken: parsed.refreshToken ?? null };
+}
+```
+
+Common hardening for both Expo and bare RN:
+- Never log tokens in production builds.
+- Clear tokens on refresh failure or HTTP 401 from `/api/auth/refresh`.
+- Keep `mysmarthealth://oauth-callback` consistent across backend and app config.
+- Prefer one global HTTP client with 401-refresh-retry behavior.
+
+---
+
+### 20.4F Mobile Go-Live Validation Checklist (QA)
+
+Run this full checklist on Android + iOS before release.
+
+1. Password Login Persists Across Restart
+- Login with email/phone + password.
+- Kill app process and relaunch.
+- Expected: user lands in authenticated stack without login prompt.
+
+2. Silent Refresh on Expired Access Token
+- Force access token expiry (or wait until expired) while keeping refresh token valid.
+- Call a protected endpoint like `/api/users/profile`.
+- Expected: app refreshes token via `/api/auth/refresh`, retries request, and continues session.
+
+3. Refresh Token Rotation
+- Capture refresh token A after login.
+- Trigger refresh and capture refresh token B.
+- Expected: A != B and subsequent refresh with A fails.
+
+4. Refresh Failure Handling
+- Corrupt stored refresh token and call protected API.
+- Expected: refresh fails, tokens are cleared, user is redirected to login stack.
+
+5. Explicit Logout
+- Login, then call logout action.
+- Expected: `/api/auth/logout` called, secure tokens removed, app returns to unauthenticated stack.
+
+6. Google SSO Deep Link Success
+- Start SSO using mobile redirect URI.
+- Complete Google auth flow.
+- Expected: deep link callback contains token + refreshToken, app stores both, profile fetch succeeds.
+
+7. Facebook SSO Deep Link Success
+- Repeat SSO flow with Facebook provider.
+- Expected: same success path as Google SSO.
+
+8. SSO Error Path
+- Cancel provider consent/login.
+- Expected: callback includes error, app shows recoverable message and stays in auth stack.
+
+9. First-Time Health Flow
+- Submit `POST /api/health-assessment/save` with valid required fields.
+- Then fetch:
+  - `GET /api/health-assessment/my`
+  - `GET /api/health-score/today`
+  - `GET /api/v3/ai-intelligence/risk-score/me`
+- Expected: submit succeeds and all cards load without auth interruption.
+
+10. App Upgrade Migration Safety
+- Install old build, login, then upgrade to latest build.
+- Expected: secure token read/parse succeeds, no forced logout due to storage schema mismatch.
+
+Release gate recommendation:
+- Mark mobile auth as release-ready only if all 10 cases pass on at least:
+  - Android (latest + one previous major)
+  - iOS (latest + one previous major)
+
+QA execution tracker template:
+
+| Test ID | Scenario | Platform | OS Version | Build | Result (Pass/Fail) | Evidence Link | Owner | Date |
+|---|---|---|---|---|---|---|---|---|
+| AUTH-01 | Password Login Persists Across Restart | Android |  |  |  |  |  |  |
+| AUTH-02 | Silent Refresh on Expired Access Token | Android |  |  |  |  |  |  |
+| AUTH-03 | Refresh Token Rotation | Android |  |  |  |  |  |  |
+| AUTH-04 | Refresh Failure Handling | Android |  |  |  |  |  |  |
+| AUTH-05 | Explicit Logout | Android |  |  |  |  |  |  |
+| AUTH-06 | Google SSO Deep Link Success | Android |  |  |  |  |  |  |
+| AUTH-07 | Facebook SSO Deep Link Success | Android |  |  |  |  |  |  |
+| AUTH-08 | SSO Error Path | Android |  |  |  |  |  |  |
+| AUTH-09 | First-Time Health Flow | Android |  |  |  |  |  |  |
+| AUTH-10 | App Upgrade Migration Safety | Android |  |  |  |  |  |  |
+| AUTH-01 | Password Login Persists Across Restart | iOS |  |  |  |  |  |  |
+| AUTH-02 | Silent Refresh on Expired Access Token | iOS |  |  |  |  |  |  |
+| AUTH-03 | Refresh Token Rotation | iOS |  |  |  |  |  |  |
+| AUTH-04 | Refresh Failure Handling | iOS |  |  |  |  |  |  |
+| AUTH-05 | Explicit Logout | iOS |  |  |  |  |  |  |
+| AUTH-06 | Google SSO Deep Link Success | iOS |  |  |  |  |  |  |
+| AUTH-07 | Facebook SSO Deep Link Success | iOS |  |  |  |  |  |  |
+| AUTH-08 | SSO Error Path | iOS |  |  |  |  |  |  |
+| AUTH-09 | First-Time Health Flow | iOS |  |  |  |  |  |  |
+| AUTH-10 | App Upgrade Migration Safety | iOS |  |  |  |  |  |  |
 
 ---
 
@@ -3182,7 +4096,7 @@ Handle incoming FCM notifications by `type` field and navigate accordingly:
 1. Receive FCM notification `type: "video_call"`
 2. Show incoming call UI
 3. On accept → `GET /api/consultation/video/join/:appointmentId`
-4. Use LiveKit SDK with returned `token` and `url`
+4. Use LiveKit SDK with `video.livekit.token` + `video.livekit.serverUrl` (fallback: top-level `token` + `serverUrl`)
 5. On end → `POST /api/consultation/video/end/:appointmentId`
 
 ### Offline Support Recommendations

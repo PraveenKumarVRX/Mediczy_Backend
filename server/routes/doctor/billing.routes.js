@@ -7,7 +7,7 @@ export const createDoctorBillingRouter = ({ authDoctor, Appointment, User }) => 
     try {
       const { appointmentId } = req.params;
       const doctorId = req.doctor.id;
-      const { items, discount, notes, taxRate } = req.body;
+      const { items: rawItems, discount = 0, notes, taxRate = 0, amount, service, description } = req.body;
 
       const appointment = await Appointment.findOne({
         where: { id: appointmentId, doctorId },
@@ -21,9 +21,29 @@ export const createDoctorBillingRouter = ({ authDoctor, Appointment, User }) => 
         });
       }
 
-      const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      const discountAmount = discount || 0;
-      const taxAmount = ((subtotal - discountAmount) * (taxRate || 0)) / 100;
+      const fallbackAmount = Number(amount ?? appointment.paymentAmount ?? appointment.consultationFee ?? 0);
+      const items = Array.isArray(rawItems) && rawItems.length > 0
+        ? rawItems
+        : [{ description: service || description || 'Doctor consultation', price: fallbackAmount, quantity: 1 }];
+
+      const normalizedItems = items.map((item, index) => {
+        const quantity = Math.max(1, Number(item.quantity ?? item.qty ?? 1) || 1);
+        const price = Number(item.price ?? item.amount ?? item.rate ?? 0);
+        return {
+          id: item.id || ('item_' + (index + 1)),
+          description: item.description || item.service || item.name || ('Item ' + (index + 1)),
+          quantity,
+          price: Number.isFinite(price) ? price : 0,
+        };
+      });
+
+      if (!normalizedItems.length || normalizedItems.some((item) => item.price < 0 || item.quantity <= 0)) {
+        return res.status(400).json({ success: false, message: 'At least one valid invoice item is required' });
+      }
+
+      const subtotal = normalizedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const discountAmount = Number(discount) || 0;
+      const taxAmount = ((subtotal - discountAmount) * (Number(taxRate) || 0)) / 100;
       const total = subtotal - discountAmount + taxAmount;
 
       const invoiceNumber = `INV-${Date.now()}-${appointmentId}`;
@@ -32,7 +52,7 @@ export const createDoctorBillingRouter = ({ authDoctor, Appointment, User }) => 
         appointmentId,
         doctorId,
         patientId: appointment.userId ?? appointment.patientId,
-        items,
+        items: normalizedItems,
         subtotal,
         discount: discountAmount,
         taxRate: taxRate || 0,
@@ -44,7 +64,15 @@ export const createDoctorBillingRouter = ({ authDoctor, Appointment, User }) => 
         dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       };
 
-      const appointmentNotes = appointment.notes || {};
+      let appointmentNotes = {};
+      try {
+        appointmentNotes = appointment.notes
+          ? (typeof appointment.notes === 'string' ? JSON.parse(appointment.notes) : appointment.notes)
+          : {};
+      } catch {
+        appointmentNotes = {};
+      }
+
       await appointment.update({
         notes: JSON.stringify({
           ...appointmentNotes,

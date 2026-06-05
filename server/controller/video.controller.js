@@ -249,22 +249,28 @@ class VideoController {
       const { roomId, appointmentId, identity } = req.query;
       const userId = req.user.id;
       const userRole = req.user.role || 'user';
+      const roomIdFromQuery = String(roomId || '').trim();
+      const parsedRoomAppointmentId = (() => {
+        const match = roomIdFromQuery.match(/^apt-(\d+)(?:-[a-f0-9]{6,})?$/i);
+        return match ? match[1] : null;
+      })();
+      const effectiveAppointmentId = appointmentId || parsedRoomAppointmentId;
       const displayName =
         [req.user.firstName, req.user.lastName].filter(Boolean).join(' ') ||
         req.user.name ||
         req.user.email ||
         'Mediczy User';
 
-      if (!appointmentId && ['user', 'doctor'].includes(String(userRole).toLowerCase())) {
+      if (!effectiveAppointmentId && !roomIdFromQuery && ['user', 'doctor'].includes(String(userRole).toLowerCase())) {
         return res.status(400).json({
           success: false,
-          message: 'appointmentId is required to join consultation rooms'
+          message: 'appointmentId or roomId is required to join consultation rooms'
         });
       }
 
-      let meetingId = roomId || createMeetingInfo({}).meetingId;
-      if (appointmentId) {
-        const appointment = await Appointment.findByPk(appointmentId);
+      let meetingId = roomIdFromQuery || createMeetingInfo({}).meetingId;
+      if (effectiveAppointmentId) {
+        const appointment = await Appointment.findByPk(effectiveAppointmentId);
         if (!appointment) {
           return res.status(404).json({
             success: false,
@@ -330,16 +336,16 @@ class VideoController {
         const resolvedMeetingId = storedMeetingId || canonicalMeetingId;
 
         if (
-          roomId &&
-          roomId !== resolvedMeetingId &&
-          !verifyCanonicalMeetingId(appointment.id, roomId)
+          roomIdFromQuery &&
+          roomIdFromQuery !== resolvedMeetingId &&
+          !verifyCanonicalMeetingId(appointment.id, roomIdFromQuery)
         ) {
           return res.status(403).json({
             success: false,
             message: 'Invalid room for appointment'
           });
         }
-        meetingId = roomId || resolvedMeetingId;
+        meetingId = roomIdFromQuery || resolvedMeetingId;
       }
 
       const participantIdentity = buildParticipantIdentity({
@@ -351,7 +357,7 @@ class VideoController {
 
       console.log('🎥 Generating LiveKit token from query params:', {
         roomId: meetingId,
-        appointmentId,
+        appointmentId: effectiveAppointmentId,
         identity: participantIdentity,
       });
 
@@ -395,7 +401,7 @@ class VideoController {
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { roomName } = req.body;
+      const { roomName, roomId } = req.body;
       const userId = req.user.id;
       const userRole = req.user.role || 'user';
       const displayName =
@@ -404,7 +410,7 @@ class VideoController {
         req.user.email ||
         'Mediczy User';
 
-      const meetingId = roomName || createMeetingInfo({}).meetingId;
+      const meetingId = roomName || roomId || createMeetingInfo({}).meetingId;
       const participantIdentity = buildParticipantIdentity({
         userRole,
         userId,
@@ -419,8 +425,15 @@ class VideoController {
 
       res.json(withOptionalIceServers({
         success: true,
+        token: livekitData.token,
+        serverUrl: livekitData.serverUrl,
+        roomName: meetingId,
+        identity: participantIdentity,
         video: withOptionalIceServers({
           meetingId,
+          roomName: meetingId,
+          token: livekitData.token,
+          serverUrl: livekitData.serverUrl,
           meetingLink: livekitData.meetUrl,
           joinUrl: livekitData.joinUrl,
           livekit: livekitData,

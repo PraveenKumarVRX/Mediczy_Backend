@@ -23,6 +23,8 @@ import bcrypt from 'bcrypt';
 import { asyncHandler } from '../../middleware/errorHandler.middleware.js';
 import { apiLimiter, authLimiter } from '../../middleware/rateLimiter.middleware.js';
 import { requestLogger, auditLogger } from '../../middleware/logging.middleware.js';
+import { rotatePortalRefreshToken } from '../../services/token-revocation.service.js';
+import doctorModel from '../../models/doctor.model.intelligent.js';
 
 const router = express.Router();
 
@@ -167,6 +169,31 @@ router.post('/auth/login', authLimiter, validateRequest(loginSchema), asyncHandl
   });
 }));
 
+const tryRefreshDoctorPortalToken = async (refreshToken, req) => {
+  const deviceFp = req.headers['x-device-fingerprint'] || req.body?.deviceFingerprint || null;
+  const result = await rotatePortalRefreshToken(refreshToken, {
+    portal: 'doctor',
+    deviceFp,
+    resolvePayload: async (payload) => {
+      const doctor = await doctorModel.findByPk(payload.userId);
+      if (!doctor) return null;
+      if (doctor.status && doctor.status !== 'active') return null;
+      if (doctor.isActive === false) return null;
+      if (!doctor.isVerified) return null;
+      return { id: doctor.id, userId: doctor.id, email: doctor.email, role: 'doctor' };
+    },
+  });
+
+  if (!result) return null;
+  return {
+    accessToken: result.accessToken,
+    token: result.accessToken,
+    refreshToken: result.refreshToken,
+    expiresIn: '15m',
+    role: 'doctor',
+  };
+};
+
 router.post('/auth/refresh', asyncHandler(async (req, res) => {
   const { refreshToken } = req.body;
   
@@ -176,15 +203,28 @@ router.post('/auth/refresh', asyncHandler(async (req, res) => {
       error: { code: 'MISSING_TOKEN', message: 'Refresh token required' }
     });
   }
-  
-  const result = await refreshAccessToken(refreshToken, {
+
+  const context = {
     ipAddress: req.ip || req.socket?.remoteAddress || null,
     userAgent: req.headers['user-agent'] || null,
-  });
+  };
+
+  let result;
+  try {
+    result = await refreshAccessToken(refreshToken, context);
+  } catch (error) {
+    result = await tryRefreshDoctorPortalToken(refreshToken, req);
+    if (!result) throw error;
+  }
   
   res.json({
     success: true,
-    data: result
+    data: result,
+    accessToken: result.accessToken,
+    token: result.token || result.accessToken,
+    refreshToken: result.refreshToken,
+    expiresIn: result.expiresIn || '15m',
+    role: result.role,
   });
 }));
 

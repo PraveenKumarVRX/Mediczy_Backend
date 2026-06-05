@@ -38,15 +38,16 @@ const doctorOrAdmin = [authUser, requireRole(['doctor', 'admin'])];
  */
 router.post('/query', authUser, async (req, res) => {
   try {
-    const { query, category = 'diagnosis', specialty = 'general', searchKnowledge = true, sources = [] } = req.body;
+    const { query, condition, category = 'diagnosis', specialty = 'general', searchKnowledge = true, sources = [] } = req.body;
+    const clinicalQuery = String(query || condition || '').trim();
 
-    if (!query || typeof query !== 'string' || query.trim().length < 3) {
+    if (!clinicalQuery || clinicalQuery.length < 3) {
       return res.status(400).json({ error: 'Query must be at least 3 characters' });
     }
 
-    console.log(`[CDSS API] Query: "${query.substring(0, 50)}..." | Category: ${category} | Specialty: ${specialty}`);
+    console.log("[CDSS API] Query: " + clinicalQuery.substring(0, 50) + "... | Category: " + category + " | Specialty: " + specialty);
 
-    const result = await cdssService.query(query.trim(), {
+    const result = await cdssService.query(clinicalQuery, {
       category,
       specialty,
       searchKnowledge,
@@ -68,6 +69,32 @@ router.post('/query', authUser, async (req, res) => {
     });
   }
 });
+
+const guidelineQueryHandler = async (req, res) => {
+  try {
+    const clinicalQuery = String(req.body?.query || req.body?.condition || req.body?.diagnosis || req.body?.chiefComplaint || "").trim();
+    if (!clinicalQuery || clinicalQuery.length < 3) {
+      return res.status(400).json({ success: false, error: "Condition or query must be at least 3 characters" });
+    }
+    const result = await cdssService.query(clinicalQuery, {
+      category: req.body?.category || "guidelines",
+      specialty: req.body?.specialty || "general",
+      searchKnowledge: req.body?.searchKnowledge ?? true,
+      sources: Array.isArray(req.body?.sources) ? req.body.sources : [],
+    });
+    return res.json({ success: true, provider: result.provider, model: result.model, ...result.data });
+  } catch (error) {
+    console.error("[CDSS API] Guidelines query error:", error);
+    return res.status(200).json({
+      success: false,
+      error: error.message,
+      fallbackMessage: "Guidelines are temporarily unavailable. Please try again."
+    });
+  }
+};
+
+router.post("/guidelines", authUser, guidelineQueryHandler);
+router.post("/query-guidelines", authUser, guidelineQueryHandler);
 
 /**
  * GET /cdss/knowledge/health

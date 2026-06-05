@@ -404,11 +404,11 @@ GOOGLE_FIT_ENABLED=true
 DEFAULT_CLINIC_SLUG=default
 
 # LiveKit Configuration (for Video Calls)
-LIVEKIT_URL=wss://video.mediqzy.com
+LIVEKIT_URL=wss://msh-kw9tvxa9.livekit.cloud
 LIVEKIT_API_KEY=your_livekit_api_key
 LIVEKIT_API_SECRET=your_livekit_api_secret
 
-# Note: LIVEKIT_URL is the video host. Keep REST API calls on app.mediqzy.com.
+# Note: LIVEKIT_URL is the LiveKit Cloud host. Keep REST API calls on app.mediqzy.com.
 ```
 
 ---
@@ -452,15 +452,15 @@ LIVEKIT_API_SECRET=your_livekit_api_secret
 ### Video Consultation
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| POST | `/api/consultations/start` | Start consultation |
-| POST | `/api/mobile/video/token` | Get LiveKit token |
-| POST | `/api/consultations/end` | End consultation |
+| GET | `/api/consultation/video/join/:appointmentId` | Join consultation and get canonical LiveKit credentials |
+| POST | `/api/video/livekit/token` | Direct token API (roomId/roomName/appointmentId) |
+| POST | `/api/consultation/video/end/:appointmentId` | End consultation |
 | GET | `/api/consultations/:id` | Get consultation details |
 | POST | `/api/consultations/:id/recording` | Start/stop recording |
 | GET | `/api/consultations/:id/recording` | Get recording status |
 | GET | `/api/notifications` | Get notification history |
 
-Note: `app.mediqzy.com` is the REST API base. `video.mediqzy.com` is the LiveKit host used by the SDK and meeting URLs.
+Note: `app.mediqzy.com` is the REST API base. `wss://msh-kw9tvxa9.livekit.cloud` is the LiveKit host used by the SDK and meeting URLs.
 
 ---
 
@@ -681,8 +681,8 @@ For exhaustive API Credentials documentation, see:
 │                                                              │
 │  1. User/Doctor initiates call → Request starts on backend │
 │  2. Backend creates LiveKit room & generates token         │
-│  3. Mobile app gets token via `/api/mobile/video/token`   │
-│  4. App connects to LiveKit server (wss://livekit-url)    │
+│  3. Mobile app calls `/api/consultation/video/join/:id`   │
+│  4. App connects via `video.livekit.serverUrl` + token    │
 │  5. Real-time video/audio streams                          │
 │  6. Optional: Recording starts on backend                  │
 │  7. Either party ends call                                 │
@@ -733,21 +733,17 @@ export class VideoConsultationService {
     }
   }
 
-  // Get LiveKit token from backend
+  // Get LiveKit credentials from appointment join endpoint
   async getConsultationToken(appointmentId, consultationType = 'video') {
     try {
       const jwtToken = await SecureStore.getItemAsync('jwt_token');
       
-      const response = await fetch(`${this.apiBase}/api/mobile/video/token`, {
-        method: 'POST',
+      const response = await fetch(`${this.apiBase}/api/consultation/video/join/${appointmentId}`, {
+        method: 'GET',
         headers: {
           'Authorization': `Bearer ${jwtToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          appointmentId: appointmentId,
-          roomName: null,
-        })
+          'Content-Type': 'application/json'
+        }
       });
 
       if (!response.ok) {
@@ -760,12 +756,14 @@ export class VideoConsultationService {
         throw new Error(data.message || 'Failed to get token');
       }
 
+      const lk = data?.video?.livekit || {};
+
       return {
-        token: data.data.token,
-        liveKitUrl: data.data.livekit_url,
-        roomName: data.data.room_name,
-        participantName: data.data.participant_name,
-        consultationId: data.data.consultation_id,
+        token: lk.token || data.token,
+        liveKitUrl: lk.serverUrl || data.serverUrl,
+        roomName: lk.roomName || data.roomName,
+        meetingId: data?.video?.meetingId || null,
+        joinUrl: data?.video?.joinUrl || null,
       };
     } catch (error) {
       this.emit('error', {
@@ -1377,10 +1375,9 @@ serviceRef.current.on('qualityChanged', (data) => {
 
 ```bash
 # Test token generation
-curl -X POST https://app.mediqzy.com/api/mobile/video/token \
+curl -X GET https://app.mediqzy.com/api/consultation/video/join/123 \
   -H "Authorization: Bearer JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"appointmentId": 123, "roomName": "apt-123"}'
+  -H "Content-Type: application/json"
 
 # Test recording (after consultation starts)
 curl -X POST https://app.mediqzy.com/api/consultations/consult_123/recording \
@@ -1391,11 +1388,11 @@ curl -X POST https://app.mediqzy.com/api/consultations/consult_123/recording \
 
 ### Troubleshooting Checklist
 
-- [ ] LiveKit server is running and accessible
-- [ ] SQLite_TOKEN has `consultation_grants` with appropriate permissions
+- [ ] LiveKit Cloud endpoint is reachable (`wss://msh-kw9tvxa9.livekit.cloud`)
+- [ ] JWT token has valid video grants in returned LiveKit token payload
 - [ ] Camera & microphone permissions granted in app settings
 - [ ] Network connectivity stable (test with speedtest)
-- [ ] LiveKit URL accessible from device
+- [ ] LiveKit Cloud URL accessible from device/network
 - [ ] Firebase Cloud Messaging configured for notifications
 - [ ] Recording endpoint returns 200 OK
 - [ ] Device has sufficient storage for recordings
@@ -1542,22 +1539,23 @@ For video consultations, LiveKit SDK is integrated:
 import { LiveKitRoom, VideoConference } from '@livekit/react-native';
 import { Room, Participant } from 'livekit-client';
 
-const startCall = async (roomId) => {
-  // Get token from backend
-  const response = await fetch(`${API_BASE}/api/mobile/video/token`, {
-    method: 'POST',
+const startCall = async (appointmentId) => {
+  // Get canonical room + token from backend
+  const response = await fetch(`${API_BASE}/api/consultation/video/join/${appointmentId}`, {
+    method: 'GET',
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ roomName: roomId })
+    }
   });
   
-  const { token: liveKitToken } = await response.json();
+  const payload = await response.json();
+  const liveKitToken = payload.video?.livekit?.token || payload.token;
+  const liveKitUrl = payload.video?.livekit?.serverUrl || payload.serverUrl;
   
   return (
     <LiveKitRoom
-      url={process.env.LIVEKIT_URL}
+      url={liveKitUrl}
       token={liveKitToken}
       connect={true}
     >
@@ -1906,7 +1904,7 @@ Before launching to production:
 | **User API Calls** | `https://app.mediqzy.com` | GET /api/users/profile |
 | **Health Data** | `https://app.mediqzy.com` | POST /api/apple-health/sync |
 | **Appointments** | `https://app.mediqzy.com` | POST /api/appointments |
-| **Video Consultation** | `https://app.mediqzy.com` | POST /api/mobile/video/token |
+| **Video Consultation** | `https://app.mediqzy.com` | GET /api/consultation/video/join/:appointmentId |
 | **Notifications** | `https://app.mediqzy.com` | POST /api/notifications/register-device |
 
 **Important:** Always use correct base URL:

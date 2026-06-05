@@ -8,10 +8,43 @@ import {
   revokeAllRefreshTokens,
   validateRefreshToken,
 } from '../services/auth-token.service.js';
+import { rotatePortalRefreshToken } from '../services/token-revocation.service.js';
 import User from '../models/postgres/user.model.postgres.js';
+import doctorModel from '../models/doctor.model.intelligent.js';
 import { COOKIE_NAMES, setAuthCookies, clearAuthCookies } from '../config/cookies.config.js';
+import jwt from 'jsonwebtoken';
 
 const router = express.Router();
+
+const tryRotateDoctorRefreshToken = async (refreshToken, req) => {
+  const decoded = jwt.decode(refreshToken);
+  if (!decoded || decoded.portal !== 'doctor' || decoded.tokenType !== 'refresh') {
+    return null;
+  }
+
+  const deviceFp = req.headers['x-device-fingerprint'] || req.body?.deviceFingerprint || null;
+  const result = await rotatePortalRefreshToken(refreshToken, {
+    portal: 'doctor',
+    deviceFp,
+    resolvePayload: async (payload) => {
+      const doctor = await doctorModel.findByPk(payload.userId);
+      if (!doctor) return null;
+      if (doctor.status && doctor.status !== 'active') return null;
+      if (doctor.isActive === false) return null;
+      if (!doctor.isVerified) return null;
+      return { id: doctor.id, email: doctor.email, role: 'doctor' };
+    },
+  });
+
+  if (!result) return null;
+  return {
+    accessToken: result.accessToken,
+    token: result.accessToken,
+    refreshToken: result.refreshToken,
+    expiresIn: 900,
+    role: 'doctor',
+  };
+};
 
 /**
  * POST /api/auth/refresh
@@ -28,7 +61,22 @@ router.post('/refresh', async (req, res) => {
     }
 
     const getUserById = (id) => User.findByPk(id);
-    const result = await rotateTokens(refreshToken, getUserById);
+    let result = null;
+    try {
+      result = await rotateTokens(refreshToken, getUserById);
+    } catch (rotateError) {
+      console.warn('[auth/refresh] user-token rotation skipped:', rotateError.message);
+    }
+
+    if (!result) {
+      const doctorResult = await tryRotateDoctorRefreshToken(refreshToken, req);
+      if (doctorResult) {
+        return res.json({
+          success: true,
+          ...doctorResult,
+        });
+      }
+    }
 
     if (!result) {
       // Refresh token invalid — clear cookies so the browser doesn't keep retrying
@@ -42,6 +90,7 @@ router.post('/refresh', async (req, res) => {
     res.json({
       success:      true,
       accessToken:  result.accessToken,
+      token:        result.accessToken,
       refreshToken: result.refreshToken,
       expiresIn:    900,
     });
