@@ -116,6 +116,31 @@ router.post('/bulk-update', authUser, [
       });
     }
 
+    const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+    const payload = (
+      req.body &&
+      typeof req.body === 'object' &&
+      req.body.weeklyAvailability &&
+      typeof req.body.weeklyAvailability === 'object'
+    )
+      ? req.body.weeklyAvailability
+      : req.body;
+
+    // Normalize app variants: walkin/walkIn/in-person, start/end aliases.
+    const normalizeSlots = (slots = []) => {
+      return slots.map((slot) => {
+        const rawType = String(slot?.consultationType || slot?.type || 'both').trim().toLowerCase();
+        const consultationType = rawType === 'walkin' || rawType === 'in-person' ? 'walkIn' :
+          (rawType === 'online' || rawType === 'walkIn' || rawType === 'both' ? rawType : 'both');
+
+        return {
+          startTime: String(slot?.startTime || slot?.start || '').trim(),
+          endTime: String(slot?.endTime || slot?.end || '').trim(),
+          consultationType
+        };
+      });
+    };
+
     // Validate slot times
     const validateSlots = (slots) => {
       return slots.every(slot => {
@@ -123,14 +148,15 @@ router.post('/bulk-update', authUser, [
         const validConsultationType = ['online', 'walkIn', 'both'].includes(slot.consultationType);
         const validTimes = timeRegex.test(slot.startTime) && timeRegex.test(slot.endTime);
         const validTimeOrder = slot.startTime < slot.endTime;
-        
+
         return validConsultationType && validTimes && validTimeOrder;
       });
     };
 
     // Validate all slots in the request
-    for (const [day, dayData] of Object.entries(req.body)) {
-      if (dayData.slots && !validateSlots(dayData.slots)) {
+    for (const [day, dayData] of Object.entries(payload || {})) {
+      const normalizedDaySlots = normalizeSlots(Array.isArray(dayData?.slots) ? dayData.slots : []);
+      if (normalizedDaySlots.length > 0 && !validateSlots(normalizedDaySlots)) {
         return res.status(400).json({
           success: false,
           message: `Invalid slots for ${day}. Please check time format and consultation types.`
@@ -144,12 +170,25 @@ router.post('/bulk-update', authUser, [
     }
 
     // Merge incoming days with existing weeklyAvailability
-    const existing = (doctor.dataValues || doctor).weeklyAvailability || {};
+    const existingRaw = (doctor.dataValues || doctor).weeklyAvailability;
+    const existing = typeof existingRaw === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(existingRaw);
+          } catch {
+            return {};
+          }
+        })()
+      : (existingRaw || {});
     const updated = { ...existing };
-    const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
     for (const day of DAYS) {
-      if (req.body[day] !== undefined) {
-        updated[day] = req.body[day];
+      if (payload?.[day] !== undefined) {
+        const dayInput = payload[day] || {};
+        const existingDay = existing?.[day] || {};
+        updated[day] = {
+          isAvailable: dayInput.isAvailable === undefined ? Boolean(existingDay.isAvailable) : Boolean(dayInput.isAvailable),
+          slots: normalizeSlots(Array.isArray(dayInput.slots) ? dayInput.slots : [])
+        };
       }
     }
 
