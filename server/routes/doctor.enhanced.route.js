@@ -87,6 +87,104 @@ const toFiniteNumber = (value) => {
   return Number.isFinite(n) ? n : null;
 };
 
+const WEEK_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+/**
+ * Normalize a raw doctor record to a consistent API shape.
+ *
+ * weeklySchedule has two incompatible schemas depending on which save path
+ * populated the doctor row:
+ *
+ *   Format A (old, Title Case keys):
+ *     { "Friday": { available, startTime, endTime, slots: ["09:00",...] } }
+ *
+ *   Format B (new, lowercase keys):
+ *     { "friday": { inPerson: { isAvailable, startTime, endTime, slots },
+ *                   online:   { isAvailable, startTime, endTime, slots },
+ *                   isOff } }
+ *
+ * Canonical output always uses lowercase keys and the shape:
+ *   { "friday": { isAvailable, startTime, endTime, slots,
+ *                 inPerson?: {...}, online?: {...} } }
+ *
+ * feeStructure is derived from fee columns when it arrives as an empty object.
+ * specializations is back-filled from the scalar `specialization` when empty.
+ */
+function normalizeDoctorProfile(raw) {
+  if (!raw || typeof raw !== 'object') return raw;
+  const doc = typeof raw.toJSON === 'function' ? raw.toJSON() : { ...raw };
+
+  // ── weeklySchedule ──────────────────────────────────────────────────────
+  const rawSchedule = doc.weeklySchedule;
+  if (rawSchedule && typeof rawSchedule === 'object' && !Array.isArray(rawSchedule)) {
+    const normalized = {};
+    for (const day of WEEK_DAYS) {
+      const titleDay = day.charAt(0).toUpperCase() + day.slice(1);
+      const entry = rawSchedule[day] ?? rawSchedule[titleDay];
+
+      if (!entry || typeof entry !== 'object') {
+        normalized[day] = { isAvailable: false, startTime: null, endTime: null, slots: [] };
+        continue;
+      }
+
+      // Format B: has inPerson / online sub-objects
+      if (entry.inPerson !== undefined || entry.online !== undefined) {
+        const ip = entry.inPerson || {};
+        const ol = entry.online || {};
+        const isOff = entry.isOff === true;
+
+        const allStarts = [ip.startTime, ol.startTime].filter(Boolean);
+        const allEnds   = [ip.endTime,   ol.endTime  ].filter(Boolean);
+        const startTime = allStarts.length ? allStarts.reduce((a, b) => a < b ? a : b) : null;
+        const endTime   = allEnds.length   ? allEnds.reduce((a, b)   => a > b ? a : b) : null;
+
+        const slotSet = new Set([
+          ...(Array.isArray(ip.slots) ? ip.slots : []),
+          ...(Array.isArray(ol.slots) ? ol.slots : []),
+        ]);
+
+        normalized[day] = {
+          isAvailable: !isOff && (ip.isAvailable !== false || ol.isAvailable !== false),
+          startTime,
+          endTime,
+          slots: Array.from(slotSet).sort(),
+          inPerson: ip,
+          online: ol,
+        };
+      } else {
+        // Format A: { available, startTime, endTime, slots }
+        normalized[day] = {
+          isAvailable: entry.available !== false,
+          startTime:   entry.startTime  || null,
+          endTime:     entry.endTime    || null,
+          slots:       Array.isArray(entry.slots) ? entry.slots : [],
+        };
+      }
+    }
+    doc.weeklySchedule = normalized;
+  }
+
+  // ── feeStructure ────────────────────────────────────────────────────────
+  const rawFee = doc.feeStructure;
+  if (!rawFee || typeof rawFee !== 'object' || Object.keys(rawFee).length === 0) {
+    const online   = parseFloat(doc.onlineConsultationFee)   || parseFloat(doc.consultationFees) || null;
+    const inClinic = parseFloat(doc.inPersonConsultationFee) || parseFloat(doc.consultationFees) || null;
+    doc.feeStructure = {
+      online,
+      inClinic,
+      followUp:  null,
+      emergency: parseFloat(doc.emergencyFee) || null,
+    };
+  }
+
+  // ── specializations ─────────────────────────────────────────────────────
+  if (doc.specialization && (!Array.isArray(doc.specializations) || doc.specializations.length === 0)) {
+    doc.specializations = [doc.specialization];
+  }
+
+  return doc;
+}
+
 const normalizeClinicLocationUpdate = (payload = {}, existingDoctor = null) => {
   const nextPayload = { ...payload };
   const existingJson = (existingDoctor?.clinicAddress_json && typeof existingDoctor.clinicAddress_json === 'object')
@@ -322,10 +420,11 @@ router.get('/available', [
       ]
     });
 
+    const normalizedDoctors = doctors.map(normalizeDoctorProfile);
     res.json({
       success: true,
-      doctors,
-      data: doctors,  // Add data alias for compatibility with frontend
+      doctors: normalizedDoctors,
+      data: normalizedDoctors,  // Add data alias for compatibility with frontend
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -385,7 +484,7 @@ router.get('/partnered', authUser, async (req, res) => {
 
     return res.json({
       success: true,
-      doctors,
+      doctors: doctors.map(normalizeDoctorProfile),
       count: doctors.length
     });
   } catch (error) {
@@ -518,7 +617,7 @@ router.get('/', [
 
     res.json({
       success: true,
-      doctors,
+      doctors: doctors.map(normalizeDoctorProfile),
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -1539,10 +1638,10 @@ router.get('/search', [
 
     const paginatedDoctors = doctors.slice(startIndex, endIndex);
 
-    // Remove sensitive data
+    // Remove sensitive data and normalize to consistent schema
     const publicDoctors = paginatedDoctors.map(doctor => {
       const { password, verificationDocuments, ...publicDoctor } = doctor;
-      return publicDoctor;
+      return normalizeDoctorProfile(publicDoctor);
     });
 
     res.json({
@@ -1599,18 +1698,18 @@ router.get('/:doctorId/public', [
       });
     }
 
-    // Remove sensitive information
+    // Remove sensitive information, then normalize to consistent schema
     const {
       password,
       verificationDocuments,
       digitalSignature,
       medicalSeal,
       ...publicProfile
-    } = doctor;
+    } = typeof doctor.toJSON === 'function' ? doctor.toJSON() : doctor;
 
     res.json({
       success: true,
-      doctor: publicProfile
+      doctor: normalizeDoctorProfile(publicProfile)
     });
   } catch (error) {
     console.error('Get public profile error:', error);
@@ -2012,6 +2111,46 @@ router.get('/messages', authUser, async (req, res) => {
  * @desc    Get chat messages with a specific patient
  * @access  Private (Doctor)
  */
+router.post('/messages/start', authUser, async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({ success: false, message: 'Access denied. Doctor role required.' });
+    }
+
+    const doctorId = req.user.id;
+    const { patientId, appointmentId, message } = req.body || {};
+    if (!patientId && !appointmentId) {
+      return res.status(400).json({ success: false, message: 'patientId or appointmentId is required' });
+    }
+
+    const { Appointment } = await import('../models/index.js');
+    const where = { doctorId };
+    if (appointmentId) where.id = appointmentId;
+    if (patientId) where.userId = patientId;
+
+    const appointment = await Appointment.findOne({ where, order: [['updatedAt', 'DESC']] });
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: 'No appointment found with this patient' });
+    }
+
+    const resolvedPatientId = appointment.userId || patientId;
+    const conversation = {
+      id: 'conv_' + doctorId + '_' + resolvedPatientId,
+      appointmentId: appointment.id,
+      patient: { id: resolvedPatientId, name: appointment.patientName, phone: appointment.patientPhone },
+      lastMessage: message ? { content: message, senderType: 'doctor', createdAt: new Date().toISOString() } : null,
+      unreadCount: 0,
+      status: appointment.status,
+      updatedAt: new Date().toISOString()
+    };
+
+    return res.status(201).json({ success: true, message: 'Conversation ready', conversation });
+  } catch (error) {
+    console.error('Start doctor conversation error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to start conversation', error: error.message });
+  }
+});
+
 router.get('/messages/:patientId', authUser, async (req, res) => {
   try {
     if (req.user.role !== 'doctor') {
