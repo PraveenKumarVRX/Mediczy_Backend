@@ -15,6 +15,7 @@ export const USER_DASHBOARD_UX_META: UserDashboardUxMeta[] = [
   { path: "/patient/notifications", category: "Main", title: "Notifications", subtitle: "Time-critical reminders and personalized care updates.", uxTier: "Good", uxScore: 82 },
 
   { path: "/health-dashboard", category: "Health", title: "Health Dashboard", subtitle: "Vitals, trends, and risk indicators in one view.", uxTier: "Good", uxScore: 83 },
+  { path: "/smart-health", category: "Health", title: "AI Health Dashboard", subtitle: "AI risk scoring, alerts, and predictive health insights.", uxTier: "Good", uxScore: 82 },
   { path: "/health-intelligence", category: "Health", title: "Health Intelligence", subtitle: "AI-driven insights with transparent recommendations.", uxTier: "Good", uxScore: 81 },
   { path: "/sib-control", category: "Health", title: "SIB Control", subtitle: "System-level controls and protected health operations.", uxTier: "Needs Work", uxScore: 72 },
   { path: "/health-diary", category: "Health", title: "Health Diary", subtitle: "Daily tracking with meaningful progress narratives.", uxTier: "Good", uxScore: 79 },
@@ -31,7 +32,7 @@ export const USER_DASHBOARD_UX_META: UserDashboardUxMeta[] = [
 
   { path: "/patient/lab-tests", category: "Records", title: "Lab Tests", subtitle: "Book and track diagnostics with clear turnaround info.", uxTier: "Good", uxScore: 83 },
   { path: "/patient/my-reports", category: "Records", title: "My Reports", subtitle: "Unified report archive with readable summaries.", uxTier: "Good", uxScore: 82 },
-  { path: "/reposts", category: "Records", title: "Scan & Share Reports", subtitle: "Digitize and share medical documents quickly.", uxTier: "Good", uxScore: 78 },
+  { path: "/report-scanner", category: "Records", title: "AI Report Scanner", subtitle: "Scan and analyze medical reports with guided AI extraction.", uxTier: "Good", uxScore: 80 },
 
   { path: "/ayushman", category: "Services", title: "Ayushman", subtitle: "Eligibility, benefits, and support for scheme usage.", uxTier: "Needs Work", uxScore: 74 },
   { path: "/health-feed", category: "Services", title: "Health Feed", subtitle: "Curated health education and timely explainers.", uxTier: "Good", uxScore: 77 },

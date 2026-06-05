@@ -2,6 +2,10 @@ import React, { createContext, useContext, useEffect, useRef } from "react";
 import io, { Socket } from "socket.io-client";
 import { useAuth } from "@/auth/AuthProvider";
 
+declare global {
+  interface Window { socket: Socket | null; }
+}
+
 interface SocketContextType {
   socket: Socket | null;
 }
@@ -39,15 +43,27 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       },
     });
 
-    // Send user connect event
-    socketRef.current.emit("user-connect", {
-      userId: currentId,
-      userType,
+    socketRef.current.on("connect", () => {
+      socketRef.current?.emit("user-connect", { userId: currentId, userType });
+      // Expose globally so VideoCallNotification and legacy callers can access it
+      window.socket = socketRef.current as any;
+    });
+
+    // Send immediately if already connected (race-condition safety)
+    if (socketRef.current.connected) {
+      socketRef.current.emit("user-connect", { userId: currentId, userType });
+      window.socket = socketRef.current as any;
+    }
+
+    socketRef.current.on("disconnect", () => {
+      window.socket = null;
     });
 
     return () => {
       if (socketRef.current) {
         socketRef.current.disconnect();
+        socketRef.current = null;
+        window.socket = null;
       }
     };
   }, [currentId, userType]);

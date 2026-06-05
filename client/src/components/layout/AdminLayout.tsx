@@ -155,8 +155,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
   // Auth gate — redirect to login if no valid session token present
   useEffect(() => {
     const adminToken = localStorage.getItem('adminToken');
-    const teamToken = localStorage.getItem('teamToken');
-    if (!adminToken && !teamToken) {
+    if (!adminToken) {
       navigate('/admin/login');
     }
   }, [navigate]);
@@ -199,8 +198,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
 
   // Determine if current user is a team member
   useEffect(() => {
-    const teamToken = localStorage.getItem('teamToken');
-    setIsTeamMember(!!teamToken);
+    setIsTeamMember(false);
   }, []);
 
   useEffect(() => {
@@ -225,6 +223,16 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
         });
       } catch (error) {
         if (!isMounted) return;
+        const status = (error as any)?.response?.status;
+        if (status === 401 || status === 403) {
+          setLivekitStatus({
+            loading: false,
+            success: null,
+            message: 'LiveKit status unavailable for this role',
+            checkedAt: new Date().toISOString()
+          });
+          return;
+        }
         setLivekitStatus({
           loading: false,
           success: false,
@@ -256,6 +264,16 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
         checkedAt: new Date().toISOString()
       });
     } catch (error) {
+      const status = (error as any)?.response?.status;
+      if (status === 401 || status === 403) {
+        setLivekitStatus({
+          loading: false,
+          success: null,
+          message: 'LiveKit status unavailable for this role',
+          checkedAt: new Date().toISOString()
+        });
+        return;
+      }
       setLivekitStatus({
         loading: false,
         success: false,
@@ -402,6 +420,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
       items: [
         { icon: BrainCircuit, label: 'AI Analytics', path: '/admin/ai-analytics', color: 'text-violet-500', bg: 'bg-violet-500/10', highlight: true },
         { icon: Shield, label: 'AI Guard', path: '/admin/ai-guard', color: 'text-red-500', bg: 'bg-red-500/10', badge: 'New' },
+        { icon: Shield, label: 'AI Governance', path: '/admin/ai-governance', color: 'text-blue-600', bg: 'bg-blue-500/10', badge: 'SaMD' },
       ]
     },
     {

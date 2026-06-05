@@ -8,6 +8,7 @@ import { InsuranceBroker } from '../models/insurance-broker.model.intelligent.js
 import { Op } from 'sequelize';
 import { authTeam, requireModule, requirePermission, attachAccessLevel } from '../middleware/team.middleware.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
+import { clearAuthCookies } from '../config/cookies.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
@@ -20,11 +21,12 @@ import { SMSService } from '../services/sms.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
 import { generateAssistedEmailDraft, analyzeEmailCommunication } from '../services/ai-email-arg.service.js';
+import { fetchScopedCorporateActivity, summarizeScopedCorporateActivity } from '../services/team-corporate-activity.service.js';
 
 const router = express.Router();
 
 // ─── Token constants ─────────────────────────────────────────────────────────
-const ACCESS_TOKEN_TTL  = '15m';
+const ACCESS_TOKEN_TTL  = '4h'; // Extended from 15m — team users need longer sessions; refresh token (30d) handles revocation
 const REFRESH_TOKEN_TTL = '30d';
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const REFRESH_SCOPE = 'team';
@@ -348,6 +350,8 @@ router.post('/login', authLimiter, [
       editableModules: Array.isArray(metadata.editableModules) ? metadata.editableModules : [],
       deletableModules: Array.isArray(metadata.deletableModules) ? metadata.deletableModules : []
     };
+
+    clearAuthCookies(res);
 
     return res.status(200).json({
       success: true,
@@ -1576,74 +1580,22 @@ router.get('/agents/list', authTeam, requirePermission('Chat Dashboard Access'),
  * - "users" scope: only end-user (patient) actions
  * - default (all): everything
  */
-router.get('/activity-logs', authTeam, requirePermission('Audit Access'), async (req, res) => {
+router.get('/activity-logs', authTeam, requirePermission(['Audit Access', 'Audit Logs']), async (req, res) => {
   try {
-    const {
-      page = 1,
-      limit = 25,
-      scope,       // 'mine' | 'users' | omit for all
-      userType,    // 'user' | 'doctor' | 'admin' | 'system'
-      action,
-      result,
-      startDate,
-      endDate,
-      search
-    } = req.query;
-
-    const teamUserId = req.teamUser?.id;
-    let logs = global.activityLogs || [];
-
-    // Scope filter
-    if (scope === 'mine') {
-      logs = logs.filter(l => String(l.userId) === String(teamUserId));
-    } else if (scope === 'users') {
-      logs = logs.filter(l => l.userType === 'user');
-    }
-
-    // Additional filters
-    if (userType && userType !== 'all') {
-      logs = logs.filter(l => l.userType === userType);
-    }
-    if (action && action !== 'all') {
-      logs = logs.filter(l => l.action === action);
-    }
-    if (result && result !== 'all') {
-      logs = logs.filter(l => l.result === result);
-    }
-    if (startDate) {
-      const from = new Date(startDate);
-      logs = logs.filter(l => new Date(l.timestamp) >= from);
-    }
-    if (endDate) {
-      const to = new Date(endDate + 'T23:59:59');
-      logs = logs.filter(l => new Date(l.timestamp) <= to);
-    }
-    if (search) {
-      const q = search.toLowerCase();
-      logs = logs.filter(l =>
-        l.activity?.toLowerCase().includes(q) ||
-        l.details?.toLowerCase().includes(q) ||
-        l.userEmail?.toLowerCase().includes(q) ||
-        l.ipAddress?.toLowerCase().includes(q) ||
-        l.resource?.toLowerCase().includes(q)
-      );
-    }
-
-    const total = logs.length;
-    const pageNum = Math.max(1, parseInt(page, 10));
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
-    const start = (pageNum - 1) * limitNum;
-    const paginatedLogs = logs.slice(start, start + limitNum);
+    const result = await fetchScopedCorporateActivity({
+      teamUser: req.teamUser,
+      query: req.query,
+      includePagination: true,
+    });
 
     return res.json({
       success: true,
-      logs: paginatedLogs,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        pages: Math.ceil(total / limitNum)
-      }
+      logs: result.logs,
+      pagination: result.pagination,
+      scope: {
+        corporates: result.visibleCorporateCount,
+        mode: result.visibleCorporateCount === null ? 'all' : 'assigned',
+      },
     });
   } catch (error) {
     console.error('[Team] activity-logs error:', error);
@@ -1653,43 +1605,23 @@ router.get('/activity-logs', authTeam, requirePermission('Audit Access'), async 
 
 /**
  * GET /api/team/activity-stats
- * Aggregate stats for the activity dashboard.
+ * Aggregate stats for corporate-scoped activity and welcome-email logs.
  */
-router.get('/activity-stats', authTeam, requirePermission('Audit Access'), async (req, res) => {
+router.get('/activity-stats', authTeam, requirePermission(['Audit Access', 'Audit Logs']), async (req, res) => {
   try {
-    const logs = global.activityLogs || [];
-    const now = Date.now();
-    const h24 = new Date(now - 24 * 60 * 60 * 1000);
-    const d7  = new Date(now - 7  * 24 * 60 * 60 * 1000);
-
-    const todayLogs = logs.filter(l => new Date(l.timestamp) > h24);
-
-    const byResult = { success: 0, failure: 0, warning: 0, info: 0 };
-    const byUserType = { admin: 0, doctor: 0, user: 0, system: 0, team: 0 };
-    const byAction = {};
-
-    for (const l of logs) {
-      if (byResult[l.result] !== undefined) byResult[l.result]++;
-      if (byUserType[l.userType] !== undefined) byUserType[l.userType]++;
-      byAction[l.action] = (byAction[l.action] || 0) + 1;
-    }
-
-    const topActions = Object.entries(byAction)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 5)
-      .map(([action, count]) => ({ action, count }));
+    const result = await fetchScopedCorporateActivity({
+      teamUser: req.teamUser,
+      query: {},
+      includePagination: false,
+    });
+    const stats = summarizeScopedCorporateActivity(result.logs);
 
     return res.json({
       success: true,
       stats: {
-        total: logs.length,
-        last24Hours: todayLogs.length,
-        last7Days: logs.filter(l => new Date(l.timestamp) > d7).length,
-        failures24h: todayLogs.filter(l => l.result === 'failure').length,
-        byResult,
-        byUserType,
-        topActions
-      }
+        ...stats,
+        corporates: result.visibleCorporateCount,
+      },
     });
   } catch (error) {
     console.error('[Team] activity-stats error:', error);

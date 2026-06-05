@@ -4,8 +4,11 @@
 
 import express from 'express';
 import { db } from '../../db/index.js';
+import { requirePharmacyAuth } from '../../middleware/pharmacyAuth.middleware.js';
 
 const router = express.Router();
+
+router.use(requirePharmacyAuth);
 
 /**
  * POST /api/pharmacy/customers
@@ -14,7 +17,6 @@ const router = express.Router();
 router.post('/', async (req, res) => {
   try {
     const {
-      pharmacyId,
       name,
       phone,
       email,
@@ -22,6 +24,7 @@ router.post('/', async (req, res) => {
       city,
       loyaltyPoints = 0
     } = req.body;
+    const pharmacyId = req.pharmacyId;
 
     if (!name || !phone) {
       return res.status(400).json({
@@ -63,12 +66,44 @@ router.post('/', async (req, res) => {
 });
 
 /**
+ * GET /api/pharmacy/customers/:customerId
+ * Get customer details for the authenticated pharmacy
+ */
+router.get('/:customerId', async (req, res) => {
+  try {
+    const { customerId } = req.params;
+    const pharmacyId = req.pharmacyId;
+
+    const query = `
+      SELECT * FROM pharmacy_customers
+      WHERE id = $1 AND pharmacy_id = $2;
+    `;
+
+    const result = await db.query(query, [customerId, pharmacyId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Customer not found' });
+    }
+
+    res.json({ success: true, customer: result.rows[0] });
+  } catch (error) {
+    console.error('Fetch customer detail error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch customer',
+      error: error.message
+    });
+  }
+});
+
+/**
  * GET /api/pharmacy/customers
  * List all customers
  */
 router.get('/', async (req, res) => {
   try {
-    const { pharmacyId, limit = 100, offset = 0 } = req.query;
+    const { limit = 100, offset = 0 } = req.query;
+    const pharmacyId = req.pharmacyId;
 
     const query = `
       SELECT * FROM pharmacy_customers

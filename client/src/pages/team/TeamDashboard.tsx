@@ -170,7 +170,7 @@ const QUICK_ACTIONS = [
     iconColor: "text-purple-500",
     link: "/team/reports",
     pattern: "radial-gradient(circle at 100% 0%, rgba(147, 51, 234, 0.05) 0%, transparent 50%)",
-    permissionGuard: /report|analytics/i,
+    permissionGuard: /patient reports|analytics access|reports access/i,
   },
   {
     title: "System Access",
@@ -181,6 +181,7 @@ const QUICK_ACTIONS = [
     link: "/team/tools",
     pattern: "radial-gradient(circle at 0% 100%, rgba(249, 115, 22, 0.05) 0%, transparent 50%)",
     permissionGuard: /system|setting/i,
+    adminOnly: true,
   },
   {
     title: "Chat Analytics",
@@ -220,7 +221,7 @@ const QUICK_ACTIONS = [
     iconColor: "text-slate-600",
     link: "/team/plan-governance",
     pattern: "radial-gradient(circle at 70% 30%, rgba(71, 85, 105, 0.05) 0%, transparent 50%)",
-    permissionGuard: /audit|compliance|corporate/i,
+    permissionGuard: /audit access|audit logs/i,
   },
   {
     title: "Doctor Management",
@@ -328,7 +329,14 @@ const TeamDashboard = ({ initialTab }: { initialTab?: 'dashboard' | 'emails' } =
   const permissionCategories = getPermissionsByCategory(permissions);
 
   // Gate quick actions: show if no guard defined, or user has a matching permission
-  const visibleActions = QUICK_ACTIONS.filter(({ permissionGuard }) => {
+  const isAdmin =
+    teamUser.isAdmin === true ||
+    String(teamUser.role || '').toLowerCase() === 'admin' ||
+    String(teamUser.role || '').toLowerCase() === 'super admin' ||
+    String(teamUser.role || '').toLowerCase() === 'super_admin';
+
+  const visibleActions = QUICK_ACTIONS.filter(({ permissionGuard, adminOnly }) => {
+    if (adminOnly && !isAdmin) return false;
     if (!permissionGuard) return true;
     return permissions.some((p) => permissionGuard.test(p));
   });

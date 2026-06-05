@@ -156,16 +156,16 @@ const DoctorDashboard = () => {
         console.warn('Failed to fetch dashboard stats:', err.message);
         setIsUsingFallbackStats(true);
         return {
-          totalPatients: 124,
-          totalConsultations: 48,
-          responseRate: 95,
-          patientGrowth: 12,
-          consultationGrowth: 8,
-          responseRateGrowth: 3,
-          todayAppointments: 8,
-          pendingAppointments: 3,
-          completedToday: 5,
-          revenue: 24500
+          totalPatients: null,
+          totalConsultations: null,
+          responseRate: null,
+          patientGrowth: 0,
+          consultationGrowth: 0,
+          responseRateGrowth: 0,
+          todayAppointments: null,
+          pendingAppointments: null,
+          completedToday: null,
+          revenue: null
         };
       }
     },
@@ -182,11 +182,7 @@ const DoctorDashboard = () => {
         return response.data.appointments || [];
       } catch (err) {
         setIsUsingFallbackAppointments(true);
-        return [
-          { id: 1, patientName: "Rahul Sharma", time: "10:00 AM", type: "Video", status: "upcoming" },
-          { id: 2, patientName: "Priya Patel", time: "11:30 AM", type: "In-Person", status: "upcoming" },
-          { id: 3, patientName: "Amit Kumar", time: "02:00 PM", type: "Video", status: "upcoming" },
-        ];
+        return [];
       }
     },
     staleTime: 2 * 60 * 1000,
@@ -251,8 +247,18 @@ const DoctorDashboard = () => {
       const livekit = response.data.livekit;
       
       if (livekit?.token && livekit?.serverUrl) {
-        // Pass token via URL params so DoctorVideoConsultation can use it directly
-        navigate(`/doctor/video?room=${encodeURIComponent(String(roomId))}&appointmentId=${appointmentId}&lkToken=${encodeURIComponent(livekit.token)}&lkServer=${encodeURIComponent(livekit.serverUrl)}`);
+        try {
+          sessionStorage.setItem('doctorLivekitHandoff', JSON.stringify({
+            appointmentId: String(appointmentId),
+            roomId: String(roomId || ''),
+            token: livekit.token,
+            serverUrl: livekit.serverUrl,
+            expiresAt: Date.now() + 2 * 60 * 1000,
+          }));
+        } catch {
+          // non-fatal: fallback path below will still navigate
+        }
+        navigate(`/doctor/video?room=${encodeURIComponent(String(roomId))}&appointmentId=${appointmentId}`);
       } else if (roomId) {
         navigate(`/doctor/video?room=${encodeURIComponent(String(roomId))}&appointmentId=${appointmentId}`);
       }
@@ -297,25 +303,25 @@ const DoctorDashboard = () => {
   const displayStats = [
     {
       title: "Total Patients",
-      value: stats?.totalPatients ?? "124",
+      value: stats?.totalPatients ?? "—",
       icon: Users,
-      trend: stats?.patientGrowth ?? 12,
+      trend: stats?.patientGrowth ?? 0,
       trendLabel: "vs last month",
       bgColor: "bg-blue-500/10",
       iconColor: "text-blue-500",
     },
     {
       title: "Today's Appointments",
-      value: stats?.todayAppointments ?? "8",
+      value: stats?.todayAppointments ?? "—",
       icon: CalendarCheck,
       trend: null,
-      trendLabel: `${stats?.completedToday ?? 5} completed`,
+      trendLabel: `${stats?.completedToday ?? "—"} completed`,
       bgColor: "bg-teal-500/10",
       iconColor: "text-teal-500",
     },
     {
       title: "Revenue",
-      value: `₹${((stats?.revenue ?? 24500) / 1000).toFixed(1)}K`,
+      value: stats?.revenue != null ? `₹${(stats.revenue / 1000).toFixed(1)}K` : "—",
       icon: DollarSign,
       trend: 15,
       trendLabel: "vs last month",
@@ -608,13 +614,13 @@ const DoctorDashboard = () => {
           <div className="flex items-start gap-3 p-3.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
             <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
             <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
-              Showing cached / demo data — some live services may be unavailable.
+              Live data is partially unavailable. Clinical schedule cards are temporarily locked to prevent decisions on stale data.
             </p>
           </div>
         )}
 
         {/* ── NEXT PATIENT CARD ── */}
-        {nextAppointment && (
+        {!isUsingFallbackAppointments && nextAppointment && (
           <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-teal-500 via-teal-600 to-cyan-600 p-5 shadow-xl shadow-teal-600/25">
             <div className="pointer-events-none absolute -top-8 -right-8 w-36 h-36 rounded-full bg-white/10 blur-xl" />
             <div className="pointer-events-none absolute -bottom-6 -left-6 w-24 h-24 rounded-full bg-white/5 blur-xl" />
@@ -698,7 +704,22 @@ const DoctorDashboard = () => {
             </div>
 
             <div className="px-5 py-3 space-y-1.5">
-              {sortedAppointments.length > 0 ? sortedAppointments.slice(0, 6).map((apt: any, index: number) => {
+              {isUsingFallbackAppointments ? (
+                <div className="flex flex-col items-center py-10 text-center">
+                  <div className="p-4 rounded-2xl bg-amber-100 dark:bg-amber-900/30 mb-3">
+                    <AlertTriangle className="w-8 h-8 text-amber-500" />
+                  </div>
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Live schedule unavailable</p>
+                  <p className="text-xs text-slate-500 mt-1">We could not load today's appointments right now.</p>
+                  <button
+                    type="button"
+                    onClick={handleRefreshDashboard}
+                    className="mt-4 text-xs text-teal-600 dark:text-teal-400 font-semibold border border-teal-200 dark:border-teal-700 px-4 py-2 rounded-xl hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-colors"
+                  >
+                    Retry live data
+                  </button>
+                </div>
+              ) : sortedAppointments.length > 0 ? sortedAppointments.slice(0, 6).map((apt: any, index: number) => {
                 const isNext = apt.id === nextAppointment?.id;
                 const isDone = apt.status === 'completed';
                 return (
@@ -998,7 +1019,7 @@ const DoctorDashboard = () => {
                 { label: "Total Patients",    value: stats?.totalPatients ?? 0,       trend: `+${stats?.patientGrowth || 0}%`,       up: true  },
                 { label: "Consultations",     value: stats?.totalConsultations ?? 0,  trend: stats?.consultationGrowth !== undefined ? `${stats.consultationGrowth >= 0 ? '+' : ''}${stats.consultationGrowth}%` : '—', up: (stats?.consultationGrowth ?? 0) >= 0 },
                 { label: "Pending",           value: stats?.pendingAppointments ?? 3, trend: "review",                               up: false },
-                { label: "Revenue (Month)",   value: `₹${((stats?.revenue ?? 24500)/1000).toFixed(1)}K`, trend: "+15%",             up: true  },
+                { label: "Revenue (Month)",   value: stats?.revenue != null ? `₹${(stats.revenue/1000).toFixed(1)}K` : "—", trend: "+15%",             up: true  },
                 { label: "Completed Today",   value: completedCount,               trend: `of ${totalToday}`,                      up: true  },
               ].map((item, i) => (
                 <div key={i} className="bg-white/8 rounded-xl px-3 py-2.5 border border-white/10">

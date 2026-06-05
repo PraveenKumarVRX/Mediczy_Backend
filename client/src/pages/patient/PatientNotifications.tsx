@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useServerNotifications, type NotificationUiModel } from '@/hooks/useServerNotifications';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineError } from '@/components/ui/inline-error';
 
 const PatientNotifications = () => {
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
@@ -15,6 +17,7 @@ const PatientNotifications = () => {
     unreadCount,
     isLoading,
     error,
+    refetch,
     markAsRead,
     markAllAsRead,
     deleteNotification,
@@ -157,22 +160,16 @@ const PatientNotifications = () => {
             </CardContent>
           </Card>
         ) : error ? (
-          <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
-            <CardContent className="py-12">
-              <div className="text-center text-slate-500 dark:text-slate-400">Failed to load notifications.</div>
-            </CardContent>
-          </Card>
+          <InlineError
+            message="Couldn't load notifications."
+            onRetry={() => refetch()}
+          />
         ) : filteredNotifications.length === 0 ? (
-          <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
-            <CardContent className="py-12">
-              <div className="text-center">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center">
-                  <Bell className="h-8 w-8 text-slate-400" />
-                </div>
-                <p className="text-slate-500 dark:text-slate-400">No notifications found</p>
-              </div>
-            </CardContent>
-          </Card>
+          <EmptyState
+            icon={Bell}
+            title="You're all caught up"
+            description="New health alerts, appointment reminders, and prescription notifications will appear here."
+          />
         ) : (
           filteredNotifications.map((notification: NotificationUiModel) => (
             <Card

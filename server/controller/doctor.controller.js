@@ -238,6 +238,7 @@ import intelligentDb from "../utils/intelligentDbClient.js";
 import { auditLoginAttempt } from "../middleware/audit.middleware.js";
 import { fn, col, where as sequelizeWhere } from "sequelize";
 import nodemailer from "nodemailer";
+import { verifyRegistrationVerificationTicket } from "../routes/shared/registrationHelpers.js";
 
 // ─── Mailer helper (reusable inside this controller) ─────────────────────────
 function getDoctorMailTransporter() {
@@ -530,6 +531,83 @@ const toPlainDoctor = (doctorInstance) => {
   return doctorInstance;
 };
 
+const toFiniteNumberSafe = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+const normalizeDoctorLocationPayload = (payload = {}) => {
+  const next = { ...payload };
+  const clinicAddressJson = (payload.clinicAddress_json && typeof payload.clinicAddress_json === 'object')
+    ? { ...payload.clinicAddress_json }
+    : {};
+
+  const clinicAddress =
+    (typeof payload.clinicAddress === 'string' && payload.clinicAddress.trim())
+    || (typeof payload.practiceAddress === 'string' && payload.practiceAddress.trim())
+    || '';
+
+  if (clinicAddress) next.clinicAddress = clinicAddress;
+
+  const placeId =
+    payload.placeId
+    || payload.place_id
+    || payload.googlePlaceId
+    || payload.google_place_id
+    || clinicAddressJson.placeId
+    || clinicAddressJson.place_id
+    || clinicAddressJson.googlePlaceId
+    || clinicAddressJson.google_place_id;
+
+  if (placeId) {
+    const normalizedPlaceId = String(placeId).trim();
+    clinicAddressJson.placeId = normalizedPlaceId;
+    clinicAddressJson.place_id = normalizedPlaceId;
+    clinicAddressJson.googlePlaceId = normalizedPlaceId;
+    clinicAddressJson.google_place_id = normalizedPlaceId;
+    clinicAddressJson.source = clinicAddressJson.source || 'google_places';
+    clinicAddressJson.provider = clinicAddressJson.provider || 'google_places';
+    clinicAddressJson.verificationStatus = 'verified';
+    clinicAddressJson.verifiedAt = new Date().toISOString();
+  }
+
+  const lat =
+    toFiniteNumberSafe(payload.practiceLatitude)
+    ?? toFiniteNumberSafe(payload.latitude)
+    ?? toFiniteNumberSafe(payload.lat)
+    ?? toFiniteNumberSafe(clinicAddressJson.latitude)
+    ?? toFiniteNumberSafe(clinicAddressJson.lat);
+
+  const lng =
+    toFiniteNumberSafe(payload.practiceLongitude)
+    ?? toFiniteNumberSafe(payload.longitude)
+    ?? toFiniteNumberSafe(payload.lng)
+    ?? toFiniteNumberSafe(payload.lon)
+    ?? toFiniteNumberSafe(clinicAddressJson.longitude)
+    ?? toFiniteNumberSafe(clinicAddressJson.lng)
+    ?? toFiniteNumberSafe(clinicAddressJson.lon);
+
+  if (lat !== null) {
+    clinicAddressJson.latitude = lat;
+    clinicAddressJson.lat = lat;
+  }
+
+  if (lng !== null) {
+    clinicAddressJson.longitude = lng;
+    clinicAddressJson.lng = lng;
+  }
+
+  if (payload.practiceCity && !clinicAddressJson.city) clinicAddressJson.city = payload.practiceCity;
+  if (payload.practiceState && !clinicAddressJson.state) clinicAddressJson.state = payload.practiceState;
+  if (payload.practiceZipCode && !clinicAddressJson.pincode) clinicAddressJson.pincode = payload.practiceZipCode;
+
+  if (Object.keys(clinicAddressJson).length > 0) {
+    next.clinicAddress_json = clinicAddressJson;
+  }
+
+  return next;
+};
+
 export async function registerDoctor(req, res) {
   try {
     const errors = validationResult(req);
@@ -539,6 +617,36 @@ export async function registerDoctor(req, res) {
     }
 
     const { email } = req.body;
+    const documentsPayload = req.body.documents || {};
+    const verifications = documentsPayload.verifications || {};
+
+    const emailTicketCheck = verifyRegistrationVerificationTicket({
+      ticket: verifications.emailVerificationTicket,
+      type: 'email',
+      identifier: email,
+      entityLabel: 'Doctor',
+    });
+
+    if (!emailTicketCheck.success) {
+      return res.status(400).json({
+        message: 'Email verification is required before registration.',
+        error: emailTicketCheck.message,
+      });
+    }
+
+    const phoneTicketCheck = verifyRegistrationVerificationTicket({
+      ticket: verifications.phoneVerificationTicket,
+      type: 'phone',
+      identifier: req.body.phoneNumber,
+      entityLabel: 'Doctor',
+    });
+
+    if (!phoneTicketCheck.success) {
+      return res.status(400).json({
+        message: 'Phone verification is required before registration.',
+        error: phoneTicketCheck.message,
+      });
+    }
 
     // Check if doctor already exists using Sequelize
     const existingDoctor = await doctorModel.findOne({ where: { email } });
@@ -550,7 +658,7 @@ export async function registerDoctor(req, res) {
     // isVerified defaults to false — manual activation required
     // Map socialMedia → socialLinks (frontend key vs model field)
     const { socialMedia, ...restBody } = req.body;
-    const normalizedBody = enrichDoctorLocationFromPayload(restBody);
+    const normalizedBody = normalizeDoctorLocationPayload(restBody);
     const socialLinks = socialMedia || restBody.socialLinks || {};
     // Coerce empty-string optional unique fields to null so PostgreSQL unique constraints
     // don't block subsequent registrations (empty string ≠ NULL in Postgres UNIQUE index).
@@ -558,7 +666,7 @@ export async function registerDoctor(req, res) {
     const newDoctor = await doctorModel.create({ ...normalizedBody, socialLinks, isVerified: false });
 
     // Send registration alert to support (fire-and-forget)
-    const docsPayload = req.body.documents || {};
+    const docsPayload = documentsPayload;
     sendDoctorRegistrationAlert(newDoctor, docsPayload);
     // Send confirmation email with signed agreement to the doctor (fire-and-forget)
     sendDoctorConfirmationEmail(newDoctor, docsPayload);
@@ -652,15 +760,34 @@ export async function signInDoctor(req, res) {
     }
 
     const { email, password } = req.body;
-    const normalizedEmail = String(email || '').toLowerCase();
-    console.log('💚 [signInDoctor] Email:', normalizedEmail);
+    const identifier = String(email || '').trim();
+    const normalizedEmail = identifier.toLowerCase();
+    const isEmailIdentifier = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+    const normalizedPhoneDigits = identifier.replace(/\D/g, '');
+    const candidatePhone = normalizedPhoneDigits.length > 10
+      ? normalizedPhoneDigits.slice(-10)
+      : normalizedPhoneDigits;
+    console.log('💚 [signInDoctor] Identifier:', identifier);
     console.log('💚 [signInDoctor] doctorModel type:', typeof doctorModel);
 
     // Check if doctor exists using Sequelize
     console.log('💚 [signInDoctor] About to query database...');
     let doctor;
     try {
-      doctor = await doctorModel.findOne({ where: { email: normalizedEmail } });
+      if (isEmailIdentifier) {
+        doctor = await doctorModel.findOne({ where: { email: normalizedEmail } });
+      } else {
+        const phoneLookupValues = [
+          identifier,
+          candidatePhone,
+          `+91${candidatePhone}`,
+          `91${candidatePhone}`,
+        ].filter(Boolean);
+        for (const phoneCandidate of phoneLookupValues) {
+          doctor = await doctorModel.findOne({ where: { phoneNumber: phoneCandidate } });
+          if (doctor) break;
+        }
+      }
       console.log('💚 [signInDoctor] Query completed');
     } catch (queryError) {
       console.error('❌ [signInDoctor] Database query error:', queryError);
@@ -674,17 +801,26 @@ export async function signInDoctor(req, res) {
 
     if (!doctor) {
       await auditLoginAttempt(req, null, normalizedEmail, false, 'Doctor not found');
-      return res.status(401).json({ message: "Invalid email or password" });
+      return res.status(401).json({
+        message: "Invalid email or password",
+        errorCode: "DOCTOR_NOT_FOUND",
+      });
     }
 
     // Account status guard — checked before password to prevent timing oracle
     if (doctor.status && doctor.status !== 'active') {
       await auditLoginAttempt(req, doctor.id, normalizedEmail, false, `Doctor inactive: ${doctor.status}`);
-      return res.status(403).json({ message: "Doctor account is inactive or suspended. Contact support." });
+      return res.status(403).json({
+        message: "Doctor account is inactive or suspended. Contact support.",
+        errorCode: "DOCTOR_INACTIVE",
+      });
     }
     if (doctor.isActive === false) {
       await auditLoginAttempt(req, doctor.id, normalizedEmail, false, 'Doctor disabled (isActive=false)');
-      return res.status(403).json({ message: "Doctor account has been disabled. Contact support." });
+      return res.status(403).json({
+        message: "Doctor account has been disabled. Contact support.",
+        errorCode: "DOCTOR_DISABLED",
+      });
     }
 
     // CROSS-ROLE GUARD: Prevent patient/user accounts from using doctor login endpoint
@@ -699,7 +835,8 @@ export async function signInDoctor(req, res) {
       console.log('💚 [signInDoctor] User/patient account found, blocking doctor login');
       await auditLoginAttempt(req, userRecord.id, normalizedEmail, false, 'Patient/user attempted doctor login');
       return res.status(403).json({ 
-        message: "Please use the patient login portal" 
+        message: "Please use the patient login portal",
+        errorCode: "PATIENT_PORTAL_ACCOUNT",
       });
     }
 
@@ -711,7 +848,10 @@ export async function signInDoctor(req, res) {
 
       if (!isPasswordValid) {
         await auditLoginAttempt(req, doctor.id, normalizedEmail, false, 'Invalid password');
-        return res.status(401).json({ message: "Invalid email or password" });
+        return res.status(401).json({
+          message: "Invalid email or password",
+          errorCode: "INVALID_PASSWORD",
+        });
       }
 
       // ── Manual activation gate ─────────────────────────────────────────────
@@ -720,6 +860,7 @@ export async function signInDoctor(req, res) {
         return res.status(403).json({
           message: "Your registration is under review. Our team will activate your account after document verification. Please check your email for updates.",
           pendingActivation: true,
+          errorCode: "DOCTOR_PENDING_ACTIVATION",
         });
       }
 
@@ -829,13 +970,28 @@ export const updateDoctorStatus = async (req, res) => {
       doctorId = decoded.id || decoded._id;
     }
 
-    // Extract status from request
-    const { isOnline } = req.body;
+    // Support both legacy boolean payload and mobile-friendly status enum.
+    const requestedStatusRaw = req.body?.status;
+    const requestedStatus = typeof requestedStatusRaw === 'string'
+      ? requestedStatusRaw.trim().toLowerCase()
+      : null;
 
-    if (typeof isOnline !== "boolean") {
+    const allowedStatuses = new Set(['available', 'busy', 'offline']);
+    let resolvedStatus = null;
+    let isOnline = null;
+
+    if (requestedStatus && allowedStatuses.has(requestedStatus)) {
+      resolvedStatus = requestedStatus;
+      isOnline = requestedStatus !== 'offline';
+    } else if (typeof req.body?.isOnline === 'boolean') {
+      isOnline = req.body.isOnline;
+      resolvedStatus = isOnline ? 'available' : 'offline';
+    }
+
+    if (typeof isOnline !== 'boolean') {
       return res.status(400).json({
         success: false,
-        message: "Invalid status. Must be a boolean value.",
+        message: 'Invalid status. Use status: available|busy|offline or isOnline: boolean.',
       });
     }
 
@@ -848,10 +1004,17 @@ export const updateDoctorStatus = async (req, res) => {
       });
     }
 
+    const metadata = {
+      ...(doctor.metadata && typeof doctor.metadata === 'object' ? doctor.metadata : {}),
+      availabilityStatus: resolvedStatus,
+      availabilityUpdatedAt: new Date().toISOString(),
+    };
+
     await doctor.update({
       isOnline,
       lastActive: new Date(),
       updatedAt: new Date(),
+      metadata,
     });
 
     const updatedUser = toPlainDoctor(doctor);
@@ -861,8 +1024,9 @@ export const updateDoctorStatus = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: `Status updated to ${isOnline ? "online" : "offline"}.`,
+      message: `Status updated to ${resolvedStatus}.`,
       data: {
+        status: resolvedStatus,
         isOnline: updatedUser.isOnline,
         lastActive: updatedUser.lastActive,
       },

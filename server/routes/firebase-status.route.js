@@ -1,14 +1,21 @@
 import express from 'express';
-import { isFirebaseInitialized } from '../utils/firebase-admin.js';
+import { hasMessagingFor, isFirebaseInitialized } from '../utils/firebase-admin.js';
 
 const router = express.Router();
 
 import { sendSystemNotification } from '../utils/firebase-admin.js';
 
 router.get('/status', (req, res) => {
+  const channels = {
+    patient: hasMessagingFor('patient'),
+    doctor: hasMessagingFor('doctor'),
+    web: hasMessagingFor('patient', 'web')
+  };
+
   res.json({
     success: true,
     initialized: isFirebaseInitialized,
+    channels,
     message: isFirebaseInitialized 
       ? 'Firebase is initialized and ready' 
       : 'Firebase is not initialized - check credentials'
@@ -24,7 +31,7 @@ router.post('/test-notification', async (req, res) => {
       });
     }
 
-    const { token, title, message } = req.body;
+    const { token, title, message, userType, deviceType } = req.body;
 
     if (!token || !title || !message) {
       return res.status(400).json({
@@ -39,11 +46,15 @@ router.post('/test-notification', async (req, res) => {
       category: 'test'
     };
 
-    const result = await sendSystemNotification(token, systemData);
+    const result = await sendSystemNotification(token, systemData, userType, deviceType);
 
     res.json({
       success: true,
       message: 'Test notification sent successfully',
+      target: {
+        userType: userType || 'patient',
+        deviceType: deviceType || 'mobile'
+      },
       messageId: result
     });
   } catch (error) {

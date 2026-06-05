@@ -3,6 +3,11 @@ import dotenv from "dotenv";
 if (process.env.NODE_ENV !== 'production' || process.env.DOTENV_IN_PROD === 'true') {
   dotenv.config();
 }
+
+// Run startup safety guards BEFORE any other initialisation.
+// In production, exits the process immediately on any violation.
+import { runStartupGuards } from './utils/startup-guard.js';
+runStartupGuards();
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
@@ -51,6 +56,8 @@ import medicalAIRouter from "./routes/medical-ai.route.js";
 import aiHealthRouter from "./routes/ai-health.route.js";
 import aiVisionRouter from "./routes/ai-vision.route.js";
 import aiScribeRouter from "./routes/ai-scribe.route.js";
+import aiGovernanceRouter from "./routes/ai-governance.route.js";
+import telemetryRouter from "./routes/telemetry.route.js";
 import scribeRouter from "./routes/scribe.js";
 import offlineScribeRouter from "./routes/offline-scribe.route.js";
 import voiceAssistantRouter from "./routes/voice-assistant.route.js";
@@ -578,12 +585,12 @@ const baseOrigins = envOrigins.length > 0
   ? envOrigins
   : (process.env.NODE_ENV === 'production' ? defaultProdOrigins : defaultDevOrigins);
 
-// Always include core production + dev domains regardless of NODE_ENV.
-const allowedOrigins = Array.from(new Set([
-  ...baseOrigins,
-  ...defaultProdOrigins,
-  ...defaultDevOrigins
-]));
+// Production: only env-provided or prod domains. Dev: include localhost/LAN.
+const allowedOrigins = Array.from(new Set(
+  process.env.NODE_ENV === 'production'
+    ? [...defaultProdOrigins, ...envOrigins]          // never include dev origins in prod
+    : [...baseOrigins, ...defaultProdOrigins, ...defaultDevOrigins]
+));
 
 // Debug CORS configuration
 console.log('🔒 CORS Configuration:');
@@ -680,6 +687,35 @@ const configLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// OTP: 3 attempts per 15 min per IP (stricter than authLimiter)
+const otpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 3,
+  message: 'Too many OTP requests. Please wait 15 minutes before trying again.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: false,
+});
+
+// Password reset: 5 attempts per 15 min per IP
+const resetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: 'Too many password reset requests. Please wait 15 minutes.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: false,
+});
+
+// Wallet earn: 10 per hour per IP (prevents rapid coin-farming bypassing service-level checks)
+const walletEarnLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: 'Too many reward requests. Please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 app.use('/api/', globalLimiter);
 app.use('/api/payments/config', configLimiter);
 
@@ -704,6 +740,22 @@ app.use('/api/doctors/login', authLimiter);
 app.use('/api/doctors/register', authLimiter);
 app.use('/api/nurse/login', authLimiter);
 app.use('/api/assistant/login', authLimiter);
+
+// OTP endpoints — stricter 3/15min limit (brute-force prevention)
+app.use('/api/users/login/send-otp',   otpLimiter);
+app.use('/api/users/login/verify-otp', otpLimiter);
+app.use('/api/users/register/send-otp',otpLimiter);
+app.use('/api/auth/send-otp',          otpLimiter);
+app.use('/api/auth/verify-otp',        otpLimiter);
+
+// Password reset — 5/15min limit
+app.use('/api/password-reset',             resetLimiter);
+app.use('/api/users/forgot-password',      resetLimiter);
+app.use('/api/users/forgot-password/reset',resetLimiter);
+
+// Wallet earn — 10/hour limit (prevents rapid coin-farming via race conditions)
+app.use('/api/wallet/earn', walletEarnLimiter);
+
 app.use('/api/ai', aiLimiter);
 app.use('/api/medical-ai', aiLimiter);
 app.use('/api/ai/working-medical-consult', aiLimiter);
@@ -892,6 +944,11 @@ app.get('/razorpay-test', (req, res) => {
 
 // 9. Session Timeout (HIPAA 15-minute idle timeout)
 app.use(sessionTimeout);
+
+// 10. Response-shape linter — detects HTTP 200 + success:false (anti-pattern).
+//     Dev: logs loudly. Prod: logs warning to PM2 for progressive cleanup.
+import responseShapeLinter from './middleware/responseShape.middleware.js';
+app.use(responseShapeLinter);
 // Public signed-token report download (no auth required — handled by JWT verification)
 app.use('/api/public', publicReportRouter);
 // Department login modules must stay before ring-fencing because login is public.
@@ -1170,6 +1227,9 @@ app.use('/oauth', oauthRouter);
 // API v1 - Multi-tenant Wellness Platform (OIDC-based authentication)
 app.use('/v1', apiV1Router);
 
+// ═══════════════════════════════════════════════════════════════════════════
+// DOMAIN: PATIENT  (→ migrate to routes/domains/patient.domain.js)
+// ═══════════════════════════════════════════════════════════════════════════
 app.use("/api/users", userRouter);
 app.use("/api/addresses", addressRouter);
 app.use("/api/family-members", familyMemberRouter);
@@ -1247,6 +1307,8 @@ app.use("/api/activity-tracker", activityTrackerRouter); // Daily activity: step
 app.use("/api/apple-health", appleHealthRouter); // Apple HealthKit integration for iOS
 app.use("/api/ai", aiRouter);
 app.use("/api/medical-ai", medicalAIRouter);
+app.use("/api/ai-governance", authUser, aiGovernanceRouter); // SaMD governance: model cards, PCCP, drift, quality gates
+app.use("/api/telemetry", telemetryRouter);                   // Client-side event ingestion (perf, funnels, errors)
 app.use("/api/ai-health", aiHealthRouter); // AI health assistant, diet plans, Dr. ISHA
 app.use("/api/v3/ai-brain", authUser, aiBrainRouter); // AI Brain intelligence layer (agentic LLM + RAG + 15 tools)
 app.use("/api/v3/ai-intelligence", authUser, aiIntelligenceRouter); // Drug interactions, insurance, triage, risk scores, insights

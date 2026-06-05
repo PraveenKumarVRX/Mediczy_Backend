@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -38,20 +38,88 @@ interface FamilyMemberDialogProps {
   onOpenChange: (open: boolean) => void;
   member?: FamilyMember;
   onSuccess: () => void;
+  allowedRelations?: string[];
+  canAddMore?: boolean;
 }
 
-const RELATIONSHIPS = [
-  "spouse", "father", "mother", "son", "daughter",
-  "brother", "sister", "grandfather", "grandmother",
-  "grandson", "granddaughter", "uncle", "aunt",
-  "nephew", "niece", "cousin", "guardian", "other"
+const RELATION_OPTIONS = [
+  { value: "spouse", label: "Spouse", genderHint: null },
+  { value: "father", label: "Father", genderHint: "Male" },
+  { value: "mother", label: "Mother", genderHint: "Female" },
+  { value: "son", label: "Son", genderHint: "Male" },
+  { value: "daughter", label: "Daughter", genderHint: "Female" },
+  { value: "brother", label: "Brother", genderHint: "Male" },
+  { value: "sister", label: "Sister", genderHint: "Female" },
+  { value: "grandfather", label: "Grandfather", genderHint: "Male" },
+  { value: "grandmother", label: "Grandmother", genderHint: "Female" },
+  { value: "grandson", label: "Grandson", genderHint: "Male" },
+  { value: "granddaughter", label: "Granddaughter", genderHint: "Female" },
+  { value: "uncle", label: "Uncle", genderHint: "Male" },
+  { value: "aunt", label: "Aunt", genderHint: "Female" },
+  { value: "nephew", label: "Nephew", genderHint: "Male" },
+  { value: "niece", label: "Niece", genderHint: "Female" },
+  { value: "cousin", label: "Cousin", genderHint: null },
+  { value: "guardian", label: "Guardian", genderHint: null },
+  { value: "other", label: "Other", genderHint: null },
 ];
 
 const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 
-export function FamilyMemberDialog({ open, onOpenChange, member, onSuccess }: FamilyMemberDialogProps) {
+const RELATION_ALIASES: Record<string, string> = {
+  wife: "spouse",
+  husband: "spouse",
+  spouse: "spouse",
+  partner: "spouse",
+  mom: "mother",
+  mother: "mother",
+  dad: "father",
+  father: "father",
+  son: "son",
+  daughter: "daughter",
+  child: "other",
+  bro: "brother",
+  brother: "brother",
+  sis: "sister",
+  sister: "sister",
+  grandma: "grandmother",
+  grandfather: "grandfather",
+  grandpa: "grandfather",
+  grandmother: "grandmother",
+  uncle: "uncle",
+  aunt: "aunt",
+  nephew: "nephew",
+  niece: "niece",
+  cousin: "cousin",
+  guardian: "guardian",
+};
+
+function inferRelationshipFromHint(hint: string) {
+  const normalized = (hint || "").toLowerCase().trim();
+  if (!normalized) return "";
+  const compact = normalized.replace(/[-_\s]+/g, "");
+  for (const [key, val] of Object.entries(RELATION_ALIASES)) {
+    if (compact.includes(key)) return val;
+  }
+  return "";
+}
+
+function inferGender(relationship: string, currentGender: string) {
+  if (["Male", "Female"].includes(currentGender)) return currentGender;
+  const option = RELATION_OPTIONS.find((r) => r.value === relationship);
+  return option?.genderHint || currentGender || "Other";
+}
+
+export function FamilyMemberDialog({
+  open,
+  onOpenChange,
+  member,
+  onSuccess,
+  allowedRelations = [],
+  canAddMore = true,
+}: FamilyMemberDialogProps) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [relationshipHint, setRelationshipHint] = useState("");
   const [formData, setFormData] = useState<FamilyMember>(
     member || {
       firstName: "",
@@ -66,24 +134,92 @@ export function FamilyMemberDialog({ open, onOpenChange, member, onSuccess }: Fa
     }
   );
 
+  useEffect(() => {
+    if (!open) return;
+    setRelationshipHint("");
+    setFormData(
+      member || {
+        firstName: "",
+        lastName: "",
+        relationship: "",
+        gender: "Other",
+        dateOfBirth: "",
+        phoneNumber: "",
+        email: "",
+        bloodType: "",
+        abhaHealthId: "",
+      }
+    );
+  }, [open, member]);
+
+  const visibleRelations = useMemo(() => {
+    if (!allowedRelations || allowedRelations.length === 0) {
+      return RELATION_OPTIONS;
+    }
+    return RELATION_OPTIONS.filter((option) => allowedRelations.includes(option.value));
+  }, [allowedRelations]);
+
+  const relationRestricted = !!allowedRelations && allowedRelations.length > 0;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!member && !canAddMore) {
+      toast({
+        title: "Plan limit reached",
+        description: "Upgrade your plan to add more family members",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const inferredRelationship = formData.relationship || inferRelationshipFromHint(relationshipHint);
+    if (!inferredRelationship) {
+      toast({
+        title: "Relationship required",
+        description: "Select relationship or describe who they are to you",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (relationRestricted && !visibleRelations.some((r) => r.value === inferredRelationship)) {
+      toast({
+        title: "Relationship not allowed",
+        description: "This relationship is not allowed in your current plan",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const payload = {
+      ...formData,
+      relationship: inferredRelationship,
+      relationshipHint: relationshipHint || undefined,
+      gender: inferGender(inferredRelationship, formData.gender),
+    };
+
     setLoading(true);
 
     try {
       if (member?.id) {
         // Update existing member
-        await api.put(`/family-members/${member.id}`, formData);
+        const res = await api.put(`/family-members/${member.id}`, payload);
+        const ai = res?.data?.aiInference;
         toast({
           title: "Success",
-          description: "Family member updated successfully",
+          description: ai?.relationshipInferred || ai?.genderInferred
+            ? "Family member updated (AI assisted inference applied)"
+            : "Family member updated successfully",
         });
       } else {
         // Add new member
-        await api.post("/family-members", formData);
+        const res = await api.post("/family-members", payload);
+        const ai = res?.data?.aiInference;
         toast({
           title: "Success",
-          description: "Family member added successfully",
+          description: ai?.relationshipInferred || ai?.genderInferred
+            ? "Family member added (AI assisted inference applied)"
+            : "Family member added successfully",
         });
       }
       onSuccess();
@@ -143,22 +279,24 @@ export function FamilyMemberDialog({ open, onOpenChange, member, onSuccess }: Fa
                 <Label htmlFor="relationship">Relationship *</Label>
                 <Select
                   value={formData.relationship}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, relationship: value })
-                  }
+                  onValueChange={(value) => {
+                    const inferred = inferGender(value, formData.gender);
+                    setFormData({ ...formData, relationship: value, gender: inferred });
+                  }}
                   required
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select relationship" />
                   </SelectTrigger>
                   <SelectContent>
-                    {RELATIONSHIPS.map((rel) => (
-                      <SelectItem key={rel} value={rel}>
-                        {rel.charAt(0).toUpperCase() + rel.slice(1)}
+                    {visibleRelations.map((rel) => (
+                      <SelectItem key={rel.value} value={rel.value}>
+                        {rel.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-slate-500">AI assist: if not sure, type in hint below and relationship/gender will be inferred.</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="gender">Gender *</Label>
@@ -179,6 +317,29 @@ export function FamilyMemberDialog({ open, onOpenChange, member, onSuccess }: Fa
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="relationshipHint">Who are they to you? (AI assist)</Label>
+              <Input
+                id="relationshipHint"
+                value={relationshipHint}
+                onChange={(e) => {
+                  const hint = e.target.value;
+                  setRelationshipHint(hint);
+                  if (!formData.relationship) {
+                    const inferredRel = inferRelationshipFromHint(hint);
+                    if (inferredRel) {
+                      setFormData((prev) => ({
+                        ...prev,
+                        relationship: inferredRel,
+                        gender: inferGender(inferredRel, prev.gender),
+                      }));
+                    }
+                  }
+                }}
+                placeholder="Example: my wife, my father, my daughter"
+              />
             </div>
 
             {/* Date of Birth and Blood Type */}
@@ -261,7 +422,7 @@ export function FamilyMemberDialog({ open, onOpenChange, member, onSuccess }: Fa
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading}>
+            <Button type="submit" disabled={loading || (!member && !canAddMore)}>
               {loading ? "Saving..." : member ? "Update" : "Add"}
             </Button>
           </DialogFooter>

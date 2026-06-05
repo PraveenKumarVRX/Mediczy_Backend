@@ -6,6 +6,18 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+const parseServiceAccountEnv = (raw) => {
+  if (!raw) return null;
+  try {
+    // Support either plain JSON or base64-encoded JSON secret values.
+    const trimmed = String(raw).trim();
+    if (trimmed.startsWith('{')) return JSON.parse(trimmed);
+    return JSON.parse(Buffer.from(trimmed, 'base64').toString('utf8'));
+  } catch {
+    return null;
+  }
+};
+
 // Initialize Firebase Admin SDK only if credentials are properly configured
 let messaging = null;          // patient/mobile default app
 let doctorMessaging = null;    // doctor app
@@ -25,6 +37,10 @@ const findServiceAccountFile = () => {
   return null;
 };
 
+const findServiceAccountFromEnv = () => {
+  return parseServiceAccountEnv(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+};
+
 // Optional separate service account for the doctor app project (doctorapp-6c768).
 // Drop firebase-service-account-doctor.json next to the patient one to enable it.
 const findDoctorServiceAccountFile = () => {
@@ -37,6 +53,10 @@ const findDoctorServiceAccountFile = () => {
     if (existsSync(p)) return p;
   }
   return null;
+};
+
+const findDoctorServiceAccountFromEnv = () => {
+  return parseServiceAccountEnv(process.env.FIREBASE_SERVICE_ACCOUNT_DOCTOR_JSON);
 };
 
 // Optional separate service account for browser/web FCM project.
@@ -52,13 +72,18 @@ const findWebServiceAccountFile = () => {
   return null;
 };
 
+const findWebServiceAccountFromEnv = () => {
+  return parseServiceAccountEnv(process.env.FIREBASE_SERVICE_ACCOUNT_WEB_JSON);
+};
+
 // Check if Firebase should be initialized
 const shouldInitializeFirebase = () => {
-  const hasEnvCredentials = process.env.FIREBASE_PROJECT_ID && 
-                           process.env.FIREBASE_PRIVATE_KEY && 
+  const hasEnvCredentials = process.env.FIREBASE_PROJECT_ID &&
+                           process.env.FIREBASE_PRIVATE_KEY &&
                            process.env.FIREBASE_CLIENT_EMAIL;
+  const hasJsonEnvCredentials = !!findServiceAccountFromEnv();
   const hasCredentialFile = !!findServiceAccountFile();
-  return hasEnvCredentials || hasCredentialFile;
+  return hasEnvCredentials || hasJsonEnvCredentials || hasCredentialFile;
 };
 
 // Initialize Firebase if credentials are available
@@ -77,6 +102,13 @@ if (shouldInitializeFirebase()) {
         credential: admin.credential.cert(serviceAccount),
         projectId: process.env.FIREBASE_PROJECT_ID,
       });
+    } else if (findServiceAccountFromEnv()) {
+      const envServiceAccount = findServiceAccountFromEnv();
+      admin.initializeApp({
+        credential: admin.credential.cert(envServiceAccount),
+        projectId: envServiceAccount.project_id,
+      });
+      console.log('Firebase (patient) initialized from FIREBASE_SERVICE_ACCOUNT_JSON');
     } else {
       const saFile = findServiceAccountFile();
       if (saFile) {
@@ -98,16 +130,21 @@ if (shouldInitializeFirebase()) {
     console.log('Firebase Admin SDK initialized successfully');
 
     // ── Doctor Firebase app (separate project) ───────────────────────────────
+    const doctorSaEnv = findDoctorServiceAccountFromEnv();
     const doctorSaFile = findDoctorServiceAccountFile();
-    if (doctorSaFile) {
+    if (doctorSaEnv || doctorSaFile) {
       try {
-        const dsa = JSON.parse(readFileSync(doctorSaFile, 'utf8'));
+        const dsa = doctorSaEnv || JSON.parse(readFileSync(doctorSaFile, 'utf8'));
         const doctorApp = admin.initializeApp(
           { credential: admin.credential.cert(dsa), projectId: dsa.project_id },
           'doctor-app'
         );
         doctorMessaging = doctorApp.messaging();
-        console.log(`Firebase (doctor) initialized from: ${doctorSaFile} [project: ${dsa.project_id}]`);
+        if (doctorSaEnv) {
+          console.log(`Firebase (doctor) initialized from FIREBASE_SERVICE_ACCOUNT_DOCTOR_JSON [project: ${dsa.project_id}]`);
+        } else {
+          console.log(`Firebase (doctor) initialized from: ${doctorSaFile} [project: ${dsa.project_id}]`);
+        }
       } catch (dErr) {
         console.warn('Firebase doctor app init failed:', dErr.message);
       }
@@ -123,16 +160,21 @@ if (shouldInitializeFirebase()) {
 
 
     // ── Web Firebase app (separate browser project, if configured) ───────────
+    const webSaEnv = findWebServiceAccountFromEnv();
     const webSaFile = findWebServiceAccountFile();
-    if (webSaFile) {
+    if (webSaEnv || webSaFile) {
       try {
-        const wsa = JSON.parse(readFileSync(webSaFile, 'utf8'));
+        const wsa = webSaEnv || JSON.parse(readFileSync(webSaFile, 'utf8'));
         const webApp = admin.initializeApp(
           { credential: admin.credential.cert(wsa), projectId: wsa.project_id },
           'web-app'
         );
         webMessaging = webApp.messaging();
-        console.log(`Firebase (web) initialized from: ${webSaFile} [project: ${wsa.project_id}]`);
+        if (webSaEnv) {
+          console.log(`Firebase (web) initialized from FIREBASE_SERVICE_ACCOUNT_WEB_JSON [project: ${wsa.project_id}]`);
+        } else {
+          console.log(`Firebase (web) initialized from: ${webSaFile} [project: ${wsa.project_id}]`);
+        }
       } catch (wErr) {
         console.warn('Firebase web app init failed:', wErr.message);
       }
@@ -184,11 +226,16 @@ const FCM_NOTIFICATION_TYPES = {
  * @param {string} [userType] - 'doctor' or 'patient' — selects the correct Firebase app
  */
 const sendPushNotification = async (token, notification, data = {}, userType, deviceType) => {
-  if (!isFirebaseInitialized || !messaging) {
+  if (!isFirebaseInitialized) {
     console.warn('Firebase not initialized. Cannot send push notification.');
     return Promise.resolve(null);
   }
+
   const fcm = getMessaging(userType, deviceType);
+  if (!fcm) {
+    console.warn(`Firebase messaging not available for userType=${userType || 'unknown'} deviceType=${deviceType || 'unknown'}.`);
+    return Promise.resolve(null);
+  }
 
   try {
     // FCM requires ALL data values to be strings — coerce everything
@@ -663,7 +710,7 @@ function getNotificationActions(type) {
  * @param {string} token - FCM token to validate
  */
 const validateToken = async (token, userType, deviceType) => {
-  if (!isFirebaseInitialized || !messaging) {
+  if (!isFirebaseInitialized) {
     console.warn('Firebase not initialized. Cannot validate token.');
     return false;
   }

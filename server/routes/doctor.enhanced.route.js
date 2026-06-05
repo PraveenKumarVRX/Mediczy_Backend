@@ -11,7 +11,14 @@ import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
-import { Doctor } from '../models/index.js';
+import { Doctor, User } from '../models/index.js';
+import {
+  issuePortalTokenPair,
+  rotatePortalRefreshToken,
+  listActivePortalSessions,
+  revokePortalSessionForUser,
+  revokeOtherPortalSessions,
+} from '../services/token-revocation.service.js';
 import tenantPartnerService from '../services/tenant-partner.service.js';
 import {
   buildDoctorMediaKeyPrefix,
@@ -22,6 +29,20 @@ import {
 import { uploadToMinio } from '../services/minio-upload.service.js';
 
 const router = express.Router();
+// Ensure request bodies are parsed even if app-level parser order changes.
+router.use(express.json());
+router.use(express.urlencoded({ extended: true }));
+
+const getCurrentAccessJti = (req) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token || !JWT_CONFIG.SECRET) return null;
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
+    return decoded?.jti || null;
+  } catch {
+    return null;
+  }
+};
 
 // Sensitive fields that must NEVER be returned in public doctor listing APIs
 const DOCTOR_SENSITIVE_FIELDS = [
@@ -643,8 +664,46 @@ router.post('/login', authLimiter, async (req, res) => {
       await auditLoginAttempt(req, null, normalizedIdentifier, false, 'Doctor not found');
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials'
+        message: 'Invalid email or password',
+        errorCode: 'DOCTOR_NOT_FOUND'
       });
+    }
+
+    if (doctor.status && doctor.status !== 'active') {
+      await auditLoginAttempt(req, doctor.id, normalizedIdentifier, false, `Doctor inactive: ${doctor.status}`);
+      return res.status(403).json({
+        success: false,
+        message: 'Doctor account is inactive or suspended. Contact support.',
+        errorCode: 'DOCTOR_INACTIVE',
+      });
+    }
+
+    if (doctor.isActive === false) {
+      await auditLoginAttempt(req, doctor.id, normalizedIdentifier, false, 'Doctor disabled (isActive=false)');
+      return res.status(403).json({
+        success: false,
+        message: 'Doctor account has been disabled. Contact support.',
+        errorCode: 'DOCTOR_DISABLED',
+      });
+    }
+
+    if (normalizedEmail) {
+      const userRecord = await User.findOne({
+        where: sequelize.where(
+          sequelize.fn('lower', sequelize.col('email')),
+          normalizedEmail
+        ),
+        attributes: ['id', 'role', 'isAdmin']
+      });
+
+      if (userRecord && userRecord.role !== 'doctor' && !userRecord.isAdmin) {
+        await auditLoginAttempt(req, userRecord.id, normalizedIdentifier, false, 'Patient/user attempted doctor login');
+        return res.status(403).json({
+          success: false,
+          message: 'Please use the patient login portal',
+          errorCode: 'PATIENT_PORTAL_ACCOUNT',
+        });
+      }
     }
 
     // Verify password
@@ -655,7 +714,18 @@ router.post('/login', authLimiter, async (req, res) => {
       await auditLoginAttempt(req, doctor.id, normalizedIdentifier, false, 'Invalid password');
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials'
+        message: 'Invalid email or password',
+        errorCode: 'INVALID_PASSWORD'
+      });
+    }
+
+    if (!doctor.isVerified) {
+      await auditLoginAttempt(req, doctor.id, normalizedIdentifier, false, 'Account pending activation');
+      return res.status(403).json({
+        success: false,
+        message: 'Your registration is under review. Our team will activate your account after document verification. Please check your email for updates.',
+        pendingActivation: true,
+        errorCode: 'DOCTOR_PENDING_ACTIVATION',
       });
     }
 
@@ -671,24 +741,19 @@ router.post('/login', authLimiter, async (req, res) => {
       console.warn('Doctor lastLoginAt update failed:', updateError.message);
     }
 
-    // Generate token
-    const token = typeof doctor.generateAuthToken === 'function'
-      ? doctor.generateAuthToken()
-      : jwt.sign(
-        {
-          id: doctor.id,
-          email: doctor.email,
-          role: 'doctor'
-        },
-        JWT_CONFIG.SECRET,
-        { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
-      );
+    const deviceFp = req.headers['x-device-fingerprint'] || null;
+    const { accessToken: token, refreshToken } = await issuePortalTokenPair(
+      { id: doctor.id, email: doctor.email, role: 'doctor' },
+      { portal: 'doctor', deviceFp }
+    );
 
     await auditLoginAttempt(req, doctor.id, normalizedIdentifier, true);
 
     res.json({
       success: true,
       message: 'Login successful',
+      expiresIn: 900,
+      refreshToken,
       doctor: {
         id: doctor.id,
         name: `${doctor.prefix} ${doctor.firstName} ${doctor.lastName}`,
@@ -705,6 +770,309 @@ router.post('/login', authLimiter, async (req, res) => {
       success: false,
       message: 'Login failed',
       error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/refresh
+ * @desc    Rotate doctor refresh token and issue a new access token pair
+ * @access  Public (refresh token required)
+ */
+router.post('/refresh', async (req, res) => {
+  try {
+    const refreshToken = req.body?.refreshToken;
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'refreshToken is required',
+        errorCode: 'REFRESH_TOKEN_REQUIRED',
+      });
+    }
+
+    const deviceFp = req.headers['x-device-fingerprint'] || req.body?.deviceFingerprint || null;
+    const result = await rotatePortalRefreshToken(refreshToken, {
+      portal: 'doctor',
+      deviceFp,
+      resolvePayload: async (decoded) => {
+        const doctor = await doctorModel.findByPk(decoded.userId);
+        if (!doctor) return null;
+        if (doctor.status && doctor.status !== 'active') return null;
+        if (doctor.isActive === false) return null;
+        if (!doctor.isVerified) return null;
+        return { id: doctor.id, email: doctor.email, role: 'doctor' };
+      }
+    });
+
+    if (!result) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired refresh token',
+        errorCode: 'INVALID_REFRESH_TOKEN',
+      });
+    }
+
+    return res.json({
+      success: true,
+      token: result.accessToken,
+      refreshToken: result.refreshToken,
+      expiresIn: 900,
+    });
+  } catch (error) {
+    console.error('Doctor refresh error:', error);
+    return res.status(401).json({
+      success: false,
+      message: 'Token refresh failed',
+      errorCode: 'TOKEN_REFRESH_FAILED',
+    });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/session/bootstrap
+ * @desc    Silent session restore for mobile app startup (rotate refresh token + return doctor profile)
+ * @access  Public (refresh token required)
+ */
+router.post('/session/bootstrap', async (req, res) => {
+  try {
+    const refreshToken = req.body?.refreshToken;
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'refreshToken is required',
+        errorCode: 'REFRESH_TOKEN_REQUIRED',
+      });
+    }
+
+    const deviceFp = req.headers['x-device-fingerprint'] || req.body?.deviceFingerprint || null;
+    let resolvedDoctor = null;
+
+    const result = await rotatePortalRefreshToken(refreshToken, {
+      portal: 'doctor',
+      deviceFp,
+      resolvePayload: async (decoded) => {
+        const doctor = await doctorModel.findByPk(decoded.userId);
+        if (!doctor) return null;
+        if (doctor.status && doctor.status !== 'active') return null;
+        if (doctor.isActive === false) return null;
+        if (!doctor.isVerified) return null;
+        resolvedDoctor = doctor;
+        return { id: doctor.id, email: doctor.email, role: 'doctor' };
+      }
+    });
+
+    if (!result || !resolvedDoctor) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired refresh token',
+        errorCode: 'INVALID_REFRESH_TOKEN',
+      });
+    }
+
+    return res.json({
+      success: true,
+      token: result.accessToken,
+      refreshToken: result.refreshToken,
+      expiresIn: 900,
+      doctor: {
+        id: resolvedDoctor.id,
+        firstName: resolvedDoctor.firstName,
+        lastName: resolvedDoctor.lastName,
+        email: resolvedDoctor.email,
+        specialization: resolvedDoctor.specialization,
+        isVerified: !!resolvedDoctor.isVerified,
+        profilePicture: resolvedDoctor.profilePicture || null,
+      },
+    });
+  } catch (error) {
+    console.error('Doctor session bootstrap error:', error);
+    return res.status(401).json({
+      success: false,
+      message: 'Session bootstrap failed',
+      errorCode: 'SESSION_BOOTSTRAP_FAILED',
+    });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/sessions
+ * @desc    List active doctor sessions (simple device list)
+ * @access  Private (Doctor)
+ */
+router.get('/sessions', authUser, requireRole('doctor'), async (req, res) => {
+  try {
+    const doctorId = req.user?.id;
+    const currentJti = getCurrentAccessJti(req);
+    const currentDeviceFp = req.headers['x-device-fingerprint'] || null;
+
+    const rows = await listActivePortalSessions(doctorId, 'doctor');
+    const sessions = rows.map((row, index) => ({
+      id: row.jti,
+      deviceFingerprint: row.device_fp || null,
+      isCurrentSession: Boolean((currentJti && row.jti === currentJti) || (currentDeviceFp && row.device_fp === currentDeviceFp && index === 0)),
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+    }));
+
+    return res.json({ success: true, sessions });
+  } catch (error) {
+    console.error('Doctor sessions list error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch active sessions',
+    });
+  }
+});
+
+/**
+ * @route   DELETE /api/doctors/sessions/:sessionId
+ * @desc    Logout a selected doctor device/session
+ * @access  Private (Doctor)
+ */
+router.delete('/sessions/:sessionId', authUser, requireRole('doctor'), async (req, res) => {
+  try {
+    const doctorId = req.user?.id;
+    const { sessionId } = req.params;
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'sessionId is required' });
+    }
+
+    const ok = await revokePortalSessionForUser(doctorId, 'doctor', sessionId);
+    if (!ok) {
+      return res.status(404).json({ success: false, message: 'Session not found' });
+    }
+
+    return res.json({ success: true, message: 'Session logged out successfully' });
+  } catch (error) {
+    console.error('Doctor session revoke error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to revoke session' });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/sessions/logout-others
+ * @desc    Keep current session, logout all other doctor sessions
+ * @access  Private (Doctor)
+ */
+router.post('/sessions/logout-others', authUser, requireRole('doctor'), async (req, res) => {
+  try {
+    const doctorId = req.user?.id;
+    const currentJti = getCurrentAccessJti(req);
+    const revokedCount = await revokeOtherPortalSessions(doctorId, 'doctor', currentJti);
+
+    return res.json({
+      success: true,
+      message: 'Logged out from other devices',
+      revokedCount,
+    });
+  } catch (error) {
+    console.error('Doctor logout others error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to logout other sessions' });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/login-diagnostics
+ * @desc    Admin-only diagnostic endpoint to explain doctor login failures
+ * @access  Private (Admin)
+ */
+router.post('/login-diagnostics', authUser, requireRole(['admin', 'system_admin', 'super_admin']), async (req, res) => {
+  try {
+    const { identifier, password } = req.body || {};
+    const raw = String(identifier || '').trim();
+
+    if (!raw) {
+      return res.status(400).json({
+        success: false,
+        message: 'identifier is required',
+      });
+    }
+
+    const digitsOnly = raw.replace(/[^0-9]/g, '');
+    const isPhone = digitsOnly.length >= 7 && digitsOnly.length <= 15 && !raw.includes('@');
+    const normalizedEmail = isPhone ? null : raw.toLowerCase();
+    const normalizedPhone = isPhone ? (digitsOnly.length > 10 ? digitsOnly.slice(-10) : digitsOnly) : null;
+
+    let doctor = null;
+    if (normalizedEmail) {
+      doctor = await doctorModel.findOne({
+        where: sequelize.where(
+          sequelize.fn('LOWER', sequelize.col('email')),
+          sequelize.fn('LOWER', normalizedEmail)
+        )
+      });
+    } else {
+      const candidates = [raw, normalizedPhone, `+91${normalizedPhone}`, `91${normalizedPhone}`].filter(Boolean);
+      for (const phoneCandidate of candidates) {
+        doctor = await doctorModel.findOne({ where: { phoneNumber: phoneCandidate } });
+        if (doctor) break;
+      }
+    }
+
+    const userRecord = normalizedEmail
+      ? await User.findOne({
+        where: sequelize.where(
+          sequelize.fn('lower', sequelize.col('email')),
+          normalizedEmail
+        ),
+        attributes: ['id', 'role', 'isAdmin', 'status']
+      })
+      : null;
+
+    let passwordMatch = null;
+    if (doctor && typeof password === 'string' && password.length > 0) {
+      passwordMatch = typeof doctor.comparePassword === 'function'
+        ? await doctor.comparePassword(password)
+        : await bcrypt.compare(password, doctor.password);
+    }
+
+    const checks = {
+      doctorFound: !!doctor,
+      doctorActiveStatus: doctor ? (doctor.status === 'active') : null,
+      doctorEnabled: doctor ? (doctor.isActive !== false) : null,
+      doctorVerified: doctor ? (!!doctor.isVerified) : null,
+      crossRoleConflict: !!(userRecord && userRecord.role !== 'doctor' && !userRecord.isAdmin),
+      passwordMatch,
+    };
+
+    let outcomeCode = 'LOGIN_OK';
+    if (!checks.doctorFound) outcomeCode = 'DOCTOR_NOT_FOUND';
+    else if (!checks.doctorActiveStatus) outcomeCode = 'DOCTOR_INACTIVE';
+    else if (!checks.doctorEnabled) outcomeCode = 'DOCTOR_DISABLED';
+    else if (checks.crossRoleConflict) outcomeCode = 'PATIENT_PORTAL_ACCOUNT';
+    else if (!checks.doctorVerified) outcomeCode = 'DOCTOR_PENDING_ACTIVATION';
+    else if (checks.passwordMatch === false) outcomeCode = 'INVALID_PASSWORD';
+
+    return res.json({
+      success: true,
+      identifier: raw,
+      normalized: {
+        email: normalizedEmail,
+        phone: normalizedPhone,
+      },
+      outcomeCode,
+      checks,
+      doctor: doctor ? {
+        id: doctor.id,
+        email: doctor.email,
+        phoneNumber: doctor.phoneNumber,
+        status: doctor.status,
+        isActive: doctor.isActive,
+        isVerified: doctor.isVerified,
+      } : null,
+      linkedUser: userRecord ? {
+        id: userRecord.id,
+        role: userRecord.role,
+        isAdmin: !!userRecord.isAdmin,
+        status: userRecord.status,
+      } : null,
+    });
+  } catch (error) {
+    console.error('Doctor login diagnostics error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to run login diagnostics',
+      error: error.message,
     });
   }
 });

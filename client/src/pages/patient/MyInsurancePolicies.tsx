@@ -17,6 +17,10 @@ import {
   Clock, RefreshCw, ShieldCheck, Info,
 } from "lucide-react";
 import api from "@/utils/api";
+import {
+  INSURANCE_POLICY_CATEGORIES,
+  DEFAULT_INSURANCE_POLICY_CATEGORY
+} from "@/constants/insurancePolicyCategories";
 
 interface PersonalPolicy {
   id: string;
@@ -33,12 +37,6 @@ interface PersonalPolicy {
   documentUrl: string | null;
   createdAt: string;
 }
-
-const POLICY_TYPES = [
-  "Health Insurance", "Family Floater", "Critical Illness", "Senior Citizen",
-  "Group Health", "Accident Insurance", "Term Life", "Mediclaim",
-  "CGHS", "ESIC", "Ayushman Bharat / PMJAY", "Other",
-];
 
 const FREQUENCIES = [
   { value: "monthly", label: "Monthly" },
@@ -77,11 +75,13 @@ const MyInsurancePolicies = () => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const [form, setForm] = useState({
-    insurerName: "", policyNumber: "", policyType: "Health Insurance",
+    insurerName: "", policyNumber: "", policyType: DEFAULT_INSURANCE_POLICY_CATEGORY,
     coverageAmount: "", premiumAmount: "", premiumFrequency: "annual",
     startDate: "", endDate: "", membersName: "", notes: "",
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrApplied, setOcrApplied] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -95,9 +95,55 @@ const MyInsurancePolicies = () => {
   useEffect(() => { load(); }, []);
 
   const resetForm = () => {
-    setForm({ insurerName: "", policyNumber: "", policyType: "Health Insurance", coverageAmount: "", premiumAmount: "", premiumFrequency: "annual", startDate: "", endDate: "", membersName: "", notes: "" });
+    setForm({ insurerName: "", policyNumber: "", policyType: DEFAULT_INSURANCE_POLICY_CATEGORY, coverageAmount: "", premiumAmount: "", premiumFrequency: "annual", startDate: "", endDate: "", membersName: "", notes: "" });
     setSelectedFile(null);
+    setOcrApplied(false);
     if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const handleFileSelect = async (file: File) => {
+    setSelectedFile(file);
+    setOcrApplied(false);
+
+    // Auto-run OCR for images and PDFs
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+    const ocrSupported = ['jpg', 'jpeg', 'png', 'webp', 'pdf'].includes(ext);
+    if (!ocrSupported) return;
+
+    setOcrLoading(true);
+    try {
+      const fd = new FormData();
+      fd.append('document', file);
+      const res = await api.post('/api/ai/vision/extract-insurance', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      if (res.data?.success && res.data?.fields) {
+        const f = res.data.fields;
+        setForm(prev => ({
+          ...prev,
+          insurerName:      f.insurerName      || prev.insurerName,
+          policyNumber:     f.policyNumber     || prev.policyNumber,
+          policyType:       f.policyType && ['health','life','motor','travel','accident','other'].includes(f.policyType)
+                              ? f.policyType : prev.policyType,
+          coverageAmount:   f.coverageAmount   || prev.coverageAmount,
+          premiumAmount:    f.premiumAmount     || prev.premiumAmount,
+          premiumFrequency: f.premiumFrequency  || prev.premiumFrequency,
+          startDate:        f.startDate         || prev.startDate,
+          endDate:          f.endDate           || prev.endDate,
+          membersName:      f.membersName       || prev.membersName,
+          notes:            f.notes             || prev.notes,
+        }));
+        setOcrApplied(true);
+        toast({ title: "Fields extracted from document", description: "Review and correct any details before saving." });
+      } else if (res.data?.message) {
+        toast({ title: "Could not auto-fill", description: res.data.message });
+      }
+    } catch {
+      // Silent — OCR failure is non-blocking
+    } finally {
+      setOcrLoading(false);
+    }
   };
 
   const handleSave = async () => {
@@ -338,8 +384,15 @@ const MyInsurancePolicies = () => {
                 <Label>Policy Type</Label>
                 <Select value={form.policyType} onValueChange={v => setForm(f => ({ ...f, policyType: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{POLICY_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                  <SelectContent>
+                    {INSURANCE_POLICY_CATEGORIES.map(({ value, label }) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
+                <p className="text-[11px] text-slate-500">
+                  Standard categories only. E-card availability is determined by policy type.
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label>Coverage Amount (₹)</Label>
@@ -379,16 +432,41 @@ const MyInsurancePolicies = () => {
               <div className="col-span-2 space-y-1.5">
                 <Label>Upload Policy Document <span className="text-xs text-slate-400">(PDF or image, max 10MB)</span></Label>
                 <div
-                  className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-lg p-4 text-center cursor-pointer hover:border-teal-300 transition-colors"
+                  className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
+                    ocrLoading ? 'border-teal-300 bg-teal-50/50 animate-pulse' :
+                    ocrApplied ? 'border-green-400 bg-green-50/40' :
+                    'border-slate-200 dark:border-slate-700 hover:border-teal-300'
+                  }`}
                   onClick={() => fileRef.current?.click()}>
-                  <Upload className="w-6 h-6 mx-auto text-slate-400 mb-2" />
-                  {selectedFile
-                    ? <p className="text-sm font-medium text-teal-600">{selectedFile.name}</p>
-                    : <p className="text-sm text-slate-500">Click to upload PDF or image</p>
-                  }
+                  {ocrLoading ? (
+                    <>
+                      <RefreshCw className="w-6 h-6 mx-auto text-teal-500 mb-2 animate-spin" />
+                      <p className="text-sm font-medium text-teal-600">Scanning document…</p>
+                      <p className="text-xs text-slate-400 mt-1">Extracting policy details with AI</p>
+                    </>
+                  ) : ocrApplied ? (
+                    <>
+                      <div className="w-6 h-6 mx-auto mb-2 rounded-full bg-green-500 flex items-center justify-center">
+                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                      </div>
+                      <p className="text-sm font-medium text-green-700">{selectedFile?.name}</p>
+                      <p className="text-xs text-green-600 mt-0.5">Fields auto-filled — please verify</p>
+                    </>
+                  ) : selectedFile ? (
+                    <>
+                      <Upload className="w-6 h-6 mx-auto text-teal-400 mb-2" />
+                      <p className="text-sm font-medium text-teal-600">{selectedFile.name}</p>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-6 h-6 mx-auto text-slate-400 mb-2" />
+                      <p className="text-sm text-slate-500">Click to upload PDF or image</p>
+                      <p className="text-xs text-slate-400 mt-1">AI will auto-fill form fields from your policy</p>
+                    </>
+                  )}
                 </div>
                 <input ref={fileRef} type="file" accept=".pdf,image/*" className="hidden"
-                  onChange={e => setSelectedFile(e.target.files?.[0] || null)} />
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }} />
               </div>
             </div>
           </div>

@@ -413,8 +413,8 @@ export async function closePostgres() {
 export function getPostgresStatus() {
   return {
     connected: isConnected,
-    host: process.env.POSTGRES_HOST || process.env.PG_HOST || '127.0.0.1',
-    database: process.env.POSTGRES_DATABASE || process.env.PG_DATABASE || 'mediczy_ai',
+    host: process.env.POSTGRES_PRIMARY_HOST || process.env.POSTGRES_HOST || process.env.PG_HOST || null,
+    database: process.env.POSTGRES_PRIMARY_DATABASE || process.env.POSTGRES_DATABASE || process.env.PG_DATABASE || null,
     poolSize: pool?.totalCount || 0,
     citusEnabled: CITUS_ENABLED && citusConfigured,
     vectorEnabled: PGVECTOR_ENABLED && pgvectorEnabled,

@@ -1,6 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useLabCart } from '@/hooks/patient/useLabCart';
+import { useLabBookings } from '@/hooks/patient/useLabBookings';
+import { useLabSearch } from '@/hooks/patient/useLabSearch';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FlaskConical, Calendar, MapPin, Download, Plus, Search, Filter, Loader2, ShoppingCart, Trash2, X, Navigation, Building2 } from 'lucide-react';
+import { FlaskConical, Calendar, MapPin, Download, Plus, Search, Filter, Loader2, ShoppingCart, Trash2, X, Navigation, Building2, FlaskRound } from 'lucide-react';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineError } from '@/components/ui/inline-error';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import api from '@/utils/api';
 import { loadRazorpayScript } from '@/utils/razorpay';
+import telemetry from '@/lib/telemetry';
 
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
 const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
@@ -148,28 +154,40 @@ const availableTests: AvailableTest[] = [
 
 const LabTests = () => {
   const { toast } = useToast();
-  const [tests, setTests] = useState<LabTest[]>([]);
-  const [labs, setLabs] = useState<LabFromAPI[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLabsLoading, setIsLabsLoading] = useState(false);
+
+  // ── Extracted hooks ──────────────────────────────────────────────────────
+  const {
+    cart, cartTotal, cartFingerprint,
+    showCartDialog, setShowCartDialog,
+    showCheckoutDialog, setShowCheckoutDialog,
+    checkoutInFlightRef, lastCheckoutKey, setLastCheckoutKey,
+    fetchCart, addToCart, removeFromCart, clearCart,
+  } = useLabCart();
+
+  const {
+    tests, isLoading,
+    filterStatus, setFilterStatus,
+    searchTerm, setSearchTerm,
+    refresh: fetchMyLabTests,
+  } = useLabBookings();
+
+  const [labFetchError, setLabFetchError] = useState(false);
+
+  const {
+    labs, corpLabs, loading: isLabsLoading, corpLoading: isCorpLoading,
+    isCorporate: isCorporateEmployee, corporateName,
+    searchCity: labSearchCity, setSearchCity: setLabSearchCity,
+    selectedLabId, setSelectedLabId,
+    selectedLab, setSelectedLab,
+    search: fetchLabs, fetchCorpLabs: fetchMyCorpLabs,
+  } = useLabSearch();
+
+  // ── Remaining local state ─────────────────────────────────────────────────
   const [isBooking, setIsBooking] = useState(false);
   const [labSearchQuery, setLabSearchQuery] = useState('');
-  const [selectedLabId, setSelectedLabId] = useState<string>('');
-  const [labSearchCity, setLabSearchCity] = useState('');
   const [collectionType, setCollectionType] = useState<'home' | 'lab' | ''>('');
-  const [selectedLab, setSelectedLab] = useState<LabFromAPI | null>(null);
-
-  // Corporate network state
-  const [corpLabs, setCorpLabs] = useState<LabFromAPI[]>([]);
-  const [isCorpLoading, setIsCorpLoading] = useState(false);
-  const [isCorporateEmployee, setIsCorporateEmployee] = useState(false);
-  const [corporateName, setCorporateName] = useState('');
   
-  // Cart state
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [showCartDialog, setShowCartDialog] = useState(false);
-  const [showCheckoutDialog, setShowCheckoutDialog] = useState(false);
-  
+  // bookingForm and catalog-local state
   const [bookingForm, setBookingForm] = useState({
     testName: '',
     appointmentDate: '',
@@ -177,203 +195,63 @@ const LabTests = () => {
     notes: '',
     labId: ''
   });
-
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
   const [showBookDialog, setShowBookDialog] = useState(false);
   const [selectedTest, setSelectedTest] = useState<AvailableTest | null>(null);
   const [searchCategory, setSearchCategory] = useState<string>('all');
   const [testSearchTerm, setTestSearchTerm] = useState('');
 
+  const buildCheckoutKey = () => {
+    const cartFingerprint = cart
+      .map((item) => item.test.id)
+      .sort()
+      .join('|');
+    return [
+      localStorage.getItem('userId') || localStorage.getItem('userEmail') || 'anon',
+      bookingForm.appointmentDate || 'no-date',
+      collectionType || 'no-collection',
+      selectedLab?.id || 'no-lab',
+      cartFingerprint,
+      getCartTotal().toString(),
+    ].join('::');
+  };
+
+  const verifyRazorpayPaymentWithRetry = async ({
+    orderId,
+    razorpayOrderId,
+    razorpayPaymentId,
+    razorpaySignature,
+    idempotencyKey,
+  }: {
+    orderId: string;
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+    idempotencyKey: string;
+  }) => {
+    let lastError: any = null;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await api.post('/billing/payments/razorpay/verify', {
+          orderId,
+          razorpayOrderId,
+          razorpayPaymentId,
+          razorpaySignature,
+        }, {
+          headers: { 'X-Idempotency-Key': `${idempotencyKey}-verify-${attempt}` }
+        });
+        return true;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw lastError;
+  };
+
   // Cart API functions
-  const fetchCart = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) return;
+  // Cart helpers delegated to useLabCart hook above
+  const getCartTotal = () => cartTotal;
 
-      const response = await api.get('/cart');
-      if (response.data?.success && response.data?.cart) {
-        setCart(response.data.cart);
-      }
-    } catch (error) {
-      console.error('Error fetching cart:', error);
-    }
-  };
-
-  const addToCartAPI = async (test: AvailableTest) => {
-    try {
-      const token = localStorage.getItem('token');
-      if (token) {
-        await api.post('/cart/add', { test, quantity: 1 });
-      }
-    } catch (error) {
-      console.error('Error adding to cart API:', error);
-    }
-  };
-
-  const removeFromCartAPI = async (testId: string) => {
-    try {
-      const token = localStorage.getItem('token');
-      if (token) {
-        await api.delete(`/cart/remove/${testId}`);
-      }
-    } catch (error) {
-      console.error('Error removing from cart API:', error);
-    }
-  };
-
-  const clearCartAPI = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      if (token) {
-        await api.delete('/cart/clear');
-      }
-    } catch (error) {
-      console.error('Error clearing cart API:', error);
-    }
-  };
-
-  // Cart functions (local + API sync)
-  const addToCart = (test: AvailableTest) => {
-    setCart(prev => {
-      const existing = prev.find(item => item.test.id === test.id);
-      if (existing) {
-        return prev; // Already in cart
-      }
-      return [...prev, { test, quantity: 1 }];
-    });
-    addToCartAPI(test);
-    toast({
-      title: 'Added to Cart',
-      description: `${test.name} added to your cart`
-    });
-  };
-
-  const removeFromCart = (testId: string) => {
-    setCart(prev => prev.filter(item => item.test.id !== testId));
-    removeFromCartAPI(testId);
-  };
-
-  const clearCart = () => {
-    setCart([]);
-    clearCartAPI();
-  };
-
-  const getCartTotal = () => {
-    return cart.reduce((total, item) => {
-      const price = parseInt(String(item.test?.price ?? '0').replace(/[₹,]/g, '')) || 0;
-      return total + price * item.quantity;
-    }, 0);
-  };
-
-  // Fetch user's lab tests from API
-  const fetchMyLabTests = async () => {
-    try {
-      setIsLoading(true);
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setTests([]);
-        setIsLoading(false);
-        return;
-      }
-      
-      const response = await api.get('/lab-tests', { params: { limit: 100 } });
-      const data = response.data;
-      const labTestsArray = data?.labTests || data?.data || [];
-      if (data?.success && labTestsArray) {
-        const formattedTests: LabTest[] = labTestsArray.map((lt: any) => ({
-          id: lt.id.toString(),
-          testName: lt.testName || lt.testType,
-          testType: lt.testType,
-          category: getTestCategory(lt.testType),
-          orderedBy: 'Self-booked',
-          orderDate: lt.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
-          status: lt.status,
-          sampleCollected: ['sample_collected', 'processing', 'completed'].includes(lt.status),
-          results: lt.results || undefined,
-          reportUrl: lt.reportUrl || undefined,
-          estimatedDate: lt.expectedCompletionDate?.split('T')[0],
-          hospitalId: lt.hospitalId,
-          labName: lt.labName,
-          labAddress: lt.labAddress,
-          urgency: lt.urgency,
-          notes: lt.notes
-        }));
-        setTests(formattedTests);
-      } else {
-        console.error('Failed to fetch lab tests');
-      }
-    } catch (error) {
-      console.error('Error fetching lab tests:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Map testType to category
-  const getTestCategory = (testType: string): string => {
-    const categoryMap: Record<string, string> = {
-      'blood_test': 'Hematology',
-      'pathology': 'Pathology',
-      'radiology': 'Radiology',
-      'scan': 'Imaging',
-      'ultrasound': 'Imaging',
-      'xray': 'Imaging',
-      'ct_scan': 'Imaging',
-      'mri': 'Imaging',
-      'ecg': 'Cardiac',
-      'echo': 'Cardiac',
-      'eeg': 'Neurology',
-      'endoscopy': 'Gastroenterology',
-      'colonoscopy': 'Gastroenterology',
-      'other': 'Other'
-    };
-    return categoryMap[testType] || 'General';
-  };
-
-  // Fetch labs by search query (city, area, or pincode)
-  const fetchLabs = async (query?: string) => {
-    try {
-      setIsLabsLoading(true);
-      const params: Record<string, string | number> = { limit: 100 };
-
-      if (query && query.length >= 2) {
-        if (/^\d{6}$/.test(query)) {
-          params.pincode = query;
-        } else {
-          params.city = query;
-        }
-      }
-
-      const response = await api.get('/labs', { params });
-      if (response.data?.success && response.data?.labs) {
-        setLabs(response.data.labs);
-      }
-    } catch (error) {
-      console.error('Error fetching labs:', error);
-    } finally {
-      setIsLabsLoading(false);
-    }
-  };
-
-  // Fetch labs assigned to this employee's corporate
-  const fetchMyCorpLabs = async () => {
-    try {
-      setIsCorpLoading(true);
-      const token = localStorage.getItem('token');
-      if (!token) return;
-      const response = await api.get('/employee/my-labs');
-      if (response.data?.success && response.data?.isCorporateEmployee) {
-        setIsCorporateEmployee(true);
-        setCorporateName(response.data.corporateName || '');
-        setCorpLabs(response.data.labs || []);
-      }
-    } catch (error) {
-      console.error('Error fetching corporate labs:', error);
-    } finally {
-      setIsCorpLoading(false);
-    }
-  };
+  // fetchMyLabTests, fetchLabs, fetchMyCorpLabs, getTestCategory → delegated to hooks above
 
   // Fetch labs when "Visit Lab" is selected
   useEffect(() => {
@@ -497,10 +375,18 @@ const LabTests = () => {
     return typeMap[category] || 'other';
   };
 
-  // Fetch data on mount
+  // Fetch data on mount — instrumented with telemetry
+  const refetchLabTests = () => {
+    setLabFetchError(false);
+    fetchMyLabTests().catch(() => setLabFetchError(true));
+  };
+
   useEffect(() => {
-    fetchMyLabTests();
-    fetchCart(); // Load saved cart
+    const mark = telemetry.startMark('LabTests');
+    Promise.all([
+      fetchMyLabTests().catch(() => setLabFetchError(true)),
+      fetchCart(),
+    ]).finally(() => telemetry.endMark(mark));
   }, []);
 
   // Fetch labs when collection type is "lab" and search query changes
@@ -610,7 +496,7 @@ const LabTests = () => {
               <Button 
                 variant="outline" 
                 className="relative bg-white/10 border-white/20 text-white hover:bg-white/20"
-                onClick={() => setShowCartDialog(true)}
+                onClick={() => { setShowCartDialog(true); telemetry.funnel('lab_checkout', 'cart_opened', { cartSize: cart.length }); }}
               >
                 <ShoppingCart className="h-5 w-5" />
                 {cart.length > 0 && (
@@ -1052,13 +938,26 @@ const LabTests = () => {
                             toast({ title: 'Please select a lab', variant: 'destructive' });
                             return;
                           }
+
+                          const checkoutKey = buildCheckoutKey();
+                          if (checkoutInFlightRef.current) {
+                            toast({ title: 'Checkout already in progress', description: 'Please wait for the current request to finish.' });
+                            return;
+                          }
+                          if (lastCheckoutKey === checkoutKey) {
+                            toast({ title: 'Duplicate checkout blocked', description: 'This booking request was already submitted.' });
+                            return;
+                          }
                           
+                          checkoutInFlightRef.current = true;
                           setIsBooking(true);
+                          telemetry.funnel('lab_checkout', 'payment_initiated', { cartSize: cart.length, totalAmount: cartTotal });
                           try {
                             const token = localStorage.getItem('token');
                             if (!token) {
                               toast({ title: 'Please login to continue', variant: 'destructive' });
                               setIsBooking(false);
+                              checkoutInFlightRef.current = false;
                               return;
                             }
 
@@ -1069,10 +968,12 @@ const LabTests = () => {
                                 testType: mapTestToType(item.test.category),
                                 testName: item.test.name,
                                 appointmentDate: bookingForm.appointmentDate,
-                                notes: `${collectionType === 'home' ? '[Home Collection] ' : `[Lab: ${selectedLab?.name}] `}${bookingForm.notes}`,
+                                notes: `${collectionType === 'home' ? '[Home Collection] ' : `[Lab: ${selectedLab?.name}] `}${bookingForm.notes} [Req:${checkoutKey}]`,
                                 urgency: 'routine'
                               };
-                              const response = await api.post('/lab-tests', requestBody);
+                              const response = await api.post('/lab-tests', requestBody, {
+                                headers: { 'X-Idempotency-Key': `${checkoutKey}-${item.test.id}` }
+                              });
                               if (!response.data?.success) {
                                 toast({ 
                                   title: 'Booking failed', 
@@ -1084,6 +985,8 @@ const LabTests = () => {
                               }
                             }
                             if (hasError) return;
+
+                            setLastCheckoutKey(checkoutKey);
 
                             const totalAmount = getCartTotal();
 
@@ -1097,6 +1000,8 @@ const LabTests = () => {
                                 discount: 0,
                                 currency: 'INR',
                                 notes: `Lab tests: ${cart.map(i => i.test.name).join(', ')}`
+                              }, {
+                                headers: { 'X-Idempotency-Key': `${checkoutKey}-order` }
                               });
                               if (orderRes.data?.success && orderRes.data?.data?.order?.id) {
                                 orderId = orderRes.data.data.order.id;
@@ -1117,6 +1022,8 @@ const LabTests = () => {
                                 orderId,
                                 amount: totalAmount,
                                 currency: 'INR'
+                              }, {
+                                headers: { 'X-Idempotency-Key': `${checkoutKey}-payment-create` }
                               });
 
                               if (!payRes.data?.success) {
@@ -1143,11 +1050,12 @@ const LabTests = () => {
                                   theme: { color: '#14b8a6' },
                                   handler: async function (response: any) {
                                     try {
-                                      await api.post('/billing/payments/razorpay/verify', {
+                                      await verifyRazorpayPaymentWithRetry({
                                         orderId,
                                         razorpayOrderId: response.razorpay_order_id,
                                         razorpayPaymentId: response.razorpay_payment_id,
-                                        razorpaySignature: response.razorpay_signature
+                                        razorpaySignature: response.razorpay_signature,
+                                        idempotencyKey: checkoutKey,
                                       });
                                       toast({ title: 'Payment Successful! 🎉', description: `${cart.length} test(s) booked and payment confirmed.` });
                                       resolve();
@@ -1175,19 +1083,19 @@ const LabTests = () => {
                             }
 
                             // Reset everything after booking (+payment)
-                            setCart([]);
+                            clearCart();
                             setCollectionType('');
                             setSelectedLab(null);
                             setLabSearchQuery('');
                             setBookingForm({ testName: '', appointmentDate: '', testType: 'blood_test', notes: '', labId: '' });
                             setShowBookDialog(false);
                             fetchMyLabTests();
-                            clearCartAPI();
                           } catch (error: any) {
                             console.error('Checkout error:', error);
                             toast({ title: 'Checkout failed', description: error.message || 'Please try again', variant: 'destructive' });
                           } finally {
                             setIsBooking(false);
+                            checkoutInFlightRef.current = false;
                           }
                         }}
                         title={!bookingForm.appointmentDate ? 'Select an appointment date first' : (collectionType === 'lab' && !selectedLab ? 'Select a lab first' : '')}
@@ -1446,6 +1354,9 @@ const LabTests = () => {
         {/* My Booked Tests */}
         <motion.div variants={item}>
         <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">My Lab Tests ({filteredTests.length})</h2>
+        {labFetchError && (
+          <InlineError message="Couldn't load lab tests." onRetry={refetchLabTests} className="mb-4" />
+        )}
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-teal-600 dark:text-teal-400" />
@@ -1528,18 +1439,13 @@ const LabTests = () => {
         </div>
         )}
 
-        {!isLoading && filteredTests.length === 0 && (
-          <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
-            <CardContent className="py-12">
-              <div className="text-center">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center">
-                  <FlaskConical className="h-8 w-8 text-slate-400" />
-                </div>
-                <p className="text-slate-500 dark:text-slate-400">No lab tests found</p>
-                <p className="text-sm text-slate-400 mt-2">Book a lab test to get started</p>
-              </div>
-            </CardContent>
-          </Card>
+        {!isLoading && !labFetchError && filteredTests.length === 0 && (
+          <EmptyState
+            icon={FlaskRound}
+            title="No lab tests yet"
+            description="Book your first test and get results directly here."
+            action={{ label: 'Book a test', onClick: () => setShowBookDialog(true) }}
+          />
         )}
         </motion.div>
       </motion.div>

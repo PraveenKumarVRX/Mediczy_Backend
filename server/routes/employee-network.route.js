@@ -12,6 +12,37 @@ import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 const router = express.Router();
 
+const toISODate = (value) => {
+  if (!value) return null;
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString().slice(0, 10);
+  } catch {
+    return null;
+  }
+};
+
+const normalizeClaimStatus = (status) => {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'approved') return 'approved';
+  if (normalized === 'rejected') return 'rejected';
+  if (normalized === 'paid' || normalized === 'settled') return 'settled';
+  if (normalized === 'query' || normalized === 'info_needed') return 'info_needed';
+  if (normalized === 'pending' || normalized === 'under_review') return 'under_review';
+  return 'submitted';
+};
+
+const inferPlanType = (value) => {
+  const haystack = String(value || '').toLowerCase();
+  if (haystack.includes('gpa') || haystack.includes('accident')) return 'gpa';
+  if (haystack.includes('gtl') || haystack.includes('life')) return 'gtl';
+  if (haystack.includes('parent')) return 'parents';
+  if (haystack.includes('personal')) return 'personal';
+  if (haystack.includes('op') || haystack.includes('wellness')) return 'wellness';
+  return 'gmc';
+};
+
 /**
  * Helper: resolve the corporate that the logged-in user belongs to (as employee).
  * Returns { corporateId, companyName } or null if not a corporate employee.
@@ -223,6 +254,262 @@ router.get('/my-clinics', authUser, async (req, res) => {
   } catch (err) {
     console.error('GET /my-clinics error:', err);
     return res.status(500).json({ success: false, message: 'Server error', error: err.message });
+  }
+});
+
+/**
+ * GET /api/employee/benefits
+ * Returns employee benefits plans for SmartBenefitsHub.
+ */
+router.get('/benefits', authUser, async (req, res) => {
+  try {
+    const corp = await getUserCorporate(req.user.id);
+    if (!corp) {
+      return res.json({
+        success: true,
+        isCorporateEmployee: false,
+        plans: []
+      });
+    }
+
+    const rows = await postgresSequelize.query(
+      `SELECT up.id,
+              up.status,
+              up.metadata,
+              up."startDate" AS start_date,
+              up."endDate" AS end_date,
+              mp.id AS plan_id,
+              mp.name AS plan_name,
+              mp.code AS plan_code,
+              mp.type AS plan_type,
+              mp.benefits AS plan_benefits,
+              mp.features AS plan_features,
+              mp.metadata AS plan_metadata
+         FROM user_plans up
+         LEFT JOIN membership_plans mp ON mp.id = up."membershipPlanId"
+        WHERE up."userId" = :userId
+          AND up.status = 'active'
+        ORDER BY COALESCE(up."startDate", up."createdAt") DESC`,
+      { replacements: { userId: req.user.id }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+
+    const plans = rows.map((row, idx) => {
+      const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+      const planMetadata = row.plan_metadata && typeof row.plan_metadata === 'object' ? row.plan_metadata : {};
+      const sourceName = row.plan_name || row.plan_code || `Corporate Plan ${idx + 1}`;
+      const planType = inferPlanType(`${row.plan_type || ''} ${sourceName}`);
+      const sumInsured = Number(metadata.sumInsured || planMetadata.sumInsured || 500000);
+      const utilized = Number(metadata.utilizedAmount || metadata.utilized || 0);
+      const remaining = Math.max(0, sumInsured - utilized);
+      const familyCovered = Number(metadata.familyCovered || metadata.maxFamilyMembers || 1);
+      const policyNumber = metadata.policyNumber || planMetadata.policyNumber || `CORP-${row.plan_id || row.id}`;
+      const featureList = Array.isArray(row.plan_benefits)
+        ? row.plan_benefits
+        : Array.isArray(row.plan_features)
+          ? row.plan_features
+          : [];
+
+      return {
+        id: String(row.plan_id || row.id),
+        name: sourceName,
+        type: planType,
+        insurer: metadata.insurer || planMetadata.insurer || corp.companyName || 'Corporate Insurance',
+        policyNumber,
+        sumInsured,
+        utilized,
+        remaining,
+        familyCovered,
+        validFrom: toISODate(row.start_date) || toISODate(new Date()),
+        validTo: toISODate(row.end_date) || toISODate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)),
+        features: featureList.map((item) => String(item)).slice(0, 8),
+        sublimits: []
+      };
+    });
+
+    return res.json({
+      success: true,
+      isCorporateEmployee: true,
+      corporateId: corp.corporateId,
+      corporateName: corp.companyName,
+      plans
+    });
+  } catch (err) {
+    console.error('GET /benefits error:', err);
+    return res.status(500).json({ success: false, message: 'Server error', error: err.message });
+  }
+});
+
+/**
+ * GET /api/employee/claims
+ * Returns employee insurance claims for SmartBenefitsHub.
+ */
+router.get('/claims', authUser, async (req, res) => {
+  try {
+    const corp = await getUserCorporate(req.user.id);
+    if (!corp) {
+      return res.json({
+        success: true,
+        isCorporateEmployee: false,
+        claims: []
+      });
+    }
+
+    const rows = await postgresSequelize.query(
+      `SELECT id,
+              claim_number,
+              claim_type,
+              status,
+              claim_amount,
+              approved_amount,
+              insurance_provider,
+              submitted_date,
+              created_at,
+              documents
+         FROM insurance_claims
+        WHERE patient_id = :userId
+        ORDER BY COALESCE(submitted_date, created_at) DESC
+        LIMIT 50`,
+      { replacements: { userId: req.user.id }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+
+    const claims = rows.map((row) => ({
+      id: String(row.id),
+      claimNumber: row.claim_number || `CLM-${row.id}`,
+      type: row.claim_type || 'Insurance',
+      amount: Number(row.claim_amount || 0),
+      approvedAmount: row.approved_amount != null ? Number(row.approved_amount) : undefined,
+      status: normalizeClaimStatus(row.status),
+      hospital: row.insurance_provider || undefined,
+      date: toISODate(row.submitted_date || row.created_at) || toISODate(new Date()),
+      member: 'Self',
+      documents: Array.isArray(row.documents) ? row.documents : [],
+      timeline: []
+    }));
+
+    return res.json({
+      success: true,
+      isCorporateEmployee: true,
+      corporateId: corp.corporateId,
+      corporateName: corp.companyName,
+      claims
+    });
+  } catch (err) {
+    console.error('GET /claims error:', err);
+    return res.status(500).json({ success: false, message: 'Server error', error: err.message });
+  }
+});
+
+/**
+ * POST /api/employee/claims
+ * Creates a new employee insurance claim from ClaimsExpress flow.
+ */
+router.post('/claims', authUser, async (req, res) => {
+  try {
+    const corp = await getUserCorporate(req.user.id);
+    if (!corp) {
+      return res.status(403).json({
+        success: false,
+        message: 'Claims filing is available only for corporate employees'
+      });
+    }
+
+    const {
+      type,
+      amount,
+      hospital,
+      date,
+      claimType,
+      diagnosis,
+      notes,
+      documents
+    } = req.body || {};
+
+    const claimAmount = Number(amount);
+    if (!Number.isFinite(claimAmount) || claimAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid claim amount is required' });
+    }
+
+    const claimLabel = String(type || claimType || 'opd').slice(0, 100);
+    const provider = String(hospital || '').trim().slice(0, 200) || 'Provider not specified';
+    const submittedDate = toISODate(date) || toISODate(new Date());
+    const claimNumber = `CLM-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const docs = Array.isArray(documents)
+      ? documents.filter((d) => typeof d === 'string').slice(0, 20)
+      : [];
+
+    const organizationId = Number(
+      req.user.organization_id || req.user.organizationId || corp.corporateId
+    );
+
+    const [insertResult] = await postgresSequelize.query(
+      `INSERT INTO insurance_claims (
+          claim_number,
+          patient_id,
+          organization_id,
+          claim_type,
+          status,
+          claim_amount,
+          insurance_provider,
+          diagnosis,
+          notes,
+          documents,
+          submitted_date,
+          created_at,
+          updated_at
+       ) VALUES (
+          :claimNumber,
+          :patientId,
+          :organizationId,
+          :claimType,
+          'submitted',
+          :claimAmount,
+          :provider,
+          :diagnosis,
+          :notes,
+          :documents,
+          :submittedDate,
+          NOW(),
+          NOW()
+       )
+       RETURNING id, claim_number, claim_type, status, claim_amount, insurance_provider, submitted_date, created_at, documents`,
+      {
+        replacements: {
+          claimNumber,
+          patientId: req.user.id,
+          organizationId,
+          claimType: claimLabel,
+          claimAmount,
+          provider,
+          diagnosis: diagnosis ? String(diagnosis).slice(0, 500) : null,
+          notes: notes ? String(notes).slice(0, 1000) : null,
+          documents: JSON.stringify(docs),
+          submittedDate,
+        }
+      }
+    );
+
+    const row = Array.isArray(insertResult) ? insertResult[0] : insertResult;
+    if (!row) {
+      return res.status(500).json({ success: false, message: 'Claim persisted but response payload was empty' });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: 'Claim filed successfully',
+      claim: {
+        id: String(row.id),
+        claimNumber: row.claim_number,
+        type: row.claim_type,
+        amount: Number(row.claim_amount || 0),
+        status: normalizeClaimStatus(row.status),
+        hospital: row.insurance_provider || undefined,
+        date: toISODate(row.submitted_date || row.created_at) || toISODate(new Date()),
+        documents: Array.isArray(row.documents) ? row.documents : docs,
+      }
+    });
+  } catch (err) {
+    console.error('POST /claims error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to file claim', error: err.message });
   }
 });
 

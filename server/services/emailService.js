@@ -1,5 +1,35 @@
 import nodemailer from 'nodemailer';
 import { EmailConfig, EmailTemplate, EmailLog } from '../models/email.model.simple.js';
+import { checkQuota, recordSent } from '../utils/emailQuota.js';
+
+// ── SES fallback: used when Zoho SMTP returns 550 (spam block) ────────────────
+let _sesClient = null;
+async function getSesClient() {
+  if (_sesClient) return _sesClient;
+  try {
+    const { SESv2Client } = await import('@aws-sdk/client-sesv2');
+    _sesClient = new SESv2Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+    return _sesClient;
+  } catch { return null; }
+}
+
+async function sendViaSes({ from, to, subject, html }) {
+  const { SendEmailCommand } = await import('@aws-sdk/client-sesv2');
+  const client = await getSesClient();
+  if (!client) throw new Error('SES unavailable');
+  await client.send(new SendEmailCommand({
+    FromEmailAddress: from,
+    Destination: { ToAddresses: Array.isArray(to) ? to : [to] },
+    Content: { Simple: {
+      Subject: { Data: subject, Charset: 'UTF-8' },
+      Body: { Html: { Data: html || '', Charset: 'UTF-8' } },
+    }},
+  }));
+}
+
+function isZohoHost(host) {
+  return String(host || '').toLowerCase().includes('zoho');
+}
 
 class EmailService {
   constructor() {
@@ -316,16 +346,38 @@ Configuration Details:
         mailOptions.html = htmlContent + trackingPixel;
       }
 
-      // Send email
+      // Transactional quota check (25/day via Brevo)
+      if (config && String(config.host || '').includes('brevo')) {
+        const txnQuota = await checkQuota('transactional');
+        if (!txnQuota.allowed) {
+          throw new Error(`Daily transactional email quota reached (${txnQuota.limit}/day). Resets at midnight UTC.`);
+        }
+      }
+
+      // Send email — fall back to SES when Zoho returns 550 (spam block)
       console.log(`📧 Sending email ${emailLogId} to ${emailLog.to}`);
-      const result = await transporter.sendMail(mailOptions);
+      let result;
+      try {
+        result = await transporter.sendMail(mailOptions);
+      } catch (smtpErr) {
+        const is550 = String(smtpErr?.responseCode || smtpErr?.code || '').startsWith('550') ||
+                      String(smtpErr?.message || '').includes('550') ||
+                      String(smtpErr?.message || '').includes('Unusual sending');
+        if (is550 && isZohoHost(config.host)) {
+          console.warn(`[email] Zoho 550 on ${emailLog.to} — retrying via SES`);
+          await sendViaSes({ from: mailOptions.from, to: mailOptions.to, subject: mailOptions.subject, html: mailOptions.html });
+          result = { messageId: 'ses-fallback' };
+        } else {
+          throw smtpErr;
+        }
+      }
 
       // Update email log with success
       emailLog.status = 'sent';
       emailLog.sentAt = new Date().toISOString();
       emailLog.trackingPixelUrl = trackingPixelUrl;
       emailLog.messageId = result.messageId;
-      
+      if (config && String(config.host || '').includes('brevo')) await recordSent('transactional', 1);
       console.log(`✅ Email ${emailLogId} sent successfully to ${emailLog.to}`);
       console.log(`📊 Tracking URL: ${trackingPixelUrl}`);
       console.log(`📧 Message ID: ${result.messageId}`);
@@ -578,7 +630,21 @@ Configuration Details:
       };
 
       console.log(`📧 Sending outbound email to ${to}`);
-      const result = await transporter.sendMail(mailOptions);
+      let result;
+      try {
+        result = await transporter.sendMail(mailOptions);
+      } catch (smtpErr) {
+        const is550 = String(smtpErr?.responseCode || smtpErr?.code || '').startsWith('550') ||
+                      String(smtpErr?.message || '').includes('550') ||
+                      String(smtpErr?.message || '').includes('Unusual sending');
+        if (is550 && isZohoHost(config?.host)) {
+          console.warn(`[email] Zoho 550 on ${to} — retrying via SES`);
+          await sendViaSes({ from: mailOptions.from, to, subject, html: htmlContent || '' });
+          result = { messageId: 'ses-fallback' };
+        } else {
+          throw smtpErr;
+        }
+      }
 
       // Log sent email
       const emailLog = await EmailLog.create({

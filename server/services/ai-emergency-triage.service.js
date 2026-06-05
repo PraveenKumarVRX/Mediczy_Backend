@@ -21,6 +21,8 @@
 
 import pool from '../db/pgPool.js';
 import llmProvider from './ai-brain/llm-provider.js';
+import interpretabilityService from './ai-interpretability.service.js';
+import qualityGates from './ai-quality-gates.service.js';
 
 // ─── Red Flag Conditions (ESI Level 1-2) ────────────────────
 const RED_FLAGS = [
@@ -164,7 +166,7 @@ class EmergencyTriageService {
     const ambulanceNeeded = esiLevel <= 2;
     const estimatedWaitMinutes = this.estimateWait(esiLevel);
 
-    // Build response
+    // Build base result
     const result = {
       esiLevel,
       esiDescription: this.getESIDescription(esiLevel),
@@ -182,15 +184,56 @@ class EmergencyTriageService {
       estimatedWaitMinutes,
       llmAnalysis: llmAnalysis?.reasoning || null,
       vitalsAssessment: vitals && Object.keys(vitals).length > 0 ? this.formatVitalsAssessment(vitals) : null,
-      latencyMs: Date.now() - startTime
+      latencyMs: Date.now() - startTime,
+      llmEnhanced: !!llmAnalysis
     };
+
+    // ── SaMD Interpretability: LIME attribution + confidence ──────────────
+    try {
+      const explanation = interpretabilityService.buildTriageExplanation(
+        symptoms, result, vitals, { age, gender, patientId }
+      );
+      result.interpretation = explanation;
+      result.confidence     = explanation.confidence;
+    } catch (iErr) {
+      console.warn('[Triage] Interpretability error (non-blocking):', iErr.message);
+    }
+
+    // ── SaMD Quality Gate ─────────────────────────────────────────────────
+    try {
+      const gateResult = await qualityGates.checkTriage({
+        patientId,
+        esiLevel,
+        actions:        result.actions,
+        symptoms,
+        vitals,
+        confidence:     result.confidence ?? 0.5,
+        llmExplanation: llmAnalysis?.reasoning
+      });
+
+      result.qualityGate = {
+        passed:   gateResult.passed,
+        severity: gateResult.severity,
+        warnings: gateResult.warnings,
+        blockers: gateResult.blockers,
+        requiredActions: gateResult.requiredActions
+      };
+
+      if (gateResult.hasBlockers) {
+        console.warn(`[Triage] Quality gate BLOCKED: ${gateResult.blockers.map(b => b.code).join(', ')}`);
+      }
+
+      await qualityGates.logGateResult(gateResult, { source: 'emergency_triage', esiLevel, category });
+    } catch (gErr) {
+      console.warn('[Triage] Quality gate error (non-blocking):', gErr.message);
+    }
 
     // Log triage for audit
     if (patientId) {
       await this.logTriageEvent(patientId, result);
     }
 
-    console.log(`[Triage] ESI-${esiLevel} | ${category} | ambulance=${ambulanceNeeded} | ${Date.now() - startTime}ms`);
+    console.log(`[Triage] ESI-${esiLevel} | ${category} | ambulance=${ambulanceNeeded} | confidence=${result.confidence ?? 'n/a'} | ${Date.now() - startTime}ms`);
     return result;
   }
 

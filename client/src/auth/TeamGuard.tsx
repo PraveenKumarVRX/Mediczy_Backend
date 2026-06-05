@@ -25,11 +25,12 @@
  *      "User Management Access" and vice versa)
  */
 
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { ShieldAlert, ArrowLeft, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
+import api from '@/utils/api';
 
 interface TeamGuardProps {
   children: ReactNode;
@@ -47,6 +48,39 @@ const readTeamUser = () => {
     return null;
   }
 };
+
+/** Parse JWT exp claim without verifying signature (client-side only). */
+const jwtExpiry = (token: string): number | null => {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+};
+
+/** Silently refresh the team access token if within 5 minutes of expiry. */
+async function proactiveRefresh() {
+  const token        = localStorage.getItem('teamToken');
+  const refreshToken = localStorage.getItem('teamRefreshToken');
+  if (!token || !refreshToken) return;
+
+  const expMs = jwtExpiry(token);
+  if (!expMs) return;
+
+  const msUntilExpiry = expMs - Date.now();
+  if (msUntilExpiry > 5 * 60 * 1000) return; // more than 5 min left — skip
+
+  try {
+    const { data } = await api.post('/team/auth/refresh', { refreshToken }, { skipAuth: true } as any);
+    if (data.success && data.token) {
+      localStorage.setItem('teamToken', data.token);
+      if (data.refreshToken) localStorage.setItem('teamRefreshToken', data.refreshToken);
+    }
+  } catch {
+    // Non-blocking — if refresh fails, the next API call will trigger the interceptor's refresh
+  }
+}
 
 const isAdminUser = (user: any) =>
   user?.isAdmin === true ||
@@ -122,6 +156,9 @@ const AccessDenied = ({ permission, adminOnly }: { permission?: string | string[
 const TeamGuard = ({ children, permission, adminOnly = false }: TeamGuardProps) => {
   const location = useLocation();
   const token = localStorage.getItem('teamToken');
+
+  // Proactively refresh if within 5 min of expiry — fires once per navigation
+  useEffect(() => { proactiveRefresh(); }, [location.pathname]);
 
   if (!token) {
     return <Navigate to="/team/login" state={{ from: location }} replace />;

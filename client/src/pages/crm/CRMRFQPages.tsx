@@ -20,6 +20,10 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart as RePieChart, Pie, Cell, Legend,
 } from 'recharts';
+import {
+  INSURANCE_POLICY_CATEGORIES,
+  DEFAULT_INSURANCE_POLICY_CATEGORY
+} from '@/constants/insurancePolicyCategories';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -48,6 +52,17 @@ const QUOTE_STATUS_COLORS: Record<string, string> = {
 };
 
 const CHART_COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#84cc16'];
+const POLICY_TYPE_OPTIONS = INSURANCE_POLICY_CATEGORIES.map((item) => item.value);
+
+function getPolicyTypeOptions(currentValue?: string) {
+  const normalizedCurrent = String(currentValue || '').trim();
+  if (!normalizedCurrent || POLICY_TYPE_OPTIONS.includes(normalizedCurrent)) {
+    return POLICY_TYPE_OPTIONS;
+  }
+
+  // Keep legacy value selectable when editing old RFQs.
+  return [normalizedCurrent, ...POLICY_TYPE_OPTIONS];
+}
 
 function formatCurrency(n: number) {
   if (!n) return '₹0';
@@ -103,7 +118,7 @@ function CreateRFQModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const [form, setForm] = useState({
     insured_name: '', insured_address: '',
     broker_name: '', broker_company: '', broker_email: '', broker_phone: '',
-    policy_type: 'Group Mediclaim', product_type: 'GMC',
+    policy_type: DEFAULT_INSURANCE_POLICY_CATEGORY, product_type: 'GMC',
     existing_insurer: '', existing_tpa: '',
     policy_start: '', policy_end: '',
     existing_coverages: '', required_coverages: '',
@@ -192,7 +207,7 @@ function CreateRFQModal({ onClose, onCreated }: { onClose: () => void; onCreated
                 <Label className="text-xs text-slate-400">Policy Type</Label>
                 <select value={form.policy_type} onChange={e => set('policy_type', e.target.value)}
                   className="mt-1.5 w-full px-3 h-10 rounded-xl bg-white/[0.04] border border-white/[0.08] text-sm text-slate-300 outline-none">
-                  {['Group Mediclaim', 'Group PA', 'Group Term', 'Group Workmen', 'Group Travel'].map(o => <option key={o}>{o}</option>)}
+                  {getPolicyTypeOptions(form.policy_type).map(o => <option key={o}>{o}</option>)}
                 </select>
               </div>
               <div>
@@ -671,7 +686,7 @@ function EditRFQModal({ rfq, onClose, onSaved }: { rfq: any; onClose: () => void
                 <Label className="text-xs text-slate-400">Policy Type</Label>
                 <select value={form.policy_type} onChange={e => set('policy_type', e.target.value)}
                   className="mt-1.5 w-full px-3 h-10 rounded-xl bg-white/[0.04] border border-white/[0.08] text-sm text-slate-300 outline-none">
-                  {['Group Mediclaim', 'Group PA', 'Group Term', 'Group Workmen', 'Group Travel'].map(o => <option key={o}>{o}</option>)}
+                  {getPolicyTypeOptions(form.policy_type).map(o => <option key={o}>{o}</option>)}
                 </select>
               </div>
               <div>

@@ -6,8 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import MainLayout from '@/components/layout/MainLayout';
 import api from '@/utils/api';
+import { downloadReport, previewReport } from '@/utils/reportActions';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineError } from '@/components/ui/inline-error';
 
 interface Report {
   id: string;
@@ -25,6 +27,7 @@ interface Report {
 const MyReports = () => {
   const { toast } = useToast();
   const [reports, setReports] = useState<Report[]>([]);
+  const [reportsStatus, setReportsStatus] = useState<'live' | 'unavailable'>('live');
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -49,6 +52,7 @@ const MyReports = () => {
       const token = localStorage.getItem('token');
       if (!token) {
         setReports([]);
+        setReportsStatus('unavailable');
         setIsLoading(false);
         return;
       }
@@ -56,18 +60,24 @@ const MyReports = () => {
       const response = await api.get('/reports', { params: { limit: 100 } });
       if (response.data?.success && response.data?.data) {
         setReports(response.data.data);
+        setReportsStatus('live');
       } else if (Array.isArray(response.data)) {
         // If response is directly an array
         setReports(response.data);
+        setReportsStatus('live');
       } else if (response.data?.reports) {
         // If response has reports property
         setReports(response.data.reports);
+        setReportsStatus('live');
       } else {
         console.error('Unexpected response format:', response.data);
         setReports([]);
+        setReportsStatus('unavailable');
       }
     } catch (error: any) {
       console.error('Error fetching reports:', error);
+      setReports([]);
+      setReportsStatus('unavailable');
       const errorMessage = error.response?.data?.message || error.message || 'Failed to load reports';
       toast({
         variant: 'destructive',
@@ -183,6 +193,38 @@ const MyReports = () => {
     imaging: reports.filter(r => r.reportType === 'imaging').length
   };
 
+  const handlePreviewReport = async (report: Report) => {
+    try {
+      await previewReport({
+        reportId: report.id,
+        fileName: report.fileName,
+        fallbackUrl: report.fileUrl,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Preview unavailable',
+        description: error?.message || 'Could not open this report right now',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleDownloadReport = async (report: Report) => {
+    try {
+      await downloadReport({
+        reportId: report.id,
+        fileName: report.fileName,
+        fallbackUrl: report.fileUrl,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Download unavailable',
+        description: error?.message || 'Could not download this report right now',
+        variant: 'destructive'
+      });
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500 px-4 md:px-6 py-6">
       {/* Header */}
@@ -197,6 +239,9 @@ const MyReports = () => {
               </div>
               <Badge className="bg-white/10 text-white/90 border-white/20 font-medium">
                 Medical Records
+              </Badge>
+              <Badge className={reportsStatus === 'live' ? 'bg-emerald-500/20 text-emerald-100 border-emerald-300/20' : 'bg-amber-500/20 text-amber-100 border-amber-300/20'}>
+                {reportsStatus === 'live' ? 'Live Reports' : 'Reports Limited'}
               </Badge>
             </div>
             <h1 className="text-2xl md:text-3xl font-bold mb-2">My Reports</h1>
@@ -406,10 +451,22 @@ const MyReports = () => {
                     {report.reportType.replace('_', ' ')}
                   </Badge>
                 </div>
-                <CardTitle className="text-lg">{report.fileName}</CardTitle>
-                {report.description && <CardDescription>{report.description}</CardDescription>}
+                <CardTitle
+                  className="text-lg leading-snug break-words overflow-hidden [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+                  title={report.fileName}
+                >
+                  {report.fileName}
+                </CardTitle>
+                {report.description && (
+                  <CardDescription className="break-words overflow-hidden [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
+                    {report.description}
+                  </CardDescription>
+                )}
                 {report.testName && (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Test: {report.testName}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 break-words">
+                    <span className="font-medium">Test:</span>{' '}
+                    <span className="break-all">{report.testName}</span>
+                  </p>
                 )}
               </CardHeader>
               <CardContent>
@@ -433,20 +490,7 @@ const MyReports = () => {
                       variant="outline"
                       size="sm"
                       className="flex-1"
-                      onClick={() => {
-                        // Open via secure decryption endpoint so encrypted MinIO reports render correctly
-                        const token = localStorage.getItem('token');
-                        // Open in new tab — uses secure decrypt endpoint for encrypted MinIO reports
-                        api.get(`/reports/download/${report.id}`, { responseType: 'blob' }).then(res => {
-                          const blob = res.data;
-                          const objectUrl = URL.createObjectURL(blob);
-                          window.open(objectUrl, '_blank');
-                          setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-                        }).catch(() => {
-                          // Fallback to direct URL for non-encrypted reports
-                          if (report.fileUrl) window.open(report.fileUrl, '_blank');
-                        });
-                      }}
+                      onClick={() => handlePreviewReport(report)}
                     >
                       <Eye className="h-3 w-3 mr-1" />
                       View
@@ -455,25 +499,7 @@ const MyReports = () => {
                       variant="outline"
                       size="sm"
                       className="flex-1"
-                      onClick={() => {
-                        api.get(`/reports/download/${report.id}`, { responseType: 'blob' }).then(res => {
-                          const blob = res.data;
-                          const objectUrl = URL.createObjectURL(blob);
-                          const link = document.createElement('a');
-                          link.href = objectUrl;
-                          link.download = report.fileName;
-                          link.click();
-                          setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-                        }).catch(() => {
-                          // Fallback for legacy unencrypted reports
-                          if (report.fileUrl) {
-                            const link = document.createElement('a');
-                            link.href = report.fileUrl;
-                            link.download = report.fileName;
-                            link.click();
-                          }
-                        });
-                      }}
+                      onClick={() => handleDownloadReport(report)}
                     >
                       <Download className="h-3 w-3 mr-1" />
                       Download
@@ -486,17 +512,17 @@ const MyReports = () => {
         </div>
       )}
 
-      {filteredReports.length === 0 && (
-        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
-          <CardContent className="py-12">
-            <div className="text-center">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center">
-                <FileText className="h-8 w-8 text-slate-400" />
-              </div>
-              <p className="text-slate-500 dark:text-slate-400">No reports found</p>
-            </div>
-          </CardContent>
-        </Card>
+      {!isLoading && reportsStatus === 'unavailable' && (
+        <InlineError message="Couldn't load your reports." onRetry={fetchReports} className="mb-4" />
+      )}
+
+      {!isLoading && reportsStatus !== 'unavailable' && filteredReports.length === 0 && (
+        <EmptyState
+          icon={FileStack}
+          title="No reports yet"
+          description="Upload your first medical report to keep all your records in one place."
+          action={{ label: 'Upload a report', onClick: () => setShowUploadDialog(true) }}
+        />
       )}
     </div>
   );

@@ -13,6 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
@@ -41,11 +42,35 @@ interface FamilyMember {
   email?: string;
   bloodType?: string;
   abhaHealthId?: string;
+  metadata?: {
+    aiInference?: {
+      relationshipInferred?: boolean;
+      genderInferred?: boolean;
+      confidence?: number;
+    };
+  };
 }
 interface FamilyLimits {
   membershipType: string;
+  planSlug?: string | null;
+  planName?: string | null;
+  source?: string;
+  componentBenefits?: {
+    insurance?: {
+      enabled?: boolean;
+      maxMembers?: number;
+      allowedRelations?: string[];
+    };
+    opWellness?: {
+      enabled?: boolean;
+      maxMembers?: number;
+      allowedRelations?: string[];
+    };
+  } | null;
   maxMembers: number;
-  currentCount: number;
+  currentCount?: number;
+  currentMembers?: number;
+  remaining?: number;
   canAddMore: boolean;
   allowedRelations: string[];
 }
@@ -155,9 +180,14 @@ const ProfileEnhanced = () => {
   // ── Security state
   const [securityInfo, setSecurityInfo] = useState<SecurityInfo | null>(null);
   const [loadingSecurity, setLoadingSecurity] = useState(false);
+  const [activeSessions, setActiveSessions] = useState<any[]>([]);
   const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
   const [showPw, setShowPw] = useState({ current: false, next: false, confirm: false });
   const [changingPw, setChangingPw] = useState(false);
+  const [pwSuccess, setPwSuccess] = useState(false);
+  const [signOutOtherDevices, setSignOutOtherDevices] = useState(false);
+  const [sendingResetLink, setSendingResetLink] = useState(false);
+  const [resetLinkSent, setResetLinkSent] = useState(false);
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
@@ -217,10 +247,13 @@ const ProfileEnhanced = () => {
     if (securityInfo) return;
     setLoadingSecurity(true);
     try {
-      const res = await api.get("/users/security");
-      setSecurityInfo(res.data.security);
-    } catch { /* silent */ }
-    finally { setLoadingSecurity(false); }
+      const [secRes, sessRes] = await Promise.allSettled([
+        api.get("/users/security"),
+        api.get("/users/security/sessions"),
+      ]);
+      if (secRes.status === 'fulfilled') setSecurityInfo(secRes.value.data.security);
+      if (sessRes.status === 'fulfilled') setActiveSessions(sessRes.value.data.sessions || []);
+    } finally { setLoadingSecurity(false); }
   };
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -310,12 +343,28 @@ const ProfileEnhanced = () => {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Password strength scorer
+  // ─────────────────────────────────────────────────────────────────────────
+  const getPasswordStrength = (pw: string) => {
+    if (!pw) return null;
+    let score = 0;
+    if (pw.length >= 8) score++;
+    if (pw.length >= 12) score++;
+    if (/[a-z]/.test(pw)) score++;
+    if (/[A-Z]/.test(pw)) score++;
+    if (/\d/.test(pw)) score++;
+    if (/[@$!%*?&]/.test(pw)) score++;
+    if (score <= 2) return { pct: 20, label: "Weak",        bar: "bg-red-500",   text: "text-red-500"   };
+    if (score === 3) return { pct: 40, label: "Fair",        bar: "bg-orange-400",text: "text-orange-500" };
+    if (score === 4) return { pct: 65, label: "Good",        bar: "bg-yellow-400",text: "text-yellow-600" };
+    if (score === 5) return { pct: 85, label: "Strong",      bar: "bg-teal-400",  text: "text-teal-600"  };
+    return              { pct: 100, label: "Very Strong", bar: "bg-green-500", text: "text-green-600" };
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Password change
   // ─────────────────────────────────────────────────────────────────────────
   const handleChangePassword = async () => {
-    if (pwForm.next !== pwForm.confirm) {
-      toast({ title: "Passwords do not match", variant: "destructive" }); return;
-    }
     setChangingPw(true);
     try {
       await api.post("/users/change-password", {
@@ -323,12 +372,32 @@ const ProfileEnhanced = () => {
         newPassword: pwForm.next,
         confirmPassword: pwForm.confirm,
       });
-      toast({ title: "Password changed successfully" });
+      if (signOutOtherDevices) {
+        await api.post("/users/security/revoke-sessions").catch(() => {});
+      }
       setPwForm({ current: "", next: "", confirm: "" });
+      setSignOutOtherDevices(false);
+      setPwSuccess(true);
+      setTimeout(() => setPwSuccess(false), 8000);
     } catch (err: any) {
       const msgs = err.response?.data?.errors?.map((e: any) => e.msg).join(". ");
-      toast({ title: "Failed", description: msgs || err.response?.data?.message || "Error", variant: "destructive" });
+      toast({ title: "Password change failed", description: msgs || err.response?.data?.message || "Please try again.", variant: "destructive" });
     } finally { setChangingPw(false); }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Forgot current password — send reset link to registered email
+  // ─────────────────────────────────────────────────────────────────────────
+  const handleForgotCurrentPassword = async () => {
+    const email = (currentUser as any)?.email;
+    if (!email) return;
+    setSendingResetLink(true);
+    try {
+      await api.post("/users/forgot-password", { email }, { skipAuth: true } as any);
+      setResetLinkSent(true);
+    } catch {
+      toast({ title: "Could not send reset link", description: "Please try again or contact support.", variant: "destructive" });
+    } finally { setSendingResetLink(false); }
   };
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -650,6 +719,10 @@ const ProfileEnhanced = () => {
           <TabsContent value="family" className="space-y-6">
             {/* Plan limits banner */}
             {familyLimits && (
+              (() => {
+                const usedCount = familyLimits.currentCount ?? familyLimits.currentMembers ?? 0;
+                const remainingSlots = familyLimits.remaining ?? Math.max(0, familyLimits.maxMembers - usedCount);
+                return (
               <Card className="border-0 bg-gradient-to-r from-teal-50 to-blue-50 dark:from-teal-950/30 dark:to-blue-950/30">
                 <CardContent className="pt-4 pb-4">
                   <div className="flex items-center justify-between flex-wrap gap-3">
@@ -658,9 +731,9 @@ const ProfileEnhanced = () => {
                         <Crown className="w-5 h-5 text-teal-600 dark:text-teal-300" />
                       </div>
                       <div>
-                        <p className="font-semibold capitalize">{familyLimits.membershipType} Plan</p>
+                        <p className="font-semibold capitalize">{familyLimits.planName || familyLimits.membershipType} Plan</p>
                         <p className="text-sm text-slate-500">
-                          {familyLimits.currentCount} / {familyLimits.maxMembers === 0 ? "0 (upgrade needed)" : familyLimits.maxMembers} members used
+                          {usedCount} / {familyLimits.maxMembers === 0 ? "0 (upgrade needed)" : familyLimits.maxMembers} members used
                         </p>
                       </div>
                     </div>
@@ -668,11 +741,11 @@ const ProfileEnhanced = () => {
                       <div className="text-right">
                         <div className="flex gap-1 mb-1">
                           {Array.from({ length: Math.max(familyLimits.maxMembers, 1) }).map((_, i) => (
-                            <div key={i} className={`w-4 h-4 rounded-full ${i < familyLimits.currentCount ? "bg-teal-500" : "bg-slate-200 dark:bg-slate-700"}`} />
+                            <div key={i} className={`w-4 h-4 rounded-full ${i < usedCount ? "bg-teal-500" : "bg-slate-200 dark:bg-slate-700"}`} />
                           ))}
                         </div>
                         <p className="text-xs text-slate-400">
-                          {familyLimits.maxMembers === 0 ? "Upgrade to Family plan for family members" : `${familyLimits.maxMembers - familyLimits.currentCount} slots remaining`}
+                          {familyLimits.maxMembers === 0 ? "Upgrade to Family plan for family members" : `${remainingSlots} slots remaining`}
                         </p>
                       </div>
                       {familyLimits.maxMembers === 0 && (
@@ -690,8 +763,26 @@ const ProfileEnhanced = () => {
                       ))}
                     </div>
                   )}
+
+                  {(familyLimits.componentBenefits?.insurance?.enabled || familyLimits.componentBenefits?.opWellness?.enabled) && (
+                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-slate-500">Corporate components:</span>
+                      {familyLimits.componentBenefits?.insurance?.enabled && (
+                        <Badge variant="secondary" className="text-xs bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200">
+                          Insurance
+                        </Badge>
+                      )}
+                      {familyLimits.componentBenefits?.opWellness?.enabled && (
+                        <Badge variant="secondary" className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
+                          OP + Wellness
+                        </Badge>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
+                );
+              })()
             )}
 
             <Card>
@@ -734,6 +825,11 @@ const ProfileEnhanced = () => {
                           <p className="font-medium text-slate-900 dark:text-slate-100">{member.firstName} {member.lastName}</p>
                           <div className="flex items-center gap-2 mt-0.5">
                             <Badge variant="outline" className="capitalize text-xs">{member.relationship}</Badge>
+                            {(member.metadata?.aiInference?.relationshipInferred || member.metadata?.aiInference?.genderInferred) && (
+                              <Badge className="text-[10px] bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200" variant="secondary">
+                                AI inferred
+                              </Badge>
+                            )}
                             {member.dateOfBirth && <span className="text-xs text-slate-400">{calcAge(member.dateOfBirth)} yrs</span>}
                             {member.bloodType && <span className="text-xs text-red-500 font-medium">{member.bloodType}</span>}
                           </div>
@@ -938,37 +1034,147 @@ const ProfileEnhanced = () => {
                   <Lock className="w-4 h-4 text-teal-500" />
                   <CardTitle>Change Password</CardTitle>
                 </div>
-                <CardDescription>Use a strong, unique password</CardDescription>
+                <CardDescription>Use a strong, unique password you don't use elsewhere</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {[
-                  { key: "current", label: "Current Password",  ph: "Enter current password"  },
-                  { key: "next",    label: "New Password",       ph: "Min 8 chars, upper+lower+number+symbol" },
-                  { key: "confirm", label: "Confirm New Password", ph: "Re-enter new password" },
-                ].map(({ key, label, ph }) => (
-                  <div key={key} className="space-y-1.5">
-                    <Label>{label}</Label>
-                    <div className="relative">
-                      <Input
-                        type={(showPw as any)[key] ? "text" : "password"}
-                        placeholder={ph}
-                        value={(pwForm as any)[key]}
-                        onChange={e => setPwForm(p => ({ ...p, [key]: e.target.value }))}
-                        className="pr-10"
-                      />
-                      <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                        onClick={() => setShowPw(p => ({ ...p, [key]: !(p as any)[key] }))}>
-                        {(showPw as any)[key] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              <CardContent className="space-y-5">
+
+                {/* ── Success state ── */}
+                {pwSuccess && (
+                  <Alert className="border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-800">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <AlertDescription className="text-green-700 dark:text-green-400">
+                      Password changed successfully. A confirmation has been sent to your email.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {/* ── Reset-link-sent state ── */}
+                {resetLinkSent && (
+                  <Alert className="border-teal-200 bg-teal-50 dark:bg-teal-950/20 dark:border-teal-800">
+                    <CheckCircle className="w-4 h-4 text-teal-600" />
+                    <AlertDescription className="text-teal-700 dark:text-teal-400">
+                      Reset link sent to <strong>{(currentUser as any)?.email}</strong>. Check your inbox and follow the link to set a new password.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {!resetLinkSent && (
+                  <>
+                    {/* Current password */}
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pw-current">Current Password</Label>
+                      <div className="relative">
+                        <Input
+                          id="pw-current"
+                          type={showPw.current ? "text" : "password"}
+                          placeholder="Enter your current password"
+                          value={pwForm.current}
+                          onChange={e => setPwForm(p => ({ ...p, current: e.target.value }))}
+                          className="pr-10"
+                          autoComplete="current-password"
+                        />
+                        <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          onClick={() => setShowPw(p => ({ ...p, current: !p.current }))}>
+                          {showPw.current ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleForgotCurrentPassword}
+                        disabled={sendingResetLink}
+                        className="text-xs text-teal-600 hover:text-teal-700 dark:text-teal-400 hover:underline disabled:opacity-50"
+                      >
+                        {sendingResetLink ? "Sending…" : "Forgot current password? Send reset link"}
                       </button>
                     </div>
-                  </div>
-                ))}
-                {pwForm.next && pwForm.confirm && pwForm.next !== pwForm.confirm && (
-                  <p className="text-xs text-red-500 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Passwords do not match</p>
+
+                    {/* New password + strength meter */}
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pw-next">New Password</Label>
+                      <div className="relative">
+                        <Input
+                          id="pw-next"
+                          type={showPw.next ? "text" : "password"}
+                          placeholder="Min 8 chars — upper, lower, number, symbol"
+                          value={pwForm.next}
+                          onChange={e => setPwForm(p => ({ ...p, next: e.target.value }))}
+                          className="pr-10"
+                          autoComplete="new-password"
+                        />
+                        <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          onClick={() => setShowPw(p => ({ ...p, next: !p.next }))}>
+                          {showPw.next ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      {/* Strength bar */}
+                      {pwForm.next && (() => {
+                        const s = getPasswordStrength(pwForm.next);
+                        if (!s) return null;
+                        return (
+                          <div className="space-y-1">
+                            <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                              <div className={`h-full rounded-full transition-all duration-300 ${s.bar}`} style={{ width: `${s.pct}%` }} />
+                            </div>
+                            <p className={`text-xs font-medium ${s.text}`}>{s.label}</p>
+                          </div>
+                        );
+                      })()}
+                      <p className="text-xs text-slate-400">Use at least 8 characters with uppercase, lowercase, a number, and a symbol (@$!%*?&)</p>
+                    </div>
+
+                    {/* Confirm password + match indicator */}
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pw-confirm">Confirm New Password</Label>
+                      <div className="relative">
+                        <Input
+                          id="pw-confirm"
+                          type={showPw.confirm ? "text" : "password"}
+                          placeholder="Re-enter your new password"
+                          value={pwForm.confirm}
+                          onChange={e => setPwForm(p => ({ ...p, confirm: e.target.value }))}
+                          className={`pr-10 ${pwForm.confirm && pwForm.next !== pwForm.confirm ? "border-red-400 focus-visible:ring-red-400" : pwForm.confirm && pwForm.next === pwForm.confirm ? "border-green-400 focus-visible:ring-green-400" : ""}`}
+                          autoComplete="new-password"
+                        />
+                        <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          onClick={() => setShowPw(p => ({ ...p, confirm: !p.confirm }))}>
+                          {showPw.confirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      {pwForm.confirm && pwForm.next !== pwForm.confirm && (
+                        <p className="text-xs text-red-500 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Passwords do not match</p>
+                      )}
+                      {pwForm.confirm && pwForm.next === pwForm.confirm && (
+                        <p className="text-xs text-green-600 flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Passwords match</p>
+                      )}
+                    </div>
+
+                    {/* Sign out other devices checkbox */}
+                    <div className="flex items-start gap-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3">
+                      <Checkbox
+                        id="sign-out-devices"
+                        checked={signOutOtherDevices}
+                        onCheckedChange={v => setSignOutOtherDevices(!!v)}
+                        className="mt-0.5"
+                      />
+                      <div>
+                        <label htmlFor="sign-out-devices" className="text-sm font-medium cursor-pointer select-none">
+                          Sign out of all other devices
+                        </label>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Recommended if you suspect unauthorised access. You will stay logged in on this device.
+                        </p>
+                      </div>
+                    </div>
+
+                    <Button
+                      onClick={handleChangePassword}
+                      disabled={changingPw || !pwForm.current || !pwForm.next || !pwForm.confirm || pwForm.next !== pwForm.confirm}
+                      className="w-full sm:w-auto"
+                    >
+                      {changingPw ? "Changing password…" : "Update Password"}
+                    </Button>
+                  </>
                 )}
-                <Button onClick={handleChangePassword} disabled={changingPw || !pwForm.current || !pwForm.next || pwForm.next !== pwForm.confirm}>
-                  {changingPw ? "Changing…" : "Change Password"}
-                </Button>
               </CardContent>
             </Card>
 
@@ -1007,16 +1213,35 @@ const ProfileEnhanced = () => {
                   <Smartphone className="w-4 h-4 text-amber-500" />
                   <CardTitle>Session Management</CardTitle>
                 </div>
-                <CardDescription>Sign out from all other devices and browsers</CardDescription>
+                <CardDescription>Devices and browsers where you're currently signed in</CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="flex items-start gap-4">
-                  <div className="flex-1">
-                    <p className="text-sm text-slate-600 dark:text-slate-400">
-                      Signing out of all sessions will invalidate all active tokens.
-                      You will be logged out from this device too and need to log in again.
-                    </p>
-                  </div>
+              <CardContent className="space-y-4">
+                {/* Active sessions — live from /users/security/sessions */}
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Active Sessions</p>
+                  {(activeSessions.length > 0 ? activeSessions : [{ id: 'current', deviceName: 'This device', ip: '', lastActiveAt: null, isCurrent: true }]).map(s => (
+                    <div key={s.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                      <div className="flex items-center gap-3">
+                        <Monitor className="w-4 h-4 text-slate-400" />
+                        <div>
+                          <p className="text-sm font-medium truncate max-w-[180px]">{s.deviceName || 'Unknown device'}</p>
+                          <p className="text-xs text-slate-400">
+                            {s.ip && s.ip !== 'Unknown' ? `${s.ip} · ` : ''}
+                            {s.lastActiveAt ? new Date(s.lastActiveAt).toLocaleDateString('en-IN') : 'Current session'}
+                          </p>
+                        </div>
+                      </div>
+                      {s.isCurrent
+                        ? <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-xs">Current</Badge>
+                        : <Badge variant="outline" className="text-slate-400 text-xs">Previous</Badge>
+                      }
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-start gap-4 pt-2 border-t border-slate-100 dark:border-slate-700/50">
+                  <p className="text-sm text-slate-600 dark:text-slate-400 flex-1">
+                    Sign out of all other devices and browsers. You will remain logged in here.
+                  </p>
                   <Button variant="outline" className="border-amber-300 text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30 shrink-0"
                     onClick={() => setRevokeDialogOpen(true)}>
                     <LogOut className="w-4 h-4 mr-2" />Sign Out All
@@ -1131,7 +1356,14 @@ const ProfileEnhanced = () => {
         </DialogContent>
       </Dialog>
 
-      <FamilyMemberDialog open={familyDialogOpen} onOpenChange={setFamilyDialogOpen} member={editingMember} onSuccess={fetchFamilyMembers} />
+      <FamilyMemberDialog
+        open={familyDialogOpen}
+        onOpenChange={setFamilyDialogOpen}
+        member={editingMember}
+        onSuccess={fetchFamilyMembers}
+        allowedRelations={familyLimits?.allowedRelations || []}
+        canAddMore={familyLimits?.canAddMore ?? true}
+      />
       <MalwareWarningDialog open={malwareWarning.open} onClose={() => setMalwareWarning({ open: false })} threat={malwareWarning.threat} fileName={malwareWarning.fileName} />
     </>
   );

@@ -20,6 +20,9 @@ import whatsappProductionService from '../services/whatsapp-production.service.j
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 const router = express.Router();
+// Ensure request bodies are parsed even if app-level parser order changes.
+router.use(express.json());
+router.use(express.urlencoded({ extended: true }));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -420,17 +423,9 @@ router.post('/', authDoctor, [
     .custom((medications) => {
       for (let i = 0; i < medications.length; i++) {
         const med = medications[i];
-        if (!med.name || !med.name.trim()) {
+        const medName = med?.name || med?.medicineName || med?.drugName;
+        if (!medName || !String(medName).trim()) {
           throw new Error(`Medication ${i + 1}: Medicine name is required`);
-        }
-        if (!med.dosage || !med.dosage.trim()) {
-          throw new Error(`Medication ${i + 1}: Dosage is required`);
-        }
-        if (!med.frequency || !med.frequency.trim()) {
-          throw new Error(`Medication ${i + 1}: Frequency is required`);
-        }
-        if (!med.duration || !med.duration.trim()) {
-          throw new Error(`Medication ${i + 1}: Duration is required`);
         }
       }
       return true;
@@ -498,6 +493,16 @@ router.post('/', authDoctor, [
       }
     }
 
+    const normalizedMedications = (Array.isArray(medications) ? medications : []).map((med) => ({
+      name: String(med?.name || med?.medicineName || med?.drugName || '').trim(),
+      composition: med?.composition || med?.strength || '',
+      dosage: String(med?.dosage || med?.dose || med?.doseText || 'As directed').trim(),
+      frequency: String(med?.frequency || med?.freq || med?.schedule || 'As directed').trim(),
+      duration: String(med?.duration || med?.days || med?.period || 'As directed').trim(),
+      quantity: med?.quantity || med?.qty || '',
+      instructions: med?.instructions || med?.notes || '',
+    }));
+
     const prescriptionPayload = {
       appointmentId,
       patientId: patientUserId,
@@ -526,7 +531,7 @@ router.post('/', authDoctor, [
       chiefComplaints: typeof chiefComplaints === 'string'
         ? [chiefComplaints]
         : (Array.isArray(chiefComplaints) ? chiefComplaints : []),
-      medications,
+      medications: normalizedMedications,
       labTests: labTests || [],
       instructions: instructions || [
         'Complete the full course of medications',

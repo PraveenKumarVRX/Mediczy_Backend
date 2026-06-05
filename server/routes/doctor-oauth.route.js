@@ -2,12 +2,94 @@ import express from 'express';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as FacebookStrategy } from 'passport-facebook';
-import jwt from 'jsonwebtoken';
 import Doctor from '../models/doctor.model.intelligent.js';
 import { processOAuthProfilePicture } from '../utils/oauth-profile-picture.js';
-import { JWT_CONFIG } from '../config/auth.config.js';
+import { issuePortalTokenPair } from '../services/token-revocation.service.js';
 
 const router = express.Router();
+
+const DOCTOR_MOBILE_REDIRECT_SCHEMES = (process.env.DOCTOR_OAUTH_MOBILE_REDIRECT_SCHEMES || 'mediqzydoctor://oauth-callback,mysmarthealth://oauth-callback')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const toQueryString = (params = {}) =>
+  Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+    .join('&');
+
+const isAllowedDoctorMobileRedirectUri = (uri = '') =>
+  DOCTOR_MOBILE_REDIRECT_SCHEMES.some((allowed) => uri.startsWith(allowed));
+
+const buildDoctorMobileState = (req) => {
+  const mobileRedirectUri = String(req.query.mobile_redirect_uri || '').trim();
+  const clientState = String(req.query.state || '').trim();
+
+  if (!mobileRedirectUri || !isAllowedDoctorMobileRedirectUri(mobileRedirectUri)) {
+    return null;
+  }
+
+  const payload = {
+    mobileRedirectUri,
+    clientState: clientState || undefined,
+    source: 'doctor-mobile',
+  };
+
+  return Buffer.from(JSON.stringify(payload)).toString('base64url');
+};
+
+const parseDoctorMobileState = (state) => {
+  if (!state) return null;
+
+  try {
+    const decoded = Buffer.from(String(state), 'base64url').toString('utf8');
+    const parsed = JSON.parse(decoded);
+    if (parsed?.mobileRedirectUri && isAllowedDoctorMobileRedirectUri(parsed.mobileRedirectUri)) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+const buildDoctorOAuthSuccessRedirect = ({ req, provider, token, refreshToken, expiresIn }) => {
+  const mobileState = parseDoctorMobileState(req.query.state);
+
+  if (mobileState?.mobileRedirectUri) {
+    const params = {
+      token,
+      refreshToken,
+      expiresIn,
+      userType: 'doctor',
+      provider,
+      state: mobileState.clientState,
+    };
+
+    return `${mobileState.mobileRedirectUri}${mobileState.mobileRedirectUri.includes('?') ? '&' : '?'}${toQueryString(params)}`;
+  }
+
+  return process.env.NODE_ENV === 'production'
+    ? `https://app.mediqzy.com/oauth-callback?token=${token}&userType=doctor&provider=${provider}`
+    : `http://localhost:3001/oauth-callback?token=${token}&userType=doctor&provider=${provider}`;
+};
+
+const buildDoctorOAuthErrorRedirect = ({ req, provider, error = 'oauth_failed' }) => {
+  const mobileState = parseDoctorMobileState(req.query.state);
+  if (mobileState?.mobileRedirectUri) {
+    const params = {
+      error,
+      provider,
+      state: mobileState.clientState,
+    };
+    return `${mobileState.mobileRedirectUri}${mobileState.mobileRedirectUri.includes('?') ? '&' : '?'}${toQueryString(params)}`;
+  }
+
+  return process.env.NODE_ENV === 'production'
+    ? `https://app.mediqzy.com/doctor/login?error=${error}&provider=${provider}`
+    : `http://localhost:3001/doctor/login?error=${error}&provider=${provider}`;
+};
 
 /**
  * Doctor OAuth2 Configuration
@@ -144,49 +226,27 @@ async function findOrCreateDoctor(profile, provider) {
 }
 
 /**
- * Generate JWT token for doctor
- * FIXED: Use JWT_SECRET and include required id/role fields for authDoctor middleware
- */
-function generateDoctorToken(doctor) {
-  const payload = {
-    id: doctor.id,             // Required for authDoctor middleware
-    doctorId: doctor.doctorId || doctor.id,
-    email: doctor.email,
-    role: 'doctor',            // Required for authUser/authDoctor middleware
-    userType: 'doctor',
-    firstName: doctor.firstName,
-    lastName: doctor.lastName,
-    specialization: doctor.specialization
-  };
-  
-  return jwt.sign(payload, JWT_CONFIG.SECRET || process.env.JWT_SECRET, {
-    expiresIn: '30d'
-  });
-}
-
-/**
  * Handle successful OAuth authentication
  */
-function handleOAuthSuccess(req, res, doctorData, provider) {
+async function handleOAuthSuccess(req, res, doctorData, provider) {
   try {
     const { doctor } = doctorData;
-    
-    // Generate JWT token
-    const token = generateDoctorToken(doctor);
+    const deviceFp = req.headers['x-device-fingerprint'] || null;
+    const { accessToken: token, refreshToken } = await issuePortalTokenPair(
+      { id: doctor.id, email: doctor.email, role: 'doctor' },
+      { portal: 'doctor', deviceFp }
+    );
+    const expiresIn = 900;
     
     console.log(`✅ Doctor ${provider} OAuth successful for: ${doctor.email}`);
     
     // Redirect to frontend with token
-    const redirectUrl = process.env.NODE_ENV === 'production'
-      ? `https://app.mediqzy.com/oauth-callback?token=${token}&userType=doctor&provider=${provider}`
-      : `http://localhost:3001/oauth-callback?token=${token}&userType=doctor&provider=${provider}`;
+    const redirectUrl = buildDoctorOAuthSuccessRedirect({ req, provider, token, refreshToken, expiresIn });
     
     res.redirect(redirectUrl);
   } catch (error) {
     console.error(`Error handling doctor ${provider} OAuth success:`, error);
-    const errorUrl = process.env.NODE_ENV === 'production'
-      ? `https://app.mediqzy.com/doctor/login?error=oauth_failed&provider=${provider}`
-      : `http://localhost:3001/doctor/login?error=oauth_failed&provider=${provider}`;
+    const errorUrl = buildDoctorOAuthErrorRedirect({ req, provider, error: 'oauth_failed' });
     res.redirect(errorUrl);
   }
 }
@@ -195,20 +255,28 @@ function handleOAuthSuccess(req, res, doctorData, provider) {
 
 router.get(
   '/google',
-  passport.authenticate('google-doctor', { 
-    scope: ['profile', 'email'],
-    session: false 
-  })
+  (req, res, next) => {
+    const state = buildDoctorMobileState(req);
+    const options = {
+      scope: ['profile', 'email'],
+      session: false,
+      ...(state ? { state } : {}),
+    };
+    return passport.authenticate('google-doctor', options)(req, res, next);
+  }
 );
 
 router.get(
   '/google/callback',
-  passport.authenticate('google-doctor', { 
-    session: false,
-    failureRedirect: '/doctor/login?error=google_auth_failed'
-  }),
-  (req, res) => {
-    handleOAuthSuccess(req, res, req.user, 'google');
+  (req, res, next) => {
+    passport.authenticate('google-doctor', { session: false }, async (err, authResult) => {
+      if (err || !authResult) {
+        const errorUrl = buildDoctorOAuthErrorRedirect({ req, provider: 'google', error: 'auth_failed' });
+        return res.redirect(errorUrl);
+      }
+      req.user = authResult;
+      await handleOAuthSuccess(req, res, req.user, 'google');
+    })(req, res, next);
   }
 );
 
@@ -216,20 +284,28 @@ router.get(
 
 router.get(
   '/facebook',
-  passport.authenticate('facebook-doctor', { 
-    scope: ['email', 'public_profile'],
-    session: false 
-  })
+  (req, res, next) => {
+    const state = buildDoctorMobileState(req);
+    const options = {
+      scope: ['email', 'public_profile'],
+      session: false,
+      ...(state ? { state } : {}),
+    };
+    return passport.authenticate('facebook-doctor', options)(req, res, next);
+  }
 );
 
 router.get(
   '/facebook/callback',
-  passport.authenticate('facebook-doctor', { 
-    session: false,
-    failureRedirect: '/doctor/login?error=facebook_auth_failed'
-  }),
-  (req, res) => {
-    handleOAuthSuccess(req, res, req.user, 'facebook');
+  (req, res, next) => {
+    passport.authenticate('facebook-doctor', { session: false }, async (err, authResult) => {
+      if (err || !authResult) {
+        const errorUrl = buildDoctorOAuthErrorRedirect({ req, provider: 'facebook', error: 'auth_failed' });
+        return res.redirect(errorUrl);
+      }
+      req.user = authResult;
+      await handleOAuthSuccess(req, res, req.user, 'facebook');
+    })(req, res, next);
   }
 );
 
@@ -241,14 +317,17 @@ router.get('/oauth/status', (req, res) => {
     : 'http://localhost:8000';
   
   res.json({
+    mobileRedirectSchemes: DOCTOR_MOBILE_REDIRECT_SCHEMES,
     google: {
       configured: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
       url: `${baseUrl}/api/auth/doctor/google`,
+      mobileUrl: `${baseUrl}/api/auth/doctor/google?mobile_redirect_uri=${encodeURIComponent(DOCTOR_MOBILE_REDIRECT_SCHEMES[0] || 'mediqzydoctor://oauth-callback')}`,
       enabled: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
     },
     facebook: {
       configured: !!(process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET),
       url: `${baseUrl}/api/auth/doctor/facebook`,
+      mobileUrl: `${baseUrl}/api/auth/doctor/facebook?mobile_redirect_uri=${encodeURIComponent(DOCTOR_MOBILE_REDIRECT_SCHEMES[0] || 'mediqzydoctor://oauth-callback')}`,
       enabled: !!(process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET)
     }
   });

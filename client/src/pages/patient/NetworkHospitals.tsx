@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useToast } from '@/hooks/use-toast';
 import { MapPin, Phone, Clock, Star, Navigation, Search, Filter, Building2, Hospital, CheckCircle } from 'lucide-react';
 import MainLayout from '@/components/layout/MainLayout';
+import api from '@/utils/api';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineError } from '@/components/ui/inline-error';
 
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
 const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
@@ -32,93 +35,65 @@ interface NetworkHospital {
 
 const NetworkHospitals: React.FC = () => {
   const { toast } = useToast();
-  const [hospitals, setHospitals] = useState<NetworkHospital[]>([
-    {
-      id: '1',
-      name: 'Apollo Hospital',
-      type: 'hospital',
-      address: 'Jubilee Hills, Road No. 72',
-      city: 'Hyderabad',
-      state: 'Telangana',
-      distance: '2.5 km',
-      phone: '+91 40 2360 7777',
-      rating: 4.5,
-      reviews: 1250,
-      specialities: ['Cardiology', 'Neurology', 'Oncology', 'Orthopedics'],
-      facilities: ['24x7 Emergency', 'ICU', 'Pharmacy', 'Blood Bank', 'Ambulance'],
-      availability: 'open_24_7',
-      insurance_accepted: true,
-      cashless: true
-    },
-    {
-      id: '2',
-      name: 'CARE Hospitals',
-      type: 'hospital',
-      address: 'Banjara Hills, Road No. 1',
-      city: 'Hyderabad',
-      state: 'Telangana',
-      distance: '3.8 km',
-      phone: '+91 40 6165 6666',
-      rating: 4.3,
-      reviews: 980,
-      specialities: ['Gastroenterology', 'Nephrology', 'Urology', 'Pulmonology'],
-      facilities: ['Emergency', 'ICU', 'Laboratory', 'Radiology'],
-      availability: 'open_24_7',
-      insurance_accepted: true,
-      cashless: true
-    },
-    {
-      id: '3',
-      name: 'Continental Hospitals',
-      type: 'hospital',
-      address: 'Gachibowli, IT Park Road',
-      city: 'Hyderabad',
-      state: 'Telangana',
-      distance: '5.2 km',
-      phone: '+91 40 6767 6767',
-      rating: 4.6,
-      reviews: 1560,
-      specialities: ['Cardiac Surgery', 'Liver Transplant', 'Robotic Surgery'],
-      facilities: ['24x7 Emergency', 'Advanced ICU', 'Cath Lab', 'Pharmacy'],
-      availability: 'open_24_7',
-      insurance_accepted: true,
-      cashless: true
-    },
-    {
-      id: '4',
-      name: 'Dr. Rao\'s ENT Super Speciality Hospital',
-      type: 'hospital',
-      address: 'Somajiguda',
-      city: 'Hyderabad',
-      state: 'Telangana',
-      distance: '4.1 km',
-      phone: '+91 40 2322 2288',
-      rating: 4.4,
-      reviews: 650,
-      specialities: ['ENT', 'Head & Neck Surgery', 'Cochlear Implant'],
-      facilities: ['OPD', 'Surgery Theatre', 'Audiology'],
-      availability: 'open_now',
-      insurance_accepted: true,
-      cashless: true
-    },
-    {
-      id: '5',
-      name: 'SRL Diagnostics',
-      type: 'diagnostic_center',
-      address: 'Punjagutta Main Road',
-      city: 'Hyderabad',
-      state: 'Telangana',
-      distance: '1.8 km',
-      phone: '+91 40 4444 5555',
-      rating: 4.2,
-      reviews: 450,
-      specialities: ['Pathology', 'Radiology', 'CT Scan', 'MRI'],
-      facilities: ['Home Collection', 'Digital Reports'],
-      availability: 'open_now',
-      insurance_accepted: true,
-      cashless: false
-    }
-  ]);
+  const seededHospitals: NetworkHospital[] = [];
+
+  const [hospitals, setHospitals] = useState<NetworkHospital[]>(seededHospitals);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
+  const [dataSource, setDataSource] = useState<'api' | 'unavailable'>('unavailable');
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadHospitals = async () => {
+      setIsLoading(true);
+      setFetchError(false);
+      try {
+        const res = await api.get('/hospitals', { params: { page: 1, limit: 100 } });
+        const rows = Array.isArray(res?.data?.data) ? res.data.data : [];
+
+        const mapped: NetworkHospital[] = rows.map((row: any, idx: number) => {
+          const inferredType = String(row.entity_type || row.type || 'hospital').toLowerCase();
+          return {
+            id: String(row.id || `h-${idx}`),
+            name: row.name || row.hospital_name || 'Hospital',
+            type: inferredType.includes('diagnostic') ? 'diagnostic_center' : inferredType.includes('pharmacy') ? 'pharmacy' : inferredType.includes('clinic') ? 'clinic' : 'hospital',
+            address: row.address || '',
+            city: row.city || 'Unknown city',
+            state: row.state || 'Unknown state',
+            distance: '—',
+            phone: row.phone || row.mobile || 'N/A',
+            rating: 4.2,
+            reviews: 0,
+            specialities: [row.entity_type || 'General Care'].filter(Boolean),
+            facilities: [row.is_spn ? 'SPN Network' : 'Network Facility'],
+            availability: 'open_now',
+            insurance_accepted: true,
+            cashless: true,
+          } as NetworkHospital;
+        });
+
+        if (mounted && mapped.length > 0) {
+          setHospitals(mapped);
+          setDataSource('api');
+        } else if (mounted) {
+          setHospitals(seededHospitals);
+          setDataSource('unavailable');
+        }
+      } catch {
+        if (mounted) {
+          setHospitals(seededHospitals);
+          setDataSource('unavailable');
+          setFetchError(true);
+        }
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    };
+
+    loadHospitals();
+    return () => { mounted = false; };
+  }, []);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
@@ -175,7 +150,7 @@ const NetworkHospitals: React.FC = () => {
     { value: 'pharmacy', label: 'Pharmacies', icon: Building2 }
   ];
 
-  const cities = ['all', 'Hyderabad', 'Bangalore', 'Mumbai', 'Delhi', 'Chennai'];
+  const cities = ['all', ...Array.from(new Set(hospitals.map((h) => h.city).filter(Boolean)))];
 
   const getAvailabilityBadge = (availability: string) => {
     const variants: Record<string, { label: string; color: string }> = {
@@ -317,16 +292,51 @@ const NetworkHospitals: React.FC = () => {
 
       {/* Hospitals List */}
       <motion.div variants={item} className="space-y-4">
-        {filteredHospitals.length === 0 ? (
-          <Card className="dark:bg-slate-800/50 dark:border-slate-700/60">
-            <CardContent className="text-center py-12">
-              <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mx-auto mb-4">
-                <Hospital className="h-8 w-8 text-slate-400" />
-              </div>
-              <p className="text-lg font-medium text-slate-700 dark:text-slate-300">No hospitals found</p>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Try adjusting your search or filters</p>
-            </CardContent>
-          </Card>
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {isLoading ? 'Loading hospitals...' : `${filteredHospitals.length} providers found`}
+          </p>
+          <Badge className={dataSource === 'api' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'}>
+            {dataSource === 'api' ? 'Live Directory' : 'Directory Limited'}
+          </Badge>
+        </div>
+        {fetchError ? (
+          <InlineError
+            message="Couldn't load hospitals."
+            onRetry={() => {
+              const stored = hospitals;
+              setFetchError(false);
+              setIsLoading(true);
+              api.get('/hospitals', { params: { page: 1, limit: 100 } })
+                .then(res => {
+                  const rows = Array.isArray(res?.data?.data) ? res.data.data : [];
+                  if (rows.length > 0) {
+                    setHospitals(rows.map((row: any, idx: number) => {
+                      const inferredType = String(row.entity_type || row.type || 'hospital').toLowerCase();
+                      return {
+                        id: String(row.id || `h-${idx}`),
+                        name: row.name || row.hospital_name || 'Hospital',
+                        type: inferredType.includes('diagnostic') ? 'diagnostic_center' : inferredType.includes('pharmacy') ? 'pharmacy' : inferredType.includes('clinic') ? 'clinic' : 'hospital',
+                        address: row.address || '', city: row.city || 'Unknown city', state: row.state || 'Unknown state',
+                        distance: '—', phone: row.phone || row.mobile || 'N/A', rating: 4.2, reviews: 0,
+                        specialities: [row.entity_type || 'General Care'].filter(Boolean),
+                        facilities: [row.is_spn ? 'SPN Network' : 'Network Facility'],
+                        availability: 'open_now', insurance_accepted: true, cashless: true,
+                      } as NetworkHospital;
+                    }));
+                    setDataSource('api');
+                  } else { setFetchError(true); }
+                })
+                .catch(() => setFetchError(true))
+                .finally(() => setIsLoading(false));
+            }}
+          />
+        ) : filteredHospitals.length === 0 ? (
+          <EmptyState
+            icon={Building2}
+            title="No hospitals found"
+            description="No in-network hospitals match your search. Try a different city or name."
+          />
         ) : (
           filteredHospitals.map((hospital, idx) => (
             <motion.div key={hospital.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.05, duration: 0.3 }}>

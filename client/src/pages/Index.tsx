@@ -105,15 +105,17 @@ const Index = () => {
 
   const userName = currentUser?.firstName || "Guest";
   const [healthStats, setHealthStats] = useState({
-    steps: 6542,
+    steps: 0,
     stepsGoal: 10000,
-    heartRate: 72,
-    sleep: 7.2,
-    water: 5,
+    heartRate: 0,
+    sleep: 0,
+    water: 0,
     waterGoal: 8,
-    calories: 1850,
+    calories: 0,
     caloriesGoal: 2200,
   });
+  const [healthStatsLoaded, setHealthStatsLoaded] = useState(false);
+  const [healthStatsUpdatedAt, setHealthStatsUpdatedAt] = useState<Date | null>(null);
   const [healthinessScore, setHealthinessScore] = useState({
     score: 78,
     trend: 'up' as 'up' | 'down' | 'stable',
@@ -258,7 +260,7 @@ const Index = () => {
   const todayTip = healthTips[todayTipIndex];
 
   // Gamification / Streak Data
-  const [streakData] = useState(() => {
+  const [streakData, setStreakData] = useState(() => {
     const stored = JSON.parse(localStorage.getItem('healthStreak') || '{}');
     return {
       currentStreak: stored.currentStreak || 0,
@@ -271,6 +273,31 @@ const Index = () => {
       badges: stored.badges || [],
     };
   });
+
+  const fetchStreakWalletData = async () => {
+    try {
+      const response = await api.get('/wallet');
+      const wallet = response?.data?.data;
+      if (!wallet) return;
+
+      setStreakData((prev) => {
+        const next = {
+          ...prev,
+          currentStreak: wallet.streakDays ?? prev.currentStreak,
+          longestStreak: Math.max(prev.longestStreak || 0, wallet.streakDays || 0),
+          healthCoins: Math.round(wallet.balance ?? prev.healthCoins ?? 0),
+          // Keep dashboard level/xp predictable while aligning source to wallet totals.
+          level: Math.max(1, Math.floor((wallet.totalEarned ?? 0) / 1000) + 1),
+          xp: Math.round(wallet.totalEarned ?? prev.xp ?? 0),
+          todayCheckedIn: !!wallet.todayActivity?.dailyLoginRewarded,
+        };
+        localStorage.setItem('healthStreak', JSON.stringify(next));
+        return next;
+      });
+    } catch (error) {
+      // Dashboard should continue rendering with cached streak data.
+    }
+  };
   
   // Bluetooth Pairing State
   const [showPairingModal, setShowPairingModal] = useState(false);
@@ -285,6 +312,7 @@ const Index = () => {
   }>>([]);
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
   const [pairingProgress, setPairingProgress] = useState(0);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
   const [connectedDevices, setConnectedDevices] = useState<Array<{
     id: string;
     name: string;
@@ -510,6 +538,23 @@ const Index = () => {
     }
   };
 
+  const syncAllDevices = async () => {
+    if (connectedDevices.length === 0 || isSyncingAll) return;
+    setIsSyncingAll(true);
+    try {
+      for (const device of connectedDevices) {
+        await syncDevice(device.id);
+      }
+      if (window.healthSyncScheduler) {
+        await window.healthSyncScheduler.performSync();
+      }
+    } catch (error) {
+      console.error('[Sync] Error syncing all devices:', error);
+    } finally {
+      setIsSyncingAll(false);
+    }
+  };
+
   // Handle URL action parameters (e.g., ?action=pair-device)
   useEffect(() => {
     const action = searchParams.get('action');
@@ -526,6 +571,7 @@ const Index = () => {
     fetchDashboardData();
     fetchHealthStats(); // Fetch real health data from backend
     fetchMembershipStatus();
+    fetchStreakWalletData();
     
     // Load connected devices from localStorage and fix any with wrong types
     const storedDevices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
@@ -688,17 +734,17 @@ const Index = () => {
       if (data.latest) {
         setHealthStats(prev => ({
           ...prev,
-          steps: data.latest.steps?.value || prev.steps,
-          heartRate: data.latest.heart_rate?.value || prev.heartRate,
-          sleep: data.latest.sleep?.value ? data.latest.sleep.value / 3600 : prev.sleep, // Convert seconds to hours
-          // Keep goals as is
+          steps:     data.latest.steps?.value      ?? prev.steps,
+          heartRate: data.latest.heart_rate?.value ?? prev.heartRate,
+          sleep:     data.latest.sleep?.value ? data.latest.sleep.value / 3600 : prev.sleep,
+          water:     data.latest.water?.value      ?? prev.water,
+          calories:  data.latest.calories?.value   ?? prev.calories,
         }));
-
-        console.log('✅ Health stats updated from backend');
+        setHealthStatsLoaded(true);
+        setHealthStatsUpdatedAt(new Date());
       }
-    } catch (error) {
-      console.log('Could not fetch health stats:', error);
-      // Keep using default/cached values
+    } catch {
+      // API not available — leave stats at zero so UI shows empty state, not fake numbers
     }
   };
 
@@ -769,24 +815,24 @@ const Index = () => {
       highlights: ["Real-time vitals", "Device integration", "AI health insights"],
     },
     {
-      title: "Doctor Consultations",
-      description: "Find doctors, book appointments, and connect instantly",
-      icon: Stethoscope,
-      color: "info-gradient",
-      borderColor: "border-info/20",
-      iconColor: "text-info",
-      link: "/doctors",
-      highlights: ["Search specialists", "Video & clinic visits", "Instant booking"],
+      title: "Claims Express",
+      description: "File and track insurance claims with guided workflows",
+      icon: Zap,
+      color: "warning-gradient",
+      borderColor: "border-warning/20",
+      iconColor: "text-warning",
+      link: "/claims-express",
+      highlights: ["Quick filing", "Live status tracking", "Reduced rework"],
     },
     {
-      title: "AI Health Assistant",
-      description: "Get instant health insights powered by AI",
-      icon: Brain,
+      title: "AI Report Scanner",
+      description: "Scan reports and extract actionable insights instantly",
+      icon: FileText,
       color: "secondary-gradient",
       borderColor: "border-secondary/20",
       iconColor: "text-secondary",
-      link: "/ai-doctor",
-      highlights: ["Symptom analysis", "Health recommendations", "24/7 availability"],
+      link: "/report-scanner",
+      highlights: ["Document OCR", "AI interpretation", "Share-ready outputs"],
     },
     {
       title: "Diet & Nutrition",
@@ -842,24 +888,24 @@ const Index = () => {
       badge: "Available 24/7",
     },
     {
-      title: "My Appointments",
-      icon: CalendarCheck,
-      color: "success-gradient",
-      border: "border-success/20",
-      iconColor: "text-success",
-      link: "/appointments",
-      description: "View Appointments",
-      badge: upcomingAppointments.length > 0 ? `${upcomingAppointments.length} upcoming` : null,
+      title: "Claims Express",
+      icon: Zap,
+      color: "warning-gradient",
+      border: "border-warning/20",
+      iconColor: "text-warning",
+      link: "/claims-express",
+      description: "File & Track Claims",
+      badge: "Fast Filing",
     },
     {
-      title: "AI Doctor",
-      icon: Bot,
-      color: "secondary-gradient",
-      border: "border-secondary/20",
-      iconColor: "text-secondary",
-      link: "/ai-doctor",
-      description: "Instant Health Advice",
-      badge: "24/7",
+      title: "Scan Report",
+      icon: FileText,
+      color: "info-gradient",
+      border: "border-info/20",
+      iconColor: "text-info",
+      link: "/report-scanner",
+      description: "AI Report Analysis",
+      badge: "Smart OCR",
     },
   ];
 
@@ -1652,7 +1698,35 @@ const Index = () => {
         )}
 
         {/* Health Stats Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Today's Health</p>
+            <div className="flex items-center gap-2">
+              {healthStatsUpdatedAt && (
+                <span className="text-xs text-slate-400 dark:text-slate-500">
+                  Updated {Math.round((Date.now() - healthStatsUpdatedAt.getTime()) / 60000) < 1
+                    ? 'just now'
+                    : `${Math.round((Date.now() - healthStatsUpdatedAt.getTime()) / 60000)}m ago`}
+                </span>
+              )}
+              <button
+                onClick={fetchHealthStats}
+                aria-label="Refresh health stats"
+                className="text-slate-400 hover:text-teal-500 dark:hover:text-teal-400 transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+          {!healthStatsLoaded ? (
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-6 text-center">
+              <Activity className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">No health data yet</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 mb-3">Connect a wearable or log your vitals to see your daily stats here.</p>
+              <a href="/patient/device-integration" className="text-xs text-teal-600 dark:text-teal-400 font-semibold underline underline-offset-2">Connect a device →</a>
+            </div>
+          ) : (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {healthMetrics.map((metric, index) => (
             <Card key={index} className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-teal-200 dark:hover:border-teal-500/50 hover:shadow-lg hover:shadow-teal-500/5 transition-all duration-300 overflow-hidden group">
               <CardContent className="p-4">
@@ -1687,6 +1761,8 @@ const Index = () => {
               </CardContent>
             </Card>
           ))}
+          </div>
+          )}
         </div>
 
         {/* Health Tip of the Day + Streak Widget */}
@@ -2043,9 +2119,14 @@ const Index = () => {
                   <Bluetooth className="w-4 h-4 mr-2" />
                   Pair New Device
                 </Button>
-                <Button variant="outline" className="border-teal-500/30 text-teal-400 hover:bg-teal-500/10">
+                <Button
+                  variant="outline"
+                  className="border-teal-500/30 text-teal-400 hover:bg-teal-500/10"
+                  onClick={syncAllDevices}
+                  disabled={connectedDevices.length === 0 || isSyncingAll}
+                >
                   <RefreshCw className="w-4 h-4 mr-2" />
-                  Sync All
+                  {isSyncingAll ? 'Syncing...' : 'Sync All'}
                 </Button>
               </div>
             </div>
@@ -2624,7 +2705,7 @@ const Index = () => {
                   <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
                     <Sparkles className="h-5 w-5" />
                   </div>
-                  <span className="text-[11px] font-semibold text-center leading-tight">AI Health</span>
+                  <span className="text-[11px] font-semibold text-center leading-tight">AI Health Dashboard</span>
                 </Link>
                 <Link to="/family-hub" className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-white/10 hover:bg-white/20 transition-all active:scale-95 backdrop-blur-sm">
                   <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">

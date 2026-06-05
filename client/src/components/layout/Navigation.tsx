@@ -8,7 +8,7 @@ const navItems = [
   { icon: Home, label: "Home", path: "/" },
   { icon: Calendar, label: "Bookings", path: "/appointments" },
   { icon: Bot, label: "Dr. iSHA", path: "/ai-doctor", highlight: true },
-  { icon: Activity, label: "Health", path: "/smart-health" },
+  { icon: Activity, label: "AI Health", path: "/smart-health" },
   { icon: User, label: "Profile", path: "/profile" },
 ];
 

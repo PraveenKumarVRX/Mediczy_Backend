@@ -1,185 +1,253 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Link, useLocation } from "react-router-dom";
 import { BRAND } from "@/config/brand";
-import { MediqzyLogo3D } from "@/components/ui/MediqzyLogo3D";
 import {
-  Activity,
-  AlignCenterVertical,
-  Stethoscope,
-  HeartPulse,
-  Home,
-  MessageSquare,
-  Pill,
-  Bot,
-  Menu,
-  X,
-  Award,
-  AlertCircle,
-  Youtube,
-  FileSearch,
-  Apple,
-  Users,
-  Calendar,
-  Building2,
-  Building,
-  FlaskConical,
-  Heart,
-  BarChart3,
-  Settings,
-  UserCircle,
-  Shield,
-  Database,
-  FileText,
-  Wallet,
-  CreditCard,
-  ShieldCheck,
-  Crown,
-  Bell,
-  CalendarCheck,
-  FileHeart,
-  FlaskRound,
-  FileStack,
-  BookHeart,
-  Watch,
-  Trophy,
-  CalendarDays,
-  UserPlus,
-  ClipboardList,
-  Receipt,
-  Brain,
-  Ticket,
-  Gift,
-  UsersRound,
-  Zap,
-  Sparkles,
-  Briefcase,
-  HelpCircle,
-  Phone,
-  Mail,
-  LayoutTemplate,
+  Activity, Stethoscope, HeartPulse, Home, MessageSquare, Pill, Bot,
+  Menu, X, Award, AlertCircle, Youtube, FileSearch, Apple, Users,
+  Calendar, Building2, Building, FlaskConical, Heart, BarChart3,
+  Settings, UserCircle, Shield, Database, FileText, Wallet, CreditCard,
+  ShieldCheck, Crown, Bell, CalendarCheck, FileHeart, FlaskRound,
+  FileStack, BookHeart, Watch, Gift, CalendarDays, UserPlus,
+  ClipboardList, Receipt, Brain, Ticket, Sparkles, Briefcase,
+  HelpCircle, Phone, Mail, LayoutTemplate, ChevronDown, ChevronRight,
+  Zap, UsersRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useState, useEffect } from "react";
 
+/* ─── Types ──────────────────────────────────────────────────────────────── */
 interface SidebarItem {
   icon: React.ComponentType<any>;
   label: string;
   path: string;
-  category?: string;
-  adminOnly?: boolean; // Flag for admin-only items
+  adminOnly?: boolean;
   permission?: string | string[];
 }
 
-const sidebarItems: SidebarItem[] = [
-  // Core Navigation
-  { icon: Home, label: "Dashboard", path: "/", category: "Main" },
-  { icon: UserCircle, label: "My Profile", path: "/profile", category: "Main" },
-  { icon: Bell, label: "Notifications", path: "/patient/notifications", category: "Main" },
-  
-  // Health Management
-  { icon: HeartPulse, label: "Health Dashboard", path: "/health-dashboard", category: "Health" },
-  { icon: Brain, label: "Health Intelligence", path: "/health-intelligence", category: "Health" },
-  { icon: Shield, label: "SIB Control", path: "/sib-control", category: "Health", adminOnly: true },
-  { icon: BookHeart, label: "Health Diary", path: "/health-diary", category: "Health" },
-  { icon: ShieldCheck, label: "Health Risk Assessment", path: "/health-risk-assessment", category: "Health" },
-  { icon: Gift, label: "Wellness & Rewards", path: "/wellness-rewards", category: "Health" },
-  { icon: CalendarDays, label: "Wellness Calendar", path: "/wellness-calendar", category: "Health" },
-  { icon: Apple, label: "Diet Plans", path: "/diet", category: "Health" },
-  { icon: Bot, label: "AI Assistant", path: "/ai-doctor", category: "Health" },
-  { icon: Watch, label: "Wearables Analytics", path: "/patient/watch-analytics", category: "Health" },
-  
-  // Appointments & Consultations
-  { icon: CalendarCheck, label: "My Appointments", path: "/appointments", category: "Appointments" },
-  { icon: Users, label: "Find & Book Doctor", path: "/doctors", category: "Appointments" },
-  { icon: FileHeart, label: "My Prescriptions", path: "/my-prescriptions", category: "Appointments" },
-  
-  // Medical Records
-  { icon: FlaskRound, label: "Lab Tests", path: "/patient/lab-tests", category: "Records" },
-  { icon: FileStack, label: "My Reports", path: "/patient/my-reports", category: "Records" },
-  { icon: FileSearch, label: "Scan & Share Reports", path: "/reposts", category: "Records" },
-  
-  // Services & Support
-  { icon: Award, label: "Ayushman", path: "/ayushman", category: "Services" },
-  { icon: Youtube, label: "Health Feed", path: "/health-feed", category: "Services" },
-  { icon: AlertCircle, label: "Emergency", path: "/emergency", category: "Services" },
-  
-  // Wallet & Plans
-  { icon: Wallet, label: "Wallet", path: "/wallet", category: "Finance" },
-  { icon: Crown, label: "Membership Plans", path: "/my-plans", category: "Finance" },
-  { icon: CreditCard, label: "My Membership Card", path: "/membership-card", category: "Finance" },
-  { icon: Sparkles, label: "Smart Benefits", path: "/benefits", category: "Finance" },
-  { icon: Zap, label: "Claims Express", path: "/claims-express", category: "Finance" },
-  { icon: FileStack, label: "Order History", path: "/billing/orders", category: "Finance" },
-  { icon: Receipt, label: "My Invoices", path: "/billing/invoices", category: "Finance" },
-  { icon: ShieldCheck, label: "My Insurance", path: "/my-insurance", category: "Finance" },
+interface SidebarSection {
+  id: string;
+  icon: React.ComponentType<any>;
+  label: string;
+  items: SidebarItem[];
+  adminOnly?: boolean;
+}
 
-  // Family
-  { icon: UsersRound, label: "Family Health Hub", path: "/family-hub", category: "Family" },
-
-  // Support
-  { icon: HelpCircle, label: "Help & Support", path: "/help", category: "Support" },
-  { icon: Phone, label: "Contact Us", path: "/contact-us", category: "Support" },
+/* ─── Patient sections (7 top-level) ─────────────────────────────────────── */
+const patientSections: SidebarSection[] = [
+  {
+    id: "health",
+    icon: HeartPulse,
+    label: "My Health",
+    items: [
+      { icon: HeartPulse,   label: "Health Dashboard",   path: "/health-dashboard" },
+      { icon: Brain,        label: "My Health Score",     path: "/health-intelligence" },
+      { icon: ShieldCheck,  label: "Risk Check",          path: "/health-risk-assessment" },
+      { icon: BookHeart,    label: "Health Diary",        path: "/health-diary" },
+      { icon: Activity,     label: "My Vitals",           path: "/patient/vital-reports" },
+      { icon: Watch,        label: "My Wearables",        path: "/patient/watch-analytics" },
+      { icon: Apple,        label: "Diet Plans",          path: "/diet" },
+      { icon: Youtube,      label: "Health Tips",         path: "/health-feed" },
+      { icon: Gift,         label: "Rewards & Streaks",   path: "/wellness-rewards" },
+      { icon: CalendarDays, label: "Wellness Calendar",   path: "/wellness-calendar" },
+      { icon: Shield,       label: "SIB Control",         path: "/sib-control", adminOnly: true },
+    ],
+  },
+  {
+    id: "care",
+    icon: CalendarCheck,
+    label: "Care",
+    items: [
+      { icon: CalendarCheck, label: "My Appointments",      path: "/appointments" },
+      { icon: Users,         label: "Find a Doctor",         path: "/doctors" },
+      { icon: Bot,           label: "AI Doctor (iSHA)",      path: "/ai-doctor" },
+      { icon: Stethoscope,   label: "Find the Right Doctor", path: "/smart-opd" },
+      { icon: FileHeart,     label: "My Prescriptions",      path: "/my-prescriptions" },
+      { icon: FlaskRound,    label: "Lab Tests",             path: "/patient/lab-tests" },
+      { icon: FileSearch,    label: "Scan a Report",         path: "/report-scanner" },
+      { icon: FileStack,     label: "My Reports",            path: "/patient/my-reports" },
+      { icon: AlertCircle,   label: "Emergency",             path: "/emergency" },
+    ],
+  },
+  {
+    id: "pharmacy",
+    icon: Pill,
+    label: "Pharmacy",
+    items: [
+      { icon: Pill, label: "Order Medicines", path: "/patient/pharmacy" },
+    ],
+  },
+  {
+    id: "insurance",
+    icon: ShieldCheck,
+    label: "Insurance & Benefits",
+    items: [
+      { icon: ShieldCheck, label: "My Insurance",     path: "/my-insurance" },
+      { icon: Zap,         label: "File a Claim",     path: "/claims-express" },
+      { icon: FileText,    label: "Claims",           path: "/claims-management" },
+      { icon: Sparkles,    label: "My Benefits",      path: "/benefits" },
+      { icon: Award,       label: "Ayushman",         path: "/ayushman" },
+    ],
+  },
+  {
+    id: "family",
+    icon: UsersRound,
+    label: "Family",
+    items: [
+      { icon: UsersRound, label: "Family Health Hub", path: "/family-hub" },
+    ],
+  },
+  {
+    id: "wallet",
+    icon: Wallet,
+    label: "Wallet & Plans",
+    items: [
+      { icon: Wallet,      label: "Health Coins",      path: "/wallet" },
+      { icon: Crown,       label: "My Plan",           path: "/my-plans" },
+      { icon: CreditCard,  label: "Membership Card",   path: "/membership-card" },
+      { icon: FileStack,   label: "Order History",     path: "/billing/orders" },
+      { icon: Receipt,     label: "My Invoices",       path: "/billing/invoices" },
+    ],
+  },
 ];
 
+/* These always appear at the footer of the patient sidebar (no collapse) */
+const patientFooterItems: SidebarItem[] = [
+  { icon: Bell,       label: "Notifications", path: "/patient/notifications" },
+  { icon: HelpCircle, label: "Help & Support", path: "/help" },
+  { icon: Phone,      label: "Contact Us",    path: "/contact-us" },
+];
+
+/* ─── Team / Nurse / Assistant items (unchanged) ─────────────────────────── */
 const teamSidebarItems: SidebarItem[] = [
-  { icon: Home, label: "Dashboard", path: "/team/dashboard" },
-  { icon: Users, label: "Team Directory", path: "/team/directory", permission: "User Management" },
-  { icon: BarChart3, label: "Reports", path: "/team/reports", permission: ["Patient Reports", "Analytics Access"] },
-  { icon: Activity, label: "System Tools", path: "/team/tools", adminOnly: true },
-  { icon: Users, label: "User Management", path: "/team/user-management", category: "Management", permission: "User Management" },
-  { icon: Stethoscope, label: "Doctors", path: "/team/doctor-management", category: "Management", permission: "Doctor Management" },
-  { icon: Building2, label: "Corporate Management", path: "/team/corporate-management", category: "Management", permission: "Corporate Management" },
-  { icon: Database, label: "Provider Network", path: "/team/provider-network", category: "Management", permission: "Corporate Management" },
-  { icon: Briefcase, label: "Broker Management", path: "/team/broker-management", category: "Management", permission: "Broker Management" },
-  { icon: FlaskConical, label: "Corporate Health Booking", path: "/team/corporate-health-booking", category: "Management", permission: "Corporate Management" },
-  { icon: Crown, label: "User Plan Customization", path: "/team/user-plan-customization", category: "Management", permission: "Corporate Management" },
-  { icon: Building2, label: "Hospital Management", path: "/team/hospital-management", category: "Management", permission: "Hospital Management" },
-  { icon: Building, label: "Clinic Management", path: "/team/clinic-management", category: "Management", permission: "Clinic Management" },
-  { icon: FlaskConical, label: "Lab Management", path: "/team/lab-management", category: "Management", permission: "Lab Management" },
-  { icon: Calendar, label: "Appointments", path: "/team/appointments", category: "Operations", permission: "Appointment Management" },
-  { icon: MessageSquare, label: "Chat Dashboard", path: "/team/chat", category: "Support", permission: "Chat Dashboard Access" },
-  { icon: Ticket, label: "Support Tickets", path: "/team/support-tickets", category: "Support", permission: "Support Tickets" },
-  { icon: Mail, label: "Email Inbox", path: "/team/email-inbox", category: "Support" },
-  { icon: LayoutTemplate, label: "Welcome Emails", path: "/team/settings?tab=email-templates", category: "Support", adminOnly: true },
-  { icon: MessageSquare, label: "WhatsApp Inbox", path: "/team/whatsapp-inbox", category: "Support", permission: "Chat Dashboard Access" },
-  { icon: MessageSquare, label: "RC Omnichannel", path: "/team/rc-omnichannel", category: "Support", permission: "Chat Dashboard Access" },
-  { icon: Pill, label: "Pharmacies", path: "/team/pharmacy-management", category: "Management", permission: "Pharmacy Management" },
-  { icon: Heart, label: "Health Plans", path: "/team/health-plans", category: "Business", permission: "Health Plans Access" },
-  { icon: ShieldCheck, label: "Plan Governance", path: "/team/plan-governance", category: "Security", permission: "Audit Access" },
-  { icon: Database, label: "Activity Logs", path: "/team/activity", category: "Security", permission: "Audit Access" },
-  { icon: Settings, label: "Settings", path: "/team/settings", category: "Administration", adminOnly: true },
+  { icon: Home,        label: "Dashboard",               path: "/team/dashboard" },
+  { icon: Users,       label: "Team Directory",          path: "/team/directory",               permission: "User Management" },
+  { icon: BarChart3,   label: "Reports",                 path: "/team/reports",                 permission: ["Patient Reports","Analytics Access","Reports Access"] },
+  { icon: Activity,    label: "System Tools",            path: "/team/tools",                   adminOnly: true },
+  { icon: Users,       label: "User Management",         path: "/team/user-management",         permission: "User Management" },
+  { icon: Stethoscope, label: "Doctors",                 path: "/team/doctor-management",       permission: "Doctor Management" },
+  { icon: Building2,   label: "Corporate Management",    path: "/team/corporate-management",    permission: "Corporate Management" },
+  { icon: Database,    label: "Provider Network",        path: "/team/provider-network",        permission: "Corporate Management" },
+  { icon: Briefcase,   label: "Broker Management",       path: "/team/broker-management",       permission: "Broker Management" },
+  { icon: FlaskConical,label: "Corporate Health Booking",path: "/team/corporate-health-booking",permission: "Corporate Management" },
+  { icon: Crown,       label: "User Plan Customization", path: "/team/user-plan-customization", permission: "Corporate Management" },
+  { icon: Building2,   label: "Hospital Management",     path: "/team/hospital-management",     permission: "Hospital Management" },
+  { icon: Building,    label: "Clinic Management",       path: "/team/clinic-management",       permission: "Clinic Management" },
+  { icon: FlaskConical,label: "Lab Management",          path: "/team/lab-management",          permission: "Lab Management" },
+  { icon: Calendar,    label: "Appointments",            path: "/team/appointments",            permission: "Appointment Management" },
+  { icon: MessageSquare,label:"Chat Dashboard",          path: "/team/chat",                    permission: "Chat Dashboard Access" },
+  { icon: Ticket,      label: "Support Tickets",         path: "/team/support-tickets",         permission: "Support Tickets" },
+  { icon: Mail,        label: "Email Inbox",             path: "/team/email-inbox" },
+  { icon: LayoutTemplate,label:"Welcome Emails",         path: "/team/settings?tab=email-templates", adminOnly: true },
+  { icon: MessageSquare,label:"WhatsApp Inbox",          path: "/team/whatsapp-inbox",          permission: "Chat Dashboard Access" },
+  { icon: MessageSquare,label:"RC Omnichannel",          path: "/team/rc-omnichannel",          permission: "Chat Dashboard Access" },
+  { icon: Pill,        label: "Pharmacies",              path: "/team/pharmacy-management",     permission: "Pharmacy Management" },
+  { icon: Heart,       label: "Health Plans",            path: "/team/health-plans",            permission: "Health Plans Access" },
+  { icon: ShieldCheck, label: "Plan Governance",         path: "/team/plan-governance",         permission: ["Audit Access","Audit Logs"] },
+  { icon: Database,    label: "Activity Logs",           path: "/team/activity",                permission: ["Audit Access","Audit Logs"] },
+  { icon: Settings,    label: "Settings",                path: "/team/settings",                adminOnly: true },
 ];
 
+/* ─── Helpers ─────────────────────────────────────────────────────────────── */
 const readStoredTeamUser = () => {
-  try {
-    const raw = localStorage.getItem('teamUserData');
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(localStorage.getItem('teamUserData') || 'null'); } catch { return null; }
 };
 
 const hasSidebarPermission = (user: any, required?: string | string[]) => {
   if (!required) return true;
-  const permissions = Array.isArray(user?.permissions) ? user.permissions : [];
-  const requiredList = Array.isArray(required) ? required : [required];
-  return requiredList.some((req) =>
-    permissions.some((permission: string) =>
-      permission.toLowerCase().includes(req.toLowerCase()) ||
-      req.toLowerCase().includes(permission.toLowerCase())
-    )
-  );
+  const permissions: string[] = Array.isArray(user?.permissions) ? user.permissions : [];
+  const needed = Array.isArray(required) ? required : [required];
+  return needed.some(r => permissions.some(p =>
+    p.toLowerCase().includes(r.toLowerCase()) || r.toLowerCase().includes(p.toLowerCase())
+  ));
 };
 
 const isTeamAdmin = (user: any) => (
   user?.isAdmin === true ||
-  String(user?.role || '').toLowerCase() === 'admin' ||
-  String(user?.role || '').toLowerCase() === 'super admin' ||
-  String(user?.role || '').toLowerCase() === 'super_admin'
+  ['admin','super admin','super_admin'].includes(String(user?.role || '').toLowerCase())
 );
 
+/* ─── NavLink helper ──────────────────────────────────────────────────────── */
+function NavLink({ item, active, onClick }: { item: SidebarItem; active: boolean; onClick?: () => void }) {
+  return (
+    <Link
+      to={item.path}
+      onClick={onClick}
+      className={cn(
+        "group flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-150",
+        active
+          ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
+          : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
+      )}
+    >
+      <item.icon className={cn("h-4 w-4 shrink-0 transition-colors",
+        active ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
+      )} />
+      <span className="truncate">{item.label}</span>
+    </Link>
+  );
+}
+
+/* ─── Collapsible section ─────────────────────────────────────────────────── */
+function SidebarAccordion({
+  section,
+  currentPath,
+  onNavClick,
+  isAdmin,
+}: {
+  section: SidebarSection;
+  currentPath: string;
+  onNavClick: () => void;
+  isAdmin: boolean;
+}) {
+  const visibleItems = section.items.filter(i => !i.adminOnly || isAdmin);
+  const hasActive = visibleItems.some(i => currentPath === i.path || currentPath.startsWith(i.path + '/'));
+  const [open, setOpen] = useState(hasActive);
+
+  // Auto-open when navigating into this section
+  useEffect(() => { if (hasActive) setOpen(true); }, [hasActive]);
+
+  if (visibleItems.length === 0) return null;
+
+  // Single-item sections: render directly without accordion chrome
+  if (visibleItems.length === 1) {
+    return <NavLink item={visibleItems[0]} active={currentPath === visibleItems[0].path} onClick={onNavClick} />;
+  }
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={cn(
+          "w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-150",
+          hasActive ? "text-teal-400" : "text-slate-300 hover:text-white hover:bg-slate-800/40"
+        )}
+        aria-expanded={open}
+      >
+        <section.icon className={cn("h-4 w-4 shrink-0", hasActive ? "text-teal-400" : "text-slate-500")} />
+        <span className="flex-1 text-left truncate">{section.label}</span>
+        {open
+          ? <ChevronDown className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+          : <ChevronRight className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+        }
+      </button>
+      {open && (
+        <div className="ml-3 pl-3 border-l border-slate-700/50 mt-0.5 space-y-0.5">
+          {visibleItems.map(item => (
+            <NavLink
+              key={item.path}
+              item={item}
+              active={currentPath === item.path}
+              onClick={onNavClick}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Main Sidebar ────────────────────────────────────────────────────────── */
 export function Sidebar() {
   const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
@@ -190,127 +258,128 @@ export function Sidebar() {
   const [isAdmin, setIsAdmin] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  // Check if user is a team member, nurse, assistant, or admin
   useEffect(() => {
-    const teamToken = localStorage.getItem('teamToken');
-    const nurseToken = localStorage.getItem('nurseToken');
+    const teamToken   = localStorage.getItem('teamToken');
+    const nurseToken  = localStorage.getItem('nurseToken');
     const assistantToken = localStorage.getItem('assistantToken');
-    const userToken = localStorage.getItem('token');
-    
-    // Check if user is admin
+    const userToken   = localStorage.getItem('token');
+
     let userIsAdmin = false;
     if (userToken) {
       try {
         const payload = JSON.parse(atob(userToken.split('.')[1]));
         userIsAdmin = payload.role === 'admin' || payload.isAdmin === true;
-      } catch (e) {
-        console.warn('Failed to parse user token:', e);
-      }
+      } catch {}
     }
     setIsAdmin(userIsAdmin);
-    
-    const isTeamRoute = location.pathname.startsWith('/team');
-    const isNurseRoute = location.pathname.startsWith('/nurse');
-    const isAssistantRoute = location.pathname.startsWith('/assistant');
-    setIsTeamUser(!!teamToken && isTeamRoute);
-    setIsNurseUser(!!nurseToken && isNurseRoute);
-    setIsAssistantUser(!!assistantToken && isAssistantRoute);
+    setIsTeamUser(!!teamToken && location.pathname.startsWith('/team'));
+    setIsNurseUser(!!nurseToken && location.pathname.startsWith('/nurse'));
+    setIsAssistantUser(!!assistantToken && location.pathname.startsWith('/assistant'));
   }, [location.pathname]);
 
-  // Track viewport for responsive open/close
   useEffect(() => {
-    const updateViewport = () => {
-      const desktop = typeof window !== 'undefined' && window.innerWidth >= 768;
+    const update = () => {
+      const desktop = window.innerWidth >= 768;
       setIsDesktop(desktop);
-      setIsOpen(desktop); // default open on desktop, closed on mobile
+      setIsOpen(desktop);
     };
-    updateViewport();
-    window.addEventListener('resize', updateViewport);
-    return () => window.removeEventListener('resize', updateViewport);
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
   }, []);
 
-  // Preserve sidebar scroll position on route change
+  // Preserve sidebar scroll on route change
   useEffect(() => {
-    const scrollViewport = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
-    if (scrollViewport) {
-      const savedScrollTop = sessionStorage.getItem('sidebarScrollTop');
-      if (savedScrollTop) {
-        scrollViewport.scrollTop = parseInt(savedScrollTop, 10);
-      }
+    const vp = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+    if (vp) {
+      const saved = sessionStorage.getItem('sidebarScrollTop');
+      if (saved) vp.scrollTop = parseInt(saved, 10);
     }
   }, [location.pathname]);
 
-  // Save scroll position before navigation
   const handleNavClick = () => {
-    const scrollViewport = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
-    if (scrollViewport) {
-      sessionStorage.setItem('sidebarScrollTop', scrollViewport.scrollTop.toString());
-    }
-    if (window.innerWidth < 768) {
-      toggleSidebar();
-    }
+    const vp = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+    if (vp) sessionStorage.setItem('sidebarScrollTop', vp.scrollTop.toString());
+    if (window.innerWidth < 768) setIsOpen(false);
   };
 
-  // Function to toggle sidebar
-  const toggleSidebar = () => {
-    setIsOpen(prev => !prev);
-  };
-
-  // Get sidebar items based on user type
+  /* ── Nurse sidebar ── */
   const nurseSidebarItems: SidebarItem[] = [
-    { icon: Home, label: 'Dashboard', path: '/nurse/dashboard' },
-    { icon: Users, label: 'Patients', path: '/nurse/patients' },
-    { icon: Activity, label: 'Record Vitals', path: '/nurse/vitals' },
-    { icon: Pill, label: 'Medications', path: '/nurse/medications' },
-    { icon: FileText, label: 'Notes', path: '/nurse/notes' },
-    { icon: Calendar, label: 'Appointments', path: '/nurse/appointments' },
-    { icon: MessageSquare, label: 'Messages', path: '/nurse/chat' },
-    { icon: UserCircle, label: 'Register Patient', path: '/nurse/register-patient' },
+    { icon: Home,        label: 'Dashboard',        path: '/nurse/dashboard' },
+    { icon: Users,       label: 'Patients',         path: '/nurse/patients' },
+    { icon: Activity,    label: 'Record Vitals',    path: '/nurse/vitals' },
+    { icon: Pill,        label: 'Medications',      path: '/nurse/medications' },
+    { icon: FileText,    label: 'Notes',            path: '/nurse/notes' },
+    { icon: Calendar,    label: 'Appointments',     path: '/nurse/appointments' },
+    { icon: MessageSquare, label: 'Messages',       path: '/nurse/chat' },
+    { icon: UserCircle,  label: 'Register Patient', path: '/nurse/register-patient' },
   ];
 
-  // Assistant Portal Sidebar Items
+  /* ── Assistant sidebar ── */
   const assistantSidebarItems: SidebarItem[] = [
-    { icon: Home, label: 'Dashboard', path: '/assistant/dashboard' },
-    { icon: Users, label: 'My Patients', path: '/assistant/patients' },
-    { icon: UserPlus, label: 'Register Patient', path: '/assistant/register-patient' },
-    { icon: Calendar, label: 'Appointments', path: '/assistant/appointments' },
-    { icon: FileText, label: 'Prescriptions', path: '/assistant/prescriptions' },
-    { icon: Receipt, label: 'Billing', path: '/assistant/billing' },
-    { icon: MessageSquare, label: 'Messages', path: '/assistant/messages' },
-    { icon: ClipboardList, label: 'Orders & Tasks', path: '/assistant/orders' },
-    { icon: BarChart3, label: 'Reports', path: '/assistant/reports' },
-    { icon: UserCircle, label: 'Profile', path: '/assistant/profile' },
+    { icon: Home,          label: 'Dashboard',        path: '/assistant/dashboard' },
+    { icon: Users,         label: 'My Patients',      path: '/assistant/patients' },
+    { icon: UserPlus,      label: 'Register Patient', path: '/assistant/register-patient' },
+    { icon: Calendar,      label: 'Appointments',     path: '/assistant/appointments' },
+    { icon: FileText,      label: 'Prescriptions',    path: '/assistant/prescriptions' },
+    { icon: Receipt,       label: 'Billing',          path: '/assistant/billing' },
+    { icon: MessageSquare, label: 'Messages',         path: '/assistant/messages' },
+    { icon: ClipboardList, label: 'Orders & Tasks',   path: '/assistant/orders' },
+    { icon: BarChart3,     label: 'Reports',          path: '/assistant/reports' },
+    { icon: UserCircle,    label: 'Profile',          path: '/assistant/profile' },
   ];
 
-  const getSidebarItems = () => {
-    if (isTeamUser) {
-      const teamUser = readStoredTeamUser();
-      const teamAdmin = isTeamAdmin(teamUser);
-      return teamSidebarItems.filter((item) => {
-        if (item.adminOnly) return teamAdmin;
-        return teamAdmin || hasSidebarPermission(teamUser, item.permission);
-      });
-    }
-    if (isNurseUser) return nurseSidebarItems;
-    if (isAssistantUser) return assistantSidebarItems;
-    
-    // Filter out admin-only items for regular users
-    return sidebarItems.filter(item => {
-      if (item.adminOnly) {
-        return isAdmin; // Only show admin items to admin users
-      }
-      return true; // Show all other items
-    });
-  };
+  /* ── Render team/nurse/assistant items (flat list, categorised) ── */
+  const renderFlatItems = (items: SidebarItem[], sections?: { label: string; category?: string }[]) => {
+    const teamUser = readStoredTeamUser();
+    const teamAdmin = isTeamAdmin(teamUser);
+    const visible = items.filter(i =>
+      i.adminOnly ? (isTeamUser ? teamAdmin : isAdmin) : (isTeamUser ? hasSidebarPermission(teamUser, i.permission) : true)
+    );
 
-  const items = getSidebarItems();
+    if (!sections) {
+      return visible.map(item => (
+        <NavLink key={item.path} item={item} active={location.pathname === item.path} onClick={handleNavClick} />
+      ));
+    }
+
+    // Group by category for team sidebar
+    const grouped: Record<string, SidebarItem[]> = {};
+    const topItems: SidebarItem[] = [];
+    visible.forEach(item => {
+      if ((item as any).category) {
+        const cat = (item as any).category as string;
+        grouped[cat] = [...(grouped[cat] || []), item];
+      } else {
+        topItems.push(item);
+      }
+    });
+
+    return (
+      <>
+        {topItems.map(item => (
+          <NavLink key={item.path} item={item} active={location.pathname === item.path} onClick={handleNavClick} />
+        ))}
+        {Object.entries(grouped).map(([cat, catItems]) => (
+          <div key={cat}>
+            <div className="px-3 py-2 mt-4">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{cat}</p>
+            </div>
+            {catItems.map(item => (
+              <NavLink key={item.path} item={item} active={location.pathname === item.path} onClick={handleNavClick} />
+            ))}
+          </div>
+        ))}
+      </>
+    );
+  };
 
   return (
     <>
-      {/* Mobile toggle button - outside the sidebar */}
+      {/* Mobile toggle */}
       <button
         id="sidebar-toggle"
-        onClick={toggleSidebar}
+        onClick={() => setIsOpen(o => !o)}
         className="fixed top-4 left-4 z-50 p-2 rounded-md bg-primary text-white md:hidden"
         aria-expanded={isOpen}
         aria-controls="sidebar"
@@ -322,14 +391,16 @@ export function Sidebar() {
       {/* Sidebar */}
       <div
         id="sidebar"
+        role="navigation"
+        aria-label="Main navigation"
         className={cn(
           "fixed inset-y-0 left-0 flex flex-col w-64 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 transform transition-transform duration-300 ease-in-out z-40 shadow-xl",
           (isDesktop || isOpen) ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        {/* Close button - visible only on mobile */}
+        {/* Close (mobile) */}
         <button
-          onClick={toggleSidebar}
+          onClick={() => setIsOpen(false)}
           className="absolute top-4 right-4 p-1 rounded-md text-slate-400 hover:text-white md:hidden"
           aria-label="Close navigation menu"
         >
@@ -337,304 +408,93 @@ export function Sidebar() {
         </button>
 
         {/* Logo */}
-        <div className="flex items-center border-b border-slate-700/50 px-5 py-4">
-          {/* Replace with SmartHealth logo if available */}
-          <img src={BRAND.logo} alt="SmartHealth Logo" style={{ height: 38, width: 38, marginRight: 12, borderRadius: 8 }} />
+        <div className="flex items-center border-b border-slate-700/50 px-5 py-4 shrink-0">
+          <img src={BRAND.logo} alt={`${BRAND.name} logo`} style={{ height: 38, width: 38, marginRight: 12, borderRadius: 8 }} />
           <span className="text-lg font-bold text-white tracking-tight">{BRAND.name}</span>
         </div>
 
-        {/* Sidebar Links */}
-        <ScrollArea ref={scrollAreaRef} className="flex-1 px-3 py-4">
-          <div className="space-y-1">
-            {/* Team Section Header */}
+        {/* ── Home link (always visible, not collapsible) ── */}
+        {!isTeamUser && !isNurseUser && !isAssistantUser && (
+          <div className="px-3 pt-3 pb-1 shrink-0">
+            <Link
+              to="/"
+              onClick={handleNavClick}
+              className={cn(
+                "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-150",
+                location.pathname === "/"
+                  ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
+                  : "text-slate-300 hover:bg-slate-800/60 hover:text-white"
+              )}
+            >
+              <Home className={cn("h-4 w-4 shrink-0", location.pathname === "/" ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400")} />
+              <span>Home</span>
+            </Link>
+            <Link
+              to="/profile"
+              onClick={handleNavClick}
+              className={cn(
+                "group flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-150 mt-0.5",
+                location.pathname === "/profile"
+                  ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
+                  : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
+              )}
+            >
+              <UserCircle className={cn("h-4 w-4 shrink-0", location.pathname === "/profile" ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400")} />
+              <span>My Profile</span>
+            </Link>
+          </div>
+        )}
+
+        {/* Links */}
+        <ScrollArea ref={scrollAreaRef} className="flex-1 px-3 py-2">
+          <div className="space-y-0.5">
+
+            {/* Team portal header */}
             {(isTeamUser || isNurseUser || isAssistantUser) && (
-              <div className="px-3 py-2 mb-2">
+              <div className="px-3 py-2 mb-1">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
                   {isTeamUser ? 'Team Dashboard' : isNurseUser ? 'Nurse Portal' : 'Assistant Portal'}
                 </p>
               </div>
             )}
-            
-            {/* Regular User Navigation with Categories */}
+
+            {/* Patient: 7 collapsible sections */}
             {!isTeamUser && !isNurseUser && !isAssistantUser && (
               <>
-                {/* Main Section */}
-                {items.filter(item => item.category === 'Main').map((item) => (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={cn(
-                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                      location.pathname === item.path
-                        ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
-                        : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
-                    )}
-                    onClick={handleNavClick}
-                  >
-                    <item.icon className={cn(
-                      "h-4 w-4 transition-colors",
-                      location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
-                    )} />
-                    <span>{item.label}</span>
-                  </Link>
+                {patientSections.map(section => (
+                  <SidebarAccordion
+                    key={section.id}
+                    section={section}
+                    currentPath={location.pathname}
+                    onNavClick={handleNavClick}
+                    isAdmin={isAdmin}
+                  />
                 ))}
-
-                {/* Health Section */}
-                <div className="px-3 py-2 mt-4">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Health</p>
+                <div className="pt-3 border-t border-slate-700/30 mt-3 space-y-0.5">
+                  {patientFooterItems.map(item => (
+                    <NavLink key={item.path} item={item} active={location.pathname === item.path} onClick={handleNavClick} />
+                  ))}
                 </div>
-                {items.filter(item => item.category === 'Health').map((item) => (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={cn(
-                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                      location.pathname === item.path
-                        ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
-                        : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
-                    )}
-                    onClick={handleNavClick}
-                  >
-                    <item.icon className={cn(
-                      "h-4 w-4 transition-colors",
-                      location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
-                    )} />
-                    <span>{item.label}</span>
-                  </Link>
-                ))}
-
-                {/* Appointments Section */}
-                <div className="px-3 py-2 mt-4">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Appointments</p>
-                </div>
-                {items.filter(item => item.category === 'Appointments').map((item) => (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={cn(
-                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                      location.pathname === item.path
-                        ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
-                        : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
-                    )}
-                    onClick={handleNavClick}
-                  >
-                    <item.icon className={cn(
-                      "h-4 w-4 transition-colors",
-                      location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
-                    )} />
-                    <span>{item.label}</span>
-                  </Link>
-                ))}
-
-                {/* Records Section */}
-                <div className="px-3 py-2 mt-4">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Records</p>
-                </div>
-                {items.filter(item => item.category === 'Records').map((item) => (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={cn(
-                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                      location.pathname === item.path
-                        ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
-                        : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
-                    )}
-                    onClick={handleNavClick}
-                  >
-                    <item.icon className={cn(
-                      "h-4 w-4 transition-colors",
-                      location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
-                    )} />
-                    <span>{item.label}</span>
-                  </Link>
-                ))}
-
-                {/* Services Section */}
-                <div className="px-3 py-2 mt-4">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Services</p>
-                </div>
-                {items.filter(item => item.category === 'Services').map((item) => (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={cn(
-                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                      location.pathname === item.path
-                        ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
-                        : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
-                    )}
-                    onClick={handleNavClick}
-                  >
-                    <item.icon className={cn(
-                      "h-4 w-4 transition-colors",
-                      location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
-                    )} />
-                    <span>{item.label}</span>
-                  </Link>
-                ))}
-
-                {/* Finance Section */}
-                <div className="px-3 py-2 mt-4">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Wallet & Plans</p>
-                </div>
-                {items.filter(item => item.category === 'Finance').map((item) => (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={cn(
-                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                      location.pathname === item.path
-                        ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
-                        : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
-                    )}
-                    onClick={handleNavClick}
-                  >
-                    <item.icon className={cn(
-                      "h-4 w-4 transition-colors",
-                      location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
-                    )} />
-                    <span>{item.label}</span>
-                  </Link>
-                ))}
               </>
             )}
-            
-            {/* Team/Nurse/Assistant user navigation - items without category */}
-            {(isTeamUser || isNurseUser) && items.filter(item => !item.category).map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={cn(
-                  "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                  location.pathname === item.path
-                    ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
-                    : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
-                )}
-                onClick={handleNavClick}
-              >
-                <item.icon className={cn(
-                  "h-4 w-4 transition-colors",
-                  location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
-                )} />
-                <span>{item.label}</span>
-              </Link>
-            ))}
 
-            {/* Assistant Portal Navigation - render all items */}
-            {isAssistantUser && items.map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={cn(
-                  "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                  location.pathname === item.path
-                    ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
-                    : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
-                )}
-                onClick={handleNavClick}
-              >
-                <item.icon className={cn(
-                  "h-4 w-4 transition-colors",
-                  location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
-                )} />
-                <span>{item.label}</span>
-              </Link>
-            ))}
+            {/* Nurse */}
+            {isNurseUser && renderFlatItems(nurseSidebarItems)}
 
-            {/* Module sections for team users */}
-            {isTeamUser && (
-              <>
-                {/* Management Modules */}
-                <div className="px-3 py-2 mt-6">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    Management
-                  </p>
-                </div>
-                {items.filter(item => item.category === 'Management').map((item) => (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={cn(
-                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                      location.pathname === item.path
-                        ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
-                        : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
-                    )}
-                    onClick={handleNavClick}
-                  >
-                    <item.icon className={cn(
-                      "h-4 w-4 transition-colors",
-                      location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
-                    )} />
-                    <span>{item.label}</span>
-                  </Link>
-                ))}
+            {/* Assistant */}
+            {isAssistantUser && renderFlatItems(assistantSidebarItems)}
 
-                {/* Operations Modules */}
-                <div className="px-3 py-2 mt-6">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    Operations
-                  </p>
-                </div>
-                {items.filter(item => item.category === 'Operations' || item.category === 'Support').map((item) => (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={cn(
-                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                      location.pathname === item.path
-                        ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
-                        : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
-                    )}
-                    onClick={handleNavClick}
-                  >
-                    <item.icon className={cn(
-                      "h-4 w-4 transition-colors",
-                      location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
-                    )} />
-                    <span>{item.label}</span>
-                  </Link>
-                ))}
-
-                {/* Other Modules */}
-                {items.filter(item => item.category && !['Management', 'Operations', 'Support'].includes(item.category)).length > 0 && (
-                  <>
-                    <div className="px-3 py-2 mt-6">
-                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        Other Modules
-                      </p>
-                    </div>
-                    {items.filter(item => item.category && !['Management', 'Operations', 'Support'].includes(item.category)).map((item) => (
-                      <Link
-                        key={item.path}
-                        to={item.path}
-                        className={cn(
-                          "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                          location.pathname === item.path
-                            ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
-                            : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
-                        )}
-                        onClick={handleNavClick}
-                      >
-                        <item.icon className={cn(
-                          "h-4 w-4 transition-colors",
-                          location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
-                        )} />
-                        <span>{item.label}</span>
-                      </Link>
-                    ))}
-                  </>
-                )}
-              </>
+            {/* Team */}
+            {isTeamUser && renderFlatItems(
+              teamSidebarItems.map(i => ({ ...i })),
+              [{ label: "Management" }, { label: "Operations" }, { label: "Support" }]
             )}
           </div>
         </ScrollArea>
 
-        {/* Chat with Doctor - Hide for team, nurse, and assistant users */}
+        {/* Chat CTA (patient only) */}
         {!isTeamUser && !isNurseUser && !isAssistantUser && (
-          <div className="border-t border-slate-700/50 p-4">
+          <div className="border-t border-slate-700/50 p-4 shrink-0">
             <Button asChild className="w-full bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg shadow-teal-500/20 border-0">
               <Link to="/chat" className="flex items-center gap-2">
                 <MessageSquare className="h-4 w-4" />
@@ -645,13 +505,14 @@ export function Sidebar() {
         )}
       </div>
 
-      {/* Overlay for mobile - appears when sidebar is open */}
-      <div
-        id="sidebar-overlay"
-        className="fixed inset-0 bg-black/50 opacity-0 pointer-events-none transition-opacity duration-300 md:hidden z-30"
-        onClick={toggleSidebar}
-        aria-hidden="true"
-      ></div>
+      {/* Mobile overlay */}
+      {isOpen && !isDesktop && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          onClick={() => setIsOpen(false)}
+          aria-hidden="true"
+        />
+      )}
     </>
   );
 }

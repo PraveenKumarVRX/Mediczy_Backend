@@ -26,7 +26,7 @@ echo "Target Email: $EMAIL"
 echo "New Password: (hidden)"
 echo ""
 
-node << EOF
+node --input-type=module << EOF
 import postgresSequelize from './server/db/postgres-sequelize.js';
 import bcrypt from 'bcrypt';
 
@@ -35,7 +35,7 @@ import bcrypt from 'bcrypt';
     console.log('⏳ Processing...');
     
     // Verify user exists first
-    const [existing] = await postgresSequelize.query(
+    const existing = await postgresSequelize.query(
       'SELECT id, email FROM users WHERE LOWER(email) = LOWER(?)',
       {
         replacements: ['$EMAIL'],
@@ -67,7 +67,7 @@ import bcrypt from 'bcrypt';
     console.log('✅ Password updated successfully for:', '$EMAIL');
     
     // Verify update
-    const [updated] = await postgresSequelize.query(
+    const updated = await postgresSequelize.query(
       'SELECT id, email, SUBSTRING(password, 1, 30) as pwd_preview FROM users WHERE id = ?',
       {
         replacements: [userId],

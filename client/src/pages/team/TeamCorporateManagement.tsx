@@ -1,5 +1,6 @@
 // Version: 2.1.0 - Numeric Corporate ID Conversion Ready
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import ExcelJS from 'exceljs';
 import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -63,6 +64,7 @@ import {
 } from 'lucide-react';
 import api from '@/utils/api';
 import { useNavigate } from 'react-router-dom';
+import CorporateWelcomeEmailBatchDialog, { WelcomeEmailDraft } from './CorporateWelcomeEmailBatchDialog';
 
 interface Corporate {
   id: number;
@@ -105,6 +107,12 @@ interface Employee {
   packageValidTo?: string;
   gender?: string;
   dateOfBirth?: string;
+  lastLoginAt?: string | null;
+  lastActivityAt?: string | null;
+  loginCount?: number;
+  requirePasswordChange?: boolean;
+  welcomeEmailStatus?: string | null;
+  welcomeEmailSentAt?: string | null;
 }
 
 interface LabPartner {
@@ -188,8 +196,190 @@ interface CorporatePlan {
   healthPackageIds?: string[];
 }
 
+interface WelcomeEmailTemplatePreset {
+  id: string;
+  name: string;
+  subject: string;
+  html: string;
+}
+
+interface WelcomeDeliveryRecord {
+  id: number;
+  corporateId: number;
+  userId: number;
+  employeeId: string | null;
+  recipientEmail: string;
+  subject: string | null;
+  idempotencyKey: string;
+  requestScope: string;
+  status: 'prepared' | 'queued' | 'sent' | 'failed' | 'rolled_back' | string;
+  attempts: number;
+  errorMessage: string | null;
+  metadata: Record<string, any>;
+  createdBy: number | null;
+  createdAt: string;
+  updatedAt: string;
+  userEmail?: string | null;
+  userFirstName?: string | null;
+  userLastName?: string | null;
+}
+
+interface CorporateAdminUser {
+  id: number;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phoneNumber: string;
+  status: string;
+  lastLoginAt: string | null;
+  createdAt: string;
+  role: string;
+}
+
 type CommunicationChannel = 'email' | 'whatsapp' | 'sms';
 type CommunicationRecipientMode = 'individual' | 'selected' | 'bulk';
+type WelcomeEmailMode = 'draft' | 'send' | 'skip';
+
+interface EmailQuotaSnapshot {
+  used: number;
+  limit: number;
+  remaining: number;
+  allowed: boolean;
+}
+
+type BulkEmployeeField =
+  | 'firstName'
+  | 'lastName'
+  | 'email'
+  | 'phoneNumber'
+  | 'employeeId'
+  | 'department'
+  | 'designation'
+  | 'dateOfBirth'
+  | 'gender'
+  | 'city'
+  | 'state'
+  | 'pinCode'
+  | 'location'
+  | 'facility';
+
+const BULK_EMPLOYEE_FIELDS: BulkEmployeeField[] = [
+  'firstName',
+  'lastName',
+  'email',
+  'phoneNumber',
+  'employeeId',
+  'department',
+  'designation',
+  'dateOfBirth',
+  'gender',
+  'city',
+  'state',
+  'pinCode',
+  'location',
+  'facility',
+];
+
+const BULK_EMPLOYEE_HEADER_ALIASES: Record<string, BulkEmployeeField> = {
+  'first name': 'firstName',
+  firstname: 'firstName',
+  fname: 'firstName',
+  givenname: 'firstName',
+  'given name': 'firstName',
+  'employee first name': 'firstName',
+  'member first name': 'firstName',
+  'last name': 'lastName',
+  lastname: 'lastName',
+  lname: 'lastName',
+  surname: 'lastName',
+  familyname: 'lastName',
+  'family name': 'lastName',
+  'employee last name': 'lastName',
+  'member last name': 'lastName',
+  name: 'firstName',
+  'employee name': 'firstName',
+  'member name': 'firstName',
+  'full name': 'firstName',
+  email: 'email',
+  'email id': 'email',
+  emailid: 'email',
+  'email address': 'email',
+  'work email': 'email',
+  'official email': 'email',
+  'corporate email': 'email',
+  phone: 'phoneNumber',
+  phonenumber: 'phoneNumber',
+  'phone number': 'phoneNumber',
+  mobile: 'phoneNumber',
+  'mobile number': 'phoneNumber',
+  contact: 'phoneNumber',
+  'contact number': 'phoneNumber',
+  employeeid: 'employeeId',
+  'employee id': 'employeeId',
+  empid: 'employeeId',
+  'emp id': 'employeeId',
+  'employee code': 'employeeId',
+  'emp code': 'employeeId',
+  'staff id': 'employeeId',
+  'staff code': 'employeeId',
+  'associate id': 'employeeId',
+  'ninjacart id': 'employeeId',
+  department: 'department',
+  dept: 'department',
+  function: 'department',
+  'business unit': 'department',
+  vertical: 'department',
+  designation: 'designation',
+  role: 'designation',
+  'job title': 'designation',
+  title: 'designation',
+  position: 'designation',
+  grade: 'designation',
+  dateofbirth: 'dateOfBirth',
+  'date of birth': 'dateOfBirth',
+  dob: 'dateOfBirth',
+  birthdate: 'dateOfBirth',
+  gender: 'gender',
+  sex: 'gender',
+  city: 'city',
+  'work city': 'city',
+  'base city': 'city',
+  state: 'state',
+  'work state': 'state',
+  pincode: 'pinCode',
+  'pin code': 'pinCode',
+  pin: 'pinCode',
+  zip: 'pinCode',
+  'zip code': 'pinCode',
+  'postal code': 'pinCode',
+  location: 'location',
+  branch: 'location',
+  'work location': 'location',
+  'office location': 'location',
+  hub: 'location',
+  facility: 'facility',
+  'work facility': 'facility',
+  site: 'facility',
+  warehouse: 'facility',
+};
+
+const normalizeBulkHeaderKey = (header: string) =>
+  String(header || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_\-./\\]+/g, ' ')
+    .replace(/[^a-z0-9 ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const isBulkEmployeeField = (value: unknown): value is BulkEmployeeField =>
+  BULK_EMPLOYEE_FIELDS.includes(value as BulkEmployeeField);
+
+const resolveBulkHeaderField = (header: string): BulkEmployeeField | '' => {
+  const normalized = normalizeBulkHeaderKey(header);
+  if (!normalized) return '';
+  return BULK_EMPLOYEE_HEADER_ALIASES[normalized] || BULK_EMPLOYEE_HEADER_ALIASES[normalized.replace(/\s+/g, '')] || '';
+};
 
 interface CommunicationTemplate {
   id: string;
@@ -220,6 +410,57 @@ const defaultBenefits = [
   { id: 'b14', name: 'Physiotherapy', category: 'Therapy', description: 'Physical rehabilitation', isIncluded: false, limit: '10 sessions per year' },
   { id: 'b15', name: 'Vision Care', category: 'Vision', description: 'Eye exams and glasses', isIncluded: false, limit: '₹5000 per year' },
 ];
+
+const defaultPlanFeatures: Record<string, boolean> = {
+  opd: true,
+  ipd: true,
+  maternity: false,
+  dental: false,
+  pharmacy: true,
+  diagnostics: true,
+  homecare: false,
+  ambulance: true,
+  wellness: true,
+  mentalHealth: false,
+  healthCalendar: false,
+  pharmacyDiscount: false,
+  webinars: false,
+  labDiscount: false,
+  discountCoupons: false,
+  gymMembership: false,
+  wellnessMembership: false,
+  wellnessPackageDiscounts: false,
+};
+
+const planFeatureLabels: Record<string, string> = {
+  opd: 'OPD',
+  ipd: 'IPD',
+  maternity: 'Maternity',
+  dental: 'Dental',
+  pharmacy: 'Pharmacy',
+  diagnostics: 'Diagnostics',
+  homecare: 'Homecare Services',
+  ambulance: 'Ambulance',
+  wellness: 'Wellness',
+  mentalHealth: 'Mental Health',
+  healthCalendar: 'Health Calendar',
+  pharmacyDiscount: 'Pharmacy Discount',
+  webinars: 'Webinars',
+  labDiscount: 'Lab Discount',
+  discountCoupons: 'Discount Coupons',
+  gymMembership: 'Gym Membership',
+  wellnessMembership: 'Wellness Membership',
+  wellnessPackageDiscounts: 'Wellness Package Discounts',
+};
+
+const getPlanFeatureLabel = (key: string) =>
+  planFeatureLabels[key] || key.replace(/([A-Z])/g, ' $1').trim();
+
+const mergePlanFeatures = (features?: Record<string, boolean>) => ({
+  ...defaultPlanFeatures,
+  ...(features || {}),
+});
+
 const industries = [
   'Information Technology', 'Banking & Finance', 'Healthcare', 'Manufacturing',
   'Retail', 'Education', 'Consulting', 'Telecommunications', 'Real Estate', 'Other'
@@ -341,6 +582,7 @@ const TeamCorporateManagement = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const welcomeDeliveryAuditRef = useRef<HTMLDivElement | null>(null);
   
   // State
   const [loading, setLoading] = useState(true);
@@ -399,15 +641,57 @@ const TeamCorporateManagement = () => {
   const [savingCorporate, setSavingCorporate] = useState(false);
   const [deletingCorporate, setDeletingCorporate] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [corporateAdmins, setCorporateAdmins] = useState<CorporateAdminUser[]>([]);
+  const [corporateAdminsLoading, setCorporateAdminsLoading] = useState(false);
   const [empCurrentPage, setEmpCurrentPage] = useState(1);
   const EMP_PAGE_SIZE = 10;
 
   // Dialog states
   const [showAddCorporateDialog, setShowAddCorporateDialog] = useState(false);
   const [showAddHRDialog, setShowAddHRDialog] = useState(false);
+  const [editingHRAdmin, setEditingHRAdmin] = useState<CorporateAdminUser | null>(null);
+  const [updatingHRAdmin, setUpdatingHRAdmin] = useState(false);
   const [showAddEmployeeDialog, setShowAddEmployeeDialog] = useState(false);
   const [showCredentialsDialog, setShowCredentialsDialog] = useState(false);
-  const [newEmployeeCredentials, setNewEmployeeCredentials] = useState<{name: string; email: string; password: string} | null>(null);
+  const [newEmployeeCredentials, setNewEmployeeCredentials] = useState<{name: string; email: string; password: string; emailStatus: "queued" | "skipped" | "draft" | "not_applicable"} | null>(null);
+  const [employeeWelcomeEmailMode, setEmployeeWelcomeEmailMode] = useState<WelcomeEmailMode>("draft");
+  const [welcomeEmailDrafts, setWelcomeEmailDrafts] = useState<WelcomeEmailDraft[]>([]);
+  const [showWelcomeEmailBatchDialog, setShowWelcomeEmailBatchDialog] = useState(false);
+  const [sendingWelcomeEmailBatch, setSendingWelcomeEmailBatch] = useState(false);
+  const [sendingExistingWelcomeEmail, setSendingExistingWelcomeEmail] = useState(false);
+  const [selectedEmployeeIdsForWelcome, setSelectedEmployeeIdsForWelcome] = useState<string[]>([]);
+  const [welcomeEmployeeSearch, setWelcomeEmployeeSearch] = useState('');
+  const [welcomeEmployeeSelectionMode, setWelcomeEmployeeSelectionMode] = useState<'selected' | 'all'>('selected');
+  const [selectedWelcomeTemplateId, setSelectedWelcomeTemplateId] = useState('standard-welcome');
+  const [approvedWelcomeTemplateId, setApprovedWelcomeTemplateId] = useState<string | null>(null);
+  const [savedWelcomeEmailTemplates, setSavedWelcomeEmailTemplates] = useState<WelcomeEmailTemplatePreset[]>([]);
+  const [savingWelcomeTemplate, setSavingWelcomeTemplate] = useState(false);
+  const [approvingWelcomeTemplate, setApprovingWelcomeTemplate] = useState(false);
+  const [preparingWelcomeEmployeeDrafts, setPreparingWelcomeEmployeeDrafts] = useState(false);
+  const [welcomeDeliveries, setWelcomeDeliveries] = useState<WelcomeDeliveryRecord[]>([]);
+  const [welcomeDeliveriesLoading, setWelcomeDeliveriesLoading] = useState(false);
+  const [welcomeDeliveryFilters, setWelcomeDeliveryFilters] = useState({
+    status: 'all',
+    requestScope: 'all',
+    employeeId: '',
+    recipient: '',
+    from: '',
+    to: '',
+  });
+  const [welcomeDeliverySummary, setWelcomeDeliverySummary] = useState({
+    total: 0,
+    sent: 0,
+    queued: 0,
+    failed: 0,
+    rolledBack: 0,
+    prepared: 0,
+  });
+  const [welcomeDeliveryPagination, setWelcomeDeliveryPagination] = useState({
+    limit: 20,
+    offset: 0,
+    total: 0,
+  });
+  const [resendingWelcomeDeliveryId, setResendingWelcomeDeliveryId] = useState<number | null>(null);
   const [showViewEmployeeDialog, setShowViewEmployeeDialog] = useState(false);
   const [showEditEmployeeDialog, setShowEditEmployeeDialog] = useState(false);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
@@ -452,7 +736,14 @@ const TeamCorporateManagement = () => {
     qcLog: { row: number; employeeId: string; name: string; email: string; issues: string[] }[];
   } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [bulkWelcomeEmailMode, setBulkWelcomeEmailMode] = useState<WelcomeEmailMode>("draft");
+  const [bulkUseAiColumnDetection, setBulkUseAiColumnDetection] = useState(true);
+  const [bulkAiColumnSummary, setBulkAiColumnSummary] = useState<string | null>(null);
   const [showUploadReport, setShowUploadReport] = useState(false);
+  const [bulkRemoveUnlisted, setBulkRemoveUnlisted] = useState(false);
+  const [syncOffboardList, setSyncOffboardList] = useState<{ id: number; name: string; email: string; employeeId: string }[]>([]);
+  const [showSyncConfirmDialog, setShowSyncConfirmDialog] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   
   // Corporate form
   const [newCorporate, setNewCorporate] = useState({
@@ -515,7 +806,7 @@ const TeamCorporateManagement = () => {
     planName: '', planType: 'Standard', description: '', validFrom: '', validTo: '',
     totalEmployees: '', premiumPerEmployee: '', status: 'Active', currency: 'INR',
     benefits: [...defaultBenefits],
-    features: { opd: true, ipd: true, maternity: false, dental: false, pharmacy: true, diagnostics: true, homecare: false, ambulance: true, wellness: true, mentalHealth: false },
+    features: mergePlanFeatures(),
     coverage: { sumInsured: '', roomRent: 'Single Room', icuRent: '2% of Sum Insured', prePolicyMedical: '30 days', postPolicyMedical: '60 days' },
     healthPackageIds: [] as string[],
   });
@@ -530,18 +821,7 @@ const TeamCorporateManagement = () => {
     status: 'Active',
     currency: 'INR',
     benefits: [...defaultBenefits],
-    features: {
-      opd: true,
-      ipd: true,
-      maternity: false,
-      dental: false,
-      pharmacy: true,
-      diagnostics: true,
-      homecare: false,
-      ambulance: true,
-      wellness: true,
-      mentalHealth: false,
-    },
+    features: mergePlanFeatures(),
     coverage: {
       sumInsured: '',
       roomRent: 'Single Room',
@@ -658,6 +938,45 @@ const TeamCorporateManagement = () => {
     };
   };
 
+  const fitCopyToChannelLimits = (text: string, wordLimit: number, charLimit: number) => {
+    const limitedByWords = clampWords(text, wordLimit);
+    const limitedByChars = clampChars(limitedByWords.text, charLimit);
+    return {
+      text: limitedByChars.text,
+      truncated: limitedByWords.truncated || limitedByChars.truncated,
+    };
+  };
+
+  const extractJsonObject = (text: string) => {
+    const trimmed = (text || '').trim();
+    if (!trimmed) return null;
+
+    const direct = trimmed.match(/^\s*\{[\s\S]*\}\s*$/);
+    if (direct?.[0]) {
+      try { return JSON.parse(direct[0]); } catch (_) { /* no-op */ }
+    }
+
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenced?.[1]) {
+      try { return JSON.parse(fenced[1].trim()); } catch (_) { /* no-op */ }
+    }
+
+    const firstObj = trimmed.match(/\{[\s\S]*\}/);
+    if (firstObj?.[0]) {
+      try { return JSON.parse(firstObj[0]); } catch (_) { /* no-op */ }
+    }
+    return null;
+  };
+
+  const stripAiTemplateFraming = (text: string) => {
+    const lines = (text || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => !/^(here(?:'s| is)|below is|template name:|category:|note:|final template:|body:|message:|email body:)/i.test(line));
+    return lines.join('\n').trim();
+  };
+
   const lintTemplateCopy = (channel: CommunicationChannel, subject: string, content: string) => {
     const blocking: string[] = [];
     const warnings: string[] = [];
@@ -729,15 +1048,30 @@ const TeamCorporateManagement = () => {
   const parseAiTemplateOutput = (text: string) => {
     const trimmed = (text || '').trim();
     if (!trimmed) return { subject: '', content: '' };
+
+    const maybeJson = extractJsonObject(trimmed);
+    if (maybeJson && typeof maybeJson === 'object') {
+      const subject = String((maybeJson.subject ?? maybeJson.title ?? '') || '').trim();
+      const rawBody = String((maybeJson.body ?? maybeJson.content ?? maybeJson.message ?? '') || '').trim();
+      return {
+        subject,
+        content: stripAiTemplateFraming(rawBody),
+      };
+    }
+
     if (communicationChannel !== 'email') {
-      return { subject: '', content: trimmed };
+      return { subject: '', content: stripAiTemplateFraming(trimmed) };
     }
     const lines = trimmed.split('\n');
     const subjectLine = lines.find((l: string) => l.toLowerCase().startsWith('subject:'));
-    const body = lines.filter((l: string) => !l.toLowerCase().startsWith('subject:')).join('\n').trim();
+    const body = lines
+      .filter((l: string) => !l.toLowerCase().startsWith('subject:'))
+      .join('\n')
+      .replace(/^body:\s*/i, '')
+      .trim();
     return {
       subject: subjectLine ? subjectLine.replace(/^subject:\s*/i, '').trim() : '',
-      content: body || trimmed,
+      content: stripAiTemplateFraming(body || trimmed),
     };
   };
 
@@ -756,23 +1090,25 @@ Template name: "${nameHint}" | Category: ${categoryHint}
 Objective: ${objectiveHint} | Tone: ${aiTemplateConfig.tone} | CTA: ${ctaHint}
 Use these exact placeholders where appropriate: {{companyName}}, {{contactPerson}}, {{employeeCount}}, {{industry}}, {{packageType}}
 ${aiTemplateConfig.customInstruction ? `Additional instruction: ${aiTemplateConfig.customInstruction}` : ''}
-${communicationChannel === 'email' ? 'Also suggest a subject line on the first line starting with "Subject: "' : ''}
-    Keep it warm, professional, and action-oriented. Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the body.`;
+${communicationChannel === 'email'
+  ? `Return only this format:\nSubject: <subject line>\nBody: <body text>`
+  : 'Return only the message body text.'}
+Do not add intros, explanations, markdown, code fences, or signatures unless explicitly requested.
+Keep it warm, professional, and action-oriented. Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the body.`;
 
       const res = await api.post('/team/ai/generate', { prompt, maxTokens: 300 });
       const text: string = res.data?.data?.content || res.data?.content || '';
       if (!text) throw new Error('No content returned');
 
       const parsed = parseAiTemplateOutput(text);
-      const limitedByWords = clampWords(parsed.content, templateWordLimit);
-      const limited = clampChars(limitedByWords.text, templateCharLimit);
+      const limited = fitCopyToChannelLimits(parsed.content, templateWordLimit, templateCharLimit);
       setCommunicationDraft(prev => ({
         ...prev,
         subject: communicationChannel === 'email' ? (parsed.subject || prev.subject) : prev.subject,
         content: limited.text,
       }));
-      if (limitedByWords.truncated || limited.truncated) {
-        toast({ title: 'AI content trimmed', description: `Content exceeded ${templateWordLimit} words and was trimmed for ${communicationChannel.toUpperCase()}.` });
+      if (limited.truncated) {
+        toast({ title: 'AI content trimmed', description: `Content was auto-fitted to ${templateWordLimit} words and ${templateCharLimit} characters for ${communicationChannel.toUpperCase()}.` });
       }
       toast({ title: 'AI template generated', description: 'Review and edit before saving.' });
     } catch (err: any) {
@@ -797,14 +1133,17 @@ ${template.content}
 Edit instruction: ${aiTemplateConfig.editInstruction || 'Improve clarity, readability, and CTA strength.'}
 Tone: ${aiTemplateConfig.tone} | Objective: ${aiTemplateConfig.objective.replace(/_/g, ' ')} | CTA: ${aiTemplateConfig.cta.replace(/_/g, ' ')}
 Preserve placeholders exactly if present: {{companyName}}, {{contactPerson}}, {{corporateId}}, {{employeeCount}}, {{industry}}, {{packageType}}
-${communicationChannel === 'email' ? 'Return subject in first line as "Subject: ..." and then body.' : 'Return message body only.'}`;
+${communicationChannel === 'email'
+  ? `Return only this format:\nSubject: <subject line>\nBody: <body text>`
+  : 'Return only the message body text.'}
+Do not add intros, explanations, markdown, code fences, or signatures unless explicitly requested.
+Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the body.`;
 
       const res = await api.post('/team/ai/generate', { prompt, maxTokens: 350 });
       const text: string = res.data?.data?.content || res.data?.content || '';
       if (!text) throw new Error('No content returned');
       const parsed = parseAiTemplateOutput(text);
-      const limitedByWords = clampWords(parsed.content, templateWordLimit);
-      const limited = clampChars(limitedByWords.text, templateCharLimit);
+      const limited = fitCopyToChannelLimits(parsed.content, templateWordLimit, templateCharLimit);
 
       const next: Record<CommunicationChannel, CommunicationTemplate[]> = {
         ...communicationTemplates,
@@ -828,8 +1167,8 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
           content: limited.text || prev.content,
         }));
       }
-      if (limitedByWords.truncated || limited.truncated) {
-        toast({ title: 'AI content trimmed', description: `Edited template exceeded ${templateWordLimit} words and was trimmed.` });
+      if (limited.truncated) {
+        toast({ title: 'AI content trimmed', description: `Edited template was auto-fitted to ${templateWordLimit} words and ${templateCharLimit} characters.` });
       }
       toast({ title: 'Template AI-edited', description: 'Existing template updated with AI improvements.' });
     } catch (err: any) {
@@ -844,21 +1183,27 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
       toast({ variant: 'destructive', title: 'Missing fields', description: 'Template name and content are required.' });
       return;
     }
-    if (templateHasBlockingLint) {
+
+    const fitted = fitCopyToChannelLimits(communicationDraft.content || '', templateWordLimit, templateCharLimit);
+    const nextDraft = {
+      ...communicationDraft,
+      subject: communicationChannel === 'email' ? (communicationDraft.subject || '').trim() : communicationDraft.subject,
+      content: fitted.text,
+    };
+    const nextLint = lintTemplateCopy(communicationChannel, nextDraft.subject || '', nextDraft.content || '');
+
+    if (nextLint.blocking.length > 0) {
       toast({
         variant: 'destructive',
         title: 'Template validation failed',
-        description: templateCopyLint.blocking[0],
+        description: nextLint.blocking[0],
       });
       return;
     }
-    if (!templateDraftWithinLimit) {
-      toast({
-        variant: 'destructive',
-        title: 'Template too long',
-        description: `${communicationChannel.toUpperCase()} templates must be within ${templateWordLimit} words (current: ${templateDraftWordCount}).`,
-      });
-      return;
+
+    if (fitted.truncated) {
+      setCommunicationDraft(nextDraft);
+      toast({ title: 'Template auto-trimmed', description: `${communicationChannel.toUpperCase()} template was fitted to ${templateWordLimit} words and ${templateCharLimit} characters.` });
     }
 
     if (editingCommunicationTemplateId) {
@@ -868,10 +1213,10 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
           template.id === editingCommunicationTemplateId
             ? {
                 ...template,
-                name: communicationDraft.name,
-                category: communicationDraft.category || 'General',
-                subject: communicationChannel === 'email' ? communicationDraft.subject : undefined,
-                content: communicationDraft.content,
+                name: nextDraft.name,
+                category: nextDraft.category || 'General',
+                subject: communicationChannel === 'email' ? nextDraft.subject : undefined,
+                content: nextDraft.content,
               }
             : template
         ),
@@ -887,10 +1232,10 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
       [communicationChannel]: [
         {
           id: `${communicationChannel}-${Date.now()}`,
-          name: communicationDraft.name,
-          category: communicationDraft.category || 'General',
-          subject: communicationChannel === 'email' ? communicationDraft.subject : undefined,
-          content: communicationDraft.content,
+          name: nextDraft.name,
+          category: nextDraft.category || 'General',
+          subject: communicationChannel === 'email' ? nextDraft.subject : undefined,
+          content: nextDraft.content,
         },
         ...communicationTemplates[communicationChannel],
       ],
@@ -1000,6 +1345,36 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
     );
   });
 
+  const hasActiveWelcomeEmailDelivery = (employee: Employee) => {
+    const status = String(employee.welcomeEmailStatus || '').toLowerCase();
+    return status === 'sent' || status === 'queued';
+  };
+
+  const filteredWelcomeEmployees = useMemo(() => {
+    const q = welcomeEmployeeSearch.trim().toLowerCase();
+    if (!q) return employees;
+
+    return employees.filter((employee) => (
+      employee.name?.toLowerCase().includes(q)
+      || employee.email?.toLowerCase().includes(q)
+      || employee.employeeId?.toLowerCase().includes(q)
+      || employee.department?.toLowerCase().includes(q)
+      || employee.designation?.toLowerCase().includes(q)
+    ));
+  }, [employees, welcomeEmployeeSearch]);
+
+  const filteredWelcomeTotalPages = Math.max(1, Math.ceil(filteredWelcomeEmployees.length / EMP_PAGE_SIZE));
+
+  useEffect(() => {
+    setEmpCurrentPage(1);
+  }, [welcomeEmployeeSearch]);
+
+  useEffect(() => {
+    if (empCurrentPage > filteredWelcomeTotalPages) {
+      setEmpCurrentPage(filteredWelcomeTotalPages);
+    }
+  }, [empCurrentPage, filteredWelcomeTotalPages]);
+
   const communicationSummary = communicationAnalytics?.summary || {};
   const communicationTotal = Number(communicationSummary.total || 0);
   const communicationSent = Number(communicationSummary.sent || 0);
@@ -1098,6 +1473,15 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
     return token ? { Authorization: `Bearer ${token}` } : undefined;
   };
 
+  const mergeAssistiveMessage = (currentMessage: string, aiMessage: string) => {
+    const current = (currentMessage || '').trim();
+    const suggestion = (aiMessage || '').trim();
+    if (!suggestion) return current;
+    if (!current) return suggestion;
+    if (current === suggestion) return current;
+    return `${current}\n\n---\nAI Suggestion:\n${suggestion}`;
+  };
+
   const generateAiCommunicationDraft = async () => {
     if (!selectedCorporate?.id) return;
     setAiCommunicationLoading(true);
@@ -1109,6 +1493,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
         intent: communicationChannel === "email" ? "corporate_plan_follow_up" : "corporate_short_outreach",
         tone: "professional",
         context: {
+          assistMode: "augment",
           recipientMode: communicationRecipientMode,
           employeeCount: selectedCorporate.employeeCount,
           packageType: selectedCorporate.packageType,
@@ -1120,12 +1505,12 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
       if (draft) {
         setCommunicationComposer((prev) => ({
           ...prev,
-          subject: communicationChannel === "email" ? (draft.subject || prev.subject) : prev.subject,
-          message: draft.message || draft.body || prev.message,
+          subject: communicationChannel === "email" ? (prev.subject || draft.subject || '') : prev.subject,
+          message: mergeAssistiveMessage(prev.message, draft.message || draft.body || ''),
         }));
         setAiCommunicationDraftId(data?.data?.id || null);
         storeAiDraftAsTemplate(draft, data?.data?.id || null);
-        toast({ title: "AI draft stored", description: "Draft added to the composer and Template Library." });
+        toast({ title: "AI assist applied", description: "Your draft was preserved and AI suggestions were added. Template saved to the library." });
         await fetchCommunicationInsights();
       }
     } catch (error: any) {
@@ -1284,6 +1669,12 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
     }
   }, [activeTab, selectedCorporate?.id, communicationChannel]);
 
+  useEffect(() => {
+    if (activeTab === 'employees' && selectedCorporate?.id) {
+      fetchWelcomeDeliveryHistory({ resetOffset: true });
+    }
+  }, [activeTab, selectedCorporate?.id]);
+
   // Debounced Employee ID duplicate check against already-loaded employees
   useEffect(() => {
     const id = newEmployee.employeeId.trim();
@@ -1297,6 +1688,18 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
     }, 400);
     return () => clearTimeout(t);
   }, [newEmployee.employeeId, employees]);
+
+  const duplicateEmployeeForNewId = (() => {
+    const id = newEmployee.employeeId.trim().toLowerCase();
+    if (!id) return undefined;
+    return employees.find((employee) => employee.employeeId?.toLowerCase() === id);
+  })();
+
+  const resetNewEmployeeForm = () => {
+    setNewEmployee({ employeeId: '', name: '', email: '', phone: '', gender: '', department: '', designation: '', joiningDate: '', workCity: '', workState: '' });
+    setEmpIdStatus('idle');
+  };
+
   const [labPartners, setLabPartners] = useState<LabPartner[]>([]);
   const [hospitalPartners, setHospitalPartners] = useState<HospitalPartner[]>([]);
   const [clinicPartners, setClinicPartners] = useState<ClinicPartner[]>([]);
@@ -1317,18 +1720,63 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
   // Fetch corporates
   useEffect(() => {
     fetchCorporates();
+    loadWelcomeEmailTemplateLibrary();
   }, []);
 
   // Fetch employees, packages, plans, and network partners when corporate is selected
   useEffect(() => {
     if (selectedCorporate?.id) {
       fetchEmployees(selectedCorporate.id);
+      fetchCorporateAdmins(selectedCorporate.id);
       fetchHealthPackages(selectedCorporate.id);
       fetchCorporatePlans(selectedCorporate.id);
       fetchNetworkPartners(selectedCorporate.id);
       fetchWellnessEvents(selectedCorporate.id);
     }
   }, [selectedCorporate?.id]);
+
+  const normalizeStatusLabel = (status: string | null | undefined) => {
+    const normalized = String(status || '').toLowerCase();
+    if (normalized === 'active') return 'Active';
+    if (normalized === 'inactive') return 'Inactive';
+    if (normalized === 'suspended') return 'Suspended';
+    return 'Pending';
+  };
+
+  const formatLastLoginLabel = (lastLoginAt: string | null | undefined) => {
+    if (!lastLoginAt) return 'Never';
+    const dt = new Date(lastLoginAt);
+    if (Number.isNaN(dt.getTime())) return 'Never';
+    return dt.toLocaleString();
+  };
+
+  const fetchCorporateAdmins = async (corporateId: number) => {
+    try {
+      setCorporateAdminsLoading(true);
+      const token = localStorage.getItem('teamToken');
+      const numericId = parseInt(String(corporateId), 10);
+      if (isNaN(numericId)) {
+        console.error('Invalid corporate ID:', corporateId);
+        setCorporateAdmins([]);
+        return;
+      }
+
+      const response = await api.get(`/admin/corporate-users/${numericId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      if (response.data?.success && Array.isArray(response.data?.users)) {
+        setCorporateAdmins(response.data.users);
+      } else {
+        setCorporateAdmins([]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch corporate admins:', error);
+      setCorporateAdmins([]);
+    } finally {
+      setCorporateAdminsLoading(false);
+    }
+  };
 
   const fetchEmployees = async (corporateId: number) => {
     try {
@@ -1339,13 +1787,31 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
         setEmployees([]);
         return;
       }
-      const response = await api.get(`/admin/corporate-employees/${numericId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined
-      });
-      
-      if (response.data?.success && response.data?.employees) {
+      const pageSize = 500;
+      let offset = 0;
+      let mergedEmployees: any[] = [];
+
+      while (true) {
+        const response = await api.get(`/admin/corporate-employees/${numericId}`, {
+          params: { limit: pageSize, offset },
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+
+        if (!response.data?.success || !Array.isArray(response.data?.employees)) {
+          mergedEmployees = [];
+          break;
+        }
+
+        const batch = response.data.employees;
+        mergedEmployees = [...mergedEmployees, ...batch];
+
+        if (batch.length < pageSize) break;
+        offset += batch.length;
+      }
+
+      if (mergedEmployees.length > 0) {
         setEmpCurrentPage(1);
-        setEmployees(response.data.employees.map((emp: any) => {
+        setEmployees(mergedEmployees.map((emp: any) => {
           const meta = emp.metadata || {};
           const firstName = emp.firstName || meta.firstName || '';
           const lastName = emp.lastName || meta.lastName || '';
@@ -1374,6 +1840,12 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
             packageValidTo: emp.packageValidTo || undefined,
             gender: emp.gender || '',
             dateOfBirth: emp.dateOfBirth || '',
+            lastLoginAt: emp.lastLoginAt || null,
+            lastActivityAt: emp.lastActivityAt || null,
+            loginCount: emp.loginCount ?? 0,
+            requirePasswordChange: emp.requirePasswordChange ?? true,
+            welcomeEmailStatus: emp.welcomeEmailStatus || null,
+            welcomeEmailSentAt: emp.welcomeEmailSentAt || null,
           };
         }));
       } else {
@@ -1382,6 +1854,189 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
     } catch (error) {
       console.error('Failed to fetch employees:', error);
       setEmployees([]);
+    }
+  };
+
+  const fetchWelcomeDeliveryHistory = async (opts?: {
+    resetOffset?: boolean;
+    nextOffset?: number;
+    filtersOverride?: Partial<typeof welcomeDeliveryFilters>;
+  }) => {
+    if (!selectedCorporate?.id) return;
+
+    const targetOffset = typeof opts?.nextOffset === 'number'
+      ? Math.max(opts.nextOffset, 0)
+      : (opts?.resetOffset ? 0 : welcomeDeliveryPagination.offset);
+    const effectiveFilters = {
+      ...welcomeDeliveryFilters,
+      ...(opts?.filtersOverride || {}),
+    };
+
+    try {
+      setWelcomeDeliveriesLoading(true);
+      const params: Record<string, any> = {
+        corporateId: selectedCorporate.id,
+        limit: welcomeDeliveryPagination.limit,
+        offset: targetOffset,
+      };
+
+      if (effectiveFilters.status !== 'all') params.status = effectiveFilters.status;
+      if (effectiveFilters.requestScope !== 'all') params.requestScope = effectiveFilters.requestScope;
+      if (effectiveFilters.employeeId.trim()) params.employeeId = effectiveFilters.employeeId.trim();
+      if (effectiveFilters.recipient.trim()) params.recipient = effectiveFilters.recipient.trim();
+      if (effectiveFilters.from) params.from = effectiveFilters.from;
+      if (effectiveFilters.to) params.to = effectiveFilters.to;
+
+      const response = await api.get('/admin/corporate-employee-welcome-emails/deliveries', {
+        params,
+        headers: teamAuthHeaders(),
+      });
+
+      const rows = response.data?.deliveries || [];
+      const summary = response.data?.summary || {};
+      setWelcomeDeliveries(rows);
+      setWelcomeDeliverySummary({
+        total: Number(summary.total || 0),
+        sent: Number(summary.sent || 0),
+        queued: Number(summary.queued || 0),
+        failed: Number(summary.failed || 0),
+        rolledBack: Number(summary.rolledBack || 0),
+        prepared: Number(summary.prepared || 0),
+      });
+      setWelcomeDeliveryPagination((prev) => ({
+        ...prev,
+        offset: targetOffset,
+        total: Number(summary.total || 0),
+      }));
+    } catch (error) {
+      console.error('Failed to fetch welcome delivery history:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Delivery history unavailable',
+        description: 'Could not load welcome email delivery logs right now.',
+      });
+    } finally {
+      setWelcomeDeliveriesLoading(false);
+    }
+  };
+
+  const resetWelcomeDeliveryFilters = () => {
+    setWelcomeDeliveryFilters({
+      status: 'all',
+      requestScope: 'all',
+      employeeId: '',
+      recipient: '',
+      from: '',
+      to: '',
+    });
+    fetchWelcomeDeliveryHistory({ resetOffset: true });
+  };
+
+  const exportWelcomeDeliveryRows = () => {
+    if (welcomeDeliveries.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'No records to export',
+        description: 'Load delivery records before exporting CSV.',
+      });
+      return;
+    }
+
+    const esc = (value: any) => {
+      const text = String(value ?? '');
+      if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+        return `"${text.replace(/"/g, '""')}"`;
+      }
+      return text;
+    };
+
+    const header = [
+      'Created At', 'Updated At', 'Status', 'Recipient Email', 'Employee ID', 'User Name', 'User Email',
+      'Attempts', 'Request Scope', 'Idempotency Key', 'Error Message', 'Delivery ID'
+    ];
+
+    const lines = welcomeDeliveries.map((row) => {
+      const userName = [row.userFirstName || '', row.userLastName || ''].join(' ').trim();
+      return [
+        row.createdAt,
+        row.updatedAt,
+        row.status,
+        row.recipientEmail,
+        row.employeeId || '',
+        userName,
+        row.userEmail || '',
+        row.attempts,
+        row.requestScope,
+        row.idempotencyKey,
+        row.errorMessage || '',
+        row.id,
+      ].map(esc).join(',');
+    });
+
+    const csv = [header.join(','), ...lines].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `welcome_delivery_audit_${selectedCorporate?.id || 'corporate'}.csv`;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const openWelcomeDeliveryAuditForEmployee = (employee: Employee) => {
+    const nextFilters = {
+      ...welcomeDeliveryFilters,
+      employeeId: employee.employeeId || '',
+      recipient: '',
+      status: 'all',
+      requestScope: 'all',
+    };
+    setWelcomeDeliveryFilters(nextFilters);
+    setActiveTab('employees');
+
+    fetchWelcomeDeliveryHistory({ resetOffset: true, filtersOverride: nextFilters });
+
+    // Delay slightly so state updates and audit card layout are settled before scrolling.
+    setTimeout(() => {
+      welcomeDeliveryAuditRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
+  };
+
+  const handleResendWelcomeFromDelivery = async (row: WelcomeDeliveryRecord) => {
+    if (!selectedCorporate) return;
+    if (!row.userId && !row.employeeId) {
+      toast({
+        variant: 'destructive',
+        title: 'Cannot resend',
+        description: 'This audit row has no user or employee identifier.',
+      });
+      return;
+    }
+
+    setResendingWelcomeDeliveryId(row.id);
+    try {
+      await api.post('/admin/corporate-employee-welcome-emails/resend', {
+        corporateId: selectedCorporate.id,
+        userId: row.userId || undefined,
+        employeeId: row.employeeId || undefined,
+        welcomeEmailMode: 'send',
+      }, {
+        headers: teamAuthHeaders(),
+      });
+
+      toast({
+        title: 'Welcome email resent',
+        description: `A fresh welcome email was triggered for ${row.recipientEmail}.`,
+      });
+      await fetchWelcomeDeliveryHistory();
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Resend failed',
+        description: error?.response?.data?.message || 'Could not resend welcome email from this audit row.',
+      });
+    } finally {
+      setResendingWelcomeDeliveryId(null);
     }
   };
 
@@ -1457,7 +2112,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
             totalEmployees: metadata.totalEmployees || 0,
             validFrom: metadata.validFrom || '',
             validTo: metadata.validTo || '',
-            features,
+            features: mergePlanFeatures(features),
             coverage: metadata.coverage || {},
             healthPackageIds: metadata.healthPackageIds || [],
           };
@@ -1504,7 +2159,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
       status: plan.status || 'Active',
       currency: plan.currency || 'INR',
       benefits: [...defaultBenefits],
-      features: plan.features || { opd: true, ipd: true, maternity: false, dental: false, pharmacy: true, diagnostics: true, homecare: false, ambulance: true, wellness: true, mentalHealth: false },
+      features: mergePlanFeatures(plan.features),
       coverage: plan.coverage || { sumInsured: '', roomRent: 'Single Room', icuRent: '2% of Sum Insured', prePolicyMedical: '30 days', postPolicyMedical: '60 days' },
       healthPackageIds: plan.healthPackageIds || [],
     });
@@ -1655,6 +2310,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
     try {
       const token = localStorage.getItem('teamToken');
       await api.put(`/admin/corporate-calendar/${editingEvent.id}`, {
+        corporateId: selectedCorporate?.id,
         title: eventForm.title,
         description: eventForm.description,
         eventType: eventForm.eventType,
@@ -1684,6 +2340,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
     try {
       const token = localStorage.getItem('teamToken');
       await api.delete(`/admin/corporate-calendar/${eventId}`, {
+        params: { corporateId: selectedCorporate?.id },
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       toast({ title: 'Event Deleted' });
@@ -1762,19 +2419,29 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
       const response = await api.get('/admin/corporates', {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
-      
+
       if (response.data?.data) {
+        const sortedCorporates = sortCorporatesForList(response.data.data);
         setCorporates(response.data.data);
-        if (response.data.data.length > 0 && !selectedCorporate) {
-          setSelectedCorporate(response.data.data[0]);
+        if (sortedCorporates.length > 0 && !selectedCorporate) {
+          const firstVisibleCorporate = sortedCorporates.find((corp) => normalizeCorporateStatus(corp.status) !== 'inactive') || sortedCorporates[0];
+          setSelectedCorporate(firstVisibleCorporate);
         }
       }
-    } catch (error) {
+    } catch (error: any) {
+      // 401 = token expired or session invalid — redirect to team login instead of error toast
+      if (error?.response?.status === 401) {
+        localStorage.removeItem('teamToken');
+        localStorage.removeItem('teamRefreshToken');
+        localStorage.removeItem('teamUserData');
+        navigate('/team/login', { state: { expired: true } });
+        return;
+      }
       console.error('Failed to fetch corporates:', error);
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Failed to load corporate data'
+        description: 'Failed to load corporate data. Please refresh the page.'
       });
     } finally {
       setLoading(false);
@@ -1921,6 +2588,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
         phoneNumber: '',
         password: ''
       });
+      fetchCorporateAdmins(selectedCorporate.id);
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -1928,6 +2596,129 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
         description: error.response?.data?.message || 'Failed to create HR admin'
       });
     }
+  };
+
+  const resetHRAdminForm = () => {
+    setNewHRAdmin({
+      firstName: '',
+      lastName: '',
+      email: '',
+      phoneNumber: '',
+      password: '',
+    });
+    setEditingHRAdmin(null);
+  };
+
+  const openEditHRAdminDialog = (admin: CorporateAdminUser) => {
+    setEditingHRAdmin(admin);
+    setNewHRAdmin({
+      firstName: admin.firstName || '',
+      lastName: admin.lastName || '',
+      email: admin.email || '',
+      phoneNumber: admin.phoneNumber || '',
+      password: '',
+    });
+    setShowAddHRDialog(true);
+  };
+
+  const handleUpdateHRAdmin = async () => {
+    if (!selectedCorporate || !editingHRAdmin) return;
+
+    try {
+      setUpdatingHRAdmin(true);
+      const token = localStorage.getItem('teamToken');
+      await api.put(`/admin/corporate-users/${selectedCorporate.id}/${editingHRAdmin.id}`, {
+        firstName: newHRAdmin.firstName,
+        lastName: newHRAdmin.lastName,
+        email: newHRAdmin.email,
+        phoneNumber: newHRAdmin.phoneNumber,
+        ...(newHRAdmin.password?.trim() ? { password: newHRAdmin.password.trim() } : {}),
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      toast({
+        title: 'HR Admin Updated',
+        description: `${newHRAdmin.email} updated successfully`,
+      });
+
+      setShowAddHRDialog(false);
+      resetHRAdminForm();
+      fetchCorporateAdmins(selectedCorporate.id);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to update HR admin',
+      });
+    } finally {
+      setUpdatingHRAdmin(false);
+    }
+  };
+
+  const handleDeactivateHRAdmin = async (
+    admin: CorporateAdminUser,
+    opts?: { skipConfirm?: boolean; silent?: boolean }
+  ) => {
+    if (!selectedCorporate) return;
+    if (!opts?.skipConfirm) {
+      const confirmed = window.confirm(`Deactivate HR admin ${admin.email}?`);
+      if (!confirmed) return;
+    }
+
+    try {
+      setUpdatingHRAdmin(true);
+      const token = localStorage.getItem('teamToken');
+      await api.put(`/admin/corporate-users/${selectedCorporate.id}/${admin.id}`, {
+        status: 'inactive',
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      if (!opts?.silent) {
+        toast({
+          title: 'HR Admin Deactivated',
+          description: `${admin.email} has been deactivated`,
+        });
+      }
+      fetchCorporateAdmins(selectedCorporate.id);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to deactivate HR admin',
+      });
+    } finally {
+      setUpdatingHRAdmin(false);
+    }
+  };
+
+  const handleReplaceHRAdmin = async () => {
+    const activeAdmins = corporateAdmins.filter((admin) => normalizeStatusLabel(admin.status) === 'Active');
+
+    if (activeAdmins.length === 0) {
+      resetHRAdminForm();
+      setShowAddHRDialog(true);
+      toast({
+        title: 'No Active HR Found',
+        description: 'Create a new HR admin profile.',
+      });
+      return;
+    }
+
+    const current = activeAdmins[0];
+    const confirmed = window.confirm(
+      `This will deactivate ${current.email} and open the form to create a replacement HR admin. Continue?`
+    );
+    if (!confirmed) return;
+
+    await handleDeactivateHRAdmin(current, { skipConfirm: true, silent: true });
+    resetHRAdminForm();
+    setShowAddHRDialog(true);
+    toast({
+      title: 'Current HR Deactivated',
+      description: 'Proceed to create the replacement HR admin account.',
+    });
   };
 
   // Add partners to corporate network
@@ -2006,10 +2797,6 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
     try {
       const token = localStorage.getItem('teamToken');
       // Prepare employee data in the format expected by the backend
-      if (!newEmployee.gender) {
-        toast({ variant: 'destructive', title: 'Validation Error', description: 'Gender is required.' });
-        return;
-      }
       const employeeData = {
         firstName: newEmployee.name.split(' ')[0] || newEmployee.name,
         lastName: newEmployee.name.split(' ').slice(1).join(' ') || '',
@@ -2017,14 +2804,17 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
         phoneNumber: newEmployee.phone,
         employeeId: newEmployee.employeeId,
         department: newEmployee.department,
-        gender: newEmployee.gender,
+        designation: newEmployee.designation,
+        gender: newEmployee.gender || undefined,
         city: newEmployee.workCity || undefined,
         state: newEmployee.workState || undefined
       };
       
       const response = await api.post(`/admin/corporate-employees`, {
         corporateId: selectedCorporate.id,
-        employees: [employeeData]
+        employees: [employeeData],
+        sendWelcomeEmail: employeeWelcomeEmailMode !== "skip",
+        welcomeEmailMode: employeeWelcomeEmailMode
       }, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
@@ -2042,16 +2832,22 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
       }
 
       setShowAddEmployeeDialog(false);
-      setNewEmployee({ employeeId: '', name: '', email: '', phone: '', gender: '', department: '', designation: '', joiningDate: '', workCity: '', workState: '' });
-      setEmpIdStatus('idle');
+      resetNewEmployeeForm();
       fetchEmployees(selectedCorporate.id);
 
-      if (created?.isNewUser && created?.temporaryPassword) {
-        // Show credentials to team member
+      const preparedDrafts = buildWelcomeEmailDraftsFromCreated(created ? [created] : [], newEmployee.name);
+      if (preparedDrafts.length > 0) {
+        addPreparedWelcomeEmailDrafts(preparedDrafts);
+        toast({
+          title: "Welcome Email Draft Prepared",
+          description: "Review and edit the welcome email before sending it."
+        });
+      } else if (created?.isNewUser && created?.temporaryPassword) {
         setNewEmployeeCredentials({
           name: newEmployee.name,
           email: newEmployee.email,
-          password: created.temporaryPassword
+          password: created.temporaryPassword,
+          emailStatus: created.emailStatus || (employeeWelcomeEmailMode === "send" ? "queued" : "skipped")
         });
         setShowCredentialsDialog(true);
       } else {
@@ -2071,158 +2867,818 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
     }
   };
 
-  // Parse CSV for bulk upload
-  const parseCSV = (text: string) => {
-    const lines = text.split('\n').filter(line => line.trim());
-    if (lines.length < 2) return [];
+  const buildWelcomeEmailDraftsFromCreated = (created: any[], fallbackName = "") => {
+    return created
+      .filter((item) => item?.welcomeEmailDraft)
+      .map((item, index) => ({
+        id: `${item.userId || item.email || index}-${Date.now()}-${index}`,
+        to: item.welcomeEmailDraft.to || item.email,
+        employeeName: fallbackName || item.name || item.email,
+        subject: item.welcomeEmailDraft.subject || "Welcome to Employee Health Portal",
+        html: item.welcomeEmailDraft.html || "",
+        status: "draft" as const,
+      }));
+  };
 
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+  const addPreparedWelcomeEmailDrafts = (drafts: WelcomeEmailDraft[]) => {
+    if (drafts.length === 0) return;
+    setWelcomeEmailDrafts((current) => [...current, ...drafts]);
+    setShowWelcomeEmailBatchDialog(true);
+  };
+
+  const handleSendWelcomeEmailBatch = async (draftsToSend: WelcomeEmailDraft[], provider: 'auto' | 'ses' | 'brevo' = 'auto') => {
+    if (!selectedCorporate || draftsToSend.length === 0) return;
+
+    const SERVER_MAX_BATCH_SIZE = 500;
+    const REQUEST_SAFE_BATCH_SIZE = 15;
+    setSendingWelcomeEmailBatch(true);
+    const sendingIds = new Set(draftsToSend.map((draft) => draft.id));
+    setWelcomeEmailDrafts((current) => current.map((draft) => sendingIds.has(draft.id) ? { ...draft, status: "sending", error: undefined } : draft));
+
+    const allSent = new Set<string>();
+    const allSkippedDuplicates = new Set<string>();
+    const allSkippedDeferred = new Map<string, string>();
+    const allFailed = new Map<string, string>();
+    const deferredIds = new Set<string>();
+    let quotaMessage = '';
+
+    try {
+      const headers = teamAuthHeaders();
+      let bulkQuota: EmailQuotaSnapshot | null = null;
+
+      try {
+        const quotaResponse = await api.get('/admin/email-quota', { headers });
+        bulkQuota = quotaResponse.data?.quota?.bulk || null;
+      } catch {
+        bulkQuota = null;
+      }
+
+      let draftsAllowedToday = draftsToSend;
+      if (bulkQuota) {
+        const remaining = Math.max(0, Number(bulkQuota.remaining) || 0);
+        if (remaining <= 0) {
+          quotaMessage = 'Daily bulk email quota reached (' + bulkQuota.limit + '/day via Brevo). Resets at midnight UTC.';
+          draftsAllowedToday = [];
+        } else if (draftsToSend.length > remaining) {
+          const deferredCount = draftsToSend.length - remaining;
+          quotaMessage = 'Brevo daily bulk email quota allows ' + remaining + ' more email' + (remaining === 1 ? '' : 's') + ' today (' + bulkQuota.used + '/' + bulkQuota.limit + ' used). ' + deferredCount + ' email' + (deferredCount === 1 ? '' : 's') + ' left as drafts for tomorrow.';
+          draftsAllowedToday = draftsToSend.slice(0, remaining);
+          draftsToSend.slice(remaining).forEach((draft) => deferredIds.add(draft.id));
+        }
+      }
+
+      const chunkSize = Math.min(SERVER_MAX_BATCH_SIZE, REQUEST_SAFE_BATCH_SIZE);
+      for (let i = 0; i < draftsAllowedToday.length; i += chunkSize) {
+        const chunk = draftsAllowedToday.slice(i, i + chunkSize);
+        try {
+          const { data } = await api.post("/admin/corporate-employee-welcome-emails/send", {
+            corporateId: selectedCorporate.id,
+            provider,
+            emails: chunk.map((draft) => ({
+              to: draft.to,
+              subject: draft.subject,
+              html: draft.html,
+              userId: draft.userId,
+              employeeId: draft.employeeId,
+              temporaryPassword: draft.temporaryPassword,
+            }))
+          }, { headers, timeout: 90000 });
+
+          (data.results?.sent || []).forEach((item: any) => allSent.add(String(item.to).toLowerCase()));
+          (data.results?.skipped || []).forEach((item: any) => {
+            const skippedTo = String(item.to).toLowerCase();
+            if (item.duplicate) {
+              allSkippedDuplicates.add(skippedTo);
+            } else {
+              allSkippedDeferred.set(skippedTo, item.reason || 'Skipped');
+            }
+          });
+          (data.results?.failed || []).forEach((item: any) => allFailed.set(String(item.to).toLowerCase(), item.reason || "Failed to send"));
+        } catch (chunkError: any) {
+          const message = chunkError.response?.data?.message || (chunkError.code === 'ECONNABORTED' ? 'Send request timed out. Check delivery history before retrying.' : 'Chunk send failed');
+          chunk.forEach((d) => allFailed.set(d.to.toLowerCase(), message));
+
+          if (chunkError.response?.status === 429) {
+            quotaMessage = message;
+            draftsAllowedToday.slice(i + chunk.length).forEach((draft) => deferredIds.add(draft.id));
+            break;
+          }
+        }
+      }
+
+      setWelcomeEmailDrafts((current) => current.map((draft) => {
+        if (!sendingIds.has(draft.id)) return draft;
+        const to = draft.to.toLowerCase();
+        if (allSent.has(to) || allSkippedDuplicates.has(to)) return { ...draft, status: "sent", error: undefined };
+        if (deferredIds.has(draft.id) || allSkippedDeferred.has(to)) return { ...draft, status: 'draft', error: String(allSkippedDeferred.get(to) || quotaMessage || 'Not sent yet. Daily quota reached.') };
+        return { ...draft, status: "failed", error: String(allFailed.get(to) || quotaMessage || "Failed to send") };
+      }));
+
+      const quotaBlockedAll = Boolean(quotaMessage && draftsAllowedToday.length === 0);
+      const duplicateSkippedCount = allSkippedDuplicates.size;
+      const deferredCount = deferredIds.size + allSkippedDeferred.size + (quotaBlockedAll ? draftsToSend.length : 0);
+      toast({
+        title: "Welcome Email Batch",
+        description: quotaMessage
+          ? (allSent.size + ' sent, ' + duplicateSkippedCount + ' already sent skipped, ' + allFailed.size + ' failed, ' + deferredCount + ' left as drafts. ' + quotaMessage)
+          : (allSent.size + ' sent' + (duplicateSkippedCount > 0 ? ', ' + duplicateSkippedCount + ' already sent skipped' : '') + (allFailed.size > 0 ? ', ' + allFailed.size + ' failed' : '') + '.'),
+        variant: allFailed.size > 0 || quotaMessage ? "destructive" : "default",
+      });
+    } catch (error: any) {
+      setWelcomeEmailDrafts((current) => current.map((draft) => sendingIds.has(draft.id) ? { ...draft, status: "failed", error: error.response?.data?.message || "Failed to send" } : draft));
+      toast({ variant: "destructive", title: "Email Batch Failed", description: error.response?.data?.message || "Failed to send welcome emails" });
+    } finally {
+      setSendingWelcomeEmailBatch(false);
+    }
+  };
+  const escapeHtml = (value: string) =>
+    String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+  const welcomeEmailTemplates: WelcomeEmailTemplatePreset[] = [
+    {
+      id: 'standard-welcome',
+      name: 'Corporate employee welcome_sigin',
+      subject: 'Welcome to My SmartHealth',
+      html: `<div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.5;">
+  <p>Dear {{employeeName}},</p>
+
+  <p><strong>Welcome to My SmartHealth!</strong></p>
+
+  <p>We're excited to partner with you on your health and wellness journey through the My SmartHealth Corporate Wellness Program, specially curated for {{companyName}} employees.</p>
+
+  <p>Your account is now ready to use.</p>
+
+  <h3 style="margin: 18px 0 8px; color: #0A6EBD;">Login Credentials</h3>
+  <p><strong>Username:</strong> {{email}}<br/>
+  <strong>Password:</strong> [Temporary Password]</p>
+
+  <h3 style="margin: 18px 0 8px; color: #0A6EBD;">Download the My SmartHealth App</h3>
+  <p><strong>Android:</strong> <a href="https://play.google.com/store/apps/details?id=com.mysmarthealth" target="_blank" rel="noopener noreferrer">https://play.google.com/store/apps/details?id=com.mysmarthealth</a></p>
+  <p><strong>iPhone (iOS):</strong> <a href="https://apps.apple.com/in/app/smart-health/id6757312276" target="_blank" rel="noopener noreferrer">https://apps.apple.com/in/app/smart-health/id6757312276</a></p>
+
+  <h3 style="margin: 18px 0 8px; color: #0A6EBD;">Your Wellness Benefits</h3>
+  <ul>
+    <li>Doctor Teleconsultations</li>
+    <li>Psychologist Consultations</li>
+    <li>Health and Wellness Camps</li>
+    <li>Expert-led Wellness Webinars</li>
+    <li>Digital Health Records - Anytime, Anywhere</li>
+  </ul>
+
+  <h3 style="margin: 18px 0 8px; color: #0A6EBD;">What's Coming This Year?</h3>
+  <ul>
+    <li><strong>June 2026</strong> - General Health Checkup Camp</li>
+    <li><strong>September 2026</strong> - Eye Health Camp</li>
+    <li><strong>October 2026</strong> - Mental Health Awareness Webinar</li>
+    <li><strong>December 2026</strong> - Dental Checkup Camp</li>
+    <li><strong>March 2027</strong> - Ergonomics Camp and Women's Health Webinar</li>
+  </ul>
+
+  <p>We encourage you to download the app, complete your profile, and start exploring the wellness services available to you.</p>
+
+  <p>Your health matters, and we're here to support you every step of the way.</p>
+
+  <p>For any assistance with login, appointments, or wellness services, feel free to reach out to us.</p>
+
+  <p><strong>WhatsApp Support:</strong> 7826911911</p>
+
+  <p>Best Regards,<br/>
+  <strong>Team My SmartHealth</strong></p>
+</div>`,
+    },
+    {
+      id: 'short-welcome',
+      name: 'Short Welcome',
+      subject: 'You are onboarded - {{companyName}}',
+      html: `<div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.5;">
+  <p>Hello {{employeeName}},</p>
+  <p>You are now onboarded to SmartHealth under {{companyName}}.</p>
+  <p>Employee ID: {{employeeId}}</p>
+  <p>Regards,<br/>Team SmartHealth</p>
+</div>`,
+    },
+    {
+      id: 'benefits-first',
+      name: 'Benefits First',
+      subject: 'Your SmartHealth benefits are ready - {{companyName}}',
+      html: `<div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.5;">
+  <p>Hi {{employeeName}},</p>
+  <p>Welcome to SmartHealth at {{companyName}}. Your healthcare benefits are now active.</p>
+  <ul>
+    <li>Corporate wellness access</li>
+    <li>Preventive care and consultations</li>
+    <li>Digital report and claims support</li>
+  </ul>
+  <p>Employee ID: {{employeeId}}</p>
+  <p>Regards,<br/>Team SmartHealth</p>
+</div>`,
+    },
+  ];
+
+  const allWelcomeEmailTemplates: WelcomeEmailTemplatePreset[] = [
+    ...welcomeEmailTemplates,
+    ...savedWelcomeEmailTemplates.filter(
+      (saved) => !welcomeEmailTemplates.some((preset) => preset.id === saved.id)
+    ),
+  ];
+
+  const loadWelcomeEmailTemplateLibrary = async () => {
+    const token = localStorage.getItem('teamToken');
+    try {
+      const response = await api.get('/team/welcome-email-templates', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      const payload = response.data?.data || {};
+      const templates = Array.isArray(payload.templates) ? payload.templates : [];
+      const mappedSavedTemplates: WelcomeEmailTemplatePreset[] = templates.map((template: any) => ({
+        id: `saved-${template.id}`,
+        name: template.name || `Saved Template ${template.id}`,
+        subject: template.subject || '',
+        html: template.htmlContent || '',
+      }));
+
+      setSavedWelcomeEmailTemplates(mappedSavedTemplates);
+
+      const assignedTemplateId = payload.assignments?.corporate_employee_welcome?.templateId;
+      if (assignedTemplateId) {
+        setSelectedWelcomeTemplateId(`saved-${assignedTemplateId}`);
+        setApprovedWelcomeTemplateId(`saved-${assignedTemplateId}`);
+      }
+    } catch (error: any) {
+      console.error('Failed to load welcome templates:', error?.response?.data || error?.message || error);
+      setSavedWelcomeEmailTemplates([]);
+    }
+  };
+
+  const handleSaveEditedWelcomeTemplate = async ({ name, subject, html }: { name: string; subject: string; html: string }) => {
+    const templateName = name.trim();
+    if (!templateName || !subject.trim() || !html.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Template not saved',
+        description: 'Template name, subject, and body are required.',
+      });
+      return;
+    }
+
+    const token = localStorage.getItem('teamToken');
+    setSavingWelcomeTemplate(true);
+    try {
+      const createResponse = await api.post(
+        '/team/welcome-email-templates',
+        {
+          name: templateName,
+          subject,
+          htmlContent: html,
+        },
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        }
+      );
+
+      const createdId = createResponse.data?.data?.id;
+      if (createdId) {
+        await api.put(
+          '/team/welcome-email-templates/assign',
+          {
+            eventType: 'corporate_employee_welcome',
+            templateId: createdId,
+          },
+          {
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          }
+        );
+      }
+
+      await loadWelcomeEmailTemplateLibrary();
+      if (createdId) {
+        setSelectedWelcomeTemplateId(`saved-${createdId}`);
+      }
+
+      toast({
+        title: 'Template saved',
+        description: 'Edited subject and body are now available as a reusable template.',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Save failed',
+        description: error?.response?.data?.message || 'Unable to save template right now.',
+      });
+    } finally {
+      setSavingWelcomeTemplate(false);
+    }
+  };
+
+  const handleApproveWelcomeTemplate = async (templateId: string) => {
+    if (!templateId) return;
+    const token = localStorage.getItem('teamToken');
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+    setApprovingWelcomeTemplate(true);
+    try {
+      let savedId: number | null = null;
+
+      if (templateId.startsWith('saved-')) {
+        savedId = parseInt(templateId.replace('saved-', ''), 10);
+      } else {
+        // Built-in template — save to DB first so it can be assigned
+        const tpl = allWelcomeEmailTemplates.find(t => t.id === templateId);
+        if (!tpl) return;
+        const res = await api.post('/team/welcome-email-templates', {
+          name: tpl.name,
+          subject: tpl.subject,
+          htmlContent: tpl.html,
+        }, { headers });
+        savedId = res.data?.data?.id;
+        if (savedId) {
+          await loadWelcomeEmailTemplateLibrary();
+          setSelectedWelcomeTemplateId(`saved-${savedId}`);
+        }
+      }
+
+      if (savedId) {
+        await api.put('/team/welcome-email-templates/assign', {
+          eventType: 'corporate_employee_welcome',
+          templateId: savedId,
+        }, { headers });
+        setApprovedWelcomeTemplateId(`saved-${savedId}`);
+        toast({ title: '✅ Template approved', description: 'This template will be used for all welcome emails.' });
+      }
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Approval failed', description: err?.response?.data?.message || 'Could not save template approval.' });
+    } finally {
+      setApprovingWelcomeTemplate(false);
+    }
+  };
+
+  const applyWelcomeTemplatePlaceholders = (template: string, employee: Employee, temporaryPassword = '') => {
+    const loginIdentifier = employee.email || employee.employeeId || '-';
+    const replacements: Record<string, string> = {
+      employeeName: employee.name || `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || 'Employee',
+      firstName: employee.firstName || (employee.name || '').split(' ')[0] || 'Employee',
+      lastName: employee.lastName || '',
+      employeeId: employee.employeeId || '-',
+      email: employee.email || '-',
+      username: loginIdentifier,
+      userId: loginIdentifier,
+      loginIdentifier,
+      temporaryPassword,
+      password: temporaryPassword,
+      department: employee.department || 'your assigned team',
+      designation: employee.designation || 'your role',
+      companyName: selectedCorporate?.companyName || 'Your company',
+      corporateId: selectedCorporate?.uniqueId || String(selectedCorporate?.id || '-'),
+    };
+
+    let rendered = template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => escapeHtml(replacements[key] || ''));
+    const literalReplacements: Record<string, string> = {
+      '[Employee Email ID / Mobile Number]': loginIdentifier,
+      '[Username]': loginIdentifier,
+      '[User ID]': loginIdentifier,
+      '[Temporary Password]': temporaryPassword,
+      '[Password]': temporaryPassword,
+      '[Employee ID]': employee.employeeId || '-',
+    };
+    Object.entries(literalReplacements).forEach(([token, value]) => {
+      rendered = rendered.split(token).join(escapeHtml(value || ''));
+    });
+    return rendered;
+  };
+
+  const getWelcomeEmployeeTargets = (mode: 'selected' | 'all' | 'single' = welcomeEmployeeSelectionMode, singleEmployeeId?: string) => {
+    if (mode === 'single') {
+      if (!singleEmployeeId) return [];
+      return employees.filter((employee) => employee.id === singleEmployeeId && employee.email && !hasActiveWelcomeEmailDelivery(employee));
+    }
+
+    if (mode === 'all') {
+      return employees.filter((employee) => employee.email && !hasActiveWelcomeEmailDelivery(employee));
+    }
+
+    const selected = new Set(selectedEmployeeIdsForWelcome);
+    return employees.filter((employee) => selected.has(employee.id) && employee.email && !hasActiveWelcomeEmailDelivery(employee));
+  };
+
+  const handlePrepareOrSendEmployeeWelcomeEmails = async (
+    sendImmediately: boolean,
+    mode: 'selected' | 'all' | 'single' = welcomeEmployeeSelectionMode,
+    singleEmployeeId?: string
+  ) => {
+    if (!selectedCorporate) return;
+
+    const targets = getWelcomeEmployeeTargets(mode, singleEmployeeId);
+    if (targets.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'No employees selected',
+        description: mode === 'all'
+          ? 'No employees with valid email were found.'
+          : mode === 'single'
+            ? 'Select a valid employee with email to continue.'
+          : 'Select one or more employees with email to continue.'
+      });
+      return;
+    }
+
+    setPreparingWelcomeEmployeeDrafts(true);
+
+    try {
+      const BULK_CHUNK = 500;
+      const allDraftRows: Array<{ userId: number; email: string; employeeId: string; temporaryPassword: string; subject: string; html: string }> = [];
+      const skippedTargets: string[] = [];
+      const failedTargets: string[] = [];
+
+      // Use bulk-prepare: one request per 500 employees instead of N sequential /resend calls
+      const employeeById = new Map(targets.map(e => [e.id, e]));
+      const userIdChunks: number[][] = [];
+      const allIds = targets.map(e => e.id).filter(Boolean);
+      for (let i = 0; i < allIds.length; i += BULK_CHUNK) {
+        userIdChunks.push(allIds.slice(i, i + BULK_CHUNK));
+      }
+
+      for (const chunk of userIdChunks) {
+        try {
+          const { data } = await api.post('/admin/corporate-employee-welcome-emails/prepare-bulk', {
+            corporateId: selectedCorporate.id,
+            userIds: chunk,
+          }, { headers: teamAuthHeaders() });
+
+          for (const d of (data.drafts || [])) {
+            allDraftRows.push(d);
+          }
+          for (const s of (data.skipped || [])) {
+            skippedTargets.push(s.email || String(s.userId));
+          }
+          for (const f of (data.failed || [])) {
+            failedTargets.push(f.email || String(f.userId));
+          }
+        } catch {
+          chunk.forEach(id => {
+            const emp = employeeById.get(id);
+            failedTargets.push(emp?.email || String(id));
+          });
+        }
+      }
+
+      if (allDraftRows.length === 0) {
+        toast({
+          variant: skippedTargets.length > 0 && failedTargets.length === 0 ? 'default' : 'destructive',
+          title: skippedTargets.length > 0 && failedTargets.length === 0 ? 'No New Welcome Emails Needed' : 'Preparation failed',
+          description: skippedTargets.length > 0 && failedTargets.length === 0
+            ? skippedTargets.length + ' selected employee(s) already had welcome emails queued or sent.'
+            : 'Could not prepare any welcome email drafts.',
+        });
+        return;
+      }
+
+      // Apply the UI-selected template (with per-employee placeholders) rather than the
+      // server's default. The server only provides temporaryPassword — subject/html come
+      // from the template the user actually chose in the dialog.
+      const selectedTemplate = allWelcomeEmailTemplates.find((t) => t.id === selectedWelcomeTemplateId) || allWelcomeEmailTemplates[0];
+
+      const draftTimestamp = Date.now();
+      const drafts: WelcomeEmailDraft[] = allDraftRows.map((row, index) => {
+        const employee = employeeById.get(row.userId);
+        // Build a minimal employee-like object for placeholder substitution when the
+        // full employee record isn't in the local state (e.g. loaded from a different page).
+        const empForPlaceholders = employee || {
+          id: row.userId,
+          email: row.email,
+          employeeId: row.employeeId,
+          name: '',
+          firstName: '',
+          lastName: '',
+        };
+        return {
+          id: `prepared-${row.userId}-${draftTimestamp}-${index}`,
+          to: row.email,
+          userId: row.userId,
+          employeeId: row.employeeId,
+          temporaryPassword: row.temporaryPassword,
+          employeeName: employee
+            ? (employee.name || `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || row.email)
+            : row.email,
+          subject: applyWelcomeTemplatePlaceholders(selectedTemplate.subject, empForPlaceholders as Employee, row.temporaryPassword),
+          html: applyWelcomeTemplatePlaceholders(selectedTemplate.html, empForPlaceholders as Employee, row.temporaryPassword),
+          status: 'draft' as const,
+        };
+      });
+
+      if (skippedTargets.length > 0 || failedTargets.length > 0) {
+        toast({
+          variant: failedTargets.length > 0 ? 'destructive' : 'default',
+          title: failedTargets.length > 0 ? 'Some employees skipped' : 'Already Sent Skipped',
+          description: (skippedTargets.length ? skippedTargets.length + ' already queued/sent skipped. ' : '') + (failedTargets.length ? failedTargets.length + ' could not be prepared.' : ''),
+        });
+      }
+
+      if (sendImmediately) {
+        setWelcomeEmailDrafts((current) => [...current, ...drafts]);
+        await handleSendWelcomeEmailBatch(drafts);
+        toast({
+          title: 'Welcome emails queued',
+          description: 'Attempted immediate send for ' + drafts.length + ' employee' + (drafts.length === 1 ? '' : 's') + (skippedTargets.length ? '; ' + skippedTargets.length + ' already queued/sent skipped.' : '.')
+        });
+        return;
+      }
+
+      addPreparedWelcomeEmailDrafts(drafts);
+      toast({
+        title: 'Welcome drafts prepared',
+        description: drafts.length + ' draft' + (drafts.length === 1 ? '' : 's') + ' added for review' + (skippedTargets.length ? '; ' + skippedTargets.length + ' already queued/sent skipped.' : '.')
+      });
+    } finally {
+      setPreparingWelcomeEmployeeDrafts(false);
+    }
+  };
+
+  const handleExistingEmployeeWelcomeEmail = async () => {
+    if (!selectedCorporate || !duplicateEmployeeForNewId) return;
+
+    const mode = employeeWelcomeEmailMode === "send" ? "send" : "draft";
+    setSendingExistingWelcomeEmail(true);
+
+    try {
+      const token = localStorage.getItem("teamToken");
+      const { data } = await api.post("/admin/corporate-employee-welcome-emails/resend", {
+        corporateId: selectedCorporate.id,
+        employeeId: duplicateEmployeeForNewId.employeeId,
+        userId: duplicateEmployeeForNewId.id,
+        welcomeEmailMode: mode,
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      const result = data?.result;
+      if (mode === "send") {
+        toast({ title: "Welcome Email Sent", description: data?.message || `A fresh welcome email was sent to ${duplicateEmployeeForNewId.email}.` });
+      } else {
+        const drafts = buildWelcomeEmailDraftsFromCreated(result ? [result] : [], duplicateEmployeeForNewId.name);
+        addPreparedWelcomeEmailDrafts(drafts);
+        toast({ title: "Welcome Email Draft Prepared", description: "Review and edit the resent welcome email before sending it." });
+      }
+
+      setShowAddEmployeeDialog(false);
+      resetNewEmployeeForm();
+      fetchEmployees(selectedCorporate.id);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Welcome Email Failed", description: error.response?.data?.message || "Failed to prepare welcome email" });
+    } finally {
+      setSendingExistingWelcomeEmail(false);
+    }
+  };
+
+  const normalizeBulkEmployee = (rawEmployee: any, index: number) => {
+    if (rawEmployee.name && !rawEmployee.firstName) {
+      const nameParts = rawEmployee.name.split(' ').filter(Boolean);
+      rawEmployee.firstName = nameParts[0] || '';
+      rawEmployee.lastName = nameParts.slice(1).join(' ') || '';
+      delete rawEmployee.name;
+    }
+
+    const firstName = (rawEmployee.firstName || '').trim() || (rawEmployee.employeeId || '').trim();
+    const lastName = (rawEmployee.lastName || '').trim();
+    const employeeId = (rawEmployee.employeeId || '').trim();
+    const phoneNumber = (rawEmployee.phoneNumber || '').trim();
+
+    if (!firstName && !employeeId && !phoneNumber) return null;
+
+    const baseEmail = (rawEmployee.email || '').trim();
+    const generatedEmailLocal = (employeeId || firstName || `emp${Date.now()}${index}`)
+      .toString()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '') || `emp${Date.now()}${index}`;
+    const email = baseEmail || `noemail.${generatedEmailLocal}@mediczy.in`;
+
+    return {
+      firstName: firstName || 'Employee',
+      lastName,
+      email,
+      phoneNumber,
+      employeeId,
+      department: rawEmployee.department || '',
+      designation: rawEmployee.designation || '',
+      dateOfBirth: rawEmployee.dateOfBirth || '',
+      gender: rawEmployee.gender || '',
+      city: rawEmployee.city || '',
+      state: rawEmployee.state || '',
+      pinCode: rawEmployee.pinCode || '',
+      location: rawEmployee.location || '',
+      facility: rawEmployee.facility || '',
+    };
+  };
+
+  const parseBulkEmployeeRows = (rows: string[][], aiColumnMap: Record<string, string> = {}) => {
+    const nonEmptyRows = rows.filter(row => row.some(cell => String(cell || '').trim()));
+    if (nonEmptyRows.length < 2) return [];
+
+    const sourceHeaders = nonEmptyRows[0].map(h => String(h || '').trim());
+    const headers = sourceHeaders.map((header) => {
+      const deterministicField = resolveBulkHeaderField(header);
+      if (deterministicField) return deterministicField;
+      const aiMapped = aiColumnMap[header] || aiColumnMap[normalizeBulkHeaderKey(header)];
+      if (isBulkEmployeeField(aiMapped)) return aiMapped;
+      return '';
+    });
     const employees = [];
 
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map(v => v.trim());
+    for (let i = 1; i < nonEmptyRows.length; i++) {
+      const values = nonEmptyRows[i].map(v => String(v || '').trim());
       const rawEmployee: any = {};
 
-      headers.forEach((header, index) => {
-        // Map common CSV headers to API fields
-        const headerMap: Record<string, string> = {
-          'first name': 'firstName',
-          'firstname': 'firstName',
-          'last name': 'lastName',
-          'lastname': 'lastName',
-          'name': 'name',
-          'email': 'email',
-          'email id': 'email',
-          'emailid': 'email',
-          'email address': 'email',
-          'phone': 'phoneNumber',
-          'phonenumber': 'phoneNumber',
-          'phone number': 'phoneNumber',
-          'mobile': 'phoneNumber',
-          'mobile number': 'phoneNumber',
-          'employee id': 'employeeId',
-          'employeeid': 'employeeId',
-          'emp id': 'employeeId',
-          'empid': 'employeeId',
-          'department': 'department',
-          'dept': 'department',
-          'designation': 'designation',
-          'role': 'designation',
-          'date of birth': 'dateOfBirth',
-          'dateofbirth': 'dateOfBirth',
-          'dob': 'dateOfBirth',
-          'gender': 'gender',
-          'city': 'city',
-          'work city': 'city',
-          'state': 'state',
-          'work state': 'state',
-          'pin code': 'pinCode',
-          'pincode': 'pinCode',
-          'zip': 'pinCode',
-          'zip code': 'pinCode',
-          'location': 'location',
-          'branch': 'location',
-          'work location': 'location',
-          'office location': 'location',
-          'facility': 'facility',
-          'work facility': 'facility',
-        };
-
-        const fieldName = headerMap[header] || header;
+      headers.forEach((fieldName, index) => {
+        if (!fieldName) return;
         rawEmployee[fieldName] = values[index] || '';
       });
 
-      // Derive names
-      if (rawEmployee.name && !rawEmployee.firstName) {
-        const nameParts = rawEmployee.name.split(' ').filter(Boolean);
-        rawEmployee.firstName = nameParts[0] || '';
-        rawEmployee.lastName = nameParts.slice(1).join(' ') || '';
-        delete rawEmployee.name;
-      }
-
-      const firstName = (rawEmployee.firstName || '').trim() || (rawEmployee.employeeId || '').trim();
-      const lastName = (rawEmployee.lastName || '').trim();
-      const employeeId = (rawEmployee.employeeId || '').trim();
-      const phoneNumber = (rawEmployee.phoneNumber || '').trim();
-
-      // Skip empty rows
-      if (!firstName && !employeeId && !phoneNumber) continue;
-
-      const baseEmail = (rawEmployee.email || '').trim();
-      const generatedEmailLocal = (employeeId || firstName || `emp${Date.now()}${i}`)
-        .toString()
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, '') || `emp${Date.now()}${i}`;
-      const email = baseEmail || `noemail.${generatedEmailLocal}@mediczy.in`;
-
-      const normalizedEmployee = {
-        firstName: firstName || 'Employee',
-        lastName,
-        email,
-        phoneNumber,
-        employeeId,
-        department: rawEmployee.department || '',
-        designation: rawEmployee.designation || '',
-        dateOfBirth: rawEmployee.dateOfBirth || '',
-        gender: rawEmployee.gender || '',
-        city: rawEmployee.city || '',
-        state: rawEmployee.state || '',
-        pinCode: rawEmployee.pinCode || '',
-        location: rawEmployee.location || '',
-        facility: rawEmployee.facility || '',
-      };
-
-      employees.push(normalizedEmployee);
+      const normalizedEmployee = normalizeBulkEmployee(rawEmployee, i);
+      if (normalizedEmployee) employees.push(normalizedEmployee);
     }
 
     return employees;
   };
 
-  // Internal QC validator — runs before API call, returns per-row issues
-  const runQC = (empList: any[]) => {
+  const readCSVRows = (text: string) => text.split('\n').map(line => line.split(','));
+
+  // Parse CSV for bulk upload
+  const parseCSV = (text: string) => parseBulkEmployeeRows(readCSVRows(text));
+
+  const getExcelCellText = (value: any) => {
+    if (value == null) return '';
+    if (value instanceof Date) return value.toISOString().slice(0, 10);
+    if (typeof value === 'object') {
+      if (Array.isArray(value.richText)) return value.richText.map((part: any) => part.text || '').join('');
+      if (value.text != null) return String(value.text);
+      if (value.result != null) return getExcelCellText(value.result);
+      if (value.hyperlink && value.text != null) return String(value.text);
+    }
+    return String(value);
+  };
+
+  const readExcelRows = async (file: File) => {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(await file.arrayBuffer());
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) return [];
+
+    const rows: string[][] = [];
+    worksheet.eachRow({ includeEmpty: false }, (row) => {
+      const rowValues: string[] = [];
+      for (let col = 1; col <= row.cellCount; col++) {
+        rowValues.push(getExcelCellText(row.getCell(col).value).trim());
+      }
+      rows.push(rowValues);
+    });
+
+    return rows;
+  };
+
+  const parseExcel = async (file: File) => parseBulkEmployeeRows(await readExcelRows(file));
+
+  const maskBulkSampleValue = (value: string) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) return '<email>';
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length >= 8) return `<${digits.length}-digit-number>`;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '<date-yyyy-mm-dd>';
+    return raw.slice(0, 40);
+  };
+
+  const inferBulkColumnMapWithAI = async (rows: string[][]) => {
+    const nonEmptyRows = rows.filter(row => row.some(cell => String(cell || '').trim()));
+    if (nonEmptyRows.length < 2) return {};
+
+    const headers = nonEmptyRows[0].map(h => String(h || '').trim()).filter(Boolean);
+    if (!headers.length) return {};
+
+    const sampleRows = nonEmptyRows.slice(1, 4).map((row) => {
+      const record: Record<string, string> = {};
+      headers.forEach((header, idx) => {
+        record[header] = maskBulkSampleValue(row[idx] || '');
+      });
+      return record;
+    });
+
+    const prompt = `You map messy corporate employee upload columns to canonical fields.
+Return ONLY valid JSON in this exact shape: {"mapping":{"Original Header":"canonicalField"},"confidence":0.0,"notes":"short"}
+Allowed canonicalField values: ${BULK_EMPLOYEE_FIELDS.join(', ')}, ignore
+Rules:
+- Map only columns that clearly represent an allowed field.
+- Use "ignore" for unrelated columns.
+- Do not invent fields.
+- If a full name column exists and no separate first/last names exist, map it to firstName.
+- Employee code, staff ID, associate ID, personnel number, or company ID maps to employeeId.
+- Phone/mobile/contact number maps to phoneNumber.
+- PIN, postal code, zip maps to pinCode.
+Headers: ${JSON.stringify(headers)}
+Masked sample rows: ${JSON.stringify(sampleRows)}`;
+
+    const res = await api.post('/team/ai/generate', { prompt, maxTokens: 350, temperature: 0.1 });
+    const content: string = res.data?.data?.content || res.data?.content || '';
+    const parsed = extractJsonObject(content);
+    const rawMapping = parsed?.mapping && typeof parsed.mapping === 'object' ? parsed.mapping : parsed;
+    if (!rawMapping || typeof rawMapping !== 'object') return {};
+
+    const mapping: Record<string, string> = {};
+    Object.entries(rawMapping).forEach(([header, field]) => {
+      const fieldValue = String(field || '').trim();
+      if (isBulkEmployeeField(fieldValue) || fieldValue === 'ignore') {
+        mapping[header] = fieldValue;
+        mapping[normalizeBulkHeaderKey(header)] = fieldValue;
+      }
+    });
+
+    const mappedCount = headers.filter((header) => {
+      const mapped = mapping[header] || mapping[normalizeBulkHeaderKey(header)];
+      return isBulkEmployeeField(mapped);
+    }).length;
+    setBulkAiColumnSummary(`AI mapped ${mappedCount} column${mappedCount === 1 ? '' : 's'}${parsed?.confidence != null ? ` (confidence ${parsed.confidence})` : ''}.`);
+    return mapping;
+  };
+
+  // Internal QC validator — runs before API call.
+  // Returns { passed, discarded } where discarded rows are removed from the upload.
+  // Rules:
+  //   DISCARD: missing first name, invalid email, duplicate email in file, duplicate employeeId in file
+  //   WARN (kept, logged): bad phone format, invalid gender, bad DOB format, bad pin code
+  const runQCAndFilter = (empList: any[]): {
+    passed: any[];
+    discarded: { row: number; employeeId: string; name: string; email: string; issues: string[] }[];
+    warnings: { row: number; employeeId: string; name: string; email: string; issues: string[] }[];
+  } => {
     const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const PHONE_RE = /^\d{10}$/;
-    const PIN_RE   = /^\d{6}$/;
-    const DOB_RE   = /^\d{4}-\d{2}-\d{2}$/;
     const VALID_GENDERS = ['male', 'female', 'other'];
+    const DOB_RE = /^\d{4}-\d{2}-\d{2}$/;
+
     const seenEmails = new Map<string, number>();
-    const errors: { row: number; employeeId: string; name: string; email: string; issues: string[] }[] = [];
+    const seenEmpIds = new Map<string, number>();
+
+    const passed: any[] = [];
+    const discarded: { row: number; employeeId: string; name: string; email: string; issues: string[] }[] = [];
+    const warnings: { row: number; employeeId: string; name: string; email: string; issues: string[] }[] = [];
 
     empList.forEach((emp, idx) => {
       const row = idx + 2;
-      const issues: string[] = [];
+      const fatal: string[] = [];
+      const warn: string[] = [];
 
+      // ── DISCARD rules ────────────────────────────────────────────────────────
       if (!emp.firstName || String(emp.firstName).trim() === '' || emp.firstName === 'Employee')
-        issues.push('Missing First Name');
+        fatal.push('Missing first name');
 
       const rawEmail = (emp.email || '').trim();
-      if (rawEmail && !rawEmail.includes('@mediczy.in') && !EMAIL_RE.test(rawEmail))
-        issues.push(`Invalid email format: ${rawEmail}`);
+      const isGenerated = rawEmail.includes('@mediczy.in');
+      if (rawEmail && !isGenerated && !EMAIL_RE.test(rawEmail))
+        fatal.push(`Invalid email format: ${rawEmail}`);
 
       const lowerEmail = rawEmail.toLowerCase();
-      if (lowerEmail && seenEmails.has(lowerEmail))
-        issues.push(`Duplicate email in CSV (also on row ${seenEmails.get(lowerEmail)}): ${lowerEmail}`);
-      else if (lowerEmail)
+      if (lowerEmail && !isGenerated && seenEmails.has(lowerEmail))
+        fatal.push(`Duplicate email (first seen on row ${seenEmails.get(lowerEmail)}): ${lowerEmail}`);
+      else if (lowerEmail && !isGenerated)
         seenEmails.set(lowerEmail, row);
 
-      if (emp.phoneNumber && !PHONE_RE.test(String(emp.phoneNumber).replace(/[\s\-]/g, '')))
-        issues.push(`Phone should be 10 digits: ${emp.phoneNumber}`);
+      const empIdKey = (emp.employeeId || '').trim().toLowerCase();
+      if (empIdKey && seenEmpIds.has(empIdKey))
+        fatal.push(`Duplicate Employee ID (first seen on row ${seenEmpIds.get(empIdKey)}): ${emp.employeeId}`);
+      else if (empIdKey)
+        seenEmpIds.set(empIdKey, row);
+
+      // ── WARN rules (row still passes) ────────────────────────────────────────
+      if (emp.phoneNumber && !PHONE_RE.test(String(emp.phoneNumber).replace(/[\s\-+]/g, '')))
+        warn.push(`Phone should be 10 digits: ${emp.phoneNumber}`);
 
       if (emp.gender && !VALID_GENDERS.includes(String(emp.gender).toLowerCase()))
-        issues.push(`Invalid gender (use Male/Female/Other): ${emp.gender}`);
+        warn.push(`Invalid gender (use Male/Female/Other): ${emp.gender}`);
 
       if (emp.dateOfBirth && !DOB_RE.test(emp.dateOfBirth))
-        issues.push(`Date of Birth must be YYYY-MM-DD: ${emp.dateOfBirth}`);
+        warn.push(`Date of Birth must be YYYY-MM-DD: ${emp.dateOfBirth}`);
 
       if (emp.pinCode && !/^\d{6}$/.test(String(emp.pinCode)))
-        issues.push(`Pin Code must be 6 digits: ${emp.pinCode}`);
+        warn.push(`Pin Code must be 6 digits: ${emp.pinCode}`);
 
-      if (issues.length > 0)
-        errors.push({ row, employeeId: emp.employeeId || '', name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(), email: rawEmail, issues });
+      const label = { row, employeeId: emp.employeeId || '', name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(), email: rawEmail };
+
+      if (fatal.length > 0) {
+        discarded.push({ ...label, issues: [...fatal, ...warn] });
+      } else {
+        passed.push(emp);
+        if (warn.length > 0) warnings.push({ ...label, issues: warn });
+      }
     });
 
-    return errors;
+    return { passed, discarded, warnings };
   };
+
+  // Keep old runQC alias used by the QC report display (reads from bulkUploadResults.qcLog)
+  const runQC = (empList: any[]) => runQCAndFilter(empList).warnings;
 
   // Bulk Upload Handler
   const handleBulkUpload = async () => {
@@ -2238,55 +3694,263 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
     try {
       setIsUploading(true);
       setBulkUploadResults(null);
+      setBulkAiColumnSummary(null);
       
-      const text = await bulkUploadFile.text();
-      const employeeList = parseCSV(text);
+      const isExcelFile = /\.xlsx$/i.test(bulkUploadFile.name);
+      const uploadRows = isExcelFile
+        ? await readExcelRows(bulkUploadFile)
+        : readCSVRows(await bulkUploadFile.text());
+      let aiColumnMap: Record<string, string> = {};
+      if (bulkUseAiColumnDetection) {
+        try {
+          aiColumnMap = await inferBulkColumnMapWithAI(uploadRows);
+        } catch (aiError: any) {
+          setBulkAiColumnSummary('AI column detection failed; used standard parser fallback.');
+          toast({
+            title: 'AI column detection skipped',
+            description: aiError?.response?.data?.message || aiError?.message || 'Standard parser fallback was used.',
+          });
+        }
+      }
+      const employeeList = parseBulkEmployeeRows(uploadRows, aiColumnMap);
       
       if (employeeList.length === 0) {
         toast({
           variant: 'destructive',
           title: 'Empty file',
-          description: 'The CSV file contains no employee data.'
+          description: 'The uploaded file contains no employee data.'
         });
         return;
       }
 
-      // Run internal QC before sending to server
-      const clientQcLog = runQC(employeeList);
-      
+      // Run QC — discard fatal rows, warn on minor issues, deduplicate
+      const { passed: cleanList, discarded: discardedRows, warnings: warnRows } = runQCAndFilter(employeeList);
+
+      if (cleanList.length === 0) {
+        toast({
+          variant: 'destructive',
+          title: 'All rows failed QC',
+          description: `${discardedRows.length} row(s) discarded. Fix the file and re-upload.`,
+        });
+        return;
+      }
+
+      if (discardedRows.length > 0) {
+        toast({
+          title: `${discardedRows.length} row(s) discarded`,
+          description: `Missing name, invalid/duplicate email, or duplicate Employee ID. Check QC warnings in the report.`,
+          variant: 'destructive',
+        });
+      }
+
       const token = localStorage.getItem('teamToken');
       const { data } = await api.post('/admin/corporate-employees', {
         corporateId: selectedCorporate.id,
-        employees: employeeList
+        employees: cleanList,
+        sendWelcomeEmail: bulkWelcomeEmailMode !== "skip",
+        welcomeEmailMode: bulkWelcomeEmailMode
       }, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        timeout: 180000
       });
-      
+
       const created = data.results?.created || [];
       const failed = data.results?.failed || [];
-      // Merge client QC + server QC (deduplicate by row)
+      // Merge: discarded rows + server QC + minor warnings
       const serverQc: any[] = data.results?.qcLog || [];
       const serverQcRows = new Set(serverQc.map((q: any) => q.row));
-      const mergedQc = [...serverQc, ...clientQcLog.filter(q => !serverQcRows.has(q.row))];
+      const mergedQc = [
+        ...discardedRows.map(d => ({ ...d, discarded: true })),
+        ...serverQc,
+        ...warnRows.filter(q => !serverQcRows.has(q.row)),
+      ];
       setBulkUploadResults({ created, failed, qcLog: mergedQc });
+      addPreparedWelcomeEmailDrafts(buildWelcomeEmailDraftsFromCreated(created));
       
       // Close the upload dialog and show the report popup
       setShowBulkUploadDialog(false);
       setBulkUploadFile(null);
       setShowUploadReport(true);
-      
+
       if (created.length > 0) {
         fetchEmployees(selectedCorporate.id);
       }
+
+      // Compute employees to deactivate when "remove unlisted" is on
+      if (bulkRemoveUnlisted) {
+        const uploadedEmployeeIds = new Set(
+          employeeList.map((e: any) => (e.employeeId || '').toLowerCase()).filter(Boolean)
+        );
+        const uploadedEmails = new Set(
+          employeeList
+            .map((e: any) => (e.email || '').toLowerCase())
+            .filter((em: string) => em && !em.startsWith('noemail.'))
+        );
+        const toDeactivate = employees
+          .filter((emp) => String(emp.status || 'active').toLowerCase() === 'active')
+          .filter((emp) => {
+            const empId = (emp.employeeId || '').toLowerCase();
+            const empEmail = (emp.email || '').toLowerCase();
+            const matchedById = empId && uploadedEmployeeIds.has(empId);
+            const matchedByEmail = empEmail && uploadedEmails.has(empEmail);
+            return !matchedById && !matchedByEmail;
+          })
+          .map((emp) => ({
+            id: emp.id,
+            name: emp.name || `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
+            email: emp.email || '',
+            employeeId: emp.employeeId || '',
+          }));
+        if (toDeactivate.length > 0) {
+          setSyncOffboardList(toDeactivate);
+          setShowSyncConfirmDialog(true);
+        }
+      }
     } catch (error: any) {
+      const isTimeout = error?.code === 'ECONNABORTED' || String(error?.message || '').toLowerCase().includes('timeout');
       toast({
         variant: 'destructive',
-        title: 'Upload failed',
-        description: error.response?.data?.message || 'Failed to upload employees'
+        title: isTimeout ? 'Upload still processing' : 'Upload failed',
+        description: isTimeout
+          ? 'Large employee uploads can take more than 30 seconds. Refresh the employee list before retrying to avoid duplicates.'
+          : (error.response?.data?.error || error.response?.data?.message || 'Failed to upload employees')
       });
     } finally {
       setIsUploading(false);
     }
+  };
+
+  const handleConfirmSync = async () => {
+    if (!selectedCorporate || syncOffboardList.length === 0) return;
+    setIsSyncing(true);
+    const token = localStorage.getItem('teamToken');
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+    let deactivated = 0;
+    let failed = 0;
+    for (const emp of syncOffboardList) {
+      try {
+        await api.put(`/admin/corporate-employees/${emp.id}`, {
+          status: 'inactive',
+          corporateId: selectedCorporate.id,
+        }, { headers });
+        deactivated++;
+      } catch {
+        failed++;
+      }
+    }
+    setIsSyncing(false);
+    setShowSyncConfirmDialog(false);
+    setSyncOffboardList([]);
+    fetchEmployees(selectedCorporate.id);
+    toast({
+      title: 'Sync complete',
+      description: `${deactivated} employee${deactivated !== 1 ? 's' : ''} deactivated${failed > 0 ? `, ${failed} failed` : ''}.`,
+      variant: failed > 0 ? 'destructive' : 'default',
+    });
+  };
+
+  const downloadActiveEmployeeList = async () => {
+    const activeEmployees = employees.filter((employee) => String(employee.status || 'active').toLowerCase() === 'active');
+
+    if (activeEmployees.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'No active employees',
+        description: 'There are no active employees available to export.',
+      });
+      return;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Mediqzy';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Active Employees', {
+      views: [{ state: 'frozen', ySplit: 1 }],
+    });
+
+    const columns = [
+      { header: 'Employee ID',      key: 'employeeId',    width: 16 },
+      { header: 'First Name',       key: 'firstName',     width: 16 },
+      { header: 'Last Name',        key: 'lastName',      width: 16 },
+      { header: 'Full Name',        key: 'name',          width: 22 },
+      { header: 'Email',            key: 'email',         width: 28 },
+      { header: 'Phone',            key: 'phone',         width: 16 },
+      { header: 'Gender',           key: 'gender',        width: 10 },
+      { header: 'Date of Birth',    key: 'dateOfBirth',   width: 14 },
+      { header: 'Department',       key: 'department',    width: 18 },
+      { header: 'Designation',      key: 'designation',   width: 20 },
+      { header: 'City',             key: 'city',          width: 14 },
+      { header: 'State',            key: 'state',         width: 14 },
+      { header: 'Pin Code',         key: 'pinCode',       width: 10 },
+      { header: 'Location',         key: 'location',      width: 18 },
+      { header: 'Facility',         key: 'facility',      width: 18 },
+      { header: 'Health Status',    key: 'healthStatus',  width: 14 },
+      { header: 'Plan',             key: 'plan',          width: 22 },
+      { header: 'Package Valid To', key: 'packageValidTo',width: 18 },
+      { header: 'Status',           key: 'status',        width: 10 },
+    ];
+    sheet.columns = columns;
+
+    // Bold + teal header row
+    const headerRow = sheet.getRow(1);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F766E' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+      };
+    });
+    headerRow.height = 22;
+
+    // Data rows with alternating fill
+    activeEmployees.forEach((employee, idx) => {
+      const row = sheet.addRow({
+        employeeId:    employee.employeeId    ?? '',
+        firstName:     employee.firstName     ?? '',
+        lastName:      employee.lastName      ?? '',
+        name:          employee.name          ?? '',
+        email:         employee.email         ?? '',
+        phone:         employee.phone         ?? '',
+        gender:        employee.gender        ?? '',
+        dateOfBirth:   employee.dateOfBirth   ?? '',
+        department:    employee.department    ?? '',
+        designation:   employee.designation   ?? '',
+        city:          employee.city          ?? '',
+        state:         employee.state         ?? '',
+        pinCode:       employee.pinCode       ?? '',
+        location:      employee.location      ?? '',
+        facility:      employee.facility      ?? '',
+        healthStatus:  employee.healthStatus  ?? '',
+        plan:          employee.currentPackageName || employee.insurancePlan || '',
+        packageValidTo:employee.packageValidTo ?? '',
+        status:        employee.status        ?? 'active',
+      });
+      if (idx % 2 === 1) {
+        row.eachCell((cell) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0FDFA' } };
+        });
+      }
+    });
+
+    // Auto-filter on header row
+    sheet.autoFilter = { from: 'A1', to: { row: 1, column: columns.length } };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const companySlug = (selectedCorporate?.companyName || 'corporate').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    a.href = url;
+    a.download = companySlug + '_active_employees_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+    a.click();
+    window.URL.revokeObjectURL(url);
+
+    toast({
+      title: 'Active list downloaded',
+      description: activeEmployees.length + ' active employees exported as Excel.',
+    });
   };
 
   // Download CSV Template (v2 — includes email column)
@@ -2642,10 +4306,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
         status: 'Active',
         currency: 'INR',
         benefits: [...defaultBenefits],
-        features: {
-          opd: true, ipd: true, maternity: false, dental: false, pharmacy: true,
-          diagnostics: true, homecare: false, ambulance: true, wellness: true, mentalHealth: false,
-        },
+        features: mergePlanFeatures(),
         coverage: {
           sumInsured: '', roomRent: 'Single Room', icuRent: '2% of Sum Insured',
           prePolicyMedical: '30 days', postPolicyMedical: '60 days',
@@ -2674,15 +4335,37 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
   };
 
   const normalizeText = (value?: string) => (value || '').replace(/\s+/g, ' ').trim();
+  const normalizeCorporateStatus = (value?: string) => (value || '').toLowerCase().trim();
+  const getCorporateCreatedTime = (corp: Corporate) => {
+    const createdTime = corp.createdAt ? new Date(corp.createdAt).getTime() : NaN;
+    return Number.isFinite(createdTime) ? createdTime : 0;
+  };
+  const sortCorporatesForList = (items: Corporate[]) => {
+    const statusRank: Record<string, number> = { active: 0, pending: 1, suspended: 2, inactive: 3 };
+    return [...items].sort((a, b) => {
+      const aStatus = normalizeCorporateStatus(a.status);
+      const bStatus = normalizeCorporateStatus(b.status);
+      const statusDiff = (statusRank[aStatus] ?? 2) - (statusRank[bStatus] ?? 2);
+      if (statusDiff !== 0) return statusDiff;
+
+      const dateDiff = getCorporateCreatedTime(b) - getCorporateCreatedTime(a);
+      if (dateDiff !== 0) return dateDiff;
+
+      return Number(b.id || 0) - Number(a.id || 0);
+    });
+  };
   const looksSuspiciousText = (value?: string) => {
     const v = (value || '').toLowerCase();
     return /drop\s+table|truncate\s+table|delete\s+from|--|;|\/\*|\*\//.test(v);
   };
 
-  // Filter corporates
-  const filteredCorporates = corporates.filter((corp) => {
+  // Filter corporates. The default view hides inactive records and sorts active corporates newest-first.
+  const filteredCorporates = sortCorporatesForList(corporates.filter((corp) => {
     const q = searchTerm.trim().toLowerCase();
-    const statusMatch = corporateStatusFilter === 'all' || (corp.status || '').toLowerCase() === corporateStatusFilter;
+    const status = normalizeCorporateStatus(corp.status);
+    const statusMatch = corporateStatusFilter === 'all'
+      ? status !== 'inactive'
+      : status === corporateStatusFilter;
     if (!statusMatch) return false;
     if (!q) return true;
     return [
@@ -2695,7 +4378,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
     ]
       .filter(Boolean)
       .some((v) => String(v).toLowerCase().includes(q));
-  });
+  }));
 
   const visibleTemplates = communicationTemplates[communicationChannel].filter((template) => {
     const q = templateLibrarySearch.trim().toLowerCase();
@@ -2759,11 +4442,11 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
               <CardTitle className="text-base text-foreground">Select Corporate</CardTitle>
               <div className="flex items-center gap-2">
                 <Select value={corporateStatusFilter} onValueChange={(value) => setCorporateStatusFilter(value as any)}>
-                  <SelectTrigger className="w-36 bg-card">
+                  <SelectTrigger className="w-44 bg-card">
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="all">All Active Statuses</SelectItem>
                     <SelectItem value="active">Active</SelectItem>
                     <SelectItem value="inactive">Inactive</SelectItem>
                     <SelectItem value="pending">Pending</SelectItem>
@@ -2967,7 +4650,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                 </Card>
               </div>
 
-              <Card>
+              <Card ref={welcomeDeliveryAuditRef}>
                 <CardHeader>
                   <CardTitle>Corporate Details</CardTitle>
                 </CardHeader>
@@ -3025,6 +4708,223 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                   </div>
                 </CardContent>
               </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <CardTitle>Welcome Delivery Audit</CardTitle>
+                      <CardDescription>
+                        Track prepared, sent, failed, and rolled-back welcome email attempts with idempotency visibility.
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fetchWelcomeDeliveryHistory()}
+                        disabled={welcomeDeliveriesLoading}
+                      >
+                        <RefreshCw className={`h-4 w-4 mr-2 ${welcomeDeliveriesLoading ? 'animate-spin' : ''}`} />
+                        Refresh
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={exportWelcomeDeliveryRows}
+                        disabled={welcomeDeliveries.length === 0}
+                      >
+                        <FileSpreadsheet className="h-4 w-4 mr-2" />
+                        Export CSV
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+                    <Badge variant="outline" className="justify-center py-2">Total: {welcomeDeliverySummary.total}</Badge>
+                    <Badge className="justify-center py-2 bg-green-100 text-green-800">Sent: {welcomeDeliverySummary.sent}</Badge>
+                    <Badge className="justify-center py-2 bg-blue-100 text-blue-800">Queued: {welcomeDeliverySummary.queued}</Badge>
+                    <Badge className="justify-center py-2 bg-red-100 text-red-800">Failed: {welcomeDeliverySummary.failed}</Badge>
+                    <Badge className="justify-center py-2 bg-amber-100 text-amber-800">Rolled Back: {welcomeDeliverySummary.rolledBack}</Badge>
+                    <Badge className="justify-center py-2 bg-slate-100 text-slate-800">Prepared: {welcomeDeliverySummary.prepared}</Badge>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                    <div className="space-y-1">
+                      <Label>Status</Label>
+                      <Select
+                        value={welcomeDeliveryFilters.status}
+                        onValueChange={(value) => setWelcomeDeliveryFilters((prev) => ({ ...prev, status: value }))}
+                      >
+                        <SelectTrigger><SelectValue placeholder="All statuses" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          <SelectItem value="prepared">Prepared</SelectItem>
+                          <SelectItem value="queued">Queued</SelectItem>
+                          <SelectItem value="sent">Sent</SelectItem>
+                          <SelectItem value="failed">Failed</SelectItem>
+                          <SelectItem value="rolled_back">Rolled Back</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Scope</Label>
+                      <Select
+                        value={welcomeDeliveryFilters.requestScope}
+                        onValueChange={(value) => setWelcomeDeliveryFilters((prev) => ({ ...prev, requestScope: value }))}
+                      >
+                        <SelectTrigger><SelectValue placeholder="All scopes" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          <SelectItem value="batch_send">Batch Send</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Employee ID</Label>
+                      <Input
+                        value={welcomeDeliveryFilters.employeeId}
+                        onChange={(event) => setWelcomeDeliveryFilters((prev) => ({ ...prev, employeeId: event.target.value }))}
+                        placeholder="e.g. NC25654"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Recipient</Label>
+                      <Input
+                        value={welcomeDeliveryFilters.recipient}
+                        onChange={(event) => setWelcomeDeliveryFilters((prev) => ({ ...prev, recipient: event.target.value }))}
+                        placeholder="email contains"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>From</Label>
+                      <Input
+                        type="date"
+                        value={welcomeDeliveryFilters.from}
+                        onChange={(event) => setWelcomeDeliveryFilters((prev) => ({ ...prev, from: event.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>To</Label>
+                      <Input
+                        type="date"
+                        value={welcomeDeliveryFilters.to}
+                        onChange={(event) => setWelcomeDeliveryFilters((prev) => ({ ...prev, to: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" onClick={() => fetchWelcomeDeliveryHistory({ resetOffset: true })} disabled={welcomeDeliveriesLoading}>
+                      Apply Filters
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={resetWelcomeDeliveryFilters} disabled={welcomeDeliveriesLoading}>
+                      Reset
+                    </Button>
+                  </div>
+
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Employee</TableHead>
+                        <TableHead>Recipient</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Attempts</TableHead>
+                        <TableHead>Idempotency</TableHead>
+                        <TableHead>Error</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {welcomeDeliveriesLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Loading delivery history...</TableCell>
+                        </TableRow>
+                      ) : welcomeDeliveries.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No delivery records found for current filters.</TableCell>
+                        </TableRow>
+                      ) : (
+                        welcomeDeliveries.map((row) => {
+                          const userName = `${row.userFirstName || ''} ${row.userLastName || ''}`.trim();
+                          return (
+                            <TableRow key={row.id}>
+                              <TableCell className="text-xs text-muted-foreground">{new Date(row.createdAt).toLocaleString()}</TableCell>
+                              <TableCell>
+                                <div className="font-medium">{row.employeeId || '-'}</div>
+                                <div className="text-xs text-muted-foreground">{userName || row.userEmail || '-'}</div>
+                              </TableCell>
+                              <TableCell>{row.recipientEmail}</TableCell>
+                              <TableCell>
+                                <Badge className={`${
+                                  row.status === 'sent'
+                                    ? 'bg-green-100 text-green-800'
+                                    : row.status === 'queued'
+                                      ? 'bg-blue-100 text-blue-800'
+                                      : row.status === 'rolled_back'
+                                        ? 'bg-amber-100 text-amber-800'
+                                        : row.status === 'failed'
+                                          ? 'bg-red-100 text-red-800'
+                                          : 'bg-slate-100 text-slate-800'
+                                }`}>
+                                  {row.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{row.attempts}</TableCell>
+                              <TableCell className="text-xs max-w-[220px] truncate" title={row.idempotencyKey}>{row.idempotencyKey}</TableCell>
+                              <TableCell className="text-xs max-w-[280px] truncate" title={row.errorMessage || ''}>{row.errorMessage || '-'}</TableCell>
+                              <TableCell>
+                                {(row.status === 'failed' || row.status === 'rolled_back') && (row.userId || row.employeeId) ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleResendWelcomeFromDelivery(row)}
+                                    disabled={resendingWelcomeDeliveryId === row.id || welcomeDeliveriesLoading}
+                                  >
+                                    <Send className="h-3.5 w-3.5 mr-1" />
+                                    {resendingWelcomeDeliveryId === row.id ? 'Resending...' : 'Resend'}
+                                  </Button>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">-</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+
+                  {welcomeDeliverySummary.total > 0 && (
+                    <div className="flex items-center justify-between text-sm text-muted-foreground">
+                      <span>
+                        Showing {Math.min(welcomeDeliveryPagination.offset + 1, welcomeDeliverySummary.total)}-
+                        {Math.min(welcomeDeliveryPagination.offset + welcomeDeliveryPagination.limit, welcomeDeliverySummary.total)} of {welcomeDeliverySummary.total}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={welcomeDeliveryPagination.offset === 0 || welcomeDeliveriesLoading}
+                          onClick={() => fetchWelcomeDeliveryHistory({ nextOffset: welcomeDeliveryPagination.offset - welcomeDeliveryPagination.limit })}
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={welcomeDeliveryPagination.offset + welcomeDeliveryPagination.limit >= welcomeDeliverySummary.total || welcomeDeliveriesLoading}
+                          onClick={() => fetchWelcomeDeliveryHistory({ nextOffset: welcomeDeliveryPagination.offset + welcomeDeliveryPagination.limit })}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
 
             {/* HR Admin Tab */}
@@ -3038,10 +4938,16 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                         Create and manage login credentials for corporate HR administrators
                       </CardDescription>
                     </div>
-                    <Button onClick={() => setShowAddHRDialog(true)}>
+                    <div className="flex gap-2">
+                      <Button variant="outline" onClick={handleReplaceHRAdmin} disabled={updatingHRAdmin}>
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Replace HR
+                      </Button>
+                      <Button onClick={() => { resetHRAdminForm(); setShowAddHRDialog(true); }}>
                       <UserPlus className="h-4 w-4 mr-2" />
                       Create HR Admin
-                    </Button>
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -3057,23 +4963,44 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      <TableRow>
-                        <TableCell className="font-medium">Equitas HR Admin</TableCell>
-                        <TableCell>{selectedCorporate.email}</TableCell>
-                        <TableCell>{selectedCorporate.phoneNumber}</TableCell>
-                        <TableCell>{getStatusBadge('Active')}</TableCell>
-                        <TableCell>2 hours ago</TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button variant="ghost" size="sm">
-                              <Key className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm">
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
+                      {corporateAdminsLoading && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-sm text-muted-foreground">Loading HR/admin users...</TableCell>
+                        </TableRow>
+                      )}
+                      {!corporateAdminsLoading && corporateAdmins.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-sm text-muted-foreground">No HR/admin users found for this corporate.</TableCell>
+                        </TableRow>
+                      )}
+                      {!corporateAdminsLoading && corporateAdmins.map((admin) => (
+                        <TableRow key={admin.id}>
+                          <TableCell className="font-medium">{`${admin.firstName || ''} ${admin.lastName || ''}`.trim() || admin.email}</TableCell>
+                          <TableCell>{admin.email}</TableCell>
+                          <TableCell>{admin.phoneNumber || '—'}</TableCell>
+                          <TableCell>{getStatusBadge(normalizeStatusLabel(admin.status))}</TableCell>
+                          <TableCell>{formatLastLoginLabel(admin.lastLoginAt)}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button variant="ghost" size="sm" disabled title="Not available yet">
+                                <Key className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="sm" title="Edit HR admin" onClick={() => openEditHRAdminDialog(admin)}>
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title="Deactivate HR admin"
+                                onClick={() => handleDeactivateHRAdmin(admin)}
+                                disabled={updatingHRAdmin || normalizeStatusLabel(admin.status) === 'Inactive'}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
                     </TableBody>
                   </Table>
                 </CardContent>
@@ -3100,9 +5027,17 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                         <Upload className="h-4 w-4 mr-2" />
                         Bulk Upload
                       </Button>
+                      <Button variant="outline" onClick={() => setShowWelcomeEmailBatchDialog(true)} title="Prepare, review, edit, and send welcome email drafts">
+                        <Mail className="h-4 w-4 mr-2" />
+                        Welcome Emails{welcomeEmailDrafts.length > 0 ? " (" + welcomeEmailDrafts.length + ")" : ""}
+                      </Button>
                       <Button variant="outline" onClick={downloadTemplate}>
                         <Download className="h-4 w-4 mr-2" />
                         Download Template
+                      </Button>
+                      <Button variant="outline" onClick={downloadActiveEmployeeList} disabled={employees.length === 0}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Export Active List
                       </Button>
                       <Button onClick={() => setShowAddEmployeeDialog(true)}>
                         <Plus className="h-4 w-4 mr-2" />
@@ -3112,28 +5047,137 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                   </div>
                 </CardHeader>
                 <CardContent>
+                  {/* ── App Activation Stats ──────────────────────────────── */}
+                  {(() => {
+                    const total = employees.length;
+                    const sent = employees.filter(e => e.welcomeEmailStatus === 'sent').length;
+                    const loggedIn = employees.filter(e => !!e.lastLoginAt).length;
+                    const pwdChanged = employees.filter(e => !!e.lastLoginAt && e.requirePasswordChange === false).length;
+                    const pctSent = total ? Math.round((sent / total) * 100) : 0;
+                    const pctLoggedIn = total ? Math.round((loggedIn / total) * 100) : 0;
+                    const pctPwd = total ? Math.round((pwdChanged / total) * 100) : 0;
+                    return (
+                      <div className="mb-4 rounded-lg border bg-white dark:bg-gray-900 p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-semibold">App Activation Funnel</p>
+                          <span className="text-xs text-muted-foreground">{total} active employees</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900 p-3 text-center">
+                            <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{sent}</p>
+                            <p className="text-xs text-blue-600 dark:text-blue-400">Welcome Email Sent</p>
+                            <p className="text-[10px] text-muted-foreground">{pctSent}% of total</p>
+                          </div>
+                          <div className="rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-100 dark:border-green-900 p-3 text-center">
+                            <p className="text-2xl font-bold text-green-700 dark:text-green-300">{loggedIn}</p>
+                            <p className="text-xs text-green-600 dark:text-green-400">Logged In to App</p>
+                            <p className="text-[10px] text-muted-foreground">{pctLoggedIn}% of total</p>
+                          </div>
+                          <div className="rounded-lg bg-teal-50 dark:bg-teal-950/30 border border-teal-100 dark:border-teal-900 p-3 text-center">
+                            <p className="text-2xl font-bold text-teal-700 dark:text-teal-300">{pwdChanged}</p>
+                            <p className="text-xs text-teal-600 dark:text-teal-400">Password Changed</p>
+                            <p className="text-[10px] text-muted-foreground">{pctPwd}% of total</p>
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px] text-muted-foreground">
+                            <span>Activation progress</span>
+                            <span>{loggedIn} / {total} logged in</span>
+                          </div>
+                          <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2 overflow-hidden">
+                            <div className="h-2 rounded-full bg-blue-200 dark:bg-blue-900" style={{ width: `${pctSent}%` }} />
+                            <div className="h-2 rounded-full bg-green-500 -mt-2" style={{ width: `${pctLoggedIn}%` }} />
+                          </div>
+                          <div className="flex gap-3 text-[10px] text-muted-foreground">
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-200 dark:bg-blue-900 inline-block"/>{pctSent}% email sent</span>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block"/>{pctLoggedIn}% logged in</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  <div className="mb-4 rounded-lg border bg-slate-50/60 dark:bg-slate-900/30 p-3 space-y-3">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium">Welcome Email Campaign</p>
+                        <p className="text-xs text-muted-foreground">
+                          Select employees below, then open Welcome Emails to prepare, review, and send from one workflow.
+                        </p>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {selectedEmployeeIdsForWelcome.length} selected of {employees.length}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="space-y-1 md:col-span-2">
+                        <Label>Find employee for welcome email</Label>
+                        <Input
+                          value={welcomeEmployeeSearch}
+                          onChange={(event) => setWelcomeEmployeeSearch(event.target.value)}
+                          placeholder="Search by employee ID, name, email, department, or designation"
+                        />
+                      </div>
+                      <div className="text-xs text-muted-foreground flex items-end">
+                        {filteredWelcomeEmployees.length} matched employee{filteredWelcomeEmployees.length === 1 ? '' : 's'}
+                      </div>
+                    </div>
+                  </div>
+
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-[44px]">
+                          <Checkbox
+                            checked={filteredWelcomeEmployees.filter((employee) => !hasActiveWelcomeEmailDelivery(employee)).length > 0 && filteredWelcomeEmployees.filter((employee) => !hasActiveWelcomeEmailDelivery(employee)).every((employee) => selectedEmployeeIdsForWelcome.includes(employee.id))}
+                            onCheckedChange={(checked) => {
+                              const filteredIds = filteredWelcomeEmployees.filter((employee) => !hasActiveWelcomeEmailDelivery(employee)).map((employee) => employee.id);
+                              if (checked === true) {
+                                setSelectedEmployeeIdsForWelcome((current) => Array.from(new Set([...current, ...filteredIds])));
+                              } else {
+                                setSelectedEmployeeIdsForWelcome((current) => current.filter((id) => !filteredIds.includes(id)));
+                              }
+                            }}
+                            aria-label="Select all employees"
+                          />
+                        </TableHead>
                         <TableHead>Employee ID</TableHead>
                         <TableHead>Name</TableHead>
                         <TableHead>Email</TableHead>
                         <TableHead>Department</TableHead>
                         <TableHead>Designation</TableHead>
                         <TableHead>Health Status</TableHead>
+                        <TableHead>App Login</TableHead>
                         <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {employees.length === 0 ? (
+                      {filteredWelcomeEmployees.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                            No employees found. Click "Add Employee" or "Bulk Upload" to add employees.
+                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                            {employees.length === 0
+                              ? 'No employees found. Click "Add Employee" or "Bulk Upload" to add employees.'
+                              : 'No employees match this search. Try employee ID (for example NC25654).'}
                           </TableCell>
                         </TableRow>
                       ) : (
-                        employees.slice((empCurrentPage - 1) * EMP_PAGE_SIZE, empCurrentPage * EMP_PAGE_SIZE).map((emp) => (
+                        filteredWelcomeEmployees.slice((empCurrentPage - 1) * EMP_PAGE_SIZE, empCurrentPage * EMP_PAGE_SIZE).map((emp) => (
                           <TableRow key={emp.id}>
+                            <TableCell>
+                              <Checkbox
+                                checked={!hasActiveWelcomeEmailDelivery(emp) && selectedEmployeeIdsForWelcome.includes(emp.id)}
+                                disabled={hasActiveWelcomeEmailDelivery(emp)}
+                                onCheckedChange={(checked) => {
+                                  if (hasActiveWelcomeEmailDelivery(emp)) return;
+                                  setSelectedEmployeeIdsForWelcome((current) => {
+                                    if (checked === true) return [...new Set([...current, emp.id])];
+                                    return current.filter((id) => id !== emp.id);
+                                  });
+                                }}
+                                aria-label={`Select ${emp.name}`}
+                              />
+                            </TableCell>
                             <TableCell>{emp.employeeId}</TableCell>
                             <TableCell className="font-medium">{emp.name}</TableCell>
                             <TableCell>{emp.email}</TableCell>
@@ -3151,7 +5195,45 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                               </Badge>
                             </TableCell>
                             <TableCell>
+                              {(() => {
+                                const welcomeStatus = String(emp.welcomeEmailStatus || '').toLowerCase();
+                                const sent = welcomeStatus === 'sent';
+                                const queued = welcomeStatus === 'queued';
+                                const loggedIn = !!emp.lastLoginAt;
+                                const pwdChanged = loggedIn && emp.requirePasswordChange === false;
+                                if (!sent && !queued) return <span className="text-xs text-muted-foreground">Not onboarded</span>;
+                                if (!loggedIn) return (
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+                                    {queued ? 'Email queued' : 'Email sent'}
+                                  </span>
+                                );
+                                const dt = new Date(emp.lastLoginAt!);
+                                const ago = (() => {
+                                  const s = Math.floor((Date.now() - dt.getTime()) / 1000);
+                                  if (s < 60) return 'just now';
+                                  if (s < 3600) return `${Math.floor(s/60)}m ago`;
+                                  if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+                                  return `${Math.floor(s/86400)}d ago`;
+                                })();
+                                return (
+                                  <div className="space-y-0.5">
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-green-600 dark:text-green-400">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                                      Active · {ago}
+                                    </span>
+                                    {!pwdChanged && (
+                                      <div className="text-[10px] text-amber-500">⚠ Temp password</div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </TableCell>
+                            <TableCell>
                               <div className="flex gap-2">
+                                <Button variant="ghost" size="sm" onClick={() => openWelcomeDeliveryAuditForEmployee(emp)} title="View welcome email delivery audit for this employee">
+                                  <Clock className="h-4 w-4" />
+                                </Button>
                                 <Button variant="ghost" size="sm" onClick={() => {
                                   setViewingEmployee(emp);
                                   setShowViewEmployeeDialog(true);
@@ -3188,13 +5270,13 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                       )}
                     </TableBody>
                   </Table>
-                  {employees.length > 0 && (
+                  {filteredWelcomeEmployees.length > 0 && (
                     <div className="flex items-center justify-between px-2 py-3 border-t text-sm text-muted-foreground">
                       <span>
-                        Showing {Math.min((empCurrentPage - 1) * EMP_PAGE_SIZE + 1, employees.length)}–{Math.min(empCurrentPage * EMP_PAGE_SIZE, employees.length)} of {employees.length} employees
+                        Showing {Math.min((empCurrentPage - 1) * EMP_PAGE_SIZE + 1, filteredWelcomeEmployees.length)}–{Math.min(empCurrentPage * EMP_PAGE_SIZE, filteredWelcomeEmployees.length)} of {filteredWelcomeEmployees.length} matched employees
                       </span>
                       <div className="flex items-center gap-2">
-                        <span>Page {empCurrentPage} of {Math.ceil(employees.length / EMP_PAGE_SIZE)}</span>
+                        <span>Page {empCurrentPage} of {filteredWelcomeTotalPages}</span>
                         <Button
                           variant="outline"
                           size="sm"
@@ -3206,7 +5288,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                         <Button
                           variant="outline"
                           size="sm"
-                          disabled={empCurrentPage >= Math.ceil(employees.length / EMP_PAGE_SIZE)}
+                          disabled={empCurrentPage >= filteredWelcomeTotalPages}
                           onClick={() => setEmpCurrentPage(p => p + 1)}
                         >
                           Next
@@ -3273,7 +5355,6 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                             </p>
                             {plan.totalEmployees ? (
                               <p className="text-sm text-muted-foreground">
-                                <Users className="h-3 w-3 inline mr-1" />
                                 {plan.enrolled} / {plan.totalEmployees} enrolled
                               </p>
                             ) : (
@@ -3293,8 +5374,8 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                                 {Object.entries(plan.features)
                                   .filter(([, v]) => v)
                                   .map(([k]) => (
-                                    <Badge key={k} variant="outline" className="text-xs capitalize">
-                                      {k.replace(/([A-Z])/g, ' $1').trim()}
+                                    <Badge key={k} variant="outline" className="text-xs">
+                                      {getPlanFeatureLabel(k)}
                                     </Badge>
                                   ))}
                               </div>
@@ -3352,7 +5433,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                         <RefreshCw className={`mr-2 h-4 w-4 ${communicationLogsLoading ? 'animate-spin' : ''}`} />Refresh Data
                       </Button>
                       <Button onClick={generateAiCommunicationDraft} disabled={aiCommunicationLoading}>
-                        <Brain className="mr-2 h-4 w-4" />{aiCommunicationLoading ? 'Drafting...' : 'AI Draft & Store'}
+                        <Brain className="mr-2 h-4 w-4" />{aiCommunicationLoading ? 'Assisting...' : 'AI Assist & Store'}
                       </Button>
                     </div>
                   </div>
@@ -4436,7 +6517,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                                           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleAssignNetwork({ id: lab.id, name: lab.name, type: 'lab', city: lab.city })}>
                                             <Users className="h-3 w-3 mr-1" />Assign
                                           </Button>
-                                          <Button variant="ghost" size="sm">
+                                          <Button variant="ghost" size="sm" disabled title="Not available yet">
                                             <Trash2 className="h-4 w-4 text-red-500" />
                                           </Button>
                                         </div>
@@ -4545,7 +6626,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                                           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleAssignNetwork({ id: hospital.id, name: hospital.name, type: 'hospital', city: hospital.city })}>
                                             <Users className="h-3 w-3 mr-1" />Assign
                                           </Button>
-                                          <Button variant="ghost" size="sm">
+                                          <Button variant="ghost" size="sm" disabled title="Not available yet">
                                             <Trash2 className="h-4 w-4 text-red-500" />
                                           </Button>
                                         </div>
@@ -4654,7 +6735,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                                           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleAssignNetwork({ id: clinic.id, name: clinic.name, type: 'clinic', city: clinic.city })}>
                                             <Users className="h-3 w-3 mr-1" />Assign
                                           </Button>
-                                          <Button variant="ghost" size="sm">
+                                          <Button variant="ghost" size="sm" disabled title="Not available yet">
                                             <Trash2 className="h-4 w-4 text-red-500" />
                                           </Button>
                                         </div>
@@ -4774,11 +6855,11 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
         </Dialog>
 
         {/* Add HR Admin Dialog */}
-        <Dialog open={showAddHRDialog} onOpenChange={setShowAddHRDialog}>
+        <Dialog open={showAddHRDialog} onOpenChange={(open) => { setShowAddHRDialog(open); if (!open) resetHRAdminForm(); }}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create HR Admin Login</DialogTitle>
-              <DialogDescription className="sr-only">Create HR admin credentials</DialogDescription>
+              <DialogTitle>{editingHRAdmin ? 'Edit HR Admin' : 'Create HR Admin Login'}</DialogTitle>
+              <DialogDescription className="sr-only">Create or edit HR admin credentials</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
@@ -4817,7 +6898,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                 />
               </div>
               <div className="space-y-2">
-                <Label>Password *</Label>
+                <Label>{editingHRAdmin ? 'Password (optional)' : 'Password *'}</Label>
                 <div className="flex gap-2">
                   <Input 
                     type="text"
@@ -4835,8 +6916,10 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowAddHRDialog(false)}>Cancel</Button>
-              <Button onClick={handleCreateHRAdmin}>Create HR Admin</Button>
+              <Button variant="outline" onClick={() => { setShowAddHRDialog(false); resetHRAdminForm(); }}>Cancel</Button>
+              <Button onClick={editingHRAdmin ? handleUpdateHRAdmin : handleCreateHRAdmin} disabled={updatingHRAdmin}>
+                {editingHRAdmin ? (updatingHRAdmin ? 'Saving...' : 'Save Changes') : 'Create HR Admin'}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -4866,9 +6949,14 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                     </span>
                   </div>
                   {empIdStatus === 'duplicate' && (
-                    <p className="text-xs text-red-500 flex items-center gap-1">
-                      <AlertCircle className="h-3 w-3" /> Employee ID already exists in this corporate
-                    </p>
+                    <div className="text-xs text-amber-700 space-y-1">
+                      <p className="flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3" /> Employee ID already exists in this corporate.
+                      </p>
+                      {duplicateEmployeeForNewId && (
+                        <p>Existing employee: {duplicateEmployeeForNewId.name} &lt;{duplicateEmployeeForNewId.email}&gt;</p>
+                      )}
+                    </div>
                   )}
                   {empIdStatus === 'ok' && (
                     <p className="text-xs text-green-600">Employee ID is available</p>
@@ -4902,7 +6990,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Gender *</Label>
+                  <Label>Gender</Label>
                   <Select value={newEmployee.gender} onValueChange={(v) => setNewEmployee({...newEmployee, gender: v})}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select gender" />
@@ -4957,8 +7045,32 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                 </div>
               </div>
             </div>
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                <Label htmlFor="employee-welcome-email-mode" className="text-sm font-medium">Welcome email handling</Label>
+                <Select value={employeeWelcomeEmailMode} onValueChange={(value) => setEmployeeWelcomeEmailMode(value as WelcomeEmailMode)}>
+                  <SelectTrigger id="employee-welcome-email-mode">
+                    <SelectValue placeholder="Choose email handling" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="draft">Prepare batch for review</SelectItem>
+                    <SelectItem value="send">Send immediately</SelectItem>
+                    <SelectItem value="skip">Do not send</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Only name and email are needed for a welcome email. Gender and department are optional employee profile fields; duplicate employees can receive a fresh password and welcome email again.</p>
+              </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowAddEmployeeDialog(false)}>Cancel</Button>
+              {empIdStatus === 'duplicate' && duplicateEmployeeForNewId && (
+                <Button variant="outline" onClick={handleExistingEmployeeWelcomeEmail} disabled={sendingExistingWelcomeEmail}>
+                  <Mail className="h-4 w-4 mr-2" />
+                  {sendingExistingWelcomeEmail
+                    ? 'Preparing...'
+                    : employeeWelcomeEmailMode === 'send'
+                      ? 'Send Welcome Email Again'
+                      : 'Prepare Welcome Email Again'}
+                </Button>
+              )}
               <Button onClick={handleAddEmployee} disabled={empIdStatus === 'duplicate'}>Add Employee</Button>
             </DialogFooter>
           </DialogContent>
@@ -5011,7 +7123,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                 </div>
                 <div className="flex items-start gap-2 rounded-md bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-800 p-3 text-sm text-amber-800 dark:text-amber-400">
                   <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                  <p>A welcome email with these credentials has been sent to <strong>{newEmployeeCredentials.email}</strong>. The employee should change this password on first login.</p>
+                  <p>{newEmployeeCredentials.emailStatus === "skipped" ? <>Welcome email was not sent. Share these credentials manually with <strong>{newEmployeeCredentials.email}</strong>.</> : <>A welcome email with these credentials has been queued for <strong>{newEmployeeCredentials.email}</strong>. The employee should change this password on first login.</>}</p>
                 </div>
               </div>
             )}
@@ -6068,7 +8180,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                           setNewPlan({ ...newPlan, features: { ...newPlan.features, [key]: checked } })
                         }
                       />
-                      <Label className="capitalize text-sm">{key.replace(/([A-Z])/g, ' $1').trim()}</Label>
+                      <Label className="text-sm">{getPlanFeatureLabel(key)}</Label>
                     </div>
                   ))}
                 </div>
@@ -6236,8 +8348,8 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                     <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Features</div>
                     <div className="flex flex-wrap gap-2">
                       {Object.entries(editingPlan.features).filter(([,v]) => v).map(([k]) => (
-                        <Badge key={k} variant="secondary" className="capitalize">
-                          {k.replace(/([A-Z])/g, ' $1').trim()}
+                        <Badge key={k} variant="secondary">
+                          {getPlanFeatureLabel(k)}
                         </Badge>
                       ))}
                     </div>
@@ -6249,7 +8361,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                     <div className="grid grid-cols-2 gap-2">
                       {Object.entries(editingPlan.coverage).filter(([k, v]) => k !== 'sumInsured' && v).map(([k, v]) => (
                         <div key={k} className="p-2 border rounded">
-                          <div className="text-xs text-muted-foreground capitalize">{k.replace(/([A-Z])/g, ' $1').trim()}</div>
+                          <div className="text-xs text-muted-foreground capitalize">{getPlanFeatureLabel(k)}</div>
                           <div className="text-sm font-medium">{String(v)}</div>
                         </div>
                       ))}
@@ -6382,7 +8494,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                   {Object.entries(editPlanForm.features).map(([key, value]) => (
                     <div key={key} className="flex items-center space-x-2 p-3 border rounded-lg">
                       <Switch checked={value as boolean} onCheckedChange={(checked) => setEditPlanForm({ ...editPlanForm, features: { ...editPlanForm.features, [key]: checked } })} />
-                      <Label className="capitalize text-sm">{key.replace(/([A-Z])/g, ' $1').trim()}</Label>
+                      <Label className="text-sm">{getPlanFeatureLabel(key)}</Label>
                     </div>
                   ))}
                 </div>
@@ -6564,6 +8676,8 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
               const successPct = total > 0 ? Math.round((bulkUploadResults.created.length / total) * 100) : 0;
               const newUsers = bulkUploadResults.created.filter((e: any) => e.isNewUser).length;
               const linked = bulkUploadResults.created.filter((e: any) => !e.isNewUser).length;
+              const emailQueued = bulkUploadResults.created.filter((e: any) => e.emailStatus === 'queued').length;
+              const emailSkipped = bulkUploadResults.created.filter((e: any) => e.emailStatus === 'skipped').length;
               const qcLog = bulkUploadResults.qcLog || [];
 
               const downloadErrorLog = () => {
@@ -6603,10 +8717,22 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                       <p className={`text-2xl font-bold ${bulkUploadResults.failed.length > 0 ? 'text-red-700 dark:text-red-300' : 'text-gray-500'}`}>{bulkUploadResults.failed.length}</p>
                       <p className={`text-xs ${bulkUploadResults.failed.length > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-500'}`}>Failed</p>
                     </div>
-                    <div className={`${qcLog.length > 0 ? 'bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800' : 'bg-gray-50 dark:bg-gray-950/30 border-gray-200 dark:border-gray-800'} border rounded-lg p-3 text-center`}>
-                      <p className={`text-2xl font-bold ${qcLog.length > 0 ? 'text-yellow-700 dark:text-yellow-300' : 'text-gray-500'}`}>{qcLog.length}</p>
-                      <p className={`text-xs ${qcLog.length > 0 ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-500'}`}>QC Warnings</p>
-                    </div>
+                    {(() => {
+                      const discarded = qcLog.filter((q: any) => q.discarded).length;
+                      const warned = qcLog.filter((q: any) => !q.discarded).length;
+                      return discarded > 0 ? (
+                        <div className="bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 border rounded-lg p-3 text-center">
+                          <p className="text-2xl font-bold text-red-700 dark:text-red-300">{discarded}</p>
+                          <p className="text-xs text-red-600 dark:text-red-400">Discarded</p>
+                          {warned > 0 && <p className="text-[10px] text-yellow-600 dark:text-yellow-400 mt-0.5">{warned} warnings</p>}
+                        </div>
+                      ) : (
+                        <div className={`${warned > 0 ? 'bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800' : 'bg-gray-50 dark:bg-gray-950/30 border-gray-200 dark:border-gray-800'} border rounded-lg p-3 text-center`}>
+                          <p className={`text-2xl font-bold ${warned > 0 ? 'text-yellow-700 dark:text-yellow-300' : 'text-gray-500'}`}>{warned}</p>
+                          <p className={`text-xs ${warned > 0 ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-500'}`}>QC Warnings</p>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Progress Bar */}
@@ -6632,6 +8758,8 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                       <div className="text-sm text-green-700 dark:text-green-400 space-y-0.5">
                         {newUsers > 0 && <p>• {newUsers} new user account{newUsers > 1 ? 's' : ''} created &amp; activated</p>}
                         {linked > 0 && <p>• {linked} existing user{linked > 1 ? 's' : ''} linked &amp; activated</p>}
+                        {emailQueued > 0 && <p>• {emailQueued} welcome email{emailQueued > 1 ? 's' : ''} queued</p>}
+                        {emailSkipped > 0 && <p>• {emailSkipped} welcome email{emailSkipped > 1 ? 's' : ''} skipped by operator choice</p>}
                       </div>
                     </div>
                   )}
@@ -6665,30 +8793,59 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                     </div>
                   )}
 
-                  {/* QC Log */}
-                  {qcLog.length > 0 && (
-                    <div className="bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
-                      <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-2 flex items-center gap-1.5">
-                        <AlertCircle className="h-4 w-4" /> QC Warnings ({qcLog.length} rows)
-                        <span className="text-xs font-normal text-yellow-600 dark:text-yellow-400 ml-1">— employees were still activated; review &amp; correct data</span>
-                      </p>
-                      <div className="max-h-48 overflow-y-auto font-mono text-xs space-y-1.5">
-                        {qcLog.map((entry: any, idx: number) => (
-                          <div key={idx} className="border-b border-yellow-200 dark:border-yellow-700 pb-1.5 last:border-0">
-                            <span className="text-yellow-700 dark:text-yellow-300 font-semibold">Row {entry.row}</span>
-                            {entry.employeeId && <span className="text-yellow-600 dark:text-yellow-400"> [{entry.employeeId}]</span>}
-                            {entry.name && <span className="text-yellow-600 dark:text-yellow-400"> {entry.name}</span>}
-                            {entry.email && <span className="text-yellow-500 dark:text-yellow-500"> &lt;{entry.email}&gt;</span>}
-                            <ul className="ml-3 mt-0.5 space-y-0.5">
-                              {entry.issues.map((issue: string, i: number) => (
-                                <li key={i} className="text-yellow-700 dark:text-yellow-400">↳ {issue}</li>
+                  {/* QC Log — discarded rows (red) + warnings (yellow) */}
+                  {qcLog.length > 0 && (() => {
+                    const discardedEntries = qcLog.filter((q: any) => q.discarded);
+                    const warnEntries = qcLog.filter((q: any) => !q.discarded);
+                    return (
+                      <div className="space-y-2">
+                        {discardedEntries.length > 0 && (
+                          <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+                            <p className="text-sm font-medium text-red-800 dark:text-red-300 mb-2 flex items-center gap-1.5">
+                              <AlertCircle className="h-4 w-4" /> Discarded rows ({discardedEntries.length}) — not uploaded
+                            </p>
+                            <div className="max-h-48 overflow-y-auto font-mono text-xs space-y-1.5">
+                              {discardedEntries.map((entry: any, idx: number) => (
+                                <div key={idx} className="border-b border-red-200 dark:border-red-700 pb-1.5 last:border-0">
+                                  <span className="text-red-700 dark:text-red-300 font-semibold">Row {entry.row}</span>
+                                  {entry.employeeId && <span className="text-red-600 dark:text-red-400"> [{entry.employeeId}]</span>}
+                                  {entry.name && <span className="text-red-600 dark:text-red-400"> {entry.name}</span>}
+                                  {entry.email && <span className="text-red-500"> &lt;{entry.email}&gt;</span>}
+                                  <ul className="ml-3 mt-0.5 space-y-0.5">
+                                    {entry.issues.map((issue: string, i: number) => (
+                                      <li key={i} className="text-red-700 dark:text-red-400">↳ {issue}</li>
+                                    ))}
+                                  </ul>
+                                </div>
                               ))}
-                            </ul>
+                            </div>
                           </div>
-                        ))}
+                        )}
+                        {warnEntries.length > 0 && (
+                          <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+                            <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-2 flex items-center gap-1.5">
+                              <AlertCircle className="h-4 w-4" /> QC Warnings ({warnEntries.length} rows) — uploaded, review data
+                            </p>
+                            <div className="max-h-40 overflow-y-auto font-mono text-xs space-y-1.5">
+                              {warnEntries.map((entry: any, idx: number) => (
+                                <div key={idx} className="border-b border-yellow-200 dark:border-yellow-700 pb-1.5 last:border-0">
+                                  <span className="text-yellow-700 dark:text-yellow-300 font-semibold">Row {entry.row}</span>
+                                  {entry.employeeId && <span className="text-yellow-600 dark:text-yellow-400"> [{entry.employeeId}]</span>}
+                                  {entry.name && <span className="text-yellow-600 dark:text-yellow-400"> {entry.name}</span>}
+                                  {entry.email && <span className="text-yellow-500"> &lt;{entry.email}&gt;</span>}
+                                  <ul className="ml-3 mt-0.5 space-y-0.5">
+                                    {entry.issues.map((issue: string, i: number) => (
+                                      <li key={i} className="text-yellow-700 dark:text-yellow-400">↳ {issue}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               );
             })()}
@@ -6732,13 +8889,14 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
           if (!open) {
             setBulkUploadFile(null);
             setBulkUploadResults(null);
+            setBulkAiColumnSummary(null);
           }
         }}>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Bulk Upload Employees</DialogTitle>
               <DialogDescription>
-                Upload a CSV file to add multiple employees at once for {selectedCorporate?.companyName}
+                Upload a CSV or Excel file to add multiple employees at once for {selectedCorporate?.companyName}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
@@ -6754,7 +8912,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
 
               {/* Column reference */}
               <div className="rounded-lg border overflow-hidden">
-                <div className="bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">CSV Columns Reference</div>
+                <div className="bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">CSV / Excel Columns Reference</div>
                 <div className="divide-y text-xs">
                   {[
                     { col: 'Employee ID', req: false, eg: 'E00001', note: 'Unique employee identifier' },
@@ -6784,10 +8942,58 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                 </div>
               </div>
 
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                <Label htmlFor="bulk-welcome-email-mode" className="text-sm font-medium">Welcome email handling</Label>
+                <Select value={bulkWelcomeEmailMode} onValueChange={(value) => setBulkWelcomeEmailMode(value as WelcomeEmailMode)}>
+                  <SelectTrigger id="bulk-welcome-email-mode">
+                    <SelectValue placeholder="Choose email handling" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="draft">Prepare batch for review</SelectItem>
+                    <SelectItem value="send">Send immediately</SelectItem>
+                    <SelectItem value="skip">Do not send</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Existing users will only be linked. New users can be prepared as editable email drafts before sending.</p>
+              </div>
+
+              <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="bulk-ai-column-detection"
+                    checked={bulkUseAiColumnDetection}
+                    onCheckedChange={(checked) => setBulkUseAiColumnDetection(Boolean(checked))}
+                  />
+                  <div className="space-y-1 leading-none">
+                    <Label htmlFor="bulk-ai-column-detection" className="text-sm font-medium">AI column detection</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Uses AI to map messy Excel headers to employee fields. Only headers and masked sample values are sent; upload QC still validates every row.
+                    </p>
+                    {bulkAiColumnSummary && <p className="text-xs text-muted-foreground">{bulkAiColumnSummary}</p>}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/30 p-3 space-y-2">
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="bulk-remove-unlisted"
+                    checked={bulkRemoveUnlisted}
+                    onCheckedChange={(checked) => setBulkRemoveUnlisted(Boolean(checked))}
+                  />
+                  <div className="space-y-1 leading-none">
+                    <Label htmlFor="bulk-remove-unlisted" className="text-sm font-medium">Remove employees not in this file</Label>
+                    <p className="text-xs text-muted-foreground">
+                      After upload, active employees whose Employee ID <em>and</em> email don't appear in this file will be shown for confirmation before being deactivated. Use this to sync the roster to the uploaded list.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div className="border-2 border-dashed rounded-lg p-6 text-center">
                 <input
                   type="file"
-                  accept=".csv"
+                  accept=".csv,.xlsx"
                   className="hidden"
                   id="bulk-upload-input"
                   onChange={(e) => {
@@ -6795,6 +9001,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                     if (file) {
                       setBulkUploadFile(file);
                       setBulkUploadResults(null);
+                      setBulkAiColumnSummary(null);
                     }
                   }}
                 />
@@ -6804,10 +9011,10 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                 >
                   <Upload className="h-10 w-10 text-muted-foreground" />
                   <span className="text-sm font-medium">
-                    {bulkUploadFile ? bulkUploadFile.name : 'Click to select CSV file'}
+                    {bulkUploadFile ? bulkUploadFile.name : 'Click to select CSV or Excel file'}
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    or drag and drop
+                    Supports .csv and .xlsx files
                   </span>
                 </label>
               </div>
@@ -6818,6 +9025,7 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                 setShowBulkUploadDialog(false);
                 setBulkUploadFile(null);
                 setBulkUploadResults(null);
+                setBulkAiColumnSummary(null);
               }}>
                 Cancel
               </Button>
@@ -6836,6 +9044,37 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
                     Upload Employees
                   </>
                 )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ─── Sync Offboard Confirmation Dialog ─── */}
+        <Dialog open={showSyncConfirmDialog} onOpenChange={(open) => { if (!open && !isSyncing) { setShowSyncConfirmDialog(false); setSyncOffboardList([]); } }}>
+          <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Remove unlisted employees?</DialogTitle>
+              <DialogDescription>
+                {syncOffboardList.length} active employee{syncOffboardList.length !== 1 ? 's are' : ' is'} not in the uploaded file and will be <strong>deactivated</strong>. This cannot be undone automatically.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="max-h-60 overflow-y-auto border rounded-md divide-y text-sm">
+              {syncOffboardList.map((emp) => (
+                <div key={emp.id} className="px-3 py-2 flex items-center justify-between gap-2">
+                  <div>
+                    <span className="font-medium">{emp.name || emp.email}</span>
+                    {emp.employeeId && <span className="ml-2 text-xs text-muted-foreground">{emp.employeeId}</span>}
+                  </div>
+                  <span className="text-xs text-muted-foreground truncate">{emp.email}</span>
+                </div>
+              ))}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" disabled={isSyncing} onClick={() => { setShowSyncConfirmDialog(false); setSyncOffboardList([]); }}>
+                Cancel
+              </Button>
+              <Button variant="destructive" disabled={isSyncing} onClick={handleConfirmSync}>
+                {isSyncing ? 'Deactivating…' : `Deactivate ${syncOffboardList.length} employee${syncOffboardList.length !== 1 ? 's' : ''}`}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -7028,6 +9267,43 @@ ${communicationChannel === 'email' ? 'Return subject in first line as "Subject: 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CorporateWelcomeEmailBatchDialog
+        open={showWelcomeEmailBatchDialog}
+        drafts={welcomeEmailDrafts}
+        sending={sendingWelcomeEmailBatch}
+        savingTemplate={savingWelcomeTemplate}
+        preparing={preparingWelcomeEmployeeDrafts}
+        employees={employees
+          .filter((employee) => String(employee.status || 'active').toLowerCase() !== 'inactive')
+          .map((employee) => ({ id: employee.id, employeeId: employee.employeeId, name: employee.name, email: employee.email }))}
+        selectedEmployeeIds={selectedEmployeeIdsForWelcome}
+        onSelectedEmployeeIdsChange={setSelectedEmployeeIdsForWelcome}
+        templateOptions={allWelcomeEmailTemplates.map((template) => ({ id: template.id, name: template.name }))}
+        selectedTemplateId={selectedWelcomeTemplateId}
+        approvedTemplateId={approvedWelcomeTemplateId}
+        approvingTemplate={approvingWelcomeTemplate}
+        onSelectedTemplateChange={setSelectedWelcomeTemplateId}
+        onApproveTemplate={handleApproveWelcomeTemplate}
+        onPrepareFromEmployees={({ mode, singleEmployeeId, sendImmediately }) => {
+          if (mode === 'selected' || mode === 'all') {
+            setWelcomeEmployeeSelectionMode(mode);
+          }
+          handlePrepareOrSendEmployeeWelcomeEmails(sendImmediately, mode, singleEmployeeId);
+        }}
+        onOpenChange={setShowWelcomeEmailBatchDialog}
+        onDraftsChange={setWelcomeEmailDrafts}
+        onSendSelected={handleSendWelcomeEmailBatch}
+        onSaveTemplate={handleSaveEditedWelcomeTemplate}
+        onPrepareSingle={() => {
+          setEmployeeWelcomeEmailMode("draft");
+          setShowAddEmployeeDialog(true);
+        }}
+        onPrepareBulk={() => {
+          setBulkWelcomeEmailMode("draft");
+          setShowBulkUploadDialog(true);
+        }}
+      />
 
       {/* Delete Corporate Confirmation Dialog */}
       <Dialog open={showDeleteCorporateDialog} onOpenChange={setShowDeleteCorporateDialog}>

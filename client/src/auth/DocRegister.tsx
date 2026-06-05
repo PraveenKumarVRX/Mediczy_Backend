@@ -123,11 +123,34 @@ const STR_COLOR = ["", "#ef4444", "#f97316", "#eab308", "#22c55e", "#10b981"];
 interface OtpState {
   sent: boolean; code: string; verified: boolean;
   error: string; timer: number; sending: boolean; verifying: boolean;
+  verificationTicket: string;
 }
 const initOtp = (): OtpState => ({
   sent: false, code: "", verified: false,
   error: "", timer: 0, sending: false, verifying: false,
+  verificationTicket: "",
 });
+
+const isVerificationTicketExpired = (ticket: string): boolean => {
+  try {
+    if (!ticket || typeof ticket !== "string" || !ticket.includes(".")) return true;
+    const [payloadPart] = ticket.split(".");
+    if (!payloadPart) return true;
+
+    // Tickets are base64url encoded on the server.
+    const normalized = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+    const payloadJson = atob(padded);
+    const payload = JSON.parse(payloadJson);
+    const exp = Number(payload?.exp);
+    if (!Number.isFinite(exp)) return true;
+
+    const now = Math.floor(Date.now() / 1000);
+    return now >= exp;
+  } catch {
+    return true;
+  }
+};
 
 const MAX_DOCUMENT_BYTES = 8 * 1024 * 1024;
 const MAX_SOURCE_IMAGE_BYTES = 25 * 1024 * 1024;
@@ -440,6 +463,8 @@ const DocRegister = () => {
         pgQuals,
         emailVerified: emailOtp.verified,
         phoneVerified: phoneOtp.verified,
+        emailVerificationTicket: emailOtp.verificationTicket,
+        phoneVerificationTicket: phoneOtp.verificationTicket,
       };
       localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
     } catch { /* non-fatal */ }
@@ -456,8 +481,8 @@ const DocRegister = () => {
       if (draft.ugQuals?.length) setUgQuals(draft.ugQuals);
       if (draft.pgQuals?.length) setPgQuals(draft.pgQuals);
       if (draft.step) { setStep(draft.step); }
-      if (draft.emailVerified) setEmailOtp(o => ({ ...o, verified: true }));
-      if (draft.phoneVerified) setPhoneOtp(o => ({ ...o, verified: true }));
+      if (draft.emailVerified) setEmailOtp(o => ({ ...o, verified: true, verificationTicket: draft.emailVerificationTicket || "" }));
+      if (draft.phoneVerified) setPhoneOtp(o => ({ ...o, verified: true, verificationTicket: draft.phoneVerificationTicket || "" }));
     } catch { /* non-fatal */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -493,7 +518,7 @@ const DocRegister = () => {
       });
       const data = await res.json();
       if (data.success) {
-        setEmailOtp(o => ({ ...o, sent: true, sending: false, timer: 60, code: "" }));
+        setEmailOtp(o => ({ ...o, sent: true, sending: false, timer: 60, code: "", verified: false, verificationTicket: "" }));
         toast({ title: "OTP sent", description: `Check your inbox at ${email}` });
       } else {
         const rawMsg = data.message || data.error?.message || "Failed to send";
@@ -516,7 +541,11 @@ const DocRegister = () => {
       });
       const data = await res.json();
       if (data.success) {
-        setEmailOtp(o => ({ ...o, verified: true, verifying: false }));
+        if (!data.verificationTicket) {
+          setEmailOtp(o => ({ ...o, verifying: false, error: "Verification proof missing. Please retry OTP verification." }));
+          return;
+        }
+        setEmailOtp(o => ({ ...o, verified: true, verifying: false, verificationTicket: data.verificationTicket }));
         toast({ title: "Email verified ✓" });
       } else {
         setEmailOtp(o => ({ ...o, verifying: false, error: data.message || "Invalid OTP" }));
@@ -538,7 +567,7 @@ const DocRegister = () => {
       });
       const data = await res.json();
       if (data.success) {
-        setPhoneOtp(o => ({ ...o, sent: true, sending: false, timer: 60, code: "" }));
+        setPhoneOtp(o => ({ ...o, sent: true, sending: false, timer: 60, code: "", verified: false, verificationTicket: "" }));
         toast({ title: "OTP sent", description: `WhatsApp verification code sent to ${phone}` });
       } else {
         const rawMsg = data.message || data.error?.message || "Failed to send";
@@ -561,7 +590,11 @@ const DocRegister = () => {
       });
       const data = await res.json();
       if (data.success) {
-        setPhoneOtp(o => ({ ...o, verified: true, verifying: false }));
+        if (!data.verificationTicket) {
+          setPhoneOtp(o => ({ ...o, verifying: false, error: "Verification proof missing. Please retry OTP verification." }));
+          return;
+        }
+        setPhoneOtp(o => ({ ...o, verified: true, verifying: false, verificationTicket: data.verificationTicket }));
         toast({ title: "Phone verified ✓" });
       } else {
         setPhoneOtp(o => ({ ...o, verifying: false, error: data.message || "Invalid OTP" }));
@@ -629,8 +662,16 @@ const DocRegister = () => {
           toast({ variant: "destructive", title: "Email not verified", description: "Please verify your email address before continuing." });
           return;
         }
+        if (!emailOtp.verificationTicket) {
+          toast({ variant: "destructive", title: "Email verification missing", description: "Please verify email OTP again before continuing." });
+          return;
+        }
         if (!phoneOtp.verified) {
           toast({ variant: "destructive", title: "Phone not verified", description: "Please verify your phone number before continuing." });
+          return;
+        }
+        if (!phoneOtp.verificationTicket) {
+          toast({ variant: "destructive", title: "Phone verification missing", description: "Please verify phone OTP again before continuing." });
           return;
         }
       }
@@ -920,6 +961,14 @@ The above terms are agreeable to both parties and have been signed in the presen
       toast({ variant: "destructive", title: "Qualification required", description: "Please add at least one qualification in Step 4 before submitting." });
       return;
     }
+    if (isVerificationTicketExpired(emailOtp.verificationTicket)) {
+      toast({ variant: "destructive", title: "Email verification expired", description: "Please verify your email OTP again before submitting." });
+      return;
+    }
+    if (isVerificationTicketExpired(phoneOtp.verificationTicket)) {
+      toast({ variant: "destructive", title: "Phone verification expired", description: "Please verify your phone OTP again before submitting." });
+      return;
+    }
     setIsSubmitting(true);
     try {
       const docs: Record<string, any> = {};
@@ -943,7 +992,12 @@ The above terms are agreeable to both parties and have been signed in the presen
           practitioner: `${form.getValues().prefix || 'Dr.'} ${form.getValues().firstName} ${form.getValues().lastName}`.trim(),
         },
       };
-      docs.verifications = { emailVerified: true, phoneVerified: true };
+      docs.verifications = {
+        emailVerified: true,
+        phoneVerified: true,
+        emailVerificationTicket: emailOtp.verificationTicket,
+        phoneVerificationTicket: phoneOtp.verificationTicket,
+      };
 
       const values = form.getValues();
       const { smFacebook, smInstagram, smLinkedin, smYoutube, ...coreValues } = values;
@@ -973,6 +1027,7 @@ The above terms are agreeable to both parties and have been signed in the presen
         onError: (error: any) => {
           const msg = error?.response?.data?.errors?.[0]?.msg
             || error?.response?.data?.[0]?.message
+            || error?.response?.data?.error
             || error?.response?.data?.message
             || "Registration failed. Please try again.";
           toast({ variant: "destructive", title: "Registration failed", description: msg });
@@ -1802,7 +1857,7 @@ The above terms are agreeable to both parties and have been signed in the presen
           <div className="px-8 py-5 border-t border-slate-100 flex items-center justify-between gap-3">
             <div>
               {step === 1 ? (
-                <Link to="/doctor-login"
+                <Link to="/doctor/login"
                   className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700 font-medium transition-colors">
                   <ArrowLeft className="h-4 w-4" /> Back to Login
                 </Link>

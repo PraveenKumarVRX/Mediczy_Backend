@@ -128,21 +128,11 @@ const AdminDashboardHome = () => {
       setStats(data.stats);
       setRecentUsers(data.recentUsers || []);
       
-      // Try to get CRM stats (optional)
-      try {
-        const crmController = new AbortController();
-        const crmTimeoutId = setTimeout(() => crmController.abort(), 3000); // 3 sec for optional data
-        
-        const crmRes = await axios.get(`${apiBaseUrl}/crm/stats`, { 
-          headers: { Authorization: `Bearer ${token}` },
-          signal: crmController.signal,
-          timeout: 3000
-        });
-        
-        clearTimeout(crmTimeoutId);
-        setCrm(crmRes.data);
-      } catch (crmError) {
-        console.log('CRM stats unavailable (optional), using empty data');
+      // CRM snapshot comes from dashboard payload when available.
+      const crmPayload = data.crm || data.crmStats || data.crmSummary;
+      if (crmPayload) {
+        setCrm(crmPayload);
+      } else {
         setCrm({ counts: { leads: 0, qualified: 0, proposal: 0, won: 0 }, openValue: 0, conversionRate: 0 });
       }
       

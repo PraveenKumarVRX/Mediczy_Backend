@@ -4,8 +4,11 @@
 
 import express from 'express';
 import { db } from '../../db/index.js';
+import { requirePharmacyAuth } from '../../middleware/pharmacyAuth.middleware.js';
 
 const router = express.Router();
+
+router.use(requirePharmacyAuth);
 
 /**
  * POST /api/pharmacy/stock
@@ -14,7 +17,6 @@ const router = express.Router();
 router.post('/', async (req, res) => {
   try {
     const {
-      pharmacyId,
       medicineName,
       quantity,
       unitPrice,
@@ -23,6 +25,7 @@ router.post('/', async (req, res) => {
       supplier,
       reorderLevel = quantity / 2
     } = req.body;
+    const pharmacyId = req.pharmacyId;
 
     if (!medicineName || !quantity || !unitPrice) {
       return res.status(400).json({
@@ -80,7 +83,8 @@ router.post('/', async (req, res) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const { pharmacyId, limit = 100, offset = 0 } = req.query;
+    const { limit = 100, offset = 0 } = req.query;
+    const pharmacyId = req.pharmacyId;
 
     const query = `
       SELECT s.*, m.name, m.unit_price, m.reorder_level
@@ -116,15 +120,16 @@ router.put('/:stockId', async (req, res) => {
   try {
     const { stockId } = req.params;
     const { quantity } = req.body;
+    const pharmacyId = req.pharmacyId;
 
     const query = `
       UPDATE pharmacy_stock 
       SET quantity = $1, updated_at = NOW()
-      WHERE id = $2
+      WHERE id = $2 AND pharmacy_id = $3
       RETURNING *;
     `;
 
-    const result = await db.query(query, [quantity, stockId]);
+    const result = await db.query(query, [quantity, stockId, pharmacyId]);
 
     res.json({
       success: true,

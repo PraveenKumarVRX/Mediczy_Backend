@@ -99,6 +99,43 @@ const bindTenantContext = (req, tenantId) => {
   };
 };
 
+const getAuthorizationBearerToken = (req) => {
+  const header = req.headers.authorization || "";
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
+};
+
+const isTeamOrAdminBearerToken = (token) => {
+  if (!token || !JWT_CONFIG.SECRET) return false;
+  try {
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
+    const role = String(decoded.role || "").toLowerCase();
+    const userType = String(decoded.userType || "").toLowerCase();
+    return Boolean(
+      decoded.isTeam ||
+      decoded.isAdmin ||
+      userType === "team" ||
+      role === "team" ||
+      role === "admin" ||
+      role === "super_admin" ||
+      role === "super admin"
+    );
+  } catch {
+    return false;
+  }
+};
+
+const resolveAuthToken = (req) => {
+  const cookieToken = req.cookies?.[COOKIE_NAMES.ACCESS] || null;
+  const bearerToken = getAuthorizationBearerToken(req);
+
+  if (cookieToken && bearerToken && isTeamOrAdminBearerToken(bearerToken)) {
+    return bearerToken;
+  }
+
+  return cookieToken || bearerToken;
+};
+
 export const authUser = async (req, res, next) => {
   // Skip auth for Twilio webhooks and other public endpoints that set skipAuth
   if (req.skipAuth) {
@@ -106,10 +143,9 @@ export const authUser = async (req, res, next) => {
   }
 
   // Accept token from httpOnly cookie (web) or Authorization header (mobile/API clients).
-  // Cookie takes precedence so XSS-extracted header tokens cannot override a cookie session.
-  const token =
-    req.cookies?.[COOKIE_NAMES.ACCESS] ||
-    req.headers.authorization?.split(" ")[1];
+  // Team/admin portals are bearer-token based; prefer a valid team/admin bearer
+  // over a stale patient cookie when both are present.
+  const token = resolveAuthToken(req);
 
   if (!token) {
     return res.status(401).json({ message: "unauthorized token" });

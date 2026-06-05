@@ -3,8 +3,9 @@
  * Covers: HMAC sessions, feedback limiter, validate analyze-symptoms,
  *         system prompt improvements, session persistence logic, copy/TTS
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from '@jest/globals';
 import crypto from 'crypto';
+import fs from 'fs';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HMAC Session ID
@@ -121,8 +122,7 @@ describe('/analyze-symptoms validation', () => {
 // Voice agent system prompt quality
 // ─────────────────────────────────────────────────────────────────────────────
 describe('Voice agent system prompt', () => {
-  const fs = require('fs');
-  const src = fs.readFileSync('./isha-agent/agent.py', 'utf8');
+  const src = fs.readFileSync('./server/isha-agent/agent.py', 'utf8');
 
   it('120-word limit (increased from 60) for clinical adequacy', () => {
     expect(src).toContain('120 words');

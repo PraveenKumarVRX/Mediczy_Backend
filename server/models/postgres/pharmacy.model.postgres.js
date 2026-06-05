@@ -217,8 +217,11 @@ Pharmacy.prototype.comparePassword = async function(candidatePassword) {
 Pharmacy.prototype.generateAuthToken = function() {
   const payload = {
     id: this.id,
+    pharmacyId: this.id,
     email: this.email,
     role: 'pharmacy',
+    userType: 'pharmacy',
+    type: 'pharmacy',
     pharmacyName: this.name,
     isVerified: this.isVerified
   };

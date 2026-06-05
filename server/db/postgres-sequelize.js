@@ -8,12 +8,23 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
 // Use existing POSTGRES env vars or fallback to new PRIMARY vars
-const host = process.env.POSTGRES_PRIMARY_HOST || process.env.POSTGRES_HOST || '127.0.0.1';
-const port = parseInt(process.env.POSTGRES_PRIMARY_PORT || process.env.POSTGRES_PORT || '5432', 10);
-const database = process.env.POSTGRES_PRIMARY_DATABASE || process.env.POSTGRES_DATABASE || 'mediczy_ai';
-const username = process.env.POSTGRES_PRIMARY_USER || process.env.POSTGRES_USER || 'mediczy_helper';
-const password = process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || 'change_me';
+const host = firstNonEmpty(process.env.POSTGRES_PRIMARY_HOST, process.env.POSTGRES_HOST);
+const port = parseInt(firstNonEmpty(process.env.POSTGRES_PRIMARY_PORT, process.env.POSTGRES_PORT) || '5432', 10);
+const database = firstNonEmpty(process.env.POSTGRES_PRIMARY_DATABASE, process.env.POSTGRES_DATABASE);
+const username = firstNonEmpty(process.env.POSTGRES_PRIMARY_USER, process.env.POSTGRES_USER);
+const password = firstNonEmpty(process.env.POSTGRES_PRIMARY_PASSWORD, process.env.POSTGRES_PASSWORD);
+
+if (!host || !database || !username || !password) {
+  throw new Error('Missing required PostgreSQL env values. Set POSTGRES_PRIMARY_HOST/POSTGRES_PRIMARY_DATABASE/POSTGRES_PRIMARY_USER/POSTGRES_PRIMARY_PASSWORD (or equivalent POSTGRES_* variables).');
+}
 
 const postgresSequelize = new Sequelize(database, username, password, {
   host,

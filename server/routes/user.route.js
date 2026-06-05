@@ -32,7 +32,34 @@ import {
   createPresignedUpload,
   getUploadsBucket
 } from "../services/s3-presign.service.js";
+
+// Safe error detail: never expose internals in production
+const safeErr = (err) =>
+  process.env.NODE_ENV !== 'production' ? err?.message : undefined;
 import { uploadToMinio } from "../services/minio-upload.service.js";
+
+let passwordAlertServicePromise = null;
+const getPasswordAlertService = async () => {
+  if (!passwordAlertServicePromise) {
+    passwordAlertServicePromise = (async () => {
+      try {
+        const mod = await import('../services/email.service.js');
+        const service = mod?.default || mod;
+        if (service && typeof service.sendPasswordChangedEmail === 'function') {
+          return service;
+        }
+      } catch (error) {
+        console.warn('[change-password] Email alert service unavailable:', error?.message || error);
+      }
+
+      return {
+        sendPasswordChangedEmail: async () => ({ success: false, skipped: true }),
+      };
+    })();
+  }
+
+  return passwordAlertServicePromise;
+};
 
 const router = express.Router();
 
@@ -1891,7 +1918,17 @@ const forgotPasswordHandler = async (req, res) => {
       userType
     });
 
-    res.json(result);
+    if (!result?.success) {
+      const statusByCode = {
+        EMAIL_NOT_FOUND: 404,
+        RATE_LIMIT_EXCEEDED: 429,
+        ACCOUNT_INACTIVE: 403,
+      };
+      const status = statusByCode[result?.code] || 400;
+      return res.status(status).json(result);
+    }
+
+    return res.status(200).json(result);
 
   } catch (error) {
     console.error('Forgot password error:', error);
@@ -1940,14 +1977,33 @@ const verifyResetOtpHandler = async (req, res) => {
       });
     }
 
-    const result = await passwordResetService.verifyOTPAndGenerateToken({
+    const verifyFn =
+      typeof passwordResetService.verifyResetOtp === 'function'
+        ? passwordResetService.verifyResetOtp.bind(passwordResetService)
+        : passwordResetService.verifyOTPAndGenerateToken.bind(passwordResetService);
+
+    const result = await verifyFn({
       email,
       phone,
       code,
       userType
     });
 
-    res.json(result);
+    if (!result?.success) {
+      const statusByCode = {
+        INVALID_OTP: 400,
+        OTP_ATTEMPTS_EXCEEDED: 429,
+        ACCOUNT_INACTIVE: 403,
+      };
+      const status = statusByCode[result?.code] || 400;
+      return res.status(status).json(result);
+    }
+
+    const resetToken = result?.resetToken || result?.data?.resetToken;
+    return res.status(200).json({
+      ...result,
+      resetToken,
+    });
 
   } catch (error) {
     console.error('Verify OTP error:', error);
@@ -1981,74 +2037,26 @@ const resetPasswordHandler = async (req, res) => {
       return res.status(400).json({ success: false, errors: errors.array() });
     }
 
-    const { resetToken, newPassword, userType = 'user' } = req.body;
+    const { email, resetToken, newPassword, userType = 'user' } = req.body;
 
-    // Hash the token to compare with stored hash
-    const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
-
-    // Find account with valid reset token
-    let account;
-    let accountType;
-
-    if (userType === 'doctor') {
-      account = await doctorModel.findOne({
-        where: {
-          passwordResetToken: resetTokenHash,
-        }
-      });
-      accountType = 'doctor';
-    } else {
-      account = await userModel.findOne({
-        where: {
-          passwordResetToken: resetTokenHash,
-        }
-      });
-      accountType = 'user';
-    }
-
-    if (!account) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid or expired reset token'
-      });
-    }
-
-    // Check if token has expired
-    if (account.passwordResetExpires && new Date() > new Date(account.passwordResetExpires)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Reset token has expired. Please request a new one.'
-      });
-    }
-
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-    // Update password and clear reset token
-    if (accountType === 'doctor') {
-      await doctorModel.update(
-        {
-          password: hashedPassword,
-          passwordResetToken: null,
-          passwordResetExpires: null
-        },
-        { where: { id: account.id } }
-      );
-    } else {
-      await userModel.update(
-        {
-          password: hashedPassword,
-          passwordResetToken: null,
-          passwordResetExpires: null
-        },
-        { where: { id: account.id } }
-      );
-    }
-
-    res.json({
-      success: true,
-      message: 'Password has been reset successfully. You can now login with your new password.'
+    const result = await passwordResetService.resetPassword({
+      email,
+      resetToken,
+      newPassword,
+      userType,
     });
+
+    if (!result?.success) {
+      const statusByCode = {
+        ACCOUNT_INACTIVE: 403,
+        INVALID_TOKEN: 400,
+        TOKEN_EXPIRED: 400,
+      };
+      const status = statusByCode[result?.code] || 400;
+      return res.status(status).json(result);
+    }
+
+    return res.status(200).json(result);
 
   } catch (error) {
     console.error('Reset password error:', error);
@@ -2137,26 +2145,37 @@ router.post('/change-password', authUser, [
       });
     }
 
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-    // Update password and remove password change requirement
-    if (metadata && metadata.requirePasswordChange) {
-      metadata.requirePasswordChange = false;
-      metadata.passwordChangedAt = new Date().toISOString();
+    // Update password and metadata.
+    // NOTE: Do NOT pre-hash here — the User model's beforeUpdate hook (user.model.intelligent.js)
+    // hashes the password automatically. Pre-hashing causes double-hashing and breaks login.
+    const safeMetadata = metadata || {};
+    safeMetadata.passwordChangedAt = new Date().toISOString();
+    if (safeMetadata.requirePasswordChange) {
+      safeMetadata.requirePasswordChange = false;
     }
 
     await user.update({
-      password: hashedPassword,
-      metadata: JSON.stringify(metadata)
+      password: newPassword,
+      metadata: safeMetadata
     });
 
     // Log the password change
     console.log(`✅ Password changed for user: ${user.email} (ID: ${userId})`);
 
+    // Fire-and-forget security alert — does not block the response
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || 'Unknown';
+    getPasswordAlertService()
+      .then((svc) => svc.sendPasswordChangedEmail({
+        email: user.email,
+        firstName: user.firstName || 'User',
+        changeDateTime: new Date().toLocaleString('en-IN'),
+        changeIp: clientIp,
+      }))
+      .catch((err) => console.error('[change-password] Alert email failed:', err.message));
+
     res.status(200).json({
       success: true,
-      message: isFirstLogin 
+      message: isFirstLogin
         ? 'Password changed successfully. You can now access all features.'
         : 'Password changed successfully.',
       firstLoginComplete: isFirstLogin
@@ -2164,11 +2183,7 @@ router.post('/change-password', authUser, [
 
   } catch (error) {
     console.error('Change password error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to change password',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    res.status(500).json({ success: false, message: 'Failed to change password', error: safeErr(error) });
   }
 });
 
@@ -2394,6 +2409,47 @@ router.post('/security/revoke-sessions', authUser, async (req, res) => {
   } catch (error) {
     console.error('Revoke sessions error:', error);
     return res.status(500).json({ success: false, message: 'Failed to revoke sessions' });
+  }
+});
+
+/**
+ * @route   GET /api/users/security/sessions
+ * @desc    List active sessions for the current user (current device shown, history from metadata)
+ * @access  Private
+ */
+router.get('/security/sessions', authUser, async (req, res) => {
+  try {
+    const user = await userModel.findByPk(req.user.id, { attributes: ['id', 'metadata'] });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    let meta = user.metadata || {};
+    if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { meta = {}; } }
+
+    // Build session list from login history stored in metadata
+    const loginHistory = Array.isArray(meta.loginHistory) ? meta.loginHistory : [];
+    const sessions = loginHistory.slice(0, 5).map((entry, i) => ({
+      id: `session-${i}`,
+      deviceName: entry.deviceName || entry.userAgent || 'Unknown device',
+      ip: entry.ip || entry.loginIp || 'Unknown',
+      lastActiveAt: entry.at || entry.timestamp || null,
+      isCurrent: i === 0, // most recent login is assumed current
+    }));
+
+    // Always include a "current session" entry even if history is empty
+    if (sessions.length === 0) {
+      sessions.push({
+        id: 'session-current',
+        deviceName: req.headers['user-agent']?.slice(0, 80) || 'This device',
+        ip: req.ip || 'Unknown',
+        lastActiveAt: new Date().toISOString(),
+        isCurrent: true,
+      });
+    }
+
+    return res.json({ success: true, sessions });
+  } catch (error) {
+    console.error('Get sessions error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to get sessions', error: safeErr(error) });
   }
 });
 

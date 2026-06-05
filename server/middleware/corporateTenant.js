@@ -33,6 +33,44 @@ import { QueryTypes } from 'sequelize';
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+const parseMetadata = (value) => {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  try { return JSON.parse(value); } catch (_) { return {}; }
+};
+
+const normalizeName = (value) => String(value || '').trim().toLowerCase();
+
+const hasNamedPermission = (permissions = [], required = []) => {
+  const needles = (Array.isArray(required) ? required : [required])
+    .map(normalizeName)
+    .filter(Boolean);
+  const granted = (Array.isArray(permissions) ? permissions : [])
+    .map(normalizeName)
+    .filter(Boolean);
+
+  return needles.some((needle) => granted.some((permission) =>
+    permission === needle || permission.includes(needle) || needle.includes(permission)
+  ));
+};
+
+const teamUserHasCorporateManagementAccess = (user = {}) => {
+  const metadata = parseMetadata(user.metadata);
+  const role = normalizeName(user.role);
+  const accessLevel = normalizeName(metadata.accessLevel);
+  const permissions = Array.isArray(user.permissions)
+    ? user.permissions
+    : (Array.isArray(metadata.permissions) ? metadata.permissions : []);
+
+  return Boolean(
+    user.isAdmin === true ||
+    role === 'admin' ||
+    role === 'super_admin' ||
+    accessLevel === 'full' ||
+    hasNamedPermission(permissions, ['Corporate Management', 'Corporate Management Access', 'All Access'])
+  );
+};
+
 /**
  * Resolve a corporate identifier (numeric id or unique_id string) to a full
  * corporate record.  Returns null when not found.
@@ -154,8 +192,9 @@ export const requireCorporateAccess = async (req, res, next) => {
     else if (userType === 'team') {
       const userId  = user.id || user.userId;
       const isAdmin = user.isAdmin === true || user.role === 'admin';
+      const hasCorporateManagementAccess = teamUserHasCorporateManagementAccess(user);
 
-      if (!isAdmin) {
+      if (!isAdmin && !hasCorporateManagementAccess) {
         const allowed = await teamUserHasCorporateAccess(userId, corp.id);
         if (!allowed) {
           console.warn(

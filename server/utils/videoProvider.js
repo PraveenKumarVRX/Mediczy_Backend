@@ -3,7 +3,6 @@ import crypto from 'crypto';
 import videoService from '../services/video.service.js';
 
 const normalizeUrl = (url) => (url ? url.replace(/\/+$/, '') : '');
-const LEGACY_UAT_LIVEKIT_HOST = 'video.mediqzy.com';
 const CLOUD_LIVEKIT_WS_FALLBACK = 'wss://msh-kw9tvxa9.livekit.cloud';
 const CLOUD_LIVEKIT_API_FALLBACK = 'https://msh-kw9tvxa9.livekit.cloud';
 const toWebSocketUrl = (url) =>
@@ -13,17 +12,17 @@ const toWebSocketUrl = (url) =>
 
 export const resolveLiveKitWsUrl = (settings = {}) => {
   const apiUrl = normalizeUrl(settings.apiUrl || process.env.LIVEKIT_API_URL);
-  if (apiUrl && !apiUrl.includes(LEGACY_UAT_LIVEKIT_HOST)) return toWebSocketUrl(apiUrl);
+  if (apiUrl) return toWebSocketUrl(apiUrl);
 
   const serverUrl = normalizeUrl(settings.serverUrl || process.env.LIVEKIT_URL);
-  if (serverUrl && !serverUrl.includes(LEGACY_UAT_LIVEKIT_HOST)) return serverUrl;
+  if (serverUrl) return serverUrl;
 
   return CLOUD_LIVEKIT_WS_FALLBACK;
 };
 
 export const resolveLiveKitApiUrl = (settings = {}) => {
   const explicitApiUrl = normalizeUrl(settings.apiUrl || process.env.LIVEKIT_API_URL);
-  if (explicitApiUrl && !explicitApiUrl.includes(LEGACY_UAT_LIVEKIT_HOST)) return explicitApiUrl;
+  if (explicitApiUrl) return explicitApiUrl;
 
   const serverUrl = resolveLiveKitWsUrl(settings);
   const derivedApiUrl = serverUrl

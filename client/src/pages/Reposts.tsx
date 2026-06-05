@@ -149,7 +149,10 @@ export default function RepostsPage() {
   return (
     <div className="container py-6 space-y-6 bg-slate-50 dark:bg-slate-900 min-h-screen">
       <div className="flex items-center justify-between bg-white dark:bg-slate-800/50 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-700">
-        <h1 className="text-3xl font-bold text-slate-800 dark:text-white">Report</h1>
+        <div>
+          <h1 className="text-3xl font-bold text-slate-800 dark:text-white">Scan & Explain Reports</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Upload a report image to extract and summarize findings in your preferred language.</p>
+        </div>
         <Select value={language} onValueChange={setLanguage}>
           <SelectTrigger className="w-[180px] bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-800 dark:text-white">
             <Languages className="h-4 w-4 mr-2 text-teal-500" />
@@ -167,6 +170,9 @@ export default function RepostsPage() {
 
       <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 shadow-sm">
         <CardContent className="p-6">
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
+            AI-generated summaries are assistive only. Always confirm clinical decisions with a qualified doctor.
+          </div>
           <div className="flex flex-col items-center space-y-4">
             {!imagePreview ? (
               <label className="w-full">

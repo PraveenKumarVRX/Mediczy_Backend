@@ -14,7 +14,8 @@
     "test:rag-refresh-audit": "npm run test:rag-refresh-audit --prefix server",
     "test:doctor-assistant-nav-regression": "npm run test:doctor-assistant-nav-regression --prefix server",
     "test:user-login-security-regression": "npm run test:user-login-security-regression --prefix server",
-    "test:index-appointments-fallback-regression": "npm run e2e:index-appointments-fallback --prefix client"
+    "test:index-appointments-fallback-regression": "npm run e2e:index-appointments-fallback --prefix client",
+    "ops:activate-subscription": "npm run ops:activate-subscription --prefix server --"
   },
   "dependencies": {
     "@google/generative-ai": "^0.22.0",
@@ -41,10 +42,14 @@
     "@babel/preset-react": "^7.28.5",
     "@babel/preset-typescript": "^7.28.5",
     "@jest/globals": "^30.4.1",
+    "@jridgewell/gen-mapping": "^0.1.1",
+    "@jridgewell/sourcemap-codec": "^1.4.14",
+    "@jridgewell/trace-mapping": "^0.3.18",
     "axios": "^1.13.2",
     "babel-jest": "^30.4.1",
     "colors": "^1.4.0",
     "concurrently": "^9.1.2",
+    "dedent": "^1.5.3",
     "jest": "^30.4.2",
     "jest-environment-jsdom": "^30.4.1",
     "mysql2": "^3.16.2",

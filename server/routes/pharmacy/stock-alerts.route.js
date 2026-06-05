@@ -4,8 +4,11 @@
 
 import express from 'express';
 import { db } from '../../db/index.js';
+import { requirePharmacyAuth } from '../../middleware/pharmacyAuth.middleware.js';
 
 const router = express.Router();
+
+router.use(requirePharmacyAuth);
 
 /**
  * POST /api/pharmacy/stock-alerts
@@ -14,13 +17,13 @@ const router = express.Router();
 router.post('/', async (req, res) => {
   try {
     const {
-      pharmacyId,
       medicineId,
       quantity,
       supplier,
       priority = 'normal',
       notes
     } = req.body;
+    const pharmacyId = req.pharmacyId;
 
     if (!medicineId || !quantity) {
       return res.status(400).json({
@@ -66,7 +69,8 @@ router.post('/', async (req, res) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const { pharmacyId, limit = 50, offset = 0 } = req.query;
+    const { limit = 50, offset = 0 } = req.query;
+    const pharmacyId = req.pharmacyId;
 
     const query = `
       SELECT a.*, m.name as medicine_name

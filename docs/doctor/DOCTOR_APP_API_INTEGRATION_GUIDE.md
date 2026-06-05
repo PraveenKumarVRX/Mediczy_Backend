@@ -1,6 +1,6 @@
 # Mediqzy — Doctor Mobile App API Integration Guide
 
-> **Version:** 2.5 · **Last Updated:** 2026-05-30  
+> **Version:** 2.10 · **Last Updated:** 2026-06-05  
 > **Base URL (Production):** `https://app.mediqzy.com/api`  
 > **WebSocket URL:** `https://app.mediqzy.com` (path: `/socket.io`)  
 > **LiveKit URL:** `wss://msh-kw9tvxa9.livekit.cloud` *(LiveKit Cloud)*
@@ -47,6 +47,11 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **2.10** | 2026-06-05 | Deploy health script now supports integrated review-policy smoke execution in a single run (`scripts/qa/doctor-auth-deploy-health.mjs`) when `DOCTOR_EMAIL` and `DOCTOR_PASSWORD` are provided. |
+| **2.9** | 2026-06-05 | Added deploy-ready smoke command for review consultation policy validation (`scripts/qa/doctor-review-policy-smoke.mjs`) that verifies: base consultation booking succeeds, first review is free (`freeReviewApplied=true`), and second review is billable. |
+| **2.8** | 2026-06-05 | Review consultation fix: booking APIs now accept `review` (`follow-up`/`followup` aliases) and apply a one-time free review entitlement per prior new consultation for the same patient+doctor pair. |
+| **2.7** | 2026-06-05 | Enhanced scheduling compatibility update: `/api/enhanced-appointments/book` and `/api/enhanced-appointments/available-slots` now accept consultation-type aliases from mobile/web clients (`video`/`audio`/`chat`→`online`, `in-person`/`walk-in`→`walkIn`, `home-visit`→`homeVisit`) to prevent schedule failures caused by enum mismatch. |
+| **2.6** | 2026-06-05 | Added targeted doctor mobile issue smoke workflow (`scripts/qa/doctor-mobile-issue-smoke.mjs`) for live verification of status update, availability toggle, weekly schedule save, and prescription create flows; documented required env vars and expected checks. |
 | **2.5** | 2026-05-30 | LiveKit migrated to LiveKit Cloud — `wss://msh-kw9tvxa9.livekit.cloud` (was `wss://video.mediqzy.com`); doctor registration OTP (email + WhatsApp) verified working — rate limiter changed from IP-based to per-email/phone (5 per 15 min); API routing fixed — `app.mediqzy.com/api` now proxied directly to PM2 server, no longer routes through ALB |
 | **2.4** | 2026-05-09 | Section 8.1 `medications` marked as required (was incorrectly optional); `prescriptionNumber` removed from response examples (field does not exist — use `prescriptionId`); `prescriptionId` format corrected to `RX-XXXXXXXX-XXXXX`; Section 8.4 description corrected (route returns all prescriptions, not issued-only); Section 8.14 added for `GET /api/prescriptions/appointment/:appointmentId`; all prescription endpoints smoke-tested and confirmed working |
 | **2.3** | 2026-05-10 | Section 11 rewritten with correct doctor chat endpoints (`/api/doctor/chat/*`); Section 13 AI Scribe paths corrected to `/api/ai/scribe/generate-prescription`, `/api/ai/scribe/autocomplete`, `/api/ai/scribe/scribe`, `/api/ai/scribe/reference/:type`; Section 15 clinical notes path corrected from `soap-notes` to `notes`, sub-endpoints added; Appendix A.3 flow corrected; backend `revenue-insights.route.js` ESM require() bug fixed; `GET /api/doctors/patients` address column bug fixed |
@@ -120,7 +125,7 @@ When a doctor authenticates, the JWT contains:
 | Setting | Value |
 |---------|-------|
 | Algorithm | HS256 |
-| Token Expiry | 7 days |
+| Token Expiry | 15 minutes |
 | Refresh Token Expiry | 30 days |
 | Delivery | `Authorization: Bearer <token>` header |
 
@@ -222,8 +227,11 @@ No authentication required. **Rate limited: 10 attempts / 15 minutes.**
 
 ```json
 {
+  "success": true,
   "message": "Login successful",
   "token": "eyJhbGciOiJIUzI1NiIs...",
+  "refreshToken": "<refresh_token>",
+  "expiresIn": 900,
   "doctor": {
     "id": 1,
     "firstName": "John",
@@ -238,28 +246,39 @@ No authentication required. **Rate limited: 10 attempts / 15 minutes.**
 ```
 
 **Error Cases:**
-- `401` — Invalid email or password
-- `403` — "Please use the patient login portal" (cross-role guard)
+- `401` — Invalid email or password (`DOCTOR_NOT_FOUND`, `INVALID_PASSWORD`)
+- `403` — Account state or portal mismatch (`DOCTOR_INACTIVE`, `DOCTOR_DISABLED`, `DOCTOR_PENDING_ACTIVATION`, `PATIENT_PORTAL_ACCOUNT`)
 - `429` — Rate limit exceeded
 
-### 2.3 Google OAuth
+### 2.3 Social SSO (Google/Facebook) for Mobile
+
+Doctor app SSO uses browser-based OAuth + deep-link callback. The app should open:
 
 ```
-POST /api/auth/doctor/google
+GET /api/auth/doctor/google?mobile_redirect_uri=<app_scheme://oauth-callback>&state=<opaque_state>
+GET /api/auth/doctor/facebook?mobile_redirect_uri=<app_scheme://oauth-callback>&state=<opaque_state>
 ```
 
-**Request Body:**
+**Allowed default deep-link schemes:**
+- `mediqzydoctor://oauth-callback`
+- `mysmarthealth://oauth-callback`
 
-```json
-{
-  "idToken": "<google_id_token>"
-}
+After successful OAuth, backend redirects to your deep-link URI with query params:
+
+```text
+<app_scheme://oauth-callback>?token=<access_token>&refreshToken=<refresh_token>&expiresIn=900&userType=doctor&provider=google|facebook&state=<opaque_state>
+```
+
+On OAuth failure, backend redirects with:
+
+```text
+<app_scheme://oauth-callback>?error=auth_failed&provider=google|facebook&state=<opaque_state>
 ```
 
 ### 2.4 Token Refresh
 
 ```
-POST /api/auth/refresh
+POST /api/doctors/refresh
 ```
 
 **Request Body:**
@@ -276,11 +295,72 @@ POST /api/auth/refresh
 {
   "success": true,
   "token": "<new_access_token>",
-  "refreshToken": "<new_refresh_token>"
+  "refreshToken": "<new_refresh_token>",
+  "expiresIn": 900
 }
 ```
 
-### 2.5 Revoke Token / Logout
+**Error Codes:**
+- `REFRESH_TOKEN_REQUIRED` — request missing refresh token
+- `INVALID_REFRESH_TOKEN` — token invalid/expired/revoked/account ineligible
+- `TOKEN_REFRESH_FAILED` — unexpected refresh error
+
+### 2.5 Session Persistence (No Re-login UX)
+
+To avoid repeated logins in the doctor app:
+
+1. Save refresh token in secure storage after password login or social SSO.
+2. On app launch, call `POST /api/doctors/session/bootstrap` silently.
+3. Replace both token and refresh token with rotated values from bootstrap response.
+4. Attach Authorization Bearer token to all API requests.
+5. On any `401`, call `POST /api/doctors/refresh`, then retry the failed request once.
+6. If refresh fails, clear local session and show login screen.
+7. Logout should clear local tokens and call `POST /api/auth/logout` with refresh token.
+
+Recommended startup contract:
+
+```
+POST /api/doctors/session/bootstrap
+```
+
+Request:
+
+```json
+{
+  "refreshToken": "<refresh_token>",
+  "deviceFingerprint": "<stable_device_id_optional>"
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "token": "<new_access_token>",
+  "refreshToken": "<new_refresh_token>",
+  "expiresIn": 900,
+  "doctor": {
+    "id": 1748,
+    "firstName": "Dr Haripriya",
+    "lastName": "Narayana",
+    "email": "drharipriya365@gmail.com",
+    "specialization": "Obstetrics and Gynecology",
+    "isVerified": true,
+    "profilePicture": null
+  }
+}
+```
+
+Error codes:
+- `REFRESH_TOKEN_REQUIRED`
+- `INVALID_REFRESH_TOKEN`
+- `SESSION_BOOTSTRAP_FAILED`
+
+Production-ready client implementation reference:
+- `docs/doctor/snippets/doctor-worldclass-auth-client.ts` (secure storage + startup bootstrap + 401 refresh-and-retry)
+
+### 2.6 Revoke Token / Logout
 
 ```
 POST /api/auth/revoke
@@ -288,6 +368,38 @@ Authorization: Bearer <token>
 ```
 
 Invalidates the current JWT (JTI-based revocation).
+
+### 2.7 Simple Device Control (Keep It Easy)
+
+These endpoints let doctors manage devices without complex settings screens:
+
+```
+GET    /api/doctors/sessions
+DELETE /api/doctors/sessions/:sessionId
+POST   /api/doctors/sessions/logout-others
+```
+
+Recommended UI:
+1. Show current device + recent devices.
+2. Provide one-tap "Logout this device".
+3. Provide one-tap "Logout other devices".
+
+Sample response for session list:
+
+```json
+{
+  "success": true,
+  "sessions": [
+    {
+      "id": "65f5d157-1f5f-4ccb-b85a-49d1b450d7c2",
+      "deviceFingerprint": "android-8f3f7d44",
+      "isCurrentSession": true,
+      "createdAt": "2026-06-05T09:12:13.000Z",
+      "expiresAt": "2026-07-05T09:12:13.000Z"
+    }
+  ]
+}
+```
 
 ---
 
@@ -546,6 +658,48 @@ Authorization: Bearer <token>
 ---
 
 ## 5. Appointment Management
+
+### 5.0 Consultation Type Compatibility (Enhanced Booking)
+
+For enhanced booking APIs:
+
+```
+POST /api/enhanced-appointments/book
+GET  /api/enhanced-appointments/available-slots
+```
+
+The backend now normalizes common consultation type aliases to avoid schedule failures when clients use different enums.
+
+| Client Input | Normalized Internal Type |
+|---|---|
+| `online`, `video`, `audio`, `chat` | `online` |
+| `review`, `follow-up`, `followup` | `review` |
+| `walkIn`, `walkin`, `walk-in`, `in-person`, `inperson`, `clinic` | `walkIn` |
+| `homeVisit`, `home-visit`, `home_visit`, `home` | `homeVisit` |
+
+> Note: This compatibility mapping applies to `/api/enhanced-appointments/*`. The primary appointment endpoint (`POST /api/appointments`) continues to use the canonical values documented in this guide.
+
+### 5.0.1 Free Review Policy
+
+Policy for review consultations:
+
+1. Every newly booked non-review consultation creates one free-review entitlement.
+2. The first eligible `review` booking for the same patient + doctor consumes this entitlement and is auto-marked paid at zero fee.
+3. Additional review bookings (after entitlement is consumed) are billed using standard consultation pricing.
+
+Response hint on booking:
+
+```json
+{
+  "success": true,
+  "appointment": {
+    "consultationType": "review",
+    "consultationFee": 0,
+    "paymentStatus": "paid",
+    "freeReviewApplied": true
+  }
+}
+```
 
 ### 5.1 Get Doctor's Appointments
 
@@ -3752,12 +3906,121 @@ Store the JWT token securely:
 - **Android:** EncryptedSharedPreferences or Android Keystore
 - **iOS:** Keychain Services
 
+### Doctor Devices & Security Screen (One Screen Spec)
+
+Goal: Keep doctors in control with minimal choices and no technical complexity.
+
+Screen title: `Devices & Security`
+
+Show only these blocks:
+
+1. `Current Device`
+- Label: `This device`
+- Subtitle: `Active now`
+
+2. `Other Devices` (if any)
+- Show max 5 recent sessions from `GET /api/doctors/sessions`
+- Each row: `Device`, `Last active`, `Logout`
+
+3. `Primary Action`
+- Button: `Logout from Other Devices`
+- Endpoint: `POST /api/doctors/sessions/logout-others`
+
+4. `Danger Action` (last item)
+- Button: `Logout from This Device`
+- Behavior: call `POST /api/auth/logout`, then clear local tokens and return to login
+
+UX rules:
+- No jargon (avoid token/session wording in UI labels).
+- Always ask confirmation for destructive actions.
+- Show simple success toasts:
+  - `Logged out from selected device`
+  - `Logged out from other devices`
+- If API fails, show one retry option and keep user on the same screen.
+
 ### Token Expiry Handling
 
-- Token expires in **7 days**
+- Access token expires in **15 minutes**
 - Refresh token expires in **30 days**
-- On `401` response, attempt token refresh via `POST /api/auth/refresh`
+- On `401` response, attempt token refresh via `POST /api/doctors/refresh`
 - If refresh fails, redirect to login screen
+
+### Keep It Simple Performance Checklist
+
+Use these guardrails to keep doctor UX fast and predictable:
+
+1. App cold start to dashboard should target < 2.5s on mid-range Android.
+2. Run `POST /api/doctors/session/bootstrap` first, then load dashboard APIs in parallel.
+3. Keep appointment list payloads paginated and avoid loading full histories by default.
+4. Cache doctor profile + dashboard summary for short TTL (30-60s) to reduce flicker.
+5. Retry network calls once with exponential backoff; avoid repeated popups.
+6. Keep one global background refresh timer only; avoid per-screen polling storms.
+7. Use skeleton loaders for dashboard cards and appointments.
+
+### QA Smoke Scripts (Auth + Doctor Mobile Core)
+
+Run this before release:
+
+```bash
+cd server
+BASE_URL=https://app.mediqzy.com node scripts/qa/doctor-auth-smoke.mjs
+```
+
+Script validates:
+- doctor OAuth status endpoint contract
+- doctor refresh endpoint contract
+- doctor session bootstrap endpoint contract
+
+Targeted doctor mobile issue smoke:
+
+```bash
+cd server
+BASE_URL=https://app.mediqzy.com \
+DOCTOR_EMAIL=<doctor_email> \
+DOCTOR_PASSWORD=<doctor_password> \
+node scripts/qa/doctor-mobile-issue-smoke.mjs
+```
+
+Script validates:
+- doctor login
+- home status update and restore (`PUT /api/doctors/status`)
+- availability toggle update (`PUT /api/doctors/availability`)
+- weekly schedule save and restore (`POST /api/doctors/availability/bulk-update`)
+- prescription create and cleanup (`POST/DELETE /api/prescriptions`)
+
+Review consultation policy smoke (one free review per new consultation):
+
+```bash
+cd server
+BASE_URL=https://app.mediqzy.com \
+DOCTOR_EMAIL=<doctor_email> \
+DOCTOR_PASSWORD=<doctor_password> \
+node scripts/qa/doctor-review-policy-smoke.mjs
+```
+
+Script validates:
+- doctor login
+- candidate slot discovery from `GET /api/enhanced-appointments/available-slots`
+- base consultation booking succeeds (`POST /api/enhanced-appointments/book`)
+- first review booking is free (`fees.totalFee=0`, `freeReviewApplied=true`)
+- second review booking is billable (`fees.totalFee>0`, `freeReviewApplied=false`)
+
+Single-run deploy health + auth smoke + review policy smoke:
+
+```bash
+cd server
+RESTART_PM2=true \
+PM2_PROCESS=mediczy-server \
+BASE_URL=https://app.mediqzy.com \
+LOCAL_BASE_URL=http://127.0.0.1:8888 \
+DOCTOR_EMAIL=<doctor_email> \
+DOCTOR_PASSWORD=<doctor_password> \
+node scripts/qa/doctor-auth-deploy-health.mjs
+```
+
+Notes:
+- Review policy smoke is auto-enabled when `DOCTOR_EMAIL` and `DOCTOR_PASSWORD` are provided.
+- To explicitly disable review smoke in this flow: `RUN_REVIEW_POLICY_SMOKE=false`.
 
 ### Background Notifications
 

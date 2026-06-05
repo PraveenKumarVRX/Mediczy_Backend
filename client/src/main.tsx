@@ -18,11 +18,23 @@ for (const key of REQUIRED_ENV_VARS) {
 // "Failed to fetch dynamically imported module" TypeError. We catch it
 // globally and force a one-time hard reload so the browser picks up the
 // fresh index.html and all new chunk URLs.
+const getCurrentBundleTag = () => {
+  const scripts = Array.from(document.querySelectorAll('script[src]'));
+  const appScript = scripts.find((s) => s.getAttribute('src')?.includes('/assets/index-'));
+  return appScript?.getAttribute('src') || window.location.pathname;
+};
+
+const triggerChunkRecovery = () => {
+  const key = 'chunk_reload_bundle';
+  const bundleTag = getCurrentBundleTag();
+  if (sessionStorage.getItem(key) === bundleTag) return false;
+  sessionStorage.setItem(key, bundleTag);
+  window.location.reload();
+  return true;
+};
+
 window.addEventListener('vite:preloadError', () => {
-  if (!sessionStorage.getItem('chunk_reload')) {
-    sessionStorage.setItem('chunk_reload', '1');
-    window.location.reload();
-  }
+  triggerChunkRecovery();
 });
 
 // Fallback for browsers / bundler versions that don't emit vite:preloadError
@@ -33,14 +45,33 @@ window.onerror = function (msg, _src, _line, _col, err) {
     (String(msg).includes('Failed to fetch dynamically imported module') ||
       String(msg).includes('Importing a module script failed'))
   ) {
-    if (!sessionStorage.getItem('chunk_reload')) {
-      sessionStorage.setItem('chunk_reload', '1');
-      window.location.reload();
+    if (triggerChunkRecovery()) {
       return true; // suppress console error
     }
   }
   if (_origOnError) return _origOnError.apply(this, arguments as any);
 };
+
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason;
+  const message = String(reason?.message || reason || '');
+  if (
+    message.includes('Failed to fetch dynamically imported module') ||
+    message.includes('Importing a module script failed')
+  ) {
+    if (triggerChunkRecovery()) {
+      event.preventDefault();
+    }
+  }
+});
+
+window.addEventListener('error', (event) => {
+  const target = event.target as HTMLScriptElement | HTMLLinkElement | null;
+  const src = (target as HTMLScriptElement | null)?.src || (target as HTMLLinkElement | null)?.href || '';
+  if (src.includes('/assets/') && (src.endsWith('.js') || src.endsWith('.css'))) {
+    triggerChunkRecovery();
+  }
+}, true);
 // ──────────────────────────────────────────────────────────────────────────
 
 createRoot(document.getElementById("root")!).render(

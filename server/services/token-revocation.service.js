@@ -164,6 +164,168 @@ export async function issuePortalTokenPair(payload, {
   return { accessToken, refreshToken, jti };
 }
 
+/**
+ * Rotate a portal refresh token (JWT-based) and issue a fresh token pair.
+ * Returns null when token is invalid, revoked, expired, or account resolver fails.
+ */
+export async function rotatePortalRefreshToken(refreshToken, {
+  portal,
+  deviceFp = null,
+  resolvePayload,
+} = {}) {
+  if (!refreshToken || typeof refreshToken !== 'string' || !portal || typeof resolvePayload !== 'function') {
+    return null;
+  }
+
+  await ensureTable();
+  await ensureUnifiedTable();
+
+  let decoded;
+  try {
+    decoded = jwt.verify(refreshToken, JWT_CONFIG.SECRET);
+  } catch {
+    return null;
+  }
+
+  const jti = decoded?.jti;
+  const userId = String(decoded?.userId || '');
+  const tokenPortal = String(decoded?.portal || '');
+
+  if (!jti || !userId || decoded?.tokenType !== 'refresh' || tokenPortal !== portal) {
+    return null;
+  }
+
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT jti
+         FROM portal_refresh_tokens
+        WHERE jti = $1
+          AND user_id = $2
+          AND portal = $3
+          AND revoked = FALSE
+          AND expires_at > NOW()
+        LIMIT 1`,
+      [jti, userId, portal]
+    );
+
+    if (!rows.length) {
+      return null;
+    }
+
+    const nextPayload = await resolvePayload(decoded);
+    if (!nextPayload || !nextPayload.id) {
+      return null;
+    }
+
+    await revokeToken(jti);
+    const rotated = await issuePortalTokenPair(nextPayload, { portal, deviceFp });
+    return rotated;
+  } catch (err) {
+    console.error('[token-revocation] rotatePortalRefreshToken error:', err.message);
+    return null;
+  }
+}
+
+/**
+ * List active sessions for a user and portal.
+ */
+export async function listActivePortalSessions(userId, portal) {
+  await ensureTable();
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT jti, device_fp, created_at, expires_at
+         FROM portal_refresh_tokens
+        WHERE user_id = $1
+          AND portal = $2
+          AND revoked = FALSE
+          AND expires_at > NOW()
+        ORDER BY created_at DESC`,
+      [String(userId), String(portal)]
+    );
+    return rows;
+  } catch (err) {
+    console.error('[token-revocation] listActivePortalSessions error:', err.message);
+    return [];
+  }
+}
+
+/**
+ * Revoke one active session token owned by the specific user+portal.
+ */
+export async function revokePortalSessionForUser(userId, portal, jti) {
+  await ensureTable();
+  await ensureUnifiedTable();
+  try {
+    const { rowCount } = await sharedPool.query(
+      `UPDATE portal_refresh_tokens
+          SET revoked = TRUE
+        WHERE user_id = $1
+          AND portal = $2
+          AND jti = $3
+          AND revoked = FALSE`,
+      [String(userId), String(portal), jti]
+    );
+
+    if (rowCount > 0) {
+      await sharedPool.query(
+        `UPDATE api_v2_refresh_tokens
+            SET revoked = TRUE, revoked_at = NOW(), updated_at = NOW()
+          WHERE jti = $1`,
+        [jti]
+      ).catch(() => {});
+    }
+
+    return rowCount > 0;
+  } catch (err) {
+    console.error('[token-revocation] revokePortalSessionForUser error:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Revoke all active sessions for user+portal except the current access token JTI.
+ */
+export async function revokeOtherPortalSessions(userId, portal, currentJti = null) {
+  await ensureTable();
+  await ensureUnifiedTable();
+  try {
+    const params = [String(userId), String(portal)];
+    const keepClause = currentJti ? ` AND jti <> $3` : '';
+    if (currentJti) params.push(currentJti);
+
+    const { rowCount } = await sharedPool.query(
+      `UPDATE portal_refresh_tokens
+          SET revoked = TRUE
+        WHERE user_id = $1
+          AND portal = $2
+          AND revoked = FALSE${keepClause}`,
+      params
+    );
+
+    if (rowCount > 0) {
+      const { rows } = await sharedPool.query(
+        `SELECT jti FROM portal_refresh_tokens
+          WHERE user_id = $1 AND portal = $2 AND revoked = TRUE AND expires_at > NOW()`,
+        [String(userId), String(portal)]
+      ).catch(() => ({ rows: [] }));
+
+      if (rows.length) {
+        await sharedPool.query(
+          `UPDATE api_v2_refresh_tokens
+              SET revoked = TRUE, revoked_at = NOW(), updated_at = NOW()
+            WHERE jti = ANY($1::uuid[])`,
+          [rows.map((r) => r.jti)]
+        ).catch(() => {});
+      }
+    }
+
+    return rowCount;
+  } catch (err) {
+    console.error('[token-revocation] revokeOtherPortalSessions error:', err.message);
+    return 0;
+  }
+}
+
 // ─── Revocation helpers ───────────────────────────────────────────────────────
 
 /** Mark a single JTI as revoked. */
@@ -320,4 +482,14 @@ function parseTtlToMs(ttl) {
   return num * 1000;
 }
 
-export default { issuePortalTokenPair, revokeToken, revokeAllForUser, isTokenRevoked, purgeExpiredTokens };
+export default {
+  issuePortalTokenPair,
+  rotatePortalRefreshToken,
+  listActivePortalSessions,
+  revokePortalSessionForUser,
+  revokeOtherPortalSessions,
+  revokeToken,
+  revokeAllForUser,
+  isTokenRevoked,
+  purgeExpiredTokens,
+};

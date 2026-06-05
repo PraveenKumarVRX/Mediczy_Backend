@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSmartBenefits } from '@/hooks/patient/useSmartBenefits';
 import { useNavigate, Link } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -254,74 +255,18 @@ export default function SmartBenefitsHub() {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const [tab, setTab] = useState<'benefits' | 'claims' | 'family' | 'network'>('benefits');
-  const [plans, setPlans] = useState<BenefitPlan[]>([]);
-  const [family, setFamily] = useState<FamilyMember[]>([]);
-  const [claims, setClaims] = useState<Claim[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showECard, setShowECard] = useState(false);
   const [eCardPlan, setECardPlan] = useState<BenefitPlan | null>(null);
-  const [showClaimModal, setShowClaimModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<BenefitPlan | null>(null);
   const [networkSearch, setNetworkSearch] = useState('');
 
-  useEffect(() => {
-    loadBenefitsData();
-  }, []);
+  // ── Data loading delegated to hook ──────────────────────────────────────
+  const {
+    plans: rawPlans, family, claims, loading, claimsDataStatus, refresh: loadBenefitsData
+  } = useSmartBenefits();
 
-  const loadBenefitsData = async () => {
-    setLoading(true);
-    let apiPlans: BenefitPlan[] = [];
-    try {
-      const token = getToken();
-      if (token) {
-        const [benefitsRes, claimsRes] = await Promise.all([
-          api.get('/employee/benefits').catch(() => null),
-          api.get('/employee/claims').catch(() => null),
-        ]);
-        apiPlans = Array.isArray(benefitsRes?.data?.plans) ? benefitsRes.data.plans : [];
-        if (claimsRes?.data?.claims) setClaims(claimsRes.data.claims);
-      }
-    } catch { /* graceful fallback */ }
-
-    setPlans(mergeExpectedBenefitPlans(apiPlans));
-
-    if (family.length === 0) {
-      setFamily([
-        { id: '1', name: currentUser?.firstName || 'You', relation: 'Self', age: 32, gender: 'M', covered: true, healthScore: 82, eCardId: 'EC-2026-001' },
-        { id: '2', name: 'Priya', relation: 'Spouse', age: 29, gender: 'F', covered: true, healthScore: 88, eCardId: 'EC-2026-002' },
-        { id: '3', name: 'Aarav', relation: 'Child', age: 5, gender: 'M', covered: true, healthScore: 95, eCardId: 'EC-2026-003' },
-        { id: '4', name: 'Ananya', relation: 'Child', age: 2, gender: 'F', covered: true, healthScore: 97, eCardId: 'EC-2026-004' },
-      ]);
-    }
-
-    if (claims.length === 0) {
-      setClaims([
-        {
-          id: '1', claimNumber: 'CLM-2026-0142', type: 'OPD', amount: 2500, approvedAmount: 2500,
-          status: 'settled', hospital: 'Apollo Clinic', date: '2026-03-15', member: 'Self', documents: 3,
-          timeline: [
-            { step: 'Claim Filed', date: '2026-03-15', status: 'done' },
-            { step: 'Documents Verified', date: '2026-03-16', status: 'done' },
-            { step: 'Approved', date: '2026-03-17', status: 'done' },
-            { step: 'Amount Settled', date: '2026-03-18', status: 'done' },
-          ],
-        },
-        {
-          id: '2', claimNumber: 'CLM-2026-0158', type: 'Hospitalization', amount: 35000,
-          status: 'under_review', hospital: 'Fortis Hospital', date: '2026-03-20', member: 'Spouse', documents: 5,
-          timeline: [
-            { step: 'Claim Filed', date: '2026-03-20', status: 'done' },
-            { step: 'Documents Verified', date: '2026-03-21', status: 'done' },
-            { step: 'Under Medical Review', date: '2026-03-22', status: 'current' },
-            { step: 'Approval Decision', date: '', status: 'pending' },
-            { step: 'Settlement', date: '', status: 'pending' },
-          ],
-        },
-      ]);
-    }
-
-    setLoading(false);
-  };
+  // Apply local merge for expected plan display (preserves existing UX)
+  const plans = mergeExpectedBenefitPlans(rawPlans);
 
   const totalSumInsured = plans.reduce((s, p) => s + p.sumInsured, 0);
   const totalUtilized = plans.reduce((s, p) => s + p.utilized, 0);
@@ -340,11 +285,16 @@ export default function SmartBenefitsHub() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-2xl font-bold text-white">My Benefits</h1>
-              <p className="text-sm text-slate-400 mt-1">
-                {plans.length} active plans • {family.length} members covered
-              </p>
+              <div className="flex items-center gap-2 mt-1">
+                <p className="text-sm text-slate-400">
+                  {plans.length} active plans • {family.length} members covered
+                </p>
+                <Badge className={claimsDataStatus === 'live' ? 'bg-emerald-500/10 text-emerald-300 border-0' : 'bg-amber-500/10 text-amber-300 border-0'}>
+                  {claimsDataStatus === 'live' ? 'Live Claims' : 'Claims Limited'}
+                </Badge>
+              </div>
             </div>
-            <Button size="sm" onClick={() => setShowClaimModal(true)}
+            <Button size="sm" onClick={() => navigate('/claims-express?source=benefits')}
               className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 border-0 rounded-xl gap-1.5 shadow-lg shadow-blue-600/20">
               <Upload className="h-3.5 w-3.5" /> File Claim
             </Button>
@@ -424,11 +374,6 @@ export default function SmartBenefitsHub() {
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
-            {(tab === 'benefits' || tab === 'claims') && (
-              <Button size="sm" className="bg-blue-600 hover:bg-blue-500 border-0" onClick={() => setShowClaimModal(true)}>
-                <Upload className="h-3.5 w-3.5 mr-1" /> File Claim
-              </Button>
-            )}
             {tab !== 'network' && (
               <Button size="sm" variant="outline" className="border-white/10 text-slate-300" onClick={() => setTab('network')}>
                 <MapPin className="h-3.5 w-3.5 mr-1" /> Find Network
@@ -571,7 +516,7 @@ export default function SmartBenefitsHub() {
                     <h3 className="text-sm font-semibold text-white">Instant Claim Filing</h3>
                     <p className="text-xs text-slate-400 mt-0.5">Snap receipts → AI extracts details → Claim filed in 60 seconds</p>
                   </div>
-                  <Button size="sm" onClick={() => setShowClaimModal(true)}
+                  <Button size="sm" onClick={() => navigate('/claims-express?source=benefits-claims-tab')}
                     className="bg-blue-600 hover:bg-blue-500 border-0 rounded-xl text-xs">
                     File Now
                   </Button>
@@ -638,7 +583,12 @@ export default function SmartBenefitsHub() {
                 {claims.length === 0 && (
                   <div className="text-center py-12">
                     <Receipt className="h-12 w-12 text-slate-700 mx-auto mb-3" />
-                    <p className="text-slate-500 text-sm">No claims filed yet</p>
+                    <p className="text-slate-500 text-sm">
+                      {claimsDataStatus === 'live' ? 'No claims filed yet' : 'Claims data is currently unavailable'}
+                    </p>
+                    {claimsDataStatus === 'unavailable' && (
+                      <p className="text-slate-600 text-xs mt-1">You can still file a claim. Timeline updates appear once claims service syncs.</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -864,37 +814,6 @@ export default function SmartBenefitsHub() {
         </DialogContent>
       </Dialog>
 
-      {/* ─── File Claim Modal ────────────────────────────────────────────── */}
-      <Dialog open={showClaimModal} onOpenChange={setShowClaimModal}>
-        <DialogContent className="bg-slate-900 border-white/10 max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-white flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-blue-400" /> Smart Claim Filing
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-slate-400">Choose how you'd like to file your claim:</p>
-            {[
-              { icon: Camera, title: 'Scan Documents', desc: 'AI reads bills & receipts automatically', gradient: 'from-blue-600/20 to-cyan-600/10', iconColor: 'text-blue-400' },
-              { icon: Upload, title: 'Upload Files', desc: 'PDF, images, or medical documents', gradient: 'from-violet-600/20 to-purple-600/10', iconColor: 'text-violet-400' },
-              { icon: FileText, title: 'Manual Entry', desc: 'Fill in claim details step by step', gradient: 'from-emerald-600/20 to-teal-600/10', iconColor: 'text-emerald-400' },
-            ].map((option, i) => (
-              <button key={i} onClick={() => { setShowClaimModal(false); navigate('/patient/claims'); }}
-                className={`w-full flex items-center gap-4 p-4 rounded-xl bg-gradient-to-r ${option.gradient} border border-white/[0.06] hover:border-white/[0.12] transition-all text-left`}>
-                <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center flex-shrink-0">
-                  <option.icon className={`h-5 w-5 ${option.iconColor}`} />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-white">{option.title}</p>
-                  <p className="text-[11px] text-slate-500">{option.desc}</p>
-                </div>
-                <ChevronRight className="h-4 w-4 text-slate-600 ml-auto" />
-              </button>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* ─── Plan Detail Modal ───────────────────────────────────────────── */}
       <Dialog open={!!selectedPlan} onOpenChange={() => setSelectedPlan(null)}>
         <DialogContent className="bg-slate-900 border-white/10 max-w-md max-h-[80vh] overflow-y-auto">
@@ -954,7 +873,7 @@ export default function SmartBenefitsHub() {
                   </div>
 
                   <div className="flex gap-2 pt-2">
-                    <Button className="flex-1 bg-blue-600 hover:bg-blue-500 border-0 rounded-xl" onClick={() => { setSelectedPlan(null); setShowClaimModal(true); }}>
+                    <Button className="flex-1 bg-blue-600 hover:bg-blue-500 border-0 rounded-xl" onClick={() => { setSelectedPlan(null); navigate('/claims-express?source=benefits-plan'); }}>
                       File Claim
                     </Button>
                     {eCardEligible.has(selectedPlan.type) && (

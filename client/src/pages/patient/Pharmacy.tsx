@@ -4,8 +4,10 @@ import {
   Pill, ShoppingCart, MapPin, Clock, Plus, Search, Package,
   RefreshCw, Eye, Truck, CheckCircle, XCircle,
   FileText, CreditCard, Calendar, IndianRupee, Activity, BoxIcon,
-  Minus, Trash2, Loader2, AlertCircle
+  Minus, Trash2, Loader2, AlertCircle, SearchX
 } from 'lucide-react';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineError } from '@/components/ui/inline-error';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -133,6 +135,7 @@ const Pharmacy = () => {
   const [orders, setOrders] = useState<PharmacyOrder[]>([]);
   const [stats, setStats] = useState<OrderStats>({ totalOrders: 0, activeOrders: 0, deliveredOrders: 0, totalSpent: 0 });
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
   const [reorderLoading, setReorderLoading] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -168,6 +171,7 @@ const Pharmacy = () => {
   const fetchPharmacyOrders = async () => {
     try {
       setLoading(true);
+      setFetchError(false);
       const { data } = await api.get('/billing/orders/pharmacy/history');
 
       if (data.success) {
@@ -188,19 +192,8 @@ const Pharmacy = () => {
         setStats(data.data.stats);
       }
     } catch {
-      setOrders([
-        {
-          id: 'ORD001', orderDate: '2024-01-15', status: 'delivered',
-          items: [{ name: 'Amoxicillin 500mg', quantity: 20, price: 150 }, { name: 'Paracetamol 650mg', quantity: 10, price: 50 }],
-          totalAmount: 200, deliveryAddress: '123 Main Street, Mumbai', prescriptionRequired: true, canReorder: true,
-        },
-        {
-          id: 'ORD002', orderDate: '2024-01-20', status: 'out_for_delivery',
-          items: [{ name: 'Vitamin D3 Supplement', quantity: 1, price: 350 }],
-          totalAmount: 350, deliveryAddress: '123 Main Street, Mumbai', estimatedDelivery: '2024-01-21', prescriptionRequired: false, canReorder: false,
-        },
-      ]);
-      setStats({ totalOrders: 2, activeOrders: 1, deliveredOrders: 1, totalSpent: 550 });
+      setFetchError(true);
+      setOrders([]);
     } finally {
       setLoading(false);
     }
@@ -415,9 +408,12 @@ const Pharmacy = () => {
                               <Loader2 className="h-4 w-4 animate-spin" /> Searching...
                             </div>
                           ) : medResults.length === 0 ? (
-                            <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-500 dark:text-slate-400">
-                              <AlertCircle className="h-4 w-4" /> No medicines found
-                            </div>
+                            <EmptyState
+                              icon={SearchX}
+                              title="No results found"
+                              description="Try a shorter name, generic name, or check the spelling."
+                              size="sm"
+                            />
                           ) : (
                             medResults.map(med => (
                               <button
@@ -660,31 +656,24 @@ const Pharmacy = () => {
               </Card>
             ))}
           </div>
+        ) : fetchError ? (
+          <InlineError message="Couldn't load orders." onRetry={() => fetchPharmacyOrders()} />
         ) : filteredOrders.length === 0 ? (
-          <Card className="dark:bg-slate-800/60 dark:border-slate-700/60">
-            <CardContent className="py-16 text-center">
-              <div className="w-16 h-16 mx-auto rounded-2xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center mb-4">
-                <Package className="h-8 w-8 text-slate-400" />
-              </div>
-              <h3 className="text-lg font-semibold dark:text-white mb-2">
-                {searchTerm || statusFilter !== 'all' ? 'No matching orders' : 'No orders yet'}
-              </h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm mx-auto mb-6">
-                {searchTerm || statusFilter !== 'all'
-                  ? 'Try adjusting your search or filter criteria.'
-                  : 'Place your first pharmacy order to get started.'}
-              </p>
-              {searchTerm || statusFilter !== 'all' ? (
-                <Button variant="outline" onClick={() => { setSearchTerm(''); setStatusFilter('all'); }} className="dark:border-slate-600">
-                  Clear Filters
-                </Button>
-              ) : (
-                <Button onClick={() => setShowOrderDialog(true)} className="bg-emerald-600 hover:bg-emerald-700">
-                  <Plus className="h-4 w-4 mr-2" /> New Order
-                </Button>
-              )}
-            </CardContent>
-          </Card>
+          searchTerm || statusFilter !== 'all' ? (
+            <EmptyState
+              icon={SearchX}
+              title="No results found"
+              description="Try a shorter name, generic name, or check the spelling."
+              size="sm"
+            />
+          ) : (
+            <EmptyState
+              icon={Pill}
+              title="No orders yet"
+              description="Search for medicines and place your first order."
+              action={{ label: 'Browse medicines', onClick: () => setShowOrderDialog(true) }}
+            />
+          )
         ) : (
           <div className="space-y-4">
             <AnimatePresence mode="popLayout">

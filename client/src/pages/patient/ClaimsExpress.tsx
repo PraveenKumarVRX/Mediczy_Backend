@@ -12,7 +12,7 @@
  * - Document checklist per claim type
  */
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,9 +26,15 @@ import {
   Camera, Upload, FileText, Plus, Clock, CheckCircle, AlertTriangle, XCircle,
   IndianRupee, Hospital, Stethoscope, Pill, Eye, Heart, Shield, Sparkles,
   ArrowRight, ChevronRight, Search, Filter, Calendar, Download, Send,
-  Scan, FileCheck, Building2, Phone, MapPin, Star, Zap, Brain
+  Scan, FileCheck, Building2, Phone, MapPin, Star, Zap, Brain, Loader2
 } from 'lucide-react';
 import MainLayout from '@/components/layout/MainLayout';
+import api from '@/utils/api';
+import { getToken } from '@/hooks/auth';
+import { useToast } from '@/hooks/use-toast';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineError } from '@/components/ui/inline-error';
+import { StatusTimeline } from '@/components/ui/status-timeline';
 
 // ─── Status Utils ────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon: typeof Clock }> = {
@@ -52,84 +58,247 @@ const CLAIM_TYPES = [
 
 const MOTION_STAGGER = 0.08;
 
+const getClaimSteps = (claim: any) => [
+  { label: 'Claim Submitted', date: claim.date ? new Date(claim.date).toLocaleDateString('en-IN') : undefined, status: 'completed' as const },
+  { label: 'Under Review', status: claim.status === 'under_review' ? 'active' as const : claim.status === 'approved' || claim.status === 'settled' ? 'completed' as const : 'pending' as const },
+  { label: 'Decision', status: claim.status === 'approved' || claim.status === 'settled' ? 'completed' as const : claim.status === 'rejected' ? 'failed' as const : claim.status === 'under_review' ? 'pending' as const : 'pending' as const },
+  { label: 'Payment', status: claim.status === 'settled' ? 'completed' as const : 'pending' as const },
+];
+
+interface ClaimsApiItem {
+  id?: string | number;
+  claimNumber?: string;
+  type?: string;
+  amount?: number;
+  approvedAmount?: number;
+  status?: string;
+  hospital?: string;
+  providerName?: string;
+  date?: string;
+  createdAt?: string;
+  member?: string;
+  documents?: unknown[];
+}
+
+const normalizeStatus = (raw?: string) => {
+  const value = String(raw || '').toLowerCase();
+  if (value === 'pending' || value === 'processing') return 'under_review';
+  if (value === 'paid' || value === 'completed') return 'settled';
+  if (value === 'need_info') return 'info_needed';
+  if (STATUS_CONFIG[value]) return value;
+  return 'submitted';
+};
+
+const toUiClaim = (claim: ClaimsApiItem, index: number) => {
+  const status = normalizeStatus(claim.status);
+  const created = claim.date || claim.createdAt || new Date().toISOString();
+  const amount = Number(claim.amount || 0);
+  const approvedAmount = Number(claim.approvedAmount || 0) || undefined;
+
+  const timelineByStatus: Record<string, { step: string; date: string; done?: boolean; active?: boolean }[]> = {
+    submitted: [
+      { step: 'Submitted', date: 'Now', done: true },
+      { step: 'Documents Verified', date: '-', active: true },
+      { step: 'Under Review', date: '-' },
+      { step: 'Approved', date: '-' },
+      { step: 'Settled', date: '-' },
+    ],
+    under_review: [
+      { step: 'Submitted', date: 'Done', done: true },
+      { step: 'Documents Verified', date: 'Done', done: true },
+      { step: 'Under Review', date: 'Now', active: true },
+      { step: 'Approved', date: '-' },
+      { step: 'Settled', date: '-' },
+    ],
+    approved: [
+      { step: 'Submitted', date: 'Done', done: true },
+      { step: 'Documents Verified', date: 'Done', done: true },
+      { step: 'Under Review', date: 'Done', done: true },
+      { step: 'Approved', date: 'Now', active: true },
+      { step: 'Settled', date: '-' },
+    ],
+    settled: [
+      { step: 'Submitted', date: 'Done', done: true },
+      { step: 'Documents Verified', date: 'Done', done: true },
+      { step: 'Under Review', date: 'Done', done: true },
+      { step: 'Approved', date: 'Done', done: true },
+      { step: 'Settled', date: 'Done', done: true },
+    ],
+    rejected: [
+      { step: 'Submitted', date: 'Done', done: true },
+      { step: 'Documents Verified', date: 'Done', done: true },
+      { step: 'Rejected', date: 'Now', active: true },
+      { step: 'Reopen', date: '-' },
+      { step: 'Settled', date: '-' },
+    ],
+    info_needed: [
+      { step: 'Submitted', date: 'Done', done: true },
+      { step: 'Info Requested', date: 'Now', active: true },
+      { step: 'Review', date: '-' },
+      { step: 'Approved', date: '-' },
+      { step: 'Settled', date: '-' },
+    ],
+  };
+
+  return {
+    id: String(claim.id || claim.claimNumber || `claim-${index}`),
+    type: (claim.type || 'opd').toLowerCase(),
+    hospital: claim.hospital || claim.providerName || 'Provider not specified',
+    date: created,
+    amount,
+    settled: status === 'settled' ? (approvedAmount || amount) : 0,
+    status,
+    claimType: 'Reimbursement',
+    diagnosis: claim.type || 'Medical claim',
+    timeline: timelineByStatus[status] || timelineByStatus.submitted,
+    documents: Array.isArray(claim.documents) ? claim.documents : [],
+    claimNumber: claim.claimNumber || String(claim.id || `CLM-${index + 1}`),
+    approvedAmount,
+  };
+};
+
 export default function ClaimsExpress() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [tab, setTab] = useState<'active' | 'history' | 'file'>('active');
   const [showNewClaim, setShowNewClaim] = useState(false);
   const [selectedClaimType, setSelectedClaimType] = useState<string | null>(null);
   const [scanMode, setScanMode] = useState<'scan' | 'upload' | 'manual' | null>(null);
   const [selectedClaim, setSelectedClaim] = useState<any>(null);
+  const [apiClaims, setApiClaims] = useState<any[]>([]);
+  const [isClaimsLoading, setIsClaimsLoading] = useState(false);
+  const [dataSource, setDataSource] = useState<'api' | 'unavailable'>('unavailable');
+  const [isSubmittingClaim, setIsSubmittingClaim] = useState(false);
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [claimForm, setClaimForm] = useState({
+    hospital: '',
+    diagnosis: '',
+    amount: '',
+    date: '',
+    claimType: 'Reimbursement',
+    notes: '',
+  });
 
-  // ─── Demo Claims ─────────────────────────────────────────────────────────
-  const activeClaims = [
-    {
-      id: 'CLM-2026-0847',
-      type: 'hospitalization',
-      hospital: 'Apollo Hospitals, Jubilee Hills',
-      date: '2026-02-18',
-      amount: 185000,
-      settled: 0,
-      status: 'under_review',
-      claimType: 'Cashless',
-      diagnosis: 'Appendectomy',
-      timeline: [
-        { step: 'Submitted', date: 'Feb 18', done: true },
-        { step: 'Documents Verified', date: 'Feb 19', done: true },
-        { step: 'Under Review', date: 'Feb 20', done: false, active: true },
-        { step: 'Approved', date: '-', done: false },
-        { step: 'Settled', date: '-', done: false },
-      ],
-      documents: ['Discharge Summary', 'Bills', 'Investigation Reports', 'Pre-Auth Letter'],
-    },
-    {
-      id: 'CLM-2026-0821',
-      type: 'opd',
-      hospital: 'Dr. Sharma Clinic',
-      date: '2026-02-10',
-      amount: 4500,
-      settled: 4500,
-      status: 'settled',
+  const resetClaimDraft = () => {
+    setSelectedClaimType(null);
+    setScanMode(null);
+    setUploadFiles([]);
+    setClaimForm({
+      hospital: '',
+      diagnosis: '',
+      amount: '',
+      date: '',
       claimType: 'Reimbursement',
-      diagnosis: 'General Consultation + Blood Tests',
-      timeline: [
-        { step: 'Submitted', date: 'Feb 10', done: true },
-        { step: 'Documents Verified', date: 'Feb 11', done: true },
-        { step: 'Approved', date: 'Feb 12', done: true },
-        { step: 'Settled', date: 'Feb 14', done: true },
-      ],
-      documents: ['Prescription', 'Lab Reports', 'Payment Receipt'],
-    },
-    {
-      id: 'CLM-2026-0799',
-      type: 'pharmacy',
-      hospital: 'MedPlus Pharmacy',
-      date: '2026-02-05',
-      amount: 2800,
-      settled: 0,
-      status: 'info_needed',
-      claimType: 'Reimbursement',
-      diagnosis: 'Monthly Medication',
-      timeline: [
-        { step: 'Submitted', date: 'Feb 5', done: true },
-        { step: 'Info Requested', date: 'Feb 7', done: false, active: true },
-        { step: 'Review', date: '-', done: false },
-        { step: 'Settled', date: '-', done: false },
-      ],
-      documents: ['Prescription', 'Bills'],
-      infoNeeded: 'Please upload the original doctor prescription with stamp',
-    },
-  ];
+      notes: '',
+    });
+  };
 
-  const claimHistory = [
-    { id: 'CLM-2026-0756', type: 'dental', amount: 8500, settled: 7200, date: '2026-01-15', status: 'settled', hospital: 'Clove Dental' },
-    { id: 'CLM-2025-1234', type: 'hospitalization', amount: 320000, settled: 295000, date: '2025-11-20', status: 'settled', hospital: 'Fortis Hospital' },
-    { id: 'CLM-2025-1189', type: 'opd', amount: 3200, settled: 3200, date: '2025-10-08', status: 'settled', hospital: 'Max Healthcare' },
-    { id: 'CLM-2025-1045', type: 'vision', amount: 12000, settled: 10000, date: '2025-08-22', status: 'settled', hospital: 'Centre for Sight' },
-    { id: 'CLM-2025-0987', type: 'pharmacy', amount: 5600, settled: 0, date: '2025-07-15', status: 'rejected', hospital: 'Apollo Pharmacy' },
-  ];
+  const loadClaims = async () => {
+    const token = getToken();
+    if (!token) {
+      setApiClaims([]);
+      setDataSource('unavailable');
+      return;
+    }
+
+    setIsClaimsLoading(true);
+    try {
+      const res = await api.get('/employee/claims');
+      const claims = Array.isArray(res?.data?.claims) ? res.data.claims : [];
+      setApiClaims(claims.map(toUiClaim));
+      setDataSource('api');
+    } catch {
+      setApiClaims([]);
+      setDataSource('unavailable');
+    } finally {
+      setIsClaimsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let mounted = true;
+
+    loadClaims();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const { activeClaims, claimHistory } = useMemo(() => {
+    return {
+      activeClaims: apiClaims.filter((c) => !['settled', 'rejected'].includes(c.status)),
+      claimHistory: apiClaims.filter((c) => ['settled', 'rejected'].includes(c.status)),
+    };
+  }, [apiClaims]);
+
+  const infoNeededClaim = activeClaims.find((claim) => claim.status === 'info_needed');
 
   const totalClaimed = activeClaims.reduce((s, c) => s + c.amount, 0);
   const totalSettled = [...activeClaims, ...claimHistory].reduce((s, c) => s + c.settled, 0);
+
+  const submitClaim = async () => {
+    const token = getToken();
+    if (!token) {
+      toast({ title: 'Login required', description: 'Please login to file a claim', variant: 'destructive' });
+      return;
+    }
+    if (!selectedClaimType) {
+      toast({ title: 'Claim type required', description: 'Please select a claim type', variant: 'destructive' });
+      return;
+    }
+    if (!claimForm.hospital.trim() || !claimForm.amount || !claimForm.date) {
+      toast({
+        title: 'Missing required details',
+        description: 'Please provide provider name, date, and claim amount',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const amount = Number(claimForm.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast({ title: 'Invalid amount', description: 'Enter a valid claim amount', variant: 'destructive' });
+      return;
+    }
+
+    setIsSubmittingClaim(true);
+    try {
+      const documents = [
+        ...uploadFiles.map((f) => f.name),
+        ...(scanMode === 'scan' ? ['Scanned bill image'] : []),
+      ];
+
+      const payload = {
+        type: selectedClaimType,
+        amount,
+        hospital: claimForm.hospital.trim(),
+        date: claimForm.date,
+        claimType: claimForm.claimType,
+        diagnosis: claimForm.diagnosis.trim(),
+        notes: claimForm.notes.trim(),
+        documents,
+      };
+
+      const res = await api.post('/employee/claims', payload);
+      if (!res?.data?.success) {
+        throw new Error(res?.data?.message || 'Failed to submit claim');
+      }
+
+      toast({ title: 'Claim submitted', description: 'Your claim has been filed and added to active tracking.' });
+      setShowNewClaim(false);
+      resetClaimDraft();
+      await loadClaims();
+      setTab('active');
+    } catch (error: any) {
+      toast({
+        title: 'Submission failed',
+        description: error?.response?.data?.message || error?.message || 'Could not file claim right now',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsSubmittingClaim(false);
+    }
+  };
 
   return (
     <MainLayout>
@@ -140,7 +309,12 @@ export default function ClaimsExpress() {
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
             <Zap className="h-6 w-6 text-amber-400" /> Claims Express
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5">AI-powered lightning-fast claims</p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-sm text-slate-400">AI-powered lightning-fast claims</p>
+            <Badge className={dataSource === 'api' ? 'bg-emerald-500/10 text-emerald-300 border-0' : 'bg-amber-500/10 text-amber-300 border-0'}>
+              {dataSource === 'api' ? 'Live Claims' : 'Claims Limited'}
+            </Badge>
+          </div>
         </div>
         <Button onClick={() => setShowNewClaim(true)}
           className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 border-0 rounded-xl gap-1.5 shadow-lg shadow-amber-600/20">
@@ -182,7 +356,10 @@ export default function ClaimsExpress() {
         className="bg-gradient-to-r from-amber-600/10 to-orange-600/5 border border-amber-500/20 rounded-xl p-3 mb-6 flex items-center gap-3">
         <Brain className="h-5 w-5 text-amber-400 flex-shrink-0" />
         <p className="text-xs text-slate-300">
-          <span className="font-semibold text-amber-400">AI Tip:</span> Your pending pharmacy claim needs the original prescription. Upload it to get ₹2,800 settled in 2 days.
+          <span className="font-semibold text-amber-400">AI Tip:</span>{' '}
+          {infoNeededClaim
+            ? `Your ${infoNeededClaim.type} claim needs additional information. Upload pending documents to prevent settlement delays.`
+            : 'Submit complete bills, prescriptions, and discharge summaries upfront to reduce info-needed loops.'}
         </p>
       </motion.div>
 
@@ -213,9 +390,6 @@ export default function ClaimsExpress() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button size="sm" className="bg-amber-600 hover:bg-amber-500 border-0" onClick={() => setShowNewClaim(true)}>
-            <Plus className="h-3.5 w-3.5 mr-1" /> File Claim
-          </Button>
           {tab !== 'active' && (
             <Button size="sm" variant="outline" className="border-white/10 text-slate-300" onClick={() => setTab('active')}>
               Track Active
@@ -234,6 +408,24 @@ export default function ClaimsExpress() {
         {tab === 'active' && (
           <motion.div key="active" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="space-y-3">
+            {isClaimsLoading && (
+              <Card className="!p-0 border-white/[0.06] bg-slate-900/50">
+                <CardContent className="p-4 flex items-center gap-2 text-slate-300 text-sm">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading claims...
+                </CardContent>
+              </Card>
+            )}
+            {!isClaimsLoading && dataSource === 'unavailable' && (
+              <InlineError message="Couldn't load claims." onRetry={() => loadClaims()} className="mb-2" />
+            )}
+            {!isClaimsLoading && dataSource === 'api' && activeClaims.length === 0 && (
+              <EmptyState
+                icon={Shield}
+                title="No claims filed"
+                description="Your insurance claims will appear here once submitted."
+                action={{ label: 'File a claim', onClick: () => setShowNewClaim(true) }}
+              />
+            )}
             {activeClaims.map((claim, i) => {
               const st = STATUS_CONFIG[claim.status] || STATUS_CONFIG.draft;
               const StIcon = st.icon;
@@ -319,6 +511,14 @@ export default function ClaimsExpress() {
         {tab === 'history' && (
           <motion.div key="history" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="space-y-2">
+            {claimHistory.length === 0 && (
+              <Card className="!p-0 border-white/[0.06] bg-slate-900/50">
+                <CardContent className="p-6 text-center">
+                  <p className="text-sm text-slate-300 font-semibold">No settled or closed claims yet</p>
+                  <p className="text-xs text-slate-500 mt-1">Your completed claims will appear here once decisions are finalized.</p>
+                </CardContent>
+              </Card>
+            )}
             {claimHistory.map((claim, i) => {
               const st = STATUS_CONFIG[claim.status] || STATUS_CONFIG.draft;
               return (
@@ -354,7 +554,13 @@ export default function ClaimsExpress() {
       </AnimatePresence>
 
       {/* ─── New Claim Dialog ──────────────────────────────────────────── */}
-      <Dialog open={showNewClaim} onOpenChange={setShowNewClaim}>
+      <Dialog
+        open={showNewClaim}
+        onOpenChange={(open) => {
+          setShowNewClaim(open);
+          if (!open) resetClaimDraft();
+        }}
+      >
         <DialogContent className="bg-slate-900 border-white/10 text-white max-w-md rounded-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg flex items-center gap-2">
@@ -433,38 +639,116 @@ export default function ClaimsExpress() {
                   <Upload className="h-12 w-12 text-slate-600" />
                   <p className="text-sm text-slate-400">Drag & drop or browse</p>
                   <p className="text-[10px] text-slate-500">PDF, JPG, PNG — Max 10MB each</p>
-                  <Button className="bg-blue-600 hover:bg-blue-500 border-0 rounded-xl gap-1.5">
+                  <Button
+                    className="bg-blue-600 hover:bg-blue-500 border-0 rounded-xl gap-1.5"
+                    onClick={() => document.getElementById('claims-upload-input')?.click()}
+                  >
                     <Upload className="h-4 w-4" /> Browse Files
                   </Button>
+                  <input
+                    id="claims-upload-input"
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
+                  />
+                  {uploadFiles.length > 0 && (
+                    <p className="text-[10px] text-slate-400">{uploadFiles.length} document(s) selected</p>
+                  )}
                 </div>
               )}
               {scanMode === 'manual' && (
                 <div className="space-y-3">
                   <div>
                     <label className="text-xs text-slate-400 block mb-1">Hospital / Provider</label>
-                    <Input className="bg-slate-800 border-white/10 text-white rounded-xl" placeholder="Apollo Hospitals..." />
+                    <Input
+                      className="bg-slate-800 border-white/10 text-white rounded-xl"
+                      placeholder="Apollo Hospitals..."
+                      value={claimForm.hospital}
+                      onChange={(e) => setClaimForm((prev) => ({ ...prev, hospital: e.target.value }))}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-400 block mb-1">Diagnosis / Treatment</label>
-                    <Input className="bg-slate-800 border-white/10 text-white rounded-xl" placeholder="General consultation..." />
+                    <Input
+                      className="bg-slate-800 border-white/10 text-white rounded-xl"
+                      placeholder="General consultation..."
+                      value={claimForm.diagnosis}
+                      onChange={(e) => setClaimForm((prev) => ({ ...prev, diagnosis: e.target.value }))}
+                    />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs text-slate-400 block mb-1">Amount (₹)</label>
-                      <Input type="number" className="bg-slate-800 border-white/10 text-white rounded-xl" placeholder="5000" />
+                      <Input
+                        type="number"
+                        className="bg-slate-800 border-white/10 text-white rounded-xl"
+                        placeholder="5000"
+                        value={claimForm.amount}
+                        onChange={(e) => setClaimForm((prev) => ({ ...prev, amount: e.target.value }))}
+                      />
                     </div>
                     <div>
                       <label className="text-xs text-slate-400 block mb-1">Date</label>
-                      <Input type="date" className="bg-slate-800 border-white/10 text-white rounded-xl" />
+                      <Input
+                        type="date"
+                        className="bg-slate-800 border-white/10 text-white rounded-xl"
+                        value={claimForm.date}
+                        onChange={(e) => setClaimForm((prev) => ({ ...prev, date: e.target.value }))}
+                      />
                     </div>
                   </div>
                   <div className="flex gap-2">
                     {['Cashless', 'Reimbursement'].map(t => (
                       <button key={t}
+                        onClick={() => setClaimForm((prev) => ({ ...prev, claimType: t }))}
                         className="flex-1 py-2.5 rounded-xl border border-white/10 text-xs font-medium text-slate-400 hover:text-white hover:border-white/20 transition-all">
                         {t}
                       </button>
                     ))}
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Notes (Optional)</label>
+                    <Input
+                      className="bg-slate-800 border-white/10 text-white rounded-xl"
+                      placeholder="Any additional context..."
+                      value={claimForm.notes}
+                      onChange={(e) => setClaimForm((prev) => ({ ...prev, notes: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              )}
+              {scanMode && scanMode !== 'manual' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Hospital / Provider</label>
+                    <Input
+                      className="bg-slate-800 border-white/10 text-white rounded-xl"
+                      placeholder="Hospital or provider name"
+                      value={claimForm.hospital}
+                      onChange={(e) => setClaimForm((prev) => ({ ...prev, hospital: e.target.value }))}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-1">Amount (₹)</label>
+                      <Input
+                        type="number"
+                        className="bg-slate-800 border-white/10 text-white rounded-xl"
+                        placeholder="5000"
+                        value={claimForm.amount}
+                        onChange={(e) => setClaimForm((prev) => ({ ...prev, amount: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-1">Date</label>
+                      <Input
+                        type="date"
+                        className="bg-slate-800 border-white/10 text-white rounded-xl"
+                        value={claimForm.date}
+                        onChange={(e) => setClaimForm((prev) => ({ ...prev, date: e.target.value }))}
+                      />
+                    </div>
                   </div>
                 </div>
               )}
@@ -473,8 +757,12 @@ export default function ClaimsExpress() {
                   onClick={() => setScanMode(null)}>
                   Back
                 </Button>
-                <Button className="flex-1 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 border-0 rounded-xl gap-1.5">
-                  <Send className="h-3.5 w-3.5" /> Submit Claim
+                <Button
+                  className="flex-1 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 border-0 rounded-xl gap-1.5"
+                  onClick={submitClaim}
+                  disabled={isSubmittingClaim}
+                >
+                  {isSubmittingClaim ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Submit Claim
                 </Button>
               </div>
             </div>
@@ -540,26 +828,7 @@ export default function ClaimsExpress() {
                   {/* Timeline */}
                   <div>
                     <h4 className="text-xs font-semibold text-slate-400 mb-2">Tracking Timeline</h4>
-                    <div className="space-y-0">
-                      {selectedClaim.timeline?.map((step: any, si: number) => (
-                        <div key={si} className="flex gap-3">
-                          <div className="flex flex-col items-center">
-                            <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
-                              step.done ? 'bg-emerald-500' : step.active ? 'bg-amber-500' : 'bg-slate-700'
-                            }`}>
-                              {step.done ? <CheckCircle className="h-3 w-3 text-white" /> : <div className="w-1.5 h-1.5 rounded-full bg-slate-400" />}
-                            </div>
-                            {si < selectedClaim.timeline.length - 1 && (
-                              <div className={`w-0.5 h-6 ${step.done ? 'bg-emerald-500' : 'bg-slate-700'}`} />
-                            )}
-                          </div>
-                          <div className="pb-4">
-                            <p className={`text-xs font-medium ${step.done || step.active ? 'text-white' : 'text-slate-500'}`}>{step.step}</p>
-                            <p className="text-[10px] text-slate-500">{step.date}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <StatusTimeline steps={getClaimSteps(selectedClaim)} className="mt-2" />
                   </div>
                 </div>
               </>

@@ -8,6 +8,7 @@ import HealthCoinsTransaction from '../models/postgres/health-coins-transaction.
 import UserActivityLog from '../models/postgres/user-activity-log.model.postgres.js';
 import { HEALTH_COINS_REWARDS, HEALTH_COINS_PRICING } from '../config/health-coins.config.js';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
+import { Op } from 'sequelize';
 
 class HealthCoinsService {
   /**
@@ -135,6 +136,30 @@ class HealthCoinsService {
    */
   async awardDailyLogin(userId) {
     const today = new Date().toISOString().split('T')[0];
+    const dayStart = new Date(`${today}T00:00:00.000Z`);
+    const dayEnd = new Date(`${today}T23:59:59.999Z`);
+
+    // Hard guard: never allow more than one DAILY_LOGIN reward transaction per day.
+    const dailyLoginTxn = await HealthCoinsTransaction.findOne({
+      where: {
+        userId,
+        activityType: 'DAILY_LOGIN',
+        status: 'COMPLETED',
+        createdAt: {
+          [Op.between]: [dayStart, dayEnd]
+        }
+      }
+    });
+
+    if (dailyLoginTxn) {
+      const wallet = await this.getOrCreateWallet(userId);
+      return {
+        success: false,
+        message: 'Daily login already rewarded today',
+        streak: wallet.streakDays || 0,
+        newBalance: parseFloat(wallet.balance)
+      };
+    }
     
     // Check if already rewarded today
     let activityLog = await UserActivityLog.findOne({
@@ -179,21 +204,9 @@ class HealthCoinsService {
       `Daily login reward - Day ${newStreak}`,
       { streak: newStreak }
     );
-    
-    // Check for streak bonus
-    if (HEALTH_COINS_REWARDS.DAILY_LOGIN_STREAK_BONUS[newStreak]) {
-      const bonusAmount = HEALTH_COINS_REWARDS.DAILY_LOGIN_STREAK_BONUS[newStreak];
-      await this.addCoins(
-        userId,
-        bonusAmount,
-        'BONUS',
-        'STREAK_BONUS',
-        `${newStreak}-day streak bonus!`,
-        { streak: newStreak }
-      );
-      result.bonusAwarded = bonusAmount;
-    }
-    
+
+    // Daily login is strictly fixed to 1 HC/day.
+    result.bonusAwarded = 0;
     result.streak = newStreak;
     return result;
   }
@@ -389,12 +402,11 @@ class HealthCoinsService {
    * Includes bonus value calculation
    */
   calculateHCForConsultation(consultationFeeINR) {
-    const bonusPercent = HEALTH_COINS_PRICING.HC_PAYMENT_BONUS_PERCENT || 10;
+    // Consultation payments must use exact HC equivalent (no bonus discount).
+    const bonusPercent = 0;
     const rate = HEALTH_COINS_PRICING.HC_TO_INR_RATE || 1;
     
-    // With bonus, HC has more value
-    // If bonus is 10%, then 100 HC = ₹110 value
-    // So to pay ₹100, you need 100 / 1.10 = ~91 HC
+    // Exact conversion: 1 HC uses configured rate with no consultation bonus.
     const effectiveRate = rate * (1 + bonusPercent / 100);
     const hcRequired = Math.ceil(consultationFeeINR / effectiveRate);
     

@@ -5,6 +5,11 @@
  */
 
 import api from '@/lib/api';
+import {
+  INSURANCE_POLICY_CATEGORIES,
+  DEFAULT_INSURANCE_POLICY_CATEGORY,
+  type InsurancePolicyCategory
+} from '@/constants/insurancePolicyCategories';
 
 const BASE_URL = '/api/hospital/practice';
 
@@ -20,6 +25,21 @@ export const getHospitalHeaders = (): HospitalHeaders => {
   return {
     Authorization: `Bearer ${token}`
   };
+};
+
+const ALLOWED_POLICY_CATEGORY_SET = new Set(
+  INSURANCE_POLICY_CATEGORIES.map((category) => category.value)
+);
+
+const normalizePolicyCategory = (value?: string): InsurancePolicyCategory => {
+  const candidate = String(value || '').trim();
+  if (ALLOWED_POLICY_CATEGORY_SET.has(candidate)) {
+    return candidate as InsurancePolicyCategory;
+  }
+
+  throw new Error(
+    `Invalid policy category '${candidate || 'empty'}'. Allowed values: ${INSURANCE_POLICY_CATEGORIES.map((category) => category.value).join(', ')}`
+  );
 };
 
 // ============================================================================
@@ -304,8 +324,28 @@ export const insuranceService = {
   /**
    * Create insurance policy
    */
-  createPolicy: async (data: any) => {
-    const response = await api.post(`${BASE_URL}/insurance/policies`, data, {
+  createPolicy: async (data: {
+    patientId: number;
+    policyNumber: string;
+    insuranceProvider: string;
+    planName?: string;
+    policyType?: string;
+    coverageAmount: number;
+    deductible?: number;
+    copay?: number;
+    validFrom: string;
+    validUpto?: string;
+    eCardAvailable?: boolean;
+  }) => {
+    const category = normalizePolicyCategory(data.policyType || data.planName || DEFAULT_INSURANCE_POLICY_CATEGORY);
+
+    const payload = {
+      ...data,
+      planName: category,
+      policyType: category
+    };
+
+    const response = await api.post(`${BASE_URL}/insurance/policies`, payload, {
       headers: getHospitalHeaders()
     });
     return response.data;

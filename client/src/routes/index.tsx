@@ -63,7 +63,6 @@ const NurseBooking          = lazy(() => import("@/pages/NurseBooking"));
 const LabBooking            = lazy(() => import("@/pages/LabBooking"));
 const HomecareBooking       = lazy(() => import("@/pages/HomecareBooking"));
 const HealthFeedPage        = lazy(() => import("@/pages/HealthFeedPage"));
-const RepostsPage           = lazy(() => import("@/pages/Reposts"));
 const MyPlans               = lazy(() => import("@/pages/MyPlans"));
 const ChoosePlan            = lazy(() => import("@/pages/user/ChoosePlan"));
 const MyMembershipCard      = lazy(() => import("@/pages/user/MyMembershipCard"));
@@ -91,7 +90,6 @@ const NetworkClinics        = lazy(() => import("@/pages/patient/NetworkClinics"
 const TeamClinicList        = lazy(() => import("@/pages/team/TeamClinicList"));
 const TeamTicketManager     = lazy(() => import("@/pages/team/TeamTicketManager"));
 const BuyInsurance          = lazy(() => import("@/pages/patient/BuyInsurance"));
-const ClaimsManagement      = lazy(() => import("@/pages/patient/ClaimsManagement"));
 const AIHealthAnalysis      = lazy(() => import("@/pages/patient/AIHealthAnalysis"));
 const EmployeeGamification  = lazy(() => import("@/pages/patient/EmployeeGamification"));
 const EmployeeWellnessCalendar = lazy(() => import("@/pages/patient/EmployeeWellnessCalendar"));
@@ -203,6 +201,7 @@ const SettingsPage             = lazy(() => import("@/pages/admin/SettingsPage")
 const CRMPage                  = lazy(() => import("@/pages/admin/CRMPage"));
 const CRMLeadDetail            = lazy(() => import("@/pages/admin/CRMLeadDetail"));
 const AIAnalyticsDashboard     = lazy(() => import("@/pages/admin/AIAnalyticsDashboard"));
+const AIGovernanceDashboard    = lazy(() => import("@/pages/admin/AIGovernanceDashboard"));
 const SIBAIDashboard           = lazy(() => import("@/pages/admin/SIBAIDashboard"));
 const HyperGridDashboard       = lazy(() => import("@/pages/admin/HyperGridDashboard"));
 const HyperGridAIView          = lazy(() => import("@/pages/admin/HyperGridAIView"));
@@ -858,19 +857,33 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) { setIsAdmin(false); return; }
-    try {
-      const payload = JSON.parse(atob(token.split(".")[1]));
-      setIsAdmin(payload.role === "admin" || payload.isAdmin === true);
-    } catch {
+    const token = localStorage.getItem("adminToken");
+    if (!token) {
       setIsAdmin(false);
+      return;
+    }
+
+    try {
+      const adminDataRaw = localStorage.getItem("adminData");
+      const adminData = adminDataRaw ? JSON.parse(adminDataRaw) : null;
+      const role = String(adminData?.role || "").toLowerCase();
+
+      // Keep guard permissive for legacy tokens when role payload isn't persisted,
+      // but block if persisted role explicitly indicates non-admin.
+      if (adminData && !(adminData.isAdmin === true || role === "admin" || role === "super admin" || role === "super_admin")) {
+        setIsAdmin(false);
+        return;
+      }
+
+      setIsAdmin(true);
+    } catch {
+      setIsAdmin(true);
     }
   }, []);
 
   if (isAdmin === null)
     return <div className="flex items-center justify-center h-screen">Loading...</div>;
-  if (!isAdmin) return <Navigate to="/" replace />;
+  if (!isAdmin) return <Navigate to="/admin/login" replace />;
   return <>{children}</>;
 };
 
@@ -1203,15 +1216,15 @@ const AppRoutes = () => {
         <Route path="/team/user-plan-customization"
           element={<TeamGuard permission="Corporate Management"><TeamUserPlanCustomization /></TeamGuard>} />
         <Route path="/team/plan-governance"
-          element={<TeamGuard permission="Audit Access"><TeamPlanGovernance /></TeamGuard>} />
+          element={<TeamGuard permission={["Audit Access", "Audit Logs"]}><TeamPlanGovernance /></TeamGuard>} />
         <Route path="/team/broker-management"
           element={<TeamGuard permission="Broker Management"><TeamBrokerManagement /></TeamGuard>} />
         <Route path="/team/reports"
-          element={<TeamGuard permission={["Patient Reports", "Analytics Access"]}><TeamReports /></TeamGuard>} />
+          element={<TeamGuard permission={["Patient Reports", "Analytics Access", "Reports Access"]}><TeamReports /></TeamGuard>} />
 
         {/* ── Team (admin-only) ────────────────────────────────────────── */}
         <Route path="/team/activity"
-          element={<TeamGuard permission="Audit Access"><TeamActivityLogsPage /></TeamGuard>} />
+          element={<TeamGuard permission={["Audit Access", "Audit Logs"]}><TeamActivityLogsPage /></TeamGuard>} />
         <Route path="/team/tools"
           element={<TeamGuard adminOnly><TeamTools /></TeamGuard>} />
         <Route path="/team/settings"
@@ -1219,66 +1232,67 @@ const AppRoutes = () => {
 
         {/* ── Admin ───────────────────────────────────────────────────── */}
         <Route path="/admin/login"               element={<AdminLogin />} />
-        <Route path="/admin/test"                element={<SimpleAdminDashboard />} />
-        <Route path="/admin/system-test"         element={<AdminTestPage />} />
-        <Route path="/admin/comprehensive"       element={<ComprehensiveAdminDashboard />} />
-        <Route path="/admin/register-patient"    element={<AdminRegisterPatient />} />
-        <Route path="/admin/manage-assistants"   element={<AdminManageAssistants />} />
-        <Route path="/admin/doctors"             element={<DoctorsManagement />} />
-        <Route path="/admin/users"               element={<UsersManagement />} />
-        <Route path="/admin/team"                element={<TeamManagement />} />
-        <Route path="/admin/team-privileges"     element={<TeamPrivileges />} />
-        <Route path="/admin/chat"                element={<AdminChatDashboard />} />
-        <Route path="/admin/appointments"        element={<AdminAppointments />} />
-        <Route path="/admin/plans"               element={<AdminPlans />} />
-        <Route path="/admin/insurance"           element={<AdminInsurance />} />
-        <Route path="/admin/workflow-automation" element={<AdminWorkflowAutomation />} />
-        <Route path="/admin/tenants"             element={<AdminTenantManagement />} />
-        <Route path="/admin/insurer"             element={<InsurerManagement />} />
-        <Route path="/admin/tpa"                 element={<TPAManagement />} />
-        <Route path="/admin/brokers"             element={<BrokerManagement />} />
-        <Route path="/admin/api-credentials"     element={<ApiCredentialsManagement />} />
-        <Route path="/admin/hospitals"           element={<HospitalsManagement />} />
-        <Route path="/admin/pending-registrations" element={<PendingRegistrations />} />
-        <Route path="/admin/clinics"             element={<ClinicsManagement />} />
-        <Route path="/admin/corporates"          element={<CorporatesManagement />} />
-        <Route path="/admin/corporate-health-packages" element={<CorporateHealthPackages />} />
-        <Route path="/admin/corporate-employees" element={<CorporateEmployeesManagement />} />
-        <Route path="/admin/corporate-plans"     element={<CorporatePlansManagement />} />
-        <Route path="/admin/pharmacies"          element={<PharmaciesManagement />} />
-        <Route path="/admin/homecare"            element={<HomecareManagement />} />
-        <Route path="/admin/ambulance"           element={<AmbulanceManagement />} />
-        <Route path="/admin/medivac"             element={<MedivacManagement />} />
-        <Route path="/admin/ngo"                 element={<NGOManagement />} />
-        <Route path="/admin/psu"                 element={<PSUManagement />} />
-        <Route path="/admin/ohc"                 element={<OHCManagement />} />
-        <Route path="/admin/labs"                element={<LabsManagement />} />
-        <Route path="/admin/billing"             element={<BillingManagement />} />
-        <Route path="/admin/accounting"          element={<AccountingManagement />} />
-        <Route path="/admin/payments"            element={<PaymentManagement />} />
-        <Route path="/admin/coupons"             element={<CouponManagement />} />
-        <Route path="/admin/email"               element={<EmailManagement />} />
-        <Route path="/admin/activity-log"        element={<ActivityLog />} />
-        <Route path="/admin/module-access"       element={<ModuleAccessControl />} />
-        <Route path="/admin/auth-test"           element={<AdminAuthTest />} />
-        <Route path="/admin/sms"                 element={<SMSManagement />} />
-        <Route path="/admin/whatsapp"            element={<WhatsAppManagement />} />
-        <Route path="/admin/video"               element={<VideoManagement />} />
-        <Route path="/admin/voice"               element={<VoiceCallManagement />} />
-        <Route path="/admin/tickets"             element={<TicketManagement />} />
-        <Route path="/admin/tickets/:id"         element={<TicketManagement />} />
-        <Route path="/admin/health-risk"         element={<AdminHealthRiskAssessment />} />
-        <Route path="/admin/reports"             element={<ReportsPage />} />
-        <Route path="/admin/crm"                 element={<CRMPage />} />
-        <Route path="/admin/crm/lead/:id"        element={<CRMLeadDetail />} />
-        <Route path="/admin/ai-analytics"        element={<AIAnalyticsDashboard />} />
-        <Route path="/admin/ai-guard"             element={<SIBAIDashboard />} />
-        <Route path="/admin/hypergrid"            element={<HyperGridDashboard />} />
-        <Route path="/admin/hypergrid-ai"         element={<HyperGridAIView />} />
-        <Route path="/admin/hypergrid-iot"        element={<HyperGridIoTView />} />
-        <Route path="/admin/settings"            element={<SettingsPage />} />
-        <Route path="/admin/dashboard"           element={<AdminDashboardHome />} />
-        <Route path="/admin"                     element={<AdminDashboardHome />} />
+        <Route path="/admin/test"                element={<AdminRoute><SimpleAdminDashboard /></AdminRoute>} />
+        <Route path="/admin/system-test"         element={<AdminRoute><AdminTestPage /></AdminRoute>} />
+        <Route path="/admin/comprehensive"       element={<AdminRoute><ComprehensiveAdminDashboard /></AdminRoute>} />
+        <Route path="/admin/register-patient"    element={<AdminRoute><AdminRegisterPatient /></AdminRoute>} />
+        <Route path="/admin/manage-assistants"   element={<AdminRoute><AdminManageAssistants /></AdminRoute>} />
+        <Route path="/admin/doctors"             element={<AdminRoute><DoctorsManagement /></AdminRoute>} />
+        <Route path="/admin/users"               element={<AdminRoute><UsersManagement /></AdminRoute>} />
+        <Route path="/admin/team"                element={<AdminRoute><TeamManagement /></AdminRoute>} />
+        <Route path="/admin/team-privileges"     element={<AdminRoute><TeamPrivileges /></AdminRoute>} />
+        <Route path="/admin/chat"                element={<AdminRoute><AdminChatDashboard /></AdminRoute>} />
+        <Route path="/admin/appointments"        element={<AdminRoute><AdminAppointments /></AdminRoute>} />
+        <Route path="/admin/plans"               element={<AdminRoute><AdminPlans /></AdminRoute>} />
+        <Route path="/admin/insurance"           element={<AdminRoute><AdminInsurance /></AdminRoute>} />
+        <Route path="/admin/workflow-automation" element={<AdminRoute><AdminWorkflowAutomation /></AdminRoute>} />
+        <Route path="/admin/tenants"             element={<AdminRoute><AdminTenantManagement /></AdminRoute>} />
+        <Route path="/admin/insurer"             element={<AdminRoute><InsurerManagement /></AdminRoute>} />
+        <Route path="/admin/tpa"                 element={<AdminRoute><TPAManagement /></AdminRoute>} />
+        <Route path="/admin/brokers"             element={<AdminRoute><BrokerManagement /></AdminRoute>} />
+        <Route path="/admin/api-credentials"     element={<AdminRoute><ApiCredentialsManagement /></AdminRoute>} />
+        <Route path="/admin/hospitals"           element={<AdminRoute><HospitalsManagement /></AdminRoute>} />
+        <Route path="/admin/pending-registrations" element={<AdminRoute><PendingRegistrations /></AdminRoute>} />
+        <Route path="/admin/clinics"             element={<AdminRoute><ClinicsManagement /></AdminRoute>} />
+        <Route path="/admin/corporates"          element={<AdminRoute><CorporatesManagement /></AdminRoute>} />
+        <Route path="/admin/corporate-health-packages" element={<AdminRoute><CorporateHealthPackages /></AdminRoute>} />
+        <Route path="/admin/corporate-employees" element={<AdminRoute><CorporateEmployeesManagement /></AdminRoute>} />
+        <Route path="/admin/corporate-plans"     element={<AdminRoute><CorporatePlansManagement /></AdminRoute>} />
+        <Route path="/admin/pharmacies"          element={<AdminRoute><PharmaciesManagement /></AdminRoute>} />
+        <Route path="/admin/homecare"            element={<AdminRoute><HomecareManagement /></AdminRoute>} />
+        <Route path="/admin/ambulance"           element={<AdminRoute><AmbulanceManagement /></AdminRoute>} />
+        <Route path="/admin/medivac"             element={<AdminRoute><MedivacManagement /></AdminRoute>} />
+        <Route path="/admin/ngo"                 element={<AdminRoute><NGOManagement /></AdminRoute>} />
+        <Route path="/admin/psu"                 element={<AdminRoute><PSUManagement /></AdminRoute>} />
+        <Route path="/admin/ohc"                 element={<AdminRoute><OHCManagement /></AdminRoute>} />
+        <Route path="/admin/labs"                element={<AdminRoute><LabsManagement /></AdminRoute>} />
+        <Route path="/admin/billing"             element={<AdminRoute><BillingManagement /></AdminRoute>} />
+        <Route path="/admin/accounting"          element={<AdminRoute><AccountingManagement /></AdminRoute>} />
+        <Route path="/admin/payments"            element={<AdminRoute><PaymentManagement /></AdminRoute>} />
+        <Route path="/admin/coupons"             element={<AdminRoute><CouponManagement /></AdminRoute>} />
+        <Route path="/admin/email"               element={<AdminRoute><EmailManagement /></AdminRoute>} />
+        <Route path="/admin/activity-log"        element={<AdminRoute><ActivityLog /></AdminRoute>} />
+        <Route path="/admin/module-access"       element={<AdminRoute><ModuleAccessControl /></AdminRoute>} />
+        <Route path="/admin/auth-test"           element={<AdminRoute><AdminAuthTest /></AdminRoute>} />
+        <Route path="/admin/sms"                 element={<AdminRoute><SMSManagement /></AdminRoute>} />
+        <Route path="/admin/whatsapp"            element={<AdminRoute><WhatsAppManagement /></AdminRoute>} />
+        <Route path="/admin/video"               element={<AdminRoute><VideoManagement /></AdminRoute>} />
+        <Route path="/admin/voice"               element={<AdminRoute><VoiceCallManagement /></AdminRoute>} />
+        <Route path="/admin/tickets"             element={<AdminRoute><TicketManagement /></AdminRoute>} />
+        <Route path="/admin/tickets/:id"         element={<AdminRoute><TicketManagement /></AdminRoute>} />
+        <Route path="/admin/health-risk"         element={<AdminRoute><AdminHealthRiskAssessment /></AdminRoute>} />
+        <Route path="/admin/reports"             element={<AdminRoute><ReportsPage /></AdminRoute>} />
+        <Route path="/admin/crm"                 element={<AdminRoute><CRMPage /></AdminRoute>} />
+        <Route path="/admin/crm/lead/:id"        element={<AdminRoute><CRMLeadDetail /></AdminRoute>} />
+        <Route path="/admin/ai-analytics"        element={<AdminRoute><AIAnalyticsDashboard /></AdminRoute>} />
+        <Route path="/admin/ai-governance"        element={<AdminRoute><AIGovernanceDashboard /></AdminRoute>} />
+        <Route path="/admin/ai-guard"             element={<AdminRoute><SIBAIDashboard /></AdminRoute>} />
+        <Route path="/admin/hypergrid"            element={<AdminRoute><HyperGridDashboard /></AdminRoute>} />
+        <Route path="/admin/hypergrid-ai"         element={<AdminRoute><HyperGridAIView /></AdminRoute>} />
+        <Route path="/admin/hypergrid-iot"        element={<AdminRoute><HyperGridIoTView /></AdminRoute>} />
+        <Route path="/admin/settings"            element={<AdminRoute><SettingsPage /></AdminRoute>} />
+        <Route path="/admin/dashboard"           element={<AdminRoute><AdminDashboardHome /></AdminRoute>} />
+        <Route path="/admin"                     element={<AdminRoute><AdminDashboardHome /></AdminRoute>} />
 
         {/* ── Corporate ───────────────────────────────────────────────── */}
         <Route path="/corporate/login"                   element={<CorporateLogin />} />
@@ -1679,7 +1693,7 @@ const AppRoutes = () => {
         <Route path="/ai-doctor"             element={<MainLayout><AiDoctor /></MainLayout>} />
         <Route path="/ayushman"              element={<MainLayout><Ayushman /></MainLayout>} />
         <Route path="/health-feed"           element={<MainLayout><HealthFeedPage /></MainLayout>} />
-        <Route path="/reposts"               element={<MainLayout><RepostsPage /></MainLayout>} />
+        <Route path="/reposts"               element={<Navigate to="/report-scanner" replace />} />
         <Route path="/consultation/:doctorId" element={<ConsultationBooking />} />
         <Route path="/nurse-booking/:nurseId" element={<NurseBooking />} />
         <Route path="/lab-booking/:labId"     element={<LabBooking />} />
@@ -1706,7 +1720,7 @@ const AppRoutes = () => {
         <Route path="/patient/network-hospitals"  element={<MainLayout><NetworkHospitals /></MainLayout>} />
         <Route path="/patient/network-clinics"   element={<MainLayout><NetworkClinics /></MainLayout>} />
         <Route path="/patient/buy-insurance"      element={<MainLayout><BuyInsurance /></MainLayout>} />
-        <Route path="/patient/claims"             element={<ClaimsExpress />} />
+        <Route path="/patient/claims"             element={<Navigate to="/claims-express" replace />} />
         <Route path="/patient/ai-health-analysis" element={<MainLayout><AIHealthAnalysis /></MainLayout>} />
         <Route path="/patient/wellness-challenges" element={<WellnessRewards />} />
         <Route path="/wellness-challenges"        element={<WellnessRewards />} />

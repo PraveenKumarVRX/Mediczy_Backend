@@ -7,7 +7,7 @@ import {
   ArrowLeft, Brain, Activity, Heart, TrendingUp, TrendingDown,
   AlertCircle, CheckCircle, Sparkles, RefreshCw, Shield, Clock,
   ChevronRight, Pill, Apple, Dumbbell, Moon, Zap, AlertTriangle,
-  Bell, FileText, Scan, Stethoscope, Star, ShieldAlert
+  Bell, FileText, Scan, Stethoscope, Star, ShieldAlert, Target
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
@@ -20,6 +20,7 @@ import aiHealthServices, {
   HealthAppreciation,
   HealthHazard,
 } from '@/services/aiHealthServices';
+import RiskScoreExplanation from '@/components/ai/RiskScoreExplanation';
 
 const riskColors: Record<string, { text: string; bg: string; ring: string }> = {
   low: { text: 'text-green-600', bg: 'bg-green-500', ring: 'ring-green-200' },
@@ -287,6 +288,20 @@ const SmartHealthDashboard: React.FC = () => {
                   </ul>
                 </CardContent>
               </Card>
+            )}
+
+            {/* AI Goals — counterfactual + confidence (patient-simplified) */}
+            {riskScore && (
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2 mb-3 px-1">
+                  <Target className="h-4 w-4 text-blue-500" />
+                  Your Personalized Health Goals
+                </h3>
+                <RiskScoreExplanation
+                  patientId={riskScore.patient_id}
+                  mode="patient"
+                />
+              </div>
             )}
 
             {/* Quick Actions */}

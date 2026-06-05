@@ -10,6 +10,8 @@ import { HEALTH_COINS_REWARDS, HEALTH_COINS_PRICING } from '../config/health-coi
 import paymentGateway from '../services/payment-gateway.service.js';
 import { Coupon, CouponUsage } from '../models/index.js';
 import { Op } from 'sequelize';
+import { ok, clientError, serverError, notFound, forbidden, conflict } from '../utils/api-response.js';
+import { ErrorCodes } from '../utils/error-codes.js';
 
 const router = express.Router();
 
@@ -88,18 +90,11 @@ const isCouponEligibleForScope = (coupon, scope) => {
 router.get('/', authUser, async (req, res) => {
   try {
     const summary = await healthCoinsService.getWalletSummary(req.user.id);
-    
-    res.json({
-      success: true,
-      data: summary
-    });
+
+    return ok(res, { data: summary });
   } catch (error) {
     console.error('Get wallet error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch wallet',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to fetch wallet');
   }
 });
 
@@ -110,18 +105,11 @@ router.get('/', authUser, async (req, res) => {
 router.get('/balance', authUser, async (req, res) => {
   try {
     const balance = await healthCoinsService.getBalance(req.user.id);
-    
-    res.json({
-      success: true,
-      balance
-    });
+
+    return ok(res, { balance });
   } catch (error) {
     console.error('Get balance error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch balance',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to fetch balance');
   }
 });
 
@@ -139,8 +127,7 @@ router.get('/transactions', authUser, async (req, res) => {
       parseInt(offset)
     );
     
-    res.json({
-      success: true,
+    return ok(res, {
       data: transactions,
       pagination: {
         limit: parseInt(limit),
@@ -150,11 +137,7 @@ router.get('/transactions', authUser, async (req, res) => {
     });
   } catch (error) {
     console.error('Get transactions error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch transactions',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to fetch transactions');
   }
 });
 
@@ -167,18 +150,10 @@ router.post('/earn/daily-login', authUser, async (req, res) => {
     const result = await healthCoinsService.awardDailyLogin(req.user.id);
     
     if (!result.success) {
-      return res.status(200).json({
-        success: false,
-        message: result.message || 'Daily login reward unavailable',
-        coinsEarned: 0,
-        bonusCoins: 0,
-        streak: result.streak || 0,
-        newBalance: result.newBalance
-      });
+      return conflict(res, result.message || 'Daily login reward unavailable', ErrorCodes.DAILY_REWARD_CLAIMED);
     }
-    
-    res.json({
-      success: true,
+
+    return ok(res, {
       message: `Earned ${HEALTH_COINS_REWARDS.DAILY_LOGIN} health coins for daily login!`,
       coinsEarned: HEALTH_COINS_REWARDS.DAILY_LOGIN,
       bonusCoins: result.bonusAwarded || 0,
@@ -187,11 +162,7 @@ router.post('/earn/daily-login', authUser, async (req, res) => {
     });
   } catch (error) {
     console.error('Daily login reward error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to award daily login',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to award daily login');
   }
 });
 
@@ -204,20 +175,16 @@ router.post('/earn/steps', authUser, async (req, res) => {
     const { steps } = req.body;
     
     if (!steps || steps < 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid steps count'
-      });
+      return clientError(res, 'Invalid steps count', ErrorCodes.INVALID_INPUT);
     }
-    
+
     const result = await healthCoinsService.awardStepsMilestone(req.user.id, steps);
-    
+
     if (!result.success) {
-      return res.status(400).json(result);
+      return clientError(res, result.message || 'Steps milestone not awarded', ErrorCodes.INVALID_INPUT);
     }
-    
-    res.json({
-      success: true,
+
+    return ok(res, {
       message: `Earned ${result.transaction.amount} health coins for steps!`,
       coinsEarned: result.transaction.amount,
       steps,
@@ -225,11 +192,7 @@ router.post('/earn/steps', authUser, async (req, res) => {
     });
   } catch (error) {
     console.error('Steps reward error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to award steps',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to award steps');
   }
 });
 
@@ -240,24 +203,19 @@ router.post('/earn/steps', authUser, async (req, res) => {
 router.post('/earn/health-assessment', authUser, async (req, res) => {
   try {
     const result = await healthCoinsService.awardHealthAssessment(req.user.id);
-    
+
     if (!result.success) {
-      return res.status(400).json(result);
+      return clientError(res, result.message || 'Health assessment reward not awarded', ErrorCodes.INVALID_INPUT);
     }
-    
-    res.json({
-      success: true,
+
+    return ok(res, {
       message: `Earned ${HEALTH_COINS_REWARDS.HEALTH_ASSESSMENT} health coins!`,
       coinsEarned: HEALTH_COINS_REWARDS.HEALTH_ASSESSMENT,
       newBalance: result.newBalance
     });
   } catch (error) {
     console.error('Health assessment reward error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to award health assessment',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to award health assessment');
   }
 });
 
@@ -268,24 +226,19 @@ router.post('/earn/health-assessment', authUser, async (req, res) => {
 router.post('/earn/vital-signs', authUser, async (req, res) => {
   try {
     const result = await healthCoinsService.awardVitalSignsLog(req.user.id);
-    
+
     if (!result.success) {
-      return res.status(400).json(result);
+      return clientError(res, result.message || 'Vital signs reward not awarded', ErrorCodes.INVALID_INPUT);
     }
-    
-    res.json({
-      success: true,
+
+    return ok(res, {
       message: `Earned ${HEALTH_COINS_REWARDS.VITAL_SIGNS_LOG} health coins!`,
       coinsEarned: HEALTH_COINS_REWARDS.VITAL_SIGNS_LOG,
       newBalance: result.newBalance
     });
   } catch (error) {
     console.error('Vital signs reward error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to award vital signs',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to award vital signs');
   }
 });
 
@@ -298,31 +251,23 @@ router.post('/earn/activity', authUser, async (req, res) => {
     const { activityType, metadata } = req.body;
     
     if (!activityType) {
-      return res.status(400).json({
-        success: false,
-        message: 'Activity type is required'
-      });
+      return clientError(res, 'Activity type is required', ErrorCodes.INVALID_INPUT);
     }
-    
+
     const result = await healthCoinsService.awardActivity(
       req.user.id,
       activityType,
       metadata || {}
     );
-    
-    res.json({
-      success: true,
+
+    return ok(res, {
       message: `Earned ${result.transaction.amount} health coins!`,
       coinsEarned: result.transaction.amount,
       newBalance: result.newBalance
     });
   } catch (error) {
     console.error('Activity reward error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to award activity',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to award activity');
   }
 });
 
@@ -335,12 +280,9 @@ router.post('/spend', authUser, async (req, res) => {
     const { amount, activityType, description, referenceType, referenceId, metadata } = req.body;
     
     if (!amount || amount <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid amount'
-      });
+      return clientError(res, 'Invalid amount', ErrorCodes.INVALID_INPUT);
     }
-    
+
     const result = await healthCoinsService.deductCoins(
       req.user.id,
       amount,
@@ -350,20 +292,15 @@ router.post('/spend', authUser, async (req, res) => {
       referenceId,
       metadata || {}
     );
-    
-    res.json({
-      success: true,
+
+    return ok(res, {
       message: `Spent ${amount} health coins`,
       coinsSpent: amount,
       newBalance: result.newBalance
     });
   } catch (error) {
     console.error('Spend coins error:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to spend coins',
-      error: error.message
-    });
+    return serverError(res, error, error.message || 'Failed to spend coins');
   }
 });
 
@@ -373,8 +310,7 @@ router.post('/spend', authUser, async (req, res) => {
  */
 router.get('/rewards', authUser, async (req, res) => {
   try {
-    res.json({
-      success: true,
+    return ok(res, {
       data: {
         rewards: HEALTH_COINS_REWARDS,
         pricing: HEALTH_COINS_PRICING
@@ -382,11 +318,7 @@ router.get('/rewards', authUser, async (req, res) => {
     });
   } catch (error) {
     console.error('Get rewards error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch rewards',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to fetch rewards');
   }
 });
 
@@ -398,10 +330,7 @@ router.get('/my-coupons', authUser, async (req, res) => {
   try {
     const scope = req.query.scope ? normalizeRequestedScope(req.query.scope) : null;
     if (req.query.scope && !scope) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid scope. Allowed: COINS_PURCHASE, HEALTH_CHECKUP, PHARMACY_PURCHASE, CONSULTATION'
-      });
+      return clientError(res, 'Invalid scope. Allowed: COINS_PURCHASE, HEALTH_CHECKUP, PHARMACY_PURCHASE, CONSULTATION', ErrorCodes.INVALID_INPUT);
     }
 
     const now = new Date();
@@ -463,17 +392,10 @@ router.get('/my-coupons', authUser, async (req, res) => {
       });
     }
 
-    res.json({
-      success: true,
-      coupons: eligibleCoupons
-    });
+    return ok(res, { coupons: eligibleCoupons });
   } catch (error) {
     console.error('Get my coupons error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch available coupons',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to fetch available coupons');
   }
 });
 
@@ -486,20 +408,14 @@ router.post('/validate-coupon', authUser, async (req, res) => {
     const { code, packageId, scope: rawScope, orderAmount } = req.body;
     
     if (!code) {
-      return res.status(400).json({
-        success: false,
-        message: 'Coupon code is required'
-      });
+      return clientError(res, 'Coupon code is required', ErrorCodes.INVALID_INPUT);
     }
 
     const scope = normalizeRequestedScope(rawScope || DEFAULT_COUPON_SCOPE);
     if (!scope) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid scope. Allowed: COINS_PURCHASE, HEALTH_CHECKUP, PHARMACY_PURCHASE, CONSULTATION'
-      });
+      return clientError(res, 'Invalid scope. Allowed: COINS_PURCHASE, HEALTH_CHECKUP, PHARMACY_PURCHASE, CONSULTATION', ErrorCodes.INVALID_INPUT);
     }
-    
+
     // Find coupon
     const coupon = await Coupon.findOne({
       where: {
@@ -509,36 +425,24 @@ router.post('/validate-coupon', authUser, async (req, res) => {
         validUntil: { [Op.gte]: new Date() }
       }
     });
-    
+
     if (!coupon) {
-      return res.status(404).json({
-        success: false,
-        message: 'Invalid or expired coupon code'
-      });
+      return notFound(res, 'Invalid or expired coupon code', ErrorCodes.INVALID_COUPON);
     }
 
     if (!isCouponEligibleForUser(coupon, req.user.id)) {
-      return res.status(403).json({
-        success: false,
-        message: 'This coupon is not assigned to your account'
-      });
+      return forbidden(res, 'This coupon is not assigned to your account', ErrorCodes.FORBIDDEN);
     }
 
     if (!isCouponEligibleForScope(coupon, scope)) {
-      return res.status(400).json({
-        success: false,
-        message: `This coupon is not valid for ${scope}`
-      });
+      return clientError(res, `This coupon is not valid for ${scope}`, ErrorCodes.INVALID_COUPON);
     }
-    
+
     // Check max usage
     if (coupon.usageCount >= coupon.maxUsage) {
-      return res.status(400).json({
-        success: false,
-        message: 'Coupon usage limit exceeded'
-      });
+      return conflict(res, 'Coupon usage limit exceeded', ErrorCodes.COUPON_ALREADY_USED);
     }
-    
+
     // Check user usage
     const userUsage = await CouponUsage.count({
       where: {
@@ -546,42 +450,33 @@ router.post('/validate-coupon', authUser, async (req, res) => {
         userId: req.user.id
       }
     });
-    
+
     if (userUsage >= coupon.maxUsagePerUser) {
-      return res.status(400).json({
-        success: false,
-        message: 'You have already used this coupon the maximum number of times'
-      });
+      return conflict(res, 'You have already used this coupon the maximum number of times', ErrorCodes.COUPON_ALREADY_USED);
     }
-    
+
     // Get package if specified
     let pkg = null;
     const normalizedOrderAmount = Number(orderAmount || 0);
     if (packageId !== undefined) {
       pkg = HEALTH_COINS_PRICING.packages[packageId];
-      
+
       // Check min purchase for PERCENTAGE type
       if (coupon.type === 'PERCENTAGE' && pkg && pkg.coins < coupon.minPurchase) {
-        return res.status(400).json({
-          success: false,
-          message: `Minimum purchase of ${coupon.minPurchase} HC required for this coupon`
-        });
+        return clientError(res, `Minimum purchase of ${coupon.minPurchase} HC required for this coupon`, ErrorCodes.INVALID_COUPON);
       }
     }
 
     if (coupon.type === 'PERCENTAGE' && !pkg && normalizedOrderAmount > 0 && normalizedOrderAmount < Number(coupon.minPurchase || 0)) {
-      return res.status(400).json({
-        success: false,
-        message: `Minimum order of ₹${coupon.minPurchase} required for this coupon`
-      });
+      return clientError(res, `Minimum order of ₹${coupon.minPurchase} required for this coupon`, ErrorCodes.INVALID_COUPON);
     }
-    
+
     // Calculate discount/bonus
     const baseAmount = pkg ? pkg.price : (normalizedOrderAmount > 0 ? normalizedOrderAmount : 0);
     let discount = 0;
     let bonusHC = 0;
     let finalPrice = baseAmount;
-    
+
     if (coupon.type === 'PERCENTAGE' && baseAmount > 0) {
       discount = (baseAmount * coupon.value) / 100;
       finalPrice = baseAmount - discount;
@@ -591,9 +486,8 @@ router.post('/validate-coupon', authUser, async (req, res) => {
       bonusHC = coupon.value;
       finalPrice = 0; // Free HC
     }
-    
-    res.json({
-      success: true,
+
+    return ok(res, {
       message: 'Coupon is valid',
       coupon: {
         code: coupon.code,
@@ -609,11 +503,7 @@ router.post('/validate-coupon', authUser, async (req, res) => {
     });
   } catch (error) {
     console.error('Validate coupon error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to validate coupon',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to validate coupon');
   }
 });
 
@@ -626,27 +516,21 @@ router.post('/create-order', authUser, async (req, res) => {
     const { packageId, couponCode } = req.body;
     
     if (packageId === undefined || packageId === null) {
-      return res.status(400).json({
-        success: false,
-        message: 'Package ID is required'
-      });
+      return clientError(res, 'Package ID is required', ErrorCodes.INVALID_INPUT);
     }
-    
+
     // Get package details
     const pkg = HEALTH_COINS_PRICING.packages[packageId];
-    
+
     if (!pkg) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid package'
-      });
+      return clientError(res, 'Invalid package', ErrorCodes.INVALID_INPUT);
     }
-    
+
     let coupon = null;
     let discount = 0;
     let bonusHC = 0;
     let finalAmount = pkg.price;
-    
+
     // Validate and apply coupon if provided
     if (couponCode) {
       coupon = await Coupon.findOne({
@@ -657,54 +541,36 @@ router.post('/create-order', authUser, async (req, res) => {
           validUntil: { [Op.gte]: new Date() }
         }
       });
-      
+
       if (!coupon) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid or expired coupon code'
-        });
+        return clientError(res, 'Invalid or expired coupon code', ErrorCodes.INVALID_COUPON);
       }
 
       if (!isCouponEligibleForUser(coupon, req.user.id)) {
-        return res.status(403).json({
-          success: false,
-          message: 'This coupon is not assigned to your account'
-        });
+        return forbidden(res, 'This coupon is not assigned to your account', ErrorCodes.FORBIDDEN);
       }
 
       if (!isCouponEligibleForScope(coupon, COUPON_SCOPES.COINS_PURCHASE)) {
-        return res.status(400).json({
-          success: false,
-          message: 'This coupon is not valid for coin purchases'
-        });
+        return clientError(res, 'This coupon is not valid for coin purchases', ErrorCodes.INVALID_COUPON);
       }
-      
+
       // Check usage limits
       if (coupon.usageCount >= coupon.maxUsage) {
-        return res.status(400).json({
-          success: false,
-          message: 'Coupon usage limit exceeded'
-        });
+        return conflict(res, 'Coupon usage limit exceeded', ErrorCodes.COUPON_ALREADY_USED);
       }
-      
+
       const userUsage = await CouponUsage.count({
         where: { couponId: coupon.id, userId: req.user.id }
       });
-      
+
       if (userUsage >= coupon.maxUsagePerUser) {
-        return res.status(400).json({
-          success: false,
-          message: 'You have already used this coupon'
-        });
+        return conflict(res, 'You have already used this coupon', ErrorCodes.COUPON_ALREADY_USED);
       }
-      
+
       // Apply coupon discount/bonus
       if (coupon.type === 'PERCENTAGE') {
         if (pkg.coins < coupon.minPurchase) {
-          return res.status(400).json({
-            success: false,
-            message: `Minimum purchase of ${coupon.minPurchase} HC required`
-          });
+          return clientError(res, `Minimum purchase of ${coupon.minPurchase} HC required`, ErrorCodes.INVALID_COUPON);
         }
         discount = (pkg.price * coupon.value) / 100;
         finalAmount = Math.max(0, pkg.price - discount);
@@ -756,8 +622,7 @@ router.post('/create-order', authUser, async (req, res) => {
       console.log('📤 Razorpay order details:', JSON.stringify(razorpayOrder, null, 2));
     }
     
-    res.json({
-      success: true,
+    return ok(res, {
       order: razorpayOrder ? {
         orderId: razorpayOrder.orderId,
         amount: razorpayOrder.amount,
@@ -775,11 +640,7 @@ router.post('/create-order', authUser, async (req, res) => {
     });
   } catch (error) {
     console.error('Create order error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create payment order',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to create payment order');
   }
 });
 
@@ -798,58 +659,46 @@ router.post('/verify-payment', authUser, async (req, res) => {
     } = req.body;
     
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || packageId === undefined) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required payment fields'
-      });
+      return clientError(res, 'Missing required payment fields', ErrorCodes.INVALID_INPUT);
     }
-    
+
     // Verify payment signature
     const isValid = paymentGateway.verifyRazorpaySignature(
       razorpay_order_id,
       razorpay_payment_id,
       razorpay_signature
     );
-    
+
     if (!isValid) {
       console.error('❌ Invalid payment signature');
-      return res.status(400).json({
-        success: false,
-        message: 'Payment verification failed'
-      });
+      return clientError(res, 'Payment verification failed', ErrorCodes.PAYMENT_FAILED);
     }
-    
+
     // Get package details
     const pkg = HEALTH_COINS_PRICING.packages[packageId];
-    
+
     if (!pkg) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid package'
-      });
+      return clientError(res, 'Invalid package', ErrorCodes.INVALID_INPUT);
     }
-    
+
     let coupon = null;
     let bonusHC = 0;
     let discount = 0;
     let totalHC = pkg.coins;
-    
+
     // Process coupon if provided
     if (couponCode) {
       coupon = await Coupon.findOne({
         where: { code: couponCode.toUpperCase() }
       });
-      
+
       if (coupon) {
         if (!isCouponEligibleForUser(coupon, req.user.id) || !isCouponEligibleForScope(coupon, COUPON_SCOPES.COINS_PURCHASE)) {
           coupon = null;
         }
 
         if (!coupon) {
-          return res.status(400).json({
-            success: false,
-            message: 'This coupon is not valid for this user or purchase type'
-          });
+          return clientError(res, 'This coupon is not valid for this user or purchase type', ErrorCodes.INVALID_COUPON);
         }
 
         // Apply coupon bonus
@@ -902,9 +751,8 @@ router.post('/verify-payment', authUser, async (req, res) => {
     );
     
     console.log(`✅ Successfully credited ${totalHC} HC to user ${req.user.id}${bonusHC > 0 ? ` (${pkg.coins} + ${bonusHC} bonus)` : ''}`);
-    
-    res.json({
-      success: true,
+
+    return ok(res, {
       message: `Successfully purchased ${pkg.coins} health coins${bonusHC > 0 ? ` + ${bonusHC} bonus HC` : ''}`,
       coinsPurchased: pkg.coins,
       bonusCoins: bonusHC,
@@ -915,11 +763,7 @@ router.post('/verify-payment', authUser, async (req, res) => {
     });
   } catch (error) {
     console.error('Verify payment error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to verify payment',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to verify payment');
   }
 });
 
@@ -932,16 +776,13 @@ router.post('/redeem-free-coupon', authUser, async (req, res) => {
     const { packageId, couponCode } = req.body;
 
     if (packageId === undefined || !couponCode) {
-      return res.status(400).json({
-        success: false,
-        message: 'Package ID and coupon code are required'
-      });
+      return clientError(res, 'Package ID and coupon code are required', ErrorCodes.INVALID_INPUT);
     }
 
     // Get package details
     const pkg = HEALTH_COINS_PRICING.packages[packageId];
     if (!pkg) {
-      return res.status(400).json({ success: false, message: 'Invalid package' });
+      return clientError(res, 'Invalid package', ErrorCodes.INVALID_INPUT);
     }
 
     // Validate coupon
@@ -955,25 +796,25 @@ router.post('/redeem-free-coupon', authUser, async (req, res) => {
     });
 
     if (!coupon) {
-      return res.status(400).json({ success: false, message: 'Invalid or expired coupon' });
+      return clientError(res, 'Invalid or expired coupon', ErrorCodes.INVALID_COUPON);
     }
 
     if (!isCouponEligibleForUser(coupon, req.user.id)) {
-      return res.status(403).json({ success: false, message: 'This coupon is not assigned to your account' });
+      return forbidden(res, 'This coupon is not assigned to your account', ErrorCodes.FORBIDDEN);
     }
 
     if (!isCouponEligibleForScope(coupon, COUPON_SCOPES.COINS_PURCHASE)) {
-      return res.status(400).json({ success: false, message: 'This coupon is not valid for coin purchases' });
+      return clientError(res, 'This coupon is not valid for coin purchases', ErrorCodes.INVALID_COUPON);
     }
 
     // Only FREE_HC coupons can be redeemed for free
     if (coupon.type !== 'FREE_HC') {
-      return res.status(400).json({ success: false, message: 'This coupon requires payment' });
+      return clientError(res, 'This coupon requires payment', ErrorCodes.INVALID_COUPON);
     }
 
     // Check usage limits
     if (coupon.usageCount >= coupon.maxUsage) {
-      return res.status(400).json({ success: false, message: 'Coupon usage limit reached' });
+      return conflict(res, 'Coupon usage limit reached', ErrorCodes.COUPON_ALREADY_USED);
     }
 
     const userUsage = await CouponUsage.count({
@@ -981,7 +822,7 @@ router.post('/redeem-free-coupon', authUser, async (req, res) => {
     });
 
     if (userUsage >= coupon.maxUsagePerUser) {
-      return res.status(400).json({ success: false, message: 'You have already used this coupon' });
+      return conflict(res, 'You have already used this coupon', ErrorCodes.COUPON_ALREADY_USED);
     }
 
     const bonusHC = coupon.value;
@@ -1021,8 +862,7 @@ router.post('/redeem-free-coupon', authUser, async (req, res) => {
 
     console.log(`✅ Free coupon ${coupon.code} redeemed by user ${req.user.id}: ${totalHC} HC`);
 
-    res.json({
-      success: true,
+    return ok(res, {
       message: `${totalHC} health coins added to your wallet via coupon ${coupon.code}`,
       totalCoins: totalHC,
       baseCoins: pkg.coins,
@@ -1031,11 +871,7 @@ router.post('/redeem-free-coupon', authUser, async (req, res) => {
     });
   } catch (error) {
     console.error('Redeem free coupon error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to redeem coupon',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to redeem coupon');
   }
 });
 
@@ -1058,35 +894,26 @@ router.post('/purchase', authUser, async (req, res) => {
     });
     
     if (packageId === undefined || packageId === null || !paymentTransactionId || !amountPaid) {
-      console.log('❌ Missing required fields:', { 
-        hasPackageId: packageId !== undefined && packageId !== null, 
-        hasPaymentTransactionId: !!paymentTransactionId, 
-        hasAmountPaid: !!amountPaid 
+      console.log('❌ Missing required fields:', {
+        hasPackageId: packageId !== undefined && packageId !== null,
+        hasPaymentTransactionId: !!paymentTransactionId,
+        hasAmountPaid: !!amountPaid
       });
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required fields'
-      });
+      return clientError(res, 'Missing required fields', ErrorCodes.INVALID_INPUT);
     }
-    
+
     // Get package details
     const pkg = HEALTH_COINS_PRICING.packages[packageId];
-    
+
     if (!pkg) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid package'
-      });
+      return clientError(res, 'Invalid package', ErrorCodes.INVALID_INPUT);
     }
-    
+
     // Verify payment amount
     if (parseFloat(amountPaid) < pkg.price) {
-      return res.status(400).json({
-        success: false,
-        message: 'Insufficient payment amount'
-      });
+      return clientError(res, 'Insufficient payment amount', ErrorCodes.PAYMENT_FAILED);
     }
-    
+
     // Add coins to wallet
     const result = await healthCoinsService.addCoins(
       req.user.id,
@@ -1102,20 +929,15 @@ router.post('/purchase', authUser, async (req, res) => {
         discount: pkg.discount
       }
     );
-    
-    res.json({
-      success: true,
+
+    return ok(res, {
       message: `Successfully purchased ${pkg.coins} health coins`,
       coinsPurchased: pkg.coins,
       newBalance: result.newBalance
     });
   } catch (error) {
     console.error('Purchase coins error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to purchase coins',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to purchase coins');
   }
 });
 
@@ -1132,25 +954,15 @@ router.get('/appointment/calculate/:consultationFee', authUser, async (req, res)
     const consultationFee = parseFloat(req.params.consultationFee);
     
     if (isNaN(consultationFee) || consultationFee <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid consultation fee'
-      });
+      return clientError(res, 'Invalid consultation fee', ErrorCodes.INVALID_INPUT);
     }
-    
+
     const canPayResult = await healthCoinsService.canPayWithHC(req.user.id, consultationFee);
-    
-    res.json({
-      success: true,
-      data: canPayResult
-    });
+
+    return ok(res, { data: canPayResult });
   } catch (error) {
     console.error('Calculate HC error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to calculate HC requirement',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to calculate HC requirement');
   }
 });
 
@@ -1163,25 +975,15 @@ router.post('/appointment/can-pay', authUser, async (req, res) => {
     const { consultationFee } = req.body;
     
     if (!consultationFee || consultationFee <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Valid consultation fee is required'
-      });
+      return clientError(res, 'Valid consultation fee is required', ErrorCodes.INVALID_INPUT);
     }
-    
+
     const result = await healthCoinsService.canPayWithHC(req.user.id, consultationFee);
-    
-    res.json({
-      success: true,
-      data: result
-    });
+
+    return ok(res, { data: result });
   } catch (error) {
     console.error('Can pay with HC error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to check HC payment eligibility',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to check HC payment eligibility');
   }
 });
 
@@ -1194,23 +996,20 @@ router.post('/appointment/pay', authUser, async (req, res) => {
     const { appointmentId, consultationFee, doctorName } = req.body;
     
     if (!appointmentId || !consultationFee || !doctorName) {
-      return res.status(400).json({
-        success: false,
-        message: 'Appointment ID, consultation fee, and doctor name are required'
-      });
+      return clientError(res, 'Appointment ID, consultation fee, and doctor name are required', ErrorCodes.INVALID_INPUT);
     }
-    
+
     // First check if user can pay
     const canPayResult = await healthCoinsService.canPayWithHC(req.user.id, consultationFee);
-    
+
     if (!canPayResult.canPay) {
-      return res.status(400).json({
-        success: false,
-        message: `Insufficient Health Coins. You need ${canPayResult.hcRequired} HC but have ${canPayResult.currentBalance} HC`,
-        data: canPayResult
-      });
+      return clientError(
+        res,
+        `Insufficient Health Coins. You need ${canPayResult.hcRequired} HC but have ${canPayResult.currentBalance} HC`,
+        ErrorCodes.INSUFFICIENT_COINS
+      );
     }
-    
+
     // Process the payment
     const result = await healthCoinsService.payForAppointment(
       req.user.id,
@@ -1218,11 +1017,10 @@ router.post('/appointment/pay', authUser, async (req, res) => {
       consultationFee,
       doctorName
     );
-    
+
     console.log(`✅ HC payment successful: User ${req.user.id} paid ${result.hcPaid} HC for appointment ${appointmentId}`);
-    
-    res.json({
-      success: true,
+
+    return ok(res, {
       message: `Successfully paid ${result.hcPaid} HC for consultation (₹${consultationFee} value with ${result.bonusPercent}% bonus)`,
       data: {
         appointmentId,
@@ -1235,11 +1033,7 @@ router.post('/appointment/pay', authUser, async (req, res) => {
     });
   } catch (error) {
     console.error('HC appointment payment error:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to process HC payment',
-      error: error.message
-    });
+    return serverError(res, error, error.message || 'Failed to process HC payment');
   }
 });
 
@@ -1252,23 +1046,19 @@ router.post('/appointment/refund', authUser, async (req, res) => {
     const { appointmentId, hcAmount, doctorName } = req.body;
     
     if (!appointmentId || !hcAmount || !doctorName) {
-      return res.status(400).json({
-        success: false,
-        message: 'Appointment ID, HC amount, and doctor name are required'
-      });
+      return clientError(res, 'Appointment ID, HC amount, and doctor name are required', ErrorCodes.INVALID_INPUT);
     }
-    
+
     const result = await healthCoinsService.refundAppointmentPayment(
       req.user.id,
       appointmentId,
       hcAmount,
       doctorName
     );
-    
+
     console.log(`✅ HC refund successful: User ${req.user.id} refunded ${hcAmount} HC for appointment ${appointmentId}`);
-    
-    res.json({
-      success: true,
+
+    return ok(res, {
       message: `Successfully refunded ${hcAmount} HC for cancelled appointment`,
       data: {
         appointmentId,
@@ -1278,11 +1068,7 @@ router.post('/appointment/refund', authUser, async (req, res) => {
     });
   } catch (error) {
     console.error('HC refund error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to process HC refund',
-      error: error.message
-    });
+    return serverError(res, error, 'Failed to process HC refund');
   }
 });
 

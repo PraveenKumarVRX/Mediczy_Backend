@@ -8,7 +8,7 @@ import DrISHAChat from "@/components/DrISHAChat";
 import QuickAppointmentModal from "@/components/QuickAppointmentModal";
 import DoctorCallNotification from "@/components/DoctorCallNotification";
 import { drIshaAPI } from "@/services/drIsha";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/auth/AuthProvider";
@@ -118,6 +118,16 @@ const Appointments = () => {
     channels: ['push', 'email']
   });
 
+  // Memoized filtered lists — avoids calling filterAppointments() inside JSX render
+  const upcomingAppointments = useMemo(
+    () => appointments.filter(apt => ['upcoming', 'pending', 'confirmed', 'pending_confirmation'].includes(apt.status)),
+    [appointments]
+  );
+  const completedAppointments = useMemo(
+    () => appointments.filter(apt => ['completed', 'cancelled', 'no_show'].includes(apt.status)),
+    [appointments]
+  );
+
   // Incoming doctor call state
   const [incomingCall, setIncomingCall] = useState<{
     appointmentId: number;
@@ -176,26 +186,23 @@ const Appointments = () => {
       const upcomingAppointments = appointments.filter(apt => apt.status === 'upcoming');
       const completedAppointments = appointments.filter(apt => apt.status === 'completed');
 
-      const query = `Analyze my appointment history and provide smart suggestions:
+      // Cap to latest 5 of each to stay within the 2000-char validation limit
+      const recentUpcoming   = upcomingAppointments.slice(0, 5);
+      const recentCompleted  = completedAppointments.slice(0, 5);
 
-      Upcoming Appointments:
-      ${upcomingAppointments.map(apt =>
-        `- ${apt.doctor.name} (${apt.doctor.specialty}) on ${apt.date} for ${apt.symptoms}`
-      ).join('\n')}
+      const fmtApt = (apt: Appointment) =>
+        `- ${(apt.doctor?.name ?? 'Doctor').slice(0, 30)} (${(apt.doctor?.specialty ?? '').slice(0, 20)}) on ${apt.date}`;
 
-      Recent Completed Appointments:
-      ${completedAppointments.map(apt =>
-        `- ${apt.doctor.name} (${apt.doctor.specialty}) on ${apt.date} for ${apt.symptoms}`
-      ).join('\n')}
-
-      Please provide:
-      1. Follow-up recommendations for completed appointments
-      2. Optimal scheduling suggestions for upcoming appointments
-      3. Preventive care reminders based on my history
-      4. Specialist referral suggestions if needed
-      5. Health monitoring recommendations
-
-      Format as actionable suggestions with priority levels.`;
+      const query = [
+        'Review my recent appointments and suggest next steps:',
+        recentUpcoming.length
+          ? `Upcoming:\n${recentUpcoming.map(fmtApt).join('\n')}`
+          : 'No upcoming appointments.',
+        recentCompleted.length
+          ? `Recent history:\n${recentCompleted.map(fmtApt).join('\n')}`
+          : 'No completed appointments.',
+        'Provide 3-5 actionable health recommendations based on the above.',
+      ].join('\n\n').slice(0, 1800); // hard cap below 2000-char server limit
 
       const result = await drIshaAPI.consult(query, 'en', {
         analysisType: 'appointment_optimization',
@@ -296,12 +303,14 @@ const Appointments = () => {
     }
   ];
 
+  // Run once when appointments first load — not on every update (avoids repeated 400s)
+  const suggestionsRunRef = useRef(false);
   useEffect(() => {
-    // Auto-generate suggestions on load
-    if (appointments.length) {
+    if (appointments.length > 0 && !suggestionsRunRef.current) {
+      suggestionsRunRef.current = true;
       generateSmartSuggestions();
     }
-  }, [appointments]);
+  }, [appointments.length]);
 
   // Listen for doctor-initiated calls via the global socket (from useSocketConnection in MainLayout)
   useEffect(() => {
@@ -421,39 +430,11 @@ const Appointments = () => {
     }
   };
 
+  // filterAppointments now returns from memoized lists — no console.log, no re-filtering
   const filterAppointments = (status: string) => {
-    const filtered = appointments.filter(apt => {
-      if (status === 'upcoming') return apt.status === 'upcoming';
-      if (status === 'completed') return apt.status === 'completed';
-      if (status === 'all') return true;
-      return apt.status === status;
-    });
-    console.log(`📅 filterAppointments(${status}): ${filtered.length} appointments`);
-    if (status === 'upcoming' && filtered.length > 0) {
-      console.log('📅 Upcoming appointments:', filtered.map(a => ({
-        id: a.id,
-        date: a.date,
-        time: a.time,
-        status: a.status,
-        doctor: a.doctor?.name
-      })));
-    }
-    
-    // Sort appointments by date and time
-    const sorted = filtered.sort((a, b) => {
-      const dateA = new Date(`${a.date}T${a.time || '00:00'}`);
-      const dateB = new Date(`${b.date}T${b.time || '00:00'}`);
-      
-      if (status === 'upcoming') {
-        // For upcoming: nearest first (ascending order)
-        return dateA.getTime() - dateB.getTime();
-      } else {
-        // For completed/history: latest first (descending order)
-        return dateB.getTime() - dateA.getTime();
-      }
-    });
-    
-    return sorted;
+    if (status === 'upcoming')  return upcomingAppointments;
+    if (status === 'completed') return completedAppointments;
+    return appointments.filter(apt => status === 'all' || apt.status === status);
   };
 
   const handleJoinCall = async (appointment: Appointment) => {

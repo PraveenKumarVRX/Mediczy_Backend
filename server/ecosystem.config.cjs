@@ -1,6 +1,6 @@
 module.exports = {
   apps: [
-    // LiveKit — migrated to LiveKit Cloud (msh-kw9tvxa9.livekit.cloud) 2026-05-30
+    // LiveKit — configured via env (self-hosted server expected at video.mediqzy.com)
 
     // Production server - cluster mode (uses all CPU cores)
     {
