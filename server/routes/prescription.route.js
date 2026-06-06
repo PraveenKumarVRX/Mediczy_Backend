@@ -451,10 +451,17 @@ router.post('/', authDoctor, [
       labTests,
       instructions,
       vitals,
-      followUpDate,
+      followUpDate: rawFollowUpDate,
       validityDays,
       notes
     } = req.body;
+
+    // Sanitize date fields — mobile apps sometimes send 'Invalid date' strings
+    const followUpDate = (() => {
+      if (!rawFollowUpDate) return null;
+      const d = new Date(rawFollowUpDate);
+      return isNaN(d.getTime()) ? null : rawFollowUpDate;
+    })();
 
     // Use patientId or userId
     const patientUserId = patientId || userId;
@@ -958,9 +965,17 @@ router.put('/:id', authDoctor, async (req, res) => {
       labTests,
       instructions,
       vitals,
-      followUpDate,
+      followUpDate: rawFollowUpDateUpdate,
       notes
     } = req.body;
+
+    // Sanitize followUpDate — mobile apps can send "Invalid date" strings
+    const followUpDate = (() => {
+      if (rawFollowUpDateUpdate === undefined) return undefined;
+      if (!rawFollowUpDateUpdate) return null;
+      const d = new Date(rawFollowUpDateUpdate);
+      return isNaN(d.getTime()) ? null : rawFollowUpDateUpdate;
+    })();
 
     // Validate medications if provided
     if (medications && Array.isArray(medications)) {

@@ -752,6 +752,7 @@ app.use('/api/auth/verify-otp',        otpLimiter);
 app.use('/api/password-reset',             resetLimiter);
 app.use('/api/users/forgot-password',      resetLimiter);
 app.use('/api/users/forgot-password/reset',resetLimiter);
+app.use('/api/doctors/forgot-password',    resetLimiter);
 
 // Wallet earn — 10/hour limit (prevents rapid coin-farming via race conditions)
 app.use('/api/wallet/earn', walletEarnLimiter);

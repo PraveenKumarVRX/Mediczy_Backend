@@ -83,6 +83,14 @@ const normalizeTimeValue = (value = '') => {
   if (TIME_24H_REGEX.test(candidate)) {
     return candidate;
   }
+  // Handle single-digit hour without AM/PM: "9:00" → "09:00"
+  const simpleMatch = candidate.match(/^(\d{1,2}):(\d{2})$/);
+  if (simpleMatch) {
+    const hour = parseInt(simpleMatch[1], 10);
+    if (hour >= 0 && hour <= 23) {
+      return `${hour.toString().padStart(2, '0')}:${simpleMatch[2]}`;
+    }
+  }
   const match = candidate.match(TIME_12H_REGEX);
   if (match) {
     let hour = parseInt(match[1], 10);

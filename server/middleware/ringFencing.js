@@ -563,6 +563,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/users/forgot-password/reset',
   '/api/doctors/login',
   '/api/doctors/register',
+  '/api/doctors/forgot-password',
   '/api/doctors/send-email-otp',
   '/api/doctors/verify-email-otp',
   '/api/doctors/send-phone-otp',

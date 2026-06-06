@@ -137,6 +137,12 @@ router.post('/bulk-update', authUser, [
       ? req.body.weeklyAvailability
       : req.body;
 
+    // Pad single-digit hours so time strings are always HH:MM for correct comparison
+    const padTime = (t = '') => {
+      const s = String(t).trim();
+      return /^\d:[0-5]\d$/.test(s) ? `0${s}` : s;
+    };
+
     // Normalize app variants: walkin/walkIn/in-person, start/end aliases.
     const normalizeSlots = (slots = []) => {
       return slots.map((slot) => {
@@ -145,8 +151,8 @@ router.post('/bulk-update', authUser, [
           (rawType === 'online' || rawType === 'walkIn' || rawType === 'both' ? rawType : 'both');
 
         return {
-          startTime: String(slot?.startTime || slot?.start || '').trim(),
-          endTime: String(slot?.endTime || slot?.end || '').trim(),
+          startTime: padTime(slot?.startTime || slot?.start || ''),
+          endTime: padTime(slot?.endTime || slot?.end || ''),
           consultationType
         };
       });

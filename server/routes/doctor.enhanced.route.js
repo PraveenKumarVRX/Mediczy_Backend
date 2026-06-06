@@ -3,6 +3,7 @@ import { body, param, query } from 'express-validator';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import path from 'path';
@@ -710,10 +711,26 @@ router.post('/login', authLimiter, async (req, res) => {
       }
     }
 
-    // Verify password
-    const isValidPassword = typeof doctor.comparePassword === 'function'
-      ? await doctor.comparePassword(password_val)
-      : await bcrypt.compare(password_val, doctor.password);
+    // Verify password — detect SHA-256 legacy hashes (64 hex chars, no $2b$ prefix)
+    // and transparently upgrade to bcrypt on successful login
+    let isValidPassword = false;
+    const isSha256Legacy = /^[a-f0-9]{64}$/.test(doctor.password);
+    if (isSha256Legacy) {
+      const sha256Input = crypto.createHash('sha256').update(password_val).digest('hex');
+      isValidPassword = sha256Input === doctor.password;
+      if (isValidPassword) {
+        try {
+          const newHash = await bcrypt.hash(password_val, 10);
+          await doctor.update({ password: newHash });
+        } catch (upgradeErr) {
+          console.warn('[doctor-login] bcrypt upgrade failed (non-fatal):', upgradeErr.message);
+        }
+      }
+    } else {
+      isValidPassword = typeof doctor.comparePassword === 'function'
+        ? await doctor.comparePassword(password_val)
+        : await bcrypt.compare(password_val, doctor.password);
+    }
     if (!isValidPassword) {
       await auditLoginAttempt(req, doctor.id, normalizedIdentifier, false, 'Invalid password');
       return res.status(401).json({
@@ -748,7 +765,7 @@ router.post('/login', authLimiter, async (req, res) => {
     const deviceFp = req.headers['x-device-fingerprint'] || null;
     const { accessToken: token, refreshToken } = await issuePortalTokenPair(
       { id: doctor.id, email: doctor.email, role: 'doctor' },
-      { portal: 'doctor', deviceFp }
+      { portal: 'doctor', deviceFp, accessTtl: '4h' }
     );
 
     await auditLoginAttempt(req, doctor.id, normalizedIdentifier, true);
@@ -756,7 +773,7 @@ router.post('/login', authLimiter, async (req, res) => {
     res.json({
       success: true,
       message: 'Login successful',
-      expiresIn: 900,
+      expiresIn: 14400,
       refreshToken,
       doctor: {
         id: doctor.id,
@@ -775,6 +792,26 @@ router.post('/login', authLimiter, async (req, res) => {
       message: 'Login failed',
       error: error.message
     });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/forgot-password
+ * @desc    Request a password reset OTP (public — no auth required)
+ * @access  Public
+ */
+router.post('/forgot-password', authLimiter, async (req, res) => {
+  try {
+    const { email, phone } = req.body;
+    if (!email && !phone) {
+      return res.status(400).json({ success: false, message: 'Email or phone number is required' });
+    }
+    const passwordResetService = (await import('../services/password-reset.service.js')).default;
+    const result = await passwordResetService.requestPasswordReset({ email, phone, userType: 'doctor' });
+    return res.json(result);
+  } catch (error) {
+    console.error('[doctor/forgot-password] error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to process password reset request' });
   }
 });
 
@@ -798,6 +835,7 @@ router.post('/refresh', async (req, res) => {
     const result = await rotatePortalRefreshToken(refreshToken, {
       portal: 'doctor',
       deviceFp,
+      accessTtl: '4h',
       resolvePayload: async (decoded) => {
         const doctor = await doctorModel.findByPk(decoded.userId);
         if (!doctor) return null;
@@ -820,7 +858,7 @@ router.post('/refresh', async (req, res) => {
       success: true,
       token: result.accessToken,
       refreshToken: result.refreshToken,
-      expiresIn: 900,
+      expiresIn: 14400,
     });
   } catch (error) {
     console.error('Doctor refresh error:', error);
@@ -854,6 +892,7 @@ router.post('/session/bootstrap', async (req, res) => {
     const result = await rotatePortalRefreshToken(refreshToken, {
       portal: 'doctor',
       deviceFp,
+      accessTtl: '4h',
       resolvePayload: async (decoded) => {
         const doctor = await doctorModel.findByPk(decoded.userId);
         if (!doctor) return null;
@@ -877,7 +916,7 @@ router.post('/session/bootstrap', async (req, res) => {
       success: true,
       token: result.accessToken,
       refreshToken: result.refreshToken,
-      expiresIn: 900,
+      expiresIn: 14400,
       doctor: {
         id: resolvedDoctor.id,
         firstName: resolvedDoctor.firstName,
