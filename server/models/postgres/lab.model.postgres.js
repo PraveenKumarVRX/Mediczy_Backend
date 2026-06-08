@@ -1,9 +1,10 @@
 import { DataTypes } from 'sequelize';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 import jwt from 'jsonwebtoken';
 import postgresSequelize from '../../db/postgres-sequelize.js';
-import { generateUniqueId } from '../../utils/uniqueIdGenerator.js';
+import { generateUniqueIdForModel } from '../../utils/uniqueIdGenerator.js';
 
 /**
  * Lab Model (PostgreSQL)
@@ -173,19 +174,19 @@ const Lab = postgresSequelize.define('Lab', {
   hooks: {
     beforeCreate: async (lab) => {
       if (lab.password) {
-        lab.password = await bcrypt.hash(lab.password, 10);
+        lab.password = await hashPasswordIfPlaintext(lab.password, 10);
       }
       if (lab.email) {
         lab.email = lab.email.toLowerCase();
       }
       // Generate unique ID if not set
       if (!lab.unique_id) {
-        lab.unique_id = generateUniqueId('lab');
+        lab.unique_id = await generateUniqueIdForModel(Lab, 'lab');
       }
     },
     beforeUpdate: async (lab) => {
-      if (lab.changed('password')) {
-        lab.password = await bcrypt.hash(lab.password, 10);
+      if (lab.changed('password') && lab.password) {
+        lab.password = await hashPasswordIfPlaintext(lab.password, 10);
       }
       if (lab.changed('email')) {
         lab.email = lab.email.toLowerCase();

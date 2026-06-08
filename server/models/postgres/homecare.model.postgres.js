@@ -1,6 +1,7 @@
 import { DataTypes } from 'sequelize';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 import jwt from 'jsonwebtoken';
 import postgresSequelize from '../../db/postgres-sequelize.js';
 
@@ -241,15 +242,15 @@ const HomecareProvider = postgresSequelize.define('HomecareProvider', {
   hooks: {
     beforeCreate: async (provider) => {
       if (provider.password) {
-        provider.password = await bcrypt.hash(provider.password, 10);
+        provider.password = await hashPasswordIfPlaintext(provider.password, 10);
       }
       if (provider.email) {
         provider.email = provider.email.toLowerCase();
       }
     },
     beforeUpdate: async (provider) => {
-      if (provider.changed('password')) {
-        provider.password = await bcrypt.hash(provider.password, 10);
+      if (provider.changed('password') && provider.password) {
+        provider.password = await hashPasswordIfPlaintext(provider.password, 10);
       }
       if (provider.changed('email')) {
         provider.email = provider.email.toLowerCase();

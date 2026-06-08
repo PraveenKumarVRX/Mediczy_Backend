@@ -1,9 +1,10 @@
 import { DataTypes } from 'sequelize';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 import jwt from 'jsonwebtoken';
 import postgresSequelize from '../../db/postgres-sequelize.js';
-import { generateUniqueId } from '../../utils/uniqueIdGenerator.js';
+import { generateUniqueIdForModel } from '../../utils/uniqueIdGenerator.js';
 
 /**
  * Nurse Model (PostgreSQL)
@@ -205,19 +206,19 @@ const Nurse = postgresSequelize.define('Nurse', {
     beforeCreate: async (nurse) => {
       // Generate unique ID if not set
       if (!nurse.unique_id) {
-        nurse.unique_id = generateUniqueId('nurse');
+        nurse.unique_id = await generateUniqueIdForModel(Nurse, 'nurse');
       }
       
       if (nurse.password) {
-        nurse.password = await bcrypt.hash(nurse.password, 10);
+        nurse.password = await hashPasswordIfPlaintext(nurse.password, 10);
       }
       if (nurse.email) {
         nurse.email = nurse.email.toLowerCase();
       }
     },
     beforeUpdate: async (nurse) => {
-      if (nurse.changed('password')) {
-        nurse.password = await bcrypt.hash(nurse.password, 10);
+      if (nurse.changed('password') && nurse.password) {
+        nurse.password = await hashPasswordIfPlaintext(nurse.password, 10);
       }
       if (nurse.changed('email')) {
         nurse.email = nurse.email.toLowerCase();

@@ -30,6 +30,7 @@ const DB_PORT        = parseInt(process.env.POSTGRES_PORT) || 5432;
 const DB_NAME        = process.env.POSTGRES_DB       || 'mediczy_ai';
 const DB_USER        = process.env.POSTGRES_USER     || 'mediczy_helper';
 const DB_PASS        = process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || undefined;
+const DB_SSL         = String(process.env.POSTGRES_SSL || process.env.POSTGRES_PRIMARY_SSL || '').toLowerCase() === 'true' || !['127.0.0.1', 'localhost'].includes(DB_HOST);
 
 // What to block (toggle false to monitor-only without blocking)
 const BLOCK_POLICY = {
@@ -67,6 +68,7 @@ const getPool = () => {
     pgPool = new pg.Pool({
       host: DB_HOST, port: DB_PORT, database: DB_NAME,
       user: DB_USER, password: DB_PASS,
+      ssl: DB_SSL ? { rejectUnauthorized: false } : false,
       max: 3, idleTimeoutMillis: 30000, connectionTimeoutMillis: 3000,
     });
   }

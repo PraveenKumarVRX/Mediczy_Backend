@@ -6,6 +6,7 @@
 import { DataTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../utils/passwordHashing.js';
 
 // ============================================================================
 // INSURANCE COMPANY MODEL
@@ -146,12 +147,12 @@ export const InsuranceCompany = sequelize.define('InsuranceCompany', {
   hooks: {
     beforeCreate: async (company) => {
       if (company.password) {
-        company.password = await bcrypt.hash(company.password, 10);
+        company.password = await hashPasswordIfPlaintext(company.password, 10);
       }
     },
     beforeUpdate: async (company) => {
-      if (company.changed('password')) {
-        company.password = await bcrypt.hash(company.password, 10);
+      if (company.changed('password') && company.password) {
+        company.password = await hashPasswordIfPlaintext(company.password, 10);
       }
     }
   },
@@ -295,12 +296,12 @@ export const Corporate = sequelize.define('Corporate', {
   hooks: {
     beforeCreate: async (corporate) => {
       if (corporate.password) {
-        corporate.password = await bcrypt.hash(corporate.password, 10);
+        corporate.password = await hashPasswordIfPlaintext(corporate.password, 10);
       }
     },
     beforeUpdate: async (corporate) => {
-      if (corporate.changed('password')) {
-        corporate.password = await bcrypt.hash(corporate.password, 10);
+      if (corporate.changed('password') && corporate.password) {
+        corporate.password = await hashPasswordIfPlaintext(corporate.password, 10);
       }
     }
   },

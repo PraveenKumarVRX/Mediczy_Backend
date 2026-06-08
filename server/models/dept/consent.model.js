@@ -1,6 +1,7 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../../db/postgres-sequelize.js';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 
 const Consent = sequelize.define('Consent', {
   email: { type: DataTypes.STRING, unique: true, allowNull: false },
@@ -11,7 +12,7 @@ const Consent = sequelize.define('Consent', {
 });
 
 Consent.beforeCreate(async (user) => {
-  user.password = await bcrypt.hash(user.password, 10);
+  user.password = await hashPasswordIfPlaintext(user.password, 10);
 });
 
 Consent.prototype.comparePassword = async function (password) {

@@ -1,6 +1,7 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { DataTypes } from 'sequelize';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../utils/passwordHashing.js';
 
 // Generate 6-character alphanumeric ID starting with 'A'
 const generateAssistantId = () => {
@@ -87,6 +88,14 @@ const Assistant = sequelize.define('Assistant', {
       // Generate assistantId if not provided
       if (!assistant.assistantId) {
         assistant.assistantId = generateAssistantId();
+      }
+      if (assistant.password) {
+        assistant.password = await hashPasswordIfPlaintext(assistant.password, 10);
+      }
+    },
+    beforeUpdate: async (assistant) => {
+      if (assistant.changed('password') && assistant.password) {
+        assistant.password = await hashPasswordIfPlaintext(assistant.password, 10);
       }
     }
   }

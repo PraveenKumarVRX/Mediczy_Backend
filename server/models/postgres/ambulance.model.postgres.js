@@ -1,6 +1,7 @@
 import { DataTypes } from 'sequelize';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 import jwt from 'jsonwebtoken';
 import postgresSequelize from '../../db/postgres-sequelize.js';
 
@@ -226,15 +227,15 @@ const Ambulance = postgresSequelize.define('Ambulance', {
   hooks: {
     beforeCreate: async (ambulance) => {
       if (ambulance.password) {
-        ambulance.password = await bcrypt.hash(ambulance.password, 10);
+        ambulance.password = await hashPasswordIfPlaintext(ambulance.password, 10);
       }
       if (ambulance.email) {
         ambulance.email = ambulance.email.toLowerCase();
       }
     },
     beforeUpdate: async (ambulance) => {
-      if (ambulance.changed('password')) {
-        ambulance.password = await bcrypt.hash(ambulance.password, 10);
+      if (ambulance.changed('password') && ambulance.password) {
+        ambulance.password = await hashPasswordIfPlaintext(ambulance.password, 10);
       }
       if (ambulance.changed('email')) {
         ambulance.email = ambulance.email.toLowerCase();

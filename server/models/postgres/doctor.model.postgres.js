@@ -6,9 +6,10 @@
 import { DataTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../../config/auth.config.js';
-import { generateUniqueId } from '../../utils/uniqueIdGenerator.js';
+import { generateUniqueIdForModel } from '../../utils/uniqueIdGenerator.js';
 
 const Doctor = sequelize.define('Doctor', {
   id: {
@@ -536,17 +537,17 @@ const Doctor = sequelize.define('Doctor', {
     beforeCreate: async (doctor) => {
       // Generate unique ID if not set
       if (!doctor.unique_id) {
-        doctor.unique_id = generateUniqueId('doctor');
+        doctor.unique_id = await generateUniqueIdForModel(Doctor, 'doctor');
       }
 
       if (doctor.password) {
-        doctor.password = await bcrypt.hash(doctor.password, 10);
+        doctor.password = await hashPasswordIfPlaintext(doctor.password, 10);
       }
     },
 
     beforeUpdate: async (doctor) => {
       if (doctor.changed('password') && doctor.password) {
-        doctor.password = await bcrypt.hash(doctor.password, 10);
+        doctor.password = await hashPasswordIfPlaintext(doctor.password, 10);
       }
     }
   }

@@ -14,8 +14,9 @@ import { JWT_CONFIG } from '../../config/auth.config.js';
 import { DataTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 import jwt from 'jsonwebtoken';
-import { generateUniqueId } from '../../utils/uniqueIdGenerator.js';
+import { generateUniqueIdForModel } from '../../utils/uniqueIdGenerator.js';
 
 const User = sequelize.define('User', {
   id: {
@@ -379,12 +380,12 @@ const User = sequelize.define('User', {
     beforeCreate: async (user) => {
       // Generate unique ID if not set
       if (!user.unique_id) {
-        user.unique_id = generateUniqueId(user.role || 'user');
+        user.unique_id = await generateUniqueIdForModel(User, user.role || 'user');
       }
       
       // Hash password
       if (user.password) {
-        user.password = await bcrypt.hash(user.password, 10);
+        user.password = await hashPasswordIfPlaintext(user.password, 10);
       }
       
       // Build address_json from individual fields
@@ -413,7 +414,7 @@ const User = sequelize.define('User', {
     beforeUpdate: async (user) => {
       // Hash password if changed
       if (user.changed('password') && user.password) {
-        user.password = await bcrypt.hash(user.password, 10);
+        user.password = await hashPasswordIfPlaintext(user.password, 10);
       }
       
       // Update address_json if address fields changed

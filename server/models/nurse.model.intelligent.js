@@ -1,12 +1,9 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { DataTypes } from 'sequelize';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../utils/passwordHashing.js';
 
 const SALT_ROUNDS = 10;
-
-function isBcryptHash(value) {
-  return typeof value === 'string' && value.startsWith('$2');
-}
 
 // Define Nurse model - NOW USING POSTGRESQL
 const Nurse = sequelize.define('Nurse', {
@@ -84,13 +81,13 @@ const Nurse = sequelize.define('Nurse', {
   },
   hooks: {
     beforeCreate: async (nurse) => {
-      if (nurse.password && !isBcryptHash(nurse.password)) {
-        nurse.password = await bcrypt.hash(nurse.password, SALT_ROUNDS);
+      if (nurse.password) {
+        nurse.password = await hashPasswordIfPlaintext(nurse.password, SALT_ROUNDS);
       }
     },
     beforeUpdate: async (nurse) => {
-      if (nurse.changed('password') && nurse.password && !isBcryptHash(nurse.password)) {
-        nurse.password = await bcrypt.hash(nurse.password, SALT_ROUNDS);
+      if (nurse.changed('password') && nurse.password) {
+        nurse.password = await hashPasswordIfPlaintext(nurse.password, SALT_ROUNDS);
       }
     }
   }

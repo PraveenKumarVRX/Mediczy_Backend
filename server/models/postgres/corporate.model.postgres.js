@@ -1,6 +1,9 @@
 import { DataTypes } from 'sequelize';
+import bcrypt from 'bcrypt';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import postgresSequelize from '../../db/postgres-sequelize.js';
+import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
+import { generateUniqueIdForModel } from '../../utils/uniqueIdGenerator.js';
 
 /**
  * Corporate Model (PostgreSQL)
@@ -178,6 +181,21 @@ const Corporate = postgresSequelize.define('Corporate', {
 }, {
   tableName: 'corporates',
   timestamps: true,
+  hooks: {
+    beforeCreate: async (corporate) => {
+      if (!corporate.uniqueId) {
+        corporate.uniqueId = await generateUniqueIdForModel(Corporate, 'corporate', 'uniqueId');
+      }
+      if (corporate.password) {
+        corporate.password = await hashPasswordIfPlaintext(corporate.password, 10);
+      }
+    },
+    beforeUpdate: async (corporate) => {
+      if (corporate.changed('password') && corporate.password) {
+        corporate.password = await hashPasswordIfPlaintext(corporate.password, 10);
+      }
+    }
+  },
   indexes: [
     {
       unique: true,
@@ -216,6 +234,13 @@ const Corporate = postgresSequelize.define('Corporate', {
 // Instance methods
 Corporate.prototype.isActive = function() {
   return this.status === 'Active';
+};
+
+Corporate.prototype.comparePassword = async function(candidatePassword) {
+  if (!this.password) {
+    return false;
+  }
+  return await bcrypt.compare(candidatePassword, this.password);
 };
 
 Corporate.prototype.isPackageValid = function() {

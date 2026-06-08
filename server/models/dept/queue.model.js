@@ -1,6 +1,7 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../../db/postgres-sequelize.js';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 
 const Queue = sequelize.define('Queue', {
   email: { type: DataTypes.STRING, unique: true, allowNull: false },
@@ -11,7 +12,7 @@ const Queue = sequelize.define('Queue', {
 });
 
 Queue.beforeCreate(async (user) => {
-  user.password = await bcrypt.hash(user.password, 10);
+  user.password = await hashPasswordIfPlaintext(user.password, 10);
 });
 
 Queue.prototype.comparePassword = async function (password) {

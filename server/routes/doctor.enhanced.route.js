@@ -692,24 +692,8 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
-    if (normalizedEmail) {
-      const userRecord = await User.findOne({
-        where: sequelize.where(
-          sequelize.fn('lower', sequelize.col('email')),
-          normalizedEmail
-        ),
-        attributes: ['id', 'role', 'isAdmin']
-      });
-
-      if (userRecord && userRecord.role !== 'doctor' && !userRecord.isAdmin) {
-        await auditLoginAttempt(req, userRecord.id, normalizedIdentifier, false, 'Patient/user attempted doctor login');
-        return res.status(403).json({
-          success: false,
-          message: 'Please use the patient login portal',
-          errorCode: 'PATIENT_PORTAL_ACCOUNT',
-        });
-      }
-    }
+    // A doctor may also have a patient/user row with the same email.
+    // Once a doctor record is found and active, authenticate against the doctor password.
 
     // Verify password — detect SHA-256 legacy hashes (64 hex chars, no $2b$ prefix)
     // and transparently upgrade to bcrypt on successful login

@@ -151,4 +151,55 @@ describe('Doctor Auth + Registration Guards', () => {
       refreshToken: 'refresh-token',
     }));
   });
+
+  it('allows an active doctor login even when a patient row with the same email is inactive', async () => {
+    const { signInDoctor } = await import('../controller/doctor.controller.js');
+
+    const doctorRecord = {
+      id: 77,
+      email: 'doctor@example.com',
+      firstName: 'Ramya',
+      lastName: 'S',
+      specialization: 'General Practitioner',
+      experience: 8,
+      status: 'active',
+      isActive: true,
+      isVerified: true,
+      isOnline: false,
+      lastActivityAt: null,
+      lastLoginAt: null,
+      comparePassword: jest.fn().mockResolvedValue(true),
+      update: jest.fn().mockResolvedValue(undefined),
+    };
+
+    mockDoctorFindOne.mockResolvedValue(doctorRecord);
+    mockUserFindOne.mockResolvedValue({ id: 200, status: 'inactive', role: 'patient' });
+    mockIssuePortalTokenPair.mockResolvedValue({
+      accessToken: 'doctor-access-token',
+      refreshToken: 'doctor-refresh-token',
+    });
+
+    const req = {
+      body: {
+        email: 'doctor@example.com',
+        password: 'Valid@123',
+      },
+      headers: {},
+    };
+    const res = makeRes();
+
+    await signInDoctor(req, res);
+
+    expect(mockDoctorFindOne).toHaveBeenCalledWith(expect.objectContaining({
+      where: { email: 'doctor@example.com' },
+    }));
+    expect(mockUserFindOne).not.toHaveBeenCalled();
+    expect(doctorRecord.comparePassword).toHaveBeenCalledWith('Valid@123');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'Login successful',
+      token: 'doctor-access-token',
+      refreshToken: 'doctor-refresh-token',
+    }));
+  });
 });

@@ -1,9 +1,10 @@
 import { DataTypes } from 'sequelize';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 import jwt from 'jsonwebtoken';
 import postgresSequelize from '../../db/postgres-sequelize.js';
-import { generateUniqueId } from '../../utils/uniqueIdGenerator.js';
+import { generateUniqueIdForModel } from '../../utils/uniqueIdGenerator.js';
 
 /**
  * DoctorAssistant Model (PostgreSQL)
@@ -163,19 +164,19 @@ const DoctorAssistant = postgresSequelize.define('DoctorAssistant', {
     beforeCreate: async (assistant) => {
       // Generate unique ID if not set
       if (!assistant.unique_id) {
-        assistant.unique_id = generateUniqueId('assistant');
+        assistant.unique_id = await generateUniqueIdForModel(DoctorAssistant, 'assistant');
       }
       
       if (assistant.password) {
-        assistant.password = await bcrypt.hash(assistant.password, 10);
+        assistant.password = await hashPasswordIfPlaintext(assistant.password, 10);
       }
       if (assistant.email) {
         assistant.email = assistant.email.toLowerCase();
       }
     },
     beforeUpdate: async (assistant) => {
-      if (assistant.changed('password')) {
-        assistant.password = await bcrypt.hash(assistant.password, 10);
+      if (assistant.changed('password') && assistant.password) {
+        assistant.password = await hashPasswordIfPlaintext(assistant.password, 10);
       }
       if (assistant.changed('email')) {
         assistant.email = assistant.email.toLowerCase();

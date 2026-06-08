@@ -387,10 +387,11 @@ const generateAggregatorUID = () => {
 
 // Hooks for password hashing and aggregator UID generation
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 
 Tenant.beforeCreate(async (tenant) => {
   if (tenant.admin_password) {
-    tenant.admin_password = await bcrypt.hash(tenant.admin_password, 10);
+    tenant.admin_password = await hashPasswordIfPlaintext(tenant.admin_password, 10);
   }
   
   // Auto-generate aggregator_uid for brokers
@@ -408,7 +409,7 @@ Tenant.beforeCreate(async (tenant) => {
 
 Tenant.beforeUpdate(async (tenant) => {
   if (tenant.changed('admin_password') && tenant.admin_password) {
-    tenant.admin_password = await bcrypt.hash(tenant.admin_password, 10);
+    tenant.admin_password = await hashPasswordIfPlaintext(tenant.admin_password, 10);
   }
   
   // Generate aggregator_uid if type changed to broker
