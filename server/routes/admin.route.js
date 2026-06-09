@@ -3471,6 +3471,10 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
             html,
           });
 
+          const passwordEmbeddedInContent =
+            String(subject || '').includes(temporaryPassword) ||
+            String(html || '').includes(temporaryPassword);
+
           if (mismatchedEmails.length > 0) {
             deliveryRecord = await createWelcomeDeliveryRecord({
               corporateId,
@@ -3499,6 +3503,39 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
               userId,
               employeeId: employeeId || null,
               reason: 'Template personalization failed: content includes another employee email (' + mismatchedEmails.join(', ') + ')',
+            });
+            continue;
+          }
+
+          if (!passwordEmbeddedInContent) {
+            deliveryRecord = await createWelcomeDeliveryRecord({
+              corporateId,
+              userId,
+              employeeId,
+              recipientEmail: to,
+              subject,
+              idempotencyKey: computedIdempotencyKey,
+              createdBy: actorUserId,
+              metadata: {
+                source: 'batch_send',
+                contentValidationFailed: true,
+                missingTemporaryPassword: true,
+              },
+            });
+
+            if (deliveryRecord?.id) {
+              await updateWelcomeDeliveryRecordStatus({
+                deliveryId: deliveryRecord.id,
+                status: 'failed',
+                errorMessage: 'Credential email content is missing the generated temporary password',
+              });
+            }
+
+            results.failed.push({
+              to,
+              userId,
+              employeeId: employeeId || null,
+              reason: 'Template personalization failed: generated temporary password is missing from email content',
             });
             continue;
           }
