@@ -2883,7 +2883,10 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
 
   const addPreparedWelcomeEmailDrafts = (drafts: WelcomeEmailDraft[]) => {
     if (drafts.length === 0) return;
-    setWelcomeEmailDrafts((current) => [...current, ...drafts]);
+    setWelcomeEmailDrafts((current) => {
+      const unsentExisting = current.filter((draft) => draft.status !== 'sent');
+      return [...unsentExisting, ...drafts];
+    });
     setShowWelcomeEmailBatchDialog(true);
   };
 

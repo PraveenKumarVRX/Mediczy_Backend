@@ -101,9 +101,18 @@ export default function CorporateWelcomeEmailBatchDialog({
 
   useEffect(() => {
     if (!open) return;
-    const draftIds = drafts.filter((draft) => draft.status !== 'sent').map((draft) => draft.id);
+    const unsentDrafts = drafts.filter((draft) => draft.status !== 'sent');
+    const draftIds = unsentDrafts.map((draft) => draft.id);
     setSelectedIds(draftIds);
-    setActiveDraftId((current) => current && drafts.some((draft) => draft.id === current) ? current : draftIds[0] || drafts[0]?.id || '');
+    setActiveDraftId((current) => {
+      if (current) {
+        const currentDraft = drafts.find((draft) => draft.id === current);
+        if (currentDraft && currentDraft.status !== 'sent') {
+          return current;
+        }
+      }
+      return draftIds[0] || '';
+    });
   }, [drafts, open]);
 
   useEffect(() => {
