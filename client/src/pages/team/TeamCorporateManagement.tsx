@@ -3410,7 +3410,68 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         }
       }
 
+      const selectedTemplate = allWelcomeEmailTemplates.find((t) => t.id === selectedWelcomeTemplateId) || allWelcomeEmailTemplates[0];
+
       if (allDraftRows.length === 0) {
+        if (mode === 'single' && skippedTargets.length > 0 && failedTargets.length === 0) {
+          const singleTarget = effectiveTargets[0];
+          const singleUserId = parseInt(String(singleTarget?.id || ''), 10);
+
+          if (!Number.isNaN(singleUserId)) {
+            try {
+              const { data } = await api.post('/admin/corporate-employee-welcome-emails/resend', {
+                corporateId: selectedCorporate.id,
+                userId: singleUserId,
+                welcomeEmailMode: 'draft',
+              }, { headers: teamAuthHeaders() });
+
+              const resendResult = data?.result;
+              const temporaryPassword = String(resendResult?.temporaryPassword || '').trim();
+              const resendEmail = String(resendResult?.email || singleTarget?.email || '').trim();
+
+              if (temporaryPassword && resendEmail) {
+                const draftTimestamp = Date.now();
+                const empForPlaceholders = {
+                  ...(singleTarget || {}),
+                  id: String(singleUserId),
+                  email: resendEmail,
+                  employeeId: singleTarget?.employeeId || '',
+                } as Employee;
+
+                const forcedDraft: WelcomeEmailDraft = {
+                  id: `prepared-resend-${singleUserId}-${draftTimestamp}`,
+                  to: resendEmail,
+                  userId: singleUserId,
+                  employeeId: singleTarget?.employeeId || '',
+                  temporaryPassword,
+                  employeeName: singleTarget?.name || resendResult?.name || resendEmail,
+                  subject: applyWelcomeTemplatePlaceholders(selectedTemplate.subject, empForPlaceholders, temporaryPassword),
+                  html: applyWelcomeTemplatePlaceholders(selectedTemplate.html, empForPlaceholders, temporaryPassword),
+                  status: 'draft',
+                };
+
+                if (sendImmediately) {
+                  setWelcomeEmailDrafts((current) => [...current, forcedDraft]);
+                  await handleSendWelcomeEmailBatch([forcedDraft]);
+                  toast({
+                    title: 'Welcome email queued',
+                    description: 'Generated fresh credentials and sent using the selected template for 1 employee.',
+                  });
+                } else {
+                  addPreparedWelcomeEmailDrafts([forcedDraft]);
+                  toast({
+                    title: 'Fresh welcome draft prepared',
+                    description: 'Generated fresh credentials draft with the selected template for review.',
+                  });
+                }
+                return;
+              }
+            } catch (error) {
+              console.error('Single-employee resend-draft override failed:', error);
+            }
+          }
+        }
+
         toast({
           variant: skippedTargets.length > 0 && failedTargets.length === 0 ? 'default' : 'destructive',
           title: skippedTargets.length > 0 && failedTargets.length === 0 ? 'No New Welcome Emails Needed' : 'Preparation failed',
@@ -3424,7 +3485,6 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       // Apply the UI-selected template (with per-employee placeholders) rather than the
       // server's default. The server only provides temporaryPassword — subject/html come
       // from the template the user actually chose in the dialog.
-      const selectedTemplate = allWelcomeEmailTemplates.find((t) => t.id === selectedWelcomeTemplateId) || allWelcomeEmailTemplates[0];
 
       const draftTimestamp = Date.now();
       const drafts: WelcomeEmailDraft[] = allDraftRows.map((row, index) => {
