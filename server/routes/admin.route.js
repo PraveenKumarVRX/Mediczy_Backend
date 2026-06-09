@@ -3307,7 +3307,7 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
     for (const item of emails) {
       const to = String(item?.to || "").trim().toLowerCase();
       const subject = String(item?.subject || "").trim();
-      const html = String(item?.html || "").trim();
+      let html = String(item?.html || "").trim();
       const temporaryPassword = String(item?.temporaryPassword || "").trim();
       const userId = item?.userId ? parseInt(String(item.userId), 10) : null;
       const employeeId = String(item?.employeeId || "").trim();
@@ -3471,7 +3471,7 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
             html,
           });
 
-          const passwordEmbeddedInContent =
+          let passwordEmbeddedInContent =
             String(subject || '').includes(temporaryPassword) ||
             String(html || '').includes(temporaryPassword);
 
@@ -3508,36 +3508,9 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
           }
 
           if (!passwordEmbeddedInContent) {
-            deliveryRecord = await createWelcomeDeliveryRecord({
-              corporateId,
-              userId,
-              employeeId,
-              recipientEmail: to,
-              subject,
-              idempotencyKey: computedIdempotencyKey,
-              createdBy: actorUserId,
-              metadata: {
-                source: 'batch_send',
-                contentValidationFailed: true,
-                missingTemporaryPassword: true,
-              },
-            });
-
-            if (deliveryRecord?.id) {
-              await updateWelcomeDeliveryRecordStatus({
-                deliveryId: deliveryRecord.id,
-                status: 'failed',
-                errorMessage: 'Credential email content is missing the generated temporary password',
-              });
-            }
-
-            results.failed.push({
-              to,
-              userId,
-              employeeId: employeeId || null,
-              reason: 'Template personalization failed: generated temporary password is missing from email content',
-            });
-            continue;
+            // Safety net: inject credentials if template author omitted password placeholder.
+            html = `${html}\n\n<div style="margin-top:16px;padding:12px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;">\n  <p style="margin:0 0 8px 0;font-family:Arial,sans-serif;font-size:14px;color:#111827;"><strong>Login Credentials</strong></p>\n  <p style="margin:0;font-family:Arial,sans-serif;font-size:14px;color:#111827;"><strong>Username:</strong> ${to}</p>\n  <p style="margin:6px 0 0 0;font-family:Arial,sans-serif;font-size:14px;color:#111827;"><strong>Temporary Password:</strong> ${temporaryPassword}</p>\n</div>`;
+            passwordEmbeddedInContent = true;
           }
         }
 
