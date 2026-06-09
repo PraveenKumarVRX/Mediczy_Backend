@@ -462,6 +462,26 @@ const Doctor = sequelize.define('Doctor', {
     comment: 'Social media links: { facebook, instagram, youtube }'
   },
 
+  // OAuth / Social Login
+  googleId: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    field: 'google_id',
+    comment: 'Google OAuth2 profile ID'
+  },
+  facebookId: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    field: 'facebook_id',
+    comment: 'Facebook OAuth profile ID'
+  },
+  oauthProvider: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+    field: 'oauth_provider',
+    comment: 'Primary OAuth provider used to create account (google, facebook)'
+  },
+
   // Full-Text Search
   search_vector: {
     type: DataTypes.TSVECTOR,
