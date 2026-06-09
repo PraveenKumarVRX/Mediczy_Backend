@@ -2799,16 +2799,64 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
 
         if (isNewUser && temporaryPassword) {
           const welcomeMode = shouldSendWelcomeEmail ? 'send' : (shouldPrepareWelcomeEmail ? 'draft' : 'skip');
-          const welcomeDispatchResult = await dispatchCorporateEmployeeWelcomeEmail({
-            welcomeEmailMode: welcomeMode,
-            welcomeEmailData,
-            temporaryPassword,
-            teamUserId,
-          });
-          emailStatus = welcomeDispatchResult.emailStatus;
-          emailError = welcomeDispatchResult.emailError;
-          welcomeEmailDraft = welcomeDispatchResult.welcomeEmailDraft;
-          emailSent = welcomeDispatchResult.emailSent;
+          let welcomeBlockedByQualityGate = false;
+
+          if (welcomeMode !== 'skip') {
+            const activeRecipientDelivery = await findActiveWelcomeDeliveryForRecipient({
+              corporateId,
+              recipientEmail: normalizedEmail,
+            });
+
+            if (activeRecipientDelivery) {
+              emailStatus = 'skipped';
+              emailError = 'Welcome email already queued or sent for this employee; skipped by quality check.';
+              welcomeBlockedByQualityGate = true;
+            } else if (isBrevoHistoryConfigured()) {
+              try {
+                const brevoMatch = await findPriorBrevoWelcomeEmail({
+                  email: normalizedEmail,
+                  days: Number(process.env.BREVO_WELCOME_HISTORY_DAYS || 90),
+                });
+
+                if (brevoMatch?.found) {
+                  try {
+                    await createExternalWelcomeDeliveryFromBrevo({
+                      corporateId,
+                      userId,
+                      employeeId,
+                      recipientEmail: normalizedEmail,
+                      subject: brevoMatch.subject || 'Welcome',
+                      actorUserId: teamUserId,
+                      brevoMatch,
+                    });
+                  } catch (auditError) {
+                    console.warn('[bulk-onboarding] Brevo history audit insert skipped:', auditError?.message || auditError);
+                  }
+
+                  emailStatus = 'skipped';
+                  emailError = 'Welcome email already sent previously; skipped by quality check.';
+                  welcomeBlockedByQualityGate = true;
+                }
+              } catch (historyError) {
+                emailStatus = 'failed';
+                emailError = 'Brevo history lookup failed; welcome email blocked to prevent duplicate send.';
+                welcomeBlockedByQualityGate = true;
+              }
+            }
+          }
+
+          if (!welcomeBlockedByQualityGate) {
+            const welcomeDispatchResult = await dispatchCorporateEmployeeWelcomeEmail({
+              welcomeEmailMode: welcomeMode,
+              welcomeEmailData,
+              temporaryPassword,
+              teamUserId,
+            });
+            emailStatus = welcomeDispatchResult.emailStatus;
+            emailError = welcomeDispatchResult.emailError;
+            welcomeEmailDraft = welcomeDispatchResult.welcomeEmailDraft;
+            emailSent = welcomeDispatchResult.emailSent;
+          }
 
           if (emailStatus === 'failed') {
             console.error(`Failed to send welcome email to employee ${normalizedEmail}:`, emailError || 'Unknown send failure');
