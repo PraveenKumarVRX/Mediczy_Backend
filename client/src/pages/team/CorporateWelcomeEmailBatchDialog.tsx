@@ -15,6 +15,7 @@ export interface WelcomeEmailDraft {
   userId?: string;
   employeeId?: string;
   temporaryPassword?: string;
+  forceResend?: boolean;
   employeeName: string;
   subject: string;
   html: string;

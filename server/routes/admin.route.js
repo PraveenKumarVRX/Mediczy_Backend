@@ -2361,6 +2361,43 @@ async function createWelcomeDeliveryRecord({
   return row || null;
 }
 
+async function supersedeActiveWelcomeDeliveriesForRecipient({
+  corporateId,
+  recipientEmail,
+  actorUserId,
+  reason = 'Superseded by explicit resend override',
+}) {
+  await ensureWelcomeDeliveryAuditTable();
+
+  if (!recipientEmail) return [];
+
+  const rows = await postgresSequelize.query(
+    `UPDATE corporate_welcome_email_deliveries
+        SET status = 'duplicate',
+            error_message = COALESCE(error_message, :reason),
+            metadata = metadata || jsonb_build_object(
+              'supersededByForceResendAt', NOW(),
+              'supersededByUserId', :actorUserId
+            ),
+            updated_at = NOW()
+      WHERE corporate_id = :corporateId
+        AND LOWER(recipient_email) = LOWER(:recipientEmail)
+        AND status IN ('queued', 'sent')
+      RETURNING id, status`,
+    {
+      replacements: {
+        corporateId,
+        recipientEmail,
+        actorUserId: actorUserId || null,
+        reason,
+      },
+      type: postgresSequelize.QueryTypes.SELECT,
+    }
+  );
+
+  return Array.isArray(rows) ? rows : [];
+}
+
 async function updateWelcomeDeliveryRecordStatus({
   deliveryId,
   status,
@@ -3226,6 +3263,8 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
       const temporaryPassword = String(item?.temporaryPassword || "").trim();
       const userId = item?.userId ? parseInt(String(item.userId), 10) : null;
       const employeeId = String(item?.employeeId || "").trim();
+      const forceResendRequested = Boolean(item?.forceResend);
+      const forceResend = forceResendRequested && emails.length === 1 && Boolean(userId) && Boolean(to);
       const payloadIdempotencyKey = String(item?.idempotencyKey || req.body?.idempotencyKey || headerIdempotencyKey).trim();
       const computedIdempotencyKey = payloadIdempotencyKey || `auto-${crypto.createHash('sha256').update(`${corporateId}|${userId || 0}|${to}|${subject}|${html}`).digest('hex').slice(0, 24)}`;
       let deliveryRecord = null;
@@ -3257,7 +3296,7 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
         recipientEmail: to,
       }) : null;
 
-      if (activeRecipientDelivery) {
+      if (activeRecipientDelivery && !forceResend) {
         results.skipped.push({
           to,
           userId,
@@ -3270,7 +3309,7 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
         continue;
       }
 
-      if (to && EMAIL_RE.test(to) && subject && isBrevoHistoryConfigured()) {
+      if (to && EMAIL_RE.test(to) && subject && isBrevoHistoryConfigured() && !forceResend) {
         try {
           const brevoMatch = await findPriorBrevoWelcomeEmail({
             email: to,
@@ -3429,6 +3468,14 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
           continue;
         }
 
+        if (forceResend) {
+          await supersedeActiveWelcomeDeliveriesForRecipient({
+            corporateId,
+            recipientEmail: to,
+            actorUserId,
+          });
+        }
+
         deliveryRecord = await createWelcomeDeliveryRecord({
           corporateId,
           userId,
@@ -3436,8 +3483,9 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
           recipientEmail: to,
           subject,
           idempotencyKey: computedIdempotencyKey,
+          requestScope: forceResend ? 'force_resend' : 'batch_send',
           createdBy: actorUserId,
-          metadata: { source: 'batch_send' },
+          metadata: { source: 'batch_send', forceResend },
         });
 
         if (deliveryRecord?.id) {

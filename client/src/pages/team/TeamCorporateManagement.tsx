@@ -2942,6 +2942,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
               userId: draft.userId,
               employeeId: draft.employeeId,
               temporaryPassword: draft.temporaryPassword,
+              forceResend: draft.forceResend === true,
             }))
           }, { headers, timeout: 90000 });
 
@@ -3481,6 +3482,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                   userId: singleUserId,
                   employeeId: singleTarget?.employeeId || '',
                   temporaryPassword,
+                  forceResend: true,
                   employeeName: singleTarget?.name || resendResult?.name || resendEmail,
                   subject: applyWelcomeTemplatePlaceholders(
                     normalizeTemplateForSingleEmployee(selectedTemplate.subject, empForPlaceholders),
