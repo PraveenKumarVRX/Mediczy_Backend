@@ -3000,6 +3000,43 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
 
+  const escapeRegExp = (value: string) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  const normalizeTemplateForSingleEmployee = (template: string, employee: Employee) => {
+    let normalized = String(template || '');
+    const targetName = String(employee.name || `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || '').trim();
+    const targetEmail = String(employee.email || '').trim();
+    const targetEmployeeId = String(employee.employeeId || '').trim();
+
+    const replaceLiteral = (literal: string, replacementToken: string) => {
+      const value = String(literal || '').trim();
+      if (!value || value.length < 3) return;
+      const pattern = new RegExp(escapeRegExp(value), 'gi');
+      normalized = normalized.replace(pattern, replacementToken);
+    };
+
+    employees.forEach((candidate) => {
+      const candidateEmail = String(candidate.email || '').trim();
+      if (candidateEmail && candidateEmail.toLowerCase() !== targetEmail.toLowerCase()) {
+        replaceLiteral(candidateEmail, '{{email}}');
+      }
+
+      const candidateEmployeeId = String(candidate.employeeId || '').trim();
+      if (candidateEmployeeId && candidateEmployeeId !== targetEmployeeId) {
+        replaceLiteral(candidateEmployeeId, '{{employeeId}}');
+      }
+
+      const candidateName = String(candidate.name || `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || '').trim();
+      if (candidateName && targetName && candidateName.toLowerCase() !== targetName.toLowerCase()) {
+        replaceLiteral(candidateName, '{{employeeName}}');
+      }
+    });
+
+    normalized = normalized.replace(/\b(Dear|Hi|Hello|Hey)\s+[^,<\n]{1,80}(,?)/gi, '$1 {{employeeName}}$2');
+
+    return normalized;
+  };
+
   const welcomeEmailTemplates: WelcomeEmailTemplatePreset[] = [
     {
       id: 'standard-welcome',
@@ -3445,8 +3482,16 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
                   employeeId: singleTarget?.employeeId || '',
                   temporaryPassword,
                   employeeName: singleTarget?.name || resendResult?.name || resendEmail,
-                  subject: applyWelcomeTemplatePlaceholders(selectedTemplate.subject, empForPlaceholders, temporaryPassword),
-                  html: applyWelcomeTemplatePlaceholders(selectedTemplate.html, empForPlaceholders, temporaryPassword),
+                  subject: applyWelcomeTemplatePlaceholders(
+                    normalizeTemplateForSingleEmployee(selectedTemplate.subject, empForPlaceholders),
+                    empForPlaceholders,
+                    temporaryPassword,
+                  ),
+                  html: applyWelcomeTemplatePlaceholders(
+                    normalizeTemplateForSingleEmployee(selectedTemplate.html, empForPlaceholders),
+                    empForPlaceholders,
+                    temporaryPassword,
+                  ),
                   status: 'draft',
                 };
 
@@ -3499,6 +3544,12 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
           firstName: '',
           lastName: '',
         };
+        const renderedSubjectTemplate = mode === 'single'
+          ? normalizeTemplateForSingleEmployee(selectedTemplate.subject, empForPlaceholders as Employee)
+          : selectedTemplate.subject;
+        const renderedHtmlTemplate = mode === 'single'
+          ? normalizeTemplateForSingleEmployee(selectedTemplate.html, empForPlaceholders as Employee)
+          : selectedTemplate.html;
         return {
           id: `prepared-${row.userId}-${draftTimestamp}-${index}`,
           to: row.email,
@@ -3508,8 +3559,8 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
           employeeName: employee
             ? (employee.name || `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || row.email)
             : row.email,
-          subject: applyWelcomeTemplatePlaceholders(selectedTemplate.subject, empForPlaceholders as Employee, row.temporaryPassword),
-          html: applyWelcomeTemplatePlaceholders(selectedTemplate.html, empForPlaceholders as Employee, row.temporaryPassword),
+          subject: applyWelcomeTemplatePlaceholders(renderedSubjectTemplate, empForPlaceholders as Employee, row.temporaryPassword),
+          html: applyWelcomeTemplatePlaceholders(renderedHtmlTemplate, empForPlaceholders as Employee, row.temporaryPassword),
           status: 'draft' as const,
         };
       });
