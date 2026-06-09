@@ -49,7 +49,7 @@ interface CorporateWelcomeEmailBatchDialogProps {
   approvingTemplate?: boolean;
   onSelectedTemplateChange?: (templateId: string) => void;
   onApproveTemplate?: (templateId: string) => void;
-  onPrepareFromEmployees?: (args: { mode: 'single' | 'selected' | 'all'; singleEmployeeId?: string; sendImmediately: boolean }) => void;
+  onPrepareFromEmployees?: (args: { mode: 'single' | 'selected' | 'all'; singleEmployeeId?: string; singleEmployeeEmail?: string; sendImmediately: boolean }) => void;
   onOpenChange: (open: boolean) => void;
   onDraftsChange: (drafts: WelcomeEmailDraft[]) => void;
   onSendSelected: (drafts: WelcomeEmailDraft[], provider: 'auto' | 'ses' | 'brevo') => void;
@@ -166,6 +166,10 @@ export default function CorporateWelcomeEmailBatchDialog({
     : prepareMode === 'selected'
       ? selectedEmployeeCount > 0
       : Boolean(singleEmployeeId);
+
+  const selectedSingleEmployee = prepareMode === 'single'
+    ? employees.find((employee) => String(employee.id) === String(singleEmployeeId || '').trim())
+    : null;
 
   const startPreparation = (handler?: () => void) => {
     onOpenChange(false);
@@ -335,7 +339,12 @@ export default function CorporateWelcomeEmailBatchDialog({
                     variant="outline"
                     size="sm"
                     disabled={!canPrepare || preparing || sending}
-                    onClick={() => onPrepareFromEmployees({ mode: prepareMode, singleEmployeeId, sendImmediately: false })}
+                    onClick={() => onPrepareFromEmployees({
+                      mode: prepareMode,
+                      singleEmployeeId,
+                      singleEmployeeEmail: selectedSingleEmployee?.email,
+                      sendImmediately: false,
+                    })}
                   >
                     {preparing ? 'Preparing...' : 'Prepare'}
                   </Button>
@@ -343,7 +352,12 @@ export default function CorporateWelcomeEmailBatchDialog({
                     type="button"
                     size="sm"
                     disabled={!canPrepare || preparing || sending}
-                    onClick={() => onPrepareFromEmployees({ mode: prepareMode, singleEmployeeId, sendImmediately: true })}
+                    onClick={() => onPrepareFromEmployees({
+                      mode: prepareMode,
+                      singleEmployeeId,
+                      singleEmployeeEmail: selectedSingleEmployee?.email,
+                      sendImmediately: true,
+                    })}
                   >
                     Send Now
                   </Button>

@@ -2806,6 +2806,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         department: newEmployee.department,
         designation: newEmployee.designation,
         gender: newEmployee.gender || undefined,
+        joiningDate: newEmployee.joiningDate || undefined,
         city: newEmployee.workCity || undefined,
         state: newEmployee.workState || undefined
       };
@@ -3128,14 +3129,54 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     }
 
     const token = localStorage.getItem('teamToken');
+      const escapeRegExp = (value: string) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const depersonalize = (templateSubject: string, templateHtml: string) => {
+        let safeSubject = String(templateSubject || '');
+        let safeHtml = String(templateHtml || '');
+        let changed = false;
+
+        const replaceAllLiteral = (literal: string, tokenValue: string) => {
+          const normalized = String(literal || '').trim();
+          if (!normalized || normalized.length < 3) return;
+          const pattern = new RegExp(escapeRegExp(normalized), 'gi');
+          const nextSubject = safeSubject.replace(pattern, tokenValue);
+          const nextHtml = safeHtml.replace(pattern, tokenValue);
+          if (nextSubject !== safeSubject || nextHtml !== safeHtml) {
+            changed = true;
+            safeSubject = nextSubject;
+            safeHtml = nextHtml;
+          }
+        };
+
+        employees.forEach((employee) => {
+          replaceAllLiteral(employee.email || '', '{{email}}');
+          replaceAllLiteral(employee.employeeId || '', '{{employeeId}}');
+          const fullName = employee.name || `${employee.firstName || ''} ${employee.lastName || ''}`.trim();
+          replaceAllLiteral(fullName, '{{employeeName}}');
+        });
+
+        replaceAllLiteral(selectedCorporate?.companyName || '', '{{companyName}}');
+        replaceAllLiteral(selectedCorporate?.uniqueId || '', '{{corporateId}}');
+
+        const passwordPattern = /(Temporary Password\s*[:<\/strong>\-\s]*)([^<\s][^<\n]*)/gi;
+        const passwordSanitized = safeHtml.replace(passwordPattern, (_, prefix: string) => `${prefix}{{temporaryPassword}}`);
+        if (passwordSanitized !== safeHtml) {
+          changed = true;
+          safeHtml = passwordSanitized;
+        }
+
+        return { safeSubject, safeHtml, changed };
+      };
+
+      const sanitized = depersonalize(subject, html);
     setSavingWelcomeTemplate(true);
     try {
       const createResponse = await api.post(
         '/team/welcome-email-templates',
         {
           name: templateName,
-          subject,
-          htmlContent: html,
+            subject: sanitized.safeSubject,
+            htmlContent: sanitized.safeHtml,
         },
         {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -3163,7 +3204,9 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
 
       toast({
         title: 'Template saved',
-        description: 'Edited subject and body are now available as a reusable template.',
+        description: sanitized.changed
+          ? 'Template saved after removing employee-specific credentials and restoring placeholders for safe reuse.'
+          : 'Edited subject and body are now available as a reusable template.',
       });
     } catch (error: any) {
       toast({
@@ -3251,10 +3294,21 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     return rendered;
   };
 
-  const getWelcomeEmployeeTargets = (mode: 'selected' | 'all' | 'single' = welcomeEmployeeSelectionMode, singleEmployeeId?: string) => {
+  const getWelcomeEmployeeTargets = (
+    mode: 'selected' | 'all' | 'single' = welcomeEmployeeSelectionMode,
+    singleEmployeeId?: string,
+    singleEmployeeEmail?: string,
+  ) => {
     if (mode === 'single') {
-      if (!singleEmployeeId) return [];
-      return employees.filter((employee) => employee.id === singleEmployeeId && employee.email && !hasActiveWelcomeEmailDelivery(employee));
+      if (!singleEmployeeId && !singleEmployeeEmail) return [];
+      const normalizedSingleId = String(singleEmployeeId).trim();
+      const normalizedSingleEmail = String(singleEmployeeEmail || '').trim().toLowerCase();
+      return employees.filter((employee) => {
+        const employeeIdMatch = normalizedSingleId && String(employee.id) === normalizedSingleId;
+        const employeeEmail = String(employee.email || '').trim().toLowerCase();
+        const employeeEmailMatch = normalizedSingleEmail && employeeEmail === normalizedSingleEmail;
+        return (employeeIdMatch || employeeEmailMatch) && Boolean(employeeEmail);
+      });
     }
 
     if (mode === 'all') {
@@ -3268,19 +3322,47 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
   const handlePrepareOrSendEmployeeWelcomeEmails = async (
     sendImmediately: boolean,
     mode: 'selected' | 'all' | 'single' = welcomeEmployeeSelectionMode,
-    singleEmployeeId?: string
+    singleEmployeeId?: string,
+    singleEmployeeEmail?: string,
   ) => {
     if (!selectedCorporate) return;
 
-    const targets = getWelcomeEmployeeTargets(mode, singleEmployeeId);
-    if (targets.length === 0) {
+    const targets = getWelcomeEmployeeTargets(mode, singleEmployeeId, singleEmployeeEmail);
+    const explicitSingleUserId = parseInt(String(singleEmployeeId || '').trim(), 10);
+    const fallbackSingleEmployee = mode === 'single' && !Number.isNaN(explicitSingleUserId)
+      ? (employees.find((employee) => String(employee.id) === String(explicitSingleUserId)) || {
+        id: String(explicitSingleUserId),
+        email: String(singleEmployeeEmail || '').trim(),
+        employeeId: '',
+        name: '',
+        firstName: '',
+        lastName: '',
+        department: '',
+        designation: '',
+      } as Employee)
+      : null;
+
+    const effectiveTargets = (targets.length === 0 && fallbackSingleEmployee && String(fallbackSingleEmployee.email || '').trim())
+      ? [fallbackSingleEmployee]
+      : targets;
+
+    if (effectiveTargets.length === 0) {
+      const singleEmployee = mode === 'single'
+        ? employees.find((employee) => {
+          const byId = String(employee.id) === String(singleEmployeeId || '').trim();
+          const byEmail = String(employee.email || '').trim().toLowerCase() === String(singleEmployeeEmail || '').trim().toLowerCase();
+          return byId || byEmail;
+        })
+        : null;
       toast({
         variant: 'destructive',
         title: 'No employees selected',
         description: mode === 'all'
           ? 'No employees with valid email were found.'
           : mode === 'single'
-            ? 'Select a valid employee with email to continue.'
+            ? (singleEmployee
+              ? 'Selected employee does not have a valid email. Update email and retry.'
+              : 'Select a valid employee with email to continue.')
           : 'Select one or more employees with email to continue.'
       });
       return;
@@ -3295,9 +3377,11 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       const failedTargets: string[] = [];
 
       // Use bulk-prepare: one request per 500 employees instead of N sequential /resend calls
-      const employeeById = new Map(targets.map(e => [e.id, e]));
+      const employeeById = new Map(effectiveTargets.map(e => [String(e.id), e]));
       const userIdChunks: number[][] = [];
-      const allIds = targets.map(e => e.id).filter(Boolean);
+      const allIds = effectiveTargets
+        .map((employee) => parseInt(String(employee.id), 10))
+        .filter((value) => !Number.isNaN(value));
       for (let i = 0; i < allIds.length; i += BULK_CHUNK) {
         userIdChunks.push(allIds.slice(i, i + BULK_CHUNK));
       }
@@ -3320,7 +3404,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
           }
         } catch {
           chunk.forEach(id => {
-            const emp = employeeById.get(id);
+            const emp = employeeById.get(String(id));
             failedTargets.push(emp?.email || String(id));
           });
         }
@@ -3344,7 +3428,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
 
       const draftTimestamp = Date.now();
       const drafts: WelcomeEmailDraft[] = allDraftRows.map((row, index) => {
-        const employee = employeeById.get(row.userId);
+        const employee = employeeById.get(String(row.userId));
         // Build a minimal employee-like object for placeholder substitution when the
         // full employee record isn't in the local state (e.g. loaded from a different page).
         const empForPlaceholders = employee || {
@@ -9285,11 +9369,11 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
         approvingTemplate={approvingWelcomeTemplate}
         onSelectedTemplateChange={setSelectedWelcomeTemplateId}
         onApproveTemplate={handleApproveWelcomeTemplate}
-        onPrepareFromEmployees={({ mode, singleEmployeeId, sendImmediately }) => {
+        onPrepareFromEmployees={({ mode, singleEmployeeId, singleEmployeeEmail, sendImmediately }) => {
           if (mode === 'selected' || mode === 'all') {
             setWelcomeEmployeeSelectionMode(mode);
           }
-          handlePrepareOrSendEmployeeWelcomeEmails(sendImmediately, mode, singleEmployeeId);
+          handlePrepareOrSendEmployeeWelcomeEmails(sendImmediately, mode, singleEmployeeId, singleEmployeeEmail);
         }}
         onOpenChange={setShowWelcomeEmailBatchDialog}
         onDraftsChange={setWelcomeEmailDrafts}
