@@ -79,5 +79,33 @@ Representative duplication found:
 
 ---
 
-## 5. Progress log
-- **2026-06-11** — Phase 0 started: P0-1 (risk-score IDOR), P0-2 (providers admin), P0-3 (sib/decide auth), P0-4 (clinical cache isolation). Follow-ups P0-5/6/7 pending product/security sign-off. Governance-gated items (P1-3, P1-4, P2-*) to be raised via `proposeChange()`.
+## 5. Phase 1 consolidation design (P1-1 / P1-2) — staged rollout
+
+Rewiring the live clinical SIB path is high-risk and must not be done blind (no
+runtime test infra in this environment). Approach:
+
+1. **Single inference gateway (P1-1).** `medicalAI.service.js` and remaining direct
+   SIB callers move onto `llm-provider.chat()`. Blocker: `llm-provider`'s `callSib`
+   uses a different request contract (`message`/`user_id`/`context`) than
+   `medicalAI.service` (`patient_id`/`patient_data`/`history`). Action: extend
+   `callSib` to accept a structured clinical payload (or add a `sib-clinical`
+   provider variant) so SIB memory/behavior is preserved, then migrate callers
+   **behind a `UNIFIED_INFERENCE` flag** with shadow comparison before cutover.
+2. **Collapse duplicates (P1-2).** Keep `/api/medical-ai/consult` as the canonical
+   chat; make `/api/ai/working-medical-consult` and `/api/ai-health/chat` thin
+   delegators (or 308-deprecate) after a client-dependency check (P0-6). Triage
+   converges on `ai-emergency-triage.service`; retire the SIB/regex path in
+   `medical-ai.route.js`. Diet converges on one real generator.
+3. **Resilience (P1-5).** ✅ transient-retry added to the cascade; circuit breaker
+   + token-budget enforcement to follow.
+4. **Config (P1-6).** ✅ centralized in `server/config/ai-services.config.js`;
+   LiveKit health is now cloud-safe.
+
+## 6. Progress log
+- **2026-06-11 (Phase 0)** — P0-1 (risk-score IDOR), P0-2 (providers admin), P0-3 (sib/decide auth), P0-4 (clinical cache isolation). Follow-ups P0-5/6/7 pending product/security sign-off.
+- **2026-06-11 (Phase 1, safe foundations)** —
+  - ✅ **P1-6** centralized AI services config (`server/config/ai-services.config.js`) + LiveKit-cloud-safe health check in `voice-assistant.route.js`.
+  - ✅ **P1-5** transient-error retry in the `llm-provider` cascade (per-provider, before failover; env-tunable).
+  - ✅ **P1-3 (governance)** clinical-output gate wrapper filed as a DRAFT governance proposal: `docs/ai/proposals/CLINICAL_OUTPUT_GATE_WRAPPER.md` + `server/scripts/propose-clinical-gate-wrapper.mjs` (registers a `pending_review` change; not applied autonomously).
+  - ⏳ **P1-1 / P1-2** consolidation staged behind flags (design above) — requires runtime/shadow testing before cutover.
+  - ⏳ **P1-4** governance apply-executor (`approveChange` applying `newConfig`) — design pending; touches config application across prompt templates / router thresholds / model configs.
