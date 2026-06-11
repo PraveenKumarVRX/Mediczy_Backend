@@ -87,13 +87,41 @@ function validateMedicalQuery(query) {
   return null;
 }
 
+// Coerce a SIB field into clean text. SIB / LLM wrappers sometimes return the
+// answer as a nested object; naive String() on those yields "[object Object]"
+// which surfaced to users as a broken Dr. iSHA reply.
+const coerceSibText = (value) => {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (typeof value === 'object') {
+    const nested = value.text
+      || value.content
+      || value.answer
+      || value.message
+      || value.response
+      || value.output
+      || value.choices?.[0]?.message?.content;
+    if (typeof nested === 'string') return nested.trim();
+  }
+  return '';
+};
+
 const extractSibResponse = (sibData) => {
-  const raw = sibData?.response
-    || sibData?.primary_response
-    || sibData?.chat_answer
-    || sibData?.message
-    || sibData?.result;
-  const text = typeof raw === 'string' ? raw.trim() : String(raw ?? '').trim();
+  const candidates = [
+    sibData?.response,
+    sibData?.primary_response,
+    sibData?.chat_answer,
+    sibData?.message,
+    sibData?.result,
+  ];
+  let text = '';
+  for (const candidate of candidates) {
+    text = coerceSibText(candidate);
+    if (text) break;
+  }
+  // Treat empty / unparseable shapes as a failure so the caller can fall back
+  // to the LLM cascade instead of returning garbage to the user.
   if (!text) throw new Error('SIB returned an empty response');
   return text;
 };
@@ -226,8 +254,17 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
     // Use provided session ID if present to preserve memory
     const sessionId = requestedSessionId || userContext.sessionId || buildSessionId(req.user.id);
 
+    // Role-aware context resolution.
+    // The patient self-context loader keys off the `users` (patient) table by id.
+    // A doctor/nurse/assistant caller's req.user.id comes from a DIFFERENT table,
+    // so calling it for them would load a completely unrelated patient's PHI
+    // (whoever happens to share that numeric id) and derail the assistant's reply.
+    // Only load patient self-context for actual patient callers.
+    const callerRole = String(req.userRole || req.user?.role || 'user').toLowerCase();
+    const isClinician = ['doctor', 'nurse', 'assistant'].includes(callerRole);
+
     let dbContext = null;
-    if (!isEmergencyMode) {
+    if (!isEmergencyMode && !isClinician) {
       try {
         dbContext = await whatsAppUserContextService.getFullUserContextByUserId(req.user.id);
       } catch (contextError) {
@@ -235,12 +272,16 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
       }
     }
 
+    const callerName = req.user?.firstName || req.user?.name || (isClinician ? 'Doctor' : 'Patient');
+
     // Add user info to context
     const enhancedContext = {
       ...userContext,
       ...(dbContext || {}),
       userId: req.user.id,
-      userName: req.user.firstName || 'Patient'
+      userRole: callerRole,
+      isClinician,
+      userName: callerName,
     };
 
     const timeoutMs = isEmergencyMode ? 15000 : 30000;
@@ -263,7 +304,10 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
             : [],
           patient_data: {
             ...enhancedContext,
-            channel: 'web',
+            // Tell SIB who is asking so it can respond in the right register
+            // (clinical decision support for doctors vs patient guidance).
+            channel: isClinician ? 'doctor_app' : (userContext?.channel || 'web'),
+            role: callerRole,
             patientData: dbContext || undefined
           }
         })
