@@ -226,8 +226,12 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
     // Use provided session ID if present to preserve memory
     const sessionId = requestedSessionId || userContext.sessionId || buildSessionId(req.user.id);
 
+    // Clinicians (doctor/nurse/assistant/admin) must not inherit another user's patient record.
+    const callerRole = req.user.role || 'patient';
+    const isClinician = ['doctor', 'nurse', 'assistant', 'admin', 'team'].includes(callerRole);
+
     let dbContext = null;
-    if (!isEmergencyMode) {
+    if (!isEmergencyMode && !isClinician) {
       try {
         dbContext = await whatsAppUserContextService.getFullUserContextByUserId(req.user.id);
       } catch (contextError) {
@@ -240,7 +244,10 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
       ...userContext,
       ...(dbContext || {}),
       userId: req.user.id,
-      userName: req.user.firstName || 'Patient'
+      userName: isClinician
+        ? `Dr. ${req.user.firstName || req.user.name || 'Doctor'}`
+        : (req.user.firstName || 'Patient'),
+      callerRole,
     };
 
     const timeoutMs = isEmergencyMode ? 15000 : 30000;
@@ -263,7 +270,7 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
             : [],
           patient_data: {
             ...enhancedContext,
-            channel: 'web',
+            channel: isClinician ? 'doctor_app' : 'web',
             patientData: dbContext || undefined
           }
         })
@@ -301,9 +308,12 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
     // LLM fallback when SIB is unavailable or returned empty
     if (!consultation) {
       try {
+        const fallbackSystemPrompt = isClinician
+          ? 'You are Dr. iSHA, a clinical decision-support AI for medical professionals. Provide concise, evidence-based clinical guidance. Include a reminder: "For reference only — apply your clinical judgment." Do not refuse clinical queries that would be appropriate for a licensed clinician.'
+          : 'You are Dr. iSHA, a helpful medical AI assistant. Answer concisely and clearly. Never provide specific drug doses. Always recommend consulting a doctor for diagnosis.';
         const llmResult = await llmProvider.chat({
           messages: [
-            { role: 'system', content: 'You are Dr. iSHA, a helpful medical AI assistant. Answer concisely and clearly. Never provide specific drug doses. Always recommend consulting a doctor for diagnosis.' },
+            { role: 'system', content: fallbackSystemPrompt },
             { role: 'user', content: query }
           ],
           maxTokens: 512,

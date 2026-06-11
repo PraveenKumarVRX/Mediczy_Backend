@@ -18,6 +18,7 @@
 
 import pool from '../../db/pgPool.js';
 import llmProvider from './llm-provider.js';
+import { getActivePrompt } from '../prompt-optimization-executor.service.js';
 import ragPipeline from './rag-pipeline.js';
 import { getToolDefinitions, execute as executeTool } from './tools/loader.js';
 
@@ -30,12 +31,9 @@ async function buildSystemPrompt(userId, userType, conversationId) {
   const db = pool;
   const parts = [];
 
-  // 1. Load prompt template
-  const { rows: [template] } = await db.query(
-    `SELECT template FROM ai_prompt_templates WHERE name = 'brain-system-prompt' AND is_active = true ORDER BY version DESC LIMIT 1`
-  );
-
-  let systemText = template?.template || 'You are Dr. iSHA, an AI medical assistant for Mediczy healthcare platform.';
+  // 1. Load prompt template (A/B + canary-aware: userId enables experiment routing)
+  let systemText = await getActivePrompt('brain-system-prompt', userId).catch(() => null)
+    ?? 'You are Dr. iSHA, an AI medical assistant for Mediczy healthcare platform.';
 
   // 2. User context
   let patientName = 'Unknown';

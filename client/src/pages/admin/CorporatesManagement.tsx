@@ -574,16 +574,21 @@ const CorporatesManagement = () => {
     }));
   };
 
-  const handleDeleteCorporate = async (corporateId: string) => {
+  const handleDeleteCorporate = async (corporateId: string | number) => {
     if (!confirm('Are you sure you want to delete this corporate client?')) return;
-    
+
     try {
       setLoading(true);
+      setError(null);
       await api.delete(`/admin/corporates/${corporateId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
-      setResult({ message: 'Corporate deleted successfully' });
-      fetchCorporates();
+      // Remove immediately from local state — re-fetching would bring the
+      // now-Inactive record back since the list endpoint returns all statuses.
+      const sid = String(corporateId);
+      setCorporates(prev => prev.filter(c => String(c.id) !== sid));
+      setFilteredCorporates(prev => prev.filter(c => String(c.id) !== sid));
+      setResult({ message: 'Corporate deactivated successfully' });
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Failed to delete corporate');
     } finally {

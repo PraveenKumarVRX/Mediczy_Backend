@@ -1289,9 +1289,6 @@ class IntelligentDatabaseAdapter {
           const adminEmail = process.env.ADMIN_EMAIL || 'admin@mediczy.com';
           const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH;
           
-          // Fallback for development if hash not set
-          const fallbackPassword = 'SecurePass123';
-          
           if (where.email === adminEmail) {
             return {
               id: 'admin_001',
@@ -1303,11 +1300,9 @@ class IntelligentDatabaseAdapter {
               comparePassword: async (password) => {
                 if (adminPasswordHash) {
                   return await bcrypt.compare(password, adminPasswordHash);
-                } else {
-                  // Development fallback
-                  console.warn('Using development admin password. Set ADMIN_PASSWORD_HASH in production!');
-                  return password === fallbackPassword;
                 }
+                console.warn('ADMIN_PASSWORD_HASH is not configured; refusing fallback admin login');
+                return false;
               },
               generateAuthToken: () => {
                 const jwtSecret = JWT_CONFIG.SECRET;

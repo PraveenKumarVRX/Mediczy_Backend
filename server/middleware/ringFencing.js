@@ -247,6 +247,10 @@ const USER_TYPE_PERMISSIONS = {
       '/api/whatsapp-production',  // Production WhatsApp messaging & conversations
       '/api/sib-chatbots',  // SIB AI chatbots (health, appointment, emergency)
       '/api/video',
+      '/api/video-config',
+      '/api/notifications',
+      '/api/ai',
+      '/api/ai-governance',
       '/api/voice',
       '/api/tickets',
       '/api/chat',  // Chat dashboard for conversations & WhatsApp
@@ -258,6 +262,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/masterdata',
       '/api/recordings',  // Admin access to consultation recordings
       '/api/consultation-recordings',  // Admin access to consultation recordings
+      '/api/feedback-intelligence',  // Self-healing AI feedback intelligence dashboard
       '/api/v3/ai-brain',  // AI Brain intelligence layer
       '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
       '/api/v3/ai-analytics',  // AI analytics dashboard (admin only)

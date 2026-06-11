@@ -8,16 +8,19 @@ import requests
 import json
 import time
 import psycopg2
+import os
 from urllib.parse import quote
 import re
 
 # Configuration
 DB_CONFIG = {
-    'host': '127.0.0.1',
-    'database': 'mediczy_ai',
-    'user': 'mediczy_helper',
-    'password': 'Mediczy2024Helper'
+    'host': os.environ.get('POSTGRES_HOST', '127.0.0.1'),
+    'database': os.environ.get('POSTGRES_DATABASE', 'mediczy_ai'),
+    'user': os.environ.get('POSTGRES_USER', 'mediczy_helper'),
+    'password': os.environ.get('POSTGRES_PASSWORD') or os.environ.get('DB_PASSWORD'),
 }
+if not DB_CONFIG['password']:
+    raise RuntimeError('POSTGRES_PASSWORD or DB_PASSWORD is required')
 
 # Google Custom Search API (you need to set up)
 # Get API key: https://console.cloud.google.com/apis/credentials

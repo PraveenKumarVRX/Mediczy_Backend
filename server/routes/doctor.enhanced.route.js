@@ -558,8 +558,8 @@ router.post('/register', [
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
   body('specialization').notEmpty().withMessage('Specialization is required'),
   body('experience').isInt({ min: 0 }).withMessage('Experience must be a positive number'),
-  body('registrationNumber').notEmpty().withMessage('Medical registration number is required'),
-  body('medicalCouncil').notEmpty().withMessage('Medical council is required')
+  body('registrationNumber').optional({ nullable: true }).trim(),
+  body('medicalCouncil').optional({ nullable: true }).trim()
 ], async (req, res) => {
   try {
     // Check if doctor already exists
@@ -574,8 +574,20 @@ router.post('/register', [
       });
     }
 
+    const payload = { ...req.body };
+
+    // Normalize optional registration fields so Postgres UNIQUE doesn't collide on empty strings.
+    if (typeof payload.registrationNumber === 'string') {
+      const normalized = payload.registrationNumber.trim();
+      payload.registrationNumber = normalized || null;
+    }
+    if (typeof payload.medicalCouncil === 'string') {
+      const normalizedCouncil = payload.medicalCouncil.trim();
+      payload.medicalCouncil = normalizedCouncil || null;
+    }
+
     // Create doctor profile
-    const doctor = await doctorModel.create(req.body);
+    const doctor = await doctorModel.create(payload);
 
     // Generate JWT token
     const token = jwt.sign(

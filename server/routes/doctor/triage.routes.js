@@ -11,6 +11,11 @@ export const createDoctorTriageRouter = ({
   ensureMeetingInfo,
   getProviderLabel,
   buildLiveKitJoinData,
+  Notification,
+  FCMToken,
+  sendDoctorCallingNotification,
+  getIO,
+  getOnlineUsers,
 }) => {
   const router = express.Router();
 
@@ -488,13 +493,16 @@ export const createDoctorTriageRouter = ({
       const meetingInfo = ensureMeetingInfo(appointment);
       let { meetingId, meetingLink, meetingDetails, provider } = meetingInfo;
 
+      const callStartedAt = new Date();
+      const callStartedAtIso = callStartedAt.toISOString();
+
       await appointment.update({
         status: 'in-progress',
         meetingId,
         meetingLink,
         meetingDetails,
         callInitiatedBy: 'doctor',
-        callInitiatedAt: new Date(),
+        callInitiatedAt: callStartedAt,
       });
 
       const doctorName = appointment.doctor
@@ -518,7 +526,7 @@ export const createDoctorTriageRouter = ({
             appointmentId: appointment.id,
             meetingLink,
             action: 'join_call',
-            callInitiatedAt: new Date().toISOString(),
+            callInitiatedAt: callStartedAtIso,
           },
           actionUrl: meetingLink,
           channels: ['push', 'in-app'],
@@ -526,30 +534,6 @@ export const createDoctorTriageRouter = ({
         });
       } catch (notifError) {
         console.error('Failed to send patient notification:', notifError);
-      }
-
-      let socketDelivered = false;
-      try {
-        const io = req.app.get('io');
-        if (io) {
-          const targetRoom = `user-${String(appointment.userId)}`;
-          const room = io.sockets.adapter.rooms.get(targetRoom);
-          const roomSize = room ? room.size : 0;
-
-          io.to(targetRoom).emit('doctor-initiated-call', {
-            appointmentId: appointment.id,
-            doctorName,
-            doctorId,
-            meetingLink,
-            callInitiatedAt: new Date().toISOString(),
-            appointmentDate: appointment.appointmentDate,
-            appointmentTime: appointment.appointmentTime,
-          });
-
-          socketDelivered = roomSize > 0;
-        }
-      } catch (socketError) {
-        console.error('Failed to emit socket event:', socketError);
       }
 
       const videoPayload = {
@@ -576,6 +560,103 @@ export const createDoctorTriageRouter = ({
         }
       }
 
+      const callPayload = {
+        type: 'video_call',
+        notificationType: 'incoming_call',
+        appointmentId: String(appointment.id),
+        patientId: String(appointment.userId),
+        doctorId: String(doctorId),
+        doctorName,
+        doctorSpecialization: req.doctor?.specialization || appointment.doctor?.specialization || '',
+        appointmentDate: appointment.appointmentDate ? String(appointment.appointmentDate).slice(0, 10) : '',
+        appointmentTime: appointment.appointmentTime || '',
+        roomId: meetingId,
+        roomName: meetingId,
+        meetingId,
+        meetingLink: videoPayload.meetingLink || meetingLink,
+        serverUrl: videoPayload.livekit?.serverUrl || '',
+        callType: 'video',
+        action: 'join_call',
+        clickAction: 'join_video_call',
+        click_action: 'join_video_call',
+        actionUrl: 'mediczy://consultation/video/' + appointment.id,
+        deepLink: 'mediczy://consultation/video/' + appointment.id,
+        joinUrl: videoPayload.joinUrl || videoPayload.meetingLink || meetingLink,
+        webRoute: '/video-consultation?room=' + encodeURIComponent(meetingId) + '&appointmentId=' + encodeURIComponent(appointment.id),
+        route: 'VideoCall',
+        screen: 'VideoCall',
+        callInitiatedAt: callStartedAtIso,
+      };
+
+      let socketDelivered = false;
+      try {
+        const io = typeof getIO === 'function' ? getIO() : req.app.get('io');
+        if (io) {
+          const targetRoom = 'user-' + String(appointment.userId);
+          const room = io.sockets.adapter.rooms.get(targetRoom);
+          const roomSize = room ? room.size : 0;
+
+          io.to(targetRoom).emit('doctor-initiated-call', callPayload);
+          io.to(targetRoom).emit('incoming-call', callPayload);
+          io.to(targetRoom).emit('video-call-incoming', callPayload);
+
+          const patientSocket = typeof getOnlineUsers === 'function'
+            ? getOnlineUsers().get(String(appointment.userId))
+            : null;
+          if (patientSocket?.socketId) {
+            io.to(patientSocket.socketId).emit('doctor-initiated-call', callPayload);
+            io.to(patientSocket.socketId).emit('incoming-call', callPayload);
+            io.to(patientSocket.socketId).emit('video-call-incoming', callPayload);
+          }
+
+          socketDelivered = roomSize > 0 || Boolean(patientSocket?.socketId);
+        }
+      } catch (socketError) {
+        console.error('Failed to emit socket event:', socketError);
+      }
+
+      let fcmSent = 0;
+      let fcmFailed = 0;
+      try {
+        if (FCMToken && typeof sendDoctorCallingNotification === 'function') {
+          const patientTokens = await FCMToken.findAll({
+            where: {
+              userId: appointment.userId,
+              userType: 'patient',
+              isActive: true,
+            },
+          });
+          const results = await Promise.allSettled(
+            patientTokens.map((tokenRecord) => sendDoctorCallingNotification(tokenRecord.token, callPayload))
+          );
+          fcmSent = results.filter((result) => result.status === 'fulfilled').length;
+          fcmFailed = results.length - fcmSent;
+        }
+      } catch (fcmError) {
+        console.error('Failed to send doctor call FCM:', fcmError);
+      }
+
+      try {
+        if (Notification) {
+          await Notification.create({
+            userId: appointment.userId,
+            userType: 'patient',
+            type: 'call_incoming',
+            title: doctorName + ' is calling',
+            message: 'Tap to join your video consultation',
+            data: callPayload,
+            deepLink: 'mediczy://consultation/video/' + appointment.id,
+            webRoute: '/video-consultation?room=' + encodeURIComponent(meetingId) + '&appointmentId=' + encodeURIComponent(appointment.id),
+            priority: 'urgent',
+            channels: ['app', 'push'],
+            status: 'sent',
+            sentAt: callStartedAt,
+          });
+        }
+      } catch (notificationError) {
+        console.error('Failed to create incoming call notification:', notificationError);
+      }
+
       res.json({
         success: true,
         message: socketDelivered
@@ -588,7 +669,12 @@ export const createDoctorTriageRouter = ({
           status: 'in-progress',
           patientName,
           callInitiatedBy: 'doctor',
-          callInitiatedAt: new Date(),
+          callInitiatedAt: callStartedAtIso,
+        },
+        notification: {
+          socketSent: socketDelivered,
+          fcmSent,
+          fcmFailed,
         },
       });
     } catch (error) {

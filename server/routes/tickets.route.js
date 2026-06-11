@@ -4,6 +4,8 @@ import { User } from '../models/user.model.intelligent.js';
 import auth from '../middleware/auth.js';
 import rocketChatService from '../services/rocketchat.service.js';
 import logger from '../config/logger.js';
+import slaTracker from '../services/sla-tracker.service.js';
+import closedLoopNotifier from '../services/closed-loop-notifier.service.js';
 
 const router = express.Router();
 
@@ -535,6 +537,23 @@ router.put('/:id', auth, async (req, res) => {
     }
 
     await ticket.save();
+
+    // ── Closed-loop feedback hooks on resolution ──────────────────────────────
+    if (statusChanged && (status === 'resolved' || status === 'closed')) {
+      const ticketId = String(ticket.ticketId || ticket._id);
+
+      // Mark SLA as resolved (clears resolution_met_at if unset)
+      slaTracker.recordMet(ticketId, 'resolution').catch(() => {});
+
+      // Schedule 24-h follow-up rating request
+      closedLoopNotifier.scheduleFollowup({
+        ticketId,
+        severity:       ticket.slaInfo?.severity,
+        requesterName:  ticket.requester?.name,
+        requesterEmail: ticket.requester?.email,
+        requesterPhone: ticket.requester?.phone,
+      }).catch(() => {});
+    }
 
     // Send RocketChat notification for status changes
     if (statusChanged) {

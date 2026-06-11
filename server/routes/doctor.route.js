@@ -16,12 +16,14 @@ import googlePlacesService from '../services/google-places.service.js';
 import { Doctor, Appointment, User } from "../models/index.js";
 import { UserPlan } from "../models/postgres/membershipPlan.model.postgres.js";
 import { Op } from 'sequelize';
-import { Notification } from '../services/notification.service.js';
+import { Notification, FCMToken } from '../services/notification.service.js';
+import { sendDoctorCallingNotification } from '../utils/firebase-admin.js';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { cache } from '../db/redis.js';
 import { evaluateVitalsAndAlert } from '../services/clinical-intelligence.service.js';
 import { buildLiveKitJoinData, ensureMeetingInfo, getProviderLabel } from '../utils/videoProvider.js';
+import { getIO, getOnlineUsers } from '../chat/chathandler.controller.js';
 import { createDoctorDashboardAlertsRouter } from './doctor/dashboard-alerts.routes.js';
 import { createDoctorTriageRouter } from './doctor/triage.routes.js';
 import { createDoctorTemplatesRouter } from './doctor/templates.routes.js';
@@ -181,6 +183,11 @@ router.use(createDoctorTriageRouter({
   ensureMeetingInfo,
   getProviderLabel,
   buildLiveKitJoinData,
+  Notification,
+  FCMToken,
+  sendDoctorCallingNotification,
+  getIO,
+  getOnlineUsers,
 }));
 
 router.use(createDoctorTemplatesRouter({

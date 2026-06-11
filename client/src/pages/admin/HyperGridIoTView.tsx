@@ -155,12 +155,12 @@ export default function HyperGridIoTView() {
     setLoading(true);
     try {
       const [devRes, gwRes, brokerRes, coverageRes, inventoryRes, rolloutRes] = await Promise.allSettled([
-        api.get("/api/hypergrid/mqtt/devices"),
-        api.get("/api/hypergrid/edge/fleet/status"),
-        api.get("/api/hypergrid/mqtt/broker/stats"),
-        api.get("/api/hypergrid/connectors/equipment/coverage"),
-        api.get("/api/hypergrid/connectors/equipment/inventory"),
-        api.get("/api/hypergrid/connectors/equipment/rollout"),
+        api.get("/hypergrid/mqtt/devices"),
+        api.get("/hypergrid/edge/fleet/status"),
+        api.get("/hypergrid/mqtt/broker/stats"),
+        api.get("/hypergrid/connectors/equipment/coverage"),
+        api.get("/hypergrid/connectors/equipment/inventory"),
+        api.get("/hypergrid/connectors/equipment/rollout"),
       ]);
       if (devRes.status === "fulfilled" && devRes.value.data.devices?.length) {
         setDevices(devRes.value.data.devices);
@@ -197,7 +197,7 @@ export default function HyperGridIoTView() {
   const vendorQueue = equipmentInventory.filter((item) => item.equipment_class === 'proprietary-device' || item.integration_status === 'blocked');
   const registerEquipment = async () => {
     if (!registration.equipmentClass || !registration.deviceName) return;
-    await api.post('/api/hypergrid/connectors/equipment/inventory', registration);
+    await api.post('/hypergrid/connectors/equipment/inventory', registration);
     setRegistration({ equipmentClass: '', deviceName: '', manufacturer: '', model: '', serialNumber: '', department: '', location: '', protocol: '', ownerDepartment: 'Biomedical', notes: '' });
     await load();
   };

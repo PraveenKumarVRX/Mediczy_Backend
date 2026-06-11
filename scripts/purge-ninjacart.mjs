@@ -1,11 +1,16 @@
 import pg from 'pg';
 const { Pool } = pg;
 
+const dbPassword = process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD;
+if (!dbPassword) {
+  throw new Error('POSTGRES_PASSWORD or DB_PASSWORD is required');
+}
+
 const pool = new Pool({
-  host: '127.0.0.1',
-  user: 'mediczy_helper',
-  password: 'Mediczy2024Helper',
-  database: 'mediczy_ai',
+  host: process.env.POSTGRES_HOST || '127.0.0.1',
+  user: process.env.POSTGRES_USER || 'mediczy_helper',
+  password: dbPassword,
+  database: process.env.POSTGRES_DATABASE || 'mediczy_ai',
 });
 
 const CORP_ID = 48;

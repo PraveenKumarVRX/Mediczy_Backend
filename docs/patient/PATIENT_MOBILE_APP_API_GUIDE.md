@@ -44,7 +44,7 @@
 19. [Health Diary](#19-health-diary)
 20. [Health Assessment](#20-health-assessment)
 21. [Health Intelligence Dashboard](#21-health-intelligence-dashboard)
-22. [Fitness & Wearables](#22-fitness--wearables)
+22. [Fitness, Wearables & Health Connect](#22-fitness-wearables--health-connect)
 23. [Leaderboard & Challenges](#23-leaderboard--challenges)
 24. [Notifications & FCM](#24-notifications--fcm)
 25. [Text-to-Speech](#25-text-to-speech)
@@ -3124,7 +3124,7 @@ Body: {
 
 ---
 
-## 22. Fitness & Wearables
+## 22. Fitness, Wearables & Health Connect
 
 ### 22.1 Fitness Data
 ```
@@ -3135,7 +3135,54 @@ GET  /api/fitness/latest       🔐  Latest readings
 GET  /api/fitness/summary      🔐  Fitness summary
 ```
 
-### 22.2 Health Data (BLE Devices)
+### 22.2 Google Health Connect (Android)
+Primary integration for Android patient app data sync.
+
+```
+POST   /api/fitness/health-connect/sync         🔐  Store Health Connect data (single-day or batch)
+GET    /api/fitness/health-connect/status       🔐  Connection status + last sync timestamp
+DELETE /api/fitness/health-connect/disconnect   🔐  Disconnect (optional `?deleteData=true`)
+```
+
+**POST /api/fitness/health-connect/sync body (single day):**
+```json
+{
+  "date": "2026-06-09",
+  "steps": 8432,
+  "calories": 512,
+  "distance": 6240,
+  "activeMinutes": 47,
+  "heartRate": { "avg": 78, "min": 61, "max": 132 },
+  "sleepHours": 7.2,
+  "bloodOxygen": 97,
+  "weight": 63.4,
+  "appVersion": "2.7.0"
+}
+```
+
+**POST /api/fitness/health-connect/sync body (batch):**
+```json
+{
+  "days": [
+    { "date": "2026-06-08", "steps": 10021, "calories": 560, "distance": 7100, "activeMinutes": 55 },
+    { "date": "2026-06-09", "steps": 8432, "calories": 512, "distance": 6240, "activeMinutes": 47 }
+  ]
+}
+```
+
+**Success response:**
+```json
+{
+  "success": true,
+  "savedCount": 16,
+  "failedCount": 0,
+  "partialFailure": false
+}
+```
+
+> Note: There is no `GET /api/fitness/health-connect/summary` endpoint. Use `/api/health-data/*` read APIs below after sync.
+
+### 22.3 Health Data (BLE + Synced Read APIs)
 ```
 POST /api/health-data/ble-sync               🔐  Sync BLE device data
 GET  /api/health-data/recent                 🔐  Recent health data
@@ -3150,7 +3197,7 @@ POST /api/health-data/apple-health-sync      🔐  Apple Health sync
 POST /api/health-data/google-fit-sync        🔐  Google Fit sync
 ```
 
-### 22.3 Apple Health
+### 22.4 Apple Health
 ```
 POST   /api/apple-health/sync         🔐  Sync Apple Health data
 POST   /api/apple-health/sync-batch   🔐  Batch sync
@@ -3159,7 +3206,7 @@ GET    /api/apple-health/summary       🔐  Health summary
 DELETE /api/apple-health/disconnect    🔐  Disconnect
 ```
 
-### 22.4 Wearable Devices
+### 22.5 Wearable Devices
 ```
 POST /api/wearables                    🔐  Register wearable
 POST /api/wearables/provision          🔐  Provision wearable
@@ -3170,13 +3217,13 @@ GET  /api/wearables/user/:user_id/health-summary 🔐  Health summary from weara
 PUT  /api/wearables/:id/settings       🔐  Update settings
 ```
 
-### 22.5 Health Metrics
+### 22.6 Health Metrics
 ```
 GET /api/health/latest        🔐  Latest health metrics
 GET /api/health/summary       🔐  Health summary
 ```
 
-### 22.6 Diet Plan
+### 22.7 Diet Plan
 
 Two routes — identical logic, alias for backward compatibility:
 ```

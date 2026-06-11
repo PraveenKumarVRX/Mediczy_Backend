@@ -153,7 +153,7 @@ router.get('/equipment/coverage', authUser, async (req, res) => {
     const pool = await connectPostgres();
     const tenantId = req.user.tenantId || req.user.id;
     const connectors = await pool.query(`SELECT connector_type, template_id, status FROM hg_connectors WHERE tenant_id=$1`, [tenantId]);
-    const devices = await pool.query(`SELECT device_type, COUNT(*)::int AS count FROM hg_devices WHERE tenant_id=$1 AND active=TRUE GROUP BY device_type`, [tenantId]);
+    const devices = await pool.query(`SELECT device_type, COUNT(*)::int AS count FROM hg_devices WHERE tenant_id=$1 AND COALESCE(status, 'offline') <> 'inactive' GROUP BY device_type`, [tenantId]);
     const connectorTypes = new Set(connectors.rows.map((row) => String(row.connector_type || '').toLowerCase()));
     const deviceTypes = new Set(devices.rows.map((row) => String(row.device_type || '').toLowerCase()));
     const equipment = EQUIPMENT_INTEGRATION_CATALOG.map((item) => {

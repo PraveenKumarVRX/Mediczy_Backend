@@ -221,12 +221,12 @@ const AIGovernanceDashboard: React.FC = () => {
     setLoading(true);
     try {
       const [dashRes, pendRes, driftRes, gateRes, cardsRes, readRes] = await Promise.allSettled([
-        api.get('/api/ai-governance/dashboard'),
-        api.get('/api/ai-governance/changes/pending'),
-        api.get('/api/ai-governance/drift/results'),
-        api.get('/api/ai-governance/quality-gates/log?limit=50'),
-        api.get('/api/ai-governance/model-cards'),
-        api.get('/api/ai-governance/samd-readiness'),
+        api.get('/ai-governance/dashboard'),
+        api.get('/ai-governance/changes/pending'),
+        api.get('/ai-governance/drift/results'),
+        api.get('/ai-governance/quality-gates/log?limit=50'),
+        api.get('/ai-governance/model-cards'),
+        api.get('/ai-governance/samd-readiness'),
       ]);
 
       if (dashRes.status === 'fulfilled')  setDashboard(dashRes.value.data?.data);
@@ -246,7 +246,7 @@ const AIGovernanceDashboard: React.FC = () => {
 
   const handleApprove = async (changeId: number, notes: string) => {
     try {
-      await api.post(`/api/ai-governance/changes/${changeId}/approve`, { notes });
+      await api.post(`/ai-governance/changes/${changeId}/approve`, { notes });
       toast({ title: 'Change approved', description: `Change #${changeId} approved successfully` });
       setPendingChanges(prev => prev.filter(c => c.id !== changeId));
     } catch (err: any) {
@@ -256,7 +256,7 @@ const AIGovernanceDashboard: React.FC = () => {
 
   const handleReject = async (changeId: number, reason: string) => {
     try {
-      await api.post(`/api/ai-governance/changes/${changeId}/reject`, { reason });
+      await api.post(`/ai-governance/changes/${changeId}/reject`, { reason });
       toast({ title: 'Change rejected', description: `Change #${changeId} rejected` });
       setPendingChanges(prev => prev.filter(c => c.id !== changeId));
     } catch (err: any) {
@@ -267,7 +267,7 @@ const AIGovernanceDashboard: React.FC = () => {
   const handleRunDrift = async () => {
     setDriftRunning(true);
     try {
-      const res = await api.post('/api/ai-governance/drift/run');
+      const res = await api.post('/ai-governance/drift/run');
       toast({ title: 'Drift monitor complete', description: `${res.data?.result?.alertCount ?? 0} alerts detected` });
       fetchAll();
     } catch {

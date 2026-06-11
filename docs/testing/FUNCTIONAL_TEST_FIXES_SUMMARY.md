@@ -26,7 +26,7 @@
 **Root Cause:** YouTube Data API v3 not enabled, and API key had restrictions
 **Fix Applied:**
 - Enabled YouTube Data API v3 in Google Cloud Console
-- Updated API key to unrestricted key: `AIzaSyCVa8eKHpCzWvyFrd4jKKxkomxHI8iAp48`
+- Updated YouTube API key configuration in `client/.env`
 - Updated `client/.env` with new YouTube API key
 - Frontend rebuilt
 **Status:** ✅ Fixed - YouTube videos will now load and play
@@ -36,7 +36,7 @@
 - File: `/root/Mediczy/server/db/Master Data/Doctors Data/teleconsulation doctors list.xlsx`
 - Successfully imported all 20 doctors
 - Total doctors in database: 97 (was 77)
-- Default password for new doctors: `Mediczy@123`
+- Default password for new doctors was rotated and should be supplied through a secure, non-repository channel.
 
 ## ⏳ ISSUES REQUIRING USER ACTION
 
@@ -45,7 +45,7 @@
 **Root Cause:** Google Places API (New) was just enabled and needs time to propagate
 **Current Status:**
 - Places API (New) enabled in Google Cloud Console
-- API key configured in backend: `GOOGLE_MAPS_API_KEY=AIzaSyAuYgocNCvsNuf8uW6G43vdSw74TYraXb4`
+- API key configured in backend via `GOOGLE_MAPS_API_KEY`
 - Backend route updated with fallback logic (tries new API, then legacy)
 **Next Steps:**
 - Wait 5-10 more minutes for API propagation
@@ -130,7 +130,7 @@ curl "http://localhost:8000/api/places/nearby?lat=12.9716&lng=77.5946&type=hospi
 
 ### Test YouTube API (should work now)
 ```bash
-curl "https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=2&q=health&type=video&key=AIzaSyCVa8eKHpCzWvyFrd4jKKxkomxHI8iAp48"
+curl "https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=2&q=health&type=video&key=$YOUTUBE_API_KEY"
 ```
 
 ### Test Medical AI Chatbot

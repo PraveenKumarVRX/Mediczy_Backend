@@ -50,11 +50,19 @@ export const TASK_DEFINITIONS = [
   { key: 'system_health',         name: 'System Health Monitor',                 schedule: 'Every 1 min',      category: 'system',     scheduleDesc: '* * * * *' },
   { key: 'email_sync',            name: 'Email Inbox Sync (IMAP)',               schedule: 'Every 5 min',      category: 'system',     scheduleDesc: '*/5 * * * *' },
   // AI
+  { key: 'feedback_aggregator',   name: 'Feedback Aggregator (3 silos → unified)', schedule: 'Every 15 min',   category: 'ai',         scheduleDesc: '*/15 * * * *' },
+  { key: 'sla_breach_checker',   name: 'SLA Breach Checker (ticket_sla)',         schedule: 'Every 5 min',    category: 'ai',         scheduleDesc: '*/5 * * * *'  },
+  { key: 'feedback_router',     name: 'Feedback Router (quality → governance)',   schedule: 'Every 30 min',   category: 'ai',         scheduleDesc: '20 */1 * * *' },
+  { key: 'closed_loop_notifier',name: 'Closed-Loop Notifier (post-resolution)',   schedule: 'Every 30 min',   category: 'ai',         scheduleDesc: '45 */1 * * *' },
+  { key: 'prompt_optimizer',   name: 'Prompt Optimization Executor (shadow/canary)', schedule: 'Daily 02:00 IST', category: 'ai',        scheduleDesc: '30 20 * * *'  },
+  { key: 'feedback_digest',   name: 'Feedback Weekly Digest Email',                schedule: 'Mon 08:00 IST',  category: 'ai',        scheduleDesc: '30 2 * * 1'   },
   { key: 'ai_health_risk',        name: 'AI Health Risk Score',                  schedule: 'Every 6 hours',    category: 'ai',         scheduleDesc: '0 */6 * * *' },
   { key: 'ai_smart_notif',        name: 'AI Smart Notifications',                schedule: 'Every 2 hours',    category: 'ai',         scheduleDesc: '15 */2 * * *' },
   { key: 'ai_clinical_insights',  name: 'AI Clinical Insights',                  schedule: 'Every 8 hours',    category: 'ai',         scheduleDesc: '0 */8 * * *' },
   { key: 'ai_self_learning',      name: 'AI Self-Learning Pipeline',             schedule: 'Every 4 hours',    category: 'ai',         scheduleDesc: '30 */4 * * *' },
   { key: 'ai_proactive_alerts',   name: 'AI Proactive Patient Alerts',           schedule: 'Every 4 hours',    category: 'ai',         scheduleDesc: '0 */4 * * *' },
+  { key: 'ai_drift_monitor',      name: 'AI Model Drift Monitor (PSI)',          schedule: 'Weekly Sun 1 AM',  category: 'ai',         scheduleDesc: '0 1 * * 0' },
+  { key: 'ai_demographic_parity', name: 'AI Demographic Parity Audit',           schedule: 'Weekly Mon 1 AM',  category: 'ai',         scheduleDesc: '0 1 * * 1' },
   // Lab
   { key: 'lab_critical_escalation', name: 'Lab Critical Alert Escalation',       schedule: 'Every 15 min',     category: 'clinical',   scheduleDesc: '*/15 * * * *' },
   // Compliance

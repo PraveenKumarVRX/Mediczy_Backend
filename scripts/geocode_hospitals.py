@@ -8,7 +8,9 @@ import time
 import os
 
 # Google Maps API Key
-GOOGLE_API_KEY = "AIzaSyAuYgocNCvs Nuf8uW6G43vdSw74TYraXb4".replace(" ", "")
+GOOGLE_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY')
+if not GOOGLE_API_KEY:
+    raise RuntimeError('GOOGLE_MAPS_API_KEY is required')
 
 def geocode_address(address):
     """Geocode an address using Google Maps API"""
@@ -36,11 +38,15 @@ def geocode_address(address):
         return None, None
 
 def main():
+    db_password = os.environ.get('POSTGRES_PASSWORD') or os.environ.get('DB_PASSWORD')
+    if not db_password:
+        raise RuntimeError('POSTGRES_PASSWORD or DB_PASSWORD is required')
+
     conn = psycopg2.connect(
-        host='127.0.0.1',
-        database='mediczy_ai',
-        user='mediczy_helper',
-        password='Mediczy2024Helper'
+        host=os.environ.get('POSTGRES_HOST', '127.0.0.1'),
+        database=os.environ.get('POSTGRES_DATABASE', 'mediczy_ai'),
+        user=os.environ.get('POSTGRES_USER', 'mediczy_helper'),
+        password=db_password
     )
     cur = conn.cursor()
     

@@ -4,7 +4,7 @@
  * Gaps closed vs. original:
  *   1. DB re-check: fetches the user record on every request — revoked/suspended
  *      admins are rejected even while their JWT is still technically valid.
- *   2. isActive + status: both fields must pass (old code only checked JWT claims).
+ *   2. status: rejects inactive, suspended, or deleted admin rows.
  *   3. Role verification: confirms the DB record still carries isAdmin=true or an
  *      admin-tier role, not just the JWT payload claim.
  */
@@ -41,14 +41,14 @@ export const adminAuthMiddleware = async (req, res, next) => {
     // DB re-validation — ensures suspended/deleted admins are rejected immediately
     const user = await userModel.findOne({
       where: { id: decoded.id },
-      attributes: ['id', 'email', 'role', 'isAdmin', 'status', 'isActive'],
+      attributes: ['id', 'email', 'role', 'isAdmin', 'status'],
     });
 
     if (!user) {
       return res.status(401).json({ success: false, error: 'Admin account not found' });
     }
 
-    if (user.status !== 'active' || user.isActive === false) {
+    if (user.status !== 'active') {
       return res.status(403).json({ success: false, error: 'Admin account is inactive or suspended' });
     }
 

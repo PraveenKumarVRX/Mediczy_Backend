@@ -111,10 +111,10 @@ export default function HyperGridDashboard() {
     setLoading(true);
     try {
       const [netStats, twinsRes, eventsRes, busRes] = await Promise.allSettled([
-        api.get("/api/hypergrid/marketplace/network/stats"),
-        api.get("/api/hypergrid/twins/summary"),
-        api.get("/api/hypergrid/events?limit=8"),
-        api.get("/api/hypergrid/events/bus/status"),
+        api.get("/hypergrid/marketplace/network/stats"),
+        api.get("/hypergrid/twins/summary"),
+        api.get("/hypergrid/events?limit=8"),
+        api.get("/hypergrid/events/bus/status"),
       ]);
 
       if (netStats.status === "fulfilled") {

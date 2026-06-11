@@ -1743,4 +1743,23 @@ router.get('/learning/stats', auth, async (req, res) => {
   }
 });
 
-export default router; 
+
+const ADMIN_AI_STATS_MODULES = new Set(["scribe", "vision", "brain", "deeptech", "cdss", "alerts"]);
+
+router.get("/:module/stats", auth, async (req, res) => {
+  const module = String(req.params.module || "").toLowerCase();
+  if (!ADMIN_AI_STATS_MODULES.has(module)) {
+    return res.status(404).json({ status: "error", message: "AI module not found" });
+  }
+
+  res.json({
+    success: true,
+    module,
+    requests: 0,
+    avgLatencyMs: 0,
+    errors: 0,
+    status: "ready",
+  });
+});
+
+export default router;

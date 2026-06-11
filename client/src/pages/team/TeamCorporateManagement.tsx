@@ -2843,14 +2843,6 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
           title: "Welcome Email Draft Prepared",
           description: "Review and edit the welcome email before sending it."
         });
-      } else if (created?.isNewUser && created?.temporaryPassword) {
-        setNewEmployeeCredentials({
-          name: newEmployee.name,
-          email: newEmployee.email,
-          password: created.temporaryPassword,
-          emailStatus: created.emailStatus || (employeeWelcomeEmailMode === "send" ? "queued" : "skipped")
-        });
-        setShowCredentialsDialog(true);
       } else {
         toast({
           title: 'Employee Added',
@@ -2877,6 +2869,11 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         employeeName: fallbackName || item.name || item.email,
         subject: item.welcomeEmailDraft.subject || "Welcome to Employee Health Portal",
         html: item.welcomeEmailDraft.html || "",
+        draftToken: item.welcomeEmailDraft.draftToken,
+        draftExpiresAt: item.welcomeEmailDraft.draftExpiresAt,
+        deliveryId: item.welcomeEmailDraft.deliveryId,
+        userId: item.userId,
+        employeeId: item.employeeId,
         status: "draft" as const,
       }));
   };
@@ -2940,12 +2937,9 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
             provider,
             emails: chunk.map((draft) => ({
               to: draft.to,
-              subject: draft.subject,
-              html: draft.html,
+              draftToken: draft.draftToken,
               userId: draft.userId,
               employeeId: draft.employeeId,
-              temporaryPassword: draft.temporaryPassword,
-              forceResend: draft.forceResend === true,
             }))
           }, { headers, timeout: 90000 });
 
@@ -3413,7 +3407,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
 
     try {
       const BULK_CHUNK = 500;
-      const allDraftRows: Array<{ userId: number; email: string; employeeId: string; temporaryPassword: string; subject: string; html: string }> = [];
+      const allDraftRows: Array<{ userId: number; email: string; employeeId: string; draftToken?: string; draftExpiresAt?: string; deliveryId?: string | number | null; subject: string; html: string }> = [];
       const skippedTargets: string[] = [];
       const failedTargets: string[] = [];
 
@@ -3467,51 +3461,37 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
               }, { headers: teamAuthHeaders() });
 
               const resendResult = data?.result;
-              const temporaryPassword = String(resendResult?.temporaryPassword || '').trim();
+              const resendDraft = resendResult?.welcomeEmailDraft;
               const resendEmail = String(resendResult?.email || singleTarget?.email || '').trim();
 
-              if (temporaryPassword && resendEmail) {
+              if (resendDraft?.draftToken && resendEmail) {
                 const draftTimestamp = Date.now();
-                const empForPlaceholders = {
-                  ...(singleTarget || {}),
-                  id: String(singleUserId),
-                  email: resendEmail,
-                  employeeId: singleTarget?.employeeId || '',
-                } as Employee;
-
-                const forcedDraft: WelcomeEmailDraft = {
+                const preparedDraft: WelcomeEmailDraft = {
                   id: `prepared-resend-${singleUserId}-${draftTimestamp}`,
                   to: resendEmail,
                   userId: singleUserId,
                   employeeId: singleTarget?.employeeId || '',
-                  temporaryPassword,
-                  forceResend: true,
+                  draftToken: resendDraft.draftToken,
+                  draftExpiresAt: resendDraft.draftExpiresAt,
+                  deliveryId: resendDraft.deliveryId,
                   employeeName: singleTarget?.name || resendResult?.name || resendEmail,
-                  subject: applyWelcomeTemplatePlaceholders(
-                    normalizeTemplateForSingleEmployee(selectedTemplate.subject, empForPlaceholders),
-                    empForPlaceholders,
-                    temporaryPassword,
-                  ),
-                  html: applyWelcomeTemplatePlaceholders(
-                    normalizeTemplateForSingleEmployee(selectedTemplate.html, empForPlaceholders),
-                    empForPlaceholders,
-                    temporaryPassword,
-                  ),
+                  subject: resendDraft.subject || selectedTemplate.subject,
+                  html: resendDraft.html || selectedTemplate.html,
                   status: 'draft',
                 };
 
                 if (sendImmediately) {
-                  setWelcomeEmailDrafts((current) => [...current, forcedDraft]);
-                  await handleSendWelcomeEmailBatch([forcedDraft]);
+                  setWelcomeEmailDrafts((current) => [...current, preparedDraft]);
+                  await handleSendWelcomeEmailBatch([preparedDraft]);
                   toast({
                     title: 'Welcome email queued',
-                    description: 'Generated fresh credentials and sent using the selected template for 1 employee.',
+                    description: 'Generated fresh credentials and queued the welcome email for 1 employee.',
                   });
                 } else {
-                  addPreparedWelcomeEmailDrafts([forcedDraft]);
+                  addPreparedWelcomeEmailDrafts([preparedDraft]);
                   toast({
                     title: 'Fresh welcome draft prepared',
-                    description: 'Generated fresh credentials draft with the selected template for review.',
+                    description: 'Generated a secure welcome draft for review.',
                   });
                 }
                 return;
@@ -3532,9 +3512,8 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         return;
       }
 
-      // Apply the UI-selected template (with per-employee placeholders) rather than the
-      // server's default. The server only provides temporaryPassword — subject/html come
-      // from the template the user actually chose in the dialog.
+      // Draft previews are server-rendered and redacted; final sends are rendered again
+      // server-side from the draft token and canonical employee data.
 
       const draftTimestamp = Date.now();
       const drafts: WelcomeEmailDraft[] = allDraftRows.map((row, index) => {
@@ -3560,12 +3539,14 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
           to: row.email,
           userId: row.userId,
           employeeId: row.employeeId,
-          temporaryPassword: row.temporaryPassword,
+          draftToken: row.draftToken,
+          draftExpiresAt: row.draftExpiresAt,
+          deliveryId: row.deliveryId,
           employeeName: employee
             ? (employee.name || `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || row.email)
             : row.email,
-          subject: applyWelcomeTemplatePlaceholders(renderedSubjectTemplate, empForPlaceholders as Employee, row.temporaryPassword),
-          html: applyWelcomeTemplatePlaceholders(renderedHtmlTemplate, empForPlaceholders as Employee, row.temporaryPassword),
+          subject: row.subject || applyWelcomeTemplatePlaceholders(renderedSubjectTemplate, empForPlaceholders as Employee),
+          html: row.html || applyWelcomeTemplatePlaceholders(renderedHtmlTemplate, empForPlaceholders as Employee),
           status: 'draft' as const,
         };
       });

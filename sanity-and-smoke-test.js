@@ -371,6 +371,14 @@ class SanityCheckAndSmokeTest {
       () => this.smokeTestEmergencyVideoCall(),
       () => this.smokeTestVideoCallNotifications(),
       () => this.smokeTestLiveKitServer(),
+      () => this.smokeTestDrIshaConsult(),
+      () => this.smokeTestDrIshaSessionReset(),
+      () => this.smokeTestLiveKitTokenEndpoint(),
+      () => this.smokeTestVoiceAssistantStatus(),
+      () => this.smokeTestVoiceAgentEndpoint(),
+      () => this.smokeTestVoiceBriefingEndpoint(),
+      () => this.smokeTestVoiceToolsEndpoint(),
+      () => this.smokeTestDoctorTasksIsolation(),
     ];
 
     for (const test of tests) {
@@ -707,25 +715,240 @@ class SanityCheckAndSmokeTest {
   async smokeTestLiveKitServer() {
     console.log('\n📹 LiveKit Video Server');
     const test = { name: 'LiveKit Server', status: 'pending' };
+    const configuredUrl =
+      process.env.LIVEKIT_API_URL ||
+      process.env.LIVEKIT_URL ||
+      process.env.LIVEKIT_MEET_URL ||
+      'http://localhost:7880';
+    const healthUrl = configuredUrl
+      .replace(/^wss:\/\//, "https://")
+      .replace(/^ws:\/\//, "http://")
+      .replace(/\/+$/, "");
+
     try {
-      // Check if LiveKit server is running
-      const response = await axios.get('http://localhost:7880', {
+      // Check the configured LiveKit API. UAT/prod use LiveKit Cloud; local dev may use :7880.
+      const response = await axios.get(healthUrl, {
         timeout: 5000,
+        validateStatus: (status) => status < 500,
       });
 
-      if (response.status === 200) {
+      if (response.status < 500) {
         test.status = 'passed';
-        this.log(`✅ LiveKit video server running on port 7880`, 'success');
+        this.log("✅ LiveKit video server reachable at " + healthUrl + " (status " + response.status + ")", 'success');
       }
     } catch (error) {
       if (error.code === 'ECONNREFUSED') {
         test.status = 'failed';
-        test.error = 'LiveKit server not running on port 7880';
-        this.log(`❌ LiveKit server not accessible`, 'error');
+        test.error = "LiveKit server not reachable at " + healthUrl;
+        this.log("❌ LiveKit server not accessible at " + healthUrl, 'error');
       } else {
         test.status = 'passed';
-        this.log(`✅ LiveKit server responding`, 'success');
+        this.log("✅ LiveKit server responding at " + healthUrl, 'success');
       }
+    }
+    this.recordResult('smoke', test);
+  }
+
+  async smokeTestDrIshaConsult() {
+    console.log('\n🩺 Dr. iSHA Consult Endpoint');
+    const test = { name: 'Dr. iSHA Consult', status: 'pending' };
+    try {
+      await axios.post(`${BASE_URL}/api/medical-ai/consult`, { message: 'hello' }, { timeout: API_TIMEOUT });
+      test.status = 'failed';
+      test.error = 'Consult endpoint accessible without authentication';
+      this.log('❌ Dr. iSHA consult accessible without auth — auth guard missing', 'error');
+    } catch (error) {
+      if (error.response?.status === 401) {
+        test.status = 'passed';
+        this.log('✅ Dr. iSHA consult endpoint exists and is auth-protected', 'success');
+      } else {
+        test.status = 'warning';
+        this.log(`⚠️ Dr. iSHA consult check: ${error.message}`, 'warning');
+      }
+    }
+    this.recordResult('smoke', test);
+  }
+
+  async smokeTestDrIshaSessionReset() {
+    console.log('\n💬 Dr. iSHA Conversation Memory Reset');
+    const test = { name: 'Dr. iSHA Session Reset', status: 'pending' };
+    try {
+      await axios.delete(`${BASE_URL}/api/medical-ai/session/test-id`, { timeout: API_TIMEOUT });
+      test.status = 'failed';
+      test.error = 'Session reset endpoint accessible without authentication';
+      this.log('❌ Session reset accessible without auth', 'error');
+    } catch (error) {
+      if (error.response?.status === 401) {
+        test.status = 'passed';
+        this.log('✅ Session reset endpoint exists and is auth-protected', 'success');
+      } else if (error.response?.status === 404) {
+        test.status = 'failed';
+        test.error = 'Session reset endpoint not found — conversation memory not wired';
+        this.log('❌ Session reset endpoint not found', 'error');
+      } else {
+        test.status = 'warning';
+        this.log(`⚠️ Session reset check: ${error.message}`, 'warning');
+      }
+    }
+    this.recordResult('smoke', test);
+  }
+
+  async smokeTestLiveKitTokenEndpoint() {
+    console.log('\n🎙️ LiveKit Token Endpoint (Voice AI)');
+    const test = { name: 'LiveKit Token Endpoint', status: 'pending' };
+    try {
+      await axios.get(`${BASE_URL}/api/voice-assistant/livekit-token`, { timeout: API_TIMEOUT });
+      test.status = 'failed';
+      test.error = 'LiveKit token endpoint accessible without authentication';
+      this.log('❌ LiveKit token endpoint missing auth guard', 'error');
+    } catch (error) {
+      if (error.response?.status === 401) {
+        test.status = 'passed';
+        this.log('✅ LiveKit token endpoint exists and is auth-protected', 'success');
+      } else if (error.response?.status === 404) {
+        test.status = 'failed';
+        test.error = 'LiveKit token endpoint not found';
+        this.log('❌ LiveKit token endpoint not found', 'error');
+      } else {
+        test.status = 'warning';
+        this.log(`⚠️ LiveKit token check: ${error.message}`, 'warning');
+      }
+    }
+    this.recordResult('smoke', test);
+  }
+
+  async smokeTestVoiceAssistantStatus() {
+    console.log('\n🔊 Voice Assistant Status');
+    const test = { name: 'Voice Assistant Status', status: 'pending' };
+    try {
+      const response = await axios.get(`${BASE_URL}/api/voice-assistant/status`, {
+        timeout: API_TIMEOUT,
+        validateStatus: (s) => s < 500,
+      });
+      if (response.status === 401) {
+        test.status = 'passed';
+        this.log('✅ Voice assistant status endpoint is auth-protected', 'success');
+      } else if (response.status === 200) {
+        const livekitUrl = response.data?.components?.livekit || 'unknown';
+        const isCloud = livekitUrl.includes('livekit.cloud');
+        test.status = 'passed';
+        test.livekit = livekitUrl;
+        this.log(`✅ Voice assistant status OK — LiveKit: ${livekitUrl} (${isCloud ? 'Cloud' : 'self-hosted'})`, 'success');
+      } else {
+        test.status = 'warning';
+        this.log(`⚠️ Voice assistant status returned ${response.status}`, 'warning');
+      }
+    } catch (error) {
+      test.status = 'warning';
+      this.log(`⚠️ Voice assistant status check: ${error.message}`, 'warning');
+    }
+    this.recordResult('smoke', test);
+  }
+
+  async smokeTestVoiceAgentEndpoint() {
+    console.log('\n🤖 Voice Agent Endpoint (iSHA)');
+    const test = { name: 'Voice Agent Endpoint', status: 'pending' };
+    try {
+      await axios.post(`${BASE_URL}/api/voice-assistant/agent`, { text: 'hello' }, { timeout: API_TIMEOUT });
+      test.status = 'failed';
+      test.error = 'Voice agent accessible without authentication';
+      this.log('❌ Voice agent missing auth guard', 'error');
+    } catch (error) {
+      if (error.response?.status === 401) {
+        test.status = 'passed';
+        this.log('✅ Voice agent endpoint exists and is auth-protected', 'success');
+      } else if (error.response?.status === 404) {
+        test.status = 'failed';
+        test.error = 'Voice agent endpoint not found';
+        this.log('❌ Voice agent endpoint not found', 'error');
+      } else {
+        test.status = 'warning';
+        this.log(`⚠️ Voice agent check: ${error.message}`, 'warning');
+      }
+    }
+    this.recordResult('smoke', test);
+  }
+
+  async smokeTestVoiceBriefingEndpoint() {
+    console.log('\n📋 Voice Briefing Poll Endpoint');
+    const test = { name: 'Voice Briefing Endpoint', status: 'pending' };
+    try {
+      await axios.get(`${BASE_URL}/api/voice-assistant/briefing`, { timeout: API_TIMEOUT });
+      test.status = 'failed';
+      test.error = 'Briefing endpoint accessible without authentication';
+      this.log('❌ Briefing endpoint missing auth guard', 'error');
+    } catch (error) {
+      if (error.response?.status === 401) {
+        test.status = 'passed';
+        this.log('✅ Voice briefing endpoint exists and is auth-protected', 'success');
+      } else if (error.response?.status === 404) {
+        test.status = 'failed';
+        test.error = 'Voice briefing endpoint not found';
+        this.log('❌ Voice briefing endpoint not found', 'error');
+      } else {
+        test.status = 'warning';
+        this.log(`⚠️ Voice briefing check: ${error.message}`, 'warning');
+      }
+    }
+    this.recordResult('smoke', test);
+  }
+
+  async smokeTestVoiceToolsEndpoint() {
+    console.log('\n🛠️ Voice Tools Registry');
+    const test = { name: 'Voice Tools Registry', status: 'pending' };
+    try {
+      await axios.get(`${BASE_URL}/api/voice-assistant/tools`, { timeout: API_TIMEOUT });
+      test.status = 'failed';
+      test.error = 'Tools endpoint accessible without authentication';
+      this.log('❌ Tools endpoint missing auth guard', 'error');
+    } catch (error) {
+      if (error.response?.status === 401) {
+        test.status = 'passed';
+        this.log('✅ Voice tools endpoint exists and is auth-protected', 'success');
+      } else if (error.response?.status === 404) {
+        test.status = 'failed';
+        test.error = 'Voice tools endpoint not found';
+        this.log('❌ Voice tools endpoint not found', 'error');
+      } else {
+        test.status = 'warning';
+        this.log(`⚠️ Voice tools check: ${error.message}`, 'warning');
+      }
+    }
+    this.recordResult('smoke', test);
+  }
+
+  async smokeTestDoctorTasksIsolation() {
+    console.log('\n🔒 Doctor Tasks — Multi-Tenant Isolation');
+    const test = { name: 'Doctor Tasks Isolation', status: 'pending' };
+    try {
+      // Unauthenticated add_task attempt must be blocked
+      const addResp = await axios.post(
+        `${BASE_URL}/api/voice-assistant/agent`,
+        { text: 'remind me to check lab results tomorrow' },
+        { timeout: API_TIMEOUT }
+      ).catch(e => e.response);
+
+      // Unauthenticated list_tasks attempt must be blocked
+      const listResp = await axios.post(
+        `${BASE_URL}/api/voice-assistant/agent`,
+        { text: 'show my tasks' },
+        { timeout: API_TIMEOUT }
+      ).catch(e => e.response);
+
+      const addBlocked  = addResp?.status === 401;
+      const listBlocked = listResp?.status === 401;
+
+      if (addBlocked && listBlocked) {
+        test.status = 'passed';
+        this.log('✅ Task add and list both blocked without a doctor token — isolation enforced', 'success');
+      } else {
+        test.status = 'failed';
+        test.error = `Task endpoints reachable without auth (add:${addResp?.status}, list:${listResp?.status})`;
+        this.log(`❌ Task isolation failure: ${test.error}`, 'error');
+      }
+    } catch (error) {
+      test.status = 'warning';
+      this.log(`⚠️ Task isolation check: ${error.message}`, 'warning');
     }
     this.recordResult('smoke', test);
   }

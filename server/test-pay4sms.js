@@ -7,10 +7,15 @@ dotenv.config();
 async function testPay4SMS() {
   console.log('🧪 Testing Pay4SMS Gateway...\n');
 
-  // Pay4SMS Configuration (you need to add these to .env)
-  const token = '3cc40fb366624fba4447d922ed555417'; // Your actual token
-  const senderId = 'MAYDEN'; // Your approved sender ID (MSMART is suspended)
-  const templateId = '1707162254671707'; // Your OTP template ID
+  // Pay4SMS Configuration (set these in .env or your shell)
+  const token = process.env.PAY4SMS_TOKEN;
+  const senderId = process.env.PAY4SMS_SENDER_ID;
+  const templateId = process.env.PAY4SMS_OTP_TEMPLATE_ID;
+  const testPhone = process.env.PAY4SMS_TEST_PHONE;
+
+  if (!token || !senderId || !templateId || !testPhone) {
+    throw new Error('PAY4SMS_TOKEN, PAY4SMS_SENDER_ID, PAY4SMS_OTP_TEMPLATE_ID, and PAY4SMS_TEST_PHONE are required');
+  }
 
   console.log('📋 Configuration:');
   console.log(`Provider: Pay4SMS`);
@@ -28,11 +33,11 @@ async function testPay4SMS() {
     apiUrl: 'http://pay4sms.in'
   });
 
-  console.log('📱 Test 1: Sending OTP SMS with actual value to 7373007737...\n');
+  console.log(`📱 Test 1: Sending OTP SMS with actual value to ${testPhone}...\n`);
 
   try {
     const result1 = await smsService.sendSMS({
-      to: '7373007737',
+      to: testPhone,
       message: '123456 is your One Time Password to login with your My Smart Health Account. Don\'t Share this with anyone.',
       templateId: templateId
     });
@@ -50,10 +55,10 @@ async function testPay4SMS() {
     }
 
     console.log('\n' + '='.repeat(60) + '\n');
-    console.log('📱 Test 2: Sending OTP SMS to 7373007737...\n');
+    console.log(`📱 Test 2: Sending OTP SMS to ${testPhone}...\n`);
 
     const result2 = await smsService.sendSMS({
-      to: '7373007737',
+      to: testPhone,
       message: '987654 is your One Time Password to login with your My Smart Health Account. Don\'t Share this with anyone.',
       templateId: templateId
     });

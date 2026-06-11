@@ -6,16 +6,20 @@ dotenv.config();
 async function diagnosePay4SMS() {
   console.log('🔍 Pay4SMS Diagnostics\n');
   
-  const token = '3cc40fb366624fba4447d922ed555417';
-  const sender = 'MSMART';
-  const phone = '7373007737';
+  const token = process.env.PAY4SMS_TOKEN;
+  const sender = process.env.PAY4SMS_SENDER_ID;
+  const phone = process.env.PAY4SMS_TEST_PHONE;
+  const templateIds = String(process.env.PAY4SMS_TEMPLATE_IDS || '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean);
+
+  if (!token || !sender || !phone || templateIds.length === 0) {
+    throw new Error('PAY4SMS_TOKEN, PAY4SMS_SENDER_ID, PAY4SMS_TEST_PHONE, and PAY4SMS_TEMPLATE_IDS are required');
+  }
   
   // Test different template IDs
-  const templates = [
-    { id: '1707162254671707XXXXXXXX', name: 'LOGIN OTP (Most Recent)' },
-    { id: '17071622546XXXXXXXX', name: 'CHANGE PASSWORD' },
-    { id: '1707162254XXXXXXXX', name: 'One Time Password' }
-  ];
+  const templates = templateIds.map((id, index) => ({ id, name: `Template ${index + 1}` }));
   
   console.log('Testing different template IDs:\n');
   
@@ -89,7 +93,7 @@ async function diagnosePay4SMS() {
   console.log('\n' + '='.repeat(60));
   console.log('\n📋 Recommendations:\n');
   console.log('1. Verify template IDs are correct in Pay4SMS dashboard');
-  console.log('2. Ensure MSMART sender ID is linked to the templates');
+  console.log('2. Ensure the configured sender ID is linked to the templates');
   console.log('3. Check if templates are in "Active" status');
   console.log('4. Verify DLT registration is complete');
   console.log('5. Contact Pay4SMS support if all messages show "Expired"');

@@ -598,6 +598,18 @@ Doctor.prototype.generateAuthToken = function () {
   );
 };
 
+Doctor.prototype.toJSON = function () {
+  const values = { ...this.get() };
+  delete values.password;
+  delete values.googleId;
+  delete values.facebookId;
+  delete values.oauthProvider;
+  delete values.google_id;
+  delete values.facebook_id;
+  delete values.oauth_provider;
+  return values;
+};
+
 // Static Methods
 Doctor.findBySpecialization = async function (specialization) {
   return await Doctor.findAll({

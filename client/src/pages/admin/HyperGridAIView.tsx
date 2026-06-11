@@ -35,12 +35,12 @@ interface AIModule {
 }
 
 const AI_MODULES: AIModule[] = [
-  { name: "AI Scribe",     endpoint: "/api/ai/scribe/stats",     requests: 0, avgLatencyMs: 0, errors: 0, icon: Mic,        color: "#6366f1" },
-  { name: "AI Vision",     endpoint: "/api/ai/vision/stats",     requests: 0, avgLatencyMs: 0, errors: 0, icon: Eye,        color: "#06b6d4" },
-  { name: "AI Brain",      endpoint: "/api/ai/brain/stats",      requests: 0, avgLatencyMs: 0, errors: 0, icon: Brain,      color: "#8b5cf6" },
-  { name: "AI DeepTech",   endpoint: "/api/ai/deeptech/stats",   requests: 0, avgLatencyMs: 0, errors: 0, icon: Cpu,        color: "#f59e0b" },
-  { name: "CDSS / CIMS",   endpoint: "/api/ai/cdss/stats",       requests: 0, avgLatencyMs: 0, errors: 0, icon: Stethoscope,color: "#22c55e" },
-  { name: "Proactive Alerts",endpoint: "/api/ai/alerts/stats",   requests: 0, avgLatencyMs: 0, errors: 0, icon: Bell,       color: "#ef4444" },
+  { name: "AI Scribe",     endpoint: "/ai/scribe/stats",     requests: 0, avgLatencyMs: 0, errors: 0, icon: Mic,        color: "#6366f1" },
+  { name: "AI Vision",     endpoint: "/ai/vision/stats",     requests: 0, avgLatencyMs: 0, errors: 0, icon: Eye,        color: "#06b6d4" },
+  { name: "AI Brain",      endpoint: "/ai/brain/stats",      requests: 0, avgLatencyMs: 0, errors: 0, icon: Brain,      color: "#8b5cf6" },
+  { name: "AI DeepTech",   endpoint: "/ai/deeptech/stats",   requests: 0, avgLatencyMs: 0, errors: 0, icon: Cpu,        color: "#f59e0b" },
+  { name: "CDSS / CIMS",   endpoint: "/ai/cdss/stats",       requests: 0, avgLatencyMs: 0, errors: 0, icon: Stethoscope,color: "#22c55e" },
+  { name: "Proactive Alerts",endpoint: "/ai/alerts/stats",   requests: 0, avgLatencyMs: 0, errors: 0, icon: Bell,       color: "#ef4444" },
 ];
 
 // ── Fake time-series (real data replaces when endpoints respond) ─────────────
@@ -141,7 +141,7 @@ export default function HyperGridAIView() {
     setLoading(true);
     try {
       // Fetch HyperGrid AI-adjacent events
-      const evRes = await api.get("/api/hypergrid/events?type=VitalsObserved&limit=1").catch(() => null);
+      const evRes = await api.get("/hypergrid/events?type=VitalsObserved&limit=1").catch(() => null);
       if (evRes?.data?.total) setTotalEvents(evRes.data.total);
 
       // Attempt to fetch individual AI module stats (graceful degradation)

@@ -9,6 +9,74 @@ import { postgresSequelize } from '../db/postgres-sequelize.js';
 import logger from '../config/logger.js';
 import rocketChatService from './rocketchat.service.js';
 
+// Lazy import — avoids circular dependency; only fires after ticket is persisted.
+async function triggerAggregatorForComplaint() {
+  try {
+    const { default: feedbackAggregator } = await import('./feedback-aggregator.service.js');
+    // Non-blocking: ingests the new ticket into unified_feedback_signals and
+    // refreshes ai_component_quality_scores without delaying ticket creation.
+    feedbackAggregator.run().catch((e) =>
+      logger.warn('[autoTicket] aggregator run error:', e.message)
+    );
+  } catch (e) {
+    logger.warn('[autoTicket] could not load feedback aggregator:', e.message);
+  }
+}
+
+/**
+ * Classify severity and record an SLA row for a complaint ticket.
+ * Non-blocking; ticket creation is never delayed.
+ */
+async function classifyAndRecordSla(ticketId, text) {
+  try {
+    const { classifySeverity, computeSLADeadlines } = await import('./feedback-severity-classifier.service.js');
+    const { default: pool } = await import('../db/pgPool.js');
+
+    const result   = await classifySeverity(text);
+    const deadlines = computeSLADeadlines(result.severity);
+
+    await pool.query(`
+      INSERT INTO ticket_sla
+        (ticket_id, severity, confidence, ai_component, feedback_type,
+         evidence_quote, recommended_action,
+         response_due_at, resolution_due_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      ON CONFLICT (ticket_id) DO NOTHING
+    `, [
+      ticketId,
+      result.severity,
+      result.confidence,
+      result.ai_component,
+      result.feedback_type,
+      result.evidence_quote,
+      result.recommended_action,
+      deadlines.response_due_at,
+      deadlines.resolution_due_at,
+    ]);
+
+    // For S0 — broadcast an immediate alert to all connected admin sockets
+    if (result.severity === 'S0') {
+      const { default: socketService } = await import('./socket.service.js');
+      const io = socketService.getIO();
+      if (io) {
+        io.emit('s0_safety_alert', {
+          ticket_id:    ticketId,
+          severity:     'S0',
+          ai_component: result.ai_component,
+          evidence:     result.evidence_quote,
+          action:       result.recommended_action,
+          timestamp:    new Date().toISOString(),
+        });
+      }
+      logger.error(`[autoTicket] 🔴 S0 SAFETY ALERT: ticket=${ticketId} — ${result.evidence_quote}`);
+    } else if (result.severity === 'S1') {
+      logger.warn(`[autoTicket] 🟠 S1 Clinical quality: ticket=${ticketId} — ${result.evidence_quote}`);
+    }
+  } catch (e) {
+    logger.warn('[autoTicket] SLA classification error:', e.message);
+  }
+}
+
 // ─── Intent patterns ──────────────────────────────────────────────────────────
 
 export const SERVICE_INTENTS = [
@@ -218,6 +286,14 @@ export async function createAutoTicket({
 
   const ticket = new Ticket(ticketData);
   await ticket.save();
+
+  // ── Feedback aggregation + SLA classification ────────────────────────────
+  // Both are non-blocking: ticket creation is never delayed.
+  if (category === 'complaint') {
+    triggerAggregatorForComplaint();
+    const classifyText = `${title || ''} ${description || ''}`.trim();
+    classifyAndRecordSla(String(ticket.ticketId || ticket._id), classifyText);
+  }
 
   // ── RocketChat notification ──────────────────────────────────────────────
   const priorityEmoji = { low: '🔵', medium: '🟡', high: '🟠', critical: '🔴' }[priority] || '⚪';

@@ -21,8 +21,50 @@ const REGION    = process.env.AWS_REGION        || 'ap-south-1';
 const SSM_PATH  = process.env.SSM_PARAM_PATH    || '/mediczy/prod';
 const SKIP_SSM  = process.env.SKIP_SSM_LOADER   === 'true';
 
+function applyProductionSafeFallbacks({ ssmLoaded }) {
+  if (process.env.NODE_ENV !== 'production') return;
+
+  const applied = [];
+
+  if (!process.env.PORT || Number.isNaN(Number(process.env.PORT))) {
+    process.env.PORT = '8888';
+    applied.push('PORT=8888');
+  }
+
+  if (!process.env.POSTGRES_SSL) {
+    process.env.POSTGRES_SSL = 'true';
+    applied.push('POSTGRES_SSL=true');
+  }
+
+  if (!process.env.POSTGRES_PRIMARY_HOST && process.env.POSTGRES_HOST) {
+    process.env.POSTGRES_PRIMARY_HOST = process.env.POSTGRES_HOST;
+    applied.push('POSTGRES_PRIMARY_HOST<-POSTGRES_HOST');
+  }
+  if (!process.env.POSTGRES_PRIMARY_PORT && process.env.POSTGRES_PORT) {
+    process.env.POSTGRES_PRIMARY_PORT = process.env.POSTGRES_PORT;
+    applied.push('POSTGRES_PRIMARY_PORT<-POSTGRES_PORT');
+  }
+  if (!process.env.POSTGRES_PRIMARY_DATABASE && process.env.POSTGRES_DATABASE) {
+    process.env.POSTGRES_PRIMARY_DATABASE = process.env.POSTGRES_DATABASE;
+    applied.push('POSTGRES_PRIMARY_DATABASE<-POSTGRES_DATABASE');
+  }
+  if (!process.env.POSTGRES_PRIMARY_USER && process.env.POSTGRES_USER) {
+    process.env.POSTGRES_PRIMARY_USER = process.env.POSTGRES_USER;
+    applied.push('POSTGRES_PRIMARY_USER<-POSTGRES_USER');
+  }
+  if (!process.env.POSTGRES_PRIMARY_PASSWORD && process.env.POSTGRES_PASSWORD) {
+    process.env.POSTGRES_PRIMARY_PASSWORD = process.env.POSTGRES_PASSWORD;
+    applied.push('POSTGRES_PRIMARY_PASSWORD<-POSTGRES_PASSWORD');
+  }
+
+  if (applied.length > 0) {
+    const mode = ssmLoaded ? 'post-SSM normalization' : 'SSM fallback hardening';
+    console.warn(`[ssm-loader] Applied ${mode}: ${applied.join(', ')}`);
+  }
+}
+
 async function loadFromSSM() {
-  if (SKIP_SSM) return;
+  if (SKIP_SSM) return false;
 
   const client = new SSMClient({ region: REGION });
   let nextToken;
@@ -48,13 +90,16 @@ async function loadFromSSM() {
     } while (nextToken);
 
     console.log(`[ssm-loader] Loaded parameters from ${SSM_PATH}`);
+    return true;
   } catch (err) {
     // Non-fatal: fall back to whatever env is already set (e.g. .env file on EC2)
     console.warn(`[ssm-loader] SSM load failed (falling back to local env): ${err.message}`);
+    return false;
   }
 }
 
-await loadFromSSM();
+const ssmLoaded = await loadFromSSM();
+applyProductionSafeFallbacks({ ssmLoaded });
 
 // Dynamically import the real entrypoint
 const entrypoint = process.argv[2] || 'index.js';

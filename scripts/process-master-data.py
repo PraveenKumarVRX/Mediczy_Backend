@@ -16,11 +16,13 @@ import hashlib
 
 # Database connection
 DB_CONFIG = {
-    'host': '127.0.0.1',
-    'database': 'mediczy_ai',
-    'user': 'mediczy_helper',
-    'password': 'Mediczy2024Helper'
+    'host': os.environ.get('POSTGRES_HOST', '127.0.0.1'),
+    'database': os.environ.get('POSTGRES_DATABASE', 'mediczy_ai'),
+    'user': os.environ.get('POSTGRES_USER', 'mediczy_helper'),
+    'password': os.environ.get('POSTGRES_PASSWORD') or os.environ.get('DB_PASSWORD'),
 }
+if not DB_CONFIG['password']:
+    raise RuntimeError('POSTGRES_PASSWORD or DB_PASSWORD is required')
 
 BASE_PATH = '/home/ubuntu/Mediczy/server/db/Master Data'
 

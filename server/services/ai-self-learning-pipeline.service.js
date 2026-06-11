@@ -263,13 +263,19 @@ class SelfLearningPipeline {
   }
 
   /**
-   * Stage 2: Analyze patterns from scored responses
+   * Stage 2: Analyze patterns from scored responses AND unified feedback signals.
+   *
+   * Feedback signals (from all three silos via feedback-aggregator) are treated
+   * as an additional quality dimension.  Any AI component whose 7-day quality
+   * score has dropped below 5/10 with ≥3 signals in the last 7 days is added
+   * as a 'low_feedback_score' pattern so the pipeline can generate a governance
+   * proposal for the medical director to review.
    */
   async analyzePatterns(db) {
     const patterns = [];
 
     try {
-      // Find intents with low average scores
+      // ── Original: low-quality conversation intents ──────────────────────────
       const { rows: intentScores } = await db.query(`
         SELECT intent,
                COUNT(*) as count,
@@ -302,7 +308,7 @@ class SelfLearningPipeline {
         }
       }
 
-      // Find responses with many follow-ups (indicates confusion)
+      // ── Original: high follow-up count (indicates confusion) ───────────────
       const { rows: highFollowUp } = await db.query(`
         SELECT intent, AVG(follow_up_count) as avg_followups, COUNT(*) as count
         FROM sib_response_quality
@@ -318,6 +324,50 @@ class SelfLearningPipeline {
           intent: row.intent,
           avgFollowups: parseFloat(row.avg_followups),
           count: parseInt(row.count)
+        });
+      }
+
+      // ── NEW: low quality scores from unified_feedback_signals ───────────────
+      // This is the bridge between all three feedback silos and the learning
+      // pipeline.  Any AI component scoring below 5/10 (neutral) over the last
+      // 7 days with at least 3 signals is flagged for governance review.
+      const { rows: componentScores } = await db.query(`
+        SELECT
+          ai_component,
+          score_7d,
+          signal_count_7d,
+          trend,
+          -- Breakdown by feedback source to include in the proposal rationale
+          (SELECT COUNT(*) FROM unified_feedback_signals ufs2
+            WHERE ufs2.ai_component = qs.ai_component
+              AND ufs2.source = 'patient_feedback'
+              AND ufs2.created_at > NOW() - INTERVAL '7 days') AS patient_count,
+          (SELECT COUNT(*) FROM unified_feedback_signals ufs3
+            WHERE ufs3.ai_component = qs.ai_component
+              AND ufs3.source = 'cdss_feedback'
+              AND ufs3.created_at > NOW() - INTERVAL '7 days') AS cdss_count,
+          (SELECT COUNT(*) FROM unified_feedback_signals ufs4
+            WHERE ufs4.ai_component = qs.ai_component
+              AND ufs4.source = 'ticket'
+              AND ufs4.created_at > NOW() - INTERVAL '7 days') AS ticket_count
+        FROM ai_component_quality_scores qs
+        WHERE qs.score_7d < 5.0
+          AND qs.signal_count_7d >= 3
+      `).catch(() => ({ rows: [] })); // graceful — table may not exist yet on first run
+
+      for (const row of componentScores) {
+        patterns.push({
+          type:           'low_feedback_score',
+          intent:         row.ai_component,   // reuse 'intent' key so generateInsights works
+          aiComponent:    row.ai_component,
+          score7d:        parseFloat(row.score_7d),
+          signalCount:    parseInt(row.signal_count_7d),
+          trend:          row.trend,
+          sourceBreakdown: {
+            patient: parseInt(row.patient_count) || 0,
+            cdss:    parseInt(row.cdss_count)    || 0,
+            tickets: parseInt(row.ticket_count)  || 0,
+          },
         });
       }
 
@@ -366,6 +416,34 @@ class SelfLearningPipeline {
         } else if (pattern.type === 'high_followup') {
           description = `Users ask ${pattern.avgFollowups.toFixed(1)} follow-up questions on average for "${pattern.intent}" queries. This suggests initial responses may be incomplete or unclear.`;
           improvedPattern = 'Provide more comprehensive initial responses with anticipatory information for common follow-up questions.';
+        } else if (pattern.type === 'low_feedback_score') {
+          const { patient, cdss, tickets } = pattern.sourceBreakdown;
+          description =
+            `AI component "${pattern.aiComponent}" has a quality score of ` +
+            `${pattern.score7d.toFixed(1)}/10 over the last 7 days ` +
+            `(${pattern.signalCount} signals — patient ratings: ${patient}, ` +
+            `doctor decisions: ${cdss}, complaint tickets: ${tickets}). ` +
+            `Trend: ${pattern.trend}.`;
+          improvedPattern =
+            `Review and improve "${pattern.aiComponent}" outputs. ` +
+            `Priority signals: ` +
+            (cdss    > 0 ? `${cdss} doctor rejection(s); ` : '') +
+            (tickets > 0 ? `${tickets} complaint ticket(s); ` : '') +
+            (patient > 0 ? `${patient} low patient rating(s).` : '');
+
+          // Also log a governance proposal directly so the medical director
+          // sees this in the dashboard without waiting for manual triage.
+          try {
+            await governanceService.proposeChange({
+              component:      pattern.aiComponent,
+              changeType:     'prompt_update',
+              description:    description,
+              rationale:      `[feedback-aggregator-pipeline] ${improvedPattern}`,
+              riskAssessment: 'moderate',
+            });
+          } catch (govErr) {
+            console.warn('[SelfLearn] Governance proposal error:', govErr.message);
+          }
         }
 
         await db.query(`
