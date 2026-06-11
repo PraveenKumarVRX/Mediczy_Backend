@@ -3,13 +3,21 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { createHash, randomUUID } from 'crypto';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes, Op } from 'sequelize';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import XLSX from '../utils/excel-compat.js';
+import sharedPool from '../db/pgPool.js';
 
 // Production-level rate limiting store (would be Redis in production cluster)
 const loginAttempts = new Map();
+
+// Auth token configuration — mirrors team.route.js
+const ACCESS_TOKEN_TTL     = '4h';
+const REFRESH_TOKEN_TTL    = '30d';
+const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const ADMIN_REFRESH_SCOPE  = 'admin';
 
 // Security configuration
 const SECURITY_CONFIG = {
@@ -18,6 +26,45 @@ const SECURITY_CONFIG = {
   PASSWORD_MIN_LENGTH: 4,
   EMAIL_REGEX: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 };
+
+// ── Token helpers (same pattern as team.route.js) ─────────────────────────────
+
+async function issueAdminTokenPair(payload, ip) {
+  const jti = randomUUID();
+
+  const accessToken = jwt.sign(
+    { ...payload, jti, tokenType: 'access' },
+    JWT_CONFIG.SECRET,
+    { expiresIn: ACCESS_TOKEN_TTL }
+  );
+
+  const refreshToken = jwt.sign(
+    { id: payload.id, jti, tokenType: 'refresh' },
+    JWT_CONFIG.SECRET,
+    { expiresIn: REFRESH_TOKEN_TTL }
+  );
+
+  const tokenHash  = createHash('sha256').update(refreshToken).digest('hex');
+  const expiresAt  = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
+
+  await sharedPool.query(
+    `INSERT INTO api_v2_refresh_tokens
+       (jti, user_id, role, token_hash, expires_at, ip_address)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [jti, payload.id, ADMIN_REFRESH_SCOPE, tokenHash, expiresAt, ip]
+  );
+
+  return { accessToken, refreshToken, jti };
+}
+
+async function revokeAdminRefreshToken(jti) {
+  await sharedPool.query(
+    `UPDATE api_v2_refresh_tokens
+        SET revoked = TRUE, revoked_at = NOW()
+      WHERE jti = $1 AND role = $2`,
+    [jti, ADMIN_REFRESH_SCOPE]
+  );
+}
 
 // Helper function for rate limiting
 const checkRateLimit = (clientIP) => {
@@ -153,42 +200,39 @@ export const adminLogin = async (req, res) => {
         lastLoginAt: new Date()
       });
       
-      // Generate token with adminId and userType for ring-fencing
-      const token = jwt.sign(
-        { 
-          id: adminUser.id,
-          adminId: adminUser.id,  // Explicit adminId for ring-fencing
-          email: adminUser.email, 
-          role: 'admin',
-          userType: 'admin',  // userType for ring-fencing middleware
-          isAdmin: true,
-          loginTime: new Date().toISOString()
-        },
-        JWT_CONFIG.SECRET,
-        { expiresIn: '15m' }
-      );
-      
+      // Issue access + refresh token pair (same pattern as team login)
+      const ip = clientIP;
+      const payload = {
+        id:       adminUser.id,
+        email:    adminUser.email,
+        role:     'admin',
+        userType: 'admin',
+        isAdmin:  true,
+      };
+      const { accessToken, refreshToken } = await issueAdminTokenPair(payload, ip);
+
       // Clear any failed attempts on successful login
       loginAttempts.delete(clientIP);
-      
+
       // Security audit log
       console.log(`✅ Admin login successful - ID: ${adminUser.id}, Email: ${adminUser.email}, IP: ${clientIP}`);
       await auditLoginAttempt(req, adminUser.id, adminUser.email, true);
-      
-      return res.json({ 
+
+      return res.json({
         success: true,
-        message: 'Admin login successful', 
-        token,
-        user: { 
-          id: adminUser.id, 
-          email: adminUser.email, 
-          firstName: adminUser.firstName,
-          lastName: adminUser.lastName,
-          role: 'admin',
-          userType: 'admin',
-          isAdmin: true,
-          lastLogin: adminUser.lastLoginAt
-        } 
+        message: 'Admin login successful',
+        token: accessToken,
+        refreshToken,
+        user: {
+          id:         adminUser.id,
+          email:      adminUser.email,
+          firstName:  adminUser.firstName,
+          lastName:   adminUser.lastName,
+          role:       'admin',
+          userType:   'admin',
+          isAdmin:    true,
+          lastLogin:  adminUser.lastLoginAt,
+        }
       });
     }
     
@@ -205,32 +249,42 @@ export const adminLogin = async (req, res) => {
   }
 };
 
-// Validate current admin and return minimal profile
+// Validate current admin and return profile (rich shape matching team profile)
 export const adminProfile = async (req, res) => {
   try {
-    // req.user is populated by authUser middleware
     if (!req.user || !req.user.isAdmin) {
-      const clientIP = req.ip || req.connection.remoteAddress || 'unknown';
-      console.warn(`Unauthorized admin profile access attempt from IP: ${clientIP}`);
+      console.warn(`Unauthorized admin profile access from IP: ${req.ip}`);
       return res.status(403).json({ message: 'Forbidden: not an admin' });
     }
-    
-    // Log profile access for security audit
-    console.log(`Admin profile accessed - ID: ${req.user.id}, Email: ${req.user.email}, IP: ${req.ip}`);
-    
-    // Set security headers
-    res.set({
-      'X-Content-Type-Options': 'nosniff',
-      'X-Frame-Options': 'DENY',
-      'X-XSS-Protection': '1; mode=block'
+
+    console.log(`Admin profile accessed - ID: ${req.user.id}, Email: ${req.user.email}`);
+    res.set({ 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY' });
+
+    // Fetch fresh DB record so profile reflects latest state
+    const admin = await userModel.findByPk(req.user.id, {
+      attributes: ['id', 'email', 'firstName', 'lastName', 'role', 'status',
+                   'isAdmin', 'isTeam', 'phoneNumber', 'profileImage', 'lastLoginAt',
+                   'createdAt', 'tenant_id']
     });
-    
+
     return res.json({
-      id: req.user.id,
-      email: req.user.email,
-      firstName: req.user.firstName,
-      lastName: req.user.lastName,
-      role: 'admin'
+      success: true,
+      user: {
+        id:           admin?.id ?? req.user.id,
+        email:        admin?.email ?? req.user.email,
+        firstName:    admin?.firstName ?? req.user.firstName,
+        lastName:     admin?.lastName ?? req.user.lastName,
+        role:         'admin',
+        userType:     'admin',
+        isAdmin:      true,
+        isActive:     admin?.status === 'active',
+        phoneNumber:  admin?.phoneNumber ?? null,
+        profileImage: admin?.profileImage ?? null,
+        tenantId:     admin?.tenant_id ?? null,
+        lastLogin:    admin?.lastLoginAt ?? null,
+        createdAt:    admin?.createdAt ?? null,
+        permissions:  ['*'],   // admins have unrestricted access
+      }
     });
   } catch (e) {
     console.error('Admin profile error:', e);
@@ -793,5 +847,78 @@ export const getDoctorSpecialties = async (req, res) => {
   } catch (e) {
     console.error('Failed to fetch specialties:', e);
     return res.status(500).json({ success: false, error: e.message });
+  }
+};
+
+// ── Refresh — issue new access + refresh token pair (rotation) ────────────────
+
+export const adminRefresh = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return res.status(400).json({ success: false, message: 'refreshToken required' });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, JWT_CONFIG.SECRET);
+    } catch (_) {
+      return res.status(401).json({ success: false, message: 'Invalid or expired refresh token' });
+    }
+
+    if (decoded.tokenType !== 'refresh') {
+      return res.status(401).json({ success: false, message: 'Invalid token type' });
+    }
+
+    const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
+    const { rows } = await sharedPool.query(
+      `SELECT * FROM api_v2_refresh_tokens WHERE jti = $1 AND role = $2`,
+      [decoded.jti, ADMIN_REFRESH_SCOPE]
+    );
+
+    if (!rows.length || rows[0].revoked || rows[0].token_hash !== tokenHash) {
+      return res.status(401).json({ success: false, message: 'Refresh token revoked or not found' });
+    }
+
+    // Revoke old token before issuing new one (rotation)
+    await revokeAdminRefreshToken(decoded.jti);
+
+    const admin = await userModel.findByPk(decoded.id);
+    if (!admin || admin.status !== 'active' || !admin.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Admin account inactive or access revoked' });
+    }
+
+    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    const payload = {
+      id:       admin.id,
+      email:    admin.email,
+      role:     'admin',
+      userType: 'admin',
+      isAdmin:  true,
+    };
+    const { accessToken, refreshToken: newRefreshToken } = await issueAdminTokenPair(payload, ip);
+
+    return res.json({ success: true, token: accessToken, refreshToken: newRefreshToken });
+  } catch (error) {
+    console.error('[Admin Refresh] Error:', error.message);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+// ── Logout — revoke refresh token ─────────────────────────────────────────────
+
+export const adminLogout = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (refreshToken) {
+      try {
+        const decoded = jwt.verify(refreshToken, JWT_CONFIG.SECRET);
+        if (decoded?.jti) await revokeAdminRefreshToken(decoded.jti);
+      } catch (_) { /* expired tokens: still a clean logout */ }
+    }
+    return res.json({ success: true, message: 'Logged out successfully' });
+  } catch (error) {
+    console.error('[Admin Logout] Error:', error.message);
+    return res.status(500).json({ success: false, message: 'Error during logout' });
   }
 };

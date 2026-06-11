@@ -2806,6 +2806,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         department: newEmployee.department,
         designation: newEmployee.designation,
         gender: newEmployee.gender || undefined,
+        joiningDate: newEmployee.joiningDate || undefined,
         city: newEmployee.workCity || undefined,
         state: newEmployee.workState || undefined
       };
@@ -2842,14 +2843,6 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
           title: "Welcome Email Draft Prepared",
           description: "Review and edit the welcome email before sending it."
         });
-      } else if (created?.isNewUser && created?.temporaryPassword) {
-        setNewEmployeeCredentials({
-          name: newEmployee.name,
-          email: newEmployee.email,
-          password: created.temporaryPassword,
-          emailStatus: created.emailStatus || (employeeWelcomeEmailMode === "send" ? "queued" : "skipped")
-        });
-        setShowCredentialsDialog(true);
       } else {
         toast({
           title: 'Employee Added',
@@ -2876,13 +2869,21 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         employeeName: fallbackName || item.name || item.email,
         subject: item.welcomeEmailDraft.subject || "Welcome to Employee Health Portal",
         html: item.welcomeEmailDraft.html || "",
+        draftToken: item.welcomeEmailDraft.draftToken,
+        draftExpiresAt: item.welcomeEmailDraft.draftExpiresAt,
+        deliveryId: item.welcomeEmailDraft.deliveryId,
+        userId: item.userId,
+        employeeId: item.employeeId,
         status: "draft" as const,
       }));
   };
 
   const addPreparedWelcomeEmailDrafts = (drafts: WelcomeEmailDraft[]) => {
     if (drafts.length === 0) return;
-    setWelcomeEmailDrafts((current) => [...current, ...drafts]);
+    setWelcomeEmailDrafts((current) => {
+      const unsentExisting = current.filter((draft) => draft.status !== 'sent');
+      return [...unsentExisting, ...drafts];
+    });
     setShowWelcomeEmailBatchDialog(true);
   };
 
@@ -2936,11 +2937,9 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
             provider,
             emails: chunk.map((draft) => ({
               to: draft.to,
-              subject: draft.subject,
-              html: draft.html,
+              draftToken: draft.draftToken,
               userId: draft.userId,
               employeeId: draft.employeeId,
-              temporaryPassword: draft.temporaryPassword,
             }))
           }, { headers, timeout: 90000 });
 
@@ -2998,6 +2997,43 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+
+  const escapeRegExp = (value: string) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  const normalizeTemplateForSingleEmployee = (template: string, employee: Employee) => {
+    let normalized = String(template || '');
+    const targetName = String(employee.name || `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || '').trim();
+    const targetEmail = String(employee.email || '').trim();
+    const targetEmployeeId = String(employee.employeeId || '').trim();
+
+    const replaceLiteral = (literal: string, replacementToken: string) => {
+      const value = String(literal || '').trim();
+      if (!value || value.length < 3) return;
+      const pattern = new RegExp(escapeRegExp(value), 'gi');
+      normalized = normalized.replace(pattern, replacementToken);
+    };
+
+    employees.forEach((candidate) => {
+      const candidateEmail = String(candidate.email || '').trim();
+      if (candidateEmail && candidateEmail.toLowerCase() !== targetEmail.toLowerCase()) {
+        replaceLiteral(candidateEmail, '{{email}}');
+      }
+
+      const candidateEmployeeId = String(candidate.employeeId || '').trim();
+      if (candidateEmployeeId && candidateEmployeeId !== targetEmployeeId) {
+        replaceLiteral(candidateEmployeeId, '{{employeeId}}');
+      }
+
+      const candidateName = String(candidate.name || `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || '').trim();
+      if (candidateName && targetName && candidateName.toLowerCase() !== targetName.toLowerCase()) {
+        replaceLiteral(candidateName, '{{employeeName}}');
+      }
+    });
+
+    normalized = normalized.replace(/\b(Dear|Hi|Hello|Hey)\s+[^,<\n]{1,80}(,?)/gi, '$1 {{employeeName}}$2');
+
+    return normalized;
+  };
 
   const welcomeEmailTemplates: WelcomeEmailTemplatePreset[] = [
     {
@@ -3128,14 +3164,54 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     }
 
     const token = localStorage.getItem('teamToken');
+      const escapeRegExp = (value: string) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const depersonalize = (templateSubject: string, templateHtml: string) => {
+        let safeSubject = String(templateSubject || '');
+        let safeHtml = String(templateHtml || '');
+        let changed = false;
+
+        const replaceAllLiteral = (literal: string, tokenValue: string) => {
+          const normalized = String(literal || '').trim();
+          if (!normalized || normalized.length < 3) return;
+          const pattern = new RegExp(escapeRegExp(normalized), 'gi');
+          const nextSubject = safeSubject.replace(pattern, tokenValue);
+          const nextHtml = safeHtml.replace(pattern, tokenValue);
+          if (nextSubject !== safeSubject || nextHtml !== safeHtml) {
+            changed = true;
+            safeSubject = nextSubject;
+            safeHtml = nextHtml;
+          }
+        };
+
+        employees.forEach((employee) => {
+          replaceAllLiteral(employee.email || '', '{{email}}');
+          replaceAllLiteral(employee.employeeId || '', '{{employeeId}}');
+          const fullName = employee.name || `${employee.firstName || ''} ${employee.lastName || ''}`.trim();
+          replaceAllLiteral(fullName, '{{employeeName}}');
+        });
+
+        replaceAllLiteral(selectedCorporate?.companyName || '', '{{companyName}}');
+        replaceAllLiteral(selectedCorporate?.uniqueId || '', '{{corporateId}}');
+
+        const passwordPattern = /(Temporary Password\s*[:<\/strong>\-\s]*)([^<\s][^<\n]*)/gi;
+        const passwordSanitized = safeHtml.replace(passwordPattern, (_, prefix: string) => `${prefix}{{temporaryPassword}}`);
+        if (passwordSanitized !== safeHtml) {
+          changed = true;
+          safeHtml = passwordSanitized;
+        }
+
+        return { safeSubject, safeHtml, changed };
+      };
+
+      const sanitized = depersonalize(subject, html);
     setSavingWelcomeTemplate(true);
     try {
       const createResponse = await api.post(
         '/team/welcome-email-templates',
         {
           name: templateName,
-          subject,
-          htmlContent: html,
+            subject: sanitized.safeSubject,
+            htmlContent: sanitized.safeHtml,
         },
         {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -3163,7 +3239,9 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
 
       toast({
         title: 'Template saved',
-        description: 'Edited subject and body are now available as a reusable template.',
+        description: sanitized.changed
+          ? 'Template saved after removing employee-specific credentials and restoring placeholders for safe reuse.'
+          : 'Edited subject and body are now available as a reusable template.',
       });
     } catch (error: any) {
       toast({
@@ -3251,10 +3329,21 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     return rendered;
   };
 
-  const getWelcomeEmployeeTargets = (mode: 'selected' | 'all' | 'single' = welcomeEmployeeSelectionMode, singleEmployeeId?: string) => {
+  const getWelcomeEmployeeTargets = (
+    mode: 'selected' | 'all' | 'single' = welcomeEmployeeSelectionMode,
+    singleEmployeeId?: string,
+    singleEmployeeEmail?: string,
+  ) => {
     if (mode === 'single') {
-      if (!singleEmployeeId) return [];
-      return employees.filter((employee) => employee.id === singleEmployeeId && employee.email && !hasActiveWelcomeEmailDelivery(employee));
+      if (!singleEmployeeId && !singleEmployeeEmail) return [];
+      const normalizedSingleId = String(singleEmployeeId).trim();
+      const normalizedSingleEmail = String(singleEmployeeEmail || '').trim().toLowerCase();
+      return employees.filter((employee) => {
+        const employeeIdMatch = normalizedSingleId && String(employee.id) === normalizedSingleId;
+        const employeeEmail = String(employee.email || '').trim().toLowerCase();
+        const employeeEmailMatch = normalizedSingleEmail && employeeEmail === normalizedSingleEmail;
+        return (employeeIdMatch || employeeEmailMatch) && Boolean(employeeEmail);
+      });
     }
 
     if (mode === 'all') {
@@ -3268,19 +3357,47 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
   const handlePrepareOrSendEmployeeWelcomeEmails = async (
     sendImmediately: boolean,
     mode: 'selected' | 'all' | 'single' = welcomeEmployeeSelectionMode,
-    singleEmployeeId?: string
+    singleEmployeeId?: string,
+    singleEmployeeEmail?: string,
   ) => {
     if (!selectedCorporate) return;
 
-    const targets = getWelcomeEmployeeTargets(mode, singleEmployeeId);
-    if (targets.length === 0) {
+    const targets = getWelcomeEmployeeTargets(mode, singleEmployeeId, singleEmployeeEmail);
+    const explicitSingleUserId = parseInt(String(singleEmployeeId || '').trim(), 10);
+    const fallbackSingleEmployee = mode === 'single' && !Number.isNaN(explicitSingleUserId)
+      ? (employees.find((employee) => String(employee.id) === String(explicitSingleUserId)) || {
+        id: String(explicitSingleUserId),
+        email: String(singleEmployeeEmail || '').trim(),
+        employeeId: '',
+        name: '',
+        firstName: '',
+        lastName: '',
+        department: '',
+        designation: '',
+      } as Employee)
+      : null;
+
+    const effectiveTargets = (targets.length === 0 && fallbackSingleEmployee && String(fallbackSingleEmployee.email || '').trim())
+      ? [fallbackSingleEmployee]
+      : targets;
+
+    if (effectiveTargets.length === 0) {
+      const singleEmployee = mode === 'single'
+        ? employees.find((employee) => {
+          const byId = String(employee.id) === String(singleEmployeeId || '').trim();
+          const byEmail = String(employee.email || '').trim().toLowerCase() === String(singleEmployeeEmail || '').trim().toLowerCase();
+          return byId || byEmail;
+        })
+        : null;
       toast({
         variant: 'destructive',
         title: 'No employees selected',
         description: mode === 'all'
           ? 'No employees with valid email were found.'
           : mode === 'single'
-            ? 'Select a valid employee with email to continue.'
+            ? (singleEmployee
+              ? 'Selected employee does not have a valid email. Update email and retry.'
+              : 'Select a valid employee with email to continue.')
           : 'Select one or more employees with email to continue.'
       });
       return;
@@ -3290,14 +3407,16 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
 
     try {
       const BULK_CHUNK = 500;
-      const allDraftRows: Array<{ userId: number; email: string; employeeId: string; temporaryPassword: string; subject: string; html: string }> = [];
+      const allDraftRows: Array<{ userId: number; email: string; employeeId: string; draftToken?: string; draftExpiresAt?: string; deliveryId?: string | number | null; subject: string; html: string }> = [];
       const skippedTargets: string[] = [];
       const failedTargets: string[] = [];
 
       // Use bulk-prepare: one request per 500 employees instead of N sequential /resend calls
-      const employeeById = new Map(targets.map(e => [e.id, e]));
+      const employeeById = new Map(effectiveTargets.map(e => [String(e.id), e]));
       const userIdChunks: number[][] = [];
-      const allIds = targets.map(e => e.id).filter(Boolean);
+      const allIds = effectiveTargets
+        .map((employee) => parseInt(String(employee.id), 10))
+        .filter((value) => !Number.isNaN(value));
       for (let i = 0; i < allIds.length; i += BULK_CHUNK) {
         userIdChunks.push(allIds.slice(i, i + BULK_CHUNK));
       }
@@ -3320,13 +3439,69 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
           }
         } catch {
           chunk.forEach(id => {
-            const emp = employeeById.get(id);
+            const emp = employeeById.get(String(id));
             failedTargets.push(emp?.email || String(id));
           });
         }
       }
 
+      const selectedTemplate = allWelcomeEmailTemplates.find((t) => t.id === selectedWelcomeTemplateId) || allWelcomeEmailTemplates[0];
+
       if (allDraftRows.length === 0) {
+        if (mode === 'single' && skippedTargets.length > 0 && failedTargets.length === 0) {
+          const singleTarget = effectiveTargets[0];
+          const singleUserId = parseInt(String(singleTarget?.id || ''), 10);
+
+          if (!Number.isNaN(singleUserId)) {
+            try {
+              const { data } = await api.post('/admin/corporate-employee-welcome-emails/resend', {
+                corporateId: selectedCorporate.id,
+                userId: singleUserId,
+                welcomeEmailMode: 'draft',
+              }, { headers: teamAuthHeaders() });
+
+              const resendResult = data?.result;
+              const resendDraft = resendResult?.welcomeEmailDraft;
+              const resendEmail = String(resendResult?.email || singleTarget?.email || '').trim();
+
+              if (resendDraft?.draftToken && resendEmail) {
+                const draftTimestamp = Date.now();
+                const preparedDraft: WelcomeEmailDraft = {
+                  id: `prepared-resend-${singleUserId}-${draftTimestamp}`,
+                  to: resendEmail,
+                  userId: singleUserId,
+                  employeeId: singleTarget?.employeeId || '',
+                  draftToken: resendDraft.draftToken,
+                  draftExpiresAt: resendDraft.draftExpiresAt,
+                  deliveryId: resendDraft.deliveryId,
+                  employeeName: singleTarget?.name || resendResult?.name || resendEmail,
+                  subject: resendDraft.subject || selectedTemplate.subject,
+                  html: resendDraft.html || selectedTemplate.html,
+                  status: 'draft',
+                };
+
+                if (sendImmediately) {
+                  setWelcomeEmailDrafts((current) => [...current, preparedDraft]);
+                  await handleSendWelcomeEmailBatch([preparedDraft]);
+                  toast({
+                    title: 'Welcome email queued',
+                    description: 'Generated fresh credentials and queued the welcome email for 1 employee.',
+                  });
+                } else {
+                  addPreparedWelcomeEmailDrafts([preparedDraft]);
+                  toast({
+                    title: 'Fresh welcome draft prepared',
+                    description: 'Generated a secure welcome draft for review.',
+                  });
+                }
+                return;
+              }
+            } catch (error) {
+              console.error('Single-employee resend-draft override failed:', error);
+            }
+          }
+        }
+
         toast({
           variant: skippedTargets.length > 0 && failedTargets.length === 0 ? 'default' : 'destructive',
           title: skippedTargets.length > 0 && failedTargets.length === 0 ? 'No New Welcome Emails Needed' : 'Preparation failed',
@@ -3337,14 +3512,12 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         return;
       }
 
-      // Apply the UI-selected template (with per-employee placeholders) rather than the
-      // server's default. The server only provides temporaryPassword — subject/html come
-      // from the template the user actually chose in the dialog.
-      const selectedTemplate = allWelcomeEmailTemplates.find((t) => t.id === selectedWelcomeTemplateId) || allWelcomeEmailTemplates[0];
+      // Draft previews are server-rendered and redacted; final sends are rendered again
+      // server-side from the draft token and canonical employee data.
 
       const draftTimestamp = Date.now();
       const drafts: WelcomeEmailDraft[] = allDraftRows.map((row, index) => {
-        const employee = employeeById.get(row.userId);
+        const employee = employeeById.get(String(row.userId));
         // Build a minimal employee-like object for placeholder substitution when the
         // full employee record isn't in the local state (e.g. loaded from a different page).
         const empForPlaceholders = employee || {
@@ -3355,17 +3528,25 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
           firstName: '',
           lastName: '',
         };
+        const renderedSubjectTemplate = mode === 'single'
+          ? normalizeTemplateForSingleEmployee(selectedTemplate.subject, empForPlaceholders as Employee)
+          : selectedTemplate.subject;
+        const renderedHtmlTemplate = mode === 'single'
+          ? normalizeTemplateForSingleEmployee(selectedTemplate.html, empForPlaceholders as Employee)
+          : selectedTemplate.html;
         return {
           id: `prepared-${row.userId}-${draftTimestamp}-${index}`,
           to: row.email,
           userId: row.userId,
           employeeId: row.employeeId,
-          temporaryPassword: row.temporaryPassword,
+          draftToken: row.draftToken,
+          draftExpiresAt: row.draftExpiresAt,
+          deliveryId: row.deliveryId,
           employeeName: employee
             ? (employee.name || `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || row.email)
             : row.email,
-          subject: applyWelcomeTemplatePlaceholders(selectedTemplate.subject, empForPlaceholders as Employee, row.temporaryPassword),
-          html: applyWelcomeTemplatePlaceholders(selectedTemplate.html, empForPlaceholders as Employee, row.temporaryPassword),
+          subject: row.subject || applyWelcomeTemplatePlaceholders(renderedSubjectTemplate, empForPlaceholders as Employee),
+          html: row.html || applyWelcomeTemplatePlaceholders(renderedHtmlTemplate, empForPlaceholders as Employee),
           status: 'draft' as const,
         };
       });
@@ -9285,11 +9466,11 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
         approvingTemplate={approvingWelcomeTemplate}
         onSelectedTemplateChange={setSelectedWelcomeTemplateId}
         onApproveTemplate={handleApproveWelcomeTemplate}
-        onPrepareFromEmployees={({ mode, singleEmployeeId, sendImmediately }) => {
+        onPrepareFromEmployees={({ mode, singleEmployeeId, singleEmployeeEmail, sendImmediately }) => {
           if (mode === 'selected' || mode === 'all') {
             setWelcomeEmployeeSelectionMode(mode);
           }
-          handlePrepareOrSendEmployeeWelcomeEmails(sendImmediately, mode, singleEmployeeId);
+          handlePrepareOrSendEmployeeWelcomeEmails(sendImmediately, mode, singleEmployeeId, singleEmployeeEmail);
         }}
         onOpenChange={setShowWelcomeEmailBatchDialog}
         onDraftsChange={setWelcomeEmailDrafts}

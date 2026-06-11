@@ -22,7 +22,7 @@ const normalizeEmail = (email) => String(email || '').toLowerCase();
 const PASSWORD_MIN_LEN = 8;
 
 // ─── Access / Refresh token lifetimes ─────────────────────────────────────────
-const ACCESS_TOKEN_TTL  = '15m';   // short-lived JWT
+const ACCESS_TOKEN_TTL  = '4h';    // aligned with team login; refresh token handles revocation
 const REFRESH_TOKEN_TTL = '30d';   // stored server-side, supports rotation
 const REFRESH_SCOPE = 'hospital';
 const LOCKOUT_MAX_ATTEMPTS = 10;   // failed logins before 15-min lockout
@@ -218,8 +218,6 @@ const buildHospitalTokenPayload = ({ hospital, tenant, user }) => {
       userType: 'hospital',
       tenant_id: tenant.id,
       organization_id: tenant.id,
-      hospital_id: tenant.id,
-      hospitalId: tenant.id,
       hospitalName: tenant.name,
       hospital_slug: tenant.slug,
       subdomain: tenant.subdomain,
@@ -234,8 +232,6 @@ const buildHospitalTokenPayload = ({ hospital, tenant, user }) => {
       email: hospital.email,
       role: 'hospital',
       userType: 'hospital',
-      hospital_id: hospital.id,
-      hospitalId: hospital.id,
       hospitalName: hospital.hospitalName || hospital.name,
       tenant_id: hospital.tenantId || null,
       capabilities: normalizeCapabilities(hospital.metadata?.capabilities, hospital.features)
@@ -846,7 +842,7 @@ router.post('/refresh', hospitalRefresh);
 export const hospitalProfile = async (req, res) => {
   try {
     const hospital = await Hospital.findByPk(req.user.id, {
-      attributes: { exclude: ['password'] }
+      attributes: { exclude: ['password', 'passwordResetToken', 'passwordResetExpires'] }
     });
 
     if (!hospital) {
@@ -1085,7 +1081,7 @@ router.post('/change-password', authUser, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Password must contain uppercase, lowercase, number, and special character (@$!%*?&)' });
     }
 
-    const hospitalId = req.user?.hospital_id || req.user?.hospitalId || req.user?.id;
+    const hospitalId = req.user?.id;
     const userId     = req.user?.id;
     const userEmail  = req.user?.email;
 

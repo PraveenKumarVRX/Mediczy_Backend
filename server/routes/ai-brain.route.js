@@ -32,6 +32,7 @@ import { getAllAgents } from '../services/ai-brain/agent-registry.js';
 import { getRoutingStats, updateThreshold } from '../services/ai-brain/cognitive-router.js';
 import { getTelemetryStats } from '../services/ai-brain/evaluation-engine.js';
 import { getWeightStats, resetWeightsToDefault } from '../services/ai-brain/scoring-model.js';
+import { resolveSibBaseUrl } from '../config/ai-services.config.js';
 
 const router = Router();
 
@@ -52,6 +53,15 @@ function requireAuth(req, res, next) {
   // req.user is set by the existing auth middleware
   if (!req.user || !req.user.id || req.user.id === 'twilio-webhook') {
     return res.status(401).json({ error: 'Authentication required' });
+  }
+  next();
+}
+
+
+function requireAdminRole(req, res, next) {
+  const role = String(req.user?.role || req.userRole || '').toLowerCase();
+  if (!['admin', 'super_admin', 'medical_director'].includes(role)) {
+    return res.status(403).json({ error: 'Admin access required' });
   }
   next();
 }
@@ -374,7 +384,7 @@ router.get('/health', async (req, res) => {
     let sibStatus = 'unknown';
     try {
       const axios = (await import('axios')).default;
-      const { data } = await axios.get(`${process.env.SIB_URL || 'http://localhost:8001'}/health`, { timeout: 3000 });
+      const { data } = await axios.get(`${resolveSibBaseUrl()}/health`, { timeout: 3000 });
       sibStatus = data.status || 'online';
     } catch (e) {
       sibStatus = `error: ${e.message}`;
@@ -404,12 +414,12 @@ router.get('/health', async (req, res) => {
 
 // ─── GET /providers — List LLM providers ──────────────────
 
-router.get('/providers', async (req, res) => {
+router.get('/providers', requireAuth, requireAdminRole, async (req, res) => {
   try {
     const providers = llmProvider.listProviders();
     const db = pool;
     const { rows: dbConfigs } = await db.query(
-      'SELECT id, name, provider, model_name, api_base_url, is_active, config FROM ai_model_configs ORDER BY id'
+      'SELECT id, name, provider, model_name, is_active FROM ai_model_configs ORDER BY id'
     );
     res.json({ providers, dbConfigs });
   } catch (err) {

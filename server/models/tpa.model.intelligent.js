@@ -1,6 +1,7 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { DataTypes } from 'sequelize';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../utils/passwordHashing.js';
 
 /**
  * TPA (Third Party Administrator) Model
@@ -114,15 +115,13 @@ const TPA = sequelize.define('TPA', {
 
 TPA.beforeCreate(async (tpa) => {
   if (tpa.password) {
-    const salt = await bcrypt.genSalt(10);
-    tpa.password = await bcrypt.hash(tpa.password, salt);
+    tpa.password = await hashPasswordIfPlaintext(tpa.password, 10);
   }
 });
 
 TPA.beforeUpdate(async (tpa) => {
   if (tpa.changed('password') && tpa.password) {
-    const salt = await bcrypt.genSalt(10);
-    tpa.password = await bcrypt.hash(tpa.password, salt);
+    tpa.password = await hashPasswordIfPlaintext(tpa.password, 10);
   }
 });
 

@@ -90,7 +90,7 @@ const shouldInitializeFirebase = () => {
 if (shouldInitializeFirebase()) {
   try {
     // ── Patient / default Firebase app ───────────────────────────────────────
-    if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+    if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL && !findServiceAccountFromEnv() && !findServiceAccountFile()) {
       const serviceAccount = {
         type: "service_account",
         project_id: process.env.FIREBASE_PROJECT_ID,
@@ -586,20 +586,39 @@ const sendCallDataOnlyMessage = async (token, data = {}) => {
  * @param {object} callData - Call data with doctor info and meeting link
  */
 const sendDoctorCallingNotification = async (recipientToken, callData) => {
-  // Use data-only message so the Android app wakes up and handles the call UI.
-  // A notification+data message lets the OS handle it silently in the background.
+  const appointmentId = String(callData.appointmentId || '');
+  const meetingId = callData.meetingId || callData.roomId || callData.roomName || '';
+  const deepLink = callData.deepLink || (appointmentId ? 'mediczy://consultation/video/' + appointmentId : 'mediczy://consultation/video');
+  const webRoute = callData.webRoute || (appointmentId
+    ? '/video-consultation?room=' + encodeURIComponent(meetingId || appointmentId) + '&appointmentId=' + encodeURIComponent(appointmentId)
+    : '/video-consultation');
+  const actionUrl = callData.actionUrl || deepLink;
+
   const data = {
     type: FCM_NOTIFICATION_TYPES.VIDEO_CALL,
     notificationType: 'incoming_call',
-    appointmentId: String(callData.appointmentId),
+    eventType: 'doctor_calling',
+    appointmentId,
+    patientId: String(callData.patientId || ''),
+    meetingId: String(meetingId),
+    roomId: String(meetingId),
+    roomName: String(meetingId),
     meetingLink: callData.meetingLink || '',
+    joinUrl: callData.joinUrl || callData.meetingLink || actionUrl,
+    serverUrl: callData.serverUrl || '',
     doctorName: callData.doctorName || '',
     doctorId: String(callData.doctorId || ''),
+    callType: callData.callType || 'video',
     callInitiatedAt: callData.callInitiatedAt || new Date().toISOString(),
     action: 'join_call',
     clickAction: 'join_video_call',
-    // Notification display hints for the Android handler
-    title: `📞 ${callData.doctorName || 'Your doctor'} is calling`,
+    click_action: 'join_video_call',
+    actionUrl,
+    deepLink,
+    webRoute,
+    route: 'VideoCall',
+    screen: 'VideoCall',
+    title: (callData.doctorName || 'Your doctor') + ' is calling',
     body: 'Your doctor has started the video consultation. Tap to join now!',
     sound: 'call_ringtone',
     channelId: 'mediczy_incoming_call',

@@ -212,6 +212,22 @@ class AIModelGovernanceService {
    */
   async proposeChange({ component, changeType, description, previousConfig, newConfig, rationale, riskAssessment = 'moderate' }) {
     try {
+      // Idempotency: skip if an identical pending_review entry already exists for this component+changeType.
+      // Prevents the cron (every 4h) from filing duplicate proposals for the same unresolved issue.
+      const existing = await pool.query(`
+        SELECT id FROM ai_model_change_log
+        WHERE model_component = $1
+          AND change_type = $2
+          AND status = 'pending_review'
+        LIMIT 1
+      `, [component, changeType]);
+
+      if (existing.rows.length > 0) {
+        const existingId = existing.rows[0].id;
+        console.log(`📋 [Governance] Skipping duplicate proposal: ID=${existingId} component=${component} type=${changeType} already pending review`);
+        return existingId;
+      }
+
       const { rows } = await pool.query(`
         INSERT INTO ai_model_change_log
           (model_component, change_type, change_description, previous_config,
@@ -523,29 +539,71 @@ class AIModelGovernanceService {
         regulatoryClass: MODEL_CARDS[k].regulatoryClass,
         lastValidated: MODEL_CARDS[k].lastValidatedAt ?? 'NOT VALIDATED'
       })),
-      samdReadiness: this._samdReadinessChecklist()
+      samdReadiness: await this._samdReadinessChecklist()
     };
   }
 
-  _samdReadinessChecklist() {
-    return [
-      { item: 'Model cards documented',                       status: 'done',    detail: `${Object.keys(MODEL_CARDS).length} components covered` },
-      { item: 'SHAP interpretability implemented',            status: 'done',    detail: 'Exact SHAP for risk scoring, LIME for triage' },
-      { item: 'Confidence scores on all AI outputs',          status: 'done',    detail: 'Data completeness → confidence interval' },
-      { item: 'Counterfactual explanations',                  status: 'done',    detail: 'Nearest-counterfactual for risk score changes' },
-      { item: 'Self-learning change control gate',            status: 'done',    detail: 'All changes require medical director approval' },
-      { item: 'Drift detection (PSI)',                        status: 'done',    detail: 'Weekly PSI check on risk score distributions' },
-      { item: 'Demographic parity monitoring',                status: 'done',    detail: 'Weekly age/gender stratified analysis' },
-      { item: 'Audit trail for all AI decisions',             status: 'done',    detail: 'isha_audit_log, sib_decision_log, operations_audit_log' },
-      { item: 'Doctor review enforcement (scribe)',           status: 'done',    detail: 'Mandatory physician signature before record commit' },
-      { item: 'Drug interaction hallucination guard',         status: 'done',    detail: 'Rule-base cross-check against LLM output' },
-      { item: 'Clinical validation study (risk scoring)',     status: 'missing', detail: 'Required before Class IIb SaMD submission' },
-      { item: 'Clinical validation study (triage)',           status: 'missing', detail: 'Required before Class III SaMD submission' },
-      { item: 'ISO 13485 Quality Management System',         status: 'missing', detail: 'Documentation and process audit required' },
-      { item: 'IEC 62304 Software Lifecycle Documentation',  status: 'missing', detail: 'Software architecture and hazard analysis required' },
-      { item: 'ISO 14971 Risk Management File',              status: 'missing', detail: 'FMEA for all AI failure modes required' },
-      { item: 'Regulatory submission (CDSCO India)',          status: 'missing', detail: 'Class B/C Medical Device Rules 2017 filing' }
+  async _samdReadinessChecklist() {
+    // Items 1-10 are always done (implemented in prior session)
+    const fixed = [
+      { item: 'Model cards documented',                       status: 'done', detail: `${Object.keys(MODEL_CARDS).length} components covered` },
+      { item: 'SHAP interpretability implemented',            status: 'done', detail: 'Exact SHAP for risk scoring, LIME for triage' },
+      { item: 'Confidence scores on all AI outputs',          status: 'done', detail: 'Data completeness → confidence interval' },
+      { item: 'Counterfactual explanations',                  status: 'done', detail: 'Nearest-counterfactual for risk score changes' },
+      { item: 'Self-learning change control gate',            status: 'done', detail: 'All changes require medical director approval' },
+      { item: 'Drift detection (PSI)',                        status: 'done', detail: 'Weekly PSI check on risk score distributions' },
+      { item: 'Demographic parity monitoring',                status: 'done', detail: 'Weekly age/gender stratified analysis' },
+      { item: 'Audit trail for all AI decisions',             status: 'done', detail: 'isha_audit_log, sib_decision_log, operations_audit_log' },
+      { item: 'Doctor review enforcement (scribe)',           status: 'done', detail: 'Mandatory physician signature before record commit' },
+      { item: 'Drug interaction hallucination guard',         status: 'done', detail: 'Rule-based cross-check against LLM output' },
     ];
+
+    // Items 11-16: dynamically check DB tables
+    const [cvRisk, cvTriage, qmsDocs, iec62304Items, iso14971Hazards, cdscoSub] = await Promise.all([
+      pool.query(`SELECT COUNT(*) FROM clinical_validation_studies WHERE model_component='health_risk_scoring' AND status='completed'`).then(r => parseInt(r.rows[0].count)).catch(() => 0),
+      pool.query(`SELECT COUNT(*) FROM clinical_validation_studies WHERE model_component='emergency_triage_esi' AND status='completed'`).then(r => parseInt(r.rows[0].count)).catch(() => 0),
+      pool.query(`SELECT COUNT(*) FROM qms_documents WHERE status='approved'`).then(r => parseInt(r.rows[0].count)).catch(() => 0),
+      pool.query(`SELECT COUNT(*) FROM iec62304_software_items`).then(r => parseInt(r.rows[0].count)).catch(() => 0),
+      pool.query(`SELECT COUNT(*) FROM iso14971_hazards`).then(r => parseInt(r.rows[0].count)).catch(() => 0),
+      pool.query(`SELECT COUNT(*) FROM cdsco_submissions WHERE status NOT IN ('withdrawn')`).then(r => parseInt(r.rows[0].count)).catch(() => 0),
+    ]);
+
+    const dynamic = [
+      {
+        item: 'Clinical validation study (risk scoring)',
+        status: cvRisk > 0 ? 'done' : 'missing',
+        detail: cvRisk > 0 ? `${cvRisk} completed validation study in DB` : 'Required before Class IIb SaMD submission',
+      },
+      {
+        item: 'Clinical validation study (triage)',
+        status: cvTriage > 0 ? 'done' : 'missing',
+        detail: cvTriage > 0 ? `${cvTriage} completed validation study in DB` : 'Required before Class III SaMD submission',
+      },
+      {
+        item: 'ISO 13485 Quality Management System',
+        status: qmsDocs >= 5 ? 'done' : qmsDocs > 0 ? 'partial' : 'missing',
+        detail: qmsDocs >= 5 ? `${qmsDocs} approved QMS documents` : `${qmsDocs} approved documents (need ≥5 core SOPs)`,
+      },
+      {
+        item: 'IEC 62304 Software Lifecycle Documentation',
+        status: iec62304Items >= 5 ? 'done' : iec62304Items > 0 ? 'partial' : 'missing',
+        detail: iec62304Items >= 5 ? `${iec62304Items} software items registered` : `${iec62304Items} items (need ≥5)`,
+      },
+      {
+        item: 'ISO 14971 Risk Management File',
+        status: iso14971Hazards >= 5 ? 'done' : iso14971Hazards > 0 ? 'partial' : 'missing',
+        detail: iso14971Hazards >= 5 ? `${iso14971Hazards} hazards logged with controls` : `${iso14971Hazards} hazards (need ≥5)`,
+      },
+      {
+        item: 'Regulatory submission (CDSCO India)',
+        status: cdscoSub > 0 ? 'done' : 'missing',
+        detail: cdscoSub > 0 ? 'CDSCO submission record created with MDR 2017 checklist' : 'Class B/C Medical Device Rules 2017 filing',
+      },
+    ];
+
+    const all = [...fixed, ...dynamic];
+    const doneCount = all.filter(i => i.status === 'done').length;
+    return { items: all, score: doneCount, total: all.length };
   }
 
   async _persistDriftResult(result) {

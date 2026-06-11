@@ -116,21 +116,52 @@ async function createSmtpTransport() {
   };
 }
 
-// Normalize SendGrid-style msg object → nodemailer format and send.
-// Prefers SES when Zoho SMTP is configured (Zoho blocks bulk sends).
-// options.provider: 'ses' | 'brevo' | 'auto' (default: auto)
-async function sendMail(msg, options = {}) {
-  const { provider = 'auto' } = options;
-  const useSes = provider === 'ses' || (provider !== 'brevo' && shouldUseSes());
-  if (useSes) {
-    try {
-      await sendViaSes(msg);
-      return;
-    } catch (sesErr) {
-      if (provider === 'ses') throw sesErr; // don't fall through if SES was explicitly chosen
-      console.warn('[email] SES failed, falling back to SMTP:', sesErr.message);
-    }
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientMailError(error) {
+  const code = String(error?.code || '').toUpperCase();
+  const responseCode = Number(error?.responseCode || 0);
+  const message = String(error?.message || '').toLowerCase();
+
+  if (['ECONNECTION', 'ETIMEDOUT', 'ESOCKET', 'EAI_AGAIN', 'ECONNRESET'].includes(code)) {
+    return true;
   }
+
+  if (responseCode >= 500 && responseCode < 600) {
+    return true;
+  }
+
+  return (
+    message.includes('temporar') ||
+    message.includes('timeout') ||
+    message.includes('try again') ||
+    message.includes('too many') ||
+    message.includes('rate limit') ||
+    message.includes('unusual sending activity')
+  );
+}
+
+function buildFromAddress(msg, smtp = null) {
+  if (typeof msg.from === 'object') {
+    const fromName = msg.from.name || smtp?.fromName || 'Mediqzy Corporate Health';
+    const fromEmail = msg.from.email || smtp?.fromEmail || smtp?.auth?.user || 'hello@mysmarthealth.in';
+    return `"${fromName}" <${fromEmail}>`;
+  }
+
+  if (String(msg.from || '').trim()) {
+    return msg.from;
+  }
+
+  if (smtp) {
+    return `"${smtp.fromName}" <${smtp.fromEmail || smtp.auth.user}>`;
+  }
+
+  return '"Mediqzy Corporate Health" <hello@mysmarthealth.in>';
+}
+
+async function sendViaSmtp(msg) {
   const { smtp, transporter } = await createSmtpTransport();
   if (isZohoHost(smtp.host)) {
     throw new Error('Zoho SMTP is disabled for welcome emails. Use SES or Brevo SMTP.');
@@ -138,15 +169,68 @@ async function sendMail(msg, options = {}) {
   if (!isBrevoHost(smtp.host)) {
     throw new Error(`Unsupported SMTP host for welcome emails: ${smtp.host}. Allowed: Brevo SMTP.`);
   }
-  const from = typeof msg.from === 'object'
-    ? `"${msg.from.name || smtp.fromName}" <${smtp.fromEmail || smtp.auth.user}>`
-    : (msg.from || `"${smtp.fromName}" <${smtp.fromEmail || smtp.auth.user}>`);
+
   return transporter.sendMail({
-    from,
+    from: buildFromAddress(msg, smtp),
     to: msg.to,
     subject: msg.subject,
     html: msg.html,
   });
+}
+
+// Normalize SendGrid-style msg object → nodemailer format and send.
+// Prefers SES when Zoho SMTP is configured (Zoho blocks bulk sends).
+// options.provider: 'ses' | 'brevo' | 'auto' (default: auto)
+async function sendMail(msg, options = {}) {
+  const { provider = 'auto' } = options;
+  const normalizedProvider = ['ses', 'brevo', 'auto'].includes(String(provider || '').toLowerCase())
+    ? String(provider).toLowerCase()
+    : 'auto';
+  const retryAttempts = Math.max(1, Math.min(parseInt(String(process.env.WELCOME_EMAIL_RETRY_ATTEMPTS || '2'), 10) || 2, 5));
+  const retryDelayMs = Math.max(250, parseInt(String(process.env.WELCOME_EMAIL_RETRY_DELAY_MS || '700'), 10) || 700);
+
+  const providerOrder = normalizedProvider === 'ses'
+    ? ['ses']
+    : normalizedProvider === 'brevo'
+      ? ['smtp']
+      : (shouldUseSes() ? ['ses', 'smtp'] : ['smtp', 'ses']);
+
+  const attemptErrors = [];
+
+  for (const channel of providerOrder) {
+    for (let attempt = 1; attempt <= retryAttempts; attempt += 1) {
+      try {
+        if (channel === 'ses') {
+          await sendViaSes({
+            ...msg,
+            from: buildFromAddress(msg),
+          });
+        } else {
+          await sendViaSmtp(msg);
+        }
+        return;
+      } catch (error) {
+        const transient = isTransientMailError(error);
+        attemptErrors.push(`[${channel} attempt ${attempt}] ${error?.message || error}`);
+
+        const canRetrySameChannel = transient && attempt < retryAttempts;
+        if (canRetrySameChannel) {
+          await wait(retryDelayMs * attempt);
+          continue;
+        }
+
+        const canTryNextChannel = normalizedProvider === 'auto' && providerOrder.indexOf(channel) < providerOrder.length - 1;
+        if (canTryNextChannel) {
+          console.warn(`[email] ${channel.toUpperCase()} failed, trying fallback channel:`, error?.message || error);
+          break;
+        }
+
+        throw new Error(`Welcome email delivery failed: ${attemptErrors.join(' | ')}`);
+      }
+    }
+  }
+
+  throw new Error(`Welcome email delivery failed: ${attemptErrors.join(' | ') || 'no provider attempted'}`);
 }
 
 /**

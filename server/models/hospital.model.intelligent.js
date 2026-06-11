@@ -1,7 +1,8 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { DataTypes } from 'sequelize';
 import bcrypt from 'bcrypt';
-import { generateUniqueId } from '../utils/uniqueIdGenerator.js';
+import { hashPasswordIfPlaintext } from '../utils/passwordHashing.js';
+import { generateUniqueIdForModel } from '../utils/uniqueIdGenerator.js';
 
 /**
  * Hospital Model
@@ -131,19 +132,17 @@ const Hospital = sequelize.define('Hospital', {
 
 Hospital.beforeCreate(async (hospital) => {
   if (hospital.password) {
-    const salt = await bcrypt.genSalt(10);
-    hospital.password = await bcrypt.hash(hospital.password, salt);
+    hospital.password = await hashPasswordIfPlaintext(hospital.password, 10);
   }
   // Generate unique ID if not set
   if (!hospital.unique_id) {
-    hospital.unique_id = generateUniqueId('hospital');
+    hospital.unique_id = await generateUniqueIdForModel(Hospital, 'hospital');
   }
 });
 
 Hospital.beforeUpdate(async (hospital) => {
   if (hospital.changed('password') && hospital.password) {
-    const salt = await bcrypt.genSalt(10);
-    hospital.password = await bcrypt.hash(hospital.password, salt);
+    hospital.password = await hashPasswordIfPlaintext(hospital.password, 10);
   }
 });
 

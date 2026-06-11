@@ -13,6 +13,7 @@ import { JWT_CONFIG } from '../../config/auth.config.js';
 import { DataTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 import jwt from 'jsonwebtoken';
 import { generateUniqueId } from '../../utils/uniqueIdGenerator.js';
 
@@ -234,15 +235,13 @@ TeamMember.beforeCreate(async (teamMember) => {
   }
   
   if (teamMember.password) {
-    const salt = await bcrypt.genSalt(10);
-    teamMember.password = await bcrypt.hash(teamMember.password, salt);
+    teamMember.password = await hashPasswordIfPlaintext(teamMember.password, 10);
   }
 });
 
 TeamMember.beforeUpdate(async (teamMember) => {
-  if (teamMember.changed('password')) {
-    const salt = await bcrypt.genSalt(10);
-    teamMember.password = await bcrypt.hash(teamMember.password, salt);
+  if (teamMember.changed('password') && teamMember.password) {
+    teamMember.password = await hashPasswordIfPlaintext(teamMember.password, 10);
   }
 });
 

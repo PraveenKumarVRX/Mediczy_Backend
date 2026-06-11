@@ -32,11 +32,9 @@ class ServerController {
     console.log('🔌 Sharing Socket.IO instance with services...');
     socketService.setIO(this.io);
     
-    // Initialize Redis Cache Service
+    // Initialize Redis Cache Service without blocking startup indefinitely.
     console.log('💾 Initializing Redis Cache Service...');
-    await cacheService.initialize().catch(err => {
-      console.warn('⚠️  Redis not available - running without cache');
-    });
+    await this.initializeCacheWithTimeout();
     
     // Initialize Appointment Notification Service
     console.log('🔔 Initializing Appointment Notification Service...');
@@ -44,6 +42,19 @@ class ServerController {
     this.notificationService.initialize();
     
     return this.server;
+  }
+
+  async initializeCacheWithTimeout(timeoutMs = 4000) {
+    try {
+      await Promise.race([
+        cacheService.initialize(),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error(`Redis init timed out after ${timeoutMs}ms`)), timeoutMs);
+        }),
+      ]);
+    } catch (err) {
+      console.warn(`⚠️  Redis not available - running without cache (${err.message})`);
+    }
   }
 
   /**

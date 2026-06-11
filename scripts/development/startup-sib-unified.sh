@@ -191,11 +191,11 @@ DB_HOST=127.0.0.1
 DB_PORT=5432
 DB_NAME=mediczy
 DB_USER=mediczy_helper
-DB_PASSWORD=Mediczy2024Helper
+DB_PASSWORD=${DB_PASSWORD:-change_me_do_not_commit}
 
 # API Keys
 GROQ_API_KEY=${GROQ_API_KEY:-your_groq_key_here}
-GEMINI_API_KEY=AIzaSyCVa8eKHpCzWvyFrd4jKKxkomxHI8iAp48
+GEMINI_API_KEY=${GEMINI_API_KEY:-your_gemini_key_here}
 
 # Server Configuration
 NODE_ENV=development

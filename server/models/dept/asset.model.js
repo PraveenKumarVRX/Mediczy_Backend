@@ -1,6 +1,7 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../../db/postgres-sequelize.js';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 
 const Asset = sequelize.define('Asset', {
   email: { type: DataTypes.STRING, unique: true, allowNull: false },
@@ -11,7 +12,7 @@ const Asset = sequelize.define('Asset', {
 });
 
 Asset.beforeCreate(async (user) => {
-  user.password = await bcrypt.hash(user.password, 10);
+  user.password = await hashPasswordIfPlaintext(user.password, 10);
 });
 
 Asset.prototype.comparePassword = async function (password) {

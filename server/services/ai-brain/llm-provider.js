@@ -485,6 +485,17 @@ async function callProvider(provider, params) {
   return client.chat.completions.create(finalParams);
 }
 
+const CLINICAL_CACHE_KEYWORDS = /\b(symptom|symptoms|diagnos|triage|emergency|pain|fever|cough|blood pressure|bp|diabetes|hypertension|medication|medicine|drug|dose|dosage|prescription|allergy|lab report|test result|patient|clinical|treatment|therapy|risk score|chest pain|stroke|pregnan|infection|cancer|asthma|cardiac|renal|liver)\b/i;
+
+function looksClinicalForCache(text = '') {
+  return CLINICAL_CACHE_KEYWORDS.test(String(text || ''));
+}
+
+function buildScopedCacheText(userMessage, cacheScope) {
+  const scope = String(cacheScope || '').trim();
+  return scope ? `${scope}\n${userMessage}` : userMessage;
+}
+
 /**
  * Call LLM with cascading fallback across 3 providers.
  *
@@ -509,7 +520,8 @@ async function chat({
   conversationId = null,
   responseFormat = null,
   forceProvider = null,
-  skipCache = false,       // set true for agentic/tool-calling flows
+  skipCache = false,       // set true for agentic/tool-calling or clinical flows
+  cacheScope = null,       // tenant/patient/session scope required before caching clinical text
   cognitiveTier = null,    // 'reflex' | 'standard' | 'deep' — from CognitiveRouter.classify()
   cognitiveDecisionId = null,  // for outcome recording
 }) {
@@ -528,10 +540,17 @@ async function chat({
   // ── Semantic cache check (before any LLM call) ──────────────────────────
   // Only cache simple user→assistant exchanges with no tools
   const userMessage = messages.filter(m => m.role === 'user').slice(-1)[0]?.content;
-  const isCacheable = !skipCache && !tools && !responseFormat && userMessage && typeof userMessage === 'string';
+  const clinicalMessage = typeof userMessage === 'string' && looksClinicalForCache(userMessage);
+  const scopedCacheText = typeof userMessage === 'string' ? buildScopedCacheText(userMessage, cacheScope) : null;
+  const isCacheable = !skipCache
+    && !tools
+    && !responseFormat
+    && userMessage
+    && typeof userMessage === 'string'
+    && (!clinicalMessage || Boolean(cacheScope));
 
   if (isCacheable) {
-    const hit = await semanticCache.lookup(userMessage);
+    const hit = await semanticCache.lookup(scopedCacheText);
     if (hit) {
       return {
         content: hit.response,
@@ -699,7 +718,7 @@ async function chat({
 
   // ── Store successful response in semantic cache ──────────────────────────
   if (isCacheable && result.content && result.usage.totalTokens > 0) {
-    semanticCache.store(userMessage, result.content, {
+    semanticCache.store(scopedCacheText, result.content, {
       provider: result.provider,
       model: result.model,
       tokensUsed: result.usage.totalTokens,

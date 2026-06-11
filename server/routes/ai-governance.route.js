@@ -20,6 +20,7 @@ import governanceService from '../services/ai-model-governance.service.js';
 import interpretabilityService from '../services/ai-interpretability.service.js';
 import qualityGates from '../services/ai-quality-gates.service.js';
 import pool from '../db/pgPool.js';
+import { requirePatientRecordAccess } from '../utils/patient-access.js';
 
 const router = express.Router();
 
@@ -254,7 +255,13 @@ router.get('/patient/:patientId/explanation', async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to view patient explanations' });
     }
 
-    const { patientId } = req.params;
+    const patientId = parseInt(String(req.params.patientId), 10);
+    if (Number.isNaN(patientId)) {
+      return res.status(400).json({ error: 'Invalid patientId' });
+    }
+
+    const access = await requirePatientRecordAccess(req, res, patientId);
+    if (!access) return;
 
     const { rows } = await pool.query(`
       SELECT r.overall_score, r.risk_level, r.subscores, r.shap_values,

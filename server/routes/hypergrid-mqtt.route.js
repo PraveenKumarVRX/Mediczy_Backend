@@ -65,17 +65,18 @@ router.get('/devices', authUser, async (req, res) => {
     const pool     = await connectPostgres();
     const r = await pool.query(
       `SELECT id, name, device_type, serial_number, manufacturer, model,
-              location, gateway_id, device_key, active, created_at, last_seen
+              location, gateway_id, gateway_key AS device_key,
+              (status = 'online') AS active, status, created_at, last_seen
        FROM hg_devices
        WHERE tenant_id = $1
          AND ($2::text IS NULL OR device_type = $2)
-         AND ($3::text IS NULL OR gateway_id  = $3)
-         AND active = TRUE
+         AND ($3::bigint IS NULL OR gateway_id  = $3::bigint)
+         AND COALESCE(status, 'offline') <> 'inactive'
        ORDER BY created_at DESC LIMIT $4 OFFSET $5`,
       [tenantId, type || null, gatewayId || null, parseInt(limit), offset]
     );
     const count = await pool.query(
-      `SELECT COUNT(*) FROM hg_devices WHERE tenant_id=$1 AND active=TRUE`, [tenantId]
+      `SELECT COUNT(*) FROM hg_devices WHERE tenant_id=$1 AND COALESCE(status, 'offline') <> 'inactive'`, [tenantId]
     );
     res.json({ success: true, devices: r.rows, total: parseInt(count.rows[0].count), page: parseInt(page) });
   } catch (err) {

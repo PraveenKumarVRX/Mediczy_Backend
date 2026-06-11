@@ -1,6 +1,7 @@
 import psycopg2
 import pandas as pd
 import random
+import os
 
 CHARSET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
@@ -8,8 +9,16 @@ def generate_unique_id(prefix='C'):
     random_part = ''.join(random.choices(CHARSET, k=5))
     return f"{prefix}{random_part}"
 
-conn = psycopg2.connect(host='127.0.0.1', database='mediczy_ai', 
-                        user='mediczy_helper', password='Mediczy2024Helper')
+db_password = os.environ.get('POSTGRES_PASSWORD') or os.environ.get('DB_PASSWORD')
+if not db_password:
+    raise RuntimeError('POSTGRES_PASSWORD or DB_PASSWORD is required')
+
+conn = psycopg2.connect(
+    host=os.environ.get('POSTGRES_HOST', '127.0.0.1'),
+    database=os.environ.get('POSTGRES_DATABASE', 'mediczy_ai'),
+    user=os.environ.get('POSTGRES_USER', 'mediczy_helper'),
+    password=db_password,
+)
 cur = conn.cursor()
 
 # Get table columns

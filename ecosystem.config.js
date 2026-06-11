@@ -18,11 +18,12 @@ const path = require('path');
 const fs = require('fs');
 
 const ROOT_DIR = process.env.MEDICZY_HOME || __dirname;
+const SERVER_DIR = path.join(ROOT_DIR, 'server');
 
-// Load .env so PM2 always picks up the latest values regardless of how it was invoked
-const envFile = path.join(ROOT_DIR, '.env');
-if (fs.existsSync(envFile)) {
-  fs.readFileSync(envFile, 'utf8')
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return;
+
+  fs.readFileSync(filePath, 'utf8')
     .split('\n')
     .forEach(line => {
       const trimmed = line.trim();
@@ -31,12 +32,14 @@ if (fs.existsSync(envFile)) {
       if (idx === -1) return;
       const key = trimmed.slice(0, idx).trim();
       const raw = trimmed.slice(idx + 1).trim();
-      // Strip surrounding matching quotes (dotenv-style: "value" or 'value' -> value)
       const val = raw.replace(/^(['"])(.*)\1$/, '$2');
-      if (key) process.env[key] = val; // .env file is source of truth; always override cached values
+      if (key) process.env[key] = val; // env file is source of truth for PM2 launches
     });
 }
-const SERVER_DIR = path.join(ROOT_DIR, 'server');
+
+// Load .env so PM2 always picks up the latest values regardless of how it was invoked
+loadEnvFile(path.join(ROOT_DIR, '.env'));
+loadEnvFile(path.join(SERVER_DIR, '.env'));
 const SCRIPTS_DIR = path.join(ROOT_DIR, 'scripts');
 const AI_ENGINE_DIR = path.join(ROOT_DIR, 'ai-engine', 'doctor_bot');
 const LOGS_DIR = path.join(ROOT_DIR, 'logs');
@@ -68,7 +71,11 @@ module.exports = {
         POSTGRES_DB: process.env.POSTGRES_DB || 'mediczy_ai',
         POSTGRES_USER: process.env.POSTGRES_USER || 'mediczy_helper',
         POSTGRES_PASSWORD: process.env.POSTGRES_PASSWORD,
-        POSTGRES_SSL: process.env.POSTGRES_SSL || 'false',
+        POSTGRES_SSL: process.env.POSTGRES_SSL || 'true',
+        REDIS_HOST: process.env.REDIS_HOST || '127.0.0.1',
+        REDIS_PORT: process.env.REDIS_PORT || '6379',
+        REDIS_PASSWORD: process.env.REDIS_PASSWORD,
+        REDIS_URL: process.env.REDIS_URL,
         DISABLE_KAFKA: 'true',
       },
       error_file: path.join(LOGS_DIR, 'server-error.log'),
@@ -102,7 +109,7 @@ module.exports = {
         POSTGRES_DB: process.env.POSTGRES_DB || 'mediczy_ai',
         POSTGRES_USER: process.env.POSTGRES_USER || 'mediczy_helper',
         POSTGRES_PASSWORD: process.env.POSTGRES_PASSWORD,
-        POSTGRES_SSL: process.env.POSTGRES_SSL || 'false',
+        POSTGRES_SSL: process.env.POSTGRES_SSL || 'true',
         DUCKDB_ENABLED: 'true',
         DUCKDB_PATH: ':memory:',
         PGVECTOR_DIMENSION: process.env.PGVECTOR_DIMENSION || '1536',
@@ -148,6 +155,32 @@ module.exports = {
       min_uptime: '10s',
       kill_timeout: 10000,
       restart_delay: 2000
+    },
+
+    // ==================== Feedback Intelligence Worker ====================
+    {
+      name: 'feedback-intelligence',
+      script: './workers/feedback-intelligence.worker.mjs',
+      cwd: SERVER_DIR,
+      instances: 1,
+      exec_mode: 'fork',
+      interpreter: 'node',
+      interpreter_args: '--experimental-vm-modules',
+      env: {
+        NODE_ENV: 'production',
+        DISABLE_KAFKA: 'true',
+      },
+      error_file: path.join(LOGS_DIR, 'feedback-intel-error.log'),
+      out_file:   path.join(LOGS_DIR, 'feedback-intel-out.log'),
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+      max_memory_restart: '500M',
+      watch: false,
+      max_restarts: 10,
+      min_uptime: '10s',
+      kill_timeout: 10000,
+      restart_delay: 5000,
+      autorestart: true,
     },
 
     // ==================== Offline AI Scribe ====================

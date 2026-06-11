@@ -67,8 +67,17 @@ function CameraEnabler({ enabled }: { enabled: boolean }) {
 }
 
 /**
- * Medical video layout — same as VideoConference but without screen share by default.
- * Uses GridLayout for multiple participants, with ControlBar controls prop.
+ * Medical video layout — fills the full parent container.
+ *
+ * Why explicit inline styles instead of lk-* class names:
+ *   The LiveKit CSS sets height on .lk-video-conference but not width, so
+ *   GridLayout's ResizeObserver measures a narrow container and collapses
+ *   all tiles into a single column with a dead black area to the right.
+ *   Explicit styles + `min-height:0` on every flex child fixes this.
+ *
+ *   paddingTop on the grid area clears the absolute-positioned header
+ *   overlay (room name / connection badge / End Call) so tiles are never
+ *   hidden behind it.
  */
 function MedicalVideoLayout({ controls }: { controls?: ControlBarControls }) {
   const tracks = useTracks(
@@ -87,14 +96,33 @@ function MedicalVideoLayout({ controls }: { controls?: ControlBarControls }) {
   };
 
   return (
-    <div className="lk-video-conference" style={{ height: '100%' }}>
-      <div className="lk-video-conference-inner" style={{ flex: 1 }}>
-        <div className="lk-grid-layout-wrapper" style={{ height: '100%' }}>
-          <GridLayout tracks={tracks}>
-            <ParticipantTile />
-          </GridLayout>
-        </div>
+    // Outer column — fills the full LKRoom container
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      width: '100%',
+      height: '100%',
+      overflow: 'hidden',
+      flex: 1,
+      minHeight: 0,
+    }}>
+      {/* Grid area — takes all space above the control bar */}
+      <div style={{
+        flex: 1,
+        width: '100%',
+        minHeight: 0,
+        overflow: 'hidden',
+        position: 'relative',
+        paddingTop: '60px', // clear the absolute header overlay
+      }}>
+        <GridLayout
+          tracks={tracks}
+          style={{ height: '100%', width: '100%' }}
+        >
+          <ParticipantTile />
+        </GridLayout>
       </div>
+      {/* Control bar — anchored to bottom */}
       <ControlBar controls={mergedControls} variation="verbose" />
     </div>
   );
@@ -237,13 +265,13 @@ export default function LiveKitRoom({
   const shellClassName = isMinimized
     ? 'fixed bottom-4 right-4 z-50 h-[260px] w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-slate-700 bg-slate-900 shadow-2xl'
     : inline
-      ? 'h-full w-full bg-slate-900'
-      : 'fixed inset-0 bg-slate-900 z-50';
+      ? 'h-full w-full bg-slate-900 flex flex-col overflow-hidden'
+      : 'fixed inset-0 bg-slate-900 z-50 overflow-hidden';
 
   const roomStyle = isMinimized
     ? { height: '260px', width: '100%' }
     : inline
-      ? { height: '100%', width: '100%' }
+      ? { flex: 1, minHeight: 0, width: '100%', overflow: 'hidden' }
       : { height: '100vh', width: '100vw' };
   const hasCustomIceServers = Array.isArray(iceServers) && iceServers.length > 0;
   const rtcConfig = {

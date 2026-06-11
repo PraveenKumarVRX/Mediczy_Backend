@@ -66,6 +66,10 @@ const ROLE_PREFIX_MAP = {
   'pharmacy_admin': 'P',
   'insurer': 'I',
   'insurer_admin': 'I',
+  'insurance_company': 'I',
+  'insurance_company_admin': 'I',
+  'insurance_broker': 'V',
+  'broker': 'V',
   'tpa': 'X',
   'tpa_admin': 'X',
   'ngo': 'G',
@@ -78,6 +82,28 @@ const ROLE_PREFIX_MAP = {
   'ambulance_admin': 'B',
   'ohc': 'O',
   'ohc_admin': 'O',
+  'employee': 'E',
+
+  // Department and hospital staff roles stored in the users table.
+  'lab_staff': 'T',
+  'pharmacy_staff': 'T',
+  'blood_bank_staff': 'T',
+  'finance_staff': 'T',
+  'accounts_staff': 'T',
+  'asset_staff': 'T',
+  'biomedical_staff': 'T',
+  'procurement_staff': 'T',
+  'dietary_staff': 'T',
+  'cssd_staff': 'T',
+  'infection_control_staff': 'T',
+  'consent_staff': 'T',
+  'queue_staff': 'T',
+  'mortuary_staff': 'T',
+  'mrd_staff': 'T',
+  'it_edp_staff': 'T',
+  'quality_staff': 'T',
+  'insurance_desk_staff': 'T',
+  'ambulance_driver': 'T',
   
   // Admin roles
   'admin': 'R',
@@ -144,11 +170,13 @@ export const getRoleFromUniqueId = (uniqueId) => {
     'A': 'assistant',
     'T': 'team',
     'C': 'corporate',
+    'E': 'corporate_employee',
     'H': 'hospital',
     'K': 'clinic',
     'L': 'lab',
     'P': 'pharmacy',
     'I': 'insurer',
+    'V': 'insurance_broker',
     'X': 'tpa',
     'G': 'ngo',
     'S': 'psu',
@@ -181,11 +209,38 @@ export const generateUniqueIdSafe = (role, existingIds = new Set(), maxAttempts 
   return `${prefix}${timestamp}`;
 };
 
+/**
+ * Generate an ID that does not already exist in a Sequelize model/table.
+ * This prevents rare public-ID collisions before the database unique index fires.
+ */
+export const generateUniqueIdForModel = async (model, role = 'user', field = 'unique_id', maxAttempts = 50) => {
+  if (!model || typeof model.findOne !== 'function') {
+    return generateUniqueId(role);
+  }
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const candidate = generateUniqueId(role);
+    const existing = await model.findOne({ where: { [field]: candidate }, attributes: ['id'] });
+    if (!existing) {
+      return candidate;
+    }
+  }
+
+  throw new Error(`Unable to allocate unique public ID for role "${role}" after ${maxAttempts} attempts`);
+};
+
+export const isUniqueIdCompatibleWithRole = (uniqueId, role) => {
+  if (!isValidUniqueId(uniqueId) || !role) return false;
+  return uniqueId.charAt(0) === getPrefixForRole(role);
+};
+
 export default {
   generateUniqueId,
   generateUniqueIdSafe,
+  generateUniqueIdForModel,
   getPrefixForRole,
   isValidUniqueId,
+  isUniqueIdCompatibleWithRole,
   getRoleFromUniqueId,
   ROLE_PREFIX_MAP
 };

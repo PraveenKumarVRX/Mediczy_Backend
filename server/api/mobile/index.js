@@ -2354,7 +2354,7 @@ router.get('/doctors/:id/availability', asyncHandler(async (req, res) => {
 
 // ============== Video Consultation ==============
 
-import { buildLiveKitJoinData, createMeetingInfo } from '../../utils/videoProvider.js';
+import { buildLiveKitJoinData, createMeetingInfo, generateCanonicalMeetingId, verifyCanonicalMeetingId } from '../../utils/videoProvider.js';
 
 const MOBILE_TURN_HOST = process.env.TURN_SERVER_HOST || '13.127.125.93';
 const MOBILE_TURN_USERNAME = process.env.TURN_USERNAME || 'livekit';
@@ -2396,8 +2396,58 @@ router.post('/video/token', authenticate(), asyncHandler(async (req, res) => {
   const userRole = user.role || 'patient';
   const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || 'Mobile User';
   
-  // Generate meeting ID if not provided
-  const meetingId = roomName || (appointmentId ? `apt-${appointmentId}` : createMeetingInfo({}).meetingId);
+  // Resolve meeting ID so all clients (doctor/patient/web/mobile) join the same room.
+  let meetingId = roomName || null;
+
+  if (appointmentId) {
+    const aptResult = await db.query(
+      `SELECT id, "userId", "doctorId", "meetingId"
+       FROM appointments
+       WHERE id = $1
+       LIMIT 1`,
+      [appointmentId]
+    );
+
+    if (aptResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'APPOINTMENT_NOT_FOUND', message: 'Appointment not found' }
+      });
+    }
+
+    const appointment = aptResult.rows[0];
+    const isParticipant = String(appointment.userId) === String(userId) || String(appointment.doctorId) === String(userId);
+    if (!isParticipant) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Not authorized to join this appointment room' }
+      });
+    }
+
+    const canonicalMeetingId = generateCanonicalMeetingId(appointment.id);
+    const resolvedMeetingId = appointment.meetingId || canonicalMeetingId;
+    const legacyMeetingId = `apt-${appointment.id}`;
+
+    if (!meetingId || meetingId === legacyMeetingId || verifyCanonicalMeetingId(appointment.id, meetingId)) {
+      meetingId = resolvedMeetingId;
+    } else if (meetingId !== resolvedMeetingId) {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'INVALID_ROOM', message: 'Invalid room for this appointment' }
+      });
+    }
+
+    if (!appointment.meetingId) {
+      await db.query(
+        `UPDATE appointments SET "meetingId" = $1, "updatedAt" = NOW() WHERE id = $2`,
+        [resolvedMeetingId, appointment.id]
+      );
+    }
+  }
+
+  if (!meetingId) {
+    meetingId = createMeetingInfo({}).meetingId;
+  }
   
   try {
     const livekitData = await buildLiveKitJoinData({

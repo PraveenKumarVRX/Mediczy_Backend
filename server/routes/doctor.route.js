@@ -16,17 +16,20 @@ import googlePlacesService from '../services/google-places.service.js';
 import { Doctor, Appointment, User } from "../models/index.js";
 import { UserPlan } from "../models/postgres/membershipPlan.model.postgres.js";
 import { Op } from 'sequelize';
-import { Notification } from '../services/notification.service.js';
+import { Notification, FCMToken } from '../services/notification.service.js';
+import { sendDoctorCallingNotification } from '../utils/firebase-admin.js';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { cache } from '../db/redis.js';
 import { evaluateVitalsAndAlert } from '../services/clinical-intelligence.service.js';
 import { buildLiveKitJoinData, ensureMeetingInfo, getProviderLabel } from '../utils/videoProvider.js';
+import { getIO, getOnlineUsers } from '../chat/chathandler.controller.js';
 import { createDoctorDashboardAlertsRouter } from './doctor/dashboard-alerts.routes.js';
 import { createDoctorTriageRouter } from './doctor/triage.routes.js';
 import { createDoctorTemplatesRouter } from './doctor/templates.routes.js';
 import { createDoctorMessagesRouter } from './doctor/messages.routes.js';
 import { createDoctorBillingRouter } from './doctor/billing.routes.js';
+import { toArray, normalizeDoctorProfile } from '../utils/doctorNormalizer.js';
 
 const router = express.Router();
 // Ensure request bodies are parsed even if app-level parser order changes.
@@ -180,6 +183,11 @@ router.use(createDoctorTriageRouter({
   ensureMeetingInfo,
   getProviderLabel,
   buildLiveKitJoinData,
+  Notification,
+  FCMToken,
+  sendDoctorCallingNotification,
+  getIO,
+  getOnlineUsers,
 }));
 
 router.use(createDoctorTemplatesRouter({
@@ -286,7 +294,7 @@ router.get("/appointments", authDoctor, async (req, res) => {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       where.appointmentDate = { [Op.gte]: today };
-      where.status = { [Op.in]: ['scheduled', 'confirmed', 'in-progress'] };
+      where.status = { [Op.in]: ['pending', 'scheduled', 'confirmed', 'in-progress'] };
     }
 
     const appointments = await Appointment.findAll({
@@ -510,27 +518,32 @@ router.get("/settings", authDoctor, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Doctor not found' });
     }
 
+    const nd = normalizeDoctorProfile(doctor);
     res.json({
       success: true,
       settings: {
         profile: {
-          firstName: doctor.firstName,
-          lastName: doctor.lastName,
-          email: doctor.email,
-          phoneNumber: doctor.phoneNumber,
-          specialization: doctor.specialization,
-          experience: doctor.experience,
-          qualifications: doctor.qualifications,
-          bio: doctor.bio,
-          profileImage: doctor.profileImage,
-          socialLinks: doctor.socialLinks || {}
+          firstName: nd.firstName,
+          lastName: nd.lastName,
+          email: nd.email,
+          phoneNumber: nd.phoneNumber,
+          specialization: nd.specialization,
+          specializations: nd.specializations,
+          experience: nd.experience,
+          qualifications: nd.qualifications,
+          languages: nd.languages,
+          bio: nd.bio,
+          profileImage: nd.profileImage,
+          socialLinks: nd.socialLinks || {}
         },
         practice: {
-          consultationFee: doctor.consultationFee,
-          slotDuration: doctor.slotDuration,
-          weeklySchedule: doctor.weeklySchedule,
-          practiceLocations: doctor.practiceLocations,
-          isAvailable: doctor.isAvailable
+          consultationFee: nd.consultationFee,
+          feeStructure: nd.feeStructure,
+          slotDuration: nd.slotDuration,
+          weeklySchedule: nd.weeklySchedule,
+          weeklyAvailability: nd.weeklyAvailability,
+          practiceLocations: nd.practiceLocations,
+          isAvailable: nd.isAvailable
         },
         notifications: {
           emailNotifications: doctor.emailNotifications ?? true,
@@ -616,17 +629,20 @@ router.put("/settings", authDoctor, async (req, res) => {
         updatedFields.push('socialLinks');
       }
 
-      // Handle qualifications - can be string or array
+      // Always store as arrays — toArray handles string/array/null
       if (profile.qualifications !== undefined) {
-        if (typeof profile.qualifications === 'string') {
-          // If it's a comma-separated string, split it into array
-          doctor.qualifications = profile.qualifications.split(',').map(q => q.trim()).filter(Boolean);
-        } else if (Array.isArray(profile.qualifications)) {
-          doctor.qualifications = profile.qualifications;
-        } else {
-          doctor.qualifications = [];
-        }
+        doctor.qualifications = toArray(profile.qualifications);
         updatedFields.push('qualifications');
+      }
+
+      if (profile.languages !== undefined) {
+        doctor.languages = toArray(profile.languages);
+        updatedFields.push('languages');
+      }
+
+      if (profile.servicesOffered !== undefined) {
+        doctor.servicesOffered = toArray(profile.servicesOffered);
+        updatedFields.push('servicesOffered');
       }
     }
 

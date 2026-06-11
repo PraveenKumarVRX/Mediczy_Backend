@@ -43,11 +43,19 @@ fi
 
 cd "$SERVER_DIR"
 
-# Ensure LiveKit is running
-if ! curl -sf http://localhost:7880 > /dev/null 2>&1; then
-  echo "❌ LiveKit not responding on :7880. Aborting." | tee -a "$LOG_FILE"
+# Ensure LiveKit Cloud endpoint is reachable (cloud-only sanity)
+LIVEKIT_TARGET_URL="${LIVEKIT_URL:-${LIVEKIT_API_URL:-wss://msh-kw9tvxa9.livekit.cloud}}"
+LIVEKIT_HEALTH_URL="${LIVEKIT_TARGET_URL/wss:\/\//https:\/\/}"
+LIVEKIT_HEALTH_URL="${LIVEKIT_HEALTH_URL/ws:\/\//http:\/\/}"
+
+LIVEKIT_HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' -I "$LIVEKIT_HEALTH_URL" || true)"
+
+if ! [[ "$LIVEKIT_HTTP_CODE" =~ ^[0-9]{3}$ ]] || [ "$LIVEKIT_HTTP_CODE" -lt 200 ] || [ "$LIVEKIT_HTTP_CODE" -ge 500 ]; then
+  echo "❌ LiveKit Cloud not reachable at $LIVEKIT_HEALTH_URL (status=$LIVEKIT_HTTP_CODE). Aborting." | tee -a "$LOG_FILE"
   exit 1
 fi
+
+echo "ℹ️  LiveKit Cloud endpoint: $LIVEKIT_HEALTH_URL" | tee -a "$LOG_FILE"
 
 # Clear local credential-stuffing guard counters for cron-run localhost checks.
 # This avoids false negatives when prior failed attempts temporarily block ::1/127.0.0.1.

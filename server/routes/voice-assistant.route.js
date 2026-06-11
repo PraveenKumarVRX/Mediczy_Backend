@@ -28,13 +28,17 @@ import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 import logger from '../config/logger.js';
 import pool from '../db/pgPool.js';
+import { getAIServiceConfig } from '../config/ai-services.config.js';
 
 const router = express.Router();
 const requireDoctor = requireRole(['doctor', 'admin', 'assistant', 'nurse', 'team']);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
-const OFFLINE_SCRIBE_URL = process.env.OFFLINE_SCRIBE_URL || 'http://localhost:8006';
-const LIVEKIT_HEALTH_URL = process.env.LIVEKIT_HEALTH_URL || 'http://127.0.0.1:7880';
+const AI_SERVICE_CONFIG = getAIServiceConfig();
+const OFFLINE_SCRIBE_URL = AI_SERVICE_CONFIG.offlineScribeUrl;
+const LIVEKIT_URL = AI_SERVICE_CONFIG.liveKitUrl;
+const LIVEKIT_HEALTH_URL = AI_SERVICE_CONFIG.liveKitHealthUrl;
+const LIVEKIT_USES_CLOUD = AI_SERVICE_CONFIG.liveKitUsesCloud;
 
 async function fetchJsonOrText(url, options = {}, timeoutMs = 5000) {
   const controller = new AbortController();
@@ -286,6 +290,59 @@ const ASSISTANT_TOOLS = [
         }
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_task',
+      description: 'Create a clinical to-do or reminder task for the doctor. Use when doctor says "remind me to", "add a task", "create a reminder", "note to self", "I need to", "don\'t let me forget", "add to my list".',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Short task title (the thing to be done)' },
+          patient_name: { type: 'string', description: 'Patient name if task is patient-specific' },
+          due_date: { type: 'string', description: 'Due date in YYYY-MM-DD format. Use today if not specified.' },
+          due_time: { type: 'string', description: 'Due time in HH:MM (24hr). Optional.' },
+          priority: {
+            type: 'string',
+            enum: ['urgent', 'high', 'normal', 'low'],
+            description: 'Task priority. Default: normal'
+          }
+        },
+        required: ['title']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_tasks',
+      description: 'List pending or recent tasks/reminders for the doctor. Use when doctor says "what are my tasks", "show my reminders", "what do I need to do", "my to-do list", "pending tasks".',
+      parameters: {
+        type: 'object',
+        properties: {
+          filter: {
+            type: 'string',
+            enum: ['pending', 'today', 'all'],
+            description: 'Filter tasks. Default: pending'
+          }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'complete_task',
+      description: 'Mark a task as completed or done. Use when doctor says "done", "completed", "mark as done", "finished", "task complete", "checked off".',
+      parameters: {
+        type: 'object',
+        properties: {
+          task_id: { type: 'integer', description: 'Task ID if known' },
+          title: { type: 'string', description: 'Task title or keywords to find the task if ID not known' }
+        }
+      }
+    }
   }
 ];
 
@@ -301,7 +358,7 @@ function buildSystemPrompt(context = {}) {
   const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
   const dateStr = now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-  return `You are iSHA — a clinical AI assistant ONLY for Dr. ${doctorName || 'Doctor'} in the SmartHealth platform. You MUST NOT answer any question that is not about medicine, patients, appointments, prescriptions, or hospital workflow. For ANY non-medical query (geography, history, sports, trivia, general knowledge, coding, etc.), you MUST respond with this exact phrase: "I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks." Today: ${dateStr}, ${timeStr}. Screen: ${currentScreen || 'dashboard'}. ${patientInfo}
+  return `You are iSHA — a clinical AI assistant ONLY for Dr. ${doctorName || 'Doctor'} in the SmartHealth platform. You MUST NOT answer any question that is not about medicine, patients, appointments, prescriptions, tasks, or hospital workflow. For ANY non-medical query (geography, history, sports, trivia, general knowledge, coding, etc.), you MUST respond with this exact phrase: "I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks." Today: ${dateStr}, ${timeStr}. Screen: ${currentScreen || 'dashboard'}. ${patientInfo}
 
 STRICT SCOPE — NEVER VIOLATE:
 - Non-clinical question (geography, capital cities, sports, history, weather, general trivia, coding, politics, etc.) → respond ONLY: "I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks."
@@ -387,7 +444,15 @@ async function executeGetTodaySummary(doctorId) {
 async function executeAddClinicalNote(doctorId, patientId, note, category = 'observation') {
   if (!patientId) return { success: false, error: 'No patient selected' };
   try {
-    // Map voice category to SOAP column
+    // Guard: doctor must have at least one appointment with this patient
+    const rel = await pool.query(
+      `SELECT 1 FROM appointments WHERE "doctorId" = $1 AND "userId" = $2 LIMIT 1`,
+      [doctorId, patientId]
+    );
+    if (rel.rows.length === 0) {
+      return { success: false, error: 'Patient not found in your appointment records.' };
+    }
+
     const colMap = { plan: 'plan', follow_up: '"followUp"', instruction: '"patientEducation"' };
     const noteCol = colMap[category] || 'subjective';
     await pool.query(`
@@ -450,20 +515,23 @@ async function executeListAppointments(doctorId, filter = 'today', limit = 10) {
 
 async function executeGetPatientHealth(doctorId, patientName, patientId) {
   try {
-    // Find user from appointments (doctor must have seen this patient)
-    let userId = patientId;
-    if (!userId && patientName) {
-      const nameResult = await pool.query(`
-        SELECT a."userId", COALESCE(a."patientName", u."firstName" || ' ' || u."lastName") AS "patientName"
-        FROM appointments a
-        LEFT JOIN users u ON a."userId" = u.id
-        WHERE a."doctorId" = $1 AND (
-          LOWER(COALESCE(a."patientName", u."firstName" || ' ' || u."lastName")) ILIKE $2
+    // ALWAYS verify the doctor-patient relationship via appointments, even when patientId is supplied.
+    // This prevents a doctor from reading another doctor's patient's PHI by sending a known patientId.
+    const relQuery = await pool.query(`
+      SELECT a."userId",
+             COALESCE(a."patientName", u."firstName" || ' ' || u."lastName") AS "patientName"
+      FROM appointments a
+      LEFT JOIN users u ON a."userId" = u.id
+      WHERE a."doctorId" = $1
+        AND (
+          ($2::integer IS NOT NULL AND a."userId" = $2::integer)
+          OR ($3::text IS NOT NULL AND LOWER(COALESCE(a."patientName", u."firstName" || ' ' || u."lastName")) ILIKE $3)
         )
-        LIMIT 1
-      `, [doctorId, `%${patientName}%`]);
-      if (nameResult.rows[0]) userId = nameResult.rows[0].userId;
-    }
+      LIMIT 1
+    `, [doctorId, patientId ? parseInt(patientId, 10) : null, patientName ? `%${patientName.toLowerCase()}%` : null]);
+
+    const userId = relQuery.rows[0]?.userId ?? null;
+    if (!userId) return null; // Patient not in this doctor's appointment records
 
     const summary = {};
 
@@ -516,8 +584,8 @@ async function executeGetPatientHealth(doctorId, patientName, patientId) {
         SELECT p.diagnosis, p.medications, p.vitals, p."chiefComplaints", p."createdAt"
         FROM prescriptions p
         JOIN appointments a ON p."appointmentId" = a."appointmentId"
-        WHERE p."doctorId" = $1 AND p."userId" = (SELECT id FROM users WHERE id = $2 LIMIT 1)
-           OR p."doctorId" = $1 AND a."userId" = $2
+        WHERE p."doctorId" = $1
+          AND (p."userId" = $2 OR a."userId" = $2)
         ORDER BY p."createdAt" DESC
         LIMIT 1
       `, [doctorId, userId]);
@@ -677,14 +745,91 @@ async function executeGetDoctorBriefing(doctorId, priority = 'all') {
       LIMIT 3
     `, [doctorId]);
 
+    // 4. Overdue or due-today tasks
+    const taskResult = await pool.query(`
+      SELECT id, title, patient_name, due_date, priority
+      FROM doctor_tasks
+      WHERE doctor_id = $1
+        AND status = 'pending'
+        AND (due_date IS NULL OR due_date <= CURRENT_DATE)
+      ORDER BY
+        CASE priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 ELSE 3 END,
+        due_date ASC NULLS LAST
+      LIMIT 5
+    `, [doctorId]).catch(() => ({ rows: [] }));
+
     return {
       unreadNotifications: notifResult.rows,
       pendingRequests: pendingReqResult.rows,
       upcomingSoon: upcomingResult.rows,
+      pendingTasks: taskResult.rows,
     };
   } catch (err) {
     logger.warn('[VoiceAssistant] get_doctor_briefing error', { error: err.message });
-    return { unreadNotifications: [], pendingRequests: [], upcomingSoon: [] };
+    return { unreadNotifications: [], pendingRequests: [], upcomingSoon: [], pendingTasks: [] };
+  }
+}
+
+async function executeAddTask(doctorId, { title, patient_name, due_date, due_time, priority = 'normal' }) {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const result = await pool.query(
+      `INSERT INTO doctor_tasks (doctor_id, title, patient_name, due_date, due_time, priority, source)
+       VALUES ($1, $2, $3, $4, $5, $6, 'voice')
+       RETURNING id, title, due_date, priority`,
+      [doctorId, title, patient_name || null, due_date || today, due_time || null, priority]
+    );
+    return { success: true, task: result.rows[0] };
+  } catch (err) {
+    logger.warn('[VoiceAssistant] add_task error', { error: err.message });
+    return { success: false, error: err.message };
+  }
+}
+
+async function executeListTasks(doctorId, filter = 'pending') {
+  try {
+    const dateClause = filter === 'today' ? `AND due_date = CURRENT_DATE` : '';
+    const statusClause = filter === 'all' ? '' : `AND status = 'pending'`;
+    const result = await pool.query(
+      `SELECT id, title, patient_name, due_date, due_time, priority, status
+       FROM doctor_tasks
+       WHERE doctor_id = $1 ${statusClause} ${dateClause}
+       ORDER BY
+         CASE priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 ELSE 4 END,
+         due_date ASC NULLS LAST
+       LIMIT 15`,
+      [doctorId]
+    );
+    return result.rows;
+  } catch (err) {
+    logger.warn('[VoiceAssistant] list_tasks error', { error: err.message });
+    return [];
+  }
+}
+
+async function executeCompleteTask(doctorId, { task_id, title }) {
+  try {
+    let result;
+    if (task_id) {
+      result = await pool.query(
+        `UPDATE doctor_tasks SET status = 'completed', updated_at = NOW()
+         WHERE id = $1 AND doctor_id = $2 RETURNING id, title`,
+        [task_id, doctorId]
+      );
+    } else if (title) {
+      result = await pool.query(
+        `UPDATE doctor_tasks SET status = 'completed', updated_at = NOW()
+         WHERE doctor_id = $1 AND status = 'pending'
+           AND title ILIKE $2
+         ORDER BY created_at DESC LIMIT 1 RETURNING id, title`,
+        [doctorId, `%${title}%`]
+      );
+    }
+    if (result?.rows?.length > 0) return { success: true, task: result.rows[0] };
+    return { success: false, error: 'Task not found' };
+  } catch (err) {
+    logger.warn('[VoiceAssistant] complete_task error', { error: err.message });
+    return { success: false, error: err.message };
   }
 }
 
@@ -789,7 +934,7 @@ router.get('/status', authUser, requireDoctor, async (req, res) => {
     },
     endpoints: {
       scribe: OFFLINE_SCRIBE_URL,
-      livekit: process.env.LIVEKIT_URL || null,
+      livekit: LIVEKIT_URL || null,
     },
   };
 
@@ -802,13 +947,24 @@ router.get('/status', authUser, requireDoctor, async (req, res) => {
     status.components.stt = { ...status.components.stt, status: 'unhealthy', error: error.message };
   }
 
-  try {
-    const livekit = await fetchJsonOrText(LIVEKIT_HEALTH_URL, {}, 5000);
-    status.components.livekit.status = livekit.ok ? 'healthy' : 'degraded';
-    status.components.livekit.healthUrl = LIVEKIT_HEALTH_URL;
-  } catch (error) {
-    status.success = false;
-    status.components.livekit = { ...status.components.livekit, status: 'unhealthy', healthUrl: LIVEKIT_HEALTH_URL, error: error.message };
+  if (LIVEKIT_USES_CLOUD && !LIVEKIT_HEALTH_URL) {
+    status.components.livekit = {
+      ...status.components.livekit,
+      status: status.components.livekit.configured ? 'configured' : 'unconfigured',
+      cloud: true,
+      healthUrl: null,
+    };
+  } else if (LIVEKIT_HEALTH_URL) {
+    try {
+      const livekit = await fetchJsonOrText(LIVEKIT_HEALTH_URL, {}, 5000);
+      status.components.livekit.status = livekit.ok ? 'healthy' : 'degraded';
+      status.components.livekit.healthUrl = LIVEKIT_HEALTH_URL;
+    } catch (error) {
+      status.success = false;
+      status.components.livekit = { ...status.components.livekit, status: 'unhealthy', healthUrl: LIVEKIT_HEALTH_URL, error: error.message };
+    }
+  } else {
+    status.components.livekit = { ...status.components.livekit, status: 'unconfigured', healthUrl: null };
   }
 
   const httpStatus = status.success ? 200 : 503;
@@ -824,7 +980,7 @@ router.get('/livekit-token', authUser, requireDoctor, async (req, res) => {
   try {
     const apiKey    = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
-    const wsUrl     = process.env.LIVEKIT_URL;
+    const wsUrl     = LIVEKIT_URL;
 
     if (!apiKey || !apiSecret || !wsUrl) {
       return res.status(503).json({ error: 'LiveKit not configured' });
@@ -912,12 +1068,18 @@ Available actions and their parameters:
 - "get_drug_info"           → {"drug":"","question":""}
 - "check_drug_interactions" → {"drugs":["drug1","drug2"]}
 - "get_doctor_briefing"     → {}
+- "add_task"                → {"title":"","patient_name":"","due_date":"YYYY-MM-DD","due_time":"HH:MM","priority":"urgent|high|normal|low"}
+- "list_tasks"              → {"filter":"pending|today|all"}
+- "complete_task"           → {"task_id":null,"title":""}
 - "medical_query"           → {"query":"the clinical question"}
 - "general"                 → {}
 
 Rules:
-- IDENTITY / GREETING (who are you, what can you do, hello, hi, good morning, introduce yourself) → {"action":"general","parameters":{},"response":"I'm iSHA, your AI clinical assistant. I can manage appointments, look up patient health, answer drug questions, and take clinical notes — just speak naturally."}
+- IDENTITY / GREETING (who are you, what can you do, hello, hi, good morning, introduce yourself) → {"action":"general","parameters":{},"response":"I'm iSHA, your AI clinical assistant. I can manage appointments, tasks, patient health, drug questions, and clinical notes — just speak naturally."}
 - NON-CLINICAL QUERY (geography, capital cities, history, sports, weather, trivia, coding, general knowledge, politics, entertainment) → respond ONLY: {"action":"general","parameters":{},"response":"I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks."}
+- TASK / REMINDER / TO-DO (remind me, add task, note to self, don't forget, I need to, add to my list) → add_task with title extracted from speech
+- SHOW TASKS / MY LIST / WHAT DO I NEED TO DO → list_tasks
+- DONE / COMPLETED / MARK AS DONE / FINISHED TASK → complete_task
 - "reschedule" → always reschedule_appointment
 - "alerts / messages / updates / notifications / briefing / what's new" → always get_doctor_briefing (NOT get_today_summary)
 - "how many patients / appointment count / today's summary" → get_today_summary
@@ -1311,9 +1473,8 @@ Rules:
     // get_doctor_briefing — execute server-side
     if (toolName === 'get_doctor_briefing') {
       const briefing = await executeGetDoctorBriefing(doctorId, args.priority || 'all');
-      const { unreadNotifications, pendingRequests, upcomingSoon } = briefing;
+      const { unreadNotifications, pendingRequests, upcomingSoon, pendingTasks = [] } = briefing;
 
-      const hasUrgent = unreadNotifications.some(n => n.priority === 'urgent');
       const parts = [];
 
       if (upcomingSoon.length > 0) {
@@ -1326,36 +1487,70 @@ Rules:
         const urgentItems = unreadNotifications.filter(n => n.priority === 'urgent');
         const highItems   = unreadNotifications.filter(n => n.priority === 'high');
         const normalItems = unreadNotifications.filter(n => !['urgent','high'].includes(n.priority));
-
-        if (urgentItems.length > 0) {
-          parts.push(`🚨 **URGENT (${urgentItems.length}):** ${urgentItems.map(n => n.title).join(' | ')}`);
-        }
-        if (highItems.length > 0) {
-          parts.push(`🔴 **High priority (${highItems.length}):** ${highItems.map(n => n.title).join(' | ')}`);
-        }
-        if (normalItems.length > 0) {
-          parts.push(`📬 **${normalItems.length} unread notification${normalItems.length > 1 ? 's' : ''}`);
-        }
+        if (urgentItems.length > 0) parts.push(`🚨 **URGENT (${urgentItems.length}):** ${urgentItems.map(n => n.title).join(' | ')}`);
+        if (highItems.length > 0)   parts.push(`🔴 **High priority (${highItems.length}):** ${highItems.map(n => n.title).join(' | ')}`);
+        if (normalItems.length > 0) parts.push(`📬 **${normalItems.length} unread notification${normalItems.length > 1 ? 's' : ''}`);
+      }
+      if (pendingTasks.length > 0) {
+        parts.push(`✅ **${pendingTasks.length} pending task${pendingTasks.length > 1 ? 's' : ''}:** ${pendingTasks.map(t => t.title).join(' | ')}`);
       }
 
       if (parts.length === 0) {
-        const msg = 'No new updates or alerts at the moment.';
+        const msg = 'No new updates, alerts, or pending tasks at the moment.';
         return res.json({ intent: 'action', action: 'get_doctor_briefing', parameters: args, response: msg, speak: msg, data: briefing, requiresConfirmation: false });
       }
 
       const fullText = parts.join('\n');
-      // Spoken version — strip emoji/markdown, keep only urgent/critical items
       const spokenParts = [];
-      if (upcomingSoon.length > 0)   spokenParts.push(`You have ${upcomingSoon.length} appointment${upcomingSoon.length > 1 ? 's' : ''} coming up in the next 2 hours.`);
-      if (pendingRequests.length > 0) spokenParts.push(`${pendingRequests.length} pending appointment request${pendingRequests.length > 1 ? 's' : ''} awaiting your confirmation.`);
+      if (upcomingSoon.length > 0)   spokenParts.push(`${upcomingSoon.length} appointment${upcomingSoon.length > 1 ? 's' : ''} coming up soon.`);
+      if (pendingRequests.length > 0) spokenParts.push(`${pendingRequests.length} pending appointment request${pendingRequests.length > 1 ? 's' : ''}.`);
       const urgentNotifs = unreadNotifications.filter(n => n.priority === 'urgent');
       const highNotifs   = unreadNotifications.filter(n => n.priority === 'high');
       if (urgentNotifs.length > 0)   spokenParts.push(`Urgent alert: ${urgentNotifs[0].title}.`);
       else if (highNotifs.length > 0) spokenParts.push(`${highNotifs.length} high-priority notification${highNotifs.length > 1 ? 's' : ''}.`);
       else if (unreadNotifications.length > 0) spokenParts.push(`${unreadNotifications.length} unread notifications.`);
-      const spokenText = spokenParts.join(' ');
+      if (pendingTasks.length > 0)   spokenParts.push(`You also have ${pendingTasks.length} pending task${pendingTasks.length > 1 ? 's' : ''}.`);
+      const spokenText = spokenParts.join(' ') || fullText;
 
       return res.json({ intent: 'action', action: 'get_doctor_briefing', parameters: args, response: fullText, speak: spokenText, data: briefing, requiresConfirmation: false });
+    }
+
+    // add_task — create a doctor task from voice
+    if (toolName === 'add_task') {
+      const result = await executeAddTask(doctorId, args);
+      const dueStr = args.due_date ? ` for ${args.due_date}` : ' for today';
+      const patientStr = args.patient_name ? ` regarding ${args.patient_name}` : '';
+      const msg = result.success
+        ? `Task added: "${args.title}"${patientStr}${dueStr}.`
+        : `Couldn't save task: ${result.error}`;
+      return res.json({ intent: 'action', action: 'add_task', parameters: args, response: msg, speak: msg, data: result.task || null, requiresConfirmation: false });
+    }
+
+    // list_tasks — show pending tasks
+    if (toolName === 'list_tasks') {
+      const tasks = await executeListTasks(doctorId, args.filter || 'pending');
+      if (!tasks.length) {
+        const msg = 'You have no pending tasks.';
+        return res.json({ intent: 'action', action: 'list_tasks', parameters: args, response: msg, speak: msg, data: [], requiresConfirmation: false });
+      }
+      const lines = tasks.map(t => {
+        const due = t.due_date ? ` — due ${t.due_date}` : '';
+        const pat = t.patient_name ? ` (${t.patient_name})` : '';
+        const pri = t.priority !== 'normal' ? ` [${t.priority}]` : '';
+        return `• ${t.title}${pat}${due}${pri}`;
+      });
+      const msg = `You have ${tasks.length} pending task${tasks.length !== 1 ? 's' : ''}:\n${lines.join('\n')}`;
+      const spoken = `You have ${tasks.length} pending task${tasks.length !== 1 ? 's' : ''}. First: ${tasks[0].title}.`;
+      return res.json({ intent: 'action', action: 'list_tasks', parameters: args, response: msg, speak: spoken, data: tasks, requiresConfirmation: false });
+    }
+
+    // complete_task — mark task done
+    if (toolName === 'complete_task') {
+      const result = await executeCompleteTask(doctorId, args);
+      const msg = result.success
+        ? `Done! Task "${result.task?.title || args.title || 'task'}" marked as completed.`
+        : `Couldn't find that task. Try saying "show my tasks" to see what's pending.`;
+      return res.json({ intent: 'action', action: 'complete_task', parameters: args, response: msg, speak: msg, data: result.task || null, requiresConfirmation: false });
     }
 
     // Unknown tool — fallback

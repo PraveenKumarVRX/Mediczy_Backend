@@ -6,9 +6,10 @@
 import { DataTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../../utils/passwordHashing.js';
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../../config/auth.config.js';
-import { generateUniqueId } from '../../utils/uniqueIdGenerator.js';
+import { generateUniqueIdForModel } from '../../utils/uniqueIdGenerator.js';
 
 const Doctor = sequelize.define('Doctor', {
   id: {
@@ -461,6 +462,26 @@ const Doctor = sequelize.define('Doctor', {
     comment: 'Social media links: { facebook, instagram, youtube }'
   },
 
+  // OAuth / Social Login
+  googleId: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    field: 'google_id',
+    comment: 'Google OAuth2 profile ID'
+  },
+  facebookId: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    field: 'facebook_id',
+    comment: 'Facebook OAuth profile ID'
+  },
+  oauthProvider: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+    field: 'oauth_provider',
+    comment: 'Primary OAuth provider used to create account (google, facebook)'
+  },
+
   // Full-Text Search
   search_vector: {
     type: DataTypes.TSVECTOR,
@@ -536,17 +557,17 @@ const Doctor = sequelize.define('Doctor', {
     beforeCreate: async (doctor) => {
       // Generate unique ID if not set
       if (!doctor.unique_id) {
-        doctor.unique_id = generateUniqueId('doctor');
+        doctor.unique_id = await generateUniqueIdForModel(Doctor, 'doctor');
       }
 
       if (doctor.password) {
-        doctor.password = await bcrypt.hash(doctor.password, 10);
+        doctor.password = await hashPasswordIfPlaintext(doctor.password, 10);
       }
     },
 
     beforeUpdate: async (doctor) => {
       if (doctor.changed('password') && doctor.password) {
-        doctor.password = await bcrypt.hash(doctor.password, 10);
+        doctor.password = await hashPasswordIfPlaintext(doctor.password, 10);
       }
     }
   }
@@ -575,6 +596,18 @@ Doctor.prototype.generateAuthToken = function () {
     JWT_CONFIG.SECRET,
     { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
   );
+};
+
+Doctor.prototype.toJSON = function () {
+  const values = { ...this.get() };
+  delete values.password;
+  delete values.googleId;
+  delete values.facebookId;
+  delete values.oauthProvider;
+  delete values.google_id;
+  delete values.facebook_id;
+  delete values.oauth_provider;
+  return values;
 };
 
 // Static Methods

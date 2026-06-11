@@ -3,6 +3,7 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 import { DataTypes } from 'sequelize';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../utils/passwordHashing.js';
 import crypto from 'crypto';
 
 // Define User model - NOW USING POSTGRESQL
@@ -277,15 +278,13 @@ const User = sequelize.define('User', {
 // Add hooks to hash password before saving
 User.beforeCreate(async (user) => {
   if (user.password) {
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(user.password, salt);
+    user.password = await hashPasswordIfPlaintext(user.password, 10);
   }
 });
 
 User.beforeUpdate(async (user) => {
   if (user.changed('password') && user.password) {
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(user.password, salt);
+    user.password = await hashPasswordIfPlaintext(user.password, 10);
   }
 });
 

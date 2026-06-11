@@ -99,7 +99,7 @@ export async function findPriorBrevoWelcomeEmail({ email, subject, days = DEFAUL
     for (const item of emails) {
       const itemSubject = normalizeSubject(item.subject);
       const subjectMatches = targetSubject
-        ? itemSubject === targetSubject || isLikelyWelcomeSubject(item.subject)
+        ? itemSubject === targetSubject
         : isLikelyWelcomeSubject(item.subject);
 
       if (!subjectMatches) continue;

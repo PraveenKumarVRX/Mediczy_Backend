@@ -9,9 +9,9 @@ import axios from 'axios';
 import { AccessToken } from 'livekit-server-sdk';
 
 const BASE_URL = 'http://localhost:8000/api';
-const LIVEKIT_URL = process.env.LIVEKIT_URL || 'wss://video.mediqzy.com';
-const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || 'API29FkbfieGsfq';
-const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'J1wqey7DBFq3UUmfhmQCiSHrEKAFSXRwhEvejCZUVBUB';
+const LIVEKIT_URL = process.env.LIVEKIT_URL || process.env.LIVEKIT_API_URL || 'wss://msh-kw9tvxa9.livekit.cloud';
+const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY || '';
+const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || '';
 
 // Test credentials
 const TEST_CREDENTIALS = {
@@ -75,6 +75,11 @@ function logInfo(message) {
 async function testLiveKitTokenGeneration() {
   logTest('LiveKit Token Generation (Direct SDK)');
   
+  if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET) {
+    logWarning('Skipping direct SDK token generation - LIVEKIT_API_KEY/LIVEKIT_API_SECRET not configured');
+    return { success: false, skipped: true };
+  }
+
   try {
     const token = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
       identity: 'test-user-123',
@@ -113,7 +118,7 @@ async function testVideoSystemHealth() {
     if (response.data.success) {
       logSuccess('Video system is operational');
       logInfo(`Timestamp: ${response.data.timestamp}`);
-      logInfo(`ICE Servers configured: ${response.data.config.iceServers.length}`);
+      logInfo(`Custom ICE servers configured: ${response.data.config?.iceServersCount || 0}`);
       return { success: true, data: response.data };
     } else {
       logError('Video system health check failed');
@@ -246,11 +251,14 @@ async function testDoctorLiveKitToken() {
       }
     );
     
-    const livekitToken = response.data?.video?.livekit?.token;
+    const payload = response.data || {};
+    const livekitToken = payload?.token || payload?.video?.token || payload?.video?.livekit?.token;
+    const serverUrl = payload?.serverUrl || payload?.video?.serverUrl || payload?.video?.livekit?.serverUrl;
+    const meetingId = payload?.roomName || payload?.video?.meetingId || payload?.video?.roomName || payload?.video?.livekit?.roomName;
     if (response.data.success && livekitToken) {
       logSuccess('LiveKit token generated for doctor');
-      logInfo(`Room: ${response.data.video.meetingId}`);
-      logInfo(`Server URL: ${response.data.video.livekit.serverUrl}`);
+      logInfo(`Room: ${meetingId}`);
+      logInfo(`Server URL: ${serverUrl}`);
       logInfo(`Token length: ${livekitToken.length} characters`);
       return { success: true, data: response.data };
     } else {
@@ -285,11 +293,14 @@ async function testUserLiveKitToken() {
       }
     );
     
-    const livekitToken = response.data?.video?.livekit?.token;
+    const payload = response.data || {};
+    const livekitToken = payload?.token || payload?.video?.token || payload?.video?.livekit?.token;
+    const serverUrl = payload?.serverUrl || payload?.video?.serverUrl || payload?.video?.livekit?.serverUrl;
+    const meetingId = payload?.roomName || payload?.video?.meetingId || payload?.video?.roomName || payload?.video?.livekit?.roomName;
     if (response.data.success && livekitToken) {
       logSuccess('LiveKit token generated for user');
-      logInfo(`Room: ${response.data.video.meetingId}`);
-      logInfo(`Server URL: ${response.data.video.livekit.serverUrl}`);
+      logInfo(`Room: ${meetingId}`);
+      logInfo(`Server URL: ${serverUrl}`);
       logInfo(`Token length: ${livekitToken.length} characters`);
       return { success: true, data: response.data };
     } else {
@@ -307,7 +318,7 @@ async function testLiveKitServerConnection() {
   logTest('LiveKit Server Connection');
   
   try {
-    const httpsUrl = LIVEKIT_URL.replace('wss://', 'https://');
+    const httpsUrl = LIVEKIT_URL.replace('wss://', 'https://').replace('ws://', 'http://');
     logInfo(`Testing connection to: ${httpsUrl}`);
     
     const response = await axios.get(httpsUrl, {
@@ -352,7 +363,7 @@ async function testRoomTokenGeneration() {
       logSuccess('Room token generated successfully');
       logInfo(`Room ID: ${response.data.roomId}`);
       logInfo(`Expires at: ${response.data.expiresAt}`);
-      logInfo(`ICE servers configured: ${response.data.iceServers.length}`);
+      logInfo(`ICE servers configured: ${response.data.iceServers?.length || 0}`);
       return { success: true, data: response.data };
     } else {
       logError('Failed to generate room token');
@@ -372,7 +383,7 @@ async function runAllTests() {
   
   logInfo(`Base URL: ${BASE_URL}`);
   logInfo(`LiveKit URL: ${LIVEKIT_URL}`);
-  logInfo(`LiveKit API Key: ${LIVEKIT_API_KEY.substring(0, 10)}...`);
+  logInfo(`LiveKit API Key: ${LIVEKIT_API_KEY ? `${LIVEKIT_API_KEY.substring(0, 10)}...` : 'not configured'}`);
   
   const results = {
     total: 0,

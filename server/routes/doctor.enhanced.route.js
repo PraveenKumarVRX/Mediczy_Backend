@@ -3,6 +3,7 @@ import { body, param, query } from 'express-validator';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import path from 'path';
@@ -27,6 +28,7 @@ import {
   getUploadsBucket
 } from '../services/s3-presign.service.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
+import { normalizeDoctorProfile } from '../utils/doctorNormalizer.js';
 
 const router = express.Router();
 // Ensure request bodies are parsed even if app-level parser order changes.
@@ -86,6 +88,8 @@ const toFiniteNumber = (value) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 };
+
+// normalizeDoctorProfile is imported from utils/doctorNormalizer.js above
 
 const normalizeClinicLocationUpdate = (payload = {}, existingDoctor = null) => {
   const nextPayload = { ...payload };
@@ -322,10 +326,11 @@ router.get('/available', [
       ]
     });
 
+    const normalizedDoctors = doctors.map(normalizeDoctorProfile);
     res.json({
       success: true,
-      doctors,
-      data: doctors,  // Add data alias for compatibility with frontend
+      doctors: normalizedDoctors,
+      data: normalizedDoctors,  // Add data alias for compatibility with frontend
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -385,7 +390,7 @@ router.get('/partnered', authUser, async (req, res) => {
 
     return res.json({
       success: true,
-      doctors,
+      doctors: doctors.map(normalizeDoctorProfile),
       count: doctors.length
     });
   } catch (error) {
@@ -518,7 +523,7 @@ router.get('/', [
 
     res.json({
       success: true,
-      doctors,
+      doctors: doctors.map(normalizeDoctorProfile),
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -553,8 +558,8 @@ router.post('/register', [
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
   body('specialization').notEmpty().withMessage('Specialization is required'),
   body('experience').isInt({ min: 0 }).withMessage('Experience must be a positive number'),
-  body('registrationNumber').notEmpty().withMessage('Medical registration number is required'),
-  body('medicalCouncil').notEmpty().withMessage('Medical council is required')
+  body('registrationNumber').optional({ nullable: true }).trim(),
+  body('medicalCouncil').optional({ nullable: true }).trim()
 ], async (req, res) => {
   try {
     // Check if doctor already exists
@@ -569,8 +574,20 @@ router.post('/register', [
       });
     }
 
+    const payload = { ...req.body };
+
+    // Normalize optional registration fields so Postgres UNIQUE doesn't collide on empty strings.
+    if (typeof payload.registrationNumber === 'string') {
+      const normalized = payload.registrationNumber.trim();
+      payload.registrationNumber = normalized || null;
+    }
+    if (typeof payload.medicalCouncil === 'string') {
+      const normalizedCouncil = payload.medicalCouncil.trim();
+      payload.medicalCouncil = normalizedCouncil || null;
+    }
+
     // Create doctor profile
-    const doctor = await doctorModel.create(req.body);
+    const doctor = await doctorModel.create(payload);
 
     // Generate JWT token
     const token = jwt.sign(
@@ -687,29 +704,29 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
-    if (normalizedEmail) {
-      const userRecord = await User.findOne({
-        where: sequelize.where(
-          sequelize.fn('lower', sequelize.col('email')),
-          normalizedEmail
-        ),
-        attributes: ['id', 'role', 'isAdmin']
-      });
+    // A doctor may also have a patient/user row with the same email.
+    // Once a doctor record is found and active, authenticate against the doctor password.
 
-      if (userRecord && userRecord.role !== 'doctor' && !userRecord.isAdmin) {
-        await auditLoginAttempt(req, userRecord.id, normalizedIdentifier, false, 'Patient/user attempted doctor login');
-        return res.status(403).json({
-          success: false,
-          message: 'Please use the patient login portal',
-          errorCode: 'PATIENT_PORTAL_ACCOUNT',
-        });
+    // Verify password — detect SHA-256 legacy hashes (64 hex chars, no $2b$ prefix)
+    // and transparently upgrade to bcrypt on successful login
+    let isValidPassword = false;
+    const isSha256Legacy = /^[a-f0-9]{64}$/.test(doctor.password);
+    if (isSha256Legacy) {
+      const sha256Input = crypto.createHash('sha256').update(password_val).digest('hex');
+      isValidPassword = sha256Input === doctor.password;
+      if (isValidPassword) {
+        try {
+          const newHash = await bcrypt.hash(password_val, 10);
+          await doctor.update({ password: newHash });
+        } catch (upgradeErr) {
+          console.warn('[doctor-login] bcrypt upgrade failed (non-fatal):', upgradeErr.message);
+        }
       }
+    } else {
+      isValidPassword = typeof doctor.comparePassword === 'function'
+        ? await doctor.comparePassword(password_val)
+        : await bcrypt.compare(password_val, doctor.password);
     }
-
-    // Verify password
-    const isValidPassword = typeof doctor.comparePassword === 'function'
-      ? await doctor.comparePassword(password_val)
-      : await bcrypt.compare(password_val, doctor.password);
     if (!isValidPassword) {
       await auditLoginAttempt(req, doctor.id, normalizedIdentifier, false, 'Invalid password');
       return res.status(401).json({
@@ -744,7 +761,7 @@ router.post('/login', authLimiter, async (req, res) => {
     const deviceFp = req.headers['x-device-fingerprint'] || null;
     const { accessToken: token, refreshToken } = await issuePortalTokenPair(
       { id: doctor.id, email: doctor.email, role: 'doctor' },
-      { portal: 'doctor', deviceFp }
+      { portal: 'doctor', deviceFp, accessTtl: '4h' }
     );
 
     await auditLoginAttempt(req, doctor.id, normalizedIdentifier, true);
@@ -752,7 +769,7 @@ router.post('/login', authLimiter, async (req, res) => {
     res.json({
       success: true,
       message: 'Login successful',
-      expiresIn: 900,
+      expiresIn: 14400,
       refreshToken,
       doctor: {
         id: doctor.id,
@@ -771,6 +788,26 @@ router.post('/login', authLimiter, async (req, res) => {
       message: 'Login failed',
       error: error.message
     });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/forgot-password
+ * @desc    Request a password reset OTP (public — no auth required)
+ * @access  Public
+ */
+router.post('/forgot-password', authLimiter, async (req, res) => {
+  try {
+    const { email, phone } = req.body;
+    if (!email && !phone) {
+      return res.status(400).json({ success: false, message: 'Email or phone number is required' });
+    }
+    const passwordResetService = (await import('../services/password-reset.service.js')).default;
+    const result = await passwordResetService.requestPasswordReset({ email, phone, userType: 'doctor' });
+    return res.json(result);
+  } catch (error) {
+    console.error('[doctor/forgot-password] error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to process password reset request' });
   }
 });
 
@@ -794,6 +831,7 @@ router.post('/refresh', async (req, res) => {
     const result = await rotatePortalRefreshToken(refreshToken, {
       portal: 'doctor',
       deviceFp,
+      accessTtl: '4h',
       resolvePayload: async (decoded) => {
         const doctor = await doctorModel.findByPk(decoded.userId);
         if (!doctor) return null;
@@ -816,7 +854,7 @@ router.post('/refresh', async (req, res) => {
       success: true,
       token: result.accessToken,
       refreshToken: result.refreshToken,
-      expiresIn: 900,
+      expiresIn: 14400,
     });
   } catch (error) {
     console.error('Doctor refresh error:', error);
@@ -850,6 +888,7 @@ router.post('/session/bootstrap', async (req, res) => {
     const result = await rotatePortalRefreshToken(refreshToken, {
       portal: 'doctor',
       deviceFp,
+      accessTtl: '4h',
       resolvePayload: async (decoded) => {
         const doctor = await doctorModel.findByPk(decoded.userId);
         if (!doctor) return null;
@@ -873,7 +912,7 @@ router.post('/session/bootstrap', async (req, res) => {
       success: true,
       token: result.accessToken,
       refreshToken: result.refreshToken,
-      expiresIn: 900,
+      expiresIn: 14400,
       doctor: {
         id: resolvedDoctor.id,
         firstName: resolvedDoctor.firstName,
@@ -1539,10 +1578,10 @@ router.get('/search', [
 
     const paginatedDoctors = doctors.slice(startIndex, endIndex);
 
-    // Remove sensitive data
+    // Remove sensitive data and normalize to consistent schema
     const publicDoctors = paginatedDoctors.map(doctor => {
       const { password, verificationDocuments, ...publicDoctor } = doctor;
-      return publicDoctor;
+      return normalizeDoctorProfile(publicDoctor);
     });
 
     res.json({
@@ -1599,18 +1638,18 @@ router.get('/:doctorId/public', [
       });
     }
 
-    // Remove sensitive information
+    // Remove sensitive information, then normalize to consistent schema
     const {
       password,
       verificationDocuments,
       digitalSignature,
       medicalSeal,
       ...publicProfile
-    } = doctor;
+    } = typeof doctor.toJSON === 'function' ? doctor.toJSON() : doctor;
 
     res.json({
       success: true,
-      doctor: publicProfile
+      doctor: normalizeDoctorProfile(publicProfile)
     });
   } catch (error) {
     console.error('Get public profile error:', error);
@@ -2012,6 +2051,46 @@ router.get('/messages', authUser, async (req, res) => {
  * @desc    Get chat messages with a specific patient
  * @access  Private (Doctor)
  */
+router.post('/messages/start', authUser, async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({ success: false, message: 'Access denied. Doctor role required.' });
+    }
+
+    const doctorId = req.user.id;
+    const { patientId, appointmentId, message } = req.body || {};
+    if (!patientId && !appointmentId) {
+      return res.status(400).json({ success: false, message: 'patientId or appointmentId is required' });
+    }
+
+    const { Appointment } = await import('../models/index.js');
+    const where = { doctorId };
+    if (appointmentId) where.id = appointmentId;
+    if (patientId) where.userId = patientId;
+
+    const appointment = await Appointment.findOne({ where, order: [['updatedAt', 'DESC']] });
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: 'No appointment found with this patient' });
+    }
+
+    const resolvedPatientId = appointment.userId || patientId;
+    const conversation = {
+      id: 'conv_' + doctorId + '_' + resolvedPatientId,
+      appointmentId: appointment.id,
+      patient: { id: resolvedPatientId, name: appointment.patientName, phone: appointment.patientPhone },
+      lastMessage: message ? { content: message, senderType: 'doctor', createdAt: new Date().toISOString() } : null,
+      unreadCount: 0,
+      status: appointment.status,
+      updatedAt: new Date().toISOString()
+    };
+
+    return res.status(201).json({ success: true, message: 'Conversation ready', conversation });
+  } catch (error) {
+    console.error('Start doctor conversation error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to start conversation', error: error.message });
+  }
+});
+
 router.get('/messages/:patientId', authUser, async (req, res) => {
   try {
     if (req.user.role !== 'doctor') {

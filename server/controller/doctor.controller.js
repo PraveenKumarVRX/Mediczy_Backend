@@ -232,11 +232,11 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 
 import { validationResult } from "express-validator";
 import doctorModel from "../models/doctor.model.intelligent.js";
-import { User } from "../models/user.model.intelligent.js";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
+import crypto from "crypto";
 import intelligentDb from "../utils/intelligentDbClient.js";
 import { auditLoginAttempt } from "../middleware/audit.middleware.js";
-import { fn, col, where as sequelizeWhere } from "sequelize";
 import nodemailer from "nodemailer";
 import { verifyRegistrationVerificationTicket } from "../routes/shared/registrationHelpers.js";
 
@@ -823,27 +823,28 @@ export async function signInDoctor(req, res) {
       });
     }
 
-    // CROSS-ROLE GUARD: Prevent patient/user accounts from using doctor login endpoint
-    // This provides server-side validation in addition to client-side routing
-    // Allow users with role='doctor' to proceed (they may have accounts in both tables)
-    const userRecord = await User.findOne({
-      where: sequelizeWhere(fn("lower", col("email")), normalizedEmail),
-      attributes: ["id", "isAdmin", "role"]
-    });
-    
-    if (userRecord && userRecord.role !== 'doctor' && !userRecord.isAdmin) {
-      console.log('💚 [signInDoctor] User/patient account found, blocking doctor login');
-      await auditLoginAttempt(req, userRecord.id, normalizedEmail, false, 'Patient/user attempted doctor login');
-      return res.status(403).json({ 
-        message: "Please use the patient login portal",
-        errorCode: "PATIENT_PORTAL_ACCOUNT",
-      });
-    }
+    // A doctor may also have a patient/user row with the same email.
+    // Once a doctor record is found and active, authenticate against the doctor password.
 
     console.log('💚 [signInDoctor] About to compare password...');
     // Validate password
     try {
-      const isPasswordValid = await doctor.comparePassword(password);
+      let isPasswordValid = false;
+      const storedPassword = String(doctor.password || '');
+      const isLegacySha256 = /^[a-f0-9]{64}$/.test(storedPassword);
+
+      if (isLegacySha256) {
+        const candidateHash = crypto.createHash('sha256').update(password).digest('hex');
+        isPasswordValid = candidateHash === storedPassword;
+        if (isPasswordValid) {
+          const upgradedHash = await bcrypt.hash(password, 10);
+          await doctor.update({ password: upgradedHash });
+        }
+      } else {
+        isPasswordValid = typeof doctor.comparePassword === 'function'
+          ? await doctor.comparePassword(password)
+          : await bcrypt.compare(password, storedPassword);
+      }
       console.log('💚 [signInDoctor] Password valid:', isPasswordValid);
 
       if (!isPasswordValid) {

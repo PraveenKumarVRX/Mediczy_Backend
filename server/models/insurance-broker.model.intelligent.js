@@ -1,6 +1,7 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { DataTypes } from 'sequelize';
 import bcrypt from 'bcrypt';
+import { hashPasswordIfPlaintext } from '../utils/passwordHashing.js';
 
 /**
  * Insurance Broker Model
@@ -155,16 +156,14 @@ const InsuranceBroker = sequelize.define('InsuranceBroker', {
 // Hash password before creating
 InsuranceBroker.beforeCreate(async (broker) => {
   if (broker.password) {
-    const salt = await bcrypt.genSalt(10);
-    broker.password = await bcrypt.hash(broker.password, salt);
+    broker.password = await hashPasswordIfPlaintext(broker.password, 10);
   }
 });
 
 // Hash password before updating
 InsuranceBroker.beforeUpdate(async (broker) => {
   if (broker.changed('password') && broker.password) {
-    const salt = await bcrypt.genSalt(10);
-    broker.password = await bcrypt.hash(broker.password, salt);
+    broker.password = await hashPasswordIfPlaintext(broker.password, 10);
   }
 });
 

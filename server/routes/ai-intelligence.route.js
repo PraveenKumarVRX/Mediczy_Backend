@@ -16,6 +16,7 @@ import pool from '../db/pgPool.js';
 import drugInteractionChecker from '../services/ai-drug-interaction.service.js';
 import insuranceBotService from '../services/ai-insurance-bot.service.js';
 import emergencyTriageService from '../services/ai-emergency-triage.service.js';
+import { requirePatientRecordAccess } from '../utils/patient-access.js';
 
 const router = Router();
 
@@ -231,12 +232,21 @@ router.get('/risk-score/me', requireAuth, async (req, res) => {
  */
 router.get('/risk-score/:patientId', requireAuth, async (req, res) => {
   try {
+    const patientId = parseInt(String(req.params.patientId), 10);
+    if (Number.isNaN(patientId)) {
+      return res.status(400).json({ error: 'Invalid patientId' });
+    }
+
+    const access = await requirePatientRecordAccess(req, res, patientId);
+    if (!access) return;
+
     const db = pool;
     const { rows } = await db.query(`
-      SELECT * FROM ai_health_risk_scores
-      WHERE patient_id = $1
-      ORDER BY updated_at DESC LIMIT 1
-    `, [parseInt(req.params.patientId)]);
+      SELECT hrs.*
+        FROM ai_health_risk_scores hrs
+       WHERE hrs.patient_id = $1
+       ORDER BY hrs.updated_at DESC LIMIT 1
+    `, [patientId]);
 
     if (rows.length === 0) {
       return res.json({ success: true, score: null });

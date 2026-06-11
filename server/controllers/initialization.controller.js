@@ -66,6 +66,15 @@ class InitializationController {
    * Initialize Kafka producer and consumer for video streaming events
    */
   async initializeKafka() {
+    const kafkaDisabled =
+      String(process.env.DISABLE_KAFKA || '').toLowerCase() === 'true' ||
+      String(process.env.KAFKA_ENABLED || '').toLowerCase() === 'false';
+
+    if (kafkaDisabled) {
+      console.log('⏭️  Kafka initialization skipped (DISABLE_KAFKA/KAFKA_ENABLED flag)');
+      return;
+    }
+
     try {
       console.log('📡 Connecting to Kafka...');
       await connectKafkaProducer();
@@ -169,10 +178,64 @@ class InitializationController {
       const { default: clinicalInsightsCron } = await import('../services/ai-clinical-insights-cron.service.js');
       clinicalInsightsCron.start();
 
+      // Feedback Intelligence: run all feedback table migrations (idempotent)
+      console.log('🎫 Running feedback intelligence migrations...');
+      const { up: runUnifiedFeedbackMigration } = await import('../migrations/unified-feedback-signals.migration.js');
+      await runUnifiedFeedbackMigration().catch(e =>
+        console.warn('⚠️  unified-feedback-signals migration skipped:', e.message)
+      );
+      const { runTicketSlaMigration } = await import('../migrations/ticket-sla.migration.js');
+      await runTicketSlaMigration().catch(e =>
+        console.warn('⚠️  ticket_sla migration skipped:', e.message)
+      );
+      const { runAiPromptVersionsMigration } = await import('../migrations/ai-prompt-versions.migration.js');
+      await runAiPromptVersionsMigration().catch(e =>
+        console.warn('⚠️  ai-prompt-versions migration skipped:', e.message)
+      );
+
+      // Feedback Aggregator — bridges patient_feedback, ai_cdss_feedback, tickets
+      // into unified_feedback_signals (every 15 min).  Must start before the
+      // self-learning pipeline so the first pipeline run finds data ready.
+      console.log('📊 Starting Feedback Aggregator...');
+      const { default: feedbackAggregator } = await import('../services/feedback-aggregator.service.js');
+      feedbackAggregator.start();
+
+      // SLA Breach Checker — monitors ticket_sla deadlines (every 5 min)
+      console.log('⏱️  Starting SLA Breach Checker...');
+      const { default: slaTracker } = await import('../services/sla-tracker.service.js');
+      slaTracker.start();
+
+      // Feedback Router — proposes governance changes for degrading components (every 30 min)
+      console.log('🔀 Starting Feedback Router...');
+      const { default: feedbackRouter } = await import('../services/feedback-router.service.js');
+      feedbackRouter.start();
+
+      // Closed-Loop Notifier — sends post-resolution rating requests (every 30 min)
+      console.log('📬 Starting Closed-Loop Notifier...');
+      const { default: closedLoopNotifier } = await import('../services/closed-loop-notifier.service.js');
+      closedLoopNotifier.start();
+
       // AI Intelligence: Self-Learning Pipeline (every 4 hours)
       console.log('🧠 Starting AI self-learning pipeline...');
       const { default: selfLearningPipeline } = await import('../services/ai-self-learning-pipeline.service.js');
       selfLearningPipeline.start();
+
+      // Prompt Optimization Executor — shadow tests → canary rollout (daily 02:00 IST)
+      console.log('🔬 Starting Prompt Optimization Executor...');
+      const { default: promptOptimizer } = await import('../services/prompt-optimization-executor.service.js');
+      promptOptimizer.start();
+
+      // A/B Experiments migration (idempotent)
+      console.log('🧪 Running A/B experiments migration...');
+      const { runAbExperimentsMigration } = await import('../migrations/ab-experiments.migration.js');
+      await runAbExperimentsMigration().catch(e =>
+        console.warn('⚠️  A/B experiments migration skipped:', e.message)
+      );
+
+      // Weekly digest email to medical director (Monday 08:00 IST)
+      console.log('📧 Starting Feedback Digest service...');
+      const { default: feedbackDigest } = await import('../services/feedback-digest.service.js');
+      feedbackDigest.start();
 
       // DeepTech: Health Intelligence Score (every 6 hours, offset +30min from healthRiskCron)
       console.log('🧬 Starting HIS (Health Intelligence Score) cron...');

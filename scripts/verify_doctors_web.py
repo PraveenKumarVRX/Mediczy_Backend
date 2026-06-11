@@ -9,6 +9,7 @@ Run:
   python3 scripts/verify_doctors_web.py [--offset N] [--limit N] [--scrape-only] [--dry-run]
 """
 import psycopg2
+import os
 import psycopg2.extras
 import json, time, re, logging, argparse, random
 import urllib.request, urllib.error
@@ -25,8 +26,15 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-DB = dict(host='127.0.0.1', port=5432, dbname='mediczy_ai',
-          user='mediczy_helper', password='Mediczy2024Helper')
+DB = {
+    'host': os.environ.get('POSTGRES_HOST', '127.0.0.1'),
+    'port': int(os.environ.get('POSTGRES_PORT', '5432')),
+    'dbname': os.environ.get('POSTGRES_DATABASE', 'mediczy_ai'),
+    'user': os.environ.get('POSTGRES_USER', 'mediczy_helper'),
+    'password': os.environ.get('POSTGRES_PASSWORD') or os.environ.get('DB_PASSWORD'),
+}
+if not DB['password']:
+    raise RuntimeError('POSTGRES_PASSWORD or DB_PASSWORD is required')
 
 UA = ('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')

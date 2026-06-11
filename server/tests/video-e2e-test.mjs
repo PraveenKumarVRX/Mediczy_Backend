@@ -9,6 +9,11 @@ import jwt from 'jsonwebtoken';
 import pg from 'pg';
 
 const BASE = 'http://localhost:8888/api';
+const LIVEKIT_TARGET_URL = process.env.LIVEKIT_URL || process.env.LIVEKIT_API_URL || 'wss://msh-kw9tvxa9.livekit.cloud';
+const LIVEKIT_HTTPS_URL = LIVEKIT_TARGET_URL
+  .replace(/^wss:\/\//, 'https://')
+  .replace(/^ws:\/\//, 'http://')
+  .replace(/\/+$/, '');
 const DB_CONFIG = {
   host: process.env.POSTGRES_HOST || 'localhost',
   port: Number(process.env.POSTGRES_PORT || 5432),
@@ -27,6 +32,7 @@ let activePatientEmail = PATIENT_EMAIL;
 let activePatientPassword = PATIENT_PASSWORD;
 
 let testAppointmentId = null;
+let cleanupDone = false;
 let passed = 0;
 let failed = 0;
 let warnings = 0;
@@ -47,6 +53,9 @@ function warn(label, detail = '') {
 }
 
 async function cleanup() {
+  if (cleanupDone) return;
+  cleanupDone = true;
+
   if (testAppointmentId) {
     try {
       const c = new pg.Client(DB_CONFIG);
@@ -61,6 +70,11 @@ async function cleanup() {
 }
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function abortRun(reason) {
+  await cleanup();
+  throw new Error(reason);
+}
 
 async function loginWithRetry(url, payload, maxAttempts = 3) {
   let lastRes = null;
@@ -91,7 +105,7 @@ async function registerFallbackPatient() {
   const seed = Date.now();
   const email = `video.e2e.${seed}@mediczy.test`;
   const password = `AutoUser123!${seed.toString().slice(-2)}`;
-  const phone = `+91${String(seed).slice(-10)}`;
+  const phone = `9${String(seed).slice(-9)}`;
 
   const res = await fetch(`${BASE}/users/register`, {
     method: 'POST',
@@ -126,6 +140,7 @@ async function run() {
   console.log(`║   Doctor:  ${DOCTOR_EMAIL} / ${DOCTOR_PASSWORD.padStart(7, '*')}           ║`);
   console.log('╚══════════════════════════════════════════════════════╝');
   console.log(`Run at: ${new Date().toISOString()}\n`);
+  console.log(`LiveKit target: ${LIVEKIT_TARGET_URL}`);
 
   // ── STEP 1: Patient Login ──
   console.log('── STEP 1: Patient Login ──');
@@ -155,8 +170,7 @@ async function run() {
     assert('Patient ID extracted', !!patientId, `id=${patientId}`);
   } catch (e) {
     assert('Patient login request', false, e.message);
-    await cleanup();
-    return;
+    await abortRun('Patient login request failed');
   }
 
   // ── STEP 2: Doctor Login ──
@@ -176,8 +190,7 @@ async function run() {
     assert('Doctor ID extracted', !!doctorId, `id=${doctorId}`);
   } catch (e) {
     assert('Doctor login request', false, e.message);
-    await cleanup();
-    return;
+    await abortRun('Doctor login request failed');
   }
 
   // ── STEP 3: Book Online Appointment ──
@@ -213,13 +226,11 @@ async function run() {
 
     if (!testAppointmentId) {
       console.log('  FULL RESPONSE:', JSON.stringify(data, null, 2));
-      await cleanup();
-      return;
+      await abortRun('Appointment booking failed: missing appointment id');
     }
   } catch (e) {
     assert('Book appointment request', false, e.message);
-    await cleanup();
-    return;
+    await abortRun('Book appointment request failed');
   }
 
   // ── STEP 4: Confirm & Mark Paid (simulate payment) ──
@@ -237,8 +248,7 @@ async function run() {
     await c.end();
   } catch (e) {
     assert('DB update', false, e.message);
-    await cleanup();
-    return;
+    await abortRun('DB confirm/paid update failed');
   }
 
   // ── STEP 5: Patient Joins Video ──
@@ -310,20 +320,13 @@ async function run() {
     assert('Token cross-validation', false, e.message);
   }
 
-  // ── STEP 8: LiveKit Server Health ──
-  console.log('\n── STEP 8: LiveKit Server Health ──');
+  // ── STEP 8: LiveKit Cloud Health ──
+  console.log('\n── STEP 8: LiveKit Cloud Health ──');
   try {
-    const res = await fetch('http://localhost:7880');
-    assert('LiveKit HTTP reachable', res.status === 200, `status=${res.status}`);
+    const res = await fetch(LIVEKIT_HTTPS_URL, { redirect: 'manual' });
+    assert('LiveKit Cloud reachable', res.status >= 200 && res.status < 500, `url=${LIVEKIT_HTTPS_URL} status=${res.status}`);
   } catch (e) {
-    assert('LiveKit local reachable', false, e.message);
-  }
-
-  try {
-    const res = await fetch('https://video.mediqzy.com', { redirect: 'manual' });
-    assert('LiveKit HTTPS reachable', res.status >= 200 && res.status < 400, `status=${res.status}`);
-  } catch (e) {
-    warn('LiveKit HTTPS check', e.message);
+    assert('LiveKit Cloud reachable', false, `${LIVEKIT_HTTPS_URL} ${e.message}`);
   }
 
   // ── STEP 9: Video Token API (direct) ──

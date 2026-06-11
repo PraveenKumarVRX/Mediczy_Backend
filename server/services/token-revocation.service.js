@@ -172,6 +172,7 @@ export async function rotatePortalRefreshToken(refreshToken, {
   portal,
   deviceFp = null,
   resolvePayload,
+  accessTtl = '15m',
 } = {}) {
   if (!refreshToken || typeof refreshToken !== 'string' || !portal || typeof resolvePayload !== 'function') {
     return null;
@@ -218,7 +219,7 @@ export async function rotatePortalRefreshToken(refreshToken, {
     }
 
     await revokeToken(jti);
-    const rotated = await issuePortalTokenPair(nextPayload, { portal, deviceFp });
+    const rotated = await issuePortalTokenPair(nextPayload, { portal, deviceFp, accessTtl });
     return rotated;
   } catch (err) {
     console.error('[token-revocation] rotatePortalRefreshToken error:', err.message);

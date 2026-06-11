@@ -1758,6 +1758,40 @@ Doctor initiates call
 
 ### 10.1 Get LiveKit Token
 
+**Recommended (appointment-based join):**
+
+```
+GET /api/consultation/video/join/:appointmentId
+Authorization: Bearer <doctor-token>
+```
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "message": "Video consultation ready",
+  "appointmentId": 101,
+  "video": {
+    "meetingId": "apt-101-abc123ef",
+    "meetingLink": "https://msh-kw9tvxa9.livekit.cloud/room/apt-101-abc123ef",
+    "joinUrl": "https://msh-kw9tvxa9.livekit.cloud/room/apt-101-abc123ef",
+    "livekit": {
+      "token": "<livekit-jwt>",
+      "serverUrl": "wss://msh-kw9tvxa9.livekit.cloud",
+      "roomName": "apt-101-abc123ef"
+    }
+  },
+  "token": "<livekit-jwt>",
+  "serverUrl": "wss://msh-kw9tvxa9.livekit.cloud",
+  "roomName": "apt-101-abc123ef"
+}
+```
+
+Use `video.livekit` as primary fields. Top-level `token/serverUrl/roomName` may be present for compatibility with older clients.
+
+**Alternative (direct room token):**
+
 ```
 POST /api/video/room/token
 Authorization: Bearer <token>
@@ -1801,8 +1835,10 @@ Authorization: Bearer <token>
 ```
 
 ```json
-{ "roomId": "apt-101-abc123", "appointmentId": 101 }
+{ "roomName": "apt-101-abc123", "roomId": "apt-101-abc123", "appointmentId": 101 }
 ```
+
+`roomId` is accepted as an alias of `roomName`. At least one of `appointmentId` or `roomId/roomName` is required.
 
 **Response (200):**
 
@@ -3813,9 +3849,8 @@ export const DoctorImaging = {
 1. GET  /api/appointments/doctor/today  → See today's schedule
 2. PATCH /api/appointments/:id/status   → Confirm appointment { status: "confirmed" }
 3. POST /api/doctors/appointments/:id/initiate-call → Start call (sends push to patient)
-4. POST /api/video/livekit/token        → Get LiveKit token
-5. POST /api/video/room/:roomId/join    → Join video room
-   ↳ Use LiveKit SDK to connect with token
+4. GET  /api/consultation/video/join/:appointmentId → Get canonical room + LiveKit credentials
+5. Join via LiveKit SDK using `video.livekit.token` + `video.livekit.serverUrl`
 6. POST /api/video/room/:roomId/leave   → Leave room (auto-creates draft Rx)
 7. PUT  /api/prescriptions/:id          → Edit the draft prescription
 8. POST /api/prescriptions/:id/issue    → Finalize (sends to patient, creates EHR)

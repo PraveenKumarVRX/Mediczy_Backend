@@ -57,6 +57,8 @@ import aiHealthRouter from "./routes/ai-health.route.js";
 import aiVisionRouter from "./routes/ai-vision.route.js";
 import aiScribeRouter from "./routes/ai-scribe.route.js";
 import aiGovernanceRouter from "./routes/ai-governance.route.js";
+import samdRegulatoryRouter from "./routes/samd-regulatory.route.js";
+import feedbackIntelligenceRouter from "./routes/feedback-intelligence.route.js";
 import telemetryRouter from "./routes/telemetry.route.js";
 import scribeRouter from "./routes/scribe.js";
 import offlineScribeRouter from "./routes/offline-scribe.route.js";
@@ -752,6 +754,8 @@ app.use('/api/auth/verify-otp',        otpLimiter);
 app.use('/api/password-reset',             resetLimiter);
 app.use('/api/users/forgot-password',      resetLimiter);
 app.use('/api/users/forgot-password/reset',resetLimiter);
+app.use('/api/doctors/forgot-password',    resetLimiter);
+app.use('/api/doctor/forgot-password',     resetLimiter);
 
 // Wallet earn — 10/hour limit (prevents rapid coin-farming via race conditions)
 app.use('/api/wallet/earn', walletEarnLimiter);
@@ -799,6 +803,23 @@ app.use(express.json({
   }
 }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
+
+// Backward-compatible alias used by some clients for doctor password reset.
+app.post('/api/doctor/forgot-password', async (req, res) => {
+  try {
+    const { email, phone } = req.body || {};
+    if (!email && !phone) {
+      return res.status(400).json({ success: false, message: 'Email or phone number is required' });
+    }
+
+    const passwordResetService = (await import('./services/password-reset.service.js')).default;
+    const result = await passwordResetService.requestPasswordReset({ email, phone, userType: 'doctor' });
+    return res.json(result);
+  } catch (error) {
+    console.error('[doctor/forgot-password-alias] error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to process password reset request' });
+  }
+});
 app.use(cookieParser());
 
 app.use((err, req, res, next) => {
@@ -1308,6 +1329,8 @@ app.use("/api/apple-health", appleHealthRouter); // Apple HealthKit integration 
 app.use("/api/ai", aiRouter);
 app.use("/api/medical-ai", medicalAIRouter);
 app.use("/api/ai-governance", authUser, aiGovernanceRouter); // SaMD governance: model cards, PCCP, drift, quality gates
+app.use("/api/samd-regulatory", samdRegulatoryRouter);       // SaMD regulatory items 11-16: clinical validation, QMS, IEC 62304, ISO 14971, CDSCO
+app.use("/api/feedback-intelligence", authUser, feedbackIntelligenceRouter); // Self-healing feedback loop: quality scores, SLA, signals
 app.use("/api/telemetry", telemetryRouter);                   // Client-side event ingestion (perf, funnels, errors)
 app.use("/api/ai-health", aiHealthRouter); // AI health assistant, diet plans, Dr. ISHA
 app.use("/api/v3/ai-brain", authUser, aiBrainRouter); // AI Brain intelligence layer (agentic LLM + RAG + 15 tools)
@@ -1389,6 +1412,7 @@ app.use('/api/chat', chatRouter); // Chat system endpoints
 app.use('/api/support', supportChatRouter); // Omnichannel support chat (WhatsApp + In-App to RocketChat)
 app.use('/api/omnichannel', omnichannelJourneyRouter); // Omnichannel journey builder — multi-channel patient messaging
 app.use('/api/embeddings', embeddingsRouter); // Embeddings management via PGVector
+app.use('/api/cdss', cdssKnowledgeRouter); // CDSS mobile aliases: /query, /guidelines
 app.use('/api/cdss/knowledge', cdssKnowledgeRouter); // CDSS Knowledge base (Gale Encyclopedia, medical PDFs)
 app.use('/api/tickets', ticketsRouter); // Support ticket management system
 app.use('/api/tenants', tenantRouter); // Multi-tenant organization management
@@ -1673,5 +1697,29 @@ dailyHealthScoreService.start();
 // ============== Pharmacy: Drug Price Sync ==============
 import drugPriceSyncService from './services/drug-price-sync.service.js';
 drugPriceSyncService.start();
+
+// ============== SaMD: Drift Monitor (weekly Sun 01:00) ==============
+import governanceServiceForCron from './services/ai-model-governance.service.js';
+import { tick as cronTick, tickError as cronTickError, tickStart as cronTickStart } from './utils/cronRegistry.js';
+import cron from 'node-cron';
+cron.schedule('0 1 * * 0', async () => {
+  cronTickStart('ai_drift_monitor');
+  try {
+    const result = await governanceServiceForCron.runDriftMonitor();
+    cronTick('ai_drift_monitor', { alerts: result.alerts?.length || 0, features: result.results?.length || 0 });
+  } catch (err) {
+    cronTickError('ai_drift_monitor', err.message);
+  }
+});
+
+cron.schedule('0 1 * * 1', async () => {
+  cronTickStart('ai_demographic_parity');
+  try {
+    const result = await governanceServiceForCron.computeDemographicParity();
+    cronTick('ai_demographic_parity', { groups: result.groups?.length || 0, flagged: result.disparityFlagged || 0 });
+  } catch (err) {
+    cronTickError('ai_demographic_parity', err.message);
+  }
+});
 
 export default app;

@@ -390,7 +390,7 @@ Provide the response in JSON format with these exact keys:
   "medications": [{"name": "", "dosage": "", "frequency": "", "duration": "", "instructions": ""}],
   "labTests": [],
   "followUpInstructions": "",
-  "followUpDate": "",
+  "followUpDate": null,
   "redFlags": [],
   "summary": "Brief 2-3 sentence summary of the consultation"
 }`;

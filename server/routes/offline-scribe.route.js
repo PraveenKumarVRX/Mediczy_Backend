@@ -624,9 +624,9 @@ router.post('/normalize', authUser, requireScribeAccess, async (req, res) => {
 
 async function handleTextDocumentGeneration(req, res, documentType) {
     try {
-        const { dictation, transcript, patient_context = {} } = req.body;
+        const { dictation, transcript, text: rawText, notes, patient_context = {} } = req.body;
         const language = normalizeLanguage(req.body.language || 'auto');
-        const text = String(dictation || transcript || '').trim();
+        const text = String(dictation || transcript || rawText || notes || '').trim();
 
         if (!text) {
             return res.status(400).json({
@@ -666,6 +666,12 @@ async function handleTextDocumentGeneration(req, res, documentType) {
  * @desc    Generate OPD prescription from dictation via Dr iSHA BiMediX → Groq → OpenAI
  * @access  Protected (Doctor/Staff)
  */
+router.post('/generate-document', authUser, requireScribeAccess, (req, res) => {
+    const documentType = mapDocumentTypeForBackend(req.body.documentType || req.body.document_type || req.body.type || 'prescription');
+    if (!enforceDoctorOnlyDocumentAccess(req, res, documentType)) return;
+    return handleTextDocumentGeneration(req, res, documentType);
+});
+
 router.post('/prescription', authUser, requireScribeAccess, (req, res) => {
     if (!enforceDoctorOnlyDocumentAccess(req, res, 'prescription')) return;
     return handleTextDocumentGeneration(req, res, 'prescription');

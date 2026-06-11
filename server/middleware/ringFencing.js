@@ -247,6 +247,10 @@ const USER_TYPE_PERMISSIONS = {
       '/api/whatsapp-production',  // Production WhatsApp messaging & conversations
       '/api/sib-chatbots',  // SIB AI chatbots (health, appointment, emergency)
       '/api/video',
+      '/api/video-config',
+      '/api/notifications',
+      '/api/ai',
+      '/api/ai-governance',
       '/api/voice',
       '/api/tickets',
       '/api/chat',  // Chat dashboard for conversations & WhatsApp
@@ -258,6 +262,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/masterdata',
       '/api/recordings',  // Admin access to consultation recordings
       '/api/consultation-recordings',  // Admin access to consultation recordings
+      '/api/feedback-intelligence',  // Self-healing AI feedback intelligence dashboard
       '/api/v3/ai-brain',  // AI Brain intelligence layer
       '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
       '/api/v3/ai-analytics',  // AI analytics dashboard (admin only)
@@ -563,6 +568,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/users/forgot-password/reset',
   '/api/doctors/login',
   '/api/doctors/register',
+  '/api/doctors/forgot-password',
   '/api/doctors/send-email-otp',
   '/api/doctors/verify-email-otp',
   '/api/doctors/send-phone-otp',
@@ -575,9 +581,12 @@ const PUBLIC_ENDPOINTS = [
   '/api/consultation/doctors', // Public consultation doctor listing (browse/book)
   '/api/labs', // Public lab search and browsing (location-based)
   '/api/admin/login',
+  '/api/admin/refresh',
+  '/api/admin/logout',
   '/api/team/login',
   '/api/team/auth/verify',
   '/api/team/auth/refresh',
+  '/api/team/logout',
   '/api/crm/login',
   '/api/crm/auth/verify',
   '/api/crm/auth/refresh',

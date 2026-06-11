@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || 'AIzaSyAuYgocNCvsNuf8uW6G43vdSw74TYraXb4';
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 interface MedicalConsultationOptions {
   language?: string;
@@ -36,6 +36,9 @@ class GeminiMedicalAI {
   private currentSessionId: string;
 
   constructor() {
+    if (!GEMINI_API_KEY) {
+      throw new Error('VITE_GEMINI_API_KEY is not configured');
+    }
     this.genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
     this.currentSessionId = this.generateSessionId();
   }

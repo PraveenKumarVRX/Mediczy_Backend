@@ -17,18 +17,21 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+import os
 
 import psycopg2
 from openpyxl import Workbook
 
 
 DB_CONFIG = {
-    "host": "127.0.0.1",
-    "port": 5432,
-    "dbname": "mediczy_ai",
-    "user": "mediczy_helper",
-    "password": "Mediczy2024Helper",
+    "host": os.environ.get("POSTGRES_HOST", "127.0.0.1"),
+    "port": int(os.environ.get("POSTGRES_PORT", "5432")),
+    "dbname": os.environ.get("POSTGRES_DATABASE", "mediczy_ai"),
+    "user": os.environ.get("POSTGRES_USER", "mediczy_helper"),
+    "password": os.environ.get("POSTGRES_PASSWORD") or os.environ.get("DB_PASSWORD"),
 }
+if not DB_CONFIG["password"]:
+    raise RuntimeError("POSTGRES_PASSWORD or DB_PASSWORD is required")
 
 CITY_ALIASES = {
     "chennai": {"chennai"},
@@ -36,7 +39,9 @@ CITY_ALIASES = {
     "hyderabad": {"hyderabad"},
 }
 
-GOOGLE_API_KEY = "AIzaSyAuYgocNCvs Nuf8uW6G43vdSw74TYraXb4".replace(" ", "")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
+if not GOOGLE_API_KEY:
+    raise RuntimeError("GOOGLE_MAPS_API_KEY is required")
 
 
 def as_dict(value):

@@ -202,6 +202,10 @@ const CRMPage                  = lazy(() => import("@/pages/admin/CRMPage"));
 const CRMLeadDetail            = lazy(() => import("@/pages/admin/CRMLeadDetail"));
 const AIAnalyticsDashboard     = lazy(() => import("@/pages/admin/AIAnalyticsDashboard"));
 const AIGovernanceDashboard    = lazy(() => import("@/pages/admin/AIGovernanceDashboard"));
+const FeedbackIntelligenceDashboard = lazy(() => import("@/pages/admin/FeedbackIntelligenceDashboard"));
+const SLATrackerPage           = lazy(() => import("@/pages/admin/SLATrackerPage"));
+const ComponentDeepDive        = lazy(() => import("@/pages/admin/ComponentDeepDive"));
+const PromptVersionManager     = lazy(() => import("@/pages/admin/PromptVersionManager"));
 const SIBAIDashboard           = lazy(() => import("@/pages/admin/SIBAIDashboard"));
 const HyperGridDashboard       = lazy(() => import("@/pages/admin/HyperGridDashboard"));
 const HyperGridAIView          = lazy(() => import("@/pages/admin/HyperGridAIView"));
@@ -1286,6 +1290,10 @@ const AppRoutes = () => {
         <Route path="/admin/crm/lead/:id"        element={<AdminRoute><CRMLeadDetail /></AdminRoute>} />
         <Route path="/admin/ai-analytics"        element={<AdminRoute><AIAnalyticsDashboard /></AdminRoute>} />
         <Route path="/admin/ai-governance"        element={<AdminRoute><AIGovernanceDashboard /></AdminRoute>} />
+        <Route path="/admin/feedback-intelligence"              element={<AdminRoute><FeedbackIntelligenceDashboard /></AdminRoute>} />
+        <Route path="/admin/feedback-intelligence/sla"          element={<AdminRoute><SLATrackerPage /></AdminRoute>} />
+        <Route path="/admin/feedback-intelligence/component/:name" element={<AdminRoute><ComponentDeepDive /></AdminRoute>} />
+        <Route path="/admin/feedback-intelligence/prompts"      element={<AdminRoute><PromptVersionManager /></AdminRoute>} />
         <Route path="/admin/ai-guard"             element={<AdminRoute><SIBAIDashboard /></AdminRoute>} />
         <Route path="/admin/hypergrid"            element={<AdminRoute><HyperGridDashboard /></AdminRoute>} />
         <Route path="/admin/hypergrid-ai"         element={<AdminRoute><HyperGridAIView /></AdminRoute>} />
