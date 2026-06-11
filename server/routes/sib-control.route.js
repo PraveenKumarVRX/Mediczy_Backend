@@ -21,8 +21,10 @@ const authAdmin = [authUser, requireRole('admin')];
 /**
  * POST /api/sib/decide
  * Submit a decision for SIB to process (with safety checks)
+ * Requires authentication — this is a control-plane endpoint and must not be
+ * callable anonymously.
  */
-router.post('/decide', async (req, res) => {
+router.post('/decide', authUser, async (req, res) => {
   try {
     const { type, data, confidence, reasoning, context } = req.body;
     

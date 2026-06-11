@@ -231,12 +231,27 @@ router.get('/risk-score/me', requireAuth, async (req, res) => {
  */
 router.get('/risk-score/:patientId', requireAuth, async (req, res) => {
   try {
+    const patientId = parseInt(req.params.patientId, 10);
+    if (Number.isNaN(patientId)) {
+      return res.status(400).json({ error: 'Invalid patientId' });
+    }
+
+    // Authorization (IDOR fix): a patient may only read their own risk score;
+    // clinicians/admins may read any. Previously any authenticated user could
+    // read any patient's score by id.
+    const role = String(req.user?.role || req.userRole || '').toLowerCase();
+    const clinicianRoles = ['doctor', 'nurse', 'assistant', 'admin', 'super_admin', 'medical_director', 'hospital'];
+    const isSelf = Number(req.user?.id) === patientId;
+    if (!isSelf && !clinicianRoles.includes(role)) {
+      return res.status(403).json({ error: "Not authorized to view this patient's risk score" });
+    }
+
     const db = pool;
     const { rows } = await db.query(`
       SELECT * FROM ai_health_risk_scores
       WHERE patient_id = $1
       ORDER BY updated_at DESC LIMIT 1
-    `, [parseInt(req.params.patientId)]);
+    `, [patientId]);
 
     if (rows.length === 0) {
       return res.json({ success: true, score: null });

@@ -404,8 +404,15 @@ router.get('/health', async (req, res) => {
 
 // ─── GET /providers — List LLM providers ──────────────────
 
-router.get('/providers', async (req, res) => {
+router.get('/providers', requireAuth, async (req, res) => {
   try {
+    // Provider configs (incl. api_base_url / config) are operational secrets —
+    // restrict to admins instead of any authenticated user.
+    const role = req.user?.role || req.user?.userType;
+    const adminRoles = ['admin', 'superadmin', 'platform_admin', 'system'];
+    if (!adminRoles.includes(role)) {
+      return res.status(403).json({ error: 'Admin role required to view provider configuration' });
+    }
     const providers = llmProvider.listProviders();
     const db = pool;
     const { rows: dbConfigs } = await db.query(
