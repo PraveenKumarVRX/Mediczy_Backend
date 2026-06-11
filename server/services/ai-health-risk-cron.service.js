@@ -576,7 +576,8 @@ Respond with ONLY a JSON array of recommendation strings. Example: ["Rec 1", "Re
       const result = await llmProvider.chat({
         messages: [{ role: 'user', content: prompt }],
         tools: null,
-        conversationId: `risk-score-${patient.patient_id}`
+        conversationId: `risk-score-${patient.patient_id}`,
+        skipCache: true, // per-patient recommendations — never serve from a shared cache
       });
 
       const content = result.content || '';
