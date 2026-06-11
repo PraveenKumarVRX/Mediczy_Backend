@@ -33,8 +33,12 @@ const router = express.Router();
 const requireDoctor = requireRole(['doctor', 'admin', 'assistant', 'nurse', 'team']);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
+import { resolveLiveKitHealthUrl, isLiveKitCloud } from '../config/ai-services.config.js';
+
 const OFFLINE_SCRIBE_URL = process.env.OFFLINE_SCRIBE_URL || 'http://localhost:8006';
-const LIVEKIT_HEALTH_URL = process.env.LIVEKIT_HEALTH_URL || 'http://127.0.0.1:7880';
+// Cloud-safe: derives from LIVEKIT_URL when LIVEKIT_HEALTH_URL is unset, so a
+// move to LiveKit Cloud no longer falsely reports the local :7880 as down.
+const LIVEKIT_HEALTH_URL = resolveLiveKitHealthUrl();
 
 async function fetchJsonOrText(url, options = {}, timeoutMs = 5000) {
   const controller = new AbortController();
@@ -802,13 +806,23 @@ router.get('/status', authUser, requireDoctor, async (req, res) => {
     status.components.stt = { ...status.components.stt, status: 'unhealthy', error: error.message };
   }
 
-  try {
-    const livekit = await fetchJsonOrText(LIVEKIT_HEALTH_URL, {}, 5000);
-    status.components.livekit.status = livekit.ok ? 'healthy' : 'degraded';
+  if (isLiveKitCloud()) {
+    // LiveKit Cloud has no public self-hosted-style health endpoint; treat a
+    // fully-configured project as healthy rather than pinging a non-existent path.
+    status.components.livekit.status = status.components.livekit.configured ? 'healthy' : 'unconfigured';
     status.components.livekit.healthUrl = LIVEKIT_HEALTH_URL;
-  } catch (error) {
-    status.success = false;
-    status.components.livekit = { ...status.components.livekit, status: 'unhealthy', healthUrl: LIVEKIT_HEALTH_URL, error: error.message };
+    status.components.livekit.mode = 'cloud';
+    if (!status.components.livekit.configured) status.success = false;
+  } else {
+    try {
+      const livekit = await fetchJsonOrText(LIVEKIT_HEALTH_URL, {}, 5000);
+      status.components.livekit.status = livekit.ok ? 'healthy' : 'degraded';
+      status.components.livekit.healthUrl = LIVEKIT_HEALTH_URL;
+      status.components.livekit.mode = 'self-hosted';
+    } catch (error) {
+      status.success = false;
+      status.components.livekit = { ...status.components.livekit, status: 'unhealthy', healthUrl: LIVEKIT_HEALTH_URL, mode: 'self-hosted', error: error.message };
+    }
   }
 
   const httpStatus = status.success ? 200 : 503;
