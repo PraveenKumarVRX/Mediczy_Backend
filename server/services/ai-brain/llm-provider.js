@@ -485,6 +485,48 @@ async function callProvider(provider, params) {
   return client.chat.completions.create(finalParams);
 }
 
+// ── Transient-error retry (per provider, before failover) ───────────────────
+const LLM_RETRY_ATTEMPTS = Math.max(1, Math.min(parseInt(process.env.LLM_RETRY_ATTEMPTS || '2', 10) || 2, 4));
+const LLM_RETRY_BASE_MS = Math.max(100, parseInt(process.env.LLM_RETRY_BASE_MS || '400', 10) || 400);
+
+function isTransientLLMError(err) {
+  const code = String(err?.code || err?.cause?.code || '').toUpperCase();
+  const status = Number(err?.status || err?.statusCode || err?.response?.status || 0);
+  const msg = String(err?.message || '').toLowerCase();
+  if (['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'ESOCKET',
+       'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT'].includes(code)) return true;
+  if (status === 429 || (status >= 500 && status < 600)) return true;
+  return (
+    msg.includes('timed out') || msg.includes('timeout') ||
+    msg.includes('rate limit') || msg.includes('429') ||
+    msg.includes('temporarily') || msg.includes('overloaded')
+  );
+}
+
+/**
+ * Call a provider with a short retry on TRANSIENT failures before the cascade
+ * fails over to the next provider. Avoids burning a permanently-down provider's
+ * slot on a blip, and avoids retrying deterministic errors (auth, bad request).
+ */
+async function callProviderWithRetry(provider, params) {
+  let lastErr;
+  for (let attempt = 1; attempt <= LLM_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return await callProvider(provider, params);
+    } catch (err) {
+      lastErr = err;
+      if (attempt < LLM_RETRY_ATTEMPTS && isTransientLLMError(err)) {
+        const delay = LLM_RETRY_BASE_MS * attempt;
+        console.warn(`[LLM] ${provider.label} transient error (attempt ${attempt}/${LLM_RETRY_ATTEMPTS}): ${err.message}; retrying in ${delay}ms`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
+}
+
 /**
  * Call LLM with cascading fallback across 3 providers.
  *
@@ -603,7 +645,7 @@ async function chat({
 
     try {
       console.log(`[LLM] Trying ${provider.label} (model: ${params.model})...`);
-      response = await callProvider(provider, params);
+      response = await callProviderWithRetry(provider, params);
 
       // Detect stub responses from any provider (e.g. iSHA returning 200 when model not loaded)
       const rawContent = response.choices[0]?.message?.content || '';
