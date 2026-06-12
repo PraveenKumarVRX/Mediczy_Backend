@@ -12,6 +12,7 @@ import Appointment from '../models/appointment.model.intelligent.js';
 import usageMeteringService from '../services/usage-metering.service.js';
 import notificationService from '../services/notification.service.js';
 import tenantPartnerService from '../services/tenant-partner.service.js';
+import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
 
 const router = express.Router();
 
@@ -662,6 +663,13 @@ router.post('/book', authUser, [
     } catch (notificationError) {
       console.error('❌ Failed to send doctor appointment notification:', notificationError);
     }
+
+    notifyCareTeamOfBooking({
+      appointment: dbAppointment,
+      patient,
+      doctor,
+      bookingSource: 'enhanced-booking'
+    });
 
     // Track usage for SaaS metering (non-blocking)
     try {

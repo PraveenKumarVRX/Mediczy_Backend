@@ -15,6 +15,7 @@ import {
 } from '../utils/videoProvider.js';
 import { Op } from 'sequelize';
 import { normalizeDoctorProfile, toArray } from '../utils/doctorNormalizer.js';
+import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
 
 const router = express.Router();
 
@@ -484,6 +485,13 @@ router.post('/book', authUser, [
       paymentStatus: initialPaymentStatus,
       symptoms: symptomsArray,
       reason
+    });
+
+    notifyCareTeamOfBooking({
+      appointment,
+      patient,
+      doctor,
+      bookingSource: 'online-consultation'
     });
 
     // Process HC payment immediately after appointment creation if requested

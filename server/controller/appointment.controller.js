@@ -15,6 +15,7 @@ import n8nService from '../services/n8n.service.js';
 import notificationService from '../services/notification.service.js';
 import kafkaEvents from '../services/kafka-events.service.js';
 import tenantPartnerService from '../services/tenant-partner.service.js';
+import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
 
 const normalizeTimeHHMM = (value = '') => {
   const trimmed = String(value || '').trim();
@@ -618,6 +619,13 @@ export const createAppointment = async (req, res) => {
     } catch (patientNotificationError) {
       console.error('❌ Failed to send patient confirmation:', patientNotificationError);
     }
+
+    notifyCareTeamOfBooking({
+      appointment,
+      patient: user,
+      doctor,
+      bookingSource: 'web'
+    });
 
     // Mirror to intelligent DB (fire-and-forget style)
     (async () => {
