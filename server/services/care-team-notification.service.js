@@ -142,7 +142,7 @@ function getEnvSmtpConfig(fromEmail) {
   });
 }
 
-async function resolveSmtpConfigs() {
+export async function resolveSmtpConfigs() {
   const fromEmail = getBookingAlertFromEmail();
   const configs = [];
   const seen = new Set();
