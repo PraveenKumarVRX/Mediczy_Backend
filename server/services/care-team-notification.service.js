@@ -1,35 +1,208 @@
 /**
  * Sends booking alerts to the care operations inbox so team users can assist patients.
+ * Reuses existing SMTP identities (hello@, support@, noreply@, etc.) from email_configs,
+ * email_settings, or environment variables — same pattern as marketing-leads / CRM email.
  */
 
 import nodemailer from 'nodemailer';
+import sharedPool from '../db/pgPool.js';
 
 const DEFAULT_CARE_TEAM_EMAIL = 'care@mysmarthealth.in';
+const DEFAULT_REPLY_TO = 'support@mediqzy.com';
 
-let _transporter = null;
+const KNOWN_SYSTEM_SENDERS = [
+  'hello@mysmarthealth.in',
+  'support@mediqzy.com',
+  'noreply@mediqzy.com',
+  'donotreply@mediqzy.com',
+  'support@mysmarthealth.in',
+  'notification@mayden.in'
+];
+
+const SENDER_DISPLAY_NAMES = {
+  'hello@mysmarthealth.in': 'Mediqzy Corporate Health',
+  'support@mediqzy.com': 'Mediczy Support',
+  'noreply@mediqzy.com': 'Mediqzy Notifications',
+  'donotreply@mediqzy.com': 'Mediqzy Notifications',
+  'support@mysmarthealth.in': 'SmartHealth Support',
+  'notification@mayden.in': 'Mediqzy Notifications'
+};
 
 function getCareTeamEmail() {
-  return (process.env.CARE_TEAM_EMAIL || DEFAULT_CARE_TEAM_EMAIL).trim();
+  return (process.env.CARE_TEAM_EMAIL || DEFAULT_CARE_TEAM_EMAIL).trim().toLowerCase();
 }
 
-function getTransporter() {
-  if (_transporter) return _transporter;
+function getPreferredSenderEmails() {
+  const override = (process.env.CARE_TEAM_SMTP_FROM || process.env.SMTP_FROM || '').trim().toLowerCase();
+  if (override) return [override];
+  return KNOWN_SYSTEM_SENDERS;
+}
 
-  const port = parseInt(process.env.SMTP_PORT || '587', 10);
-  const secure = port === 465;
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
 
-  _transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtppro.zoho.in',
+function buildSmtpConfig({ source, host, port, secure, user, pass, fromEmail, fromName, replyTo }) {
+  if (!host || !user || !pass) return null;
+  const normalizedFrom = normalizeEmail(fromEmail || user);
+  return {
+    source,
+    host,
+    port: Number(port || 587),
+    secure: secure === true || Number(port) === 465,
+    user,
+    pass,
+    fromEmail: normalizedFrom,
+    fromName: fromName || SENDER_DISPLAY_NAMES[normalizedFrom] || 'Mediqzy Bookings',
+    replyTo: replyTo || DEFAULT_REPLY_TO
+  };
+}
+
+async function getEmailConfigForAddress(email) {
+  const target = normalizeEmail(email);
+  if (!target) return null;
+
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT host, port, secure, username, password, "fromEmail", "fromName", "replyTo"
+       FROM email_configs
+       WHERE "isActive" = true
+         AND (
+           LOWER(username) = $1
+           OR LOWER("fromEmail") = $1
+         )
+       ORDER BY "isDefault" DESC, id ASC
+       LIMIT 1`,
+      [target]
+    );
+
+    const row = rows[0];
+    if (!row?.username || !row?.password) return null;
+
+    return buildSmtpConfig({
+      source: `email_configs:${target}`,
+      host: row.host,
+      port: row.port,
+      secure: row.secure,
+      user: row.username,
+      pass: row.password,
+      fromEmail: row.fromEmail || row.username,
+      fromName: row.fromName,
+      replyTo: row.replyTo
+    });
+  } catch (error) {
+    console.warn(`[CareTeam] email_configs lookup failed for ${target}:`, error.message);
+    return null;
+  }
+}
+
+async function getEmailSettingsForAddress(email) {
+  const target = normalizeEmail(email);
+  if (!target) return null;
+
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT email, display_name, smtp_host, smtp_port, smtp_secure, smtp_username, smtp_password
+       FROM email_settings
+       WHERE deleted_at IS NULL
+         AND is_active = true
+         AND LOWER(email) = $1
+       ORDER BY is_default DESC, updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+       LIMIT 1`,
+      [target]
+    );
+
+    const row = rows[0];
+    if (!row?.smtp_host || !row?.smtp_password) return null;
+
+    return buildSmtpConfig({
+      source: `email_settings:${target}`,
+      host: row.smtp_host,
+      port: row.smtp_port,
+      secure: row.smtp_secure,
+      user: row.smtp_username || row.email,
+      pass: row.smtp_password,
+      fromEmail: row.email,
+      fromName: row.display_name
+    });
+  } catch (error) {
+    console.warn(`[CareTeam] email_settings lookup failed for ${target}:`, error.message);
+    return null;
+  }
+}
+
+async function getDefaultEmailConfig() {
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT host, port, secure, username, password, "fromEmail", "fromName", "replyTo"
+       FROM email_configs
+       WHERE "isActive" = true
+       ORDER BY "isDefault" DESC, id ASC
+       LIMIT 1`
+    );
+
+    const row = rows[0];
+    if (!row?.username || !row?.password) return null;
+
+    return buildSmtpConfig({
+      source: 'email_configs:default',
+      host: row.host,
+      port: row.port,
+      secure: row.secure,
+      user: row.username,
+      pass: row.password,
+      fromEmail: row.fromEmail || row.username,
+      fromName: row.fromName,
+      replyTo: row.replyTo
+    });
+  } catch (error) {
+    console.warn('[CareTeam] default email_configs lookup failed:', error.message);
+    return null;
+  }
+}
+
+function getEnvSmtpConfig() {
+  const host = (process.env.SMTP_HOST || 'smtppro.zoho.in').trim();
+  const user = (process.env.SMTP_USER || '').trim();
+  const pass = (process.env.SMTP_PASSWORD || process.env.SMTP_PASS || '').trim();
+  if (!user || !pass) return null;
+
+  const port = Number(process.env.SMTP_PORT || 465);
+  const fromEmail = normalizeEmail(process.env.SMTP_FROM || user);
+
+  return buildSmtpConfig({
+    source: 'environment',
+    host,
     port,
-    secure,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASSWORD || process.env.SMTP_PASS
-    },
-    tls: { rejectUnauthorized: false }
+    secure: port === 465,
+    user,
+    pass,
+    fromEmail,
+    fromName: process.env.EMAIL_FROM_NAME || SENDER_DISPLAY_NAMES[fromEmail] || 'Mediqzy Bookings'
   });
+}
 
-  return _transporter;
+async function resolveSmtpConfigs() {
+  const configs = [];
+  const seen = new Set();
+
+  const addConfig = (config) => {
+    if (!config) return;
+    const key = `${config.host}|${config.user}|${config.fromEmail}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    configs.push(config);
+  };
+
+  for (const email of getPreferredSenderEmails()) {
+    addConfig(await getEmailConfigForAddress(email));
+    addConfig(await getEmailSettingsForAddress(email));
+  }
+
+  addConfig(await getDefaultEmailConfig());
+  addConfig(getEnvSmtpConfig());
+
+  return configs;
 }
 
 function escapeHtml(value) {
@@ -149,30 +322,65 @@ function buildPlainText(details) {
   ].join('\n');
 }
 
+async function sendWithSmtpConfig(config, mailOptions) {
+  const transporter = nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    auth: {
+      user: config.user,
+      pass: config.pass
+    },
+    connectionTimeout: 10000,
+    greetingTimeout: 5000,
+    socketTimeout: 15000,
+    tls: { rejectUnauthorized: false, minVersion: 'TLSv1.2' }
+  });
+
+  await transporter.sendMail({
+    ...mailOptions,
+    from: `"${config.fromName}" <${config.fromEmail}>`,
+    replyTo: mailOptions.replyTo || config.replyTo || DEFAULT_REPLY_TO,
+    headers: {
+      'X-Mediqzy-System': 'true',
+      'X-Sender-Type': 'care-team-booking-alert',
+      ...(mailOptions.headers || {})
+    }
+  });
+
+  return config.source;
+}
+
 export async function sendCareTeamBookingAlert(input = {}) {
   const details = normalizeCareTeamBookingDetails(input);
   const to = getCareTeamEmail();
-
-  if (!process.env.SMTP_USER || !(process.env.SMTP_PASSWORD || process.env.SMTP_PASS)) {
-    console.warn('[CareTeam] SMTP not configured; skipping booking alert email');
-    return { sent: false, reason: 'smtp_not_configured' };
-  }
-
   const subject = `[Mediqzy] New booking — ${details.patientName} with ${details.doctorName} on ${details.appointmentDate} ${details.appointmentTime}`;
   const html = buildBookingEmailHtml(details);
   const text = buildPlainText(details);
 
-  const transporter = getTransporter();
-  await transporter.sendMail({
-    from: `"Mediqzy Bookings" <${process.env.SMTP_USER}>`,
-    to,
-    subject,
-    text,
-    html
-  });
+  const smtpConfigs = await resolveSmtpConfigs();
+  if (!smtpConfigs.length) {
+    console.warn('[CareTeam] No SMTP configuration found (email_configs, email_settings, or env); skipping booking alert');
+    return { sent: false, reason: 'smtp_not_configured' };
+  }
 
-  console.log(`[CareTeam] Booking alert sent to ${to} for appointment ${details.appointmentId ?? 'unknown'}`);
-  return { sent: true, to };
+  const mailOptions = { to, subject, text, html };
+  let lastError = null;
+
+  for (const config of smtpConfigs) {
+    try {
+      const source = await sendWithSmtpConfig(config, mailOptions);
+      console.log(
+        `[CareTeam] Booking alert sent to ${to} for appointment ${details.appointmentId ?? 'unknown'} via ${source} (${config.fromEmail})`
+      );
+      return { sent: true, to, from: config.fromEmail, source };
+    } catch (error) {
+      lastError = error;
+      console.warn(`[CareTeam] Send failed via ${config.source} (${config.fromEmail}):`, error.message);
+    }
+  }
+
+  throw lastError || new Error('All SMTP configurations failed');
 }
 
 /**
@@ -187,5 +395,6 @@ export function notifyCareTeamOfBooking(input = {}) {
 export default {
   notifyCareTeamOfBooking,
   sendCareTeamBookingAlert,
-  normalizeCareTeamBookingDetails
+  normalizeCareTeamBookingDetails,
+  resolveSmtpConfigs
 };
