@@ -31,7 +31,9 @@
     "test:rls-coverage": "node scripts/qa/verify-rls-coverage.mjs",
     "test:uuid-shadow-parity": "node scripts/qa/verify-uuid-shadow-parity.mjs",
     "backfill:phi-encryption": "node scripts/qa/backfill-phi-encryption.mjs",
-    "ops:activate-subscription": "node scripts/admin/activate-user-subscription.mjs"
+    "ops:activate-subscription": "node scripts/admin/activate-user-subscription.mjs",
+    "test:team-booking-alert": "node scripts/smoke-team-booking-alert.mjs",
+    "test:team-booking-alert:send": "node scripts/smoke-team-booking-alert.mjs --send"
   },
   "keywords": [],
   "author": "",
