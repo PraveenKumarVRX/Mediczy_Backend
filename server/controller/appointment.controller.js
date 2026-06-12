@@ -568,6 +568,114 @@ export const createAppointment = async (req, res) => {
       console.error('❌ Failed to send doctor notification:', notificationError);
     }
 
+    // Notify assigned team users (fire-and-forget)
+    (async () => {
+      try {
+        const orgId = appointment.corporate_tenant_id || appointment.organization_id;
+        if (!orgId) return;
+
+        // Find team users assigned to this corporate/org
+        const teamUsers = await postgresSequelize.query(
+          `SELECT DISTINCT u.id, u.email, u."firstName", u."lastName"
+           FROM "Users" u
+           WHERE u.id IN (
+             SELECT "assignedTo" FROM corporates
+             WHERE id = :orgId AND "assignedTo" IS NOT NULL
+           )
+           UNION
+           SELECT DISTINCT u.id, u.email, u."firstName", u."lastName"
+           FROM "Users" u
+           WHERE u.organization_id = :orgId
+             AND (u."isTeam" = true OR u.role IN ('team','team_lead','team_member'))
+             AND u.status = 'active'
+           LIMIT 10`,
+          { replacements: { orgId: parseInt(orgId) }, type: postgresSequelize.QueryTypes.SELECT }
+        );
+
+        if (!teamUsers.length) return;
+
+        const nodemailer = (await import('nodemailer')).default;
+        const emailServiceModule = (await import('../services/emailService.js')).default;
+
+        const apptDate = new Date(appointment.appointmentDate).toLocaleDateString('en-IN', {
+          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+        });
+        const symptoms = Array.isArray(appointment.symptoms)
+          ? appointment.symptoms.join(', ')
+          : (appointment.symptoms || appointment.reason || '—');
+
+        const emailHtml = `
+          <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+            <div style="background:#1a6eb5;padding:20px;border-radius:8px 8px 0 0">
+              <h2 style="color:#fff;margin:0">New Appointment Booking</h2>
+              <p style="color:#cfe8ff;margin:4px 0 0">Action required — please review and confirm</p>
+            </div>
+            <div style="background:#f9fafb;padding:24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px">
+              <table style="width:100%;border-collapse:collapse">
+                <tr><td style="padding:8px 0;color:#6b7280;width:40%">Appointment ID</td><td style="padding:8px 0;font-weight:600">#${appointment.id}</td></tr>
+                <tr><td style="padding:8px 0;color:#6b7280">Patient</td><td style="padding:8px 0;font-weight:600">${appointment.patientName}</td></tr>
+                <tr><td style="padding:8px 0;color:#6b7280">Patient Email</td><td style="padding:8px 0">${appointment.patientEmail || '—'}</td></tr>
+                <tr><td style="padding:8px 0;color:#6b7280">Patient Phone</td><td style="padding:8px 0">${appointment.patientPhone || '—'}</td></tr>
+                <tr><td style="padding:8px 0;color:#6b7280">Doctor</td><td style="padding:8px 0;font-weight:600">${appointment.doctorName}</td></tr>
+                <tr><td style="padding:8px 0;color:#6b7280">Specialization</td><td style="padding:8px 0">${appointment.specialization || '—'}</td></tr>
+                <tr><td style="padding:8px 0;color:#6b7280">Date</td><td style="padding:8px 0">${apptDate}</td></tr>
+                <tr><td style="padding:8px 0;color:#6b7280">Time</td><td style="padding:8px 0">${appointment.appointmentTime}</td></tr>
+                <tr><td style="padding:8px 0;color:#6b7280">Type</td><td style="padding:8px 0;text-transform:capitalize">${appointment.consultationType || '—'}</td></tr>
+                <tr><td style="padding:8px 0;color:#6b7280">Symptoms / Reason</td><td style="padding:8px 0">${symptoms}</td></tr>
+                <tr><td style="padding:8px 0;color:#6b7280">Payment Status</td><td style="padding:8px 0;text-transform:capitalize">${appointment.paymentStatus || 'pending'}</td></tr>
+              </table>
+              <div style="margin-top:20px;text-align:center">
+                <a href="https://mediqzy.com/team/appointments" style="background:#1a6eb5;color:#fff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:600">View in Dashboard</a>
+              </div>
+            </div>
+          </div>`;
+
+        for (const tu of teamUsers) {
+          if (!tu.email) continue;
+          try {
+            // Use team user's own email_settings SMTP if available
+            const [cfg] = await postgresSequelize.query(
+              `SELECT email, display_name, smtp_host, smtp_port, smtp_secure, smtp_username, smtp_password
+               FROM email_settings
+               WHERE user_id = :userId AND is_active = true AND deleted_at IS NULL
+               ORDER BY is_default DESC LIMIT 1`,
+              { replacements: { userId: tu.id }, type: postgresSequelize.QueryTypes.SELECT }
+            );
+
+            if (cfg?.smtp_host && cfg?.smtp_password) {
+              const transporter = nodemailer.createTransport({
+                host: cfg.smtp_host,
+                port: cfg.smtp_port || 465,
+                secure: cfg.smtp_port === 465 || cfg.smtp_secure === true,
+                auth: { user: cfg.smtp_username || cfg.email, pass: cfg.smtp_password },
+                connectionTimeout: 10000, greetingTimeout: 5000, socketTimeout: 15000,
+                tls: { rejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== 'false', minVersion: 'TLSv1.2' }
+              });
+              await transporter.sendMail({
+                from: `"${cfg.display_name || 'Mediqzy'}" <${cfg.email}>`,
+                to: tu.email,
+                subject: `New Appointment — ${appointment.patientName} on ${apptDate}`,
+                html: emailHtml,
+                headers: { 'X-Mediqzy-System': 'true', 'X-Sender-Type': 'team-booking-alert' }
+              });
+            } else {
+              // Fallback: global noreply config
+              await emailServiceModule.sendOutboundEmail(1, {
+                to: tu.email,
+                subject: `New Appointment — ${appointment.patientName} on ${apptDate}`,
+                htmlContent: emailHtml
+              });
+            }
+            console.log(`✅ [team-booking-alert] Notified ${tu.email} (team user ${tu.id}) for appointment #${appointment.id}`);
+          } catch (tuErr) {
+            console.error(`❌ [team-booking-alert] Failed to notify team user ${tu.id}:`, tuErr.message);
+          }
+        }
+      } catch (teamNotifyErr) {
+        console.error('❌ [team-booking-alert] Error resolving team users:', teamNotifyErr.message);
+      }
+    })();
+
     // Send confirmation notification to patient
     try {
       console.log('📧 Sending appointment confirmation to patient...');
