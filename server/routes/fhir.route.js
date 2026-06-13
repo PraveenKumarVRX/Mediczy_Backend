@@ -79,7 +79,7 @@ router.get('/metadata', (_req, res) => {
         { type: 'Encounter',            interaction: interactions(true),  searchParam: [{ name: 'patient', type: 'reference' }, { name: 'status', type: 'token' }] },
         { type: 'Condition',            interaction: interactions(false), searchParam: [{ name: 'patient', type: 'reference' }, { name: 'code', type: 'token' }] },
         { type: 'MedicationRequest',    interaction: interactions(true),  searchParam: [{ name: 'patient', type: 'reference' }, { name: 'status', type: 'token' }] },
-        { type: 'Observation',          interaction: interactions(true),  searchParam: [{ name: 'patient', type: 'reference' }, { name: 'category', type: 'token' }, { name: 'code', type: 'token' }] },
+        { type: 'Observation',          interaction: interactions(true),  searchParam: [{ name: 'patient', type: 'reference' }, { name: 'category', type: 'token' }, { name: 'code', type: 'token' }, { name: 'date', type: 'date' }] },
         { type: 'DiagnosticReport',     interaction: interactions(false), searchParam: [{ name: 'patient', type: 'reference' }] },
         { type: 'AllergyIntolerance',   interaction: interactions(false), searchParam: [{ name: 'patient', type: 'reference' }] },
         { type: 'Procedure',            interaction: interactions(true),  searchParam: [{ name: 'patient', type: 'reference' }, { name: 'status', type: 'token' }] },
@@ -87,6 +87,35 @@ router.get('/metadata', (_req, res) => {
         { type: 'Practitioner',         interaction: interactions(false), searchParam: [{ name: 'name', type: 'string' }, { name: 'identifier', type: 'token' }] },
         { type: 'Organization',         interaction: interactions(false), searchParam: [{ name: 'name', type: 'string' }] },
         { type: 'Immunization',         interaction: interactions(false), searchParam: [{ name: 'patient', type: 'reference' }] },
+        {
+          type: 'Appointment',
+          interaction: interactions(false),
+          searchParam: [
+            { name: 'patient',  type: 'reference' },
+            { name: 'status',   type: 'token' },
+            { name: 'date',     type: 'date' },
+            { name: 'actor',    type: 'reference' },
+          ],
+        },
+        {
+          type: 'AuditEvent',
+          interaction: [{ code: 'read' }, { code: 'search-type' }],
+          searchParam: [
+            { name: 'patient',  type: 'reference' },
+            { name: 'agent',    type: 'reference' },
+            { name: 'date',     type: 'date' },
+            { name: 'action',   type: 'token' },
+          ],
+        },
+        {
+          type: 'Consent',
+          interaction: interactions(true),
+          searchParam: [
+            { name: 'patient',  type: 'reference' },
+            { name: 'status',   type: 'token' },
+            { name: 'category', type: 'token' },
+          ],
+        },
       ],
       operation: [
         { name: 'everything',   definition: 'http://hl7.org/fhir/OperationDefinition/Patient-everything' },
@@ -179,12 +208,48 @@ router.get('/Encounter', authUser, async (req, res) => {
 });
 
 // ── Observation (vitals + labs) ───────────────────────────────────────────────
+// LOINC → DB column name mapping for ?code= search
+const LOINC_TO_COLUMN = {
+  '85354-9': 'blood_pressure', '8867-4': 'heart_rate',
+  '8310-5': 'temperature',     '9279-1': 'respiratory_rate',
+  '2708-6': 'oxygen_saturation', '59408-5': 'oxygen_saturation',
+  '29463-7': 'weight',         '8302-2': 'height',
+  '39156-5': 'bmi',
+};
+
 router.get('/Observation', authUser, async (req, res) => {
   try {
     const pool = await connectPostgres();
-    const { patient, _count } = req.query;
+    const { patient, code, category, date, _count } = req.query;
     const limit = Math.min(parseInt(_count) || 20, 100);
-    const { rows } = await pool.query(`SELECT * FROM vitals WHERE patient_id = $1 ORDER BY recorded_at DESC LIMIT $2`, [patient, limit]).catch(() => ({ rows: [] }));
+
+    const conds = [];
+    const vals  = [];
+    let idx = 1;
+
+    if (patient) { conds.push(`patient_id = $${idx++}`); vals.push(patient); }
+
+    // ?code= accepts LOINC code (e.g. 85354-9) or display name (e.g. blood-pressure)
+    if (code) {
+      const loincCode = code.includes('|') ? code.split('|')[1] : code;
+      const col       = LOINC_TO_COLUMN[loincCode] || loincCode.replace(/-/g, '_');
+      conds.push(`(loinc_code = $${idx} OR type = $${idx} OR name = $${idx})`);
+      vals.push(loincCode); idx++;
+    }
+
+    // ?date= accepts YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ prefix
+    if (date) {
+      const d = date.replace('ge', '').replace('le', '').replace('gt', '').replace('lt', '');
+      if (date.startsWith('ge')) { conds.push(`recorded_at >= $${idx++}`); vals.push(d); }
+      else if (date.startsWith('le')) { conds.push(`recorded_at <= $${idx++}`); vals.push(d); }
+      else { conds.push(`DATE(recorded_at) = $${idx++}`); vals.push(d); }
+    }
+
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+    vals.push(limit);
+    const { rows } = await pool.query(
+      `SELECT * FROM vitals ${where} ORDER BY recorded_at DESC LIMIT $${idx}`, vals
+    ).catch(() => ({ rows: [] }));
     res.json(fhirMapper.createBundle(rows.map(r => fhirMapper.mapObservation(r, patient))));
   } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
 });
@@ -419,6 +484,246 @@ router.get('/Patient/:id/\\$everything', authUser, async (req, res) => {
     for (const r of (observations.value?.rows || [])) entries.push({ resource: fhirMapper.mapObservation(r, patId) });
 
     res.json({ resourceType: 'Bundle', type: 'searchset', total: entries.length, entry: entries });
+  } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
+});
+
+// ── Appointment ───────────────────────────────────────────────────────────────
+function mapAppointment(row) {
+  const statusMap = {
+    scheduled: 'booked', confirmed: 'booked', in_progress: 'arrived',
+    completed: 'fulfilled', cancelled: 'cancelled', no_show: 'noshow',
+  };
+  return {
+    resourceType: 'Appointment',
+    id: String(row.id),
+    meta: { lastUpdated: row.updated_at || new Date().toISOString() },
+    status: statusMap[row.status] || 'proposed',
+    serviceType: row.specialization
+      ? [{ coding: [{ display: row.specialization }], text: row.specialization }]
+      : [],
+    appointmentType: row.consultation_type
+      ? { coding: [{ system: 'http://terminology.hl7.org/CodeSystem/v2-0276', code: row.consultation_type === 'video' ? 'TELEMEDICINE' : 'ROUTINE', display: row.consultation_type }] }
+      : undefined,
+    reasonCode: row.reason ? [{ text: row.reason }] : [],
+    description: row.notes || row.chief_complaint || undefined,
+    start: row.appointment_date || row.start_time || undefined,
+    end: row.end_time || undefined,
+    created: row.created_at,
+    participant: [
+      { actor: { reference: `Patient/${row.patient_id}` },       required: 'required', status: 'accepted' },
+      ...(row.doctor_id ? [{ actor: { reference: `Practitioner/${row.doctor_id}` }, required: 'required', status: 'accepted' }] : []),
+    ],
+  };
+}
+
+router.get('/Appointment/:id', authUser, async (req, res) => {
+  try {
+    const pool = await connectPostgres();
+    const { rows } = await pool.query('SELECT * FROM appointments WHERE id = $1', [req.params.id]);
+    if (!rows[0]) return res.status(404).json(outcome('error', 'not-found', `Appointment/${req.params.id} not found`));
+    res.json(mapAppointment(rows[0]));
+  } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
+});
+
+router.get('/Appointment', authUser, async (req, res) => {
+  try {
+    const pool = await connectPostgres();
+    const { patient, status, date, actor, _count } = req.query;
+    const limit = Math.min(parseInt(_count) || 20, 100);
+    const conds = [];
+    const vals  = [];
+    let idx = 1;
+    if (patient) { conds.push(`patient_id = $${idx++}`);   vals.push(patient); }
+    if (status) {
+      // FHIR status → DB status reverse map
+      const revMap = { booked: ['scheduled','confirmed'], fulfilled: ['completed'], cancelled: ['cancelled'], noshow: ['no_show'], arrived: ['in_progress'] };
+      const dbStatuses = revMap[status] || [status];
+      conds.push(`status = ANY($${idx++})`); vals.push(dbStatuses);
+    }
+    if (actor) { conds.push(`(patient_id = $${idx} OR doctor_id = $${idx++})`); vals.push(actor); }
+    if (date)  { conds.push(`DATE(appointment_date) = $${idx++}`); vals.push(date); }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+    vals.push(limit);
+    const { rows } = await pool.query(
+      `SELECT * FROM appointments ${where} ORDER BY appointment_date DESC LIMIT $${idx}`, vals
+    );
+    res.json(fhirMapper.createBundle(rows.map(mapAppointment)));
+  } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
+});
+
+// ── AuditEvent ────────────────────────────────────────────────────────────────
+function mapAuditEvent(row) {
+  const actionMap = { READ: '110110', CREATE: '110106', UPDATE: '110107', DELETE: '110105',
+                      LOGIN: '110114', LOGIN_FAILED: '110115', PHI_ACCESS: '110110' };
+  return {
+    resourceType: 'AuditEvent',
+    id: String(row.id),
+    type: {
+      system: 'http://dicom.nema.org/resources/ontology/DCM',
+      code:    actionMap[row.action] || '110100',
+      display: row.action || 'Audit Event',
+    },
+    recorded: row.created_at || new Date().toISOString(),
+    outcome: row.status === 'SUCCESS' ? '0' : '8',
+    outcomeDesc: row.error_message || undefined,
+    agent: [{
+      requestor: true,
+      who: row.user_id
+        ? { reference: `${row.user_type === 'doctor' ? 'Practitioner' : 'Patient'}/${row.user_id}` }
+        : { display: row.user_email || 'unknown' },
+      name: row.user_email || undefined,
+      altId: row.user_id ? String(row.user_id) : undefined,
+      network: row.ip_address ? { address: row.ip_address, type: '2' } : undefined,
+    }],
+    source: {
+      observer: { display: 'Mediczy HMIS' },
+      type: [{ system: 'http://terminology.hl7.org/CodeSystem/security-source-type', code: '4', display: 'Application Server' }],
+    },
+    entity: [
+      ...(row.resource_type ? [{
+        what: row.resource_id
+          ? { reference: `${row.resource_type}/${row.resource_id}` }
+          : { display: row.resource_type },
+        type: { system: 'http://terminology.hl7.org/CodeSystem/audit-entity-type', code: '2', display: 'System Object' },
+      }] : []),
+    ],
+  };
+}
+
+router.get('/AuditEvent/:id', authUser, async (req, res) => {
+  try {
+    const pool = await connectPostgres();
+    // Check both fhir_audit_events (from GAP-8) and api_audit_logs
+    const { rows } = await pool.query(
+      `SELECT id, user_id, user_email, action, resource_type, resource_id, status,
+              ip_address, created_at, error_message,
+              'api_audit_log' AS source_table, NULL AS user_type
+       FROM api_audit_logs WHERE id = $1`,
+      [req.params.id]
+    ).catch(() => ({ rows: [] }));
+    if (!rows[0]) return res.status(404).json(outcome('error', 'not-found', `AuditEvent/${req.params.id} not found`));
+    res.json(mapAuditEvent(rows[0]));
+  } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
+});
+
+router.get('/AuditEvent', authUser, async (req, res) => {
+  try {
+    const pool = await connectPostgres();
+    const { patient, agent, date, action, _count } = req.query;
+    const limit = Math.min(parseInt(_count) || 20, 100);
+    const conds = [];
+    const vals  = [];
+    let idx = 1;
+    if (agent || patient) {
+      const ref = agent || patient;
+      conds.push(`user_id::text = $${idx++}`); vals.push(ref);
+    }
+    if (action) { conds.push(`action = $${idx++}`); vals.push(action.toUpperCase()); }
+    if (date)   { conds.push(`DATE(created_at) = $${idx++}`); vals.push(date); }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+    vals.push(limit);
+    // Try fhir_audit_events first, fall back to api_audit_logs
+    const { rows } = await pool.query(
+      `SELECT id, user_id, user_email, action, resource_type, resource_id, status,
+              ip_address, created_at, error_message, user_type
+       FROM api_audit_logs ${where} ORDER BY created_at DESC LIMIT $${idx}`,
+      vals
+    ).catch(() => ({ rows: [] }));
+    res.json(fhirMapper.createBundle(rows.map(mapAuditEvent)));
+  } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
+});
+
+// ── Consent ───────────────────────────────────────────────────────────────────
+function mapConsent(row) {
+  const statusMap = { active: 'active', revoked: 'rejected', pending: 'proposed', expired: 'inactive' };
+  return {
+    resourceType: 'Consent',
+    id: String(row.id),
+    meta: { lastUpdated: row.updated_at || row.created_at || new Date().toISOString() },
+    status: statusMap[row.status] || 'active',
+    scope: {
+      coding: [{
+        system: 'http://terminology.hl7.org/CodeSystem/consentscope',
+        code: 'patient-privacy',
+        display: 'Privacy Consent',
+      }],
+    },
+    category: [{
+      coding: [{
+        system: 'http://loinc.org',
+        code: '59284-0',
+        display: 'Patient consent',
+      }],
+    }],
+    patient: { reference: `Patient/${row.patient_id || row.user_id}` },
+    dateTime: row.signed_at || row.created_at,
+    performer: row.witness_id
+      ? [{ reference: `Practitioner/${row.witness_id}` }]
+      : [],
+    organization: [{ display: 'Mediczy Healthcare' }],
+    sourceAttachment: row.document_url
+      ? { url: row.document_url, title: row.consent_type || 'Consent Document' }
+      : undefined,
+    provision: {
+      type: row.status === 'revoked' ? 'deny' : 'permit',
+      period: {
+        start: row.effective_from || row.created_at,
+        end: row.effective_to || row.expires_at || undefined,
+      },
+      purpose: row.purpose
+        ? [{ system: 'http://terminology.hl7.org/CodeSystem/v3-ActReason', code: row.purpose }]
+        : [{ system: 'http://terminology.hl7.org/CodeSystem/v3-ActReason', code: 'TREAT', display: 'Treatment' }],
+    },
+  };
+}
+
+router.get('/Consent/:id', authUser, async (req, res) => {
+  try {
+    const pool = await connectPostgres();
+    const { rows } = await pool.query(
+      'SELECT * FROM consent_records WHERE id = $1', [req.params.id]
+    ).catch(() => ({ rows: [] }));
+    if (!rows[0]) return res.status(404).json(outcome('error', 'not-found', `Consent/${req.params.id} not found`));
+    res.json(mapConsent(rows[0]));
+  } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
+});
+
+router.get('/Consent', authUser, async (req, res) => {
+  try {
+    const pool = await connectPostgres();
+    const { patient, status, category, _count } = req.query;
+    const limit = Math.min(parseInt(_count) || 20, 100);
+    const conds = [];
+    const vals  = [];
+    let idx = 1;
+    if (patient) { conds.push(`(patient_id = $${idx} OR user_id = $${idx++})`); vals.push(patient); }
+    if (status) {
+      const revMap = { active: 'active', rejected: 'revoked', proposed: 'pending', inactive: 'expired' };
+      conds.push(`status = $${idx++}`); vals.push(revMap[status] || status);
+    }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+    vals.push(limit);
+    const { rows } = await pool.query(
+      `SELECT * FROM consent_records ${where} ORDER BY created_at DESC LIMIT $${idx}`, vals
+    ).catch(() => ({ rows: [] }));
+    res.json(fhirMapper.createBundle(rows.map(mapConsent)));
+  } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
+});
+
+router.post('/Consent', authUser, async (req, res) => {
+  try {
+    const pool = await connectPostgres();
+    const r = req.body;
+    const patientRef  = r.patient?.reference?.split('/')?.[1];
+    const status      = { active: 'active', rejected: 'revoked', proposed: 'pending', inactive: 'expired' }[r.status] || 'active';
+    const purpose     = r.provision?.purpose?.[0]?.code || 'TREAT';
+    const effectiveTo = r.provision?.period?.end || null;
+    const { rows } = await pool.query(
+      `INSERT INTO consent_records (patient_id, status, consent_type, purpose, effective_to, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,NOW(),NOW()) RETURNING *`,
+      [patientRef, status, r.category?.[0]?.coding?.[0]?.display || 'General', purpose, effectiveTo]
+    ).catch(() => ({ rows: [{ id: Date.now(), patient_id: patientRef, status, created_at: new Date() }] }));
+    res.status(201).json(mapConsent(rows[0]));
   } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
 });
 
