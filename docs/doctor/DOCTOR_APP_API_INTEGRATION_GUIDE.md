@@ -1,6 +1,6 @@
 # Mediqzy — Doctor Mobile App API Integration Guide
 
-> **Version:** 2.10 · **Last Updated:** 2026-06-05  
+> **Version:** 2.11 · **Last Updated:** 2026-06-13  
 > **Base URL (Production):** `https://app.mediqzy.com/api`  
 > **WebSocket URL:** `https://app.mediqzy.com` (path: `/socket.io`)  
 > **LiveKit URL:** `wss://msh-kw9tvxa9.livekit.cloud` *(LiveKit Cloud)*
@@ -47,6 +47,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **2.11** | 2026-06-13 | Doctor mobile integration update: appointment settings now preserve `blockedSlots`, `inPerson.locationId`, and `practiceLocations`; patient vitals now persist through the `patient_vitals` migration and return `201` on create; iSHA appointment-list commands now query live doctor appointments instead of model-generated content. |
 | **2.10** | 2026-06-05 | Deploy health script now supports integrated review-policy smoke execution in a single run (`scripts/qa/doctor-auth-deploy-health.mjs`) when `DOCTOR_EMAIL` and `DOCTOR_PASSWORD` are provided. |
 | **2.9** | 2026-06-05 | Added deploy-ready smoke command for review consultation policy validation (`scripts/qa/doctor-review-policy-smoke.mjs`) that verifies: base consultation booking succeeds, first review is free (`freeReviewApplied=true`), and second review is billable. |
 | **2.8** | 2026-06-05 | Review consultation fix: booking APIs now accept `review` (`follow-up`/`followup` aliases) and apply a one-time free review entitlement per prior new consultation for the same patient+doctor pair. |
@@ -1117,7 +1118,8 @@ Authorization: Bearer <token>
       "monday": {
         "isOff": false,
         "online": { "enabled": true, "startTime": "09:00", "endTime": "13:00" },
-        "inPerson": { "enabled": true, "startTime": "14:00", "endTime": "18:00" }
+        "inPerson": { "enabled": true, "startTime": "14:00", "endTime": "18:00", "locationId": "clinic-main" },
+        "blockedSlots": ["10:00 - 10:15", "15:00 - 15:15"]
       },
       "tuesday": { "isOff": false, "online": { "enabled": true, "startTime": "09:00", "endTime": "13:00" }, "inPerson": { "enabled": true, "startTime": "14:00", "endTime": "18:00" } },
       "wednesday": { "isOff": false, "online": { "enabled": true, "startTime": "09:00", "endTime": "13:00" }, "inPerson": { "enabled": true, "startTime": "14:00", "endTime": "18:00" } },
@@ -1130,7 +1132,15 @@ Authorization: Bearer <token>
     "onlineConsultationEnabled": true,
     "inPersonConsultationEnabled": true,
     "onlineConsultationFee": 500,
-    "inPersonConsultationFee": 500
+    "inPersonConsultationFee": 500,
+    "practiceLocations": [
+      {
+        "id": "clinic-main",
+        "name": "Main Clinic",
+        "address": "123 Medical Street, Chennai",
+        "consultationFee": 700
+      }
+    ]
   }
 }
 ```
@@ -1152,9 +1162,29 @@ Authorization: Bearer <token>
 | `inPersonConsultationEnabled` | boolean | — |
 | `onlineConsultationFee` | number | ≥ 0 |
 | `inPersonConsultationFee` | number | ≥ 0 |
-| `weeklySchedule` | object | Per-day config (see response above) |
+| `weeklySchedule` | object | Per-day config (see response above). Preserves `blockedSlots` and `inPerson.locationId`. |
+| `practiceLocations` | object[] | Optional list of clinic/hospital locations: `{ id, name, address, consultationFee }` |
 
-Time format: `HH:MM` (24-hour). End time must be after start time.
+Time format: `HH:MM` (24-hour). End time must be after start time. For blocked slots, use the same generated slot string shown by the slot preview and booking APIs, e.g. `"10:00 - 10:15"`.
+
+**Example with blocked slots:**
+
+```json
+{
+  "slotDuration": 15,
+  "weeklySchedule": {
+    "monday": {
+      "isOff": false,
+      "online": { "enabled": true, "startTime": "09:00", "endTime": "13:00" },
+      "inPerson": { "enabled": true, "startTime": "14:00", "endTime": "18:00", "locationId": "clinic-main" },
+      "blockedSlots": ["10:00 - 10:15", "15:00 - 15:15"]
+    }
+  },
+  "practiceLocations": [
+    { "id": "clinic-main", "name": "Main Clinic", "address": "123 Medical Street", "consultationFee": 700 }
+  ]
+}
+```
 
 ### 7.3 Update Slot Duration Only
 
@@ -1180,7 +1210,8 @@ Authorization: Bearer <token>
 {
   "isOff": false,
   "online": { "enabled": true, "startTime": "09:00", "endTime": "13:00" },
-  "inPerson": { "enabled": true, "startTime": "14:00", "endTime": "18:00" }
+  "inPerson": { "enabled": true, "startTime": "14:00", "endTime": "18:00", "locationId": "clinic-main" },
+  "blockedSlots": ["10:00 - 10:15"]
 }
 ```
 
@@ -1202,6 +1233,8 @@ GET /api/doctor-settings/available-slots/:doctorId?date=2026-03-15&type=online
 ```
 
 **Public endpoint.** Query param `type`: `online` | `in-person` (optional, returns both if omitted).
+
+> For patient/mobile booking slot selection, prefer `GET /api/doctors/:doctorId/user-slots?date=YYYY-MM-DD`. That endpoint returns online and in-person slots with `available` and `blocked` flags and respects `weeklySchedule[day].blockedSlots`.
 
 **Response (200):**
 
@@ -1646,7 +1679,7 @@ Update editable fields on a patient account. All fields are optional (partial up
 
 ### 9.8 Record Patient Vitals
 
-> **New — verified May 2026**
+> **Updated — verified 2026-06-13**
 
 ```
 POST /api/doctors/my-patients/:patientId/vitals
@@ -1664,7 +1697,7 @@ Record a new vitals snapshot for the patient.
   "spo2": 98,
   "weight": 70,
   "height": 170,
-  "bmi": 24.2,
+  "bloodGlucose": 110,
   "notes": "Post-consultation check"
 }
 ```
@@ -1677,20 +1710,44 @@ Record a new vitals snapshot for the patient.
 | `spo2` | integer | % | Oxygen saturation |
 | `weight` | float | kg | |
 | `height` | float | cm | |
-| `bmi` | float | kg/m² | Can be calculated client-side |
+| `bloodGlucose` | float | mg/dL | Optional |
+| `temperatureUnit` | string | — | Optional: `F` default, or `C` for Celsius validation |
 | `notes` | string | — | Optional doctor notes |
 
-**Response (200):**
+**Response (201):**
 
 ```json
 {
   "success": true,
-  "message": "Vitals recorded successfully",
-  "vitals": { "patientId": 42, "bp": "120/80", "heartRate": 72, ... }
+  "vitals": {
+    "id": 101,
+    "patient_id": 42,
+    "recorded_by_doctor_id": 7,
+    "bp": "120/80",
+    "heart_rate": 72,
+    "temperature": "98.60",
+    "spo2": 98,
+    "weight": "70.00",
+    "height": "170.00",
+    "blood_glucose": "110.00",
+    "notes": "Post-consultation check",
+    "recorded_at": "2026-06-13T10:30:00.000Z"
+  },
+  "intelligence": {
+    "score": { "news2": 0, "qsofa": 0, "alertRequired": false },
+    "alert": null
+  }
 }
 ```
 
-> **Note:** If the `patient_vitals` table doesn't exist yet (graceful fallback), the endpoint still returns 200 with a warning flag `{ "tableNotReady": true }`.
+**Validation and storage notes:**
+
+- The backend verifies the authenticated doctor has a patient relationship before writing vitals.
+- `bp` must use `systolic/diastolic` format, e.g. `120/80`.
+- `heartRate` must be an integer between 20 and 300.
+- `spo2` must be an integer between 0 and 100.
+- `temperature` defaults to Fahrenheit validation; pass `temperatureUnit: "C"` if sending Celsius.
+- The `patient_vitals` table is now created by startup migration. A `VITALS_TABLE_NOT_READY` response should be treated as a deployment/migration issue, not a normal mobile fallback.
 
 ### 9.9 Add Medical History Entry
 
@@ -2706,6 +2763,66 @@ Process multiple dictations at once (max 10).
   "errors": []
 }
 ```
+
+### 14.10 Doctor iSHA Assistant (Text / Voice Agent)
+
+Use this endpoint for the doctor assistant chat/voice command layer. The same endpoint handles navigation, patient search, tasks, clinical Q&A, and appointment read/write actions.
+
+```
+POST /api/voice-assistant/agent
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request:**
+
+```json
+{
+  "text": "Show today's appointments",
+  "context": { "currentScreen": "dashboard" },
+  "history": []
+}
+```
+
+**Appointment-list behavior:**
+
+For appointment listing commands such as `Show today's appointments`, `List upcoming appointments`, `Show pending appointments`, or `Show completed appointments`, the backend bypasses LLM-generated content and queries the live `appointments` table for the authenticated doctor. The response must not be treated as sample data.
+
+**Response (200):**
+
+```json
+{
+  "intent": "action",
+  "action": "list_appointments",
+  "parameters": { "filter": "today" },
+  "response": "You have 2 appointments today:\n• 10:00 — Arjun Kumar (confirmed): consultation\n• 11:30 — Meera Shah (pending): follow-up",
+  "speak": "You have 2 appointments today. 10:00 Arjun Kumar, 11:30 Meera Shah.",
+  "data": [
+    {
+      "id": 123,
+      "appointmentId": "APPT-123",
+      "appointmentDate": "2026-06-13",
+      "appointmentTime": "10:00:00",
+      "status": "confirmed",
+      "patientName": "Arjun Kumar",
+      "reason": "consultation"
+    }
+  ],
+  "requiresConfirmation": false
+}
+```
+
+**Supported appointment filters:**
+
+| User wording | Filter sent/returned |
+|---|---|
+| `today's appointments`, `today appointments` | `today` |
+| `upcoming appointments`, `next appointments` | `upcoming` |
+| `pending appointments`, `appointment requests` | `pending` |
+| `completed appointments`, `past appointments` | `completed` |
+| `all appointments` | `all` |
+
+Other iSHA actions continue through the assistant router. For navigation and search actions, execute the returned `action` and `parameters` on the mobile client after playing `speak` if needed.
 
 ---
 
@@ -3880,9 +3997,9 @@ export const DoctorImaging = {
 ### A.5 Schedule Management (Web / Doctor Settings)
 
 ```
-1. GET  /api/doctor-settings/appointment-config  → Load current config
-2. PUT  /api/doctor-settings/appointment-config  → Update fees, slot duration
-3. PUT  /api/doctor-settings/weekly-schedule/monday → Set Monday hours
+1. GET  /api/doctor-settings/appointment-config  → Load current config including blockedSlots and practiceLocations
+2. PUT  /api/doctor-settings/appointment-config  → Update fees, slot duration, practiceLocations, and blocked slots
+3. PUT  /api/doctor-settings/weekly-schedule/monday → Set Monday hours and blockedSlots
 4. PUT  /api/doctor-settings/off-days → Set off days
 5. POST /api/doctors/:id/availability/bulk → Bulk set weekly schedule
 ```

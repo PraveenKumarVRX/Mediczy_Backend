@@ -45,6 +45,13 @@ const SUPPORTED_TYPES = [
   { type: 'SIU^S12', description: 'Notification of New Appointment (Scheduling)', trigger: 'AppointmentScheduled', standard: 'HL7 v2.5.1 §10.3.2' },
   { type: 'SIU^S14', description: 'Appointment Modification', trigger: 'AppointmentModified', standard: 'HL7 v2.5.1 §10.3.4' },
   { type: 'ACK',     description: 'General Acknowledgement', trigger: 'Acknowledgement',    standard: 'HL7 v2.5.1 §2.9' },
+  // ── MFN — Master File Notifications (GAP-6) ──────────────────────────────────
+  { type: 'MFN^M01', description: 'Master File — Generic',                          trigger: 'MasterFileGenericUpdated',      standard: 'HL7 v2.5.1 §8.3.1' },
+  { type: 'MFN^M02', description: 'Master File — Staff/Practitioner (HPR sync)',    trigger: 'MasterFilePractitionerUpdated', standard: 'HL7 v2.5.1 §8.3.2', loincMapped: false },
+  { type: 'MFN^M04', description: 'Master File — Charge Description Master (CDM)', trigger: 'MasterFileChargeUpdated',       standard: 'HL7 v2.5.1 §8.3.4' },
+  { type: 'MFN^M05', description: 'Master File — Location (Ward/Room/Bed)',         trigger: 'MasterFileLocationUpdated',     standard: 'HL7 v2.5.1 §8.3.5' },
+  { type: 'MFN^M08', description: 'Master File — Lab Test/Observation Catalogue',  trigger: 'MasterFileLabTestUpdated',      standard: 'HL7 v2.5.1 §8.3.8', loincMapped: true },
+  { type: 'MFN^M12', description: 'Master File — Basic Observation/Vital Signs',   trigger: 'MasterFileObservationUpdated',  standard: 'HL7 v2.5.1 §8.3.12', loincMapped: true },
 ];
 
 // ── HL7 v2 Validator ─────────────────────────────────────────────────────────

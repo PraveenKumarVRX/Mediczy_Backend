@@ -228,6 +228,14 @@ import { sibAIGuard, attachAIReporter } from './middleware/sib-ai-guard.middlewa
 // Phase 4: FHIR R4 Interoperability
 import fhirRouter from './routes/fhir.route.js';
 
+// Interoperability — GAP implementations (all 8 gaps)
+import sftpRouter        from './routes/sftp.route.js';
+import cdaRouter         from './routes/cda.route.js';
+import nabhjciRouter     from './routes/nabh-jci.route.js';
+import iso27001Router    from './routes/iso27001.route.js';
+import x12nEdiRouter     from './routes/x12n-edi.route.js';
+import abdmRouter        from './routes/abdm.route.js';
+
 // HyperGrid — IoT/Interoperability/AI Platform
 import hypergridMqttRouter        from './routes/hypergrid-mqtt.route.js';
 import hypergridEventsRouter       from './routes/hypergrid-events.route.js';
@@ -1525,6 +1533,14 @@ app.use('/api/superadmin/tenants', superAdminTenantRouter); // Super admin tenan
 
 // Phase 4: FHIR R4 API — Interoperability endpoints (metadata is public per FHIR spec)
 app.use('/api/fhir/r4', fhirRouter);
+
+// ============== INTEROPERABILITY — GAP IMPLEMENTATIONS ==============
+app.use('/api/sftp',       sftpRouter);        // GAP-5: SFTP/FTPS file exchange (AES-256-GCM creds)
+app.use('/api/cda',        cdaRouter);         // GAP-7: CDA R2 discharge, referral, CCD, imaging
+app.use('/api/compliance', nabhjciRouter);     // GAP-3: NABH 5th Ed + JCI 8th Ed compliance
+app.use('/api/iso27001',   iso27001Router);    // GAP-4: ISO 27001:2022 — 93 controls, SoA, risk register
+app.use('/api/edi',        x12nEdiRouter);     // GAP-1: X12N EDI 270/271/837P/837I/835/278 (HIPAA 5010)
+app.use('/api/abdm',       abdmRouter);        // GAP-2: Live ABDM/ABHA client (consent, PHI, care-context)
 
 // ============== HYPERGRID — IoT / Interoperability / AI Platform ==============
 app.use('/api/hypergrid/mqtt',        hypergridMqttRouter);

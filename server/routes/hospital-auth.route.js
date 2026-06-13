@@ -28,9 +28,114 @@ const REFRESH_SCOPE = 'hospital';
 const LOCKOUT_MAX_ATTEMPTS = 10;   // failed logins before 15-min lockout
 const LOCKOUT_WINDOW_MIN   = 15;
 
+// ─── Interop config helpers ───────────────────────────────────────────────────
+const APP_BASE = process.env.APP_BASE_URL || 'https://app.mediqzy.com';
+
+async function ensureInteropTables() {
+  await sharedPool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_interop_config (
+      tenant_id          INTEGER PRIMARY KEY,
+      fhir_base_url      TEXT,
+      hl7_facility_id    VARCHAR(50),
+      hl7_sending_app    VARCHAR(50) DEFAULT 'MEDICZY_HMIS',
+      dicom_ae_title     VARCHAR(16),
+      abdm_hip_id        VARCHAR(50),
+      smart_auth_url     TEXT,
+      terminology_url    TEXT,
+      created_at         TIMESTAMPTZ DEFAULT NOW(),
+      updated_at         TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS fhir_audit_events (
+      id             BIGSERIAL PRIMARY KEY,
+      tenant_id      INTEGER,
+      user_id        TEXT,
+      action         VARCHAR(50) NOT NULL,
+      resource_type  VARCHAR(50) DEFAULT 'AuditEvent',
+      outcome        VARCHAR(10) NOT NULL,
+      ip_address     TEXT,
+      user_agent     TEXT,
+      detail         JSONB,
+      recorded_at    TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_fhir_audit_tenant ON fhir_audit_events(tenant_id, recorded_at);
+  `);
+}
+
+async function loadInteropConfig(tenantId) {
+  if (!tenantId) return buildDefaultInteropConfig(null);
+  try {
+    const { rows } = await sharedPool.query(
+      'SELECT * FROM tenant_interop_config WHERE tenant_id = $1',
+      [tenantId]
+    );
+    if (rows.length) return buildInteropConfigFromRow(rows[0]);
+    // Auto-provision default config for new tenant
+    const facilityId = `MQZ-${String(tenantId).padStart(6, '0')}`;
+    await sharedPool.query(
+      `INSERT INTO tenant_interop_config (tenant_id, fhir_base_url, hl7_facility_id, dicom_ae_title, smart_auth_url, terminology_url)
+       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (tenant_id) DO NOTHING`,
+      [
+        tenantId,
+        `${APP_BASE}/api/fhir/r4`,
+        facilityId,
+        `MEDICZY_${String(tenantId).padStart(4, '0')}`,
+        `${APP_BASE}/api/hypergrid/smart`,
+        `${APP_BASE}/api/hypergrid/terminology`,
+      ]
+    );
+    return buildDefaultInteropConfig(tenantId);
+  } catch {
+    return buildDefaultInteropConfig(tenantId);
+  }
+}
+
+function buildDefaultInteropConfig(tenantId) {
+  const facilityId = tenantId ? `MQZ-${String(tenantId).padStart(6, '0')}` : 'MQZ-GLOBAL';
+  return {
+    fhirBaseUrl:      `${APP_BASE}/api/fhir/r4`,
+    hl7FacilityId:    facilityId,
+    hl7SendingApp:    'MEDICZY_HMIS',
+    dicomAeTitle:     tenantId ? `MEDICZY_${String(tenantId).padStart(4, '0')}` : 'MEDICZY_PACS',
+    abdmHipId:        null,
+    smartAuthUrl:     `${APP_BASE}/api/hypergrid/smart`,
+    terminologyUrl:   `${APP_BASE}/api/hypergrid/terminology`,
+  };
+}
+
+function buildInteropConfigFromRow(row) {
+  return {
+    fhirBaseUrl:    row.fhir_base_url      || `${APP_BASE}/api/fhir/r4`,
+    hl7FacilityId:  row.hl7_facility_id    || 'MQZ-GLOBAL',
+    hl7SendingApp:  row.hl7_sending_app    || 'MEDICZY_HMIS',
+    dicomAeTitle:   row.dicom_ae_title     || 'MEDICZY_PACS',
+    abdmHipId:      row.abdm_hip_id        || null,
+    smartAuthUrl:   row.smart_auth_url     || `${APP_BASE}/api/hypergrid/smart`,
+    terminologyUrl: row.terminology_url    || `${APP_BASE}/api/hypergrid/terminology`,
+  };
+}
+
+async function emitFhirAuditEvent({ tenantId, userId, action, outcome, req, detail }) {
+  try {
+    await sharedPool.query(
+      `INSERT INTO fhir_audit_events (tenant_id, user_id, action, outcome, ip_address, user_agent, detail)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [
+        tenantId || null,
+        String(userId || 'unknown'),
+        action,
+        outcome,
+        req?.ip || req?.headers?.['x-forwarded-for'] || null,
+        req?.headers?.['user-agent'] || null,
+        detail ? JSON.stringify(detail) : null,
+      ]
+    );
+  } catch { /* non-fatal — audit failure must never break login */ }
+}
+
 // ─── Ensure hospital_refresh_tokens table exists (idempotent) ─────────────────
 (async () => {
   try {
+    await ensureInteropTables();
     await sharedPool.query(`
       CREATE TABLE IF NOT EXISTS api_v2_refresh_tokens (
         id             BIGSERIAL   PRIMARY KEY,
@@ -433,6 +538,8 @@ export const hospitalLogin = async (req, res) => {
 
       await clearFailedAttempts(normalizedEmail);
       await auditLoginAttempt(req, user.id, normalizedEmail, true);
+      const interopConfig = await loadInteropConfig(tenant.id);
+      await emitFhirAuditEvent({ tenantId: tenant.id, userId: user.id, action: 'login', outcome: 'success', req });
 
       return res.json({
         success: true,
@@ -457,7 +564,8 @@ export const hospitalLogin = async (req, res) => {
           type: tenant.type,
           plan: tenant.plan,
           status: tenant.status
-        }
+        },
+        interopConfig,
       });
     }
 
@@ -486,6 +594,8 @@ export const hospitalLogin = async (req, res) => {
 
     await clearFailedAttempts(normalizedEmail);
     await auditLoginAttempt(req, hospital.id, normalizedEmail, true);
+    const interopConfig = await loadInteropConfig(hospital.tenantId || null);
+    await emitFhirAuditEvent({ tenantId: hospital.tenantId || null, userId: hospital.id, action: 'login', outcome: 'success', req });
 
     res.json({
       success: true,
@@ -502,7 +612,8 @@ export const hospitalLogin = async (req, res) => {
         status: hospital.status,
         totalBeds: hospital.totalBeds,
         availableBeds: hospital.availableBeds
-      }
+      },
+      interopConfig,
     });
   } catch (error) {
     console.error('Hospital login error:', error);
@@ -616,6 +727,8 @@ export const hospitalLoginV2 = async (req, res) => {
 
       await clearFailedAttempts(email);
       await auditLoginAttempt(req, user.id, email, true);
+      const interopCfgV2 = await loadInteropConfig(tenant.id);
+      await emitFhirAuditEvent({ tenantId: tenant.id, userId: user.id, action: 'login', outcome: 'success', req });
 
       return res.json({
         success: true,
@@ -628,7 +741,8 @@ export const hospitalLoginV2 = async (req, res) => {
           subdomain: tenant.subdomain, custom_domain: tenant.custom_domain,
           email: tenant.email, phone: tenant.phone, type: tenant.type,
           plan: tenant.plan, status: tenant.status
-        }
+        },
+        interopConfig: interopCfgV2,
       });
     }
 
@@ -659,6 +773,8 @@ export const hospitalLoginV2 = async (req, res) => {
 
     await clearFailedAttempts(email);
     await auditLoginAttempt(req, hospital.id, email, true);
+    const interopCfgLegacy = await loadInteropConfig(hospital.tenantId || null);
+    await emitFhirAuditEvent({ tenantId: hospital.tenantId || null, userId: hospital.id, action: 'login', outcome: 'success', req });
 
     return res.json({
       success: true,
@@ -669,7 +785,8 @@ export const hospitalLoginV2 = async (req, res) => {
         id: hospital.id, hospitalName: hospital.hospitalName, email: hospital.email,
         phoneNumber: hospital.phoneNumber, city: hospital.city, state: hospital.state,
         status: hospital.status, totalBeds: hospital.totalBeds, availableBeds: hospital.availableBeds
-      }
+      },
+      interopConfig: interopCfgLegacy,
     });
 
   } catch (error) {
@@ -743,13 +860,16 @@ export const hospitalLoginTenant = async (req, res) => {
 
     await clearFailedAttempts(normalizedEmail);
     await auditLoginAttempt(req, user.id, email, true);
+    const interopCfgTenant = await loadInteropConfig(tenant.id);
+    await emitFhirAuditEvent({ tenantId: tenant.id, userId: user.id, action: 'login', outcome: 'success', req });
 
     res.json({
       success: true,
       message: 'Login successful',
       token: accessToken,
       refreshToken,
-      hospital: { id: tenant.id, name: tenant.name, subdomain: tenant.subdomain, slug: tenant.slug }
+      hospital: { id: tenant.id, name: tenant.name, subdomain: tenant.subdomain, slug: tenant.slug },
+      interopConfig: interopCfgTenant,
     });
   } catch (error) {
     console.error('Hospital tenant login error:', error);

@@ -193,6 +193,11 @@ class InitializationController {
         console.warn('⚠️  ai-prompt-versions migration skipped:', e.message)
       );
 
+      const { runPatientVitalsMigration } = await import('../migrations/patient-vitals.migration.js');
+      await runPatientVitalsMigration().catch(e =>
+        console.warn('⚠️  patient_vitals migration skipped:', e.message)
+      );
+
       // Feedback Aggregator — bridges patient_feedback, ai_cdss_feedback, tickets
       // into unified_feedback_signals (every 15 min).  Must start before the
       // self-learning pipeline so the first pipeline run finds data ready.

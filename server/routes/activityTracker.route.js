@@ -18,6 +18,7 @@ async function ensureTable() {
       date DATE NOT NULL DEFAULT CURRENT_DATE,
       steps INTEGER DEFAULT 0,
       stairs INTEGER DEFAULT 0,
+      distance_meters NUMERIC(10,2),
       calories_burned INTEGER DEFAULT 0,
       calories_consumed INTEGER DEFAULT 0,
       exercise_type TEXT,
@@ -37,6 +38,7 @@ async function ensureTable() {
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE(user_id, date)
     );
+    ALTER TABLE daily_activity ADD COLUMN IF NOT EXISTS distance_meters NUMERIC(10,2);
     CREATE INDEX IF NOT EXISTS daily_activity_user_date ON daily_activity (user_id, date DESC);
   `);
   tableReady = true;
@@ -59,16 +61,18 @@ router.post('/log', authLimiter, authUser, auditHealthAccess('ACTIVITY_LOG_WRITE
     await ensureTable();
     const userId = req.user.id;
     const {
-      date, steps, stairs, caloriesBurned, caloriesConsumed,
+      date, steps, stairs, distanceMeters, caloriesBurned, caloriesConsumed,
       exerciseType, exerciseMinutes, sleepHours, sleepQuality,
       heartRate, bpSystolic, bpDiastolic, spo2, temperature,
-      weight, bloodSugar, notes
+      weight, bloodSugar, notes,
+      source = 'manual'
     } = req.body;
 
     // ── Input validation ──────────────────────────────────────────────────────
     try {
       validateRange('steps', steps, 0, 100000);
       validateRange('stairs', stairs, 0, 10000);
+      validateRange('distanceMeters', distanceMeters, 0, 200000);
       validateRange('caloriesBurned', caloriesBurned, 0, 20000);
       validateRange('caloriesConsumed', caloriesConsumed, 0, 20000);
       validateRange('exerciseMinutes', exerciseMinutes, 0, 1440);
@@ -91,19 +95,20 @@ router.post('/log', authLimiter, authUser, auditHealthAccess('ACTIVITY_LOG_WRITE
 
     const [rows] = await postgresSequelize.query(`
       INSERT INTO daily_activity (
-        user_id, date, steps, stairs, calories_burned, calories_consumed,
+        user_id, date, steps, stairs, distance_meters, calories_burned, calories_consumed,
         exercise_type, exercise_minutes, sleep_hours, sleep_quality,
         heart_rate, blood_pressure_systolic, blood_pressure_diastolic,
         spo2, temperature, weight, blood_sugar, notes, source
       ) VALUES (
-        :userId, :date, :steps, :stairs, :caloriesBurned, :caloriesConsumed,
+        :userId, :date, :steps, :stairs, :distanceMeters, :caloriesBurned, :caloriesConsumed,
         :exerciseType, :exerciseMinutes, :sleepHours, :sleepQuality,
         :heartRate, :bpSystolic, :bpDiastolic,
-        :spo2, :temperature, :weight, :bloodSugar, :notes, 'manual'
+        :spo2, :temperature, :weight, :bloodSugar, :notes, :source
       )
       ON CONFLICT (user_id, date) DO UPDATE SET
         steps = COALESCE(EXCLUDED.steps, daily_activity.steps),
         stairs = COALESCE(EXCLUDED.stairs, daily_activity.stairs),
+        distance_meters = COALESCE(EXCLUDED.distance_meters, daily_activity.distance_meters),
         calories_burned = COALESCE(EXCLUDED.calories_burned, daily_activity.calories_burned),
         calories_consumed = COALESCE(EXCLUDED.calories_consumed, daily_activity.calories_consumed),
         exercise_type = COALESCE(EXCLUDED.exercise_type, daily_activity.exercise_type),
@@ -118,6 +123,7 @@ router.post('/log', authLimiter, authUser, auditHealthAccess('ACTIVITY_LOG_WRITE
         weight = COALESCE(EXCLUDED.weight, daily_activity.weight),
         blood_sugar = COALESCE(EXCLUDED.blood_sugar, daily_activity.blood_sugar),
         notes = COALESCE(EXCLUDED.notes, daily_activity.notes),
+        source = EXCLUDED.source,
         updated_at = NOW()
       RETURNING *
     `, {
@@ -126,6 +132,7 @@ router.post('/log', authLimiter, authUser, auditHealthAccess('ACTIVITY_LOG_WRITE
         date: targetDate,
         steps: steps ?? null,
         stairs: stairs ?? null,
+        distanceMeters: distanceMeters ?? null,
         caloriesBurned: caloriesBurned ?? null,
         caloriesConsumed: caloriesConsumed ?? null,
         exerciseType: exerciseType ?? null,
@@ -139,7 +146,8 @@ router.post('/log', authLimiter, authUser, auditHealthAccess('ACTIVITY_LOG_WRITE
         temperature: temperature ?? null,
         weight: weight ?? null,
         bloodSugar: bloodSugar ?? null,
-        notes: notes ?? null
+        notes: notes ?? null,
+        source: ['manual', 'health_connect', 'wearable', 'device'].includes(source) ? source : 'manual'
       },
       type: QueryTypes.INSERT
     });
@@ -245,10 +253,103 @@ router.get('/summary', authUser, async (req, res) => {
   }
 });
 
+// ── POST /api/activity-tracker/health-connect/sync — Bulk sync from Google Health Connect ──
+// Mobile app sends an array of daily records; each is upserted by (user_id, date).
+router.post('/health-connect/sync', authLimiter, authUser, auditHealthAccess('ACTIVITY_LOG_WRITE'), async (req, res) => {
+  try {
+    await ensureTable();
+    const userId = req.user.id;
+    const { records } = req.body;
+
+    if (!Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({ success: false, error: 'records must be a non-empty array' });
+    }
+    if (records.length > 366) {
+      return res.status(400).json({ success: false, error: 'Maximum 366 records per sync' });
+    }
+
+    const results = [];
+    for (const rec of records) {
+      const {
+        date, steps, stairs, distanceMeters, caloriesBurned, caloriesConsumed,
+        exerciseType, exerciseMinutes, sleepHours, sleepQuality,
+        heartRate, bpSystolic, bpDiastolic, spo2, temperature,
+        weight, bloodSugar, notes
+      } = rec;
+
+      if (!date) continue;
+
+      const [rows] = await postgresSequelize.query(`
+        INSERT INTO daily_activity (
+          user_id, date, steps, stairs, distance_meters, calories_burned, calories_consumed,
+          exercise_type, exercise_minutes, sleep_hours, sleep_quality,
+          heart_rate, blood_pressure_systolic, blood_pressure_diastolic,
+          spo2, temperature, weight, blood_sugar, notes, source
+        ) VALUES (
+          :userId, :date, :steps, :stairs, :distanceMeters, :caloriesBurned, :caloriesConsumed,
+          :exerciseType, :exerciseMinutes, :sleepHours, :sleepQuality,
+          :heartRate, :bpSystolic, :bpDiastolic,
+          :spo2, :temperature, :weight, :bloodSugar, :notes, 'health_connect'
+        )
+        ON CONFLICT (user_id, date) DO UPDATE SET
+          steps = COALESCE(EXCLUDED.steps, daily_activity.steps),
+          stairs = COALESCE(EXCLUDED.stairs, daily_activity.stairs),
+          distance_meters = COALESCE(EXCLUDED.distance_meters, daily_activity.distance_meters),
+          calories_burned = COALESCE(EXCLUDED.calories_burned, daily_activity.calories_burned),
+          calories_consumed = COALESCE(EXCLUDED.calories_consumed, daily_activity.calories_consumed),
+          exercise_type = COALESCE(EXCLUDED.exercise_type, daily_activity.exercise_type),
+          exercise_minutes = COALESCE(EXCLUDED.exercise_minutes, daily_activity.exercise_minutes),
+          sleep_hours = COALESCE(EXCLUDED.sleep_hours, daily_activity.sleep_hours),
+          sleep_quality = COALESCE(EXCLUDED.sleep_quality, daily_activity.sleep_quality),
+          heart_rate = COALESCE(EXCLUDED.heart_rate, daily_activity.heart_rate),
+          blood_pressure_systolic = COALESCE(EXCLUDED.blood_pressure_systolic, daily_activity.blood_pressure_systolic),
+          blood_pressure_diastolic = COALESCE(EXCLUDED.blood_pressure_diastolic, daily_activity.blood_pressure_diastolic),
+          spo2 = COALESCE(EXCLUDED.spo2, daily_activity.spo2),
+          temperature = COALESCE(EXCLUDED.temperature, daily_activity.temperature),
+          weight = COALESCE(EXCLUDED.weight, daily_activity.weight),
+          blood_sugar = COALESCE(EXCLUDED.blood_sugar, daily_activity.blood_sugar),
+          notes = COALESCE(EXCLUDED.notes, daily_activity.notes),
+          source = 'health_connect',
+          updated_at = NOW()
+        RETURNING id, date
+      `, {
+        replacements: {
+          userId,
+          date,
+          steps: steps ?? null,
+          stairs: stairs ?? null,
+          distanceMeters: distanceMeters ?? null,
+          caloriesBurned: caloriesBurned ?? null,
+          caloriesConsumed: caloriesConsumed ?? null,
+          exerciseType: exerciseType ?? null,
+          exerciseMinutes: exerciseMinutes ?? null,
+          sleepHours: sleepHours ?? null,
+          sleepQuality: sleepQuality ?? null,
+          heartRate: heartRate ?? null,
+          bpSystolic: bpSystolic ?? null,
+          bpDiastolic: bpDiastolic ?? null,
+          spo2: spo2 ?? null,
+          temperature: temperature ?? null,
+          weight: weight ?? null,
+          bloodSugar: bloodSugar ?? null,
+          notes: notes ?? null,
+        },
+        type: QueryTypes.INSERT
+      });
+      if (rows) results.push(rows[0] || rows);
+    }
+
+    res.json({ success: true, synced: results.length });
+  } catch (error) {
+    console.error('[ActivityTracker] Health Connect sync error:', error);
+    res.status(500).json({ success: false, error: 'Health Connect sync failed' });
+  }
+});
+
 // ── GET /api/activity-tracker — Status endpoint ──
 router.get('/', authUser, async (req, res) => {
   await ensureTable();
-  res.json({ success: true, message: 'Activity Tracker API', endpoints: ['/log', '/today', '/history', '/summary'] });
+  res.json({ success: true, message: 'Activity Tracker API', endpoints: ['/log', '/health-connect/sync', '/today', '/history', '/summary'] });
 });
 
 export default router;

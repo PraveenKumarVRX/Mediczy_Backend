@@ -1,6 +1,6 @@
 # Mediczy — Patient Mobile App API Guide
 
-> **Version:** 2.7 | **Last Updated:** 2026-05-30
+> **Version:** 2.8 | **Last Updated:** 2026-06-13
 
 - **Base URL:** `https://app.mediqzy.com/api`
 - **Auth:** `Authorization: Bearer <jwt-token>` (JWT, expires 7 days)
@@ -1063,7 +1063,7 @@ GET /api/wallet/rewards                  🔐  Packages (HEALTH_COINS_PRICING) +
 | Daily login | `POST /api/wallet/earn/daily-login` | Streak bonus applied automatically |
 | Step count | `POST /api/wallet/earn/steps` | Body: `{ "steps": 10000 }` |
 | Health assessment | `POST /api/wallet/earn/health-assessment` | After completing §20 assessment |
-| Log vital signs | `POST /api/wallet/earn/vital-signs` | Body: `{ "vitalData": { ... } }` |
+| Vital signs reward | `POST /api/wallet/earn/vital-signs` | Reward-only endpoint. It does not persist vitals payload; store manual vitals via `/api/activity-tracker/log` or synced vitals via `/api/health-data/*`. |
 | Any activity | `POST /api/wallet/earn/activity` | Body: `{ "activityType": "meditation", "value": 30 }` |
 
 **Daily login response:**
@@ -3187,7 +3187,7 @@ DELETE /api/fitness/health-connect/disconnect   🔐  Disconnect (optional `?del
 POST /api/health-data/ble-sync               🔐  Sync BLE device data
 GET  /api/health-data/recent                 🔐  Recent health data
 GET  /api/health-data/summary                🔐  Health data summary
-GET  /api/health-data/trends/:dataType       🔐  Trends (bp, heartRate, spo2, temperature)
+GET  /api/health-data/trends/:dataType       🔐  Trends (heart_rate, blood_pressure_systolic, blood_pressure_diastolic, spo2, temperature)
 GET  /api/health-data/history/:dataType      🔐  History by type
 GET  /api/health-data/devices                🔐  List connected devices
 POST /api/health-data/devices/register       🔐  Register device
@@ -3196,6 +3196,51 @@ POST /api/health-data/veepoo-sync            🔐  Veepoo watch sync
 POST /api/health-data/apple-health-sync      🔐  Apple Health sync
 POST /api/health-data/google-fit-sync        🔐  Google Fit sync
 ```
+
+**Where user vitals are stored:**
+
+- BLE, Apple Health, Google Fit, Veepoo, and wearable sync endpoints persist time-series readings in the Postgres `health_data` table.
+- Each row is scoped by authenticated `user_id` and has `data_type`, `value`, `unit`, `source`, `device_id`, `recorded_at`, and optional `metadata`.
+- Compound BP readings from `/api/health-data/ble-sync` are split into `blood_pressure_systolic` and `blood_pressure_diastolic` rows.
+- Read back synced vitals with `GET /api/health-data/recent?type=spo2`, `GET /api/health-data/history/:dataType`, `GET /api/health-data/trends/:dataType`, or `GET /api/health/latest`.
+
+**Canonical synced vitals data types:**
+
+| Metric | `dataType` | Unit |
+|---|---|---|
+| Heart rate | `heart_rate` | `bpm` |
+| Blood pressure systolic | `blood_pressure_systolic` | `mmHg` |
+| Blood pressure diastolic | `blood_pressure_diastolic` | `mmHg` |
+| SpO2 | `spo2` | `%` |
+| Temperature | `temperature` | `C` or `F` as supplied |
+| Blood glucose | `blood_glucose` | `mg/dL` |
+| Weight | `weight` | `kg` |
+
+**BLE vitals sync example:**
+
+```json
+{
+  "readings": [
+    { "type": "heart_rate", "value": 78, "unit": "bpm", "timestamp": "2026-06-13T09:30:00Z", "deviceId": "bp-watch-001" },
+    { "type": "blood_pressure", "value": { "systolic": 120, "diastolic": 80 }, "unit": "mmHg", "timestamp": "2026-06-13T09:31:00Z", "deviceId": "bp-watch-001" },
+    { "type": "spo2", "value": 98, "unit": "%", "timestamp": "2026-06-13T09:32:00Z", "deviceId": "pulse-ox-001" }
+  ]
+}
+```
+
+**BLE response:**
+
+```json
+{
+  "success": true,
+  "processedCount": 4,
+  "totalReceived": 3,
+  "rejectedCount": 0,
+  "rejected": []
+}
+```
+
+> `processedCount` can be greater than `totalReceived` because compound BP creates separate systolic and diastolic rows.
 
 ### 22.4 Apple Health
 ```
@@ -3798,32 +3843,79 @@ GET  /api/activity-tracker/history   🔐  Activity history (with date range)
 GET  /api/activity-tracker/summary   🔐  Aggregated stats
 GET  /api/activity-tracker/          🔐  All activity records (paginated)
 ```
-**Log Activity Body:**
+**Log Activity / Manual Vitals Body:**
+
+Manual user-entered vitals from the patient app are persisted in the Postgres `daily_activity` table, one row per authenticated `user_id` + `date`. Re-posting for the same date updates only the supplied fields and preserves existing values for omitted fields.
+
 ```json
 {
-  "activity_type": "steps",
-  "value": 8500,
-  "unit": "count",
-  "date": "2026-04-18",
-  "metadata": { "source": "manual", "deviceId": "phone" }
+  "date": "2026-06-13",
+  "steps": 8500,
+  "stairs": 12,
+  "caloriesBurned": 320,
+  "caloriesConsumed": 1850,
+  "exerciseType": "walking",
+  "exerciseMinutes": 35,
+  "sleepHours": 7.5,
+  "sleepQuality": "good",
+  "heartRate": 78,
+  "bpSystolic": 120,
+  "bpDiastolic": 80,
+  "spo2": 98,
+  "temperature": 36.8,
+  "weight": 70.4,
+  "bloodSugar": 104,
+  "notes": "Morning reading after breakfast"
 }
 ```
-> Supported `activity_type` values: `steps` | `stairs` | `sleep` | `exercise` | `calories` | `heart_rate` | `blood_pressure` | `spo2` | `weight` | `water_intake`
 
-**Today Summary Response:**
+**Manual vitals fields and validation:**
+
+| Field | DB column | Range / values |
+|---|---|---|
+| `heartRate` | `heart_rate` | 30-250 bpm |
+| `bpSystolic` | `blood_pressure_systolic` | 50-300 mmHg |
+| `bpDiastolic` | `blood_pressure_diastolic` | 30-200 mmHg |
+| `spo2` | `spo2` | 50-100% |
+| `temperature` | `temperature` | 30-45 C |
+| `weight` | `weight` | 1-500 kg |
+| `bloodSugar` | `blood_sugar` | 20-800 mg/dL |
+| `sleepQuality` | `sleep_quality` | `poor`, `fair`, `good`, or `excellent` |
+
+**Log response:**
 ```json
 {
   "success": true,
-  "date": "2026-04-18",
-  "totals": {
+  "activity": {
+    "id": 501,
+    "user_id": 42,
+    "date": "2026-06-13",
+    "heart_rate": 78,
+    "blood_pressure_systolic": 120,
+    "blood_pressure_diastolic": 80,
+    "spo2": 98,
+    "temperature": "36.8",
+    "weight": "70.4",
+    "blood_sugar": 104,
+    "source": "manual"
+  }
+}
+```
+
+**Today response:**
+```json
+{
+  "success": true,
+  "activity": {
+    "date": "2026-06-13",
     "steps": 8500,
-    "calories": 320,
-    "sleep_hours": 7.5,
-    "exercise_minutes": 35
-  },
-  "goals": {
-    "steps_goal": 10000,
-    "steps_progress": 85
+    "heart_rate": 78,
+    "blood_pressure_systolic": 120,
+    "blood_pressure_diastolic": 80,
+    "spo2": 98,
+    "temperature": "36.8",
+    "weight": "70.4",
+    "blood_sugar": 104
   }
 }
 ```
@@ -4151,6 +4243,7 @@ Handle incoming FCM notifications by `type` field and navigate accordingly:
 - Queue wallet earn activities for sync
 - Use `/api/cart/sync` to merge offline cart on reconnect
 - Store health diary entries offline, sync on connection
+- Queue manual vitals using `/api/activity-tracker/log`; do not use `/api/wallet/earn/vital-signs` as the vitals storage API because it only awards HC coins.
 
 ### Key Libraries Needed
 | Platform | Library | Purpose |
@@ -4170,6 +4263,7 @@ Handle incoming FCM notifications by `type` field and navigate accordingly:
 
 | Date | Version | Changes |
 |---|---|---|
+| Jun 13, 2026 | 2.8 | §22/§36 clarified user vitals DB storage: synced device/Apple/Google/BLE readings persist in `health_data`; manual patient-app daily vitals persist in `daily_activity`; wallet vital-sign reward endpoint does not store the clinical reading payload. Updated Activity Tracker payload/response examples to match the backend route. |
 | Apr 25, 2026 | 2.4 | **Bug fixes & new endpoints:** §6 Added `GET /api/appointments/upcoming` named alias; §16 Added `GET /api/medical-ai/health-summary` (profile, BMI, conditions, upcoming count) as new §16.7, renumbered §16.7–16.10 → §16.8–16.11; §20 Added `GET /api/health-assessment/questions` (questionnaire schema) as new §20.1, added `GET /api/health-assessment/my` alias (200+null-safe) to §20.3, renumbered §20.2–20.5; §25 `GET /api/tts/voices` now returns static fallback list instead of 503 when ElevenLabs not configured; §41 Known Issues — removed two resolved entries (`/tts/voices`, `/appointments/upcoming`); **Mobile app fix:** `AI.drIsha` in `Utils/api.js` corrected to call `/medical-ai/consult` (real SIB backend) instead of static `/ai-health/dr-isha/consult`; `toReadableReply` in `AIAssistantScreen.js` updated to handle `chat_answer` field and `drIshaResponse` nested structure |
 | Apr 25, 2026 | 2.3 | §12 Wallet — 3-step HC purchase flow, appointment payment (calculate/can-pay/pay/refund), earn activities table; §13 Payments restructured — `/api/billing/payments/razorpay` + Stripe routes, state machine; §14 Billing — `POST /api/billing/orders` pharmacy, `GET stats`, full response shapes; §16 AI Doctor — expanded consult body/response, language list, emergency triage response, SOS notified-contacts response, instant triage call billing response, PHI-safe chat detail, Dr. iSHA rule-based consult, high-risk term list; §18 AI Intelligence — route prefix corrected to `/api/ai-intelligence/...` (was `/api/v3/`), drug interaction body fixed, triage body expanded, risk score, learning/quality endpoints added; §21 Health Intelligence — reminder types fixed (medication/checkup/lifestyle/diet/activity/vitals/lab_test), action body corrected; §22 Diet Plan — full body/response with macronutrients, meal plan, BMR/TDEE calculation |
 | Apr 19, 2026 | 2.1 | §3 Family member insurance CRUD (`/api/family-members/:id/insurances`); §9 Medical Reports `familyMemberId` upload + filter; §26 Insurance restructured with correct user policy path (`/api/users/my-insurances`) |

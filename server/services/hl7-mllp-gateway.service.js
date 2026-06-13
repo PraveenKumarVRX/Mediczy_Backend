@@ -229,6 +229,153 @@ function handleOrmO01(segments) {
   };
 }
 
+// ── MFN handlers (Master File Notifications — HL7 v2.5.1 §8) ─────────────────
+
+/**
+ * MFN^M02 — Master File — Staff/Practitioner
+ * Synchronises provider directory (HPR) with partner systems.
+ */
+function handleMfnM02(segments) {
+  const mfi = segments.MFI?.[0];
+  const mfes = segments.MFE || [];
+  const stfs  = segments.STF || [];
+  const practitioners = stfs.map((stf, i) => ({
+    staffId:       component(field(stf, 1), 0),
+    lastName:      component(field(stf, 3), 0),
+    firstName:     component(field(stf, 3), 1),
+    staffType:     field(stf, 4),   // e.g. 'MD', 'NP', 'RN'
+    specialty:     component(field(stf, 5), 0),
+    activeFlag:    field(stf, 7),   // 'Y' | 'N'
+    primaryDept:   component(field(stf, 8), 0),
+    effectiveDate: mfes[i] ? field(mfes[i], 3) : null,
+    actionCode:    mfes[i] ? field(mfes[i], 1) : 'MAD', // MAD=add, MDL=delete, MUP=update
+  }));
+  return {
+    type: 'MasterFilePractitionerUpdated',
+    source: 'hl7',
+    payload: {
+      masterFileId:  component(field(mfi, 1), 0),
+      responseLvl:   field(mfi, 3),
+      practitioners,
+    },
+  };
+}
+
+/**
+ * MFN^M04 — Master File — Charge Description Master (CDM)
+ * Synchronises procedure/fee schedule with partner billing systems.
+ */
+function handleMfnM04(segments) {
+  const mfi  = segments.MFI?.[0];
+  const mfes = segments.MFE || [];
+  const cdms = segments.CDM || [];
+  const charges = cdms.map((cdm, i) => ({
+    chargeCode:    component(field(cdm, 1), 0),
+    description:   field(cdm, 2),
+    chargeType:    field(cdm, 3),
+    cptCode:       component(field(cdm, 4), 0),
+    price:         parseFloat(field(cdm, 7)) || null,
+    activeFlag:    field(cdm, 8),
+    actionCode:    mfes[i] ? field(mfes[i], 1) : 'MAD',
+  }));
+  return {
+    type: 'MasterFileChargeUpdated',
+    source: 'hl7',
+    payload: {
+      masterFileId: component(field(mfi, 1), 0),
+      charges,
+    },
+  };
+}
+
+/**
+ * MFN^M05 — Master File — Location (Wards, Rooms, Beds)
+ * Synchronises hospital location hierarchy.
+ */
+function handleMfnM05(segments) {
+  const mfi  = segments.MFI?.[0];
+  const mfes = segments.MFE || [];
+  const locs = segments.LOC || [];
+  const locations = locs.map((loc, i) => ({
+    locationId:    component(field(loc, 1), 0),
+    description:   field(loc, 2),
+    locationType:  field(loc, 3),   // 'N'=nursing unit, 'R'=room, 'B'=bed, 'C'=clinic
+    organization:  component(field(loc, 4), 0),
+    status:        field(loc, 7),
+    actionCode:    mfes[i] ? field(mfes[i], 1) : 'MAD',
+  }));
+  return {
+    type: 'MasterFileLocationUpdated',
+    source: 'hl7',
+    payload: {
+      masterFileId: component(field(mfi, 1), 0),
+      locations,
+    },
+  };
+}
+
+/**
+ * MFN^M08 — Master File — Test/Observation (Lab catalogue, LOINC mapped)
+ * Synchronises lab test catalogue with reference ranges.
+ */
+function handleMfnM08(segments) {
+  const mfi  = segments.MFI?.[0];
+  const mfes = segments.MFE || [];
+  const oms3s = segments.OM3 || [];
+  const oms1s = segments.OM1 || [];
+  const tests = oms1s.map((om1, i) => ({
+    testCode:        component(field(om1, 2), 0),
+    loincCode:       component(field(om1, 2), 1),
+    testName:        field(om1, 3),
+    specimen:        field(om1, 15),
+    unit:            component(field(om1, 26), 0),
+    normalRange:     field(oms3s[i] || [], 5),
+    criticalHigh:    field(oms3s[i] || [], 8),
+    criticalLow:     field(oms3s[i] || [], 7),
+    processingTime:  field(om1, 27),
+    actionCode:      mfes[i] ? field(mfes[i], 1) : 'MAD',
+  }));
+  return {
+    type: 'MasterFileLabTestUpdated',
+    source: 'hl7',
+    payload: {
+      masterFileId: component(field(mfi, 1), 0),
+      tests,
+    },
+  };
+}
+
+/**
+ * MFN^M12 — Master File — Additional Basic Observation/Services
+ * Handles vital sign observation catalogue updates.
+ */
+function handleMfnM12(segments) {
+  const mfi  = segments.MFI?.[0];
+  const mfes = segments.MFE || [];
+  const oms1s = segments.OM1 || [];
+  const observations = oms1s.map((om1, i) => ({
+    observationId:  component(field(om1, 2), 0),
+    loincCode:      component(field(om1, 2), 1),
+    name:           field(om1, 3),
+    category:       field(om1, 5),
+    dataType:       field(om1, 20),
+    units:          component(field(om1, 26), 0),
+    actionCode:     mfes[i] ? field(mfes[i], 1) : 'MAD',
+  }));
+  return {
+    type: 'MasterFileObservationUpdated',
+    source: 'hl7',
+    payload: {
+      masterFileId: component(field(mfi, 1), 0),
+      observations,
+    },
+  };
+}
+
+// MFN action code labels for audit/logging
+const MFN_ACTION_LABELS = { MAD: 'add', MDL: 'delete', MUP: 'update', MDC: 'deactivate' };
+export { MFN_ACTION_LABELS };
+
 // ── Message dispatcher ────────────────────────────────────────────────────────
 
 function dispatchMessage(raw) {
@@ -244,9 +391,16 @@ function dispatchMessage(raw) {
     case 'ADT^A01': event = handleAdtA01(segments); break;
     case 'ADT^A02': event = handleAdtA02(segments); break;
     case 'ADT^A03': event = handleAdtA03(segments); break;
-    case 'ADT^A08': event = handleAdtA01(segments); if (event) event.type = 'PatientInfoUpdated'; break; // reuse A01 parser
+    case 'ADT^A08': event = handleAdtA01(segments); if (event) event.type = 'PatientInfoUpdated'; break;
     case 'ORU^R01': event = handleOruR01(segments); break;
     case 'ORM^O01': event = handleOrmO01(segments); break;
+    // ── MFN — Master File Notifications ───────────────────────────────────
+    case 'MFN^M01': event = { type: 'MasterFileGenericUpdated', source: 'hl7', payload: { raw: msgType } }; break;
+    case 'MFN^M02': event = handleMfnM02(segments); break;
+    case 'MFN^M04': event = handleMfnM04(segments); break;
+    case 'MFN^M05': event = handleMfnM05(segments); break;
+    case 'MFN^M08': event = handleMfnM08(segments); break;
+    case 'MFN^M12': event = handleMfnM12(segments); break;
     default:
       return { event: null, msh, error: `Unsupported message type: ${msgType}` };
   }

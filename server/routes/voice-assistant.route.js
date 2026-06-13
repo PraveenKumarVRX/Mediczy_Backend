@@ -513,6 +513,68 @@ async function executeListAppointments(doctorId, filter = 'today', limit = 10) {
   }
 }
 
+const normalizeAppointmentFilter = (rawFilter = 'today') => {
+  const VALID_FILTERS = ['today', 'upcoming', 'pending', 'completed', 'all'];
+  let filter = String(rawFilter || 'today').toLowerCase();
+  if (VALID_FILTERS.includes(filter)) return filter;
+  if (['confirmed', 'scheduled', 'booked'].includes(filter)) return 'upcoming';
+  if (['done', 'finished', 'past'].includes(filter)) return 'completed';
+  return 'today';
+};
+
+const inferAppointmentListFilter = (text) => {
+  const normalized = String(text || '').toLowerCase();
+  const mentionsAppointments = /\b(appointments?|bookings?|schedule)\b/.test(normalized);
+  if (!mentionsAppointments) return null;
+
+  if (/\b(open|go to|navigate|take me to)\b/.test(normalized)) return null;
+  if (/\b(reschedule|cancel|book|create|fix)\b/.test(normalized)) return null;
+
+  const asksToList = /\b(show|list|view|see|display|what|tell)\b/.test(normalized) ||
+    /\b(today[’']?s?|todays|upcoming|pending|completed|all)\b/.test(normalized);
+  if (!asksToList) return null;
+
+  if (/\b(today[’']?s?|todays)\b/.test(normalized)) return 'today';
+  if (/\b(upcoming|future|next)\b/.test(normalized)) return 'upcoming';
+  if (/\b(pending|requests?)\b/.test(normalized)) return 'pending';
+  if (/\b(completed|done|finished|past)\b/.test(normalized)) return 'completed';
+  if (/\b(all)\b/.test(normalized)) return 'all';
+  return 'today';
+};
+
+const buildAppointmentListPayload = async (doctorId, args = {}) => {
+  const filter = normalizeAppointmentFilter(args.filter || 'today');
+  const limit = args.limit ? (parseInt(args.limit, 10) || 10) : 10;
+  const rows = await executeListAppointments(doctorId, filter, limit);
+
+  if (!rows || rows.length === 0) {
+    const msg = filter === 'today'
+      ? 'You have no appointments scheduled for today.'
+      : `No ${filter} appointments found.`;
+    return { intent: 'action', action: 'list_appointments', parameters: args, response: msg, speak: msg, data: [], requiresConfirmation: false };
+  }
+
+  const lines = rows.map(a => {
+    const time = a.appointmentTime ? String(a.appointmentTime).slice(0, 5) : '';
+    const status = a.status || '';
+    const name = a.patientName || 'Unknown';
+    const reason = a.reason || a.symptoms || '';
+    return `• ${time} — ${name} (${status})${reason ? ': ' + reason : ''}`;
+  });
+  const heading = filter === 'today'
+    ? `You have ${rows.length} appointment${rows.length !== 1 ? 's' : ''} today:`
+    : `${rows.length} ${filter} appointment${rows.length !== 1 ? 's' : ''}:`;
+  const msg = `${heading}\n${lines.join('\n')}`;
+  const firstFew = rows.slice(0, 3).map(a =>
+    `${String(a.appointmentTime || '').slice(0, 5)} ${a.patientName || 'unknown'}`
+  ).join(', ');
+  const speak = rows.length <= 3
+    ? `${heading.replace(':', '.')} ${firstFew}.`
+    : `${heading.replace(':', '.')} First: ${firstFew}${rows.length > 3 ? `, and ${rows.length - 3} more.` : '.'}`;
+
+  return { intent: 'action', action: 'list_appointments', parameters: args, response: msg, speak, data: rows, requiresConfirmation: false };
+};
+
 async function executeGetPatientHealth(doctorId, patientName, patientId) {
   try {
     // ALWAYS verify the doctor-patient relationship via appointments, even when patientId is supplied.
@@ -1039,6 +1101,12 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
   const systemPrompt = buildSystemPrompt(enrichedContext);
   const currentPatientId = context.currentPatient?.id || context.currentPatient?._id;
 
+  const deterministicAppointmentFilter = inferAppointmentListFilter(text);
+  if (deterministicAppointmentFilter) {
+    const payload = await buildAppointmentListPayload(doctorId, { filter: deterministicAppointmentFilter });
+    return res.json(payload);
+  }
+
   // Build conversation messages with history for continuity (last 10 turns)
   const historyMessages = Array.isArray(history)
     ? history.slice(-10).map(m => ({
@@ -1357,43 +1425,7 @@ Rules:
 
     // list_appointments — execute server-side
     if (toolName === 'list_appointments') {
-      // Normalize filter — LLM sometimes uses non-enum values like "confirmed", "scheduled", "booked"
-      const VALID_FILTERS = ['today', 'upcoming', 'pending', 'completed', 'all'];
-      let rawFilter = (args.filter || 'today').toLowerCase();
-      if (!VALID_FILTERS.includes(rawFilter)) {
-        // Map common synonyms
-        if (['confirmed', 'scheduled', 'booked', 'upcoming'].includes(rawFilter)) rawFilter = 'upcoming';
-        else if (['done', 'finished', 'past'].includes(rawFilter)) rawFilter = 'completed';
-        else rawFilter = 'today';
-      }
-      const filter = rawFilter;
-      const limit = args.limit ? (parseInt(args.limit, 10) || 10) : 10;
-      const rows = await executeListAppointments(doctorId, filter, limit);
-      if (!rows || rows.length === 0) {
-        const msg = filter === 'today'
-          ? 'You have no appointments scheduled for today.'
-          : `No ${filter} appointments found.`;
-        return res.json({ intent: 'action', action: 'list_appointments', parameters: args, response: msg, speak: msg, data: [], requiresConfirmation: false });
-      }
-      const lines = rows.map(a => {
-        const time = a.appointmentTime ? String(a.appointmentTime).slice(0, 5) : '';
-        const status = a.status || '';
-        const name = a.patientName || 'Unknown';
-        const reason = a.reason || a.symptoms || '';
-        return `• ${time} — ${name} (${status})${reason ? ': ' + reason : ''}`;
-      });
-      const heading = filter === 'today'
-        ? `You have ${rows.length} appointment${rows.length !== 1 ? 's' : ''} today:`
-        : `${rows.length} ${filter} appointment${rows.length !== 1 ? 's' : ''}:`;
-      const msg = `${heading}\n${lines.join('\n')}`;
-      // Spoken version — concise summary
-      const firstFew = rows.slice(0, 3).map(a =>
-        `${String(a.appointmentTime || '').slice(0, 5)} ${a.patientName || 'unknown'}`
-      ).join(', ');
-      const speak = rows.length <= 3
-        ? `${heading.replace(':', '.')} ${firstFew}.`
-        : `${heading.replace(':', '.')} First: ${firstFew}${rows.length > 3 ? `, and ${rows.length - 3} more.` : '.'}`;
-      return res.json({ intent: 'action', action: 'list_appointments', parameters: args, response: msg, speak, data: rows, requiresConfirmation: false });
+      return res.json(await buildAppointmentListPayload(doctorId, args));
     }
 
     // get_patient_health — execute server-side
