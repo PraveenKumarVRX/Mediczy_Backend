@@ -162,10 +162,12 @@ function getPool() {
       console.error('[pgPool] Unexpected idle-client error:', err.message);
     });
 
-    _pool.on('connect', () => {
+    _pool.on('connect', (client) => {
       if (process.env.NODE_ENV !== 'production') {
         console.debug(`[pgPool] New client connected — total: ${_pool.totalCount}`);
       }
+      // ITEM-07: Set HNSW search beam width for vector similarity queries
+      client.query('SET hnsw.ef_search = 40').catch(() => {/* pgvector not enabled — ignore */});
     });
   }
   return _pool;

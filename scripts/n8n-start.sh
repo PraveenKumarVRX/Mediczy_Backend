@@ -14,6 +14,11 @@ else
     echo "[$(date)] WARNING: n8n config file not found at $HOME/.n8n/.env"
 fi
 
+# Force DB_TYPE=sqlite regardless of any PM2-cached env vars.
+# n8n's database.sqlite is at ~/.n8n/database.sqlite (pre-existing).
+export DB_TYPE=sqlite
+unset DB_POSTGRESDB_HOST DB_POSTGRESDB_PORT DB_POSTGRESDB_DATABASE DB_POSTGRESDB_USER DB_POSTGRESDB_PASSWORD DB_POSTGRESDB_SCHEMA DB_POSTGRESDB_SSL
+
 # Trust proxy so rate limiter honors X-Forwarded-For behind Cloudflare/Nginx.
 export N8N_TRUST_PROXY=true
 

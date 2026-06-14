@@ -181,6 +181,35 @@ export const MODEL_CARDS = {
       'Safety check on generated content before presenting to physician'
     ],
     regulatoryNotes:   'If physician always reviews and modifies before committing, this is a documentation productivity tool, not SaMD. If notes are committed without physician review, it crosses into SaMD territory.'
+  },
+
+  'admin-copilot-v1': {
+    componentName:      'Admin AI Copilot',
+    version:            'v1.0',
+    regulatoryClass:    'NOT SaMD',
+    intendedUse:        'Conversational AI assistant for hospital and platform administrators. Provides ops insights, audit log queries, governance queue visibility, system status, and analytics summaries. Default mode is configuration and observability — not clinical decision support.',
+    notIntendedFor:     'Replacing clinical decision support tools; autonomous execution of high-risk writes (tenant changes, refunds, prescriptions) without human approval; use by non-admin roles.',
+    modelType:          'Multi-agent orchestrator (Admin Agent) with LLM cascade — iSHA BiMediX2 → Groq → OpenAI fallback via llm-provider.js',
+    inputFeatures:      ['Admin natural language query', 'Conversation context (last 10 turns)', 'Ops RAG documents (when indexed)'],
+    outputDescription:  'Natural language response with tool call results. Ops/analytics data is always scoped to requesting admin\'s tenant.',
+    knownLimitations: [
+      'Does not have real-time access to live patient vitals or active clinical workflows',
+      'System tools (get_system_status) expose infrastructure info — scoped to super_admin only',
+      'RAG document accuracy depends on indexed runbooks being up to date',
+      'LLM may hallucinate metric values — always cross-check with governance dashboards'
+    ],
+    safetyControls: [
+      'All calls pass through agent-permission-engine (RBAC/ABAC)',
+      'System tools gated behind EXEC_SYSTEM_TOOLS capability',
+      'Write/side-effect tools require human approval via UI modal before execution',
+      'All requests pass through SIB AI Guard (kill switch, rate limits, circuit breaker)',
+      'Every run persisted in ai_agent_runs for audit'
+    ],
+    humanOversight:    'Required for all write and system-configuration actions. UI enforces approval modal before any state-changing tool call.',
+    samdClass:         'NOT_SaMD',
+    lastAudited:       '2026-06-14',
+    lastValidatedAt:   '2026-06-14',
+    regulatoryNotes:   'NOT SaMD by default (ops and analytics only). If admin uses copilot to surface or interpret clinical AI outputs (risk scores, triage), those outputs inherit their source component\'s SaMD classification and must be treated accordingly.'
   }
 };
 

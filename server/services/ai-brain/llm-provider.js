@@ -765,7 +765,7 @@ async function chat({
        input_tokens, output_tokens, total_tokens, cost_usd, latency_ms, status, error_message, tool_calls, metadata)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
     [
-      dbConfig?.id || null, conversationId, winningProvider.name, result.model,
+      dbConfig?.id || null, (Number.isInteger(+conversationId) && conversationId != null ? +conversationId : null), winningProvider.name, result.model,
       JSON.stringify(messages.map(m => ({ role: m.role, content: m.content?.substring(0, 500) }))),
       result.content?.substring(0, 2000),
       result.usage.inputTokens, result.usage.outputTokens, result.usage.totalTokens,

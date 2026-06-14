@@ -22,6 +22,7 @@
 
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto';
 import pool from '../db/pgPool.js';
+import { sftpCircuitBreaker } from '../utils/circuit-breaker.js';
 
 // ── Encryption helpers (AES-256-GCM for credential storage) ──────────────────
 // SFTP_CREDENTIAL_KEY must be set independently — never fall back to JWT_SECRET.
@@ -176,9 +177,11 @@ export async function deleteConnection(id, tenantId) {
 
 // ── Connectivity test (no real SSH in stateless test; validates config) ───────
 export async function testConnection(id, tenantId) {
+  if (sftpCircuitBreaker.isOpen()) {
+    return { connectionId: id, status: 'circuit_open', issues: ['SFTP circuit breaker is open — too many recent failures'], testedAt: new Date().toISOString() };
+  }
+
   const conn = await getConnection(id, tenantId);
-  // In production, attempt real SSH handshake via ssh2 if available.
-  // Here we validate required credentials are present and record the attempt.
   const issues = [];
   if (!conn.host)     issues.push('host is missing');
   if (!conn.username) issues.push('username is missing');
@@ -186,12 +189,19 @@ export async function testConnection(id, tenantId) {
   if (conn.auth_type === 'key'      && !conn.private_key_enc) issues.push('private key not configured');
 
   const status = issues.length ? 'config_error' : 'reachable';
+  if (status === 'config_error') {
+    sftpCircuitBreaker.onFailure();
+  } else {
+    sftpCircuitBreaker.onSuccess();
+  }
   await pool.query(
     'UPDATE sftp_connections SET last_tested = NOW(), last_status = $1 WHERE id = $2',
     [status, id]
   );
   return { connectionId: id, status, issues, testedAt: new Date().toISOString() };
 }
+
+export { sftpCircuitBreaker };
 
 // ── Transfer queue operations ─────────────────────────────────────────────────
 

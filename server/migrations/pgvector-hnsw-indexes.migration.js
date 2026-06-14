@@ -73,12 +73,27 @@ export async function runMigration(pgPool = pool) {
     `);
     console.log('[pgvector-hnsw] HNSW index created on ai_semantic_cache');
 
-    // Supporting B-tree indexes
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_sib_embeddings_patient ON sib_embeddings(patient_id, record_type);
-      CREATE INDEX IF NOT EXISTS idx_ai_semantic_cache_expires ON ai_semantic_cache(expires_at)
-        WHERE expires_at IS NOT NULL;
+    // Supporting B-tree indexes — only if columns exist
+    const { rows: embCols } = await client.query(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'sib_embeddings' AND column_name IN ('patient_id', 'record_type')
     `);
+    if (embCols.length === 2) {
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_sib_embeddings_patient ON sib_embeddings(patient_id, record_type)
+      `);
+    }
+
+    const { rows: cacheExpCols } = await client.query(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'ai_semantic_cache' AND column_name = 'expires_at'
+    `);
+    if (cacheExpCols.length > 0) {
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_ai_semantic_cache_expires ON ai_semantic_cache(expires_at)
+          WHERE expires_at IS NOT NULL
+      `);
+    }
 
     console.log('[pgvector-hnsw] Migration complete');
     return { success: true };

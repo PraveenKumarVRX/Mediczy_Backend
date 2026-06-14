@@ -1798,4 +1798,16 @@ cron.schedule('0 3 * * *', async () => {
   }
 });
 
+// ITEM-06: Auto-create next month's audit_log partition on the 25th at 1 AM
+import { ensureNextMonthPartition } from './migrations/audit-log-partitioning.migration.js';
+cron.schedule('0 1 25 * *', async () => {
+  cronTickStart('audit_log_partition');
+  try {
+    await ensureNextMonthPartition();
+    cronTick('audit_log_partition', { action: 'next_month_partition_ensured' });
+  } catch (err) {
+    cronTickError('audit_log_partition', err.message);
+  }
+});
+
 export default app;

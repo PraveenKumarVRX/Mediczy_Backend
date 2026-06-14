@@ -216,6 +216,7 @@ function _mapToAgentRole(rawRole) {
   const r = String(rawRole).toLowerCase();
   if (r.includes('platform') || r === 'superadmin' || r === 'super_admin') return ROLES.PLATFORM_ADMIN;
   if (r.includes('hospital_admin') || r === 'admin' || r === 'manager') return ROLES.HOSPITAL_ADMIN;
+  if (r === 'medical_director' || r === 'medicaldirector') return ROLES.HOSPITAL_ADMIN;
   if (r === 'doctor' || r === 'physician' || r.startsWith('dr')) return ROLES.DOCTOR;
   if (r === 'nurse' || r === 'staff' || r === 'paramedic') return ROLES.NURSE;
   if (r === 'analyst' || r === 'data_analyst') return ROLES.ANALYST;

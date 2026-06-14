@@ -20,9 +20,11 @@ import governanceService from '../services/ai-model-governance.service.js';
 import interpretabilityService from '../services/ai-interpretability.service.js';
 import qualityGates from '../services/ai-quality-gates.service.js';
 import pool, { getPoolStats } from '../db/pgPool.js';
+import { abdmCircuitBreaker, sftpCircuitBreaker } from '../utils/circuit-breaker.js';
 import { requirePatientRecordAccess } from '../utils/patient-access.js';
 import { verifyChain } from '../services/audit-chain.service.js';
 import llmMetrics from '../services/llm-metrics.service.js';
+import { getOpportunityMatrix } from '../services/healthcare-ai-opportunity.service.js';
 
 const router = express.Router();
 
@@ -53,6 +55,18 @@ function requireSuperAdmin(req, res, next) {
   }
   next();
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/ai-governance/opportunity-matrix
+// Healthcare AI prioritisation map derived from current guidance and implementation state
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/opportunity-matrix', requireSuperAdminOrMedDir, async (req, res) => {
+  try {
+    res.json({ success: true, data: getOpportunityMatrix() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/ai-governance/dashboard
@@ -625,7 +639,7 @@ router.get('/audit-chain/verify', requireSuperAdmin, async (req, res) => {
       checkedRows: result.checkedRows,
       message:     result.valid
         ? `Audit chain intact — ${result.checkedRows} row(s) verified`
-        : `Audit chain BROKEN at row id ${result.brokenAt} — possible tampering detected`
+        : `Audit chain BROKEN at log_id ${result.brokenAt} — possible tampering detected`
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -705,7 +719,14 @@ router.get('/provider-performance', requireSuperAdminOrMedDir, async (req, res) 
 
 // ITEM-05: DB pool monitoring — super_admin only
 router.get('/db-pool', requireSuperAdmin, (req, res) => {
-  res.json({ poolStats: getPoolStats(), timestamp: new Date().toISOString() });
+  res.json({
+    poolStats: getPoolStats(),
+    circuitBreakers: {
+      abdm: abdmCircuitBreaker.toJSON(),
+      sftp: sftpCircuitBreaker.toJSON(),
+    },
+    timestamp: new Date().toISOString(),
+  });
 });
 
 export default router;

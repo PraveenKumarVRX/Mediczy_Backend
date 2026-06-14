@@ -25,6 +25,7 @@
  */
 
 import pool from '../db/pgPool.js';
+import { abdmCircuitBreaker } from '../utils/circuit-breaker.js';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const ABDM_BASE       = (process.env.ABDM_BASE_URL    || 'https://dev.abdm.gov.in/gateway').replace(/\/$/, '');
@@ -125,36 +126,51 @@ export async function getAccessToken() {
 }
 
 async function abdmGet(path) {
+  if (abdmCircuitBreaker.isOpen()) throw new Error('ABDM gateway circuit open — cooling down');
   const token = await getAccessToken();
-  const resp  = await fetch(`${ABDM_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'X-HIP-ID': ABDM_HIP_ID },
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`ABDM GET ${path} failed: ${resp.status} ${text}`);
+  try {
+    const resp = await fetch(`${ABDM_BASE}${path}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'X-HIP-ID': ABDM_HIP_ID },
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      abdmCircuitBreaker.onFailure();
+      throw new Error(`ABDM GET ${path} failed: ${resp.status} ${text}`);
+    }
+    abdmCircuitBreaker.onSuccess();
+    return resp.json();
+  } catch (err) {
+    if (!err.message.includes('circuit open')) abdmCircuitBreaker.onFailure();
+    throw err;
   }
-  return resp.json();
 }
 
 async function abdmPost(path, body) {
+  if (abdmCircuitBreaker.isOpen()) throw new Error('ABDM gateway circuit open — cooling down');
   const token = await getAccessToken();
-  const resp  = await fetch(`${ABDM_BASE}${path}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'X-HIP-ID': ABDM_HIP_ID,
-    },
-    body: JSON.stringify(body),
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`ABDM POST ${path} failed: ${resp.status} ${text}`);
+  try {
+    const resp = await fetch(`${ABDM_BASE}${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-HIP-ID': ABDM_HIP_ID,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      abdmCircuitBreaker.onFailure();
+      throw new Error(`ABDM POST ${path} failed: ${resp.status} ${text}`);
+    }
+    abdmCircuitBreaker.onSuccess();
+    const ct = resp.headers.get('content-type') || '';
+    return ct.includes('json') ? resp.json() : { status: resp.status };
+  } catch (err) {
+    if (!err.message.includes('circuit open')) abdmCircuitBreaker.onFailure();
+    throw err;
   }
-  // Some ABDM endpoints return 202 with no body
-  const ct = resp.headers.get('content-type') || '';
-  return ct.includes('json') ? resp.json() : { status: resp.status };
 }
 
 // ── ABHA Registration ─────────────────────────────────────────────────────────

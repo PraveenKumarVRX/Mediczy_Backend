@@ -9,6 +9,7 @@ import ClinicalNote from '../models/clinical-note.model.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 import { connectPostgres } from '../db/postgres.js';
 import { createCodingSuggestions } from '../services/clinical-intelligence.service.js';
+import { draftSoapNote } from '../services/healthcare-ai-opportunity.service.js';
 
 const router = express.Router();
 
@@ -110,6 +111,68 @@ Provide a 2-3 sentence professional summary suitable for handoff or quick review
     res.status(500).json({
       success: false,
       message: 'Failed to generate summary'
+    });
+  }
+});
+
+// AI draft SOAP note from consultation transcript or rough notes.
+// This is assistive only: it returns draft content and optionally creates a draft clinical note.
+router.post('/notes/draft-from-transcript', authDoctor, async (req, res) => {
+  try {
+    const { transcript, context = {}, appointmentId, patientId, persist = false } = req.body || {};
+
+    const result = await draftSoapNote({
+      transcript,
+      context: {
+        ...context,
+        appointmentId,
+        patientId,
+        doctorId: req.doctor.id
+      }
+    });
+
+    let note = null;
+    if (persist) {
+      if (!appointmentId || !patientId) {
+        return res.status(400).json({
+          success: false,
+          message: 'appointmentId and patientId are required when persist=true'
+        });
+      }
+
+      note = await ClinicalNote.create({
+        appointmentId,
+        patientId,
+        doctorId: req.doctor.id,
+        chiefComplaint: result.data.chiefComplaint || context.chiefComplaint || '',
+        subjective: result.data.subjective || '',
+        objective: result.data.objective || '',
+        assessment: result.data.assessment || '',
+        plan: result.data.plan || '',
+        vitals: context.vitals || {},
+        icd10Codes: [],
+        cptCodes: [],
+        encounterSummary: result.data.followUp || null,
+        status: 'draft',
+        isAiGenerated: true,
+        aiConfidenceScore: result.governance.fallbackReason ? 0.55 : 0.82
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        draft: result.data,
+        note,
+        governance: result.governance
+      }
+    });
+  } catch (error) {
+    const status = error.status || 500;
+    console.error('SOAP draft generation error:', error);
+    res.status(status).json({
+      success: false,
+      message: status === 400 ? error.message : 'Failed to draft SOAP note'
     });
   }
 });

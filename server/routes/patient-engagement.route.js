@@ -3,6 +3,7 @@ const router = express.Router();
 import PatientEngagement from '../models/patient-engagement.model.js';
 import { authDoctor } from '../middleware/doctor.middleware.js';
 import { notificationService } from '../services/notification.service.js';
+import { draftPatientInstructions } from '../services/healthcare-ai-opportunity.service.js';
 
 // Get patient engagement records
 router.get('/patient/:patientId', authDoctor, async (req, res) => {
@@ -15,6 +16,31 @@ router.get('/patient/:patientId', authDoctor, async (req, res) => {
   } catch (error) {
     console.error('Fetch engagement records error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch engagement records', error: error.message });
+  }
+});
+
+// AI draft patient-facing post-visit instructions. Doctor reviews before sending.
+router.post('/draft-instructions', authDoctor, async (req, res) => {
+  try {
+    const result = await draftPatientInstructions({
+      ...req.body,
+      doctorId: req.doctor.id
+    });
+
+    res.json({
+      success: true,
+      data: {
+        draft: result.data,
+        governance: result.governance
+      }
+    });
+  } catch (error) {
+    console.error('Draft patient instructions error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to draft patient instructions',
+      error: error.message
+    });
   }
 });
 

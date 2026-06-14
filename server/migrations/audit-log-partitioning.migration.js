@@ -3,13 +3,18 @@
  *
  * Strategy:
  *   1. Rename existing table to api_audit_logs_legacy
- *   2. Create new partitioned parent table (PARTITION BY RANGE on created_at)
- *   3. Create the current month partition + next month partition
- *   4. Re-insert legacy rows into the new partitioned table
- *   5. A cron or next-run of this script can drop the legacy table once verified
+ *   2. Create new partitioned parent (PARTITION BY RANGE on created_at)
+ *      — Uses the actual schema: log_id VARCHAR, actor_id VARCHAR, …
+ *      — PostgreSQL requires the partition key (created_at) to be part of
+ *        the PRIMARY KEY, so PK becomes (log_id, created_at)
+ *   3. Create current month + next 2 month partitions with per-partition indexes
+ *   4. Re-insert legacy rows; rows with NULL created_at get COALESCE(NOW())
+ *   5. Drop legacy table once verified externally
  *
  * Run once per environment:
  *   node server/migrations/audit-log-partitioning.migration.js
+ *
+ * Safe to re-run — detects already-partitioned table and skips.
  */
 
 import pool from '../db/pgPool.js';
@@ -19,7 +24,7 @@ export async function runMigration(pgPool = pool) {
   try {
     await client.query('BEGIN');
 
-    // Check if already migrated
+    // Already partitioned?
     const { rows: existing } = await client.query(`
       SELECT relname FROM pg_class
       WHERE relname = 'api_audit_logs' AND relkind = 'p'
@@ -39,25 +44,26 @@ export async function runMigration(pgPool = pool) {
       console.log('[audit-partition] Renamed existing table to api_audit_logs_legacy');
     }
 
-    // 2. Create partitioned parent (no data lives here directly)
+    // 2. Create partitioned parent — mirrors the actual api_audit_logs schema.
+    //    PostgreSQL requires the partition key (created_at) to be in the PK,
+    //    so PK is (log_id, created_at).
     await client.query(`
-      CREATE TABLE IF NOT EXISTS api_audit_logs (
-        id             BIGSERIAL,
-        user_id        INTEGER,
-        action         VARCHAR(100),
-        method         VARCHAR(10),
-        path           TEXT,
-        status_code    INTEGER,
-        ip_address     VARCHAR(45),
-        user_agent     TEXT,
-        resource_type  VARCHAR(100),
-        resource_id    TEXT,
-        tenant_id      INTEGER,
-        details        JSONB,
-        row_hash       TEXT,
-        prev_hash      TEXT,
-        created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        PRIMARY KEY (id, created_at)
+      CREATE TABLE api_audit_logs (
+        log_id        VARCHAR        NOT NULL,
+        tenant_id     INTEGER,
+        actor_id      VARCHAR,
+        actor_type    VARCHAR,
+        action        VARCHAR,
+        resource_type VARCHAR,
+        resource_id   VARCHAR,
+        changes       JSONB,
+        metadata      JSONB,
+        ip_address    VARCHAR,
+        user_agent    TEXT,
+        created_at    TIMESTAMP      NOT NULL DEFAULT NOW(),
+        row_hash      TEXT,
+        prev_hash     TEXT,
+        PRIMARY KEY (log_id, created_at)
       ) PARTITION BY RANGE (created_at)
     `);
     console.log('[audit-partition] Created partitioned api_audit_logs parent');
@@ -66,29 +72,54 @@ export async function runMigration(pgPool = pool) {
     const now = new Date();
     for (let delta = 0; delta <= 2; delta++) {
       const d     = new Date(now.getFullYear(), now.getMonth() + delta, 1);
-      const start = d.toISOString().slice(0, 7);           // YYYY-MM
-      const end   = new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString().slice(0, 7);
+      const start = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const nextD = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+      const end   = `${nextD.getFullYear()}-${String(nextD.getMonth() + 1).padStart(2, '0')}`;
       const name  = `api_audit_logs_${start.replace('-', '_')}`;
       await client.query(`
         CREATE TABLE IF NOT EXISTS ${name}
           PARTITION OF api_audit_logs
           FOR VALUES FROM ('${start}-01') TO ('${end}-01')
       `);
-      // Index within partition
       await client.query(`
-        CREATE INDEX IF NOT EXISTS idx_${name}_user ON ${name}(user_id, created_at DESC)
+        CREATE INDEX IF NOT EXISTS idx_${name}_tenant
+          ON ${name}(tenant_id, created_at DESC)
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_${name}_actor
+          ON ${name}(actor_id, created_at DESC)
       `);
       console.log(`[audit-partition] Created partition ${name}`);
     }
 
-    // 4. Re-insert legacy rows (batch by ID to avoid memory pressure)
+    // 4. Re-insert legacy rows (columns mapped explicitly; NULL created_at → NOW())
     if (legacyExists.length > 0) {
-      const { rows: [{ count }] } = await client.query(`SELECT COUNT(*) FROM api_audit_logs_legacy`);
-      console.log(`[audit-partition] Migrating ${count} legacy rows...`);
+      const { rows: [{ count }] } = await client.query(
+        `SELECT COUNT(*) FROM api_audit_logs_legacy`
+      );
+      console.log(`[audit-partition] Migrating ${count} legacy rows…`);
       await client.query(`
         INSERT INTO api_audit_logs
-          SELECT * FROM api_audit_logs_legacy
-          ON CONFLICT DO NOTHING
+          (log_id, tenant_id, actor_id, actor_type, action, resource_type,
+           resource_id, changes, metadata, ip_address, user_agent,
+           created_at, row_hash, prev_hash)
+        SELECT
+          log_id,
+          tenant_id,
+          actor_id,
+          actor_type,
+          action,
+          resource_type,
+          resource_id,
+          changes,
+          metadata,
+          ip_address,
+          user_agent,
+          COALESCE(created_at, NOW()),
+          row_hash,
+          prev_hash
+        FROM api_audit_logs_legacy
+        ON CONFLICT DO NOTHING
       `);
       console.log('[audit-partition] Legacy rows migrated');
     }
@@ -105,21 +136,35 @@ export async function runMigration(pgPool = pool) {
   }
 }
 
-// ── Auto-create monthly partition (call from a monthly cron) ─────────────────
+// ── Auto-create monthly partition (call from monthly cron) ────────────────────
 export async function ensureNextMonthPartition(pgPool = pool) {
   const d     = new Date();
   const next  = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-  const start = next.toISOString().slice(0, 7);
-  const end   = new Date(next.getFullYear(), next.getMonth() + 1, 1).toISOString().slice(0, 7);
+  const start = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+  const endD  = new Date(next.getFullYear(), next.getMonth() + 1, 1);
+  const end   = `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, '0')}`;
   const name  = `api_audit_logs_${start.replace('-', '_')}`;
+
   try {
+    // Only attempt if the parent is partitioned
+    const { rows } = await pgPool.query(`
+      SELECT relname FROM pg_class WHERE relname = 'api_audit_logs' AND relkind = 'p'
+    `);
+    if (rows.length === 0) {
+      console.log('[audit-partition] api_audit_logs is not yet partitioned — skipping cron partition creation');
+      return;
+    }
+
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS ${name}
         PARTITION OF api_audit_logs
         FOR VALUES FROM ('${start}-01') TO ('${end}-01')
     `);
     await pgPool.query(`
-      CREATE INDEX IF NOT EXISTS idx_${name}_user ON ${name}(user_id, created_at DESC)
+      CREATE INDEX IF NOT EXISTS idx_${name}_tenant ON ${name}(tenant_id, created_at DESC)
+    `);
+    await pgPool.query(`
+      CREATE INDEX IF NOT EXISTS idx_${name}_actor ON ${name}(actor_id, created_at DESC)
     `);
     console.log(`[audit-partition] Ensured partition ${name}`);
   } catch (err) {
