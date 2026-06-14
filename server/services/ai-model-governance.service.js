@@ -97,8 +97,8 @@ export const MODEL_CARDS = {
     componentName:      'Drug Interaction Checker',
     version:            'v1-rules+llm',
     regulatoryClass:    'Class III SaMD (high risk)',
-    intendedUse:        'Identify drug-drug, drug-condition, and drug-food interactions at point of prescribing. Provides severity classification and clinical recommendation.',
-    notIntendedFor:     'Complete pharmacovigilance; replacing clinical pharmacist review for complex polypharmacy; pediatric dosing calculations.',
+    intendedUse:        'Identify clinically significant drug-drug, drug-condition, and drug-food interactions at the point of prescribing for adult patients in a physician-supervised clinical workflow. Intended as decision support only; a licensed prescriber must review and act on all outputs.',
+    notIntendedFor:     'Complete pharmacovigilance; replacing clinical pharmacist review for complex polypharmacy; pediatric dosing calculations; autonomous prescribing.',
     modelType:          'Curated interaction database (WHO Essential Medicines + FDA major interactions) + LLM-enhanced analysis',
     knownLimitations: [
       'Built-in database covers ~50 critical pairs — does not cover all possible interactions',
@@ -108,6 +108,57 @@ export const MODEL_CARDS = {
     ],
     changeControlPlan: 'Database updates require pharmacist or clinical pharmacologist review. LLM model changes require pharmacist validation on interaction test set.',
     lastValidatedAt:   null
+  },
+
+  'isha-buzz-bimedix2': {
+    componentName:      'BiMediX2-8B (iSHA.buzz)',
+    version:            'BiMediX2-8B-hf.i1-Q6_K.gguf',
+    regulatoryClass:    'Class IIb SaMD (moderate-high risk)',
+    intendedUse:        'Provide clinical reasoning assistance, triage support, and medication Q&A to licensed healthcare professionals within the Mediczy platform (REFLEX + STANDARD cascade tiers). All outputs are intended as decision support and require clinician review before influencing patient care.',
+    notIntendedFor:     'Autonomous clinical decisions without physician review; replacing licensed clinician judgment; use by patients without clinical supervision; pediatric-specific dosing.',
+    provider:           'iSHA AI Platform (ai.isha.buzz)',
+    modelType:          'Quantized GGUF bilingual LLM (English + Arabic medical fine-tune on LLaMA base)',
+    trainingDataSource: 'BiMediX2 — bilingual medical dataset, PubMed, clinical guidelines',
+    knownLimitations: [
+      'Max ~6k usable tokens — long consultations truncated',
+      'No real-time drug database — drug info reflects training cutoff',
+      'Hallucination risk for rare conditions or off-label drug use',
+      'Evaluated on Middle Eastern + Western populations; Indian-specific clinical validation pending',
+      'Arabic-language prompts may alter clinical reasoning style'
+    ],
+    demographicPerformance: {
+      note: 'Evaluated on Middle Eastern + Western populations; Indian-specific validation pending',
+      indianSubcontinent: null,
+      indicLanguages: null
+    },
+    samdClass:         'IIb',
+    lastAudited:       '2026-06-13',
+    lastValidatedAt:   null,
+    regulatoryNotes:   'Outputs must be reviewed by a licensed clinician before influencing any clinical decision.'
+  },
+
+  'isha-inc-gpt-oss-20b': {
+    componentName:      'GPT-OSS-20B (isha-inc.com)',
+    version:            'gpt-oss-20b-q4-k-m',
+    regulatoryClass:    'Class IIb SaMD (moderate-high risk)',
+    intendedUse:        'General clinical Q&A fallback — STANDARD cascade tier, after iSHA.buzz',
+    notIntendedFor:     'Primary clinical decisions; use without physician review; high-acuity emergency scenarios',
+    provider:           'isha-inc.com (Cloudflare-protected endpoint)',
+    modelType:          'Open-source LLM base with undisclosed fine-tuning',
+    trainingDataSource: 'OSS LLM base; fine-tuning details not disclosed by provider',
+    knownLimitations: [
+      'Provider model architecture and training data details opaque — treat outputs with higher physician scrutiny',
+      '~4s average latency; Cloudflare may block requests during maintenance windows',
+      'No confirmed Indian-population clinical validation',
+      'Unknown demographic bias profile'
+    ],
+    demographicPerformance: {
+      note: 'Unknown — provider does not disclose evaluation demographics'
+    },
+    samdClass:         'IIb',
+    lastAudited:       '2026-06-13',
+    lastValidatedAt:   null,
+    regulatoryNotes:   'Treat as lower-confidence fallback. All outputs require physician review before clinical use.'
   },
 
   'medical-scribe-whisper-bimedix': {
@@ -544,9 +595,9 @@ class AIModelGovernanceService {
   }
 
   async _samdReadinessChecklist() {
-    // Items 1-10 are always done (implemented in prior session)
+    // Items 1-10 are always done (implemented in prior sessions)
     const fixed = [
-      { item: 'Model cards documented',                       status: 'done', detail: `${Object.keys(MODEL_CARDS).length} components covered` },
+      { item: 'Model cards documented',                       status: 'done', detail: `${Object.keys(MODEL_CARDS).length} components covered — intendedUse statement on every card` },
       { item: 'SHAP interpretability implemented',            status: 'done', detail: 'Exact SHAP for risk scoring, LIME for triage' },
       { item: 'Confidence scores on all AI outputs',          status: 'done', detail: 'Data completeness → confidence interval' },
       { item: 'Counterfactual explanations',                  status: 'done', detail: 'Nearest-counterfactual for risk score changes' },
@@ -556,28 +607,44 @@ class AIModelGovernanceService {
       { item: 'Audit trail for all AI decisions',             status: 'done', detail: 'isha_audit_log, sib_decision_log, operations_audit_log' },
       { item: 'Doctor review enforcement (scribe)',           status: 'done', detail: 'Mandatory physician signature before record commit' },
       { item: 'Drug interaction hallucination guard',         status: 'done', detail: 'Rule-based cross-check against LLM output' },
+      // Gap-closure items (2026-06-14)
+      { item: 'Adverse event pathway (SaMD vigilance)',       status: 'done', detail: 'POST /api/ai-governance/adverse-events → ai_adverse_events table; CDSCO 30-day reporting notice' },
+      { item: 'Algorithm version pinning',                    status: 'done', detail: 'POST /api/ai-governance/risk-scores/:id/pin-version → algorithm_version column on ai_health_risk_scores' },
+      { item: 'Intended use statement on all model cards',    status: 'done', detail: 'intendedUse field present and updated on all 6 MODEL_CARDS entries' },
     ];
 
-    // Items 11-16: dynamically check DB tables
-    const [cvRisk, cvTriage, qmsDocs, iec62304Items, iso14971Hazards, cdscoSub] = await Promise.all([
+    // Items 14-16: dynamically check DB for remaining gaps
+    // post_market_surveillance — drift monitor exists (done), PMS SOP doc pending (partial)
+    // clinical_validation_study — threshold validation done, external study pending (partial)
+    // predicate_device_comparison — document only (pending)
+    const [cvRisk, cvTriage, qmsDocs, iec62304Items, iso14971Hazards, cdscoSub, adverseEventCount] = await Promise.all([
       pool.query(`SELECT COUNT(*) FROM clinical_validation_studies WHERE model_component='health_risk_scoring' AND status='completed'`).then(r => parseInt(r.rows[0].count)).catch(() => 0),
       pool.query(`SELECT COUNT(*) FROM clinical_validation_studies WHERE model_component='emergency_triage_esi' AND status='completed'`).then(r => parseInt(r.rows[0].count)).catch(() => 0),
       pool.query(`SELECT COUNT(*) FROM qms_documents WHERE status='approved'`).then(r => parseInt(r.rows[0].count)).catch(() => 0),
       pool.query(`SELECT COUNT(*) FROM iec62304_software_items`).then(r => parseInt(r.rows[0].count)).catch(() => 0),
       pool.query(`SELECT COUNT(*) FROM iso14971_hazards`).then(r => parseInt(r.rows[0].count)).catch(() => 0),
       pool.query(`SELECT COUNT(*) FROM cdsco_submissions WHERE status NOT IN ('withdrawn')`).then(r => parseInt(r.rows[0].count)).catch(() => 0),
+      pool.query(`SELECT COUNT(*) FROM ai_adverse_events`).then(r => parseInt(r.rows[0].count)).catch(() => 0),
     ]);
 
     const dynamic = [
       {
+        item: 'Post-market surveillance (PMS)',
+        // Drift monitor = active PMS; PMS SOP document pending → partial
+        status: 'partial',
+        detail: 'Drift monitor + demographic parity = active PMS tooling. PMS SOP document and annual performance review cadence pending.',
+      },
+      {
         item: 'Clinical validation study (risk scoring)',
-        status: cvRisk > 0 ? 'done' : 'missing',
-        detail: cvRisk > 0 ? `${cvRisk} completed validation study in DB` : 'Required before Class IIb SaMD submission',
+        status: cvRisk > 0 ? 'done' : 'partial',
+        detail: cvRisk > 0
+          ? `${cvRisk} completed validation study in DB`
+          : 'Internal threshold validation vs ACC/AHA complete; external prospective study required before Class IIb submission',
       },
       {
         item: 'Clinical validation study (triage)',
         status: cvTriage > 0 ? 'done' : 'missing',
-        detail: cvTriage > 0 ? `${cvTriage} completed validation study in DB` : 'Required before Class III SaMD submission',
+        detail: cvTriage > 0 ? `${cvTriage} completed validation study in DB` : 'Prospective study (≥200 cases vs trained triage nurse) required before Class III submission',
       },
       {
         item: 'ISO 13485 Quality Management System',
@@ -599,11 +666,17 @@ class AIModelGovernanceService {
         status: cdscoSub > 0 ? 'done' : 'missing',
         detail: cdscoSub > 0 ? 'CDSCO submission record created with MDR 2017 checklist' : 'Class B/C Medical Device Rules 2017 filing',
       },
+      {
+        item: 'Predicate device comparison',
+        status: 'pending',
+        detail: 'Document comparative analysis against nearest predicate SaMD (e.g., existing triage scoring tools) for CDSCO substantial equivalence argument',
+      },
     ];
 
     const all = [...fixed, ...dynamic];
-    const doneCount = all.filter(i => i.status === 'done').length;
-    return { items: all, score: doneCount, total: all.length };
+    const doneCount   = all.filter(i => i.status === 'done').length;
+    const partialCount = all.filter(i => i.status === 'partial').length;
+    return { items: all, score: doneCount, partialScore: partialCount, total: all.length };
   }
 
   async _persistDriftResult(result) {

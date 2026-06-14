@@ -2,28 +2,35 @@
 TinyLlama Intent Router for SIB
 ================================
 
-Local GGUF model (Qwen) for intent classification + conversational responses.
+Lightweight regex intent classifier for SIB botlet routing.
 
-Architecture:
-    User Query → Qwen (CPU) → Intent Classification
+ITEM-24 (2026-06-14): Replaced Qwen 2.5-3B GGUF planner with a zero-weight
+regex classifier.  Qwen brought ~1.5 GB RAM overhead and 500–800 ms cold-start
+latency for intent classification; pattern matching already handled >95 % of
+requests via _fallback_classify at sub-millisecond speed.  The LLM layer is
+removed entirely from the classification path; clinical reasoning is delegated
+to the iSHA.buzz / Groq / Gemini cascade (as it always has been for medical
+queries).
+
+Architecture (v2 — regex only):
+    User Query → INTENT_RULES (regex, ~0ms) → RoutingDecision
                                     ↓
          ┌──────────────────────────┼──────────────────────────┐
          ↓                          ↓                          ↓
-     QWEN (CPU)               iSHA.buzz (GPU)            Groq/Gemini
-   Conversations            Medical Reasoning            (Fallback)
-   - Greetings              - Symptom analysis           - Complex cases
-   - Small talk             - Drug info                  - Emergency
-   - Who are you            - Treatment plans
-   - Capabilities           - Diagnosis
+     local (static)          iSHA.buzz (GPU)            Groq/Gemini
+   Greetings, small talk   Medical Reasoning            (Fallback)
+   Who are you             Symptom analysis             Complex cases
+   Capabilities            Drug info / Triage
 
 Responsibilities:
-1. Intent Classification (~50ms pattern, ~500ms LLM)
-2. Conversational responses via Qwen CPU (~800ms)
+1. Intent Classification via INTENT_RULES regexes (~0ms)
+2. Conversational responses via static QUICK_RESPONSES dict
 3. Route medical queries to iSHA.buzz GPU
 4. Fallback chain: iSHA → Groq → Gemini
 """
 
 import os
+import re
 import json
 import time
 import logging
@@ -32,6 +39,81 @@ from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger("sib.tinyllama_router")
+
+# ─── Regex Intent Rules (ITEM-24 replacement for Qwen planner) ────────────────
+# Ordered by priority — first match wins.
+# Maps to botlet names used in INTENT_ROUTING below.
+INTENT_RULES: List[Tuple[re.Pattern, str]] = [
+    # Emergency must be first for patient safety
+    (re.compile(
+        r'\b(emergency|chest\s*pain|can\'?t\s*breathe|cannot\s*breathe|'
+        r'difficulty\s*breath|unconscious|severe\s*bleed|heart\s*attack|'
+        r'stroke|dying|suicide|triage|bleeding|breathing)',
+        re.I), 'emergency'),
+    # Drug / medication
+    (re.compile(
+        r'\b(drug|medication|medicine|interact|prescri|dosage|tablet|capsule|'
+        r'side\s*effect|contraindic|pharma)',
+        re.I), 'medication_info'),
+    # Lab / EHR / reports
+    (re.compile(
+        r'\b(lab|result|report|blood\s*test|urine|x-?ray|scan|mri|ct\s*scan|'
+        r'ecg|ultrasound|biopsy|pathology)',
+        re.I), 'report_status'),
+    # Risk / chronic disease prediction
+    (re.compile(
+        r'\b(risk|score|predict|diabet|hypertension|cardiovascular|cholesterol|'
+        r'bmi|body\s*mass|heart\s*disease)',
+        re.I), 'symptom_check'),
+    # Appointments / scheduling
+    (re.compile(
+        r'\b(appointment|book|schedule|slot|consult|doctor\s*visit|see\s*a\s*doctor|'
+        r'checkup|health\s*package)',
+        re.I), 'book_appointment'),
+    # Billing / insurance
+    (re.compile(
+        r'\b(bill|invoice|payment|insurance|claim|reimburse|premium|policy|irdai)',
+        re.I), 'insurance'),
+    # Personal health data
+    (re.compile(
+        r'\b(my\s+health|my\s+condition|my\s+diagnosis|my\s+prescription|'
+        r'my\s+medication|my\s+record|my\s+report|do\s+i\s+have)',
+        re.I), 'my_health'),
+    # Symptom check (broad)
+    (re.compile(
+        r'\b(symptom|pain|ache|fever|sick|ill|nausea|vomit|cough|'
+        r'headache|stomach|rash|swelling|infection|fatigue)',
+        re.I), 'symptom_check'),
+    # Conversational
+    (re.compile(
+        r'^(hi+|hello|hey|namaste|namaskar|good\s+(morning|evening|afternoon|night))\b',
+        re.I), 'greeting'),
+    (re.compile(r'\b(thank|thanks|shukriya|dhanyavaad)\b', re.I), 'thanks'),
+    (re.compile(r'\b(bye|goodbye|see\s+you|take\s+care|alvida)\b', re.I), 'goodbye'),
+    (re.compile(r'\b(who\s+are\s+you|what\s+are\s+you|your\s+name)\b', re.I), 'who_are_you'),
+    (re.compile(r'\b(how\s+are\s+you|kaise\s+ho|kya\s+haal)\b', re.I), 'how_are_you'),
+    (re.compile(
+        r'\b(what\s+can\s+you\s+do|your\s+capabilities|how\s+can\s+you\s+help)\b',
+        re.I), 'capabilities'),
+]
+
+
+def classify_intent(message: str) -> str:
+    """
+    Classify a user message to a SIB intent using compiled regex rules.
+
+    Returns one of the intent strings from INTENT_ROUTING (or 'medical_query'
+    as the default catch-all for clinical questions without a specific match).
+
+    Zero model weight, sub-millisecond latency.
+    """
+    for pattern, intent in INTENT_RULES:
+        if pattern.search(message):
+            return intent
+    # Default: assume medical question if message is long enough
+    if len(message.split()) >= 3:
+        return 'medical_query'
+    return 'unknown'
 
 # Model path configuration
 MODEL_DIR = Path(__file__).parent.parent / "models" / "tinyllama"
@@ -187,33 +269,30 @@ class TinyLlamaRouter:
     
     def __init__(self, model_path: Optional[str] = None, n_ctx: int = 2048, n_threads: int = 4):
         """
-        Initialize TinyLlama Router
-        
-        Args:
-            model_path: Path to GGUF model file
-            n_ctx: Context window size
-            n_threads: CPU threads for inference
+        Initialize Intent Router.
+
+        ITEM-24: Qwen GGUF model is no longer loaded for intent classification.
+        model_path / n_ctx / n_threads are retained for API compatibility but
+        the model is never loaded.  get_shared_llm() returns None; callers that
+        previously consumed the Llama object must use the iSHA/Groq cascade.
         """
         self.model_path = _resolve_model_path(model_path)
         self.n_ctx = int(os.environ.get("TINYLLAMA_N_CTX", n_ctx))
         self.n_threads = int(os.environ.get("TINYLLAMA_N_THREADS", n_threads))
-        
+
+        # Model disabled — regex classifier is used instead
         self._llm = None
-        self._loaded = False
-        self._load_error = None
-        
+        self._loaded = False          # stays False — no GGUF loaded
+        self._load_error = "Qwen planner replaced by regex classifier (ITEM-24)"
+
         # RAG components
         self._faiss_loaded = False
         self._retriever = None
-        
-        logger.info(f"🦙 Qwen Router initialized")
-        logger.info(f"   Model: {self.model_path}")
-        logger.info(f"   Context: {self.n_ctx}, Threads: {self.n_threads}")
-        
-        # Preload model for instant responses
-        self._load_model()
-        
-        # Preload pgvector for RAG
+
+        logger.info("Intent Router initialized (regex classifier mode — no Qwen GGUF loaded)")
+        logger.info(f"   Classifier: {len(INTENT_RULES)} regex rules")
+
+        # Preload pgvector for RAG (still used for my_health / patient_history)
         self._load_pgvector()
     
     def _load_model(self) -> bool:
@@ -385,117 +464,53 @@ class TinyLlamaRouter:
     
     def _generate_conversation(self, intent: str, user_query: str, language: str = "en") -> Optional[str]:
         """
-        Generate conversational response - prefer static for crisp, professional responses
-        
+        Return a conversational response for LOCAL intents.
+
+        ITEM-24: Qwen GGUF is no longer used. All conversational responses are
+        served from the QUICK_RESPONSES static dict (short, crisp, professional).
+        For intents without a static entry the caller falls through to iSHA/Groq.
+
         Args:
-            intent: The classified intent
-            user_query: Original user message
-            language: Response language
-            
+            intent: Classified intent string
+            user_query: Original user message (unused for static responses)
+            language: Response language code (en / hi)
+
         Returns:
-            Generated response or None if failed
+            Static response string, or None (caller routes to iSHA cascade)
         """
-        # ═══════════════════════════════════════════════════════════════
-        # STATIC RESPONSES - Short, crisp, neutral, professional
-        # For conversational intents, static is better (zero drama)
-        # ═══════════════════════════════════════════════════════════════
         if intent in self.QUICK_RESPONSES:
             responses = self.QUICK_RESPONSES[intent]
             return responses.get(language, responses.get("en"))
-        
-        # For unknown intents, try Qwen
-        if not self._load_model():
-            return None
-        
-        system_prompt = "You are Dr. iSHA, an AI health assistant. Be brief, neutral, and professional. No drama."
-        if language == "hi":
-            system_prompt += " Reply in Hindi/Hinglish. Keep it brief."
-        
-        try:
-            prompt = f"""{system_prompt}
 
-User: {user_query}
-Dr. iSHA:"""
-            
-            start = time.time()
-            response = self._llm(
-                prompt,
-                max_tokens=30,
-                temperature=0.3,
-                top_p=0.9,
-                stop=["\n", "User:", "<|", "Dr. iSHA:"]
-            )
-            
-            generated = response['choices'][0]['text'].strip()
-            generated = generated.replace("<think>", "").replace("</think>", "").strip()
-            
-            latency = (time.time() - start) * 1000
-            logger.info(f"💬 Qwen: {latency:.0f}ms | '{generated[:50]}...'")
-            
-            return generated if generated and len(generated) >= 5 else None
-            
-        except Exception as e:
-            logger.warning(f"⚠️ Qwen conversation failed: {e}")
-            return None
+        # No static entry — signal caller to route to iSHA/Groq
+        return None
     
     def generate_with_rag(self, query: str, patient_id: Optional[str] = None, language: str = "en") -> Optional[str]:
         """
-        Generate response using Qwen with RAG context
-        
-        This method:
-        1. Retrieves relevant context from FAISS
-        2. Builds a context-aware prompt
-        3. Generates response with Qwen
-        
+        Retrieve RAG context for personal health queries.
+
+        ITEM-24: Qwen is no longer used to generate answers.  This method now
+        retrieves pgvector context chunks and returns them formatted as a
+        context string that the caller (SIB brain / iSHA cascade) can inject
+        into its own LLM prompt.  Returns None when no relevant chunks found.
+
         Args:
             query: User query
-            patient_id: Optional patient ID for personalized context
-            language: Response language
-            
-        Returns:
-            Generated response with RAG context
-        """
-        if not self._load_model():
-            return None
-        
-        # Retrieve relevant context
-        context_chunks = self.retrieve_context(query, patient_id, k=3)
-        
-        # Build context string
-        context_str = ""
-        if context_chunks:
-            context_str = "\n\nRelevant patient information:\n" + "\n".join(f"- {c[:200]}" for c in context_chunks)
-        
-        system_prompt = "You are Dr. iSHA, an AI health assistant. Use the provided patient information to give personalized, accurate responses. Be brief and professional."
-        if language == "hi":
-            system_prompt += " Reply in Hindi/Hinglish."
-        
-        try:
-            prompt = f"""{system_prompt}{context_str}
+            patient_id: Optional patient ID for personalized context filtering
+            language: Response language (unused here — returned as metadata)
 
-User: {query}
-Dr. iSHA:"""
-            
-            start = time.time()
-            response = self._llm(
-                prompt,
-                max_tokens=100,  # More tokens for RAG responses
-                temperature=0.4,
-                top_p=0.9,
-                stop=["\n\n", "User:", "<|", "Dr. iSHA:"]
-            )
-            
-            generated = response['choices'][0]['text'].strip()
-            generated = generated.replace("<think>", "").replace("</think>", "").strip()
-            
-            latency = (time.time() - start) * 1000
-            logger.info(f"📚 Qwen+RAG: {latency:.0f}ms | context={len(context_chunks)} | '{generated[:50]}...'")
-            
-            return generated if generated and len(generated) >= 5 else None
-            
-        except Exception as e:
-            logger.warning(f"⚠️ Qwen+RAG failed: {e}")
+        Returns:
+            Formatted context string for injection into iSHA prompt, or None
+        """
+        context_chunks = self.retrieve_context(query, patient_id, k=3)
+        if not context_chunks:
             return None
+
+        # Return as structured context block (not a final answer)
+        context_lines = [f"- {c[:200]}" for c in context_chunks]
+        context_block = "[PATIENT CONTEXT]\n" + "\n".join(context_lines)
+        logger.info(f"RAG: {len(context_chunks)} context chunks retrieved for patient={patient_id}")
+        return context_block
     
     def _build_prompt(self, query: str, context: Optional[Dict] = None) -> str:
         """Build intent classification prompt"""
@@ -731,25 +746,25 @@ Return JSON with:
     
     def classify(self, query: str, language: str = "en", context: Optional[Dict] = None, use_rag: bool = False) -> RoutingDecision:
         """
-        Classify intent and determine routing
-        
-        OPTIMIZED FLOW (for speed):
-        1. First try fast pattern matching (~1ms)
-        2. If high confidence (>0.7), use that result immediately
-        3. Only use LLM for ambiguous cases
-        4. Optionally use RAG for context-aware responses
-        
+        Classify intent and determine routing.
+
+        ITEM-24 flow (regex-only, no Qwen):
+        1. Run INTENT_RULES regex classifier (~0ms) — primary classification
+        2. If low-confidence regex result, fall back to _fallback_classify patterns
+        3. For LOCAL intents, return static QUICK_RESPONSES (no LLM generation)
+        4. For MY_HEALTH intents, auto-enable pgvector RAG context
+
         Args:
             query: User message
             language: Language code (en, hi, etc.)
-            context: Optional context (user info, conversation history)
-            use_rag: Whether to use RAG for enhanced responses
-            
+            context: Optional context dict (patient_id, patient_data, history)
+            use_rag: Whether to fetch pgvector RAG context for personal queries
+
         Returns:
-            RoutingDecision with intent, backend, and optional quick response
+            RoutingDecision with intent, backend, and optional quick_response
         """
         start_time = time.time()
-        
+
         # Extract patient_id from context if available
         patient_id = None
         if context:
@@ -757,80 +772,63 @@ Return JSON with:
             if not patient_id:
                 patient_data = context.get("patient_data") or {}
                 patient_id = patient_data.get("id") or patient_data.get("patient_id")
-        
-        # STEP 1: Fast pattern matching first (instant)
-        parsed = self._fallback_classify(query)
-        confidence = parsed.get("confidence", 0.5)
-        
-        # STEP 2: If high confidence, use pattern result (skip LLM)
-        USE_LLM_THRESHOLD = 0.6  # Only use LLM if pattern confidence < 60%
-        
-        if confidence >= USE_LLM_THRESHOLD:
-            logger.debug(f"🚀 Fast path: pattern match confidence {confidence:.0%}")
+
+        # STEP 1: Regex classifier (primary path — replaces Qwen planner)
+        regex_intent = classify_intent(query)
+        confidence = 0.90 if regex_intent != 'unknown' else 0.50
+
+        # STEP 2: For very short / ambiguous inputs, supplement with pattern matcher
+        parsed: Dict[str, Any]
+        if confidence < 0.75:
+            parsed = self._fallback_classify(query)
+            # Use whichever has higher confidence
+            if parsed.get("confidence", 0) > confidence:
+                intent = parsed.get("intent", regex_intent)
+                confidence = parsed.get("confidence", confidence)
+                reasoning = parsed.get("reasoning", "pattern fallback")
+            else:
+                intent = regex_intent
+                reasoning = "regex classifier"
         else:
-            # STEP 3: Low confidence - try LLM for better classification
-            model_available = self._load_model()
-            
-            if model_available and self._llm:
-                try:
-                    prompt = self._build_prompt(query, context)
-                    
-                    response = self._llm(
-                        prompt,
-                        max_tokens=256,
-                        temperature=0.1,
-                        stop=["</s>", "<|user|>"]
-                    )
-                    
-                    raw_output = response['choices'][0]['text'].strip()
-                    llm_parsed = self._parse_response(raw_output)
-                    
-                    # Use LLM result if it has higher confidence
-                    if llm_parsed.get("confidence", 0) > confidence:
-                        parsed = llm_parsed
-                        
-                except Exception as e:
-                    logger.warning(f"Qwen inference failed: {e}, using pattern match")
-        
-        # Determine backend routing
-        intent = parsed.get("intent", "unknown")
-        confidence = parsed.get("confidence", 0.5)
+            intent = regex_intent
+            parsed = {"entities": {}}
+            reasoning = "regex classifier"
+
         backend = self.INTENT_ROUTING.get(intent, "isha")
-        
+
         # Auto-enable RAG for personal health queries
         if intent in ("my_health", "patient_history"):
             use_rag = True
-            logger.info(f"📚 Auto-enabling RAG for personal health query: {intent}")
-        
-        # ═══════════════════════════════════════════════════════════════
-        # Generate response for LOCAL intents using Qwen CPU
-        # Optionally enhanced with RAG context
-        # ═══════════════════════════════════════════════════════════════
-        quick_response = None
+            logger.info(f"Auto-enabling RAG for personal health query: {intent}")
+
+        # ─── Local intents: return static response (no Qwen inference) ──────
+        quick_response: Optional[str] = None
         if backend == "local":
-            # Try RAG-enhanced response if enabled or for my_health queries
+            # For my_health: try pgvector RAG first
             if use_rag:
                 quick_response = self.generate_with_rag(query, patient_id, language)
-            
-            # Fallback to standard generation
+
+            # Static responses for conversational intents (crisp, professional)
             if not quick_response:
                 quick_response = self._generate_conversation(intent, query, language)
-            
-            # Final fallback to static response
+
             if not quick_response and intent in self.QUICK_RESPONSES:
                 responses = self.QUICK_RESPONSES[intent]
                 quick_response = responses.get(language, responses.get("en"))
-                logger.debug(f"Using static fallback for {intent}")
-        
+
         latency = (time.time() - start_time) * 1000
-        
+        logger.debug(
+            f"classify: intent={intent} backend={backend} "
+            f"confidence={confidence:.2f} latency={latency:.1f}ms via={reasoning}"
+        )
+
         return RoutingDecision(
             intent=intent,
             confidence=confidence,
             backend=backend,
             quick_response=quick_response,
             entities=parsed.get("entities", {}),
-            reasoning=parsed.get("reasoning", ""),
+            reasoning=reasoning,
             latency_ms=latency
         )
     

@@ -492,6 +492,17 @@ export const authUser = async (req, res, next) => {
       return res.status(401).json({ message: "user not found" });
     }
 
+    // token_version check — invalidates sessions issued before the last password change
+    if (decoded.tokenVersion !== undefined) {
+      try {
+        const meta = typeof user.metadata === 'string' ? JSON.parse(user.metadata) : (user.metadata || {});
+        const dbVersion = meta.tokenVersion || 0;
+        if (decoded.tokenVersion < dbVersion) {
+          return res.status(401).json({ message: "Session invalidated. Please log in again." });
+        }
+      } catch { /* metadata parse error — allow through */ }
+    }
+
     // Preserve isTeam and isAdmin flags from both token and database
     // ✅ FIX: Ensure ID is always set (Sequelize may return dataValues structure)
     req.user = {

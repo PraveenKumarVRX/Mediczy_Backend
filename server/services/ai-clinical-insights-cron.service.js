@@ -17,7 +17,8 @@
  */
 
 import cron from 'node-cron';
-import pool from '../db/pgPool.js';
+import { getCronPool } from '../db/pgPool.js';
+const pool = getCronPool();
 import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
 
 class ClinicalInsightsCron {

@@ -56,6 +56,44 @@ from llm import get_llm_engine
 from stt import get_stt_service, AudioProcessor, normalize_transcription_language
 from templates import get_template_engine, DocumentType
 
+# ITEM-26: Optional IndicTrans2 translation (CPU offline)
+# Install: pip install ctranslate2 sentencepiece
+# Model: ai4bharat/indictrans2-indic-en-dist-200M (download separately)
+_INDIC_TRANS_AVAILABLE = False
+_indic_trans_model = None
+_indic_trans_tokenizer = None
+INDIC_TRANS_MODEL_DIR = os.environ.get("INDIC_TRANS_MODEL_DIR", "")
+
+try:
+    from IndicTransToolkit import IndicProcessor
+    import ctranslate2
+    import sentencepiece as spm
+    if INDIC_TRANS_MODEL_DIR and Path(INDIC_TRANS_MODEL_DIR).is_dir():
+        _indic_trans_model     = ctranslate2.Translator(INDIC_TRANS_MODEL_DIR, device="cpu")
+        _indic_trans_tokenizer = IndicProcessor(inference=True)
+        _INDIC_TRANS_AVAILABLE = True
+        logging.getLogger(__name__).info(f"[scribe] IndicTrans2 loaded from {INDIC_TRANS_MODEL_DIR}")
+except ImportError:
+    pass
+
+
+def translate_with_indictrans(text: str, src_lang: str) -> Dict[str, Any]:
+    """Translate Indic text to English using IndicTrans2 (offline).
+    Returns {translated, engine, source_lang} or {translated: original, engine: 'passthrough'}.
+    """
+    if not _INDIC_TRANS_AVAILABLE or not text.strip():
+        return {"translated": text, "engine": "passthrough", "source_lang": src_lang}
+    try:
+        batch = _indic_trans_tokenizer.preprocess_batch([text], src_lang=src_lang, tgt_lang="eng_Latn")
+        results = _indic_trans_model.translate_batch(batch)
+        translated = _indic_trans_tokenizer.postprocess_batch(
+            [r.hypotheses[0] for r in results], lang="eng_Latn"
+        )[0]
+        return {"translated": translated, "engine": "indictrans2", "source_lang": src_lang}
+    except Exception as exc:
+        logging.getLogger(__name__).warning(f"[scribe] IndicTrans2 translation failed: {exc}")
+        return {"translated": text, "engine": "passthrough", "source_lang": src_lang}
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -588,10 +626,24 @@ async def transcribe_audio(
         })
         
         if result["success"]:
-            return {
+            detected_lang = result.get("language", "unknown")
+            transcript_text = result["text"]
+
+            # ITEM-26: Translate to English when non-English Indic language detected
+            indic_lang_map = {
+                "hi": "hin_Deva", "ta": "tam_Taml", "te": "tel_Telu",
+                "kn": "kan_Knda", "ml": "mal_Mlym", "mr": "mar_Deva",
+                "bn": "ben_Beng", "gu": "guj_Gujr", "pa": "pan_Guru", "ur": "urd_Arab",
+            }
+            translation_result = None
+            if detected_lang in indic_lang_map and not translate:
+                src = indic_lang_map[detected_lang]
+                translation_result = translate_with_indictrans(transcript_text, src)
+
+            response_obj = {
                 "success": True,
-                "text": result["text"],
-                "language": result.get("language", "unknown"),
+                "text": transcript_text,
+                "language": detected_lang,
                 "detected_languages": result.get("detected_languages", []),
                 "code_switching": result.get("code_switching", False),
                 "language_confidence": result.get("language_probability", 0),
@@ -606,7 +658,15 @@ async def transcribe_audio(
                 "dominant_language_hint": dominant_language_hint,
                 "effective_language": effective_language,
                 "quality": score_transcript_quality(result, requested_language),
+                "indictrans_available": _INDIC_TRANS_AVAILABLE,
             }
+            if translation_result:
+                response_obj["english_translation"] = translation_result["translated"]
+                response_obj["translation_engine"]   = translation_result["engine"]
+            elif detected_lang in indic_lang_map:
+                response_obj["translation_required"] = True
+                response_obj["translation_engine"]   = "indictrans2_not_installed"
+            return response_obj
         else:
             raise HTTPException(500, result.get("error", "Transcription failed"))
     

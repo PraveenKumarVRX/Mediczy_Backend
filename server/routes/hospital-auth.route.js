@@ -1247,9 +1247,19 @@ router.post('/change-password', authUser, async (req, res) => {
       return res.status(400).json({ success: false, message: 'New password must be different from current password' });
     }
     const hashed = await bcrypt.hash(newPassword, 10);
-    await sharedPool.query('UPDATE users SET password = $1 WHERE id = $2', [hashed, user.id]);
+    // Bump tokenVersion so all existing JWTs are invalidated (ITEM-18 session invalidation)
+    await sharedPool.query(`
+      UPDATE users
+      SET password = $1,
+          metadata = jsonb_set(
+            COALESCE(metadata, '{}'),
+            '{tokenVersion}',
+            to_jsonb(COALESCE((metadata->>'tokenVersion')::int, 0) + 1)
+          )
+      WHERE id = $2
+    `, [hashed, user.id]);
     console.log(`✅ Hospital password changed (users table): ${user.email}`);
-    return res.json({ success: true, message: 'Password changed successfully.' });
+    return res.json({ success: true, message: 'Password changed successfully. All other sessions have been signed out.' });
 
   } catch (err) {
     console.error('[hospital-auth] change-password error:', err);

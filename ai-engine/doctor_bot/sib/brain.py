@@ -548,24 +548,39 @@ class SyntheticIntelligenceBrain:
             if request_type == RequestType.HEALTH_CHECK.value:
                 return self._health_check()
 
-            # ── Primary path: Qwen planning + execution ────────────────────
+            # ── ITEM-24: regex intent classifier replaces Qwen planner ─────
+            # For CHAT requests, run classify_intent to annotate the data dict
+            # with the detected intent so _handle_chat / botlets can specialise.
+            if request_type == RequestType.CHAT.value:
+                try:
+                    from sib.tinyllama_router import classify_intent
+                    message = data.get("message", "")
+                    if message:
+                        detected = classify_intent(message)
+                        # Inject intent into data so _handle_chat can act on it
+                        data = {**data, "_intent": detected}
+                        logger.info(f"regex classifier: intent={detected} for chat request")
+                except Exception as _cls_err:
+                    logger.debug(f"classify_intent skipped: {_cls_err}")
+
+            # ── Qwen planner path (kept for /planner/plan endpoint — Qwen
+            #    returns None when GGUF unavailable, falls through naturally) ─
             try:
                 from sib.qwen_planner import get_planner, execute_plan
 
                 planner = get_planner()
-                # plan() is CPU-bound (Llama.cpp) — run in thread to free event loop
+                # plan() returns None immediately when _llm is None (ITEM-24)
                 plan = await asyncio.to_thread(planner.plan, request_type, data)
 
                 if plan is not None:
                     logger.info(
-                        f"🧠 QwenPlanner: intent={plan.intent} urgency={plan.urgency} "
+                        f"QwenPlanner: intent={plan.intent} urgency={plan.urgency} "
                         f"steps={len(plan.steps)} groups={plan.parallel_groups} "
                         f"reasoning='{plan.reasoning}'"
                     )
 
                     step_results = await execute_plan(plan, self, data)
 
-                    # synthesize() is also CPU-bound (Llama.cpp) — run in thread
                     request_text = (
                         data.get("message") or data.get("query") or
                         data.get("prompt") or request_type
@@ -587,7 +602,6 @@ class SyntheticIntelligenceBrain:
                         "provider":      "qwen_orchestrated",
                         "latency_ms":    elapsed,
                     }
-                    # Synthetic intelligence: record outcome for adaptive learning
                     try:
                         from sib.synthetic_intelligence import get_outcome_tracker
                         get_outcome_tracker().record(result, request_type)
@@ -595,9 +609,9 @@ class SyntheticIntelligenceBrain:
                         pass
                     return result
             except Exception as plan_err:
-                logger.warning(f"⚠️ QwenPlanner unavailable ({plan_err}), using hardcoded routing")
+                logger.debug(f"QwenPlanner path skipped ({plan_err}), using direct routing")
 
-            # ── Fallback: hardcoded routing (Qwen unavailable) ─────────────
+            # ── Primary path (ITEM-24): direct botlet routing ──────────────
             return await self._hardcoded_route(request_type, data, start_time)
 
         except Exception as e:

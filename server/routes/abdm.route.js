@@ -24,6 +24,7 @@
 
 import { Router } from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
+import redisClient from '../config/redis.js';
 import {
   ensureAbdmTables,
   getAccessToken,
@@ -101,7 +102,28 @@ router.post('/abha/register/init', async (req, res) => {
   }
 });
 
-router.post('/abha/register/verify', async (req, res) => {
+// ITEM-15: Redis-backed brute-force guard on OTP verify (5 attempts per txn per 30 min)
+async function abhaOtpRateLimit(req, res, next) {
+  try {
+    const txnId  = req.body?.txnId || 'unknown';
+    const userId = req.user?.id || 'anon';
+    const key    = `abdm:otp:${userId}:${txnId}`;
+    const count  = await redisClient.incr(key);
+    if (count === 1) await redisClient.expire(key, 1800); // 30-minute window
+    if (count > 5) {
+      return res.status(429).json({
+        success: false,
+        message: 'Too many OTP attempts. Please wait 30 minutes before retrying.',
+        retryAfter: 1800,
+      });
+    }
+    next();
+  } catch {
+    next(); // Redis unavailable — fail open so ABDM flow isn't broken
+  }
+}
+
+router.post('/abha/register/verify', abhaOtpRateLimit, async (req, res) => {
   try {
     const { txnId, otp, mobile } = req.body;
     if (!txnId || !otp) return res.status(400).json({ success: false, message: 'txnId and otp are required' });

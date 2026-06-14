@@ -21,8 +21,30 @@ import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import fhirMapper from '../services/fhir-mapper.service.js';
 import { connectPostgres } from '../db/postgres.js';
+import redisClient from '../config/redis.js';
+import { startExport, getExportStatus } from '../services/fhir-bulk-export.service.js';
+import { createReadStream, existsSync } from 'fs';
+import path from 'path';
 
 const router = express.Router();
+
+// ── FHIR Redis cache helper ───────────────────────────────────────────────────
+// Pass key=null to skip caching (e.g. for parameterised searches with code/date filters)
+async function fhirCached(key, ttlSeconds, fn) {
+  if (!key) return fn();
+  try {
+    const cached = await redisClient.get(`fhir:${key}`);
+    if (cached) return JSON.parse(cached);
+    const result = await fn();
+    if (result !== null && result !== undefined) {
+      await redisClient.set(`fhir:${key}`, JSON.stringify(result), 'EX', ttlSeconds);
+    }
+    return result;
+  } catch (e) {
+    // On Redis failure, fall through to the DB query
+    return fn();
+  }
+}
 
 // ── Content-Type + FHIR headers ──────────────────────────────────────────────
 router.use((req, res, next) => {
@@ -126,12 +148,34 @@ router.get('/metadata', (_req, res) => {
 });
 
 // ── Patient ───────────────────────────────────────────────────────────────────
+// NOTE: /Patient/$export must be registered BEFORE /Patient/:id so Express does not
+// treat '$export' as a value for the :id parameter.
+router.get('/Patient/\\$export', authUser, async (req, res) => {
+  try {
+    const params = {
+      resourceTypes: (req.query._type || 'Patient,Observation,Condition,MedicationRequest,Encounter').split(',').map(s => s.trim()),
+      outputFormat: req.query._outputFormat || 'application/fhir+ndjson',
+      since: req.query._since || null,
+      initiatedBy: req.user?.id || 'anonymous',
+    };
+    const job = await startExport(params);
+    const statusUrl = `${process.env.FHIR_BASE_URL || 'https://api.mediqzy.com/api/fhir/r4'}/bulkstatus/${job.jobId}`;
+    res.status(202)
+      .setHeader('Content-Location', statusUrl)
+      .json({ jobId: job.jobId, statusUrl, status: 'accepted' });
+  } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
+});
+
 router.get('/Patient/:id', authUser, async (req, res) => {
   try {
-    const pool = await connectPostgres();
-    const { rows } = await pool.query(`SELECT * FROM users WHERE id = $1 AND role IN ('patient','user')`, [req.params.id]);
-    if (!rows[0]) return res.status(404).json(outcome('error', 'not-found', `Patient/${req.params.id} not found`));
-    res.json(fhirMapper.mapPatient(rows[0]));
+    const result = await fhirCached(`Patient:${req.params.id}`, 30, async () => {
+      const pool = await connectPostgres();
+      const { rows } = await pool.query(`SELECT * FROM users WHERE id = $1 AND role IN ('patient','user')`, [req.params.id]);
+      if (!rows[0]) return null;
+      return fhirMapper.mapPatient(rows[0]);
+    });
+    if (!result) return res.status(404).json(outcome('error', 'not-found', `Patient/${req.params.id} not found`));
+    res.json(result);
   } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
 });
 
@@ -179,6 +223,8 @@ router.put('/Patient/:id', authUser, async (req, res) => {
       [name.given?.[0], name.family, email, phone, r.gender, r.birthDate, req.params.id]
     );
     if (!rows[0]) return res.status(404).json(outcome('error', 'not-found', `Patient/${req.params.id} not found`));
+    // Invalidate cache
+    await redisClient.del(`fhir:Patient:${req.params.id}`).catch(() => {});
     res.json(fhirMapper.mapPatient(rows[0]));
   } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
 });
@@ -186,10 +232,14 @@ router.put('/Patient/:id', authUser, async (req, res) => {
 // ── Encounter ─────────────────────────────────────────────────────────────────
 router.get('/Encounter/:id', authUser, async (req, res) => {
   try {
-    const pool = await connectPostgres();
-    const { rows } = await pool.query(`SELECT * FROM appointments WHERE id = $1`, [req.params.id]);
-    if (!rows[0]) return res.status(404).json(outcome('error', 'not-found', `Encounter/${req.params.id} not found`));
-    res.json(fhirMapper.mapEncounter(rows[0]));
+    const result = await fhirCached(`Encounter:${req.params.id}`, 30, async () => {
+      const pool = await connectPostgres();
+      const { rows } = await pool.query(`SELECT * FROM appointments WHERE id = $1`, [req.params.id]);
+      if (!rows[0]) return null;
+      return fhirMapper.mapEncounter(rows[0]);
+    });
+    if (!result) return res.status(404).json(outcome('error', 'not-found', `Encounter/${req.params.id} not found`));
+    res.json(result);
   } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
 });
 
@@ -219,38 +269,44 @@ const LOINC_TO_COLUMN = {
 
 router.get('/Observation', authUser, async (req, res) => {
   try {
-    const pool = await connectPostgres();
     const { patient, code, category, date, _count } = req.query;
-    const limit = Math.min(parseInt(_count) || 20, 100);
+    // Only cache simple patient-scoped queries with no extra filters
+    const useCache = patient && !code && !date;
+    const cacheKey = `Observation:patient:${patient}`;
 
-    const conds = [];
-    const vals  = [];
-    let idx = 1;
+    const bundle = await fhirCached(useCache ? cacheKey : null, 15, async () => {
+      const pool = await connectPostgres();
+      const limit = Math.min(parseInt(_count) || 20, 100);
 
-    if (patient) { conds.push(`patient_id = $${idx++}`); vals.push(patient); }
+      const conds = [];
+      const vals  = [];
+      let idx = 1;
 
-    // ?code= accepts LOINC code (e.g. 85354-9) or display name (e.g. blood-pressure)
-    if (code) {
-      const loincCode = code.includes('|') ? code.split('|')[1] : code;
-      const col       = LOINC_TO_COLUMN[loincCode] || loincCode.replace(/-/g, '_');
-      conds.push(`(loinc_code = $${idx} OR type = $${idx} OR name = $${idx})`);
-      vals.push(loincCode); idx++;
-    }
+      if (patient) { conds.push(`patient_id = $${idx++}`); vals.push(patient); }
 
-    // ?date= accepts YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ prefix
-    if (date) {
-      const d = date.replace('ge', '').replace('le', '').replace('gt', '').replace('lt', '');
-      if (date.startsWith('ge')) { conds.push(`recorded_at >= $${idx++}`); vals.push(d); }
-      else if (date.startsWith('le')) { conds.push(`recorded_at <= $${idx++}`); vals.push(d); }
-      else { conds.push(`DATE(recorded_at) = $${idx++}`); vals.push(d); }
-    }
+      // ?code= accepts LOINC code (e.g. 85354-9) or display name (e.g. blood-pressure)
+      if (code) {
+        const loincCode = code.includes('|') ? code.split('|')[1] : code;
+        conds.push(`(loinc_code = $${idx} OR type = $${idx} OR name = $${idx})`);
+        vals.push(loincCode); idx++;
+      }
 
-    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
-    vals.push(limit);
-    const { rows } = await pool.query(
-      `SELECT * FROM vitals ${where} ORDER BY recorded_at DESC LIMIT $${idx}`, vals
-    ).catch(() => ({ rows: [] }));
-    res.json(fhirMapper.createBundle(rows.map(r => fhirMapper.mapObservation(r, patient))));
+      // ?date= accepts YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ prefix
+      if (date) {
+        const d = date.replace('ge', '').replace('le', '').replace('gt', '').replace('lt', '');
+        if (date.startsWith('ge')) { conds.push(`recorded_at >= $${idx++}`); vals.push(d); }
+        else if (date.startsWith('le')) { conds.push(`recorded_at <= $${idx++}`); vals.push(d); }
+        else { conds.push(`DATE(recorded_at) = $${idx++}`); vals.push(d); }
+      }
+
+      const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+      vals.push(limit);
+      const { rows } = await pool.query(
+        `SELECT * FROM vitals ${where} ORDER BY recorded_at DESC LIMIT $${idx}`, vals
+      ).catch(() => ({ rows: [] }));
+      return fhirMapper.createBundle(rows.map(r => fhirMapper.mapObservation(r, patient)));
+    });
+    res.json(bundle);
   } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
 });
 
@@ -273,25 +329,28 @@ router.post('/Observation', authUser, async (req, res) => {
 // ── Condition ────────────────────────────────────────────────────────────────
 router.get('/Condition', authUser, async (req, res) => {
   try {
-    const pool = await connectPostgres();
     const { patient, _count } = req.query;
-    const limit = Math.min(parseInt(_count) || 20, 100);
-    const { rows } = await pool.query(
-      `SELECT id, patient_id, assessment as description, icd10_codes, created_at FROM clinical_notes WHERE patient_id = $1 AND assessment IS NOT NULL ORDER BY created_at DESC LIMIT $2`,
-      [patient, limit]
-    ).catch(() => ({ rows: [] }));
-    const resources = [];
-    for (const row of rows) {
-      const codes = Array.isArray(row.icd10_codes) ? row.icd10_codes : [];
-      if (codes.length > 0) {
-        for (const code of codes) {
-          resources.push(fhirMapper.mapCondition({ id: `${row.id}-${code}`, patient_id: row.patient_id, icd10_code: typeof code === 'string' ? code : code.code, description: typeof code === 'object' ? code.description : row.description, created_at: row.created_at }, patient));
+    const bundle = await fhirCached(patient ? `Condition:patient:${patient}` : null, 30, async () => {
+      const pool = await connectPostgres();
+      const limit = Math.min(parseInt(_count) || 20, 100);
+      const { rows } = await pool.query(
+        `SELECT id, patient_id, assessment as description, icd10_codes, created_at FROM clinical_notes WHERE patient_id = $1 AND assessment IS NOT NULL ORDER BY created_at DESC LIMIT $2`,
+        [patient, limit]
+      ).catch(() => ({ rows: [] }));
+      const resources = [];
+      for (const row of rows) {
+        const codes = Array.isArray(row.icd10_codes) ? row.icd10_codes : [];
+        if (codes.length > 0) {
+          for (const code of codes) {
+            resources.push(fhirMapper.mapCondition({ id: `${row.id}-${code}`, patient_id: row.patient_id, icd10_code: typeof code === 'string' ? code : code.code, description: typeof code === 'object' ? code.description : row.description, created_at: row.created_at }, patient));
+          }
+        } else if (row.description) {
+          resources.push(fhirMapper.mapCondition({ id: row.id, description: row.description, created_at: row.created_at }, patient));
         }
-      } else if (row.description) {
-        resources.push(fhirMapper.mapCondition({ id: row.id, description: row.description, created_at: row.created_at }, patient));
       }
-    }
-    res.json(fhirMapper.createBundle(resources));
+      return fhirMapper.createBundle(resources);
+    });
+    res.json(bundle);
   } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
 });
 
@@ -724,6 +783,46 @@ router.post('/Consent', authUser, async (req, res) => {
       [patientRef, status, r.category?.[0]?.coding?.[0]?.display || 'General', purpose, effectiveTo]
     ).catch(() => ({ rows: [{ id: Date.now(), patient_id: patientRef, status, created_at: new Date() }] }));
     res.status(201).json(mapConsent(rows[0]));
+  } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
+});
+
+// ── FHIR Bulk $export status + file download (ITEM-20) ───────────────────────
+// GET /Patient/$export is registered early (before /Patient/:id) to avoid route
+// shadowing — see the Patient section above.
+
+// GET /bulkstatus/:jobId — poll export status
+router.get('/bulkstatus/:jobId', authUser, async (req, res) => {
+  try {
+    const status = await getExportStatus(req.params.jobId);
+    if (!status) return res.status(404).json(outcome('error', 'not-found', `Export job ${req.params.jobId} not found`));
+    if (status.status === 'in-progress') {
+      return res.status(202)
+        .setHeader('X-Progress', `${status.progress || 0}%`)
+        .json(status);
+    }
+    if (status.status === 'error') {
+      return res.status(500).json({ ...status, error: status.error || 'Export failed' });
+    }
+    // complete
+    res.status(200).json(status);
+  } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
+});
+
+// GET /bulkdata/:jobId/:filename — stream NDJSON file
+router.get('/bulkdata/:jobId/:filename', authUser, async (req, res) => {
+  try {
+    const { jobId, filename } = req.params;
+    // Sanitise filename — only allow alphanumeric, dash, underscore, dot
+    if (!/^[\w\-]+\.ndjson$/.test(filename)) {
+      return res.status(400).json(outcome('error', 'invalid', 'Invalid filename'));
+    }
+    const filePath = path.join('/tmp/fhir-exports', jobId, filename);
+    if (!existsSync(filePath)) {
+      return res.status(404).json(outcome('error', 'not-found', 'Export file not found'));
+    }
+    res.setHeader('Content-Type', 'application/fhir+ndjson');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    createReadStream(filePath).pipe(res);
   } catch (e) { res.status(500).json(outcome('error', 'exception', e.message)); }
 });
 

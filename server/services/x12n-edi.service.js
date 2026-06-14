@@ -20,7 +20,41 @@
  *   CMS 5010 Companion Guides (270/271/837P/837I/835/278)
  */
 
+import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import pool from '../db/pgPool.js';
+
+// ── EDI encryption (AES-256-GCM) — HIPAA §164.312(a)(2)(iv) ─────────────────
+// EDI_ENCRYPTION_KEY must be a 64-char hex string (32 bytes).
+// Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+function getEdiKey() {
+  const k = process.env.EDI_ENCRYPTION_KEY;
+  if (!k) throw new Error('EDI_ENCRYPTION_KEY env var is required');
+  return Buffer.from(k.slice(0, 64), 'hex');
+}
+
+export function encryptEdi(plaintext) {
+  if (!plaintext) return null;
+  const key    = getEdiKey();
+  const iv     = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const enc    = Buffer.concat([cipher.update(String(plaintext), 'utf8'), cipher.final()]);
+  const tag    = cipher.getAuthTag();
+  return `edi:${iv.toString('hex')}:${tag.toString('hex')}:${enc.toString('hex')}`;
+}
+
+export function decryptEdi(ciphertext) {
+  if (!ciphertext) return null;
+  if (!ciphertext.startsWith('edi:')) return ciphertext; // legacy unencrypted row
+  try {
+    const key              = getEdiKey();
+    const [, ivH, tagH, encH] = ciphertext.split(':');
+    const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(ivH, 'hex'));
+    decipher.setAuthTag(Buffer.from(tagH, 'hex'));
+    return Buffer.concat([decipher.update(Buffer.from(encH, 'hex')), decipher.final()]).toString('utf8');
+  } catch {
+    return null;
+  }
+}
 
 // ── DB bootstrap ──────────────────────────────────────────────────────────────
 export async function ensureEdiTables() {
@@ -281,7 +315,7 @@ export async function saveEdiTransaction(tenantId, opts) {
       parsed?.transactionCtrl || opts.stCtrlNum || null,
       parsed?.senderId || SENDER_ID.trim(),
       parsed?.receiverId || RECEIVER_ID.trim(),
-      raw || null,
+      encryptEdi(raw || null),
       parsed ? JSON.stringify(parsed) : null,
       referenceId || null, referenceType || null,
     ]
@@ -313,7 +347,9 @@ export async function getEdiTransaction(id, tenantId) {
     [id, tenantId]
   );
   if (!rows.length) throw new Error('EDI transaction not found');
-  return rows[0];
+  const row = rows[0];
+  if (row.raw_edi) row.raw_edi = decryptEdi(row.raw_edi);
+  return row;
 }
 
 export async function updateEdiStatus(id, status, errorMessage = null) {

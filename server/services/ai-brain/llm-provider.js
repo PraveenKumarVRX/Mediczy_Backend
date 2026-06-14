@@ -97,6 +97,8 @@ async function getIshaToken() {
 
 // isha-inc.com uses Cloudflare which blocks the OpenAI SDK User-Agent — use fetch directly.
 async function callIshaInc(params) {
+  if (cbCheck(_ishaIncOpenUntil)) throw new Error('isha-inc circuit open');
+
   const baseURL = (getProviderEnv('ISHA_INC_URL') || 'https://isha-inc.com') + '/v1/chat/completions';
   const apiKey  = getProviderEnv('ISHA_INC_API_KEY');
   if (!apiKey) throw new Error('ISHA_INC_API_KEY not configured');
@@ -121,15 +123,20 @@ async function callIshaInc(params) {
       const body = await res.text().catch(() => '');
       throw new Error(`isha-inc ${res.status}: ${body.substring(0, 200)}`);
     }
-    return res.json();
+    const data = await res.json();
+    _ishaIncFailures = 0;
+    return data;
   } catch (err) {
     clearTimeout(timeoutId);
+    cbFail(() => _ishaIncFailures, v => { _ishaIncFailures = v; }, () => _ishaIncOpenUntil, v => { _ishaIncOpenUntil = v; }, 'isha-inc');
     if (err.name === 'AbortError') throw new Error('isha-inc request timed out (30s)');
     throw err;
   }
 }
 
 async function callIsha(params) {
+  if (cbCheck(_ishaOpenUntil)) throw new Error('isha circuit open');
+
   const baseURL = getProviderEnv('ISHA_AI_URL');
   if (!baseURL) throw new Error('ISHA_AI_URL not configured');
   const url = `${baseURL}/v1/chat/completions`;
@@ -180,9 +187,12 @@ async function callIsha(params) {
       const body = await res.text().catch(() => '');
       throw new Error(`iSHA ${res.status}: ${body.substring(0, 200)}`);
     }
-    return res.json();
+    const data = await res.json();
+    _ishaFailures = 0;
+    return data;
   } catch (err) {
     clearTimeout(timeoutId);
+    cbFail(() => _ishaFailures, v => { _ishaFailures = v; }, () => _ishaOpenUntil, v => { _ishaOpenUntil = v; }, 'isha');
     if (err.name === 'AbortError') throw new Error('iSHA request timed out (30s)');
     throw err;
   }
@@ -220,34 +230,47 @@ function getIshaIncClient() {
   return _clients.ishaInc;
 }
 
-/**
- * Call local offline SLM (Indic-Gemma-2B via offline scribe FastAPI).
- * Translates OpenAI-compatible params → offline_scribe ChatRequest format.
- * Returns an OpenAI-compatible response object for seamless cascade.
- */
 // Strings that indicate any provider is returning a stub (no real inference backend).
-// Keep these SPECIFIC to avoid false-positives from legitimate model responses.
 const STUB_RESPONSE_MARKERS = [
   'Integrate vLLM or llama.cpp backend',
   'enable real inference with BiMediX2',
 ];
 
+// In-memory circuit breakers for iSHA and isha-inc (same pattern as SIB)
+let _ishaFailures = 0, _ishaOpenUntil = 0;
+let _ishaIncFailures = 0, _ishaIncOpenUntil = 0;
+let _slmFailures = 0, _slmOpenUntil = 0;
+
+function cbCheck(openUntil) { return Date.now() < openUntil; }
+function cbFail(getF, setF, getO, setO, name) {
+  const f = getF() + 1;
+  setF(f);
+  if (f >= 3) { setO(Date.now() + 5 * 60_000); setF(0); console.warn(`[LLM] ${name} circuit opened for 5 min`); }
+}
+
+/**
+ * Call local SLM via Ollama (http://localhost:11434).
+ * Uses Ollama's /api/chat endpoint — no external dependencies, runs on CPU.
+ */
 async function callLocalSLM(provider, params) {
-  const url = `${provider.baseUrl}/api/chat`;
+  if (cbCheck(_slmOpenUntil)) throw new Error('local-slm circuit open');
+
+  const baseUrl = getProviderEnv('LOCAL_LLM_URL') || provider.baseUrl || 'http://localhost:11434';
+  const model   = getProviderEnv('OLLAMA_MODEL') || 'qwen2:1.5b';
+  const url     = `${baseUrl.replace(/\/$/, '')}/api/chat`;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60_000); // longer — CPU inference
+  const timeoutId  = setTimeout(() => controller.abort(), 30_000);
 
   try {
-    const body = {
-      messages: params.messages.map(m => ({ role: m.role, content: String(m.content || '') })),
-      max_tokens: Math.min(params.max_tokens || 512, 1024),
-      temperature: params.temperature || 0.5,
-    };
-
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        model,
+        messages: params.messages.map(m => ({ role: m.role, content: String(m.content || '') })),
+        stream: false,
+        options: { num_predict: Math.min(params.max_tokens || 512, 1024), temperature: params.temperature || 0.5 },
+      }),
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
@@ -257,42 +280,41 @@ async function callLocalSLM(provider, params) {
       throw new Error(`local-slm ${res.status}: ${errText.substring(0, 200)}`);
     }
 
-    const data = await res.json();
-    const content = data.content || '';
+    const data    = await res.json();
+    const content = data.message?.content || '';
+    if (!content.trim()) throw new Error('local-slm (Ollama) returned empty response');
 
-    // Detect stub placeholder responses — treat as failure so cascade continues
-    if (STUB_RESPONSE_MARKERS.some(marker => content.includes(marker))) {
-      throw new Error('local-slm returned stub placeholder — real inference backend not running');
-    }
-
-    // Convert offline scribe response to OpenAI-compatible format
+    _slmFailures = 0;
     return {
-      id: data.id || `slm-${Date.now()}`,
+      id: `slm-${Date.now()}`,
       object: 'chat.completion',
-      choices: [{
-        index: 0,
-        message: { role: 'assistant', content },
-        finish_reason: data.finish_reason || 'stop',
-      }],
-      model: data.model || provider.model,
+      choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: data.done ? 'stop' : 'length' }],
+      model: data.model || model,
       usage: {
-        prompt_tokens: data.usage?.prompt_tokens || 0,
-        completion_tokens: data.usage?.completion_tokens || 0,
-        total_tokens: data.usage?.total_tokens || 0,
+        prompt_tokens: data.prompt_eval_count || 0,
+        completion_tokens: data.eval_count || 0,
+        total_tokens: (data.prompt_eval_count || 0) + (data.eval_count || 0),
       },
     };
   } catch (err) {
     clearTimeout(timeoutId);
-    if (err.name === 'AbortError') throw new Error('local-slm request timed out (60s)');
+    cbFail(() => _slmFailures, v => { _slmFailures = v; }, () => _slmOpenUntil, v => { _slmOpenUntil = v; }, 'local-slm');
+    if (err.name === 'AbortError') throw new Error('local-slm request timed out (30s)');
     throw err;
   }
 }
 
+// In-memory circuit breaker for SIB (Qwen CPU inference is 60-120s, always times out)
+let _sibFailures = 0;
+let _sibOpenUntil = 0;
+
 async function callSib(params) {
+  if (Date.now() < _sibOpenUntil) throw new Error('sib circuit open');
+
   const baseUrl = getProviderEnv('SIB_URL') || 'http://localhost:8005';
   const url = `${baseUrl.replace(/\/$/, '')}/chat`;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+  const timeoutId = setTimeout(() => controller.abort(), 8_000);
 
   const messages = Array.isArray(params.messages) ? params.messages : [];
   const systemParts = messages
@@ -313,7 +335,8 @@ async function callSib(params) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message,
-        user_id: 'mediczy-backend',
+        patient_id: params.patientId || params.userId || 'mediczy-backend',
+        user_id: params.userId,
         context: {
           source: 'llm-provider',
           model_hint: params.model,
@@ -334,6 +357,7 @@ async function callSib(params) {
     const content = (data.response || data.answer || data.content || '').toString();
     if (!content.trim()) throw new Error('sib returned empty response');
 
+    _sibFailures = 0; // reset on success
     return {
       id: data.id || `sib-${Date.now()}`,
       object: 'chat.completion',
@@ -351,7 +375,13 @@ async function callSib(params) {
     };
   } catch (err) {
     clearTimeout(timeoutId);
-    if (err.name === 'AbortError') throw new Error('sib request timed out (30s)');
+    _sibFailures++;
+    if (_sibFailures >= 3) {
+      _sibOpenUntil = Date.now() + 5 * 60_000; // open for 5 min
+      _sibFailures = 0;
+      console.warn('[LLM] SIB circuit opened — skipping for 5 min');
+    }
+    if (err.name === 'AbortError') throw new Error('sib request timed out (8s)');
     throw err;
   }
 }
@@ -420,7 +450,7 @@ const PROVIDERS = [
     model: 'indic-gemma-2b-navarasa',
     useFetch: false,
     useLocalSLM: true,
-    baseUrl: getProviderEnv('OFFLINE_SCRIBE_URL') || 'http://localhost:8006',
+    baseUrl: getProviderEnv('LOCAL_LLM_URL') || 'http://localhost:11434',
     priority: 5,                   // Only used when all cloud providers fail
   },
 ];
@@ -620,6 +650,7 @@ async function chat({
       params.response_format = responseFormat;
     }
 
+    const providerStart = Date.now();
     try {
       console.log(`[LLM] Trying ${provider.label} (model: ${params.model})...`);
       response = await callProvider(provider, params);
@@ -632,6 +663,12 @@ async function chat({
 
         cascade.push({ provider: provider.name, status: 'error', error: 'Stub placeholder response — backend not ready' });
         errorMessage = (errorMessage ? errorMessage + ' | ' : '') + `${provider.name}: Stub placeholder response`;
+        // Metrics: stub is a soft failure
+        import('../llm-metrics.service.js').then(({ logProviderCall }) => {
+          logProviderCall(provider.name, cognitiveTier, Date.now() - providerStart,
+            response?.usage?.prompt_tokens || 0, response?.usage?.completion_tokens || 0,
+            params.model, false, 'stub', null);
+        }).catch(() => {});
         response = null;
         continue;
       }
@@ -645,6 +682,12 @@ async function chat({
           console.warn(`[LLM] ${provider.label} returned invalid JSON, cascading...`);
           cascade.push({ provider: provider.name, status: 'error', error: 'Invalid JSON response' });
           errorMessage = (errorMessage ? errorMessage + ' | ' : '') + `${provider.name}: Invalid JSON response`;
+          // Metrics: invalid JSON is a soft failure
+          import('../llm-metrics.service.js').then(({ logProviderCall }) => {
+            logProviderCall(provider.name, cognitiveTier, Date.now() - providerStart,
+              response?.usage?.prompt_tokens || 0, response?.usage?.completion_tokens || 0,
+              params.model, false, 'invalid-json', null);
+          }).catch(() => {});
           response = null;
           continue; // Try next provider
         }
@@ -652,12 +695,30 @@ async function chat({
 
       winningProvider = provider;
       cascade.push({ provider: provider.name, status: 'success' });
+      // Metrics: success path — log after we know it's the winner
+      const providerLatency = Date.now() - providerStart;
+      import('../llm-metrics.service.js').then(({ logProviderCall }) => {
+        logProviderCall(provider.name, cognitiveTier, providerLatency,
+          response?.usage?.prompt_tokens || 0, response?.usage?.completion_tokens || 0,
+          params.model, true, null, null);
+      }).catch(() => {});
       break; // Success — stop cascade
     } catch (err) {
       const msg = err.message || String(err);
       console.warn(`[LLM] ${provider.label} failed: ${msg}`);
       cascade.push({ provider: provider.name, status: 'error', error: msg });
       errorMessage = (errorMessage ? errorMessage + ' | ' : '') + `${provider.name}: ${msg}`;
+      // Metrics: classify error type
+      const errType = /timeout/i.test(msg) ? 'timeout'
+        : /circuit open/i.test(msg) ? 'circuit-open'
+        : /4\d\d/.test(msg) ? 'http-4xx'
+        : /5\d\d/.test(msg) ? 'http-5xx'
+        : /not configured/i.test(msg) ? 'not-configured'
+        : 'unknown';
+      import('../llm-metrics.service.js').then(({ logProviderCall }) => {
+        logProviderCall(provider.name, cognitiveTier, Date.now() - providerStart,
+          0, 0, params.model, false, errType, null);
+      }).catch(() => {});
     }
   }
 

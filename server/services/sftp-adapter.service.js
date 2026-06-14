@@ -24,12 +24,17 @@ import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypt
 import pool from '../db/pgPool.js';
 
 // ── Encryption helpers (AES-256-GCM for credential storage) ──────────────────
-const ENC_KEY = Buffer.from(
-  (process.env.SFTP_CREDENTIAL_KEY || process.env.JWT_SECRET || 'mediczy-sftp-default-key-32bytes!').padEnd(32, '0').slice(0, 32)
-);
+// SFTP_CREDENTIAL_KEY must be set independently — never fall back to JWT_SECRET.
+// Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+function getEncKey() {
+  const key = process.env.SFTP_CREDENTIAL_KEY;
+  if (!key) throw new Error('SFTP_CREDENTIAL_KEY env var is required. Generate a 32-byte hex key and add it to server/.env');
+  return Buffer.from(key.slice(0, 64), 'hex');
+}
 
 export function encryptCredential(plaintext) {
   if (!plaintext) return null;
+  const ENC_KEY = getEncKey();
   const iv  = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', ENC_KEY, iv);
   const enc  = Buffer.concat([cipher.update(String(plaintext), 'utf8'), cipher.final()]);
@@ -40,6 +45,7 @@ export function encryptCredential(plaintext) {
 export function decryptCredential(ciphertext) {
   if (!ciphertext) return null;
   try {
+    const ENC_KEY = getEncKey();
     const [ivHex, tagHex, encHex] = ciphertext.split(':');
     const iv      = Buffer.from(ivHex, 'hex');
     const tag     = Buffer.from(tagHex, 'hex');

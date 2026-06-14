@@ -19,8 +19,10 @@ import express from 'express';
 import governanceService from '../services/ai-model-governance.service.js';
 import interpretabilityService from '../services/ai-interpretability.service.js';
 import qualityGates from '../services/ai-quality-gates.service.js';
-import pool from '../db/pgPool.js';
+import pool, { getPoolStats } from '../db/pgPool.js';
 import { requirePatientRecordAccess } from '../utils/patient-access.js';
+import { verifyChain } from '../services/audit-chain.service.js';
+import llmMetrics from '../services/llm-metrics.service.js';
 
 const router = express.Router();
 
@@ -30,6 +32,24 @@ function requireSuperAdminOrMedDir(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
   if (!['super_admin', 'medical_director', 'admin'].includes(role)) {
     return res.status(403).json({ error: 'Medical director or super-admin access required for governance operations' });
+  }
+  next();
+}
+
+// Requires the acting user to be a doctor or admin (for physician acknowledgment)
+function requireDoctorOrAdmin(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!['doctor', 'admin', 'super_admin', 'medical_director'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Physician or admin access required' });
+  }
+  next();
+}
+
+// Requires super_admin only (for sensitive chain verification)
+function requireSuperAdmin(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  if (req.user.role !== 'super_admin') {
+    return res.status(403).json({ error: 'Super-admin access required' });
   }
   next();
 }
@@ -313,6 +333,169 @@ router.get('/patient/:patientId/explanation', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /api/ai-governance/adverse-events
+// Report an adverse event attributable to an AI output (SaMD vigilance pathway)
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/adverse-events', async (req, res) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { patientId, componentId, description, severity, reportedBy } = req.body;
+
+    if (!componentId || !description || !severity) {
+      return res.status(400).json({ error: 'componentId, description, and severity are required' });
+    }
+
+    const validSeverities = ['mild', 'moderate', 'severe', 'critical', 'fatal'];
+    if (!validSeverities.includes(severity)) {
+      return res.status(400).json({ error: `severity must be one of: ${validSeverities.join(', ')}` });
+    }
+
+    // Ensure table exists (idempotent DDL)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ai_adverse_events (
+        id           SERIAL PRIMARY KEY,
+        patient_id   INTEGER,
+        component_id TEXT NOT NULL,
+        description  TEXT NOT NULL,
+        severity     TEXT NOT NULL,
+        reported_by  INTEGER REFERENCES users(id),
+        status       TEXT DEFAULT 'open',
+        created_at   TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    const reporterId = reportedBy ?? req.user?.id ?? null;
+
+    const { rows } = await pool.query(`
+      INSERT INTO ai_adverse_events
+        (patient_id, component_id, description, severity, reported_by, status, created_at)
+      VALUES ($1, $2, $3, $4, $5, 'open', NOW())
+      RETURNING id, created_at
+    `, [patientId ?? null, componentId, description, severity, reporterId]);
+
+    const eventId = rows[0].id;
+
+    // Log to operations audit trail
+    await pool.query(`
+      INSERT INTO operations_audit_log (module, action, actor, details, created_at)
+      VALUES ('ai_governance', 'adverse_event_reported', $1, $2, NOW())
+    `, [
+      req.user?.email || String(reporterId),
+      JSON.stringify({ eventId, componentId, severity, patientId: patientId ?? null })
+    ]).catch(() => {});
+
+    // Console warning — email/SMS notification handled by drift alert pattern
+    console.warn(`[SaMD VIGILANCE] Adverse event #${eventId} reported: component=${componentId} severity=${severity} patient=${patientId ?? 'unspecified'}`);
+
+    res.status(201).json({
+      success: true,
+      message: `Adverse event #${eventId} recorded. Severity: ${severity}.`,
+      eventId,
+      componentId,
+      severity,
+      status: 'open',
+      createdAt: rows[0].created_at,
+      note: 'Events with severity=severe/critical/fatal must be reported to CDSCO under Vigilance Protocol within 30 days.'
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/ai-governance/adverse-events
+// List adverse events (filtered by status/severity/component)
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/adverse-events', requireSuperAdminOrMedDir, async (req, res) => {
+  try {
+    const { status, severity, component_id, limit = 100 } = req.query;
+    const conditions = ['1=1'];
+    const params = [];
+
+    if (status)       { params.push(status);       conditions.push(`status = $${params.length}`); }
+    if (severity)     { params.push(severity);      conditions.push(`severity = $${params.length}`); }
+    if (component_id) { params.push(component_id);  conditions.push(`component_id = $${params.length}`); }
+
+    params.push(parseInt(limit));
+
+    let rows = [];
+    try {
+      const result = await pool.query(`
+        SELECT ae.*, u."firstName", u."lastName", u.email
+        FROM ai_adverse_events ae
+        LEFT JOIN users u ON u.id = ae.reported_by
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY ae.created_at DESC
+        LIMIT $${params.length}
+      `, params);
+      rows = result.rows;
+    } catch (_tableErr) {
+      // Table may not exist yet if no event has been filed
+    }
+
+    res.json({
+      success: true,
+      count: rows.length,
+      events: rows
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/ai-governance/risk-scores/:id/pin-version
+// Pin an algorithm version label to a specific health risk score row
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/risk-scores/:id/pin-version', requireSuperAdminOrMedDir, async (req, res) => {
+  try {
+    const scoreId = parseInt(req.params.id, 10);
+    if (Number.isNaN(scoreId)) {
+      return res.status(400).json({ error: 'Invalid score ID' });
+    }
+
+    const { algorithmVersion } = req.body;
+    if (!algorithmVersion || typeof algorithmVersion !== 'string') {
+      return res.status(400).json({ error: 'algorithmVersion (string) is required' });
+    }
+
+    // Ensure column exists (idempotent DDL)
+    await pool.query(`
+      ALTER TABLE ai_health_risk_scores
+      ADD COLUMN IF NOT EXISTS algorithm_version TEXT
+    `);
+
+    const { rows } = await pool.query(`
+      UPDATE ai_health_risk_scores
+      SET algorithm_version = $1
+      WHERE id = $2
+      RETURNING id, patient_id, algorithm_version, updated_at
+    `, [algorithmVersion, scoreId]);
+
+    if (!rows.length) {
+      return res.status(404).json({ error: `Risk score ${scoreId} not found` });
+    }
+
+    await pool.query(`
+      INSERT INTO operations_audit_log (module, action, actor, details, created_at)
+      VALUES ('ai_governance', 'algorithm_version_pinned', $1, $2, NOW())
+    `, [
+      req.user?.email || 'admin',
+      JSON.stringify({ scoreId, algorithmVersion, patientId: rows[0].patient_id })
+    ]).catch(() => {});
+
+    res.json({
+      success: true,
+      message: `Algorithm version pinned: ${algorithmVersion}`,
+      score: rows[0]
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/ai-governance/model-cards/sync
 // Sync static model cards to database
 // ─────────────────────────────────────────────────────────────────────────────
@@ -346,6 +529,183 @@ router.get('/samd-readiness', requireSuperAdminOrMedDir, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ITEM-10: Physician acknowledgment gate
+// ─────────────────────────────────────────────────────────────────────────────
+
+// POST /api/ai-governance/risk-scores/:id/acknowledge
+// Physician marks a specific risk score as reviewed.
+router.post('/risk-scores/:id/acknowledge', requireDoctorOrAdmin, async (req, res) => {
+  try {
+    const scoreId = parseInt(req.params.id, 10);
+    if (Number.isNaN(scoreId)) {
+      return res.status(400).json({ error: 'Invalid score id' });
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE ai_health_risk_scores
+          SET physician_acknowledged_at = NOW(),
+              acknowledged_by           = $1
+        WHERE id = $2
+    RETURNING id, patient_id, overall_score, risk_level,
+              physician_acknowledged_at, acknowledged_by`,
+      [req.user.id, scoreId]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ error: 'Risk score not found' });
+    }
+
+    // Audit-log the acknowledgment
+    await pool.query(
+      `INSERT INTO operations_audit_log (module, action, actor, details, created_at)
+       VALUES ('ai_governance', 'risk_score_acknowledged', $1, $2, NOW())`,
+      [
+        req.user.email || req.user.id,
+        JSON.stringify({ scoreId, patientId: rows[0].patient_id, riskLevel: rows[0].risk_level })
+      ]
+    ).catch(() => {});
+
+    res.json({ success: true, score: rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/ai-governance/risk-scores/unacknowledged
+// Returns high-risk scores (overall_score > 7) that have not yet been reviewed.
+router.get('/risk-scores/unacknowledged', requireDoctorOrAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit ?? '100', 10), 500);
+
+    const { rows } = await pool.query(
+      `SELECT r.id, r.patient_id, r.overall_score, r.risk_level,
+              r.subscores, r.confidence_score, r.updated_at,
+              p."userId" as user_patient_id,
+              u."firstName", u."lastName"
+         FROM ai_health_risk_scores r
+         JOIN patients p ON p.id = r.patient_id
+         JOIN users   u ON u.id = p."userId"
+        WHERE r.physician_acknowledged_at IS NULL
+          AND r.overall_score > 7
+        ORDER BY r.overall_score DESC, r.updated_at DESC
+        LIMIT $1`,
+      [limit]
+    );
+
+    res.json({
+      success: true,
+      count:   rows.length,
+      message: rows.length > 0
+        ? `${rows.length} high-risk patient score(s) awaiting physician acknowledgment`
+        : 'No unacknowledged high-risk scores',
+      scores:  rows
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ITEM-16: Audit log cryptographic chain verification
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/ai-governance/audit-chain/verify
+// Replays all chained audit rows and reports whether the chain is intact.
+router.get('/audit-chain/verify', requireSuperAdmin, async (req, res) => {
+  try {
+    const result = await verifyChain();
+    const status = result.valid ? 200 : 409;
+    res.status(status).json({
+      success:     result.valid,
+      valid:       result.valid,
+      brokenAt:    result.brokenAt,
+      checkedRows: result.checkedRows,
+      message:     result.valid
+        ? `Audit chain intact — ${result.checkedRows} row(s) verified`
+        : `Audit chain BROKEN at row id ${result.brokenAt} — possible tampering detected`
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ITEM-25: LLM Provider Performance Dashboard
+// GET /api/ai-governance/provider-performance?window=24h|7d|30d
+// Returns P50/P95/P99 latency per provider, success rates, and token totals.
+// Access: super-admin / medical director only.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/provider-performance', requireSuperAdminOrMedDir, async (req, res) => {
+  try {
+    const window = ['24h', '7d', '30d'].includes(req.query.window) ? req.query.window : '24h';
+
+    const [performance, errors] = await Promise.all([
+      llmMetrics.getProviderPerformance(window),
+      llmMetrics.getErrorBreakdown(window),
+    ]);
+
+    // Attach error breakdown per provider for convenience
+    const errorsByProvider = {};
+    for (const e of errors) {
+      if (!errorsByProvider[e.provider]) errorsByProvider[e.provider] = [];
+      errorsByProvider[e.provider].push({ errorType: e.error_type, count: Number(e.count) });
+    }
+
+    const enriched = performance.map(row => ({
+      provider:           row.provider,
+      cognitiveTier:      row.cognitive_tier,
+      window,
+      totalCalls:         Number(row.total_calls),
+      successCount:       Number(row.success_count),
+      failureCount:       Number(row.failure_count),
+      successRatePct:     Number(row.success_rate_pct),
+      latency: {
+        p50Ms:            row.p50_ms,
+        p95Ms:            row.p95_ms,
+        p99Ms:            row.p99_ms,
+        avgMs:            row.avg_ms,
+      },
+      tokens: {
+        totalPrompt:      Number(row.total_prompt_tokens),
+        totalCompletion:  Number(row.total_completion_tokens),
+        totalAll:         Number(row.total_tokens),
+      },
+      windowStart:        row.window_start,
+      windowEnd:          row.window_end,
+      errorBreakdown:     errorsByProvider[row.provider] || [],
+    }));
+
+    res.json({
+      success:    true,
+      window,
+      generatedAt: new Date().toISOString(),
+      providers:  enriched,
+      summary: {
+        totalProviders:    enriched.length,
+        totalCalls:        enriched.reduce((s, r) => s + r.totalCalls, 0),
+        overallSuccessPct: enriched.length
+          ? Math.round(
+              enriched.reduce((s, r) => s + (r.successCount), 0) /
+              Math.max(1, enriched.reduce((s, r) => s + r.totalCalls, 0)) * 100
+            )
+          : null,
+        fastestProvider:   enriched.length
+          ? enriched.filter(r => r.latency.p50Ms != null)
+              .sort((a, b) => a.latency.p50Ms - b.latency.p50Ms)[0]?.provider ?? null
+          : null,
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ITEM-05: DB pool monitoring — super_admin only
+router.get('/db-pool', requireSuperAdmin, (req, res) => {
+  res.json({ poolStats: getPoolStats(), timestamp: new Date().toISOString() });
 });
 
 export default router;

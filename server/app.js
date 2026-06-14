@@ -1,3 +1,4 @@
+import './telemetry.js';
 import express from "express";
 import dotenv from "dotenv";
 if (process.env.NODE_ENV !== 'production' || process.env.DOTENV_IN_PROD === 'true') {
@@ -227,6 +228,11 @@ import { sibAIGuard, attachAIReporter } from './middleware/sib-ai-guard.middlewa
 
 // Phase 4: FHIR R4 Interoperability
 import fhirRouter from './routes/fhir.route.js';
+import fhirSubscriptionsRouter from './routes/fhir-subscriptions.route.js';
+import fhirSubscriptionService from './services/fhir-subscription.service.js';
+
+// CDS Hooks — HL7 point-of-care clinical decision support
+import cdsHooksRouter from './routes/cds-hooks.route.js';
 
 // Interoperability — GAP implementations (all 8 gaps)
 import sftpRouter        from './routes/sftp.route.js';
@@ -494,6 +500,11 @@ if (process.env.DISABLE_KAFKA !== 'true') {
 } else {
   console.log('📝 Kafka disabled by DISABLE_KAFKA environment variable');
 }
+
+// ITEM-23: FHIR Subscription table init (non-blocking)
+fhirSubscriptionService.start().catch(err =>
+  console.warn('⚠️  FHIR Subscription table init failed:', err.message)
+);
 
 // HyperGrid service init (non-blocking)
 initEventBus().catch(err => console.warn('⚠️  HyperGrid event bus init failed:', err.message));
@@ -811,6 +822,10 @@ app.use(express.json({
   }
 }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
+
+// Attach OpenTelemetry trace ID to every request as X-Trace-Id / X-Request-Id header.
+import { correlationMiddleware } from './telemetry.js';
+app.use(correlationMiddleware);
 
 // Backward-compatible alias used by some clients for doctor password reset.
 app.post('/api/doctor/forgot-password', async (req, res) => {
@@ -1533,6 +1548,11 @@ app.use('/api/superadmin/tenants', superAdminTenantRouter); // Super admin tenan
 
 // Phase 4: FHIR R4 API — Interoperability endpoints (metadata is public per FHIR spec)
 app.use('/api/fhir/r4', fhirRouter);
+// ITEM-23: FHIR Subscription push notifications
+app.use('/api/fhir/r4/Subscription', fhirSubscriptionsRouter);
+
+// ITEM-22: CDS Hooks — HL7 point-of-care clinical decision support (discovery is public)
+app.use('/cds-hooks', cdsHooksRouter);
 
 // ============== INTEROPERABILITY — GAP IMPLEMENTATIONS ==============
 app.use('/api/sftp',       sftpRouter);        // GAP-5: SFTP/FTPS file exchange (AES-256-GCM creds)
@@ -1718,11 +1738,35 @@ drugPriceSyncService.start();
 import governanceServiceForCron from './services/ai-model-governance.service.js';
 import { tick as cronTick, tickError as cronTickError, tickStart as cronTickStart } from './utils/cronRegistry.js';
 import cron from 'node-cron';
+import nodemailer from 'nodemailer';
+
+async function sendDriftAlert(drifted) {
+  if (!process.env.MEDICAL_DIRECTOR_EMAIL || !process.env.SMTP_HOST) return;
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT) || 587,
+    secure: false,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
+  });
+  await transporter.sendMail({
+    from: process.env.EMAIL_FROM || process.env.SMTP_FROM,
+    to: process.env.MEDICAL_DIRECTOR_EMAIL,
+    subject: '[ALERT] AI Model Drift Detected — Mediczy',
+    text: `Drift detected in ${drifted.length} feature(s): ${drifted.join(', ')}.\n\nReview at: ${process.env.APP_URL || 'https://mediqzy.com'}/api/ai-governance/dashboard\n\nThis is an automated alert from the Mediczy AI Governance system.`,
+  });
+}
+
 cron.schedule('0 1 * * 0', async () => {
   cronTickStart('ai_drift_monitor');
   try {
     const result = await governanceServiceForCron.runDriftMonitor();
     cronTick('ai_drift_monitor', { alerts: result.alerts?.length || 0, features: result.results?.length || 0 });
+
+    const drifted = result.results?.filter(r => r.psi > 0.20).map(r => r.feature) || [];
+    if (drifted.length > 0) {
+      console.warn(`[DriftMonitor] Drift detected in features: ${drifted.join(', ')}`);
+      sendDriftAlert(drifted).catch(e => console.error('[DriftMonitor] Alert email failed:', e.message));
+    }
   } catch (err) {
     cronTickError('ai_drift_monitor', err.message);
   }
@@ -1735,6 +1779,22 @@ cron.schedule('0 1 * * 1', async () => {
     cronTick('ai_demographic_parity', { groups: result.groups?.length || 0, flagged: result.disparityFlagged || 0 });
   } catch (err) {
     cronTickError('ai_demographic_parity', err.message);
+  }
+});
+
+// ============== ITEM-16: Audit Chain Integrity Check (daily 03:00 AM) ==============
+import { verifyChain as verifyAuditChain } from './services/audit-chain.service.js';
+
+cron.schedule('0 3 * * *', async () => {
+  cronTickStart('audit_chain_verify');
+  try {
+    const result = await verifyAuditChain();
+    cronTick('audit_chain_verify', { valid: result.valid, checkedRows: result.checkedRows, brokenAt: result.brokenAt });
+    if (!result.valid) {
+      console.warn(`[AuditChain] INTEGRITY BREACH — chain broken at row id ${result.brokenAt}. Possible tampering detected. Checked ${result.checkedRows} rows.`);
+    }
+  } catch (err) {
+    cronTickError('audit_chain_verify', err.message);
   }
 });
 

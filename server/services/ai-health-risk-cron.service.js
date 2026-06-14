@@ -15,7 +15,8 @@
  */
 
 import cron from 'node-cron';
-import pool from '../db/pgPool.js';
+import { getCronPool } from '../db/pgPool.js';
+const pool = getCronPool();
 import llmProvider from './ai-brain/llm-provider.js';
 import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
 import interpretabilityService from './ai-interpretability.service.js';

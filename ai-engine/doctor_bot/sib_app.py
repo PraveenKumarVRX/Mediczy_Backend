@@ -343,13 +343,16 @@ async def lifespan(app: FastAPI):
         except Exception as _e:
             logger.warning(f"ClinicalBERT warmup skipped: {_e}")
 
-    async def _prewarm_qwen():
+    async def _prewarm_regex_router():
         try:
-            from sib.tinyllama_router import get_router
-            await asyncio.to_thread(get_router)
-            logger.info("✅ Qwen 2.5-3B (TinyLlamaRouter) preloaded")
+            from sib.tinyllama_router import get_router, classify_intent
+            # Instantiate router singleton and warm the regex engine (ITEM-24: no GGUF loaded)
+            router = await asyncio.to_thread(get_router)
+            # Warm compile: run one classify to ensure all regex patterns are compiled
+            _ = classify_intent("hello")
+            logger.info("Intent router preloaded (regex classifier, no GGUF)")
         except Exception as _e:
-            logger.warning(f"Qwen preload skipped: {_e}")
+            logger.warning(f"Regex router preload skipped: {_e}")
 
     async def _prewarm_groq():
         try:
@@ -362,7 +365,7 @@ async def lifespan(app: FastAPI):
     await asyncio.gather(
         _prewarm_pubmed(),
         _prewarm_clinical(),
-        _prewarm_qwen(),
+        _prewarm_regex_router(),
         _prewarm_groq(),
         return_exceptions=True,
     )
@@ -381,18 +384,18 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Dr. iSHA & Mediqzy - SIB API",
     description="""
-    Synthetic Intelligence Brain (SIB) — Qwen-Orchestrated Medical AI.
+    Synthetic Intelligence Brain (SIB) — Regex-Routed Medical AI.
 
-    Orchestration (v2):
-      Every request → QwenPlanner.plan() → parallel botlet execution → QwenPlanner.synthesize()
-      Qwen 2.5-3B (CPU, local) plans and synthesizes; iSHA GPU / Groq / Gemini execute deep reasoning.
+    Orchestration (v3 — ITEM-24):
+      Every request → regex intent classifier (~0ms) → botlet routing → iSHA/Groq/Gemini execution
+      Qwen 2.5-3B GGUF planner replaced by lightweight INTENT_RULES regex classifier.
 
     Endpoints:
-    - /chat:            Multi-turn conversational AI (Qwen-orchestrated)
+    - /chat:            Multi-turn conversational AI (regex-routed)
     - /query:           RAG-powered Q&A with risk assessment
-    - /planner/plan:    Direct QwenPlanner call — returns execution plan JSON
-    - /planner/status:  Qwen model load status and capabilities
-    - /automate:        Unified automation route → QwenPlanner → task_router
+    - /planner/plan:    QwenPlanner call (falls back to regex if Qwen unavailable)
+    - /planner/status:  Router load status and capabilities
+    - /automate:        Unified automation route → regex classifier → task_router
     - /triage:          ESI 5-level triage
     - /emergency-triage: Real-time emergency assessment
     - /risk:            Bayesian cardiovascular risk scoring
@@ -404,9 +407,9 @@ app = FastAPI(
     - /kb/refresh:      Nightly IRDAI / WHO knowledge refresh
     - /webhook/n8n:     n8n bidirectional integration
 
-    LLM Stack: Qwen 2.5-3B (planner) → iSHA GPU (BiMediX2/MedGemma) → Groq → Gemini
+    LLM Stack: regex classifier (router) → iSHA GPU (BiMediX2/MedGemma) → Groq → Gemini
     """,
-    version="3.0.0",
+    version="3.1.0",
     lifespan=lifespan
 )
 
@@ -431,10 +434,10 @@ async def root():
     """Root endpoint"""
     return {
         "name": "Dr. iSHA & Mediqzy - Synthetic Intelligence Brain",
-        "version": "3.0.0",
+        "version": "3.1.0",
         "status": "online",
         "docs": "/docs",
-        "orchestration": "Qwen 2.5-3B plans → botlets execute → Qwen synthesizes",
+        "orchestration": "regex intent classifier → botlets execute → iSHA/Groq/Gemini synthesize",
         "planner": "/planner/status",
         "automate": "/automate",
         "botlets": [
@@ -444,11 +447,12 @@ async def root():
             "EmergencyTriageBotlet", "WebSearchBotlet",
         ],
         "llm_stack": [
-            "Qwen 2.5-3B (planner/synthesizer, local CPU)",
+            "regex classifier (intent router, zero-weight, ~0ms)",
             "iSHA GPU: BiMediX2-8B / MedGemma-4B (clinical reasoning)",
             "Groq: Llama-3.3-70B (cloud fallback 1)",
             "Gemini: 1.5-flash (cloud fallback 2)",
         ],
+        "item_24": "Qwen 2.5-3B GGUF planner replaced by INTENT_RULES regex classifier",
     }
 
 
@@ -1863,25 +1867,25 @@ async def planner_plan(request: PlanRequest):
 @app.get("/planner/status")
 async def planner_status():
     """
-    QwenPlanner and Qwen model load status.
+    Intent router status.
 
-    Returns whether Qwen 2.5-3B is loaded, the model path,
-    and which botlets and automation routes the planner can command.
+    ITEM-24: Qwen 2.5-3B GGUF replaced by regex classifier.
+    Returns classifier rule count and routing capabilities.
     """
     try:
-        from sib.qwen_planner import get_planner
-        from sib.tinyllama_router import get_router
+        from sib.tinyllama_router import get_router, INTENT_RULES
 
-        planner = get_planner()
         router = get_router()
-        llm_loaded = router._loaded and router._llm is not None
 
         return {
-            "qwen_loaded": llm_loaded,
-            "model_path": router.model_path,
-            "model_profile": __import__("os").environ.get("ROUTER_MODEL_PROFILE", "balanced"),
-            "planner_active": llm_loaded,
-            "fallback_routing": not llm_loaded,
+            "classifier": "regex",
+            "classifier_rules": len(INTENT_RULES),
+            "qwen_loaded": False,                  # ITEM-24: Qwen removed
+            "model_path": router.model_path,       # retained for reference
+            "model_profile": os.environ.get("ROUTER_MODEL_PROFILE", "balanced"),
+            "planner_active": True,                # regex classifier is always active
+            "fallback_routing": False,
+            "item_24": "Qwen 2.5-3B GGUF planner replaced by INTENT_RULES regex classifier",
             "commandable_botlets": [
                 "chat", "ehr", "risk", "summarizer", "task",
                 "notification", "insurance", "web_search",

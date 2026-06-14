@@ -42,6 +42,13 @@ function getRedis() {
 export function issueAccessToken(user) {
   if (!JWT_SECRET) throw new Error('JWT_SECRET not configured');
 
+  // tokenVersion from metadata — used by auth.middleware to invalidate old tokens on password change
+  let tokenVersion = 0;
+  try {
+    const meta = typeof user.metadata === 'string' ? JSON.parse(user.metadata) : (user.metadata || {});
+    tokenVersion = meta.tokenVersion || 0;
+  } catch { /* ignore parse errors */ }
+
   const payload = {
     sub:              user.id,
     email:            user.email,
@@ -50,6 +57,7 @@ export function issueAccessToken(user) {
     org_type:         user.organization_type || null,
     is_admin:         !!user.isAdmin,
     token_type:       'access',
+    tokenVersion,
   };
 
   return jwt.sign(payload, JWT_SECRET, {

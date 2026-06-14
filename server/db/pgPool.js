@@ -171,4 +171,39 @@ function getPool() {
   return _pool;
 }
 
+// ── Dedicated cron pool (ITEM-21) ─────────────────────────────────────────────
+// Low-max-connection pool for cron jobs. Prevents long-running batch jobs from
+// starving API request handlers under load. Import this — not the default pool —
+// in all *-cron.service.js and *-self-learning-pipeline.service.js files.
+let _cronPool = null;
+
+export function getCronPool() {
+  if (!_cronPool) {
+    const cfg = { ...buildPoolConfig(), max: 5 };
+    _cronPool = new Pool(cfg);
+    _cronPool.on('error', (err) => {
+      console.error('[pgPool:cron] Unexpected idle-client error:', err.message);
+    });
+  }
+  return _cronPool;
+}
+
+// ── Pool stats (ITEM-05) ───────────────────────────────────────────────────────
+export function getPoolStats() {
+  const main = _pool;
+  const cron = _cronPool;
+  return {
+    main: main ? {
+      total: main.totalCount,
+      idle:  main.idleCount,
+      waiting: main.waitingCount,
+    } : null,
+    cron: cron ? {
+      total: cron.totalCount,
+      idle:  cron.idleCount,
+      waiting: cron.waitingCount,
+    } : null,
+  };
+}
+
 export default getPool();
