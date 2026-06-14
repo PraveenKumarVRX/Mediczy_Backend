@@ -33,6 +33,11 @@ import { getRoutingStats, updateThreshold } from '../services/ai-brain/cognitive
 import { getTelemetryStats } from '../services/ai-brain/evaluation-engine.js';
 import { getWeightStats, resetWeightsToDefault } from '../services/ai-brain/scoring-model.js';
 import { resolveSibBaseUrl } from '../config/ai-services.config.js';
+import { ADMIN_COPILOT } from '../config/admin-copilot.config.js';
+import {
+  resolvePendingAction,
+  listPendingActions,
+} from '../services/admin-copilot-approval.service.js';
 
 const router = Router();
 
@@ -435,16 +440,18 @@ router.get('/providers', requireAuth, requireAdminRole, async (req, res) => {
 // GET    /agents/history        — Caller's agent run history
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * POST /agents/process
- * Main multi-agent entry point. Resolves identity, plans tasks, routes agents.
- *
- * Body: { message, conversationId?, contextMessages?, forceAgent? }
- * forceAgent: bypass planner and use a specific agent (still permission-checked)
- */
-router.post('/agents/process', async (req, res) => {
+function requireAdminCopilotEnabled(req, res, next) {
+  if (!ADMIN_COPILOT.enabled) {
+    return res.status(503).json({ error: 'Admin Copilot is disabled', code: 'COPILOT_DISABLED' });
+  }
+  next();
+}
+
+// ─── POST /agents/process — Main multi-agent entry point ─────────────────────
+
+router.post('/agents/process', requireAdminCopilotEnabled, async (req, res) => {
   try {
-    const { message, conversationId, contextMessages, forceAgent } = req.body;
+    const { message, conversationId, contextMessages, forceAgent, copilotType } = req.body;
 
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
       return res.status(400).json({ error: 'message is required' });
@@ -459,6 +466,7 @@ router.post('/agents/process', async (req, res) => {
       conversationId: conversationId ? parseInt(conversationId) : null,
       contextMessages: Array.isArray(contextMessages) ? contextMessages : [],
       forceAgent: forceAgent || null,
+      copilotType: copilotType || 'ops',
     });
 
     res.json({
@@ -476,6 +484,93 @@ router.post('/agents/process', async (req, res) => {
   } catch (err) {
     const status = err.status || 500;
     res.status(status).json({ success: false, error: err.message, code: err.code });
+  }
+});
+
+/**
+ * POST /agents/process/stream — SSE stream for admin copilot progress events
+ * Body: same as /agents/process; requires ADMIN_COPILOT_STREAMING !== false
+ */
+router.post('/agents/process/stream', requireAdminCopilotEnabled, async (req, res) => {
+  if (!ADMIN_COPILOT.streaming) {
+    return res.status(503).json({ error: 'Admin Copilot streaming is disabled' });
+  }
+
+  try {
+    const { message, conversationId, contextMessages, forceAgent, copilotType } = req.body;
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    const send = (payload) => {
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    send({ type: 'thinking', message: 'Routing to agent...' });
+
+    const result = await multiAgentOrchestrator.process({
+      message: message.trim(),
+      req,
+      conversationId: conversationId ? parseInt(conversationId) : null,
+      contextMessages: Array.isArray(contextMessages) ? contextMessages : [],
+      forceAgent: forceAgent || null,
+      copilotType: copilotType || 'ops',
+      onEvent: (event) => send(event),
+    });
+
+    send({
+      type: 'response',
+      success: true,
+      response: result.response,
+      agentsUsed: result.agentsUsed,
+      taskPlan: result.taskPlan,
+      meta: { totalTokens: result.totalTokens, latencyMs: result.latencyMs },
+    });
+    send({ type: 'done' });
+    res.end();
+  } catch (err) {
+    const status = err.status || 500;
+    if (!res.headersSent) {
+      return res.status(status).json({ success: false, error: err.message, code: err.code });
+    }
+    res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+    res.end();
+  }
+});
+
+/**
+ * GET /agents/pending-actions — Pending copilot write approvals for caller
+ */
+router.get('/agents/pending-actions', requireAuth, async (req, res) => {
+  try {
+    const actions = await listPendingActions(req.user.id);
+    res.json({ actions });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /agents/approve-action — Approve or reject a pending copilot action
+ * Body: { actionId, approve: boolean }
+ */
+router.post('/agents/approve-action', requireAuth, requireAdminRole, async (req, res) => {
+  try {
+    const { actionId, approve } = req.body;
+    if (!actionId) return res.status(400).json({ error: 'actionId is required' });
+    const result = await resolvePendingAction({
+      actionId,
+      userId: req.user.id,
+      approve: !!approve,
+    });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 

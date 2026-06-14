@@ -130,6 +130,28 @@ export const MODEL_CARDS = {
       'Safety check on generated content before presenting to physician'
     ],
     regulatoryNotes:   'If physician always reviews and modifies before committing, this is a documentation productivity tool, not SaMD. If notes are committed without physician review, it crosses into SaMD territory.'
+  },
+
+  'admin-copilot-v1': {
+    componentName:      'Admin AI Copilot',
+    version:            'v1.0.0',
+    regulatoryClass:    'NOT SaMD (administrative ops assistant)',
+    intendedUse:        'Conversational assistant for hospital/platform administrators. Supports configuration guidance, audit log queries, agent metrics, and ops runbooks. Default mode is non-clinical.',
+    notIntendedFor:     'Autonomous clinical decision-making, prescription generation, or emergency triage disposition without physician oversight.',
+    modelType:          'Multi-agent orchestrator (Admin Agent) + LLM cascade (iSHA → Groq → OpenAI)',
+    knownLimitations: [
+      'May hallucinate operational steps not present in RAG corpus',
+      'Write/system actions require human approval by default',
+      'Tenant-scoped admins cannot access platform-wide audit data',
+    ],
+    safetyControls: [
+      'RBAC via agent-permission-engine',
+      'SIB kill switch and rate limits on /agents/process',
+      'Human approval for reload_prompts and system writes',
+      'Audit log in ai_agent_runs with copilot_type metadata',
+    ],
+    changeControlPlan: 'Prompt and agent config changes via PCCP governance workflow.',
+    lastValidatedAt:   null,
   }
 };
 

@@ -202,6 +202,8 @@ const CRMPage                  = lazy(() => import("@/pages/admin/CRMPage"));
 const CRMLeadDetail            = lazy(() => import("@/pages/admin/CRMLeadDetail"));
 const AIAnalyticsDashboard     = lazy(() => import("@/pages/admin/AIAnalyticsDashboard"));
 const AIGovernanceDashboard    = lazy(() => import("@/pages/admin/AIGovernanceDashboard"));
+const AdminCopilot             = lazy(() => import("@/pages/admin/AdminCopilot"));
+const AdminClinicalCopilot     = lazy(() => import("@/pages/admin/AdminClinicalCopilot"));
 const FeedbackIntelligenceDashboard = lazy(() => import("@/pages/admin/FeedbackIntelligenceDashboard"));
 const SLATrackerPage           = lazy(() => import("@/pages/admin/SLATrackerPage"));
 const ComponentDeepDive        = lazy(() => import("@/pages/admin/ComponentDeepDive"));
@@ -1289,6 +1291,8 @@ const AppRoutes = () => {
         <Route path="/admin/crm"                 element={<AdminRoute><CRMPage /></AdminRoute>} />
         <Route path="/admin/crm/lead/:id"        element={<AdminRoute><CRMLeadDetail /></AdminRoute>} />
         <Route path="/admin/ai-analytics"        element={<AdminRoute><AIAnalyticsDashboard /></AdminRoute>} />
+        <Route path="/admin/copilot"             element={<AdminRoute><AdminCopilot /></AdminRoute>} />
+        <Route path="/admin/copilot/clinical"    element={<AdminRoute><AdminClinicalCopilot /></AdminRoute>} />
         <Route path="/admin/ai-governance"        element={<AdminRoute><AIGovernanceDashboard /></AdminRoute>} />
         <Route path="/admin/feedback-intelligence"              element={<AdminRoute><FeedbackIntelligenceDashboard /></AdminRoute>} />
         <Route path="/admin/feedback-intelligence/sla"          element={<AdminRoute><SLATrackerPage /></AdminRoute>} />

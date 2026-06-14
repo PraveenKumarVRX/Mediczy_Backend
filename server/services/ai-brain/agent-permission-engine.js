@@ -25,6 +25,7 @@ import jwt from 'jsonwebtoken';
 // ─── Roles ────────────────────────────────────────────────────────────────────
 
 export const ROLES = {
+  MEDICAL_DIRECTOR: 'medical_director',
   PLATFORM_ADMIN: 'platform_admin',
   HOSPITAL_ADMIN: 'hospital_admin',
   DOCTOR:         'doctor',
@@ -83,8 +84,16 @@ const ROLE_CAPABILITIES = {
     CAPS.LLM_HIGH_REASONING, CAPS.LLM_STANDARD, CAPS.LLM_BASIC,
     CAPS.READ_PATIENT_DATA, CAPS.WRITE_PATIENT_DATA,
     CAPS.READ_ANALYTICS, CAPS.READ_FINANCIAL, CAPS.WRITE_FINANCIAL,
-    CAPS.EXEC_READ_TOOLS, CAPS.EXEC_WRITE_TOOLS,
+    CAPS.EXEC_READ_TOOLS, CAPS.EXEC_WRITE_TOOLS, CAPS.EXEC_SYSTEM_TOOLS,
     CAPS.VIEW_AUDIT_LOGS, CAPS.MANAGE_AGENTS,
+  ],
+
+  [ROLES.MEDICAL_DIRECTOR]: [
+    CAPS.INVOKE_ANALYST_AGENT, CAPS.INVOKE_CLINICAL_AGENT, CAPS.INVOKE_RESEARCH_AGENT,
+    CAPS.LLM_HIGH_REASONING, CAPS.LLM_STANDARD,
+    CAPS.READ_PATIENT_DATA, CAPS.READ_ANALYTICS,
+    CAPS.EXEC_READ_TOOLS,
+    CAPS.VIEW_AUDIT_LOGS,
   ],
 
   [ROLES.DOCTOR]: [
@@ -133,6 +142,7 @@ const ROLE_CAPABILITIES = {
 
 const TOKEN_BUDGETS = {
   [ROLES.PLATFORM_ADMIN]: 16000,
+  [ROLES.MEDICAL_DIRECTOR]: 10000,
   [ROLES.HOSPITAL_ADMIN]: 12000,
   [ROLES.DOCTOR]:          8000,
   [ROLES.NURSE]:           4000,
@@ -215,6 +225,7 @@ function _mapToAgentRole(rawRole) {
   if (!rawRole) return ROLES.PATIENT;
   const r = String(rawRole).toLowerCase();
   if (r.includes('platform') || r === 'superadmin' || r === 'super_admin') return ROLES.PLATFORM_ADMIN;
+  if (r === 'medical_director') return ROLES.MEDICAL_DIRECTOR;
   if (r.includes('hospital_admin') || r === 'admin' || r === 'manager') return ROLES.HOSPITAL_ADMIN;
   if (r === 'doctor' || r === 'physician' || r.startsWith('dr')) return ROLES.DOCTOR;
   if (r === 'nurse' || r === 'staff' || r === 'paramedic') return ROLES.NURSE;

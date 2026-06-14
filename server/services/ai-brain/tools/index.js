@@ -29,6 +29,12 @@ function register(tool) {
   _tools.set(tool.name, tool);
 }
 
+function getToolMeta(name) {
+  const tool = _tools.get(name);
+  if (!tool) return {};
+  return { isWrite: !!tool.isWrite, isSystem: !!tool.isSystem };
+}
+
 /**
  * Get all registered tools as OpenAI function-calling format.
  */
@@ -39,7 +45,8 @@ function getToolDefinitions() {
       name: t.name,
       description: t.description,
       parameters: t.parameters
-    }
+    },
+    _meta: { isWrite: !!t.isWrite, isSystem: !!t.isSystem },
   }));
 }
 
@@ -52,6 +59,7 @@ function listTools() {
     description: t.description,
     category: t.category,
     isWrite: !!t.isWrite,
+    isSystem: !!t.isSystem,
     parameterCount: Object.keys(t.parameters?.properties || {}).length
   }));
 }
@@ -109,4 +117,4 @@ async function execute(name, params, context = {}) {
   return result;
 }
 
-export { register, getToolDefinitions, listTools, execute };
+export { register, getToolDefinitions, listTools, execute, getToolMeta };

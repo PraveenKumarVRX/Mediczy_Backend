@@ -347,11 +347,16 @@ async function runAgent(task, identity, conversationMessages, ragContext = '', o
       let toolArgs = {};
       try { toolArgs = JSON.parse(tc.function.arguments || '{}'); } catch { /* ignore */ }
 
+      opts.onEvent?.({ type: 'tool_start', tool: tc.function.name, args: toolArgs });
+
       const toolResult = await executeTool(tc.function.name, toolArgs, {
         userId: identity.userId,
         userType: identity.role,
         agentId: task.agentId,
+        tenantId: identity.tenantId,
       });
+
+      opts.onEvent?.({ type: 'tool_result', tool: tc.function.name, summary: JSON.stringify(toolResult).substring(0, 500) });
 
       toolsExecuted.push({ name: tc.function.name, result: toolResult });
 
@@ -384,7 +389,7 @@ async function runAgent(task, identity, conversationMessages, ragContext = '', o
 /**
  * Execute a task DAG — runs independent tasks in parallel, respects dependsOn.
  */
-async function executeGraph(plan, identity, conversationMessages) {
+async function executeGraph(plan, identity, conversationMessages, onEvent) {
   // Get agentic RAG context for the overall query (shared across agents)
   let ragContext = '';
   try {
@@ -415,6 +420,7 @@ async function executeGraph(plan, identity, conversationMessages) {
       ready.map(task => runAgent(task, identity, conversationMessages, ragContext, {
         cognitiveTier:      plan.cognitiveTier,
         cognitiveDecisionId: plan.cognitiveDecisionId,
+        onEvent,
       }))
     );
 
@@ -497,12 +503,16 @@ Combine them into a single coherent, well-structured response.
  * @param {string}  [options.forceAgent]      - Force a specific agent (bypasses planner, still checks permissions)
  * @returns {{ response, agentsUsed, taskPlan, totalTokens, latencyMs, identity }}
  */
-export async function processRequest({ message, req, conversationId, contextMessages = [], forceAgent }) {
+export async function processRequest({
+  message, req, conversationId, contextMessages = [], forceAgent,
+  copilotType = 'ops', onEvent,
+}) {
   await ensureDb();
   const runStart = Date.now();
 
   // 1. Resolve identity
   const identity = await resolveIdentity(req);
+  onEvent?.({ type: 'identity', identity: { role: identity.role, source: identity.source } });
 
   // 2. Permission gate — must be able to execute at least one agent
   const available = getAvailableAgents(identity.capabilities);
@@ -535,6 +545,7 @@ export async function processRequest({ message, req, conversationId, contextMess
   }
 
   console.log(`[MultiAgent] Plan: intent=${plan.intent}, tasks=${plan.tasks.length}, agents=${plan.tasks.map(t => t.agentId).join(',')} (role=${identity.role})`);
+  onEvent?.({ type: 'plan', taskPlan: plan });
 
   // 4. Execute task graph — enforce hard wall-clock timeout
   const timeoutError = new Error(`Agent run exceeded ${AGENT_RUN_TIMEOUT_MS}ms limit`);
@@ -542,7 +553,7 @@ export async function processRequest({ message, req, conversationId, contextMess
   timeoutError.status = 504;
 
   const agentResults = await Promise.race([
-    executeGraph(plan, identity, contextMessages),
+    executeGraph(plan, identity, contextMessages, onEvent),
     new Promise((_, rej) => setTimeout(() => rej(timeoutError), AGENT_RUN_TIMEOUT_MS)),
   ]);
   const totalTokens = agentResults.reduce((s, r) => s + (r.tokens || 0), 0);
@@ -565,6 +576,9 @@ export async function processRequest({ message, req, conversationId, contextMess
     totalTokens,
     latencyMs,
     conversationId,
+    copilotType,
+    forceAgent:    !!forceAgent,
+    tenantId:      identity.tenantId,
   }).catch(err => console.error('[MultiAgent] Audit log error:', err.message));
 
   // 7. Evaluation telemetry (feeds self-optimizing weight updates)
@@ -639,7 +653,14 @@ async function _auditLog(data) {
       data.errorMessage || null,
       data.totalTokens,
       data.latencyMs,
-      JSON.stringify({ conversationId: data.conversationId }),
+      JSON.stringify({
+        conversationId: data.conversationId,
+        copilot_type: data.copilotType || 'ops',
+        tenant_id: data.tenantId || null,
+        action_category: 'read',
+        force_agent: !!data.forceAgent,
+        safety_classification: 'admin-action',
+      }),
     ]
   );
 }
