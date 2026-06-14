@@ -11,6 +11,8 @@ import pool from '../db/pgPool.js';
 import clinicalValidationService from '../services/clinical-validation.service.js';
 import regulatoryComplianceService from '../services/regulatory-compliance.service.js';
 import cdscoFilingService from '../services/cdsco-filing.service.js';
+import samdDocGen from '../services/samd-document-generator.service.js';
+import dpdpPrivacyService from '../services/dpdp-privacy.service.js';
 
 const router = express.Router();
 
@@ -374,6 +376,193 @@ router.post('/cdsco/submissions', requireRole('superadmin'), async (req, res) =>
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
+// DOCUMENT GENERATION — IFU, DoC, CER, Software Label, PMS Plan, EPC
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** GET /api/samd-regulatory/documents/ifu */
+router.get('/documents/ifu', async (req, res) => {
+  try { res.json(await samdDocGen.generateIFU()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/** GET /api/samd-regulatory/documents/declaration-of-conformity */
+router.get('/documents/declaration-of-conformity', async (req, res) => {
+  try { res.json(await samdDocGen.generateDeclarationOfConformity()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/** GET /api/samd-regulatory/documents/clinical-evaluation-report */
+router.get('/documents/clinical-evaluation-report', async (req, res) => {
+  try { res.json(await samdDocGen.generateClinicalEvaluationReport()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/** GET /api/samd-regulatory/documents/software-label */
+router.get('/documents/software-label', async (req, res) => {
+  try { res.json(await samdDocGen.generateSoftwareLabel()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/** GET /api/samd-regulatory/documents/pms-plan */
+router.get('/documents/pms-plan', async (req, res) => {
+  try { res.json(await samdDocGen.generatePMSPlan()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/** GET /api/samd-regulatory/documents/essential-principles */
+router.get('/documents/essential-principles', async (req, res) => {
+  try { res.json(await samdDocGen.generateEssentialPrinciples()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/** GET /api/samd-regulatory/documents/software-architecture */
+router.get('/documents/software-architecture', async (req, res) => {
+  try { res.json(await samdDocGen.generateSoftwareArchitectureDocument()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/** GET /api/samd-regulatory/documents — index of all documents */
+router.get('/documents', async (req, res) => {
+  res.json({
+    documents: [
+      { id: 'IFU-MEDICZY-001',   type: 'Instructions for Use',              endpoint: '/api/samd-regulatory/documents/ifu' },
+      { id: 'DOC-MEDICZY-001',   type: 'Declaration of Conformity',         endpoint: '/api/samd-regulatory/documents/declaration-of-conformity' },
+      { id: 'CER-MEDICZY-001',   type: 'Clinical Evaluation Report',        endpoint: '/api/samd-regulatory/documents/clinical-evaluation-report' },
+      { id: 'LABEL-MEDICZY-001', type: 'Software Label',                    endpoint: '/api/samd-regulatory/documents/software-label' },
+      { id: 'PMS-SOP-001',       type: 'Post-Market Surveillance Plan',     endpoint: '/api/samd-regulatory/documents/pms-plan' },
+      { id: 'EPC-MEDICZY-001',   type: 'Essential Principles Checklist',    endpoint: '/api/samd-regulatory/documents/essential-principles' },
+      { id: 'IEC62304-SLD-001',  type: 'Software Architecture Document',    endpoint: '/api/samd-regulatory/documents/software-architecture' },
+      { id: 'DPDP-PIA-001',      type: 'Privacy Impact Assessment',         endpoint: '/api/samd-regulatory/dpdp/pia' },
+    ],
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DPDP 2023 PRIVACY
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** GET /api/samd-regulatory/dpdp/pia */
+router.get('/dpdp/pia', async (req, res) => {
+  try { res.json(await dpdpPrivacyService.generatePIA()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/** GET /api/samd-regulatory/dpdp/summary */
+router.get('/dpdp/summary', async (req, res) => {
+  try { res.json(await dpdpPrivacyService.getPIASummary()); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CDSCO CHECKLIST AUTO-COMPLETE + READINESS
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** POST /api/samd-regulatory/cdsco/submissions/:id/auto-complete */
+router.post('/cdsco/submissions/:submissionId/auto-complete', requireRole('superadmin'), async (req, res) => {
+  try {
+    const result = await cdscoFilingService.autoCompleteChecklist(parseInt(req.params.submissionId, 10));
+    res.json({ success: true, ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/** POST /api/samd-regulatory/cdsco/submissions/:id/sync-evidence */
+router.post('/cdsco/submissions/:submissionId/sync-evidence', requireRole('superadmin'), async (req, res) => {
+  try {
+    const result = await cdscoFilingService.syncEvidenceToChecklist(parseInt(req.params.submissionId, 10));
+    res.json({ success: true, ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/** GET /api/samd-regulatory/cdsco/submissions/:id/readiness */
+router.get('/cdsco/submissions/:submissionId/readiness', async (req, res) => {
+  try {
+    res.json(await cdscoFilingService.getFullReadinessReport(parseInt(req.params.submissionId, 10)));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// IEC 62304 REQUIREMENTS + VERIFICATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** GET /api/samd-regulatory/iec62304/requirements */
+router.get('/iec62304/requirements', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT r.*, si.name AS software_item_name, si.item_id
+      FROM iec62304_requirements r
+      JOIN iec62304_software_items si ON si.id = r.software_item_id
+      ORDER BY r.req_id
+    `).catch(() => ({ rows: [] }));
+    const byItem = {};
+    rows.forEach(r => {
+      if (!byItem[r.item_id]) byItem[r.item_id] = { name: r.software_item_name, requirements: [] };
+      byItem[r.item_id].requirements.push(r);
+    });
+    res.json({ total: rows.length, by_software_item: byItem });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/** POST /api/samd-regulatory/iec62304/requirements/seed */
+router.post('/iec62304/requirements/seed', requireRole('superadmin'), async (req, res) => {
+  try {
+    const result = await regulatoryComplianceService.seedRequirements();
+    res.json({ success: true, ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/** POST /api/samd-regulatory/iec62304/verify-all */
+router.post('/iec62304/verify-all', requireRole('superadmin'), async (req, res) => {
+  try {
+    const result = await regulatoryComplianceService.verifyAllSoftwareItems();
+    res.json({ success: true, ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MASTER SAMD COMPLIANCE DASHBOARD
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** GET /api/samd-regulatory/compliance-dashboard */
+router.get('/compliance-dashboard', async (req, res) => {
+  try {
+    const [cdsco, qms, iec62304, iso14971, dpdp, validation] = await Promise.all([
+      cdscoFilingService.getFilingDashboard().catch(() => null),
+      regulatoryComplianceService.getQMSDashboard().catch(() => null),
+      regulatoryComplianceService.getIEC62304Dashboard().catch(() => null),
+      regulatoryComplianceService.getRiskManagementDashboard().catch(() => null),
+      dpdpPrivacyService.getPIASummary().catch(() => null),
+      clinicalValidationService.getStudySummary().catch(() => null),
+    ]);
+
+    const completionPct = cdsco?.checklist_progress?.completion_pct ?? 0;
+
+    res.json({
+      overall: {
+        submission_ref:  cdsco?.submission?.submission_ref,
+        device_class:    cdsco?.submission?.device_class,
+        filing_status:   cdsco?.submission?.status,
+        checklist_pct:   completionPct,
+        ready_to_file:   completionPct >= 90,
+        last_updated:    new Date().toISOString(),
+      },
+      cdsco_checklist:    cdsco?.checklist_progress,
+      qms:                qms,
+      iec62304:           iec62304,
+      iso14971: {
+        dashboard:      iso14971,
+        compliant:      iso14971?.iso14971_compliant ?? false,
+      },
+      dpdp_privacy:       dpdp,
+      clinical_validation: validation,
+      documents: {
+        available: ['IFU-MEDICZY-001','DOC-MEDICZY-001','CER-MEDICZY-001','LABEL-MEDICZY-001','PMS-SOP-001','EPC-MEDICZY-001','IEC62304-SLD-001','DPDP-PIA-001'],
+        index_endpoint: '/api/samd-regulatory/documents',
+      },
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
 // COMBINED SEED — initialise all regulatory data in one shot
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -391,6 +580,16 @@ router.post('/seed-all', requireRole('superadmin'), async (req, res) => {
   } catch (e) { results.iec62304_items = `error: ${e.message}`; }
 
   try {
+    const reqResult = await regulatoryComplianceService.seedRequirements();
+    results.iec62304_requirements = `seeded: ${reqResult.seeded} requirements`;
+  } catch (e) { results.iec62304_requirements = `error: ${e.message}`; }
+
+  try {
+    const verifyResult = await regulatoryComplianceService.verifyAllSoftwareItems();
+    results.iec62304_verified = `verified: ${verifyResult.verified} items`;
+  } catch (e) { results.iec62304_verified = `error: ${e.message}`; }
+
+  try {
     await regulatoryComplianceService.seedRiskRegister();
     results.iso14971_risk_register = 'seeded';
   } catch (e) { results.iso14971_risk_register = `error: ${e.message}`; }
@@ -403,7 +602,12 @@ router.post('/seed-all', requireRole('superadmin'), async (req, res) => {
 
   try {
     const sub = await cdscoFilingService.getOrCreatePrimarySubmission();
-    results.cdsco_submission = sub ? `created/found: ${sub.submission_ref}` : 'skipped';
+    if (sub) {
+      const syncResult = await cdscoFilingService.syncEvidenceToChecklist(sub.id);
+      results.cdsco_submission = `${sub.submission_ref} — ${syncResult.synced} checklist items synced`;
+    } else {
+      results.cdsco_submission = 'skipped';
+    }
   } catch (e) { results.cdsco = `error: ${e.message}`; }
 
   res.json({ seeded: true, results });
