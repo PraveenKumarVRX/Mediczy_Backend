@@ -333,6 +333,20 @@ const ASSISTANT_TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'accept_appointment',
+      description: 'Confirm/accept a pending appointment request from a patient. Use when doctor says "confirm the appointment", "accept booking", "approve appointment request".',
+      parameters: {
+        type: 'object',
+        properties: {
+          patient_name: { type: 'string', description: 'Patient name if specified' },
+          appointment_id: { type: 'string', description: 'Appointment ID if known' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'complete_task',
       description: 'Mark a task as completed or done. Use when doctor says "done", "completed", "mark as done", "finished", "task complete", "checked off".',
       parameters: {
@@ -380,6 +394,7 @@ TOOL ROUTING (strict):
 | "my appointments / today / pending / upcoming" | list_appointments |
 | "book / schedule / fix appointment for X on DATE at TIME" | book_appointment |
 | "cancel appointment for X" | cancel_appointment |
+| "confirm / accept / approve appointment (for X)" | accept_appointment |
 | "reschedule / move / shift / change appointment for X to DATE TIME" | reschedule_appointment (NOT list_appointments) |
 | "health / vitals / status of X" | get_patient_health |
 | "today's summary / how many patients today / appointment count" | get_today_summary (counts only — NOT for messages/alerts) |
@@ -387,6 +402,7 @@ TOOL ROUTING (strict):
 | "open / go to / show [screen]" | navigate_to |
 | "any updates / messages / alerts / urgent / emergencies / what's new / briefing / what did I miss / any notifications" | get_doctor_briefing (NOT get_today_summary) |
 | "are you sure / is that right / really / confirm that" | NO tool — restate last answer verbally |
+| "what do you mean / explain that / clarify / what does that mean" | NO tool — clarify or simplify your previous answer from history |
 | "dose / dosage / side effects / indication / contraindication of [drug]" | get_drug_info |
 | "interaction / combine / mix [drug1] with [drug2]" | check_drug_interactions |
 | any other clinical/medical question (diagnosis, symptoms, treatment, physiology) | medical_query |
@@ -479,7 +495,7 @@ async function executeListAppointments(doctorId, filter = 'today', limit = 10) {
       // Upcoming = future/today, not yet cancelled or completed
       whereClause += ` AND a."appointmentDate" >= CURRENT_DATE AND a.status NOT IN ('cancelled', 'completed')`;
     } else if (filter === 'pending') {
-      whereClause += ` AND a.status IN ('pending', 'confirmed', 'scheduled')`;
+      whereClause += ` AND a.status = 'pending'`;
     } else if (filter === 'completed') {
       whereClause += ` AND a.status = 'completed' AND DATE(a."appointmentDate") = $2`;
       params.push(today);
@@ -660,6 +676,56 @@ async function executeCancelAppointment(doctorId, appointmentId, patientName, re
     return { success: true, cancelled: result.rows };
   } catch (err) {
     logger.warn('[VoiceAssistant] cancel_appointment error', { error: err.message });
+    return { success: false, error: err.message };
+  }
+}
+
+async function executeAcceptAppointment(doctorId, appointmentId, patientName) {
+  try {
+    if (appointmentId || patientName) {
+      let where = `"doctorId" = $1 AND status = 'pending'`;
+      const params = [doctorId];
+
+      if (appointmentId) {
+        params.push(String(appointmentId));
+        where += ` AND ("appointmentId" = $${params.length} OR id::text = $${params.length})`;
+      } else if (patientName) {
+        params.push(`%${patientName}%`);
+        where += ` AND "patientName" ILIKE $${params.length}`;
+      }
+
+      const result = await pool.query(`
+        UPDATE appointments
+        SET status = 'confirmed', "updatedAt" = NOW()
+        WHERE ${where}
+        RETURNING "appointmentId", "patientName", "appointmentDate", "appointmentTime"
+      `, params);
+
+      if (result.rows.length === 0) {
+        return { success: false, error: 'No pending appointment request found for that patient.' };
+      }
+      return { success: true, confirmed: result.rows };
+    }
+
+    // No name/ID — confirm the earliest pending request
+    const result = await pool.query(`
+      UPDATE appointments
+      SET status = 'confirmed', "updatedAt" = NOW()
+      WHERE id = (
+        SELECT id FROM appointments
+        WHERE "doctorId" = $1 AND status = 'pending'
+        ORDER BY "appointmentDate" ASC, "appointmentTime" ASC
+        LIMIT 1
+      )
+      RETURNING "appointmentId", "patientName", "appointmentDate", "appointmentTime"
+    `, [doctorId]);
+
+    if (result.rows.length === 0) {
+      return { success: false, error: 'No pending appointment requests to confirm.' };
+    }
+    return { success: true, confirmed: result.rows };
+  } catch (err) {
+    logger.warn('[VoiceAssistant] accept_appointment error', { error: err.message });
     return { success: false, error: err.message };
   }
 }
@@ -1026,6 +1092,44 @@ router.get('/livekit-token', authUser, requireDoctor, async (req, res) => {
   }
 });
 
+// ─── Follow-up / misclassification helpers ───────────────────────────────────
+
+const META_MEDICAL_RE = /I understood this as|health intelligence request|please confirm before I take action/i;
+const CLARIFY_RE = /\b(what do you mean|what does that mean|explain (that|this)|clarify|can you explain|i don'?t understand)\b/i;
+const DOUBT_RE = /\b(are you sure|is that (right|correct)|really\??|confirm that)\b/i;
+const CONFIRM_APPT_RE = /\b(confirm|accept|approve)\s+(the\s+)?(appointment|booking|request)s?\b/i;
+
+function tryConversationShortcuts(text, historyMessages) {
+  const trimmed = text.trim();
+
+  if (CLARIFY_RE.test(trimmed) && historyMessages.length) {
+    const lastAssistant = [...historyMessages].reverse().find(m => m.role === 'assistant' && m.content);
+    if (lastAssistant) {
+      const simplified = toSpokenText(lastAssistant.content, 4);
+      const response = simplified
+        ? `Let me clarify: ${simplified}`
+        : "I was referring to your previous question. Could you tell me which part you'd like me to explain?";
+      return { intent: 'general', action: null, parameters: null, response, speak: response, requiresConfirmation: false };
+    }
+  }
+
+  if (DOUBT_RE.test(trimmed) && historyMessages.length) {
+    const lastAssistant = [...historyMessages].reverse().find(m => m.role === 'assistant' && m.content);
+    if (lastAssistant) {
+      const response = `Yes — ${toSpokenText(lastAssistant.content, 3)}`;
+      return { intent: 'general', action: null, parameters: null, response, speak: response, requiresConfirmation: false };
+    }
+  }
+
+  if (CONFIRM_APPT_RE.test(trimmed)) {
+    const nameMatch = trimmed.match(/\bfor\s+([a-z][a-z\s.'-]{1,40})/i);
+    const patientName = nameMatch?.[1]?.trim().replace(/\s+(please|now|today)$/i, '') || '';
+    return { shortcut: 'accept_appointment', parameters: { patient_name: patientName } };
+  }
+
+  return null;
+}
+
 // ─── POST /agent — Text → Intent + Action/Answer ─────────────────────────────
 
 router.post('/agent', authUser, requireDoctor, async (req, res) => {
@@ -1047,6 +1151,12 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
       }))
     : [];
 
+  // Fast path: clarifications, doubt-checks, appointment confirmations
+  const shortcut = tryConversationShortcuts(text, historyMessages);
+  if (shortcut && !shortcut.shortcut) {
+    return res.json(shortcut);
+  }
+
   // ── iSHA JSON intent prompt — sent to iSHA instead of function-calling ─────
   const ishaIntentPrompt = `You are iSHA, an AI medical assistant for Dr. ${enrichedContext.doctorName || 'Doctor'} on the SmartHealth platform.
 Today: ${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.${enrichedContext.currentPatient ? `\nActive patient: ${enrichedContext.currentPatient.name || 'Unknown'}.` : ''}
@@ -1059,6 +1169,7 @@ Available actions and their parameters:
 - "get_today_summary"       → {}
 - "book_appointment"        → {"patient_name":"","date":"YYYY-MM-DD","time":"HH:MM","reason":"","patient_phone":""}
 - "cancel_appointment"      → {"patient_name":"","appointment_id":"","reason":""}
+- "accept_appointment"      → {"patient_name":"","appointment_id":""}
 - "reschedule_appointment"  → {"patient_name":"","appointment_id":"","new_date":"YYYY-MM-DD","new_time":"HH:MM"}
 - "schedule_followup"       → {"days":7,"reason":""}
 - "search_patient"          → {"query":"name/phone/ID"}
@@ -1081,22 +1192,27 @@ Rules:
 - SHOW TASKS / MY LIST / WHAT DO I NEED TO DO → list_tasks
 - DONE / COMPLETED / MARK AS DONE / FINISHED TASK → complete_task
 - "reschedule" → always reschedule_appointment
+- "confirm / accept / approve appointment" → accept_appointment (NOT medical_query). If no patient named, confirm the next pending request.
+- "what do you mean / explain that / clarify" → general: restate or simplify your PREVIOUS assistant message from conversation history
+- "are you sure / confirm that / is that right" (doubting prior answer) → general: restate previous answer, NO tool
+- WORKFLOW QUESTIONS about appointments, briefing, tasks, patients, navigation → use the matching action tool, NEVER medical_query
 - "alerts / messages / updates / notifications / briefing / what's new" → always get_doctor_briefing (NOT get_today_summary)
 - "how many patients / appointment count / today's summary" → get_today_summary
 - DRUG DOSE / SIDE EFFECTS / INDICATION / CONTRAINDICATION (e.g. "dose of metformin", "side effects of aspirin", "when to use lisinopril") → get_drug_info with {"drug":"<name>","question":"<specific aspect>"}
 - DRUG INTERACTIONS (e.g. "interaction between X and Y", "can I combine X with Y") → check_drug_interactions with {"drugs":["X","Y"]}
 - CLINICAL / MEDICAL QUESTION without a specific drug (diagnosis criteria, treatment protocol, symptoms, physiology) → medical_query with {"query":"<question>"}
+- NEVER use medical_query for appointment confirmation, briefing follow-ups, or "what do you mean" clarifications
 - For get_drug_info, check_drug_interactions, medical_query: write the full clinical answer directly in "response"
 - For all other actions: write a 1-sentence spoken confirmation in "response"`;
 
   try {
     // ── Step 1: Call central LLM router (SIB-first) for JSON intent ─────
-    let toolName = null;
-    let args = {};
+    let toolName = shortcut?.shortcut || null;
+    let args = shortcut?.parameters || {};
     let directContent = null;
     let ishaOk = false;
 
-    try {
+    if (!toolName) try {
       const ishaResp = await llmProvider.chat({
         messages: [
           { role: 'system', content: ishaIntentPrompt },
@@ -1129,7 +1245,7 @@ Rules:
       }
 
       toolName = parsed.action || 'general';
-      args = parsed.parameters || {};
+      args = { ...args, ...(parsed.parameters || {}) };
       directContent = parsed.response || null;
       ishaOk = true;
     } catch (ishaErr) {
@@ -1225,6 +1341,33 @@ Rules:
 
     // medical_query — iSHA already answered in directContent; fall back to answerMedicalQuery
     if (toolName === 'medical_query') {
+      // SIB sometimes misclassifies workflow questions as medical_query with a meta placeholder
+      if (META_MEDICAL_RE.test(directContent || '') || CONFIRM_APPT_RE.test(text)) {
+        const pending = await executeListAppointments(doctorId, 'pending', 5);
+        if (pending?.length) {
+          const names = pending.map(a => a.patientName || 'Unknown').join(', ');
+          const msg = `You have ${pending.length} pending appointment request${pending.length > 1 ? 's' : ''}: ${names}. Say "confirm the appointment" to accept the next one, or name the patient.`;
+          return res.json({
+            intent: 'action',
+            action: 'list_appointments',
+            parameters: { filter: 'pending' },
+            response: msg,
+            speak: toSpokenText(msg),
+            data: pending,
+            requiresConfirmation: false,
+          });
+        }
+        const msg = "I can help with appointments, patient records, drug questions, and your daily briefing. What would you like to do?";
+        return res.json({
+          intent: 'general',
+          action: null,
+          parameters: null,
+          response: msg,
+          speak: msg,
+          requiresConfirmation: false,
+        });
+      }
+
       const answer = directContent || await answerMedicalQuery(args.query || text, args.context || '');
       return res.json({
         intent: 'medical_query',
@@ -1438,6 +1581,28 @@ Rules:
         ? `Appointment booked for ${result.patientName} on ${result.date} at ${result.time}. ID: ${result.appointmentId}.`
         : `Could not book appointment: ${result.error}`;
       return res.json({ intent: 'action', action: 'book_appointment', parameters: args, response: msg, speak: msg, data: result, requiresConfirmation: false });
+    }
+
+    // accept_appointment — confirm pending patient request
+    if (toolName === 'accept_appointment') {
+      const result = await executeAcceptAppointment(doctorId, args.appointment_id, args.patient_name);
+      let msg;
+      if (result.success) {
+        const c = result.confirmed[0];
+        const dateStr = c.appointmentDate ? new Date(c.appointmentDate).toLocaleDateString('en-IN') : '';
+        msg = `Confirmed appointment for ${c.patientName}${dateStr ? ` on ${dateStr}` : ''}${c.appointmentTime ? ` at ${String(c.appointmentTime).slice(0, 5)}` : ''}.`;
+      } else {
+        msg = result.error || 'Could not confirm the appointment.';
+      }
+      return res.json({
+        intent: 'action',
+        action: 'accept_appointment',
+        parameters: args,
+        response: msg,
+        speak: msg,
+        data: result,
+        requiresConfirmation: false,
+      });
     }
 
     // cancel_appointment — execute server-side

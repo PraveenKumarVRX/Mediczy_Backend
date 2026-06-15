@@ -311,9 +311,14 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
         const fallbackSystemPrompt = isClinician
           ? 'You are Dr. iSHA, a clinical decision-support AI for medical professionals. Provide concise, evidence-based clinical guidance. Include a reminder: "For reference only — apply your clinical judgment." Do not refuse clinical queries that would be appropriate for a licensed clinician.'
           : 'You are Dr. iSHA, a helpful medical AI assistant. Answer concisely and clearly. Never provide specific drug doses. Always recommend consulting a doctor for diagnosis.';
+        const history = (userContext?.conversationHistory || [])
+          .slice(-15)
+          .filter(m => m?.role && m?.content)
+          .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content) }));
         const llmResult = await llmProvider.chat({
           messages: [
             { role: 'system', content: fallbackSystemPrompt },
+            ...history,
             { role: 'user', content: query }
           ],
           maxTokens: 512,

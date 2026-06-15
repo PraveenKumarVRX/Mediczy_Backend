@@ -447,7 +447,7 @@ export default function DoctorVoiceAssistant() {
     setMessages(prev => [...prev, userMsg]);
     setInputText("");
 
-    const history = messagesRef.current
+    const history = [...messagesRef.current, userMsg]
       .filter(m => m.id !== "welcome")
       .slice(-10)
       .map(m => ({ role: m.role, text: m.text }));
