@@ -3,6 +3,10 @@ import nodemailer from 'nodemailer';
 import { body, validationResult } from 'express-validator';
 import rateLimit from 'express-rate-limit';
 import sharedPool from '../db/pgPool.js';
+import {
+  findExistingLead,
+  runPostCaptureAutomation,
+} from '../services/crm-lead-automation.service.js';
 
 const router = express.Router();
 
@@ -181,32 +185,56 @@ router.post(
     let leadId = null;
     let stored = false;
     let emailed = false;
+    let isDuplicate = false;
 
-    try {
-      const result = await sharedPool.query(
-        `INSERT INTO crm_leads (name, email, phone, company, designation, source, status, priority, notes, tags, custom_fields, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-         RETURNING id`,
-        [
-          name,
-          email,
-          cleanPhone || phone,
-          organization || null,
-          entityType ? `${entityType} Demo Request` : 'Website Demo Request',
-          'marketing-website',
-          'new',
-          'high',
-          requirements || null,
-          JSON.stringify(tags),
-          JSON.stringify(customFields),
-          0,
-        ]
-      );
-
-      leadId = result.rows[0]?.id || null;
+    const existing = await findExistingLead({ email, phone: cleanPhone || phone });
+    if (existing) {
+      isDuplicate = true;
+      leadId = existing.id;
       stored = true;
-    } catch (error) {
-      console.error('[Marketing Lead] Failed to store CRM lead:', error.message);
+      await sharedPool.query(
+        `UPDATE crm_leads SET
+           name = $1, phone = COALESCE($2, phone), company = COALESCE($3, company),
+           notes = COALESCE($4, notes),
+           custom_fields = COALESCE(custom_fields, '{}'::jsonb) || $5::jsonb,
+           updated_at = NOW()
+         WHERE id = $6`,
+        [name, cleanPhone || phone, organization || null, requirements || null, JSON.stringify(customFields), leadId]
+      );
+    } else {
+      try {
+        const result = await sharedPool.query(
+          `INSERT INTO crm_leads (name, email, phone, company, designation, source, status, priority, notes, tags, custom_fields, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+           RETURNING id`,
+          [
+            name,
+            email,
+            cleanPhone || phone,
+            organization || null,
+            entityType ? `${entityType} Demo Request` : 'Website Demo Request',
+            'marketing-website',
+            'new',
+            'high',
+            requirements || null,
+            JSON.stringify(tags),
+            JSON.stringify(customFields),
+            0,
+          ]
+        );
+
+        leadId = result.rows[0]?.id || null;
+        stored = true;
+      } catch (error) {
+        console.error('[Marketing Lead] Failed to store CRM lead:', error.message);
+      }
+    }
+
+    if (leadId && stored) {
+      const phoneE164 = cleanPhone
+        ? (String(cleanPhone).startsWith('+') ? cleanPhone : `+91${cleanPhone.replace(/^0/, '')}`)
+        : null;
+      runPostCaptureAutomation(leadId, { phoneE164, triggerN8n: !!phoneE164 }).catch(() => {});
     }
 
     try {
@@ -257,8 +285,9 @@ router.post(
       stored,
       emailed,
       leadId,
+      duplicate: isDuplicate,
       message: stored || emailed
-        ? 'Lead captured successfully'
+        ? (isDuplicate ? 'Lead updated successfully' : 'Lead captured successfully')
         : 'Failed to capture lead',
     });
   }

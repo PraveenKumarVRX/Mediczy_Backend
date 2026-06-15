@@ -40,6 +40,7 @@ function daysSince(dateStr) {
 
 const SOURCE_WEIGHTS = {
   referral: 20, website: 15, linkedin: 15, conference: 12,
+  'facebook-lead-ads': 18, 'marketing-website': 16, instagram: 17,
   cold_call: 5, email: 8, social: 8, other: 3,
 };
 const STATUS_WEIGHTS = {
@@ -60,6 +61,19 @@ function ruleBasedLeadScore(lead) {
   else if (recency < 14) score += 4;
   else if (recency > 60) score -= 15;
   return Math.max(0, Math.min(100, score));
+}
+
+/** Fast rule-based score for automation pipelines (no LLM latency). */
+export function quickScoreLead(lead) {
+  const score = ruleBasedLeadScore(lead);
+  return {
+    score,
+    tier: tierFromScore(score),
+    confidence: 'medium',
+    factors: [],
+    nextAction: null,
+    source: 'rules',
+  };
 }
 
 export async function scoreLead(lead, activities = []) {
