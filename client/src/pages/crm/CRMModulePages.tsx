@@ -9,7 +9,7 @@ import {
   Briefcase, ChevronRight, ChevronLeft, LayoutGrid,
   PieChart, Settings, Plus, Search, Trash2, Edit,
   CheckCircle, X, Save, Bell, ArrowRight, UserCheck,
-  Building2, IndianRupee, Brain,
+  Building2, IndianRupee, Brain, Sparkles,
 } from 'lucide-react';
 import api from '@/utils/api';
 
@@ -29,6 +29,7 @@ const sidebarNav = [
     { icon: Activity, label: 'Activities', path: '/crm/activities' },
   ]},
   { section: 'MARKETING', items: [
+    { icon: Sparkles, label: 'AI Copilot', path: '/crm/marketing-copilot' },
     { icon: Mail, label: 'Campaigns', path: '/crm/campaigns' },
     { icon: Users, label: 'Lists', path: '/crm/lists' },
     { icon: FileText, label: 'Templates', path: '/crm/templates' },
