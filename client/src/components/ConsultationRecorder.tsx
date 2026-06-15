@@ -64,6 +64,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import api from '@/utils/api';
+import { downloadPrescriptionPdf, openPrescriptionPdf } from '@/utils/pdfDownload';
 import { useAuth } from '@/auth/AuthProvider';
 import { 
   getTranslation, 
@@ -687,23 +688,26 @@ const ConsultationRecorder: React.FC<ConsultationRecorderProps> = ({
     }
 
     try {
-      window.open(`/api/prescriptions/${savedPrescriptionId}/pdf`, '_blank');
-    } catch (error) {
+      await downloadPrescriptionPdf(api, savedPrescriptionId, `prescription-${savedPrescriptionId}.pdf`);
+    } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Download Failed",
-        description: "Failed to download PDF",
+        description: error.message || "Failed to download PDF",
       });
     }
   };
 
   // Print prescription
-  const printPrescription = () => {
+  const printPrescription = async () => {
     if (!savedPrescriptionId) {
-      // Generate print preview from current data
       generatePrintPreview();
     } else {
-      window.open(`/api/prescriptions/${savedPrescriptionId}/pdf`, '_blank');
+      try {
+        await openPrescriptionPdf(api, savedPrescriptionId);
+      } catch {
+        generatePrintPreview();
+      }
     }
   };
 

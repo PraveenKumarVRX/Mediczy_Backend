@@ -90,6 +90,7 @@ import labTestsRouter from './routes/lab-tests.route.js';
 import availabilityRouter from './routes/availability.route.js';
 import membershipRouter from './routes/membership.route.js';
 import orgMembershipPlansRouter from './routes/org-membership-plans.route.js';
+import healthProgramsRouter from './routes/health-programs.route.js';
 import teamRouter from './routes/team.route.js';
 import teamEmailRouter from './routes/teamEmail.route.js';
 import crmEmailRouter from './routes/crmEmail.route.js';
@@ -1314,6 +1315,7 @@ app.use("/api/doctor/revenue", revenueInsightsRouter); // Revenue insights, prof
 app.use("/api/doctor/engagement", patientEngagementRouter); // Patient engagement, post-visit instructions
 app.use("/api/membership", membershipRouter);
 app.use("/api/org-membership-plans", orgMembershipPlansRouter); // Organization-specific plan customization
+app.use("/api/programs", healthProgramsRouter);                // Health Coaching Framework — unlimited configurable programs
 app.use("/api/insurance", insuranceRouter);
 app.use("/api/insurance-policies", insurancePolicyRouter); // Comprehensive insurance policy & rule engine
 app.use("/api/insurance-company", insuranceCompanyRouter); // Insurance company & corporate login

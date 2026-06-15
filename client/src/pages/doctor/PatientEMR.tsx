@@ -62,6 +62,7 @@ import {
   Brain
 } from 'lucide-react';
 import api from '@/utils/api';
+import { downloadReport } from '@/utils/reportActions';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 
@@ -920,9 +921,7 @@ export default function PatientEMR() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => {
-                                    window.open(`/api/reports/${report.id}/download`, '_blank');
-                                  }}
+                                  onClick={() => downloadReport({ reportId: report.id, fileName: report.fileName || `report-${report.id}` })}
                                   title="Download Report"
                                 >
                                   <Download className="w-4 h-4" />

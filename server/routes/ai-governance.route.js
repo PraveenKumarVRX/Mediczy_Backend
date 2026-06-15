@@ -529,16 +529,20 @@ router.post('/model-cards/sync', requireSuperAdminOrMedDir, async (req, res) => 
 router.get('/samd-readiness', requireSuperAdminOrMedDir, async (req, res) => {
   try {
     const dashboard = await governanceService.getGovernanceDashboard();
-    const checklist = dashboard.samdReadiness;
-    const done    = checklist.filter(c => c.status === 'done').length;
-    const missing = checklist.filter(c => c.status === 'missing').length;
+    const readiness = dashboard.samdReadiness;
+    const items   = Array.isArray(readiness) ? readiness : (readiness?.items ?? []);
+    const done    = items.filter(c => c.status === 'done').length;
+    const missing = items.filter(c => c.status === 'missing').length;
 
     res.json({
       success:       true,
-      readinessScore: `${done}/${checklist.length}`,
-      readinessPct:   Math.round((done / checklist.length) * 100),
+      readinessScore: `${done}/${items.length}`,
+      readinessPct:   Math.round((done / items.length) * 100),
       status:         missing === 0 ? 'ready' : missing <= 4 ? 'near-ready' : 'in-progress',
-      checklist
+      checklist:      items,
+      score:          readiness?.score,
+      partialScore:   readiness?.partialScore,
+      total:          readiness?.total,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

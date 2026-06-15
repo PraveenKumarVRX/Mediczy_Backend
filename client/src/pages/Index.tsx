@@ -35,7 +35,8 @@ import {
   Watch,
   Bluetooth,
   RefreshCw,
-  Building2
+  Building2,
+  Target,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -923,6 +924,13 @@ const Index = () => {
       icon: FileText,
       link: "/health-diary",
       badge: "Daily",
+    },
+    {
+      title: "My Programs",
+      description: "Health coaching & disease management",
+      icon: Target,
+      link: "/my-programs",
+      badge: "Coaching",
     },
     {
       title: "Membership Plans",

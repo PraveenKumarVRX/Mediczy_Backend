@@ -14,6 +14,7 @@ import { Prescription, Appointment, User, Doctor } from '../models/index.js';
 import { EHRRecord, HealthDiary } from '../models/index.js';
 import { authUser, authDoctor } from '../middleware/auth.middleware.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
+import { COOKIE_NAMES } from '../config/cookies.config.js';
 import AuditLog from '../models/auditLog.model.intelligent.js';
 import n8nService from '../services/n8n.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
@@ -25,6 +26,16 @@ router.use(express.json());
 router.use(express.urlencoded({ extended: true }));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const canAccessPrescriptionPdf = (decoded, prescription) => {
+  if (!decoded) return false;
+  if (decoded.role === 'doctor' || decoded.role === 'admin' || decoded.role === 'super_admin') {
+    return true;
+  }
+
+  const decodedIds = [decoded.id, decoded.userId, decoded.user_id].filter(value => value !== undefined && value !== null);
+  return decodedIds.some(value => String(value) === String(prescription.patientId));
+};
 
 // Helper function to render prescription HTML
 const renderPrescriptionHTML = (prescription) => {
@@ -1321,33 +1332,22 @@ router.get('/:id/html', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
 
-    // Check access - either via Authorization header or query token
+    // Check access via Authorization header, signed share token, or httpOnly web auth cookie.
+    const jwt = await import('jsonwebtoken');
+    const bearerToken = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7).trim() : null;
+    const cookieToken = req.cookies?.[COOKIE_NAMES.ACCESS];
+    const tokenCandidates = [bearerToken, token, cookieToken].filter(Boolean);
     let authenticated = false;
 
-    // Try authorization header first
-    if (req.headers.authorization) {
+    for (const candidate of tokenCandidates) {
       try {
-        const headerToken = req.headers.authorization.split(' ')[1];
-        const jwt = await import('jsonwebtoken');
-        const decoded = jwt.default.verify(headerToken, JWT_CONFIG.SECRET);
-        if (decoded.role === 'doctor' || decoded.id === prescription.patientId) {
+        const decoded = jwt.default.verify(candidate, JWT_CONFIG.SECRET);
+        if (canAccessPrescriptionPdf(decoded, prescription)) {
           authenticated = true;
+          break;
         }
-      } catch (err) {
-        // Header auth failed, will try query token
-      }
-    }
-
-    // Try query token if header auth failed
-    if (!authenticated && token) {
-      try {
-        const jwt = await import('jsonwebtoken');
-        const decoded = jwt.default.verify(token, JWT_CONFIG.SECRET);
-        if (decoded.role === 'doctor' || decoded.id === prescription.patientId) {
-          authenticated = true;
-        }
-      } catch (err) {
-        // Query token also failed
+      } catch {
+        // Try the next token source.
       }
     }
 
@@ -1427,33 +1427,22 @@ router.get('/:id/pdf', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
 
-    // Check access - either via Authorization header or query token
+    // Check access via Authorization header, signed share token, or httpOnly web auth cookie.
+    const jwt = await import('jsonwebtoken');
+    const bearerToken = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7).trim() : null;
+    const cookieToken = req.cookies?.[COOKIE_NAMES.ACCESS];
+    const tokenCandidates = [bearerToken, token, cookieToken].filter(Boolean);
     let authenticated = false;
 
-    // Try authorization header first
-    if (req.headers.authorization) {
+    for (const candidate of tokenCandidates) {
       try {
-        const headerToken = req.headers.authorization.split(' ')[1];
-        const jwt = await import('jsonwebtoken');
-        const decoded = jwt.default.verify(headerToken, JWT_CONFIG.SECRET);
-        if (decoded.role === 'doctor' || decoded.id === prescription.patientId) {
+        const decoded = jwt.default.verify(candidate, JWT_CONFIG.SECRET);
+        if (canAccessPrescriptionPdf(decoded, prescription)) {
           authenticated = true;
+          break;
         }
-      } catch (err) {
-        // Header auth failed, will try query token
-      }
-    }
-
-    // Try query token if header auth failed
-    if (!authenticated && token) {
-      try {
-        const jwt = await import('jsonwebtoken');
-        const decoded = jwt.default.verify(token, JWT_CONFIG.SECRET);
-        if (decoded.role === 'doctor' || decoded.id === prescription.patientId) {
-          authenticated = true;
-        }
-      } catch (err) {
-        // Query token also failed
+      } catch {
+        // Try the next token source.
       }
     }
 
@@ -1475,7 +1464,9 @@ router.get('/:id/pdf', async (req, res) => {
       try {
         const page = await browser.newPage();
         await page.setContent(html, { waitUntil: 'networkidle0' });
-        pdfBuffer = await page.pdf({
+        // Buffer.from() required: puppeteer v20+ returns Uint8Array, not Buffer.
+        // Express JSON-serialises Uint8Array unless converted.
+        pdfBuffer = Buffer.from(await page.pdf({
           format: 'A4',
           printBackground: true,
           margin: {
@@ -1484,7 +1475,7 @@ router.get('/:id/pdf', async (req, res) => {
             bottom: '10mm',
             left: '10mm'
           }
-        });
+        }));
       } finally {
         await browser.close();
       }
@@ -1496,18 +1487,24 @@ router.get('/:id/pdf', async (req, res) => {
         fs.mkdirSync(uploadsDir, { recursive: true });
       }
 
+      if (!pdfBuffer?.slice(0, 4).equals(Buffer.from("%PDF"))) {
+        throw new Error("Generated file is not a valid PDF");
+      }
+
       const pdfPath = path.join(uploadsDir, `${prescription.prescriptionId}.pdf`);
       fs.writeFileSync(pdfPath, pdfBuffer);
-
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="prescription-${prescription.prescriptionId}.pdf"`);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", "attachment; filename=\"prescription-" + prescription.prescriptionId + ".pdf\"");
+      res.setHeader("Content-Length", String(pdfBuffer.length));
+      res.setHeader("Cache-Control", "private, no-store");
       res.send(pdfBuffer);
     } catch (pdfError) {
-      console.warn('PDF generation failed, returning HTML:', pdfError.message);
-      // Fallback to HTML if PDF fails
-      res.setHeader('Content-Type', 'text/html');
-      res.setHeader('Content-Disposition', `inline; filename="prescription-${prescription.prescriptionId}.html"`);
-      res.send(html);
+      console.warn("PDF generation failed:", pdfError.message);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to generate prescription PDF. Please use print preview and try again.",
+        error: pdfError.message
+      });
     }
   } catch (error) {
     console.error('Generate prescription PDF error:', error);

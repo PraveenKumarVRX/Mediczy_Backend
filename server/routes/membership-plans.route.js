@@ -756,7 +756,7 @@ router.get('/card-image', authUser, async (req, res) => {
     await page.setViewport({ width: 480, height: 280, deviceScaleFactor: scale });
     await page.setContent(html, { waitUntil: 'networkidle0' });
 
-    const screenshot = await page.screenshot({ type: format, omitBackground: false });
+    const screenshot = Buffer.from(await page.screenshot({ type: format, omitBackground: false }));
     await browser.close();
     browser = null;
 

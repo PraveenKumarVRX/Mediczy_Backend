@@ -10,7 +10,7 @@ import {
   FileStack, BookHeart, Watch, Gift, CalendarDays, UserPlus,
   ClipboardList, Receipt, Brain, Ticket, Sparkles, Briefcase,
   HelpCircle, Phone, Mail, LayoutTemplate, ChevronDown, ChevronRight,
-  Zap, UsersRound,
+  Zap, UsersRound, Target,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,7 @@ const patientSections: SidebarSection[] = [
       { icon: BookHeart,    label: "Health Diary",        path: "/health-diary" },
       { icon: Activity,     label: "My Vitals",           path: "/patient/vital-reports" },
       { icon: Watch,        label: "My Wearables",        path: "/patient/watch-analytics" },
+      { icon: Target,       label: "My Programs",          path: "/my-programs" },
       { icon: Apple,        label: "Diet Plans",          path: "/diet" },
       { icon: Youtube,      label: "Health Tips",         path: "/health-feed" },
       { icon: Gift,         label: "Rewards & Streaks",   path: "/wellness-rewards" },

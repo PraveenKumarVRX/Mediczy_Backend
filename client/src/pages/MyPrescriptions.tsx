@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/auth/AuthProvider";
 import api from "@/utils/api";
+import { downloadPrescriptionPdf } from "@/utils/pdfDownload";
 import MainLayout from "@/components/layout/MainLayout";
 import {
   Dialog,
@@ -116,18 +117,7 @@ const MyPrescriptions = () => {
 
   const handleDownloadPDF = async (id: number, prescriptionNumber?: string) => {
     try {
-      const response = await api.get(`/prescriptions/${id}/pdf`, {
-        responseType: "blob",
-      });
-      const blob = new Blob([response.data], { type: "application/pdf" });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `prescription-${prescriptionNumber || id}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      await downloadPrescriptionPdf(api, id, `prescription-${prescriptionNumber || id}.pdf`);
       toast({
         title: "Downloaded",
         description: "Prescription PDF downloaded successfully.",
@@ -135,7 +125,7 @@ const MyPrescriptions = () => {
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.response?.data?.error || "Failed to download PDF",
+        description: error.message || "Failed to download PDF",
         variant: "destructive",
       });
     }

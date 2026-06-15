@@ -18,6 +18,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import api from '@/utils/api';
+import { downloadReport } from '@/utils/reportActions';
 import {
   patientService,
   ehrService,
@@ -1489,7 +1490,7 @@ const HospitalEHR = () => {
                             variant="outline"
                             size="sm"
                             className="gap-2"
-                            onClick={() => window.open(`/api/reports/${report.id}/download`, '_blank')}
+                            onClick={() => downloadReport({ reportId: report.id, fileName: report.fileName || `report-${report.id}` })}
                           >
                             <Download className="h-4 w-4" /> Download
                           </Button>

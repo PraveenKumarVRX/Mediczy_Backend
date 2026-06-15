@@ -77,6 +77,9 @@ const HealthIntelligence    = lazy(() => import("@/pages/HealthIntelligence"));
 const SIBControlDashboard   = lazy(() => import("@/pages/SIBControlDashboard"));
 const UserHealthRiskAssessment = lazy(() => import("@/pages/UserHealthRiskAssessment"));
 const OrderTasks            = lazy(() => import("@/pages/OrderTasks"));
+const MyPrograms            = lazy(() => import("@/pages/MyPrograms"));
+const ProgramDetail         = lazy(() => import("@/pages/ProgramDetail"));
+const ProgramJourney        = lazy(() => import("@/pages/ProgramJourney"));
 
 // ─── Patient sub-pages ───────────────────────────────────────────────────────
 const PatientNotifications  = lazy(() => import("@/pages/patient/PatientNotifications"));
@@ -1715,6 +1718,9 @@ const AppRoutes = () => {
         <Route path="/my-appointments"       element={<Navigate to="/appointments" replace />} />
         <Route path="/my-prescriptions"      element={<MyPrescriptions />} />
         <Route path="/my-plans"              element={<MainLayout><MyPlans /></MainLayout>} />
+        <Route path="/my-programs"           element={<MyPrograms />} />
+        <Route path="/programs/:slug"        element={<ProgramDetail />} />
+        <Route path="/programs/journey/:enrollmentId" element={<ProgramJourney />} />
         <Route path="/choose-plan"           element={<ChoosePlan />} />
         <Route path="/membership-card"       element={<MainLayout><MyMembershipCard /></MainLayout>} />
         <Route path="/diet"                  element={<MainLayout><Diet /></MainLayout>} />

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { PrescriptionCard } from "@/components/doctor/PrescriptionCard";
 import {
   FileText,
   Plus,
@@ -32,6 +33,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAutosave } from "@/hooks/useAutosave";
 import { useAuth } from "@/auth/AuthProvider";
 import api from "@/utils/api";
+import { downloadPrescriptionPdf } from "@/utils/pdfDownload";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
 import AIScribe from "@/components/AIScribe";
 import OfflineScribePanel from "@/components/OfflineScribePanel";
@@ -480,18 +482,7 @@ const DoctorPrescriptions = () => {
 
   const handleDownloadPDF = async (id: number) => {
     try {
-      const response = await api.get(`/prescriptions/${id}/pdf`, {
-        responseType: "blob",
-      });
-      const blob = new Blob([response.data], { type: "application/pdf" });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `prescription-${id}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      await downloadPrescriptionPdf(api, id, `prescription-${id}.pdf`);
       toast({
         title: "Downloaded",
         description: "Prescription PDF downloaded successfully.",
@@ -499,7 +490,7 @@ const DoctorPrescriptions = () => {
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.response?.data?.error || "Failed to download PDF",
+        description: error.message || "Failed to download PDF",
         variant: "destructive",
       });
     }
@@ -657,61 +648,28 @@ const DoctorPrescriptions = () => {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Total</p>
-                  <h3 className="text-2xl font-bold">{prescriptions.length}</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: "Total", value: prescriptions.length, icon: FileText, from: "from-blue-500", to: "to-indigo-600", bg: "bg-blue-50 dark:bg-blue-900/20" },
+            { label: "Drafts", value: prescriptions.filter((rx: Prescription) => rx.status === "draft").length, icon: Clock, from: "from-amber-400", to: "to-orange-500", bg: "bg-amber-50 dark:bg-amber-900/20" },
+            { label: "Issued", value: prescriptions.filter((rx: Prescription) => rx.status === "issued" || rx.status === "active").length, icon: CheckCircle, from: "from-emerald-500", to: "to-teal-600", bg: "bg-emerald-50 dark:bg-emerald-900/20" },
+            { label: "This Month", value: prescriptions.filter((rx: Prescription) => { const d = new Date(rx.createdAt); const n = new Date(); return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear(); }).length, icon: Calendar, from: "from-purple-500", to: "to-violet-600", bg: "bg-purple-50 dark:bg-purple-900/20" },
+          ].map(({ label, value, icon: Icon, from, to, bg }) => (
+            <Card key={label} className="border-0 shadow-sm overflow-hidden">
+              <CardContent className="p-0">
+                <div className={`${bg} px-5 py-4 flex items-center justify-between`}>
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">{label}</p>
+                    <p className="text-3xl font-bold text-slate-800 dark:text-white">{value}</p>
+                  </div>
+                  <div className={`p-3 rounded-xl bg-gradient-to-br ${from} ${to} shadow-sm`}>
+                    <Icon className="h-5 w-5 text-white" />
+                  </div>
                 </div>
-                <FileText className="h-8 w-8 text-blue-600" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Drafts</p>
-                  <h3 className="text-2xl font-bold">
-                    {prescriptions.filter((rx: Prescription) => rx.status === "draft").length}
-                  </h3>
-                </div>
-                <Clock className="h-8 w-8 text-yellow-600" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Issued</p>
-                  <h3 className="text-2xl font-bold">
-                    {prescriptions.filter((rx: Prescription) => rx.status === "issued").length}
-                  </h3>
-                </div>
-                <CheckCircle className="h-8 w-8 text-green-600" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">This Month</p>
-                  <h3 className="text-2xl font-bold">
-                    {prescriptions.filter((rx: Prescription) => {
-                      const created = new Date(rx.createdAt);
-                      const now = new Date();
-                      return created.getMonth() === now.getMonth() && created.getFullYear() === now.getFullYear();
-                    }).length}
-                  </h3>
-                </div>
-                <Calendar className="h-8 w-8 text-purple-600" />
-              </div>
-            </CardContent>
-          </Card>
+                <div className={`h-1 w-full bg-gradient-to-r ${from} ${to}`} />
+              </CardContent>
+            </Card>
+          ))}
         </div>
 
         {/* Filters */}
@@ -740,131 +698,60 @@ const DoctorPrescriptions = () => {
           </Select>
         </div>
 
-        {/* Prescriptions List */}
-        <Card>
-          <CardContent className="p-0">
-            {isLoading ? (
-              <div className="flex justify-center items-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-              </div>
-            ) : filteredPrescriptions.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <FileText className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No prescriptions found</h3>
-                <p className="text-muted-foreground">
-                  {searchQuery ? "Try adjusting your search" : "Create your first prescription to get started"}
-                </p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Rx #</TableHead>
-                    <TableHead>Patient</TableHead>
-                    <TableHead>Diagnosis</TableHead>
-                    <TableHead>Medications</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredPrescriptions.map((rx: Prescription) => (
-                    <TableRow key={rx.id}>
-                      <TableCell className="font-mono text-sm">{rx.prescriptionId || rx.prescriptionNumber || `RX-${rx.id}`}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <User className="h-4 w-4 text-muted-foreground" />
-                          <div>
-                            <p className="font-medium">{rx.patientName}</p>
-                            {rx.patientAge && (
-                              <p className="text-xs text-muted-foreground">
-                                {rx.patientAge} yrs, {rx.patientGender}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="max-w-[200px] truncate">{rx.diagnosis || "-"}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="flex items-center gap-1 w-fit">
-                          <Pill className="h-3 w-3" />
-                          {rx.medications?.length || 0} meds
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{getStatusBadge(rx.status)}</TableCell>
-                      <TableCell>{format(new Date(rx.createdAt), "MMM dd, yyyy")}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button variant="ghost" size="icon" onClick={() => openViewDialog(rx)} title="View">
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          {rx.status === "draft" && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleIssuePrescription(rx.id)}
-                              title="Issue"
-                              className="text-green-600 hover:text-green-700"
-                            >
-                              <Send className="h-4 w-4" />
-                            </Button>
-                          )}
-                          <Button variant="ghost" size="icon" onClick={() => handleDownloadPDF(rx.id)} title="Download PDF">
-                            <Download className="h-4 w-4" />
-                          </Button>
-                          {(rx.status === "issued" || rx.status === "active") && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title="Send via WhatsApp"
-                              className="text-green-600 hover:text-green-700"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                const phone = (rx as any)?.patientPhone || (rx as any)?.patient?.phone || '';
-                                if (!phone) {
-                                  toast({ title: 'No phone', description: 'Patient phone not on record.', variant: 'destructive' });
-                                  return;
-                                }
-                                try {
-                                  const medications = ((rx as any)?.medicines || (rx as any)?.medications || [])
-                                    .map((m: any) => m?.name || m?.medicine || '').filter(Boolean);
-                                  await api.post('/whatsapp-production/send/prescription', {
-                                    to: phone,
-                                    patientName: (rx as any)?.patientName || 'Patient',
-                                    doctorName: (rx as any)?.doctorName || 'Doctor',
-                                    prescriptionUrl: (rx as any)?.pdfUrl || `${window.location.origin}/prescriptions/${rx.id}`,
-                                    medications,
-                                  });
-                                  toast({ title: '✅ Sent!', description: 'Prescription sent via WhatsApp.' });
-                                } catch {
-                                  toast({ title: 'Failed', description: 'Could not send WhatsApp message.', variant: 'destructive' });
-                                }
-                              }}
-                            >
-                              <Send className="h-4 w-4" />
-                            </Button>
-                          )}
-                          {rx.status === "draft" && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDeletePrescription(rx.id)}
-                              title="Delete"
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+        {/* Prescriptions Card Grid */}
+        {isLoading ? (
+          <div className="flex justify-center items-center py-16">
+            <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          </div>
+        ) : filteredPrescriptions.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center bg-slate-50 dark:bg-slate-800/30 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700">
+            <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-800 mb-4">
+              <FileText className="h-10 w-10 text-slate-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-300">No prescriptions found</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-xs">
+              {searchQuery ? "Try adjusting your search or filter" : "Create your first prescription to get started"}
+            </p>
+            {!searchQuery && (
+              <Button className="mt-5 gap-2" onClick={() => { resetForm(); setCreateDialogOpen(true); }}>
+                <Plus className="h-4 w-4" /> New Prescription
+              </Button>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {filteredPrescriptions.map((rx: Prescription) => (
+              <PrescriptionCard
+                key={rx.id}
+                rx={rx}
+                onView={openViewDialog}
+                onIssue={handleIssuePrescription}
+                onDownload={handleDownloadPDF}
+                onWhatsApp={async (rx) => {
+                  const phone = (rx as any)?.patientPhone || (rx as any)?.patient?.phone || '';
+                  if (!phone) {
+                    toast({ title: 'No phone', description: 'Patient phone not on record.', variant: 'destructive' });
+                    return;
+                  }
+                  try {
+                    const medications = ((rx as any)?.medicines || (rx as any)?.medications || [])
+                      .map((m: any) => m?.name || m?.medicine || '').filter(Boolean);
+                    await api.post('/whatsapp-production/send/prescription', {
+                      to: phone,
+                      patientName: (rx as any)?.patientName || 'Patient',
+                      doctorName: (rx as any)?.doctorName || 'Doctor',
+                      prescriptionUrl: (rx as any)?.pdfUrl || `${window.location.origin}/prescriptions/${rx.id}`,
+                      medications,
+                    });
+                    toast({ title: '✅ Sent!', description: 'Prescription sent via WhatsApp.' });
+                  } catch {
+                    toast({ title: 'Failed', description: 'Could not send WhatsApp message.', variant: 'destructive' });
+                  }
+                }}
+              />
+            ))}
+          </div>
+        )}
 
         {/* Create Prescription Dialog */}
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>

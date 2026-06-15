@@ -272,6 +272,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/hypergrid',  // HyperGrid interoperability & IoT layer
       '/api/cdss',  // Clinical Decision Support System
       '/api/compliance',  // HIPAA/DPDP compliance dashboard
+      '/api/samd-regulatory',  // SaMD regulatory compliance (CDSCO/MDR 2017)
       '/v1',  // API v1 multi-tenant mobile app endpoints
       '/api/v1/adt',      // ADT — Admit / Discharge / Transfer
       '/api/v1/beds',     // Bed Management
