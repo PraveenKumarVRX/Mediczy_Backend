@@ -1331,7 +1331,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     });
   };
 
-  const storeAiDraftAsTemplate = (draft: any, sourceId?: string | number | null) => {
+  const storeAiDraftAsTemplate = async (draft: any, sourceId?: string | number | null) => {
     if (!draft) return null;
     const content = draft.message || draft.body || '';
     if (!content.trim()) return null;
@@ -1353,7 +1353,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     return template;
   };
 
-  const saveComposerAsCommunicationTemplate = () => {
+  const saveComposerAsCommunicationTemplate = async () => {
     if (!communicationComposer.message.trim()) {
       toast({ variant: 'destructive', title: 'Nothing to save', description: 'Write or generate a message before saving a template.' });
       return;
@@ -1768,7 +1768,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       setCommunicationTemplates(defaultCommunicationTemplates);
     }
 
-    await loadServerCommunicationTemplates(selectedCorporate.id);
+    void loadServerCommunicationTemplates(selectedCorporate.id);
 
     setCommunicationComposer({
       to: getDefaultRecipientByChannel(communicationChannel, selectedCorporate),
