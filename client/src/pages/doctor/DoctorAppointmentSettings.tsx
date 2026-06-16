@@ -141,12 +141,16 @@ const DoctorAppointmentSettings = () => {
       });
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data?.config) {
+        setConfig(data.config);
+      }
       toast({
         title: "Settings Saved",
         description: "Your appointment configuration has been updated successfully.",
       });
       queryClient.invalidateQueries({ queryKey: ["appointmentConfig"] });
+      queryClient.invalidateQueries({ queryKey: ["doctor-settings"] });
     },
     onError: (error: any) => {
       toast({
