@@ -126,14 +126,13 @@ const isTeamOrAdminBearerToken = (token) => {
 };
 
 const resolveAuthToken = (req) => {
-  const cookieToken = req.cookies?.[COOKIE_NAMES.ACCESS] || null;
+  // Always prefer an explicit bearer token — cookie is only a fallback for
+  // browser sessions that don't inject a token via the Authorization header.
+  // Preferring cookie over bearer caused stale patient cookies (msz_access)
+  // to shadow valid doctor/team bearer tokens sent on the same domain.
   const bearerToken = getAuthorizationBearerToken(req);
-
-  if (cookieToken && bearerToken && isTeamOrAdminBearerToken(bearerToken)) {
-    return bearerToken;
-  }
-
-  return cookieToken || bearerToken;
+  if (bearerToken) return bearerToken;
+  return req.cookies?.[COOKIE_NAMES.ACCESS] || null;
 };
 
 export const authUser = async (req, res, next) => {

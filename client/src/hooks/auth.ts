@@ -39,7 +39,8 @@ export const clearAuthTokens = () => {
     "userId",
     "userData",
     "fcmToken",
-    "refreshToken",   // Patient/user refresh token for silent session renewal
+    "refreshToken",        // Patient/user refresh token for silent session renewal
+    "doctorRefreshToken",  // Doctor portal refresh token
   ]);
 
   keysToClear.forEach((key) => localStorage.removeItem(key));
@@ -251,11 +252,14 @@ const login = async ({ credentials, loginType }: { credentials: any; loginType: 
   
   setAuthData(data.token, loginType, userId);
 
-  // Store refresh token for silent session renewal (patient/user role).
-  // The server also sets httpOnly cookies, but storing the refresh token in
-  // localStorage lets the axios interceptor call /api/auth/refresh on 401.
+  // Store refresh token for silent session renewal.
+  // Doctors use a dedicated key so it doesn't clash with patient sessions.
   if (data.refreshToken) {
-    localStorage.setItem("refreshToken", data.refreshToken);
+    if (loginType === "doctor") {
+      localStorage.setItem("doctorRefreshToken", data.refreshToken);
+    } else {
+      localStorage.setItem("refreshToken", data.refreshToken);
+    }
   }
 
   // Return data in a consistent format

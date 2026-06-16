@@ -52,19 +52,17 @@ import scoringModel from './scoring-model.js';
 // ─── Tier Constants ───────────────────────────────────────────────────────────
 
 export const TIERS = {
-  REFLEX:   'reflex',    // SLM first
-  STANDARD: 'standard',  // Groq Llama-70B
-  DEEP:     'deep',      // iSHA BiMediX2 / GPT-4-class
+  REFLEX:   'reflex',
+  STANDARD: 'standard',
+  DEEP:     'deep'
 };
 
 // Tier → preferred provider name (maps to PROVIDERS in llm-provider.js)
-// REFLEX   → groq     (Llama 4 Scout, ~138ms consistent — qwen-0.6b-med evicts from VRAM)
-// STANDARD → isha-inc (smart-orchestrator: MedGemma + InsuranceLLM + RAG, ~554ms)
-// DEEP     → isha     (BiMediX2-8B FP16 — highest quality clinical reasoning)
+// Primary policy: all app AI routes go through SIB. SIB owns iSHA.buzz/isha-inc routing.
 export const TIER_PROVIDERS = {
-  [TIERS.REFLEX]:   'groq',
-  [TIERS.STANDARD]: 'isha-inc',
-  [TIERS.DEEP]:     'isha',
+  [TIERS.REFLEX]:   'sib',
+  [TIERS.STANDARD]: 'sib',
+  [TIERS.DEEP]:     'sib',
 };
 
 // ─── Signal Definitions ───────────────────────────────────────────────────────

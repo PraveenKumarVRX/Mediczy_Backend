@@ -103,7 +103,7 @@ const NurseChat: React.FC = () => {
          : window.location.origin));
 
     const sock = io(socketOrigin, {
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       path: '/socket.io',
       query: { userId: nurseId, userType: 'nurse' },
     });

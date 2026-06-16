@@ -22,7 +22,9 @@ import {
   Moon, Zap, Watch, RefreshCw, Bluetooth, BluetoothOff,
   TrendingUp, TrendingDown, Minus, Clock, Battery,
   Dumbbell, MapPin, Droplets, FlaskConical, HeartPulse,
+  Settings, AlertCircle,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import api from '@/utils/api';
 import { healthSyncScheduler } from '@/services/health/HealthSyncScheduler';
@@ -216,6 +218,16 @@ const WatchAnalytics: React.FC = () => {
   const [chartStats, setChartStats] = useState<{ average: number; minimum: number; maximum: number; totalReadings: number } | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
 
+  // ── CGM / Nightscout state ────────────────────────────────────────────────
+  const [nightscoutUrl]    = useState(() => localStorage.getItem('nightscoutUrl') ?? '');
+  const [cgmReading, setCgmReading]       = useState<{ sgv: number; trend: number; date: number } | null>(null);
+  const [cgmLoading, setCgmLoading]       = useState(false);
+  const [cgmError,   setCgmError]         = useState(false);
+
+  // ── Integration status (device category summary) ──────────────────────────
+  interface DeviceCategory { label: string; connected: boolean; detail?: string }
+  const [deviceCategories, setDeviceCategories] = useState<DeviceCategory[]>([]);
+
   // ── Load chart data from /trends API ─────────────────────────────────────
   const loadChartData = useCallback(async (metric: string, period: 'today' | '7day') => {
     const apiType = METRIC_API_TYPE[metric];
@@ -318,6 +330,42 @@ const WatchAnalytics: React.FC = () => {
     }
   }, []);
 
+  // ── Fetch Nightscout CGM reading ─────────────────────────────────────────
+  const loadCgm = useCallback(async () => {
+    if (!nightscoutUrl) return;
+    setCgmLoading(true);
+    setCgmError(false);
+    try {
+      const res = await api.post('/health-data/nightscout-proxy', { url: nightscoutUrl, count: 1 });
+      const entries: any[] = res.data.entries ?? [];
+      if (entries.length > 0) {
+        setCgmReading({ sgv: entries[0].sgv, trend: entries[0].trend ?? 0, date: entries[0].date });
+      }
+    } catch {
+      setCgmError(true);
+    } finally {
+      setCgmLoading(false);
+    }
+  }, [nightscoutUrl]);
+
+  // ── Build device category summary from localStorage ───────────────────────
+  const buildDeviceCategories = useCallback(() => {
+    const storedDevices: any[] = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
+    const hasBleWatch    = storedDevices.some(d => ['smartwatch', 'fitness_band', 'smart_ring'].includes(d.type));
+    const hasVeepoo      = storedDevices.some(d => d.isVeepooDevice);
+    const hasFireBoltt   = storedDevices.some(d => d.isFireBolttDevice);
+    const hasBp          = storedDevices.some(d => d.type === 'bp_monitor');
+    const hasGluco       = storedDevices.some(d => d.type === 'glucometer');
+    const hasNightscout  = !!nightscoutUrl;
+
+    setDeviceCategories([
+      { label: 'Fitness Watch',    connected: hasBleWatch || hasVeepoo || hasFireBoltt, detail: hasVeepoo ? 'Veepoo' : hasFireBoltt ? 'Fire-Boltt' : hasBleWatch ? 'BLE' : undefined },
+      { label: 'CGM',              connected: hasNightscout, detail: hasNightscout ? 'Nightscout' : undefined },
+      { label: 'BP Monitor',       connected: hasBp },
+      { label: 'Glucometer',       connected: hasGluco },
+    ]);
+  }, [nightscoutUrl]);
+
   // Scheduler init — runs once on mount only
   useEffect(() => {
     setAutoSync(healthSyncScheduler.isSchedulerRunning());
@@ -327,14 +375,19 @@ const WatchAnalytics: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    loadCgm();
+    buildDeviceCategories();
     const handleSync = () => { loadData(); loadChartData(selectedMetric, chartPeriod); setLastSync(new Date()); };
     window.addEventListener('healthDataSynced', handleSync);
     const tick = setInterval(loadData, 60_000); // refresh display every minute
+    // Refresh CGM every 5 minutes
+    const cgmTick = setInterval(loadCgm, 300_000);
     return () => {
       window.removeEventListener('healthDataSynced', handleSync);
       clearInterval(tick);
+      clearInterval(cgmTick);
     };
-  }, [loadData, loadChartData, selectedMetric, chartPeriod]);
+  }, [loadData, loadChartData, loadCgm, buildDeviceCategories, selectedMetric, chartPeriod]);
 
   useEffect(() => {
     loadChartData(selectedMetric, chartPeriod);
@@ -458,7 +511,7 @@ const WatchAnalytics: React.FC = () => {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Button
               size="sm"
               onClick={handleManualSync}
@@ -468,9 +521,41 @@ const WatchAnalytics: React.FC = () => {
               <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
               Sync Now
             </Button>
+            <Link to="/patient/device-integration">
+              <Button size="sm" variant="outline" className="border-slate-500/40 text-slate-300 hover:bg-slate-700/40">
+                <Settings className="w-4 h-4 mr-2" />
+                Manage Devices
+              </Button>
+            </Link>
           </div>
         </div>
       </div>
+
+      {/* ── Integration Status Banner ──────────────────────────────────────── */}
+      {deviceCategories.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {deviceCategories.map(cat => (
+            <div
+              key={cat.label}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${
+                cat.connected
+                  ? 'bg-teal-500/10 border-teal-500/30 text-teal-300'
+                  : 'bg-slate-700/40 border-slate-600/30 text-slate-500'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${cat.connected ? 'bg-teal-400' : 'bg-slate-500'}`} />
+              {cat.label}
+              {cat.detail && <span className="opacity-70">· {cat.detail}</span>}
+            </div>
+          ))}
+          <Link to="/patient/device-integration">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-dashed border-teal-600/30 text-teal-500 hover:bg-teal-500/10 cursor-pointer transition-colors">
+              <Settings className="w-3 h-3" />
+              Add device
+            </div>
+          </Link>
+        </div>
+      )}
 
       {/* ── Auto-sync controls ─────────────────────────────────────────────── */}
       <Card className="bg-slate-800/60 border-slate-700/50">
@@ -515,6 +600,83 @@ const WatchAnalytics: React.FC = () => {
         </CardContent>
       </Card>
 
+      {/* ── CGM / Nightscout Section ──────────────────────────────────────── */}
+      {nightscoutUrl ? (
+        <Card className="bg-slate-800/60 border-slate-700/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-white text-base flex items-center gap-2">
+              <Droplets className="w-4 h-4 text-lime-400" /> Continuous Glucose (CGM)
+              <Badge className="text-[10px] px-1 py-0 h-4 bg-lime-500/20 text-lime-400 border-0">Nightscout</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 pt-0">
+            {cgmLoading && (
+              <div className="flex items-center gap-2 text-slate-400 text-sm">
+                <RefreshCw className="w-3 h-3 animate-spin" /> Fetching latest glucose…
+              </div>
+            )}
+            {cgmError && (
+              <div className="flex items-center gap-2 text-amber-400 text-sm">
+                <AlertCircle className="w-4 h-4" />
+                Could not reach Nightscout.{' '}
+                <button className="underline text-teal-400 text-xs" onClick={loadCgm}>Retry</button>
+              </div>
+            )}
+            {cgmReading && !cgmLoading && (
+              <div className="flex items-center gap-6">
+                <div>
+                  <p className="text-xs text-slate-400 mb-1">Current Glucose</p>
+                  <div className="flex items-baseline gap-2">
+                    <span className={`text-4xl font-bold ${
+                      cgmReading.sgv < 70  ? 'text-red-400'
+                      : cgmReading.sgv > 180 ? 'text-amber-400'
+                      : 'text-lime-400'
+                    }`}>
+                      {cgmReading.sgv}
+                    </span>
+                    <span className="text-slate-400 text-sm">mg/dL</span>
+                    <span className="text-lg" title="Trend">
+                      {cgmReading.trend === 1 ? '↑↑' : cgmReading.trend === 2 ? '↑' : cgmReading.trend === 3 ? '↗' : cgmReading.trend === 4 ? '→' : cgmReading.trend === 5 ? '↘' : cgmReading.trend === 6 ? '↓' : cgmReading.trend === 7 ? '↓↓' : '—'}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    {cgmReading.date ? new Date(cgmReading.date).toLocaleTimeString() : ''}
+                  </p>
+                </div>
+                <div className="flex-1">
+                  <div className="flex gap-3 text-xs text-slate-400">
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400" /> &lt;70 Low</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-lime-400" /> 70–180 Normal</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> &gt;180 High</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            {!cgmReading && !cgmLoading && !cgmError && (
+              <p className="text-xs text-slate-500">No recent readings from Nightscout.</p>
+            )}
+            <div className="mt-3 pt-3 border-t border-slate-700/40 flex items-center justify-between">
+              <p className="text-[10px] text-slate-500 truncate">{nightscoutUrl}</p>
+              <Link to="/patient/device-integration">
+                <button className="text-[10px] text-teal-400 hover:underline">Change URL</button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-slate-800/40 border border-dashed border-slate-600/40">
+          <div className="flex items-center gap-2">
+            <Droplets className="w-4 h-4 text-slate-500" />
+            <span className="text-sm text-slate-400">No CGM connected</span>
+          </div>
+          <Link to="/patient/device-integration">
+            <Button size="sm" variant="outline" className="border-teal-500/30 text-teal-400 hover:bg-teal-500/10 h-7 text-xs">
+              Connect CGM
+            </Button>
+          </Link>
+        </div>
+      )}
+
       {/* ── Error / No-device states ──────────────────────────────────────── */}
       {fetchError && (
         <InlineError
@@ -529,6 +691,16 @@ const WatchAnalytics: React.FC = () => {
           description="Connect a fitness tracker to see your health trends."
           action={{ label: 'Connect a device', href: '/patient/device-integration' }}
         />
+      )}
+      {!fetchError && !device && deviceCategories.every(c => !c.connected) && (
+        <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
+          <span className="text-sm text-amber-300">No devices synced recently. Add or reconnect a device.</span>
+          <Link to="/patient/device-integration">
+            <Button size="sm" className="bg-teal-600 hover:bg-teal-700 text-white h-7 text-xs">
+              Manage Devices
+            </Button>
+          </Link>
+        </div>
       )}
 
       {/* ── Activity Rings ────────────────────────────────────────────────── */}

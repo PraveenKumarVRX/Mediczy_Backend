@@ -671,7 +671,7 @@ export const getUserProfile = async (req, res, next) => {
     if (req.user.corporateId) {
       const { Corporate } = await import('../models/insurance-company.model.intelligent.js');
       const corporate = await Corporate.findByPk(req.user.corporateId, {
-        attributes: ['id', 'companyName', 'cin', 'industry', 'employeeCount']
+        attributes: ['id', 'companyName', 'industry', 'employeeCount']
       });
       
       if (corporate) {

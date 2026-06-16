@@ -1,1022 +1,1231 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+/**
+ * DeviceIntegration — Unified Device Hub
+ *
+ * Categories:
+ *  1. Fitness Watches / Bands  (BLE / Health Connect)
+ *  2. CGM Devices              (Dexcom, FreeStyle Libre, Nightscout)
+ *  3. Blood Pressure Monitors  (BLE — Omron, iHealth, Withings)
+ *  4. Glucometers              (BLE — Accu-Chek, OneTouch)
+ *  5. Platform Aggregators     (Google Fit / Health Connect, Apple Health)
+ *  6. My Devices               (paired devices from backend + localStorage)
+ */
+import React, { useState, useEffect, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  Card, CardContent, CardHeader, CardTitle, CardDescription,
+} from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Watch, Activity, Smartphone, Bluetooth, CheckCircle, XCircle, RefreshCw, Plus, Settings, Heart, Footprints, Moon, Zap, ShieldCheck, Droplets, Thermometer, Clock, Timer, TrendingUp, ChevronRight } from 'lucide-react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import {
+  Watch, Activity, Bluetooth, CheckCircle, XCircle, RefreshCw,
+  Plus, Heart, Droplets, Thermometer, Link2, Settings, Info,
+  Smartphone, Zap, Shield,
+} from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import api from '@/utils/api';
-import { healthSyncScheduler, SyncStatus } from '@/services/health/HealthSyncScheduler';
-import HealthTrendCard, { healthMetricConfigs } from '@/components/health/HealthTrendCard';
+import bleService from '@/services/ble/BLEService';
+import veepooService from '@/services/ble/VeepooService';
+import fireBolttService, { FIREBOLTT_SERVICE_UUID } from '@/services/ble/FireBolttService';
 
-interface Device {
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface PairedDevice {
+  id: string;
+  device_id?: string;
+  deviceId?: string;
+  device_name?: string;
+  name?: string;
+  type?: string;
+  brand?: string;
+  model?: string;
+  battery?: number;
+  last_sync?: string;
+  lastSync?: string;
+  // extra flags from localStorage
+  isVeepooDevice?: boolean;
+  isFireBolttDevice?: boolean;
+}
+
+type ModalType =
+  | 'dexcom'
+  | 'libre'
+  | 'nightscout'
+  | 'fitbit-oauth'
+  | 'garmin-oauth'
+  | 'apple-health'
+  | 'google-fit'
+  | null;
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function getLastSyncDate(device: PairedDevice): Date | null {
+  const raw = device.last_sync ?? device.lastSync ?? null;
+  if (!raw) return null;
+  const d = new Date(raw);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function syncStatus(device: PairedDevice): 'green' | 'amber' | 'red' {
+  const last = getLastSyncDate(device);
+  if (!last) return 'red';
+  const diffMin = (Date.now() - last.getTime()) / 60000;
+  if (diffMin <= 30) return 'green';
+  if (diffMin <= 1440) return 'amber';
+  return 'red';
+}
+
+const STATUS_DOT: Record<'green' | 'amber' | 'red', string> = {
+  green: 'bg-teal-400',
+  amber: 'bg-amber-400',
+  red:   'bg-red-500',
+};
+
+function formatRelative(date: Date | null): string {
+  if (!date) return 'Never';
+  const diff = Math.round((Date.now() - date.getTime()) / 60000);
+  if (diff < 1)   return 'Just now';
+  if (diff < 60)  return `${diff}m ago`;
+  const h = Math.floor(diff / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+function lsDevices(): PairedDevice[] {
+  try {
+    return JSON.parse(localStorage.getItem('connectedDevices') || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveLsDevice(dev: PairedDevice) {
+  const list = lsDevices();
+  const idx = list.findIndex(d => (d.id ?? d.device_id) === (dev.id ?? dev.device_id));
+  if (idx >= 0) list[idx] = { ...list[idx], ...dev };
+  else list.push(dev);
+  localStorage.setItem('connectedDevices', JSON.stringify(list));
+}
+
+function removeLsDevice(id: string) {
+  const list = lsDevices().filter(d => (d.id ?? d.device_id) !== id);
+  localStorage.setItem('connectedDevices', JSON.stringify(list));
+}
+
+// ─── Section configs ──────────────────────────────────────────────────────────
+
+const FITNESS_WATCHES = [
+  {
+    id: 'apple-watch',
+    name: 'Apple Watch',
+    description: 'Health data via Apple Health / HealthKit',
+    icon: '⌚',
+    flow: 'apple-health' as ModalType,
+    tags: ['HR', 'Steps', 'Sleep', 'ECG', 'SpO2'],
+  },
+  {
+    id: 'samsung-watch',
+    name: 'Samsung Galaxy Watch',
+    description: 'Sync via Google Health Connect',
+    icon: '⌚',
+    flow: 'google-fit' as ModalType,
+    tags: ['HR', 'Steps', 'Sleep', 'BP'],
+  },
+  {
+    id: 'fitbit',
+    name: 'Fitbit',
+    description: 'Fitbit OAuth API',
+    icon: '📿',
+    flow: 'fitbit-oauth' as ModalType,
+    tags: ['HR', 'Steps', 'Sleep', 'Calories'],
+  },
+  {
+    id: 'garmin',
+    name: 'Garmin',
+    description: 'Garmin Connect OAuth API',
+    icon: '⌚',
+    flow: 'garmin-oauth' as ModalType,
+    tags: ['HR', 'Steps', 'GPS', 'SpO2'],
+  },
+  {
+    id: 'mi-band',
+    name: 'Mi Band / Xiaomi',
+    description: 'Direct BLE pairing',
+    icon: '📿',
+    flow: 'ble-generic' as const,
+    tags: ['HR', 'Steps', 'Sleep'],
+  },
+  {
+    id: 'fire-boltt',
+    name: 'Fire-Boltt',
+    description: 'Direct BLE pairing',
+    icon: '⌚',
+    flow: 'ble-fireboltt' as const,
+    tags: ['HR', 'SpO2', 'BP', 'Steps'],
+  },
+  {
+    id: 'veepoo',
+    name: 'Veepoo (VE30 / VE20 / VE40)',
+    description: 'Direct BLE pairing via HBand SDK',
+    icon: '⌚',
+    flow: 'ble-veepoo' as const,
+    tags: ['HR', 'BP', 'SpO2', 'HRV', 'Steps'],
+  },
+  {
+    id: 'generic-ble',
+    name: 'Generic BLE Watch',
+    description: 'Any Bluetooth LE wearable',
+    icon: '📱',
+    flow: 'ble-generic' as const,
+    tags: ['HR', 'Steps'],
+  },
+];
+
+const CGM_DEVICES = [
+  {
+    id: 'dexcom',
+    name: 'Dexcom G6 / G7',
+    description: 'Requires Dexcom Share enabled in Dexcom app',
+    icon: '📡',
+    flow: 'dexcom' as ModalType,
+    tags: ['Continuous Glucose', 'Alerts'],
+  },
+  {
+    id: 'libre',
+    name: 'FreeStyle Libre 2 / 3',
+    description: 'BLE direct + LibreLink polling',
+    icon: '📡',
+    flow: 'libre' as ModalType,
+    tags: ['Continuous Glucose', 'Trends'],
+  },
+  {
+    id: 'nightscout',
+    name: 'Nightscout',
+    description: 'Enter your Nightscout URL to pull CGM readings',
+    icon: '🌐',
+    flow: 'nightscout' as ModalType,
+    tags: ['CGM Data', 'Self-hosted'],
+  },
+];
+
+const BP_MONITORS = [
+  {
+    id: 'omron',
+    name: 'Omron',
+    description: 'BLE — pairs via OMRON prefix',
+    icon: '🩺',
+    flow: 'ble-bp-omron' as const,
+    tags: ['Systolic', 'Diastolic', 'HR'],
+  },
+  {
+    id: 'ihealth',
+    name: 'iHealth',
+    description: 'BLE — GATT Blood Pressure Service',
+    icon: '🩺',
+    flow: 'ble-bp' as const,
+    tags: ['Systolic', 'Diastolic'],
+  },
+  {
+    id: 'withings-bpm',
+    name: 'Withings BPM',
+    description: 'BLE pairing',
+    icon: '🩺',
+    flow: 'ble-bp' as const,
+    tags: ['Systolic', 'Diastolic', 'HR'],
+  },
+];
+
+const GLUCOMETERS = [
+  {
+    id: 'accu-chek',
+    name: 'Accu-Chek',
+    description: 'BLE Glucose Service',
+    icon: '💉',
+    flow: 'ble-glucose' as const,
+    tags: ['Blood Glucose'],
+  },
+  {
+    id: 'onetouch',
+    name: 'OneTouch',
+    description: 'BLE Glucose Service',
+    icon: '💉',
+    flow: 'ble-glucose' as const,
+    tags: ['Blood Glucose'],
+  },
+];
+
+const AGGREGATORS = [
+  {
+    id: 'google-fit',
+    name: 'Google Fit / Health Connect',
+    description: 'Import activity, heart rate, sleep and more from Google Health services',
+    icon: '🟢',
+    flow: 'google-fit-sync' as const,
+    tags: ['Steps', 'HR', 'Sleep', 'Calories', 'Weight'],
+  },
+  {
+    id: 'apple-health',
+    name: 'Apple Health',
+    description: 'Import HealthKit data from iPhone',
+    icon: '🍎',
+    flow: 'apple-health-sync' as const,
+    tags: ['HR', 'Steps', 'Sleep', 'Blood Glucose', 'Weight'],
+  },
+];
+
+// ─── Device Catalog Row ───────────────────────────────────────────────────────
+
+interface CatalogEntry {
   id: string;
   name: string;
-  type: 'smartwatch' | 'fitness_band' | 'smart_ring' | 'bp_monitor' | 'glucometer' | 'weight_scale' | string;
-  brand: string;
-  model: string;
-  status: 'connected' | 'disconnected' | 'syncing';
-  lastSync: Date | null;
-  battery?: number;
-  dataTypes: string[];
-  icon?: string;
-  isVeepooDevice?: boolean;
+  description: string;
+  icon: string;
+  flow: string;
+  tags: string[];
 }
 
-interface HealthStats {
-  heartRate: number | null;
-  steps: number | null;
-  sleepScore: number | null;
-  bloodPressure: { systolic: number; diastolic: number } | null;
-  spo2: number | null;
-  temperature: number | null;
-  bloodGlucose: number | null;
-  hrv: number | null;
-  uricAcid: number | null;
-  totalCholesterol: number | null;
-  lastUpdated: Date | null;
-}
+const DeviceRow: React.FC<{
+  entry: CatalogEntry;
+  onConnect: (flow: string, id: string) => void;
+  connecting: string | null;
+}> = ({ entry, onConnect, connecting }) => (
+  <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700/40 hover:border-teal-600/40 transition-colors">
+    <div className="flex items-center gap-3 min-w-0">
+      <span className="text-2xl flex-shrink-0">{entry.icon}</span>
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-white truncate">{entry.name}</p>
+        <p className="text-xs text-slate-400 truncate">{entry.description}</p>
+        <div className="flex flex-wrap gap-1 mt-1">
+          {entry.tags.map(t => (
+            <Badge key={t} className="text-[10px] px-1 py-0 h-4 bg-slate-700 text-slate-300 border-0">
+              {t}
+            </Badge>
+          ))}
+        </div>
+      </div>
+    </div>
+    <Button
+      size="sm"
+      variant="outline"
+      className="flex-shrink-0 border-teal-500/40 text-teal-400 hover:bg-teal-500/10"
+      disabled={connecting === entry.id}
+      onClick={() => onConnect(entry.flow, entry.id)}
+    >
+      {connecting === entry.id ? (
+        <RefreshCw className="w-3 h-3 animate-spin mr-1" />
+      ) : (
+        <Plus className="w-3 h-3 mr-1" />
+      )}
+      Connect
+    </Button>
+  </div>
+);
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 const DeviceIntegration: React.FC = () => {
-  const [searchParams] = useSearchParams();
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [healthStats, setHealthStats] = useState<HealthStats>({
-    heartRate: null,
-    steps: null,
-    sleepScore: null,
-    bloodPressure: null,
-    spo2: null,
-    temperature: null,
-    bloodGlucose: null,
-    hrv: null,
-    uricAcid: null,
-    totalCholesterol: null,
-    lastUpdated: null
+  const queryClient = useQueryClient();
+  const [connecting, setConnecting] = useState<string | null>(null);
+  const [modal, setModal] = useState<ModalType>(null);
+  const [nightscoutUrl, setNightscoutUrl] = useState(
+    () => localStorage.getItem('nightscoutUrl') ?? ''
+  );
+  const [nightscoutInput, setNightscoutInput] = useState(nightscoutUrl);
+
+  // ── Fetch registered devices from backend ─────────────────────────────────
+  const { data: wearablesData, isLoading: wearablesLoading, refetch: refetchWearables } = useQuery({
+    queryKey: ['wearables'],
+    queryFn: async () => {
+      const res = await api.get('/health-data/devices');
+      const devices = Array.isArray(res.data) ? res.data : res.data?.devices ?? [];
+      return devices.map((device: any) => ({
+        id: String(device.id ?? device.device_id ?? device.deviceId ?? 'unknown'),
+        device_id: device.device_id ?? device.deviceId,
+        deviceId: device.deviceId ?? device.device_id,
+        device_name: device.device_name ?? device.name ?? device.deviceId ?? device.device_id ?? 'Health device',
+        name: device.name ?? device.device_name,
+        type: device.type ?? device.device_type ?? device.source ?? 'wearable',
+        brand: device.brand,
+        model: device.model,
+        battery: device.battery,
+        last_sync: device.last_sync ?? device.lastSyncTime ?? device.lastSync,
+        lastSync: device.lastSync ?? device.last_sync ?? device.lastSyncTime,
+      })) as PairedDevice[];
+    },
+    staleTime: 60_000,
   });
-  const [loadingStats, setLoadingStats] = useState(true);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
-  const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
-  const [showTrendDialog, setShowTrendDialog] = useState(false);
 
-  // Load devices and health data on mount
+  // Merge backend devices with localStorage
+  const [localDevices, setLocalDevices] = useState<PairedDevice[]>([]);
   useEffect(() => {
-    loadDevices();
-    loadHealthStats();
-    updateSyncStatus();
-    
-    // Auto-start sync scheduler if enabled
-    healthSyncScheduler.autoStart();
-    setAutoSyncEnabled(healthSyncScheduler.isSchedulerRunning());
-    
-    // Handle URL actions (from Bluetooth pairing redirect)
-    const action = searchParams.get('action');
-    const connect = searchParams.get('connect');
-    
-    if (action === 'add-manual') {
-      toast.info('Manual device entry coming soon!');
-    }
-    if (connect === 'apple-health') {
-      toast.info('Apple Health integration coming soon!');
-    }
+    setLocalDevices(lsDevices());
+  }, []);
 
-    // Listen for sync events
-    const handleSyncEvent = () => {
-      loadHealthStats();
-      updateSyncStatus();
-    };
-    window.addEventListener('healthDataSynced', handleSyncEvent);
+  const allDevices: PairedDevice[] = React.useMemo(() => {
+    const backendIds = new Set(
+      (wearablesData ?? []).map(d => d.device_id ?? d.id)
+    );
+    const extra = localDevices.filter(ld => !backendIds.has(ld.id ?? ld.device_id ?? ''));
+    return [...(wearablesData ?? []), ...extra];
+  }, [wearablesData, localDevices]);
 
-    // Update sync status every minute
-    const statusInterval = setInterval(updateSyncStatus, 60000);
-
-    return () => {
-      window.removeEventListener('healthDataSynced', handleSyncEvent);
-      clearInterval(statusInterval);
-    };
-  }, [searchParams]);
-
-  // Update sync status
-  const updateSyncStatus = () => {
-    setSyncStatus(healthSyncScheduler.getStatus());
-  };
-
-  // Toggle auto sync
-  const toggleAutoSync = (enabled: boolean) => {
-    setAutoSyncEnabled(enabled);
-    if (enabled) {
-      healthSyncScheduler.start();
-      toast.success('Auto-sync enabled! Data will sync every 30 minutes.');
-    } else {
-      healthSyncScheduler.stop();
-      toast.info('Auto-sync disabled');
-    }
-    updateSyncStatus();
-  };
-
-  // Manual sync
-  const handleSyncNow = async () => {
-    setSyncing(true);
-    toast.info('Syncing health data...');
-    try {
-      const success = await healthSyncScheduler.syncNow();
-      if (success) {
-        toast.success('Health data synced successfully!');
-        loadHealthStats();
-      } else {
-        toast.info('No new data to sync');
+  // ── Unregister / disconnect device ───────────────────────────────────────
+  const removeMutation = useMutation({
+    mutationFn: async (deviceId: string) => {
+      try {
+        await api.delete(`/health-data/devices/${deviceId}`);
+      } catch {
+        // non-fatal if row missing
       }
-    } catch (error) {
-      toast.error('Sync failed. Please try again.');
-    } finally {
-      setSyncing(false);
-      updateSyncStatus();
-    }
-  };
+      removeLsDevice(deviceId);
+    },
+    onSuccess: () => {
+      setLocalDevices(lsDevices());
+      queryClient.invalidateQueries({ queryKey: ['wearables'] });
+      toast.success('Device removed');
+    },
+  });
 
-  // Format time until next sync
-  const formatTimeUntilSync = (): string => {
-    const ms = healthSyncScheduler.getTimeUntilNextSync();
-    if (ms <= 0) return 'Now';
-    const minutes = Math.floor(ms / 60000);
-    if (minutes < 1) return 'Less than 1 min';
-    if (minutes === 1) return '1 minute';
-    return `${minutes} minutes`;
-  };
-
-  // Fetch health stats from backend
-  const loadHealthStats = async () => {
-    setLoadingStats(true);
+  // ── Sync device ──────────────────────────────────────────────────────────
+  const syncDevice = useCallback(async (device: PairedDevice) => {
+    const id = device.device_id ?? device.deviceId ?? device.id ?? '';
+    toast.info(`Syncing ${device.device_name ?? device.name ?? 'device'}…`);
     try {
-      const response = await api.get('/health-data/summary');
-      const data = response.data;
-      
-      setHealthStats({
-        heartRate: data.latest?.heart_rate?.value || null,
-        steps: data.latest?.steps?.value || null,
-        sleepScore: data.latest?.sleep?.value ? Math.round(data.latest.sleep.value * 100 / 8) : null, // Convert hours to score
-        bloodPressure: data.latest?.blood_pressure_systolic?.value ? {
-          systolic: data.latest.blood_pressure_systolic.value,
-          diastolic: data.latest.blood_pressure_diastolic?.value || 80
-        } : null,
-        spo2: data.latest?.spo2?.value || null,
-        temperature: data.latest?.temperature?.value || null,
-        bloodGlucose: data.latest?.blood_glucose?.value || null,
-        hrv: data.latest?.hrv?.value || null,
-        uricAcid: data.latest?.uric_acid?.value || null,
-        totalCholesterol: data.latest?.total_cholesterol?.value || null,
-        lastUpdated: data.lastSync ? new Date(data.lastSync) : null
+      if (device.isVeepooDevice) {
+        if (!veepooService.getConnectionStatus()) await veepooService.reconnect();
+        if (veepooService.getConnectionStatus()) {
+          await veepooService.startHeartRateMeasurement();
+          toast.success('Veepoo measurement started');
+        } else {
+          toast.warning('Watch out of range — showing cached data');
+        }
+      } else if (device.isFireBolttDevice) {
+        const d = await fireBolttService.syncAll();
+        toast.success(`Fire-Boltt synced — HR: ${d.heartRate ?? '—'} bpm`);
+      } else {
+        // Generic BLE — use bleService
+        const ble = bleService.getDevice(id);
+        if (ble) {
+          await bleService.syncDevice(id);
+          toast.success('Device synced');
+        } else {
+          toast.info('Device not in BLE range — latest data shown from server');
+        }
+      }
+      refetchWearables();
+    } catch (e) {
+      toast.error('Sync failed — ensure device is nearby and Bluetooth is on');
+    }
+  }, [refetchWearables]);
+
+  // ── BLE pairing helpers ──────────────────────────────────────────────────
+  const pairBleGeneric = useCallback(async (entryId: string, options?: RequestDeviceOptions) => {
+    setConnecting(entryId);
+    try {
+      const device = await bleService.requestDevice(options);
+      if (!device) { toast.info('Pairing cancelled'); return; }
+
+      const connected = await bleService.connect(device);
+      if (!connected) { toast.error('Could not connect to device'); return; }
+
+      const newDev: PairedDevice = {
+        id: device.id,
+        device_id: device.id,
+        device_name: device.name,
+        name: device.name,
+        type: device.type,
+        last_sync: new Date().toISOString(),
+      };
+
+      // Register on server
+      try {
+        await api.post('/health-data/devices/register', {
+          deviceId: device.id,
+          deviceName: device.name,
+          deviceType: device.type,
+        });
+      } catch { /* non-fatal */ }
+
+      saveLsDevice(newDev);
+      setLocalDevices(lsDevices());
+      queryClient.invalidateQueries({ queryKey: ['wearables'] });
+      toast.success(`${device.name} paired successfully!`);
+    } catch (err: any) {
+      if (err.message?.includes('not supported')) {
+        toast.error('Web Bluetooth is not supported in this browser. Use Chrome on Android or desktop.');
+      } else {
+        toast.error(`Pairing failed: ${err.message}`);
+      }
+    } finally {
+      setConnecting(null);
+    }
+  }, [queryClient]);
+
+  const pairVeepoo = useCallback(async (entryId: string) => {
+    setConnecting(entryId);
+    try {
+      const deviceInfo = await veepooService.connect();
+      if (!deviceInfo) { toast.error('Veepoo connection failed'); return; }
+
+      const generatedId = `veepoo-${deviceInfo.mac ?? Date.now()}`;
+      const newDev: PairedDevice = {
+        id: generatedId,
+        device_id: generatedId,
+        device_name: deviceInfo.name ?? 'Veepoo Watch',
+        name: deviceInfo.name ?? 'Veepoo Watch',
+        type: 'smartwatch',
+        battery: deviceInfo.battery,
+        isVeepooDevice: true,
+        last_sync: new Date().toISOString(),
+      };
+
+      try {
+        await api.post('/health-data/devices/register', {
+          deviceId: newDev.device_id,
+          deviceName: newDev.device_name,
+          deviceType: 'smartwatch',
+        });
+      } catch { /* non-fatal */ }
+
+      saveLsDevice(newDev);
+      setLocalDevices(lsDevices());
+      queryClient.invalidateQueries({ queryKey: ['wearables'] });
+      toast.success(`${newDev.device_name} paired!`);
+    } catch (err: any) {
+      toast.error(`Veepoo pairing failed: ${err.message}`);
+    } finally {
+      setConnecting(null);
+    }
+  }, [queryClient]);
+
+  const pairFireBoltt = useCallback(async (entryId: string) => {
+    setConnecting(entryId);
+    try {
+      // Request the BLE device first, then hand the GATT server to FireBolttService
+      const bleDevice = await bleService.requestDevice({
+        filters: [
+          { namePrefix: 'Fire-Boltt' },
+          { namePrefix: 'FB' },
+          { services: [FIREBOLTT_SERVICE_UUID] },
+        ],
+        optionalServices: ['0000180f-0000-1000-8000-00805f9b34fb'],
       });
-    } catch (error) {
-      console.log('Health stats not available:', error);
-      // Use localStorage cached data as fallback
-      const cachedStats = localStorage.getItem('lastHealthStats');
-      if (cachedStats) {
-        try {
-          setHealthStats(JSON.parse(cachedStats));
-        } catch (e) {
-          // Ignore malformed cached data.
-        }
-      }
-    } finally {
-      setLoadingStats(false);
-    }
-  };
+      if (!bleDevice) { toast.info('Pairing cancelled'); return; }
 
-  const loadDevices = () => {
-    try {
-      // Load devices from localStorage (saved by Bluetooth pairing)
-      const savedDevices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
-      
-      // Sample devices for demo
-      const sampleDevices: Device[] = [
-        {
-          id: 'sample-1',
-          name: 'Apple Watch Series 9',
-          type: 'smartwatch',
-          brand: 'Apple',
-          model: 'Series 9',
-          status: 'connected',
-          lastSync: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
-          battery: 85,
-          dataTypes: ['Heart Rate', 'Steps', 'Sleep', 'Calories', 'Activity']
-        }
-      ];
+      const rawDevice = bleDevice.rawDevice;
+      if (!rawDevice?.gatt) { toast.error('GATT not available on this device'); return; }
 
-      // Merge saved devices with sample (if user has paired any)
-      const mergedDevices: Device[] = savedDevices.map((saved: any) => ({
-        id: saved.id,
-        name: saved.name || 'Unknown Device',
-        type: saved.type || 'fitness_band',
-        brand: getBrandFromName(saved.name),
-        model: getModelFromName(saved.name),
-        status: 'connected' as const,
-        lastSync: saved.lastSync ? new Date(saved.lastSync) : (saved.connectedAt ? new Date(saved.connectedAt) : new Date()),
-        battery: saved.battery || null,
-        dataTypes: saved.dataTypes?.length > 0 ? saved.dataTypes : getDataTypesForDevice(saved.type, saved.isVeepooDevice),
-        icon: saved.icon,
-        isVeepooDevice: saved.isVeepooDevice || false
-      }));
+      const server = await rawDevice.gatt.connect();
+      const success = await fireBolttService.connect(server);
+      if (!success) { toast.error('Fire-Boltt connection failed'); return; }
 
-      // Show sample devices only if no paired devices exist
-      if (mergedDevices.length === 0) {
-        setDevices(sampleDevices);
+      const deviceId = rawDevice.id ?? `fire-boltt-${Date.now()}`;
+      const newDev: PairedDevice = {
+        id: deviceId,
+        device_id: deviceId,
+        device_name: rawDevice.name ?? 'Fire-Boltt',
+        name: rawDevice.name ?? 'Fire-Boltt',
+        type: 'smartwatch',
+        isFireBolttDevice: true,
+        last_sync: new Date().toISOString(),
+      };
+
+      try {
+        await api.post('/health-data/devices/register', {
+          deviceId,
+          deviceName: newDev.device_name,
+          deviceType: 'smartwatch',
+        });
+      } catch { /* non-fatal */ }
+
+      saveLsDevice(newDev);
+      setLocalDevices(lsDevices());
+      queryClient.invalidateQueries({ queryKey: ['wearables'] });
+      toast.success('Fire-Boltt paired!');
+    } catch (err: any) {
+      if (err.message?.includes('not supported')) {
+        toast.error('Web Bluetooth not supported in this browser. Use Chrome on Android or desktop.');
       } else {
-        setDevices(mergedDevices);
+        toast.error(`Fire-Boltt pairing failed: ${err.message}`);
       }
-    } catch (error) {
-      console.error('Failed to load devices:', error);
-      setDevices([]);
     } finally {
-      setLoading(false);
+      setConnecting(null);
     }
-  };
+  }, [queryClient]);
 
-  const getBrandFromName = (name: string): string => {
-    const nameLower = (name || '').toLowerCase();
-    if (nameLower.includes('ve30') || nameLower.includes('ve20') || nameLower.includes('ve40')) return 'Veepoo';
-    if (nameLower.includes('apple') || nameLower.includes('watch')) return 'Apple';
-    if (nameLower.includes('samsung') || nameLower.includes('galaxy')) return 'Samsung';
-    if (nameLower.includes('mi') || nameLower.includes('xiaomi')) return 'Xiaomi';
-    if (nameLower.includes('fitbit')) return 'Fitbit';
-    if (nameLower.includes('garmin')) return 'Garmin';
-    if (nameLower.includes('oura')) return 'Oura';
-    if (nameLower.includes('omron')) return 'Omron';
-    return 'Generic';
-  };
-
-  const getModelFromName = (name: string): string => {
-    // Try to extract model from device name
-    return name || 'Unknown Model';
-  };
-
-  const getDataTypesForDevice = (type: string, isVeepooDevice?: boolean): string[] => {
-    // Veepoo devices (VE30, etc.) have known capabilities
-    if (isVeepooDevice) {
-      return ['Heart Rate', 'Blood Pressure', 'Blood Oxygen', 'Steps', 'Calories', 'Sleep', 'HRV'];
+  const syncGoogleFit = useCallback(async () => {
+    setConnecting('google-fit');
+    try {
+      // Post empty readings array — server accepts the sync signal
+      await api.post('/health-data/google-fit-sync', { readings: [], syncId: `manual-${Date.now()}` });
+      toast.success('Google Fit sync triggered — check Health Connect on your Android device');
+    } catch {
+      toast.error('Google Fit sync failed');
+    } finally {
+      setConnecting(null);
     }
-    
-    switch (type) {
-      case 'smartwatch':
-        return ['Heart Rate', 'Steps', 'Sleep', 'Calories', 'Activity'];
-      case 'fitness_band':
-        return ['Steps', 'Heart Rate', 'Sleep'];
-      case 'smart_ring':
-        return ['Sleep', 'Heart Rate', 'Activity', 'Temperature'];
-      case 'bp_monitor':
-        return ['Blood Pressure', 'Heart Rate'];
-      case 'glucometer':
-        return ['Blood Glucose'];
-      case 'weight_scale':
-        return ['Weight', 'BMI', 'Body Fat'];
+  }, []);
+
+  const syncAppleHealth = useCallback(async () => {
+    setConnecting('apple-health');
+    try {
+      await api.post('/health-data/apple-health-sync', { readings: [], syncId: `manual-${Date.now()}` });
+      toast.success('Apple Health sync triggered — open Mediczy on your iPhone to export data');
+    } catch {
+      toast.error('Apple Health sync failed');
+    } finally {
+      setConnecting(null);
+    }
+  }, []);
+
+  const saveNightscoutUrl = () => {
+    const trimmed = nightscoutInput.trim();
+    if (trimmed && !trimmed.startsWith('https://')) {
+      toast.error('Nightscout URL must start with https://');
+      return;
+    }
+    localStorage.setItem('nightscoutUrl', trimmed);
+    setNightscoutUrl(trimmed);
+    toast.success(trimmed ? 'Nightscout URL saved — CGM data will appear in Watch Analytics' : 'Nightscout URL cleared');
+    setModal(null);
+  };
+
+  // ── Connect handler dispatcher ────────────────────────────────────────────
+  const handleConnect = useCallback(async (flow: string, entryId: string) => {
+    switch (flow) {
+      case 'ble-generic':
+        await pairBleGeneric(entryId);
+        break;
+      case 'ble-veepoo':
+        await pairVeepoo(entryId);
+        break;
+      case 'ble-fireboltt':
+        await pairFireBoltt(entryId);
+        break;
+      case 'ble-bp':
+        await pairBleGeneric(entryId, {
+          filters: [{ services: ['00001810-0000-1000-8000-00805f9b34fb'] }],
+          optionalServices: ['0000180f-0000-1000-8000-00805f9b34fb', '0000180a-0000-1000-8000-00805f9b34fb'],
+        });
+        break;
+      case 'ble-bp-omron':
+        await pairBleGeneric(entryId, {
+          filters: [
+            { namePrefix: 'OMRON' },
+            { namePrefix: 'BLEsmart' },
+            { services: ['00001810-0000-1000-8000-00805f9b34fb'] },
+          ],
+          optionalServices: ['0000180f-0000-1000-8000-00805f9b34fb', '0000180a-0000-1000-8000-00805f9b34fb'],
+        });
+        break;
+      case 'ble-glucose':
+        await pairBleGeneric(entryId, {
+          filters: [{ services: ['00001808-0000-1000-8000-00805f9b34fb'] }],
+          optionalServices: ['0000180f-0000-1000-8000-00805f9b34fb', '0000180a-0000-1000-8000-00805f9b34fb'],
+        });
+        break;
+      case 'google-fit-sync':
+        await syncGoogleFit();
+        break;
+      case 'apple-health-sync':
+        await syncAppleHealth();
+        break;
+      // Modal flows
+      case 'dexcom':
+        setModal('dexcom');
+        break;
+      case 'libre':
+        setModal('libre');
+        break;
+      case 'nightscout':
+        setModal('nightscout');
+        break;
+      case 'fitbit-oauth':
+        setModal('fitbit-oauth');
+        break;
+      case 'garmin-oauth':
+        setModal('garmin-oauth');
+        break;
+      case 'apple-health':
+        setModal('apple-health');
+        break;
+      case 'google-fit':
+        setModal('google-fit');
+        break;
       default:
-        return ['Heart Rate', 'Steps'];
+        toast.info('This device type is coming soon');
     }
-  };
+  }, [pairBleGeneric, pairVeepoo, pairFireBoltt, syncGoogleFit, syncAppleHealth]);
 
-  const [availableDevices] = useState([
-    { type: 'smartwatch', emoji: '⌚', brands: ['Apple Watch', 'Samsung Galaxy Watch', 'Fitbit Versa', 'Garmin Venu'] },
-    { type: 'fitness_band', emoji: '📱', brands: ['Mi Band', 'Fitbit Charge', 'Garmin Vivosmart', 'Honor Band'] },
-    { type: 'smart_ring', emoji: '💍', brands: ['Oura Ring', 'Circular Ring', 'Ultrahuman Ring'] },
-    { type: 'bp_monitor', emoji: '🩺', brands: ['Omron', 'iHealth', 'Withings BPM'] },
-    { type: 'glucometer', emoji: '💉', brands: ['Accu-Chek', 'OneTouch', 'FreeStyle Libre'] },
-    { type: 'weight_scale', emoji: '⚖️', brands: ['Withings Body', 'Fitbit Aria', 'Eufy Smart Scale'] }
-  ]);
-
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, { label: string; icon: any; color: string }> = {
-      connected: { label: 'Connected', icon: CheckCircle, color: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400' },
-      disconnected: { label: 'Disconnected', icon: XCircle, color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' },
-      syncing: { label: 'Syncing...', icon: RefreshCw, color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' }
-    };
-    const variant = variants[status];
-    const Icon = variant.icon;
-    return (
-      <Badge className={`${variant.color} flex items-center gap-1`}>
-        <Icon className={`h-3 w-3 ${status === 'syncing' ? 'animate-spin' : ''}`} />
-        {variant.label}
-      </Badge>
-    );
-  };
-
-  const handleSync = async (deviceId: string) => {
-    setDevices(devices.map(device => 
-      device.id === deviceId 
-        ? { ...device, status: 'syncing' as const }
-        : device
-    ));
-
-    try {
-      // Trigger actual health data sync
-      console.log('🔄 Syncing device:', deviceId);
-      await healthSyncScheduler.triggerDeviceMeasurements();
-      const success = await healthSyncScheduler.performSync();
-      
-      setDevices(prev => prev.map(device => 
-        device.id === deviceId 
-          ? { ...device, status: 'connected' as const, lastSync: new Date() }
-          : device
-      ));
-      
-      if (success) {
-        toast.success('Device synced successfully! Real health data updated.');
-        loadHealthStats(); // Reload health stats after sync
-      } else {
-        toast.warning('No new data available. Please ensure device is connected via Bluetooth.');
-      }
-    } catch (error) {
-      console.error('Sync error:', error);
-      setDevices(prev => prev.map(device => 
-        device.id === deviceId 
-          ? { ...device, status: 'connected' as const }
-          : device
-      ));
-      toast.error('Sync failed. Please try again.');
-    }
-  };
-
-  const handleConnect = (deviceId: string) => {
-    setDevices(devices.map(device => 
-      device.id === deviceId 
-        ? { ...device, status: 'connected' as const, lastSync: new Date() }
-        : device
-    ));
-    
-    // Update localStorage
-    const savedDevices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
-    const updatedDevices = savedDevices.map((d: any) => 
-      d.id === deviceId ? { ...d, status: 'connected' } : d
-    );
-    localStorage.setItem('connectedDevices', JSON.stringify(updatedDevices));
-    toast.success('Device connected!');
-  };
-
-  const handleDisconnect = (deviceId: string) => {
-    setDevices(devices.map(device => 
-      device.id === deviceId 
-        ? { ...device, status: 'disconnected' as const }
-        : device
-    ));
-    toast.info('Device disconnected');
-  };
-
-  const handleRemoveDevice = (deviceId: string) => {
-    // Remove from state
-    setDevices(prev => prev.filter(d => d.id !== deviceId));
-    
-    // Remove from localStorage
-    const savedDevices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
-    const updatedDevices = savedDevices.filter((d: any) => d.id !== deviceId);
-    localStorage.setItem('connectedDevices', JSON.stringify(updatedDevices));
-    toast.success('Device removed');
-  };
-
-  const handleStartPairing = () => {
-    // Navigate to dashboard and trigger pairing
-    window.location.href = '/?action=pair-device';
-  };
-
-  const getDeviceEmoji = (type: string) => {
-    switch (type) {
-      case 'smartwatch': return '⌚';
-      case 'fitness_band': return '📱';
-      case 'smart_ring': return '💍';
-      case 'bp_monitor': return '🩺';
-      case 'glucometer': return '💉';
-      case 'weight_scale': return '⚖️';
-      default: return '📱';
-    }
-  };
-
-  const connectedDevicesCount = devices.filter(d => d.status === 'connected').length;
+  // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500 px-4 md:px-6 py-6">
-      {/* Hero Header */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L2c+PC9zdmc+')] opacity-30" />
-        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-teal-500/20 to-transparent rounded-full blur-3xl" />
+    <div className="max-w-5xl mx-auto space-y-8 px-4 md:px-6 py-6 animate-in fade-in duration-500">
+
+      {/* ── Hero ──────────────────────────────────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-teal-900 p-6 md:p-8 text-white shadow-2xl">
+        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_70%_50%,rgba(20,184,166,0.6),transparent)]" />
         <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <div className="flex items-center gap-3 mb-3">
-              <div className="p-2.5 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 shadow-lg shadow-teal-500/30">
-                <Watch className="w-6 h-6" />
+              <div className="p-2.5 rounded-xl bg-teal-500/20 border border-teal-500/30">
+                <Watch className="w-6 h-6 text-teal-400" />
               </div>
-              <Badge className="bg-white/10 text-white/90 border-white/20 font-medium">
-                {connectedDevicesCount} Connected
+              <Badge className="bg-white/10 text-white/90 border-white/20">
+                {allDevices.length} device{allDevices.length !== 1 ? 's' : ''} paired
               </Badge>
             </div>
-            <h1 className="text-2xl md:text-3xl font-bold mb-2">Smart Device Integration</h1>
-            <p className="text-slate-300 text-sm md:text-base">
-              Connect your smartwatch, fitness band, or smart ring to automatically track your health data
+            <h1 className="text-2xl md:text-3xl font-bold mb-1">Device Hub</h1>
+            <p className="text-slate-300 text-sm">
+              Connect fitness trackers, CGMs, blood pressure monitors and glucometers
             </p>
           </div>
-          <div className="flex gap-3">
-            <Button onClick={handleStartPairing} className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg shadow-teal-500/30">
-              <Bluetooth className="mr-2 h-4 w-4" />
-              Pair New Device
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Stats - Real Data from Connected Devices */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-teal-100 dark:bg-teal-900/30">
-                <Watch className="w-5 h-5 text-teal-600 dark:text-teal-400" />
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Devices</p>
-                <p className="text-lg font-bold text-slate-800 dark:text-white">{connectedDevicesCount}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card 
-          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-red-300 dark:hover:border-red-700 transition-all"
-          onClick={() => { setSelectedMetric('heart_rate'); setShowTrendDialog(true); }}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
-                  <Heart className="w-5 h-5 text-red-600 dark:text-red-400" />
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Heart Rate</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-white">
-                    {loadingStats ? '...' : healthStats.heartRate ? `${healthStats.heartRate} bpm` : '-- bpm'}
-                  </p>
-                </div>
-              </div>
-              <TrendingUp className="w-4 h-4 text-slate-400" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card 
-          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-blue-300 dark:hover:border-blue-700 transition-all"
-          onClick={() => { setSelectedMetric('steps'); setShowTrendDialog(true); }}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
-                  <Footprints className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Steps Today</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-white">
-                    {loadingStats ? '...' : healthStats.steps ? healthStats.steps.toLocaleString() : '--'}
-                  </p>
-                </div>
-              </div>
-              <TrendingUp className="w-4 h-4 text-slate-400" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card 
-          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-purple-300 dark:hover:border-purple-700 transition-all"
-          onClick={() => { setSelectedMetric('sleep'); setShowTrendDialog(true); }}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
-                  <Moon className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Sleep Score</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-white">
-                    {loadingStats ? '...' : healthStats.sleepScore ? `${healthStats.sleepScore}%` : '--%'}
-                  </p>
-                </div>
-              </div>
-              <TrendingUp className="w-4 h-4 text-slate-400" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card 
-          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-pink-300 dark:hover:border-pink-700 transition-all"
-          onClick={() => { setSelectedMetric('blood_pressure_systolic'); setShowTrendDialog(true); }}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-pink-100 dark:bg-pink-900/30">
-                  <Activity className="w-5 h-5 text-pink-600 dark:text-pink-400" />
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Blood Pressure</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-white">
-                    {loadingStats ? '...' : healthStats.bloodPressure 
-                      ? `${healthStats.bloodPressure.systolic}/${healthStats.bloodPressure.diastolic}` 
-                      : '--/--'}
-                  </p>
-                </div>
-              </div>
-              <TrendingUp className="w-4 h-4 text-slate-400" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card 
-          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-cyan-300 dark:hover:border-cyan-700 transition-all"
-          onClick={() => { setSelectedMetric('spo2'); setShowTrendDialog(true); }}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-cyan-100 dark:bg-cyan-900/30">
-                  <Droplets className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">SpO2</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-white">
-                    {loadingStats ? '...' : healthStats.spo2 ? `${healthStats.spo2}%` : '--%'}
-                  </p>
-                </div>
-              </div>
-              <TrendingUp className="w-4 h-4 text-slate-400" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Additional Health Metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card 
-          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-orange-300 dark:hover:border-orange-700 transition-all"
-          onClick={() => { setSelectedMetric('blood_glucose'); setShowTrendDialog(true); }}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
-                  <Zap className="w-5 h-5 text-orange-600 dark:text-orange-400" />
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Blood Sugar</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-white">
-                    {loadingStats ? '...' : healthStats.bloodGlucose ? `${healthStats.bloodGlucose} mg/dL` : '-- mg/dL'}
-                  </p>
-                </div>
-              </div>
-              <TrendingUp className="w-4 h-4 text-slate-400" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card 
-          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-700 transition-all"
-          onClick={() => { setSelectedMetric('hrv'); setShowTrendDialog(true); }}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-                  <Activity className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">HRV</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-white">
-                    {loadingStats ? '...' : healthStats.hrv ? `${healthStats.hrv} ms` : '-- ms'}
-                  </p>
-                </div>
-              </div>
-              <TrendingUp className="w-4 h-4 text-slate-400" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card 
-          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-amber-300 dark:hover:border-amber-700 transition-all"
-          onClick={() => { setSelectedMetric('uric_acid'); setShowTrendDialog(true); }}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
-                  <Droplets className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Uric Acid</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-white">
-                    {loadingStats ? '...' : healthStats.uricAcid ? `${healthStats.uricAcid} mg/dL` : '-- mg/dL'}
-                  </p>
-                </div>
-              </div>
-              <TrendingUp className="w-4 h-4 text-slate-400" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card 
-          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-rose-300 dark:hover:border-rose-700 transition-all"
-          onClick={() => { setSelectedMetric('total_cholesterol'); setShowTrendDialog(true); }}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-rose-100 dark:bg-rose-900/30">
-                  <Heart className="w-5 h-5 text-rose-600 dark:text-rose-400" />
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Total Cholesterol</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-white">
-                    {loadingStats ? '...' : healthStats.totalCholesterol ? `${healthStats.totalCholesterol} mg/dL` : '-- mg/dL'}
-                  </p>
-                </div>
-              </div>
-              <TrendingUp className="w-4 h-4 text-slate-400" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Trend Analytics Dialog */}
-      <Dialog open={showTrendDialog} onOpenChange={setShowTrendDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogTitle className="sr-only">Health Trend Analytics</DialogTitle>
-          {selectedMetric && healthMetricConfigs[selectedMetric as keyof typeof healthMetricConfigs] && (
-            <HealthTrendCard
-              dataType={selectedMetric}
-              title={healthMetricConfigs[selectedMetric as keyof typeof healthMetricConfigs].title}
-              currentValue={
-                selectedMetric === 'heart_rate' ? healthStats.heartRate :
-                selectedMetric === 'steps' ? healthStats.steps :
-                selectedMetric === 'sleep' ? healthStats.sleepScore :
-                selectedMetric === 'blood_pressure_systolic' ? healthStats.bloodPressure?.systolic ?? null :
-                selectedMetric === 'spo2' ? healthStats.spo2 :
-                selectedMetric === 'blood_glucose' ? healthStats.bloodGlucose :
-                selectedMetric === 'hrv' ? healthStats.hrv :
-                selectedMetric === 'uric_acid' ? healthStats.uricAcid :
-                selectedMetric === 'total_cholesterol' ? healthStats.totalCholesterol : null
-              }
-              unit={healthMetricConfigs[selectedMetric as keyof typeof healthMetricConfigs].unit}
-              icon={healthMetricConfigs[selectedMetric as keyof typeof healthMetricConfigs].icon}
-              color={healthMetricConfigs[selectedMetric as keyof typeof healthMetricConfigs].color}
-              onClose={() => setShowTrendDialog(false)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Auto-Sync Settings & Actions */}
-      <Card className="bg-gradient-to-r from-slate-50 to-teal-50/30 dark:from-slate-800/50 dark:to-teal-900/20 border-teal-200/50 dark:border-teal-700/30">
-        <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            {/* Auto-sync toggle */}
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-teal-100 dark:bg-teal-900/30">
-                  <Timer className="w-5 h-5 text-teal-600 dark:text-teal-400" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-slate-800 dark:text-white">Auto-Sync</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Sync data every 30 minutes
-                  </p>
-                </div>
-              </div>
-              <Switch
-                checked={autoSyncEnabled}
-                onCheckedChange={toggleAutoSync}
-                className="data-[state=checked]:bg-teal-500"
-              />
-            </div>
-            
-            {/* Sync status info */}
-            <div className="flex items-center gap-4 text-sm">
-              {autoSyncEnabled && syncStatus && (
-                <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
-                  <Clock className="w-4 h-4 text-teal-500" />
-                  <span>Next sync: {formatTimeUntilSync()}</span>
-                </div>
-              )}
-              <div className="text-xs text-slate-500 dark:text-slate-400">
-                {healthStats.lastUpdated 
-                  ? `Last: ${new Date(healthStats.lastUpdated).toLocaleTimeString()}`
-                  : 'No data synced yet'
-                }
-              </div>
-              {syncStatus && syncStatus.pendingReadings > 0 && (
-                <Badge variant="secondary" className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                  {syncStatus.pendingReadings} pending
-                </Badge>
-              )}
-            </div>
-            
-            {/* Sync now button */}
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={handleSyncNow}
-              disabled={loadingStats || syncing}
-              className="border-teal-500/30 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20"
-            >
-              <RefreshCw className={`mr-2 h-4 w-4 ${(loadingStats || syncing) ? 'animate-spin' : ''}`} />
-              {syncing ? 'Syncing...' : 'Sync Now'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Activity Log from Google Fit / Apple Health */}
-      <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg font-semibold text-slate-800 dark:text-white flex items-center gap-2">
-              <Activity className="w-5 h-5 text-green-500" />
-              Activity Log
-            </CardTitle>
-            <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-              Google Fit / Apple Health
-            </Badge>
-          </div>
-          <CardDescription>Daily activity from your smartphone</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-            <Card 
-              className="bg-slate-50 dark:bg-slate-900/50 border-0 cursor-pointer hover:shadow-md transition-all"
-              onClick={() => { setSelectedMetric('walking'); setShowTrendDialog(true); }}
-            >
-              <CardContent className="p-3 text-center">
-                <Footprints className="w-6 h-6 mx-auto text-green-500 mb-1" />
-                <p className="text-xs text-slate-500">Walking</p>
-                <p className="text-sm font-bold">View Trends</p>
-              </CardContent>
-            </Card>
-            
-            <Card 
-              className="bg-slate-50 dark:bg-slate-900/50 border-0 cursor-pointer hover:shadow-md transition-all"
-              onClick={() => { setSelectedMetric('running'); setShowTrendDialog(true); }}
-            >
-              <CardContent className="p-3 text-center">
-                <Activity className="w-6 h-6 mx-auto text-red-500 mb-1" />
-                <p className="text-xs text-slate-500">Running</p>
-                <p className="text-sm font-bold">View Trends</p>
-              </CardContent>
-            </Card>
-            
-            <Card 
-              className="bg-slate-50 dark:bg-slate-900/50 border-0 cursor-pointer hover:shadow-md transition-all"
-              onClick={() => { setSelectedMetric('cycling'); setShowTrendDialog(true); }}
-            >
-              <CardContent className="p-3 text-center">
-                <Activity className="w-6 h-6 mx-auto text-blue-500 mb-1" />
-                <p className="text-xs text-slate-500">Cycling</p>
-                <p className="text-sm font-bold">View Trends</p>
-              </CardContent>
-            </Card>
-            
-            <Card 
-              className="bg-slate-50 dark:bg-slate-900/50 border-0 cursor-pointer hover:shadow-md transition-all"
-              onClick={() => { setSelectedMetric('calories'); setShowTrendDialog(true); }}
-            >
-              <CardContent className="p-3 text-center">
-                <Zap className="w-6 h-6 mx-auto text-orange-500 mb-1" />
-                <p className="text-xs text-slate-500">Calories</p>
-                <p className="text-sm font-bold">View Trends</p>
-              </CardContent>
-            </Card>
-            
-            <Card 
-              className="bg-slate-50 dark:bg-slate-900/50 border-0 cursor-pointer hover:shadow-md transition-all"
-              onClick={() => { setSelectedMetric('distance'); setShowTrendDialog(true); }}
-            >
-              <CardContent className="p-3 text-center">
-                <Activity className="w-6 h-6 mx-auto text-teal-500 mb-1" />
-                <p className="text-xs text-slate-500">Distance</p>
-                <p className="text-sm font-bold">View Trends</p>
-              </CardContent>
-            </Card>
-            
-            <Card 
-              className="bg-slate-50 dark:bg-slate-900/50 border-0 cursor-pointer hover:shadow-md transition-all"
-              onClick={() => { setSelectedMetric('active_minutes'); setShowTrendDialog(true); }}
-            >
-              <CardContent className="p-3 text-center">
-                <Timer className="w-6 h-6 mx-auto text-emerald-500 mb-1" />
-                <p className="text-xs text-slate-500">Active Time</p>
-                <p className="text-sm font-bold">View Trends</p>
-              </CardContent>
-            </Card>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Connected Devices */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-slate-800 dark:text-white">Your Devices</h2>
-          <Link to="/health-risk-assessment">
-            <Button variant="outline" size="sm" className="border-teal-500/30 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20">
-              <ShieldCheck className="mr-2 h-4 w-4" />
-              Run Health Assessment
+          <Link to="/patient/watch-analytics">
+            <Button variant="outline" className="border-teal-500/40 text-teal-300 hover:bg-teal-500/10">
+              <Activity className="w-4 h-4 mr-2" />
+              View Analytics
             </Button>
           </Link>
         </div>
-        
-        {/* Loading State */}
-        {loading && (
-          <div className="flex items-center justify-center py-12">
-            <RefreshCw className="h-8 w-8 text-teal-500 animate-spin" />
-            <span className="ml-3 text-slate-600 dark:text-slate-400">Loading devices...</span>
+      </div>
+
+      {/* ── My Devices ───────────────────────────────────────────────────── */}
+      <section>
+        <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          <Settings className="w-4 h-4 text-teal-400" />
+          My Devices
+        </h2>
+
+        {wearablesLoading && (
+          <div className="flex items-center gap-2 text-slate-400 py-4">
+            <RefreshCw className="w-4 h-4 animate-spin" />
+            <span className="text-sm">Loading devices…</span>
           </div>
         )}
-        
-        {/* Empty State */}
-        {!loading && devices.length === 0 && (
-          <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <div className="p-4 bg-slate-100 dark:bg-slate-700 rounded-full mb-4">
-                <Bluetooth className="h-8 w-8 text-slate-400" />
-              </div>
-              <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-2">No Devices Connected</h3>
-              <p className="text-slate-500 dark:text-slate-400 text-center mb-4 max-w-md">
-                Connect your smartwatch, fitness band, or other Bluetooth health devices to start tracking your health data automatically.
+
+        {!wearablesLoading && allDevices.length === 0 && (
+          <Card className="bg-slate-800/60 border-slate-700/40">
+            <CardContent className="flex flex-col items-center justify-center py-10 gap-3">
+              <Bluetooth className="w-10 h-10 text-slate-500" />
+              <p className="text-slate-400 text-sm text-center">
+                No devices paired yet. Connect a device from one of the sections below.
               </p>
-              <Button onClick={handleStartPairing} className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white">
-                <Bluetooth className="mr-2 h-4 w-4" />
-                Pair Your First Device
-              </Button>
             </CardContent>
           </Card>
         )}
-        
-        {/* Device Grid */}
-        {!loading && devices.length > 0 && (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {devices.map((device) => (
-            <Card key={device.id} className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-teal-200 dark:hover:border-teal-500/50 transition-all">
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2.5 bg-gradient-to-br from-teal-50 to-teal-100 dark:from-teal-900/30 dark:to-teal-800/20 rounded-xl">
-                      <span className="text-2xl">{getDeviceEmoji(device.type)}</span>
-                    </div>
-                    <div>
-                      <CardTitle className="text-base text-slate-800 dark:text-white">{device.name}</CardTitle>
-                      <CardDescription className="text-slate-500 dark:text-slate-400">
-                        {device.brand} • {device.model}
-                      </CardDescription>
-                    </div>
-                  </div>
-                  {getStatusBadge(device.status)}
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {device.battery !== undefined && (
-                    <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span className="text-slate-600 dark:text-slate-400">Battery</span>
-                        <span className="font-medium text-slate-800 dark:text-white">{device.battery}%</span>
+
+        {allDevices.length > 0 && (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {allDevices.map((device) => {
+              const did = device.device_id ?? device.deviceId ?? device.id ?? '';
+              const dname = device.device_name ?? device.name ?? 'Unknown Device';
+              const status = syncStatus(device);
+              const lastSyncDate = getLastSyncDate(device);
+
+              return (
+                <Card key={did} className="bg-slate-800/60 border-slate-700/40 hover:border-teal-600/40 transition-colors">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${STATUS_DOT[status]}`} />
+                        <p className="text-sm font-medium text-white truncate max-w-[140px]">{dname}</p>
                       </div>
-                      <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
-                        <div
-                          className={`h-2 rounded-full transition-all ${
-                            device.battery > 50 ? 'bg-teal-500' : 
-                            device.battery > 20 ? 'bg-yellow-500' : 'bg-red-500'
-                          }`}
-                          style={{ width: `${device.battery}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                  {device.lastSync && (
-                    <div className="text-sm text-slate-600 dark:text-slate-400">
-                      Last synced: {new Date(device.lastSync).toLocaleString()}
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-2">Tracks:</p>
-                    <div className="flex flex-wrap gap-2">
-                      {device.dataTypes.map((dataType, index) => (
-                        <Badge key={index} variant="secondary" className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
-                          {dataType}
+                      {device.battery != null && (
+                        <Badge className="bg-slate-700 text-slate-300 border-0 text-[10px]">
+                          {device.battery}%
                         </Badge>
-                      ))}
+                      )}
                     </div>
-                  </div>
-                  <div className="flex gap-2 pt-2">
-                    {device.status === 'connected' ? (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleSync(device.id)}
-                          disabled={device.status === 'syncing'}
-                          className="border-teal-500/30 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20"
-                        >
-                          <RefreshCw className={`mr-2 h-4 w-4 ${device.status === 'syncing' ? 'animate-spin' : ''}`} />
-                          Sync Now
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDisconnect(device.id)}
-                          className="text-slate-600 dark:text-slate-400"
-                        >
-                          Disconnect
-                        </Button>
-                      </>
-                    ) : (
+
+                    <div className="space-y-0.5 mb-4">
+                      {device.type && (
+                        <p className="text-xs text-slate-500 capitalize">{device.type.replace('_', ' ')}</p>
+                      )}
+                      <p className="text-xs text-slate-500">
+                        Last sync: {formatRelative(lastSyncDate)}
+                      </p>
+                      {(device.isVeepooDevice || device.isFireBolttDevice) && (
+                        <Badge className="text-[10px] px-1 py-0 h-4 bg-teal-500/20 text-teal-400 border-0 mt-1">
+                          {device.isVeepooDevice ? 'Veepoo' : 'Fire-Boltt'}
+                        </Badge>
+                      )}
+                    </div>
+
+                    <div className="flex gap-2">
                       <Button
                         size="sm"
-                        onClick={() => handleConnect(device.id)}
-                        className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white"
+                        variant="outline"
+                        className="flex-1 border-teal-500/40 text-teal-400 hover:bg-teal-500/10"
+                        onClick={() => syncDevice(device)}
                       >
-                        <Bluetooth className="mr-2 h-4 w-4" />
-                        Connect
+                        <RefreshCw className="w-3 h-3 mr-1" />
+                        Sync
                       </Button>
-                    )}
-                    <Button variant="ghost" size="sm" className="text-slate-500" onClick={() => handleRemoveDevice(device.id)}>
-                      <XCircle className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                        onClick={() => removeMutation.mutate(did)}
+                      >
+                        <XCircle className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
         )}
+      </section>
+
+      {/* ── Status legend ─────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap gap-4 text-xs text-slate-400">
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-teal-400" />Synced within 30 min</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400" />Synced &gt;30 min ago</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500" />Never synced / disconnected</span>
       </div>
 
-      {/* Available Device Types */}
-      <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-slate-800 dark:text-white">Add New Device</h2>
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {availableDevices.map((device, index) => (
-            <Card key={index} className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:border-teal-200 dark:hover:border-teal-500/50 hover:shadow-lg transition-all group">
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 bg-gradient-to-br from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-800 rounded-xl group-hover:from-teal-50 group-hover:to-teal-100/50 dark:group-hover:from-teal-900/30 dark:group-hover:to-teal-800/20 transition-colors">
-                    <span className="text-3xl">{device.emoji}</span>
-                  </div>
-                  <CardTitle className="text-base capitalize text-slate-800 dark:text-white">
-                    {device.type.replace('_', ' ')}
-                  </CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">Supported brands:</p>
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {device.brands.map((brand, brandIndex) => (
-                    <Badge key={brandIndex} variant="outline" className="text-xs text-slate-600 dark:text-slate-400">
-                      {brand}
-                    </Badge>
-                  ))}
-                </div>
-                <Button variant="outline" className="w-full border-teal-500/30 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20" size="sm">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add {device.type.replace('_', ' ')}
-                </Button>
-              </CardContent>
-            </Card>
+      {/* ── Fitness Watches ───────────────────────────────────────────────── */}
+      <section>
+        <div className="flex items-center gap-2 mb-4">
+          <Watch className="w-5 h-5 text-teal-400" />
+          <h2 className="text-lg font-semibold text-white">Fitness Watches & Bands</h2>
+        </div>
+        <div className="space-y-2">
+          {FITNESS_WATCHES.map(entry => (
+            <DeviceRow
+              key={entry.id}
+              entry={entry as CatalogEntry}
+              onConnect={handleConnect}
+              connecting={connecting}
+            />
           ))}
         </div>
-      </div>
+      </section>
 
-      {/* Integration Info */}
-      <Card className="bg-gradient-to-br from-slate-800 via-slate-900 to-slate-800 border-slate-700/50">
-        <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2">
-            <Zap className="w-5 h-5 text-teal-400" />
-            How Device Integration Works
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid md:grid-cols-2 gap-4">
-            {[
-              { title: 'Automatic Sync', desc: 'Connected devices automatically sync data when in range via Bluetooth' },
-              { title: 'Data Privacy', desc: 'All health data is encrypted and stored securely on our servers' },
-              { title: 'Health Assessment', desc: 'Synced data is used for personalized health risk assessment' },
-              { title: 'Multiple Devices', desc: 'Connect multiple devices to track different health metrics' },
-            ].map((item, idx) => (
-              <div key={idx} className="flex items-start gap-3 p-3 rounded-lg bg-slate-800/50">
-                <CheckCircle className="w-5 h-5 text-teal-400 mt-0.5 flex-shrink-0" />
+      {/* ── CGM Devices ──────────────────────────────────────────────────── */}
+      <section>
+        <div className="flex items-center gap-2 mb-1">
+          <Droplets className="w-5 h-5 text-lime-400" />
+          <h2 className="text-lg font-semibold text-white">CGM (Continuous Glucose Monitors)</h2>
+        </div>
+        <p className="text-xs text-slate-400 mb-4">
+          CGM data appears in Watch Analytics as a live glucose reading when Nightscout is configured.
+        </p>
+        {nightscoutUrl && (
+          <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-lime-500/10 border border-lime-500/30">
+            <CheckCircle className="w-4 h-4 text-lime-400 flex-shrink-0" />
+            <span className="text-xs text-lime-300 truncate">Nightscout: {nightscoutUrl}</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-auto text-lime-400 hover:text-lime-300 h-6 px-2"
+              onClick={() => setModal('nightscout')}
+            >
+              Edit
+            </Button>
+          </div>
+        )}
+        <div className="space-y-2">
+          {CGM_DEVICES.map(entry => (
+            <DeviceRow
+              key={entry.id}
+              entry={entry as CatalogEntry}
+              onConnect={handleConnect}
+              connecting={connecting}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* ── Blood Pressure Monitors ───────────────────────────────────────── */}
+      <section>
+        <div className="flex items-center gap-2 mb-4">
+          <Heart className="w-5 h-5 text-pink-400" />
+          <h2 className="text-lg font-semibold text-white">Blood Pressure Monitors</h2>
+        </div>
+        <div className="space-y-2">
+          {BP_MONITORS.map(entry => (
+            <DeviceRow
+              key={entry.id}
+              entry={entry as CatalogEntry}
+              onConnect={handleConnect}
+              connecting={connecting}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* ── Glucometers ───────────────────────────────────────────────────── */}
+      <section>
+        <div className="flex items-center gap-2 mb-4">
+          <Thermometer className="w-5 h-5 text-orange-400" />
+          <h2 className="text-lg font-semibold text-white">Glucometers (Point-in-time)</h2>
+        </div>
+        <div className="space-y-2">
+          {GLUCOMETERS.map(entry => (
+            <DeviceRow
+              key={entry.id}
+              entry={entry as CatalogEntry}
+              onConnect={handleConnect}
+              connecting={connecting}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* ── Platform Aggregators ─────────────────────────────────────────── */}
+      <section>
+        <div className="flex items-center gap-2 mb-4">
+          <Smartphone className="w-5 h-5 text-blue-400" />
+          <h2 className="text-lg font-semibold text-white">Platform Health Aggregators</h2>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-4">
+          {/* Google Fit */}
+          <Card className="bg-slate-800/60 border-slate-700/40 hover:border-teal-600/40 transition-colors">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-3xl">🟢</span>
                 <div>
-                  <p className="text-white font-medium text-sm">{item.title}</p>
-                  <p className="text-slate-400 text-sm">{item.desc}</p>
+                  <p className="text-sm font-medium text-white">Google Fit / Health Connect</p>
+                  <p className="text-xs text-slate-400">Steps, HR, sleep, calories from Android</p>
                 </div>
               </div>
-            ))}
+              <p className="text-xs text-slate-500 mb-3">
+                Requires Health Connect app installed on Android 9+. Grant permissions then tap Sync.
+              </p>
+              <Button
+                size="sm"
+                className="w-full bg-teal-600 hover:bg-teal-700 text-white"
+                disabled={connecting === 'google-fit'}
+                onClick={() => handleConnect('google-fit-sync', 'google-fit')}
+              >
+                {connecting === 'google-fit' ? (
+                  <RefreshCw className="w-3 h-3 animate-spin mr-2" />
+                ) : (
+                  <Link2 className="w-3 h-3 mr-2" />
+                )}
+                Sync Google Fit
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Apple Health */}
+          <Card className="bg-slate-800/60 border-slate-700/40 hover:border-teal-600/40 transition-colors">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-3xl">🍎</span>
+                <div>
+                  <p className="text-sm font-medium text-white">Apple Health</p>
+                  <p className="text-xs text-slate-400">HealthKit data from iPhone</p>
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 mb-3">
+                Open Mediczy on your iPhone and tap "Export to Mediczy" to push HealthKit data.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full border-teal-500/40 text-teal-400 hover:bg-teal-500/10"
+                disabled={connecting === 'apple-health'}
+                onClick={() => handleConnect('apple-health-sync', 'apple-health')}
+              >
+                {connecting === 'apple-health' ? (
+                  <RefreshCw className="w-3 h-3 animate-spin mr-2" />
+                ) : (
+                  <Link2 className="w-3 h-3 mr-2" />
+                )}
+                Sync Apple Health
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {/* ── Info footer ──────────────────────────────────────────────────── */}
+      <Card className="bg-slate-800/40 border-slate-700/30">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <Shield className="w-5 h-5 text-teal-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-white mb-1">Privacy & Security</p>
+              <p className="text-xs text-slate-400">
+                All health data is encrypted in transit and at rest. BLE connections are local-only — data is only sent to
+                Mediczy servers after you initiate a sync. OAuth connections use read-only scopes.
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* ─────────────────────────── Modals ────────────────────────────── */}
+
+      {/* Nightscout */}
+      <Dialog open={modal === 'nightscout'} onOpenChange={o => !o && setModal(null)}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="text-xl">🌐</span> Nightscout CGM
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Enter your Nightscout URL to pull continuous glucose readings into Watch Analytics.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <label className="text-xs text-slate-400 mb-1.5 block">Nightscout URL (must be HTTPS)</label>
+              <Input
+                value={nightscoutInput}
+                onChange={e => setNightscoutInput(e.target.value)}
+                placeholder="https://mynightscout.herokuapp.com"
+                className="bg-slate-800 border-slate-600 text-white placeholder:text-slate-500"
+              />
+            </div>
+            <div className="rounded-lg bg-slate-800/60 p-3 space-y-1.5">
+              <p className="text-xs font-medium text-slate-300">How to set up Nightscout</p>
+              <ol className="text-xs text-slate-400 space-y-1 list-decimal list-inside">
+                <li>Deploy Nightscout (nightscout.github.io) or use a provider like ns.10be.de</li>
+                <li>Set AUTH_DEFAULT_ROLES=readable in your Nightscout env</li>
+                <li>Paste your site URL above and tap Save</li>
+                <li>CGM readings will appear on the Watch Analytics page</li>
+              </ol>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button
+                className="flex-1 bg-teal-600 hover:bg-teal-700"
+                onClick={saveNightscoutUrl}
+              >
+                Save URL
+              </Button>
+              {nightscoutUrl && (
+                <Button
+                  variant="outline"
+                  className="border-red-500/40 text-red-400 hover:bg-red-500/10"
+                  onClick={() => { setNightscoutInput(''); saveNightscoutUrl(); }}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dexcom */}
+      <Dialog open={modal === 'dexcom'} onOpenChange={o => !o && setModal(null)}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="text-xl">📡</span> Dexcom G6 / G7
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Connect via Dexcom Share API
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3">
+              <p className="text-xs text-amber-300 font-medium mb-1">Dexcom Share credentials required</p>
+              <p className="text-xs text-amber-200/70">
+                Full OAuth integration requires Dexcom developer API keys (server-side setup). Contact your Mediczy administrator to enable this.
+              </p>
+            </div>
+            <div className="rounded-lg bg-slate-800/60 p-3 space-y-1.5">
+              <p className="text-xs font-medium text-slate-300">Alternative: Use Nightscout as a bridge</p>
+              <ol className="text-xs text-slate-400 space-y-1 list-decimal list-inside">
+                <li>Enable Dexcom Share in the Dexcom G6/G7 app</li>
+                <li>Install xDrip+ (Android) or Spike (iOS) and connect to Dexcom Share</li>
+                <li>Configure xDrip+/Spike to upload to your Nightscout site</li>
+                <li>Add your Nightscout URL in the Nightscout section above</li>
+              </ol>
+            </div>
+            <Button
+              className="w-full bg-teal-600 hover:bg-teal-700"
+              onClick={() => { setModal('nightscout'); }}
+            >
+              Set Up Nightscout Instead
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* FreeStyle Libre */}
+      <Dialog open={modal === 'libre'} onOpenChange={o => !o && setModal(null)}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="text-xl">📡</span> FreeStyle Libre 2 / 3
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              BLE direct connection + LibreLink polling
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div className="rounded-lg bg-slate-800/60 p-3 space-y-1.5">
+              <p className="text-xs font-medium text-slate-300">Option 1 — BLE Direct (Libre 2 / 3)</p>
+              <p className="text-xs text-slate-400">
+                Libre 2 and Libre 3 broadcast BLE. Compatible reader apps (e.g. xDrip+, Diabox) can forward readings to Nightscout.
+              </p>
+            </div>
+            <div className="rounded-lg bg-slate-800/60 p-3 space-y-1.5">
+              <p className="text-xs font-medium text-slate-300">Option 2 — via Nightscout</p>
+              <ol className="text-xs text-slate-400 space-y-1 list-decimal list-inside">
+                <li>Install LibreLink on Android and enable connections</li>
+                <li>Use xDrip+ to bridge LibreLink → Nightscout</li>
+                <li>Add your Nightscout URL in the Nightscout section</li>
+              </ol>
+            </div>
+            <Button
+              className="w-full bg-teal-600 hover:bg-teal-700"
+              onClick={() => { setModal('nightscout'); }}
+            >
+              Set Up Nightscout
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Fitbit OAuth */}
+      <Dialog open={modal === 'fitbit-oauth'} onOpenChange={o => !o && setModal(null)}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="text-xl">📿</span> Fitbit OAuth
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Connect your Fitbit account
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Info className="w-3.5 h-3.5 text-amber-400" />
+                <p className="text-xs text-amber-300 font-medium">Setup Required</p>
+              </div>
+              <p className="text-xs text-amber-200/70">
+                Fitbit OAuth requires server-side credentials (Fitbit App client ID + secret). This feature is pending activation by your Mediczy administrator.
+              </p>
+            </div>
+            <div className="rounded-lg bg-slate-800/60 p-3">
+              <p className="text-xs font-medium text-slate-300 mb-1">What you'll be able to do</p>
+              <ul className="text-xs text-slate-400 space-y-1 list-disc list-inside">
+                <li>Sync 7-day heart rate, steps, sleep, calories</li>
+                <li>Import weight and BMI data</li>
+                <li>Auto-refresh every 30 minutes</li>
+              </ul>
+            </div>
+            <p className="text-xs text-slate-500">
+              As an alternative, you can also sync Fitbit data via Google Health Connect on Android.
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Garmin OAuth */}
+      <Dialog open={modal === 'garmin-oauth'} onOpenChange={o => !o && setModal(null)}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="text-xl">⌚</span> Garmin Connect
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Connect your Garmin account
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Info className="w-3.5 h-3.5 text-amber-400" />
+                <p className="text-xs text-amber-300 font-medium">Setup Required</p>
+              </div>
+              <p className="text-xs text-amber-200/70">
+                Garmin Health API OAuth requires approved developer access. This feature is pending activation.
+              </p>
+            </div>
+            <div className="rounded-lg bg-slate-800/60 p-3">
+              <p className="text-xs text-slate-400">
+                You can pair your Garmin watch via direct BLE (select "Generic BLE Watch") to read heart rate and SpO2 data in real-time.
+              </p>
+            </div>
+            <Button
+              className="w-full bg-teal-600 hover:bg-teal-700"
+              onClick={() => { setModal(null); handleConnect('ble-generic', 'generic-ble'); }}
+            >
+              <Bluetooth className="w-3 h-3 mr-2" />
+              Pair via BLE Instead
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Apple Health instruction modal */}
+      <Dialog open={modal === 'apple-health'} onOpenChange={o => !o && setModal(null)}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="text-xl">🍎</span> Apple Watch / Apple Health
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Sync HealthKit data from your iPhone
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div className="rounded-lg bg-slate-800/60 p-3 space-y-1.5">
+              <p className="text-xs font-medium text-slate-300">Steps to sync</p>
+              <ol className="text-xs text-slate-400 space-y-1 list-decimal list-inside">
+                <li>Open the Mediczy app on your iPhone (iOS app required)</li>
+                <li>Go to Settings → Health Integration</li>
+                <li>Tap "Connect Apple Health" and grant permissions</li>
+                <li>Tap "Export to Mediczy" — data syncs automatically</li>
+              </ol>
+            </div>
+            <p className="text-xs text-slate-500">
+              Apple Watch health data (HR, ECG, SpO2, sleep) flows through HealthKit and is included in the export.
+            </p>
+            <Button
+              className="w-full bg-teal-600 hover:bg-teal-700"
+              onClick={() => { syncAppleHealth(); setModal(null); }}
+            >
+              <Zap className="w-3 h-3 mr-2" />
+              Trigger Sync Now
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Google Fit / Health Connect instruction modal */}
+      <Dialog open={modal === 'google-fit'} onOpenChange={o => !o && setModal(null)}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="text-xl">🟢</span> Samsung Galaxy Watch / Google Fit
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Sync via Google Health Connect
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div className="rounded-lg bg-slate-800/60 p-3 space-y-1.5">
+              <p className="text-xs font-medium text-slate-300">Steps to sync</p>
+              <ol className="text-xs text-slate-400 space-y-1 list-decimal list-inside">
+                <li>Install "Health Connect" from the Play Store</li>
+                <li>Open Samsung Health or Google Fit and link to Health Connect</li>
+                <li>Open Mediczy on Android — it will request Health Connect permissions</li>
+                <li>Tap "Sync Google Fit" below to import data</li>
+              </ol>
+            </div>
+            <Button
+              className="w-full bg-teal-600 hover:bg-teal-700"
+              onClick={() => { syncGoogleFit(); setModal(null); }}
+            >
+              <Zap className="w-3 h-3 mr-2" />
+              Sync Now
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 };

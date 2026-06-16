@@ -37,15 +37,17 @@ const normalizeWeeklySchedule = (rawSchedule) => {
   Object.keys(DEFAULT_WEEKLY_SCHEDULE).forEach(day => {
     const savedDay = weeklySchedule[day] || {};
     const defaultDay = DEFAULT_WEEKLY_SCHEDULE[day];
+    const hasLegacyWindow = savedDay.startTime && savedDay.endTime;
+    const legacyEnabled = savedDay.isAvailable !== false && hasLegacyWindow;
     weeklySchedule[day] = {
-      isOff: savedDay.isOff ?? defaultDay.isOff,
+      isOff: savedDay.isOff ?? (savedDay.isAvailable === false ? true : defaultDay.isOff),
       online: {
-        enabled: savedDay.online?.enabled ?? defaultDay.online.enabled,
-        startTime: savedDay.online?.startTime || defaultDay.online.startTime,
-        endTime: savedDay.online?.endTime || defaultDay.online.endTime
+        enabled: savedDay.online?.enabled ?? (legacyEnabled ? true : defaultDay.online.enabled),
+        startTime: savedDay.online?.startTime || savedDay.startTime || defaultDay.online.startTime,
+        endTime: savedDay.online?.endTime || savedDay.endTime || defaultDay.online.endTime
       },
       inPerson: {
-        enabled: savedDay.inPerson?.enabled ?? defaultDay.inPerson.enabled,
+        enabled: savedDay.inPerson?.enabled ?? false,
         startTime: savedDay.inPerson?.startTime || defaultDay.inPerson.startTime,
         endTime: savedDay.inPerson?.endTime || defaultDay.inPerson.endTime,
         ...(savedDay.inPerson?.locationId ? { locationId: savedDay.inPerson.locationId } : {})
@@ -485,10 +487,13 @@ router.get('/available-slots/:doctorId', async (req, res) => {
     const targetDate = date ? new Date(date) : new Date();
     const dayName = targetDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
     
-    const weeklySchedule = doctor.weeklySchedule || {};
+    const weeklySchedule = normalizeWeeklySchedule(doctor.weeklySchedule);
     const daySchedule = weeklySchedule[dayName];
     const slotDuration = doctor.slotDuration || 15;
     const offDays = doctor.offDays || ['sunday'];
+    const normalizeSlot = (slot) => String(slot || '').replace(/\s*-\s*/, ' - ');
+    const blockedSlots = new Set((daySchedule?.blockedSlots || []).map(normalizeSlot));
+    const isBlockedSlot = (slot) => blockedSlots.has(normalizeSlot(slot));
 
     // Check if it's an off day
     if (offDays.includes(dayName) || daySchedule?.isOff) {
@@ -532,7 +537,7 @@ router.get('/available-slots/:doctorId', async (req, res) => {
         }
         
         const slotEnd = `${slotEndHour.toString().padStart(2, '0')}:${slotEndMin.toString().padStart(2, '0')}`;
-        slots.push(`${slotStart}-${slotEnd}`);
+        slots.push(`${slotStart} - ${slotEnd}`);
         
         currentHour = slotEndHour;
         currentMin = slotEndMin;
@@ -544,16 +549,20 @@ router.get('/available-slots/:doctorId', async (req, res) => {
     let availableSlots = [];
     
     if (type === 'online' && daySchedule?.online?.enabled) {
-      availableSlots = generateSlots(daySchedule.online.startTime, daySchedule.online.endTime);
+      availableSlots = generateSlots(daySchedule.online.startTime, daySchedule.online.endTime).filter(slot => !isBlockedSlot(slot));
     } else if (type === 'in-person' && daySchedule?.inPerson?.enabled) {
-      availableSlots = generateSlots(daySchedule.inPerson.startTime, daySchedule.inPerson.endTime);
+      availableSlots = generateSlots(daySchedule.inPerson.startTime, daySchedule.inPerson.endTime).filter(slot => !isBlockedSlot(slot));
     } else if (!type) {
       // Return both types if no specific type requested
       const onlineSlots = daySchedule?.online?.enabled 
-        ? generateSlots(daySchedule.online.startTime, daySchedule.online.endTime).map(s => ({ slot: s, type: 'online' }))
+        ? generateSlots(daySchedule.online.startTime, daySchedule.online.endTime)
+            .filter(slot => !isBlockedSlot(slot))
+            .map(s => ({ slot: s, type: 'online' }))
         : [];
       const inPersonSlots = daySchedule?.inPerson?.enabled
-        ? generateSlots(daySchedule.inPerson.startTime, daySchedule.inPerson.endTime).map(s => ({ slot: s, type: 'in-person' }))
+        ? generateSlots(daySchedule.inPerson.startTime, daySchedule.inPerson.endTime)
+            .filter(slot => !isBlockedSlot(slot))
+            .map(s => ({ slot: s, type: 'in-person' }))
         : [];
       
       return res.json({
@@ -568,6 +577,7 @@ router.get('/available-slots/:doctorId', async (req, res) => {
           online: onlineSlots.map(s => s.slot),
           inPerson: inPersonSlots.map(s => s.slot)
         },
+        blockedSlots: Array.from(blockedSlots),
         fees: {
           online: doctor.onlineConsultationFee || doctor.consultationFees || 500,
           inPerson: doctor.inPersonConsultationFee || doctor.consultationFees || 500
@@ -584,6 +594,7 @@ router.get('/available-slots/:doctorId', async (req, res) => {
       isOffDay: false,
       type: type || 'all',
       availableSlots,
+      blockedSlots: Array.from(blockedSlots),
       slotDuration,
       fee: type === 'online' 
         ? (doctor.onlineConsultationFee || doctor.consultationFees || 500)

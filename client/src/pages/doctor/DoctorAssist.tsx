@@ -283,6 +283,13 @@ const getKnowledgeStats = async () => {
   }
 };
 
+// Coerce any LLM value to a proper string array (handles strings returned instead of arrays)
+const toArr = (v: unknown): string[] => {
+  if (Array.isArray(v)) return (v as unknown[]).map(String).filter(Boolean);
+  if (typeof v === 'string' && v.trim()) return v.split(/[,;]\s*|\n/).map(s => s.trim()).filter(Boolean);
+  return [];
+};
+
 // ==========================================
 // AI-POWERED CDSS ENGINE (SIB + Groq)
 // ==========================================
@@ -339,7 +346,7 @@ const generateCDSSResponse = async (query: string, category: string, specialty: 
   
   // Try AI enhancement with enough timeout for LLM
   try {
-    const aiResponse = await queryAICDSS(query, category, specialty, 12000);
+    const aiResponse = await queryAICDSS(query, category, specialty, 20000);
     if (aiResponse && (aiResponse.clinicalGuidelines.length > 0 || aiResponse.drugInfo.length > 0 || aiResponse.differentialDiagnosis.length > 0 || aiResponse.labTests.length > 0)) {
       // Merge AI refs with local refs for completeness
       const mergedRefs = [...(aiResponse.references || []), ...(localResponse.references || [])]
@@ -958,7 +965,7 @@ const ClinicalWarningCard = ({ warning }: { warning: ClinicalWarning }) => {
     info: { bg: 'bg-blue-50 dark:bg-blue-950/30', border: 'border-blue-500', icon: Info, iconColor: 'text-blue-500' }
   };
   
-  const { bg, border, icon: Icon, iconColor } = config[warning.type];
+  const { bg, border, icon: Icon, iconColor } = config[warning.type] ?? config['warning'];
   
   return (
     <div className={cn("p-3 rounded-lg border-l-4", bg, border)}>
@@ -1012,8 +1019,8 @@ const DrugCard = ({ drug }: { drug: DrugInformation }) => (
         <div>
           <h4 className="text-sm font-semibold text-green-600 dark:text-green-400 mb-1">Indications</h4>
           <ul className="text-xs space-y-0.5">
-            {(drug.indications || []).length > 0 ? (
-              drug.indications.map((ind, i) => (
+            {toArr(drug.indications).length > 0 ? (
+              toArr(drug.indications).map((ind, i) => (
                 <li key={i} className="flex items-center gap-1">
                   <CheckCircle className="h-3 w-3 text-green-500" />
                   {ind}
@@ -1024,12 +1031,12 @@ const DrugCard = ({ drug }: { drug: DrugInformation }) => (
             )}
           </ul>
         </div>
-        
+
         <div>
           <h4 className="text-sm font-semibold text-red-600 dark:text-red-400 mb-1">Contraindications</h4>
           <ul className="text-xs space-y-0.5">
-            {(drug.contraindications || []).length > 0 ? (
-              drug.contraindications.slice(0, 3).map((contra, i) => (
+            {toArr(drug.contraindications).length > 0 ? (
+              toArr(drug.contraindications).slice(0, 3).map((contra, i) => (
                 <li key={i} className="flex items-center gap-1">
                   <X className="h-3 w-3 text-red-500" />
                   {contra}
@@ -1041,7 +1048,7 @@ const DrugCard = ({ drug }: { drug: DrugInformation }) => (
           </ul>
         </div>
       </div>
-      
+
       <Accordion type="single" collapsible className="w-full">
         <AccordionItem value="details" className="border-0">
           <AccordionTrigger className="text-sm py-2">More Details</AccordionTrigger>
@@ -1050,13 +1057,13 @@ const DrugCard = ({ drug }: { drug: DrugInformation }) => (
               <div>
                 <h5 className="text-xs font-semibold text-amber-600">Side Effects</h5>
                 <p className="text-xs text-muted-foreground">
-                  {(drug.sideEffects || []).length > 0 ? drug.sideEffects.join(', ') : 'No side effects listed'}
+                  {toArr(drug.sideEffects).length > 0 ? toArr(drug.sideEffects).join(', ') : 'No side effects listed'}
                 </p>
               </div>
               <div>
                 <h5 className="text-xs font-semibold text-purple-600">Interactions</h5>
                 <p className="text-xs text-muted-foreground">
-                  {(drug.interactions || []).length > 0 ? drug.interactions.join(', ') : 'No interactions listed'}
+                  {toArr(drug.interactions).length > 0 ? toArr(drug.interactions).join(', ') : 'No interactions listed'}
                 </p>
               </div>
               {drug.source && (
@@ -1148,8 +1155,8 @@ const DifferentialCard = ({ differential }: { differential: DifferentialDiagnosi
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground mb-1">Key Features</h4>
           <div className="flex flex-wrap gap-1">
-            {(differential.keyFeatures || []).length > 0 ? (
-              differential.keyFeatures.map((feature, i) => (
+            {toArr(differential.keyFeatures).length > 0 ? (
+              toArr(differential.keyFeatures).map((feature, i) => (
                 <Badge key={i} variant="outline" className="text-xs">{feature}</Badge>
               ))
             ) : (
@@ -1160,8 +1167,8 @@ const DifferentialCard = ({ differential }: { differential: DifferentialDiagnosi
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground mb-1">Ruling Out Tests</h4>
           <p className="text-xs">
-            {(differential.rulingOutTests || []).length > 0 
-              ? differential.rulingOutTests.join(', ') 
+            {toArr(differential.rulingOutTests).length > 0
+              ? toArr(differential.rulingOutTests).join(', ')
               : 'No ruling out tests specified'}
           </p>
         </div>
@@ -1695,10 +1702,10 @@ const DoctorAssist = () => {
         {currentResponse && (
           <div className="space-y-4">
             {/* Warnings */}
-            {currentResponse.warnings.length > 0 && (
+            {(currentResponse.warnings?.length ?? 0) > 0 && (
               <div className="space-y-2">
                 {currentResponse.warnings.map((warning, i) => (
-                  <ClinicalWarningCard key={i} warning={warning} />
+                  <ClinicalWarningCard key={i} warning={warning as any} />
                 ))}
               </div>
             )}

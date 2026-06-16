@@ -63,7 +63,7 @@ import {
 } from 'lucide-react';
 import api from '@/utils/api';
 import { downloadReport } from '@/utils/reportActions';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 
 interface Patient {
@@ -85,7 +85,7 @@ interface Patient {
 interface VitalSign {
   id: number;
   type: string;
-  value: number;
+  value: number | string;
   unit: string;
   recordedAt: string;
   notes?: string;
@@ -136,8 +136,28 @@ interface PatientReport {
   createdAt: string;
 }
 
+// Maps one patient_vitals row (multiple measurements) into separate VitalSign entries
+const transformVitalsRows = (rows: any[]): VitalSign[] => {
+  const entries: VitalSign[] = [];
+  rows.forEach((row) => {
+    const recordedAt = row.recorded_at || row.recordedAt;
+    const push = (type: string, value: any, unit: string) => {
+      if (value === null || value === undefined || value === '') return;
+      entries.push({ id: entries.length + 1, type, value, unit, recordedAt, notes: row.notes || undefined });
+    };
+    if (row.bp) entries.push({ id: entries.length + 1, type: 'Blood Pressure', value: row.bp, unit: 'mmHg', recordedAt, notes: row.notes || undefined });
+    push('Heart Rate', row.heart_rate, 'bpm');
+    push('Temperature', row.temperature, '°F');
+    push('SpO2', row.spo2, '%');
+    push('Weight', row.weight, 'kg');
+    push('Blood Sugar', row.blood_glucose, 'mg/dL');
+  });
+  return entries;
+};
+
 export default function PatientEMR() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -183,6 +203,18 @@ export default function PatientEMR() {
 
   const patients = patientsData?.patients || [];
 
+  // Fetch vitals history for the selected patient
+  const { data: vitalsData, refetch: refetchVitals } = useQuery({
+    queryKey: ['patient-vitals', selectedPatient?.id],
+    queryFn: async () => {
+      const response = await api.get(`/doctors/my-patients/${selectedPatient!.id}/vitals-history`);
+      return response.data;
+    },
+    enabled: !!selectedPatient,
+  });
+
+  const vitalsList: VitalSign[] = transformVitalsRows(vitalsData?.vitals || []);
+
   // Filter patients based on search
   const filteredPatients = patients.filter((p: Patient) => {
     const searchLower = searchQuery.toLowerCase();
@@ -215,16 +247,7 @@ export default function PatientEMR() {
     fetchReports();
   }, [selectedPatient]);
 
-  // Mock data for selected patient's records
-  const mockVitals: VitalSign[] = selectedPatient ? [
-    { id: 1, type: 'Blood Pressure', value: 120, unit: '/80 mmHg', recordedAt: '2025-12-28T10:00:00', notes: 'Normal' },
-    { id: 2, type: 'Heart Rate', value: 72, unit: 'bpm', recordedAt: '2025-12-28T10:00:00' },
-    { id: 3, type: 'Temperature', value: 98.6, unit: '°F', recordedAt: '2025-12-28T10:00:00' },
-    { id: 4, type: 'SpO2', value: 98, unit: '%', recordedAt: '2025-12-28T10:00:00' },
-    { id: 5, type: 'Weight', value: 70, unit: 'kg', recordedAt: '2025-12-28T10:00:00' },
-    { id: 6, type: 'Blood Sugar', value: 95, unit: 'mg/dL', recordedAt: '2025-12-28T10:00:00', notes: 'Fasting' },
-  ] : [];
-
+  // Mock data for selected patient's records (vitals now come from the real API — see vitalsList)
   const mockPrescriptions: Prescription[] = selectedPatient ? [
     {
       id: 1,
@@ -300,12 +323,13 @@ export default function PatientEMR() {
   };
 
   const handleSaveVitals = async () => {
+    if (!selectedPatient) return;
     try {
       // Validate at least one vital is entered
-      const hasData = Object.entries(vitalsForm).some(([key, value]) => 
+      const hasData = Object.entries(vitalsForm).some(([key, value]) =>
         key !== 'notes' && value !== ''
       );
-      
+
       if (!hasData) {
         toast({
           title: 'No data entered',
@@ -315,14 +339,46 @@ export default function PatientEMR() {
         return;
       }
 
-      // In a real app, you would save to the API
-      // await api.post('/vitals', { patientId: selectedPatient.id, ...vitalsForm });
-      
+      const { bloodPressureSystolic, bloodPressureDiastolic, heartRate, temperature, spO2, weight, bloodSugar, notes } = vitalsForm;
+
+      const response = await api.post(`/doctors/my-patients/${selectedPatient.id}/vitals`, {
+        bp: bloodPressureSystolic && bloodPressureDiastolic ? `${bloodPressureSystolic}/${bloodPressureDiastolic}` : undefined,
+        heartRate: heartRate || undefined,
+        temperature: temperature || undefined,
+        temperatureUnit: 'F',
+        spo2: spO2 || undefined,
+        weight: weight || undefined,
+        bloodGlucose: bloodSugar || undefined,
+        notes: notes || undefined,
+      });
+
+      const savedVitals = response.data?.vitals;
+      if (savedVitals) {
+        queryClient.setQueryData(['patient-vitals', selectedPatient.id], (oldData: any) => ({
+          ...(oldData || {}),
+          vitals: [savedVitals, ...((oldData?.vitals || []).filter((row: any) => row.id !== savedVitals.id))],
+        }));
+        queryClient.setQueryData(['patient-vitals', String(selectedPatient.id)], (oldRows: any[] = []) => [
+          savedVitals,
+          ...oldRows.filter((row: any) => row.id !== savedVitals.id),
+        ]);
+      }
+
+      // Refresh all doctor-side summaries that can display latest vitals.
+      await Promise.all([
+        refetchVitals(),
+        refetchPatients(),
+        queryClient.invalidateQueries({ queryKey: ['patient-vitals'] }),
+        queryClient.invalidateQueries({ queryKey: ['doctor-patients-emr'] }),
+        queryClient.invalidateQueries({ queryKey: ['health-monitoring-patients'] }),
+        queryClient.invalidateQueries({ queryKey: ['remote-monitoring-patients'] }),
+      ]);
+
       toast({
         title: 'Success',
         description: 'Vital signs recorded successfully'
       });
-      
+
       setIsRecordVitalsOpen(false);
       setVitalsForm({
         bloodPressureSystolic: '',
@@ -334,10 +390,11 @@ export default function PatientEMR() {
         bloodSugar: '',
         notes: ''
       });
-    } catch (error) {
+    } catch (error: any) {
+      const message = error.response?.data?.errors?.join(', ') || error.response?.data?.message || 'Failed to record vitals';
       toast({
         title: 'Error',
-        description: 'Failed to record vitals',
+        description: message,
         variant: 'destructive'
       });
     }
@@ -390,7 +447,7 @@ export default function PatientEMR() {
         gender: selectedPatient.gender,
         bloodGroup: selectedPatient.bloodGroup,
       },
-      vitals: mockVitals,
+      vitals: vitalsList,
       prescriptions: mockPrescriptions,
       labReports: filteredLabReports,
       appointments: mockAppointments,
@@ -676,7 +733,7 @@ export default function PatientEMR() {
                       </CardHeader>
                       <CardContent>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                          {mockVitals.slice(0, 6).map((vital) => (
+                          {vitalsList.slice(0, 6).map((vital) => (
                             <div key={vital.id} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                               {getVitalIcon(vital.type)}
                               <div>
@@ -729,23 +786,27 @@ export default function PatientEMR() {
                       </CardHeader>
                       <CardContent>
                         <div className="space-y-4">
-                          {mockVitals.map((vital) => (
-                            <div key={vital.id} className="flex items-center justify-between p-4 border rounded-lg">
-                              <div className="flex items-center gap-3">
-                                {getVitalIcon(vital.type)}
-                                <div>
-                                  <p className="font-medium">{vital.type}</p>
-                                  <p className="text-sm text-gray-500">
-                                    {format(new Date(vital.recordedAt), 'dd MMM yyyy, hh:mm a')}
-                                  </p>
+                          {vitalsList.length === 0 ? (
+                            <p className="text-sm text-gray-500 text-center py-6">No vitals recorded yet</p>
+                          ) : (
+                            vitalsList.map((vital) => (
+                              <div key={vital.id} className="flex items-center justify-between p-4 border rounded-lg">
+                                <div className="flex items-center gap-3">
+                                  {getVitalIcon(vital.type)}
+                                  <div>
+                                    <p className="font-medium">{vital.type}</p>
+                                    <p className="text-sm text-gray-500">
+                                      {format(new Date(vital.recordedAt), 'dd MMM yyyy, hh:mm a')}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-xl font-bold">{vital.value}{vital.unit}</p>
+                                  {vital.notes && <p className="text-sm text-gray-500">{vital.notes}</p>}
                                 </div>
                               </div>
-                              <div className="text-right">
-                                <p className="text-xl font-bold">{vital.value}{vital.unit}</p>
-                                {vital.notes && <p className="text-sm text-gray-500">{vital.notes}</p>}
-                              </div>
-                            </div>
-                          ))}
+                            ))
+                          )}
                         </div>
                       </CardContent>
                     </Card>

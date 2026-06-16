@@ -39,6 +39,29 @@ except Exception:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sib.medical_pipeline")
 
+_PROVIDER_COOLDOWN_SECONDS = int(os.environ.get("SIB_PROVIDER_COOLDOWN_SECONDS", "300"))
+
+_STUB_RESPONSE_MARKERS = (
+    "Integrate vLLM or llama.cpp backend",
+    "enable real inference with BiMediX2",
+    "This is a stub response",
+)
+
+
+def _is_stub_response(text: Any) -> bool:
+    return any(marker in str(text or "") for marker in _STUB_RESPONSE_MARKERS)
+
+
+def _normalize_provider_url(url: str, default: str) -> str:
+    """Normalize provider URL and correct the common insha-inc typo."""
+    value = (url or default).strip().rstrip("/")
+    if "insha-inc.com" in value:
+        logger.warning("Correcting provider URL typo insha-inc.com -> isha-inc.com")
+        value = value.replace("insha-inc.com", "isha-inc.com")
+    if not value.startswith(("http://", "https://")):
+        value = "https://" + value
+    return value
+
 
 @dataclass
 class PipelineResult:
@@ -75,10 +98,12 @@ class MedicalPipeline:
         self._llm = None
         self._groq_client = None
         self._intent_router = None
+        self._provider_cooldowns = {}
         
         # API keys (loaded from environment — no hardcoded fallbacks)
         self.groq_api_key = os.environ.get("GROQ_API_KEY", "")
         self.gemini_api_key = os.environ.get("GEMINI_API_KEY", "")
+        self.openai_api_key = os.environ.get("OPENAI_API_KEY", "")
         
         logger.info("🏥 Medical Pipeline initialized")
     
@@ -666,7 +691,10 @@ You: "A month of unexplained fatigue can sometimes point to things like anaemia,
         model = data.get("model", model_name)
         logger.info(f"✅ iSHA AI GPU inference: {latency:.2f}ms (model: {model})")
         
-        return data["choices"][0]["message"]["content"]
+        content = data["choices"][0]["message"]["content"]
+        if _is_stub_response(content):
+            raise RuntimeError("iSHA local GPU returned stub placeholder")
+        return content
     
     def _generate_with_groq(self, prompt: str, system_prompt: str) -> str:
         """Generate with Groq API (FALLBACK)"""
@@ -1005,18 +1033,23 @@ Thank you for sharing your health concern with me.
         
         Backend priority based on TinyLlama routing:
         - isha: iSHA.buzz API (medical RAG)
-        - groq: Groq Llama-3.1 (fast reasoning)
-        - gemini: Google Gemini (complex analysis)
+        - isha-inc: iSHA node2 if its Cloudflare/origin path is healthy
+        - groq: Groq Llama cloud fallback
+        - openai: OpenAI fallback
+        - gemini: Google Gemini fallback
         """
         
-        # Define backend order based on preference
+        # Define backend order based on preference. Keep this aligned with
+        # SyntheticIntelligenceBrain.llm_reasoning so /chat gets the same cascade.
         backend_order = {
-            "isha": ["isha", "groq", "gemini"],
-            "groq": ["groq", "gemini", "isha"],
-            "gemini": ["gemini", "groq", "isha"]
+            "isha": ["isha", "isha-inc", "groq", "openai", "gemini"],
+            "isha-inc": ["isha-inc", "isha", "groq", "openai", "gemini"],
+            "groq": ["groq", "isha", "isha-inc", "openai", "gemini"],
+            "openai": ["openai", "groq", "isha", "isha-inc", "gemini"],
+            "gemini": ["gemini", "groq", "openai", "isha", "isha-inc"]
         }
         
-        backends = backend_order.get(preferred_backend, ["isha", "groq", "gemini"])
+        backends = backend_order.get(preferred_backend, backend_order["isha"])
         
         for backend in backends:
             try:
@@ -1025,10 +1058,20 @@ Thank you for sharing your health concern with me.
                     if response:
                         return response, "isha-api"
                         
+                elif backend == "isha-inc":
+                    response = self._call_isha_inc(query, context, patient_data, conversation_history=conversation_history)
+                    if response:
+                        return response, "isha-inc"
+
                 elif backend == "groq":
                     response = self._call_groq(query, context, patient_data, conversation_history=conversation_history)
                     if response:
                         return response, "groq-llama"
+
+                elif backend == "openai":
+                    response = self._call_openai(query, context, patient_data, conversation_history=conversation_history)
+                    if response:
+                        return response, "openai"
                         
                 elif backend == "gemini":
                     response = self._call_gemini(query, context, patient_data, conversation_history=conversation_history)
@@ -1047,7 +1090,7 @@ Thank you for sharing your health concern with me.
         import time
         import requests
 
-        isha_url = os.environ.get("ISHA_AI_URL", "https://ai.isha.buzz")
+        isha_url = _normalize_provider_url(os.environ.get("ISHA_AI_URL", ""), "https://ai.isha.buzz")
         username = os.environ.get("ISHA_AUTH_USERNAME")
         password = os.environ.get("ISHA_AUTH_PASSWORD")
         if not username or not password:
@@ -1087,6 +1130,113 @@ Thank you for sharing your health concern with me.
             logger.debug("iSHA token refresh failed: %s", e)
         return None
 
+    def _is_provider_on_cooldown(self, provider: str) -> bool:
+        until = self._provider_cooldowns.get(provider, 0)
+        return time.time() < until
+
+    def _cooldown_provider(self, provider: str, reason: str) -> None:
+        self._provider_cooldowns[provider] = time.time() + _PROVIDER_COOLDOWN_SECONDS
+        logger.warning("%s unavailable, cooling down for %ss: %s", provider, _PROVIDER_COOLDOWN_SECONDS, reason)
+
+    def _build_messages(self, query: str, context: Optional[List[str]],
+                        conversation_history: Optional[List[Dict]] = None) -> List[Dict[str, str]]:
+        system_prompt = self.DR_ISHA_PERSONA
+        if context:
+            system_prompt += "\n\nRELEVANT MEDICAL CONTEXT (use if directly applicable):\n" + "\n".join(context[:2])
+
+        messages = [{"role": "system", "content": system_prompt}]
+        if conversation_history:
+            for turn in conversation_history[-6:]:
+                role = turn.get("role", "user")
+                content = turn.get("content", "")
+                if role in ("user", "assistant") and content:
+                    messages.append({"role": role, "content": content})
+        messages.append({"role": "user", "content": query})
+        return messages
+
+    def _select_isha_inc_model(self, query: str) -> str:
+        insurance_keywords = (
+            "insurance", "claim", "billing", "coverage", "policy",
+            "premium", "deductible", "copay", "reimbursement",
+            "pre-authorization", "preauth", "network", "hmo", "ppo",
+        )
+        prompt_lower = str(query or "").lower()
+        if any(keyword in prompt_lower for keyword in insurance_keywords):
+            return os.environ.get("ISHA_INC_INSURANCE_MODEL", "insurance-llm")
+        return os.environ.get("ISHA_INC_MODEL", "medgemma-4b")
+
+    def _call_isha_inc(self, query: str, context: Optional[List[str]],
+                       patient_data: Optional[Dict],
+                       conversation_history: Optional[List[Dict]] = None) -> Optional[str]:
+        """Call iSHA node2 if its Cloudflare/origin route is healthy."""
+        if self._is_provider_on_cooldown("isha-inc"):
+            return None
+
+        api_key = os.environ.get("ISHA_INC_API_KEY", "")
+        if not api_key:
+            logger.debug("ISHA_INC_API_KEY not set, skipping iSHA node2")
+            return None
+
+        try:
+            import requests
+
+            base_url = _normalize_provider_url(os.environ.get("ISHA_INC_URL", ""), "https://isha-inc.com")
+            model = self._select_isha_inc_model(query)
+            response = requests.post(
+                f"{base_url}/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "User-Agent": "Mediczy-SIB/3.0",
+                },
+                json={
+                    "model": model,
+                    "messages": self._build_messages(query, context, conversation_history),
+                    "max_tokens": 300,
+                    "temperature": 0.5,
+                    "stream": False,
+                },
+                timeout=8,
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                content = data.get("choices", [{}])[0].get("message", {}).get("content")
+                if _is_stub_response(content):
+                    raise RuntimeError("iSHA node2 returned stub placeholder")
+                return content
+
+            if response.status_code in (522, 523, 524, 530):
+                self._cooldown_provider("isha-inc", f"Cloudflare/origin HTTP {response.status_code}")
+            logger.warning("iSHA node2 returned %s: %s", response.status_code, response.text[:120])
+            return None
+        except Exception as e:
+            self._cooldown_provider("isha-inc", str(e))
+            return None
+
+    def _call_openai(self, query: str, context: Optional[List[str]],
+                     patient_data: Optional[Dict],
+                     conversation_history: Optional[List[Dict]] = None) -> Optional[str]:
+        """Call OpenAI fallback."""
+        try:
+            if not self.openai_api_key:
+                logger.debug("OPENAI_API_KEY not configured, skipping OpenAI")
+                return None
+
+            from openai import OpenAI
+            client = OpenAI(api_key=self.openai_api_key)
+            response = client.chat.completions.create(
+                model=os.environ.get("OPENAI_MODEL", "gpt-3.5-turbo"),
+                messages=self._build_messages(query, context, conversation_history),
+                max_tokens=300,
+                temperature=0.5,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.warning("OpenAI API call failed: %s", e)
+            return None
+
     def _call_isha(self, query: str, context: Optional[List[str]], 
                    patient_data: Optional[Dict],
                    conversation_history: Optional[List[Dict]] = None) -> Optional[str]:
@@ -1109,22 +1259,9 @@ Thank you for sharing your health concern with me.
                 logger.debug("iSHA token unavailable, skipping iSHA backend")
                 return None
             
-            # Build system prompt from canonical Dr. iSHA persona
-            system_prompt = self.DR_ISHA_PERSONA
-            if context:
-                system_prompt += f"\n\nRELEVANT MEDICAL CONTEXT (use if directly applicable):\n" + "\n".join(context[:2])
+            messages = self._build_messages(query, context, conversation_history)
             
-            # Build messages array: system + last 6 history turns + current user message
-            messages = [{"role": "system", "content": system_prompt}]
-            if conversation_history:
-                for turn in conversation_history[-6:]:
-                    role = turn.get("role", "user")
-                    content = turn.get("content", "")
-                    if role in ("user", "assistant") and content:
-                        messages.append({"role": role, "content": content})
-            messages.append({"role": "user", "content": query})
-            
-            isha_url = os.environ.get("ISHA_AI_URL", "https://ai.isha.buzz")
+            isha_url = _normalize_provider_url(os.environ.get("ISHA_AI_URL", ""), "https://ai.isha.buzz")
             # Use the correct endpoint with agent_type
             response = self._isha_session.post(
                 f"{isha_url}/v1/chat/completions",
@@ -1141,7 +1278,10 @@ Thank you for sharing your health concern with me.
             
             if response.status_code == 200:
                 data = response.json()
-                return data.get("choices", [{}])[0].get("message", {}).get("content")
+                content = data.get("choices", [{}])[0].get("message", {}).get("content")
+                if _is_stub_response(content):
+                    raise RuntimeError("iSHA chat returned stub placeholder")
+                return content
             
             logger.warning(f"⚠️ iSHA API returned {response.status_code}: {response.text[:100]}")
             return None

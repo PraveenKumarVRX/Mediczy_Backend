@@ -141,12 +141,18 @@ const DoctorAppointmentSettings = () => {
       });
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (response) => {
+      if (response?.config) {
+        setConfig(response.config);
+        queryClient.setQueryData(["appointmentConfig"], response.config);
+      }
       toast({
         title: "Settings Saved",
         description: "Your appointment configuration has been updated successfully.",
       });
       queryClient.invalidateQueries({ queryKey: ["appointmentConfig"] });
+      queryClient.removeQueries({ queryKey: ["doctorSlots"] });
+      queryClient.invalidateQueries({ queryKey: ["doctorSlots"] });
     },
     onError: (error: any) => {
       toast({
@@ -287,39 +293,36 @@ const DoctorAppointmentSettings = () => {
   };
 
   const handleBlockSlot = (day: string, slotTime: string, type: 'online' | 'inPerson') => {
-    if (config) {
-      const updatedSchedule = { ...config.weeklySchedule };
-      const currentBlockedSlots = updatedSchedule[day].blockedSlots || [];
-      
-      if (!currentBlockedSlots.includes(slotTime)) {
-        updatedSchedule[day] = {
-          ...updatedSchedule[day],
-          blockedSlots: [...currentBlockedSlots, slotTime],
-        };
-        setConfig({ ...config, weeklySchedule: updatedSchedule });
-        toast({
-          title: "Slot Blocked",
-          description: `${slotTime} blocked for ${DAY_LABELS[day]}`,
-        });
-      }
-    }
+    if (!config) return;
+    const updatedSchedule = { ...config.weeklySchedule };
+    const currentBlockedSlots = updatedSchedule[day].blockedSlots || [];
+
+    if (currentBlockedSlots.includes(slotTime)) return;
+
+    updatedSchedule[day] = {
+      ...updatedSchedule[day],
+      blockedSlots: [...currentBlockedSlots, slotTime],
+    };
+    const updatedConfig = { ...config, weeklySchedule: updatedSchedule };
+    setConfig(updatedConfig);
+    // Persist immediately — block/unblock must hit the server right away,
+    // not wait for the separate "Save" button, otherwise a refetch (e.g. on
+    // window focus) silently reverts the unsaved local change.
+    saveMutation.mutate(updatedConfig);
   };
 
   const handleUnblockSlot = (day: string, slotTime: string, type: 'online' | 'inPerson') => {
-    if (config) {
-      const updatedSchedule = { ...config.weeklySchedule };
-      const currentBlockedSlots = updatedSchedule[day].blockedSlots || [];
-      
-      updatedSchedule[day] = {
-        ...updatedSchedule[day],
-        blockedSlots: currentBlockedSlots.filter(slot => slot !== slotTime),
-      };
-      setConfig({ ...config, weeklySchedule: updatedSchedule });
-      toast({
-        title: "Slot Unblocked",
-        description: `${slotTime} unblocked for ${DAY_LABELS[day]}`,
-      });
-    }
+    if (!config) return;
+    const updatedSchedule = { ...config.weeklySchedule };
+    const currentBlockedSlots = updatedSchedule[day].blockedSlots || [];
+
+    updatedSchedule[day] = {
+      ...updatedSchedule[day],
+      blockedSlots: currentBlockedSlots.filter(slot => slot !== slotTime),
+    };
+    const updatedConfig = { ...config, weeklySchedule: updatedSchedule };
+    setConfig(updatedConfig);
+    saveMutation.mutate(updatedConfig);
   };
 
   const handleSave = () => {

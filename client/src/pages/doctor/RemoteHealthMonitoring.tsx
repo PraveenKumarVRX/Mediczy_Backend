@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import api from "@/utils/api";
+import { useSocketConnection } from "@/hooks/useSocketConnection";
 import { useAuth } from "@/auth/AuthProvider";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -1405,17 +1408,92 @@ const ResourceBar = ({ resources, mode }: ResourceBarProps) => {
 };
 
 // ==========================================
+// REAL PATIENT MAPPER
+// ==========================================
+
+/** Maps a raw API patient row to the Patient interface used by the dashboard. */
+const mapApiPatient = (p: any): Patient => {
+  const riskLevel: string = p.risk_level ?? 'low';
+
+  // Prefer AI composite score (0-100); fall back to range-based estimate from risk_level
+  const aiScore: number | null = p.ai_health_score != null ? Math.round(Number(p.ai_health_score)) : null;
+  const riskScore = aiScore != null
+    ? aiScore
+    : riskLevel === 'critical' ? 82
+    : riskLevel === 'high'     ? 62
+    : riskLevel === 'medium'   ? 42
+    : 18;
+
+  const status: Patient['status'] =
+    riskLevel === 'critical' ? 'critical' :
+    riskLevel === 'high'     ? 'warning'  : 'stable';
+
+  const hr  = Number(p.heart_rate)        || 72;
+  const spo2= Number(p.oxygen_saturation) || 98;
+  const temp= Number(p.temperature)       || 36.8;
+
+  // Parse BP string "120/80" or take integer systolic
+  let systolic = 120, diastolic = 80;
+  if (p.blood_pressure) {
+    const parts = String(p.blood_pressure).split('/');
+    systolic  = parseInt(parts[0]) || 120;
+    diastolic = parseInt(parts[1]) || 80;
+  }
+
+  // Estimate respiratory rate from SpO2 (coarse; only used when no real RR)
+  const rr = spo2 < 92 ? 26 : spo2 < 95 ? 20 : 16;
+
+  const vitalSigns: VitalSigns = {
+    heartRate: hr,
+    bloodPressure: { systolic, diastolic },
+    oxygenSaturation: spo2,
+    temperature: temp,
+    respiratoryRate: rr,
+  };
+  vitalSigns.newsScore = calculateNEWS(vitalSigns);
+
+  const lastReading = p.last_reading ? new Date(p.last_reading) : new Date();
+  const minutesAgo = (Date.now() - lastReading.getTime()) / 60000;
+  const connectivity: Patient['connectivity'] =
+    !p.last_reading         ? 'offline'      :
+    minutesAgo < 30         ? 'online'        :
+    minutesAgo < 120        ? 'intermittent'  : 'offline';
+
+  return {
+    id: String(p.id),
+    name: p.name || 'Unknown Patient',
+    age: p.age ?? 0,
+    gender: (p.gender === 'Female' ? 'Female' : p.gender === 'Other' ? 'Other' : 'Male') as Patient['gender'],
+    bedNumber: p.id ? `P-${p.id}` : 'Remote',
+    admissionTime: p.enrolled_date || new Date().toISOString(),
+    chiefComplaint: p.chief_complaint || 'Remote Monitoring',
+    riskScore,
+    status,
+    vitalSigns,
+    trend: 'stable',
+    alerts: p.total_alerts > 0 ? [`${p.total_alerts} active alert${p.total_alerts > 1 ? 's' : ''}`] : [],
+    lastUpdated: lastReading,
+    location: 'Home',
+    deviceType: p.has_wearable ? 'wearable' : 'mobile-app',
+    connectivity,
+    lastSync: lastReading,
+  };
+};
+
+// ==========================================
 // MAIN DASHBOARD COMPONENT
 // ==========================================
 
 const RemoteHealthMonitoring = () => {
   const { currentDoctor } = useAuth();
   const { toast } = useToast();
-  
+  const queryClient = useQueryClient();
+  const socket = useSocketConnection();
+
   // Dashboard Mode
   const [dashboardMode, setDashboardMode] = useState<DashboardMode>('remote');
   const [viewMode, setViewMode] = useState<'grid' | 'scatter' | 'list'>('scatter');
-  
+
   // State
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -1441,86 +1519,136 @@ const RemoteHealthMonitoring = () => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const updateIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Initialize patients based on mode
+  // ── Real data fetch (remote mode only) ──────────────────────────────────
+  const { data: remoteApiData, isLoading: remoteLoading } = useQuery({
+    queryKey: ['remote-monitoring-patients'],
+    queryFn: async () => {
+      const res = await api.get('/doctors/health-monitoring/patients');
+      return (res.data.patients || []).map(mapApiPatient) as Patient[];
+    },
+    staleTime: 60_000,
+    refetchInterval: 90_000,
+    enabled: dashboardMode === 'remote',
+  });
+
+  // ── Initialize patients based on mode ────────────────────────────────────
   useEffect(() => {
-    const patientCount = dashboardMode === 'icu' ? 20 : dashboardMode === 'er' ? 35 : 50;
-    setPatients(generateMockPatients(patientCount, dashboardMode));
     setResources(generateResourceStatus(dashboardMode));
-    if (dashboardMode === 'er') {
-      setAmbulances(generateAmbulances(Math.floor(Math.random() * 4) + 1));
-    }
-    // Set default view mode per dashboard mode
+
     if (dashboardMode === 'icu') {
       setViewMode('grid');
+      setPatients(generateMockPatients(20, 'icu'));
     } else if (dashboardMode === 'er') {
       setViewMode('scatter');
+      setPatients(generateMockPatients(35, 'er'));
+      setAmbulances(generateAmbulances(Math.floor(Math.random() * 4) + 1));
     } else {
       setViewMode('scatter');
+      // remote mode: wait for API (set below)
     }
   }, [dashboardMode]);
-  
-  // Real-time updates simulation
+
+  // Sync real API data → patients state when in remote mode
   useEffect(() => {
-    updateIntervalRef.current = setInterval(() => {
-      setPatients(prevPatients => {
-        return prevPatients.map(patient => {
-          // Random chance to update vitals
-          if (Math.random() > 0.7) {
-            const newRiskScore = Math.max(0, Math.min(100, patient.riskScore + (Math.random() - 0.5) * 10));
-            const oldStatus = patient.status;
-            
-            let newStatus: Patient['status'] = 'stable';
-            if (newRiskScore >= RISK_THRESHOLDS.CRITICAL) newStatus = 'critical';
-            else if (newRiskScore >= RISK_THRESHOLDS.WARNING) newStatus = 'warning';
-            
-            // Create alert on status change
-            if (newStatus !== oldStatus) {
-              if ((oldStatus === 'stable' && newStatus === 'warning') ||
-                  (oldStatus === 'warning' && newStatus === 'critical') ||
-                  (oldStatus === 'stable' && newStatus === 'critical')) {
-                const newAlert: AlertEvent = {
-                  id: `alert-${Date.now()}`,
-                  patientId: patient.id,
-                  patientName: patient.name,
-                  type: newStatus === 'critical' ? 'critical' : 'warning',
-                  message: `Status changed from ${oldStatus} to ${newStatus}`,
-                  timestamp: new Date(),
-                  acknowledged: false,
-                  priority: newStatus === 'critical' ? 1 : 2
-                };
-                setAlerts(prev => [newAlert, ...prev].slice(0, 50));
-                
-                // Play sound for critical alerts
-                if (soundEnabled && newStatus === 'critical') {
-                  playAlertSound();
-                }
-              }
-            }
-            
-            return {
-              ...patient,
-              riskScore: Math.round(newRiskScore),
-              status: newStatus,
-              vitalSigns: {
-                ...patient.vitalSigns,
-                heartRate: Math.max(40, Math.min(180, patient.vitalSigns.heartRate + Math.floor((Math.random() - 0.5) * 10))),
-                oxygenSaturation: Math.max(80, Math.min(100, patient.vitalSigns.oxygenSaturation + Math.floor((Math.random() - 0.5) * 3))),
-              },
-              trend: newRiskScore > patient.riskScore ? 'declining' : newRiskScore < patient.riskScore ? 'improving' : patient.trend,
-              lastUpdated: new Date()
-            };
-          }
-          return patient;
-        });
-      });
-    }, 3000); // Update every 3 seconds
-    
-    return () => {
-      if (updateIntervalRef.current) {
-        clearInterval(updateIntervalRef.current);
-      }
+    if (dashboardMode === 'remote' && remoteApiData) {
+      setPatients(remoteApiData);
+    }
+  }, [dashboardMode, remoteApiData]);
+
+  // ── Socket.IO: real-time vitals alert from patient BLE sync ─────────────
+  useEffect(() => {
+    if (!socket || dashboardMode !== 'remote') return;
+
+    const handleVitalsAlert = (data: {
+      patientId: number | string;
+      reading: { metric_type: string; value: number; alert_triggered: boolean };
+      severity: string;
+    }) => {
+      const pid = String(data.patientId);
+      setPatients(prev => prev.map(p => {
+        if (p.id !== pid) return p;
+        const vs = { ...p.vitalSigns };
+        if (data.reading.metric_type === 'heart_rate')        vs.heartRate = data.reading.value;
+        if (data.reading.metric_type === 'blood_oxygen')      vs.oxygenSaturation = data.reading.value;
+        if (data.reading.metric_type === 'temperature')       vs.temperature = data.reading.value;
+        vs.newsScore = calculateNEWS(vs);
+
+        const sev = data.severity;
+        const newStatus: Patient['status'] =
+          sev === 'critical' ? 'critical' : sev === 'high' ? 'warning' : p.status;
+
+        if (newStatus !== p.status && (newStatus === 'critical' || newStatus === 'warning')) {
+          const ev: AlertEvent = {
+            id: `socket-${Date.now()}`,
+            patientId: pid,
+            patientName: p.name,
+            type: newStatus === 'critical' ? 'critical' : 'warning',
+            message: `${p.name}: live ${data.reading.metric_type?.replace('_', ' ')} alert`,
+            timestamp: new Date(),
+            acknowledged: false,
+            priority: newStatus === 'critical' ? 1 : 2,
+          };
+          setAlerts(prev => [ev, ...prev].slice(0, 50));
+          if (soundEnabled && newStatus === 'critical') playAlertSound();
+        }
+
+        return { ...p, vitalSigns: vs, status: newStatus, lastUpdated: new Date(), connectivity: 'online' };
+      }));
     };
-  }, [soundEnabled]);
+
+    socket.on('patient_vitals_alert', handleVitalsAlert);
+    return () => { socket.off('patient_vitals_alert', handleVitalsAlert); };
+  }, [socket, dashboardMode, soundEnabled]);
+
+  // ── Simulated vitals drift (ER/ICU only; remote gets real data) ──────────
+  useEffect(() => {
+    if (dashboardMode === 'remote') return; // real data only for remote
+
+    updateIntervalRef.current = setInterval(() => {
+      setPatients(prevPatients => prevPatients.map(patient => {
+        if (Math.random() > 0.7) {
+          const newRiskScore = Math.max(0, Math.min(100, patient.riskScore + (Math.random() - 0.5) * 10));
+          const oldStatus = patient.status;
+          let newStatus: Patient['status'] = 'stable';
+          if (newRiskScore >= RISK_THRESHOLDS.CRITICAL) newStatus = 'critical';
+          else if (newRiskScore >= RISK_THRESHOLDS.WARNING) newStatus = 'warning';
+
+          if (newStatus !== oldStatus &&
+              ((oldStatus === 'stable' && newStatus !== 'stable') ||
+               (oldStatus === 'warning' && newStatus === 'critical'))) {
+            const newAlert: AlertEvent = {
+              id: `alert-${Date.now()}-${patient.id}`,
+              patientId: patient.id,
+              patientName: patient.name,
+              type: newStatus === 'critical' ? 'critical' : 'warning',
+              message: `[Demo] ${patient.name} status changed to ${newStatus}`,
+              timestamp: new Date(),
+              acknowledged: false,
+              priority: newStatus === 'critical' ? 1 : 2,
+            };
+            setAlerts(prev => [newAlert, ...prev].slice(0, 50));
+            if (soundEnabled && newStatus === 'critical') playAlertSound();
+          }
+
+          return {
+            ...patient,
+            riskScore: Math.round(newRiskScore),
+            status: newStatus,
+            vitalSigns: {
+              ...patient.vitalSigns,
+              heartRate: Math.max(40, Math.min(180, patient.vitalSigns.heartRate + Math.floor((Math.random() - 0.5) * 10))),
+              oxygenSaturation: Math.max(80, Math.min(100, patient.vitalSigns.oxygenSaturation + Math.floor((Math.random() - 0.5) * 3))),
+            },
+            trend: newRiskScore > patient.riskScore ? 'declining' : newRiskScore < patient.riskScore ? 'improving' : patient.trend,
+            lastUpdated: new Date(),
+          };
+        }
+        return patient;
+      }));
+    }, 3000);
+
+    return () => { if (updateIntervalRef.current) clearInterval(updateIntervalRef.current); };
+  }, [dashboardMode, soundEnabled]);
   
   // Play alert sound
   const playAlertSound = useCallback(() => {
@@ -1704,11 +1832,18 @@ const RemoteHealthMonitoring = () => {
                  dashboardMode === 'er' ? 'ER/Casualty Dashboard' :
                  'Remote Health Monitoring'}
               </h1>
-              <p className="text-muted-foreground text-sm">
+              <p className="text-muted-foreground text-sm flex items-center gap-2">
                 {dashboardMode === 'icu' ? 'Intensive Care Unit • Real-time ICU monitoring' :
                  dashboardMode === 'er' ? 'Emergency Department • Triage & casualty management' :
                  'Home patients • Remote vital signs monitoring'}
                 {' '}• Last updated: {new Date().toLocaleTimeString()}
+                {dashboardMode === 'remote' ? (
+                  remoteLoading
+                    ? <span className="inline-flex items-center gap-1 text-xs text-teal-500"><RefreshCw className="h-3 w-3 animate-spin" />Loading live data…</span>
+                    : <span className="inline-flex items-center gap-1 text-xs bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 px-1.5 py-0.5 rounded-full font-medium"><span className="h-1.5 w-1.5 rounded-full bg-teal-500 animate-pulse inline-block" />Live</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-xs bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded-full font-medium">Demo</span>
+                )}
               </p>
             </div>
           </div>
@@ -1981,7 +2116,7 @@ const RemoteHealthMonitoring = () => {
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-muted-foreground">Avg Risk</p>
+                  <p className="text-xs text-muted-foreground">Avg Score</p>
                   <p className="text-2xl font-bold">{stats.avgRiskScore}</p>
                 </div>
                 <Activity className="h-8 w-8 text-slate-400" />
@@ -1989,7 +2124,28 @@ const RemoteHealthMonitoring = () => {
             </CardContent>
           </Card>
         </div>
-        
+
+        {/* Loading skeleton for remote mode */}
+        {dashboardMode === 'remote' && remoteLoading && patients.length === 0 && (
+          <Card>
+            <CardContent className="p-8 flex flex-col items-center gap-3 text-center">
+              <RefreshCw className="h-8 w-8 text-teal-500 animate-spin" />
+              <p className="text-muted-foreground">Loading your patients' live vitals…</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Empty state for remote mode with no patients */}
+        {dashboardMode === 'remote' && !remoteLoading && patients.length === 0 && (
+          <Card>
+            <CardContent className="p-8 flex flex-col items-center gap-3 text-center">
+              <Radio className="h-10 w-10 text-teal-400" />
+              <p className="font-medium text-foreground">No patients enrolled in remote monitoring</p>
+              <p className="text-sm text-muted-foreground">Patients appear here once they have appointments with you or are assigned as your primary patients.</p>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Main Content */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           {/* Main Visualization Area */}
@@ -2024,7 +2180,10 @@ const RemoteHealthMonitoring = () => {
                     <div>
                       <CardTitle className="text-lg text-white">Patient Health Matrix</CardTitle>
                       <CardDescription className="text-slate-400">
-                        Age vs Risk Score • Real-time visualization
+                        Age vs AI Health Score (0–100)
+                        {dashboardMode === 'remote'
+                          ? ' • Live data from your patients'
+                          : ' • Simulated demo data'}
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-4 text-sm">
@@ -2064,7 +2223,7 @@ const RemoteHealthMonitoring = () => {
                           domain={[0, 100]}
                           tickCount={11}
                           stroke="#94a3b8"
-                          label={{ value: 'Health Risk Score', angle: -90, position: 'insideLeft', offset: 10, fill: '#94a3b8' }}
+                          label={{ value: 'AI Health Score (0–100)', angle: -90, position: 'insideLeft', offset: 10, fill: '#94a3b8' }}
                         />
                         <ReferenceLine y={RISK_THRESHOLDS.CRITICAL} stroke="#ef4444" strokeDasharray="5 5" />
                         <ReferenceLine y={RISK_THRESHOLDS.WARNING} stroke="#f59e0b" strokeDasharray="5 5" />

@@ -14,6 +14,7 @@ Orchestration Model (v2):
 
 import asyncio
 import hashlib
+import inspect
 import os
 import time
 import logging
@@ -47,6 +48,27 @@ _SKIP_CACHE_PATTERNS = (
     "chest pain", "emergency", "heart attack", "stroke", "unconscious",
     "bleeding", "suicide", "overdose", "anaphylaxis", "cardiac",
 )
+
+_STUB_RESPONSE_MARKERS = (
+    "Integrate vLLM or llama.cpp backend",
+    "enable real inference with BiMediX2",
+    "This is a stub response",
+)
+
+
+def _is_stub_response(text: Any) -> bool:
+    return any(marker in str(text or "") for marker in _STUB_RESPONSE_MARKERS)
+
+
+def _normalize_provider_url(url: str, default: str) -> str:
+    """Normalize provider URL and correct the common insha-inc typo."""
+    value = (url or default).strip().rstrip("/")
+    if "insha-inc.com" in value:
+        logger.warning("Correcting provider URL typo insha-inc.com -> isha-inc.com")
+        value = value.replace("insha-inc.com", "isha-inc.com")
+    if not value.startswith(("http://", "https://")):
+        value = "https://" + value
+    return value
 
 
 def _is_sensitive_query(prompt: str) -> bool:
@@ -434,7 +456,7 @@ class SyntheticIntelligenceBrain:
                              max_tokens: int = 1024, temperature: float = 0.7) -> Dict[str, Any]:
         """iSHA GPU node1 via ai.isha.buzz — persistent httpx session (connection reuse)."""
         port, model_name, agent_type = self._select_gpu_model(prompt)
-        gpu_url = os.environ.get("ISHA_AI_URL", "https://ai.isha.buzz")
+        gpu_url = _normalize_provider_url(os.environ.get("ISHA_AI_URL", ""), "https://ai.isha.buzz")
         logger.info(f"🧠 iSHA node1: {model_name} port={port} agent={agent_type}")
 
         messages = []
@@ -465,7 +487,10 @@ class SyntheticIntelligenceBrain:
         )
         response.raise_for_status()
         data = response.json()
-        return {"answer": data["choices"][0]["message"]["content"], "model": data.get("model", model_name)}
+        content = data["choices"][0]["message"]["content"]
+        if _is_stub_response(content):
+            raise RuntimeError("iSHA node1 returned stub placeholder")
+        return {"answer": content, "model": data.get("model", model_name)}
 
     def _groq_inference(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
         """Groq API — singleton client, no per-request instantiation."""
@@ -486,7 +511,7 @@ class SyntheticIntelligenceBrain:
                             model: str = "insurance-llm", max_tokens: int = 512) -> Dict[str, Any]:
         """iSHA GPU node2 via isha-inc.com — persistent httpx session (connection reuse)."""
         api_key = os.environ.get("ISHA_INC_API_KEY", "")
-        base_url = os.environ.get("ISHA_INC_URL", "https://isha-inc.com")
+        base_url = _normalize_provider_url(os.environ.get("ISHA_INC_URL", ""), "https://isha-inc.com")
 
         messages = []
         if system_prompt:
@@ -502,10 +527,14 @@ class SyntheticIntelligenceBrain:
                 "Accept": "application/json",
             },
             json={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": 0.3},
+            timeout=10.0,
         )
         response.raise_for_status()
         data = response.json()
-        return {"answer": data["choices"][0]["message"]["content"], "model": data.get("model", model)}
+        content = data["choices"][0]["message"]["content"]
+        if _is_stub_response(content):
+            raise RuntimeError("iSHA node2 returned stub placeholder")
+        return {"answer": content, "model": data.get("model", model)}
 
     def _openai_inference(self, prompt: str, system_prompt: Optional[str] = None) -> Dict[str, Any]:
         """OpenAI gpt-3.5-turbo — cloud fallback 2 (singleton client)."""
@@ -803,9 +832,17 @@ class SyntheticIntelligenceBrain:
 
         # Retrieve relevant context from EHR
         retrieved = self.ehr_bot.retrieve(query, patient_id=patient_id)
+        if inspect.isawaitable(retrieved):
+            retrieved = asyncio.run(retrieved)
+        if not isinstance(retrieved, dict):
+            retrieved = {"chunks": []}
+        chunks = retrieved.get("chunks", []) if isinstance(retrieved.get("chunks", []), list) else []
 
         # Build context-enriched prompt
-        context = "\n".join([chunk["text"] for chunk in retrieved.get("chunks", [])])
+        context = "\n".join([
+            chunk.get("text", "") if isinstance(chunk, dict) else str(chunk)
+            for chunk in chunks
+        ]).strip()
         enriched_prompt = f"""Based on the following medical context:
 
 {context}
@@ -839,7 +876,7 @@ Please provide a helpful, medically accurate response."""
             "answer": safe_answer,
             "risk": risk_result,
             "summary": summary,
-            "context_chunks": len(retrieved.get("chunks", [])),
+            "context_chunks": len(chunks),
             "provider": llm_result.get("provider"),
             "latency_ms": llm_result.get("latency_ms"),
             "safety_alerts": [{"level": a.level.value, "message": a.message} for a in safety_alerts] if safety_alerts else None

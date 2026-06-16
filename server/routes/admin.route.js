@@ -3661,6 +3661,195 @@ router.post('/corporate-employee-welcome-emails/resend', authUser, requireRole([
     return res.status(500).json({ success: false, message: 'Failed to resend welcome email', error: error.message });
   }
 });
+
+/**
+ * Background worker for the bulk reminder route below. Resets each employee's
+ * password and sends the reminder email, logging every step to the existing
+ * welcome-delivery audit table. Deliberately bypasses assertNoPriorWelcomeDelivery
+ * (via supersedeActiveWelcomeDeliveriesForRecipient) since this IS a deliberate
+ * re-send, unlike the duplicate-prevention guard on /resend.
+ */
+export async function runCorporateEmployeeReminderBulkSend({ corporateId, corporate, employees, teamUserId }) {
+  const dayBucket = new Date().toISOString().slice(0, 10);
+
+  for (const employee of employees) {
+    let deliveryRecord = null;
+    try {
+      const quota = await checkQuota('bulk');
+      if (!quota.allowed || quota.remaining <= 0) {
+        console.warn(`[reminder-bulk] Daily bulk email quota reached — stopping at corporate ${corporateId}, remaining employees skipped.`);
+        break;
+      }
+
+      const welcomeEmailData = buildCorporateEmployeeWelcomeEmailData({ employee, corporate, fallbackEmployeeId: employee.corporate_employee_id || '' });
+      if (!welcomeEmailData.email) {
+        console.warn(`[reminder-bulk] Skipping employee ${employee.id} — no email address on file`);
+        continue;
+      }
+
+      const temporaryPassword = welcomeEmailService.generateSecurePassword();
+      const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
+      const message = await welcomeEmailService.buildCorporateEmployeeReminderEmail(
+        welcomeEmailData,
+        temporaryPassword,
+        { teamUserId }
+      );
+
+      const mismatchedEmails = findMismatchedCredentialEmails({
+        recipientEmail: welcomeEmailData.email,
+        subject: message.subject,
+        html: message.html,
+      });
+      if (mismatchedEmails.length > 0) {
+        console.error(`[reminder-bulk] Skipping employee ${employee.id} — template leaked another recipient's email: ${mismatchedEmails.join(', ')}`);
+        continue;
+      }
+
+      await supersedeActiveWelcomeDeliveriesForRecipient({
+        corporateId,
+        recipientEmail: welcomeEmailData.email,
+        actorUserId: teamUserId,
+        reason: 'Superseded by bulk reminder send',
+      });
+
+      const idempotencyKey = `reminder-${crypto.createHash('sha256').update(`${corporateId}|${employee.id}|${welcomeEmailData.email}|${dayBucket}`).digest('hex').slice(0, 24)}`;
+      deliveryRecord = await createWelcomeDeliveryRecord({
+        corporateId,
+        userId: employee.id,
+        employeeId: welcomeEmailData.employeeId,
+        recipientEmail: welcomeEmailData.email,
+        subject: message.subject,
+        idempotencyKey,
+        requestScope: 'reminder_send',
+        createdBy: teamUserId,
+        metadata: { source: 'bulk_reminder_send' },
+      });
+      await updateWelcomeDeliveryRecordStatus({
+        deliveryId: deliveryRecord.id,
+        status: 'queued',
+        incrementAttempts: true,
+        metadata: { queuedAt: new Date().toISOString() },
+      });
+
+      await postgresSequelize.query(
+        `UPDATE users
+           SET password = :hashedPassword,
+               "isVerified" = true,
+               status = 'active',
+               metadata = COALESCE(metadata, '{}'::jsonb) || '{"requirePasswordChange": true}'::jsonb,
+               "updatedAt" = NOW()
+         WHERE id = :userId`,
+        { replacements: { userId: employee.id, hashedPassword }, type: postgresSequelize.QueryTypes.UPDATE }
+      );
+
+      try {
+        await welcomeEmailService.sendPreparedCorporateEmployeeWelcomeEmail(
+          { to: message.to, subject: message.subject, html: message.html },
+          { teamUserId }
+        );
+        await recordSent('bulk', 1);
+        await updateWelcomeDeliveryRecordStatus({
+          deliveryId: deliveryRecord.id,
+          status: 'sent',
+          metadata: { sentAt: new Date().toISOString() },
+        });
+      } catch (sendErr) {
+        // Compensating rollback so a failed send does not silently invalidate credentials.
+        await postgresSequelize.query(
+          `UPDATE users
+             SET password = :oldPassword,
+                 metadata = :oldMetadata::jsonb,
+                 status = :oldStatus,
+                 "isVerified" = :oldIsVerified,
+                 "updatedAt" = NOW()
+           WHERE id = :userId`,
+          {
+            replacements: {
+              userId: employee.id,
+              oldPassword: employee.password,
+              oldMetadata: JSON.stringify(employee.user_metadata || {}),
+              oldStatus: employee.user_status || 'active',
+              oldIsVerified: Boolean(employee.user_is_verified),
+            },
+            type: postgresSequelize.QueryTypes.UPDATE,
+          }
+        );
+        await updateWelcomeDeliveryRecordStatus({
+          deliveryId: deliveryRecord.id,
+          status: 'rolled_back',
+          errorMessage: sendErr?.message || String(sendErr),
+          metadata: { rolledBackAt: new Date().toISOString() },
+        });
+        console.error(`[reminder-bulk] Send failed for employee ${employee.id} (${welcomeEmailData.email}):`, sendErr?.message || sendErr);
+      }
+    } catch (err) {
+      console.error(`[reminder-bulk] Unexpected error for employee ${employee?.id}:`, err?.message || err);
+    }
+
+    // Small delay between sends to stay friendly to the mail provider's rate limits.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+
+  console.log(`[reminder-bulk] Finished reminder batch for corporate ${corporateId} (${employees.length} employees processed)`);
+}
+
+/**
+ * POST /api/admin/corporate-employee-welcome-emails/send-reminder-bulk
+ * Sends a "reminder" email (distinct copy from the welcome email, same
+ * personalization placeholders) with a freshly generated temporary password
+ * to every employee of the given corporate — including employees who already
+ * received and acted on the original welcome email. Runs as a background
+ * job; progress is visible in the Welcome Delivery Audit table
+ * (request_scope = 'reminder_send').
+ */
+router.post('/corporate-employee-welcome-emails/send-reminder-bulk', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
+  try {
+    const corporate = req.resolvedCorporate;
+    const corporateId = corporate.id;
+    const teamUserId = req.user?.id || req.user?.userId || null;
+
+    await requireActiveCorporatePlanOrThrow({ corporateId });
+
+    const employees = await postgresSequelize.query(
+      [
+        'SELECT u.id, u.email, u."firstName", u."lastName", u.employee_id, u.department_name, u.password,',
+        '       u.metadata AS user_metadata, u.status AS user_status, u."isVerified" AS user_is_verified,',
+        '       ua.metadata, ce."employeeId" AS corporate_employee_id',
+        'FROM users u',
+        'JOIN user_associations ua ON u.id = ua."userId"',
+        'LEFT JOIN corporate_employees ce ON ce."userId" = u.id AND ce.corporate_id = :corporateId',
+        `WHERE ua."entityType" = 'corporate'`,
+        '  AND ua."entityId" = :corporateId',
+        "  AND ua.role = 'employee'",
+      ].join('\n'),
+      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+
+    if (employees.length === 0) {
+      return res.status(404).json({ success: false, message: 'No employees found for this corporate' });
+    }
+
+    // Fire-and-forget: a sequential per-employee send for a large corporate can
+    // exceed the HTTP/proxy timeout. Progress is tracked in the audit table
+    // instead of the response.
+    runCorporateEmployeeReminderBulkSend({ corporateId, corporate, employees, teamUserId }).catch((err) => {
+      console.error('[reminder-bulk] Background job crashed:', err?.message || err);
+    });
+
+    return res.json({
+      success: true,
+      message: `Reminder emails queued for ${employees.length} employee(s). Track progress in the Welcome Delivery Audit table.`,
+      totalQueued: employees.length,
+    });
+  } catch (error) {
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    console.error('Failed to queue corporate employee reminder emails:', error);
+    return res.status(500).json({ success: false, message: 'Failed to queue reminder emails', error: error.message });
+  }
+});
+
 /**
  * Bulk-prepare welcome email drafts for multiple employees in one request.
  * POST /api/admin/corporate-employee-welcome-emails/prepare-bulk

@@ -224,21 +224,76 @@ api.interceptors.response.use(
       }
     }
 
-    // Doctor 401 — clear stale token and redirect to doctor login
+    // Doctor 401 — try silent refresh first, then clear and redirect
     if (
       error.response?.status === 401 &&
+      !originalRequest._retry &&
       typeof window !== "undefined" &&
       getUserType() === "doctor"
     ) {
-      const hadToken = window.localStorage.getItem("doctorToken");
-      if (hadToken) {
-        window.localStorage.removeItem("doctorToken");
-        window.localStorage.removeItem("token");
-        window.localStorage.removeItem("userType");
-        if (!window.location.pathname.startsWith("/doctor/login")) {
-          window.location.href = "/doctor/login";
+      // Mark as retried IMMEDIATELY so concurrent 401s from other requests don't
+      // each trigger their own refresh or fall through to the patient handler.
+      originalRequest._retry = true;
+
+      // Support both old sessions ("refreshToken") and new sessions ("doctorRefreshToken")
+      const refreshToken =
+        window.localStorage.getItem("doctorRefreshToken") ||
+        window.localStorage.getItem("refreshToken");
+
+      if (refreshToken) {
+        if (_isRefreshing) {
+          return new Promise<string>((resolve) => {
+            _refreshQueue.push(resolve);
+          }).then((newToken) => {
+            (originalRequest as any).headers = {
+              ...(originalRequest.headers || {}),
+              Authorization: `Bearer ${newToken}`,
+            };
+            return api(originalRequest);
+          });
+        }
+
+        _isRefreshing = true;
+        try {
+          const { data } = await axios.post(
+            `${api.defaults.baseURL}/doctors/refresh`,
+            { refreshToken },
+            { skipAuth: true } as any
+          );
+          if (data.success && data.token) {
+            window.localStorage.setItem("doctorToken", data.token);
+            window.localStorage.setItem("token", data.token);
+            // Migrate old "refreshToken" key to the dedicated doctor key
+            const nextRefresh = data.refreshToken || refreshToken;
+            window.localStorage.setItem("doctorRefreshToken", nextRefresh);
+            window.localStorage.removeItem("refreshToken");
+            _refreshQueue.forEach((cb) => cb(data.token));
+            _refreshQueue = [];
+            (originalRequest as any).headers = {
+              ...(originalRequest.headers || {}),
+              Authorization: `Bearer ${data.token}`,
+            };
+            return api(originalRequest);
+          }
+        } catch {
+          // Refresh failed — fall through to clear session
+        } finally {
+          _isRefreshing = false;
         }
       }
+
+      // No refresh token or refresh failed — clear session and redirect to doctor login.
+      // Clear userType LAST so any concurrent 401s still match getUserType() === "doctor"
+      // and don't cascade into the patient handler below.
+      window.localStorage.removeItem("doctorToken");
+      window.localStorage.removeItem("doctorRefreshToken");
+      window.localStorage.removeItem("refreshToken");
+      window.localStorage.removeItem("token");
+      window.localStorage.removeItem("userType");
+      if (!window.location.pathname.startsWith("/doctor/login")) {
+        window.location.href = "/doctor/login";
+      }
+      return Promise.reject(error);
     }
 
     // Lab 401 — clear stale token and redirect to lab login

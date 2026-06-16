@@ -24,7 +24,7 @@ class SocketService {
     if (import.meta.env.DEV) console.log('🔌 Connecting to Socket.IO server:', SOCKET_URL);
     
     this.socket = io(SOCKET_URL, {
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: this.maxReconnectAttempts,
       reconnectionDelay: 1000,

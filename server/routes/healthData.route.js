@@ -119,17 +119,38 @@ router.post('/ble-sync', auth, async (req, res) => {
         processedReadings.push(healthRecord);
       }
 
-      // Emit real-time update via Socket.IO if available
+      // Emit real-time update via Socket.IO — to patient AND to their doctor(s)
       try {
         const io = req.app.get('io');
         if (io) {
-          io.to(`user_${userId}`).emit('health_data_update', {
-            type: 'ble_reading',
-            data: healthRecord
+          io.to(`user-${userId}`).emit('health_data_update', {
+            type: 'ble_reading', data: healthRecord
           });
+          // If reading is abnormal, also push to all doctors who have this patient
+          if (healthRecord.alertTriggered) {
+            try {
+              const [doctorRows] = await postgresSequelize.query(
+                `SELECT DISTINCT "doctorId" FROM appointments WHERE ("patientId" = :uid OR "userId" = :uid) AND "doctorId" IS NOT NULL`,
+                { replacements: { uid: userId }, type: 'SELECT' }
+              );
+              for (const row of doctorRows) {
+                const did = row.doctorId;
+                if (did) {
+                  io.to(`doctor-${did}`).emit('patient_vitals_alert', {
+                    patientId: userId,
+                    reading: healthRecord,
+                    severity: healthRecord.alertSeverity ?? 'warning',
+                    ts: new Date().toISOString()
+                  });
+                }
+              }
+            } catch (e) {
+              // Doctor broadcast non-fatal
+            }
+          }
         }
       } catch (e) {
-        // Socket.IO not available
+        // Socket.IO or DB query not available — non-fatal
       }
     }
 
@@ -476,47 +497,6 @@ router.get('/history/:dataType', auth, async (req, res) => {
 });
 
 /**
- * GET /api/health-data/devices
- * Get list of devices that have synced data
- */
-router.get('/devices', auth, async (req, res) => {
-  try {
-    const userId = req.user.id;
-
-    if (HealthData) {
-      // Get unique devices with their last sync time
-      const devices = await HealthData.findAll({
-        where: { userId },
-        attributes: ['deviceId', 'source'],
-        group: ['deviceId', 'source'],
-        raw: true
-      });
-
-      const deviceInfo = await Promise.all(devices.map(async (d) => {
-        const lastReading = await HealthData.findOne({
-          where: { userId, deviceId: d.deviceId },
-          order: [['recordedAt', 'DESC']]
-        });
-
-        return {
-          deviceId: d.deviceId,
-          source: d.source,
-          lastSyncTime: lastReading?.recordedAt || null,
-          dataTypes: [] // Would need aggregation for this
-        };
-      }));
-
-      return res.json(deviceInfo);
-    }
-
-    res.json([]);
-  } catch (error) {
-    console.error('Error fetching device list:', error);
-    res.status(500).json({ error: 'Failed to fetch device list' });
-  }
-});
-
-/**
  * DELETE /api/health-data/device/:deviceId
  * Delete all data from a specific device
  */
@@ -677,7 +657,7 @@ router.post('/veepoo-sync', auth, async (req, res) => {
     try {
       const io = req.app.get('io');
       if (io) {
-        io.to(`user_${userId}`).emit('health_data_update', {
+        io.to(`user-${userId}`).emit('health_data_update', {
           type: 'veepoo_sync',
           device: deviceName,
           count: processedReadings.length
@@ -770,7 +750,7 @@ router.post('/apple-health-sync', auth, async (req, res) => {
     try {
       const io = req.app.get('io');
       if (io) {
-        io.to(`user_${userId}`).emit('health_data_update', {
+        io.to(`user-${userId}`).emit('health_data_update', {
           type: 'apple_health_sync',
           count: processedReadings.length
         });
@@ -860,7 +840,7 @@ router.post('/google-fit-sync', auth, async (req, res) => {
     try {
       const io = req.app.get('io');
       if (io) {
-        io.to(`user_${userId}`).emit('health_data_update', {
+        io.to(`user-${userId}`).emit('health_data_update', {
           type: 'google_fit_sync',
           count: processedReadings.length
         });
@@ -978,6 +958,98 @@ router.delete('/devices/:deviceId', auth, async (req, res) => {
   } catch (error) {
     console.error('Device removal error:', error);
     res.status(500).json({ error: 'Failed to remove device' });
+  }
+});
+
+/**
+ * GET /api/health-data/wearables
+ * List all wearable devices registered to the authenticated user
+ * Queries the wearables table (populated by BLE pairing flow).
+ */
+router.get('/wearables', auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Try the dedicated `wearables` table first
+    try {
+      const [rows] = await postgresSequelize.query(
+        `SELECT id, device_id, device_name, type, brand, model,
+                current_metrics, last_sync, created_at
+         FROM wearables
+         WHERE user_id = $1
+         ORDER BY last_sync DESC NULLS LAST`,
+        { bind: [userId] }
+      );
+      return res.json({ wearables: rows });
+    } catch (tableErr) {
+      // wearables table may not exist — fall back to user_devices
+      console.warn('wearables table not found, falling back to user_devices:', tableErr.message);
+    }
+
+    // Fallback: user_devices table
+    const [devices] = await postgresSequelize.query(
+      `SELECT id, device_id, device_name, device_type AS type, mac_address,
+              paired_at AS created_at, last_sync, is_active
+       FROM user_devices
+       WHERE user_id = $1 AND is_active = TRUE
+       ORDER BY last_sync DESC NULLS LAST`,
+      { bind: [userId] }
+    );
+
+    res.json({ wearables: devices });
+  } catch (error) {
+    console.error('Error fetching wearables:', error);
+    res.status(500).json({ error: 'Failed to fetch wearables' });
+  }
+});
+
+/**
+ * POST /api/health-data/nightscout-proxy
+ * Proxy Nightscout CGM readings to avoid browser CORS issues.
+ * Body: { url: string, count?: number }
+ */
+router.post('/nightscout-proxy', auth, async (req, res) => {
+  try {
+    const { url, count = 1 } = req.body;
+
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'url is required' });
+    }
+
+    // Validate: must be https
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return res.status(400).json({ error: 'Invalid URL format' });
+    }
+
+    if (parsed.protocol !== 'https:') {
+      return res.status(400).json({ error: 'URL must use HTTPS' });
+    }
+
+    const safeCount = Math.min(Math.max(1, parseInt(count) || 1), 100);
+    const apiUrl = `${url.replace(/\/$/, '')}/api/v1/entries.json?count=${safeCount}`;
+
+    const response = await fetch(apiUrl, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!response.ok) {
+      return res.status(502).json({
+        error: `Nightscout returned HTTP ${response.status}`,
+      });
+    }
+
+    const entries = await response.json();
+    res.json({ entries });
+  } catch (error) {
+    if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+      return res.status(504).json({ error: 'Nightscout request timed out' });
+    }
+    console.error('Nightscout proxy error:', error);
+    res.status(500).json({ error: 'Failed to fetch Nightscout data' });
   }
 });
 

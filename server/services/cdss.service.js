@@ -88,17 +88,68 @@ class CDSSService {
    * Normalize CDSS response: convert array summary to string, ensure all fields exist
    */
   normalizeCDSSResponse(parsed) {
+    // Coerce a value to a string[] — handles LLM returning strings where arrays are expected
+    const toArr = (v) => {
+      if (Array.isArray(v)) return v.map(String).filter(Boolean);
+      if (typeof v === 'string' && v.trim()) return v.split(/[,;]\s*|\n/).map(s => s.trim()).filter(Boolean);
+      return [];
+    };
+
     // Convert summary from array to string if needed
     if (Array.isArray(parsed.summary)) {
       parsed.summary = parsed.summary.join(' ');
     }
-    // Ensure all expected fields exist
+
+    // Ensure all expected top-level fields exist
     const defaults = {
       summary: '', clinicalGuidelines: [], drugInfo: [], medicationAlternatives: [],
       differentialDiagnosis: [], labTests: [], drugInteractions: [],
       warnings: [], icd10Codes: [], references: []
     };
-    return { ...defaults, ...parsed };
+    const result = { ...defaults, ...parsed };
+
+    // Deep-normalize nested array fields that the LLM may return as strings
+    if (Array.isArray(result.drugInfo)) {
+      result.drugInfo = result.drugInfo.map(drug => ({
+        ...drug,
+        indications: toArr(drug.indications),
+        contraindications: toArr(drug.contraindications),
+        sideEffects: toArr(drug.sideEffects),
+        interactions: toArr(drug.interactions),
+      }));
+    }
+
+    if (Array.isArray(result.differentialDiagnosis)) {
+      result.differentialDiagnosis = result.differentialDiagnosis.map(diff => ({
+        ...diff,
+        keyFeatures: toArr(diff.keyFeatures),
+        rulingOutTests: toArr(diff.rulingOutTests),
+      }));
+    }
+
+    if (Array.isArray(result.clinicalGuidelines)) {
+      result.clinicalGuidelines = result.clinicalGuidelines.map(g => ({
+        ...g,
+        keyPoints: toArr(g.keyPoints),
+      }));
+    }
+
+    if (!Array.isArray(result.warnings)) result.warnings = toArr(result.warnings);
+    // Normalize each warning to {type, message, action} — LLM often returns plain strings
+    const VALID_TYPES = new Set(['critical', 'warning', 'info']);
+    result.warnings = result.warnings.map(w => {
+      if (typeof w === 'string') return { type: 'warning', message: w };
+      if (w && typeof w === 'object') {
+        return {
+          type: VALID_TYPES.has(w.type) ? w.type : 'warning',
+          message: w.message || String(w),
+          ...(w.action ? { action: w.action } : {}),
+        };
+      }
+      return { type: 'warning', message: String(w) };
+    });
+
+    return result;
   }
 
   /**
@@ -339,7 +390,7 @@ Be concise. Max 2 guidelines, 3 drugs, 3 DDx, 3 labs, 3 ICD-10. Indian context. 
   }
 
   /**
-   * Query CDSS using SIB (Primary)
+   * Query CDSS through SIB. SIB owns iSHA.buzz/isha-inc routing.
    */
   async queryWithSIB(query, category, specialty, knowledgeContext = '') {
     try {
@@ -368,7 +419,7 @@ Be concise. Max 2 guidelines, 3 drugs, 3 DDx, 3 labs, 3 ICD-10. Indian context. 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          question: cdssQuery,
+          query: cdssQuery,
           patient_id: `cdss_${Date.now()}`
         }),
         signal: controller.signal
@@ -394,14 +445,8 @@ Be concise. Max 2 guidelines, 3 drugs, 3 DDx, 3 labs, 3 ICD-10. Indian context. 
         };
       }
 
-      console.warn('[CDSS] Could not extract structured data from SIB response');
-      return {
-        success: true,
-        data: { summary: responseText.replace(/```json\n?|```\n?/g, '').trim(), clinicalGuidelines: [], drugInfo: [], differentialDiagnosis: [], labTests: [], warnings: [], icd10Codes: [], references: [] },
-        provider: 'sib-llama',
-        model: 'Llama-3.1-8B-Instruct',
-        raw: true
-      };
+      console.warn('[CDSS] SIB returned unstructured data; falling back to Groq');
+      throw new Error('SIB returned unstructured CDSS response');
     } catch (error) {
       console.error('[CDSS] SIB error:', error.message);
       throw error;
@@ -409,7 +454,7 @@ Be concise. Max 2 guidelines, 3 drugs, 3 DDx, 3 labs, 3 ICD-10. Indian context. 
   }
 
   /**
-   * Query CDSS using Groq (Fallback)
+   * Final fallback through llmProvider. Default order is SIB, then Groq if SIB fails.
    */
   async queryWithGroq(query, category, specialty, knowledgeContext = '') {
     try {
@@ -427,7 +472,8 @@ Be concise. Max 2 guidelines, 3 drugs, 3 DDx, 3 labs, 3 ICD-10. Indian context. 
         ],
         temperature: 0.3,
         maxTokens: 1500,
-        responseFormat: { type: 'json_object' }
+        responseFormat: { type: 'json_object' },
+        skipCache: true,
       });
 
       const responseText = result.content || '';
@@ -551,7 +597,7 @@ Be concise. Max 2 guidelines, 3 drugs, 3 DDx, 3 labs, 3 ICD-10. Indian context. 
       
       return sibResult;
     } catch (sibError) {
-      console.warn('[CDSS] SIB failed, trying Groq fallback:', sibError.message);
+      console.warn('[CDSS] SIB failed, trying final Groq fallback:', sibError.message);
     }
 
     // Step 3: Try Groq (Fallback 1)
@@ -562,7 +608,7 @@ Be concise. Max 2 guidelines, 3 drugs, 3 DDx, 3 labs, 3 ICD-10. Indian context. 
       // Enrich with CIMS data if drug info is present
       if (searchCIMS && groqResult.data && groqResult.data.drugInfo) {
         try {
-          console.log('[CDSS] Enriching Groq response with CIMS medicine data...');
+          console.log('[CDSS] Enriching AI response with CIMS medicine data...');
           groqResult.data.drugInfo = await this.enrichDrugInfoWithCIMS(groqResult.data.drugInfo);
           
           // Get alternatives

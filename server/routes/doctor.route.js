@@ -21,6 +21,7 @@ import { sendDoctorCallingNotification } from '../utils/firebase-admin.js';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { cache } from '../db/redis.js';
+import pool from '../db/pgPool.js';
 import { evaluateVitalsAndAlert } from '../services/clinical-intelligence.service.js';
 import { buildLiveKitJoinData, ensureMeetingInfo, getProviderLabel } from '../utils/videoProvider.js';
 import { getIO, getOnlineUsers } from '../chat/chathandler.controller.js';
@@ -60,6 +61,57 @@ const MAX_CACHE_ENTRIES = 1000; // Limit to prevent memory leak
 const toFiniteNumber = (value) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+};
+
+const DEFAULT_WEEKLY_SCHEDULE = {
+  monday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+  tuesday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+  wednesday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+  thursday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+  friday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+  saturday: { isOff: false, online: { enabled: true, startTime: '10:00', endTime: '14:00' }, inPerson: { enabled: false, startTime: '14:00', endTime: '18:00' } },
+  sunday: { isOff: true, online: { enabled: false, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: false, startTime: '14:00', endTime: '18:00' } }
+};
+
+const normalizeJsonValue = (value, fallback) => {
+  if (!value) return fallback;
+  if (typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    return fallback;
+  }
+};
+
+const normalizeWeeklySchedule = (rawSchedule) => {
+  const source = normalizeJsonValue(rawSchedule, {});
+  const weeklySchedule = {};
+
+  Object.keys(DEFAULT_WEEKLY_SCHEDULE).forEach((day) => {
+    const savedDay = source[day] || {};
+    const defaultDay = DEFAULT_WEEKLY_SCHEDULE[day];
+    const hasLegacyWindow = savedDay.startTime && savedDay.endTime;
+    const legacyEnabled = savedDay.isAvailable !== false && hasLegacyWindow;
+    const isOff = savedDay.isOff ?? (savedDay.isAvailable === false ? true : defaultDay.isOff);
+
+    weeklySchedule[day] = {
+      isOff,
+      online: {
+        enabled: savedDay.online?.enabled ?? (legacyEnabled ? true : defaultDay.online.enabled),
+        startTime: savedDay.online?.startTime || savedDay.startTime || defaultDay.online.startTime,
+        endTime: savedDay.online?.endTime || savedDay.endTime || defaultDay.online.endTime
+      },
+      inPerson: {
+        enabled: savedDay.inPerson?.enabled ?? false,
+        startTime: savedDay.inPerson?.startTime || defaultDay.inPerson.startTime,
+        endTime: savedDay.inPerson?.endTime || defaultDay.inPerson.endTime,
+        ...(savedDay.inPerson?.locationId ? { locationId: savedDay.inPerson.locationId } : {})
+      },
+      blockedSlots: Array.isArray(savedDay.blockedSlots) ? savedDay.blockedSlots : []
+    };
+  });
+
+  return weeklySchedule;
 };
 
 const normalizeClinicLocationPayload = (practice = {}, existingClinicAddress = '', existingClinicAddressJson = {}) => {
@@ -851,7 +903,7 @@ router.get("/:doctorId/user-slots", async (req, res) => {
 
     // Get doctor's appointment configuration
     const slotDuration = doctor.slotDuration || 30;
-    const weeklySchedule = doctor.weeklySchedule || {};
+    const weeklySchedule = normalizeWeeklySchedule(doctor.weeklySchedule);
     const practiceLocations = doctor.practiceLocations || [];
 
     // If date is provided, get slots for that specific day
@@ -910,6 +962,9 @@ router.get("/:doctorId/user-slots", async (req, res) => {
       });
 
       const bookedSlotTimes = bookedAppointments.map(apt => apt.appointmentTime);
+      const normalizeSlot = (slot) => String(slot || '').replace(/\s*-\s*/, ' - ');
+      const blockedSlots = new Set((daySchedule.blockedSlots || []).map(normalizeSlot));
+      const isSlotBlocked = (slot) => blockedSlots.has(normalizeSlot(slot));
 
       // Generate online slots
       const onlineSlots = daySchedule.online?.enabled
@@ -919,8 +974,8 @@ router.get("/:doctorId/user-slots", async (req, res) => {
           slotDuration
         ).map(slot => ({
           time: slot,
-          available: !bookedSlotTimes.includes(slot) && !daySchedule.blockedSlots?.includes(slot),
-          blocked: daySchedule.blockedSlots?.includes(slot) || false
+          available: !bookedSlotTimes.includes(slot) && !isSlotBlocked(slot),
+          blocked: isSlotBlocked(slot)
         }))
         : [];
 
@@ -934,8 +989,8 @@ router.get("/:doctorId/user-slots", async (req, res) => {
           const location = practiceLocations.find(loc => loc.id === daySchedule.inPerson?.locationId);
           return {
             time: slot,
-            available: !bookedSlotTimes.includes(slot) && !daySchedule.blockedSlots?.includes(slot),
-            blocked: daySchedule.blockedSlots?.includes(slot) || false,
+            available: !bookedSlotTimes.includes(slot) && !isSlotBlocked(slot),
+            blocked: isSlotBlocked(slot),
             location: location ? {
               name: location.name,
               address: location.address,
@@ -1910,86 +1965,138 @@ router.get('/places-autocomplete', authLimiter, async (req, res) => {
 router.get('/health-monitoring/patients', authDoctor, async (req, res) => {
   try {
     const doctorId = req.doctor.id;
-    const { status, limit = 50, offset = 0 } = req.query;
+    const { limit = 50, offset = 0 } = req.query;
 
-    // Build where clause
-    const whereClause = {
-      doctorId: parseInt(doctorId)
-    };
+    // Unified query using the real Sequelize-managed tables (users, doctors, appointments)
+    const { rows: patients } = await pool.query(`
+      WITH doctor_patients AS (
+        SELECT DISTINCT u.id, u."firstName", u."lastName", u.email, u."phoneNumber",
+               u."dateOfBirth", u.gender, u."createdAt"
+        FROM   users u
+        WHERE  u.id IN (
+          SELECT DISTINCT "patientId" FROM appointments
+          WHERE  "doctorId" = $1 AND "patientId" IS NOT NULL
+          UNION
+          SELECT DISTINCT "userId" FROM appointments
+          WHERE  "doctorId" = $1 AND "userId" IS NOT NULL
+        )
+        LIMIT $2 OFFSET $3
+      ),
+      latest_doctor_vitals AS (
+        SELECT DISTINCT ON (patient_id)
+               patient_id, bp, heart_rate, temperature, spo2, blood_glucose, recorded_at AS vitals_at
+        FROM   patient_vitals
+        WHERE  patient_id IN (SELECT id FROM doctor_patients)
+        ORDER  BY patient_id, recorded_at DESC
+      ),
+      latest_wearable AS (
+        SELECT DISTINCT ON (user_id)
+               user_id,
+               (current_metrics->>'heartRate')::numeric         AS hr_wearable,
+               (current_metrics->>'bloodPressure')             AS bp_wearable,
+               (current_metrics->>'oxygenSaturation')::numeric AS spo2_wearable,
+               (current_metrics->>'temperature')::numeric      AS temp_wearable,
+               last_sync                                       AS wearable_at
+        FROM   wearables
+        WHERE  user_id IN (SELECT id FROM doctor_patients)
+          AND  last_sync IS NOT NULL
+        ORDER  BY user_id, last_sync DESC
+      ),
+      latest_activity AS (
+        SELECT DISTINCT ON (user_id)
+               user_id,
+               heart_rate               AS hr_activity,
+               blood_sugar              AS glucose_activity,
+               steps, sleep_hours, date AS activity_date
+        FROM   daily_activity
+        WHERE  user_id IN (SELECT id FROM doctor_patients)
+        ORDER  BY user_id, date DESC
+      ),
+      active_alerts AS (
+        SELECT patient_id, COUNT(*) AS alert_count,
+               MAX(CASE severity WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END) AS max_sev
+        FROM   early_warning_alerts
+        WHERE  patient_id IN (SELECT id FROM doctor_patients)
+          AND  resolved = FALSE
+        GROUP  BY patient_id
+      ),
+      wearable_alerts AS (
+        SELECT user_id, COUNT(*) AS wearable_alert_count
+        FROM   health_readings
+        WHERE  user_id IN (SELECT id FROM doctor_patients)
+          AND  alert_triggered = TRUE
+          AND  recorded_at >= NOW() - INTERVAL '24 hours'
+        GROUP  BY user_id
+      ),
+      ai_scores AS (
+        SELECT DISTINCT ON (patient_id)
+               patient_id,
+               ROUND((overall_score * 10)::numeric, 1) AS composite_score,
+               risk_level      AS risk_category,
+               confidence_score
+        FROM   ai_health_risk_scores
+        WHERE  patient_id IN (SELECT id FROM doctor_patients)
+        ORDER  BY patient_id, created_at DESC
+      )
+      SELECT
+        dp.id,
+        dp."firstName" || ' ' || dp."lastName"           AS name,
+        dp.email,
+        dp."phoneNumber"                                  AS phone,
+        EXTRACT(YEAR FROM AGE(dp."dateOfBirth"))::int     AS age,
+        dp.gender,
+        dp."createdAt"                                    AS enrolled_date,
+        -- Vitals: prefer wearable (freshest) then doctor-entered
+        COALESCE(lw.hr_wearable, ldv.heart_rate)         AS heart_rate,
+        COALESCE(lw.bp_wearable, ldv.bp)                 AS blood_pressure,
+        COALESCE(lw.spo2_wearable, ldv.spo2)             AS oxygen_saturation,
+        COALESCE(lw.temp_wearable, ldv.temperature)      AS temperature,
+        COALESCE(ldv.blood_glucose, la.glucose_activity)  AS blood_glucose,
+        la.steps, la.sleep_hours,
+        GREATEST(lw.wearable_at, ldv.vitals_at)          AS last_reading,
+        -- Risk classification
+        CASE
+          WHEN aa.max_sev >= 4 OR lw.spo2_wearable < 92 OR lw.hr_wearable > 130 OR lw.hr_wearable < 45 THEN 'critical'
+          WHEN aa.max_sev = 3 OR wa.wearable_alert_count > 0                                              THEN 'high'
+          WHEN aa.max_sev = 2                                                                               THEN 'medium'
+          ELSE 'low'
+        END AS risk_level,
+        COALESCE(aa.alert_count, 0) + COALESCE(wa.wearable_alert_count, 0) AS total_alerts,
+        -- AI health score (0-100, from 6-hourly cron)
+        ais.composite_score   AS ai_health_score,
+        ais.risk_category     AS ai_risk_category,
+        ais.confidence_score  AS ai_confidence,
+        -- Data source flags
+        (lw.user_id IS NOT NULL)     AS has_wearable,
+        (ldv.patient_id IS NOT NULL) AS has_doctor_vitals
+      FROM   doctor_patients dp
+      LEFT JOIN latest_doctor_vitals  ldv ON ldv.patient_id = dp.id
+      LEFT JOIN latest_wearable       lw  ON lw.user_id     = dp.id
+      LEFT JOIN latest_activity       la  ON la.user_id     = dp.id
+      LEFT JOIN active_alerts         aa  ON aa.patient_id  = dp.id
+      LEFT JOIN wearable_alerts       wa  ON wa.user_id     = dp.id
+      LEFT JOIN ai_scores             ais ON ais.patient_id = dp.id
+      ORDER BY
+        CASE WHEN aa.max_sev >= 4 OR lw.spo2_wearable < 92 THEN 0
+             WHEN aa.max_sev = 3 OR wa.wearable_alert_count > 0 THEN 1
+             WHEN aa.max_sev = 2 THEN 2 ELSE 3 END,
+        GREATEST(lw.wearable_at, ldv.vitals_at) DESC NULLS LAST
+    `, [doctorId, parseInt(limit), parseInt(offset)]);
 
-    // Get all patients for this doctor
-    const appointments = await Appointment.findAll({
-      where: whereClause,
-      attributes: ['userId'],
-      raw: true
-    });
-
-    // Get unique patient IDs
-    const patientIds = [...new Set(appointments.map(apt => apt.userId).filter(Boolean))];
-
-    // Get patients with basic info (include primary doctor assignments)
-    const patients = await User.findAll({
-      where: {
-        [Op.or]: [
-          { id: { [Op.in]: patientIds } },
-          { primaryDoctorId: parseInt(doctorId) }
-        ]
-      },
-      attributes: [
-        'id',
-        'firstName',
-        'lastName',
-        'email',
-        'phoneNumber',
-        'dateOfBirth',
-        'gender',
-        'createdAt'
-      ],
-      limit: parseInt(limit),
-      offset: parseInt(offset)
-    });
-
-    // Format patient data with mock health monitoring status
-    const patientsWithHealth = patients.map(patient => ({
-      id: patient.id,
-      name: `${patient.firstName} ${patient.lastName}`,
-      email: patient.email,
-      phone: patient.phoneNumber,
-      age: patient.dateOfBirth ? new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear() : null,
-      gender: patient.gender,
-      healthStatus: 'active', // Default to active
-      lastReading: new Date(),
-      vitals: {
-        heartRate: null,
-        bloodPressure: null,
-        temperature: null,
-        oxygenSaturation: null
-      },
-      enrolledDate: patient.createdAt
-    }));
+    const critical = patients.filter(p => p.risk_level === 'critical').length;
+    const high     = patients.filter(p => p.risk_level === 'high').length;
+    const withData = patients.filter(p => p.last_reading).length;
 
     res.json({
       success: true,
-      patients: patientsWithHealth,
-      total: patientIds.length,
-      healthMonitoring: {
-        active: patientsWithHealth.length,
-        inactive: 0,
-        critical: 0
-      },
-      pagination: {
-        limit: parseInt(limit),
-        offset: parseInt(offset),
-        total: patientIds.length
-      }
+      patients,
+      total: patients.length,
+      healthMonitoring: { active: withData, critical, high, low: patients.length - critical - high },
+      pagination: { limit: parseInt(limit), offset: parseInt(offset), total: patients.length }
     });
   } catch (error) {
-    console.error('Health monitoring patients error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch health monitoring patients',
-      error: error.message
-    });
+    console.error('[health-monitoring] patients error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch health monitoring patients', error: error.message });
   }
 });
 
@@ -2005,64 +2112,197 @@ router.get('/health-monitoring/patients', authDoctor, async (req, res) => {
 router.get('/vital-alerts', authDoctor, async (req, res) => {
   try {
     const doctorId = req.doctor.id;
-    const { status, limit = 50 } = req.query;
+    const { status, limit = 100 } = req.query;
+    const statusFilter = status ? `AND ewa.resolved = ${status === 'resolved' ? 'TRUE' : 'FALSE'}` : '';
 
-    // Get doctor's patient IDs from appointments
-    const appointments = await Appointment.findAll({
-      where: { doctorId: parseInt(doctorId) },
-      attributes: ['userId', 'id', 'status', 'appointmentDate'],
-      include: [{ model: User, as: 'patient', attributes: ['id', 'firstName', 'lastName', 'phoneNumber'] }],
-      order: [['appointmentDate', 'DESC']],
-      limit: parseInt(limit)
-    });
+    // Real alerts: early_warning_alerts for doctor's patients + wearable alerts from last 24h
+    const { rows: alerts } = await pool.query(`
+      WITH doc_patients AS (
+        SELECT DISTINCT "patientId" AS pid FROM appointments WHERE "doctorId" = $1 AND "patientId" IS NOT NULL
+        UNION
+        SELECT DISTINCT "userId" AS pid FROM appointments WHERE "doctorId" = $1 AND "userId" IS NOT NULL
+      )
+      SELECT
+        'ewa_' || ewa.id                                 AS id,
+        ewa.patient_id,
+        u."firstName" || ' ' || u."lastName"             AS patient_name,
+        u."phoneNumber"                                  AS patient_phone,
+        ewa.alert_type                                   AS type,
+        ewa.severity,
+        COALESCE(ewa.alert_type, 'vitals') || ' alert — NEWS2 score: ' || COALESCE(ewa.news2_score::text,'?') AS message,
+        CASE WHEN ewa.resolved THEN 'resolved' ELSE 'active' END AS status,
+        ewa.triggered_at                                 AS created_at,
+        ewa.acknowledged_at                              AS updated_at,
+        ewa.news2_score,
+        ewa.resolved
+      FROM early_warning_alerts ewa
+      JOIN users u ON u.id = ewa.patient_id
+      WHERE ewa.patient_id IN (SELECT pid FROM doc_patients)
+        ${statusFilter}
 
-    // Build alerts from recent appointment data (critical/urgent statuses)
-    const alerts = [];
-    const seen = new Set();
-    for (const apt of appointments) {
-      if (!apt.patient || seen.has(apt.userId)) continue;
-      seen.add(apt.userId);
-      // Simulate vital alert record from appointment context
-      const alertStatus = status ? status : (['in-progress', 'confirmed'].includes(apt.status) ? 'active' : 'resolved');
-      if (status && alertStatus !== status) continue;
-      alerts.push({
-        id: `va_${apt.id}`,
-        patientId: apt.userId,
-        patientName: `${apt.patient.firstName} ${apt.patient.lastName}`,
-        patientPhone: apt.patient.phoneNumber,
-        type: 'vitals_review',
-        severity: apt.status === 'in-progress' ? 'high' : 'medium',
-        message: `Vital signs review required for appointment on ${new Date(apt.appointmentDate).toLocaleDateString()}`,
-        status: alertStatus,
-        createdAt: apt.appointmentDate,
-        updatedAt: apt.updatedAt || apt.createdAt,
-        vitals: { heartRate: null, bloodPressure: null, oxygenSaturation: null }
-      });
-    }
+      UNION ALL
+
+      SELECT
+        'hr_' || hr.id                                   AS id,
+        hr.user_id                                       AS patient_id,
+        u."firstName" || ' ' || u."lastName"             AS patient_name,
+        u."phoneNumber"                                  AS patient_phone,
+        hr.reading_type                                  AS type,
+        hr.alert_severity                                AS severity,
+        hr.reading_type || ' reading out of range'       AS message,
+        'active'                                         AS status,
+        hr.recorded_at                                   AS created_at,
+        hr.recorded_at                                   AS updated_at,
+        NULL                                             AS news2_score,
+        FALSE                                            AS resolved
+      FROM health_readings hr
+      JOIN users u ON u.id = hr.user_id
+      WHERE hr.user_id IN (SELECT pid FROM doc_patients)
+        AND hr.alert_triggered = TRUE
+        AND hr.recorded_at >= NOW() - INTERVAL '24 hours'
+        ${status === 'resolved' ? 'AND FALSE' : ''}
+
+      ORDER BY
+        CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'warning' THEN 3 ELSE 4 END,
+        created_at DESC
+      LIMIT $2
+    `, [doctorId, parseInt(limit)]);
 
     res.json({ success: true, count: alerts.length, alerts });
   } catch (error) {
-    console.error('Vital alerts error:', error);
+    console.error('[vital-alerts] error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch vital alerts', error: error.message });
   }
 });
 
-/**
- * @route   PUT /api/doctors/vital-alerts/:id/acknowledge
- * @route   PUT /api/doctors/vital-alerts/:id/resolve
- * @route   PUT /api/doctors/vital-alerts/:id/dismiss
- */
 router.put('/vital-alerts/:id/acknowledge', authDoctor, async (req, res) => {
-  res.json({ success: true, message: 'Alert acknowledged', id: req.params.id, status: 'acknowledged' });
+  try {
+    if (req.params.id.startsWith('ewa_')) {
+      const alertId = parseInt(req.params.id.replace('ewa_', ''));
+      await pool.query(
+        `UPDATE early_warning_alerts SET acknowledged_by=$1, acknowledged_at=NOW() WHERE id=$2`,
+        [req.doctor.id, alertId]
+      );
+    }
+    res.json({ success: true, message: 'Alert acknowledged', id: req.params.id, status: 'acknowledged' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
+
 router.put('/vital-alerts/:id/resolve', authDoctor, async (req, res) => {
-  res.json({ success: true, message: 'Alert resolved', id: req.params.id, status: 'resolved' });
+  try {
+    if (req.params.id.startsWith('ewa_')) {
+      const alertId = parseInt(req.params.id.replace('ewa_', ''));
+      await pool.query(
+        `UPDATE early_warning_alerts SET resolved=TRUE, acknowledged_by=$1, acknowledged_at=NOW() WHERE id=$2`,
+        [req.doctor.id, alertId]
+      );
+    }
+    res.json({ success: true, message: 'Alert resolved', id: req.params.id, status: 'resolved' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
+
 router.put('/vital-alerts/:id/dismiss', authDoctor, async (req, res) => {
   res.json({ success: true, message: 'Alert dismissed', id: req.params.id, status: 'dismissed' });
 });
-router.post('/vital-alerts', authDoctor, async (req, res) => {
-  res.status(201).json({ success: true, message: 'Alert created', alert: { id: `va_${Date.now()}`, ...req.body } });
+
+// GET /api/doctors/my-patients/:patientId/latest-vitals  — unified vitals for one patient
+router.get('/my-patients/:patientId/latest-vitals', authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const patientId = parseInt(req.params.patientId);
+
+    const { rows: [vitals] } = await pool.query(`
+      WITH wearable_latest AS (
+        SELECT
+          (current_metrics->>'heartRate')::numeric         AS hr,
+          current_metrics->>'bloodPressure'                AS bp,
+          (current_metrics->>'oxygenSaturation')::numeric  AS spo2,
+          (current_metrics->>'temperature')::numeric       AS temp,
+          last_sync                                        AS ts
+        FROM wearables
+        WHERE user_id = $1 AND last_sync IS NOT NULL
+        ORDER BY last_sync DESC LIMIT 1
+      ),
+      reading_glucose AS (
+        SELECT (value->>'value')::numeric AS glucose, recorded_at AS ts
+        FROM health_readings
+        WHERE user_id = $1 AND reading_type = 'blood_glucose'
+        ORDER BY recorded_at DESC LIMIT 1
+      ),
+      reading_hr AS (
+        SELECT (value->>'value')::numeric AS hr, recorded_at AS ts
+        FROM health_readings
+        WHERE user_id = $1 AND reading_type IN ('heart_rate','heartRate')
+        ORDER BY recorded_at DESC LIMIT 1
+      ),
+      reading_bp AS (
+        SELECT value->>'systolic' || '/' || value->>'diastolic' AS bp, recorded_at AS ts
+        FROM health_readings
+        WHERE user_id = $1 AND reading_type IN ('blood_pressure','bloodPressure')
+        ORDER BY recorded_at DESC LIMIT 1
+      ),
+      reading_spo2 AS (
+        SELECT (value->>'value')::numeric AS spo2, recorded_at AS ts
+        FROM health_readings
+        WHERE user_id = $1 AND reading_type IN ('spo2','oxygen_saturation')
+        ORDER BY recorded_at DESC LIMIT 1
+      ),
+      doctor_vitals AS (
+        SELECT heart_rate, bp, spo2, temperature, blood_glucose, recorded_at AS ts
+        FROM patient_vitals WHERE patient_id = $1
+        ORDER BY recorded_at DESC LIMIT 1
+      ),
+      activity AS (
+        SELECT heart_rate, blood_sugar, steps, sleep_hours, date
+        FROM daily_activity WHERE user_id = $1
+        ORDER BY date DESC LIMIT 1
+      ),
+      alerts_24h AS (
+        SELECT COUNT(*) AS cnt, MAX(alert_severity) AS max_sev
+        FROM health_readings
+        WHERE user_id = $1 AND alert_triggered = TRUE AND recorded_at >= NOW() - INTERVAL '24h'
+      )
+      SELECT
+        COALESCE(wl.hr, rhr.hr, dv.heart_rate, a.heart_rate)        AS heart_rate,
+        COALESCE(wl.bp, rbp.bp, dv.bp)                              AS blood_pressure,
+        COALESCE(wl.spo2, rs.spo2, dv.spo2)                        AS oxygen_saturation,
+        COALESCE(wl.temp, dv.temperature)                           AS temperature,
+        COALESCE(rg.glucose, dv.blood_glucose, a.blood_sugar)       AS blood_glucose,
+        a.steps, a.sleep_hours,
+        GREATEST(wl.ts, dv.ts)                                      AS last_reading,
+        (wl.ts IS NOT NULL)                                          AS from_wearable,
+        al.cnt::int                                                  AS alerts_24h,
+        al.max_sev
+      FROM (SELECT 1) x
+      LEFT JOIN wearable_latest wl ON TRUE
+      LEFT JOIN reading_glucose rg  ON TRUE
+      LEFT JOIN reading_hr      rhr ON TRUE
+      LEFT JOIN reading_bp      rbp ON TRUE
+      LEFT JOIN reading_spo2    rs  ON TRUE
+      LEFT JOIN doctor_vitals   dv  ON TRUE
+      LEFT JOIN activity        a   ON TRUE
+      LEFT JOIN alerts_24h      al  ON TRUE
+    `, [patientId]);
+
+    // Also get trend (last 7 readings) from health_readings
+    const { rows: trend } = await pool.query(`
+      SELECT reading_type, (value->>'value')::numeric AS val, recorded_at
+      FROM health_readings
+      WHERE user_id = $1
+        AND reading_type IN ('heart_rate','heartRate','blood_pressure','spo2','oxygen_saturation','blood_glucose','temperature')
+        AND recorded_at >= NOW() - INTERVAL '7 days'
+      ORDER BY recorded_at DESC LIMIT 50
+    `, [patientId]);
+
+    res.json({ success: true, data: { vitals, trend } });
+  } catch (err) {
+    console.error('[latest-vitals] error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ==========================================================================

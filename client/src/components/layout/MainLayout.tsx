@@ -464,17 +464,6 @@ const MainLayout = ({ children }: MainLayoutProps) => {
               </button>
             </div>
           )}
-          {showUserUxStrip && (
-            <section className="worldclass-panel rounded-2xl p-4 md:p-5 border">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500 font-semibold">{uxMeta.category}</p>
-                  <h1 className="text-lg md:text-xl font-semibold text-slate-900 dark:text-white">{uxMeta.title}</h1>
-                  <p className="text-sm text-slate-600 dark:text-slate-300">{uxMeta.subtitle}</p>
-                </div>
-              </div>
-            </section>
-          )}
           <PageTransition key={location.pathname}>
             {children}
           </PageTransition>

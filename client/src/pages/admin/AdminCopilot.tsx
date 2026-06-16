@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, KeyboardEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { useLocation } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import {
   Bot,
@@ -131,6 +132,7 @@ function MessageMeta({
 
 export default function AdminCopilot() {
   const adminToken = localStorage.getItem('adminToken');
+  const location = useLocation();
 
   const [persona, setPersona] = useState<Persona>('ops');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -145,6 +147,7 @@ export default function AdminCopilot() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const msgIdRef = useRef(0);
+  const prefilledPromptRef = useRef<string | null>(null);
 
   const nextId = () => ++msgIdRef.current;
 
@@ -152,6 +155,21 @@ export default function AdminCopilot() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const prompt = (params.get('prompt') || '').trim();
+    const personaParam = params.get('persona');
+
+    if (personaParam && ['ops', 'analytics', 'revenue', 'quality'].includes(personaParam) && personaParam !== persona) {
+      setPersona(personaParam as Persona);
+    }
+
+    if (prompt && prompt !== prefilledPromptRef.current) {
+      prefilledPromptRef.current = prompt;
+      setInput(prompt);
+    }
+  }, [location.search, persona]);
 
   // Switch persona: clear conversation state
   const switchPersona = (p: Persona) => {

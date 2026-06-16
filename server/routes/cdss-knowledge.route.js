@@ -47,6 +47,7 @@ router.post('/query', authUser, async (req, res) => {
 
     console.log("[CDSS API] Query: " + clinicalQuery.substring(0, 50) + "... | Category: " + category + " | Specialty: " + specialty);
 
+    const startedAt = Date.now();
     const result = await cdssService.query(clinicalQuery, {
       category,
       specialty,
@@ -58,6 +59,7 @@ router.post('/query', authUser, async (req, res) => {
       success: true,
       provider: result.provider,
       model: result.model,
+      latencyMs: Date.now() - startedAt,
       ...result.data
     });
   } catch (error) {
@@ -76,13 +78,14 @@ const guidelineQueryHandler = async (req, res) => {
     if (!clinicalQuery || clinicalQuery.length < 3) {
       return res.status(400).json({ success: false, error: "Condition or query must be at least 3 characters" });
     }
+    const startedAt = Date.now();
     const result = await cdssService.query(clinicalQuery, {
       category: req.body?.category || "guidelines",
       specialty: req.body?.specialty || "general",
       searchKnowledge: req.body?.searchKnowledge ?? true,
       sources: Array.isArray(req.body?.sources) ? req.body.sources : [],
     });
-    return res.json({ success: true, provider: result.provider, model: result.model, ...result.data });
+    return res.json({ success: true, provider: result.provider, model: result.model, latencyMs: Date.now() - startedAt, ...result.data });
   } catch (error) {
     console.error("[CDSS API] Guidelines query error:", error);
     return res.status(200).json({

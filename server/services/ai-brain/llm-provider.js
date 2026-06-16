@@ -26,6 +26,16 @@ import { recordTelemetry } from './evaluation-engine.js';
 const _clients = {};
 let _providerEnvCache = null;
 
+function normalizeProviderUrl(value, fallback) {
+  let url = String(value || fallback || '').trim().replace(/\/$/, '');
+  if (url.includes('insha-inc.com')) {
+    console.warn('[LLM] Correcting provider URL typo insha-inc.com -> isha-inc.com');
+    url = url.replace(/insha-inc\.com/g, 'isha-inc.com');
+  }
+  if (url && !/^https?:\/\//i.test(url)) url = `https://${url}`;
+  return url;
+}
+
 function getProviderEnv(key) {
   if (process.env[key]) return process.env[key];
   if (!_providerEnvCache) {
@@ -99,12 +109,12 @@ async function getIshaToken() {
 async function callIshaInc(params) {
   if (cbCheck(_ishaIncOpenUntil)) throw new Error('isha-inc circuit open');
 
-  const baseURL = (getProviderEnv('ISHA_INC_URL') || 'https://isha-inc.com') + '/v1/chat/completions';
+  const baseURL = normalizeProviderUrl(getProviderEnv('ISHA_INC_URL'), 'https://isha-inc.com') + '/v1/chat/completions';
   const apiKey  = getProviderEnv('ISHA_INC_API_KEY');
   if (!apiKey) throw new Error('ISHA_INC_API_KEY not configured');
 
   const controller = new AbortController();
-  const timeoutId  = setTimeout(() => controller.abort(), 30_000);
+  const timeoutId  = setTimeout(() => controller.abort(), 8_000);
 
   try {
     const res = await fetch(baseURL, {
@@ -121,6 +131,11 @@ async function callIshaInc(params) {
     clearTimeout(timeoutId);
     if (!res.ok) {
       const body = await res.text().catch(() => '');
+      if ([522, 523, 524, 530].includes(res.status)) {
+        _ishaIncOpenUntil = Date.now() + 5 * 60_000;
+        _ishaIncFailures = 0;
+        console.warn(`[LLM] isha-inc circuit opened for 5 min due to Cloudflare/origin HTTP ${res.status}`);
+      }
       throw new Error(`isha-inc ${res.status}: ${body.substring(0, 200)}`);
     }
     const data = await res.json();
@@ -129,7 +144,7 @@ async function callIshaInc(params) {
   } catch (err) {
     clearTimeout(timeoutId);
     cbFail(() => _ishaIncFailures, v => { _ishaIncFailures = v; }, () => _ishaIncOpenUntil, v => { _ishaIncOpenUntil = v; }, 'isha-inc');
-    if (err.name === 'AbortError') throw new Error('isha-inc request timed out (30s)');
+    if (err.name === 'AbortError') throw new Error('isha-inc request timed out (8s)');
     throw err;
   }
 }
@@ -137,7 +152,7 @@ async function callIshaInc(params) {
 async function callIsha(params) {
   if (cbCheck(_ishaOpenUntil)) throw new Error('isha circuit open');
 
-  const baseURL = getProviderEnv('ISHA_AI_URL');
+  const baseURL = normalizeProviderUrl(getProviderEnv('ISHA_AI_URL'), 'https://ai.isha.buzz');
   if (!baseURL) throw new Error('ISHA_AI_URL not configured');
   const url = `${baseURL}/v1/chat/completions`;
   const controller = new AbortController();
@@ -224,7 +239,7 @@ function getIshaIncClient() {
   if (!_clients.ishaInc) {
     const apiKey = getProviderEnv('ISHA_INC_API_KEY');
     if (!apiKey) throw new Error('ISHA_INC_API_KEY not configured');
-    const baseURL = (getProviderEnv('ISHA_INC_URL') || 'http://isha-inc.com') + '/v1';
+    const baseURL = normalizeProviderUrl(getProviderEnv('ISHA_INC_URL'), 'https://isha-inc.com') + '/v1';
     _clients.ishaInc = new OpenAI({ baseURL, apiKey });
   }
   return _clients.ishaInc;
@@ -354,7 +369,9 @@ async function callSib(params) {
     }
 
     const data = await res.json();
-    const content = (data.response || data.answer || data.content || '').toString();
+    // SIB's LangGraph agent returns the answer in "chat_answer"; older/direct SIB
+    // responses use "response", "answer", or "content" — check all variants.
+    const content = (data.chat_answer || data.response || data.answer || data.content || '').toString();
     if (!content.trim()) throw new Error('sib returned empty response');
 
     _sibFailures = 0; // reset on success
@@ -391,69 +408,79 @@ async function callSib(params) {
 const PROVIDERS = [
   {
     name: 'sib',
-    label: 'SIB FastAPI (Primary AI Router)',
+    label: 'SIB FastAPI (Primary AI Gateway)',
     model: getProviderEnv('SIB_MODEL') || 'sib-router',
     getClient: () => ({ available: true }),
     useSib: true,
     priority: 0,
   },
   {
-    name: 'isha-reflex',
-    label: 'iSHA.buzz (BiMediX2-8B — REFLEX)',
-    model: getProviderEnv('ISHA_REFLEX_MODEL') || 'bi-medix2',
-    getClient: () => ({ available: true }),
-    useFetch: true,
-    priority: 1,
-    extraBody: { agent_type: 'Clinical' },
-  },
-  {
     name: 'groq',
-    label: 'Groq (Llama 4 Scout 17B)',
+    label: 'Groq (Llama 4 Scout 17B fallback)',
     model: 'meta-llama/llama-4-scout-17b-16e-instruct',
     getClient: getGroqClient,
-    priority: 2,
-  },
-  {
-    name: 'isha-inc',
-    label: 'isha-inc.com (smart-orchestrator)',
-    model: getProviderEnv('ISHA_INC_MODEL') || 'smart-orchestrator',
-    getClient: getIshaIncClient,
-    priority: 3,
-  },
-  {
-    name: 'isha-insurance',
-    label: 'isha-inc.com (MedGemma-4B)',
-    model: 'medgemma-4b',
-    getClient: () => ({ available: true }),
-    useFetchIshaInc: true,   // bypass OpenAI SDK — Cloudflare blocks its User-Agent
-    priority: 2,
-  },
-  {
-    name: 'isha',
-    label: 'iSHA.buzz (BiMediX2-8B — DEEP)',
-    model: getProviderEnv('ISHA_LLM_MODEL') || 'bi-medix2',
-    getClient: () => ({ available: true }),
-    useFetch: true,
-    priority: 4,
-    extraBody: { agent_type: 'Clinical' },
+    priority: 1,
   },
   {
     name: 'openai',
-    label: 'OpenAI (GPT-3.5-turbo)',
+    label: 'OpenAI direct (disabled; Groq is the only non-SIB fallback)',
     model: 'gpt-3.5-turbo',
     getClient: getOpenAIClient,
-    priority: 5,
+    priority: 94,
+    disabled: true,
+  },
+  {
+    name: 'isha',
+    label: 'iSHA.buzz direct (diagnostics only; app traffic goes through SIB)',
+    model: getProviderEnv('ISHA_LLM_MODEL') || 'bi-medix2',
+    getClient: () => ({ available: true }),
+    useFetch: true,
+    priority: 90,
+    disabled: true,
+    extraBody: { agent_type: 'Clinical' },
+  },
+  {
+    name: 'isha-reflex',
+    label: 'iSHA.buzz reflex direct (diagnostics only; app traffic goes through SIB)',
+    model: getProviderEnv('ISHA_REFLEX_MODEL') || 'bi-medix2',
+    getClient: () => ({ available: true }),
+    useFetch: true,
+    priority: 91,
+    disabled: true,
+    extraBody: { agent_type: 'Clinical' },
+  },
+  {
+    name: 'isha-inc',
+    label: 'isha-inc.com direct (diagnostics only; app traffic goes through SIB)',
+    model: getProviderEnv('ISHA_INC_MODEL') || 'smart-orchestrator',
+    getClient: getIshaIncClient,
+    useFetchIshaInc: true,
+    priority: 92,
+    disabled: true,
+  },
+  {
+    name: 'isha-insurance',
+    label: 'isha-inc.com MedGemma direct (diagnostics only; app traffic goes through SIB)',
+    model: 'medgemma-4b',
+    getClient: () => ({ available: true }),
+    useFetchIshaInc: true,
+    priority: 93,
+    disabled: true,
   },
   {
     name: 'local-slm',
-    label: 'Local Indic-Gemma-2B (offline fallback)',
+    label: 'Local Indic-Gemma-2B direct (disabled; Groq is the only non-SIB fallback)',
     model: 'indic-gemma-2b-navarasa',
     useFetch: false,
     useLocalSLM: true,
     baseUrl: getProviderEnv('LOCAL_LLM_URL') || 'http://localhost:11434',
-    priority: 5,                   // Only used when all cloud providers fail
+    priority: 95,
+    disabled: true,
   },
 ];
+
+const DIRECT_AI_PROVIDER_ALIASES = new Set(['isha', 'isha-reflex', 'isha-inc', 'isha-insurance']);
+const ALLOW_DIRECT_AI_PROVIDERS = String(process.env.ALLOW_DIRECT_AI_PROVIDERS || '').toLowerCase() === 'true';
 
 // ─── Model config cache (60s TTL — avoids DB hit on every request) ───────────
 let _cfgCache = null;
@@ -573,6 +600,7 @@ async function chat({
   const clinicalMessage = typeof userMessage === 'string' && looksClinicalForCache(userMessage);
   const scopedCacheText = typeof userMessage === 'string' ? buildScopedCacheText(userMessage, cacheScope) : null;
   const isCacheable = !skipCache
+    && !forceProvider
     && !tools
     && !responseFormat
     && userMessage
@@ -599,8 +627,17 @@ async function chat({
   // Determine which providers to try
   let providersToTry;
   if (forceProvider) {
-    const forced = PROVIDERS.find(p => p.name === forceProvider);
-    if (!forced) throw new Error(`Unknown provider: ${forceProvider}`);
+    const requestedProvider = (!ALLOW_DIRECT_AI_PROVIDERS && DIRECT_AI_PROVIDER_ALIASES.has(forceProvider))
+      ? 'sib'
+      : forceProvider;
+    if (requestedProvider !== forceProvider) {
+      console.log('[LLM] Routing forceProvider=' + forceProvider + ' through SIB gateway');
+    }
+    const forced = PROVIDERS.find(p => p.name === requestedProvider);
+    if (!forced) throw new Error('Unknown provider: ' + forceProvider);
+    if (forced.disabled && !ALLOW_DIRECT_AI_PROVIDERS) {
+      throw new Error('Provider ' + forceProvider + ' is disabled for app traffic');
+    }
     providersToTry = [forced];
   } else if (cognitiveTier && !tools) {
     // ── HAIS: Tier-first routing ─────────────────────────────────────────
@@ -813,7 +850,7 @@ function listProviders() {
       p.getClient();
       available = true;
     } catch { /* not configured */ }
-    return { name: p.name, label: p.label, model: p.model, priority: p.priority, available };
+    return { name: p.name, label: p.label, model: p.model, priority: p.priority, available: available && !p.disabled, disabled: Boolean(p.disabled) };
   });
 }
 
@@ -822,11 +859,21 @@ function listProviders() {
 let _geminiVisionClient = null;
 
 async function callIshaIncVision({ base64Image, mimeType, prompt, maxTokens }) {
-  const baseURL = (getProviderEnv('ISHA_INC_URL') || 'https://isha-inc.com') + '/v1/chat/completions';
+  if (!ALLOW_DIRECT_AI_PROVIDERS) {
+    throw new Error('isha-inc vision direct disabled; route vision through SIB gateway');
+  }
+
+  const baseURL = normalizeProviderUrl(getProviderEnv('ISHA_INC_URL'), 'https://isha-inc.com') + '/v1/chat/completions';
   const apiKey = getProviderEnv('ISHA_INC_API_KEY');
   if (!apiKey) throw new Error('ISHA_INC_API_KEY not configured');
 
-  const model = getProviderEnv('ISHA_INC_VISION_MODEL') || getProviderEnv('ISHA_INC_MODEL') || 'smart-orchestrator';
+  const visionModel = getProviderEnv('ISHA_INC_VISION_MODEL');
+  const visionEnabled = String(getProviderEnv('ISHA_INC_VISION_ENABLED') || '').toLowerCase() === 'true';
+  if (!visionModel && !visionEnabled) {
+    throw new Error('ISHA_INC_VISION_MODEL not configured; skipping isha-inc vision');
+  }
+
+  const model = visionModel || getProviderEnv('ISHA_INC_MODEL') || 'smart-orchestrator';
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 45_000);
 

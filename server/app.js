@@ -624,11 +624,9 @@ console.log('   Allowed Origins:', allowedOrigins);
 app.use((req, res, next) => {
   const origin = req.get('Origin');
   const referer = req.get('Referer');
-  console.log('🔍 ORIGIN CHECK:', { origin, referer, url: req.url, method: req.method });
-  
+
   if (origin && !allowedOrigins.includes(origin)) {
-    console.log('🚫 CORS BLOCKED - Origin:', origin, 'URL:', req.url, 'Method:', req.method);
-    console.log('   Allowed origins:', allowedOrigins);
+    console.warn('[CORS] Blocked origin:', origin, req.url);
     if (req.method === 'OPTIONS') {
       return res.status(403).end();
     }
@@ -968,7 +966,6 @@ app.use(activityLogger({
 // Twilio WhatsApp Webhook Bypass - MUST RUN FIRST before session/auth checks
 // Allow unauthenticated requests for Twilio webhooks and RocketChat outgoing webhooks
 app.use((req, res, next) => {
-  console.log('🚀 [Bypass Check] Path:', req.path);
   if (req.path.startsWith('/api/whatsapp-production/webhook') ||
       req.path.startsWith('/api/whatsapp-production/fallback') ||
       req.path.startsWith('/api/whatsapp-production/status-callback') ||
@@ -976,7 +973,6 @@ app.use((req, res, next) => {
       req.path.startsWith('/api/support/webhook/whatsapp') ||
       req.path === '/api/payments/webhook' ||
       req.path === '/api/payments/config') {
-    console.log('✅ [Bypass Check] Setting skipAuth=true for path:', req.path);
     req.skipAuth = true;
   }
   next();

@@ -87,6 +87,7 @@ const LabTests              = lazy(() => import("@/pages/patient/LabTests"));
 const MyReports             = lazy(() => import("@/pages/patient/MyReports"));
 const Pharmacy              = lazy(() => import("@/pages/patient/Pharmacy"));
 const VitalReports          = lazy(() => import("@/pages/patient/VitalReports"));
+const DeviceIntegration     = lazy(() => import("@/pages/patient/DeviceIntegration"));
 const UploadedDocuments     = lazy(() => import("@/pages/patient/UploadedDocuments"));
 const NetworkHospitals      = lazy(() => import("@/pages/patient/NetworkHospitals"));
 const NetworkClinics        = lazy(() => import("@/pages/patient/NetworkClinics"));
@@ -1733,6 +1734,7 @@ const AppRoutes = () => {
         <Route path="/patient/my-reports"         element={<MainLayout><MyReports /></MainLayout>} />
         <Route path="/patient/pharmacy"           element={<MainLayout><Pharmacy /></MainLayout>} />
         <Route path="/patient/vital-reports"      element={<MainLayout><VitalReports /></MainLayout>} />
+        <Route path="/patient/device-integration" element={<MainLayout><DeviceIntegration /></MainLayout>} />
         <Route path="/patient/watch-analytics"    element={<MainLayout><WatchAnalytics /></MainLayout>} />
         <Route path="/patient/documents"          element={<MainLayout><UploadedDocuments /></MainLayout>} />
         <Route path="/patient/network-hospitals"  element={<MainLayout><NetworkHospitals /></MainLayout>} />

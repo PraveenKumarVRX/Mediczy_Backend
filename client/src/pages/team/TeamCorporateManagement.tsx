@@ -60,7 +60,9 @@ import {
   Bell,
   Send,
   ChevronLeft,
-  Sparkles
+  Sparkles,
+  Bot,
+  MessageSquare
 } from 'lucide-react';
 import api from '@/utils/api';
 import { useNavigate } from 'react-router-dom';
@@ -113,6 +115,23 @@ interface Employee {
   requirePasswordChange?: boolean;
   welcomeEmailStatus?: string | null;
   welcomeEmailSentAt?: string | null;
+}
+
+interface ActivationStats {
+  total: number;
+  welcomeSent: number;
+  loggedIn: number;
+  passwordChanged: number;
+  active7d: number;
+  active30d: number;
+  neverLoggedIn: number;
+  notYetOnboarded: number;
+}
+
+interface TaskCopilotMessage {
+  id: string;
+  role: 'assistant' | 'user';
+  content: string;
 }
 
 interface LabPartner {
@@ -578,6 +597,17 @@ const channelCharacterLimits: Record<CommunicationChannel, number> = {
   sms: 160,
 };
 
+const emptyActivationStats: ActivationStats = {
+  total: 0,
+  welcomeSent: 0,
+  loggedIn: 0,
+  passwordChanged: 0,
+  active7d: 0,
+  active30d: 0,
+  neverLoggedIn: 0,
+  notYetOnboarded: 0,
+};
+
 const TeamCorporateManagement = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -641,10 +671,17 @@ const TeamCorporateManagement = () => {
   const [savingCorporate, setSavingCorporate] = useState(false);
   const [deletingCorporate, setDeletingCorporate] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [activationStats, setActivationStats] = useState<ActivationStats>(emptyActivationStats);
+  const [activationStatsLoading, setActivationStatsLoading] = useState(false);
+  const [activationStatsLastUpdatedAt, setActivationStatsLastUpdatedAt] = useState<string | null>(null);
   const [corporateAdmins, setCorporateAdmins] = useState<CorporateAdminUser[]>([]);
   const [corporateAdminsLoading, setCorporateAdminsLoading] = useState(false);
   const [empCurrentPage, setEmpCurrentPage] = useState(1);
   const EMP_PAGE_SIZE = 10;
+  const [taskCopilotLoading, setTaskCopilotLoading] = useState(false);
+  const [taskCopilotMessages, setTaskCopilotMessages] = useState<TaskCopilotMessage[]>([]);
+  const [taskCopilotInput, setTaskCopilotInput] = useState('');
+  const taskCopilotMessagesEndRef = useRef<HTMLDivElement | null>(null);
 
   // Dialog states
   const [showAddCorporateDialog, setShowAddCorporateDialog] = useState(false);
@@ -692,6 +729,8 @@ const TeamCorporateManagement = () => {
     total: 0,
   });
   const [resendingWelcomeDeliveryId, setResendingWelcomeDeliveryId] = useState<number | null>(null);
+  const [showReminderConfirmDialog, setShowReminderConfirmDialog] = useState(false);
+  const [isSendingReminders, setIsSendingReminders] = useState(false);
   const [showViewEmployeeDialog, setShowViewEmployeeDialog] = useState(false);
   const [showEditEmployeeDialog, setShowEditEmployeeDialog] = useState(false);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
@@ -744,6 +783,7 @@ const TeamCorporateManagement = () => {
   const [syncOffboardList, setSyncOffboardList] = useState<{ id: number; name: string; email: string; employeeId: string }[]>([]);
   const [showSyncConfirmDialog, setShowSyncConfirmDialog] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const adminCopilotAvailable = Boolean(localStorage.getItem('adminToken'));
   
   // Corporate form
   const [newCorporate, setNewCorporate] = useState({
@@ -1363,6 +1403,173 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     ));
   }, [employees, welcomeEmployeeSearch]);
 
+  const activationFunnel = useMemo(() => {
+    const localTotal = employees.length;
+    const localWelcomeSent = employees.filter((employee) => String(employee.welcomeEmailStatus || '').toLowerCase() === 'sent').length;
+    const localLoggedIn = employees.filter((employee) => !!employee.lastLoginAt).length;
+    const localPasswordChanged = employees.filter((employee) => !!employee.lastLoginAt && employee.requirePasswordChange === false).length;
+
+    const total = activationStatsLastUpdatedAt ? activationStats.total : localTotal;
+    const welcomeSent = activationStatsLastUpdatedAt ? activationStats.welcomeSent : localWelcomeSent;
+    const loggedIn = activationStatsLastUpdatedAt ? activationStats.loggedIn : localLoggedIn;
+    const passwordChanged = activationStatsLastUpdatedAt ? activationStats.passwordChanged : localPasswordChanged;
+    const active7d = activationStatsLastUpdatedAt ? activationStats.active7d : 0;
+    const active30d = activationStatsLastUpdatedAt ? activationStats.active30d : 0;
+    const neverLoggedIn = activationStatsLastUpdatedAt ? activationStats.neverLoggedIn : Math.max(localTotal - localLoggedIn, 0);
+    const notYetOnboarded = activationStatsLastUpdatedAt ? activationStats.notYetOnboarded : Math.max(localTotal - localWelcomeSent, 0);
+
+    return {
+      total,
+      welcomeSent,
+      loggedIn,
+      passwordChanged,
+      active7d,
+      active30d,
+      neverLoggedIn,
+      notYetOnboarded,
+      pctSent: total ? Math.round((welcomeSent / total) * 100) : 0,
+      pctLoggedIn: total ? Math.round((loggedIn / total) * 100) : 0,
+      pctPasswordChanged: total ? Math.round((passwordChanged / total) * 100) : 0,
+      live: Boolean(activationStatsLastUpdatedAt),
+    };
+  }, [activationStats, activationStatsLastUpdatedAt, employees]);
+
+  const buildTaskCopilotMessageId = (role: TaskCopilotMessage['role']) => `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  const createTaskCopilotWelcomeMessage = (corporateName?: string): TaskCopilotMessage => ({
+    id: buildTaskCopilotMessageId('assistant'),
+    role: 'assistant',
+    content: corporateName
+      ? `I am watching the activation funnel for ${corporateName}. Ask me where the funnel is blocked, what to do next, or ask for a reminder draft for inactive employees.`
+      : 'Select a corporate to start the activation copilot chat.',
+  });
+
+  const resetTaskCopilotConversation = (corporateName?: string) => {
+    setTaskCopilotMessages(corporateName ? [createTaskCopilotWelcomeMessage(corporateName)] : []);
+    setTaskCopilotInput('');
+  };
+
+  const buildCorporateTaskCopilotPrompt = (userRequest: string, conversation: TaskCopilotMessage[] = []) => {
+    if (!selectedCorporate) return '';
+
+    const recentConversation = conversation
+      .slice(-6)
+      .map((message) => `${message.role === 'user' ? 'Team user' : 'Copilot'}: ${message.content}`)
+      .join('\n');
+
+    return `You are Mediqzy's admin copilot helping a corporate management team user complete employee activation tasks.
+Corporate: ${selectedCorporate.companyName}
+Industry: ${selectedCorporate.industry || 'General'}
+Employees in scope: ${activationFunnel.total}
+Welcome emails sent: ${activationFunnel.welcomeSent}
+Logged in to app: ${activationFunnel.loggedIn}
+Password changed: ${activationFunnel.passwordChanged}
+Never logged in: ${activationFunnel.neverLoggedIn}
+Not yet onboarded: ${activationFunnel.notYetOnboarded}
+Active in last 7 days: ${activationFunnel.active7d}
+Active in last 30 days: ${activationFunnel.active30d}
+
+Recent conversation:
+${recentConversation || 'No prior conversation.'}
+
+Current request: ${userRequest}
+
+Respond like an operations copilot for the team user. Keep it concise and practical. Prefer short bullets. If useful, recommend one of these in-app actions next: welcome emails, employee follow-up, HR admin escalation, export/reporting.`;
+  };
+
+  const buildAdminCopilotHandoffPrompt = () => {
+    if (!selectedCorporate) return '';
+
+    const latestUserMessage = [...taskCopilotMessages]
+      .reverse()
+      .find((message) => message.role === 'user')?.content || 'Help me continue this employee activation workflow.';
+
+    const recentSummary = taskCopilotMessages
+      .slice(-4)
+      .map((message) => `${message.role === 'user' ? 'Team user' : 'Copilot'}: ${message.content}`)
+      .join('\n');
+
+    return `Corporate: ${selectedCorporate.companyName}
+Industry: ${selectedCorporate.industry || 'General'}
+Employees in scope: ${activationFunnel.total}
+Welcome emails sent: ${activationFunnel.welcomeSent}
+Logged in to app: ${activationFunnel.loggedIn}
+Password changed: ${activationFunnel.passwordChanged}
+Never logged in: ${activationFunnel.neverLoggedIn}
+Not yet onboarded: ${activationFunnel.notYetOnboarded}
+Active in last 7 days: ${activationFunnel.active7d}
+Active in last 30 days: ${activationFunnel.active30d}
+
+Recent conversation:
+${recentSummary || 'No prior conversation.'}
+
+Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
+  };
+
+  const handleTaskCopilotSubmit = async (messageOverride?: string) => {
+    if (!selectedCorporate?.id || taskCopilotLoading) return;
+
+    const userRequest = (messageOverride ?? taskCopilotInput).trim();
+    if (!userRequest) return;
+
+    const userMessage: TaskCopilotMessage = {
+      id: buildTaskCopilotMessageId('user'),
+      role: 'user',
+      content: userRequest,
+    };
+    const nextConversation = [...taskCopilotMessages, userMessage];
+
+    setTaskCopilotMessages(nextConversation);
+    setTaskCopilotInput('');
+    setTaskCopilotLoading(true);
+
+    try {
+      const response = await api.post('/team/ai/generate', {
+        prompt: buildCorporateTaskCopilotPrompt(userRequest, nextConversation),
+        maxTokens: 450,
+        temperature: 0.4,
+      }, {
+        headers: teamAuthHeaders(),
+      });
+
+      const assistantMessage: TaskCopilotMessage = {
+        id: buildTaskCopilotMessageId('assistant'),
+        role: 'assistant',
+        content: response.data?.data?.content || 'I could not generate guidance for this request.',
+      };
+
+      setTaskCopilotMessages((current) => [...current, assistantMessage]);
+    } catch (error: any) {
+      const fallbackMessage: TaskCopilotMessage = {
+        id: buildTaskCopilotMessageId('assistant'),
+        role: 'assistant',
+        content: 'I could not generate guidance right now. Try again, open Welcome Emails, or hand off to Admin Copilot.',
+      };
+
+      setTaskCopilotMessages((current) => [...current, fallbackMessage]);
+      toast({
+        variant: 'destructive',
+        title: 'Copilot unavailable',
+        description: error?.response?.data?.message || 'Unable to generate task guidance right now.',
+      });
+    } finally {
+      setTaskCopilotLoading(false);
+    }
+  };
+
+  const handleGenerateTaskCopilot = () => {
+    void handleTaskCopilotSubmit('Recommend the next actions for this activation funnel today.');
+  };
+
+  const openAdminCopilotWithContext = () => {
+    if (!adminCopilotAvailable || !selectedCorporate) return;
+    const params = new URLSearchParams({
+      persona: 'ops',
+      prompt: buildAdminCopilotHandoffPrompt(),
+    });
+    navigate(`/admin/copilot?${params.toString()}`);
+  };
+
   const filteredWelcomeTotalPages = Math.max(1, Math.ceil(filteredWelcomeEmployees.length / EMP_PAGE_SIZE));
 
   useEffect(() => {
@@ -1732,8 +1939,26 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       fetchCorporatePlans(selectedCorporate.id);
       fetchNetworkPartners(selectedCorporate.id);
       fetchWellnessEvents(selectedCorporate.id);
+      resetTaskCopilotConversation(selectedCorporate.companyName);
+      return;
     }
+
+    setActivationStats(emptyActivationStats);
+    setActivationStatsLastUpdatedAt(null);
+    resetTaskCopilotConversation();
   }, [selectedCorporate?.id]);
+
+  useEffect(() => {
+    if (!selectedCorporate?.id) return;
+    const intervalId = window.setInterval(() => {
+      fetchActivationStats(selectedCorporate.id);
+    }, 30000);
+    return () => window.clearInterval(intervalId);
+  }, [selectedCorporate?.id]);
+
+  useEffect(() => {
+    taskCopilotMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [taskCopilotMessages, taskCopilotLoading]);
 
   const normalizeStatusLabel = (status: string | null | undefined) => {
     const normalized = String(status || '').toLowerCase();
@@ -1748,6 +1973,49 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     const dt = new Date(lastLoginAt);
     if (Number.isNaN(dt.getTime())) return 'Never';
     return dt.toLocaleString();
+  };
+
+  const formatSyncLabel = (timestamp: string | null | undefined) => {
+    if (!timestamp) return 'Waiting for live sync';
+    const dt = new Date(timestamp);
+    if (Number.isNaN(dt.getTime())) return 'Waiting for live sync';
+    return `Live sync ${dt.toLocaleTimeString()}`;
+  };
+
+  const fetchActivationStats = async (corporateId: number) => {
+    try {
+      setActivationStatsLoading(true);
+      const token = localStorage.getItem('teamToken');
+      const numericId = parseInt(String(corporateId), 10);
+      if (Number.isNaN(numericId)) {
+        setActivationStats(emptyActivationStats);
+        setActivationStatsLastUpdatedAt(null);
+        return;
+      }
+
+      const response = await api.get(`/admin/corporate-employees/${numericId}/activation-stats`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      if (response.data?.success && response.data?.stats) {
+        const stats = response.data.stats;
+        setActivationStats({
+          total: Number(stats.total || 0),
+          welcomeSent: Number(stats.welcomeSent || 0),
+          loggedIn: Number(stats.loggedIn || 0),
+          passwordChanged: Number(stats.passwordChanged || 0),
+          active7d: Number(stats.active7d || 0),
+          active30d: Number(stats.active30d || 0),
+          neverLoggedIn: Number(stats.neverLoggedIn || 0),
+          notYetOnboarded: Number(stats.notYetOnboarded || 0),
+        });
+        setActivationStatsLastUpdatedAt(new Date().toISOString());
+      }
+    } catch (error) {
+      console.error('Failed to fetch activation stats:', error);
+    } finally {
+      setActivationStatsLoading(false);
+    }
   };
 
   const fetchCorporateAdmins = async (corporateId: number) => {
@@ -1785,8 +2053,11 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       if (isNaN(numericId)) {
         console.error('Invalid corporate ID:', corporateId);
         setEmployees([]);
+        setActivationStats(emptyActivationStats);
+        setActivationStatsLastUpdatedAt(null);
         return;
       }
+      void fetchActivationStats(numericId);
       const pageSize = 500;
       let offset = 0;
       let mergedEmployees: any[] = [];
@@ -2037,6 +2308,37 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       });
     } finally {
       setResendingWelcomeDeliveryId(null);
+    }
+  };
+
+  // Sends a "Reminder" email (distinct copy from the original welcome email,
+  // same personalization) with a brand-new temporary password to EVERY
+  // employee of the selected corporate, including ones who already activated.
+  const handleSendReminderToAllEmployees = async () => {
+    if (!selectedCorporate) return;
+    setIsSendingReminders(true);
+    try {
+      const { data } = await api.post('/admin/corporate-employee-welcome-emails/send-reminder-bulk', {
+        corporateId: selectedCorporate.id,
+      }, {
+        headers: teamAuthHeaders(),
+      });
+
+      toast({
+        title: 'Reminder emails queued',
+        description: data?.message || `Reminders are being sent to ${data?.totalQueued ?? 'all'} employee(s). Check the audit table below for progress.`,
+      });
+      setShowReminderConfirmDialog(false);
+      // Give the background job a moment to create the first delivery rows, then refresh.
+      setTimeout(() => fetchWelcomeDeliveryHistory(), 2000);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not queue reminders',
+        description: error?.response?.data?.message || 'Failed to send reminder emails.',
+      });
+    } finally {
+      setIsSendingReminders(false);
     }
   };
 
@@ -4918,6 +5220,15 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                         <FileSpreadsheet className="h-4 w-4 mr-2" />
                         Export CSV
                       </Button>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => setShowReminderConfirmDialog(true)}
+                        disabled={!selectedCorporate}
+                      >
+                        <Send className="h-4 w-4 mr-2" />
+                        Send Reminder to All Employees
+                      </Button>
                     </div>
                   </div>
                 </CardHeader>
@@ -4959,6 +5270,8 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                         <SelectContent>
                           <SelectItem value="all">All</SelectItem>
                           <SelectItem value="batch_send">Batch Send</SelectItem>
+                          <SelectItem value="resend_send">Resend</SelectItem>
+                          <SelectItem value="reminder_send">Reminder</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -5229,54 +5542,172 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                 </CardHeader>
                 <CardContent>
                   {/* ── App Activation Stats ──────────────────────────────── */}
-                  {(() => {
-                    const total = employees.length;
-                    const sent = employees.filter(e => e.welcomeEmailStatus === 'sent').length;
-                    const loggedIn = employees.filter(e => !!e.lastLoginAt).length;
-                    const pwdChanged = employees.filter(e => !!e.lastLoginAt && e.requirePasswordChange === false).length;
-                    const pctSent = total ? Math.round((sent / total) * 100) : 0;
-                    const pctLoggedIn = total ? Math.round((loggedIn / total) * 100) : 0;
-                    const pctPwd = total ? Math.round((pwdChanged / total) * 100) : 0;
-                    return (
-                      <div className="mb-4 rounded-lg border bg-white dark:bg-gray-900 p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm font-semibold">App Activation Funnel</p>
-                          <span className="text-xs text-muted-foreground">{total} active employees</span>
-                        </div>
-                        <div className="grid grid-cols-3 gap-3">
-                          <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900 p-3 text-center">
-                            <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{sent}</p>
-                            <p className="text-xs text-blue-600 dark:text-blue-400">Welcome Email Sent</p>
-                            <p className="text-[10px] text-muted-foreground">{pctSent}% of total</p>
-                          </div>
-                          <div className="rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-100 dark:border-green-900 p-3 text-center">
-                            <p className="text-2xl font-bold text-green-700 dark:text-green-300">{loggedIn}</p>
-                            <p className="text-xs text-green-600 dark:text-green-400">Logged In to App</p>
-                            <p className="text-[10px] text-muted-foreground">{pctLoggedIn}% of total</p>
-                          </div>
-                          <div className="rounded-lg bg-teal-50 dark:bg-teal-950/30 border border-teal-100 dark:border-teal-900 p-3 text-center">
-                            <p className="text-2xl font-bold text-teal-700 dark:text-teal-300">{pwdChanged}</p>
-                            <p className="text-xs text-teal-600 dark:text-teal-400">Password Changed</p>
-                            <p className="text-[10px] text-muted-foreground">{pctPwd}% of total</p>
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-[10px] text-muted-foreground">
-                            <span>Activation progress</span>
-                            <span>{loggedIn} / {total} logged in</span>
-                          </div>
-                          <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2 overflow-hidden">
-                            <div className="h-2 rounded-full bg-blue-200 dark:bg-blue-900" style={{ width: `${pctSent}%` }} />
-                            <div className="h-2 rounded-full bg-green-500 -mt-2" style={{ width: `${pctLoggedIn}%` }} />
-                          </div>
-                          <div className="flex gap-3 text-[10px] text-muted-foreground">
-                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-200 dark:bg-blue-900 inline-block"/>{pctSent}% email sent</span>
-                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block"/>{pctLoggedIn}% logged in</span>
-                          </div>
+                  <div className="mb-4 rounded-lg border bg-white dark:bg-gray-900 p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold">App Activation Funnel</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs text-muted-foreground">{activationFunnel.total} active employees</span>
+                          <Badge variant="outline" className="text-[10px]">
+                            {activationFunnel.live ? 'Live data' : 'Employee snapshot'}
+                          </Badge>
                         </div>
                       </div>
-                    );
-                  })()}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-muted-foreground">{formatSyncLabel(activationStatsLastUpdatedAt)}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => selectedCorporate && fetchActivationStats(selectedCorporate.id)}
+                          disabled={activationStatsLoading || !selectedCorporate}
+                          title="Refresh live activation stats"
+                        >
+                          <RefreshCw className={`h-4 w-4 ${activationStatsLoading ? 'animate-spin' : ''}`} />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900 p-3 text-center">
+                        <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{activationFunnel.welcomeSent}</p>
+                        <p className="text-xs text-blue-600 dark:text-blue-400">Welcome Email Sent</p>
+                        <p className="text-[10px] text-muted-foreground">{activationFunnel.pctSent}% of total</p>
+                      </div>
+                      <div className="rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-100 dark:border-green-900 p-3 text-center">
+                        <p className="text-2xl font-bold text-green-700 dark:text-green-300">{activationFunnel.loggedIn}</p>
+                        <p className="text-xs text-green-600 dark:text-green-400">Logged In to App</p>
+                        <p className="text-[10px] text-muted-foreground">{activationFunnel.pctLoggedIn}% of total</p>
+                      </div>
+                      <div className="rounded-lg bg-teal-50 dark:bg-teal-950/30 border border-teal-100 dark:border-teal-900 p-3 text-center">
+                        <p className="text-2xl font-bold text-teal-700 dark:text-teal-300">{activationFunnel.passwordChanged}</p>
+                        <p className="text-xs text-teal-600 dark:text-teal-400">Password Changed</p>
+                        <p className="text-[10px] text-muted-foreground">{activationFunnel.pctPasswordChanged}% of total</p>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] text-muted-foreground">
+                        <span>Activation progress</span>
+                        <span>{activationFunnel.loggedIn} / {activationFunnel.total} logged in</span>
+                      </div>
+                      <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2 overflow-hidden">
+                        <div className="h-2 rounded-full bg-blue-200 dark:bg-blue-900" style={{ width: `${activationFunnel.pctSent}%` }} />
+                        <div className="h-2 rounded-full bg-green-500 -mt-2" style={{ width: `${activationFunnel.pctLoggedIn}%` }} />
+                      </div>
+                      <div className="flex gap-3 text-[10px] text-muted-foreground flex-wrap">
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-200 dark:bg-blue-900 inline-block"/>{activationFunnel.pctSent}% email sent</span>
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block"/>{activationFunnel.pctLoggedIn}% logged in</span>
+                        <span>{activationFunnel.neverLoggedIn} never logged in</span>
+                        <span>{activationFunnel.active7d} active in 7d</span>
+                        <span>{activationFunnel.active30d} active in 30d</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mb-4 rounded-lg border border-violet-200 bg-violet-50/70 dark:border-violet-900 dark:bg-violet-950/20 overflow-hidden">
+                    <div className="p-4 border-b border-violet-200/80 dark:border-violet-900/80 space-y-3">
+                      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <MessageSquare className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                            <p className="text-sm font-semibold">Admin Copilot Chat</p>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Chat against the live activation funnel, get next-step guidance, and hand off to the full admin copilot when needed.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button variant="outline" size="sm" onClick={handleGenerateTaskCopilot} disabled={taskCopilotLoading || !selectedCorporate}>
+                            <Sparkles className={`h-4 w-4 mr-2 ${taskCopilotLoading ? 'animate-pulse' : ''}`} />
+                            Next Actions
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => setShowWelcomeEmailBatchDialog(true)} disabled={employees.length === 0}>
+                            <Mail className="h-4 w-4 mr-2" />
+                            Open Welcome Emails
+                          </Button>
+                          <Button size="sm" onClick={openAdminCopilotWithContext} disabled={!adminCopilotAvailable || !selectedCorporate} title={adminCopilotAvailable ? 'Open the full admin copilot with this funnel context' : 'Admin Copilot requires an admin session'}>
+                            <Brain className="h-4 w-4 mr-2" />
+                            Open Admin Copilot
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          'Where is this funnel blocked right now?',
+                          'Give me the next 5 actions for HR follow-up.',
+                          'Draft a reminder message for employees who never logged in.',
+                        ].map((prompt) => (
+                          <Button
+                            key={prompt}
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-[11px] bg-white/70 dark:bg-slate-950/30"
+                            onClick={() => void handleTaskCopilotSubmit(prompt)}
+                            disabled={taskCopilotLoading || !selectedCorporate}
+                          >
+                            {prompt}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <ScrollArea className="h-72 bg-white/70 dark:bg-slate-950/30">
+                      <div className="p-4 space-y-3">
+                        {taskCopilotMessages.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">Select a corporate to start the activation copilot chat.</p>
+                        ) : taskCopilotMessages.map((message) => (
+                          <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-[88%] rounded-lg px-3 py-2 text-sm shadow-sm ${message.role === 'user' ? 'bg-violet-600 text-white' : 'border border-violet-200/80 bg-white text-slate-700 dark:border-violet-900/70 dark:bg-slate-950/70 dark:text-slate-200'}`}>
+                              <div className={`mb-1 flex items-center gap-1 text-[11px] ${message.role === 'user' ? 'text-violet-100' : 'text-muted-foreground'}`}>
+                                {message.role === 'assistant' ? <Bot className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
+                                <span>{message.role === 'assistant' ? 'Copilot' : 'Team User'}</span>
+                              </div>
+                              <div className="whitespace-pre-wrap break-words">{message.content}</div>
+                            </div>
+                          </div>
+                        ))}
+                        {taskCopilotLoading && (
+                          <div className="flex justify-start">
+                            <div className="max-w-[88%] rounded-lg border border-violet-200/80 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm dark:border-violet-900/70 dark:bg-slate-950/70 dark:text-slate-200">
+                              <div className="mb-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+                                <Bot className="h-3 w-3" />
+                                <span>Copilot</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-muted-foreground">
+                                <Sparkles className="h-3.5 w-3.5 animate-pulse" />
+                                <span>Thinking...</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        <div ref={taskCopilotMessagesEndRef} />
+                      </div>
+                    </ScrollArea>
+
+                    <div className="p-4 border-t border-violet-200/80 dark:border-violet-900/80 bg-violet-50/60 dark:bg-violet-950/10 space-y-3">
+                      <Textarea
+                        rows={3}
+                        value={taskCopilotInput}
+                        onChange={(event) => setTaskCopilotInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' && !event.shiftKey) {
+                            event.preventDefault();
+                            void handleTaskCopilotSubmit();
+                          }
+                        }}
+                        placeholder={selectedCorporate ? `Ask about ${selectedCorporate.companyName}'s activation bottlenecks, reminder strategy, or next steps` : 'Select a corporate to start chatting'}
+                        disabled={!selectedCorporate || taskCopilotLoading}
+                        className="min-h-[88px] bg-white dark:bg-slate-950/70"
+                      />
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-[11px] text-muted-foreground">
+                          Enter sends. Shift+Enter adds a new line.
+                        </p>
+                        <Button onClick={() => void handleTaskCopilotSubmit()} disabled={!selectedCorporate || taskCopilotLoading || !taskCopilotInput.trim()}>
+                          <Send className="h-4 w-4 mr-2" />
+                          Send
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
 
                   <div className="mb-4 rounded-lg border bg-slate-50/60 dark:bg-slate-900/30 p-3 space-y-3">
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -7311,6 +7742,38 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
             <DialogFooter>
               <Button onClick={() => { setShowCredentialsDialog(false); setNewEmployeeCredentials(null); }}>
                 Done
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Send Reminder to All Employees — confirmation dialog */}
+        <Dialog open={showReminderConfirmDialog} onOpenChange={(open) => { if (!isSendingReminders) setShowReminderConfirmDialog(open); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-amber-700">
+                <AlertCircle className="h-5 w-5" /> Send Reminder to All Employees
+              </DialogTitle>
+              <DialogDescription>
+                This generates a brand-new temporary password for every employee of{' '}
+                <strong>{selectedCorporate?.companyName}</strong> and emails them a reminder with their Employee ID,
+                login email, and new temporary password.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 dark:bg-amber-950/30 dark:border-amber-800 p-3 text-sm text-amber-800 dark:text-amber-400">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <p>
+                This resets passwords for <strong>all</strong> employees, including those who already activated
+                their account and set their own password. They will need to use the new temporary password from
+                the reminder email to log in again.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowReminderConfirmDialog(false)} disabled={isSendingReminders}>
+                Cancel
+              </Button>
+              <Button onClick={handleSendReminderToAllEmployees} disabled={isSendingReminders}>
+                {isSendingReminders ? 'Queuing...' : 'Send Reminder to All'}
               </Button>
             </DialogFooter>
           </DialogContent>

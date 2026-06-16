@@ -43,49 +43,59 @@ interface PatientVitals {
   lastUpdated: string;
   riskLevel: 'low' | 'medium' | 'high' | 'critical';
   alerts: string[];
+  bloodGlucose?: number | null;
+  steps?: number | null;
+  sleepHours?: number | null;
+  totalAlerts?: number;
+  hasWearable?: boolean;
 }
+
+const VitalBox = ({ icon, label, value, unit, status }: {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number | null | undefined;
+  unit: string;
+  status: string;
+}) => (
+  <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50">
+    <div className="flex items-center gap-2 mb-1">
+      {icon}
+      <span className="text-xs text-muted-foreground">{label}</span>
+    </div>
+    <p className={cn("text-lg font-semibold", status)}>
+      {value != null ? <>{value}{unit && <span className="text-xs font-normal ml-0.5">{unit}</span>}</> : <span className="text-sm text-muted-foreground">—</span>}
+    </p>
+  </div>
+);
 
 const HealthMonitoringDashboardWrapper = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [riskFilter, setRiskFilter] = useState<string>('all');
 
-  const { data: patientsData, isLoading, refetch } = useQuery({
+  const { data: patientsData, isLoading, error: patientsError, refetch } = useQuery({
     queryKey: ['health-monitoring-patients'],
     queryFn: async () => {
-      try {
-        const response = await api.get('/doctors/health-monitoring/patients');
-        const rawPatients = response.data.patients || [];
-        return rawPatients.map((patient: any) => {
-          const name =
-            patient.patientName ||
-            patient.name ||
-            `${patient.firstName || ''} ${patient.lastName || ''}`.trim() ||
-            'Patient';
-          const riskLevel =
-            patient.riskLevel ||
-            (patient.healthStatus === 'critical' ? 'critical' : null) ||
-            (patient.healthStatus === 'high' ? 'high' : null) ||
-            (patient.healthStatus === 'medium' ? 'medium' : null) ||
-            'low';
-
-          return {
-            id: patient.id,
-            patientName: name,
-            patientAge: patient.patientAge ?? patient.age ?? null,
-            patientGender: patient.patientGender ?? patient.gender ?? 'Unknown',
-            heartRate: patient.heartRate ?? patient.vitals?.heartRate ?? 0,
-            bloodPressure: patient.bloodPressure ?? patient.vitals?.bloodPressure ?? '-',
-            oxygenSaturation: patient.oxygenSaturation ?? patient.vitals?.oxygenSaturation ?? 0,
-            temperature: patient.temperature ?? patient.vitals?.temperature ?? 0,
-            lastUpdated: patient.lastUpdated ?? patient.lastReading ?? patient.updatedAt ?? new Date().toISOString(),
-            riskLevel,
-            alerts: patient.alerts ?? []
-          };
-        });
-      } catch (err) {
-        // Return sample data for demonstration
-        return generateSamplePatients();
-      }
+      const response = await api.get('/doctors/health-monitoring/patients');
+      const rawPatients = response.data.patients || [];
+      return rawPatients.map((p: any) => ({
+        id: p.id,
+        patientName: p.name || 'Patient',
+        patientAge: p.age ?? null,
+        patientGender: p.gender ?? 'Unknown',
+        // New flat API shape: snake_case from postgres
+        heartRate:        p.heart_rate ?? p.heartRate ?? p.vitals?.heartRate ?? null,
+        bloodPressure:    p.blood_pressure ?? p.bloodPressure ?? p.vitals?.bloodPressure ?? null,
+        oxygenSaturation: p.oxygen_saturation ?? p.oxygenSaturation ?? p.vitals?.oxygenSaturation ?? null,
+        temperature:      p.temperature ?? p.vitals?.temperature ?? null,
+        bloodGlucose:     p.blood_glucose ?? null,
+        steps:            p.steps ?? null,
+        sleepHours:       p.sleep_hours ?? null,
+        lastUpdated:      p.last_reading ?? p.lastReading ?? null,
+        riskLevel:        (p.risk_level ?? p.riskLevel ?? 'low') as 'low' | 'medium' | 'high' | 'critical',
+        totalAlerts:      p.total_alerts ?? 0,
+        hasWearable:      p.has_wearable ?? false,
+        alerts: []
+      }));
     },
     staleTime: 30 * 1000,
     refetchInterval: 60 * 1000,
@@ -280,51 +290,37 @@ const HealthMonitoringDashboardWrapper = () => {
                 <CardContent className="space-y-4">
                   {/* Vitals Grid */}
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Heart className="h-4 w-4 text-red-500" />
-                        <span className="text-xs text-muted-foreground">Heart Rate</span>
-                      </div>
-                      <p className={cn("text-lg font-semibold", getVitalStatus('heartRate', patient.heartRate))}>
-                        {patient.heartRate} <span className="text-xs font-normal">bpm</span>
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Activity className="h-4 w-4 text-blue-500" />
-                        <span className="text-xs text-muted-foreground">BP</span>
-                      </div>
-                      <p className="text-lg font-semibold text-foreground">
-                        {patient.bloodPressure}
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Droplets className="h-4 w-4 text-cyan-500" />
-                        <span className="text-xs text-muted-foreground">SpO2</span>
-                      </div>
-                      <p className={cn("text-lg font-semibold", getVitalStatus('oxygen', patient.oxygenSaturation))}>
-                        {patient.oxygenSaturation}%
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Thermometer className="h-4 w-4 text-orange-500" />
-                        <span className="text-xs text-muted-foreground">Temp</span>
-                      </div>
-                      <p className={cn("text-lg font-semibold", getVitalStatus('temperature', patient.temperature))}>
-                        {patient.temperature}°C
-                      </p>
-                    </div>
+                    <VitalBox icon={<Heart className="h-4 w-4 text-red-500" />} label="Heart Rate"
+                      value={patient.heartRate} unit="bpm" status={getVitalStatus('heartRate', patient.heartRate)} />
+                    <VitalBox icon={<Activity className="h-4 w-4 text-blue-500" />} label="BP"
+                      value={patient.bloodPressure} unit="mmHg" status="text-foreground" />
+                    <VitalBox icon={<Droplets className="h-4 w-4 text-cyan-500" />} label="SpO₂"
+                      value={patient.oxygenSaturation != null ? `${patient.oxygenSaturation}` : null} unit="%" status={getVitalStatus('oxygen', patient.oxygenSaturation)} />
+                    <VitalBox icon={<Thermometer className="h-4 w-4 text-orange-500" />} label="Temp"
+                      value={patient.temperature} unit="°C" status={getVitalStatus('temperature', patient.temperature)} />
                   </div>
 
+                  {/* Extra metrics row */}
+                  {(patient.bloodGlucose != null || patient.steps != null) && (
+                    <div className="grid grid-cols-2 gap-3">
+                      {patient.bloodGlucose != null && (
+                        <VitalBox icon={<Droplets className="h-4 w-4 text-rose-400" />} label="Glucose"
+                          value={patient.bloodGlucose} unit="mg/dL" status="text-foreground" />
+                      )}
+                      {patient.steps != null && (
+                        <VitalBox icon={<TrendingUp className="h-4 w-4 text-emerald-500" />} label="Steps"
+                          value={patient.steps != null ? patient.steps.toLocaleString() : null} unit="" status="text-foreground" />
+                      )}
+                    </div>
+                  )}
+
                   {/* Alerts */}
-                  {patient.alerts && patient.alerts.length > 0 && (
+                  {(patient as any).totalAlerts > 0 && (
                     <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800">
-                      <div className="flex items-start gap-2">
-                        <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5" />
-                        <div className="text-xs text-red-700 dark:text-red-400">
-                          {patient.alerts.join(', ')}
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0" />
+                        <div className="text-xs text-red-700 dark:text-red-400 font-medium">
+                          {(patient as any).totalAlerts} active alert{(patient as any).totalAlerts > 1 ? 's' : ''} in last 24h
                         </div>
                       </div>
                     </div>

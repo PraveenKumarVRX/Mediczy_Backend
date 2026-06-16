@@ -792,6 +792,149 @@ export async function sendCorporateEmployeeWelcomeEmail(employeeData, temporaryP
   }
 }
 
+/**
+ * Build a "reminder" email for a corporate employee who already received the
+ * initial welcome email. Same personalization (name, employee ID, login
+ * identifier, plan details) as the welcome email, but worded as a nudge to
+ * activate/log in rather than a first-time welcome, and carries a freshly
+ * generated temporary password.
+ */
+export async function buildCorporateEmployeeReminderEmail(employeeData, temporaryPassword, options = {}) {
+  const { email, firstName, lastName, companyName, employeeId, department } = employeeData;
+  const plan = formatCorporateEmployeePlan(employeeData);
+  const planBenefitsHtml = renderPlanBenefitsList(plan.benefits);
+  const planBenefitsText = plan.benefits.join(", ");
+  const loginIdentifier = email || employeeId || "";
+
+  const msg = {
+    to: email,
+    from: {
+      email: process.env.SENDGRID_FROM_EMAIL || 'noreply@mediqzy.com',
+      name: 'Mediqzy Corporate Health'
+    },
+    subject: `Reminder: Activate Your ${companyName} Health Portal Access`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
+        <div style="background-color: #b45309; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1 style="color: white; margin: 0; font-size: 26px;">⏰ Reminder: Activate Your Health Portal Access</h1>
+        </div>
+        <div style="background-color: white; padding: 40px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+          <h2 style="color: #0f766e; margin-bottom: 20px;">Dear ${firstName} ${lastName},</h2>
+          <p style="font-size: 16px; line-height: 1.6; color: #374151;">
+            This is a friendly reminder that your employee health account under the <strong>${companyName}</strong> corporate health program on Mediqzy is ready and waiting. We've issued a new temporary password below so you can log in right away.
+          </p>
+          <div style="background-color: #f0fdfa; border-left: 4px solid #0f766e; padding: 20px; margin: 25px 0; border-radius: 5px;">
+            <h3 style="color: #0f766e; margin-top: 0;">Your Account Details</h3>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+              <li style="padding: 8px 0; border-bottom: 1px solid #ccfbf1;"><strong>Name:</strong> ${firstName} ${lastName}</li>
+              <li style="padding: 8px 0; border-bottom: 1px solid #ccfbf1;"><strong>Email:</strong> ${email}</li>
+              <li style="padding: 8px 0; border-bottom: 1px solid #ccfbf1;"><strong>Employee ID:</strong> ${employeeId || '—'}</li>
+              <li style="padding: 8px 0;"><strong>Department:</strong> ${department || '—'}</li>
+            </ul>
+          </div>
+          <div style="background-color: #eef2ff; border-left: 4px solid #4f46e5; padding: 20px; margin: 25px 0; border-radius: 5px;">
+            <h3 style="color: #4338ca; margin-top: 0;">Your Health Plan Details</h3>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+              <li style="padding: 8px 0; border-bottom: 1px solid #c7d2fe;"><strong>Plan:</strong> ${plan.planName}</li>
+              <li style="padding: 8px 0; border-bottom: 1px solid #c7d2fe;"><strong>Coverage:</strong> ${plan.coverageAmount}</li>
+              <li style="padding: 8px 0; border-bottom: 1px solid #c7d2fe;"><strong>Validity:</strong> ${plan.validity}</li>
+              <li style="padding: 8px 0; border-bottom: 1px solid #c7d2fe;"><strong>Sponsor:</strong> ${plan.sponsor}</li>
+              <li style="padding: 8px 0;"><strong>Employee Share / Co-pay:</strong> ${plan.copay}</li>
+            </ul>
+            <div style="margin-top: 16px; background: #ffffff; border: 1px solid #e0e7ff; border-radius: 8px; padding: 14px 16px;">
+              <p style="margin: 0 0 8px; color: #4338ca; font-weight: bold;">Included benefits</p>
+              <ul style="margin: 0; padding-left: 18px;">${planBenefitsHtml}</ul>
+            </div>
+          </div>
+          <div style="background-color: #fef3c7; border: 2px solid #fbbf24; padding: 20px; margin: 25px 0; border-radius: 8px;">
+            <h3 style="color: #92400e; margin-top: 0;">🔐 Your New Login Credentials</h3>
+            <p style="margin: 10px 0; color: #78350f;">
+              <strong>Login Email:</strong> ${email}<br>
+              <strong>Temporary Password:</strong> <code style="background: #fff; padding: 5px 10px; border-radius: 4px; font-size: 14px; color: #dc2626;">${temporaryPassword}</code>
+            </p>
+            <p style="margin: 15px 0 0; color: #92400e; font-size: 14px;">
+              ⚠️ <strong>This replaces any password you set previously.</strong> Please change it again after logging in.
+            </p>
+          </div>
+          <h3 style="color: #0f766e; margin-top: 30px;">What You Can Do</h3>
+          <ul style="font-size: 15px; line-height: 1.8; color: #374151;">
+            <li>📅 Book doctor appointments</li>
+            <li>🧪 Schedule lab tests at network labs</li>
+            <li>💊 Access pharmacy benefits</li>
+            <li>📋 View your health records</li>
+            <li>🏥 Access corporate health plan</li>
+          </ul>
+          <div style="text-align: center; margin: 35px 0;">
+            <a href="https://app.mediqzy.com/login" style="background-color: #b45309; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
+              Activate My Account →
+            </a>
+          </div>
+          <p style="font-size: 14px; color: #6b7280; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+            Need help? Contact your HR team or reach us at:<br>
+            📧 support@mediqzy.com &nbsp;|&nbsp; 📞 +91-1234567890
+          </p>
+        </div>
+        <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">
+          <p>© 2026 Mediqzy Healthcare. All rights reserved.</p>
+        </div>
+      </div>
+    `
+  };
+
+  // Apply custom template override if configured (same placeholder set as the welcome email)
+  const customTplReminder = await getCustomTemplate('corporate_employee_reminder', options);
+  if (customTplReminder) {
+    const vars = {
+      "{{firstName}}": firstName,
+      "{{lastName}}": lastName,
+      "{{email}}": email,
+      "{{companyName}}": companyName,
+      "{{employeeId}}": employeeId || "",
+      "{{department}}": department || "",
+      "{{temporaryPassword}}": temporaryPassword,
+      "{{password}}": temporaryPassword,
+      "{{username}}": loginIdentifier,
+      "{{userId}}": loginIdentifier,
+      "{{loginIdentifier}}": loginIdentifier,
+      "{{loginUrl}}": "https://app.mediqzy.com/login",
+      "{{planName}}": plan.planName,
+      "{{coverageAmount}}": plan.coverageAmount,
+      "{{planValidity}}": plan.validity,
+      "{{planSponsor}}": plan.sponsor,
+      "{{planCopay}}": plan.copay,
+      "{{planBenefits}}": planBenefitsText,
+      "[First Name]": firstName,
+      "[Last Name]": lastName,
+      "[Employee Name]": `${firstName || ""} ${lastName || ""}`.trim(),
+      "[Employee Email ID / Mobile Number]": loginIdentifier,
+      "[Username]": loginIdentifier,
+      "[User ID]": loginIdentifier,
+      "[Employee ID]": employeeId || "",
+      "[Temporary Password]": temporaryPassword,
+      "[Password]": temporaryPassword,
+      "[Company Name]": companyName,
+      "[Department]": department || "",
+      "[Login URL]": "https://app.mediqzy.com/login"
+    };
+    msg.subject = renderTemplate(customTplReminder.subject, vars);
+    msg.html = renderTemplate(customTplReminder.html_content, vars);
+  }
+
+  return msg;
+}
+
+export async function sendCorporateEmployeeReminderEmail(employeeData, temporaryPassword, options = {}) {
+  const msg = await buildCorporateEmployeeReminderEmail(employeeData, temporaryPassword, options);
+  try {
+    await sendMail(msg);
+    console.log("Reminder email sent to corporate employee: " + msg.to);
+    return { success: true, message: "Reminder email sent successfully" };
+  } catch (error) {
+    console.error("Error sending corporate employee reminder email:", error);
+    throw error;
+  }
+}
+
 export async function sendPreparedCorporateEmployeeWelcomeEmail({ to, subject, html }, options = {}) {
   if (!to || !subject || !html) {
     throw new Error("to, subject and html are required");
@@ -905,5 +1048,7 @@ export default {
   buildCorporateEmployeeWelcomeEmail,
   sendCorporateEmployeeWelcomeEmail,
   sendPreparedCorporateEmployeeWelcomeEmail,
+  buildCorporateEmployeeReminderEmail,
+  sendCorporateEmployeeReminderEmail,
   sendTeamWelcomeEmail
 };
