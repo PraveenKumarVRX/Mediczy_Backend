@@ -91,6 +91,57 @@ async function main() {
     fail('analytics channel filter', err.message);
   }
 
+  // 4b. Audit-fix backend wiring
+  try {
+    const teamRouteSrc = readFileSync(path.join(root, 'server/routes/team.route.js'), 'utf8');
+    const auditSnippets = [
+      "router.post('/communications/apply-stage'",
+      'ai_draft_id',
+      "assistMode !== \"create_template\"",
+      'source VARCHAR(30)',
+      'aiDraftId',
+    ];
+    for (const snippet of auditSnippets) {
+      if (!teamRouteSrc.includes(snippet)) throw new Error(`missing audit snippet: ${snippet}`);
+    }
+    pass('audit-fix backend wiring', `${auditSnippets.length} checks`);
+  } catch (err) {
+    fail('audit-fix backend wiring', err.message);
+  }
+
+  // 4c. AI email-arg + shared limits
+  try {
+    const argSrc = readFileSync(path.join(root, 'server/services/ai-email-arg.service.js'), 'utf8');
+    const limitsSrc = readFileSync(path.join(root, 'server/constants/communication-limits.js'), 'utf8');
+    if (!argSrc.includes('estimateRevenueImpact')) throw new Error('estimateRevenueImpact missing');
+    if (!argSrc.includes("channel === 'whatsapp'")) throw new Error('whatsapp channel branch missing');
+    if (!argSrc.includes("channel === 'sms'")) throw new Error('sms channel branch missing');
+    if (!limitsSrc.includes('email: { words: 150')) throw new Error('email limits mismatch');
+    pass('ai-email-arg + limits', 'channel drafts + revenue helper');
+  } catch (err) {
+    fail('ai-email-arg + limits', err.message);
+  }
+
+  // 4d. ai-email-arg runtime (rules fallback when LLM unavailable)
+  try {
+    const { analyzeEmailCommunication, estimateRevenueImpact } = await import('../../services/ai-email-arg.service.js');
+    const { getChannelLimits } = await import('../../constants/communication-limits.js');
+    const rev = estimateRevenueImpact({ employeeCount: 100 }, { premiumPerEmployee: 500 });
+    if (rev !== 50000) throw new Error(`revenue calc got ${rev}`);
+    const analysis = await analyzeEmailCommunication({
+      eventType: 'reply',
+      replyText: 'Yes interested, send demo slots',
+      entity: { companyName: 'TestCo' },
+    });
+    if (analysis.conversionSignal !== 'hot') throw new Error(`expected hot, got ${analysis.conversionSignal}`);
+    for (const ch of ['email', 'whatsapp', 'sms']) {
+      if (!getChannelLimits(ch).words) throw new Error(`no limits for ${ch}`);
+    }
+    pass('ai-email-arg runtime', `hot signal, revenue=${rev}`);
+  } catch (err) {
+    fail('ai-email-arg runtime', err.message);
+  }
+
   // 5. Frontend wiring
   try {
     const uiSrc = readFileSync(path.join(root, 'client/src/pages/team/TeamCorporateManagement.tsx'), 'utf8');
@@ -103,6 +154,13 @@ async function main() {
       'Review & Send',
       'error_message',
       "channel: communicationChannel",
+      'callUnifiedAiDraft',
+      'findUnresolvedPlaceholders',
+      'showAiSavePrompt',
+      'apply-stage',
+      'aiAssistMergeMode',
+      'resolvedComposerMessage',
+      'applyFollowUpFromAction',
     ];
     for (const snippet of required) {
       if (!uiSrc.includes(snippet)) throw new Error(`missing UI snippet: ${snippet}`);
