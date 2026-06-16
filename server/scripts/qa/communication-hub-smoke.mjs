@@ -9,6 +9,12 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import dotenv from 'dotenv';
 
+import {
+  ensureSmokeStack,
+  stopSmokeStack,
+  loadSmokeEnv,
+} from './lib/communication-hub-smoke-bootstrap.mjs';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '../../..');
 
@@ -18,9 +24,10 @@ for (const envFile of [
   path.join(root, '.env.testing'),
 ]) {
   if (existsSync(envFile)) {
-    dotenv.config({ path: envFile });
+    dotenv.config({ path: envFile, override: true });
   }
 }
+loadSmokeEnv(); // smoke overrides win for PORT/Postgres/bootstrap
 
 const results = [];
 let failed = 0;
@@ -170,43 +177,93 @@ async function main() {
     fail('TeamCorporateManagement.tsx wiring', err.message);
   }
 
-  // 6. Optional live API (if server running)
-  const base = process.env.SMOKE_API_BASE || 'http://127.0.0.1:5000';
+  // 6. Live API — bootstrap local Postgres + server when needed
+  let smokeChild = null;
   try {
-    const health = await fetch(`${base}/health`, { signal: AbortSignal.timeout(3000) });
-    if (!health.ok) throw new Error(`health status ${health.status}`);
-    pass('server health', base);
+    if (process.env.SMOKE_SKIP_STACK === '1') {
+      const base = process.env.SMOKE_API_BASE || `http://127.0.0.1:${process.env.PORT || 8000}`;
+      const health = await fetch(`${base}/health`, { signal: AbortSignal.timeout(5000) });
+      if (!health.ok) throw new Error(`health status ${health.status}`);
+      pass('server health', `${base} (external)`);
 
-    const teamEmail = process.env.TEAM_SMOKE_EMAIL;
-    const teamPass = process.env.TEAM_SMOKE_PASSWORD;
-    if (teamEmail && teamPass) {
+      const teamEmail = process.env.TEAM_SMOKE_EMAIL;
+      const teamPass = process.env.TEAM_SMOKE_PASSWORD;
+      if (!teamEmail || !teamPass) throw new Error('TEAM_SMOKE_EMAIL and TEAM_SMOKE_PASSWORD required when SMOKE_SKIP_STACK=1');
       const loginRes = await fetch(`${base}/api/team/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: teamEmail, password: teamPass }),
       });
       const loginJson = await loginRes.json();
-      const token = loginJson?.token || loginJson?.accessToken;
-      if (!token) throw new Error('team login failed — no token');
-      const headers = { Authorization: `Bearer ${token}` };
-
-      const ph = await fetch(`${base}/api/team/communications/provider-health`, { headers });
-      const phJson = await ph.json();
-      if (!ph.ok || !phJson?.email) throw new Error(`provider-health ${ph.status}`);
-      pass('GET /communications/provider-health', `email.healthy=${phJson.email.healthy}`);
-
-      const tpl = await fetch(`${base}/api/team/communications/templates?corporateId=1&channel=email`, { headers });
-      if (!tpl.ok) throw new Error(`templates list ${tpl.status}`);
-      pass('GET /communications/templates', `status ${tpl.status}`);
+      const token = loginJson?.token || loginJson?.accessToken || loginJson?.data?.accessToken;
+      if (!token) throw new Error(`team login failed — ${JSON.stringify(loginJson)}`);
+      await runLiveCommunicationApiChecks(base, token, pass, fail);
     } else {
-      pass('live API auth', 'skipped (set TEAM_SMOKE_EMAIL + TEAM_SMOKE_PASSWORD)');
+      const stack = await ensureSmokeStack();
+      smokeChild = stack.child;
+      pass('smoke stack bootstrap', stack.reused ? `reused ${stack.baseUrl}` : `started ${stack.baseUrl}`);
+
+      const loginRes = await fetch(`${stack.baseUrl}/api/team/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: process.env.TEAM_SMOKE_EMAIL,
+          password: process.env.TEAM_SMOKE_PASSWORD,
+        }),
+      });
+      const loginJson = await loginRes.json();
+      const loginToken = loginJson?.token || loginJson?.accessToken || loginJson?.data?.accessToken;
+      if (loginRes.ok && loginToken) {
+        pass('POST /team/login', 'password auth');
+        await runLiveCommunicationApiChecks(stack.baseUrl, loginToken, pass, fail);
+      } else {
+        pass('POST /team/login', `password auth unavailable (${loginJson?.message || loginRes.status}); using minted team token`);
+        await runLiveCommunicationApiChecks(stack.baseUrl, stack.token, pass, fail);
+      }
     }
   } catch (err) {
-    pass('live API', `skipped or unavailable (${err.message})`);
+    fail('live API', err.message || String(err));
+  } finally {
+    if (smokeChild && process.env.SMOKE_KEEP_SERVER !== '1') {
+      await stopSmokeStack(smokeChild);
+    }
   }
 
   console.log(`\nSummary: ${results.length - failed}/${results.length} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);
+}
+
+async function runLiveCommunicationApiChecks(base, token, pass, fail) {
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const corpId = parseInt(process.env.SMOKE_CORP_ID || '1', 10);
+
+  const health = await fetch(`${base}/health`, { signal: AbortSignal.timeout(5000) });
+  if (!health.ok) throw new Error(`health status ${health.status}`);
+  pass('server health', base);
+
+  const ph = await fetch(`${base}/api/team/communications/provider-health`, { headers });
+  const phJson = await ph.json();
+  if (!ph.ok || !phJson?.email) throw new Error(`provider-health ${ph.status} ${JSON.stringify(phJson)}`);
+  pass('GET /communications/provider-health', `email.configured=${phJson.email.configured} healthy=${phJson.email.healthy}`);
+
+  const tpl = await fetch(`${base}/api/team/communications/templates?corporateId=${corpId}&channel=email`, { headers });
+  const tplJson = await tpl.json();
+  if (!tpl.ok || !tplJson?.templates) throw new Error(`templates list ${tpl.status} ${JSON.stringify(tplJson)}`);
+  pass('GET /communications/templates', `email templates=${tplJson.templates?.email?.length ?? 0}`);
+
+  const dash = await fetch(`${base}/api/team/communications/ai-dashboard?corporateId=${corpId}&days=30`, { headers });
+  const dashJson = await dash.json();
+  if (!dash.ok || !dashJson?.data) throw new Error(`ai-dashboard ${dash.status} ${JSON.stringify(dashJson)}`);
+  pass('GET /communications/ai-dashboard', `records=${dashJson.data?.totals?.total ?? 0}`);
+
+  const stage = await fetch(`${base}/api/team/communications/apply-stage`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ corporateId: corpId, suggestedStage: 'qualified' }),
+  });
+  const stageJson = await stage.json();
+  if (!stage.ok || !stageJson?.data?.status) throw new Error(`apply-stage ${stage.status} ${JSON.stringify(stageJson)}`);
+  pass('POST /communications/apply-stage', `status=${stageJson.data.status}`);
 }
 
 main().catch((err) => {
