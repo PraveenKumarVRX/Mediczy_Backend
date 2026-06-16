@@ -25,7 +25,8 @@ import {
   Ticket,
   MessageCircle,
   Mail,
-  Briefcase
+  Briefcase,
+  Bot,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '@/utils/api';
@@ -72,6 +73,17 @@ const getPermissionsByCategory = (permissions: string[] = []) => {
 // A card is shown when the user has at least one permission matching its guard,
 // or when no guard is specified (always-visible cards like Profile Settings).
 const QUICK_ACTIONS = [
+  {
+    title: "Admin Copilot",
+    description: "AI ops assistant for admins",
+    icon: Bot,
+    color: "bg-gradient-to-br from-violet-500/10 to-purple-500/10 border-violet-500/20",
+    iconColor: "text-violet-600",
+    link: "/team/copilot",
+    pattern: "radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.08) 0%, transparent 50%)",
+    permissionGuard: null,
+    adminOnly: true,
+  },
   {
     title: "Profile Settings",
     description: "Update your information",
@@ -418,7 +430,7 @@ const TeamDashboard = ({ initialTab }: { initialTab?: 'dashboard' | 'emails' } =
                     </div>
                   </div>
 
-                  {(teamUser.role === 'Super Admin' || teamUser.role === 'Admin') && (
+                  {isAdmin && (
                     <Link
                       to="/admin"
                       className="group flex items-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 text-amber-700 hover:from-amber-500/20 hover:to-orange-500/20 transition-all duration-300"

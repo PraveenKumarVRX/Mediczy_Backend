@@ -41,6 +41,8 @@ const ROUTE_TO_DECISION = [
   
   // AI Brain orchestrator
   { method: 'POST', pattern: /^\/api\/v3\/ai-brain\/think/, type: AI_DECISION_TYPES.AI_QUERY },
+  { method: 'POST', pattern: /^\/api\/v3\/ai-brain\/agents\/process/, type: AI_DECISION_TYPES.AI_QUERY },
+  { method: 'POST', pattern: /^\/api\/v3\/ai-brain\/agents\/process\/stream/, type: AI_DECISION_TYPES.AI_QUERY },
   
   // Direct AI chat/query
   { method: 'POST', pattern: /^\/api\/ai\/chat/, type: AI_DECISION_TYPES.AI_QUERY },

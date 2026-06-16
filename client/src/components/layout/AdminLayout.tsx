@@ -54,6 +54,8 @@ import {
   RefreshCw,
   Key,
   BrainCircuit,
+  Bot,
+  MessageSquareText,
   Globe,
   Radio,
   Cpu,
@@ -418,9 +420,11 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
       icon: BrainCircuit,
       color: 'text-violet-500',
       items: [
+        { icon: Bot, label: 'Admin Copilot', path: '/admin/copilot', color: 'text-violet-600', bg: 'bg-violet-500/10', highlight: true, badge: 'New' },
         { icon: BrainCircuit, label: 'AI Analytics', path: '/admin/ai-analytics', color: 'text-violet-500', bg: 'bg-violet-500/10', highlight: true },
         { icon: Shield, label: 'AI Guard', path: '/admin/ai-guard', color: 'text-red-500', bg: 'bg-red-500/10', badge: 'New' },
         { icon: Shield, label: 'AI Governance', path: '/admin/ai-governance', color: 'text-blue-600', bg: 'bg-blue-500/10', badge: 'SaMD' },
+        { icon: MessageSquareText, label: 'Feedback Intelligence', path: '/admin/feedback-intelligence', color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
       ]
     },
     {

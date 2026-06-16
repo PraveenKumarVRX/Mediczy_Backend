@@ -3,7 +3,7 @@
 **Version:** 1.0  
 **Date:** 2026-06-14  
 **Classification:** Internal — Product & Engineering  
-**Status:** Planned (not yet implemented)  
+**Status:** Implemented (Phases 0–5) — 2026-06-16  
 **Owner:** Platform / AI Engineering  
 **Related docs:**
 - [CLAUDE.md](../../CLAUDE.md) — SaMD governance rules

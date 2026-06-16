@@ -9,5 +9,6 @@ import './wellness-tools.js';
 import './memory-tools.js';
 import './rag-tools.js';
 import './intelligence-tools.js';
+import './system-tools.js';
 
-export { getToolDefinitions, listTools, execute } from './index.js';
+export { getToolDefinitions, listTools, execute, getToolMeta } from './index.js';
