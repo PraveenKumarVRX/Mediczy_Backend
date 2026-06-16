@@ -46,6 +46,8 @@ import DrISHAChat from "@/components/DrISHAChat";
 import { drIshaAPI } from "@/services/drIsha";
 import { toast } from "sonner";
 import MainLayout from "@/components/layout/MainLayout";
+import api from "@/utils/api";
+import { useAuth } from "@/auth/AuthProvider";
 
 interface Medication {
   id: string;
@@ -65,6 +67,9 @@ interface Medication {
   startDate: string;
   endDate?: string;
   imageUrl?: string;
+  prescriptionId?: number;
+  medicationKey?: string;
+  fromPrescription?: boolean;
 }
 
 interface Reminder {
@@ -100,8 +105,19 @@ interface AdherenceData {
   score: number;
 }
 
+const frequencyToTimes = (frequency = ""): string[] => {
+  const f = frequency.toLowerCase();
+  if (f.includes("twice") || f.includes("bd") || f.includes("bid")) return ["08:00", "20:00"];
+  if (f.includes("thrice") || f.includes("tds") || f.includes("tid")) return ["08:00", "14:00", "20:00"];
+  if (f.includes("four") || f.includes("qid")) return ["06:00", "12:00", "18:00", "22:00"];
+  return ["08:00"];
+};
+
 export default function MedicinePage() {
+  const { currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState("medications");
+  const [overallAdherenceRate, setOverallAdherenceRate] = useState<number | null>(null);
+  const [loadingPrescriptions, setLoadingPrescriptions] = useState(false);
   const [medications, setMedications] = useState<Medication[]>(() => {
     const saved = localStorage.getItem('medications');
     return saved ? JSON.parse(saved) : [];
@@ -145,12 +161,100 @@ export default function MedicinePage() {
     localStorage.setItem('reminders', JSON.stringify(reminders));
   }, [medications, reminders]);
 
+  const loadPrescriptionMedications = async () => {
+    if (!currentUser?._id && !currentUser?.id) return;
+
+    setLoadingPrescriptions(true);
+    try {
+      const [rxRes, adherenceRes] = await Promise.all([
+        api.get("/prescriptions/patient"),
+        api.get("/prescriptions/patient/adherence-summary"),
+      ]);
+
+      const prescriptions = rxRes.data?.prescriptions || [];
+      if (typeof adherenceRes.data?.overallAdherenceRate === "number") {
+        setOverallAdherenceRate(adherenceRes.data.overallAdherenceRate);
+      }
+
+      const adherenceByRx = new Map(
+        (adherenceRes.data?.prescriptions || []).map((item: { prescriptionId: number; adherenceTracking?: Record<string, Record<string, boolean>> }) => [
+          item.prescriptionId,
+          item,
+        ])
+      );
+
+      const prescriptionMeds: Medication[] = [];
+      const newReminders: Reminder[] = [];
+      const today = new Date().toISOString().split("T")[0];
+
+      prescriptions.forEach((rx: {
+        id: number;
+        doctorName?: string;
+        followUpDate?: string;
+        issuedAt?: string;
+        medications?: Array<{ name: string; dosage?: string; dose?: string; frequency?: string; quantity?: string; instructions?: string }>;
+      }) => {
+        (rx.medications || []).forEach((med, index) => {
+          const medKey = `${med.name || "med"}-${index}`;
+          const id = `rx-${rx.id}-${index}`;
+          const timeOfDay = frequencyToTimes(med.frequency || "daily");
+          const tracking = adherenceByRx.get(rx.id)?.adherenceTracking?.[today] || {};
+
+          prescriptionMeds.push({
+            id,
+            prescriptionId: rx.id,
+            medicationKey: medKey,
+            fromPrescription: true,
+            name: med.name,
+            dosage: med.dosage || med.dose || "",
+            frequency: med.frequency || "daily",
+            timeOfDay,
+            remainingQuantity: Number.parseInt(med.quantity || "", 10) || 30,
+            refillThreshold: 5,
+            nextRefillDate: rx.followUpDate || new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
+            category: "Prescribed",
+            prescribedBy: rx.doctorName || "",
+            instructions: med.instructions || "",
+            startDate: rx.issuedAt?.split("T")[0] || today,
+          });
+
+          timeOfDay.forEach((time, tIndex) => {
+            newReminders.push({
+              id: `${id}-${tIndex}`,
+              medicationId: id,
+              time,
+              taken: tracking[medKey] === true,
+              date: today,
+            });
+          });
+        });
+      });
+
+      setMedications((prev) => {
+        const manual = prev.filter((m) => !m.fromPrescription);
+        return [...manual, ...prescriptionMeds];
+      });
+      setReminders((prev) => {
+        const manual = prev.filter((r) => !r.medicationId.startsWith("rx-"));
+        return [...manual, ...newReminders];
+      });
+    } catch (error) {
+      console.error("Failed to load prescriptions:", error);
+    } finally {
+      setLoadingPrescriptions(false);
+    }
+  };
+
   // Check for notifications permission on mount
   useEffect(() => {
     if ('Notification' in window) {
       Notification.requestPermission();
     }
   }, []);
+
+  useEffect(() => {
+    loadPrescriptionMedications();
+  }, [currentUser?._id, currentUser?.id]);
 
   // Check for reminders every minute
   useEffect(() => {
@@ -354,7 +458,9 @@ export default function MedicinePage() {
     };
   };
 
-  const takeMedication = (medicationId: string, timeSlot: string) => {
+  const takeMedication = async (medicationId: string, timeSlot: string) => {
+    const medication = medications.find((med) => med.id === medicationId);
+
     setMedications(prev => prev.map(med => {
       if (med.id === medicationId) {
         const newQuantity = med.remainingQuantity - 1;
@@ -395,10 +501,31 @@ export default function MedicinePage() {
       }
     });
 
+    if (medication?.prescriptionId && medication?.medicationKey) {
+      try {
+        await api.post(`/prescriptions/${medication.prescriptionId}/adherence`, {
+          medicationId: medication.medicationKey,
+          taken: true,
+        });
+        const { data } = await api.get("/prescriptions/patient/adherence-summary");
+        if (typeof data?.overallAdherenceRate === "number") {
+          setOverallAdherenceRate(data.overallAdherenceRate);
+        }
+      } catch (error) {
+        console.error("Adherence sync error:", error);
+        toast.error("Logged locally, but could not sync adherence to your care record");
+      }
+    }
+
     toast.success('Medication taken');
   };
 
   const deleteMedication = (id: string) => {
+    const med = medications.find((m) => m.id === id);
+    if (med?.fromPrescription) {
+      toast.error("Prescribed medications cannot be removed here. View them in My Prescriptions.");
+      return;
+    }
     setMedications(prev => prev.filter(med => med.id !== id));
     setReminders(prev => prev.filter(rem => rem.medicationId !== id));
     toast.success('Medication deleted');
@@ -442,6 +569,7 @@ export default function MedicinePage() {
   };
 
   const calculateAdherenceScore = () => {
+    if (overallAdherenceRate !== null) return overallAdherenceRate;
     if (adherenceData.length === 0) return 100;
     const totalMeds = adherenceData.reduce((sum, data) => sum + data.medications.length, 0);
     const takenMeds = adherenceData.reduce((sum, data) => 
@@ -468,6 +596,21 @@ export default function MedicinePage() {
               Medicine Management
             </h1>
             <div className="flex items-center space-x-3">
+              {loadingPrescriptions && (
+                <Badge variant="outline" className="border-[#00FFF3]/30 text-[#00FFF3]">
+                  Syncing prescriptions...
+                </Badge>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={loadPrescriptionMedications}
+                disabled={loadingPrescriptions}
+                className="border-[#00FFF3]/30 text-[#00FFF3] hover:bg-[#00FFF3]/10"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${loadingPrescriptions ? "animate-spin" : ""}`} />
+                Sync Rx
+              </Button>
               <Button
                 variant="outline"
                 onClick={() => setShowAIChat(true)}

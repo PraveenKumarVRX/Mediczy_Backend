@@ -12,6 +12,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/auth/AuthProvider";
+import api from "@/utils/api";
 import { appointmentsService } from "@/services/appointments.service";
 import {
   useAppointmentAnalytics,
@@ -39,8 +40,18 @@ import {
   CheckCircle,
   Timer,
   Navigation,
-  Zap
+  Zap,
+  Loader2,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type Appointment = PatientAppointment;
 
@@ -115,8 +126,10 @@ const Appointments = () => {
   const [reminderSettings, setReminderSettings] = useState({
     enabled: true,
     timeBeforeAppointment: 30, // minutes
-    channels: ['push', 'email']
+    channels: ['push', 'email'] as string[]
   });
+  const [savingReminderPrefs, setSavingReminderPrefs] = useState(false);
+  const [reminderPrefsLoaded, setReminderPrefsLoaded] = useState(false);
 
   // Memoized filtered lists — avoids calling filterAppointments() inside JSX render
   const upcomingAppointments = useMemo(
@@ -167,6 +180,69 @@ const Appointments = () => {
     }
 
     setShowAIChat(true);
+  };
+
+  useEffect(() => {
+    if (!patientUserId) return;
+
+    const loadReminderPreferences = async () => {
+      try {
+        const { data } = await api.get("/notifications/preferences");
+        const prefs = data?.preferences || {};
+        setReminderSettings({
+          enabled: prefs.appointmentReminders !== false,
+          timeBeforeAppointment: prefs.reminderMinutesBefore ?? 30,
+          channels: Array.isArray(prefs.reminderChannels) && prefs.reminderChannels.length
+            ? prefs.reminderChannels
+            : ['push', 'email'],
+        });
+      } catch (error) {
+        console.error("Failed to load reminder preferences:", error);
+      } finally {
+        setReminderPrefsLoaded(true);
+      }
+    };
+
+    loadReminderPreferences();
+  }, [patientUserId]);
+
+  const saveReminderPreferences = async (nextSettings = reminderSettings) => {
+    setSavingReminderPrefs(true);
+    try {
+      await api.put("/notifications/preferences", {
+        preferences: {
+          appointmentReminders: nextSettings.enabled,
+          reminderMinutesBefore: nextSettings.timeBeforeAppointment,
+          reminderChannels: nextSettings.channels,
+          medicationReminders: nextSettings.enabled,
+          followUpReminders: nextSettings.enabled,
+        },
+      });
+      toast({
+        title: "Reminder preferences saved",
+        description: "Your appointment reminder settings have been updated.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Could not save preferences",
+        description: error?.response?.data?.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingReminderPrefs(false);
+    }
+  };
+
+  const toggleReminderChannel = (channel: string) => {
+    setReminderSettings((prev) => {
+      const hasChannel = prev.channels.includes(channel);
+      const channels = hasChannel
+        ? prev.channels.filter((c) => c !== channel)
+        : [...prev.channels, channel];
+      const next = { ...prev, channels: channels.length ? channels : [channel] };
+      void saveReminderPreferences(next);
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -741,6 +817,90 @@ const Appointments = () => {
             </div>
           </div>
         </div>
+
+        <Card className="border-[#00FFF3]/20 bg-[#0f1d30]">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between text-[#00FFF3] text-lg">
+              <span className="flex items-center gap-2">
+                {reminderSettings.enabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
+                Appointment Reminders
+              </span>
+              {savingReminderPrefs && <Loader2 className="h-4 w-4 animate-spin text-[#00FFF3]" />}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label htmlFor="appointment-reminders" className="text-gray-200">Enable reminders</Label>
+                <p className="text-xs text-gray-400 mt-1">Get notified before upcoming consultations.</p>
+              </div>
+              <Switch
+                id="appointment-reminders"
+                checked={reminderSettings.enabled}
+                disabled={!reminderPrefsLoaded || savingReminderPrefs}
+                onCheckedChange={(enabled) => {
+                  const next = { ...reminderSettings, enabled };
+                  setReminderSettings(next);
+                  void saveReminderPreferences(next);
+                }}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-gray-200">Remind me before</Label>
+                <Select
+                  value={String(reminderSettings.timeBeforeAppointment)}
+                  disabled={!reminderSettings.enabled || !reminderPrefsLoaded || savingReminderPrefs}
+                  onValueChange={(value) => {
+                    const next = { ...reminderSettings, timeBeforeAppointment: Number(value) };
+                    setReminderSettings(next);
+                    void saveReminderPreferences(next);
+                  }}
+                >
+                  <SelectTrigger className="border-[#00FFF3]/30 bg-[#1A2333] text-gray-200">
+                    <SelectValue placeholder="Select timing" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="15">15 minutes before</SelectItem>
+                    <SelectItem value="30">30 minutes before</SelectItem>
+                    <SelectItem value="60">1 hour before</SelectItem>
+                    <SelectItem value="120">2 hours before</SelectItem>
+                    <SelectItem value="1440">1 day before</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-gray-200">Notification channels</Label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { id: "push", label: "Push" },
+                    { id: "email", label: "Email" },
+                    { id: "sms", label: "SMS" },
+                    { id: "inApp", label: "In-app" },
+                  ].map((channel) => (
+                    <Button
+                      key={channel.id}
+                      type="button"
+                      size="sm"
+                      variant={reminderSettings.channels.includes(channel.id) ? "default" : "outline"}
+                      className={
+                        reminderSettings.channels.includes(channel.id)
+                          ? "bg-[#00FFF3] text-black hover:bg-[#00E6D6]"
+                          : "border-[#00FFF3]/30 text-[#00FFF3]"
+                      }
+                      disabled={!reminderSettings.enabled || !reminderPrefsLoaded || savingReminderPrefs}
+                      onClick={() => toggleReminderChannel(channel.id)}
+                    >
+                      {channel.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-3 bg-[#1A2333] p-1 rounded-lg">

@@ -62,9 +62,75 @@ import {
   Brain
 } from 'lucide-react';
 import api from '@/utils/api';
-import { downloadReport } from '@/utils/reportActions';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
+
+interface VitalsRecord {
+  id: number;
+  bp?: string | null;
+  heart_rate?: number | null;
+  temperature?: number | null;
+  spo2?: number | null;
+  weight?: number | null;
+  blood_glucose?: number | null;
+  notes?: string | null;
+  recorded_at: string;
+}
+
+const emptyVitalsForm = {
+  bloodPressureSystolic: '',
+  bloodPressureDiastolic: '',
+  heartRate: '',
+  temperature: '',
+  spO2: '',
+  weight: '',
+  bloodSugar: '',
+  notes: ''
+};
+
+function vitalsRecordsToDisplayCards(records: VitalsRecord[]): VitalSign[] {
+  const latest = records[0];
+  if (!latest) return [];
+
+  const cards: VitalSign[] = [];
+  let id = 1;
+
+  if (latest.bp) {
+    const [systolic, diastolic] = latest.bp.split('/');
+    cards.push({
+      id: id++,
+      type: 'Blood Pressure',
+      value: Number(systolic) || 0,
+      unit: `/${diastolic || '?'} mmHg`,
+      recordedAt: latest.recorded_at,
+      notes: latest.notes || undefined,
+    });
+  }
+  if (latest.heart_rate != null) {
+    cards.push({ id: id++, type: 'Heart Rate', value: latest.heart_rate, unit: ' bpm', recordedAt: latest.recorded_at });
+  }
+  if (latest.temperature != null) {
+    cards.push({ id: id++, type: 'Temperature', value: latest.temperature, unit: '°F', recordedAt: latest.recorded_at });
+  }
+  if (latest.spo2 != null) {
+    cards.push({ id: id++, type: 'SpO2', value: latest.spo2, unit: '%', recordedAt: latest.recorded_at });
+  }
+  if (latest.weight != null) {
+    cards.push({ id: id++, type: 'Weight', value: latest.weight, unit: ' kg', recordedAt: latest.recorded_at });
+  }
+  if (latest.blood_glucose != null) {
+    cards.push({
+      id: id++,
+      type: 'Blood Sugar',
+      value: latest.blood_glucose,
+      unit: ' mg/dL',
+      recordedAt: latest.recorded_at,
+      notes: latest.notes || undefined,
+    });
+  }
+
+  return cards;
+}
 
 interface Patient {
   id: number;
@@ -85,7 +151,7 @@ interface Patient {
 interface VitalSign {
   id: number;
   type: string;
-  value: number | string;
+  value: number;
   unit: string;
   recordedAt: string;
   notes?: string;
@@ -136,25 +202,6 @@ interface PatientReport {
   createdAt: string;
 }
 
-// Maps one patient_vitals row (multiple measurements) into separate VitalSign entries
-const transformVitalsRows = (rows: any[]): VitalSign[] => {
-  const entries: VitalSign[] = [];
-  rows.forEach((row) => {
-    const recordedAt = row.recorded_at || row.recordedAt;
-    const push = (type: string, value: any, unit: string) => {
-      if (value === null || value === undefined || value === '') return;
-      entries.push({ id: entries.length + 1, type, value, unit, recordedAt, notes: row.notes || undefined });
-    };
-    if (row.bp) entries.push({ id: entries.length + 1, type: 'Blood Pressure', value: row.bp, unit: 'mmHg', recordedAt, notes: row.notes || undefined });
-    push('Heart Rate', row.heart_rate, 'bpm');
-    push('Temperature', row.temperature, '°F');
-    push('SpO2', row.spo2, '%');
-    push('Weight', row.weight, 'kg');
-    push('Blood Sugar', row.blood_glucose, 'mg/dL');
-  });
-  return entries;
-};
-
 export default function PatientEMR() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -165,16 +212,8 @@ export default function PatientEMR() {
   
   // Record Vitals Dialog State
   const [isRecordVitalsOpen, setIsRecordVitalsOpen] = useState(false);
-  const [vitalsForm, setVitalsForm] = useState({
-    bloodPressureSystolic: '',
-    bloodPressureDiastolic: '',
-    heartRate: '',
-    temperature: '',
-    spO2: '',
-    weight: '',
-    bloodSugar: '',
-    notes: ''
-  });
+  const [vitalsForm, setVitalsForm] = useState(emptyVitalsForm);
+  const [savingVitals, setSavingVitals] = useState(false);
   
   // Lab Filter State
   const [isLabFilterOpen, setIsLabFilterOpen] = useState(false);
@@ -203,17 +242,23 @@ export default function PatientEMR() {
 
   const patients = patientsData?.patients || [];
 
-  // Fetch vitals history for the selected patient
-  const { data: vitalsData, refetch: refetchVitals } = useQuery({
+  const { data: vitalsRecords = [], isLoading: loadingVitals, refetch: refetchVitals } = useQuery({
     queryKey: ['patient-vitals', selectedPatient?.id],
     queryFn: async () => {
-      const response = await api.get(`/doctors/my-patients/${selectedPatient!.id}/vitals-history`);
-      return response.data;
+      const response = await api.get(`/doctors/my-patients/${selectedPatient!.id}/vitals-history?limit=50`);
+      return (response.data?.vitals ?? []) as VitalsRecord[];
     },
-    enabled: !!selectedPatient,
+    enabled: !!selectedPatient?.id,
   });
 
-  const vitalsList: VitalSign[] = transformVitalsRows(vitalsData?.vitals || []);
+  const displayVitals = vitalsRecordsToDisplayCards(vitalsRecords);
+
+  useEffect(() => {
+    const patientId = searchParams.get('patientId');
+    if (!patientId || patients.length === 0) return;
+    const patient = patients.find((p: Patient) => String(p.id) === patientId);
+    if (patient) setSelectedPatient(patient);
+  }, [searchParams, patients]);
 
   // Filter patients based on search
   const filteredPatients = patients.filter((p: Patient) => {
@@ -247,7 +292,6 @@ export default function PatientEMR() {
     fetchReports();
   }, [selectedPatient]);
 
-  // Mock data for selected patient's records (vitals now come from the real API — see vitalsList)
   const mockPrescriptions: Prescription[] = selectedPatient ? [
     {
       id: 1,
@@ -324,8 +368,8 @@ export default function PatientEMR() {
 
   const handleSaveVitals = async () => {
     if (!selectedPatient) return;
+
     try {
-      // Validate at least one vital is entered
       const hasData = Object.entries(vitalsForm).some(([key, value]) =>
         key !== 'notes' && value !== ''
       );
@@ -339,40 +383,22 @@ export default function PatientEMR() {
         return;
       }
 
-      const { bloodPressureSystolic, bloodPressureDiastolic, heartRate, temperature, spO2, weight, bloodSugar, notes } = vitalsForm;
+      const payload: Record<string, string | number> = { temperatureUnit: 'F' };
 
-      const response = await api.post(`/doctors/my-patients/${selectedPatient.id}/vitals`, {
-        bp: bloodPressureSystolic && bloodPressureDiastolic ? `${bloodPressureSystolic}/${bloodPressureDiastolic}` : undefined,
-        heartRate: heartRate || undefined,
-        temperature: temperature || undefined,
-        temperatureUnit: 'F',
-        spo2: spO2 || undefined,
-        weight: weight || undefined,
-        bloodGlucose: bloodSugar || undefined,
-        notes: notes || undefined,
-      });
-
-      const savedVitals = response.data?.vitals;
-      if (savedVitals) {
-        queryClient.setQueryData(['patient-vitals', selectedPatient.id], (oldData: any) => ({
-          ...(oldData || {}),
-          vitals: [savedVitals, ...((oldData?.vitals || []).filter((row: any) => row.id !== savedVitals.id))],
-        }));
-        queryClient.setQueryData(['patient-vitals', String(selectedPatient.id)], (oldRows: any[] = []) => [
-          savedVitals,
-          ...oldRows.filter((row: any) => row.id !== savedVitals.id),
-        ]);
+      if (vitalsForm.bloodPressureSystolic && vitalsForm.bloodPressureDiastolic) {
+        payload.bp = `${vitalsForm.bloodPressureSystolic}/${vitalsForm.bloodPressureDiastolic}`;
       }
+      if (vitalsForm.heartRate) payload.heartRate = Number(vitalsForm.heartRate);
+      if (vitalsForm.temperature) payload.temperature = Number(vitalsForm.temperature);
+      if (vitalsForm.spO2) payload.spo2 = Number(vitalsForm.spO2);
+      if (vitalsForm.weight) payload.weight = Number(vitalsForm.weight);
+      if (vitalsForm.bloodSugar) payload.bloodGlucose = Number(vitalsForm.bloodSugar);
+      if (vitalsForm.notes) payload.notes = vitalsForm.notes;
 
-      // Refresh all doctor-side summaries that can display latest vitals.
-      await Promise.all([
-        refetchVitals(),
-        refetchPatients(),
-        queryClient.invalidateQueries({ queryKey: ['patient-vitals'] }),
-        queryClient.invalidateQueries({ queryKey: ['doctor-patients-emr'] }),
-        queryClient.invalidateQueries({ queryKey: ['health-monitoring-patients'] }),
-        queryClient.invalidateQueries({ queryKey: ['remote-monitoring-patients'] }),
-      ]);
+      setSavingVitals(true);
+      await api.post(`/doctors/my-patients/${selectedPatient.id}/vitals`, payload);
+
+      await queryClient.invalidateQueries({ queryKey: ['patient-vitals', selectedPatient.id] });
 
       toast({
         title: 'Success',
@@ -380,23 +406,15 @@ export default function PatientEMR() {
       });
 
       setIsRecordVitalsOpen(false);
-      setVitalsForm({
-        bloodPressureSystolic: '',
-        bloodPressureDiastolic: '',
-        heartRate: '',
-        temperature: '',
-        spO2: '',
-        weight: '',
-        bloodSugar: '',
-        notes: ''
-      });
+      setVitalsForm(emptyVitalsForm);
     } catch (error: any) {
-      const message = error.response?.data?.errors?.join(', ') || error.response?.data?.message || 'Failed to record vitals';
       toast({
         title: 'Error',
-        description: message,
+        description: error.response?.data?.message || 'Failed to record vitals',
         variant: 'destructive'
       });
+    } finally {
+      setSavingVitals(false);
     }
   };
 
@@ -447,7 +465,7 @@ export default function PatientEMR() {
         gender: selectedPatient.gender,
         bloodGroup: selectedPatient.bloodGroup,
       },
-      vitals: vitalsList,
+      vitals: vitalsRecords,
       prescriptions: mockPrescriptions,
       labReports: filteredLabReports,
       appointments: mockAppointments,
@@ -495,7 +513,10 @@ export default function PatientEMR() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => refetchPatients()}>
+            <Button variant="outline" size="sm" onClick={() => {
+              refetchPatients();
+              if (selectedPatient) refetchVitals();
+            }}>
               <RefreshCw className="w-4 h-4 mr-2" />
               Refresh
             </Button>
@@ -733,15 +754,23 @@ export default function PatientEMR() {
                       </CardHeader>
                       <CardContent>
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                          {vitalsList.slice(0, 6).map((vital) => (
-                            <div key={vital.id} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                              {getVitalIcon(vital.type)}
-                              <div>
-                                <p className="text-sm text-gray-500">{vital.type}</p>
-                                <p className="font-semibold">{vital.value}{vital.unit}</p>
-                              </div>
+                          {loadingVitals ? (
+                            <div className="col-span-full flex items-center justify-center py-4">
+                              <Loader2 className="w-5 h-5 animate-spin text-primary" />
                             </div>
-                          ))}
+                          ) : displayVitals.length === 0 ? (
+                            <p className="col-span-full text-sm text-gray-500 text-center py-4">No vitals recorded yet</p>
+                          ) : (
+                            displayVitals.slice(0, 6).map((vital) => (
+                              <div key={vital.id} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                {getVitalIcon(vital.type)}
+                                <div>
+                                  <p className="text-sm text-gray-500">{vital.type}</p>
+                                  <p className="font-semibold">{vital.value}{vital.unit}</p>
+                                </div>
+                              </div>
+                            ))
+                          )}
                         </div>
                       </CardContent>
                     </Card>
@@ -786,24 +815,60 @@ export default function PatientEMR() {
                       </CardHeader>
                       <CardContent>
                         <div className="space-y-4">
-                          {vitalsList.length === 0 ? (
-                            <p className="text-sm text-gray-500 text-center py-6">No vitals recorded yet</p>
+                          {loadingVitals ? (
+                            <div className="flex items-center justify-center py-8">
+                              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                            </div>
+                          ) : vitalsRecords.length === 0 ? (
+                            <div className="text-center py-8 text-gray-500">
+                              <Activity className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                              <p>No vitals recorded yet</p>
+                            </div>
                           ) : (
-                            vitalsList.map((vital) => (
-                              <div key={vital.id} className="flex items-center justify-between p-4 border rounded-lg">
-                                <div className="flex items-center gap-3">
-                                  {getVitalIcon(vital.type)}
-                                  <div>
-                                    <p className="font-medium">{vital.type}</p>
-                                    <p className="text-sm text-gray-500">
-                                      {format(new Date(vital.recordedAt), 'dd MMM yyyy, hh:mm a')}
-                                    </p>
-                                  </div>
+                            vitalsRecords.map((record) => (
+                              <div key={record.id} className="p-4 border rounded-lg space-y-2">
+                                <p className="text-sm font-medium text-gray-500">
+                                  {format(new Date(record.recorded_at), 'dd MMM yyyy, hh:mm a')}
+                                </p>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                  {record.bp && (
+                                    <div className="flex items-center gap-2">
+                                      <Heart className="w-4 h-4 text-red-500" />
+                                      <span className="text-sm">BP: <strong>{record.bp} mmHg</strong></span>
+                                    </div>
+                                  )}
+                                  {record.heart_rate != null && (
+                                    <div className="flex items-center gap-2">
+                                      <Activity className="w-4 h-4 text-pink-500" />
+                                      <span className="text-sm">HR: <strong>{record.heart_rate} bpm</strong></span>
+                                    </div>
+                                  )}
+                                  {record.temperature != null && (
+                                    <div className="flex items-center gap-2">
+                                      <Thermometer className="w-4 h-4 text-orange-500" />
+                                      <span className="text-sm">Temp: <strong>{record.temperature}°F</strong></span>
+                                    </div>
+                                  )}
+                                  {record.spo2 != null && (
+                                    <div className="flex items-center gap-2">
+                                      <Wind className="w-4 h-4 text-blue-500" />
+                                      <span className="text-sm">SpO2: <strong>{record.spo2}%</strong></span>
+                                    </div>
+                                  )}
+                                  {record.weight != null && (
+                                    <div className="flex items-center gap-2">
+                                      <Activity className="w-4 h-4 text-gray-500" />
+                                      <span className="text-sm">Weight: <strong>{record.weight} kg</strong></span>
+                                    </div>
+                                  )}
+                                  {record.blood_glucose != null && (
+                                    <div className="flex items-center gap-2">
+                                      <Droplets className="w-4 h-4 text-purple-500" />
+                                      <span className="text-sm">Glucose: <strong>{record.blood_glucose} mg/dL</strong></span>
+                                    </div>
+                                  )}
                                 </div>
-                                <div className="text-right">
-                                  <p className="text-xl font-bold">{vital.value}{vital.unit}</p>
-                                  {vital.notes && <p className="text-sm text-gray-500">{vital.notes}</p>}
-                                </div>
+                                {record.notes && <p className="text-sm text-gray-500">{record.notes}</p>}
                               </div>
                             ))
                           )}
@@ -982,7 +1047,9 @@ export default function PatientEMR() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => downloadReport({ reportId: report.id, fileName: report.fileName || `report-${report.id}` })}
+                                  onClick={() => {
+                                    window.open(`/api/reports/${report.id}/download`, '_blank');
+                                  }}
                                   title="Download Report"
                                 >
                                   <Download className="w-4 h-4" />
@@ -1185,8 +1252,15 @@ export default function PatientEMR() {
             <Button variant="outline" onClick={() => setIsRecordVitalsOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSaveVitals}>
-              Save Vitals
+            <Button onClick={handleSaveVitals} disabled={savingVitals}>
+              {savingVitals ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save Vitals'
+              )}
             </Button>
           </div>
         </DialogContent>

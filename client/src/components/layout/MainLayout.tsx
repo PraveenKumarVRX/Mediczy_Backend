@@ -32,6 +32,8 @@ import VideoCallNotification from "@/components/notifications/VideoCallNotificat
 import { PageTransition } from "@/components/PageTransition";
 import ChatApplet from "@/components/chat/ChatApplet";
 import GlobalSearch from "@/components/GlobalSearch";
+import SupportChatWidget from "@/components/SupportChatWidget";
+import { FloatingDrISHA } from "@/components/FloatingDrISHA";
 import aiHealthServices from "@/services/aiHealthServices";
 import { lazy, Suspense } from "react";
 import { useVideoCall } from "@/context/VideoCallContext";
@@ -88,6 +90,14 @@ const MainLayout = ({ children }: MainLayoutProps) => {
   const assistantData = assistantDataRaw ? JSON.parse(assistantDataRaw) : null;
   const isAssistantRoute = location.pathname.startsWith('/assistant');
   const isAssistantUser = !!assistantToken && isAssistantRoute;
+  const isPatientUser = Boolean(
+    currentUser &&
+    !isTeamUser &&
+    !isAdminUser &&
+    !isNurseRoute &&
+    !isAssistantUser &&
+    userType !== 'doctor'
+  );
 
   // Auto-minimize an active video call when the user navigates to a new page
   // so they can browse freely without the full-screen overlay blocking navigation.
@@ -477,6 +487,14 @@ const MainLayout = ({ children }: MainLayoutProps) => {
       
       {/* Team Chat Communication Module */}
       {isTeamUser && <ChatApplet />}
+
+      {/* Patient omnichannel + AI assistant */}
+      {isPatientUser && (
+        <>
+          <SupportChatWidget />
+          <FloatingDrISHA />
+        </>
+      )}
 
       {/* Persistent video call overlay — survives page navigation */}
       {videoCall.liveKitConnection && (

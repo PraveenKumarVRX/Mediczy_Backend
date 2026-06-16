@@ -151,8 +151,12 @@ const DoctorAppointmentSettings = () => {
         description: "Your appointment configuration has been updated successfully.",
       });
       queryClient.invalidateQueries({ queryKey: ["appointmentConfig"] });
+      // "doctorSlots" feeds the patient-facing booking page (DoctorListBooking.tsx);
+      // "doctor-settings" feeds a separate settings page (DoctorSettings.tsx).
+      // Invalidate both so neither shows stale availability after a save.
       queryClient.removeQueries({ queryKey: ["doctorSlots"] });
       queryClient.invalidateQueries({ queryKey: ["doctorSlots"] });
+      queryClient.invalidateQueries({ queryKey: ["doctor-settings"] });
     },
     onError: (error: any) => {
       toast({

@@ -962,9 +962,11 @@ router.get("/:doctorId/user-slots", async (req, res) => {
       });
 
       const bookedSlotTimes = bookedAppointments.map(apt => apt.appointmentTime);
-      const normalizeSlot = (slot) => String(slot || '').replace(/\s*-\s*/, ' - ');
-      const blockedSlots = new Set((daySchedule.blockedSlots || []).map(normalizeSlot));
-      const isSlotBlocked = (slot) => blockedSlots.has(normalizeSlot(slot));
+      // Strip all whitespace before comparing so "10:00-10:30", "10:00 - 10:30",
+      // and "10:00- 10:30" are all treated as the same slot.
+      const normalizeSlotKey = (slot) => String(slot || '').replace(/\s+/g, '');
+      const blockedSlots = daySchedule.blockedSlots || [];
+      const isSlotBlocked = (slot) => blockedSlots.some((blocked) => normalizeSlotKey(blocked) === normalizeSlotKey(slot));
 
       // Generate online slots
       const onlineSlots = daySchedule.online?.enabled

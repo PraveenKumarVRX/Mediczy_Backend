@@ -9,24 +9,15 @@ import api from '@/utils/api';
 
 interface VitalsRow {
   id: number;
-  recorded_at?: string;
-  recordedAt?: string;
-  bp?: string;
-  blood_pressure_systolic?: number;
-  blood_pressure_diastolic?: number;
-  heart_rate?: number;
-  spo2?: number;
-  temperature?: number;
-  blood_sugar?: number;
-  blood_glucose?: number;
+  recorded_at: string;
+  bp?: string | null;
+  heart_rate?: number | null;
+  spo2?: number | null;
+  temperature?: number | null;
+  blood_glucose?: number | null;
+  weight?: number | null;
+  notes?: string | null;
 }
-
-const splitBloodPressure = (v: VitalsRow) => {
-  if (v.blood_pressure_systolic != null && v.blood_pressure_diastolic != null) {
-    return `${v.blood_pressure_systolic}/${v.blood_pressure_diastolic}`;
-  }
-  return v.bp || null;
-};
 
 interface RecordRow {
   id: number;
@@ -124,25 +115,29 @@ export default function PatientInfoPane({ patientId, patientName }: Props) {
               <EmptyState label="No vitals recorded" />
             ) : (
               <div className="space-y-2 mt-3">
-                {vitalsData.map((v) => (
+                {vitalsData.map((v) => {
+                  const [bpSystolic, bpDiastolic] = v.bp?.split('/') ?? [];
+                  return (
                   <Card key={v.id} className="p-3 bg-slate-50 dark:bg-slate-800/50 border-0 shadow-none">
                     <p className="text-[11px] text-slate-400 mb-1">
-                      {new Date(v.recorded_at || v.recordedAt || Date.now()).toLocaleDateString()}
+                      {new Date(v.recorded_at).toLocaleDateString()}
                     </p>
-                    {splitBloodPressure(v) && (
+                    {bpSystolic && bpDiastolic && (
                       <div className="flex justify-between items-center py-1 border-b border-slate-100 dark:border-slate-700 last:border-0">
                         <span className="text-xs text-slate-500">BP</span>
                         <span className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                          {splitBloodPressure(v)} mmHg
+                          {bpSystolic}/{bpDiastolic} mmHg
                         </span>
                       </div>
                     )}
                     <VitalValue label="Heart Rate" value={v.heart_rate} unit="bpm" />
                     <VitalValue label="SpO₂" value={v.spo2} unit="%" />
                     <VitalValue label="Temp" value={v.temperature} unit="°F" />
-                    <VitalValue label="Blood Sugar" value={v.blood_glucose ?? v.blood_sugar} unit="mg/dL" />
+                    <VitalValue label="Blood Sugar" value={v.blood_glucose} unit="mg/dL" />
+                    <VitalValue label="Weight" value={v.weight} unit="kg" />
                   </Card>
-                ))}
+                  );
+                })}
               </div>
             )}
           </ScrollArea>

@@ -24,19 +24,10 @@ jobs:
           script: |
             set -e
             cd /home/ubuntu/Mediczy
+            git fetch origin main
             git pull origin main
-            echo "✓ Code updated"
-
-            # Restart backend with updated env vars
-            pm2 restart mediczy-server --update-env
-            echo "✓ Backend restarted"
-
-            # Rebuild client bundle so UI changes are never shipped stale
-            cd client
-            npm ci --prefer-offline
-            npm run build
-            cd ..
-            echo "✓ Client bundle rebuilt"
+            bash scripts/deploy/deploy-full-prod-s3.sh
+            echo "✓ Full prod + S3 deployment complete"
 
       - name: Post-deployment health check
         run: |

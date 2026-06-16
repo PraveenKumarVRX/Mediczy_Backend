@@ -1039,6 +1039,64 @@ export async function sendTeamWelcomeEmail(userData, temporaryPassword) {
   }
 }
 
+/**
+ * Shared transactional email path for corporate outreach and other non-welcome sends.
+ */
+export async function sendTransactionalEmail({ to, subject, html, text, fromName }) {
+  const bodyHtml = html || `<pre style="font-family:Segoe UI,Arial,sans-serif;white-space:pre-wrap;">${String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
+  await sendMail({
+    to,
+    subject,
+    html: bodyHtml,
+    from: fromName ? { name: fromName, email: undefined } : undefined,
+  });
+  return { success: true };
+}
+
+/**
+ * Lightweight provider health for communication hub dashboards.
+ */
+export async function getEmailProviderStatus() {
+  try {
+    const smtp = await resolveSmtpConfig();
+    const hasAuth = Boolean(smtp?.auth?.user && smtp?.auth?.pass);
+    if (!hasAuth) {
+      return {
+        configured: false,
+        healthy: false,
+        host: smtp?.host || null,
+        fromEmail: smtp?.fromEmail || null,
+        provider: 'none',
+        error: 'SMTP credentials are not configured',
+      };
+    }
+
+    const { transporter } = await createSmtpTransport();
+    await transporter.verify();
+
+    const host = String(smtp.host || '').toLowerCase();
+    const provider = isBrevoHost(host) ? 'brevo' : (shouldUseSes() ? 'ses' : 'smtp');
+
+    return {
+      configured: true,
+      healthy: true,
+      host: smtp.host,
+      fromEmail: smtp.fromEmail || smtp.auth.user,
+      provider,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      configured: Boolean(process.env.SMTP_USER),
+      healthy: false,
+      host: process.env.SMTP_HOST || null,
+      fromEmail: process.env.SMTP_FROM || process.env.SMTP_USER || null,
+      provider: 'smtp',
+      error: error?.message || 'Email provider verification failed',
+    };
+  }
+}
+
 export default {
   generateSecurePassword,
   hashPassword,
@@ -1050,5 +1108,7 @@ export default {
   sendPreparedCorporateEmployeeWelcomeEmail,
   buildCorporateEmployeeReminderEmail,
   sendCorporateEmployeeReminderEmail,
-  sendTeamWelcomeEmail
+  sendTeamWelcomeEmail,
+  sendTransactionalEmail,
+  getEmailProviderStatus,
 };

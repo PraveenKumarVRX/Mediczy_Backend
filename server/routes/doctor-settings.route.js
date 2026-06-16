@@ -491,9 +491,11 @@ router.get('/available-slots/:doctorId', async (req, res) => {
     const daySchedule = weeklySchedule[dayName];
     const slotDuration = doctor.slotDuration || 15;
     const offDays = doctor.offDays || ['sunday'];
-    const normalizeSlot = (slot) => String(slot || '').replace(/\s*-\s*/, ' - ');
-    const blockedSlots = new Set((daySchedule?.blockedSlots || []).map(normalizeSlot));
-    const isBlockedSlot = (slot) => blockedSlots.has(normalizeSlot(slot));
+    // Strip all whitespace before comparing so "10:00-10:30", "10:00 - 10:30",
+    // and "10:00- 10:30" are all treated as the same slot.
+    const normalizeSlotKey = (slot) => String(slot || '').replace(/\s+/g, '');
+    const blockedSlots = daySchedule?.blockedSlots || [];
+    const isBlockedSlot = (slot) => blockedSlots.some((blocked) => normalizeSlotKey(blocked) === normalizeSlotKey(slot));
 
     // Check if it's an off day
     if (offDays.includes(dayName) || daySchedule?.isOff) {
