@@ -65,6 +65,11 @@ import {
 import api from '@/utils/api';
 import { useNavigate } from 'react-router-dom';
 import CorporateWelcomeEmailBatchDialog, { WelcomeEmailDraft } from './CorporateWelcomeEmailBatchDialog';
+import {
+  CHANNEL_COMMUNICATION_LIMITS,
+  findUnresolvedPlaceholders,
+  getChannelLimits,
+} from '@/constants/communicationLimits';
 
 interface Corporate {
   id: number;
@@ -387,6 +392,19 @@ interface CommunicationTemplate {
   subject?: string;
   content: string;
   category: string;
+  source?: 'preset' | 'manual' | 'ai' | 'saved';
+}
+
+interface AiDraftMetadata {
+  cta?: string;
+  recommendedSendTime?: string;
+  followUpAfterHours?: number;
+  pipelineStageSuggestion?: string | null;
+  revenueAngle?: string | null;
+  approvalRequired?: boolean;
+  reasons?: string[];
+  revenueImpact?: number;
+  preheader?: string;
 }
 
 const packageTypes = ['Basic', 'Standard', 'Premium', 'Enterprise', 'Custom'];
@@ -472,6 +490,7 @@ const defaultCommunicationTemplates: Record<CommunicationChannel, CommunicationT
       id: 'email-welcome',
       name: 'Corporate Welcome',
       category: 'Onboarding',
+      source: 'preset',
       subject: 'Welcome to SmartHealth Corporate Program - {{companyName}}',
       content:
         'Hello {{contactPerson}},\n\nWelcome to SmartHealth corporate wellness program for {{companyName}}. Your corporate ID is {{corporateId}}.\n\nWe are excited to support your {{employeeCount}} employees with preventive care and wellness services.\n\nRegards,\nTeam SmartHealth',
@@ -480,6 +499,7 @@ const defaultCommunicationTemplates: Record<CommunicationChannel, CommunicationT
       id: 'email-renewal',
       name: 'Plan Renewal Reminder',
       category: 'Plans',
+      source: 'preset',
       subject: 'Plan Renewal Reminder - {{companyName}}',
       content:
         'Dear {{contactPerson}},\n\nThis is a reminder to review and renew the {{packageType}} package for {{companyName}} (Corporate ID: {{corporateId}}).\n\nPlease connect with us to avoid interruption in employee benefits.\n\nRegards,\nTeam SmartHealth',
@@ -490,6 +510,7 @@ const defaultCommunicationTemplates: Record<CommunicationChannel, CommunicationT
       id: 'wa-health-camp',
       name: 'Health Camp Invite',
       category: 'Wellness',
+      source: 'preset',
       content:
         'Hi {{contactPerson}}, this is Team SmartHealth. A health camp slot is available for {{companyName}}. Reply YES to schedule for your {{employeeCount}} employees.',
     },
@@ -497,6 +518,7 @@ const defaultCommunicationTemplates: Record<CommunicationChannel, CommunicationT
       id: 'wa-opd-update',
       name: 'OPD Benefit Update',
       category: 'Benefits',
+      source: 'preset',
       content:
         'Hello {{contactPerson}}, OPD benefits under {{packageType}} plan are now active for {{companyName}} ({{corporateId}}). Need a quick orientation call?',
     },
@@ -506,6 +528,7 @@ const defaultCommunicationTemplates: Record<CommunicationChannel, CommunicationT
       id: 'sms-onboarded',
       name: 'Onboarding Confirmation',
       category: 'Onboarding',
+      source: 'preset',
       content:
         'SmartHealth: {{companyName}} onboarded successfully. Corporate ID: {{corporateId}}. HR SPOC: {{contactPerson}}.',
     },
@@ -513,6 +536,7 @@ const defaultCommunicationTemplates: Record<CommunicationChannel, CommunicationT
       id: 'sms-action-required',
       name: 'Action Required',
       category: 'Operations',
+      source: 'preset',
       content:
         'SmartHealth: Please review pending corporate updates for {{companyName}} ({{corporateId}}). Contact support for assistance.',
     },
@@ -567,15 +591,15 @@ const aiTemplatePresets = [
 ];
 
 const channelWordLimits: Record<CommunicationChannel, number> = {
-  email: 150,
-  whatsapp: 80,
-  sms: 35,
+  email: CHANNEL_COMMUNICATION_LIMITS.email.words,
+  whatsapp: CHANNEL_COMMUNICATION_LIMITS.whatsapp.words,
+  sms: CHANNEL_COMMUNICATION_LIMITS.sms.words,
 };
 
 const channelCharacterLimits: Record<CommunicationChannel, number> = {
-  email: 1200,
-  whatsapp: 420,
-  sms: 160,
+  email: CHANNEL_COMMUNICATION_LIMITS.email.chars,
+  whatsapp: CHANNEL_COMMUNICATION_LIMITS.whatsapp.chars,
+  sms: CHANNEL_COMMUNICATION_LIMITS.sms.chars,
 };
 
 const TeamCorporateManagement = () => {
@@ -615,6 +639,13 @@ const TeamCorporateManagement = () => {
   const [aiReplyText, setAiReplyText] = useState("");
   const [aiReplyMonitoring, setAiReplyMonitoring] = useState(false);
   const [aiTemplateWriting, setAiTemplateWriting] = useState(false);
+  const [aiDraftMetadata, setAiDraftMetadata] = useState<AiDraftMetadata | null>(null);
+  const [aiAssistMergeMode, setAiAssistMergeMode] = useState<'replace' | 'append'>('replace');
+  const [showAiSavePrompt, setShowAiSavePrompt] = useState(false);
+  const [pendingAiDraftForSave, setPendingAiDraftForSave] = useState<{ subject?: string; message: string; sourceId?: string | number | null } | null>(null);
+  const [complianceApproved, setComplianceApproved] = useState(false);
+  const [showResolvedPreview, setShowResolvedPreview] = useState(true);
+  const [applyingCorporateStage, setApplyingCorporateStage] = useState(false);
   const [aiTemplateConfig, setAiTemplateConfig] = useState({
     objective: 'follow_up',
     tone: 'professional',
@@ -923,6 +954,7 @@ const TeamCorporateManagement = () => {
             category: template.category || 'General',
             subject: template.subject,
             content: template.content,
+            source: template.source || 'manual',
           }, { headers })
         )
       )
@@ -939,9 +971,9 @@ const TeamCorporateManagement = () => {
       });
       if (data?.templates) {
         setCommunicationTemplates((prev) => ({
-          email: data.templates.email?.length ? data.templates.email : prev.email,
-          whatsapp: data.templates.whatsapp?.length ? data.templates.whatsapp : prev.whatsapp,
-          sms: data.templates.sms?.length ? data.templates.sms : prev.sms,
+          email: data.templates.email?.length ? data.templates.email.map((t: CommunicationTemplate) => ({ ...t, source: t.source || 'manual' })) : prev.email,
+          whatsapp: data.templates.whatsapp?.length ? data.templates.whatsapp.map((t: CommunicationTemplate) => ({ ...t, source: t.source || 'manual' })) : prev.whatsapp,
+          sms: data.templates.sms?.length ? data.templates.sms.map((t: CommunicationTemplate) => ({ ...t, source: t.source || 'manual' })) : prev.sms,
         }));
       }
     } catch (error) {
@@ -1078,7 +1110,101 @@ const TeamCorporateManagement = () => {
   const composerWithinWordLimit = composerMessageWordCount <= templateWordLimit;
   const composerCopyLint = lintTemplateCopy(communicationChannel, communicationComposer.subject || '', communicationComposer.message || '');
   const composerHasBlockingLint = composerCopyLint.blocking.length > 0;
+  const unresolvedComposerPlaceholders = findUnresolvedPlaceholders(
+    communicationComposer.subject || '',
+    communicationComposer.message || '',
+  );
+  const resolvedComposerSubject = communicationChannel === 'email'
+    ? applyCommunicationPlaceholders(communicationComposer.subject || '')
+    : '';
+  const resolvedComposerMessage = applyCommunicationPlaceholders(communicationComposer.message || '');
+  const requiresComplianceApproval = aiDraftMetadata?.approvalRequired === true;
   const availableAiPresets = aiTemplatePresets.filter((preset) => preset.channels.includes(communicationChannel));
+
+  const getTemplateSourceLabel = (source?: CommunicationTemplate['source']) => {
+    switch (source) {
+      case 'preset': return 'Preset';
+      case 'ai': return 'AI Draft';
+      case 'saved': return 'Saved Draft';
+      default: return 'Manual';
+    }
+  };
+
+  const getTemplateSourceBadgeClass = (source?: CommunicationTemplate['source']) => {
+    switch (source) {
+      case 'preset': return 'bg-slate-100 text-slate-700';
+      case 'ai': return 'bg-violet-100 text-violet-700';
+      case 'saved': return 'bg-sky-100 text-sky-700';
+      default: return 'bg-muted text-foreground/80';
+    }
+  };
+
+  const computeEstimatedRevenue = () => {
+    const activePlan = corporatePlans.find((plan) => plan.status?.toLowerCase() === 'active') || corporatePlans[0];
+    if (!activePlan) return 0;
+    const enrolled = activePlan.enrolled || selectedCorporate?.employeeCount || 0;
+    return Math.round((activePlan.price || 0) * enrolled);
+  };
+
+  const buildAiRevenuePayload = () => {
+    const activePlan = corporatePlans.find((plan) => plan.status?.toLowerCase() === 'active') || corporatePlans[0];
+    return {
+      estimatedRevenue: computeEstimatedRevenue(),
+      planPrice: activePlan?.price,
+      enrolledEmployees: activePlan?.enrolled || selectedCorporate?.employeeCount,
+      premiumPerEmployee: activePlan?.price,
+    };
+  };
+
+  const extractAiDraftMetadata = (draft: any): AiDraftMetadata => ({
+    cta: draft?.cta,
+    recommendedSendTime: draft?.recommendedSendTime,
+    followUpAfterHours: draft?.followUpAfterHours,
+    pipelineStageSuggestion: draft?.pipelineStageSuggestion,
+    revenueAngle: draft?.revenueAngle,
+    approvalRequired: draft?.approvalRequired,
+    reasons: draft?.reasons,
+    revenueImpact: draft?.revenueImpact,
+    preheader: draft?.preheader,
+  });
+
+  const callUnifiedAiDraft = async (opts: {
+    assistMode: 'augment' | 'create_template';
+    intent?: string;
+    persistDraft?: boolean;
+    overrideSubject?: string;
+    overrideMessage?: string;
+  }) => {
+    if (!selectedCorporate?.id) throw new Error('Select a corporate account first.');
+    const currentSubject = opts.overrideSubject ?? (opts.assistMode === 'create_template' ? communicationDraft.subject : communicationComposer.subject);
+    const currentMessage = opts.overrideMessage ?? (opts.assistMode === 'create_template' ? communicationDraft.content : communicationComposer.message);
+    const { data } = await api.post('/team/communications/ai-draft', {
+      corporateId: selectedCorporate.id,
+      corporate: selectedCorporate,
+      channel: communicationChannel,
+      intent: opts.intent || (communicationChannel === 'email' ? 'corporate_plan_follow_up' : 'corporate_short_outreach'),
+      tone: aiTemplateConfig.tone,
+      assistMode: opts.assistMode,
+      persistDraft: opts.persistDraft ?? opts.assistMode !== 'create_template',
+      ...buildAiRevenuePayload(),
+      context: {
+        assistMode: opts.assistMode,
+        channel: communicationChannel,
+        recipientMode: communicationRecipientMode,
+        employeeCount: selectedCorporate.employeeCount,
+        packageType: selectedCorporate.packageType,
+        currentSubject,
+        currentMessage,
+        objective: aiTemplateConfig.objective,
+        cta: aiTemplateConfig.cta,
+        customInstruction: aiTemplateConfig.customInstruction,
+        editInstruction: aiTemplateConfig.editInstruction,
+        templateName: communicationDraft.name,
+        templateCategory: communicationDraft.category,
+      },
+    }, { headers: teamAuthHeaders() });
+    return data?.data;
+  };
 
   const applyAiTemplatePreset = (presetKey: string) => {
     const preset = availableAiPresets.find((item) => item.key === presetKey);
@@ -1138,40 +1264,35 @@ const TeamCorporateManagement = () => {
     if (!selectedCorporate) return;
     setAiTemplateWriting(true);
     try {
-      const channelHint = communicationChannel === 'email' ? 'professional email' : communicationChannel === 'whatsapp' ? 'WhatsApp message' : 'SMS text';
-      const nameHint = communicationDraft.name || 'Corporate Outreach';
-      const categoryHint = communicationDraft.category || 'General';
-      const objectiveHint = aiTemplateConfig.objective.replace(/_/g, ' ');
-      const ctaHint = aiTemplateConfig.cta.replace(/_/g, ' ');
-      const prompt = `Write a concise, professional ${channelHint} template for a healthcare benefits platform.
-Corporate: ${selectedCorporate.companyName} | Industry: ${selectedCorporate.industry || 'General'} | Employees: ${selectedCorporate.employeeCount || 0} | Plan: ${selectedCorporate.packageType || 'Standard'}
-Template name: "${nameHint}" | Category: ${categoryHint}
-Objective: ${objectiveHint} | Tone: ${aiTemplateConfig.tone} | CTA: ${ctaHint}
-Use these exact placeholders where appropriate: {{companyName}}, {{contactPerson}}, {{employeeCount}}, {{industry}}, {{packageType}}
-${aiTemplateConfig.customInstruction ? `Additional instruction: ${aiTemplateConfig.customInstruction}` : ''}
-${communicationChannel === 'email'
-  ? `Return only this format:\nSubject: <subject line>\nBody: <body text>`
-  : 'Return only the message body text.'}
-Do not add intros, explanations, markdown, code fences, or signatures unless explicitly requested.
-Keep it warm, professional, and action-oriented. Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the body.`;
+      const intentMap: Record<string, string> = {
+        follow_up: 'corporate_plan_follow_up',
+        onboarding: 'corporate_onboarding',
+        renewal: 'corporate_renewal',
+        upsell: 'corporate_upsell',
+        reactivation: 'corporate_reactivation',
+      };
+      const result = await callUnifiedAiDraft({
+        assistMode: 'create_template',
+        intent: intentMap[aiTemplateConfig.objective] || 'corporate_plan_follow_up',
+        persistDraft: false,
+      });
+      const draft = result?.draft;
+      if (!draft?.body && !draft?.message) throw new Error('No content returned');
 
-      const res = await api.post('/team/ai/generate', { prompt, maxTokens: 300 });
-      const text: string = res.data?.data?.content || res.data?.content || '';
-      if (!text) throw new Error('No content returned');
-
-      const parsed = parseAiTemplateOutput(text);
-      const limited = fitCopyToChannelLimits(parsed.content, templateWordLimit, templateCharLimit);
-      setCommunicationDraft(prev => ({
+      const body = draft.body || draft.message || '';
+      const limited = fitCopyToChannelLimits(body, templateWordLimit, templateCharLimit);
+      setCommunicationDraft((prev) => ({
         ...prev,
-        subject: communicationChannel === 'email' ? (parsed.subject || prev.subject) : prev.subject,
+        subject: communicationChannel === 'email' ? (draft.subject || prev.subject) : prev.subject,
         content: limited.text,
       }));
+      setAiDraftMetadata(extractAiDraftMetadata(draft));
       if (limited.truncated) {
         toast({ title: 'AI content trimmed', description: `Content was auto-fitted to ${templateWordLimit} words and ${templateCharLimit} characters for ${communicationChannel.toUpperCase()}.` });
       }
-      toast({ title: 'AI template generated', description: 'Review and edit before saving.' });
+      toast({ title: 'AI template generated', description: 'Review and save when ready. Placeholders are preserved for reuse.' });
     } catch (err: any) {
-      toast({ variant: 'destructive', title: 'AI failed', description: err.message || 'Could not generate template' });
+      toast({ variant: 'destructive', title: 'AI failed', description: err?.response?.data?.message || err.message || 'Could not generate template' });
     } finally {
       setAiTemplateWriting(false);
     }
@@ -1181,28 +1302,22 @@ Keep it warm, professional, and action-oriented. Maximum ${templateWordLimit} wo
     if (!selectedCorporate) return;
     setAiTemplateWriting(true);
     try {
-      const channelHint = communicationChannel === 'email' ? 'professional email' : communicationChannel === 'whatsapp' ? 'WhatsApp message' : 'SMS text';
-      const prompt = `Rewrite this ${channelHint} template for better conversion while preserving placeholders exactly.
-Corporate: ${selectedCorporate.companyName} | Industry: ${selectedCorporate.industry || 'General'} | Plan: ${selectedCorporate.packageType || 'Standard'}
-Template name: "${template.name}" | Category: ${template.category}
-Current subject: ${template.subject || 'N/A'}
-Current content:
-${template.content}
-
-Edit instruction: ${aiTemplateConfig.editInstruction || 'Improve clarity, readability, and CTA strength.'}
-Tone: ${aiTemplateConfig.tone} | Objective: ${aiTemplateConfig.objective.replace(/_/g, ' ')} | CTA: ${aiTemplateConfig.cta.replace(/_/g, ' ')}
-Preserve placeholders exactly if present: {{companyName}}, {{contactPerson}}, {{corporateId}}, {{employeeCount}}, {{industry}}, {{packageType}}
-${communicationChannel === 'email'
-  ? `Return only this format:\nSubject: <subject line>\nBody: <body text>`
-  : 'Return only the message body text.'}
-Do not add intros, explanations, markdown, code fences, or signatures unless explicitly requested.
-Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the body.`;
-
-      const res = await api.post('/team/ai/generate', { prompt, maxTokens: 350 });
-      const text: string = res.data?.data?.content || res.data?.content || '';
-      if (!text) throw new Error('No content returned');
-      const parsed = parseAiTemplateOutput(text);
-      const limited = fitCopyToChannelLimits(parsed.content, templateWordLimit, templateCharLimit);
+      setCommunicationDraft({
+        name: template.name,
+        category: template.category || 'General',
+        subject: template.subject || '',
+        content: template.content || '',
+      });
+      const result = await callUnifiedAiDraft({
+        assistMode: 'augment',
+        intent: `corporate_${aiTemplateConfig.objective}`,
+        persistDraft: false,
+        overrideSubject: template.subject,
+        overrideMessage: template.content,
+      });
+      const draft = result?.draft;
+      const body = draft?.body || draft?.message || template.content;
+      const limited = fitCopyToChannelLimits(body, templateWordLimit, templateCharLimit);
 
       const next: Record<CommunicationChannel, CommunicationTemplate[]> = {
         ...communicationTemplates,
@@ -1210,9 +1325,10 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
           item.id === template.id
             ? {
                 ...item,
-                subject: communicationChannel === 'email' ? (parsed.subject || item.subject || '') : undefined,
+                subject: communicationChannel === 'email' ? (draft?.subject || item.subject || '') : undefined,
                 content: limited.text || item.content,
                 category: item.category || 'General',
+                source: item.source === 'preset' ? 'preset' : 'manual',
               }
             : item
         ),
@@ -1222,16 +1338,17 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       if (editingCommunicationTemplateId === template.id) {
         setCommunicationDraft((prev) => ({
           ...prev,
-          subject: communicationChannel === 'email' ? (parsed.subject || prev.subject) : prev.subject,
+          subject: communicationChannel === 'email' ? (draft?.subject || prev.subject) : prev.subject,
           content: limited.text || prev.content,
         }));
       }
+      setAiDraftMetadata(extractAiDraftMetadata(draft));
       if (limited.truncated) {
         toast({ title: 'AI content trimmed', description: `Edited template was auto-fitted to ${templateWordLimit} words and ${templateCharLimit} characters.` });
       }
       toast({ title: 'Template AI-edited', description: 'Existing template updated with AI improvements.' });
     } catch (err: any) {
-      toast({ variant: 'destructive', title: 'AI edit failed', description: err.message || 'Could not edit template with AI' });
+      toast({ variant: 'destructive', title: 'AI edit failed', description: err?.response?.data?.message || err.message || 'Could not edit template with AI' });
     } finally {
       setAiTemplateWriting(false);
     }
@@ -1295,6 +1412,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
           category: nextDraft.category || 'General',
           subject: communicationChannel === 'email' ? nextDraft.subject : undefined,
           content: nextDraft.content,
+          source: 'manual',
         },
         ...communicationTemplates[communicationChannel],
       ],
@@ -1342,6 +1460,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       category: 'AI Draft',
       subject: communicationChannel === 'email' ? (draft.subject || communicationComposer.subject || '') : undefined,
       content,
+      source: 'ai',
     };
     const existing = communicationTemplates[communicationChannel].filter((item) => item.id !== templateId);
     const next: Record<CommunicationChannel, CommunicationTemplate[]> = {
@@ -1364,6 +1483,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       category: 'Saved Draft',
       subject: communicationChannel === 'email' ? communicationComposer.subject : undefined,
       content: communicationComposer.message,
+      source: 'saved',
     };
     const next: Record<CommunicationChannel, CommunicationTemplate[]> = {
       ...communicationTemplates,
@@ -1382,6 +1502,14 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       subject: communicationChannel === 'email' ? (action.subject || prev.subject || '') : prev.subject,
       message: action.body || action.message || action.nextAction?.message || prev.message,
     }));
+    setAiDraftMetadata({
+      pipelineStageSuggestion: action.suggestedStage,
+      revenueImpact: action.revenueImpact,
+      cta: action.nextAction?.type,
+      recommendedSendTime: action.urgency === 'high' ? 'asap' : 'next_business_morning',
+      approvalRequired: true,
+    });
+    setComplianceApproved(false);
     const matchingTemplate = communicationTemplates[communicationChannel].find((item) => item.id === `ai-${action.id}`);
     if (matchingTemplate) setSelectedTemplateId(matchingTemplate.id);
     setCommunicationHubTab('campaign');
@@ -1494,6 +1622,8 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     subject: communicationChannel !== 'email' || communicationComposer.subject.trim().length > 0,
     message: communicationComposer.message.trim().length > 0,
     limits: composerWithinWordLimit && !composerHasBlockingLint,
+    placeholders: unresolvedComposerPlaceholders.length === 0,
+    compliance: !requiresComplianceApproval || complianceApproved,
     provider: communicationChannel === 'email'
       ? providerHealth?.email?.healthy === true
       : communicationChannel === 'whatsapp'
@@ -1504,7 +1634,9 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
   const isCommunicationReadyToSend = readinessChecks.recipient
     && readinessChecks.subject
     && readinessChecks.message
-    && readinessChecks.limits;
+    && readinessChecks.limits
+    && readinessChecks.placeholders
+    && readinessChecks.compliance;
   const communicationHealthTone = communicationSuccessRate >= 80 ? 'healthy' : communicationSuccessRate >= 50 ? 'watch' : 'critical';
 
   const fetchCommunicationInsights = async (opts?: { days?: string }) => {
@@ -1568,50 +1700,93 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     return token ? { Authorization: `Bearer ${token}` } : undefined;
   };
 
-  const mergeAssistiveMessage = (currentMessage: string, aiMessage: string) => {
+  const mergeAssistiveMessage = (currentMessage: string, aiMessage: string, mode: 'replace' | 'append' = aiAssistMergeMode) => {
     const current = (currentMessage || '').trim();
     const suggestion = (aiMessage || '').trim();
     if (!suggestion) return current;
-    if (!current) return suggestion;
+    if (!current || mode === 'replace') return suggestion;
     if (current === suggestion) return current;
-    return `${current}\n\n---\nAI Suggestion:\n${suggestion}`;
+    return `${current}\n\n${suggestion}`;
   };
 
   const generateAiCommunicationDraft = async () => {
     if (!selectedCorporate?.id) return;
     setAiCommunicationLoading(true);
     try {
-      const { data } = await api.post("/team/communications/ai-draft", {
-        corporateId: selectedCorporate.id,
-        corporate: selectedCorporate,
-        channel: communicationChannel,
-        intent: communicationChannel === "email" ? "corporate_plan_follow_up" : "corporate_short_outreach",
-        tone: "professional",
-        context: {
-          assistMode: "augment",
-          recipientMode: communicationRecipientMode,
-          employeeCount: selectedCorporate.employeeCount,
-          packageType: selectedCorporate.packageType,
-          currentSubject: communicationComposer.subject,
-          currentMessage: communicationComposer.message,
-        },
-      }, { headers: teamAuthHeaders() });
-      const draft = data?.data?.draft;
+      const result = await callUnifiedAiDraft({ assistMode: 'augment', persistDraft: true });
+      const draft = result?.draft;
       if (draft) {
+        const aiMessage = draft.message || draft.body || '';
         setCommunicationComposer((prev) => ({
           ...prev,
-          subject: communicationChannel === "email" ? (prev.subject || draft.subject || '') : prev.subject,
-          message: mergeAssistiveMessage(prev.message, draft.message || draft.body || ''),
+          subject: communicationChannel === 'email' ? mergeAssistiveMessage(prev.subject, draft.subject || '', 'replace') : prev.subject,
+          message: mergeAssistiveMessage(prev.message, aiMessage),
         }));
-        setAiCommunicationDraftId(data?.data?.id || null);
-        storeAiDraftAsTemplate(draft, data?.data?.id || null);
-        toast({ title: "AI assist applied", description: "Your draft was preserved and AI suggestions were added. Template saved to the library." });
+        setAiCommunicationDraftId(result?.id || null);
+        setAiDraftMetadata(extractAiDraftMetadata(draft));
+        setComplianceApproved(false);
+        setPendingAiDraftForSave({
+          subject: draft.subject,
+          message: aiMessage,
+          sourceId: result?.id || null,
+        });
+        setShowAiSavePrompt(true);
+        toast({
+          title: 'AI assist applied',
+          description: aiAssistMergeMode === 'replace'
+            ? 'Draft updated. Review AI insights, then save to library if needed.'
+            : 'AI suggestion added below your draft. Review before sending.',
+        });
         await fetchCommunicationInsights();
       }
     } catch (error: any) {
-      toast({ variant: "destructive", title: "AI draft failed", description: error?.response?.data?.message || "Unable to generate draft right now." });
+      toast({ variant: 'destructive', title: 'AI draft failed', description: error?.response?.data?.message || 'Unable to generate draft right now.' });
     } finally {
       setAiCommunicationLoading(false);
+    }
+  };
+
+  const applyFollowUpFromAction = (action: any) => {
+    if (!action) return;
+    const followUpMessage = action.nextAction?.message || action.body || action.message || '';
+    setCommunicationComposer((prev) => ({
+      ...prev,
+      subject: communicationChannel === 'email' ? (action.subject || prev.subject || '') : prev.subject,
+      message: followUpMessage || prev.message,
+    }));
+    setAiCommunicationDraftId(action.id || null);
+    if (action.nextAction || action.suggestedStage) {
+      setAiDraftMetadata({
+        pipelineStageSuggestion: action.suggestedStage,
+        revenueImpact: action.revenueImpact,
+        cta: action.nextAction?.type,
+        recommendedSendTime: action.urgency === 'high' ? 'asap' : 'next_business_morning',
+        approvalRequired: true,
+      });
+    }
+    setCommunicationHubTab('campaign');
+    setTimeout(() => communicationComposerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+    toast({ title: 'Follow-up applied', description: 'Composer updated from AI pipeline action.' });
+  };
+
+  const applyCorporateStageFromAi = async (suggestedStage?: string | null) => {
+    if (!selectedCorporate?.id || !suggestedStage) return;
+    setApplyingCorporateStage(true);
+    try {
+      const { data } = await api.post('/team/communications/apply-stage', {
+        corporateId: selectedCorporate.id,
+        suggestedStage,
+      }, { headers: teamAuthHeaders() });
+      const updated = data?.data;
+      if (updated?.status) {
+        setSelectedCorporate((prev) => prev ? { ...prev, status: updated.status } : prev);
+        setCorporates((prev) => prev.map((corp) => corp.id === selectedCorporate.id ? { ...corp, status: updated.status } : corp));
+      }
+      toast({ title: 'Pipeline stage updated', description: `Corporate status set to ${updated?.status || suggestedStage}.` });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Stage update failed', description: error?.response?.data?.message || 'Could not update corporate stage.' });
+    } finally {
+      setApplyingCorporateStage(false);
     }
   };
 
@@ -1627,6 +1802,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         subject: communicationComposer.subject,
         message: communicationComposer.message,
         replyText: aiReplyText,
+        ...buildAiRevenuePayload(),
       }, { headers: teamAuthHeaders() });
       setAiReplyText("");
       toast({ title: "Reply monitored", description: "AI updated engagement and next action." });
@@ -1665,6 +1841,23 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       return;
     }
 
+    if (unresolvedComposerPlaceholders.length > 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Unresolved placeholders',
+        description: `Replace or apply a template to resolve: ${unresolvedComposerPlaceholders.map((p) => `{{${p}}}`).join(', ')}`,
+      });
+      return;
+    }
+    if (requiresComplianceApproval && !complianceApproved) {
+      toast({
+        variant: 'destructive',
+        title: 'Compliance review required',
+        description: 'Confirm you have reviewed this AI-assisted message before sending.',
+      });
+      return;
+    }
+
     const selectedTemplate = communicationTemplates[communicationChannel].find((template) => template.id === selectedTemplateId);
 
     setSendingCommunication(true);
@@ -1680,6 +1873,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         templateName: selectedTemplate?.name || undefined,
         companyName: selectedCorporate?.companyName,
         corporateId: selectedCorporate?.id,
+        aiDraftId: aiCommunicationDraftId || undefined,
       }, {
         headers: (() => {
           const token = localStorage.getItem('teamToken');
@@ -1739,10 +1933,17 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
 
   const openSendReview = () => {
     if (!isCommunicationReadyToSend) {
+      const blockers: string[] = [];
+      if (!readinessChecks.recipient) blockers.push('recipient');
+      if (!readinessChecks.subject) blockers.push('subject');
+      if (!readinessChecks.message) blockers.push('message');
+      if (!readinessChecks.limits) blockers.push('length/validation');
+      if (!readinessChecks.placeholders) blockers.push(`unresolved placeholders (${unresolvedComposerPlaceholders.join(', ')})`);
+      if (!readinessChecks.compliance) blockers.push('compliance approval');
       toast({
         variant: 'destructive',
         title: 'Not ready to send',
-        description: 'Complete recipient, subject (email), and message before reviewing.',
+        description: `Complete: ${blockers.join(', ')}.`,
       });
       return;
     }
@@ -5748,9 +5949,6 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                       <Button variant="outline" onClick={() => fetchCommunicationInsights()} disabled={communicationLogsLoading}>
                         <RefreshCw className={`mr-2 h-4 w-4 ${communicationLogsLoading ? 'animate-spin' : ''}`} />Refresh Data
                       </Button>
-                      <Button onClick={generateAiCommunicationDraft} disabled={aiCommunicationLoading}>
-                        <Brain className="mr-2 h-4 w-4" />{aiCommunicationLoading ? 'Assisting...' : 'AI Assist & Store'}
-                      </Button>
                     </div>
                   </div>
                 </CardHeader>
@@ -5767,12 +5965,14 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                           {isCommunicationReadyToSend ? 'Ready to review & send' : 'Incomplete'}
                         </Badge>
                       </div>
-                      <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
+                      <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-7">
                         {[
                           { key: 'recipient', label: `Recipient (${audienceCount})`, ok: readinessChecks.recipient },
                           { key: 'subject', label: communicationChannel === 'email' ? 'Email subject' : 'Subject (n/a)', ok: readinessChecks.subject },
                           { key: 'message', label: 'Message body', ok: readinessChecks.message },
                           { key: 'limits', label: 'Length & validation', ok: readinessChecks.limits },
+                          { key: 'placeholders', label: 'Placeholders resolved', ok: readinessChecks.placeholders },
+                          { key: 'compliance', label: 'Compliance review', ok: readinessChecks.compliance },
                           { key: 'provider', label: `${communicationChannel.toUpperCase()} provider`, ok: readinessChecks.provider },
                         ].map((item) => (
                           <div key={item.key} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${item.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300'}`}>
@@ -5831,6 +6031,16 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                             <Badge className={isCommunicationReadyToSend ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700 dark:text-amber-400'}>
                               {isCommunicationReadyToSend ? 'Ready to Send' : 'Missing Required Inputs'}
                             </Badge>
+                            <Select value={aiAssistMergeMode} onValueChange={(value) => setAiAssistMergeMode(value as 'replace' | 'append')}>
+                              <SelectTrigger className="h-8 w-[130px]"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="replace">AI: Replace</SelectItem>
+                                <SelectItem value="append">AI: Append</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Button size="sm" variant="outline" onClick={generateAiCommunicationDraft} disabled={aiCommunicationLoading}>
+                              <Brain className="mr-2 h-4 w-4" />{aiCommunicationLoading ? 'Assisting...' : 'AI Assist'}
+                            </Button>
                           </div>
                         </div>
                       </CardHeader>
@@ -6001,6 +6211,30 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                               ))}
                             </div>
                           )}
+                          {unresolvedComposerPlaceholders.length > 0 && (
+                            <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-400">
+                              Unresolved placeholders: {unresolvedComposerPlaceholders.map((p) => `{{${p}}}`).join(', ')}. Apply a template or edit before sending.
+                            </div>
+                          )}
+                          {aiDraftMetadata && (
+                            <div className="rounded-lg border border-cyan-200 bg-cyan-50/60 p-3 text-xs text-cyan-900 dark:border-cyan-800 dark:bg-cyan-950/20 dark:text-cyan-200">
+                              <p className="mb-1 font-semibold">AI Insights</p>
+                              <div className="grid gap-1 md:grid-cols-2">
+                                {aiDraftMetadata.cta && <p><span className="font-medium">CTA:</span> {aiDraftMetadata.cta}</p>}
+                                {aiDraftMetadata.recommendedSendTime && <p><span className="font-medium">Send time:</span> {aiDraftMetadata.recommendedSendTime}</p>}
+                                {aiDraftMetadata.pipelineStageSuggestion && <p><span className="font-medium">Pipeline:</span> {aiDraftMetadata.pipelineStageSuggestion}</p>}
+                                {aiDraftMetadata.revenueAngle && <p className="md:col-span-2"><span className="font-medium">Revenue angle:</span> {aiDraftMetadata.revenueAngle}</p>}
+                                {(aiDraftMetadata.revenueImpact || 0) > 0 && <p><span className="font-medium">Est. revenue:</span> ₹{Number(aiDraftMetadata.revenueImpact).toLocaleString()}</p>}
+                                {aiDraftMetadata.approvalRequired && <p><span className="font-medium">Review:</span> Compliance approval required before send</p>}
+                              </div>
+                            </div>
+                          )}
+                          {requiresComplianceApproval && (
+                            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+                              <Checkbox checked={complianceApproved} onCheckedChange={(value) => setComplianceApproved(Boolean(value))} />
+                              <p className="text-xs text-amber-800">I have reviewed this AI-assisted message for accuracy and compliance-safe language.</p>
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex flex-wrap gap-2">
@@ -6039,7 +6273,10 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                   <Card className="border bg-card">
                     <CardHeader>
                       <CardTitle className="text-base text-foreground">Template Library</CardTitle>
-                      <CardDescription className="text-muted-foreground">Apply templates to the composer on the Campaign tab. Placeholders: {'{{companyName}}, {{contactPerson}}, {{corporateId}}, {{employeeCount}}, {{industry}}, {{packageType}}'}</CardDescription>
+                      <CardDescription className="text-muted-foreground">
+                        Apply templates to the composer on the Campaign tab. Placeholders: {'{{companyName}}, {{contactPerson}}, {{corporateId}}, {{employeeCount}}, {{industry}}, {{packageType}}'}.
+                        Employee welcome emails (HTML) are managed under the <button type="button" className="underline font-medium" onClick={() => setActiveTab('employees')}>Employees</button> tab.
+                      </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -6066,7 +6303,10 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                             <div key={template.id} className="space-y-2 rounded-lg border bg-muted/30 p-3">
                               <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0">
-                                  <p className="truncate font-medium text-foreground">{template.name}</p>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="truncate font-medium text-foreground">{template.name}</p>
+                                    <Badge className={`text-[10px] ${getTemplateSourceBadgeClass(template.source)}`}>{getTemplateSourceLabel(template.source)}</Badge>
+                                  </div>
                                   <p className="text-xs text-muted-foreground">{template.category}</p>
                                 </div>
                                 <div className="flex shrink-0 gap-2">
@@ -6296,9 +6536,26 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                           <Label>AI Draft Suggestions</Label>
                           {(aiCommunicationDashboard?.nextActions || []).slice(0, 4).map((action: any) => (
                             <div key={action.id} className="rounded-lg border bg-card p-3 mb-2">
-                              <p className="text-sm font-medium truncate">{action.subject || 'Follow-up'}</p>
-                              <div className="mt-2 flex gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-sm font-medium truncate">{action.subject || 'Follow-up'}</p>
+                                {action.conversionSignal && (
+                                  <Badge variant="outline" className="text-[10px] uppercase">{action.conversionSignal}</Badge>
+                                )}
+                                {action.engagementScore != null && (
+                                  <Badge variant="secondary" className="text-[10px]">Score {action.engagementScore}</Badge>
+                                )}
+                              </div>
+                              {action.suggestedStage && (
+                                <p className="mt-1 text-xs text-muted-foreground">Suggested stage: {action.suggestedStage}</p>
+                              )}
+                              <div className="mt-2 flex flex-wrap gap-2">
                                 <Button size="sm" variant="outline" onClick={() => useStoredAiCommunication(action)}>Apply to Composer</Button>
+                                <Button size="sm" variant="secondary" onClick={() => applyFollowUpFromAction(action)}>Apply Follow-up</Button>
+                                {action.suggestedStage && (
+                                  <Button size="sm" variant="ghost" disabled={applyingCorporateStage} onClick={() => applyCorporateStageFromAi(action.suggestedStage)}>
+                                    Mark {action.suggestedStage}
+                                  </Button>
+                                )}
                                 <Button size="sm" variant="ghost" onClick={() => { storeAiDraftAsTemplate({ subject: action.subject, message: action.body || action.nextAction?.message }, action.id); toast({ title: 'Template saved' }); }}>Save Template</Button>
                               </div>
                             </div>
@@ -6367,25 +6624,78 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                   )}
 
                   <Dialog open={showSendReviewModal} onOpenChange={setShowSendReviewModal}>
-                    <DialogContent className="max-w-lg">
+                    <DialogContent className="max-w-2xl">
                       <DialogHeader>
                         <DialogTitle>Review before sending</DialogTitle>
                         <DialogDescription>Confirm recipients and message content for {selectedCorporate?.companyName}.</DialogDescription>
                       </DialogHeader>
                       <div className="space-y-3 text-sm">
-                        <div><span className="font-medium">Channel:</span> {communicationChannel.toUpperCase()}</div>
-                        <div><span className="font-medium">Recipients:</span> {buildCommunicationRecipients().join(', ')}</div>
-                        {communicationChannel === 'email' && <div><span className="font-medium">Subject:</span> {communicationComposer.subject}</div>}
-                        <div className="rounded-md border bg-muted/40 p-3 whitespace-pre-wrap max-h-48 overflow-auto">{communicationComposer.message}</div>
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                          <div><span className="font-medium">Channel:</span> {communicationChannel.toUpperCase()}</div>
+                          <div><span className="font-medium">Recipients:</span> {buildCommunicationRecipients().length}</div>
+                        </div>
+                        <div className="rounded-md border bg-muted/40 p-2 text-xs break-all">{buildCommunicationRecipients().join(', ')}</div>
+                        {communicationChannel === 'email' && (
+                          <div>
+                            <span className="font-medium">Subject:</span>{' '}
+                            {showResolvedPreview ? resolvedComposerSubject : communicationComposer.subject}
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">Message preview</span>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs">Resolved for {selectedCorporate?.companyName}</Label>
+                            <Switch checked={showResolvedPreview} onCheckedChange={setShowResolvedPreview} />
+                          </div>
+                        </div>
+                        <div className="rounded-md border bg-muted/40 p-3 whitespace-pre-wrap max-h-48 overflow-auto">
+                          {showResolvedPreview ? resolvedComposerMessage : communicationComposer.message}
+                        </div>
+                        {unresolvedComposerPlaceholders.length > 0 && (
+                          <p className="text-xs text-rose-700">Unresolved placeholders detected: {unresolvedComposerPlaceholders.map((p) => `{{${p}}}`).join(', ')}</p>
+                        )}
+                        {aiDraftMetadata && (
+                          <div className="rounded-md border border-cyan-200 bg-cyan-50/50 p-2 text-xs">
+                            {aiDraftMetadata.pipelineStageSuggestion && <p>Pipeline: {aiDraftMetadata.pipelineStageSuggestion}</p>}
+                            {aiDraftMetadata.recommendedSendTime && <p>Recommended send: {aiDraftMetadata.recommendedSendTime}</p>}
+                            {(aiDraftMetadata.revenueImpact || 0) > 0 && <p>Est. revenue influence: ₹{Number(aiDraftMetadata.revenueImpact).toLocaleString()}</p>}
+                          </div>
+                        )}
+                        {requiresComplianceApproval && (
+                          <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+                            <Checkbox checked={complianceApproved} onCheckedChange={(value) => setComplianceApproved(Boolean(value))} />
+                            <p className="text-xs text-amber-800">I confirm this AI-assisted copy has been reviewed for compliance.</p>
+                          </div>
+                        )}
                         {!readinessChecks.provider && (
                           <p className="text-xs text-rose-700">Warning: provider health check failed. Sending may fail.</p>
                         )}
                       </div>
                       <DialogFooter>
                         <Button variant="outline" onClick={() => setShowSendReviewModal(false)}>Cancel</Button>
-                        <Button onClick={sendCommunication} disabled={sendingCommunication}>
+                        <Button onClick={sendCommunication} disabled={sendingCommunication || !isCommunicationReadyToSend}>
                           {sendingCommunication ? 'Sending...' : `Send ${communicationChannel.toUpperCase()}`}
                         </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+
+                  <Dialog open={showAiSavePrompt} onOpenChange={setShowAiSavePrompt}>
+                    <DialogContent className="max-w-md">
+                      <DialogHeader>
+                        <DialogTitle>Save AI draft to library?</DialogTitle>
+                        <DialogDescription>Optional — save this AI-assisted draft as a reusable template.</DialogDescription>
+                      </DialogHeader>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => { setShowAiSavePrompt(false); setPendingAiDraftForSave(null); }}>Not now</Button>
+                        <Button onClick={async () => {
+                          if (pendingAiDraftForSave) {
+                            await storeAiDraftAsTemplate(pendingAiDraftForSave, pendingAiDraftForSave.sourceId);
+                            toast({ title: 'Template saved', description: 'AI draft added to the Template Library.' });
+                          }
+                          setShowAiSavePrompt(false);
+                          setPendingAiDraftForSave(null);
+                        }}>Save Template</Button>
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
