@@ -1175,7 +1175,7 @@ const AppRoutes = () => {
         <Route path="/team/dashboard"
           element={<TeamGuard><TeamDashboard /></TeamGuard>} />
         <Route path="/team/copilot"
-          element={<TeamGuard adminOnly><AdminCopilot layout="team" /></TeamGuard>} />
+          element={<TeamGuard><AdminCopilot layout="team" /></TeamGuard>} />
         <Route path="/team/email-inbox"
           element={<TeamGuard><TeamDashboard initialTab="emails" /></TeamGuard>} />
         <Route path="/team/profile"

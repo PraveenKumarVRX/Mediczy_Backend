@@ -87,6 +87,28 @@ const DEEP_LINKS = [
   { label: 'AI Analytics', path: '/admin/ai-analytics' },
 ];
 
+const TEAM_DEEP_LINKS = [
+  { label: 'Team Dashboard', path: '/team/dashboard' },
+  { label: 'Reports', path: '/team/reports' },
+  { label: 'Activity Logs', path: '/team/activity' },
+];
+
+const TEAM_MEMBER_PERSONAS: CopilotPersona[] = ['analytics', 'quality'];
+const ALL_PERSONAS: CopilotPersona[] = ['ops', 'analytics', 'revenue', 'quality'];
+
+function readTeamAdminFlag(): boolean {
+  try {
+    const user = JSON.parse(localStorage.getItem('teamUserData') || 'null');
+    if (!user) return false;
+    return (
+      user.isAdmin === true ||
+      ['admin', 'super_admin', 'super admin', 'superadmin'].includes(String(user.role || '').toLowerCase())
+    );
+  } catch {
+    return false;
+  }
+}
+
 interface ChatEntry extends CopilotMessage {
   id: string;
   meta?: { latencyMs?: number; agentsUsed?: string[] };
@@ -105,7 +127,15 @@ export default function AdminCopilot({
   clinicalMode = false,
 }: AdminCopilotProps) {
   const Layout = layout === 'team' ? MainLayout : AdminLayout;
-  const [persona, setPersona] = useState<CopilotPersona>(clinicalMode ? 'clinical' : defaultPersona);
+  const teamAdmin = layout === 'team' ? readTeamAdminFlag() : true;
+  const availablePersonas =
+    layout === 'team' && !teamAdmin ? TEAM_MEMBER_PERSONAS : ALL_PERSONAS;
+  const deepLinks = layout === 'team' ? TEAM_DEEP_LINKS : DEEP_LINKS;
+  const [persona, setPersona] = useState<CopilotPersona>(() => {
+    if (clinicalMode) return 'clinical';
+    if (layout === 'team' && !teamAdmin) return 'analytics';
+    return defaultPersona;
+  });
   const [messages, setMessages] = useState<ChatEntry[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -288,7 +318,9 @@ export default function AdminCopilot({
                 </Badge>
               </div>
               <p className="text-sm text-muted-foreground mt-1">
-                AI-assisted ops tool. Verify critical actions in the governance dashboard.
+                {layout === 'team' && !teamAdmin
+                  ? 'AI assistant for team workflows — analytics and quality insights.'
+                  : 'AI-assisted ops tool. Verify critical actions in the governance dashboard.'}
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -298,18 +330,20 @@ export default function AdminCopilot({
                     <SelectValue placeholder="Persona" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ops">Ops</SelectItem>
-                    <SelectItem value="analytics">Analytics</SelectItem>
-                    <SelectItem value="revenue">Revenue</SelectItem>
-                    <SelectItem value="quality">Quality</SelectItem>
+                    {availablePersonas.includes('ops') && <SelectItem value="ops">Ops</SelectItem>}
+                    {availablePersonas.includes('analytics') && <SelectItem value="analytics">Analytics</SelectItem>}
+                    {availablePersonas.includes('revenue') && <SelectItem value="revenue">Revenue</SelectItem>}
+                    {availablePersonas.includes('quality') && <SelectItem value="quality">Quality</SelectItem>}
                   </SelectContent>
                 </Select>
               )}
-              <Button variant="outline" size="sm" asChild>
-                <Link to="/admin/ai-governance">
-                  <Shield className="h-4 w-4 mr-1" /> Governance
-                </Link>
-              </Button>
+              {layout !== 'team' && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link to="/admin/ai-governance">
+                    <Shield className="h-4 w-4 mr-1" /> Governance
+                  </Link>
+                </Button>
+              )}
             </div>
           </div>
 
@@ -334,7 +368,9 @@ export default function AdminCopilot({
             <CardContent className="flex-1 overflow-y-auto p-4 space-y-4" aria-live="polite">
               {messages.length === 0 && (
                 <p className="text-center text-muted-foreground py-12">
-                  Ask about agents, governance, audit logs, or system health.
+                  {layout === 'team' && !teamAdmin
+                    ? 'Ask about reports, analytics, or team workflows.'
+                    : 'Ask about agents, governance, audit logs, or system health.'}
                 </p>
               )}
               {messages.map((m) => (
@@ -428,7 +464,7 @@ export default function AdminCopilot({
               <div>
                 <p className="text-xs font-semibold text-muted-foreground mb-2">Quick links</p>
                 <div className="flex flex-col gap-1">
-                  {DEEP_LINKS.map((l) => (
+                  {deepLinks.map((l) => (
                     <Link key={l.path} to={l.path} className="text-violet-600 hover:underline flex items-center gap-1 text-xs">
                       <ExternalLink className="h-3 w-3" /> {l.label}
                     </Link>

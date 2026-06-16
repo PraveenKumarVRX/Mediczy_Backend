@@ -196,7 +196,7 @@ export async function resolveIdentity(req) {
     const userId   = decoded.id || decoded.userId || decoded.sub;
     const orgId    = decoded.orgId || decoded.hospitalId || decoded.tenantId;
     const rawRole  = decoded.role || decoded.userType || decoded.userRole || 'patient';
-    const role     = _mapToAgentRole(rawRole);
+    const role     = _mapToAgentRole(rawRole, decoded);
     const caps     = [...(ROLE_CAPABILITIES[role] || ROLE_CAPABILITIES[ROLES.VIEWER])];
 
     // Load extra DB-granted capabilities
@@ -220,9 +220,24 @@ export async function resolveIdentity(req) {
   }
 }
 
-function _mapToAgentRole(rawRole) {
-  if (!rawRole) return ROLES.PATIENT;
-  const r = String(rawRole).toLowerCase();
+function _mapToAgentRole(rawRole, decoded = {}) {
+  if (!rawRole && !decoded) return ROLES.PATIENT;
+  const r = String(rawRole || '').toLowerCase();
+  const isTeamCaller =
+    decoded.isTeam === true ||
+    decoded.userType === 'team' ||
+    ['team', 'team_member', 'team_lead'].includes(r);
+
+  if (isTeamCaller) {
+    const teamAdmin =
+      decoded.isAdmin === true ||
+      r === 'admin' ||
+      r === 'super_admin' ||
+      r === 'super admin' ||
+      r === 'superadmin';
+    return teamAdmin ? ROLES.HOSPITAL_ADMIN : ROLES.ANALYST;
+  }
+
   if (r.includes('platform') || r === 'superadmin' || r === 'super_admin') return ROLES.PLATFORM_ADMIN;
   if (r === 'medical_director') return ROLES.MEDICAL_DIRECTOR;
   if (r.includes('hospital_admin') || r === 'admin' || r === 'manager') return ROLES.HOSPITAL_ADMIN;

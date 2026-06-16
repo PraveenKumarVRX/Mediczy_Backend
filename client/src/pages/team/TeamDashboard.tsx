@@ -82,7 +82,6 @@ const QUICK_ACTIONS = [
     link: "/team/copilot",
     pattern: "radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.08) 0%, transparent 50%)",
     permissionGuard: null,
-    adminOnly: true,
   },
   {
     title: "Profile Settings",
