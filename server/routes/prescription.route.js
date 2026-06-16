@@ -729,6 +729,111 @@ router.get('/patient', authUser, async (req, res) => {
 });
 
 /**
+ * @route   GET /api/prescriptions/patient/adherence-summary
+ * @desc    Adherence summary across active patient prescriptions
+ * @access  Private (Patient)
+ */
+router.get('/patient/adherence-summary', authUser, async (req, res) => {
+  try {
+    const patientId = req.user.id;
+    const prescriptions = await Prescription.findAll({
+      where: { patientId, status: ['issued', 'active', 'dispensed'] },
+      order: [['createdAt', 'DESC']],
+    });
+
+    const summaries = prescriptions.map((rx) => {
+      const tracking = rx.adherenceTracking || {};
+      let total = 0;
+      let taken = 0;
+      Object.values(tracking).forEach((day) => {
+        Object.values(day || {}).forEach((value) => {
+          total += 1;
+          if (value) taken += 1;
+        });
+      });
+      const adherenceRate = total > 0 ? Math.round((taken / total) * 100) : 100;
+      return {
+        prescriptionId: rx.id,
+        prescriptionNumber: rx.prescriptionId,
+        doctorName: rx.doctorName,
+        adherenceRate,
+        adherenceTracking: tracking,
+        medications: rx.medications || [],
+      };
+    });
+
+    const overallRate = summaries.length
+      ? Math.round(summaries.reduce((sum, item) => sum + item.adherenceRate, 0) / summaries.length)
+      : 100;
+
+    res.json({
+      success: true,
+      overallAdherenceRate: overallRate,
+      prescriptions: summaries,
+    });
+  } catch (error) {
+    console.error('Adherence summary error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch adherence summary' });
+  }
+});
+
+/**
+ * @route   POST /api/prescriptions/:id/adherence
+ * @desc    Record medication dose taken / missed for adherence tracking
+ * @access  Private (Patient owner)
+ */
+router.post('/:id/adherence', authUser, [
+  body('medicationId').notEmpty().withMessage('medicationId is required'),
+  body('taken').optional().isBoolean(),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const { id } = req.params;
+    const { medicationId, taken = true } = req.body;
+    const userId = req.user.id;
+
+    const prescription = await Prescription.findOne({
+      where: isNaN(id) ? { prescriptionId: id } : { id: parseInt(id, 10) },
+    });
+
+    if (!prescription) {
+      return res.status(404).json({ success: false, message: 'Prescription not found' });
+    }
+    if (prescription.patientId !== userId) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const { default: medicationReminderService } = await import('../services/medication-reminder-cron.service.js');
+    await medicationReminderService.trackAdherence(prescription.id, String(medicationId), taken === true);
+
+    await prescription.reload();
+    const tracking = prescription.adherenceTracking || {};
+    let total = 0;
+    let takenCount = 0;
+    Object.values(tracking).forEach((day) => {
+      Object.values(day || {}).forEach((value) => {
+        total += 1;
+        if (value) takenCount += 1;
+      });
+    });
+    const adherenceRate = total > 0 ? Math.round((takenCount / total) * 100) : 100;
+
+    res.json({
+      success: true,
+      adherenceRate,
+      adherenceTracking: tracking,
+    });
+  } catch (error) {
+    console.error('Track adherence error:', error);
+    res.status(500).json({ success: false, message: 'Failed to record adherence' });
+  }
+});
+
+/**
  * @route   GET /api/prescriptions/:id
  * @desc    Get prescription by ID
  * @access  Private (Doctor or Patient owner)

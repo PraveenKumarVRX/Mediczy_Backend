@@ -231,6 +231,52 @@ class NotificationService {
         message: 'Your appointment with Dr. {{doctorName}} starts in 15 minutes. Get ready!',
         channels: ['push', 'in-app'],
         priority: 'urgent'
+      },
+
+      // Medication reminder (cron: medication-reminder-cron.service.js)
+      medication_reminder: {
+        title: 'Medication Reminder 💊',
+        message: '{{timeOfDay}} dose: {{medications}} ({{count}} medication(s))',
+        channels: ['push', 'sms', 'whatsapp', 'in-app'],
+        priority: 'normal'
+      },
+
+      // Follow-up appointment reminders (cron: followup-automation.service.js)
+      followup_reminder: {
+        title: 'Follow-up Appointment Reminder',
+        message: 'Hi {{patientName}}, your follow-up with Dr. {{doctorName}} is on {{followUpDate}} ({{daysRemaining}} day(s) away) for {{diagnosis}}.',
+        channels: ['push', 'email', 'sms', 'whatsapp', 'in-app'],
+        priority: 'normal'
+      },
+
+      followup_reminder_doctor: {
+        title: 'Patient Follow-up Due',
+        message: '{{patientName}} has a follow-up on {{followUpDate}} regarding {{diagnosis}}.',
+        channels: ['push', 'email', 'in-app'],
+        priority: 'normal'
+      },
+
+      // Prescription expiry (cron: prescription-expiry-cron.service.js)
+      prescription_expiring_soon: {
+        title: 'Prescription Expiring Soon',
+        message: 'Hi {{patientName}}, your prescription from Dr. {{doctorName}} expires in {{daysRemaining}} day(s) on {{expiryDate}}.',
+        channels: ['push', 'email', 'sms', 'in-app'],
+        priority: 'high'
+      },
+
+      prescription_expired: {
+        title: 'Prescription Expired',
+        message: 'Hi {{patientName}}, your prescription ({{prescriptionId}}) from Dr. {{doctorName}} has expired. Book a follow-up to renew.',
+        channels: ['push', 'email', 'sms', 'whatsapp', 'in-app'],
+        priority: 'urgent'
+      },
+
+      // Low medication adherence alert to doctor
+      low_medication_adherence: {
+        title: 'Low Medication Adherence Alert',
+        message: '{{patientName}} adherence is {{adherenceRate}}% for prescription {{prescriptionId}}.',
+        channels: ['push', 'email', 'in-app'],
+        priority: 'high'
       }
     };
   }

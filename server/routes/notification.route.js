@@ -3,6 +3,10 @@ import { body, param, query, validationResult } from 'express-validator';
 import nodemailer from 'nodemailer';
 import { authUser } from '../middleware/auth.middleware.js';
 import notificationService, { Notification, FCMToken } from '../services/notification.service.js';
+import {
+  getNotificationPreferences,
+  saveNotificationPreferences,
+} from '../services/notification-preferences.service.js';
 import { getKafkaWorkerStatus, getKafkaWorkerAnalytics } from '../workers/index.js';
 
 const router = express.Router();
@@ -247,24 +251,48 @@ router.post('/test', authUser, async (req, res) => {
  */
 router.get('/preferences', authUser, async (req, res) => {
   try {
-    // Return default preferences (can be extended with user preferences model)
+    const userId = req.user.id || req.user.dataValues?.id;
+    const preferences = await getNotificationPreferences(userId);
     res.json({
       success: true,
-      preferences: {
-        push: true,
-        email: true,
-        sms: true,
-        inApp: true,
-        appointmentReminders: true,
-        paymentAlerts: true,
-        promotions: false
-      }
+      preferences,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
       message: 'Failed to get preferences',
       error: error.message
+    });
+  }
+});
+
+/**
+ * @route   PUT /api/notifications/preferences
+ * @desc    Save notification preferences for current user
+ * @access  Private
+ */
+router.put('/preferences', authUser, [
+  body('preferences').isObject().withMessage('preferences object is required'),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const userId = req.user.id || req.user.dataValues?.id;
+    const preferences = await saveNotificationPreferences(userId, req.body.preferences || {});
+
+    res.json({
+      success: true,
+      message: 'Notification preferences saved',
+      preferences,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to save preferences',
+      error: error.message,
     });
   }
 });

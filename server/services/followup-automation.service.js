@@ -88,6 +88,12 @@ class FollowUpAutomationService {
           if (daysDifference === 7 && !prescription.followUpReminder7DaysSent) {
             await this.sendFollowUpReminder(prescription, 7);
             await prescription.update({ followUpReminder7DaysSent: true });
+            await this.createFollowUpSuggestion(
+              prescription.id,
+              prescription.patientId || prescription.userId,
+              prescription.doctorId,
+              prescription.followUpDate
+            );
             remindersSent.sevenDays++;
           }
 
@@ -158,7 +164,7 @@ class FollowUpAutomationService {
         daysBeforeFollowUp: daysBeforeFollowUp
       },
       channels: ['in-app', 'email', 'sms', 'whatsapp'],
-      actionUrl: '/book-appointment',
+      actionUrl: '/appointments',
       priority: daysBeforeFollowUp === 1 ? 'high' : 'normal'
     });
 

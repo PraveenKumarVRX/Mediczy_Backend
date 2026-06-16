@@ -4,13 +4,15 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Bot, Send, User, Mic, Volume2, VolumeX, AlertCircle, Clock, CheckCircle, XCircle, Trash2, Copy, Check } from "lucide-react";
+import { Bot, Send, User, Mic, Volume2, VolumeX, AlertCircle, Clock, CheckCircle, XCircle, Trash2, Copy, Check, Video } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { drIshaAPI } from '@/services/drIsha';
+import api from '@/utils/api';
+import { useVideoCall } from '@/context/VideoCallContext';
 
 interface Message {
   id: string;
@@ -46,6 +48,7 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
   maxHeight = "600px"
 }) => {
   const navigate = useNavigate();
+  const videoCall = useVideoCall();
   const STORAGE_KEY = 'dr_isha_session';
 
   // Restore persisted session from localStorage on mount
@@ -81,6 +84,43 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
   const [suggestedFollowUps, setSuggestedFollowUps] = useState<string[]>([
     "Tell me more", "What should I do?", "Is this serious?", "Home remedies?", "When to see a doctor?"
   ]);
+  const [showVideoEscalation, setShowVideoEscalation] = useState(false);
+  const [videoConnecting, setVideoConnecting] = useState(false);
+
+  const startEmergencyVideo = async () => {
+    setVideoConnecting(true);
+    try {
+      const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
+      const { data } = await api.post('/medical-ai/instant-triage-call', {
+        symptoms: lastUserMessage || 'Emergency consultation requested from Dr. iSHA chat',
+        urgencyLevel: 'HIGH',
+      });
+      const livekit = data?.videoCall?.livekit;
+      if (livekit?.serverUrl && livekit?.token) {
+        videoCall.startCall({
+          serverUrl: livekit.serverUrl,
+          token: livekit.token,
+          roomName: livekit.roomName || data.videoCall.roomId,
+          iceServers: livekit.iceServers,
+        }, 'Patient');
+        toast.success('Connecting you to an emergency doctor via video...');
+        setShowVideoEscalation(false);
+        return;
+      }
+      if (data?.videoCall?.joinUrl) {
+        window.open(data.videoCall.joinUrl, '_blank', 'width=1280,height=720');
+        setShowVideoEscalation(false);
+        return;
+      }
+      throw new Error('Video room unavailable');
+    } catch (error) {
+      console.error('Emergency video escalation failed:', error);
+      toast.error('Could not start video call. Opening emergency page...');
+      navigate('/emergency');
+    } finally {
+      setVideoConnecting(false);
+    }
+  };
 
   // Persist session to localStorage whenever messages/sessionId change
   useEffect(() => {
@@ -202,7 +242,8 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
 
         // Handle Emergency Intent
         if (response_data.intentType === 'emergency') {
-          toast.error('EMERGENCY DETECTED - Call emergency services immediately!', { duration: 5000 });
+          setShowVideoEscalation(true);
+          toast.error('EMERGENCY DETECTED - Call emergency services immediately if needed.', { duration: 5000 });
           setTimeout(() => safeNavigate(response_data.redirectUrl, '/emergency'), 2000);
         }
         // Handle Appointment Intent
@@ -513,6 +554,23 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
           </motion.div>
         )}
       </ScrollArea>
+
+      {showVideoEscalation && (
+        <div className="mx-4 mb-2 rounded-lg border border-rose-300 bg-rose-50 dark:bg-rose-950/30 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="text-sm text-rose-800 dark:text-rose-200">
+            <strong>Emergency detected.</strong> Start an instant video consult with a doctor, or use the emergency page.
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="destructive" onClick={startEmergencyVideo} disabled={videoConnecting}>
+              <Video className="w-4 h-4 mr-1" />
+              {videoConnecting ? 'Connecting...' : 'Start video now'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => navigate('/emergency')}>
+              Emergency page
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Input Form */}
       <motion.div

@@ -10,6 +10,8 @@ import { User } from '../models/user.model.intelligent.js';
 import { buildLiveKitJoinData } from '../utils/videoProvider.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 import { mlog, mwarn, merr } from '../utils/medical-ai-logger.js';
+import emergencyTriageService from '../services/ai-emergency-triage.service.js';
+import { getWearableContextForUser } from '../services/patient-wearable-context.service.js';
 
 const router = express.Router();
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
@@ -231,11 +233,17 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
     const isClinician = ['doctor', 'nurse', 'assistant', 'admin', 'team'].includes(callerRole);
 
     let dbContext = null;
+    let wearableContext = null;
     if (!isEmergencyMode && !isClinician) {
       try {
         dbContext = await whatsAppUserContextService.getFullUserContextByUserId(req.user.id);
       } catch (contextError) {
         mwarn("User context load failed", { error: contextError.message });
+      }
+      try {
+        wearableContext = await getWearableContextForUser(req.user.id);
+      } catch (wearableError) {
+        mwarn('Wearable context load failed', { error: wearableError?.message });
       }
     }
 
@@ -243,6 +251,7 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
     const enhancedContext = {
       ...userContext,
       ...(dbContext || {}),
+      ...(wearableContext || {}),
       userId: req.user.id,
       userName: isClinician
         ? `Dr. ${req.user.firstName || req.user.name || 'Doctor'}`
@@ -442,7 +451,7 @@ router.post('/analyze-symptoms', authUser, async (req, res) => {
  */
 router.post('/emergency-triage', authUser, async (req, res) => {
   try {
-    const { symptoms, description, language = 'en', multimodalContext } = req.body;
+    const { symptoms, description, language = 'en', multimodalContext, vitals = {}, painScale = null } = req.body;
 
     if (!symptoms || !description) {
       return res.status(400).json({
@@ -451,119 +460,80 @@ router.post('/emergency-triage', authUser, async (req, res) => {
       });
     }
 
-    let triage;
-    let sibUsed = false;
-
-    // Build emergency triage prompt for SIB /chat endpoint
-    const emergencyPrompt = `EMERGENCY TRIAGE REQUEST:
-
-Symptoms: ${symptoms}
-Description: ${description}
-
-Please provide an emergency triage assessment including:
-1. Urgency level (CRITICAL, HIGH, MODERATE, LOW)
-2. Whether immediate medical attention is required
-3. Whether to call an ambulance
-4. Recommended actions while waiting for help
-5. Any follow-up questions to assess severity`;
-
-    // 20-second hard timeout on emergency triage
-    const etController = new AbortController();
-    const etTimeout = setTimeout(() => etController.abort(), 20000);
-    let sibResult = null;
-    try {
-      const sibResponse = await fetch(`${SIB_URL}/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: etController.signal,
-        body: JSON.stringify({
-          message: emergencyPrompt,
-          language,
-          patient_id: String(req.user.id),
-          user_id: req.user.id,
-          include_risk: true,
-          context_type: 'emergency_triage'
-        })
-      });
-      if (sibResponse.ok) sibResult = await sibResponse.json();
-      else mwarn('SIB non-OK for emergency triage, using LLM fallback', { status: sibResponse.status });
-    } catch (fetchErr) {
-      if (fetchErr.name === 'AbortError') mwarn('SIB timeout on emergency triage, using LLM fallback', {});
-      else mwarn('SIB fetch error on emergency triage', { error: fetchErr.message });
-    } finally { clearTimeout(etTimeout); }
-
-    // LLM fallback if SIB unavailable
-    if (!sibResult) {
-      try {
-        const llmRes = await llmProvider.chat({
-          messages: [
-            { role: 'system', content: 'You are an emergency medical triage assistant. Assess urgency level (CRITICAL/HIGH/MODERATE/LOW), whether to call an ambulance, and immediate actions. Be concise and direct.' },
-            { role: 'user', content: emergencyPrompt }
-          ],
-          maxTokens: 400,
-          temperature: 0.2,
-        });
-        const fallbackText = llmRes?.content || llmRes?.text || '';
-        if (fallbackText) {
-          sibResult = { response: fallbackText, provider: 'llm-fallback' };
-        }
-      } catch (llmErr) {
-        merr('All providers failed for emergency triage', { error: llmErr?.message });
-        return res.status(500).json({
-          success: false,
-          error: 'Emergency triage service unavailable',
-          urgencyLevel: 'UNKNOWN',
-          requiresImmediateAttention: true,
-          fallbackAdvice: 'If experiencing severe symptoms, call 112 or seek immediate medical attention.',
-        });
-      }
-    }
-    sibUsed = true;
-    
-    // Parse urgency from response (look for keywords)
-    const responseText = sibResult.response || sibResult.primary_response || sibResult.chat_answer || '';
-    const urgencyKeywords = {
-      'CRITICAL': /\b(critical|life.?threatening|call.?911|call.?ambulance|immediate.?emergency)\b/i,
-      'HIGH': /\b(high.?urgency|urgent|seek.?immediate|emergency.?room|ER)\b/i,
-      'MODERATE': /\b(moderate|see.?doctor|within.?24|schedule.?appointment)\b/i,
-      'LOW': /\b(low.?urgency|monitor|self.?care|rest)\b/i
+    const symptomText = `${symptoms}. ${description}`.trim();
+    const wearableContext = await getWearableContextForUser(req.user.id).catch(() => null);
+    const mergedVitals = {
+      ...(wearableContext?.wearableSummary?.heart_rate?.value != null
+        ? { heart_rate: wearableContext.wearableSummary.heart_rate.value }
+        : {}),
+      ...(wearableContext?.wearableSummary?.spo2?.value != null
+        ? { spo2: wearableContext.wearableSummary.spo2.value }
+        : {}),
+      ...(wearableContext?.wearableSummary?.blood_pressure?.value != null
+        ? { blood_pressure: wearableContext.wearableSummary.blood_pressure.value }
+        : {}),
+      ...vitals,
     };
-    
-    let detectedUrgency = 'HIGH'; // Default to HIGH for safety
-    for (const [level, pattern] of Object.entries(urgencyKeywords)) {
-      if (pattern.test(responseText)) {
-        detectedUrgency = level;
-        break;
-      }
+
+    // Governed ESI engine (primary path — SaMD quality gates + LIME)
+    const esiResult = await emergencyTriageService.triage({
+      symptoms: symptomText,
+      vitals: mergedVitals,
+      painScale: painScale ?? multimodalContext?.painScale ?? null,
+      age: req.user?.dateOfBirth ? Math.floor((Date.now() - new Date(req.user.dateOfBirth)) / (365.25 * 24 * 3600 * 1000)) : null,
+      gender: req.user?.gender || null,
+      patientId: req.user.id,
+    });
+
+    const esiToUrgency = { 1: 'CRITICAL', 2: 'HIGH', 3: 'MODERATE', 4: 'LOW', 5: 'LOW' };
+    const urgencyLevel = esiToUrgency[esiResult.esiLevel] || 'HIGH';
+    const requiresImmediate = esiResult.esiLevel <= 2;
+    const callAmbulance = esiResult.ambulanceNeeded === true;
+
+    // Optional patient-friendly narrative from SIB/LLM (secondary — does not override ESI)
+    let narrative = esiResult.esiDescription;
+    try {
+      const llmRes = await llmProvider.chat({
+        messages: [
+          { role: 'system', content: 'Summarize triage guidance in 2-3 short sentences for a patient. Do not change urgency level.' },
+          { role: 'user', content: `ESI level ${esiResult.esiLevel}. Symptoms: ${symptomText}. Actions: ${(esiResult.immediateActions || []).join('; ')}` },
+        ],
+        maxTokens: 200,
+        temperature: 0.2,
+      });
+      narrative = llmRes?.content || llmRes?.text || narrative;
+    } catch {
+      // Non-blocking narrative fallback
     }
-    
-    const requiresImmediate = ['CRITICAL', 'HIGH'].includes(detectedUrgency);
-    const callAmbulance = detectedUrgency === 'CRITICAL' || /\b(call.?911|call.?ambulance|emergency.?services)\b/i.test(responseText);
-    
-    // Map SIB response to triage format
-    triage = {
+
+    const triage = {
       success: true,
-      urgencyLevel: detectedUrgency,
+      urgencyLevel,
+      esiLevel: esiResult.esiLevel,
+      esiDescription: esiResult.esiDescription,
+      category: esiResult.category,
+      specialty: esiResult.specialty,
       urgencyDetails: {
-        level: detectedUrgency,
-        reason: `Based on symptoms: ${symptoms}`,
-        actions: requiresImmediate ? ['Seek immediate medical attention'] : ['Monitor symptoms', 'Consult doctor if worsening']
+        level: urgencyLevel,
+        reason: `ESI-${esiResult.esiLevel}: ${esiResult.category}`,
+        actions: esiResult.immediateActions || [],
       },
-      response: responseText,
+      response: narrative,
       requiresImmediateAttention: requiresImmediate,
-      callAmbulance: callAmbulance,
-      recommendedActions: requiresImmediate 
-        ? ['Seek immediate medical attention', 'Do not drive yourself if feeling faint']
-        : ['Monitor your symptoms', 'Stay hydrated', 'Rest', 'Consult a doctor if symptoms persist'],
+      callAmbulance,
+      recommendedActions: esiResult.immediateActions || [],
       followUpQuestions: [],
       triageId: `triage_${Date.now()}_${req.user.id}`,
-      sibUsed: true,
-      processingTime: sibResult.processing_time_ms || null
+      governed: true,
+      qualityGate: esiResult.qualityGate || null,
+      interpretation: esiResult.interpretation || null,
+      confidence: esiResult.confidence ?? null,
+      wearableContextUsed: Boolean(wearableContext),
+      multimodalContext: multimodalContext || null,
+      language,
     };
 
-    // Log emergency triage attempts for audit
-    mlog("Emergency triage completed", { userId: req.user.id, urgencyLevel: triage?.urgencyLevel });
-
+    mlog('Emergency triage completed (ESI)', { userId: req.user.id, esiLevel: esiResult.esiLevel, urgencyLevel });
     res.json(triage);
   } catch (error) {
     merr("Emergency triage error", { error: error?.message });
