@@ -82,7 +82,7 @@ module.exports = {
       out_file: path.join(LOGS_DIR, 'server-out.log'),
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
-      max_memory_restart: '2G',  // Restart if RSS exceeds 2GB (LaBSE model loads into memory)
+      max_memory_restart: '3G',  // RSS exceeds 2.5GB in steady state because model/native memory sits outside V8
       watch: false,
       ignore_watch: ['node_modules', 'logs', '.git'],
       max_restarts: 15,

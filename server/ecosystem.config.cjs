@@ -14,7 +14,7 @@ module.exports = {
       instances: 1,       // Single instance to avoid memory-threshold restart loops
       exec_mode: 'cluster',
       autorestart: true,
-      max_memory_restart: '2G',
+      max_memory_restart: '3G',
       env: {
         NODE_ENV: 'production',
         AWS_REGION: 'ap-south-1',
