@@ -130,9 +130,55 @@ async function main() {
     'path="/admin/copilot"',
     'path="/admin/copilot/clinical"',
     'path="/team/copilot"',
+    '<TeamGuard><AdminCopilot layout="team" /></TeamGuard>',
     'AdminCopilot',
     'AdminClinicalCopilot',
   ], 'Phase 1 routes');
+
+  includesAll('client/src/components/layout/Sidebar.tsx', [
+    'label: "Admin Copilot"',
+    'path: "/team/copilot"',
+  ], 'Team sidebar Admin Copilot nav');
+
+  // Team copilot must NOT be admin-only in route/sidebar/dashboard
+  const routesContent = read('client/src/routes/index.tsx');
+  if (routesContent.includes('team/copilot') && routesContent.includes('TeamGuard adminOnly><AdminCopilot')) {
+    fail('Team copilot route must not use TeamGuard adminOnly');
+  } else {
+    pass('Team copilot route open to all team users');
+  }
+
+  const sidebarContent = read('client/src/components/layout/Sidebar.tsx');
+  const copilotSidebarLine = sidebarContent.split('\n').find((l) => l.includes('/team/copilot'));
+  if (copilotSidebarLine?.includes('adminOnly')) {
+    fail('Team sidebar copilot must not be adminOnly');
+  } else {
+    pass('Team sidebar copilot visible to all team users');
+  }
+
+  const dashboardContent = read('client/src/pages/team/TeamDashboard.tsx');
+  const copilotActionBlock = dashboardContent.slice(
+    dashboardContent.indexOf('title: "Admin Copilot"'),
+    dashboardContent.indexOf('title: "Profile Settings"')
+  );
+  if (copilotActionBlock.includes('adminOnly: true')) {
+    fail('Team dashboard copilot quick action must not be adminOnly');
+  } else {
+    pass('Team dashboard copilot quick action for all team users');
+  }
+
+  includesAll('server/services/ai-brain/agent-permission-engine.js', [
+    'isTeamCaller',
+    'ROLES.ANALYST',
+    'team_member',
+    'team_lead',
+  ], 'Team user analyst agent mapping');
+
+  includesAll('client/src/pages/admin/AdminCopilot.tsx', [
+    'TEAM_MEMBER_PERSONAS',
+    'readTeamAdminFlag',
+    'TEAM_DEEP_LINKS',
+  ], 'Team member copilot personas');
 
   includesAll('client/src/pages/team/TeamDashboard.tsx', [
     '/team/copilot',
