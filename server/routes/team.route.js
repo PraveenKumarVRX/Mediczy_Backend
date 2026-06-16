@@ -22,6 +22,7 @@ import whatsappProductionService from '../services/whatsapp-production.service.j
 import doctorModel from '../models/doctor.model.intelligent.js';
 import { generateAssistedEmailDraft, analyzeEmailCommunication } from '../services/ai-email-arg.service.js';
 import { fetchScopedCorporateActivity, summarizeScopedCorporateActivity } from '../services/team-corporate-activity.service.js';
+import { sendTransactionalEmail, getEmailProviderStatus } from '../services/welcome-email.service.js';
 
 const router = express.Router();
 
@@ -130,6 +131,22 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
       CREATE INDEX IF NOT EXISTS idx_tcomm_team_created   ON team_communication_logs(team_user_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_tcomm_channel_status ON team_communication_logs(channel, status);
       CREATE INDEX IF NOT EXISTS idx_tcomm_corporate      ON team_communication_logs(corporate_id);
+
+      CREATE TABLE IF NOT EXISTS team_communication_templates (
+        id            BIGSERIAL PRIMARY KEY,
+        team_user_id  INTEGER NOT NULL,
+        corporate_id  INTEGER,
+        channel       VARCHAR(20) NOT NULL,
+        template_key  VARCHAR(120) NOT NULL,
+        name          VARCHAR(150) NOT NULL,
+        category      VARCHAR(80) NOT NULL DEFAULT 'General',
+        subject       TEXT,
+        content       TEXT NOT NULL,
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (team_user_id, corporate_id, channel, template_key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tcomm_tpl_corporate ON team_communication_templates(corporate_id, channel);
     `);
   } catch (err) {
     console.error('[Team] DB table init error:', err.message);
@@ -1891,6 +1908,160 @@ const _logTeamCommunication = async ({
   );
 };
 
+router.get('/communications/provider-health', authTeam, requirePermission('Corporate Management'), async (req, res) => {
+  try {
+    const email = await getEmailProviderStatus();
+    const smsReady = Boolean(process.env.SMS_API_KEY);
+    const whatsappReady = Boolean(whatsappProductionService?.twilioConfigured || process.env.WHATSAPP_ACCESS_TOKEN);
+
+    return res.json({
+      success: true,
+      email,
+      whatsapp: {
+        configured: whatsappReady,
+        healthy: whatsappReady,
+        provider: whatsappProductionService?.twilioConfigured ? 'twilio' : (process.env.WHATSAPP_ACCESS_TOKEN ? 'meta' : 'none'),
+        error: whatsappReady ? null : 'WhatsApp provider is not configured',
+      },
+      sms: {
+        configured: smsReady,
+        healthy: smsReady,
+        provider: process.env.SMS_PROVIDER || 'pay4sms',
+        error: smsReady ? null : 'SMS API key is not configured',
+      },
+    });
+  } catch (error) {
+    console.error('[Team] provider health error:', error?.message || error);
+    return res.status(500).json({ success: false, message: 'Failed to check provider health' });
+  }
+});
+
+router.get('/communications/templates', authTeam, requirePermission('Corporate Management'), async (req, res) => {
+  try {
+    const teamUserId = req.teamUser?.id || req.user?.id;
+    const corporateId = req.query.corporateId ? parseInt(String(req.query.corporateId), 10) : null;
+    const channel = req.query.channel ? String(req.query.channel).toLowerCase() : null;
+
+    const values = [teamUserId];
+    let where = 'WHERE team_user_id = $1';
+    if (corporateId) {
+      values.push(corporateId);
+      where += ` AND corporate_id = $${values.length}`;
+    }
+    if (channel) {
+      values.push(channel);
+      where += ` AND channel = $${values.length}`;
+    }
+
+    const { rows } = await sharedPool.query(
+      `SELECT id, corporate_id, channel, template_key, name, category, subject, content, created_at, updated_at
+       FROM team_communication_templates
+       ${where}
+       ORDER BY updated_at DESC`,
+      values
+    );
+
+    const grouped = { email: [], whatsapp: [], sms: [] };
+    for (const row of rows) {
+      const ch = String(row.channel || '').toLowerCase();
+      if (!grouped[ch]) grouped[ch] = [];
+      grouped[ch].push({
+        id: row.template_key,
+        name: row.name,
+        category: row.category || 'General',
+        subject: row.subject || undefined,
+        content: row.content,
+        serverId: row.id,
+      });
+    }
+
+    return res.json({ success: true, templates: grouped });
+  } catch (error) {
+    console.error('[Team] communication templates list error:', error?.message || error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch communication templates' });
+  }
+});
+
+router.post('/communications/templates', authTeam, requirePermission('Corporate Management'), async (req, res) => {
+  try {
+    const teamUserId = req.teamUser?.id || req.user?.id;
+    const {
+      corporateId,
+      channel,
+      id: templateKey,
+      name,
+      category = 'General',
+      subject,
+      content,
+    } = req.body || {};
+
+    const safeChannel = String(channel || '').toLowerCase();
+    if (!['email', 'whatsapp', 'sms'].includes(safeChannel)) {
+      return res.status(400).json({ success: false, message: 'Invalid channel' });
+    }
+    if (!name?.trim() || !content?.trim()) {
+      return res.status(400).json({ success: false, message: 'Template name and content are required' });
+    }
+
+    const key = String(templateKey || `${safeChannel}-${Date.now()}`).slice(0, 120);
+    const corpId = corporateId ? parseInt(String(corporateId), 10) : null;
+
+    const { rows } = await sharedPool.query(
+      `INSERT INTO team_communication_templates
+         (team_user_id, corporate_id, channel, template_key, name, category, subject, content, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+       ON CONFLICT (team_user_id, corporate_id, channel, template_key)
+       DO UPDATE SET
+         name = EXCLUDED.name,
+         category = EXCLUDED.category,
+         subject = EXCLUDED.subject,
+         content = EXCLUDED.content,
+         updated_at = NOW()
+       RETURNING template_key, name, category, subject, content`,
+      [teamUserId, corpId, safeChannel, key, name.trim(), category, subject || null, content.trim()]
+    );
+
+    const row = rows[0];
+    return res.status(201).json({
+      success: true,
+      template: {
+        id: row.template_key,
+        name: row.name,
+        category: row.category,
+        subject: row.subject || undefined,
+        content: row.content,
+      },
+    });
+  } catch (error) {
+    console.error('[Team] communication template save error:', error?.message || error);
+    return res.status(500).json({ success: false, message: 'Failed to save communication template' });
+  }
+});
+
+router.delete('/communications/templates/:templateKey', authTeam, requirePermission('Corporate Management'), async (req, res) => {
+  try {
+    const teamUserId = req.teamUser?.id || req.user?.id;
+    const corporateId = req.query.corporateId ? parseInt(String(req.query.corporateId), 10) : null;
+    const channel = String(req.query.channel || '').toLowerCase();
+    const templateKey = String(req.params.templateKey || '');
+
+    if (!templateKey || !['email', 'whatsapp', 'sms'].includes(channel)) {
+      return res.status(400).json({ success: false, message: 'channel query param and template key are required' });
+    }
+
+    await sharedPool.query(
+      `DELETE FROM team_communication_templates
+       WHERE team_user_id = $1 AND corporate_id = $2 AND channel = $3 AND template_key = $4`,
+      [teamUserId, corporateId, channel, templateKey]
+    );
+
+    return res.json({ success: true, message: 'Template deleted' });
+  } catch (error) {
+    console.error('[Team] communication template delete error:', error?.message || error);
+    return res.status(500).json({ success: false, message: 'Failed to delete communication template' });
+  }
+});
+
 router.post('/communications/send', authTeam, requirePermission('Corporate Management'), async (req, res) => {
   try {
     const {
@@ -1926,20 +2097,19 @@ router.post('/communications/send', authTeam, requirePermission('Corporate Manag
         return res.status(400).json({ success: false, message: 'No valid recipient email addresses found.' });
       }
 
-      const mailer = _teamMailer();
       const sendResults = [];
       for (const email of emailRecipients) {
         try {
-          const sent = await mailer.sendMail({
-            from: `"SmartHealth Team" <${process.env.SMTP_FROM || 'noreply@mediqzy.com'}>`,
+          await sendTransactionalEmail({
             to: email,
             subject: String(subject || 'SmartHealth Communication').slice(0, 200),
-            text: safeMessage,
             html: _buildProfessionalEmailHtml({
               subject: String(subject || 'SmartHealth Communication').slice(0, 200),
               message: safeMessage,
               companyName,
             }),
+            text: safeMessage,
+            fromName: 'SmartHealth Team',
           });
 
           await _logTeamCommunication({
@@ -1952,11 +2122,11 @@ router.post('/communications/send', authTeam, requirePermission('Corporate Manag
             templateName,
             subject,
             message: safeMessage,
-            provider: 'smtp',
+            provider: 'unified',
             status: 'sent',
-            providerMessageId: sent?.messageId || null,
+            providerMessageId: null,
           });
-          sendResults.push({ recipient: email, success: true, messageId: sent?.messageId || null });
+          sendResults.push({ recipient: email, success: true, messageId: null });
         } catch (err) {
           await _logTeamCommunication({
             teamUserId,
@@ -1968,7 +2138,7 @@ router.post('/communications/send', authTeam, requirePermission('Corporate Manag
             templateName,
             subject,
             message: safeMessage,
-            provider: 'smtp',
+            provider: 'unified',
             status: 'failed',
             errorMessage: err?.message || 'Email send failed',
           });
@@ -2378,7 +2548,7 @@ router.get('/communications/logs', authTeam, requirePermission('Corporate Manage
 router.get('/communications/analytics', authTeam, requirePermission('Corporate Management'), async (req, res) => {
   try {
     const teamUserId = req.teamUser?.id || req.user?.id;
-    const { corporateId, days = 30 } = req.query;
+    const { corporateId, days = 30, channel } = req.query;
     const safeDays = Math.min(Math.max(parseInt(String(days), 10) || 30, 1), 365);
 
     const values = [teamUserId, safeDays];
@@ -2386,6 +2556,12 @@ router.get('/communications/analytics', authTeam, requirePermission('Corporate M
     if (corporateId) {
       values.push(parseInt(String(corporateId), 10));
       corporateClause = `AND corporate_id = $3`;
+    }
+    let channelClause = '';
+    if (channel) {
+      values.push(String(channel).toLowerCase());
+      corporateClause = corporateId ? `AND corporate_id = $3` : '';
+      channelClause = `AND channel = $${values.length}`;
     }
 
     const pool = sharedPool;
@@ -2397,7 +2573,8 @@ router.get('/communications/analytics', authTeam, requirePermission('Corporate M
        FROM team_communication_logs
        WHERE team_user_id = $1
          AND created_at >= NOW() - ($2 || ' days')::interval
-         ${corporateClause}`,
+         ${corporateClause}
+         ${channelClause}`,
       values
     );
 
@@ -2410,6 +2587,7 @@ router.get('/communications/analytics', authTeam, requirePermission('Corporate M
        WHERE team_user_id = $1
          AND created_at >= NOW() - ($2 || ' days')::interval
          ${corporateClause}
+         ${channelClause}
        GROUP BY channel
        ORDER BY channel ASC`,
       values
@@ -2424,6 +2602,7 @@ router.get('/communications/analytics', authTeam, requirePermission('Corporate M
        WHERE team_user_id = $1
          AND created_at >= NOW() - ($2 || ' days')::interval
          ${corporateClause}
+         ${channelClause}
        GROUP BY DATE_TRUNC('day', created_at)
        ORDER BY DATE_TRUNC('day', created_at) ASC`,
       values

@@ -583,6 +583,7 @@ const TeamCorporateManagement = () => {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const welcomeDeliveryAuditRef = useRef<HTMLDivElement | null>(null);
+  const communicationComposerRef = useRef<HTMLDivElement | null>(null);
   
   // State
   const [loading, setLoading] = useState(true);
@@ -623,6 +624,10 @@ const TeamCorporateManagement = () => {
   });
   const [communicationLogsLoading, setCommunicationLogsLoading] = useState(false);
   const [communicationAnalyticsDays, setCommunicationAnalyticsDays] = useState('30');
+  const [communicationHubTab, setCommunicationHubTab] = useState<'campaign' | 'templates' | 'analytics'>('campaign');
+  const [providerHealth, setProviderHealth] = useState<any>(null);
+  const [providerHealthLoading, setProviderHealthLoading] = useState(false);
+  const [showSendReviewModal, setShowSendReviewModal] = useState(false);
   const [sendingCommunication, setSendingCommunication] = useState(false);
   const [corporates, setCorporates] = useState<Corporate[]>([]);
   const [selectedCorporate, setSelectedCorporate] = useState<Corporate | null>(null);
@@ -899,10 +904,64 @@ const TeamCorporateManagement = () => {
     return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key: string) => map[key] || '');
   };
 
-  const persistCommunicationTemplates = (next: Record<CommunicationChannel, CommunicationTemplate[]>) => {
+  const persistCommunicationTemplates = async (next: Record<CommunicationChannel, CommunicationTemplate[]>) => {
     if (!selectedCorporate?.id) return;
     localStorage.setItem(getCommunicationStorageKey(selectedCorporate.id), JSON.stringify(next));
     setCommunicationTemplates(next);
+
+    const token = localStorage.getItem('teamToken');
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+    const channels: CommunicationChannel[] = ['email', 'whatsapp', 'sms'];
+    await Promise.allSettled(
+      channels.flatMap((channel) =>
+        (next[channel] || []).map((template) =>
+          api.post('/team/communications/templates', {
+            corporateId: selectedCorporate.id,
+            channel,
+            id: template.id,
+            name: template.name,
+            category: template.category || 'General',
+            subject: template.subject,
+            content: template.content,
+          }, { headers })
+        )
+      )
+    );
+  };
+
+  const loadServerCommunicationTemplates = async (corporateId: number) => {
+    try {
+      const token = localStorage.getItem('teamToken');
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+      const { data } = await api.get('/team/communications/templates', {
+        params: { corporateId },
+        headers,
+      });
+      if (data?.templates) {
+        setCommunicationTemplates((prev) => ({
+          email: data.templates.email?.length ? data.templates.email : prev.email,
+          whatsapp: data.templates.whatsapp?.length ? data.templates.whatsapp : prev.whatsapp,
+          sms: data.templates.sms?.length ? data.templates.sms : prev.sms,
+        }));
+      }
+    } catch (error) {
+      console.warn('Failed to load server communication templates', error);
+    }
+  };
+
+  const fetchProviderHealth = async () => {
+    try {
+      setProviderHealthLoading(true);
+      const token = localStorage.getItem('teamToken');
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+      const { data } = await api.get('/team/communications/provider-health', { headers });
+      setProviderHealth(data || null);
+    } catch (error) {
+      console.error('Failed to fetch provider health', error);
+      setProviderHealth(null);
+    } finally {
+      setProviderHealthLoading(false);
+    }
   };
 
   const resetCommunicationDraft = () => {
@@ -1158,7 +1217,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
             : item
         ),
       };
-      persistCommunicationTemplates(next);
+      await persistCommunicationTemplates(next);
 
       if (editingCommunicationTemplateId === template.id) {
         setCommunicationDraft((prev) => ({
@@ -1178,7 +1237,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     }
   };
 
-  const saveCommunicationTemplate = () => {
+  const saveCommunicationTemplate = async () => {
     if (!communicationDraft.name || !communicationDraft.content) {
       toast({ variant: 'destructive', title: 'Missing fields', description: 'Template name and content are required.' });
       return;
@@ -1221,7 +1280,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
             : template
         ),
       };
-      persistCommunicationTemplates(next);
+      await persistCommunicationTemplates(next);
       resetCommunicationDraft();
       toast({ title: 'Template updated', description: `${communicationChannel.toUpperCase()} template updated.` });
       return;
@@ -1240,7 +1299,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         ...communicationTemplates[communicationChannel],
       ],
     };
-    persistCommunicationTemplates(next);
+    await persistCommunicationTemplates(next);
     resetCommunicationDraft();
     toast({ title: 'Template saved', description: `${communicationChannel.toUpperCase()} template added.` });
   };
@@ -1262,6 +1321,14 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       subject: template.subject ? applyCommunicationPlaceholders(template.subject) : '',
       message: applyCommunicationPlaceholders(template.content),
     }));
+    setCommunicationHubTab('campaign');
+    setTimeout(() => {
+      communicationComposerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+    toast({
+      title: 'Template applied',
+      description: 'Review the composer, then send when ready.',
+    });
   };
 
   const storeAiDraftAsTemplate = (draft: any, sourceId?: string | number | null) => {
@@ -1281,7 +1348,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       ...communicationTemplates,
       [communicationChannel]: [template, ...existing],
     };
-    persistCommunicationTemplates(next);
+    await persistCommunicationTemplates(next);
     setSelectedTemplateId(templateId);
     return template;
   };
@@ -1302,7 +1369,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       ...communicationTemplates,
       [communicationChannel]: [template, ...communicationTemplates[communicationChannel]],
     };
-    persistCommunicationTemplates(next);
+    await persistCommunicationTemplates(next);
     setSelectedTemplateId(template.id);
     toast({ title: 'Template stored', description: 'Current draft saved to the Template Library.' });
   };
@@ -1317,14 +1384,29 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     }));
     const matchingTemplate = communicationTemplates[communicationChannel].find((item) => item.id === `ai-${action.id}`);
     if (matchingTemplate) setSelectedTemplateId(matchingTemplate.id);
+    setCommunicationHubTab('campaign');
+    setTimeout(() => communicationComposerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+    toast({ title: 'Draft applied', description: 'Review the composer on the Campaign tab.' });
   };
 
-  const removeCommunicationTemplate = (templateId: string) => {
+  const removeCommunicationTemplate = async (templateId: string) => {
     const next: Record<CommunicationChannel, CommunicationTemplate[]> = {
       ...communicationTemplates,
       [communicationChannel]: communicationTemplates[communicationChannel].filter((template) => template.id !== templateId),
     };
-    persistCommunicationTemplates(next);
+    await persistCommunicationTemplates(next);
+    if (selectedCorporate?.id) {
+      try {
+        const token = localStorage.getItem('teamToken');
+        const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+        await api.delete(`/team/communications/templates/${encodeURIComponent(templateId)}`, {
+          params: { corporateId: selectedCorporate.id, channel: communicationChannel },
+          headers,
+        });
+      } catch (error) {
+        console.warn('Failed to delete server template', error);
+      }
+    }
   };
 
   const getEmployeeChannelAddress = (employee: Employee) => {
@@ -1381,17 +1463,6 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
   const communicationFailed = Number(communicationSummary.failed || 0);
   const communicationSuccessRate = Number(communicationSummary.successRate || 0);
   const aiNextActionCount = Number(aiCommunicationDashboard?.nextActions?.length || 0);
-  const audienceCount = communicationRecipientMode === 'selected'
-    ? selectedCommunicationEmployeeIds.length
-    : communicationRecipientMode === 'bulk'
-      ? communicationBulkRecipients.split(/\n|,|;/g).map((item) => item.trim()).filter(Boolean).length
-      : (communicationComposer.to.trim() ? 1 : 0);
-  const isCommunicationReadyToSend = audienceCount > 0
-    && communicationComposer.message.trim().length > 0
-    && (communicationChannel !== 'email' || communicationComposer.subject.trim().length > 0)
-    && composerWithinWordLimit
-    && !composerHasBlockingLint;
-  const communicationHealthTone = communicationSuccessRate >= 80 ? 'healthy' : communicationSuccessRate >= 50 ? 'watch' : 'critical';
 
   const buildCommunicationRecipients = () => {
     if (communicationRecipientMode === 'individual') {
@@ -1412,6 +1483,30 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
     return [...new Set(bulkList)];
   };
 
+  const audienceCount = communicationRecipientMode === 'selected'
+    ? buildCommunicationRecipients().length
+    : communicationRecipientMode === 'bulk'
+      ? communicationBulkRecipients.split(/\n|,|;/g).map((item) => item.trim()).filter(Boolean).length
+      : (communicationComposer.to.trim() ? 1 : 0);
+
+  const readinessChecks = {
+    recipient: audienceCount > 0,
+    subject: communicationChannel !== 'email' || communicationComposer.subject.trim().length > 0,
+    message: communicationComposer.message.trim().length > 0,
+    limits: composerWithinWordLimit && !composerHasBlockingLint,
+    provider: communicationChannel === 'email'
+      ? providerHealth?.email?.healthy === true
+      : communicationChannel === 'whatsapp'
+        ? providerHealth?.whatsapp?.healthy === true
+        : providerHealth?.sms?.healthy === true,
+  };
+
+  const isCommunicationReadyToSend = readinessChecks.recipient
+    && readinessChecks.subject
+    && readinessChecks.message
+    && readinessChecks.limits;
+  const communicationHealthTone = communicationSuccessRate >= 80 ? 'healthy' : communicationSuccessRate >= 50 ? 'watch' : 'critical';
+
   const fetchCommunicationInsights = async (opts?: { days?: string }) => {
     if (!selectedCorporate?.id) return;
     try {
@@ -1426,7 +1521,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
           headers,
         }),
         api.get("/team/communications/analytics", {
-          params: { corporateId: selectedCorporate.id, days },
+          params: { corporateId: selectedCorporate.id, days, channel: communicationChannel },
           headers,
         }),
         api.get("/team/communications/ai-dashboard", {
@@ -1574,7 +1669,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
 
     setSendingCommunication(true);
     try {
-      await api.post('/team/communications/send', {
+      const response = await api.post('/team/communications/send', {
         channel: communicationChannel,
         to: recipients[0],
         recipients: recipients.slice(1),
@@ -1592,11 +1687,32 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
         })(),
       });
 
-      toast({
-        title: `${communicationChannel.toUpperCase()} sent`,
-        description: `Message sent to ${recipients.length} recipient${recipients.length > 1 ? 's' : ''} for ${selectedCorporate?.companyName || 'corporate contact'}.`,
-      });
-      if (communicationChannel === "email") {
+      const summary = response.data?.summary || {};
+      const failed = Number(summary.failed || 0);
+      const success = Number(summary.success || 0);
+      const allFailed = failed > 0 && success === 0;
+      const partial = failed > 0 && success > 0;
+
+      if (allFailed) {
+        const firstError = response.data?.results?.find((r: any) => !r.success)?.error;
+        toast({
+          variant: 'destructive',
+          title: `${communicationChannel.toUpperCase()} delivery failed`,
+          description: firstError || response.data?.message || `All ${failed} recipient(s) failed. Check provider settings.`,
+        });
+      } else if (partial) {
+        toast({
+          title: `${communicationChannel.toUpperCase()} partially sent`,
+          description: `${success} delivered, ${failed} failed. Review delivery logs for details.`,
+        });
+      } else {
+        toast({
+          title: `${communicationChannel.toUpperCase()} sent`,
+          description: `Message delivered to ${success || recipients.length} recipient${(success || recipients.length) > 1 ? 's' : ''}.`,
+        });
+      }
+
+      if (communicationChannel === "email" && success > 0) {
         await api.post("/team/communications/ai-monitor", {
           communicationId: aiCommunicationDraftId || undefined,
           corporateId: selectedCorporate?.id,
@@ -1607,16 +1723,30 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
           contactEmail: recipients[0],
         }, { headers: teamAuthHeaders() }).catch(() => {});
       }
+      setShowSendReviewModal(false);
       await fetchCommunicationInsights();
+      await fetchProviderHealth();
     } catch (error: any) {
       toast({
         variant: 'destructive',
         title: `${communicationChannel.toUpperCase()} send failed`,
-        description: error?.response?.data?.message || 'Unable to send right now. Template is still saved.',
+        description: error?.response?.data?.message || 'Unable to send right now.',
       });
     } finally {
       setSendingCommunication(false);
     }
+  };
+
+  const openSendReview = () => {
+    if (!isCommunicationReadyToSend) {
+      toast({
+        variant: 'destructive',
+        title: 'Not ready to send',
+        description: 'Complete recipient, subject (email), and message before reviewing.',
+      });
+      return;
+    }
+    setShowSendReviewModal(true);
   };
 
   useEffect(() => {
@@ -1638,6 +1768,8 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
       setCommunicationTemplates(defaultCommunicationTemplates);
     }
 
+    await loadServerCommunicationTemplates(selectedCorporate.id);
+
     setCommunicationComposer({
       to: getDefaultRecipientByChannel(communicationChannel, selectedCorporate),
       subject: '',
@@ -1654,9 +1786,11 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
   useEffect(() => {
     if (!selectedCorporate) return;
     setCommunicationComposer((prev) => ({
-      ...prev,
       to: getDefaultRecipientByChannel(communicationChannel, selectedCorporate),
+      subject: '',
+      message: '',
     }));
+    setSelectedTemplateId('');
     setSelectedCommunicationEmployeeIds([]);
     setCommunicationBulkRecipients('');
     setCommunicationRecipientSearch('');
@@ -1666,6 +1800,7 @@ Maximum ${templateWordLimit} words and ${templateCharLimit} characters for the b
   useEffect(() => {
     if (activeTab === 'communication' && selectedCorporate?.id) {
       fetchCommunicationInsights();
+      fetchProviderHealth();
     }
   }, [activeTab, selectedCorporate?.id, communicationChannel]);
 
@@ -5622,32 +5757,60 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
 
                 <CardContent className="space-y-5 bg-muted/30 p-4 md:p-6">
                   <Card className="border bg-card">
-                    <CardContent className="pt-4">
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                        <div className="rounded-lg border bg-muted/30 p-3">
-                          <p className="text-xs text-muted-foreground">Step 1</p>
-                          <p className="text-sm font-medium text-foreground">Choose Channel</p>
-                          <p className="text-xs text-muted-foreground">Current: {communicationChannel.toUpperCase()}</p>
+                    <CardContent className="pt-4 space-y-3">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">Send Readiness</p>
+                          <p className="text-xs text-muted-foreground">Complete each item before sending your {communicationChannel.toUpperCase()} campaign.</p>
                         </div>
-                        <div className="rounded-lg border bg-muted/30 p-3">
-                          <p className="text-xs text-muted-foreground">Step 2</p>
-                          <p className="text-sm font-medium text-foreground">Pick or Create Template</p>
-                          <p className="text-xs text-muted-foreground">{selectedTemplateId ? 'Template selected' : 'No template selected'}</p>
-                        </div>
-                        <div className="rounded-lg border bg-muted/30 p-3">
-                          <p className="text-xs text-muted-foreground">Step 3</p>
-                          <p className="text-sm font-medium text-foreground">Confirm Audience</p>
-                          <p className="text-xs text-muted-foreground">Recipients ready: {audienceCount}</p>
-                        </div>
-                        <div className="rounded-lg border bg-muted/30 p-3">
-                          <p className="text-xs text-muted-foreground">Step 4</p>
-                          <p className="text-sm font-medium text-foreground">Send & Monitor</p>
-                          <p className="text-xs text-muted-foreground">{isCommunicationReadyToSend ? 'Ready to send' : 'Missing required inputs'}</p>
-                        </div>
+                        <Badge className={isCommunicationReadyToSend ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}>
+                          {isCommunicationReadyToSend ? 'Ready to review & send' : 'Incomplete'}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
+                        {[
+                          { key: 'recipient', label: `Recipient (${audienceCount})`, ok: readinessChecks.recipient },
+                          { key: 'subject', label: communicationChannel === 'email' ? 'Email subject' : 'Subject (n/a)', ok: readinessChecks.subject },
+                          { key: 'message', label: 'Message body', ok: readinessChecks.message },
+                          { key: 'limits', label: 'Length & validation', ok: readinessChecks.limits },
+                          { key: 'provider', label: `${communicationChannel.toUpperCase()} provider`, ok: readinessChecks.provider },
+                        ].map((item) => (
+                          <div key={item.key} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${item.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300'}`}>
+                            {item.ok ? <CheckCircle className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+                            <span>{item.label}</span>
+                          </div>
+                        ))}
                       </div>
                     </CardContent>
                   </Card>
 
+                  <Card className={`border ${readinessChecks.provider ? 'border-emerald-200 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/20' : 'border-rose-200 bg-rose-50/50 dark:border-rose-800 dark:bg-rose-950/20'}`}>
+                    <CardContent className="flex flex-col gap-3 pt-4 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Delivery Provider Status</p>
+                        <p className="text-xs text-muted-foreground">
+                          {providerHealthLoading && 'Checking provider configuration...'}
+                          {!providerHealthLoading && readinessChecks.provider && `${communicationChannel.toUpperCase()} provider healthy (${providerHealth?.[communicationChannel]?.provider || providerHealth?.email?.provider || 'configured'}).`}
+                          {!providerHealthLoading && !readinessChecks.provider && (providerHealth?.[communicationChannel]?.error || providerHealth?.email?.error || 'Provider is not configured or failed verification.')}
+                        </p>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={fetchProviderHealth} disabled={providerHealthLoading}>
+                        <RefreshCw className={`mr-2 h-4 w-4 ${providerHealthLoading ? 'animate-spin' : ''}`} />
+                        Check Provider
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  <Tabs value={communicationHubTab} onValueChange={(v) => setCommunicationHubTab(v as 'campaign' | 'templates' | 'analytics')}>
+                    <TabsList className="grid w-full grid-cols-3 rounded-xl bg-muted p-1">
+                      <TabsTrigger value="campaign" className="rounded-lg">Campaign</TabsTrigger>
+                      <TabsTrigger value="templates" className="rounded-lg">Templates</TabsTrigger>
+                      <TabsTrigger value="analytics" className="rounded-lg">Analytics</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+
+                  {communicationHubTab === 'campaign' && (
+                  <>
                   <Tabs value={communicationChannel} onValueChange={(v) => setCommunicationChannel(v as CommunicationChannel)}>
                     <TabsList className="grid w-full grid-cols-3 rounded-xl bg-muted p-1">
                       <TabsTrigger value="email" className="rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground">Email</TabsTrigger>
@@ -5656,188 +5819,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                     </TabsList>
                   </Tabs>
 
-                  <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-                    <Card className="border bg-card">
-                      <CardContent className="pt-4">
-                        <p className="text-xs text-muted-foreground">Audience Ready</p>
-                        <p className="text-2xl font-semibold text-foreground">{audienceCount}</p>
-                      </CardContent>
-                    </Card>
-                    <Card className="border bg-card">
-                      <CardContent className="pt-4">
-                        <p className="text-xs text-muted-foreground">Total Comm</p>
-                        <p className="text-2xl font-semibold text-foreground">{communicationTotal}</p>
-                      </CardContent>
-                    </Card>
-                    <Card className="border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30">
-                      <CardContent className="pt-4">
-                        <p className="text-xs text-emerald-700 dark:text-emerald-400">Sent</p>
-                        <p className="text-2xl font-semibold text-emerald-700 dark:text-emerald-400">{communicationSent}</p>
-                      </CardContent>
-                    </Card>
-                    <Card className="border-rose-200 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/30">
-                      <CardContent className="pt-4">
-                        <p className="text-xs text-rose-700 dark:text-rose-400">Failed</p>
-                        <p className="text-2xl font-semibold text-rose-700 dark:text-rose-400">{communicationFailed}</p>
-                      </CardContent>
-                    </Card>
-                    <Card className="border-sky-200 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/30">
-                      <CardContent className="pt-4">
-                        <p className="text-xs text-sky-700 dark:text-sky-400">Success Rate</p>
-                        <p className="text-2xl font-semibold text-sky-700 dark:text-sky-400">{communicationSuccessRate}%</p>
-                      </CardContent>
-                    </Card>
-                    <Card className="border-violet-200 bg-violet-50 dark:border-violet-800 dark:bg-violet-950/30">
-                      <CardContent className="pt-4">
-                        <p className="text-xs text-violet-700 dark:text-violet-400">AI Next Actions</p>
-                        <p className="text-2xl font-semibold text-violet-700 dark:text-violet-400">{aiNextActionCount}</p>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  <Card className="border bg-card">
-                    <CardContent className="flex flex-col gap-3 pt-4 md:flex-row md:items-center md:justify-between">
-                      <div className="flex items-start gap-3">
-                        {communicationHealthTone === 'healthy' ? (
-                          <CheckCircle className="mt-0.5 h-5 w-5 text-emerald-600" />
-                        ) : communicationHealthTone === 'watch' ? (
-                          <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />
-                        ) : (
-                          <XCircle className="mt-0.5 h-5 w-5 text-rose-600" />
-                        )}
-                        <div>
-                          <p className="text-sm font-semibold text-foreground">Communication Health Status</p>
-                          <p className="text-sm text-muted-foreground">
-                            {communicationHealthTone === 'healthy' && 'Delivery performance is strong. Continue scaling high-response templates.'}
-                            {communicationHealthTone === 'watch' && 'Delivery quality is moderate. Prioritize template fixes and recipient hygiene.'}
-                            {communicationHealthTone === 'critical' && 'Critical communication risk detected. Fix provider settings and run retry campaigns.'}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge className="bg-muted text-foreground/80">Window: Last {communicationAnalyticsDays} days</Badge>
-                        <Badge className="bg-card text-foreground/80 border">Channel: {communicationChannel.toUpperCase()}</Badge>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="border-cyan-200 bg-gradient-to-br from-cyan-50 to-cyan-100/60 dark:border-cyan-800 dark:from-cyan-950/30 dark:to-cyan-900/10">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2 text-base text-foreground"><Brain className="h-4 w-4 text-cyan-700" />AI-Assisted Communication</CardTitle>
-                      <CardDescription className="text-muted-foreground">Draft, monitor, and prioritize outreach using AI-assisted intent signals.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-                        {[
-                          { label: 'Drafts', value: aiCommunicationDashboard?.totals?.drafts || 0 },
-                          { label: 'Sent', value: aiCommunicationDashboard?.totals?.sent || 0 },
-                          { label: 'Replies', value: aiCommunicationDashboard?.totals?.replies || 0 },
-                          { label: 'Hot Signals', value: aiCommunicationDashboard?.totals?.hotSignals || 0 },
-                          { label: 'Avg Score', value: aiCommunicationDashboard?.totals?.avgEngagement || 0 },
-                        ].map((item) => (
-                          <div key={item.label} className="rounded-lg border-cyan-200 bg-card p-3">
-                            <p className="text-xs text-muted-foreground">{item.label}</p>
-                            <p className="text-xl font-semibold text-foreground">{item.value}</p>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label>Record Reply or Buying Signal</Label>
-                          <Textarea rows={3} value={aiReplyText} onChange={(e) => setAiReplyText(e.target.value)} placeholder="Paste corporate reply, for example: Yes, share demo slots next week." />
-                          <Button size="sm" variant="outline" onClick={recordAiReplySignal} disabled={aiReplyMonitoring || !aiReplyText.trim()}>
-                            <Activity className="mr-2 h-4 w-4" />{aiReplyMonitoring ? 'Monitoring...' : 'Monitor Reply'}
-                          </Button>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label>AI Next Actions</Label>
-                          <div className="max-h-40 space-y-2 overflow-auto pr-1">
-                            {(aiCommunicationDashboard?.nextActions || []).slice(0, 4).map((action: any) => (
-                              <div key={action.id} className="rounded-lg border-cyan-200 bg-card p-3">
-                                <div className="flex items-center justify-between gap-2">
-                                  <p className="truncate text-sm font-medium text-foreground">{action.subject || action.nextAction?.type || 'Follow-up'}</p>
-                                  <Badge variant="outline" className="capitalize">{action.conversionSignal || action.status}</Badge>
-                                </div>
-                                <p className="mt-1 truncate text-xs text-muted-foreground">{action.nextAction?.message || action.contactEmail || 'AI monitored communication'}</p>
-                                <div className="mt-2 flex gap-2">
-                                  <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => useStoredAiCommunication(action)}>Use</Button>
-                                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { storeAiDraftAsTemplate({ subject: action.subject, message: action.body || action.nextAction?.message }, action.id); toast({ title: 'Template stored', description: 'AI draft saved to the Template Library.' }); }}>Save Template</Button>
-                                </div>
-                              </div>
-                            ))}
-                            {!aiCommunicationDashboard?.nextActions?.length && (
-                              <p className="rounded-lg border-dashed border bg-card p-3 text-xs text-muted-foreground">No AI-monitored actions yet. Generate an AI draft to start tracking intent signals.</p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <div className="overflow-x-auto pb-2">
-                    <div className="grid min-w-[1080px] grid-cols-5 gap-4">
-                      <Card className="border bg-card col-span-2">
-                      <CardHeader>
-                        <CardTitle className="text-base text-foreground">Template Library</CardTitle>
-                        <CardDescription className="text-muted-foreground">Use dynamic placeholders: {'{{companyName}}, {{contactPerson}}, {{corporateId}}, {{employeeCount}}, {{industry}}, {{packageType}}'}</CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                          <div className="relative">
-                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground/70" />
-                            <Input
-                              value={templateLibrarySearch}
-                              onChange={(e) => setTemplateLibrarySearch(e.target.value)}
-                              placeholder="Search templates"
-                              className="pl-8"
-                            />
-                          </div>
-                          <Select value={templateLibraryCategory} onValueChange={(value) => setTemplateLibraryCategory(value)}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Category" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="all">All Categories</SelectItem>
-                              {templateCategoryOptions.map((category) => (
-                                <SelectItem key={category} value={category}>{category}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <ScrollArea className="h-[470px] w-full rounded-md border">
-                          <div className="min-w-[700px] space-y-3 p-2">
-                            {visibleTemplates.length === 0 && (
-                              <div className="rounded-lg border-dashed border bg-muted/40 p-4 text-sm text-muted-foreground">No templates available for this channel. Create one from the form below.</div>
-                            )}
-                            {visibleTemplates.map((template) => (
-                              <div key={template.id} className="min-w-[680px] space-y-2 rounded-lg border bg-muted/30 p-3">
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <p className="truncate font-medium text-foreground">{template.name}</p>
-                                    <p className="text-xs text-muted-foreground">{template.category}</p>
-                                  </div>
-                                  <div className="flex shrink-0 gap-2 whitespace-nowrap">
-                                    <Button size="sm" variant="outline" className="whitespace-nowrap" onClick={() => useCommunicationTemplate(template)}>Use</Button>
-                                    <Button size="sm" variant="outline" className="whitespace-nowrap" onClick={() => editCommunicationTemplate(template)}>Edit</Button>
-                                    <Button size="sm" variant="outline" className="gap-1 whitespace-nowrap" disabled={aiTemplateWriting || !selectedCorporate} onClick={() => aiEditExistingTemplate(template)}>
-                                      <Sparkles className="h-3.5 w-3.5" />AI Edit
-                                    </Button>
-                                    <Button size="sm" variant="ghost" className="whitespace-nowrap text-rose-700 hover:bg-rose-50" onClick={() => removeCommunicationTemplate(template.id)}>Delete</Button>
-                                  </div>
-                                </div>
-                                {template.subject && <p className="text-xs text-foreground/80"><span className="font-medium">Subject:</span> {template.subject}</p>}
-                                <p className="line-clamp-3 text-sm text-muted-foreground">{template.content}</p>
-                              </div>
-                            ))}
-                          </div>
-                          <ScrollBar orientation="horizontal" className="h-3" />
-                        </ScrollArea>
-                      </CardContent>
-                    </Card>
-
-                      <Card className="border bg-card col-span-3">
+                  <Card ref={communicationComposerRef} className="border bg-card">
                       <CardHeader>
                         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                           <div>
@@ -6022,9 +6004,9 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                         </div>
 
                         <div className="flex flex-wrap gap-2">
-                          <Button onClick={sendCommunication} disabled={sendingCommunication || !isCommunicationReadyToSend}>
+                          <Button onClick={openSendReview} disabled={sendingCommunication || !isCommunicationReadyToSend}>
                             <Send className="mr-2 h-4 w-4" />
-                            {sendingCommunication ? 'Sending...' : 'Send'}
+                            {sendingCommunication ? 'Sending...' : 'Review & Send'}
                           </Button>
                           <Button variant="outline" onClick={() => navigator.clipboard.writeText(communicationComposer.message || '')}>
                             <Copy className="mr-2 h-4 w-4" />Copy
@@ -6040,97 +6022,65 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                           </p>
                         )}
                       </CardContent>
-                      </Card>
-                    </div>
-                  </div>
+                  </Card>
+                  </>
+                  )}
+
+                  {communicationHubTab === 'templates' && (
+                  <>
+                  <Tabs value={communicationChannel} onValueChange={(v) => setCommunicationChannel(v as CommunicationChannel)}>
+                    <TabsList className="grid w-full grid-cols-3 rounded-xl bg-muted p-1">
+                      <TabsTrigger value="email" className="rounded-lg">Email</TabsTrigger>
+                      <TabsTrigger value="whatsapp" className="rounded-lg">WhatsApp</TabsTrigger>
+                      <TabsTrigger value="sms" className="rounded-lg">SMS</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
 
                   <Card className="border bg-card">
                     <CardHeader>
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div>
-                          <CardTitle className="text-base text-foreground">Delivery Logs and Analytics</CardTitle>
-                          <CardDescription className="text-muted-foreground">Monitor outcomes and catch delivery failures quickly.</CardDescription>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Select
-                            value={communicationAnalyticsDays}
-                            onValueChange={(value) => {
-                              setCommunicationAnalyticsDays(value);
-                              fetchCommunicationInsights({ days: value });
-                            }}
-                          >
-                            <SelectTrigger className="w-32">
-                              <SelectValue placeholder="Window" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="7">Last 7 days</SelectItem>
-                              <SelectItem value="30">Last 30 days</SelectItem>
-                              <SelectItem value="90">Last 90 days</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Button variant="outline" size="sm" onClick={() => fetchCommunicationInsights()} disabled={communicationLogsLoading}>
-                            <RefreshCw className={`h-4 w-4 ${communicationLogsLoading ? 'animate-spin' : ''}`} />
-                          </Button>
-                        </div>
-                      </div>
+                      <CardTitle className="text-base text-foreground">Template Library</CardTitle>
+                      <CardDescription className="text-muted-foreground">Apply templates to the composer on the Campaign tab. Placeholders: {'{{companyName}}, {{contactPerson}}, {{corporateId}}, {{employeeCount}}, {{industry}}, {{packageType}}'}</CardDescription>
                     </CardHeader>
-
-                    <CardContent className="space-y-4">
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                        <div className="rounded-lg border bg-muted/40 p-3">
-                          <p className="text-xs text-muted-foreground">Total</p>
-                          <p className="text-2xl font-semibold text-foreground">{communicationTotal}</p>
+                    <CardContent className="space-y-3">
+                      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground/70" />
+                          <Input value={templateLibrarySearch} onChange={(e) => setTemplateLibrarySearch(e.target.value)} placeholder="Search templates" className="pl-8" />
                         </div>
-                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-800 dark:bg-emerald-950/30">
-                          <p className="text-xs text-emerald-700 dark:text-emerald-400">Sent</p>
-                          <p className="text-2xl font-semibold text-emerald-700 dark:text-emerald-400">{communicationSent}</p>
-                        </div>
-                        <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 dark:border-rose-800 dark:bg-rose-950/30">
-                          <p className="text-xs text-rose-700 dark:text-rose-400">Failed</p>
-                          <p className="text-2xl font-semibold text-rose-700 dark:text-rose-400">{communicationFailed}</p>
-                        </div>
-                        <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 dark:border-sky-800 dark:bg-sky-950/30">
-                          <p className="text-xs text-sky-700 dark:text-sky-400">Success Rate</p>
-                          <p className="text-2xl font-semibold text-sky-700 dark:text-sky-400">{communicationSuccessRate}%</p>
-                        </div>
+                        <Select value={templateLibraryCategory} onValueChange={(value) => setTemplateLibraryCategory(value)}>
+                          <SelectTrigger><SelectValue placeholder="Category" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Categories</SelectItem>
+                            {templateCategoryOptions.map((category) => (
+                              <SelectItem key={category} value={category}>{category}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
-
-                      <div className="overflow-x-auto rounded-lg border">
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="bg-muted/60">
-                              <TableHead>Time</TableHead>
-                              <TableHead>Channel</TableHead>
-                              <TableHead>Recipient</TableHead>
-                              <TableHead>Template</TableHead>
-                              <TableHead>Status</TableHead>
-                              <TableHead>Provider</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {communicationLogs.length === 0 ? (
-                              <TableRow>
-                                <TableCell colSpan={6} className="text-center text-muted-foreground">No communication logs yet.</TableCell>
-                              </TableRow>
-                            ) : (
-                              communicationLogs.map((log) => (
-                                <TableRow key={log.id}>
-                                  <TableCell>{new Date(log.created_at).toLocaleString()}</TableCell>
-                                  <TableCell className="uppercase">{log.channel}</TableCell>
-                                  <TableCell className="max-w-[220px] truncate">{log.recipient}</TableCell>
-                                  <TableCell>{log.template_name || '-'}</TableCell>
-                                  <TableCell>
-                                    <Badge className={log.status === 'sent' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}>
-                                      {log.status}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell>{log.provider || '-'}</TableCell>
-                                </TableRow>
-                              ))
-                            )}
-                          </TableBody>
-                        </Table>
-                      </div>
+                      <ScrollArea className="h-[420px] w-full rounded-md border">
+                        <div className="space-y-3 p-2">
+                          {visibleTemplates.length === 0 && (
+                            <div className="rounded-lg border-dashed border bg-muted/40 p-4 text-sm text-muted-foreground">No templates for this channel yet.</div>
+                          )}
+                          {visibleTemplates.map((template) => (
+                            <div key={template.id} className="space-y-2 rounded-lg border bg-muted/30 p-3">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="truncate font-medium text-foreground">{template.name}</p>
+                                  <p className="text-xs text-muted-foreground">{template.category}</p>
+                                </div>
+                                <div className="flex shrink-0 gap-2">
+                                  <Button size="sm" variant="default" onClick={() => useCommunicationTemplate(template)}>Apply to Composer</Button>
+                                  <Button size="sm" variant="outline" onClick={() => editCommunicationTemplate(template)}>Edit</Button>
+                                  <Button size="sm" variant="ghost" className="text-rose-700" onClick={() => removeCommunicationTemplate(template.id)}>Delete</Button>
+                                </div>
+                              </div>
+                              {template.subject && <p className="text-xs"><span className="font-medium">Subject:</span> {template.subject}</p>}
+                              <p className="line-clamp-3 text-sm text-muted-foreground">{template.content}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
                     </CardContent>
                   </Card>
 
@@ -6299,6 +6249,146 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                       </div>
                     </CardContent>
                   </Card>
+                  </>
+                  )}
+
+                  {communicationHubTab === 'analytics' && (
+                  <>
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                    <Card className="border bg-card"><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Delivery Attempts</p><p className="text-2xl font-semibold">{communicationTotal}</p></CardContent></Card>
+                    <Card className="border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30"><CardContent className="pt-4"><p className="text-xs text-emerald-700">Sent</p><p className="text-2xl font-semibold text-emerald-700">{communicationSent}</p></CardContent></Card>
+                    <Card className="border-rose-200 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/30"><CardContent className="pt-4"><p className="text-xs text-rose-700">Failed</p><p className="text-2xl font-semibold text-rose-700">{communicationFailed}</p></CardContent></Card>
+                    <Card className="border-sky-200 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/30"><CardContent className="pt-4"><p className="text-xs text-sky-700">Success Rate</p><p className="text-2xl font-semibold text-sky-700">{communicationSuccessRate}%</p></CardContent></Card>
+                    <Card className="border-violet-200 bg-violet-50 dark:border-violet-800 dark:bg-violet-950/30"><CardContent className="pt-4"><p className="text-xs text-violet-700">AI Draft Suggestions</p><p className="text-2xl font-semibold text-violet-700">{aiNextActionCount}</p></CardContent></Card>
+                    <Card className="border bg-card"><CardContent className="pt-4"><p className="text-xs text-muted-foreground">Audience Ready</p><p className="text-2xl font-semibold">{audienceCount}</p></CardContent></Card>
+                  </div>
+
+                  <Card className="border bg-card">
+                    <CardContent className="flex flex-col gap-3 pt-4 md:flex-row md:items-center md:justify-between">
+                      <div className="flex items-start gap-3">
+                        {communicationHealthTone === 'healthy' ? <CheckCircle className="mt-0.5 h-5 w-5 text-emerald-600" /> : communicationHealthTone === 'watch' ? <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" /> : <XCircle className="mt-0.5 h-5 w-5 text-rose-600" />}
+                        <div>
+                          <p className="text-sm font-semibold">Communication Health</p>
+                          <p className="text-sm text-muted-foreground">
+                            {communicationHealthTone === 'critical' ? 'Critical delivery risk. Fix provider settings before scaling outreach.' : communicationHealthTone === 'watch' ? 'Moderate delivery quality. Review failed logs and templates.' : 'Delivery performance is healthy for this channel.'}
+                          </p>
+                        </div>
+                      </div>
+                      <Badge className="bg-card border">Channel: {communicationChannel.toUpperCase()} · Last {communicationAnalyticsDays} days</Badge>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-cyan-200 bg-gradient-to-br from-cyan-50 to-cyan-100/60 dark:border-cyan-800 dark:from-cyan-950/30 dark:to-cyan-900/10">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-base"><Brain className="h-4 w-4 text-cyan-700" />AI Draft Suggestions</CardTitle>
+                      <CardDescription>Apply a draft to the Campaign composer or save it as a template.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>Record Reply or Buying Signal</Label>
+                          <Textarea rows={3} value={aiReplyText} onChange={(e) => setAiReplyText(e.target.value)} placeholder="Paste corporate reply, for example: Yes, share demo slots next week." />
+                          <Button size="sm" variant="outline" onClick={recordAiReplySignal} disabled={aiReplyMonitoring || !aiReplyText.trim()}>
+                            <Activity className="mr-2 h-4 w-4" />{aiReplyMonitoring ? 'Monitoring...' : 'Monitor Reply'}
+                          </Button>
+                        </div>
+                        <div className="space-y-2 max-h-48 overflow-auto">
+                          <Label>AI Draft Suggestions</Label>
+                          {(aiCommunicationDashboard?.nextActions || []).slice(0, 4).map((action: any) => (
+                            <div key={action.id} className="rounded-lg border bg-card p-3 mb-2">
+                              <p className="text-sm font-medium truncate">{action.subject || 'Follow-up'}</p>
+                              <div className="mt-2 flex gap-2">
+                                <Button size="sm" variant="outline" onClick={() => useStoredAiCommunication(action)}>Apply to Composer</Button>
+                                <Button size="sm" variant="ghost" onClick={() => { storeAiDraftAsTemplate({ subject: action.subject, message: action.body || action.nextAction?.message }, action.id); toast({ title: 'Template saved' }); }}>Save Template</Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border bg-card">
+                    <CardHeader>
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <CardTitle className="text-base">Delivery Logs</CardTitle>
+                          <CardDescription>Failed deliveries include provider error details for faster fixes.</CardDescription>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Select value={communicationAnalyticsDays} onValueChange={(value) => { setCommunicationAnalyticsDays(value); fetchCommunicationInsights({ days: value }); }}>
+                            <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="7">Last 7 days</SelectItem>
+                              <SelectItem value="30">Last 30 days</SelectItem>
+                              <SelectItem value="90">Last 90 days</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button variant="outline" size="sm" onClick={() => fetchCommunicationInsights()} disabled={communicationLogsLoading}>
+                            <RefreshCw className={`h-4 w-4 ${communicationLogsLoading ? 'animate-spin' : ''}`} />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="overflow-x-auto rounded-lg border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-muted/60">
+                              <TableHead>Time</TableHead>
+                              <TableHead>Channel</TableHead>
+                              <TableHead>Recipient</TableHead>
+                              <TableHead>Template</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Provider</TableHead>
+                              <TableHead>Error</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {communicationLogs.length === 0 ? (
+                              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No communication logs yet.</TableCell></TableRow>
+                            ) : communicationLogs.map((log) => (
+                              <TableRow key={log.id}>
+                                <TableCell>{new Date(log.created_at).toLocaleString()}</TableCell>
+                                <TableCell className="uppercase">{log.channel}</TableCell>
+                                <TableCell className="max-w-[180px] truncate">{log.recipient}</TableCell>
+                                <TableCell>{log.template_name || '-'}</TableCell>
+                                <TableCell><Badge className={log.status === 'sent' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}>{log.status}</Badge></TableCell>
+                                <TableCell>{log.provider || '-'}</TableCell>
+                                <TableCell className="max-w-[240px] truncate text-xs text-rose-700" title={log.error_message || ''}>{log.error_message || '-'}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  </>
+                  )}
+
+                  <Dialog open={showSendReviewModal} onOpenChange={setShowSendReviewModal}>
+                    <DialogContent className="max-w-lg">
+                      <DialogHeader>
+                        <DialogTitle>Review before sending</DialogTitle>
+                        <DialogDescription>Confirm recipients and message content for {selectedCorporate?.companyName}.</DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-3 text-sm">
+                        <div><span className="font-medium">Channel:</span> {communicationChannel.toUpperCase()}</div>
+                        <div><span className="font-medium">Recipients:</span> {buildCommunicationRecipients().join(', ')}</div>
+                        {communicationChannel === 'email' && <div><span className="font-medium">Subject:</span> {communicationComposer.subject}</div>}
+                        <div className="rounded-md border bg-muted/40 p-3 whitespace-pre-wrap max-h-48 overflow-auto">{communicationComposer.message}</div>
+                        {!readinessChecks.provider && (
+                          <p className="text-xs text-rose-700">Warning: provider health check failed. Sending may fail.</p>
+                        )}
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowSendReviewModal(false)}>Cancel</Button>
+                        <Button onClick={sendCommunication} disabled={sendingCommunication}>
+                          {sendingCommunication ? 'Sending...' : `Send ${communicationChannel.toUpperCase()}`}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 </CardContent>
               </Card>
             </TabsContent>
