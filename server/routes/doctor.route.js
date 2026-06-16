@@ -910,6 +910,9 @@ router.get("/:doctorId/user-slots", async (req, res) => {
       });
 
       const bookedSlotTimes = bookedAppointments.map(apt => apt.appointmentTime);
+      const blockedSlots = daySchedule.blockedSlots || [];
+      const normalizeSlotKey = (slot) => String(slot || '').replace(/\s+/g, '');
+      const isBlocked = (slot) => blockedSlots.some((b) => normalizeSlotKey(b) === normalizeSlotKey(slot));
 
       // Generate online slots
       const onlineSlots = daySchedule.online?.enabled
@@ -919,8 +922,8 @@ router.get("/:doctorId/user-slots", async (req, res) => {
           slotDuration
         ).map(slot => ({
           time: slot,
-          available: !bookedSlotTimes.includes(slot) && !daySchedule.blockedSlots?.includes(slot),
-          blocked: daySchedule.blockedSlots?.includes(slot) || false
+          available: !bookedSlotTimes.includes(slot) && !isBlocked(slot),
+          blocked: isBlocked(slot)
         }))
         : [];
 
@@ -934,8 +937,8 @@ router.get("/:doctorId/user-slots", async (req, res) => {
           const location = practiceLocations.find(loc => loc.id === daySchedule.inPerson?.locationId);
           return {
             time: slot,
-            available: !bookedSlotTimes.includes(slot) && !daySchedule.blockedSlots?.includes(slot),
-            blocked: daySchedule.blockedSlots?.includes(slot) || false,
+            available: !bookedSlotTimes.includes(slot) && !isBlocked(slot),
+            blocked: isBlocked(slot),
             location: location ? {
               name: location.name,
               address: location.address,

@@ -10,6 +10,56 @@ const toFiniteNumber = (value) => {
   return Number.isFinite(n) ? n : null;
 };
 
+const normalizeSlotKey = (slot) => String(slot || '').replace(/\s+/g, '');
+
+const isSlotBlocked = (slot, blockedSlots = []) => {
+  const key = normalizeSlotKey(slot);
+  return blockedSlots.some((blocked) => normalizeSlotKey(blocked) === key);
+};
+
+const mergeDaySchedule = (existing, defaults) => {
+  const inPerson = {
+    enabled: existing?.inPerson?.enabled ?? defaults.inPerson.enabled,
+    startTime: existing?.inPerson?.startTime || defaults.inPerson.startTime,
+    endTime: existing?.inPerson?.endTime || defaults.inPerson.endTime,
+  };
+
+  if (existing?.inPerson?.locationId) {
+    inPerson.locationId = existing.inPerson.locationId;
+  }
+
+  return {
+    isOff: existing?.isOff ?? defaults.isOff,
+    blockedSlots: Array.isArray(existing?.blockedSlots) ? existing.blockedSlots : [],
+    online: {
+      enabled: existing?.online?.enabled ?? defaults.online.enabled,
+      startTime: existing?.online?.startTime || defaults.online.startTime,
+      endTime: existing?.online?.endTime || defaults.online.endTime,
+    },
+    inPerson,
+  };
+};
+
+const parseWeeklySchedule = (weeklySchedule, defaultSchedule) => {
+  let parsed = weeklySchedule;
+  if (!parsed) {
+    parsed = defaultSchedule;
+  } else if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch (e) {
+      console.error('Failed to parse weeklySchedule:', e);
+      parsed = defaultSchedule;
+    }
+  }
+
+  Object.keys(defaultSchedule).forEach((day) => {
+    parsed[day] = mergeDaySchedule(parsed[day], defaultSchedule[day]);
+  });
+
+  return parsed;
+};
+
 const hasGoogleVerifiedClinicLocation = (doctor) => {
   const clinicAddress = typeof doctor?.clinicAddress === 'string' ? doctor.clinicAddress.trim() : '';
   const clinicAddressJson = doctor?.clinicAddress_json && typeof doctor.clinicAddress_json === 'object'
@@ -74,40 +124,8 @@ router.get('/appointment-config', authUser, async (req, res) => {
     };
 
     // Parse weeklySchedule if it's a string, or use default if null
-    let weeklySchedule = doctor.weeklySchedule;
-    if (!weeklySchedule) {
-      weeklySchedule = defaultSchedule;
-    } else if (typeof weeklySchedule === 'string') {
-      try {
-        weeklySchedule = JSON.parse(weeklySchedule);
-      } catch (e) {
-        console.error('Failed to parse weeklySchedule:', e);
-        weeklySchedule = defaultSchedule;
-      }
-    }
+    const weeklySchedule = parseWeeklySchedule(doctor.weeklySchedule, defaultSchedule);
     
-    // Ensure all days are present with proper structure
-    Object.keys(defaultSchedule).forEach(day => {
-      if (!weeklySchedule[day]) {
-        weeklySchedule[day] = defaultSchedule[day];
-      } else {
-        // Ensure each day has complete structure
-        weeklySchedule[day] = {
-          isOff: weeklySchedule[day].isOff ?? defaultSchedule[day].isOff,
-          online: {
-            enabled: weeklySchedule[day].online?.enabled ?? defaultSchedule[day].online.enabled,
-            startTime: weeklySchedule[day].online?.startTime || defaultSchedule[day].online.startTime,
-            endTime: weeklySchedule[day].online?.endTime || defaultSchedule[day].online.endTime
-          },
-          inPerson: {
-            enabled: weeklySchedule[day].inPerson?.enabled ?? defaultSchedule[day].inPerson.enabled,
-            startTime: weeklySchedule[day].inPerson?.startTime || defaultSchedule[day].inPerson.startTime,
-            endTime: weeklySchedule[day].inPerson?.endTime || defaultSchedule[day].inPerson.endTime
-          }
-        };
-      }
-    });
-
     res.json({
       success: true,
       config: {
@@ -239,12 +257,22 @@ router.put('/appointment-config', authUser, [
 
     await doctor.save();
 
+    const normalizedSchedule = parseWeeklySchedule(doctor.weeklySchedule, {
+      monday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+      tuesday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+      wednesday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+      thursday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+      friday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+      saturday: { isOff: false, online: { enabled: true, startTime: '10:00', endTime: '14:00' }, inPerson: { enabled: false, startTime: '14:00', endTime: '18:00' } },
+      sunday: { isOff: true, online: { enabled: false, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: false, startTime: '14:00', endTime: '18:00' } },
+    });
+
     res.json({
       success: true,
       message: 'Appointment configuration updated successfully',
       config: {
         slotDuration: doctor.slotDuration,
-        weeklySchedule: doctor.weeklySchedule,
+        weeklySchedule: normalizedSchedule,
         offDays: doctor.offDays,
         onlineConsultationEnabled: doctor.onlineConsultationEnabled,
         inPersonConsultationEnabled: doctor.inPersonConsultationEnabled,
@@ -469,10 +497,21 @@ router.get('/available-slots/:doctorId', async (req, res) => {
     const targetDate = date ? new Date(date) : new Date();
     const dayName = targetDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
     
-    const weeklySchedule = doctor.weeklySchedule || {};
+    const defaultSchedule = {
+      monday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+      tuesday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+      wednesday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+      thursday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+      friday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+      saturday: { isOff: false, online: { enabled: true, startTime: '10:00', endTime: '14:00' }, inPerson: { enabled: false, startTime: '14:00', endTime: '18:00' } },
+      sunday: { isOff: true, online: { enabled: false, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: false, startTime: '14:00', endTime: '18:00' } },
+    };
+
+    const weeklySchedule = parseWeeklySchedule(doctor.weeklySchedule, defaultSchedule);
     const daySchedule = weeklySchedule[dayName];
     const slotDuration = doctor.slotDuration || 15;
     const offDays = doctor.offDays || ['sunday'];
+    const blockedSlots = daySchedule?.blockedSlots || [];
 
     // Check if it's an off day
     if (offDays.includes(dayName) || daySchedule?.isOff) {
@@ -516,13 +555,13 @@ router.get('/available-slots/:doctorId', async (req, res) => {
         }
         
         const slotEnd = `${slotEndHour.toString().padStart(2, '0')}:${slotEndMin.toString().padStart(2, '0')}`;
-        slots.push(`${slotStart}-${slotEnd}`);
+        slots.push(`${slotStart} - ${slotEnd}`);
         
         currentHour = slotEndHour;
         currentMin = slotEndMin;
       }
       
-      return slots;
+      return slots.filter((slot) => !isSlotBlocked(slot, blockedSlots));
     };
 
     let availableSlots = [];
