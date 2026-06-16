@@ -101,7 +101,6 @@ const AIReportScanner       = lazy(() => import("@/pages/patient/AIReportScanner
 const AISymptomTriage       = lazy(() => import("@/pages/patient/AISymptomTriage"));
 const SmartHealthDashboard  = lazy(() => import("@/pages/patient/SmartHealthDashboard"));
 const WatchAnalytics        = lazy(() => import("@/pages/patient/WatchAnalytics"));
-const DeviceIntegration     = lazy(() => import("@/pages/patient/DeviceIntegration"));
 const SmartBenefitsHub      = lazy(() => import("@/pages/patient/SmartBenefitsHub"));
 const FamilyHealthHub       = lazy(() => import("@/pages/patient/FamilyHealthHub"));
 const WellnessRewards       = lazy(() => import("@/pages/patient/WellnessRewards"));
@@ -1697,7 +1696,6 @@ const AppRoutes = () => {
         <Route path="/wallet"                element={<MainLayout><Wallet /></MainLayout>} />
         <Route path="/health-dashboard"      element={<UnifiedHealthDashboard />} />
         <Route path="/patient/devices"       element={<HealthDashboard />} />
-        <Route path="/patient/device-integration" element={<MainLayout><DeviceIntegration /></MainLayout>} />
         <Route path="/health-tracker"        element={<MainLayout><HealthTracker /></MainLayout>} />
         <Route path="/health-diary"          element={<MainLayout><HealthDiary /></MainLayout>} />
         <Route path="/health-intelligence"   element={<MainLayout><HealthIntelligence /></MainLayout>} />
