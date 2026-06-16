@@ -26,28 +26,8 @@ jobs:
             cd /home/ubuntu/Mediczy
             git fetch origin main
             git pull origin main
-            echo "✓ Code updated"
-
-            # Install backend dependencies
-            cd server
-            npm ci --prefer-offline --omit=dev
-            cd ..
-            echo "✓ Server dependencies installed"
-
-            # Rebuild client bundle so UI changes are never shipped stale
-            cd client
-            npm ci --prefer-offline
-            npm run build
-            cd ..
-            echo "✓ Client bundle rebuilt"
-
-            # Deploy frontend to S3 + invalidate CloudFront
-            bash scripts/deploy/deploy-frontend-s3.sh
-            echo "✓ Frontend deployed to S3"
-
-            # Restart backend with updated env vars
-            pm2 restart mediczy-server --update-env
-            echo "✓ Backend restarted"
+            bash scripts/deploy/deploy-full-prod-s3.sh
+            echo "✓ Full prod + S3 deployment complete"
 
       - name: Post-deployment health check
         run: |
