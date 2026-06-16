@@ -22,6 +22,7 @@ import whatsappProductionService from '../services/whatsapp-production.service.j
 import doctorModel from '../models/doctor.model.intelligent.js';
 import { generateAssistedEmailDraft, analyzeEmailCommunication } from '../services/ai-email-arg.service.js';
 import { fetchScopedCorporateActivity, summarizeScopedCorporateActivity } from '../services/team-corporate-activity.service.js';
+import { sendTransactionalEmail, getEmailProviderStatus } from '../services/welcome-email.service.js';
 
 const router = express.Router();
 
@@ -130,6 +131,28 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
       CREATE INDEX IF NOT EXISTS idx_tcomm_team_created   ON team_communication_logs(team_user_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_tcomm_channel_status ON team_communication_logs(channel, status);
       CREATE INDEX IF NOT EXISTS idx_tcomm_corporate      ON team_communication_logs(corporate_id);
+
+      CREATE TABLE IF NOT EXISTS team_communication_templates (
+        id            BIGSERIAL PRIMARY KEY,
+        team_user_id  INTEGER NOT NULL,
+        corporate_id  INTEGER,
+        channel       VARCHAR(20) NOT NULL,
+        template_key  VARCHAR(120) NOT NULL,
+        name          VARCHAR(150) NOT NULL,
+        category      VARCHAR(80) NOT NULL DEFAULT 'General',
+        subject       TEXT,
+        content       TEXT NOT NULL,
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (team_user_id, corporate_id, channel, template_key)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tcomm_tpl_corporate ON team_communication_templates(corporate_id, channel);
+
+      ALTER TABLE team_communication_logs
+        ADD COLUMN IF NOT EXISTS ai_draft_id BIGINT;
+
+      ALTER TABLE team_communication_templates
+        ADD COLUMN IF NOT EXISTS source VARCHAR(30) NOT NULL DEFAULT 'manual';
     `);
   } catch (err) {
     console.error('[Team] DB table init error:', err.message);
@@ -1866,13 +1889,14 @@ const _logTeamCommunication = async ({
   status,
   providerMessageId,
   errorMessage,
+  aiDraftId,
 }) => {
   const pool = sharedPool;
   await pool.query(
     `INSERT INTO team_communication_logs
-      (team_user_id, corporate_id, channel, recipient, recipient_mode, template_id, template_name, subject, message, provider, status, provider_message_id, error_message)
+      (team_user_id, corporate_id, channel, recipient, recipient_mode, template_id, template_name, subject, message, provider, status, provider_message_id, error_message, ai_draft_id)
      VALUES
-      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
     [
       teamUserId,
       corporateId || null,
@@ -1887,9 +1911,170 @@ const _logTeamCommunication = async ({
       status,
       providerMessageId || null,
       errorMessage || null,
+      aiDraftId ? parseInt(String(aiDraftId), 10) : null,
     ]
   );
 };
+
+router.get('/communications/provider-health', authTeam, requirePermission('Corporate Management'), async (req, res) => {
+  try {
+    const email = await getEmailProviderStatus();
+    const smsReady = Boolean(process.env.SMS_API_KEY);
+    const whatsappReady = Boolean(whatsappProductionService?.twilioConfigured || process.env.WHATSAPP_ACCESS_TOKEN);
+
+    return res.json({
+      success: true,
+      email,
+      whatsapp: {
+        configured: whatsappReady,
+        healthy: whatsappReady,
+        provider: whatsappProductionService?.twilioConfigured ? 'twilio' : (process.env.WHATSAPP_ACCESS_TOKEN ? 'meta' : 'none'),
+        error: whatsappReady ? null : 'WhatsApp provider is not configured',
+      },
+      sms: {
+        configured: smsReady,
+        healthy: smsReady,
+        provider: process.env.SMS_PROVIDER || 'pay4sms',
+        error: smsReady ? null : 'SMS API key is not configured',
+      },
+    });
+  } catch (error) {
+    console.error('[Team] provider health error:', error?.message || error);
+    return res.status(500).json({ success: false, message: 'Failed to check provider health' });
+  }
+});
+
+router.get('/communications/templates', authTeam, requirePermission('Corporate Management'), async (req, res) => {
+  try {
+    const teamUserId = req.teamUser?.id || req.user?.id;
+    const corporateId = req.query.corporateId ? parseInt(String(req.query.corporateId), 10) : null;
+    const channel = req.query.channel ? String(req.query.channel).toLowerCase() : null;
+
+    const values = [teamUserId];
+    let where = 'WHERE team_user_id = $1';
+    if (corporateId) {
+      values.push(corporateId);
+      where += ` AND corporate_id = $${values.length}`;
+    }
+    if (channel) {
+      values.push(channel);
+      where += ` AND channel = $${values.length}`;
+    }
+
+    const { rows } = await sharedPool.query(
+      `SELECT id, corporate_id, channel, template_key, name, category, subject, content, source, created_at, updated_at
+       FROM team_communication_templates
+       ${where}
+       ORDER BY updated_at DESC`,
+      values
+    );
+
+    const grouped = { email: [], whatsapp: [], sms: [] };
+    for (const row of rows) {
+      const ch = String(row.channel || '').toLowerCase();
+      if (!grouped[ch]) grouped[ch] = [];
+      grouped[ch].push({
+        id: row.template_key,
+        name: row.name,
+        category: row.category || 'General',
+        subject: row.subject || undefined,
+        content: row.content,
+        source: row.source || 'manual',
+        serverId: row.id,
+      });
+    }
+
+    return res.json({ success: true, templates: grouped });
+  } catch (error) {
+    console.error('[Team] communication templates list error:', error?.message || error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch communication templates' });
+  }
+});
+
+router.post('/communications/templates', authTeam, requirePermission('Corporate Management'), async (req, res) => {
+  try {
+    const teamUserId = req.teamUser?.id || req.user?.id;
+    const {
+      corporateId,
+      channel,
+      id: templateKey,
+      name,
+      category = 'General',
+      subject,
+      content,
+      source = 'manual',
+    } = req.body || {};
+
+    const safeChannel = String(channel || '').toLowerCase();
+    if (!['email', 'whatsapp', 'sms'].includes(safeChannel)) {
+      return res.status(400).json({ success: false, message: 'Invalid channel' });
+    }
+    if (!name?.trim() || !content?.trim()) {
+      return res.status(400).json({ success: false, message: 'Template name and content are required' });
+    }
+
+    const key = String(templateKey || `${safeChannel}-${Date.now()}`).slice(0, 120);
+    const corpId = corporateId ? parseInt(String(corporateId), 10) : null;
+
+    const safeSource = ['preset', 'manual', 'ai', 'saved'].includes(String(source)) ? String(source) : 'manual';
+
+    const { rows } = await sharedPool.query(
+      `INSERT INTO team_communication_templates
+         (team_user_id, corporate_id, channel, template_key, name, category, subject, content, source, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+       ON CONFLICT (team_user_id, corporate_id, channel, template_key)
+       DO UPDATE SET
+         name = EXCLUDED.name,
+         category = EXCLUDED.category,
+         subject = EXCLUDED.subject,
+         content = EXCLUDED.content,
+         source = EXCLUDED.source,
+         updated_at = NOW()
+       RETURNING template_key, name, category, subject, content, source`,
+      [teamUserId, corpId, safeChannel, key, name.trim(), category, subject || null, content.trim(), safeSource]
+    );
+
+    const row = rows[0];
+    return res.status(201).json({
+      success: true,
+      template: {
+        id: row.template_key,
+        name: row.name,
+        category: row.category,
+        subject: row.subject || undefined,
+        content: row.content,
+        source: row.source || 'manual',
+      },
+    });
+  } catch (error) {
+    console.error('[Team] communication template save error:', error?.message || error);
+    return res.status(500).json({ success: false, message: 'Failed to save communication template' });
+  }
+});
+
+router.delete('/communications/templates/:templateKey', authTeam, requirePermission('Corporate Management'), async (req, res) => {
+  try {
+    const teamUserId = req.teamUser?.id || req.user?.id;
+    const corporateId = req.query.corporateId ? parseInt(String(req.query.corporateId), 10) : null;
+    const channel = String(req.query.channel || '').toLowerCase();
+    const templateKey = String(req.params.templateKey || '');
+
+    if (!templateKey || !['email', 'whatsapp', 'sms'].includes(channel)) {
+      return res.status(400).json({ success: false, message: 'channel query param and template key are required' });
+    }
+
+    await sharedPool.query(
+      `DELETE FROM team_communication_templates
+       WHERE team_user_id = $1 AND corporate_id = $2 AND channel = $3 AND template_key = $4`,
+      [teamUserId, corporateId, channel, templateKey]
+    );
+
+    return res.json({ success: true, message: 'Template deleted' });
+  } catch (error) {
+    console.error('[Team] communication template delete error:', error?.message || error);
+    return res.status(500).json({ success: false, message: 'Failed to delete communication template' });
+  }
+});
 
 router.post('/communications/send', authTeam, requirePermission('Corporate Management'), async (req, res) => {
   try {
@@ -1904,11 +2089,13 @@ router.post('/communications/send', authTeam, requirePermission('Corporate Manag
       templateId,
       templateName,
       companyName,
+      aiDraftId,
     } = req.body || {};
     const safeChannel = String(channel || '').toLowerCase();
     const safeMessage = String(message || '').trim();
     const recipientList = _extractRecipients({ to, recipients });
     const teamUserId = req.teamUser?.id || req.user?.id;
+    const baseLog = { teamUserId, corporateId, recipientMode, templateId, templateName, subject, message: safeMessage, aiDraftId };
 
     if (!['email', 'whatsapp', 'sms'].includes(safeChannel)) {
       return res.status(400).json({ success: false, message: 'Invalid channel. Use email, whatsapp, or sms.' });
@@ -1926,49 +2113,36 @@ router.post('/communications/send', authTeam, requirePermission('Corporate Manag
         return res.status(400).json({ success: false, message: 'No valid recipient email addresses found.' });
       }
 
-      const mailer = _teamMailer();
       const sendResults = [];
       for (const email of emailRecipients) {
         try {
-          const sent = await mailer.sendMail({
-            from: `"SmartHealth Team" <${process.env.SMTP_FROM || 'noreply@mediqzy.com'}>`,
+          await sendTransactionalEmail({
             to: email,
             subject: String(subject || 'SmartHealth Communication').slice(0, 200),
-            text: safeMessage,
             html: _buildProfessionalEmailHtml({
               subject: String(subject || 'SmartHealth Communication').slice(0, 200),
               message: safeMessage,
               companyName,
             }),
+            text: safeMessage,
+            fromName: 'SmartHealth Team',
           });
 
           await _logTeamCommunication({
-            teamUserId,
-            corporateId,
+            ...baseLog,
             channel: 'email',
             recipient: email,
-            recipientMode,
-            templateId,
-            templateName,
-            subject,
-            message: safeMessage,
-            provider: 'smtp',
+            provider: 'unified',
             status: 'sent',
-            providerMessageId: sent?.messageId || null,
+            providerMessageId: null,
           });
-          sendResults.push({ recipient: email, success: true, messageId: sent?.messageId || null });
+          sendResults.push({ recipient: email, success: true, messageId: null });
         } catch (err) {
           await _logTeamCommunication({
-            teamUserId,
-            corporateId,
+            ...baseLog,
             channel: 'email',
             recipient: email,
-            recipientMode,
-            templateId,
-            templateName,
-            subject,
-            message: safeMessage,
-            provider: 'smtp',
+            provider: 'unified',
             status: 'failed',
             errorMessage: err?.message || 'Email send failed',
           });
@@ -2003,15 +2177,9 @@ router.post('/communications/send', authTeam, requirePermission('Corporate Manag
               body: safeMessage.slice(0, 4096),
             });
             await _logTeamCommunication({
-              teamUserId,
-              corporateId,
+              ...baseLog,
               channel: 'whatsapp',
               recipient: normalizedTo,
-              recipientMode,
-              templateId,
-              templateName,
-              subject,
-              message: safeMessage,
               provider: 'twilio',
               status: 'sent',
               providerMessageId: twilioResponse?.sid || null,
@@ -2019,15 +2187,9 @@ router.post('/communications/send', authTeam, requirePermission('Corporate Manag
             results.push({ recipient: normalizedTo, success: true, provider: 'twilio', sid: twilioResponse?.sid || null, status: twilioResponse?.status || null });
           } catch (err) {
             await _logTeamCommunication({
-              teamUserId,
-              corporateId,
+              ...baseLog,
               channel: 'whatsapp',
               recipient: normalizedTo,
-              recipientMode,
-              templateId,
-              templateName,
-              subject,
-              message: safeMessage,
               provider: 'twilio',
               status: 'failed',
               errorMessage: err?.message || 'WhatsApp send failed',
@@ -2078,15 +2240,9 @@ router.post('/communications/send', authTeam, requirePermission('Corporate Manag
           );
           const providerMessageId = metaResponse?.data?.messages?.[0]?.id || null;
           await _logTeamCommunication({
-            teamUserId,
-            corporateId,
+            ...baseLog,
             channel: 'whatsapp',
             recipient: normalizedTo,
-            recipientMode,
-            templateId,
-            templateName,
-            subject,
-            message: safeMessage,
             provider: 'meta',
             status: 'sent',
             providerMessageId,
@@ -2094,15 +2250,9 @@ router.post('/communications/send', authTeam, requirePermission('Corporate Manag
           results.push({ recipient: normalizedTo, success: true, provider: 'meta', messageId: providerMessageId });
         } catch (err) {
           await _logTeamCommunication({
-            teamUserId,
-            corporateId,
+            ...baseLog,
             channel: 'whatsapp',
             recipient: normalizedTo,
-            recipientMode,
-            templateId,
-            templateName,
-            subject,
-            message: safeMessage,
             provider: 'meta',
             status: 'failed',
             errorMessage: err?.message || 'WhatsApp send failed',
@@ -2143,15 +2293,9 @@ router.post('/communications/send', authTeam, requirePermission('Corporate Manag
 
         if (!smsResult?.success) {
           await _logTeamCommunication({
-            teamUserId,
-            corporateId,
+            ...baseLog,
             channel: 'sms',
             recipient: normalizedTo,
-            recipientMode,
-            templateId,
-            templateName,
-            subject,
-            message: safeMessage,
             provider: smsResult?.provider || 'sms',
             status: 'failed',
             errorMessage: smsResult?.error || 'SMS provider rejected the message.',
@@ -2161,15 +2305,9 @@ router.post('/communications/send', authTeam, requirePermission('Corporate Manag
         }
 
         await _logTeamCommunication({
-          teamUserId,
-          corporateId,
+          ...baseLog,
           channel: 'sms',
           recipient: normalizedTo,
-          recipientMode,
-          templateId,
-          templateName,
-          subject,
-          message: safeMessage,
           provider: smsResult?.provider || 'sms',
           status: 'sent',
           providerMessageId: smsResult?.messageId || null,
@@ -2177,15 +2315,9 @@ router.post('/communications/send', authTeam, requirePermission('Corporate Manag
         results.push({ recipient: normalizedTo, success: true, provider: smsResult?.provider || 'sms', messageId: smsResult?.messageId || null });
       } catch (err) {
         await _logTeamCommunication({
-          teamUserId,
-          corporateId,
+          ...baseLog,
           channel: 'sms',
           recipient: normalizedTo,
-          recipientMode,
-          templateId,
-          templateName,
-          subject,
-          message: safeMessage,
           provider: 'sms',
           status: 'failed',
           errorMessage: err?.message || 'SMS send failed',
@@ -2221,15 +2353,37 @@ router.post("/communications/ai-draft", authTeam, requirePermission('Corporate M
     const intent = req.body?.intent || "corporate_follow_up";
     const tone = req.body?.tone || "professional";
     const channel = req.body?.channel || "email";
-    const context = { ...(req.body?.context || {}), channel, teamDashboard: true };
+    const assistMode = req.body?.assistMode || req.body?.context?.assistMode || "augment";
+    const context = {
+      ...(req.body?.context || {}),
+      channel,
+      teamDashboard: true,
+      assistMode,
+      estimatedRevenue: req.body?.estimatedRevenue ?? req.body?.context?.estimatedRevenue,
+      premiumPerEmployee: req.body?.premiumPerEmployee ?? req.body?.context?.premiumPerEmployee,
+      planPrice: req.body?.planPrice ?? req.body?.context?.planPrice,
+      enrolledEmployees: req.body?.enrolledEmployees ?? req.body?.context?.enrolledEmployees,
+    };
 
     const draft = await generateAssistedEmailDraft({ entityType: "team_corporate", entity: corporate, intent, tone, context, previousMessages: [] });
-    const row = await _recordTeamAiCommunication({
-      teamUserId, corporateId, contactEmail: corporate.email || req.body?.contactEmail || null, subject: draft.subject, message: draft.body,
-      intent, tone: draft.tone || tone, status: "draft", draft,
-    });
 
-    return res.json({ success: true, data: { id: row.id, draft: { ...draft, message: draft.body }, communication: row } });
+    const shouldPersist = assistMode !== "create_template" && req.body?.persistDraft !== false;
+    let row = null;
+    if (shouldPersist) {
+      row = await _recordTeamAiCommunication({
+        teamUserId, corporateId, contactEmail: corporate.email || req.body?.contactEmail || null, subject: draft.subject, message: draft.body,
+        intent, tone: draft.tone || tone, status: "draft", draft,
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        id: row?.id || null,
+        draft: { ...draft, message: draft.body },
+        communication: row,
+      },
+    });
   } catch (error) {
     console.error("[Team] AI communication draft error:", error?.message || error);
     return res.status(500).json({ success: false, message: "Failed to generate AI communication draft" });
@@ -2253,6 +2407,12 @@ router.post("/communications/ai-monitor", authTeam, requirePermission('Corporate
       eventType, subject: req.body?.subject || existing?.subject || "", body: req.body?.message || req.body?.body || existing?.body || "",
       replyText: req.body?.replyText || "", currentStage: corporate.status || req.body?.currentStage || "", entity: corporate,
       revenueImpact: req.body?.revenueImpact || existing?.revenue_impact || 0,
+      context: {
+        estimatedRevenue: req.body?.estimatedRevenue,
+        premiumPerEmployee: req.body?.premiumPerEmployee,
+        planPrice: req.body?.planPrice,
+        enrolledEmployees: req.body?.enrolledEmployees,
+      },
     });
     const row = await _recordTeamAiCommunication({
       teamUserId, corporateId, contactEmail: corporate.email || req.body?.contactEmail || existing?.contact_email || null,
@@ -2305,6 +2465,48 @@ router.get("/communications/ai-dashboard", authTeam, requirePermission('Corporat
   } catch (error) {
     console.error("[Team] AI communication dashboard error:", error?.message || error);
     return res.status(500).json({ success: false, message: "Failed to fetch AI communication dashboard" });
+  }
+});
+
+router.post('/communications/apply-stage', authTeam, requirePermission('Corporate Management'), async (req, res) => {
+  try {
+    const corporateId = req.body?.corporateId ? parseInt(String(req.body.corporateId), 10) : null;
+    const suggestedStage = String(req.body?.suggestedStage || req.body?.stage || '').trim();
+    if (!corporateId || !suggestedStage) {
+      return res.status(400).json({ success: false, message: 'corporateId and suggestedStage are required.' });
+    }
+
+    const stageMap = {
+      contacted: 'Active',
+      qualified: 'Active',
+      proposal: 'Pending',
+      negotiation: 'Pending',
+      nurture: 'Pending',
+      disqualified: 'Inactive',
+    };
+    const mappedStatus = stageMap[suggestedStage.toLowerCase()] || suggestedStage;
+
+    const { rows } = await sharedPool.query(
+      `UPDATE corporates SET status = $1, "updatedAt" = NOW() WHERE id = $2 RETURNING id, "companyName", status`,
+      [mappedStatus, corporateId]
+    );
+
+    if (!rows[0]) {
+      return res.status(404).json({ success: false, message: 'Corporate not found.' });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        corporateId: rows[0].id,
+        companyName: rows[0].companyName,
+        status: rows[0].status,
+        appliedStage: suggestedStage,
+      },
+    });
+  } catch (error) {
+    console.error('[Team] apply corporate stage error:', error?.message || error);
+    return res.status(500).json({ success: false, message: 'Failed to apply corporate stage' });
   }
 });
 
@@ -2378,7 +2580,7 @@ router.get('/communications/logs', authTeam, requirePermission('Corporate Manage
 router.get('/communications/analytics', authTeam, requirePermission('Corporate Management'), async (req, res) => {
   try {
     const teamUserId = req.teamUser?.id || req.user?.id;
-    const { corporateId, days = 30 } = req.query;
+    const { corporateId, days = 30, channel } = req.query;
     const safeDays = Math.min(Math.max(parseInt(String(days), 10) || 30, 1), 365);
 
     const values = [teamUserId, safeDays];
@@ -2386,6 +2588,12 @@ router.get('/communications/analytics', authTeam, requirePermission('Corporate M
     if (corporateId) {
       values.push(parseInt(String(corporateId), 10));
       corporateClause = `AND corporate_id = $3`;
+    }
+    let channelClause = '';
+    if (channel) {
+      values.push(String(channel).toLowerCase());
+      corporateClause = corporateId ? `AND corporate_id = $3` : '';
+      channelClause = `AND channel = $${values.length}`;
     }
 
     const pool = sharedPool;
@@ -2397,7 +2605,8 @@ router.get('/communications/analytics', authTeam, requirePermission('Corporate M
        FROM team_communication_logs
        WHERE team_user_id = $1
          AND created_at >= NOW() - ($2 || ' days')::interval
-         ${corporateClause}`,
+         ${corporateClause}
+         ${channelClause}`,
       values
     );
 
@@ -2410,6 +2619,7 @@ router.get('/communications/analytics', authTeam, requirePermission('Corporate M
        WHERE team_user_id = $1
          AND created_at >= NOW() - ($2 || ' days')::interval
          ${corporateClause}
+         ${channelClause}
        GROUP BY channel
        ORDER BY channel ASC`,
       values
@@ -2424,6 +2634,7 @@ router.get('/communications/analytics', authTeam, requirePermission('Corporate M
        WHERE team_user_id = $1
          AND created_at >= NOW() - ($2 || ' days')::interval
          ${corporateClause}
+         ${channelClause}
        GROUP BY DATE_TRUNC('day', created_at)
        ORDER BY DATE_TRUNC('day', created_at) ASC`,
       values
