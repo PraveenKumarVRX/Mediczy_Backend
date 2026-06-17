@@ -1,16 +1,21 @@
 # Doctor Mobile API — Copilot Client
 
-Portable TypeScript client for the **msh_d_app** React Native doctor app (AI-PLATFORM-001).
+Portable client for the **msh_d_app** React Native doctor app (AI-PLATFORM-001).
 
 ## Install in msh_d_app
 
-Copy or symlink this folder into the mobile repo:
+```bash
+# From Mediczy repo root
+MSH_D_APP_PATH=/path/to/msh_d_app node scripts/integrate-msh-d-app-copilot.mjs
+```
+
+Or copy manually:
 
 ```
-msh_d_app/src/api/mediczy/doctor-mobile-api/
+msh_d_app/app/api/mediczy/doctor-mobile-api/
 ```
 
-Or publish as an internal package `@mediczy/doctor-mobile-api`.
+Full migration guide: [docs/doctor/MSH_D_APP_ISHA_COPILOT_MIGRATION.md](../../docs/doctor/MSH_D_APP_ISHA_COPILOT_MIGRATION.md)
 
 ## Quick start
 
@@ -48,6 +53,17 @@ const spoken = result.response || result.speak;
 | `copilot.getBriefing()` | `GET /api/voice-assistant/briefing` | Morning briefing |
 | `copilot.speechToText()` | `POST /api/voice-assistant/stt` | Voice → text |
 | `copilot.health()` | `GET /api/doctor-copilot/health` | Gateway health |
+
+## Files
+
+| File | Purpose |
+|---|---|
+| `doctorCopilot.client.js` | Low-level fetch client (JS) |
+| `doctorCopilot.client.ts` | Low-level fetch client (TS) |
+| `ishaCopilot.service.js` | `sendIshaMessage`, `parseIshaAction`, init singleton |
+| `useDoctorIshaCopilot.js` | React hook for iSHA screen |
+| `screenPaths.js` | `navigate_to` screen → React Navigation route map |
+| `msh-d-app/api.isha.snippet.js` | Drop-in `Utils/api.js` Isha module replacement |
 
 ## Migration from legacy endpoints
 

@@ -4445,7 +4445,9 @@ The doctor app (`MSH_D_App`) uses Firebase project **`doctorapp-6c768`** with se
 ### Dr. iSHA Copilot (AI-PLATFORM-001)
 
 - **Primary:** `POST /api/doctor-copilot/chat` via `createDoctorCopilotClient()` (see §14.10)
-- Copy `shared/doctor-mobile-api/` from Mediczy repo into `msh_d_app/src/api/mediczy/`
+- Copy `shared/doctor-mobile-api/` from Mediczy repo into `msh_d_app/app/api/mediczy/`
+- Run `MSH_D_APP_PATH=/path/to/msh_d_app node scripts/integrate-msh-d-app-copilot.mjs`
+- See [MSH_D_APP_ISHA_COPILOT_MIGRATION.md](../doctor/MSH_D_APP_ISHA_COPILOT_MIGRATION.md) for full steps
 - Replace direct calls to `/voice-assistant/agent` and `/medical-ai/consult`
 - Always pass `context.currentScreen` and `context.currentPatient` when on Patient Details
 - Keep last 10–15 turns in `history` for follow-up questions

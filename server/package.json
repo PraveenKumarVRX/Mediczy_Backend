@@ -30,6 +30,7 @@
     "test:fix-regression-smoke": "node scripts/qa/fix-regression-smoke.mjs",
     "test:clinical-golden-regression": "node scripts/qa/clinical-golden-regression.mjs",
     "generate:clinical-golden-set": "node scripts/qa/generate-clinical-golden-set.mjs",
+    "integrate:msh-d-app-copilot": "node scripts/integrate-msh-d-app-copilot.mjs",
     "test:doctor-ai-contracts": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand __tests__/doctor-vitals-contract.test.js __tests__/doctor-copilot-gateway.test.js __tests__/doctor-availability-bulk-update.test.js",
     "test:user-login-security-regression": "node scripts/qa/user-login-security-regression.mjs",
     "test:consultation-membership-exemption": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand __tests__/consultation-membership-exemption.test.js",
