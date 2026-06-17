@@ -32,16 +32,6 @@ interface Message {
   timestamp: Date;
 }
 
-interface AgentResponse {
-  intent: string;
-  action: string | null;
-  parameters: Record<string, unknown> | null;
-  response: string;
-  speak: string;
-  data?: Record<string, unknown> | null;
-  requiresConfirmation: boolean;
-}
-
 // Screen path map for navigation actions
 const SCREEN_PATHS: Record<string, string> = {
   appointments:   "/doctor/appointments",
