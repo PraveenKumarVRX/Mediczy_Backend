@@ -5,6 +5,13 @@ import { Doctor } from '../models/index.js';
 
 const router = express.Router();
 
+const ALLOWED_SLOT_DURATIONS = [15, 30, 45, 60];
+
+const normalizeSlotDuration = (value, fallback = 15) => {
+  const parsed = parseInt(value, 10);
+  return ALLOWED_SLOT_DURATIONS.includes(parsed) ? parsed : fallback;
+};
+
 const toFiniteNumber = (value) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -117,7 +124,7 @@ router.get('/appointment-config', authUser, async (req, res) => {
     res.json({
       success: true,
       config: {
-        slotDuration: doctor.slotDuration || 15,
+        slotDuration: normalizeSlotDuration(doctor.slotDuration, 15),
         weeklySchedule: weeklySchedule,
         offDays: doctor.offDays || ['sunday'],
         onlineConsultationEnabled: doctor.onlineConsultationEnabled ?? true,
@@ -143,7 +150,7 @@ router.get('/appointment-config', authUser, async (req, res) => {
  * @access  Private (Doctor)
  */
 router.put('/appointment-config', authUser, [
-  body('slotDuration').optional().isIn([15, 30, 45, 60]).withMessage('Slot duration must be 15, 30, 45, or 60 minutes'),
+  body('slotDuration').optional().toInt().isIn(ALLOWED_SLOT_DURATIONS).withMessage('Slot duration must be 15, 30, 45, or 60 minutes'),
   body('offDays').optional().isArray().withMessage('Off days must be an array'),
   body('onlineConsultationEnabled').optional().isBoolean(),
   body('inPersonConsultationEnabled').optional().isBoolean(),
@@ -244,7 +251,9 @@ router.put('/appointment-config', authUser, [
     }
 
     // Update fields
-    if (slotDuration !== undefined) doctor.slotDuration = slotDuration;
+    if (slotDuration !== undefined) {
+      doctor.slotDuration = normalizeSlotDuration(slotDuration, doctor.slotDuration || 15);
+    }
     if (weeklySchedule !== undefined) doctor.weeklySchedule = weeklySchedule;
     if (offDays !== undefined) doctor.offDays = offDays;
     if (onlineConsultationEnabled !== undefined) doctor.onlineConsultationEnabled = onlineConsultationEnabled;
@@ -259,7 +268,7 @@ router.put('/appointment-config', authUser, [
       success: true,
       message: 'Appointment configuration updated successfully',
       config: {
-        slotDuration: doctor.slotDuration,
+        slotDuration: normalizeSlotDuration(doctor.slotDuration, 15),
         weeklySchedule: doctor.weeklySchedule,
         offDays: doctor.offDays,
         onlineConsultationEnabled: doctor.onlineConsultationEnabled,
@@ -311,7 +320,7 @@ router.put('/slot-duration', authUser, [
       });
     }
 
-    doctor.slotDuration = req.body.duration;
+    doctor.slotDuration = normalizeSlotDuration(req.body.duration, doctor.slotDuration || 15);
     await doctor.save();
 
     res.json({

@@ -1655,7 +1655,7 @@ router.post('/my-patients/:patientId/vitals', authDoctor, async (req, res) => {
       return res.status(422).json({ success: false, message: 'Invalid vitals values', errors: validationErrors });
     }
 
-    const [rows] = await User.sequelize.query(
+    const insertedRows = await User.sequelize.query(
       `INSERT INTO patient_vitals
          (patient_id, recorded_by_doctor_id, bp, heart_rate, temperature, spo2, weight, height, blood_glucose, notes, recorded_at)
        VALUES (:patientId, :doctorId, :bp, :heartRate, :temperature, :spo2, :weight, :height, :bloodGlucose, :notes, NOW())
@@ -1666,15 +1666,22 @@ router.post('/my-patients/:patientId/vitals', authDoctor, async (req, res) => {
       }
     );
 
-    const intelligence = await evaluateVitalsAndAlert({
-      tenantId: req.doctor.organizationId || req.doctor.hospitalId || req.doctor.id,
-      patientId,
-      source: 'doctor-patient-vitals',
-      recordedBy: req.doctor.id,
-      vitals: { bp, heartRate, temperature, spo2 }
-    });
+    const savedVitals = Array.isArray(insertedRows) ? insertedRows[0] : insertedRows;
 
-    res.status(201).json({ success: true, vitals: rows || req.body, intelligence });
+    let intelligence = null;
+    try {
+      intelligence = await evaluateVitalsAndAlert({
+        tenantId: req.doctor.organizationId || req.doctor.hospitalId || req.doctor.id,
+        patientId,
+        source: 'doctor-patient-vitals',
+        recordedBy: req.doctor.id,
+        vitals: { bp, heartRate, temperature, spo2 }
+      });
+    } catch (alertError) {
+      console.warn('Vitals saved but alert evaluation failed:', alertError.message);
+    }
+
+    res.status(201).json({ success: true, vitals: savedVitals || req.body, intelligence });
   } catch (error) {
     console.error('Record vitals error:', error);
     // Table may not exist yet — return success so mobile UX doesn't break
@@ -2523,17 +2530,14 @@ router.get('/my-patients/:patientId/vitals-history', authDoctor, async (req, res
       return res.status(403).json({ success: false, message: 'No appointment relationship with this patient' });
     }
 
-    // Try to get from patient_vitals table
-    let vitals = [];
-    try {
-      const { rows } = await req.app.locals.pgPool?.query(
-        `SELECT * FROM patient_vitals WHERE patient_id = $1 ORDER BY recorded_at DESC LIMIT $2`,
-        [parseInt(patientId), parseInt(limit)]
-      ) || { rows: [] };
-      vitals = rows;
-    } catch (_) {
-      vitals = [];
-    }
+    const { rows: vitals } = await pool.query(
+      `SELECT *
+         FROM patient_vitals
+        WHERE patient_id = $1
+        ORDER BY recorded_at DESC
+        LIMIT $2`,
+      [parseInt(patientId, 10), parseInt(limit, 10)]
+    );
 
     res.json({ success: true, patientId, count: vitals.length, vitals });
   } catch (error) {

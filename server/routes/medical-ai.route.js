@@ -232,6 +232,20 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
     const callerRole = req.user.role || 'patient';
     const isClinician = ['doctor', 'nurse', 'assistant', 'admin', 'team'].includes(callerRole);
 
+    const conversationHistory = (
+      Array.isArray(req.body.history)
+        ? req.body.history
+        : Array.isArray(userContext?.conversationHistory)
+          ? userContext.conversationHistory
+          : []
+    )
+      .slice(-15)
+      .map((turn) => ({
+        role: turn?.role === 'assistant' ? 'assistant' : 'user',
+        content: String(turn?.content || '').trim(),
+      }))
+      .filter((turn) => turn.content.length > 0);
+
     let dbContext = null;
     let wearableContext = null;
     if (!isEmergencyMode && !isClinician) {
@@ -257,6 +271,7 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
         ? `Dr. ${req.user.firstName || req.user.name || 'Doctor'}`
         : (req.user.firstName || 'Patient'),
       callerRole,
+      audience: isClinician ? 'clinician' : 'patient',
     };
 
     const timeoutMs = isEmergencyMode ? 15000 : 30000;
@@ -273,13 +288,11 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
           patient_id: sessionId,
           message: query,
           language,
-          // Forward up to 15 conversation turns for context continuity
-          history: Array.isArray(userContext?.conversationHistory)
-            ? userContext.conversationHistory.slice(-15)
-            : [],
+          history: conversationHistory,
           patient_data: {
             ...enhancedContext,
             channel: isClinician ? 'doctor_app' : 'web',
+            audience: isClinician ? 'clinician' : 'patient',
             patientData: dbContext || undefined
           }
         })
@@ -318,15 +331,16 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
     if (!consultation) {
       try {
         const fallbackSystemPrompt = isClinician
-          ? 'You are Dr. iSHA, a clinical decision-support AI for medical professionals. Provide concise, evidence-based clinical guidance. Include a reminder: "For reference only — apply your clinical judgment." Do not refuse clinical queries that would be appropriate for a licensed clinician.'
+          ? 'You are Dr. iSHA, a clinical decision-support AI for medical professionals. Provide concise, evidence-based clinical guidance for licensed clinicians. You may discuss diagnosis criteria, treatment options, drug classes, and differentials. Include a reminder: "For reference only — apply your clinical judgment." Do not refuse appropriate clinical queries.'
           : 'You are Dr. iSHA, a helpful medical AI assistant. Answer concisely and clearly. Never provide specific drug doses. Always recommend consulting a doctor for diagnosis.';
         const llmResult = await llmProvider.chat({
           messages: [
             { role: 'system', content: fallbackSystemPrompt },
+            ...conversationHistory,
             { role: 'user', content: query }
           ],
           maxTokens: 512,
-          temperature: 0.3,
+          temperature: isClinician ? 0.2 : 0.3,
         });
         const fallbackText = llmResult?.content || llmResult?.text || llmResult?.response;
         if (!fallbackText) throw new Error('LLM fallback also returned empty');

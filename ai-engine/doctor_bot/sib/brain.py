@@ -732,6 +732,7 @@ class SyntheticIntelligenceBrain:
         include_risk = data.get("include_risk", False)
         include_rag = data.get("include_rag", True)
         patient_data = data.get("patient_data")
+        conversation_history = data.get("history") or []
 
         # Carry KB RAG context (injected by /chat endpoint) through to chat_bot
         kb_context = data.get("kb_context", "")
@@ -748,6 +749,7 @@ class SyntheticIntelligenceBrain:
                 patient_id=patient_id,
                 message=message,
                 patient_data=patient_data,
+                history=conversation_history,
             )
             response_text = agent_result.get("chat_answer", "")
             learning_applied = False

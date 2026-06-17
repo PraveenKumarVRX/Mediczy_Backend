@@ -399,6 +399,7 @@ export default function PatientEMR() {
       await api.post(`/doctors/my-patients/${selectedPatient.id}/vitals`, payload);
 
       await queryClient.invalidateQueries({ queryKey: ['patient-vitals', selectedPatient.id] });
+      await refetchVitals();
 
       toast({
         title: 'Success',

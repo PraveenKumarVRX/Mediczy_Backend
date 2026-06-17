@@ -90,6 +90,7 @@ class ChatRequest(BaseModel):
     include_risk: bool = Field(False, description="Include risk assessment")
     include_rag: bool = Field(True, description="Include retrieval-augmented context")
     skip_kb_rag: bool = Field(False, description="Skip knowledge-base RAG enrichment for this turn")
+    history: Optional[List[Dict[str, Any]]] = Field(None, description="Prior conversation turns")
     patient_data: Optional[Dict[str, Any]] = Field(None, description="Patient health data")
 
 

@@ -7,6 +7,13 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Settings, User, Bell, Shield, Clock, Loader2, Save, CheckCircle, FileSignature, Stamp, Upload, X, RefreshCw, Building2, Plus, Trash2, Share2, Youtube, Instagram, Facebook } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import api from "@/utils/api";
@@ -136,7 +143,10 @@ const DoctorSettings = () => {
       }));
       setPractice(prev => ({
         ...prev,
-        ...(settings.practice || {})
+        ...(settings.practice || {}),
+        slotDuration: [15, 30, 45, 60].includes(Number(settings.practice?.slotDuration))
+          ? Number(settings.practice.slotDuration)
+          : 30,
       }));
       setNotifications(settings.notifications || {});
     } else if (currentDoctor) {
@@ -876,12 +886,20 @@ const DoctorSettings = () => {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="duration">Slot Duration (minutes)</Label>
-                    <Input
-                      id="duration"
-                      type="number"
-                      value={practice.slotDuration}
-                      onChange={(e) => setPractice({ ...practice, slotDuration: parseInt(e.target.value) || 30 })}
-                    />
+                    <Select
+                      value={String(practice.slotDuration)}
+                      onValueChange={(value) => setPractice({ ...practice, slotDuration: parseInt(value, 10) })}
+                    >
+                      <SelectTrigger id="duration">
+                        <SelectValue placeholder="Select duration" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="15">15 minutes</SelectItem>
+                        <SelectItem value="30">30 minutes</SelectItem>
+                        <SelectItem value="45">45 minutes</SelectItem>
+                        <SelectItem value="60">60 minutes</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 

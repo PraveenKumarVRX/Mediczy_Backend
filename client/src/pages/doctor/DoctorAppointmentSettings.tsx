@@ -103,6 +103,23 @@ const TIME_OPTIONS = [
   '18:00', '18:30', '19:00', '19:30', '20:00', '20:30', '21:00', '21:30', '22:00'
 ];
 
+const ALLOWED_SLOT_DURATIONS = [15, 30, 45, 60] as const;
+
+const normalizeSlotDuration = (value: unknown): number => {
+  const parsed = parseInt(String(value ?? ''), 10);
+  return (ALLOWED_SLOT_DURATIONS as readonly number[]).includes(parsed) ? parsed : 15;
+};
+
+const buildAppointmentPayload = (config: AppointmentConfig) => ({
+  slotDuration: normalizeSlotDuration(config.slotDuration),
+  weeklySchedule: config.weeklySchedule,
+  offDays: config.offDays,
+  onlineConsultationEnabled: config.onlineConsultationEnabled,
+  inPersonConsultationEnabled: config.inPersonConsultationEnabled,
+  onlineConsultationFee: config.onlineConsultationFee,
+  inPersonConsultationFee: config.inPersonConsultationFee,
+});
+
 const DoctorAppointmentSettings = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -128,7 +145,10 @@ const DoctorAppointmentSettings = () => {
 
   useEffect(() => {
     if (data) {
-      setConfig(data);
+      setConfig({
+        ...data,
+        slotDuration: normalizeSlotDuration(data.slotDuration),
+      });
     }
   }, [data]);
 
@@ -168,9 +188,11 @@ const DoctorAppointmentSettings = () => {
   });
 
   const handleSlotDurationChange = (duration: string) => {
-    if (config) {
-      setConfig({ ...config, slotDuration: parseInt(duration) });
-    }
+    if (!config) return;
+    const nextDuration = normalizeSlotDuration(duration);
+    const nextConfig = { ...config, slotDuration: nextDuration };
+    setConfig(nextConfig);
+    saveMutation.mutate(buildAppointmentPayload(nextConfig));
   };
 
   const handleDayToggle = (day: string) => {
@@ -331,7 +353,7 @@ const DoctorAppointmentSettings = () => {
 
   const handleSave = () => {
     if (config) {
-      saveMutation.mutate(config);
+      saveMutation.mutate(buildAppointmentPayload(config));
     }
   };
 

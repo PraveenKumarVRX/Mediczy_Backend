@@ -382,8 +382,11 @@ class CDSSService {
   /**
    * Build CDSS system prompt for clinical decision support (optimized for speed)
    */
-  buildCDSSPrompt(category, specialty) {
-    return `CDSS for Indian doctors. Specialty: ${specialty || 'General'}. Task: ${category || 'diagnosis'}.
+  buildCDSSPrompt(category, specialty, audience = 'clinician') {
+    const audienceLine = audience === 'clinician'
+      ? 'Audience: licensed clinicians in India. Provide evidence-based clinical decision support.'
+      : 'Audience: patients. Keep language simple and non-prescriptive.';
+    return `CDSS for Indian doctors. ${audienceLine} Specialty: ${specialty || 'General'}. Task: ${category || 'diagnosis'}.
 Return ONLY raw JSON (no markdown, no \`\`\`, no explanation). Keep values short.
 {"summary":"2-3 sentences","clinicalGuidelines":[{"title":"","source":"NICE/WHO/AHA","recommendation":"","evidenceLevel":""}],"drugInfo":[{"name":"","genericName":"","drugClass":"","dosage":"","contraindications":"","sideEffects":""}],"differentialDiagnosis":[{"condition":"","probability":"High/Moderate/Low","keyFeatures":""}],"labTests":[{"name":"","purpose":"","normalRange":""}],"warnings":[{"type":"critical/warning/info","message":""}],"icd10Codes":[{"code":"","description":""}]}
 Be concise. Max 2 guidelines, 3 drugs, 3 DDx, 3 labs, 3 ICD-10. Indian context. Output ONLY the JSON object.`;
@@ -420,7 +423,12 @@ Be concise. Max 2 guidelines, 3 drugs, 3 DDx, 3 labs, 3 ICD-10. Indian context. 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           query: cdssQuery,
-          patient_id: `cdss_${Date.now()}`
+          patient_id: `cdss_${Date.now()}`,
+          patient_data: {
+            channel: 'doctor_app',
+            audience: 'clinician',
+            callerRole: 'doctor',
+          },
         }),
         signal: controller.signal
       });

@@ -184,6 +184,36 @@ You: "That kind of fatigue — sleeping enough but still exhausted — is worth 
 You: "A month of unexplained fatigue can sometimes point to things like anaemia, thyroid function changes, or even low vitamin D — all very common and very treatable. Have you noticed any other changes: hair, weight, mood, or getting cold easily?"
 """
 
+    DR_ISHA_CLINICIAN_PERSONA = """You are Dr. iSHA, a clinical decision-support assistant for licensed doctors on Mediczy.
+
+═══ WHO YOU ARE ═══
+You support clinicians with concise, evidence-based medical reasoning. You are not the treating physician.
+
+═══ RESPONSE STYLE ═══
+- Answer the clinical question directly in 3-8 sentences or short structured bullets.
+- Include differentials, red flags, first-line workup, and management considerations when relevant.
+- Use standard medical terminology appropriate for doctors.
+- Cite guideline families when useful (NICE, WHO, AHA, ADA, IDSA, Indian national guidelines).
+- For drug questions: indications, contraindications, interactions, monitoring — not patient-facing counselling.
+- End with: "For reference only — apply your clinical judgment."
+
+═══ RULES ═══
+- Do NOT speak to the user as if they are a patient.
+- Do NOT refuse appropriate clinical questions from a licensed clinician.
+- Do NOT invent patient-specific facts that were not provided.
+- If critical data is missing, state assumptions briefly and what to verify.
+"""
+
+    @classmethod
+    def _resolve_persona(cls, patient_data: Optional[Dict] = None) -> str:
+        data = patient_data or {}
+        channel = str(data.get("channel") or "").lower()
+        audience = str(data.get("audience") or "").lower()
+        caller_role = str(data.get("callerRole") or data.get("caller_role") or "").lower()
+        if channel == "doctor_app" or audience == "clinician" or caller_role in {"doctor", "nurse", "assistant", "admin", "team"}:
+            return cls.DR_ISHA_CLINICIAN_PERSONA
+        return cls.DR_ISHA_PERSONA
+
     # ==================== Component 0: TinyLlama Intent Router ====================
     
     def _load_intent_router(self):
@@ -582,7 +612,7 @@ You: "A month of unexplained fatigue can sometimes point to things like anaemia,
         if patient_data:
             patient_context = self._build_patient_context(patient_data)
         
-        default_system = self.DR_ISHA_PERSONA
+        default_system = self._resolve_persona(patient_data)
         
         system_prompt = system_prompt or default_system
         
@@ -1139,8 +1169,9 @@ Thank you for sharing your health concern with me.
         logger.warning("%s unavailable, cooling down for %ss: %s", provider, _PROVIDER_COOLDOWN_SECONDS, reason)
 
     def _build_messages(self, query: str, context: Optional[List[str]],
-                        conversation_history: Optional[List[Dict]] = None) -> List[Dict[str, str]]:
-        system_prompt = self.DR_ISHA_PERSONA
+                        conversation_history: Optional[List[Dict]] = None,
+                        patient_data: Optional[Dict] = None) -> List[Dict[str, str]]:
+        system_prompt = self._resolve_persona(patient_data)
         if context:
             system_prompt += "\n\nRELEVANT MEDICAL CONTEXT (use if directly applicable):\n" + "\n".join(context[:2])
 
@@ -1192,7 +1223,7 @@ Thank you for sharing your health concern with me.
                 },
                 json={
                     "model": model,
-                    "messages": self._build_messages(query, context, conversation_history),
+                    "messages": self._build_messages(query, context, conversation_history, patient_data),
                     "max_tokens": 300,
                     "temperature": 0.5,
                     "stream": False,
@@ -1228,7 +1259,7 @@ Thank you for sharing your health concern with me.
             client = OpenAI(api_key=self.openai_api_key)
             response = client.chat.completions.create(
                 model=os.environ.get("OPENAI_MODEL", "gpt-3.5-turbo"),
-                messages=self._build_messages(query, context, conversation_history),
+                messages=self._build_messages(query, context, conversation_history, patient_data),
                 max_tokens=300,
                 temperature=0.5,
             )
@@ -1259,7 +1290,7 @@ Thank you for sharing your health concern with me.
                 logger.debug("iSHA token unavailable, skipping iSHA backend")
                 return None
             
-            messages = self._build_messages(query, context, conversation_history)
+            messages = self._build_messages(query, context, conversation_history, patient_data)
             
             isha_url = _normalize_provider_url(os.environ.get("ISHA_AI_URL", ""), "https://ai.isha.buzz")
             # Use the correct endpoint with agent_type
@@ -1301,7 +1332,7 @@ Thank you for sharing your health concern with me.
                 return None
             
             # Build system prompt from canonical Dr. iSHA persona
-            system_prompt = self.DR_ISHA_PERSONA
+            system_prompt = self._resolve_persona(patient_data)
             if context:
                 system_prompt += f"\n\nRELEVANT MEDICAL CONTEXT (use if directly applicable):\n" + "\n".join(context[:1])
             
@@ -1345,7 +1376,7 @@ Thank you for sharing your health concern with me.
             model = genai.GenerativeModel('gemini-1.5-flash')
             
             # Use canonical Dr. iSHA persona
-            system_context = self.DR_ISHA_PERSONA
+            system_context = self._resolve_persona(patient_data)
             if context:
                 system_context += f"\n\nRELEVANT MEDICAL CONTEXT (use if directly applicable):\n" + "\n".join(context[:2]) + "\n\n"
             
