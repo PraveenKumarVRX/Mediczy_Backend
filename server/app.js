@@ -1732,6 +1732,10 @@ dailyHealthScoreService.start();
 import drugPriceSyncService from './services/drug-price-sync.service.js';
 drugPriceSyncService.start();
 
+// ============== Corporate Employee QC (Daily 03:00 IST) ==============
+import corporateEmployeeQcService from './services/corporate-employee-qc.service.js';
+corporateEmployeeQcService.start();
+
 // ============== SaMD: Drift Monitor (weekly Sun 01:00) ==============
 import governanceServiceForCron from './services/ai-model-governance.service.js';
 import { tick as cronTick, tickError as cronTickError, tickStart as cronTickStart } from './utils/cronRegistry.js';

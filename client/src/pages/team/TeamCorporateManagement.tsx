@@ -874,6 +874,10 @@ const TeamCorporateManagement = () => {
     validityDays: '365'
   });
   
+  const todayISO = () => new Date().toISOString().slice(0, 10);
+  const oneYearISO = () => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10); };
+  const fmtPlanDate = (iso?: string) => iso ? new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
   const [showCreatePlanDialog, setShowCreatePlanDialog] = useState(false);
   const [showEditPlanDialog, setShowEditPlanDialog] = useState(false);
   const [showViewPlanDialog, setShowViewPlanDialog] = useState(false);
@@ -890,8 +894,8 @@ const TeamCorporateManagement = () => {
     planName: '',
     planType: 'Standard',
     description: '',
-    validFrom: '',
-    validTo: '',
+    validFrom: todayISO(),
+    validTo: oneYearISO(),
     totalEmployees: '',
     premiumPerEmployee: '',
     status: 'Active',
@@ -2276,6 +2280,8 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
       fetchNetworkPartners(selectedCorporate.id);
       fetchWellnessEvents(selectedCorporate.id);
       resetTaskCopilotConversation(selectedCorporate.companyName);
+      // Reload template library with corporate-specific assignment context
+      loadWelcomeEmailTemplateLibrary(selectedCorporate.id);
       return;
     }
 
@@ -2807,6 +2813,14 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
   const handleUpdatePlan = async () => {
     if (!editingPlan || !editPlanForm.planName || !editPlanForm.totalEmployees || !editPlanForm.premiumPerEmployee) {
       toast({ variant: 'destructive', title: 'Error', description: 'Plan name, total employees, and premium are required' });
+      return;
+    }
+    if (!editPlanForm.validFrom || !editPlanForm.validTo) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Plan Start Date and End Date are required' });
+      return;
+    }
+    if (editPlanForm.validFrom >= editPlanForm.validTo) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Plan End Date must be after Start Date' });
       return;
     }
     try {
@@ -3761,11 +3775,13 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
     ),
   ];
 
-  const loadWelcomeEmailTemplateLibrary = async () => {
+  const loadWelcomeEmailTemplateLibrary = async (overrideCorporateId?: number) => {
     const token = localStorage.getItem('teamToken');
+    const corpId = overrideCorporateId ?? corporateId;
     try {
       const response = await api.get('/team/welcome-email-templates', {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        params: corpId ? { corporateId: corpId } : undefined,
       });
 
       const payload = response.data?.data || {};
@@ -3779,10 +3795,15 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
 
       setSavedWelcomeEmailTemplates(mappedSavedTemplates);
 
-      const assignedTemplateId = payload.assignments?.corporate_employee_welcome?.templateId;
+      // Corporate-specific assignment takes priority over team-user default
+      const corpAssigned = payload.corporateAssignments?.corporate_employee_welcome?.templateId;
+      const teamAssigned = payload.assignments?.corporate_employee_welcome?.templateId;
+      const assignedTemplateId = corpAssigned ?? teamAssigned;
       if (assignedTemplateId) {
         setSelectedWelcomeTemplateId(`saved-${assignedTemplateId}`);
         setApprovedWelcomeTemplateId(`saved-${assignedTemplateId}`);
+      } else {
+        setApprovedWelcomeTemplateId(null);
       }
     } catch (error: any) {
       console.error('Failed to load welcome templates:', error?.response?.data || error?.message || error);
@@ -3863,6 +3884,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
           {
             eventType: 'corporate_employee_welcome',
             templateId: createdId,
+            corporateId: corporateId,
           },
           {
             headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -3919,12 +3941,23 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
       }
 
       if (savedId) {
+        // Always assign per-corporate so each corporate has its own independent template
         await api.put('/team/welcome-email-templates/assign', {
           eventType: 'corporate_employee_welcome',
           templateId: savedId,
+          corporateId: corporateId,
+        }, { headers });
+        // Also assign the reminder event type to the same template for this corporate
+        await api.put('/team/welcome-email-templates/assign', {
+          eventType: 'corporate_employee_reminder',
+          templateId: savedId,
+          corporateId: corporateId,
         }, { headers });
         setApprovedWelcomeTemplateId(`saved-${savedId}`);
-        toast({ title: '✅ Template approved', description: 'This template will be used for all welcome emails.' });
+        toast({
+          title: '✅ Template approved for this corporate',
+          description: 'This template will be used for welcome and reminder emails to this corporate\'s employees only.',
+        });
       }
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Approval failed', description: err?.response?.data?.message || 'Could not save template approval.' });
@@ -5081,6 +5114,14 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
       });
       return;
     }
+    if (!newPlan.validFrom || !newPlan.validTo) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Plan Start Date and End Date are required' });
+      return;
+    }
+    if (newPlan.validFrom >= newPlan.validTo) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Plan End Date must be after Start Date' });
+      return;
+    }
 
     try {
       const token = localStorage.getItem('teamToken');
@@ -5118,8 +5159,8 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
         planName: '',
         planType: 'Standard',
         description: '',
-        validFrom: '',
-        validTo: '',
+        validFrom: todayISO(),
+        validTo: oneYearISO(),
         totalEmployees: '',
         premiumPerEmployee: '',
         status: 'Active',
@@ -6311,12 +6352,12 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                 {plan.enrolled} enrolled
                               </p>
                             )}
-                            {plan.validFrom && plan.validTo && (
-                              <p className="text-xs text-muted-foreground">
-                                <Calendar className="h-3 w-3 inline mr-1" />
-                                {plan.validFrom} → {plan.validTo}
-                              </p>
-                            )}
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Calendar className="h-3 w-3 shrink-0" />
+                              <span>{fmtPlanDate(plan.validFrom)}</span>
+                              <span>–</span>
+                              <span>{fmtPlanDate(plan.validTo)}</span>
+                            </p>
                             {plan.features && (
                               <div className="flex flex-wrap gap-1 mt-2">
                                 {Object.entries(plan.features)
@@ -9148,12 +9189,12 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                 </div>
               </div>
 
-              {/* Validity Period */}
+              {/* Plan Duration */}
               <div className="space-y-4">
-                <Label className="text-base font-semibold">Validity Period</Label>
+                <Label className="text-base font-semibold">Plan Duration</Label>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Valid From</Label>
+                    <Label>Plan Start Date <span className="text-red-500">*</span></Label>
                     <Input
                       type="date"
                       value={newPlan.validFrom}
@@ -9161,14 +9202,20 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Valid To</Label>
+                    <Label>Plan End Date <span className="text-red-500">*</span></Label>
                     <Input
                       type="date"
                       value={newPlan.validTo}
+                      min={newPlan.validFrom || undefined}
                       onChange={(e) => setNewPlan({ ...newPlan, validTo: e.target.value })}
                     />
                   </div>
                 </div>
+                {newPlan.validFrom && newPlan.validTo && (
+                  <p className="text-xs text-muted-foreground">
+                    Duration: {Math.ceil((new Date(newPlan.validTo).getTime() - new Date(newPlan.validFrom).getTime()) / (1000 * 60 * 60 * 24))} days
+                  </p>
+                )}
               </div>
 
               {/* Coverage Details — only relevant for IPD plans */}
@@ -9372,15 +9419,16 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                     </div>
                   ) : null}
                 </div>
-                {(editingPlan.validFrom || editingPlan.validTo) && (
-                  <div>
-                    <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Validity</div>
-                    <div className="flex items-center gap-2 text-sm">
-                      <Calendar className="h-4 w-4" />
-                      {editingPlan.validFrom} → {editingPlan.validTo}
-                    </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-green-50 rounded-lg border border-green-100">
+                    <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><Calendar className="h-3 w-3" /> Plan Start Date</div>
+                    <div className="text-base font-semibold text-green-800">{fmtPlanDate(editingPlan.validFrom)}</div>
                   </div>
-                )}
+                  <div className="p-4 bg-orange-50 rounded-lg border border-orange-100">
+                    <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><Calendar className="h-3 w-3" /> Plan End Date</div>
+                    <div className="text-base font-semibold text-orange-800">{fmtPlanDate(editingPlan.validTo)}</div>
+                  </div>
+                </div>
                 {editingPlan.description && (
                   <div>
                     <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Description</div>
@@ -9509,17 +9557,22 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                 </div>
               </div>
               <div className="space-y-4">
-                <Label className="text-base font-semibold">Validity Period</Label>
+                <Label className="text-base font-semibold">Plan Duration</Label>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Valid From</Label>
+                    <Label>Plan Start Date <span className="text-red-500">*</span></Label>
                     <Input type="date" value={editPlanForm.validFrom} onChange={(e) => setEditPlanForm({ ...editPlanForm, validFrom: e.target.value })} />
                   </div>
                   <div className="space-y-2">
-                    <Label>Valid To</Label>
-                    <Input type="date" value={editPlanForm.validTo} onChange={(e) => setEditPlanForm({ ...editPlanForm, validTo: e.target.value })} />
+                    <Label>Plan End Date <span className="text-red-500">*</span></Label>
+                    <Input type="date" value={editPlanForm.validTo} min={editPlanForm.validFrom || undefined} onChange={(e) => setEditPlanForm({ ...editPlanForm, validTo: e.target.value })} />
                   </div>
                 </div>
+                {editPlanForm.validFrom && editPlanForm.validTo && (
+                  <p className="text-xs text-muted-foreground">
+                    Duration: {Math.ceil((new Date(editPlanForm.validTo).getTime() - new Date(editPlanForm.validFrom).getTime()) / (1000 * 60 * 60 * 24))} days
+                  </p>
+                )}
               </div>
               {editPlanForm.features.ipd && (
                 <div className="space-y-4">

@@ -2136,6 +2136,7 @@ async function dispatchCorporateEmployeeWelcomeEmail({
   welcomeEmailData,
   temporaryPassword,
   teamUserId,
+  corporateId,
   throwOnSendFailure = false,
 }) {
   const normalizedMode = welcomeEmailMode === 'send'
@@ -2151,12 +2152,14 @@ async function dispatchCorporateEmployeeWelcomeEmail({
     };
   }
 
+  const emailOptions = { teamUserId, corporateId };
+
   if (normalizedMode === 'send') {
     try {
       await welcomeEmailService.sendCorporateEmployeeWelcomeEmail(
         welcomeEmailData,
         temporaryPassword,
-        { teamUserId }
+        emailOptions
       );
       return {
         emailStatus: 'queued',
@@ -2181,7 +2184,7 @@ async function dispatchCorporateEmployeeWelcomeEmail({
     const draft = await welcomeEmailService.buildCorporateEmployeeWelcomeEmail(
       welcomeEmailData,
       WELCOME_DRAFT_PASSWORD_PLACEHOLDER,
-      { teamUserId }
+      emailOptions
     );
     return {
       emailStatus: 'draft',
@@ -2913,12 +2916,15 @@ async function assignUserToActiveCorporatePlan({ userId, corporateId, corporateP
   const cycle = String(corporatePlan?.billing_cycle || 'ANNUAL').toUpperCase();
   const price = Number(corporatePlan?.price || metadata.premiumPerEmployee || 0);
   const currency = String(corporatePlan?.currency || 'INR').toUpperCase();
+  const planStartDate = metadata.validFrom || new Date().toISOString().slice(0, 10);
+  const planEndDate = metadata.validTo || null;
 
   if (existing) {
     await postgresSequelize.query(
       `UPDATE user_subscriptions
           SET status = 'ACTIVE',
-              start_date = COALESCE(start_date, CURRENT_DATE),
+              start_date = COALESCE(start_date, :startDate::date),
+              end_date = COALESCE(end_date, :endDate::date),
               billing_cycle = :billingCycle,
               price = :price,
               currency = :currency,
@@ -2927,6 +2933,8 @@ async function assignUserToActiveCorporatePlan({ userId, corporateId, corporateP
       {
         replacements: {
           id: existing.id,
+          startDate: planStartDate,
+          endDate: planEndDate,
           billingCycle: cycle,
           price,
           currency,
@@ -2940,15 +2948,17 @@ async function assignUserToActiveCorporatePlan({ userId, corporateId, corporateP
 
   await postgresSequelize.query(
     `INSERT INTO user_subscriptions (
-       user_id, plan_id, status, start_date, auto_renew, billing_cycle, price, currency, created_at, updated_at
+       user_id, plan_id, status, start_date, end_date, auto_renew, billing_cycle, price, currency, created_at, updated_at
      )
      VALUES (
-       :userId, :planId, 'ACTIVE', NOW(), false, :billingCycle, :price, :currency, NOW(), NOW()
+       :userId, :planId, 'ACTIVE', :startDate::date, :endDate::date, false, :billingCycle, :price, :currency, NOW(), NOW()
      )`,
     {
       replacements: {
         userId,
         planId,
+        startDate: planStartDate,
+        endDate: planEndDate,
         billingCycle: cycle,
         price,
         currency,
@@ -3081,20 +3091,24 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
         let temporaryPassword = null;
         
         if (existingUser) {
-          // User exists — activate and link to corporate's aggregator/tenant
+          // User exists — activate, link to corporate, and issue a fresh temporary password
           userId = existingUser.id;
-          // Resolve corporate's aggregator and tenant for activation of existing user
+          temporaryPassword = welcomeEmailService.generateSecurePassword();
+          const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
           const corpAggregatorId = corporate.dataValues?.aggregator_id ?? corporate.aggregator_id ?? null;
           const corpAggregatorType = corporate.dataValues?.aggregator_type ?? corporate.aggregator_type ?? null;
           const corpTenantId = corporate.dataValues?.tenant_id ?? corporate.tenant_id ?? null;
           await postgresSequelize.query(
-            `UPDATE users SET "isVerified" = true, "isCorporate" = true,
+            `UPDATE users SET "isVerified" = true, "isCorporate" = true, status = 'active',
+              password = :password,
+              metadata = COALESCE(metadata, '{}'::jsonb) || '{"requirePasswordChange": true}'::jsonb,
               aggregator_id = COALESCE(aggregator_id, :aggregatorId),
               aggregator_type = COALESCE(aggregator_type, :aggregatorType),
-              tenant_id = COALESCE(tenant_id, :tenantId)
+              tenant_id = COALESCE(tenant_id, :tenantId),
+              "updatedAt" = NOW()
              WHERE id = :userId`,
             {
-              replacements: { userId, aggregatorId: corpAggregatorId, aggregatorType: corpAggregatorType, tenantId: corpTenantId },
+              replacements: { userId, password: hashedPassword, aggregatorId: corpAggregatorId, aggregatorType: corpAggregatorType, tenantId: corpTenantId },
               type: postgresSequelize.QueryTypes.UPDATE,
               transaction: tx
             }
@@ -3273,7 +3287,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
           copay: emp.copay || emp.employeeShare
         };
 
-        if (isNewUser && temporaryPassword) {
+        if (temporaryPassword) {
           const welcomeMode = shouldSendWelcomeEmail ? 'send' : (shouldPrepareWelcomeEmail ? 'draft' : 'skip');
           let welcomeBlockedByQualityGate = false;
 
@@ -3327,6 +3341,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
               welcomeEmailData,
               temporaryPassword,
               teamUserId,
+              corporateId,
             });
             emailStatus = welcomeDispatchResult.emailStatus;
             emailError = welcomeDispatchResult.emailError;
@@ -3563,6 +3578,7 @@ router.post('/corporate-employee-welcome-emails/resend', authUser, requireRole([
           welcomeEmailData,
           temporaryPassword,
           teamUserId,
+          corporateId,
           throwOnSendFailure: true,
         });
         emailStatus = welcomeDispatchResult.emailStatus;
@@ -3692,7 +3708,7 @@ export async function runCorporateEmployeeReminderBulkSend({ corporateId, corpor
       const message = await welcomeEmailService.buildCorporateEmployeeReminderEmail(
         welcomeEmailData,
         temporaryPassword,
-        { teamUserId }
+        { teamUserId, corporateId }
       );
 
       const mismatchedEmails = findMismatchedCredentialEmails({
@@ -4671,10 +4687,15 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
       { replacements: userReplacements, type: postgresSequelize.QueryTypes.UPDATE }
     );
 
+    // Normalise the incoming status to lowercase ('active' / 'inactive')
+    const normalizedStatus = status ? String(status).toLowerCase() : null;
+    const isActivating = normalizedStatus === 'active';
+    const isDeactivating = normalizedStatus === 'inactive';
+
     // Update user_associations table (status + metadata)
     const assocUpdates = ['"updatedAt" = NOW()'];
     const assocReplacements = { userId: numericUserId, corpId: numericCorporateId };
-    if (status) { assocUpdates.push('status = :status'); assocReplacements.status = status; }
+    if (normalizedStatus) { assocUpdates.push('status = :status'); assocReplacements.status = normalizedStatus; }
     if (designation !== undefined || secondaryEmail !== undefined || employeeId !== undefined || location !== undefined || facility !== undefined) {
       const metaParts = [];
       if (designation !== undefined) { metaParts.push("'designation', :designation"); assocReplacements.designation = designation; }
@@ -4691,12 +4712,50 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
       { replacements: assocReplacements, type: postgresSequelize.QueryTypes.UPDATE }
     );
 
-    // Sync employeeId to corporate_employees table as well
-    if (employeeId !== undefined) {
+    // Sync users.status and corporate_employees.isActive when toggling activation
+    if (normalizedStatus) {
       await postgresSequelize.query(
-        `UPDATE corporate_employees SET "employeeId" = :employeeId, "updatedAt" = NOW()
-         WHERE "userId" = :userId AND corporate_id = :corpId`,
-        { replacements: { employeeId, userId: numericUserId, corpId: numericCorporateId }, type: postgresSequelize.QueryTypes.UPDATE }
+        `UPDATE users SET status = :status, "updatedAt" = NOW() WHERE id = :userId`,
+        { replacements: { status: normalizedStatus, userId: numericUserId }, type: postgresSequelize.QueryTypes.UPDATE }
+      );
+    }
+
+    // Sync employeeId + isActive to corporate_employees table
+    const ceUpdates = ['"updatedAt" = NOW()'];
+    const ceReplacements = { userId: numericUserId, corpId: numericCorporateId };
+    if (employeeId !== undefined) { ceUpdates.push('"employeeId" = :employeeId'); ceReplacements.employeeId = employeeId; }
+    if (normalizedStatus) {
+      ceUpdates.push('"isActive" = :isActive');
+      ceReplacements.isActive = isActivating;
+    }
+    await postgresSequelize.query(
+      `UPDATE corporate_employees SET ${ceUpdates.join(', ')} WHERE "userId" = :userId AND corporate_id = :corpId`,
+      { replacements: ceReplacements, type: postgresSequelize.QueryTypes.UPDATE }
+    );
+
+    // Assign active corporate plan when activating; deactivate when deactivating
+    if (isActivating) {
+      try {
+        const activePlan = await getActiveCorporateSubscriptionPlan({ corporateId: numericCorporateId });
+        if (activePlan) {
+          await assignUserToActiveCorporatePlan({ userId: numericUserId, corporateId: numericCorporateId, corporatePlan: activePlan });
+        }
+      } catch (planErr) {
+        console.warn(`[PUT employee] Could not assign plan to user ${numericUserId}:`, planErr.message);
+      }
+    } else if (isDeactivating) {
+      await postgresSequelize.query(
+        `UPDATE user_subscriptions us
+            SET status = 'INACTIVE', updated_at = NOW()
+          WHERE us.user_id = :userId
+            AND us.status = 'ACTIVE'
+            AND EXISTS (
+              SELECT 1 FROM subscription_plans sp
+               WHERE sp.id = us.plan_id
+                 AND sp.type = 'CORPORATE'
+                 AND (sp.metadata->>'corporateId')::int = :corpId
+            )`,
+        { replacements: { userId: numericUserId, corpId: numericCorporateId }, type: postgresSequelize.QueryTypes.UPDATE }
       );
     }
 
@@ -7781,6 +7840,44 @@ router.put('/team-members/:id/privileges', authUser, requireRole('admin'), async
   } catch (err) {
     console.error('[admin/team-privileges] error:', err.message);
     res.status(500).json({ success: false, message: 'Failed to update privileges' });
+  }
+});
+
+// ─── Corporate Employee QC ───────────────────────────────────────────────────
+import corporateEmployeeQcService from '../services/corporate-employee-qc.service.js';
+
+/**
+ * POST /api/admin/corporate-employee-qc/run
+ * Manually trigger the QC sweep (admin/team only)
+ */
+router.post('/corporate-employee-qc/run', authUser, requireRole(['admin', 'team']), async (req, res) => {
+  try {
+    const result = await corporateEmployeeQcService.runNow();
+    return res.json({ success: true, message: 'QC sweep completed', result });
+  } catch (err) {
+    console.error('[QC] manual run failed:', err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * GET /api/admin/corporate-employee-qc/logs?limit=20
+ * Fetch recent QC run logs
+ */
+router.get('/corporate-employee-qc/logs', authUser, requireRole(['admin', 'team']), async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit || '20', 10), 100);
+    const { rows } = await postgresSequelize.query(
+      `SELECT id, run_at, duration_ms, corporates_scanned, checks_run,
+              issues_found, issues_fixed, issues_failed, errors
+       FROM corporate_employee_qc_log
+       ORDER BY run_at DESC
+       LIMIT :limit`,
+      { replacements: { limit }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    return res.json({ success: true, logs: rows });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 
