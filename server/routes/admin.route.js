@@ -21,6 +21,10 @@ import { checkQuota, recordSent, getQuotaStatus } from '../utils/emailQuota.js';
 import cimsService from '../services/cims-medicine.service.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import {
+  reactivateCorporateEmployeeAccount,
+  reactivateCorporateEmployeeByIdentifier,
+} from '../services/corporate-employee-activation.service.js';
+import {
   adminLogin,
   adminRefresh,
   adminLogout,
@@ -2868,25 +2872,6 @@ async function createDefaultCorporatePlanForCorporate({ corporateId, companyName
   return inserted || null;
 }
 
-/** Ensure corporate employee can log in (OTP/password). Idempotent. */
-async function activateCorporateEmployeeAccount({ userId, transaction = null }) {
-  if (!userId) return;
-  await postgresSequelize.query(
-    `UPDATE users
-        SET status = 'active',
-            "isCorporate" = true,
-            "isVerified" = COALESCE("isVerified", true),
-            "updatedAt" = NOW()
-      WHERE id = :userId
-        AND (status IS DISTINCT FROM 'active' OR "isCorporate" IS NOT TRUE)`,
-    {
-      replacements: { userId },
-      type: postgresSequelize.QueryTypes.UPDATE,
-      transaction,
-    }
-  );
-}
-
 async function assignUserToActiveCorporatePlan({ userId, corporateId, corporatePlan, transaction = null }) {
   const planId = Number(corporatePlan?.id);
   if (!userId || Number.isNaN(planId)) {
@@ -3268,7 +3253,11 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
           transaction: tx,
         });
 
-        await activateCorporateEmployeeAccount({ userId, transaction: tx });
+        await postgresSequelize.query(
+          `UPDATE users SET status = 'active', "isCorporate" = true, "isVerified" = true, "updatedAt" = NOW()
+           WHERE id = :userId`,
+          { replacements: { userId }, type: postgresSequelize.QueryTypes.UPDATE, transaction: tx }
+        );
 
         await tx.commit();
         tx = null;
@@ -4391,6 +4380,43 @@ router.get('/corporate-employees/:corporateId/activation-stats', authUser, requi
     });
   } catch (error) {
     console.error('Activation stats error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POST /api/admin/corporate-employees/reactivate
+ * Reactivate login for a corporate employee stuck on "Account is inactive".
+ * Body: { email?, employeeId?, userId? }
+ */
+router.post('/corporate-employees/reactivate', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
+  try {
+    const corporateId = req.resolvedCorporate?.id;
+    const { email, employeeId, userId } = req.body || {};
+
+    let result;
+    if (userId) {
+      result = await reactivateCorporateEmployeeAccount(parseInt(userId, 10));
+    } else {
+      result = await reactivateCorporateEmployeeByIdentifier({
+        email: email || null,
+        employeeId: employeeId || null,
+        corporateId,
+      });
+    }
+
+    if (!result.success) {
+      const status = result.reason === 'user_not_found' ? 404 : 400;
+      return res.status(status).json({ success: false, message: result.reason, ...result });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Employee account activated for login',
+      ...result,
+    });
+  } catch (error) {
+    console.error('Corporate employee reactivate error:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 });

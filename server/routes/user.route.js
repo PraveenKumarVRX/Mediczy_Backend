@@ -23,6 +23,7 @@ import { auditLoginAttempt } from "../middleware/audit.middleware.js";
 import { authLimiter, otpLimiter } from "../middleware/rateLimiter.middleware.js";
 import intelligentDb from "../utils/intelligentDbClient.js";
 import OTP from "../models/otp.model.intelligent.js";
+import { tryAutoActivateCorporateEmployeeForLogin } from "../services/corporate-employee-activation.service.js";
 import { cache } from "../db/redis.js";
 import postgresSequelize from "../db/postgres-sequelize.js";
 import { UserPlan, MembershipPlan } from "../models/membershipPlan.model.intelligent.js";
@@ -1494,6 +1495,9 @@ router.post(
       }
 
       const isRenewalExemptUser = isMembershipRenewalExemptEmail(user.email);
+
+      await tryAutoActivateCorporateEmployeeForLogin(user);
+
       if ((user.status !== 'active' || user.isActive === false) && !isRenewalExemptUser) {
         await auditLoginAttempt(req, user.id, user.email, false, 'Inactive user attempted OTP login');
         const details = await buildInactiveAccountContext(user.id);
