@@ -15,6 +15,8 @@ const normalizeSlotDuration = (value, fallback = 30) => {
   return ALLOWED_SLOT_DURATIONS.includes(parsed) ? parsed : fallback;
 };
 
+const router = express.Router();
+
 // Thin wrappers kept for local call-site readability
 const getWeeklyAvailability   = (doctor) => normalizeWeeklyAvailability(doctor?.weeklyAvailability);
 const getConsultationTypes     = (doctor) => normalizeConsultationTypes(doctor?.consultationTypes);
@@ -161,7 +163,7 @@ router.post('/bulk-update', authUser, [
     };
 
     // Normalize app variants: walkin/walkIn/in-person, start/end aliases.
-    const normalizeSlots = (slots = [], defaultDuration = 30) => {
+    const normalizeSlots = (slots = []) => {
       return slots.map((slot) => {
         const rawType = String(slot?.consultationType || slot?.type || 'both').trim().toLowerCase();
         const consultationType = rawType === 'walkin' || rawType === 'in-person' ? 'walkIn' :
@@ -173,8 +175,10 @@ router.post('/bulk-update', authUser, [
           consultationType
         };
 
-        const slotDuration = normalizeSlotDuration(slot?.slotDuration, defaultDuration);
-        if (slotDuration) normalized.slotDuration = slotDuration;
+        const explicitDuration = parseInt(slot?.slotDuration, 10);
+        if (ALLOWED_SLOT_DURATIONS.includes(explicitDuration)) {
+          normalized.slotDuration = explicitDuration;
+        }
 
         const maxPatients = parseInt(slot?.maxPatients, 10);
         if (Number.isFinite(maxPatients) && maxPatients > 0) {
@@ -201,7 +205,7 @@ router.post('/bulk-update', authUser, [
     for (const day of DAYS) {
       const dayData = payload?.[day];
       if (!dayData) continue;
-      const normalizedDaySlots = normalizeSlots(Array.isArray(dayData?.slots) ? dayData.slots : [], doctorSlotDuration);
+      const normalizedDaySlots = normalizeSlots(Array.isArray(dayData?.slots) ? dayData.slots : []);
       if (normalizedDaySlots.length > 0 && !validateSlots(normalizedDaySlots)) {
         return res.status(400).json({
           success: false,
@@ -228,7 +232,7 @@ router.post('/bulk-update', authUser, [
         const existingDay = existing?.[day] || {};
         updated[day] = {
           isAvailable: dayInput.isAvailable === undefined ? Boolean(existingDay.isAvailable) : Boolean(dayInput.isAvailable),
-          slots: normalizeSlots(Array.isArray(dayInput.slots) ? dayInput.slots : [], doctorSlotDuration)
+          slots: normalizeSlots(Array.isArray(dayInput.slots) ? dayInput.slots : [])
         };
       }
     }
