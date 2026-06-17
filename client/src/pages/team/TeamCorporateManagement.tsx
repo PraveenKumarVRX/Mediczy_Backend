@@ -2124,6 +2124,7 @@ const TeamCorporateManagement = () => {
         userId: emp.id,
         email: emp.email,
         employeeId: emp.employeeId,
+        corporateId: selectedCorporate.id,
       });
       if (!data?.success) {
         throw new Error(data?.message || 'Reactivation failed');
