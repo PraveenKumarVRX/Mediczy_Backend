@@ -61,6 +61,9 @@ export interface DoctorCopilotBriefingResponse {
   todayAppointments?: number;
   pending?: number;
   completed?: number;
+  hasUpdates?: boolean;
+  hasUrgent?: boolean;
+  speakText?: string;
   [key: string]: unknown;
 }
 

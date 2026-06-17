@@ -2930,7 +2930,27 @@ Force routing with `mode: "agent"` or `mode: "clinical"` when needed.
 | `/api/voice-assistant/briefing` | GET | Morning briefing (appointments + alerts) |
 | `/api/voice-assistant/livekit-token` | GET | Live voice session token (if enabled) |
 
-#### 14.10.4 Mobile Client (msh_d_app)
+#### 14.10.4 Web doctor portal (React)
+
+Route: **`/doctor/assistant`** (`DoctorVoiceAssistant.tsx`)
+
+- Sidebar: **iSHA Assistant** · floating orb (bottom-right on all doctor pages)
+- API client: `client/src/services/doctorCopilot.ts` → `POST /api/doctor-copilot/chat`
+- Patient context: when a chart is open in Patient EMR, `sessionStorage.doctorCopilotPatient` is set automatically
+
+```typescript
+import doctorCopilotService from '@/services/doctorCopilot';
+
+const data = await doctorCopilotService.chat({
+  message: text,
+  history: priorTurns,
+  context: { currentScreen: 'isha_assistant', currentPatient },
+});
+```
+
+Voice (web): `doctorCopilotService.speechToText(formData)` → chat. Briefing poll uses `getBriefing()`.
+
+#### 14.10.5 Mobile client (msh_d_app)
 
 Copy `shared/doctor-mobile-api/` from the Mediczy repo into the mobile app:
 
@@ -2971,7 +2991,7 @@ const reply = await copilot.chat({ message: text, context: { currentScreen: 'ish
 
 See `shared/doctor-mobile-api/README.md` for full API surface.
 
-#### 14.10.5 Migration from Legacy Endpoints
+#### 14.10.6 Migration from Legacy Endpoints
 
 | Before (legacy) | After (preferred) |
 |---|---|
@@ -2980,7 +3000,7 @@ See `shared/doctor-mobile-api/README.md` for full API surface.
 
 Legacy `/voice-assistant/agent` remains supported. New msh_d_app builds should use the copilot client only.
 
-#### 14.10.6 Appointment-List Behavior
+#### 14.10.7 Appointment-List Behavior
 
 For appointment listing commands such as `Show today's appointments`, `List upcoming appointments`, `Show pending appointments`, or `Show completed appointments`, the backend bypasses LLM-generated content and queries the live `appointments` table for the authenticated doctor. The response must not be treated as sample data.
 
@@ -2994,7 +3014,7 @@ For appointment listing commands such as `Show today's appointments`, `List upco
 | `completed appointments`, `past appointments` | `completed` |
 | `all appointments` | `all` |
 
-#### 14.10.7 Client Action Handling
+#### 14.10.8 Client Action Handling
 
 When `requiresConfirmation` is `true`, show a confirm dialog before executing `action` + `parameters`.
 

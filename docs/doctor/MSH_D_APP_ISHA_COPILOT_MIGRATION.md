@@ -1,6 +1,8 @@
 # msh_d_app — Dr. iSHA Copilot Migration (AI-PLATFORM-001)
 
-Wire the existing Dr. iSHA assistant screen to the unified gateway `POST /api/doctor-copilot/chat`.
+Wire the existing Dr. iSHA assistant to the unified gateway `POST /api/doctor-copilot/chat`.
+
+**Web doctor portal** is already on this gateway: route `/doctor/assistant`, service `client/src/services/doctorCopilot.ts`. Mobile steps below mirror the same API.
 
 ## Prerequisites
 

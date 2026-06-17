@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { MicVAD } from "@ricky0123/vad-web";
 import { Room } from "livekit-client";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import api from "@/lib/api";
+import doctorCopilotService from "@/services/doctorCopilot";
 import { getToken } from "@/hooks/auth";
 import {
   Send, Volume2, VolumeX, Loader2, Sparkles,
@@ -112,9 +113,25 @@ const extractCommand = (t: string): string =>
 
 export default function DoctorVoiceAssistant() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const { currentDoctor } = useAuth();
   const doctorFirstName = currentDoctor?.firstName || "Doctor";
+
+  const copilotContext = useMemo(() => {
+    const segment = location.pathname.replace(/^\/doctor\/?/, "").split("/")[0] || "dashboard";
+    let currentPatient: { id?: number | string; name?: string } | null = null;
+    try {
+      const raw = sessionStorage.getItem("doctorCopilotPatient");
+      if (raw) currentPatient = JSON.parse(raw);
+    } catch {
+      /* ignore */
+    }
+    return {
+      currentScreen: segment === "assistant" ? "isha_assistant" : segment,
+      currentPatient,
+    };
+  }, [location.pathname]);
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -301,8 +318,8 @@ export default function DoctorVoiceAssistant() {
       const form = new FormData();
       form.append('audio', wav, 'recording.wav');
       try {
-        const r = await api.post('/voice-assistant/stt', form, { headers: { 'Content-Type': 'multipart/form-data' } });
-        return (r.data?.text || '').trim();
+        const r = await doctorCopilotService.speechToText(form);
+        return (r?.text || '').trim();
       } catch { return ''; }
     };
 
@@ -349,9 +366,9 @@ export default function DoctorVoiceAssistant() {
               // Pure wake phrase — greet with briefing
               let wakeMsg = `Yes, Dr. ${doctorFirstName}?`;
               try {
-                const br = await api.get('/voice-assistant/briefing');
-                if (br.data?.hasUrgent && br.data?.speakText)
-                  wakeMsg = `Dr. ${doctorFirstName}, ${br.data.speakText}`;
+                const br = await doctorCopilotService.getBriefing();
+                if (br?.hasUrgent && br?.speakText)
+                  wakeMsg = `Dr. ${doctorFirstName}, ${br.speakText}`;
               } catch { /* silent */ }
               speakRef.current?.(wakeMsg);
             }
@@ -388,7 +405,7 @@ export default function DoctorVoiceAssistant() {
       if (isSpeaking || isListening) return;
       if (Date.now() - lastSpokenAlertRef.current < 5 * 60 * 1000) return;
       try {
-        const { data } = await api.get("/voice-assistant/briefing");
+        const data = await doctorCopilotService.getBriefing();
         if (data?.hasUpdates && data?.speakText) {
           lastSpokenAlertRef.current = Date.now();
           const alertMsg: Message = {
@@ -453,19 +470,19 @@ export default function DoctorVoiceAssistant() {
       .map(m => ({ role: m.role, text: m.text }));
 
     try {
-      const { data } = await api.post<AgentResponse>("/doctor-copilot/chat", {
+      const data = await doctorCopilotService.chat({
         message: text,
         history,
-        context: { currentScreen: window.location.pathname.split("/").pop() || "dashboard" },
+        context: copilotContext,
       });
 
-      const responseText = data.response || (data as any).primary_response || data.speak || "I'm not sure how to help with that.";
+      const responseText = data.response || data.speak || "I'm not sure how to help with that.";
 
       const assistantMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
         text: responseText,
-        intent: data.intent || ((data as any).gateway?.path === 'clinical' ? 'medical_query' : data.intent),
+        intent: data.intent || (data.path === 'clinical' ? 'medical_query' : data.intent),
         action: data.action,
         parameters: data.parameters,
         requiresConfirmation: data.requiresConfirmation,
@@ -498,7 +515,7 @@ export default function DoctorVoiceAssistant() {
     } finally {
       setIsProcessing(false);
     }
-  }, [speak, executeAction]);
+  }, [speak, executeAction, copilotContext]);
 
   // Keep sendToAgentRef in sync
   useEffect(() => { sendToAgentRef.current = sendToAgent; }, [sendToAgent]);

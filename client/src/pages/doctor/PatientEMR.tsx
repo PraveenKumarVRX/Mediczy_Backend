@@ -260,6 +260,20 @@ export default function PatientEMR() {
     if (patient) setSelectedPatient(patient);
   }, [searchParams, patients]);
 
+  useEffect(() => {
+    if (!selectedPatient) {
+      sessionStorage.removeItem('doctorCopilotPatient');
+      return;
+    }
+    sessionStorage.setItem(
+      'doctorCopilotPatient',
+      JSON.stringify({
+        id: selectedPatient.id,
+        name: [selectedPatient.firstName, selectedPatient.lastName].filter(Boolean).join(' '),
+      })
+    );
+  }, [selectedPatient]);
+
   // Filter patients based on search
   const filteredPatients = patients.filter((p: Patient) => {
     const searchLower = searchQuery.toLowerCase();
