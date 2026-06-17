@@ -81,6 +81,16 @@ router.get('/dashboard', requireSuperAdminOrMedDir, async (req, res) => {
   }
 });
 
+// GET /api/ai-governance/layer-map — AI capability layer registry (MED-AI-LAYER-001)
+router.get('/layer-map', requireSuperAdminOrMedDir, async (_req, res) => {
+  try {
+    const { getAiLayerMapSummary } = await import('../services/ai-layer-map.service.js');
+    res.json({ success: true, data: getAiLayerMapSummary() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/ai-governance/changes/pending
 // List all pending model changes awaiting review

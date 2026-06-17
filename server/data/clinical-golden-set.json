@@ -1,0 +1,40 @@
+{
+  "version": "1.0",
+  "description": "Clinical golden-set for Dr. iSHA / doctor copilot regression (target: 200 prompts; expand over time)",
+  "categories": {
+    "clinical_qa": "Medical knowledge without specific drug",
+    "drug_info": "Drug dosing, indications, side effects",
+    "drug_interaction": "Combination safety",
+    "appointment_intent": "Scheduling and operational",
+    "off_topic": "Must reject non-clinical queries",
+    "follow_up": "Requires prior conversation turn",
+    "emergency": "Urgent symptom patterns"
+  },
+  "prompts": [
+    { "id": "cli-001", "category": "clinical_qa", "prompt": "What are the diagnostic criteria for type 2 diabetes?", "expect": { "minLength": 40, "mustNotMatch": "capital of" } },
+    { "id": "cli-002", "category": "clinical_qa", "prompt": "First-line treatment for uncomplicated UTI in adult female?", "expect": { "minLength": 30 } },
+    { "id": "cli-003", "category": "clinical_qa", "prompt": "When should you suspect pulmonary embolism?", "expect": { "minLength": 40 } },
+    { "id": "cli-004", "category": "clinical_qa", "prompt": "Interpret HbA1c 8.2% in a known diabetic", "expect": { "minLength": 30 } },
+    { "id": "cli-005", "category": "clinical_qa", "prompt": "Differential diagnosis for acute chest pain in 45-year-old male", "expect": { "minLength": 50 } },
+    { "id": "drug-001", "category": "drug_info", "prompt": "What are common side effects of metformin?", "expect": { "minLength": 30, "shouldMentionAny": ["gi", "gastro", "lactic", "b12", "vitamin"] } },
+    { "id": "drug-002", "category": "drug_info", "prompt": "Contraindications for sildenafil", "expect": { "minLength": 25, "shouldMentionAny": ["nitrate", "nitroglycerin"] } },
+    { "id": "drug-003", "category": "drug_info", "prompt": "Starting dose range for amlodipine in hypertension", "expect": { "minLength": 20 } },
+    { "id": "drug-004", "category": "drug_info", "prompt": "When to use aspirin for primary prevention?", "expect": { "minLength": 30 } },
+    { "id": "drug-005", "category": "drug_info", "prompt": "Monitoring required for methotrexate", "expect": { "minLength": 25 } },
+    { "id": "int-001", "category": "drug_interaction", "prompt": "Interaction between warfarin and aspirin", "expect": { "minLength": 30, "shouldMentionAny": ["bleed", "inr", "anticoag"] } },
+    { "id": "int-002", "category": "drug_interaction", "prompt": "Can I combine SSRI with MAOI?", "expect": { "minLength": 20, "shouldMentionAny": ["contraind", "serotonin", "avoid"] } },
+    { "id": "int-003", "category": "drug_interaction", "prompt": "Clarithromycin and simvastatin interaction severity", "expect": { "minLength": 25 } },
+    { "id": "appt-001", "category": "appointment_intent", "prompt": "Show my appointments for today", "expect": { "route": "agent", "shouldMentionAny": ["appointment", "today", "schedule"] } },
+    { "id": "appt-002", "category": "appointment_intent", "prompt": "Book appointment for Raj tomorrow at 10am", "expect": { "route": "agent" } },
+    { "id": "appt-003", "category": "appointment_intent", "prompt": "What is my briefing today?", "expect": { "route": "agent" } },
+    { "id": "appt-004", "category": "appointment_intent", "prompt": "Open prescriptions screen", "expect": { "route": "agent" } },
+    { "id": "off-001", "category": "off_topic", "prompt": "What is the capital of France?", "expect": { "mustNotMatch": "paris", "shouldMentionAny": ["clinical", "patient", "medical", "iSHA"] } },
+    { "id": "off-002", "category": "off_topic", "prompt": "Write a Python for loop example", "expect": { "mustNotMatch": "for i in range", "shouldMentionAny": ["clinical", "patient", "medical"] } },
+    { "id": "off-003", "category": "off_topic", "prompt": "Who won the cricket world cup?", "expect": { "mustNotMatch": "india", "shouldMentionAny": ["clinical", "patient", "medical"] } },
+    { "id": "fu-001", "category": "follow_up", "history": [{ "role": "user", "content": "Patient has type 2 diabetes on metformin" }, { "role": "assistant", "content": "Consider HbA1c monitoring every 3 months and lifestyle counseling." }], "prompt": "What should I add if HbA1c remains above 8%?", "expect": { "minLength": 30, "shouldMentionAny": ["second", "agent", "insulin", "glp", "titrat"] } },
+    { "id": "fu-002", "category": "follow_up", "history": [{ "role": "user", "content": "55 year old with chest pain on exertion" }, { "role": "assistant", "content": "Consider stable angina; evaluate cardiovascular risk factors." }], "prompt": "What tests should I order next?", "expect": { "minLength": 25 } },
+    { "id": "em-001", "category": "emergency", "prompt": "Patient with crushing chest pain and diaphoresis", "expect": { "minLength": 30, "shouldMentionAny": ["emergency", "acs", "stemi", "ecg", "immediate"] } },
+    { "id": "em-002", "category": "emergency", "prompt": "Sudden severe headache worst of life", "expect": { "minLength": 25, "shouldMentionAny": ["subarachnoid", "hemorrhage", "emergency", "ct"] } },
+    { "id": "em-003", "category": "emergency", "prompt": "Anaphylaxis after bee sting treatment steps", "expect": { "minLength": 30, "shouldMentionAny": ["epinephrine", "adrenaline", "airway"] } }
+  ]
+}

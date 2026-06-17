@@ -19,6 +19,7 @@
  */
 
 import pool from '../db/pgPool.js';
+import { getAiLayerMapSummary } from './ai-layer-map.service.js';
 
 // ─── Model Card Registry ─────────────────────────────────────────────────────
 // Static model cards for each AI decision component.
@@ -619,6 +620,7 @@ class AIModelGovernanceService {
         regulatoryClass: MODEL_CARDS[k].regulatoryClass,
         lastValidated: MODEL_CARDS[k].lastValidatedAt ?? 'NOT VALIDATED'
       })),
+      aiLayerMap: getAiLayerMapSummary(),
       samdReadiness: await this._samdReadinessChecklist()
     };
   }

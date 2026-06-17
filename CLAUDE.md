@@ -38,6 +38,7 @@ This is a healthcare platform with AI features that qualify as **Software as a M
 
 Read first:
 - [docs/ai/SAMD_READINESS_SCORECARD.md](docs/ai/SAMD_READINESS_SCORECARD.md) — regulatory classification and what's required
+- [docs/ai/MEDICZY_AI_LAYER_MAP.md](docs/ai/MEDICZY_AI_LAYER_MAP.md) — 7-layer capability map, service owners, SLOs
 - [docs/ai/AI_MODEL_CARDS.md](docs/ai/AI_MODEL_CARDS.md) — existing model documentation
 - [docs/ai/AI_INTERPRETABILITY_AND_QUALITY_GATES.md](docs/ai/AI_INTERPRETABILITY_AND_QUALITY_GATES.md) — SHAP/LIME/gates technical spec
 
@@ -79,12 +80,22 @@ POST /api/ai-governance/model-cards/sync
 Medical directors and super-admins access the governance dashboard at:
 
 ```
-GET /api/ai-governance/dashboard          — Full overview
-GET /api/ai-governance/changes/pending    — Pending model changes for review
+GET /api/ai-governance/dashboard          — Full overview (includes aiLayerMap)
+GET /api/ai-governance/layer-map            — AI capability layer registry (MED-AI-LAYER-001)
+GET /api/ai-governance/changes/pending      — Pending model changes for review
 POST /api/ai-governance/changes/:id/approve — Approve a change
-GET /api/ai-governance/samd-readiness     — Readiness checklist (10/16 → target 16/16)
+GET /api/ai-governance/samd-readiness       — Readiness checklist (22/27)
 GET /api/ai-governance/patient/:id/explanation — SHAP explanation for a patient
 ```
+
+**Doctor AI unified gateway (AI-PLATFORM-001):**
+
+```
+POST /api/doctor-copilot/chat    — Single doctor copilot entry (agent + clinical routing)
+GET  /api/doctor-copilot/layer-map — Layer map for doctor app
+```
+
+Legacy paths still supported: `/api/voice-assistant/agent`, `/api/medical-ai/consult`.
 
 ---
 
@@ -124,6 +135,8 @@ server/
   services/
     ai-interpretability.service.js     ← SHAP + LIME + counterfactuals + confidence
     ai-model-governance.service.js     ← Model cards + PCCP + drift detection
+    ai-layer-map.service.js            ← 7-layer capability registry (MED-AI-LAYER-001)
+    doctor-copilot.service.js          ← Unified doctor AI gateway (AI-PLATFORM-001)
     ai-quality-gates.service.js        ← 8 pre-flight safety checks
     ai-health-risk-cron.service.js     ← Patient risk scoring (6h, now with SHAP)
     ai-emergency-triage.service.js     ← ESI triage (now with LIME + gates)
@@ -134,11 +147,13 @@ server/
       evaluation-engine.js             ← Telemetry + dry-run optimization
   routes/
     ai-governance.route.js             ← All governance API endpoints
+    doctor-copilot.route.js              ← Unified doctor copilot gateway
   migrations/
     samd-interpretability-governance.migration.js ← Run once per new environment
 
 docs/ai/
   SAMD_READINESS_SCORECARD.md         ← Regulatory compliance tracker
+  MEDICZY_AI_LAYER_MAP.md             ← 7-layer capability map, owners, SLOs
   AI_MODEL_CARDS.md                   ← Per-component AI documentation
   AI_INTERPRETABILITY_AND_QUALITY_GATES.md ← Technical spec
 ```

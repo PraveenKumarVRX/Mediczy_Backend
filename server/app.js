@@ -64,6 +64,7 @@ import telemetryRouter from "./routes/telemetry.route.js";
 import scribeRouter from "./routes/scribe.js";
 import offlineScribeRouter from "./routes/offline-scribe.route.js";
 import voiceAssistantRouter from "./routes/voice-assistant.route.js";
+import doctorCopilotRouter from "./routes/doctor-copilot.route.js";
 import doctorChatRouter from "./routes/doctor-chat.route.js";
 import doctorImagingRouter from "./routes/doctor-imaging.route.js";
 import localAiNodeRouter from "./routes/local-ai-node.route.js";
@@ -1447,6 +1448,7 @@ app.use('/api/scribe', scribeRouter); // AI Scribe - Public API entrypoint
 app.use('/api/hospital/scribe', scribeRouter); // AI Scribe - Hospital dashboard entrypoint
 app.use('/api/offline-scribe', offlineScribeRouter); // Offline AI Scribe - CPU-only, Indian languages
 app.use('/api/voice-assistant', voiceAssistantRouter); // Doctor Voice Assistant - Siri-style AI agent
+app.use('/api/doctor-copilot', doctorCopilotRouter); // Unified doctor AI gateway (AI-PLATFORM-001)
 app.use('/api/doctor/chat', doctorChatRouter); // Doctor ↔ Patient / Doctor ↔ Nurse messaging
 app.use('/api/doctors/imaging', doctorImagingRouter); // Medical imaging (CT, MRI, USG, Echo, Cathlab, X-Ray)
 import doctorRisReferredRouter from './routes/doctor-ris-referred.route.js';

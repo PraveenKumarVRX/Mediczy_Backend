@@ -453,17 +453,19 @@ export default function DoctorVoiceAssistant() {
       .map(m => ({ role: m.role, text: m.text }));
 
     try {
-      const { data } = await api.post<AgentResponse>("/voice-assistant/agent", {
-        text,
+      const { data } = await api.post<AgentResponse>("/doctor-copilot/chat", {
+        message: text,
         history,
         context: { currentScreen: window.location.pathname.split("/").pop() || "dashboard" },
       });
 
+      const responseText = data.response || (data as any).primary_response || data.speak || "I'm not sure how to help with that.";
+
       const assistantMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        text: data.response,
-        intent: data.intent,
+        text: responseText,
+        intent: data.intent || ((data as any).gateway?.path === 'clinical' ? 'medical_query' : data.intent),
         action: data.action,
         parameters: data.parameters,
         requiresConfirmation: data.requiresConfirmation,
@@ -473,13 +475,13 @@ export default function DoctorVoiceAssistant() {
       setMessages(prev => [...prev, assistantMsg]);
 
       if (data.requiresConfirmation) {
-        speak(data.speak || data.response);
+        speak(data.speak || responseText);
         setPendingAction(assistantMsg);
       } else if (data.action === 'navigate_to' || data.action === 'search_patient') {
         // Speak first, navigate only after TTS finishes so audio isn't cut off by unmount
-        speak(data.speak || data.response, () => executeAction(data.action, data.parameters));
+        speak(data.speak || responseText, () => executeAction(data.action, data.parameters));
       } else {
-        speak(data.speak || data.response);
+        speak(data.speak || responseText);
         executeAction(data.action, data.parameters);
       }
     } catch (err: unknown) {
