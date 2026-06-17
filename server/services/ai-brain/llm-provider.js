@@ -326,7 +326,7 @@ let _sibOpenUntil = 0;
 async function callSib(params) {
   if (Date.now() < _sibOpenUntil) throw new Error('sib circuit open');
 
-  const baseUrl = getProviderEnv('SIB_URL') || 'http://localhost:8005';
+  const baseUrl = getProviderEnv('SIB_URL') || 'http://localhost:8001';
   const url = `${baseUrl.replace(/\/$/, '')}/chat`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8_000);
@@ -336,12 +336,26 @@ async function callSib(params) {
     .filter(m => m?.role === 'system' && typeof m?.content === 'string')
     .map(m => m.content.trim())
     .filter(Boolean);
-  const userParts = messages
+  const conversational = messages
     .filter(m => m?.role !== 'system' && typeof m?.content === 'string')
-    .map(m => m.content.trim())
-    .filter(Boolean);
+    .map(m => ({ role: m.role, content: m.content.trim() }))
+    .filter(m => m.content);
 
-  const message = [...systemParts, ...userParts].join('\n\n').trim();
+  const lastTurn = conversational[conversational.length - 1];
+  const userMessage = lastTurn?.role === 'user'
+    ? lastTurn.content
+    : conversational.map(m => m.content).join('\n\n');
+
+  const history = conversational
+    .slice(0, lastTurn?.role === 'user' ? -1 : conversational.length)
+    .map(m => ({
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: m.content,
+    }));
+
+  const message = systemParts.length
+    ? `${systemParts.join('\n\n')}\n\n${userMessage}`.trim()
+    : userMessage;
   if (!message) throw new Error('SIB request has no message content');
 
   try {
@@ -350,6 +364,7 @@ async function callSib(params) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message,
+        history: history.slice(-15),
         patient_id: params.patientId || params.userId || 'mediczy-backend',
         user_id: params.userId,
         context: {

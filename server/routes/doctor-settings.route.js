@@ -143,7 +143,7 @@ router.get('/appointment-config', authUser, async (req, res) => {
  * @access  Private (Doctor)
  */
 router.put('/appointment-config', authUser, [
-  body('slotDuration').optional().isIn([15, 30, 45, 60]).withMessage('Slot duration must be 15, 30, 45, or 60 minutes'),
+  body('slotDuration').optional().isIn([15, 20, 30, 45, 60]).withMessage('Slot duration must be 15, 20, 30, 45, or 60 minutes'),
   body('offDays').optional().isArray().withMessage('Off days must be an array'),
   body('onlineConsultationEnabled').optional().isBoolean(),
   body('inPersonConsultationEnabled').optional().isBoolean(),
@@ -284,15 +284,17 @@ router.put('/appointment-config', authUser, [
  * @desc    Update only slot duration
  * @access  Private (Doctor)
  */
-router.put('/slot-duration', authUser, [
-  body('duration').isIn([15, 30, 45, 60]).withMessage('Duration must be 15, 30, 45, or 60 minutes')
-], async (req, res) => {
+router.put('/slot-duration', authUser, async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
+    const rawDuration = req.body.duration ?? req.body.slotDuration;
+    const duration = parseInt(rawDuration, 10);
+    const allowedDurations = [15, 20, 30, 45, 60];
+
+    if (!allowedDurations.includes(duration)) {
       return res.status(400).json({
         success: false,
-        errors: errors.array()
+        message: 'Duration must be 15, 20, 30, 45, or 60 minutes',
+        errors: [{ msg: 'Duration must be 15, 20, 30, 45, or 60 minutes', param: 'duration' }]
       });
     }
 
@@ -311,7 +313,7 @@ router.put('/slot-duration', authUser, [
       });
     }
 
-    doctor.slotDuration = req.body.duration;
+    doctor.slotDuration = duration;
     await doctor.save();
 
     res.json({

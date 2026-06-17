@@ -243,7 +243,7 @@ export default function PatientEMR() {
   const patients = patientsData?.patients || [];
 
   const { data: vitalsRecords = [], isLoading: loadingVitals, refetch: refetchVitals } = useQuery({
-    queryKey: ['patient-vitals', selectedPatient?.id],
+    queryKey: ['patient-vitals', selectedPatient?.id ?? null],
     queryFn: async () => {
       const response = await api.get(`/doctors/my-patients/${selectedPatient!.id}/vitals-history?limit=50`);
       return (response.data?.vitals ?? []) as VitalsRecord[];
@@ -398,7 +398,7 @@ export default function PatientEMR() {
       setSavingVitals(true);
       await api.post(`/doctors/my-patients/${selectedPatient.id}/vitals`, payload);
 
-      await queryClient.invalidateQueries({ queryKey: ['patient-vitals', selectedPatient.id] });
+      await queryClient.invalidateQueries({ queryKey: ['patient-vitals'] });
 
       toast({
         title: 'Success',

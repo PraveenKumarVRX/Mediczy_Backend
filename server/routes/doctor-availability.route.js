@@ -8,7 +8,12 @@ import {
   normalizeWeeklySchedule,
 } from '../utils/doctorNormalizer.js';
 
-const router = express.Router();
+const ALLOWED_SLOT_DURATIONS = [15, 20, 30, 45, 60];
+
+const normalizeSlotDuration = (value, fallback = 30) => {
+  const parsed = parseInt(value, 10);
+  return ALLOWED_SLOT_DURATIONS.includes(parsed) ? parsed : fallback;
+};
 
 // Thin wrappers kept for local call-site readability
 const getWeeklyAvailability   = (doctor) => normalizeWeeklyAvailability(doctor?.weeklyAvailability);
@@ -30,6 +35,7 @@ router.get('/', authUser, async (req, res) => {
     res.json({
       success: true,
       data: {
+        slotDuration: doctor.slotDuration || 30,
         weeklyAvailability: getWeeklyAvailability(doctor),
         weeklySchedule:     normalizeWeeklySchedule(doctor.weeklySchedule) ?? undefined,
         consultationTypes:  getConsultationTypes(doctor),
@@ -79,6 +85,7 @@ router.get('/dashboard', authUser, async (req, res) => {
     res.json({
       success: true,
       dashboard: {
+        slotDuration: doctor.slotDuration || 30,
         weeklyAvailability,
         statistics: {
           availableDays,
@@ -137,6 +144,16 @@ router.post('/bulk-update', authUser, [
       ? req.body.weeklyAvailability
       : req.body;
 
+    const doctor = await doctorModel.findByPk(req.user.id);
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    const doctorSlotDuration = normalizeSlotDuration(
+      payload?.slotDuration ?? req.body?.slotDuration,
+      doctor.slotDuration || 30
+    );
+
     // Pad single-digit hours so time strings are always HH:MM for correct comparison
     const padTime = (t = '') => {
       const s = String(t).trim();
@@ -144,17 +161,27 @@ router.post('/bulk-update', authUser, [
     };
 
     // Normalize app variants: walkin/walkIn/in-person, start/end aliases.
-    const normalizeSlots = (slots = []) => {
+    const normalizeSlots = (slots = [], defaultDuration = 30) => {
       return slots.map((slot) => {
         const rawType = String(slot?.consultationType || slot?.type || 'both').trim().toLowerCase();
         const consultationType = rawType === 'walkin' || rawType === 'in-person' ? 'walkIn' :
           (rawType === 'online' || rawType === 'walkIn' || rawType === 'both' ? rawType : 'both');
 
-        return {
+        const normalized = {
           startTime: padTime(slot?.startTime || slot?.start || ''),
           endTime: padTime(slot?.endTime || slot?.end || ''),
           consultationType
         };
+
+        const slotDuration = normalizeSlotDuration(slot?.slotDuration, defaultDuration);
+        if (slotDuration) normalized.slotDuration = slotDuration;
+
+        const maxPatients = parseInt(slot?.maxPatients, 10);
+        if (Number.isFinite(maxPatients) && maxPatients > 0) {
+          normalized.maxPatients = maxPatients;
+        }
+
+        return normalized;
       });
     };
 
@@ -171,19 +198,16 @@ router.post('/bulk-update', authUser, [
     };
 
     // Validate all slots in the request
-    for (const [day, dayData] of Object.entries(payload || {})) {
-      const normalizedDaySlots = normalizeSlots(Array.isArray(dayData?.slots) ? dayData.slots : []);
+    for (const day of DAYS) {
+      const dayData = payload?.[day];
+      if (!dayData) continue;
+      const normalizedDaySlots = normalizeSlots(Array.isArray(dayData?.slots) ? dayData.slots : [], doctorSlotDuration);
       if (normalizedDaySlots.length > 0 && !validateSlots(normalizedDaySlots)) {
         return res.status(400).json({
           success: false,
           message: `Invalid slots for ${day}. Please check time format and consultation types.`
         });
       }
-    }
-
-    const doctor = await doctorModel.findByPk(req.user.id);
-    if (!doctor) {
-      return res.status(404).json({ success: false, message: 'Doctor not found' });
     }
 
     // Merge incoming days with existing weeklyAvailability
@@ -204,16 +228,22 @@ router.post('/bulk-update', authUser, [
         const existingDay = existing?.[day] || {};
         updated[day] = {
           isAvailable: dayInput.isAvailable === undefined ? Boolean(existingDay.isAvailable) : Boolean(dayInput.isAvailable),
-          slots: normalizeSlots(Array.isArray(dayInput.slots) ? dayInput.slots : [])
+          slots: normalizeSlots(Array.isArray(dayInput.slots) ? dayInput.slots : [], doctorSlotDuration)
         };
       }
     }
 
-    await doctorModel.update(req.user.id, { weeklyAvailability: updated });
+    const updatePayload = { weeklyAvailability: updated };
+    if (payload?.slotDuration !== undefined || req.body?.slotDuration !== undefined) {
+      updatePayload.slotDuration = doctorSlotDuration;
+    }
+
+    await doctorModel.update(req.user.id, updatePayload);
     
     res.json({
       success: true,
-      message: 'Weekly availability updated successfully'
+      message: 'Weekly availability updated successfully',
+      slotDuration: updatePayload.slotDuration ?? doctor.slotDuration ?? 30,
     });
   } catch (error) {
     console.error('Bulk update availability error:', error);
