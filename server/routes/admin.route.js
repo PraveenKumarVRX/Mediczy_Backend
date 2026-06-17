@@ -2868,6 +2868,25 @@ async function createDefaultCorporatePlanForCorporate({ corporateId, companyName
   return inserted || null;
 }
 
+/** Ensure corporate employee can log in (OTP/password). Idempotent. */
+async function activateCorporateEmployeeAccount({ userId, transaction = null }) {
+  if (!userId) return;
+  await postgresSequelize.query(
+    `UPDATE users
+        SET status = 'active',
+            "isCorporate" = true,
+            "isVerified" = COALESCE("isVerified", true),
+            "updatedAt" = NOW()
+      WHERE id = :userId
+        AND (status IS DISTINCT FROM 'active' OR "isCorporate" IS NOT TRUE)`,
+    {
+      replacements: { userId },
+      type: postgresSequelize.QueryTypes.UPDATE,
+      transaction,
+    }
+  );
+}
+
 async function assignUserToActiveCorporatePlan({ userId, corporateId, corporatePlan, transaction = null }) {
   const planId = Number(corporatePlan?.id);
   if (!userId || Number.isNaN(planId)) {
@@ -3088,7 +3107,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
           const corpAggregatorType = corporate.dataValues?.aggregator_type ?? corporate.aggregator_type ?? null;
           const corpTenantId = corporate.dataValues?.tenant_id ?? corporate.tenant_id ?? null;
           await postgresSequelize.query(
-            `UPDATE users SET "isVerified" = true, "isCorporate" = true,
+            `UPDATE users SET status = 'active', "isVerified" = true, "isCorporate" = true,
               aggregator_id = COALESCE(aggregator_id, :aggregatorId),
               aggregator_type = COALESCE(aggregator_type, :aggregatorType),
               tenant_id = COALESCE(tenant_id, :tenantId)
@@ -3248,6 +3267,8 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
           corporatePlan: activeCorporatePlan,
           transaction: tx,
         });
+
+        await activateCorporateEmployeeAccount({ userId, transaction: tx });
 
         await tx.commit();
         tx = null;
@@ -4477,6 +4498,13 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
     if (pinCode !== undefined) { userUpdates.push('"address_zipCode" = :addressZip'); userReplacements.addressZip = pinCode; }
     if (department !== undefined) { userUpdates.push('department_name = :deptName'); userReplacements.deptName = department; }
     if (employeeId !== undefined) { userUpdates.push('employee_id = :employeeId'); userReplacements.employeeId = employeeId; }
+    if (status === 'active') {
+      userUpdates.push("status = 'active'");
+      userUpdates.push('"isCorporate" = true');
+    } else if (status === 'inactive' || status === 'suspended') {
+      userUpdates.push('status = :userStatus');
+      userReplacements.userStatus = status;
+    }
     await postgresSequelize.query(
       `UPDATE users SET ${userUpdates.join(', ')} WHERE id = :userId`,
       { replacements: userReplacements, type: postgresSequelize.QueryTypes.UPDATE }
