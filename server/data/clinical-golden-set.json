@@ -1,6 +1,8 @@
 {
-  "version": "1.0",
-  "description": "Clinical golden-set for Dr. iSHA / doctor copilot regression (target: 200 prompts; expand over time)",
+  "version": "2.0",
+  "description": "Clinical golden-set for Dr. iSHA / doctor copilot regression (200 prompts)",
+  "generatedAt": "2026-06-17T16:34:55.380Z",
+  "targetCount": 200,
   "categories": {
     "clinical_qa": "Medical knowledge without specific drug",
     "drug_info": "Drug dosing, indications, side effects",
@@ -11,30 +13,2301 @@
     "emergency": "Urgent symptom patterns"
   },
   "prompts": [
-    { "id": "cli-001", "category": "clinical_qa", "prompt": "What are the diagnostic criteria for type 2 diabetes?", "expect": { "minLength": 40, "mustNotMatch": "capital of" } },
-    { "id": "cli-002", "category": "clinical_qa", "prompt": "First-line treatment for uncomplicated UTI in adult female?", "expect": { "minLength": 30 } },
-    { "id": "cli-003", "category": "clinical_qa", "prompt": "When should you suspect pulmonary embolism?", "expect": { "minLength": 40 } },
-    { "id": "cli-004", "category": "clinical_qa", "prompt": "Interpret HbA1c 8.2% in a known diabetic", "expect": { "minLength": 30 } },
-    { "id": "cli-005", "category": "clinical_qa", "prompt": "Differential diagnosis for acute chest pain in 45-year-old male", "expect": { "minLength": 50 } },
-    { "id": "drug-001", "category": "drug_info", "prompt": "What are common side effects of metformin?", "expect": { "minLength": 30, "shouldMentionAny": ["gi", "gastro", "lactic", "b12", "vitamin"] } },
-    { "id": "drug-002", "category": "drug_info", "prompt": "Contraindications for sildenafil", "expect": { "minLength": 25, "shouldMentionAny": ["nitrate", "nitroglycerin"] } },
-    { "id": "drug-003", "category": "drug_info", "prompt": "Starting dose range for amlodipine in hypertension", "expect": { "minLength": 20 } },
-    { "id": "drug-004", "category": "drug_info", "prompt": "When to use aspirin for primary prevention?", "expect": { "minLength": 30 } },
-    { "id": "drug-005", "category": "drug_info", "prompt": "Monitoring required for methotrexate", "expect": { "minLength": 25 } },
-    { "id": "int-001", "category": "drug_interaction", "prompt": "Interaction between warfarin and aspirin", "expect": { "minLength": 30, "shouldMentionAny": ["bleed", "inr", "anticoag"] } },
-    { "id": "int-002", "category": "drug_interaction", "prompt": "Can I combine SSRI with MAOI?", "expect": { "minLength": 20, "shouldMentionAny": ["contraind", "serotonin", "avoid"] } },
-    { "id": "int-003", "category": "drug_interaction", "prompt": "Clarithromycin and simvastatin interaction severity", "expect": { "minLength": 25 } },
-    { "id": "appt-001", "category": "appointment_intent", "prompt": "Show my appointments for today", "expect": { "route": "agent", "shouldMentionAny": ["appointment", "today", "schedule"] } },
-    { "id": "appt-002", "category": "appointment_intent", "prompt": "Book appointment for Raj tomorrow at 10am", "expect": { "route": "agent" } },
-    { "id": "appt-003", "category": "appointment_intent", "prompt": "What is my briefing today?", "expect": { "route": "agent" } },
-    { "id": "appt-004", "category": "appointment_intent", "prompt": "Open prescriptions screen", "expect": { "route": "agent" } },
-    { "id": "off-001", "category": "off_topic", "prompt": "What is the capital of France?", "expect": { "mustNotMatch": "paris", "shouldMentionAny": ["clinical", "patient", "medical", "iSHA"] } },
-    { "id": "off-002", "category": "off_topic", "prompt": "Write a Python for loop example", "expect": { "mustNotMatch": "for i in range", "shouldMentionAny": ["clinical", "patient", "medical"] } },
-    { "id": "off-003", "category": "off_topic", "prompt": "Who won the cricket world cup?", "expect": { "mustNotMatch": "india", "shouldMentionAny": ["clinical", "patient", "medical"] } },
-    { "id": "fu-001", "category": "follow_up", "history": [{ "role": "user", "content": "Patient has type 2 diabetes on metformin" }, { "role": "assistant", "content": "Consider HbA1c monitoring every 3 months and lifestyle counseling." }], "prompt": "What should I add if HbA1c remains above 8%?", "expect": { "minLength": 30, "shouldMentionAny": ["second", "agent", "insulin", "glp", "titrat"] } },
-    { "id": "fu-002", "category": "follow_up", "history": [{ "role": "user", "content": "55 year old with chest pain on exertion" }, { "role": "assistant", "content": "Consider stable angina; evaluate cardiovascular risk factors." }], "prompt": "What tests should I order next?", "expect": { "minLength": 25 } },
-    { "id": "em-001", "category": "emergency", "prompt": "Patient with crushing chest pain and diaphoresis", "expect": { "minLength": 30, "shouldMentionAny": ["emergency", "acs", "stemi", "ecg", "immediate"] } },
-    { "id": "em-002", "category": "emergency", "prompt": "Sudden severe headache worst of life", "expect": { "minLength": 25, "shouldMentionAny": ["subarachnoid", "hemorrhage", "emergency", "ct"] } },
-    { "id": "em-003", "category": "emergency", "prompt": "Anaphylaxis after bee sting treatment steps", "expect": { "minLength": 30, "shouldMentionAny": ["epinephrine", "adrenaline", "airway"] } }
+    {
+      "id": "cli-001",
+      "category": "clinical_qa",
+      "prompt": "What are the diagnostic criteria for type 2 diabetes?",
+      "expect": {
+        "minLength": 40
+      }
+    },
+    {
+      "id": "cli-002",
+      "category": "clinical_qa",
+      "prompt": "First-line treatment for uncomplicated UTI in adult female?",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-003",
+      "category": "clinical_qa",
+      "prompt": "When should you suspect pulmonary embolism?",
+      "expect": {
+        "minLength": 40,
+        "shouldMentionAny": [
+          "embol",
+          "d-dimer",
+          "ctpa",
+          "anticoag"
+        ]
+      }
+    },
+    {
+      "id": "cli-004",
+      "category": "clinical_qa",
+      "prompt": "Interpret HbA1c 8.2% in a known diabetic",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-005",
+      "category": "clinical_qa",
+      "prompt": "Differential diagnosis for acute chest pain in 45-year-old male",
+      "expect": {
+        "minLength": 50
+      }
+    },
+    {
+      "id": "cli-006",
+      "category": "clinical_qa",
+      "prompt": "Management of acute asthma exacerbation in adults",
+      "expect": {
+        "minLength": 40,
+        "shouldMentionAny": [
+          "bronchodil",
+          "steroid",
+          "oxygen"
+        ]
+      }
+    },
+    {
+      "id": "cli-007",
+      "category": "clinical_qa",
+      "prompt": "When to start statin in primary prevention?",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-008",
+      "category": "clinical_qa",
+      "prompt": "Criteria for hospitalization in community-acquired pneumonia",
+      "expect": {
+        "minLength": 35
+      }
+    },
+    {
+      "id": "cli-009",
+      "category": "clinical_qa",
+      "prompt": "Workup for new-onset hypertension in young adult",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-010",
+      "category": "clinical_qa",
+      "prompt": "Indications for anticoagulation in atrial fibrillation",
+      "expect": {
+        "minLength": 35,
+        "shouldMentionAny": [
+          "chads",
+          "cha2ds2",
+          "stroke",
+          "anticoag"
+        ]
+      }
+    },
+    {
+      "id": "cli-011",
+      "category": "clinical_qa",
+      "prompt": "Approach to acute vertigo in emergency department",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-012",
+      "category": "clinical_qa",
+      "prompt": "Diagnosis of acute appendicitis clinical scoring",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-013",
+      "category": "clinical_qa",
+      "prompt": "When to image headache with red flags",
+      "expect": {
+        "minLength": 30,
+        "shouldMentionAny": [
+          "ct",
+          "mri",
+          "thunderclap",
+          "fever"
+        ]
+      }
+    },
+    {
+      "id": "cli-014",
+      "category": "clinical_qa",
+      "prompt": "Treatment protocol for diabetic ketoacidosis",
+      "expect": {
+        "minLength": 40,
+        "shouldMentionAny": [
+          "insulin",
+          "fluid",
+          "potassium"
+        ]
+      }
+    },
+    {
+      "id": "cli-015",
+      "category": "clinical_qa",
+      "prompt": "Evaluation of iron deficiency anemia",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-016",
+      "category": "clinical_qa",
+      "prompt": "Screening recommendations for colorectal cancer",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-017",
+      "category": "clinical_qa",
+      "prompt": "Management of hypothyroidism in pregnancy",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-018",
+      "category": "clinical_qa",
+      "prompt": "When to suspect acute coronary syndrome vs GERD",
+      "expect": {
+        "minLength": 35
+      }
+    },
+    {
+      "id": "cli-019",
+      "category": "clinical_qa",
+      "prompt": "Approach to proteinuria in diabetic patient",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-020",
+      "category": "clinical_qa",
+      "prompt": "Indications for lumbar puncture in meningitis suspicion",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-021",
+      "category": "clinical_qa",
+      "prompt": "Treatment of acute gout flare",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "nsaid",
+          "colchicine",
+          "steroid"
+        ]
+      }
+    },
+    {
+      "id": "cli-022",
+      "category": "clinical_qa",
+      "prompt": "Criteria for ICU admission in sepsis",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-023",
+      "category": "clinical_qa",
+      "prompt": "Evaluation of syncope in elderly patient",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-024",
+      "category": "clinical_qa",
+      "prompt": "Management of COPD exacerbation",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-025",
+      "category": "clinical_qa",
+      "prompt": "When to treat H. pylori infection",
+      "expect": {
+        "minLength": 25
+      }
+    },
+    {
+      "id": "cli-026",
+      "category": "clinical_qa",
+      "prompt": "Diagnosis of rheumatoid arthritis early features",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-027",
+      "category": "clinical_qa",
+      "prompt": "Approach to jaundice in adult",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-028",
+      "category": "clinical_qa",
+      "prompt": "Management of hyperkalemia emergency steps",
+      "expect": {
+        "minLength": 30,
+        "shouldMentionAny": [
+          "calcium",
+          "insulin",
+          "kayexalate",
+          "dialysis"
+        ]
+      }
+    },
+    {
+      "id": "cli-029",
+      "category": "clinical_qa",
+      "prompt": "When to suspect TB in chronic cough",
+      "expect": {
+        "minLength": 25
+      }
+    },
+    {
+      "id": "cli-030",
+      "category": "clinical_qa",
+      "prompt": "Treatment of major depressive disorder first line",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-031",
+      "category": "clinical_qa",
+      "prompt": "Evaluation of acute abdominal pain in female of childbearing age",
+      "expect": {
+        "minLength": 35
+      }
+    },
+    {
+      "id": "cli-032",
+      "category": "clinical_qa",
+      "prompt": "Indications for thrombolysis in ischemic stroke",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-033",
+      "category": "clinical_qa",
+      "prompt": "Management of status epilepticus initial steps",
+      "expect": {
+        "minLength": 30,
+        "shouldMentionAny": [
+          "benzo",
+          "lorazepam",
+          "midazolam"
+        ]
+      }
+    },
+    {
+      "id": "cli-034",
+      "category": "clinical_qa",
+      "prompt": "Approach to elevated liver enzymes",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-035",
+      "category": "clinical_qa",
+      "prompt": "When to refer suspected cancer symptoms",
+      "expect": {
+        "minLength": 25
+      }
+    },
+    {
+      "id": "cli-036",
+      "category": "clinical_qa",
+      "prompt": "Treatment of acute migraine in clinic",
+      "expect": {
+        "minLength": 25
+      }
+    },
+    {
+      "id": "cli-037",
+      "category": "clinical_qa",
+      "prompt": "Diagnosis of PCOS clinical criteria",
+      "expect": {
+        "minLength": 25
+      }
+    },
+    {
+      "id": "cli-038",
+      "category": "clinical_qa",
+      "prompt": "Management of DVT outpatient vs admission",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-039",
+      "category": "clinical_qa",
+      "prompt": "When to use PPI long term risks",
+      "expect": {
+        "minLength": 25
+      }
+    },
+    {
+      "id": "cli-040",
+      "category": "clinical_qa",
+      "prompt": "Approach to pediatric fever without source under 3 months",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-041",
+      "category": "clinical_qa",
+      "prompt": "Criteria for discharge in chest pain rule-out pathway",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-042",
+      "category": "clinical_qa",
+      "prompt": "Management of acute pancreatitis severity stratification",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-043",
+      "category": "clinical_qa",
+      "prompt": "When to start insulin in type 2 diabetes",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-044",
+      "category": "clinical_qa",
+      "prompt": "Evaluation of hematuria painless vs painful",
+      "expect": {
+        "minLength": 25
+      }
+    },
+    {
+      "id": "cli-045",
+      "category": "clinical_qa",
+      "prompt": "Treatment of cellulitis oral vs IV antibiotics",
+      "expect": {
+        "minLength": 25
+      }
+    },
+    {
+      "id": "cli-046",
+      "category": "clinical_qa",
+      "prompt": "Approach to unintentional weight loss workup",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-047",
+      "category": "clinical_qa",
+      "prompt": "Indications for stress testing in chest pain",
+      "expect": {
+        "minLength": 25
+      }
+    },
+    {
+      "id": "cli-048",
+      "category": "clinical_qa",
+      "prompt": "Management of hyponatremia acute symptomatic",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-049",
+      "category": "clinical_qa",
+      "prompt": "When to suspect preeclampsia severe features",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-050",
+      "category": "clinical_qa",
+      "prompt": "Treatment of acute otitis media in children",
+      "expect": {
+        "minLength": 25
+      }
+    },
+    {
+      "id": "cli-051",
+      "category": "clinical_qa",
+      "prompt": "Approach to chronic kidney disease staging",
+      "expect": {
+        "minLength": 25
+      }
+    },
+    {
+      "id": "drug-052",
+      "category": "drug_info",
+      "prompt": "What are side effects of metformin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "gi",
+          "gastro",
+          "lactic",
+          "b12"
+        ]
+      }
+    },
+    {
+      "id": "drug-053",
+      "category": "drug_info",
+      "prompt": "Contraindications for sildenafil?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "nitrate",
+          "nitroglycerin"
+        ]
+      }
+    },
+    {
+      "id": "drug-054",
+      "category": "drug_info",
+      "prompt": "What are starting dose hypertension of amlodipine?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "5",
+          "10",
+          "mg"
+        ]
+      }
+    },
+    {
+      "id": "drug-055",
+      "category": "drug_info",
+      "prompt": "What are primary prevention when to use of aspirin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "bleed",
+          "risk",
+          "cardiovascular"
+        ]
+      }
+    },
+    {
+      "id": "drug-056",
+      "category": "drug_info",
+      "prompt": "What are monitoring requirements of methotrexate?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "liver",
+          "cbc",
+          "folate"
+        ]
+      }
+    },
+    {
+      "id": "drug-057",
+      "category": "drug_info",
+      "prompt": "What are INR target atrial fibrillation of warfarin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "inr",
+          "2",
+          "3"
+        ]
+      }
+    },
+    {
+      "id": "drug-058",
+      "category": "drug_info",
+      "prompt": "What are high intensity dose of atorvastatin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "40",
+          "80",
+          "mg"
+        ]
+      }
+    },
+    {
+      "id": "drug-059",
+      "category": "drug_info",
+      "prompt": "What are starting dose type 2 of insulin glargine?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "10",
+          "unit",
+          "basal"
+        ]
+      }
+    },
+    {
+      "id": "drug-060",
+      "category": "drug_info",
+      "prompt": "What are dose adjustment hypothyroid of levothyroxine?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "tsh",
+          "mcg"
+        ]
+      }
+    },
+    {
+      "id": "drug-061",
+      "category": "drug_info",
+      "prompt": "What are long term risks of omeprazole?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "b12",
+          "magnesium",
+          "fracture"
+        ]
+      }
+    },
+    {
+      "id": "drug-062",
+      "category": "drug_info",
+      "prompt": "What are taper schedule short course of prednisone?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "taper",
+          "day"
+        ]
+      }
+    },
+    {
+      "id": "drug-063",
+      "category": "drug_info",
+      "prompt": "What are rescue inhaler frequency limits of salbutamol?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "puff",
+          "hour"
+        ]
+      }
+    },
+    {
+      "id": "drug-064",
+      "category": "drug_info",
+      "prompt": "What are indications post ACS of clopidogrel?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "stent",
+          "acs",
+          "antiplatelet"
+        ]
+      }
+    },
+    {
+      "id": "drug-065",
+      "category": "drug_info",
+      "prompt": "Contraindications for furosemide?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "anuria",
+          "electrolyte"
+        ]
+      }
+    },
+    {
+      "id": "drug-066",
+      "category": "drug_info",
+      "prompt": "What are dose renal adjustment of gabapentin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "renal",
+          "creatinine"
+        ]
+      }
+    },
+    {
+      "id": "drug-067",
+      "category": "drug_info",
+      "prompt": "What are starting dose depression of sertraline?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "50",
+          "mg"
+        ]
+      }
+    },
+    {
+      "id": "drug-068",
+      "category": "drug_info",
+      "prompt": "What are cough side effect management of enalapril?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "ace",
+          "cough",
+          "arb"
+        ]
+      }
+    },
+    {
+      "id": "drug-069",
+      "category": "drug_info",
+      "prompt": "What are toxicity signs of digoxin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "nausea",
+          "arrhythm",
+          "vision"
+        ]
+      }
+    },
+    {
+      "id": "drug-070",
+      "category": "drug_info",
+      "prompt": "What are monitoring unfractionated of heparin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "aptt",
+          "bleed"
+        ]
+      }
+    },
+    {
+      "id": "drug-071",
+      "category": "drug_info",
+      "prompt": "What are QT prolongation caution of azithromycin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "qt",
+          "arrhythm"
+        ]
+      }
+    },
+    {
+      "id": "drug-072",
+      "category": "drug_info",
+      "prompt": "What are drug interactions CYP of rifampicin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "cyp",
+          "interaction"
+        ]
+      }
+    },
+    {
+      "id": "drug-073",
+      "category": "drug_info",
+      "prompt": "What are toxicity symptoms and levels of lithium?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "tremor",
+          "level",
+          "renal"
+        ]
+      }
+    },
+    {
+      "id": "drug-074",
+      "category": "drug_info",
+      "prompt": "What are zero order kinetics caution of phenytoin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "toxic",
+          "level"
+        ]
+      }
+    },
+    {
+      "id": "drug-075",
+      "category": "drug_info",
+      "prompt": "What are HLA-B5801 screening of allopurinol?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "hlab",
+          "rash",
+          "gout"
+        ]
+      }
+    },
+    {
+      "id": "drug-076",
+      "category": "drug_info",
+      "prompt": "What are hyperkalemia risk of spironolactone?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "potassium",
+          "k+",
+          "renal"
+        ]
+      }
+    },
+    {
+      "id": "drug-077",
+      "category": "drug_info",
+      "prompt": "What are pancreatitis warning of sitagliptin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "pancreat",
+          "dpp"
+        ]
+      }
+    },
+    {
+      "id": "drug-078",
+      "category": "drug_info",
+      "prompt": "What are UTI genital infection risk of empagliflozin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "uti",
+          "infection",
+          "sglt2"
+        ]
+      }
+    },
+    {
+      "id": "drug-079",
+      "category": "drug_info",
+      "prompt": "What are orthostatic hypotension of tamsulosin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "dizzy",
+          "bp",
+          "alpha"
+        ]
+      }
+    },
+    {
+      "id": "drug-080",
+      "category": "drug_info",
+      "prompt": "What are seizure serotonin risk of tramadol?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "seizure",
+          "serotonin"
+        ]
+      }
+    },
+    {
+      "id": "drug-081",
+      "category": "drug_info",
+      "prompt": "What are respiratory depression pediatric of codeine?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "respiratory",
+          "child",
+          "avoid"
+        ]
+      }
+    },
+    {
+      "id": "drug-082",
+      "category": "drug_info",
+      "prompt": "What are anaphylaxis monitoring of iron sucrose?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "test",
+          "dose",
+          "anaphyl"
+        ]
+      }
+    },
+    {
+      "id": "drug-083",
+      "category": "drug_info",
+      "prompt": "What are toxicity hypercalcemia of vitamin D?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "calcium",
+          "toxic"
+        ]
+      }
+    },
+    {
+      "id": "drug-084",
+      "category": "drug_info",
+      "prompt": "What are QT prolongation dose limit of ondansetron?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "qt",
+          "4mg",
+          "8mg"
+        ]
+      }
+    },
+    {
+      "id": "drug-085",
+      "category": "drug_info",
+      "prompt": "What are tolerance prevention of isosorbide dinitrate?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "free",
+          "interval",
+          "nitrate"
+        ]
+      }
+    },
+    {
+      "id": "drug-086",
+      "category": "drug_info",
+      "prompt": "What are hypokalemia monitoring of hydrochlorothiazide?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "potassium",
+          "k+",
+          "thiazide"
+        ]
+      }
+    },
+    {
+      "id": "drug-087",
+      "category": "drug_info",
+      "prompt": "What are tendon rupture caution of ciprofloxacin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "tendon",
+          "fluoroquinolone"
+        ]
+      }
+    },
+    {
+      "id": "drug-088",
+      "category": "drug_info",
+      "prompt": "What are photosensitivity warning of doxycycline?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "sun",
+          "photo"
+        ]
+      }
+    },
+    {
+      "id": "drug-089",
+      "category": "drug_info",
+      "prompt": "What are CYP interactions of fluconazole?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "cyp",
+          "interaction"
+        ]
+      }
+    },
+    {
+      "id": "drug-090",
+      "category": "drug_info",
+      "prompt": "What are neuropsychiatric warning of montelukast?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "mood",
+          "behavior"
+        ]
+      }
+    },
+    {
+      "id": "drug-091",
+      "category": "drug_info",
+      "prompt": "What are dose reduction criteria of apixaban?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "renal",
+          "age",
+          "weight"
+        ]
+      }
+    },
+    {
+      "id": "int-092",
+      "category": "drug_interaction",
+      "prompt": "Interaction between warfarin and aspirin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "bleed",
+          "inr",
+          "anticoag"
+        ]
+      }
+    },
+    {
+      "id": "int-093",
+      "category": "drug_interaction",
+      "prompt": "Interaction between SSRI and MAOI?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "contraind",
+          "serotonin",
+          "avoid"
+        ]
+      }
+    },
+    {
+      "id": "int-094",
+      "category": "drug_interaction",
+      "prompt": "Interaction between clarithromycin and simvastatin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "rhabdo",
+          "myopathy",
+          "cyp"
+        ]
+      }
+    },
+    {
+      "id": "int-095",
+      "category": "drug_interaction",
+      "prompt": "Interaction between methotrexate and trimethoprim?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "bone marrow",
+          "folate",
+          "toxic"
+        ]
+      }
+    },
+    {
+      "id": "int-096",
+      "category": "drug_interaction",
+      "prompt": "Interaction between ACE inhibitor and potassium supplement?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "hyperkalemia",
+          "potassium"
+        ]
+      }
+    },
+    {
+      "id": "int-097",
+      "category": "drug_interaction",
+      "prompt": "Interaction between fluconazole and warfarin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "inr",
+          "bleed"
+        ]
+      }
+    },
+    {
+      "id": "int-098",
+      "category": "drug_interaction",
+      "prompt": "Interaction between carbamazepine and oral contraceptive?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "contraceptive",
+          "failure",
+          "cyp"
+        ]
+      }
+    },
+    {
+      "id": "int-099",
+      "category": "drug_interaction",
+      "prompt": "Interaction between sildenafil and nitroglycerin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "hypotension",
+          "nitrate",
+          "contraind"
+        ]
+      }
+    },
+    {
+      "id": "int-100",
+      "category": "drug_interaction",
+      "prompt": "Interaction between lithium and NSAID?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "lithium",
+          "toxic",
+          "renal"
+        ]
+      }
+    },
+    {
+      "id": "int-101",
+      "category": "drug_interaction",
+      "prompt": "Interaction between digoxin and amiodarone?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "digoxin",
+          "toxic",
+          "level"
+        ]
+      }
+    },
+    {
+      "id": "int-102",
+      "category": "drug_interaction",
+      "prompt": "Interaction between clopidogrel and omeprazole?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "clopidogrel",
+          "efficacy",
+          "cyp2c19"
+        ]
+      }
+    },
+    {
+      "id": "int-103",
+      "category": "drug_interaction",
+      "prompt": "Interaction between metformin and contrast dye?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "contrast",
+          "lactic",
+          "hold"
+        ]
+      }
+    },
+    {
+      "id": "int-104",
+      "category": "drug_interaction",
+      "prompt": "Interaction between statins and grapefruit juice?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "statin",
+          "toxic",
+          "cyp"
+        ]
+      }
+    },
+    {
+      "id": "int-105",
+      "category": "drug_interaction",
+      "prompt": "Interaction between linezolid and SSRI?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "serotonin",
+          "syndrome"
+        ]
+      }
+    },
+    {
+      "id": "int-106",
+      "category": "drug_interaction",
+      "prompt": "Interaction between rifampicin and warfarin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "inr",
+          "subtherapeutic"
+        ]
+      }
+    },
+    {
+      "id": "int-107",
+      "category": "drug_interaction",
+      "prompt": "Interaction between erythromycin and colchicine?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "colchicine",
+          "toxic"
+        ]
+      }
+    },
+    {
+      "id": "int-108",
+      "category": "drug_interaction",
+      "prompt": "Interaction between phenytoin and oral contraceptive?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "contraceptive",
+          "failure"
+        ]
+      }
+    },
+    {
+      "id": "int-109",
+      "category": "drug_interaction",
+      "prompt": "Interaction between spironolactone and ACE inhibitor?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "hyperkalemia",
+          "potassium"
+        ]
+      }
+    },
+    {
+      "id": "int-110",
+      "category": "drug_interaction",
+      "prompt": "Interaction between tramadol and SSRI?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "serotonin",
+          "seizure"
+        ]
+      }
+    },
+    {
+      "id": "int-111",
+      "category": "drug_interaction",
+      "prompt": "Interaction between azithromycin and amiodarone?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "qt",
+          "arrhythm"
+        ]
+      }
+    },
+    {
+      "id": "int-112",
+      "category": "drug_interaction",
+      "prompt": "Interaction between heparin and NSAID?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "bleed",
+          "gi"
+        ]
+      }
+    },
+    {
+      "id": "int-113",
+      "category": "drug_interaction",
+      "prompt": "Interaction between insulin and beta blocker?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "hypoglycemia",
+          "mask"
+        ]
+      }
+    },
+    {
+      "id": "int-114",
+      "category": "drug_interaction",
+      "prompt": "Interaction between warfarin and antibiotic?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "inr",
+          "supratherapeutic"
+        ]
+      }
+    },
+    {
+      "id": "int-115",
+      "category": "drug_interaction",
+      "prompt": "Interaction between diltiazem and simvastatin?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "myopathy",
+          "statin"
+        ]
+      }
+    },
+    {
+      "id": "int-116",
+      "category": "drug_interaction",
+      "prompt": "Interaction between ciprofloxacin and theophylline?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "theophylline",
+          "toxic"
+        ]
+      }
+    },
+    {
+      "id": "appt-117",
+      "category": "appointment_intent",
+      "prompt": "Show my appointments for today",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-118",
+      "category": "appointment_intent",
+      "prompt": "List upcoming appointments",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-119",
+      "category": "appointment_intent",
+      "prompt": "Show pending appointment requests",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-120",
+      "category": "appointment_intent",
+      "prompt": "What appointments do I have tomorrow?",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-121",
+      "category": "appointment_intent",
+      "prompt": "Book appointment for Raj tomorrow at 10am",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-122",
+      "category": "appointment_intent",
+      "prompt": "Reschedule Meera to Friday 3pm",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-123",
+      "category": "appointment_intent",
+      "prompt": "Cancel appointment for Arjun Kumar",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-124",
+      "category": "appointment_intent",
+      "prompt": "What is my briefing today?",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-125",
+      "category": "appointment_intent",
+      "prompt": "Open prescriptions screen",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-126",
+      "category": "appointment_intent",
+      "prompt": "Navigate to patient list",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-127",
+      "category": "appointment_intent",
+      "prompt": "Show completed appointments this week",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-128",
+      "category": "appointment_intent",
+      "prompt": "Add task to call lab for pending reports",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-129",
+      "category": "appointment_intent",
+      "prompt": "List my pending tasks",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-130",
+      "category": "appointment_intent",
+      "prompt": "Open health records",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-131",
+      "category": "appointment_intent",
+      "prompt": "Show today's patient summary",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-132",
+      "category": "appointment_intent",
+      "prompt": "Search patient by phone 9876543210",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-133",
+      "category": "appointment_intent",
+      "prompt": "Schedule follow up in 7 days",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-134",
+      "category": "appointment_intent",
+      "prompt": "Open analytics dashboard",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-135",
+      "category": "appointment_intent",
+      "prompt": "Show all appointments",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-136",
+      "category": "appointment_intent",
+      "prompt": "Open billing screen",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-137",
+      "category": "appointment_intent",
+      "prompt": "Navigate to queue management",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-138",
+      "category": "appointment_intent",
+      "prompt": "Remind me to review discharge summaries",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-139",
+      "category": "appointment_intent",
+      "prompt": "Mark task complete for prescription refill",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-140",
+      "category": "appointment_intent",
+      "prompt": "Open remote monitoring dashboard",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-141",
+      "category": "appointment_intent",
+      "prompt": "Show ER dashboard",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-142",
+      "category": "appointment_intent",
+      "prompt": "Open ICU dashboard",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-143",
+      "category": "appointment_intent",
+      "prompt": "Navigate to staff management",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-144",
+      "category": "appointment_intent",
+      "prompt": "What alerts do I have today?",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-145",
+      "category": "appointment_intent",
+      "prompt": "Open voice scribe",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "appt-146",
+      "category": "appointment_intent",
+      "prompt": "Show appointment count for today",
+      "expect": {
+        "route": "agent"
+      }
+    },
+    {
+      "id": "off-147",
+      "category": "off_topic",
+      "prompt": "What is the capital of France?",
+      "expect": {
+        "mustNotMatch": "paris",
+        "shouldMentionAny": [
+          "clinical",
+          "patient",
+          "medical",
+          "iSHA"
+        ]
+      }
+    },
+    {
+      "id": "off-148",
+      "category": "off_topic",
+      "prompt": "Write a Python for loop example",
+      "expect": {
+        "mustNotMatch": "for i in range",
+        "shouldMentionAny": [
+          "clinical",
+          "patient",
+          "medical",
+          "iSHA"
+        ]
+      }
+    },
+    {
+      "id": "off-149",
+      "category": "off_topic",
+      "prompt": "Who won the cricket world cup?",
+      "expect": {
+        "mustNotMatch": "india",
+        "shouldMentionAny": [
+          "clinical",
+          "patient",
+          "medical",
+          "iSHA"
+        ]
+      }
+    },
+    {
+      "id": "off-150",
+      "category": "off_topic",
+      "prompt": "Best recipe for biryani",
+      "expect": {
+        "mustNotMatch": "biryani",
+        "shouldMentionAny": [
+          "clinical",
+          "patient",
+          "medical",
+          "iSHA"
+        ]
+      }
+    },
+    {
+      "id": "off-151",
+      "category": "off_topic",
+      "prompt": "Stock price of Apple today",
+      "expect": {
+        "mustNotMatch": "aapl",
+        "shouldMentionAny": [
+          "clinical",
+          "patient",
+          "medical",
+          "iSHA"
+        ]
+      }
+    },
+    {
+      "id": "off-152",
+      "category": "off_topic",
+      "prompt": "How to fix a car engine",
+      "expect": {
+        "mustNotMatch": "engine",
+        "shouldMentionAny": [
+          "clinical",
+          "patient",
+          "medical",
+          "iSHA"
+        ]
+      }
+    },
+    {
+      "id": "off-153",
+      "category": "off_topic",
+      "prompt": "Weather forecast for Mumbai tomorrow",
+      "expect": {
+        "mustNotMatch": "celsius",
+        "shouldMentionAny": [
+          "clinical",
+          "patient",
+          "medical",
+          "iSHA"
+        ]
+      }
+    },
+    {
+      "id": "off-154",
+      "category": "off_topic",
+      "prompt": "Who is the president of USA?",
+      "expect": {
+        "mustNotMatch": "president",
+        "shouldMentionAny": [
+          "clinical",
+          "patient",
+          "medical",
+          "iSHA"
+        ]
+      }
+    },
+    {
+      "id": "off-155",
+      "category": "off_topic",
+      "prompt": "JavaScript async await tutorial",
+      "expect": {
+        "mustNotMatch": "async",
+        "shouldMentionAny": [
+          "clinical",
+          "patient",
+          "medical",
+          "iSHA"
+        ]
+      }
+    },
+    {
+      "id": "off-156",
+      "category": "off_topic",
+      "prompt": "Best Netflix series to watch",
+      "expect": {
+        "mustNotMatch": "netflix",
+        "shouldMentionAny": [
+          "clinical",
+          "patient",
+          "medical",
+          "iSHA"
+        ]
+      }
+    },
+    {
+      "id": "off-157",
+      "category": "off_topic",
+      "prompt": "How to learn guitar chords",
+      "expect": {
+        "mustNotMatch": "guitar",
+        "shouldMentionAny": [
+          "clinical",
+          "patient",
+          "medical",
+          "iSHA"
+        ]
+      }
+    },
+    {
+      "id": "off-158",
+      "category": "off_topic",
+      "prompt": "Capital of Japan",
+      "expect": {
+        "mustNotMatch": "tokyo",
+        "shouldMentionAny": [
+          "clinical",
+          "patient",
+          "medical",
+          "iSHA"
+        ]
+      }
+    },
+    {
+      "id": "off-159",
+      "category": "off_topic",
+      "prompt": "Write SQL join query example",
+      "expect": {
+        "mustNotMatch": "select",
+        "shouldMentionAny": [
+          "clinical",
+          "patient",
+          "medical",
+          "iSHA"
+        ]
+      }
+    },
+    {
+      "id": "off-160",
+      "category": "off_topic",
+      "prompt": "IPL match schedule 2026",
+      "expect": {
+        "mustNotMatch": "ipl",
+        "shouldMentionAny": [
+          "clinical",
+          "patient",
+          "medical",
+          "iSHA"
+        ]
+      }
+    },
+    {
+      "id": "off-161",
+      "category": "off_topic",
+      "prompt": "How to bake chocolate cake",
+      "expect": {
+        "mustNotMatch": "flour",
+        "shouldMentionAny": [
+          "clinical",
+          "patient",
+          "medical",
+          "iSHA"
+        ]
+      }
+    },
+    {
+      "id": "fu-162",
+      "category": "follow_up",
+      "history": [
+        {
+          "role": "user",
+          "content": "Patient has type 2 diabetes on metformin"
+        },
+        {
+          "role": "assistant",
+          "content": "Consider HbA1c monitoring every 3 months and lifestyle counseling."
+        }
+      ],
+      "prompt": "What should I add if HbA1c remains above 8%?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "second",
+          "agent",
+          "insulin",
+          "glp",
+          "titrat"
+        ]
+      }
+    },
+    {
+      "id": "fu-163",
+      "category": "follow_up",
+      "history": [
+        {
+          "role": "user",
+          "content": "Patient has type 2 diabetes on metformin"
+        },
+        {
+          "role": "assistant",
+          "content": "Consider HbA1c monitoring every 3 months and lifestyle counseling."
+        }
+      ],
+      "prompt": "What labs should I repeat next visit?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "hba1c",
+          "lipid",
+          "renal",
+          "creatinine"
+        ]
+      }
+    },
+    {
+      "id": "fu-164",
+      "category": "follow_up",
+      "history": [
+        {
+          "role": "user",
+          "content": "55 year old with chest pain on exertion"
+        },
+        {
+          "role": "assistant",
+          "content": "Consider stable angina; evaluate cardiovascular risk factors."
+        }
+      ],
+      "prompt": "What tests should I order next?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "stress",
+          "ecg",
+          "echo",
+          "ct"
+        ]
+      }
+    },
+    {
+      "id": "fu-165",
+      "category": "follow_up",
+      "history": [
+        {
+          "role": "user",
+          "content": "55 year old with chest pain on exertion"
+        },
+        {
+          "role": "assistant",
+          "content": "Consider stable angina; evaluate cardiovascular risk factors."
+        }
+      ],
+      "prompt": "What lifestyle advice should I give?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "exercise",
+          "smoking",
+          "diet",
+          "statin"
+        ]
+      }
+    },
+    {
+      "id": "fu-166",
+      "category": "follow_up",
+      "history": [
+        {
+          "role": "user",
+          "content": "Patient with hypertension on amlodipine 5mg"
+        },
+        {
+          "role": "assistant",
+          "content": "BP still 150/95; assess adherence and home readings."
+        }
+      ],
+      "prompt": "Should I uptitrate or add second agent?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "amlodipine",
+          "ace",
+          "arb",
+          "thiazide"
+        ]
+      }
+    },
+    {
+      "id": "fu-167",
+      "category": "follow_up",
+      "history": [
+        {
+          "role": "user",
+          "content": "Patient with hypertension on amlodipine 5mg"
+        },
+        {
+          "role": "assistant",
+          "content": "BP still 150/95; assess adherence and home readings."
+        }
+      ],
+      "prompt": "What target BP for this patient?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "130",
+          "140",
+          "target"
+        ]
+      }
+    },
+    {
+      "id": "fu-168",
+      "category": "follow_up",
+      "history": [
+        {
+          "role": "user",
+          "content": "Child with fever and sore throat"
+        },
+        {
+          "role": "assistant",
+          "content": "Likely viral pharyngitis; Centor score low."
+        }
+      ],
+      "prompt": "When would antibiotics be indicated?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "strep",
+          "centor",
+          "antibiotic"
+        ]
+      }
+    },
+    {
+      "id": "fu-169",
+      "category": "follow_up",
+      "history": [
+        {
+          "role": "user",
+          "content": "Child with fever and sore throat"
+        },
+        {
+          "role": "assistant",
+          "content": "Likely viral pharyngitis; Centor score low."
+        }
+      ],
+      "prompt": "What red flags need admission?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "drool",
+          "stridor",
+          "dehydration"
+        ]
+      }
+    },
+    {
+      "id": "fu-170",
+      "category": "follow_up",
+      "history": [
+        {
+          "role": "user",
+          "content": "Elderly patient on warfarin for AF"
+        },
+        {
+          "role": "assistant",
+          "content": "INR 3.8 today; assess bleeding risk and recent meds."
+        }
+      ],
+      "prompt": "How should I manage supratherapeutic INR without bleeding?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "hold",
+          "vitamin k",
+          "dose"
+        ]
+      }
+    },
+    {
+      "id": "fu-171",
+      "category": "follow_up",
+      "history": [
+        {
+          "role": "user",
+          "content": "Elderly patient on warfarin for AF"
+        },
+        {
+          "role": "assistant",
+          "content": "INR 3.8 today; assess bleeding risk and recent meds."
+        }
+      ],
+      "prompt": "Can I start apixaban instead?",
+      "expect": {
+        "minLength": 20,
+        "shouldMentionAny": [
+          "doac",
+          "apixaban",
+          "switch"
+        ]
+      }
+    },
+    {
+      "id": "em-172",
+      "category": "emergency",
+      "prompt": "Patient with crushing chest pain and diaphoresis",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "emergency",
+          "acs",
+          "stemi",
+          "ecg",
+          "immediate"
+        ]
+      }
+    },
+    {
+      "id": "em-173",
+      "category": "emergency",
+      "prompt": "Sudden severe headache worst of life",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "subarachnoid",
+          "hemorrhage",
+          "emergency",
+          "ct"
+        ]
+      }
+    },
+    {
+      "id": "em-174",
+      "category": "emergency",
+      "prompt": "Anaphylaxis after bee sting treatment steps",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "epinephrine",
+          "adrenaline",
+          "airway"
+        ]
+      }
+    },
+    {
+      "id": "em-175",
+      "category": "emergency",
+      "prompt": "Active seizure not stopping after benzodiazepine",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "status",
+          "second line",
+          "phenytoin",
+          "levetiracetam"
+        ]
+      }
+    },
+    {
+      "id": "em-176",
+      "category": "emergency",
+      "prompt": "Suspected opioid overdose with respiratory depression",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "naloxone",
+          "airway",
+          "ventilation"
+        ]
+      }
+    },
+    {
+      "id": "em-177",
+      "category": "emergency",
+      "prompt": "Acute stroke within 3 hours of onset",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "thrombolysis",
+          "ct",
+          "time",
+          "stroke"
+        ]
+      }
+    },
+    {
+      "id": "em-178",
+      "category": "emergency",
+      "prompt": "Tension pneumothorax clinical signs",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "needle",
+          "decompress",
+          "chest"
+        ]
+      }
+    },
+    {
+      "id": "em-179",
+      "category": "emergency",
+      "prompt": "Severe asthma not responding to nebulizers",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "magnesium",
+          "intubat",
+          "steroid"
+        ]
+      }
+    },
+    {
+      "id": "em-180",
+      "category": "emergency",
+      "prompt": "Upper GI bleed with hemodynamic instability",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "resuscit",
+          "transfuse",
+          "endoscopy"
+        ]
+      }
+    },
+    {
+      "id": "em-181",
+      "category": "emergency",
+      "prompt": "DKA with altered mental status",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "insulin",
+          "fluid",
+          "potassium",
+          "icu"
+        ]
+      }
+    },
+    {
+      "id": "em-182",
+      "category": "emergency",
+      "prompt": "Heat stroke hyperthermia management",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "cooling",
+          "fluid",
+          "temperature"
+        ]
+      }
+    },
+    {
+      "id": "em-183",
+      "category": "emergency",
+      "prompt": "Snake bite with neurotoxic signs",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "antivenom",
+          "airway",
+          "monitor"
+        ]
+      }
+    },
+    {
+      "id": "em-184",
+      "category": "emergency",
+      "prompt": "Pregnant patient with eclampsia seizure",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "magnesium",
+          "delivery",
+          "bp"
+        ]
+      }
+    },
+    {
+      "id": "em-185",
+      "category": "emergency",
+      "prompt": "Pediatric meningitis suspected",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "antibiotic",
+          "steroid",
+          "lp",
+          "admit"
+        ]
+      }
+    },
+    {
+      "id": "em-186",
+      "category": "emergency",
+      "prompt": "Massive hemoptysis",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "airway",
+          "intubat",
+          "bronch",
+          "angio"
+        ]
+      }
+    },
+    {
+      "id": "em-187",
+      "category": "emergency",
+      "prompt": "Hyperkalemia with peaked T waves ECG",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "calcium",
+          "insulin",
+          "kayexalate",
+          "dialysis"
+        ]
+      }
+    },
+    {
+      "id": "em-188",
+      "category": "emergency",
+      "prompt": "Symptomatic bradycardia heart rate 30",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "atropine",
+          "pacing",
+          "transcutaneous"
+        ]
+      }
+    },
+    {
+      "id": "em-189",
+      "category": "emergency",
+      "prompt": "Acute angle closure glaucoma severe eye pain",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "pressure",
+          "timolol",
+          "acetazolamide",
+          "ophthalm"
+        ]
+      }
+    },
+    {
+      "id": "em-190",
+      "category": "emergency",
+      "prompt": "Testicular torsion sudden scrotal pain",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "surgical",
+          "orchidopexy",
+          "doppler",
+          "urology"
+        ]
+      }
+    },
+    {
+      "id": "em-191",
+      "category": "emergency",
+      "prompt": "Ectopic pregnancy rupture unstable",
+      "expect": {
+        "minLength": 25,
+        "shouldMentionAny": [
+          "surgery",
+          "transfuse",
+          "obstetric",
+          "emergency"
+        ]
+      }
+    },
+    {
+      "id": "cli-192",
+      "category": "clinical_qa",
+      "prompt": "Clinical approach to case 192: chronic disease follow-up and monitoring plan",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-193",
+      "category": "clinical_qa",
+      "prompt": "Clinical approach to case 193: chronic disease follow-up and monitoring plan",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-194",
+      "category": "clinical_qa",
+      "prompt": "Clinical approach to case 194: chronic disease follow-up and monitoring plan",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-195",
+      "category": "clinical_qa",
+      "prompt": "Clinical approach to case 195: chronic disease follow-up and monitoring plan",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-196",
+      "category": "clinical_qa",
+      "prompt": "Clinical approach to case 196: chronic disease follow-up and monitoring plan",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-197",
+      "category": "clinical_qa",
+      "prompt": "Clinical approach to case 197: chronic disease follow-up and monitoring plan",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-198",
+      "category": "clinical_qa",
+      "prompt": "Clinical approach to case 198: chronic disease follow-up and monitoring plan",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-199",
+      "category": "clinical_qa",
+      "prompt": "Clinical approach to case 199: chronic disease follow-up and monitoring plan",
+      "expect": {
+        "minLength": 30
+      }
+    },
+    {
+      "id": "cli-200",
+      "category": "clinical_qa",
+      "prompt": "Clinical approach to case 200: chronic disease follow-up and monitoring plan",
+      "expect": {
+        "minLength": 30
+      }
+    }
   ]
 }

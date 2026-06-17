@@ -2766,15 +2766,93 @@ Process multiple dictations at once (max 10).
 
 ### 14.10 Doctor iSHA Assistant (Text / Voice Agent)
 
-Use this endpoint for the doctor assistant chat/voice command layer. The same endpoint handles navigation, patient search, tasks, clinical Q&A, and appointment read/write actions.
+**Primary endpoint (AI-PLATFORM-001):** use the unified doctor copilot gateway for all doctor AI chat — scheduling, navigation, and clinical Q&A. The gateway auto-routes to the agent layer or clinical consult based on the message.
 
 ```
-POST /api/voice-assistant/agent
+POST /api/doctor-copilot/chat
 Authorization: Bearer <token>
 Content-Type: application/json
 ```
 
 **Request:**
+
+```json
+{
+  "message": "Show today's appointments",
+  "context": {
+    "currentScreen": "dashboard",
+    "currentPatient": { "id": 42, "name": "Arjun Kumar" }
+  },
+  "history": [
+    { "role": "user", "text": "List pending tasks" },
+    { "role": "assistant", "text": "You have 3 pending tasks." }
+  ],
+  "sessionId": "copilot_optional_session_id",
+  "language": "en",
+  "mode": "auto"
+}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `message` | Yes | Primary text field (preferred over legacy `text`) |
+| `context.currentScreen` | Recommended | e.g. `dashboard`, `patient_details`, `SetTimeSlots` |
+| `context.currentPatient` | When on chart | Enables patient-aware clinical answers |
+| `history` | Optional | Up to 15 prior turns `{ role, text }` |
+| `mode` | Optional | `auto` (default), `agent`, or `clinical` |
+
+**Response (200):**
+
+```json
+{
+  "intent": "action",
+  "action": "list_appointments",
+  "parameters": { "filter": "today" },
+  "response": "You have 2 appointments today:\n• 10:00 — Arjun Kumar (confirmed): consultation\n• 11:30 — Meera Shah (pending): follow-up",
+  "speak": "You have 2 appointments today. 10:00 Arjun Kumar, 11:30 Meera Shah.",
+  "data": [
+    {
+      "id": 123,
+      "appointmentId": "APPT-123",
+      "appointmentDate": "2026-06-13",
+      "appointmentTime": "10:00:00",
+      "status": "confirmed",
+      "patientName": "Arjun Kumar",
+      "reason": "consultation"
+    }
+  ],
+  "requiresConfirmation": false,
+  "traceId": "copilot_1718640000000_a1b2c3d4",
+  "gateway": "doctor-copilot",
+  "path": "agent"
+}
+```
+
+**Mobile client (msh_d_app):** copy `shared/doctor-mobile-api/` into the app and use `createDoctorCopilotClient()` — see `shared/doctor-mobile-api/README.md`.
+
+```typescript
+import { createDoctorCopilotClient } from './api/mediczy/doctor-mobile-api';
+
+const copilot = createDoctorCopilotClient({
+  baseUrl: 'https://app.mediqzy.com/api',
+  getToken: () => AsyncStorage.getItem('doctorToken'),
+});
+
+const result = await copilot.chat({
+  message: "Show today's appointments",
+  context: { currentScreen: 'dashboard' },
+});
+```
+
+**Legacy endpoint (still supported):**
+
+```
+POST /api/voice-assistant/agent
+```
+
+Legacy requests accept `text` instead of `message`. New integrations should use `/api/doctor-copilot/chat` only.
+
+**Legacy request shape:**
 
 ```json
 {
