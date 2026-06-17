@@ -235,17 +235,31 @@ async function sendMail(msg, options = {}) {
 
 /**
  * Look up a custom email template from the DB for the given event type.
- * Uses email_event_assignments to find the assigned template_id, then fetches its content.
+ * Priority: corporate-specific assignment > team-user assignment > any global assignment.
  * Returns { subject, html_content } if found, otherwise null (use default).
  */
 async function getCustomTemplate(eventType, options = {}) {
-  const { teamUserId } = options;
+  const { teamUserId, corporateId } = options;
   try {
+    // 1. Try corporate-specific assignment first
+    if (corporateId) {
+      const corpRows = await postgresSequelize.query(
+        `SELECT wet.subject, wet.html_content
+         FROM email_event_assignments eea
+         JOIN welcome_email_templates wet ON wet.id = eea.template_id
+         WHERE eea.event_type = :eventType AND eea.corporate_id = :corporateId
+         ORDER BY eea.updated_at DESC LIMIT 1`,
+        { replacements: { eventType, corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+      if (Array.isArray(corpRows) && corpRows.length > 0) return corpRows[0];
+    }
+
+    // 2. Fall back to team-user-level assignment
     const sql = [
       'SELECT wet.subject, wet.html_content',
       'FROM email_event_assignments eea',
       'JOIN welcome_email_templates wet ON wet.id = eea.template_id',
-      'WHERE eea.event_type = :eventType'
+      'WHERE eea.event_type = :eventType AND eea.corporate_id IS NULL'
     ];
     const replacements = { eventType };
 

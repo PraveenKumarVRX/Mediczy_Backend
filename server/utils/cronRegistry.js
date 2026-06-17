@@ -77,6 +77,8 @@ export const TASK_DEFINITIONS = [
   { key: 'audit_log_partition',   name: 'Audit Log Monthly Partition Creation',  schedule: '25th of month',    category: 'system',     scheduleDesc: '0 1 25 * *' },
   { key: 'audit_chain_verify',    name: 'Audit Chain Integrity Verification',    schedule: 'Daily 3 AM',       category: 'security',   scheduleDesc: '0 3 * * *' },
   { key: 'ai_his_score',          name: 'AI HIS Health Score Aggregation',       schedule: 'Every 6 hours',    category: 'ai',         scheduleDesc: '30 */6 * * *' },
+  // Corporate QC
+  { key: 'corp_employee_qc',      name: 'Corporate Employee QC Sweep',           schedule: 'Daily 3 AM IST',   category: 'corporate',  scheduleDesc: '0 3 * * *' },
 ];
 
 // Key lookup map

@@ -23,20 +23,40 @@ function getTransporter() {
 function hasDangerousContent(html) { return /<script[\s>]/i.test(html); }
 
 // GET / — template library + event assignments
+// ?corporateId=N  → also returns per-corporate assignment overrides for that corporate
 router.get('/', authUser, async (req, res) => {
   const userId = req.user?.id || req.user?.teamMemberId;
+  const corporateId = req.query.corporateId ? parseInt(req.query.corporateId, 10) : null;
   try {
     const templates = await postgresSequelize.query(
       `SELECT id, name, subject, html_content AS "htmlContent", to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "updatedAt" FROM welcome_email_templates WHERE team_user_id = :userId ORDER BY updated_at DESC`,
       { replacements: { userId }, type: postgresSequelize.QueryTypes.SELECT }
     );
+    // Team-user-level assignments (baseline)
     const assignmentRows = await postgresSequelize.query(
-      `SELECT eea.event_type AS "eventType", eea.template_id AS "templateId", wet.name AS "templateName" FROM email_event_assignments eea LEFT JOIN welcome_email_templates wet ON wet.id = eea.template_id WHERE eea.team_user_id = :userId`,
+      `SELECT eea.event_type AS "eventType", eea.template_id AS "templateId", wet.name AS "templateName", eea.corporate_id AS "corporateId"
+       FROM email_event_assignments eea
+       LEFT JOIN welcome_email_templates wet ON wet.id = eea.template_id
+       WHERE eea.team_user_id = :userId AND eea.corporate_id IS NULL`,
       { replacements: { userId }, type: postgresSequelize.QueryTypes.SELECT }
     );
     const assignments = {};
     for (const row of assignmentRows) assignments[row.eventType] = { templateId: row.templateId, templateName: row.templateName };
-    res.json({ success: true, data: { templates: Array.isArray(templates) ? templates : [], assignments, eventTypes: EVENT_TYPES } });
+
+    // Per-corporate assignment overrides (if corporateId requested)
+    let corporateAssignments = {};
+    if (corporateId) {
+      const corpRows = await postgresSequelize.query(
+        `SELECT eea.event_type AS "eventType", eea.template_id AS "templateId", wet.name AS "templateName"
+         FROM email_event_assignments eea
+         LEFT JOIN welcome_email_templates wet ON wet.id = eea.template_id
+         WHERE eea.corporate_id = :corporateId`,
+        { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+      for (const row of corpRows) corporateAssignments[row.eventType] = { templateId: row.templateId, templateName: row.templateName };
+    }
+
+    res.json({ success: true, data: { templates: Array.isArray(templates) ? templates : [], assignments, corporateAssignments, eventTypes: EVENT_TYPES } });
   } catch (error) {
     console.error('Error fetching templates:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch templates' });
@@ -63,22 +83,59 @@ router.post('/', authUser, async (req, res) => {
 });
 
 // PUT /assign — assign or unassign a template to an event type (must be before /:id)
+// Body: { eventType, templateId, corporateId? }
+// If corporateId is provided → corporate-specific assignment (overrides team-user default)
+// If corporateId is absent  → team-user-level assignment (baseline for all corporates)
 router.put('/assign', authUser, async (req, res) => {
   const userId = req.user?.id || req.user?.teamMemberId;
-  const { eventType, templateId } = req.body;
+  const { eventType, templateId, corporateId } = req.body;
   if (!eventType || !VALID_EVENT_TYPES.has(eventType)) return res.status(400).json({ success: false, message: 'Invalid event type' });
+  const corpId = corporateId ? parseInt(corporateId, 10) : null;
   try {
     if (templateId === null || templateId === undefined || templateId === '') {
-      await postgresSequelize.query('DELETE FROM email_event_assignments WHERE event_type = :eventType AND team_user_id = :userId', { replacements: { eventType, userId }, type: postgresSequelize.QueryTypes.DELETE });
+      // Unassign — corporate-specific or team-user-level
+      if (corpId) {
+        await postgresSequelize.query(
+          'DELETE FROM email_event_assignments WHERE event_type = :eventType AND corporate_id = :corpId',
+          { replacements: { eventType, corpId }, type: postgresSequelize.QueryTypes.DELETE }
+        );
+        return res.json({ success: true, message: 'Corporate template override removed — will fall back to team default' });
+      }
+      await postgresSequelize.query(
+        'DELETE FROM email_event_assignments WHERE event_type = :eventType AND team_user_id = :userId AND corporate_id IS NULL',
+        { replacements: { eventType, userId }, type: postgresSequelize.QueryTypes.DELETE }
+      );
       return res.json({ success: true, message: 'Template unassigned — event will use built-in default' });
     }
-    const tplRows = await postgresSequelize.query('SELECT id FROM welcome_email_templates WHERE id = :templateId AND team_user_id = :userId', { replacements: { templateId, userId }, type: postgresSequelize.QueryTypes.SELECT });
+
+    // Validate template belongs to this team user
+    const tplRows = await postgresSequelize.query(
+      'SELECT id FROM welcome_email_templates WHERE id = :templateId AND team_user_id = :userId',
+      { replacements: { templateId, userId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
     if (!tplRows || tplRows.length === 0) return res.status(404).json({ success: false, message: 'Template not found' });
+
+    if (corpId) {
+      // Upsert corporate-specific assignment
+      await postgresSequelize.query(
+        `INSERT INTO email_event_assignments (event_type, team_user_id, template_id, corporate_id, updated_at)
+         VALUES (:eventType, :userId, :templateId, :corpId, NOW())
+         ON CONFLICT (event_type, corporate_id) WHERE corporate_id IS NOT NULL
+         DO UPDATE SET template_id = EXCLUDED.template_id, team_user_id = EXCLUDED.team_user_id, updated_at = NOW()`,
+        { replacements: { eventType, userId, templateId, corpId }, type: postgresSequelize.QueryTypes.INSERT }
+      );
+      return res.json({ success: true, message: 'Template assigned to this corporate' });
+    }
+
+    // Team-user-level assignment / global default
     await postgresSequelize.query(
-      `INSERT INTO email_event_assignments (event_type, team_user_id, template_id, updated_at) VALUES (:eventType, :userId, :templateId, NOW()) ON CONFLICT (event_type, team_user_id) DO UPDATE SET template_id = EXCLUDED.template_id, updated_at = NOW()`,
+      `INSERT INTO email_event_assignments (event_type, team_user_id, template_id, updated_at)
+       VALUES (:eventType, :userId, :templateId, NOW())
+       ON CONFLICT (event_type, team_user_id) WHERE corporate_id IS NULL
+       DO UPDATE SET template_id = EXCLUDED.template_id, updated_at = NOW()`,
       { replacements: { eventType, userId, templateId }, type: postgresSequelize.QueryTypes.INSERT }
     );
-    res.json({ success: true, message: 'Template assigned to event' });
+    res.json({ success: true, message: 'Template assigned to event (all corporates default)' });
   } catch (error) {
     console.error('Error assigning template:', error);
     res.status(500).json({ success: false, message: 'Failed to assign template' });
