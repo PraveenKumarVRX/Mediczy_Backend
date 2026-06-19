@@ -2280,7 +2280,6 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
   // Fetch corporates
   useEffect(() => {
     fetchCorporates();
-    loadWelcomeEmailTemplateLibrary();
   }, []);
 
   // Fetch employees, packages, plans, and network partners when corporate is selected

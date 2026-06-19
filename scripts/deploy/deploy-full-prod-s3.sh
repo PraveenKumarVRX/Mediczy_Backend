@@ -50,23 +50,37 @@ deploy_body() {
   echo -e "${BLUE}[1/6] Pulling latest main...${NC}"
   git fetch origin main
   git pull origin main
-  echo -e "${GREEN}✓ Code updated ($(git rev-parse --short HEAD))${NC}"
+  HEAD_SHA="$(git rev-parse --short HEAD)"
+  echo -e "${GREEN}✓ Code updated ($HEAD_SHA)${NC}"
+  if ! git merge-base --is-ancestor c0bd4174 HEAD 2>/dev/null; then
+    echo -e "${RED}❌ Welcome-campaign fix (c0bd4174) not in checked-out commit.${NC}"
+    echo -e "${RED}   Refusing deploy — pull main or merge the fix first.${NC}"
+    exit 1
+  fi
 
-  echo -e "${BLUE}[2/6] Installing server dependencies...${NC}"
+  echo -e "${BLUE}[2/7] Installing server dependencies...${NC}"
   (cd server && npm ci --omit=dev --prefer-offline)
   echo -e "${GREEN}✓ Server dependencies installed${NC}"
 
-  echo -e "${BLUE}[3/6] Building client...${NC}"
+  echo -e "${BLUE}[3/7] Building client...${NC}"
   (
     cd client
     export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=3072}"
     npm ci --prefer-offline
     npm run build
   )
+  TEAM_BUNDLE="$(ls client/dist/assets/TeamCorporateManagement-*.js 2>/dev/null | xargs -n1 basename | head -1 || true)"
+  INDEX_BUNDLE="$(ls client/dist/assets/index-*.js 2>/dev/null | grep -v 'index.es' | xargs -n1 basename | head -1 || true)"
   echo -e "${GREEN}✓ Client build complete${NC}"
+  echo -e "${GREEN}  index bundle: ${INDEX_BUNDLE:-unknown}${NC}"
+  echo -e "${GREEN}  team bundle:  ${TEAM_BUNDLE:-unknown}${NC}"
+  if [ "$TEAM_BUNDLE" = "TeamCorporateManagement-h5kXIWw0.js" ]; then
+    echo -e "${RED}❌ Build still produced stale TeamCorporateManagement hash — aborting S3 upload${NC}"
+    exit 1
+  fi
 
   if [ "$SKIP_S3" != true ]; then
-    echo -e "${BLUE}[4/6] Deploying frontend to S3 + CloudFront...${NC}"
+    echo -e "${BLUE}[4/7] Deploying frontend to S3 + CloudFront...${NC}"
     if ! command -v aws >/dev/null 2>&1; then
       echo -e "${RED}❌ aws CLI not found — install AWS CLI or set SKIP_S3=true${NC}"
       exit 1
@@ -74,18 +88,24 @@ deploy_body() {
     bash scripts/deploy/deploy-frontend-s3.sh
     echo -e "${GREEN}✓ S3 deployment complete${NC}"
   else
-    echo -e "${YELLOW}[4/6] Skipping S3 (SKIP_S3=true)${NC}"
+    echo -e "${YELLOW}[4/7] Skipping S3 (SKIP_S3=true)${NC}"
   fi
 
-  echo -e "${BLUE}[5/6] Restarting backend (PM2)...${NC}"
+  echo -e "${BLUE}[5/7] Restarting backend (PM2)...${NC}"
   pm2 restart mediczy-server --update-env
   pm2 save --force 2>/dev/null || true
   echo -e "${GREEN}✓ Backend restarted${NC}"
 
-  echo -e "${BLUE}[6/6] Health check...${NC}"
+  echo -e "${BLUE}[6/7] Health check...${NC}"
   sleep 4
   curl -sf http://localhost:8888/api/health || curl -sf http://localhost:8000/api/health || true
   echo ""
+
+  if [ "$SKIP_S3" != true ] && [ -f "$SCRIPT_DIR/verify-prod-bundle.sh" ]; then
+    echo -e "${BLUE}[7/7] Verifying live S3 bundle...${NC}"
+    sleep 15
+    bash "$SCRIPT_DIR/verify-prod-bundle.sh" || true
+  fi
 }
 
 echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
@@ -103,42 +123,54 @@ PROD_PATH="${PROD_PATH:-/home/ubuntu/Mediczy}"
 SKIP_S3="${SKIP_S3:-false}"
 cd "$PROD_PATH"
 
-echo "[1/6] Pulling latest main..."
+echo "[1/7] Pulling latest main..."
 git fetch origin main
 git pull origin main
-echo "✓ Code updated ($(git rev-parse --short HEAD))"
+HEAD_SHA="$(git rev-parse --short HEAD)"
+echo "✓ Code updated ($HEAD_SHA)"
+git merge-base --is-ancestor c0bd4174 HEAD || { echo "❌ Welcome-campaign fix (c0bd4174) not in HEAD"; exit 1; }
 
-echo "[2/6] Installing server dependencies..."
+echo "[2/7] Installing server dependencies..."
 (cd server && npm ci --omit=dev --prefer-offline)
 echo "✓ Server dependencies installed"
 
-echo "[3/6] Building client..."
+echo "[3/7] Building client..."
 (
   cd client
   export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=3072}"
   npm ci --prefer-offline
   npm run build
 )
+TEAM_BUNDLE="$(ls client/dist/assets/TeamCorporateManagement-*.js 2>/dev/null | xargs -n1 basename | head -1 || true)"
+INDEX_BUNDLE="$(ls client/dist/assets/index-*.js 2>/dev/null | grep -v 'index.es' | xargs -n1 basename | head -1 || true)"
 echo "✓ Client build complete"
+echo "  index bundle: ${INDEX_BUNDLE:-unknown}"
+echo "  team bundle:  ${TEAM_BUNDLE:-unknown}"
+[ "$TEAM_BUNDLE" != "TeamCorporateManagement-h5kXIWw0.js" ] || { echo "❌ Stale bundle hash"; exit 1; }
 
 if [ "$SKIP_S3" != true ]; then
-  echo "[4/6] Deploying frontend to S3 + CloudFront..."
+  echo "[4/7] Deploying frontend to S3 + CloudFront..."
   command -v aws >/dev/null || { echo "❌ aws CLI not found"; exit 1; }
   bash scripts/deploy/deploy-frontend-s3.sh
   echo "✓ S3 deployment complete"
 else
-  echo "[4/6] Skipping S3"
+  echo "[4/7] Skipping S3"
 fi
 
-echo "[5/6] Restarting backend..."
+echo "[5/7] Restarting backend..."
 pm2 restart mediczy-server --update-env
 pm2 save --force 2>/dev/null || true
 echo "✓ Backend restarted"
 
-echo "[6/6] Health check..."
+echo "[6/7] Health check..."
 sleep 4
 curl -sf http://localhost:8888/api/health || curl -sf http://localhost:8000/api/health || true
 echo ""
+if [ "$SKIP_S3" != true ] && [ -f scripts/deploy/verify-prod-bundle.sh ]; then
+  echo "[7/7] Verifying live S3 bundle..."
+  sleep 15
+  bash scripts/deploy/verify-prod-bundle.sh || true
+fi
 REMOTE_SCRIPT
 else
   if [ ! -d "$PROD_PATH" ] && [ -d "$REPO_ROOT/.git" ]; then
