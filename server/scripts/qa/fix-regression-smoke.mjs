@@ -47,6 +47,37 @@ function runStaticChecks() {
 
   const doctorSettings = readServerFile('routes/doctor-settings.route.js');
   record('slot-duration accepts slotDuration alias', doctorSettings.includes('req.body.duration ?? req.body.slotDuration'));
+
+  const welcomeEmail = readServerFile('services/welcome-email-template.util.js');
+  record('welcome email supports {{employeeName}}', welcomeEmail.includes("'{{employeeName}}': employeeName"));
+  record('welcome email legacy password literal supported', welcomeEmail.includes("'[generated securely at send time]'"));
+
+  const welcomeTemplates = readServerFile('routes/welcomeEmailTemplates.route.js');
+  record('template docs list {{employeeName}}', welcomeTemplates.includes('"{{employeeName}}"'));
+}
+
+async function runWelcomeEmailTemplateChecks() {
+  const { renderTemplate, buildCorporateEmployeeTemplateVars } = await import('../../services/welcome-email-template.util.js');
+  const vars = buildCorporateEmployeeTemplateVars({
+    email: 'alice@corp.com',
+    firstName: 'Alice',
+    lastName: 'Singh',
+    companyName: 'Ninjacart',
+    employeeId: 'NC001',
+    department: 'Ops',
+  }, 'SecretPass12!');
+
+  const html = renderTemplate(
+    '<p>Dear {{employeeName}}, user {{email}} / {{ username }} pass {{temporaryPassword}}</p>',
+    vars,
+  );
+  record('employeeName placeholder renders on send', html.includes('Dear Alice Singh,'));
+  record('email placeholder renders on send', html.includes('alice@corp.com'));
+  record('password placeholder renders on send', html.includes('SecretPass12!'));
+  record(
+    'legacy generated-password literal renders on send',
+    renderTemplate('Password: [generated securely at send time]', vars).includes('SecretPass12!'),
+  );
 }
 
 function runJestSuite() {
@@ -73,6 +104,9 @@ function runSyntaxChecks() {
     'routes/medical-ai.route.js',
     'services/ai-brain/llm-provider.js',
     'models/doctor.model.intelligent.js',
+    'services/welcome-email.service.js',
+    'services/welcome-email-template.util.js',
+    'routes/welcomeEmailTemplates.route.js',
   ];
 
   for (const file of files) {
@@ -85,6 +119,8 @@ console.log('=== Fix regression smoke test ===\n');
 runSyntaxChecks();
 console.log('');
 runStaticChecks();
+console.log('');
+await runWelcomeEmailTemplateChecks();
 console.log('');
 runJestSuite();
 console.log('\n=== Summary ===');
