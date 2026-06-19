@@ -28,6 +28,7 @@
     "test:doctor-auth-deploy-health": "node scripts/qa/doctor-auth-deploy-health.mjs",
     "test:doctor-mobile-issue-smoke": "node scripts/qa/doctor-mobile-issue-smoke.mjs",
     "test:fix-regression-smoke": "node scripts/qa/fix-regression-smoke.mjs",
+    "test:welcome-email-template-smoke": "node scripts/qa/welcome-email-template.smoke.mjs",
     "test:clinical-golden-regression": "node scripts/qa/clinical-golden-regression.mjs",
     "generate:clinical-golden-set": "node scripts/qa/generate-clinical-golden-set.mjs",
     "integrate:msh-d-app-copilot": "node scripts/integrate-msh-d-app-copilot.mjs",
