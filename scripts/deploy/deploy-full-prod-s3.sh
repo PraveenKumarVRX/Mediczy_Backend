@@ -10,6 +10,9 @@
 #
 #   Backend-only (skip S3):
 #     SKIP_S3=true bash scripts/deploy/deploy-full-prod-s3.sh
+#
+#   Discard local server commits and match GitHub main exactly:
+#     RESET_TO_ORIGIN_MAIN=true bash scripts/deploy/deploy-full-prod-s3.sh
 
 set -euo pipefail
 
@@ -24,11 +27,13 @@ PROD_PATH="${PROD_PATH:-/home/ubuntu/Mediczy}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/mediczy.pem}"
 REMOTE_MODE=false
 SKIP_S3="${SKIP_S3:-false}"
+RESET_TO_ORIGIN_MAIN="${RESET_TO_ORIGIN_MAIN:-false}"
 
 for arg in "$@"; do
   case "$arg" in
     --remote) REMOTE_MODE=true ;;
     --skip-s3) SKIP_S3=true ;;
+    --reset-to-origin) RESET_TO_ORIGIN_MAIN=true ;;
   esac
 done
 
@@ -47,9 +52,8 @@ deploy_body() {
   set -euo pipefail
   cd "$PROD_PATH"
 
-  echo -e "${BLUE}[1/6] Pulling latest main...${NC}"
-  git fetch origin main
-  git pull origin main
+  echo -e "${BLUE}[1/7] Syncing to origin/main...${NC}"
+  bash "$SCRIPT_DIR/sync-git-main.sh"
   HEAD_SHA="$(git rev-parse --short HEAD)"
   echo -e "${GREEN}✓ Code updated ($HEAD_SHA)${NC}"
   if ! git merge-base --is-ancestor c0bd4174 HEAD 2>/dev/null; then
@@ -117,15 +121,15 @@ if [ "$REMOTE_MODE" = true ]; then
   echo "Mode: remote → $PROD_SERVER"
   echo "Path: $PROD_PATH"
   echo ""
-  ssh_exec "SKIP_S3='$SKIP_S3' PROD_PATH='$PROD_PATH' bash -s" <<'REMOTE_SCRIPT'
+  ssh_exec "SKIP_S3='$SKIP_S3' RESET_TO_ORIGIN_MAIN='$RESET_TO_ORIGIN_MAIN' PROD_PATH='$PROD_PATH' bash -s" <<'REMOTE_SCRIPT'
 set -euo pipefail
 PROD_PATH="${PROD_PATH:-/home/ubuntu/Mediczy}"
 SKIP_S3="${SKIP_S3:-false}"
+RESET_TO_ORIGIN_MAIN="${RESET_TO_ORIGIN_MAIN:-false}"
 cd "$PROD_PATH"
 
-echo "[1/7] Pulling latest main..."
-git fetch origin main
-git pull origin main
+echo "[1/7] Syncing to origin/main..."
+RESET_TO_ORIGIN_MAIN="$RESET_TO_ORIGIN_MAIN" bash scripts/deploy/sync-git-main.sh
 HEAD_SHA="$(git rev-parse --short HEAD)"
 echo "✓ Code updated ($HEAD_SHA)"
 git merge-base --is-ancestor c0bd4174 HEAD || { echo "❌ Welcome-campaign fix (c0bd4174) not in HEAD"; exit 1; }
