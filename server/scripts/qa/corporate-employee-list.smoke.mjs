@@ -11,6 +11,7 @@ import {
   mergeCorporateEmployeeRows,
   normalizeAssociationEmployee,
   normalizeRosterEmployee,
+  parseMetadata,
   CORPORATE_EMPLOYEE_ASSOCIATION_SQL,
   CORPORATE_EMPLOYEE_ROSTER_SQL,
 } from '../../services/corporate-employee-list.service.js';
@@ -30,8 +31,12 @@ function runStaticSanityChecks() {
   record('admin route imports merge service', adminRoute.includes('mergeCorporateEmployeeRows'));
   record('admin route queries association + roster', adminRoute.includes('CORPORATE_EMPLOYEE_ASSOCIATION_SQL') && adminRoute.includes('CORPORATE_EMPLOYEE_ROSTER_SQL'));
   record('admin route returns total count', adminRoute.includes('total: merged.length'));
+  record('admin route uses safe metadata parse', adminRoute.includes('parseMetadata(e.metadata)'));
 
   const ui = readFileSync(path.join(root, 'client/src/pages/team/TeamCorporateManagement.tsx'), 'utf8');
+  record('welcome template loader uses selectedCorporate id', ui.includes('overrideCorporateId ?? selectedCorporate?.id'));
+  record('welcome template assign uses selectedCorporate id', ui.includes('corporateId: selectedCorporate.id,'));
+  record('no bare corporateId reference in welcome loader', !ui.includes('overrideCorporateId ?? corporateId'));
   const uiChecks = [
     'isWelcomeEmailEligible',
     'employeesLoadError',
@@ -111,6 +116,8 @@ record('roster normalize flags missing association', roster.rosterOnly === true 
 
 record('merge total count for pagination', mergeCorporateEmployeeRows(associationRows, rosterRows).length === 3);
 record('pagination slice returns requested page size', mergeCorporateEmployeeRows(associationRows, rosterRows).slice(0, 2).length === 2);
+record('safe metadata parse handles invalid JSON', parseMetadata('{not-json') && typeof parseMetadata('{not-json') === 'object');
+record('safe metadata parse handles object input', parseMetadata({ employeeId: 'X' }).employeeId === 'X');
 
 console.log('\n=== Summary ===');
 const failed = results.filter((row) => !row.ok);

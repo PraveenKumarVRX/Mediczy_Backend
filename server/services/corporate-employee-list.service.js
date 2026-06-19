@@ -3,7 +3,7 @@
  * for the team portal welcome-email workflow.
  */
 
-function parseMetadata(value) {
+export function parseMetadata(value) {
   if (value == null) return {};
   if (typeof value === 'object') return value;
   try {

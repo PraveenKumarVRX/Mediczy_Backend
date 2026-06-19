@@ -2401,6 +2401,51 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
     }
   };
 
+  const mapEmployeeRow = (emp: any) => {
+    const meta = emp.metadata || {};
+    const firstName = emp.firstName || meta.firstName || '';
+    const lastName = emp.lastName || meta.lastName || '';
+    const employeeId = emp.user_employee_id || meta.employeeId || emp.corporate_employee_id || emp.employeeId || emp.unique_id || (emp.id ? `EMP${emp.id}` : '');
+    const userId = emp.id != null ? String(emp.id) : (emp.corporate_employee_row_id ? `ce-${emp.corporate_employee_row_id}` : employeeId);
+    return {
+      id: userId,
+      employeeId,
+      firstName,
+      lastName,
+      name: `${firstName} ${lastName}`.trim() || emp.name || employeeId || 'Unknown',
+      email: emp.email || '',
+      secondaryEmail: meta.secondaryEmail || '',
+      phone: emp.phoneNumber || meta.phoneNumber || '',
+      department: emp.department_name || meta.department || emp.department || 'Not Assigned',
+      designation: meta.designation || emp.designation || emp.ce_designation || 'Not Assigned',
+      city: emp.address_city || meta.city || '',
+      state: emp.address_state || meta.state || '',
+      pinCode: emp.address_zipCode || meta.pinCode || '',
+      location: meta.location || '',
+      facility: meta.facility || '',
+      joiningDate: emp.startDate || meta.joiningDate || '',
+      healthStatus: meta.healthStatus || emp.healthStatus || 'Not Assessed',
+      insurancePlan: emp.currentPackageName || meta.insurancePlan || 'None',
+      status: emp.status || 'active',
+      currentPackageId: emp.currentPackageId || undefined,
+      currentPackageName: emp.currentPackageName || undefined,
+      packageValidTo: emp.packageValidTo || undefined,
+      gender: emp.gender || '',
+      dateOfBirth: emp.dateOfBirth || '',
+      lastLoginAt: emp.lastLoginAt || null,
+      lastActivityAt: emp.lastActivityAt || null,
+      loginCount: emp.loginCount ?? 0,
+      requirePasswordChange: emp.requirePasswordChange ?? true,
+      welcomeEmailStatus: emp.welcomeEmailStatus || null,
+      welcomeEmailSentAt: emp.welcomeEmailSentAt || null,
+      welcomeEligible: emp.welcomeEligible,
+      rosterOnly: emp.rosterOnly,
+      hasUserAccount: emp.hasUserAccount,
+      hasAssociation: emp.hasAssociation,
+      corporateEmployeeRowId: emp.corporate_employee_row_id || null,
+    };
+  };
+
   const fetchEmployees = async (corporateId: number) => {
     try {
       setEmployeesLoading(true);
@@ -2422,10 +2467,27 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
       let reportedTotal: number | null = null;
 
       while (true) {
-        const response = await api.get(`/admin/corporate-employees/${numericId}`, {
-          params: { limit: pageSize, offset },
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        });
+        let response;
+        try {
+          response = await api.get(`/admin/corporate-employees/${numericId}`, {
+            params: { limit: pageSize, offset },
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          });
+        } catch (pageError: any) {
+          if (mergedEmployees.length > 0) {
+            setEmpCurrentPage(1);
+            setEmployees(mergedEmployees.map(mapEmployeeRow));
+            const partialMessage = `Loaded ${mergedEmployees.length} employees, but additional pages failed to load.`;
+            setEmployeesLoadError(partialMessage);
+            toast({
+              variant: 'destructive',
+              title: 'Partial employee list loaded',
+              description: pageError?.response?.data?.message || partialMessage,
+            });
+            return;
+          }
+          throw pageError;
+        }
 
         if (!response.data?.success || !Array.isArray(response.data?.employees)) {
           const message = response.data?.message || 'Employee list API returned an unexpected response.';
@@ -2453,50 +2515,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
 
       if (mergedEmployees.length > 0) {
         setEmpCurrentPage(1);
-        setEmployees(mergedEmployees.map((emp: any) => {
-          const meta = emp.metadata || {};
-          const firstName = emp.firstName || meta.firstName || '';
-          const lastName = emp.lastName || meta.lastName || '';
-          const employeeId = emp.user_employee_id || meta.employeeId || emp.corporate_employee_id || emp.employeeId || emp.unique_id || (emp.id ? `EMP${emp.id}` : '');
-          const userId = emp.id != null ? String(emp.id) : (emp.corporate_employee_row_id ? `ce-${emp.corporate_employee_row_id}` : employeeId);
-          return {
-            id: userId,
-            employeeId,
-            firstName,
-            lastName,
-            name: `${firstName} ${lastName}`.trim() || emp.name || employeeId || 'Unknown',
-            email: emp.email || '',
-            secondaryEmail: meta.secondaryEmail || '',
-            phone: emp.phoneNumber || meta.phoneNumber || '',
-            department: emp.department_name || meta.department || emp.department || 'Not Assigned',
-            designation: meta.designation || emp.designation || emp.ce_designation || 'Not Assigned',
-            city: emp.address_city || meta.city || '',
-            state: emp.address_state || meta.state || '',
-            pinCode: emp.address_zipCode || meta.pinCode || '',
-            location: meta.location || '',
-            facility: meta.facility || '',
-            joiningDate: emp.startDate || meta.joiningDate || '',
-            healthStatus: meta.healthStatus || emp.healthStatus || 'Not Assessed',
-            insurancePlan: emp.currentPackageName || meta.insurancePlan || 'None',
-            status: emp.status || 'active',
-            currentPackageId: emp.currentPackageId || undefined,
-            currentPackageName: emp.currentPackageName || undefined,
-            packageValidTo: emp.packageValidTo || undefined,
-            gender: emp.gender || '',
-            dateOfBirth: emp.dateOfBirth || '',
-            lastLoginAt: emp.lastLoginAt || null,
-            lastActivityAt: emp.lastActivityAt || null,
-            loginCount: emp.loginCount ?? 0,
-            requirePasswordChange: emp.requirePasswordChange ?? true,
-            welcomeEmailStatus: emp.welcomeEmailStatus || null,
-            welcomeEmailSentAt: emp.welcomeEmailSentAt || null,
-            welcomeEligible: emp.welcomeEligible,
-            rosterOnly: emp.rosterOnly,
-            hasUserAccount: emp.hasUserAccount,
-            hasAssociation: emp.hasAssociation,
-            corporateEmployeeRowId: emp.corporate_employee_row_id || null,
-          };
-        }));
+        setEmployees(mergedEmployees.map(mapEmployeeRow));
       } else {
         setEmployees([]);
       }
@@ -3822,7 +3841,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
 
   const loadWelcomeEmailTemplateLibrary = async (overrideCorporateId?: number) => {
     const token = localStorage.getItem('teamToken');
-    const corpId = overrideCorporateId ?? corporateId;
+    const corpId = overrideCorporateId ?? selectedCorporate?.id;
     try {
       const response = await api.get('/team/welcome-email-templates', {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -3923,13 +3942,13 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
       );
 
       const createdId = createResponse.data?.data?.id;
-      if (createdId) {
+      if (createdId && selectedCorporate?.id) {
         await api.put(
           '/team/welcome-email-templates/assign',
           {
             eventType: 'corporate_employee_welcome',
             templateId: createdId,
-            corporateId: corporateId,
+            corporateId: selectedCorporate.id,
           },
           {
             headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -3937,7 +3956,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
         );
       }
 
-      await loadWelcomeEmailTemplateLibrary();
+      await loadWelcomeEmailTemplateLibrary(selectedCorporate?.id);
       if (createdId) {
         setSelectedWelcomeTemplateId(`saved-${createdId}`);
       }
@@ -3960,7 +3979,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
   };
 
   const handleApproveWelcomeTemplate = async (templateId: string) => {
-    if (!templateId) return;
+    if (!templateId || !selectedCorporate?.id) return;
     const token = localStorage.getItem('teamToken');
     const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
     setApprovingWelcomeTemplate(true);
@@ -3980,7 +3999,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
         }, { headers });
         savedId = res.data?.data?.id;
         if (savedId) {
-          await loadWelcomeEmailTemplateLibrary();
+          await loadWelcomeEmailTemplateLibrary(selectedCorporate.id);
           setSelectedWelcomeTemplateId(`saved-${savedId}`);
         }
       }
@@ -3990,13 +4009,13 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
         await api.put('/team/welcome-email-templates/assign', {
           eventType: 'corporate_employee_welcome',
           templateId: savedId,
-          corporateId: corporateId,
+          corporateId: selectedCorporate.id,
         }, { headers });
         // Also assign the reminder event type to the same template for this corporate
         await api.put('/team/welcome-email-templates/assign', {
           eventType: 'corporate_employee_reminder',
           templateId: savedId,
-          corporateId: corporateId,
+          corporateId: selectedCorporate.id,
         }, { headers });
         setApprovedWelcomeTemplateId(`saved-${savedId}`);
         toast({

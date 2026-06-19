@@ -19,6 +19,7 @@ import {
   CORPORATE_EMPLOYEE_ASSOCIATION_SQL,
   CORPORATE_EMPLOYEE_ROSTER_SQL,
   mergeCorporateEmployeeRows,
+  parseMetadata,
 } from '../services/corporate-employee-list.service.js';
 import { findPriorBrevoWelcomeEmail, isBrevoHistoryConfigured } from '../services/brevo-transactional-history.service.js';
 import { encrypt, decrypt } from '../utils/encryption.js';
@@ -4620,7 +4621,7 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
       corporate_employee_row_id: e.corporate_employee_row_id || null,
       gender: e.gender || null,
       dateOfBirth: e.dateOfBirth || null,
-      metadata: typeof e.metadata === 'string' ? JSON.parse(e.metadata) : (e.metadata || {}),
+      metadata: parseMetadata(e.metadata),
     }));
 
     return res.json({
