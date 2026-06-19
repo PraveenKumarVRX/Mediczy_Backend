@@ -14,6 +14,7 @@ import {
   parseMetadata,
   CORPORATE_EMPLOYEE_ASSOCIATION_SQL,
   CORPORATE_EMPLOYEE_ROSTER_SQL,
+  CORPORATE_WELCOME_PREPARE_BULK_SQL,
 } from '../../services/corporate-employee-list.service.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -51,6 +52,10 @@ function runStaticSanityChecks() {
 
   record('association SQL joins corporate_employees', CORPORATE_EMPLOYEE_ASSOCIATION_SQL.includes('corporate_employees ce'));
   record('roster SQL reads corporate_employees', CORPORATE_EMPLOYEE_ROSTER_SQL.includes('FROM corporate_employees ce'));
+  record('welcome prepare bulk SQL exported', typeof CORPORATE_WELCOME_PREPARE_BULK_SQL === 'string' && CORPORATE_WELCOME_PREPARE_BULK_SQL.includes('corporate_employees'));
+  record('prepare-bulk uses welcome prepare SQL', adminRoute.includes('CORPORATE_WELCOME_PREPARE_BULK_SQL'));
+  record('welcome routes ensure corporate plan', adminRoute.includes('ensureCorporatePlanForWelcome'));
+  record('client surfaces bulk prepare API errors', ui.includes('lastBulkError'));
 }
 
 console.log('=== Corporate employee list smoke ===\n');

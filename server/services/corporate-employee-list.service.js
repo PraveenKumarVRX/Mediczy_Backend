@@ -179,6 +179,27 @@ export const CORPORATE_EMPLOYEE_ASSOCIATION_SQL = `
     AND ua.role = 'employee'
 `;
 
+export const CORPORATE_WELCOME_PREPARE_BULK_SQL = `
+  SELECT DISTINCT ON (u.id)
+         u.id, u.email, u."firstName", u."lastName", u.employee_id,
+         u.department_name, u.metadata AS user_metadata,
+         ua.metadata AS assoc_metadata,
+         ce."employeeId" AS corporate_employee_id
+    FROM users u
+    LEFT JOIN user_associations ua
+      ON ua."userId" = u.id
+     AND ua."entityType" = 'corporate'
+     AND ua."entityId" = :corporateId
+     AND ua.role = 'employee'
+    LEFT JOIN corporate_employees ce
+      ON ce."userId" = u.id
+     AND ce.corporate_id = :corporateId
+   WHERE u.id IN (:numericIds)
+     AND (ua.id IS NOT NULL OR ce.id IS NOT NULL)
+     AND COALESCE(TRIM(u.email), '') <> ''
+   ORDER BY u.id, ce.id DESC NULLS LAST
+`;
+
 export const CORPORATE_EMPLOYEE_ROSTER_SQL = `
   SELECT u.id, u.email, u."firstName", u."lastName", u."phoneNumber",
          u.address_city, u.address_state, u."address_zipCode",

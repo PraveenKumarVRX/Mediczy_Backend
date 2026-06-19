@@ -4144,6 +4144,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
       const allDraftRows: Array<{ userId: number; email: string; employeeId: string; draftToken?: string; draftExpiresAt?: string; deliveryId?: string | number | null; subject: string; html: string }> = [];
       const skippedTargets: string[] = [];
       const failedTargets: string[] = [];
+      let lastBulkError: string | null = null;
 
       // Use bulk-prepare: one request per 500 employees instead of N sequential /resend calls
       const employeeById = new Map(effectiveTargets.map(e => [String(e.id), e]));
@@ -4171,7 +4172,10 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
           for (const f of (data.failed || [])) {
             failedTargets.push(f.email || String(f.userId));
           }
-        } catch {
+        } catch (error: any) {
+          const apiMessage = error?.response?.data?.message || error?.response?.data?.error || error?.message;
+          if (apiMessage) lastBulkError = String(apiMessage);
+          console.error('Welcome prepare bulk chunk failed:', apiMessage || error);
           chunk.forEach(id => {
             const emp = employeeById.get(String(id));
             failedTargets.push(emp?.email || String(id));
@@ -4241,7 +4245,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
           title: skippedTargets.length > 0 && failedTargets.length === 0 ? 'No New Welcome Emails Needed' : 'Preparation failed',
           description: skippedTargets.length > 0 && failedTargets.length === 0
             ? skippedTargets.length + ' selected employee(s) already had welcome emails queued or sent.'
-            : 'Could not prepare any welcome email drafts.',
+            : (lastBulkError || 'Could not prepare any welcome email drafts.'),
         });
         return;
       }

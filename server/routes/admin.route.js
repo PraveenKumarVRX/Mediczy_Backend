@@ -18,6 +18,7 @@ import welcomeEmailService from '../services/welcome-email.service.js';
 import {
   CORPORATE_EMPLOYEE_ASSOCIATION_SQL,
   CORPORATE_EMPLOYEE_ROSTER_SQL,
+  CORPORATE_WELCOME_PREPARE_BULK_SQL,
   mergeCorporateEmployeeRows,
   parseMetadata,
 } from '../services/corporate-employee-list.service.js';
@@ -2583,7 +2584,7 @@ async function createPreparedWelcomeDraft({
   const draftPreview = await welcomeEmailService.buildCorporateEmployeeWelcomeEmail(
     welcomeEmailData,
     WELCOME_DRAFT_PASSWORD_PLACEHOLDER,
-    { teamUserId }
+    { teamUserId, corporateId }
   );
   const draftToken = createWelcomeDraftToken();
   const draftTokenHash = hashWelcomeDraftToken(draftToken);
@@ -2795,7 +2796,10 @@ async function getActiveCorporateSubscriptionPlan({ corporateId, transaction = n
        FROM subscription_plans
       WHERE type = 'CORPORATE'
         AND is_active = true
-        AND (metadata->>'corporateId')::int = :corporateId
+        AND (
+          (metadata->>'corporateId')::int = :corporateId
+          OR slug LIKE ('corp-' || CAST(:corporateId AS TEXT) || '-%')
+        )
       ORDER BY updated_at DESC, id DESC
       LIMIT 1`,
     {
@@ -2815,6 +2819,31 @@ async function requireActiveCorporatePlanOrThrow({ corporateId, transaction = nu
   }
 
   const error = new Error('No active corporate plan found. Create/activate a corporate plan before adding employees or sending welcome emails.');
+  error.statusCode = 412;
+  throw error;
+}
+
+async function ensureCorporatePlanForWelcome({ corporateId, corporate, transaction = null }) {
+  const activePlan = await getActiveCorporateSubscriptionPlan({ corporateId, transaction });
+  if (activePlan) return activePlan;
+
+  const companyName = corporate?.companyName || corporate?.name || `Corporate ${corporateId}`;
+  try {
+    const created = await createDefaultCorporatePlanForCorporate({
+      corporateId,
+      companyName,
+      employeeCount: 0,
+      transaction,
+    });
+    if (created) {
+      console.log(`[welcome-email] Auto-created default corporate plan for corporate ${corporateId}`);
+      return created;
+    }
+  } catch (bootstrapError) {
+    console.warn('[welcome-email] Default corporate plan bootstrap failed:', bootstrapError?.message || bootstrapError);
+  }
+
+  const error = new Error('No active corporate plan found. Create/activate a corporate plan before sending welcome emails.');
   error.statusCode = 412;
   throw error;
 }
@@ -3473,7 +3502,7 @@ router.post('/corporate-employee-welcome-emails/resend', authUser, requireRole([
     const { employeeId, userId, welcomeEmailMode = 'draft' } = req.body || {};
     const normalizedWelcomeEmailMode = welcomeEmailMode === 'send' ? 'send' : 'draft';
 
-    await requireActiveCorporatePlanOrThrow({ corporateId });
+    await ensureCorporatePlanForWelcome({ corporateId, corporate });
 
     if (!employeeId && !userId) {
       return res.status(400).json({ success: false, message: 'employeeId or userId is required' });
@@ -3830,7 +3859,7 @@ router.post('/corporate-employee-welcome-emails/send-reminder-bulk', authUser, r
     const corporateId = corporate.id;
     const teamUserId = req.user?.id || req.user?.userId || null;
 
-    await requireActiveCorporatePlanOrThrow({ corporateId });
+    await ensureCorporatePlanForWelcome({ corporateId, corporate });
 
     const employees = await postgresSequelize.query(
       [
@@ -3886,7 +3915,7 @@ router.post('/corporate-employee-welcome-emails/prepare-bulk', authUser, require
     const teamUserId = req.user?.id || req.user?.userId || null;
     const { userIds } = req.body || {};
 
-    await requireActiveCorporatePlanOrThrow({ corporateId });
+    await ensureCorporatePlanForWelcome({ corporateId, corporate });
 
     if (!Array.isArray(userIds) || userIds.length === 0) {
       return res.status(400).json({ success: false, message: 'userIds array is required' });
@@ -3900,46 +3929,30 @@ router.post('/corporate-employee-welcome-emails/prepare-bulk', authUser, require
       return res.status(400).json({ success: false, message: 'No valid userIds provided' });
     }
 
-    // Fetch all employees in one query
-    const employees = await postgresSequelize.query(`
-      SELECT u.id, u.email, u."firstName", u."lastName", u.employee_id,
-             u.department_name, u.metadata AS user_metadata,
-             ua.metadata AS assoc_metadata,
-             ce."employeeId" AS corporate_employee_id
-      FROM users u
-      JOIN user_associations ua ON u.id = ua."userId"
-        AND ua."entityType" = 'corporate'
-        AND ua."entityId" = :corporateId
-        AND ua.role = 'employee'
-        AND ua.status = 'active'
-      LEFT JOIN LATERAL (
-        SELECT "employeeId" FROM corporate_employees
-        WHERE "userId" = u.id AND corporate_id = :corporateId
-        ORDER BY id DESC LIMIT 1
-      ) ce ON true
-      WHERE u.id IN (:numericIds)
-    `, {
+    const employees = await postgresSequelize.query(CORPORATE_WELCOME_PREPARE_BULK_SQL, {
       replacements: { corporateId, numericIds },
       type: postgresSequelize.QueryTypes.SELECT,
     });
 
-    // Deduplicate by userId in case of any remaining JOIN fanout
-    const seen = new Set();
-    const uniqueEmployees = employees.filter(e => {
-      if (seen.has(e.id)) return false;
-      seen.add(e.id);
-      return true;
-    });
-
+    const uniqueEmployees = employees;
     const drafts = [];
     const failed = [];
     const skipped = [];
+    const employeesById = new Map(uniqueEmployees.map((employee) => [Number(employee.id), employee]));
+
+    for (const requestedId of numericIds) {
+      if (!employeesById.has(Number(requestedId))) {
+        failed.push({
+          userId: requestedId,
+          email: null,
+          reason: 'Employee not linked to this corporate or missing email',
+        });
+      }
+    }
 
     for (const employee of uniqueEmployees) {
       try {
-        const assocMeta = typeof employee.assoc_metadata === 'string'
-          ? JSON.parse(employee.assoc_metadata || '{}')
-          : (employee.assoc_metadata || {});
+        const assocMeta = parseMetadata(employee.assoc_metadata);
 
         const temporaryPassword = welcomeEmailService.generateSecurePassword();
         const resolvedEmployeeId = employee.corporate_employee_id || employee.employee_id || assocMeta.employeeId || '';
@@ -4027,7 +4040,7 @@ router.post("/corporate-employee-welcome-emails/send", authUser, requireRole(["a
     const headerIdempotencyKey = String(req.headers['x-idempotency-key'] || '').trim();
     const { emails, provider } = req.body || {};
 
-    await requireActiveCorporatePlanOrThrow({ corporateId });
+    await ensureCorporatePlanForWelcome({ corporateId, corporate });
 
     const resolvedProvider = ['ses', 'brevo'].includes(String(provider || '').toLowerCase())
       ? String(provider).toLowerCase()
