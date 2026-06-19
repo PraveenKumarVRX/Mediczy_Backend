@@ -670,6 +670,7 @@ function renderPlanBenefitsList(benefits = []) {
 
 export async function buildCorporateEmployeeWelcomeEmail(employeeData, temporaryPassword, options = {}) {
   const { email, firstName, lastName, companyName, employeeId, department } = employeeData;
+  const employeeName = `${firstName || ''} ${lastName || ''}`.trim() || firstName || 'Employee';
   const plan = formatCorporateEmployeePlan(employeeData);
   const planBenefitsHtml = renderPlanBenefitsList(plan.benefits);
   const planBenefitsText = plan.benefits.join(", " );
@@ -754,6 +755,7 @@ export async function buildCorporateEmployeeWelcomeEmail(employeeData, temporary
   const customTplEmp = await getCustomTemplate('corporate_employee_welcome', options);
   if (customTplEmp) {
     const vars = {
+      "{{employeeName}}": employeeName,
       "{{firstName}}": firstName,
       "{{lastName}}": lastName,
       "{{email}}": email,
@@ -776,7 +778,7 @@ export async function buildCorporateEmployeeWelcomeEmail(employeeData, temporary
       // Support legacy or manually-written bracket placeholders from HTML editors.
       "[First Name]": firstName,
       "[Last Name]": lastName,
-      "[Employee Name]": `${firstName || ""} ${lastName || ""}`.trim(),
+      "[Employee Name]": employeeName,
       "[Employee Email ID / Mobile Number]": loginIdentifier,
       "[Username]": loginIdentifier,
       "[User ID]": loginIdentifier,

@@ -1617,6 +1617,16 @@ const TeamCorporateManagement = () => {
     return Boolean(employee.email?.trim()) && !Number.isNaN(userId) && userId > 0;
   };
 
+  const welcomePrepareStats = useMemo(() => {
+    const eligible = employees.filter((employee) => isWelcomeEmailEligible(employee) && !hasActiveWelcomeEmailDelivery(employee)).length;
+    const alreadyWelcomed = employees.filter((employee) => isWelcomeEmailEligible(employee) && hasActiveWelcomeEmailDelivery(employee)).length;
+    return {
+      total: employees.length,
+      eligible,
+      alreadyWelcomed,
+    };
+  }, [employees]);
+
   const filteredWelcomeEmployees = useMemo(() => {
     const q = welcomeEmployeeSearch.trim().toLowerCase();
     if (!q) return employees;
@@ -4031,8 +4041,9 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
 
   const applyWelcomeTemplatePlaceholders = (template: string, employee: Employee, temporaryPassword = '') => {
     const loginIdentifier = employee.email || employee.employeeId || '-';
+    const employeeDisplayName = employee.name || `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || 'Employee';
     const replacements: Record<string, string> = {
-      employeeName: employee.name || `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || 'Employee',
+      employeeName: employeeDisplayName,
       firstName: employee.firstName || (employee.name || '').split(' ')[0] || 'Employee',
       lastName: employee.lastName || '',
       employeeId: employee.employeeId || '-',
@@ -4272,6 +4283,9 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
         const renderedHtmlTemplate = mode === 'single'
           ? normalizeTemplateForSingleEmployee(selectedTemplate.html, empForPlaceholders as Employee)
           : selectedTemplate.html;
+        const draftPasswordPreview = '[generated securely at send time]';
+        const baseSubject = row.subject || renderedSubjectTemplate;
+        const baseHtml = row.html || renderedHtmlTemplate;
         return {
           id: `prepared-${row.userId}-${draftTimestamp}-${index}`,
           to: row.email,
@@ -4283,8 +4297,8 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
           employeeName: employee
             ? (employee.name || `${employee.firstName || ''} ${employee.lastName || ''}`.trim() || row.email)
             : row.email,
-          subject: row.subject || applyWelcomeTemplatePlaceholders(renderedSubjectTemplate, empForPlaceholders as Employee),
-          html: row.html || applyWelcomeTemplatePlaceholders(renderedHtmlTemplate, empForPlaceholders as Employee),
+          subject: applyWelcomeTemplatePlaceholders(baseSubject, empForPlaceholders as Employee, draftPasswordPreview),
+          html: applyWelcomeTemplatePlaceholders(baseHtml, empForPlaceholders as Employee, draftPasswordPreview),
           status: 'draft' as const,
         };
       });
@@ -4308,9 +4322,13 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
       }
 
       addPreparedWelcomeEmailDrafts(drafts);
+      const targetCount = effectiveTargets.length;
       toast({
         title: 'Welcome drafts prepared',
-        description: drafts.length + ' draft' + (drafts.length === 1 ? '' : 's') + ' added for review' + (skippedTargets.length ? '; ' + skippedTargets.length + ' already queued/sent skipped.' : '.')
+        description: `${drafts.length} draft${drafts.length === 1 ? '' : 's'} added for review (${targetCount} targeted`
+          + (skippedTargets.length ? `; ${skippedTargets.length} already welcomed` : '')
+          + (failedTargets.length ? `; ${failedTargets.length} failed` : '')
+          + ').',
       });
     } finally {
       setPreparingWelcomeEmployeeDrafts(false);
@@ -10488,6 +10506,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
           }
           handlePrepareOrSendEmployeeWelcomeEmails(sendImmediately, mode, singleEmployeeId, singleEmployeeEmail);
         }}
+        welcomePrepareStats={welcomePrepareStats}
         onOpenChange={setShowWelcomeEmailBatchDialog}
         onDraftsChange={setWelcomeEmailDrafts}
         onSendSelected={handleSendWelcomeEmailBatch}

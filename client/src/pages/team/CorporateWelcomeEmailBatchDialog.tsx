@@ -52,6 +52,11 @@ interface CorporateWelcomeEmailBatchDialogProps {
   onSelectedTemplateChange?: (templateId: string) => void;
   onApproveTemplate?: (templateId: string) => void;
   onPrepareFromEmployees?: (args: { mode: 'single' | 'selected' | 'all'; singleEmployeeId?: string; singleEmployeeEmail?: string; sendImmediately: boolean }) => void;
+  welcomePrepareStats?: {
+    total: number;
+    eligible: number;
+    alreadyWelcomed: number;
+  };
   onOpenChange: (open: boolean) => void;
   onDraftsChange: (drafts: WelcomeEmailDraft[]) => void;
   onSendSelected: (drafts: WelcomeEmailDraft[], provider: 'auto' | 'ses' | 'brevo') => void;
@@ -83,6 +88,7 @@ export default function CorporateWelcomeEmailBatchDialog({
   onSelectedTemplateChange,
   onApproveTemplate,
   onPrepareFromEmployees,
+  welcomePrepareStats,
   onOpenChange,
   onDraftsChange,
   onSendSelected,
@@ -172,8 +178,12 @@ export default function CorporateWelcomeEmailBatchDialog({
   const allSelected = allUnsentIds.length > 0 && allUnsentIds.every((id) => selectedIds.includes(id));
   const hasDrafts = drafts.length > 0;
   const selectedEmployeeCount = selectedEmployeeIds.length;
+  const totalEmployees = welcomePrepareStats?.total ?? employees.length;
+  const eligibleEmployees = welcomePrepareStats?.eligible ?? employees.length;
+  const alreadyWelcomedEmployees = welcomePrepareStats?.alreadyWelcomed ?? Math.max(totalEmployees - eligibleEmployees, 0);
+
   const canPrepare = prepareMode === 'all'
-    ? employees.length > 0
+    ? eligibleEmployees > 0
     : prepareMode === 'selected'
       ? selectedEmployeeCount > 0
       : Boolean(singleEmployeeId);
@@ -248,8 +258,16 @@ export default function CorporateWelcomeEmailBatchDialog({
                   >
                     <option value="single">Single employee</option>
                     <option value="selected">Selected employees ({selectedEmployeeCount})</option>
-                    <option value="all">All employees ({employees.length})</option>
+                    <option value="all">
+                      All employees ({totalEmployees} total{eligibleEmployees !== totalEmployees ? `, ${eligibleEmployees} eligible` : ''})
+                    </option>
                   </select>
+                  {prepareMode === 'all' && alreadyWelcomedEmployees > 0 && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {alreadyWelcomedEmployees} already have welcome emails queued or sent and will be skipped.
+                      Only {eligibleEmployees} new draft{eligibleEmployees === 1 ? '' : 's'} can be prepared.
+                    </p>
+                  )}
                 </div>
 
                 {prepareMode === 'single' && (
