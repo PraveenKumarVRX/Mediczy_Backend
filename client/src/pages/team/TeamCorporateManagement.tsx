@@ -120,6 +120,11 @@ interface Employee {
   requirePasswordChange?: boolean;
   welcomeEmailStatus?: string | null;
   welcomeEmailSentAt?: string | null;
+  welcomeEligible?: boolean;
+  rosterOnly?: boolean;
+  hasUserAccount?: boolean;
+  hasAssociation?: boolean;
+  corporateEmployeeRowId?: number | null;
 }
 
 interface ActivationStats {
@@ -707,6 +712,8 @@ const TeamCorporateManagement = () => {
   const [savingCorporate, setSavingCorporate] = useState(false);
   const [deletingCorporate, setDeletingCorporate] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employeesLoading, setEmployeesLoading] = useState(false);
+  const [employeesLoadError, setEmployeesLoadError] = useState<string | null>(null);
   const [activationStats, setActivationStats] = useState<ActivationStats>(emptyActivationStats);
   const [activationStatsLoading, setActivationStatsLoading] = useState(false);
   const [activationStatsLastUpdatedAt, setActivationStatsLastUpdatedAt] = useState<string | null>(null);
@@ -1604,6 +1611,12 @@ const TeamCorporateManagement = () => {
     return status === 'sent' || status === 'queued';
   };
 
+  const isWelcomeEmailEligible = (employee: Employee) => {
+    if (employee.welcomeEligible === false) return false;
+    const userId = parseInt(String(employee.id), 10);
+    return Boolean(employee.email?.trim()) && !Number.isNaN(userId) && userId > 0;
+  };
+
   const filteredWelcomeEmployees = useMemo(() => {
     const q = welcomeEmployeeSearch.trim().toLowerCase();
     if (!q) return employees;
@@ -2390,11 +2403,14 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
 
   const fetchEmployees = async (corporateId: number) => {
     try {
+      setEmployeesLoading(true);
+      setEmployeesLoadError(null);
       const token = localStorage.getItem('teamToken');
       const numericId = parseInt(String(corporateId), 10);
       if (isNaN(numericId)) {
         console.error('Invalid corporate ID:', corporateId);
         setEmployees([]);
+        setEmployeesLoadError('Invalid corporate selected. Choose a corporate again and retry.');
         setActivationStats(emptyActivationStats);
         setActivationStatsLastUpdatedAt(null);
         return;
@@ -2403,6 +2419,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
       const pageSize = 500;
       let offset = 0;
       let mergedEmployees: any[] = [];
+      let reportedTotal: number | null = null;
 
       while (true) {
         const response = await api.get(`/admin/corporate-employees/${numericId}`, {
@@ -2411,14 +2428,26 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
         });
 
         if (!response.data?.success || !Array.isArray(response.data?.employees)) {
-          mergedEmployees = [];
-          break;
+          const message = response.data?.message || 'Employee list API returned an unexpected response.';
+          setEmployees([]);
+          setEmployeesLoadError(message);
+          toast({
+            variant: 'destructive',
+            title: 'Could not load employees',
+            description: message,
+          });
+          return;
+        }
+
+        if (typeof response.data.total === 'number') {
+          reportedTotal = response.data.total;
         }
 
         const batch = response.data.employees;
         mergedEmployees = [...mergedEmployees, ...batch];
 
         if (batch.length < pageSize) break;
+        if (reportedTotal != null && mergedEmployees.length >= reportedTotal) break;
         offset += batch.length;
       }
 
@@ -2428,17 +2457,19 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
           const meta = emp.metadata || {};
           const firstName = emp.firstName || meta.firstName || '';
           const lastName = emp.lastName || meta.lastName || '';
+          const employeeId = emp.user_employee_id || meta.employeeId || emp.corporate_employee_id || emp.employeeId || emp.unique_id || (emp.id ? `EMP${emp.id}` : '');
+          const userId = emp.id != null ? String(emp.id) : (emp.corporate_employee_row_id ? `ce-${emp.corporate_employee_row_id}` : employeeId);
           return {
-            id: emp.id?.toString() || emp.uid,
-            employeeId: emp.user_employee_id || meta.employeeId || emp.employeeId || emp.unique_id || `EMP${emp.id}`,
+            id: userId,
+            employeeId,
             firstName,
             lastName,
-            name: `${firstName} ${lastName}`.trim() || emp.name || 'Unknown',
+            name: `${firstName} ${lastName}`.trim() || emp.name || employeeId || 'Unknown',
             email: emp.email || '',
             secondaryEmail: meta.secondaryEmail || '',
             phone: emp.phoneNumber || meta.phoneNumber || '',
             department: emp.department_name || meta.department || emp.department || 'Not Assigned',
-            designation: meta.designation || emp.designation || 'Not Assigned',
+            designation: meta.designation || emp.designation || emp.ce_designation || 'Not Assigned',
             city: emp.address_city || meta.city || '',
             state: emp.address_state || meta.state || '',
             pinCode: emp.address_zipCode || meta.pinCode || '',
@@ -2459,14 +2490,28 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
             requirePasswordChange: emp.requirePasswordChange ?? true,
             welcomeEmailStatus: emp.welcomeEmailStatus || null,
             welcomeEmailSentAt: emp.welcomeEmailSentAt || null,
+            welcomeEligible: emp.welcomeEligible,
+            rosterOnly: emp.rosterOnly,
+            hasUserAccount: emp.hasUserAccount,
+            hasAssociation: emp.hasAssociation,
+            corporateEmployeeRowId: emp.corporate_employee_row_id || null,
           };
         }));
       } else {
         setEmployees([]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to fetch employees:', error);
+      const message = error?.response?.data?.message || error?.message || 'Failed to load employees for this corporate.';
       setEmployees([]);
+      setEmployeesLoadError(message);
+      toast({
+        variant: 'destructive',
+        title: 'Could not load employees',
+        description: message,
+      });
+    } finally {
+      setEmployeesLoading(false);
     }
   };
 
@@ -4018,11 +4063,11 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
     }
 
     if (mode === 'all') {
-      return employees.filter((employee) => employee.email && !hasActiveWelcomeEmailDelivery(employee));
+      return employees.filter((employee) => isWelcomeEmailEligible(employee) && !hasActiveWelcomeEmailDelivery(employee));
     }
 
     const selected = new Set(selectedEmployeeIdsForWelcome);
-    return employees.filter((employee) => selected.has(employee.id) && employee.email && !hasActiveWelcomeEmailDelivery(employee));
+    return employees.filter((employee) => selected.has(employee.id) && isWelcomeEmailEligible(employee) && employee.email && !hasActiveWelcomeEmailDelivery(employee));
   };
 
   const handlePrepareOrSendEmployeeWelcomeEmails = async (
@@ -6095,7 +6140,10 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                         </p>
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {selectedEmployeeIdsForWelcome.length} selected of {employees.length}
+                        {selectedEmployeeIdsForWelcome.length} selected of {employees.filter(isWelcomeEmailEligible).length} welcome-ready
+                        {employees.length !== employees.filter(isWelcomeEmailEligible).length
+                          ? ` (${employees.length} total loaded)`
+                          : ''}
                       </div>
                     </div>
 
@@ -6108,10 +6156,26 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                           placeholder="Search by employee ID, name, email, department, or designation"
                         />
                       </div>
-                      <div className="text-xs text-muted-foreground flex items-end">
-                        {filteredWelcomeEmployees.length} matched employee{filteredWelcomeEmployees.length === 1 ? '' : 's'}
+                      <div className="flex items-end justify-between gap-2 text-xs text-muted-foreground">
+                        <span>
+                          {employeesLoading
+                            ? 'Loading employees...'
+                            : `${filteredWelcomeEmployees.length} matched employee${filteredWelcomeEmployees.length === 1 ? '' : 's'}`}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => selectedCorporate?.id && fetchEmployees(selectedCorporate.id)}
+                          disabled={!selectedCorporate?.id || employeesLoading}
+                        >
+                          Refresh
+                        </Button>
                       </div>
                     </div>
+                    {employeesLoadError && (
+                      <p className="text-xs text-red-600 dark:text-red-400">{employeesLoadError}</p>
+                    )}
                   </div>
 
                   <Table>
@@ -6119,9 +6183,9 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                       <TableRow>
                         <TableHead className="w-[44px]">
                           <Checkbox
-                            checked={filteredWelcomeEmployees.filter((employee) => !hasActiveWelcomeEmailDelivery(employee)).length > 0 && filteredWelcomeEmployees.filter((employee) => !hasActiveWelcomeEmailDelivery(employee)).every((employee) => selectedEmployeeIdsForWelcome.includes(employee.id))}
+                            checked={filteredWelcomeEmployees.filter((employee) => isWelcomeEmailEligible(employee) && !hasActiveWelcomeEmailDelivery(employee)).length > 0 && filteredWelcomeEmployees.filter((employee) => isWelcomeEmailEligible(employee) && !hasActiveWelcomeEmailDelivery(employee)).every((employee) => selectedEmployeeIdsForWelcome.includes(employee.id))}
                             onCheckedChange={(checked) => {
-                              const filteredIds = filteredWelcomeEmployees.filter((employee) => !hasActiveWelcomeEmailDelivery(employee)).map((employee) => employee.id);
+                              const filteredIds = filteredWelcomeEmployees.filter((employee) => isWelcomeEmailEligible(employee) && !hasActiveWelcomeEmailDelivery(employee)).map((employee) => employee.id);
                               if (checked === true) {
                                 setSelectedEmployeeIdsForWelcome((current) => Array.from(new Set([...current, ...filteredIds])));
                               } else {
@@ -6144,10 +6208,14 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                     <TableBody>
                       {filteredWelcomeEmployees.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                            {employees.length === 0
-                              ? 'No employees found. Click "Add Employee" or "Bulk Upload" to add employees.'
-                              : 'No employees match this search. Try employee ID (for example NC25654).'}
+                          <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                            {employeesLoading
+                              ? 'Loading employees for this corporate...'
+                              : employeesLoadError
+                                ? `Could not load employees: ${employeesLoadError}`
+                                : employees.length === 0
+                                  ? 'No employees found. Click "Add Employee" or "Bulk Upload" to add employees, or use Refresh if you recently imported a roster.'
+                                  : 'No employees match this search. Try employee ID (for example NC25654).'}
                           </TableCell>
                         </TableRow>
                       ) : (
@@ -6155,10 +6223,10 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                           <TableRow key={emp.id}>
                             <TableCell>
                               <Checkbox
-                                checked={!hasActiveWelcomeEmailDelivery(emp) && selectedEmployeeIdsForWelcome.includes(emp.id)}
-                                disabled={hasActiveWelcomeEmailDelivery(emp)}
+                                checked={isWelcomeEmailEligible(emp) && !hasActiveWelcomeEmailDelivery(emp) && selectedEmployeeIdsForWelcome.includes(emp.id)}
+                                disabled={hasActiveWelcomeEmailDelivery(emp) || !isWelcomeEmailEligible(emp)}
                                 onCheckedChange={(checked) => {
-                                  if (hasActiveWelcomeEmailDelivery(emp)) return;
+                                  if (hasActiveWelcomeEmailDelivery(emp) || !isWelcomeEmailEligible(emp)) return;
                                   setSelectedEmployeeIdsForWelcome((current) => {
                                     if (checked === true) return [...new Set([...current, emp.id])];
                                     return current.filter((id) => id !== emp.id);
@@ -6168,7 +6236,17 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                               />
                             </TableCell>
                             <TableCell>{emp.employeeId}</TableCell>
-                            <TableCell className="font-medium">{emp.name}</TableCell>
+                            <TableCell className="font-medium">
+                              <div className="flex flex-col gap-1">
+                                <span>{emp.name}</span>
+                                {emp.rosterOnly && (
+                                  <Badge variant="outline" className="w-fit text-[10px]">Roster only — create/login account to email</Badge>
+                                )}
+                                {!emp.rosterOnly && !isWelcomeEmailEligible(emp) && (
+                                  <Badge variant="outline" className="w-fit text-[10px]">Missing email for welcome send</Badge>
+                                )}
+                              </div>
+                            </TableCell>
                             <TableCell>{emp.email}</TableCell>
                             <TableCell>{emp.department}</TableCell>
                             <TableCell>{emp.designation}</TableCell>

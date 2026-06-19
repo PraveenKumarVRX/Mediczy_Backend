@@ -15,6 +15,11 @@ import Nurse from '../models/nurse.model.intelligent.js';
 import Assistant from '../models/assistant.model.intelligent.js';
 import { Op } from 'sequelize';
 import welcomeEmailService from '../services/welcome-email.service.js';
+import {
+  CORPORATE_EMPLOYEE_ASSOCIATION_SQL,
+  CORPORATE_EMPLOYEE_ROSTER_SQL,
+  mergeCorporateEmployeeRows,
+} from '../services/corporate-employee-list.service.js';
 import { findPriorBrevoWelcomeEmail, isBrevoHistoryConfigured } from '../services/brevo-transactional-history.service.js';
 import { encrypt, decrypt } from '../utils/encryption.js';
 import { checkQuota, recordSent, getQuotaStatus } from '../utils/emailQuota.js';
@@ -4587,62 +4592,41 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
     const numericCorporateId = req.resolvedCorporate.id;
 
     const { limit: qLimit = 5000, offset: qOffset = 0 } = req.query;
-    const employees = await postgresSequelize.query(`
-      SELECT u.id, u.email, u."firstName", u."lastName", u."phoneNumber",
-             u.address_city, u.address_state, u."address_zipCode",
-             u.department_name, u.employee_id AS user_employee_id,
-             u.gender, u."dateOfBirth",
-             ua.metadata, ua.status, ua."startDate",
-             uhp."packageId" AS "currentPackageId",
-             uhp."packageName" AS "currentPackageName",
-             uhp."validTo" AS "packageValidTo",
-             u."lastLoginAt",
-             u."lastActivityAt",
-             u."loginCount",
-             (u.metadata->>'requirePasswordChange')::boolean AS "requirePasswordChange",
-             wd.status AS "welcomeEmailStatus",
-             wd.updated_at AS "welcomeEmailSentAt"
-      FROM users u
-      JOIN user_associations ua ON u.id = ua."userId"
-      LEFT JOIN LATERAL (
-        SELECT "packageId", "packageName", "validTo"
-        FROM user_health_packages
-        WHERE "userId" = u.id AND corporate_id = :corporateId AND status = 'active'
-        ORDER BY "validTo" DESC LIMIT 1
-      ) uhp ON true
-      LEFT JOIN LATERAL (
-        SELECT status, updated_at
-        FROM corporate_welcome_email_deliveries
-        WHERE corporate_id = :corporateId
-          AND LOWER(recipient_email) = LOWER(u.email)
-          AND COALESCE(metadata->>'source', '') <> 'brevo_transactional_history'
-          AND status IN ('queued', 'sent')
-        ORDER BY CASE WHEN status = 'sent' THEN 0 ELSE 1 END, updated_at DESC LIMIT 1
-      ) wd ON true
-      WHERE ua."entityType" = 'corporate'
-        AND ua."entityId" = :corporateId
-        AND ua.role = 'employee'
-      ORDER BY u."firstName"
-      LIMIT :limit OFFSET :offset
-    `, {
-      replacements: { corporateId: numericCorporateId, limit: Math.min(parseInt(qLimit) || 5000, 5000), offset: parseInt(qOffset) || 0 },
-      type: postgresSequelize.QueryTypes.SELECT,
-      benchmark: true,
-    });
-    
+    const limit = Math.min(parseInt(qLimit, 10) || 5000, 5000);
+    const offset = parseInt(qOffset, 10) || 0;
+
+    const [associationRows, rosterRows] = await Promise.all([
+      postgresSequelize.query(CORPORATE_EMPLOYEE_ASSOCIATION_SQL, {
+        replacements: { corporateId: numericCorporateId },
+        type: postgresSequelize.QueryTypes.SELECT,
+        benchmark: true,
+      }),
+      postgresSequelize.query(CORPORATE_EMPLOYEE_ROSTER_SQL, {
+        replacements: { corporateId: numericCorporateId },
+        type: postgresSequelize.QueryTypes.SELECT,
+        benchmark: true,
+      }),
+    ]);
+
+    const merged = mergeCorporateEmployeeRows(associationRows, rosterRows);
+    const employees = merged.slice(offset, offset + limit).map((e) => ({
+      ...e,
+      address_city: e.address_city || null,
+      address_state: e.address_state || null,
+      address_zipCode: e.address_zipCode || null,
+      department_name: e.department_name || null,
+      user_employee_id: e.user_employee_id || null,
+      corporate_employee_id: e.corporate_employee_id || null,
+      corporate_employee_row_id: e.corporate_employee_row_id || null,
+      gender: e.gender || null,
+      dateOfBirth: e.dateOfBirth || null,
+      metadata: typeof e.metadata === 'string' ? JSON.parse(e.metadata) : (e.metadata || {}),
+    }));
+
     return res.json({
       success: true,
-      employees: employees.map(e => ({
-        ...e,
-        address_city: e.address_city || null,
-        address_state: e.address_state || null,
-        address_zipCode: e.address_zipCode || null,
-        department_name: e.department_name || null,
-        user_employee_id: e.user_employee_id || null,
-        gender: e.gender || null,
-        dateOfBirth: e.dateOfBirth || null,
-        metadata: typeof e.metadata === 'string' ? JSON.parse(e.metadata) : e.metadata
-      }))
+      total: merged.length,
+      employees,
     });
   } catch (error) {
     console.error('Failed to get corporate employees:', error);
