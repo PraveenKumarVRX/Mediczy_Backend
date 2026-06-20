@@ -905,14 +905,16 @@ router.get("/:doctorId/user-slots", async (req, res) => {
     const slotDuration = doctor.slotDuration || 30;
     const weeklySchedule = normalizeWeeklySchedule(doctor.weeklySchedule);
     const practiceLocations = doctor.practiceLocations || [];
+    const offDays = (doctor.offDays || ['sunday']).map((d) => String(d).toLowerCase());
 
     // If date is provided, get slots for that specific day
     if (date) {
       const requestedDate = new Date(date);
       const dayName = requestedDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-      const daySchedule = weeklySchedule[dayName];
+      const daySchedule = weeklySchedule?.[dayName];
+      const isOffDay = offDays.includes(dayName) || daySchedule?.isOff === true || daySchedule?.isAvailable === false;
 
-      if (!daySchedule || daySchedule.isOff) {
+      if (!daySchedule || isOffDay) {
         return res.json({
           success: true,
           date,

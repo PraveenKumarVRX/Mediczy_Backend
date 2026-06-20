@@ -59,6 +59,16 @@ const normalizeWeeklySchedule = (rawSchedule) => {
   return weeklySchedule;
 };
 
+const deriveOffDaysFromSchedule = (weeklySchedule = {}) => {
+  return Object.keys(DEFAULT_WEEKLY_SCHEDULE).filter((day) => weeklySchedule[day]?.isOff === true);
+};
+
+const mergeOffDays = (storedOffDays, weeklySchedule) => {
+  const fromSchedule = deriveOffDaysFromSchedule(weeklySchedule);
+  const stored = Array.isArray(storedOffDays) ? storedOffDays.map((d) => String(d).toLowerCase()) : [];
+  return [...new Set([...stored, ...fromSchedule])];
+};
+
 const hasGoogleVerifiedClinicLocation = (doctor) => {
   const clinicAddress = typeof doctor?.clinicAddress === 'string' ? doctor.clinicAddress.trim() : '';
   const clinicAddressJson = doctor?.clinicAddress_json && typeof doctor.clinicAddress_json === 'object'
@@ -113,13 +123,14 @@ router.get('/appointment-config', authUser, async (req, res) => {
 
     const weeklySchedule = normalizeWeeklySchedule(doctor.weeklySchedule);
     const practiceLocations = normalizeJsonValue(doctor.practiceLocations, []);
+    const offDays = mergeOffDays(doctor.offDays, weeklySchedule);
 
     res.json({
       success: true,
       config: {
         slotDuration: doctor.slotDuration || 15,
         weeklySchedule: weeklySchedule,
-        offDays: doctor.offDays || ['sunday'],
+        offDays,
         onlineConsultationEnabled: doctor.onlineConsultationEnabled ?? true,
         inPersonConsultationEnabled: doctor.inPersonConsultationEnabled ?? true,
         onlineConsultationFee: doctor.onlineConsultationFee || doctor.consultationFees || 500,
@@ -245,7 +256,12 @@ router.put('/appointment-config', authUser, [
 
     // Update fields
     if (slotDuration !== undefined) doctor.slotDuration = slotDuration;
-    if (weeklySchedule !== undefined) doctor.weeklySchedule = weeklySchedule;
+    if (weeklySchedule !== undefined) {
+      doctor.weeklySchedule = weeklySchedule;
+      if (offDays === undefined) {
+        doctor.offDays = deriveOffDaysFromSchedule(weeklySchedule);
+      }
+    }
     if (offDays !== undefined) doctor.offDays = offDays;
     if (onlineConsultationEnabled !== undefined) doctor.onlineConsultationEnabled = onlineConsultationEnabled;
     if (inPersonConsultationEnabled !== undefined) doctor.inPersonConsultationEnabled = inPersonConsultationEnabled;
@@ -445,7 +461,7 @@ router.put('/off-days', authUser, [
           inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' }
         };
       }
-      weeklySchedule[day].isOff = offDays.includes(day);
+      weeklySchedule[day].isOff = offDays.map((d) => String(d).toLowerCase()).includes(day);
     });
     doctor.weeklySchedule = weeklySchedule;
     

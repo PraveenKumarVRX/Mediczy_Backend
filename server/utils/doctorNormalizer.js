@@ -85,7 +85,7 @@ export function normalizeWeeklySchedule(raw) {
     const entry = raw[day] ?? raw[titleDay];
 
     if (!entry || typeof entry !== 'object') {
-      normalized[day] = { isAvailable: false, startTime: null, endTime: null, slots: [] };
+      normalized[day] = { isOff: true, isAvailable: false, startTime: null, endTime: null, slots: [], blockedSlots: [] };
       continue;
     }
 
@@ -104,12 +104,14 @@ export function normalizeWeeklySchedule(raw) {
       ]);
 
       normalized[day] = {
-        isAvailable: !isOff && (ip.isAvailable !== false || ol.isAvailable !== false),
+        isOff,
+        isAvailable: !isOff && (ip.enabled !== false || ol.enabled !== false || ip.isAvailable !== false || ol.isAvailable !== false),
         startTime:   allStarts.length ? allStarts.reduce((a, b) => a < b ? a : b) : null,
         endTime:     allEnds.length   ? allEnds.reduce((a, b)   => a > b ? a : b) : null,
         slots:       Array.from(slotSet).sort(),
         inPerson:    ip,
         online:      ol,
+        blockedSlots: Array.isArray(entry.blockedSlots) ? entry.blockedSlots : [],
       };
     } else {
       // Format A: { available, startTime, endTime, slots }
