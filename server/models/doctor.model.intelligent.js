@@ -504,7 +504,37 @@ const doctorModel = {
 
         return true;
       });
-  }
+  },
+
+  /**
+   * Persist uploaded doctor media URL to the correct column/JSONB field.
+   * profilePicture → doctors.profileImage
+   * digitalSignature / medicalSeal / clinicImage → templateSettings
+   */
+  updateMedia: async (doctorId, mediaType, url) => {
+    const doctor = await Doctor.findByPk(doctorId);
+    if (!doctor) {
+      throw new Error('Doctor not found');
+    }
+
+    if (mediaType === 'profilePicture') {
+      doctor.profileImage = url;
+      await doctor.save();
+      return doctor;
+    }
+
+    const templateSettings = parseJsonField(doctor.templateSettings, {});
+    const templateFieldMap = {
+      digitalSignature: 'signature',
+      medicalSeal: 'seal',
+      clinicImage: 'clinicLogo',
+    };
+    const settingsKey = templateFieldMap[mediaType] || mediaType;
+    templateSettings[settingsKey] = url;
+    doctor.templateSettings = templateSettings;
+    await doctor.save();
+    return doctor;
+  },
 };
 
 export default doctorModel;

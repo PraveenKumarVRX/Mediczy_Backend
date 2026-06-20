@@ -241,6 +241,10 @@ export function normalizeDoctorProfile(raw) {
 
   doc.verificationStatus = normalizeVerificationStatus(doc);
 
+  // Canonical profile photo field — DB column is profileImage; some clients expect profilePicture
+  doc.profileImage = doc.profileImage || doc.profilePicture || null;
+  doc.profilePicture = doc.profileImage;
+
   return doc;
 }
 
