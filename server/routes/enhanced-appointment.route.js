@@ -12,6 +12,12 @@ import Appointment from '../models/appointment.model.intelligent.js';
 import usageMeteringService from '../services/usage-metering.service.js';
 import notificationService from '../services/notification.service.js';
 import tenantPartnerService from '../services/tenant-partner.service.js';
+import {
+  canonicalizeAppointmentTime,
+  findSlotConflict,
+  normalizeTimeHHMM,
+} from '../utils/appointmentSlotTime.js';
+import { checkDoctorConflict, checkPatientConflict } from '../services/appointmentEligibility.service.js';
 
 const router = express.Router();
 
@@ -39,13 +45,6 @@ const normalizeSymptoms = (value) => {
     .split(/[,\n;]+/)
     .map((entry) => entry.trim())
     .filter(Boolean);
-};
-
-const normalizeTimeHHMM = (value = '') => {
-  const trimmed = String(value || '').trim();
-  if (/^([01]\d|2[0-3]):[0-5]\d$/.test(trimmed)) return trimmed;
-  if (/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(trimmed)) return trimmed.slice(0, 5);
-  return trimmed;
 };
 
 const normalizeEnhancedConsultationType = (value) => {
@@ -308,6 +307,8 @@ router.post('/book', authUser, [
       });
     }
 
+    const canonicalStartTime = canonicalizeAppointmentTime(startTime.trim());
+
     const slotAvailable = dayAvailability.slots.some(slot => 
       slot.startTime <= startTime && 
       slot.endTime >= endTime && 
@@ -321,19 +322,13 @@ router.post('/book', authUser, [
       });
     }
 
-    // Check if doctor has an appointment at this time (prevent doctor double-booking)
-    const doctorConflict = await Appointment.findOne({
-      where: {
-        doctorId: resolvedDoctorId,
-        appointmentDate,
-        appointmentTime: startTime,
-        status: {
-          [Op.notIn]: ['cancelled', 'no-show']
-        }
-      }
-    });
+    const doctorConflictResult = await checkDoctorConflict(
+      resolvedDoctorId,
+      appointmentDate,
+      canonicalStartTime
+    );
 
-    if (doctorConflict) {
+    if (doctorConflictResult.conflict) {
       return res.status(409).json({
         success: false,
         message: `Dr. ${doctor.firstName} ${doctor.lastName} (ID: ${doctor.unique_id || doctor.id}) is not available at the selected time. The time slot is already booked by another patient. Please select a different time slot.`,
@@ -343,25 +338,15 @@ router.post('/book', authUser, [
       });
     }
 
-    // Check if patient has an appointment at this time (prevent patient double-booking)
-    const patientConflict = await Appointment.findOne({
-      where: {
-        userId: req.user.id,
-        appointmentDate,
-        appointmentTime: startTime,
-        status: {
-          [Op.notIn]: ['cancelled', 'no-show']
-        }
-      }
-    });
+    const patientConflictResult = await checkPatientConflict(
+      req.user.id,
+      appointmentDate,
+      canonicalStartTime
+    );
 
-    if (patientConflict) {
-      const conflictDoctor = await doctorModel.findByPk(patientConflict.doctorId, {
-        attributes: ['firstName', 'lastName', 'specialization', 'prefix']
-      });
-      const conflictDoctorName = conflictDoctor 
-        ? `${conflictDoctor.prefix || 'Dr.'} ${conflictDoctor.firstName} ${conflictDoctor.lastName} (${conflictDoctor.specialization})`
-        : 'another doctor';
+    if (patientConflictResult.conflict) {
+      const conflictDoctorName = patientConflictResult.conflictDoctorName || 'another doctor';
+      const patientConflict = patientConflictResult.existingAppointment;
 
       return res.status(409).json({
         success: false,
