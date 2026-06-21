@@ -1,9 +1,28 @@
 # 📚 HOSPITAL VALIDATION PACKAGE - DOCUMENT INDEX
 
 **Hospital:** Dhyan Health Care (Kovilpatti & Kalugumalai)  
-**Date:** January 9, 2026  
-**Total Documents:** 6 comprehensive validation documents  
-**Reading Time:** 30-60 minutes (all documents)
+**Date:** January 9, 2026 (updated 2026-06-17)  
+**Total Documents:** 7+ comprehensive validation & implementation documents  
+**Reading Time:** 30-90 minutes (all documents)
+
+---
+
+## 🆕 GREENFIELD IMPLEMENTATION BACKLOG (June 2026)
+
+### **GREENFIELD_HOSPITAL_GAPS_IMPLEMENTATION.md** ⭐ FOR ENGINEERING & DELIVERY
+**Read Time:** 45 minutes  
+**Audience:** CTO, PM, BA, Engineering, QA, Security, Delivery  
+**Purpose:** Master gap register + phased implementation plan for new hospital deployments
+
+**Sections:**
+- P0/P1/P2 gap IDs with owners and acceptance criteria
+- Architecture context (hospital portal vs HMIS stack)
+- Migration runbook, QA gates, sign-off checklist
+- Phase 0–4 implementation timeline
+
+**When to use:** Before any greenfield hospital go-live; reference gap IDs in PRs (e.g. `GAP-ARCH-002`)
+
+**Path:** `docs/hospital/GREENFIELD_HOSPITAL_GAPS_IMPLEMENTATION.md`
 
 ---
 
