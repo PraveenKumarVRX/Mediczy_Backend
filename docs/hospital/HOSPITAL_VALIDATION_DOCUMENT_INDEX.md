@@ -33,6 +33,7 @@
 - P0/P1/P2 gap IDs with owners and acceptance criteria
 - Architecture context (hospital portal vs HMIS stack)
 - Smart Hospital OS + paperless kiosk gaps (KIOSK, DISPLAY, VIDEO, HOS, IOT)
+- **Smart queue management** (QUEUE-001–008): unified engine, SSE, predictive wait, notifications
 - Migration runbook, QA gates, sign-off checklist
 - Phase 0–4 + Display OS phases (1b, 2a–2c, 3b)
 

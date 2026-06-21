@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | **Document ID** | MED-HOSP-GAP-001 |
-| **Version** | 1.2 |
+| **Version** | 1.3 |
 | **Date** | 2026-06-17 |
 | **Owner** | AI CTO |
 | **Audience** | PM, BA, Engineering, QA, Security, Delivery |
@@ -45,8 +45,9 @@ Each gap has: **ID, priority, owner role, current state, target state, files, im
 | Smart displays (info boards, clinical walls) | 25% | **No** |
 | Video-ready displays (bedside, ER, ICU, OT) | 10% | **No** |
 | Hospital OS control plane (devices, CMS, command) | 20% | **No** |
+| Smart queue management (unified, real-time, predictive) | 20% | **No** |
 
-**Weighted overall:** ~55/100 (clinical core strong; campus display OS immature)
+**Weighted overall:** ~54/100 (clinical core strong; campus display + queue OS immature)
 
 ### 2.2 Verdict
 
@@ -54,7 +55,8 @@ Each gap has: **ID, priority, owner role, current state, target state, files, im
 |-----------------|--------|
 | Phased greenfield: OPD + insurance + pharmacy + lab | **Yes** (Phase 1) |
 | Paperless lobby: QR check-in + walk-in self-registration | **After KIOSK-001–005** (Phase 1b) |
-| Smart hospital info displays (queue, signage, dept boards) | **After DISPLAY-001 + HOS-001** (Phase 2a) |
+| Smart hospital info displays (queue, signage, dept boards) | **After DISPLAY-001 + QUEUE-002** (Phase 2a) |
+| Smart queue (unified engine, SSE, predictive wait) | **After QUEUE-001–002** (Phase 1b/2a) |
 | Clinical display walls (ER, ICU, OT, ward) + MQTT vitals | **After DISPLAY-003 + IOT-001** (Phase 2b) |
 | Video-call ready surfaces (bedside, ER booth, family) | **After VIDEO-001–003** (Phase 3) |
 | IPD pilot (10–30 beds) using HMIS routes | **After Phase 0 + Phase 2** |
@@ -180,6 +182,22 @@ Full vision: **`docs/hospital/SMART_HOSPITAL_OS_VISION.md`**
 
 **Display taxonomy (extended):** Types A–D per kiosk plan + **E (video booth)** + **F (command centre)**. Rule: Type D (bedside) and E must ship with camera + LiveKit join.
 
+### 3.3 Smart queue management (fragmented today)
+
+Patient queue is the **connective tissue** between kiosk check-in, doctor EMR, and wall displays. Today it is **split across three implementations** that do not talk to each other:
+
+| System | Path | Problem |
+|--------|------|---------|
+| `QueueEntry` | `/api/doctor/queue/*`, `QueueManagementPanel.tsx` | Doctor-only; not linked to kiosk or displays |
+| `checkin_tokens` | `hospital-display.route.js` | Kiosk tokens isolated from doctor queue |
+| `queue_tokens` | `GET /api/display/queue` | Referenced but no migration; demo fallback; `avgWaitMins: 12` hardcoded |
+
+`OPDQueueDisplay` polls every **15 s**; doctor panel polls every **30 s**. No SSE `token_called` event ties them together.
+
+**Target:** One `hospital_queue_entries` service (GAP-QUEUE-001) with priority rules, predictive wait (GAP-QUEUE-003), SSE push (GAP-QUEUE-002), and proactive patient notify (GAP-QUEUE-006). Full spec: **`SMART_HOSPITAL_OS_VISION.md` §5**.
+
+**Dependency rule:** GAP-KIOSK-005 and GAP-DISPLAY-001 require GAP-QUEUE-001 for production.
+
 ---
 
 ## 4. Master gap register
@@ -250,6 +268,14 @@ Full vision: **`docs/hospital/SMART_HOSPITAL_OS_VISION.md`**
 | GAP-VIDEO-005 | P2 | OT remote expert / proctoring video channel | Frontend + Backend | 4 | Open |
 | GAP-IOT-001 | P1 | MQTT vitals → SSE bridge for ICU/ER displays | Backend + DevOps | 2 | Open |
 | GAP-IOT-002 | P2 | Ambient deterioration alerts on ward/ICU displays | AI + Backend | 4 | Open |
+| GAP-QUEUE-001 | P0 | Unified hospital queue service (merge 3 queue implementations) | Backend | 1 | Open |
+| GAP-QUEUE-002 | P0 | Real-time queue SSE events (displays + doctor panel) | Backend + Frontend | 2 | Open |
+| GAP-QUEUE-003 | P1 | Predictive wait-time engine (per-doctor ML / historical) | Backend + AI | 3 | Open |
+| GAP-QUEUE-004 | P1 | Priority rules engine (ESI, appointment, walk-in, VIP) | Backend + BA | 2 | Open |
+| GAP-QUEUE-005 | P1 | Multi-counter load balancing | Backend | 2 | Open |
+| GAP-QUEUE-006 | P1 | Proactive patient queue notifications (WhatsApp/SMS/push) | Backend | 3 | Open |
+| GAP-QUEUE-007 | P1 | Front-desk queue console (call, reorder, transfer, no-show) | Frontend + Backend | 2 | Open |
+| GAP-QUEUE-008 | P2 | Queue analytics dashboard (P50/P90 wait, utilisation, SLA) | Backend + Frontend | 4 | Open |
 
 ---
 
@@ -1112,6 +1138,180 @@ Response: { patientId, uhid, token_number, eReceiptQrPayload }
 
 ---
 
+### GAP-QUEUE-001 — Unified hospital queue service
+
+| | |
+|---|---|
+| **Owner** | Backend |
+| **Phase** | 1b (minimal) → 2a (full) |
+| **Current** | Three disconnected implementations: `QueueEntry` (Sequelize), `checkin_tokens`, `queue_tokens` (no migration) |
+| **Target** | Single `hospital_queue_entries` table + `server/services/hospital-queue.service.js` as source of truth for all departments |
+
+**Schema (proposed)**
+
+```sql
+CREATE TABLE hospital_queue_entries (
+  id SERIAL PRIMARY KEY,
+  organization_id UUID NOT NULL,
+  department VARCHAR(40) NOT NULL,  -- opd, er, pharmacy, lab, radiology
+  token_number VARCHAR(20) NOT NULL,
+  queue_zone VARCHAR(80),           -- OPD-MAIN, OPD-DR1, PHARMACY-1
+  patient_id INTEGER REFERENCES users(id),
+  appointment_id INTEGER,
+  doctor_id INTEGER,
+  counter_id VARCHAR(40),
+  queue_type VARCHAR(30),           -- scheduled, walk_in, urgent, emergency
+  triage_level VARCHAR(20),         -- ESI-1..5
+  priority_score INTEGER DEFAULT 50,
+  status VARCHAR(30) DEFAULT 'waiting',
+  estimated_wait_minutes INTEGER,
+  check_in_at TIMESTAMPTZ DEFAULT NOW(),
+  called_at TIMESTAMPTZ,
+  serving_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  no_show_at TIMESTAMPTZ,
+  metadata JSONB DEFAULT '{}'
+);
+CREATE INDEX idx_hqe_org_dept_status ON hospital_queue_entries(organization_id, department, status);
+CREATE UNIQUE INDEX idx_hqe_token_day ON hospital_queue_entries(organization_id, department, token_number, (check_in_at::date));
+```
+
+**API (proposed)**
+
+```
+POST   /api/v1/queue/check-in          -- kiosk, front desk, appointment arrival
+PATCH  /api/v1/queue/:id/call          -- staff/doctor call next
+PATCH  /api/v1/queue/:id/start         -- consultation / service started
+PATCH  /api/v1/queue/:id/complete
+PATCH  /api/v1/queue/:id/no-show
+GET    /api/v1/queue/board?zone=       -- display board aggregate
+GET    /api/v1/queue/my?doctorId=      -- doctor panel (replaces /api/doctor/queue)
+```
+
+**Migration steps**
+
+1. Create migration + `hospital-queue.service.js`.
+2. Port logic from `queue-management.route.js` into service; mount at `/api/v1/queue`.
+3. Redirect kiosk `issue-token` to create `hospital_queue_entries` row (deprecate `checkin_tokens`).
+4. Rewrite `GET /api/display/queue` to read from service (deprecate `queue_tokens`).
+5. Data migration script: copy existing `QueueEntry` rows if table populated.
+6. Deprecation headers on `/api/doctor/queue/*` for 90 days.
+
+**Acceptance criteria**
+
+- [ ] Kiosk token appears on doctor queue panel within 1 s
+- [ ] Single token sequence per department per day per tenant
+- [ ] `organization_id` enforced on all queue operations
+- [ ] No demo fallback in production
+
+**Blocks** | GAP-KIOSK-005, GAP-DISPLAY-001, GAP-QUEUE-002
+
+---
+
+### GAP-QUEUE-002 — Real-time queue SSE events
+
+| | |
+|---|---|
+| **Owner** | Backend + Frontend |
+| **Phase** | 2a |
+| **Current** | `OPDQueueDisplay` polls every 15 s; `QueueManagementPanel` polls every 30 s; kiosk push uses `new-token` only |
+| **Target** | SSE events on every queue state change; displays and doctor panel subscribe |
+
+**SSE events**
+
+| Event | Payload | Subscribers |
+|-------|---------|-------------|
+| `queue_token_issued` | token, zone, eta | OPD board, counter display |
+| `queue_token_called` | token, counter, doctor | OPD board + TTS, door panel, patient push |
+| `queue_token_serving` | token, room | Doctor desk display |
+| `queue_token_completed` | token | Analytics |
+| `queue_updated` | zone snapshot | Board refresh |
+
+**Implementation steps**
+
+1. Extend `hospital-display.route.js` SSE broker with queue events from `hospital-queue.service.js`.
+2. `OPDQueueDisplay`: subscribe via `useDisplaySSE`; remove 15 s poll (keep 60 s health poll).
+3. `QueueManagementPanel`: subscribe to doctor-filtered SSE or WebSocket.
+4. TTS trigger on `queue_token_called` only (not on poll diff).
+
+**Acceptance criteria**
+
+- [ ] Token called on doctor panel → wall board updates in < 1 s
+- [ ] Audio TTS fires once per call (no duplicate on poll)
+- [ ] SSE reconnect restores current queue snapshot
+
+**Dependencies** | GAP-QUEUE-001, GAP-HOS-001
+
+---
+
+### GAP-QUEUE-003 — Predictive wait-time engine
+
+| | |
+|---|---|
+| **Owner** | Backend + AI |
+| **Phase** | 3 |
+| **Current** | `estimatedWaitMinutes = queueLength × 20` in `queue-management.route.js` |
+| **Target** | Per-doctor rolling consult duration + queue depth + time-of-day factor |
+
+**Formula (v1):** `eta = f(doctor_id, queue_depth, triage_priority, historical_p50_consult_minutes)`
+
+**Acceptance criteria**
+
+- [ ] ETA shown on kiosk e-receipt and OPD board within ±5 min P50 on staging backtest
+- [ ] ETA recalculates on every `queue_updated` event
+
+---
+
+### GAP-QUEUE-004 — Priority rules engine
+
+| | |
+|---|---|
+| **Owner** | Backend + BA |
+| **Phase** | 2b |
+| **Target** | Configurable rules per hospital: ESI-1 always first; scheduled appointments within 15 min of slot bump priority; elderly/VIP flags |
+
+**Acceptance criteria**
+
+- [ ] Rules stored per `organization_id`; changes audit-logged
+- [ ] ER queue sorted by ESI then arrival time
+
+---
+
+### GAP-QUEUE-005 — Multi-counter load balancing
+
+| | |
+|---|---|
+| **Owner** | Backend |
+| **Phase** | 2a |
+| **Target** | Walk-in check-in auto-assigns to shortest open counter in zone |
+
+---
+
+### GAP-QUEUE-006 — Proactive patient notifications
+
+| | |
+|---|---|
+| **Owner** | Backend |
+| **Phase** | 3 |
+| **Target** | WhatsApp/SMS/push when patient is N positions away and when called |
+
+**Acceptance criteria**
+
+- [ ] Patient opts in at kiosk check-in; DPDP consent logged
+- [ ] "You are being called" notification < 3 s after doctor calls
+
+---
+
+### GAP-QUEUE-007 — Front-desk queue console
+
+| | |
+|---|---|
+| **Owner** | Frontend + Backend |
+| **Phase** | 2a |
+| **Target** | Staff UI at `/hospital/queue-console`: view all counters, call next, drag reorder, transfer, no-show |
+
+---
+
 ## 6. P1 gaps — detailed implementation
 
 ### GAP-IPD-001 — Ward master data CRUD API
@@ -1319,6 +1519,7 @@ Use `server/routes/nabh-jci.route.js` to upload checkpoint evidence per hospital
 | GAP-HOS-002 | Digital twin / live floor map | Bed/OT/ER occupancy on 2D map |
 | GAP-HOS-003 | AI voice wayfinding | Lobby kiosk natural-language directions |
 | GAP-IOT-002 | Ambient deterioration alerts on displays | NEWS2 threshold → highlight bed on ward/ICU wall |
+| GAP-QUEUE-008 | Queue analytics dashboard | P50/P90 wait, no-show %, doctor utilisation, SLA breach |
 
 ---
 
@@ -1369,6 +1570,7 @@ Use `server/routes/nabh-jci.route.js` to upload checkpoint evidence per hospital
 | Work items | Gap IDs |
 |------------|---------|
 | Harden check-in APIs (no demo data) | KIOSK-005 |
+| **Unified queue service (kiosk → doctor → display)** | **QUEUE-001** |
 | QR entry on kiosk (ABHA + appointment + deep link) | KIOSK-001 |
 | Walk-in registration API + UHID + token | KIOSK-003 |
 | Kiosk ABHA (device token, OTP limits) | KIOSK-004 |
@@ -1404,7 +1606,9 @@ Use `server/routes/nabh-jci.route.js` to upload checkpoint evidence per hospital
 | Work items | Gap IDs |
 |------------|---------|
 | Hospital OS control plane (device enroll, CMS) | HOS-001 |
-| OPD queue board on live data + SSE | DISPLAY-001 |
+| OPD queue board on live data + SSE | DISPLAY-001, **QUEUE-002** |
+| **Front-desk queue console** | **QUEUE-007** |
+| **Multi-counter load balancing** | **QUEUE-005** |
 | Lobby / corridor signage | DISPLAY-001, HOS-001 |
 | Pharmacy / lab / blood bank boards | DISPLAY-001 |
 | Display device provisioning in greenfield playbook | TEN-003, HOS-001 |
@@ -1417,7 +1621,7 @@ Use `server/routes/nabh-jci.route.js` to upload checkpoint evidence per hospital
 
 | Work items | Gap IDs |
 |------------|---------|
-| ER triage + public waiting displays | DISPLAY-003, IPD-005 |
+| ER triage + public waiting displays | DISPLAY-003, IPD-005, **QUEUE-004** |
 | ICU / OT / ward staff boards on HMIS data | DISPLAY-003 |
 | MQTT vitals → SSE bridge | IOT-001 |
 
@@ -1455,6 +1659,7 @@ Use `server/routes/nabh-jci.route.js` to upload checkpoint evidence per hospital
 | Work items | Gap IDs |
 |------------|---------|
 | Video SDK embedded in DisplayShell | VIDEO-001 |
+| **Predictive wait + patient queue notifications** | **QUEUE-003, QUEUE-006** |
 | Bedside + family lounge video consult | VIDEO-003 |
 | ER tele-triage video booth | VIDEO-002 |
 | ICU tele-intensivist overlay (optional) | VIDEO-004 |
@@ -1517,9 +1722,9 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 |------|------|----------|
 | **G0** | Before any prod PHI | MIG-001–005, TEN-004, QA-002, CMP-001 |
 | **G1** | Phase 1 go-live | Insurance E2E manual script; OPD booking works; no placeholder routes used |
-| **G1b** | Paperless lobby (Phase 1b) | KIOSK-005 smoke green; walk-in registration E2E; ABHA QR on staging; consent logged |
+| **G1b** | Paperless lobby (Phase 1b) | KIOSK-005 smoke green; **QUEUE-001** kiosk→doctor link; walk-in E2E; consent logged |
 | **G2** | IPD pilot start | QA-001 pass; ARCH-001 redirects live; ward seed exists |
-| **G2a** | Smart info displays | HOS-001 devices enrolled; DISPLAY-001 queue SSE live |
+| **G2a** | Smart info displays | HOS-001 devices enrolled; **QUEUE-002** SSE < 1 s; DISPLAY-001 live |
 | **G2b** | Clinical display walls | DISPLAY-003 + IOT-001; ICU vitals on board |
 | **G2c** | Interactive care | DISPLAY-002 nurse call E2E; DISPLAY-004 family board |
 | **G3** | IPD production | ARCH-004 complete; BIL-003 discharge billing; IPD-004 optional |
@@ -1565,6 +1770,7 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 | SaMD software governance | 22/27 scorecard items |
 | Display/kiosk layer (plan + partial check-in) | `docs/hospital/MEDIQZY_DISPLAY_KIOSK_PLAN.md`, `/kiosk/checkin`, `SelfCheckinKiosk.tsx` |
 | Smart Hospital OS vision | `docs/hospital/SMART_HOSPITAL_OS_VISION.md` |
+| Doctor queue API (per-doctor only — merge into QUEUE-001) | `queue-management.route.js`, `QueueManagementPanel.tsx` |
 | Display pages (scaffold) | `client/src/pages/display/*` — queue, ICU, OT, ward, bedside |
 | SSE + emergency shell | `DisplayShell.tsx`, `hospital-display.route.js` |
 | LiveKit video (web consult — not displays yet) | `videoProvider.js`, `DoctorVideoConsultation.tsx` |
@@ -1579,6 +1785,7 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 | Walk-in patient at kiosk | KIOSK-003 |
 | ABHA at kiosk without staff login | KIOSK-004 |
 | Production-hardened check-in APIs | KIOSK-005 |
+| Unified smart queue (kiosk + doctor + display) | QUEUE-001–008 |
 | Video on hospital displays | VIDEO-001–005 |
 | Clinical walls on live HMIS/MQTT data | DISPLAY-003, IOT-001 |
 | Hospital OS control plane (CMS, command) | HOS-001, DISPLAY-005 |
