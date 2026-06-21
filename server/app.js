@@ -169,6 +169,7 @@ import roadmapIntelligenceRouter from './routes/roadmap-intelligence.route.js';
 import hospitalDisplayRouter from './routes/hospital-display.route.js';
 import hospitalQueueRouter from './routes/hospital-queue.route.js';
 import displayKioskRouter from './routes/display-kiosk.route.js';
+import abdmKioskRouter from './routes/abdm-kiosk.route.js';
 import emrRouter from './routes/emr.route.js';
 import healthDiaryRouter from './routes/health-diary.route.js';
 import healthIntelligenceRouter from './routes/health-intelligence.route.js';
@@ -256,6 +257,7 @@ import hypergridConnectorRouter    from './routes/hypergrid-connector.route.js';
 import hypergridEdgeRouter         from './routes/hypergrid-edge.route.js';
 import hypergridMarketplaceRouter  from './routes/hypergrid-marketplace.route.js';
 import { startMqttBroker }         from './services/hypergrid-mqtt.service.js';
+import { startDisplayMqttBridge }  from './services/display-mqtt-bridge.service.js';
 import { initEventBus }            from './services/hypergrid-event-bus.service.js';
 import { startDeviceAlarmBridge }  from './services/device-alarm-bridge.service.js';
 import { initTerminologyService }  from './services/hypergrid-terminology.service.js';
@@ -478,7 +480,7 @@ app.use(passport.initialize());
 
 // Create upload directories for doctor media
 import fs from 'fs';
-const uploadDirs = ['./uploads', './uploads/doctors', './uploads/temp', './uploads/chat', './uploads/imaging'];
+const uploadDirs = ['./uploads', './uploads/doctors', './uploads/temp', './uploads/chat', './uploads/imaging', './uploads/kiosk'];
 uploadDirs.forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -515,6 +517,7 @@ initTerminologyService().catch(err => console.warn('⚠️  HyperGrid terminolog
 if (process.env.DISABLE_MQTT !== 'true') {
   startMqttBroker().catch(err => console.warn('⚠️  HyperGrid MQTT broker init failed:', err.message));
   startDeviceAlarmBridge().catch(err => console.warn('⚠️  Device alarm bridge init failed:', err.message));
+  startDisplayMqttBridge().catch(err => console.warn('⚠️  Display MQTT vitals bridge init failed:', err.message));
 }
 
 // Initialize compliance schedulers (GDPR/DPDP/HIPAA)
@@ -1334,6 +1337,7 @@ app.use('/api/payroll', payrollRouter);
 app.use('/api/roadmap-intelligence', roadmapIntelligenceRouter);
 app.use('/api/display', hospitalDisplayRouter);
 app.use('/api/display/kiosk', displayKioskRouter);
+app.use('/api/abdm/kiosk', abdmKioskRouter);
 app.use('/api/v1/queue', hospitalQueueRouter);
 app.use("/api/emr", emrRouter); // EMR folder per user — accessible by team members
 app.use("/api/health-diary", healthDiaryRouter); // Patient health journal and diary entries

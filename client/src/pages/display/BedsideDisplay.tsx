@@ -211,6 +211,26 @@ export default function BedsideDisplay() {
           <div className="bg-gray-800/60 border border-gray-700 rounded-2xl p-4">
             <h3 className="text-sm font-semibold text-gray-300 mb-2 uppercase tracking-widest">Need Help?</h3>
             <NurseCallButton />
+            <button
+              type="button"
+              className="w-full py-3 mt-3 bg-teal-800 hover:bg-teal-700 rounded-xl text-sm font-semibold"
+              onClick={async () => {
+                const ward = new URLSearchParams(window.location.search).get('ward') || 'ward';
+                await fetch('/api/display/video/sessions', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    sessionType: 'bedside-consult',
+                    targetZone: ward,
+                    bedId: bed,
+                    patientId: data.patient_name,
+                    role: 'patient',
+                  }),
+                });
+              }}
+            >
+              📹 Video consult
+            </button>
           </div>
 
           {/* Entertainment placeholder */}

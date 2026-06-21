@@ -1,7 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import DisplayShell from './DisplayShell';
+import KioskQrScanner from '@/components/display/KioskQrScanner';
+import KioskPhotoCapture from '@/components/display/KioskPhotoCapture';
 
-type Step = 'idle' | 'choose' | 'enter-phone' | 'walk-in' | 'select-appointment' | 'confirm' | 'token-issued';
+type Step =
+  | 'idle'
+  | 'choose'
+  | 'scan-qr'
+  | 'enter-phone'
+  | 'walk-in'
+  | 'walk-in-photo'
+  | 'abha-flow'
+  | 'select-appointment'
+  | 'confirm'
+  | 'token-issued';
 
 interface Appointment {
   id: string;
@@ -50,6 +62,11 @@ export default function SelfCheckinKiosk() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [consent, setConsent] = useState(false);
+  const [notifyOptIn, setNotifyOptIn] = useState(true);
+  const [photoKey, setPhotoKey] = useState<string | null>(null);
+  const [abhaId, setAbhaId] = useState<string | null>(null);
+  const [abhaOtp, setAbhaOtp] = useState('');
+  const [abhaTxnId, setAbhaTxnId] = useState<string | null>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const resetToIdle = useCallback(() => {
@@ -61,6 +78,11 @@ export default function SelfCheckinKiosk() {
     setToken(null);
     setError(null);
     setConsent(false);
+    setNotifyOptIn(true);
+    setPhotoKey(null);
+    setAbhaId(null);
+    setAbhaOtp('');
+    setAbhaTxnId(null);
   }, []);
 
   const resetIdleTimer = useCallback(() => {
@@ -78,6 +100,106 @@ export default function SelfCheckinKiosk() {
     if (d === 'DEL') { setPhone(p => p.slice(0, -1)); return; }
     if (phone.length >= 10) return;
     setPhone(p => p + d);
+  };
+
+  const handleQrScan = async (payload: string) => {
+    setStep('choose');
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/display/kiosk/parse-qr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payload }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setError(json.message || 'Could not read QR code.');
+        return;
+      }
+      if (json.nextStep === 'confirm-appointment' && json.appointment) {
+        setSelected({
+          id: String(json.appointment.id),
+          appointment_date: json.appointment.appointment_date,
+          appointment_time: json.appointment.appointment_time,
+          doctor_name: json.appointment.doctor_name,
+          specialty: json.appointment.specialty,
+          patient_name: json.appointment.patient_name,
+          status: json.appointment.status,
+        });
+        setStep('confirm');
+      } else if (json.nextStep === 'walk-in-register') {
+        setStep('walk-in');
+      } else if (json.nextStep === 'abha-lookup') {
+        setStep('abha-flow');
+      } else if (json.nextStep === 'token-lookup') {
+        setError(`Token ${json.token || ''} — please see the counter.`);
+      } else {
+        setError('QR recognized. Use appointment or walk-in flow.');
+      }
+    } catch (_) {
+      setError('Connection error while reading QR.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const uploadPhoto = async (blob: Blob) => {
+    const form = new FormData();
+    form.append('photo', blob, 'kiosk-photo.jpg');
+    const res = await fetch('/api/display/kiosk/photo', { method: 'POST', body: form });
+    const json = await res.json();
+    if (json.success) setPhotoKey(json.photoKey);
+    setStep('walk-in');
+  };
+
+  const startAbha = async () => {
+    if (phone.length < 10) {
+      setError('Enter 10-digit mobile for ABHA OTP.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/abdm/kiosk/abha/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mobile: phone, name: reg.firstName || 'Patient' }),
+      });
+      const json = await res.json();
+      if (json.success && json.txnId) {
+        setAbhaTxnId(json.txnId);
+      } else {
+        setError(json.message || 'ABHA initiation failed.');
+      }
+    } catch (_) {
+      setError('ABHA service unavailable.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyAbha = async () => {
+    if (!abhaTxnId || !abhaOtp) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/abdm/kiosk/abha/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ txnId: abhaTxnId, otp: abhaOtp, mobile: phone }),
+      });
+      const json = await res.json();
+      if (json.success && json.abhaNumber) {
+        setAbhaId(json.abhaNumber);
+        setStep('walk-in');
+      } else {
+        setError(json.message || 'OTP verification failed.');
+      }
+    } catch (_) {
+      setError('ABHA verification failed.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const lookupAppointments = async () => {
@@ -161,6 +283,10 @@ export default function SelfCheckinKiosk() {
           gender: reg.gender,
           chiefComplaint: reg.chiefComplaint,
           consentVersion: 'kiosk-v1',
+          photoKey,
+          abhaId,
+          notifyOptIn,
+          notifyPhone: phone,
         }),
       });
       const json = await res.json();
@@ -187,6 +313,10 @@ export default function SelfCheckinKiosk() {
 
   return (
     <DisplayShell zone="opd-counter" zoneName="Self Check-in" fullscreen>
+      {step === 'scan-qr' && (
+        <KioskQrScanner onScan={handleQrScan} onClose={() => setStep('choose')} />
+      )}
+
       <div className="h-full flex flex-col items-center justify-center p-8 select-none" onClick={step === 'idle' ? () => setStep('choose') : undefined}>
 
         {step === 'idle' && (
@@ -200,8 +330,10 @@ export default function SelfCheckinKiosk() {
         {step === 'choose' && (
           <div className="w-full max-w-lg space-y-4">
             <h2 className="text-3xl font-bold text-center mb-8">How would you like to proceed?</h2>
+            <button onClick={() => { setStep('scan-qr'); resetIdleTimer(); }} className="w-full py-6 bg-purple-800 hover:bg-purple-700 rounded-2xl text-2xl font-bold">📷 Scan QR Code</button>
             <button onClick={() => { setStep('enter-phone'); resetIdleTimer(); }} className="w-full py-6 bg-teal-700 hover:bg-teal-600 rounded-2xl text-2xl font-bold">📅 I have an appointment</button>
             <button onClick={() => { setStep('walk-in'); resetIdleTimer(); }} className="w-full py-6 bg-blue-800 hover:bg-blue-700 rounded-2xl text-2xl font-bold">🆕 Walk-in (new visit)</button>
+            <button onClick={() => { setStep('abha-flow'); resetIdleTimer(); }} className="w-full py-5 bg-indigo-900 hover:bg-indigo-800 rounded-2xl text-xl font-bold">🪪 Link ABHA</button>
             <button onClick={resetToIdle} className="w-full py-3 text-gray-500 text-sm">Cancel</button>
           </div>
         )}
@@ -225,6 +357,13 @@ export default function SelfCheckinKiosk() {
           </div>
         )}
 
+        {step === 'walk-in-photo' && (
+          <KioskPhotoCapture
+            onCapture={uploadPhoto}
+            onSkip={() => setStep('walk-in')}
+          />
+        )}
+
         {step === 'walk-in' && (
           <div className="w-full max-w-md space-y-4">
             <h2 className="text-2xl font-bold text-center">Walk-in Registration</h2>
@@ -236,14 +375,44 @@ export default function SelfCheckinKiosk() {
               onChange={e => setReg(r => ({ ...r, lastName: e.target.value }))} />
             <input className="w-full p-4 rounded-xl bg-gray-800 border border-gray-700" placeholder="Chief complaint" value={reg.chiefComplaint}
               onChange={e => setReg(r => ({ ...r, chiefComplaint: e.target.value }))} />
+            {abhaId && <p className="text-teal-300 text-sm">ABHA linked: {abhaId}</p>}
+            {photoKey && <p className="text-gray-400 text-sm">Photo captured ✓</p>}
             <label className="flex items-start gap-3 text-sm text-gray-300">
               <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-1" />
               I consent to processing my data for registration and queue management (DPDP kiosk-v1).
             </label>
+            <label className="flex items-start gap-3 text-sm text-gray-300">
+              <input type="checkbox" checked={notifyOptIn} onChange={e => setNotifyOptIn(e.target.checked)} className="mt-1" />
+              Send WhatsApp/SMS queue updates to my mobile.
+            </label>
             {error && <p className="text-red-400 text-sm">{error}</p>}
+            <button type="button" onClick={() => setStep('walk-in-photo')} className="w-full py-3 bg-gray-700 rounded-xl text-sm">📷 Add photo (optional)</button>
             <button onClick={submitWalkIn} disabled={loading} className="w-full py-4 bg-teal-600 rounded-2xl text-xl font-bold disabled:opacity-50">
               {loading ? 'Registering…' : 'Register & Get Token'}
             </button>
+            <button onClick={() => setStep('choose')} className="w-full py-3 text-gray-500 text-sm">← Back</button>
+          </div>
+        )}
+
+        {step === 'abha-flow' && (
+          <div className="w-full max-w-md space-y-4">
+            <h2 className="text-2xl font-bold text-center">ABHA Registration</h2>
+            <input className="w-full p-4 rounded-xl bg-gray-800 border border-gray-700" placeholder="Mobile (10 digits)" value={phone}
+              onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} />
+            {!abhaTxnId ? (
+              <button onClick={startAbha} disabled={loading} className="w-full py-4 bg-indigo-700 rounded-2xl font-bold">
+                {loading ? 'Sending OTP…' : 'Send ABHA OTP'}
+              </button>
+            ) : (
+              <>
+                <input className="w-full p-4 rounded-xl bg-gray-800 border border-gray-700" placeholder="Enter OTP" value={abhaOtp}
+                  onChange={e => setAbhaOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} />
+                <button onClick={verifyAbha} disabled={loading} className="w-full py-4 bg-teal-600 rounded-2xl font-bold">
+                  {loading ? 'Verifying…' : 'Verify & Continue'}
+                </button>
+              </>
+            )}
+            {error && <p className="text-red-400 text-sm">{error}</p>}
             <button onClick={() => setStep('choose')} className="w-full py-3 text-gray-500 text-sm">← Back</button>
           </div>
         )}

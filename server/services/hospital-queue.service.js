@@ -5,6 +5,7 @@
 
 import pool from '../db/pgPool.js';
 import { pushQueueEvent, pushToZone } from './display-sse-broker.service.js';
+import * as queueNotify from './queue-notify.service.js';
 
 const DEPT_PREFIX = { opd: 'A', pharmacy: 'P', lab: 'L', er: 'ER', radiology: 'R' };
 const ESI_PRIORITY = {
@@ -54,31 +55,92 @@ export async function nextTokenNumber(organizationId, department = 'opd') {
   return `${prefix}-${String(seq).padStart(3, '0')}`;
 }
 
-export async function estimateWaitMinutes({ organizationId, doctorId, department = 'opd' }) {
+export async function estimateWaitMinutes({ organizationId, doctorId, department = 'opd', entryId }) {
   await ensureQueueTables();
   const org = defaultOrgId(organizationId);
-  const waiting = await pool.query(
-    `SELECT COUNT(*)::int AS c FROM hospital_queue_entries
-     WHERE organization_id = $1 AND department = $2 AND status IN ('waiting','called')
-       AND ($3::int IS NULL OR doctor_id = $3) AND check_in_at::date = CURRENT_DATE`,
-    [org, department, doctorId || null]
-  );
-  const depth = waiting.rows[0]?.c || 0;
+  const stats = await getConsultDurationStats(org, doctorId, department);
 
-  let avgConsult = 15;
-  if (doctorId) {
-    const hist = await pool.query(
-      `SELECT AVG(actual_wait_minutes)::float AS avg_wait,
-              AVG(EXTRACT(EPOCH FROM (completed_at - serving_at))/60)::float AS avg_consult
-       FROM hospital_queue_entries
-       WHERE organization_id = $1 AND doctor_id = $2 AND status = 'completed'
-         AND completed_at::date >= CURRENT_DATE - INTERVAL '7 days'`,
-      [org, doctorId]
+  let position = 0;
+  if (entryId) {
+    const entry = await getEntryById(entryId, org);
+    if (entry) {
+      const ahead = await pool.query(
+        `SELECT COUNT(*)::int AS c FROM hospital_queue_entries
+         WHERE organization_id = $1 AND department = $2 AND status IN ('waiting','called')
+           AND check_in_at::date = CURRENT_DATE
+           AND (priority_score > $3 OR (priority_score = $3 AND check_in_at < $4))`,
+        [org, department, entry.priorityScore, entry.checkInAt]
+      );
+      position = ahead.rows[0]?.c || 0;
+    }
+  } else {
+    const waiting = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM hospital_queue_entries
+       WHERE organization_id = $1 AND department = $2 AND status IN ('waiting','called')
+         AND ($3::int IS NULL OR doctor_id = $3) AND check_in_at::date = CURRENT_DATE`,
+      [org, department, doctorId || null]
     );
-    if (hist.rows[0]?.avg_consult) avgConsult = Math.max(8, Math.round(hist.rows[0].avg_consult));
+    position = waiting.rows[0]?.c || 0;
   }
 
-  return Math.max(5, depth * avgConsult);
+  const hour = new Date().getHours();
+  const peakFactor = hour >= 9 && hour <= 12 ? 1.15 : hour >= 17 && hour <= 20 ? 1.1 : 1.0;
+  const p50 = stats.p50Consult || 15;
+  const estimate = Math.round(position * p50 * peakFactor);
+  return Math.max(5, estimate);
+}
+
+async function getConsultDurationStats(organizationId, doctorId, department = 'opd') {
+  const params = [organizationId];
+  let doctorFilter = '';
+  if (doctorId) {
+    params.push(doctorId);
+    doctorFilter = ' AND doctor_id = $2';
+  }
+  const { rows } = await pool.query(
+    `SELECT
+       COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (completed_at - serving_at))/60), 15) AS p50,
+       COALESCE(PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (completed_at - serving_at))/60), 22) AS p90,
+       COUNT(*)::int AS sample_size
+     FROM hospital_queue_entries
+     WHERE organization_id = $1 AND status = 'completed'
+       AND serving_at IS NOT NULL AND completed_at IS NOT NULL
+       AND completed_at::date >= CURRENT_DATE - INTERVAL '14 days'
+       ${doctorFilter}`,
+    params
+  );
+  const r = rows[0] || {};
+  return {
+    p50Consult: Math.max(8, Math.round(parseFloat(r.p50) || 15)),
+    p90Consult: Math.max(10, Math.round(parseFloat(r.p90) || 22)),
+    sampleSize: r.sample_size || 0,
+  };
+}
+
+export async function getHospitalQueueAnalytics(organizationId) {
+  await ensureQueueTables();
+  const org = defaultOrgId(organizationId);
+  const { rows } = await pool.query(
+    `SELECT
+       department,
+       COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
+       COUNT(*) FILTER (WHERE status = 'no_show')::int AS no_show,
+       COUNT(*) FILTER (WHERE status IN ('waiting','called','serving'))::int AS active,
+       COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY actual_wait_minutes) FILTER (WHERE status = 'completed'), 0) AS p50_wait,
+       COALESCE(PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY actual_wait_minutes) FILTER (WHERE status = 'completed'), 0) AS p90_wait,
+       COALESCE(AVG(EXTRACT(EPOCH FROM (completed_at - serving_at))/60) FILTER (WHERE status = 'completed'), 0) AS avg_consult_min
+     FROM hospital_queue_entries
+     WHERE organization_id = $1 AND check_in_at::date = CURRENT_DATE
+     GROUP BY department`,
+    [org]
+  );
+  const totals = await pool.query(
+    `SELECT COUNT(*)::int AS total_today,
+            COUNT(*) FILTER (WHERE status = 'completed')::int AS completed_today
+     FROM hospital_queue_entries WHERE organization_id = $1 AND check_in_at::date = CURRENT_DATE`,
+    [org]
+  );
+  return { byDepartment: rows, totals: totals.rows[0] || {}, generatedAt: new Date().toISOString() };
 }
 
 export async function assignCounter(organizationId, queueZone) {
@@ -137,7 +199,15 @@ export async function checkIn({
     ]
   );
   const entry = mapRow(rows[0]);
-  pushQueueEvent(queueZone, 'queue_token_issued', { entry, board: await getBoardSnapshot({ organizationId: org, queueZone }) });
+  const board = await getBoardSnapshot({ organizationId: org, queueZone });
+  pushQueueEvent(queueZone, 'queue_token_issued', { entry, board });
+
+  const meta = typeof entry.metadata === 'object' ? entry.metadata : {};
+  if (meta.notifyOptIn && meta.notifyPhone) {
+    queueNotify.notifyQueueCheckIn({ ...entry, notifyOptIn: true }, meta.notifyPhone).catch(() => {});
+  }
+  queueNotify.refreshPositionNotifications(org, queueZone).catch(() => {});
+
   return entry;
 }
 
@@ -189,10 +259,15 @@ export async function callNext({ doctorId, organizationId, entryId }) {
     [entry.id]
   );
   const updated = mapRow(rows[0]);
-  pushQueueEvent(updated.queueZone, 'queue_token_called', {
-    entry: updated,
-    board: await getBoardSnapshot({ organizationId: org, queueZone: updated.queueZone }),
-  });
+  const board = await getBoardSnapshot({ organizationId: org, queueZone: updated.queueZone });
+  pushQueueEvent(updated.queueZone, 'queue_token_called', { entry: updated, board });
+
+  const meta = updated.metadata || {};
+  if (meta.notifyPhone) {
+    queueNotify.notifyTokenCalled(updated, meta.notifyPhone).catch(() => {});
+  }
+  queueNotify.refreshPositionNotifications(org, updated.queueZone).catch(() => {});
+
   return updated;
 }
 
@@ -295,6 +370,7 @@ export async function getBoardSnapshot({ organizationId, queueZone, department, 
   const waiting = entries.filter((e) => e.status === 'waiting').length;
 
   const avgWait = await estimateWaitMinutes({ organizationId: org, doctorId, department });
+  const durationStats = await getConsultDurationStats(org, doctorId, department);
 
   return {
     current: current ? {
@@ -307,9 +383,38 @@ export async function getBoardSnapshot({ organizationId, queueZone, department, 
     next: next.map((e) => ({ token: e.tokenNumber, counter: e.counterId || '' })),
     waiting,
     avgWaitMins: avgWait,
+    waitEstimate: {
+      p50ConsultMins: durationStats.p50Consult,
+      p90ConsultMins: durationStats.p90Consult,
+      sampleSize: durationStats.sampleSize,
+    },
     live: true,
     entries,
   };
+}
+
+export function parseKioskQrPayload(raw) {
+  const payload = String(raw || '').trim();
+  if (!payload) return { type: 'unknown', raw: '' };
+  try {
+    const parsed = payload.startsWith('{') ? JSON.parse(payload) : null;
+    if (parsed?.type === 'appointment' && (parsed.id || parsed.appointmentId)) {
+      return { type: 'appointment', appointmentId: parsed.id || parsed.appointmentId };
+    }
+    if (parsed?.type === 'walk-in' || parsed?.type === 'register') {
+      return { type: 'walk-in', department: parsed.dept || parsed.department || 'opd' };
+    }
+    if (parsed?.uhid || parsed?.token) {
+      return { type: 'token', uhid: parsed.uhid, token: parsed.token };
+    }
+  } catch (_) {}
+  if (payload.includes('abha') || /^[\d-]{10,}$/.test(payload)) {
+    return { type: 'abha', healthId: payload };
+  }
+  if (/^A-\d+/i.test(payload) || /^[A-Z]+-\d+/i.test(payload)) {
+    return { type: 'token', token: payload };
+  }
+  return { type: 'manual', raw: payload.slice(0, 200) };
 }
 
 export async function allocateUhid(organizationId) {
@@ -396,4 +501,7 @@ export default {
   createNurseCall,
   listCmsSlides,
   estimateWaitMinutes,
+  getHospitalQueueAnalytics,
+  getConsultDurationStats,
+  parseKioskQrPayload,
 };

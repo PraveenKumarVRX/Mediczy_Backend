@@ -13,19 +13,27 @@ interface QueueEntry {
   queueType: string;
 }
 
+interface QueueAnalytics {
+  byDepartment: Array<{ department: string; completed: number; active: number; p50_wait: number; p90_wait: number }>;
+  totals: { total_today?: number; completed_today?: number };
+}
+
 export default function QueueConsole() {
   const [entries, setEntries] = useState<QueueEntry[]>([]);
+  const [analytics, setAnalytics] = useState<QueueAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const zone = new URLSearchParams(window.location.search).get('zone') || 'opd-waiting';
 
   const fetchConsole = useCallback(async () => {
     try {
       const token = localStorage.getItem('token') || localStorage.getItem('staffToken');
-      const res = await fetch(`/api/v1/queue/console?zone=${encodeURIComponent(zone)}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch(`/api/v1/queue/console?zone=${encodeURIComponent(zone)}`, { headers });
       const json = await res.json();
       if (json.success && json.entries) setEntries(json.entries);
+      const aRes = await fetch('/api/v1/queue/analytics/hospital', { headers });
+      const aJson = await aRes.json();
+      if (aJson.success) setAnalytics(aJson.analytics);
     } catch (_) {}
     finally { setLoading(false); }
   }, [zone]);
@@ -52,6 +60,18 @@ export default function QueueConsole() {
     <DisplayShell zone={zone} zoneName="Queue Console" fullscreen={false}>
       <div className="p-6 max-w-6xl mx-auto">
         <h1 className="text-2xl font-bold text-teal-300 mb-4">Smart Queue Console — {zone}</h1>
+        {analytics && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            <div className="bg-gray-800 rounded-xl p-3"><p className="text-xs text-gray-500">Today total</p><p className="text-2xl font-bold">{analytics.totals?.total_today ?? 0}</p></div>
+            <div className="bg-gray-800 rounded-xl p-3"><p className="text-xs text-gray-500">Completed</p><p className="text-2xl font-bold text-green-400">{analytics.totals?.completed_today ?? 0}</p></div>
+            {(analytics.byDepartment || []).slice(0, 2).map((d) => (
+              <div key={d.department} className="bg-gray-800 rounded-xl p-3">
+                <p className="text-xs text-gray-500 uppercase">{d.department} p50/p90 wait</p>
+                <p className="text-lg font-bold">{Math.round(d.p50_wait || 0)}m / {Math.round(d.p90_wait || 0)}m</p>
+              </div>
+            ))}
+          </div>
+        )}
         {loading ? <p className="text-gray-400">Loading…</p> : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

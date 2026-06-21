@@ -206,4 +206,14 @@ router.get('/analytics', authDoctor, async (req, res) => {
   }
 });
 
+router.get('/analytics/hospital', authUser, async (req, res) => {
+  try {
+    const org = orgFromReq(req) || parseInt(req.query.organizationId || '1', 10);
+    const analytics = await queue.getHospitalQueueAnalytics(org);
+    res.json({ success: true, analytics });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
 export default router;

@@ -852,6 +852,9 @@ const BloodBankDisplay       = lazy(() => import("@/pages/display/BloodBankDispl
 const OTStatusDisplay        = lazy(() => import("@/pages/display/OTStatusDisplay"));
 const WardNursingDisplay     = lazy(() => import("@/pages/display/WardNursingDisplay"));
 const DischargeStatusDisplay = lazy(() => import("@/pages/display/DischargeStatusDisplay"));
+const CommandCentreDisplay   = lazy(() => import("@/pages/display/CommandCentreDisplay"));
+const HospitalFloorMapDisplay = lazy(() => import("@/pages/display/HospitalFloorMapDisplay"));
+const FamilyVideoKiosk       = lazy(() => import("@/pages/display/FamilyVideoKiosk"));
 const DisplayAdminPage       = lazy(() => import("@/pages/display/DisplayAdminPage"));
 
 // ─── PageLoader — Suspense fallback ──────────────────────────────────────────
@@ -1782,6 +1785,9 @@ const AppRoutes = () => {
         <Route path="/kiosk/checkin"            element={<SelfCheckinKiosk />} />
         <Route path="/hospital/queue-console"   element={<QueueConsole />} />
         <Route path="/display/signage"           element={<LobbySignageDisplay />} />
+        <Route path="/display/command"          element={<CommandCentreDisplay />} />
+        <Route path="/display/floor-map"        element={<HospitalFloorMapDisplay />} />
+        <Route path="/kiosk/family-video"       element={<FamilyVideoKiosk />} />
         <Route path="/display/admin"            element={<DisplayAdminPage />} />
 
         {/* ── Misc ────────────────────────────────────────────────────── */}

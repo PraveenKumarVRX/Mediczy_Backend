@@ -2,7 +2,7 @@ import express from 'express';
 import { connectPostgres } from '../db/postgres.js';
 import { Op } from 'sequelize';
 import Appointment from '../models/postgres/appointment.model.postgres.js';
-import { registerDisplaySSE, pushToZone, pushToAll } from '../services/display-sse-broker.service.js';
+import { registerDisplaySSE, pushToZone, pushToAll, getSSEStats } from '../services/display-sse-broker.service.js';
 import * as queueService from '../services/hospital-queue.service.js';
 import { buildLiveKitJoinData } from '../utils/videoProvider.js';
 
@@ -646,6 +646,137 @@ router.get('/signage', async (req, res) => {
   }
 });
 
+// GET /api/display/command — executive command centre KPIs (GAP-DISPLAY-005)
+router.get('/command', async (req, res) => {
+  try {
+    const orgId = parseInt(req.query.organizationId || process.env.HOSPITAL_DEFAULT_ORG_ID || '1', 10);
+    const queueAnalytics = await queueService.getHospitalQueueAnalytics(orgId);
+
+    const icuBeds = await safeQuery(
+      `SELECT bed_number, status, alert_level FROM icu_beds WHERE active = true ORDER BY bed_number`
+    );
+    const otRooms = await safeQuery(
+      `SELECT room_number, status FROM ot_rooms WHERE active = true ORDER BY room_number`
+    );
+    const erWaiting = await safeQueryOne(
+      `SELECT COUNT(*)::int AS c FROM hospital_queue_entries
+       WHERE organization_id = $1 AND department = 'er' AND status IN ('waiting','called')
+         AND check_in_at::date = CURRENT_DATE`,
+      [orgId]
+    );
+    const opdWaiting = await safeQueryOne(
+      `SELECT COUNT(*)::int AS c FROM hospital_queue_entries
+       WHERE organization_id = $1 AND department = 'opd' AND status IN ('waiting','called')
+         AND check_in_at::date = CURRENT_DATE`,
+      [orgId]
+    );
+
+    const icuOccupied = icuBeds.filter((b) => b.status !== 'available').length;
+    const icuCritical = icuBeds.filter((b) => b.alert_level === 'red').length;
+    const otInProgress = otRooms.filter((r) => /progress|prep/i.test(r.status || '')).length;
+
+    const displayStats = getSSEStats();
+    const revenueToday = await safeQueryOne(
+      `SELECT COALESCE(SUM(amount), 0)::float AS total FROM payments
+       WHERE status = 'completed' AND created_at::date = CURRENT_DATE`
+    );
+
+    res.json({
+      success: true,
+      live: icuBeds.length > 0 || otRooms.length > 0 || (queueAnalytics.totals?.total_today || 0) > 0,
+      generatedAt: new Date().toISOString(),
+      census: {
+        icuBeds: icuBeds.length || 6,
+        icuOccupied: icuOccupied || 4,
+        icuCritical: icuCritical || 2,
+        otRooms: otRooms.length || 5,
+        otInProgress: otInProgress || 2,
+      },
+      queues: {
+        opdWaiting: opdWaiting?.c ?? queueAnalytics.totals?.active ?? 0,
+        erWaiting: erWaiting?.c ?? 0,
+        completedToday: queueAnalytics.totals?.completed_today ?? 0,
+        byDepartment: queueAnalytics.byDepartment || [],
+      },
+      revenueToday: Math.round(revenueToday?.total || 0),
+      displays: displayStats,
+      incidents: { codeBlueActive: 0, nurseCallsOpen: 0 },
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// GET /api/display/floor-map — digital twin occupancy overlay (GAP-HOS-002)
+router.get('/floor-map', async (req, res) => {
+  try {
+    const orgId = parseInt(req.query.organizationId || process.env.HOSPITAL_DEFAULT_ORG_ID || '1', 10);
+    const floor = req.query.floor || 'all';
+
+    let twins = [];
+    try {
+      const { listTwins } = await import('../services/hypergrid-twins.service.js');
+      twins = await listTwins({ tenantId: orgId, twinType: 'asset', limit: 100 });
+    } catch (_) {}
+
+    const zones = [
+      { id: 'er', name: 'Emergency', floor: 'G', x: 12, y: 68, capacity: 12, type: 'er' },
+      { id: 'opd', name: 'OPD Waiting', floor: 'G', x: 45, y: 55, capacity: 80, type: 'opd' },
+      { id: 'icu', name: 'ICU', floor: '2', x: 72, y: 28, capacity: 6, type: 'icu' },
+      { id: 'ot', name: 'Operation Theatre', floor: '3', x: 55, y: 18, capacity: 5, type: 'ot' },
+      { id: 'ward-3b', name: 'Ward 3B', floor: '3', x: 28, y: 35, capacity: 24, type: 'ward' },
+      { id: 'pharmacy', name: 'Pharmacy', floor: 'G', x: 82, y: 72, capacity: 20, type: 'pharmacy' },
+    ].filter((z) => floor === 'all' || z.floor === floor);
+
+    const opdWaiting = await safeQueryOne(
+      `SELECT COUNT(*)::int AS c FROM hospital_queue_entries
+       WHERE organization_id = $1 AND department = 'opd' AND status IN ('waiting','called')
+         AND check_in_at::date = CURRENT_DATE`,
+      [orgId]
+    );
+    const erWaiting = await safeQueryOne(
+      `SELECT COUNT(*)::int AS c FROM hospital_queue_entries
+       WHERE organization_id = $1 AND department = 'er' AND status IN ('waiting','called')
+         AND check_in_at::date = CURRENT_DATE`,
+      [orgId]
+    );
+    const icuBeds = await safeQuery(`SELECT status FROM icu_beds WHERE active = true`);
+    const otRooms = await safeQuery(`SELECT status FROM ot_rooms WHERE active = true`);
+
+    const occupancy = {
+      er: erWaiting?.c || 0,
+      opd: opdWaiting?.c || 0,
+      icu: icuBeds.filter((b) => b.status !== 'available').length,
+      ot: otRooms.filter((r) => /progress|prep/i.test(r.status || '')).length,
+      'ward-3b': 18,
+      pharmacy: 3,
+    };
+
+    const nodes = zones.map((z) => {
+      const occ = occupancy[z.id] ?? 0;
+      const util = z.capacity ? Math.min(100, Math.round((occ / z.capacity) * 100)) : 0;
+      const twin = twins.find((t) => t.external_id === z.id);
+      return {
+        ...z,
+        occupied: occ,
+        utilizationPct: util,
+        status: util >= 90 ? 'critical' : util >= 70 ? 'busy' : util >= 40 ? 'moderate' : 'normal',
+        twinAttributes: twin?.attributes || null,
+      };
+    });
+
+    res.json({
+      success: true,
+      live: twins.length > 0 || (opdWaiting?.c || 0) > 0,
+      floor,
+      nodes,
+      legend: { normal: '<40%', moderate: '40-70%', busy: '70-90%', critical: '>90%' },
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
 // POST /api/display/video/sessions — LiveKit room for display surfaces
 router.post('/video/sessions', async (req, res) => {
   try {
@@ -685,15 +816,11 @@ router.post('/announce', async (req, res) => {
 
 // GET /api/display/stats — connected display count
 router.get('/stats', (_req, res) => {
-  const counts = {};
-  sseClients.forEach(({ zone }) => {
-    const key = zone || 'unzoned';
-    counts[key] = (counts[key] || 0) + 1;
-  });
+  const stats = getSSEStats();
   res.json({
     success: true,
-    connected: sseClients.size,
-    byZone: counts,
+    connected: stats.connected,
+    byZone: stats.byZone,
   });
 });
 

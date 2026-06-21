@@ -48,6 +48,10 @@ const DISPLAY_TYPES = [
   { type: 'bedside', label: 'Bedside Terminal', path: '/display/bedside' },
   { type: 'blood-bank', label: 'Blood Bank Inventory', path: '/display/blood-bank' },
   { type: 'discharge-status', label: 'Discharge Status Lounge', path: '/display/discharge-status' },
+  { type: 'command-centre', label: 'Command Centre KPI Wall', path: '/display/command' },
+  { type: 'floor-map', label: 'Digital Twin Floor Map', path: '/display/floor-map' },
+  { type: 'family-video', label: 'Family Video Kiosk', path: '/kiosk/family-video' },
+  { type: 'queue-console', label: 'Queue Console', path: '/hospital/queue-console' },
 ];
 
 const navSections = [

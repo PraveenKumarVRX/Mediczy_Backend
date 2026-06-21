@@ -54,5 +54,10 @@ export function registerDisplaySSE(router) {
 }
 
 export function getSSEStats() {
-  return { clients: sseClients.size };
+  const byZone = {};
+  sseClients.forEach(({ zone }) => {
+    const key = zone || 'unzoned';
+    byZone[key] = (byZone[key] || 0) + 1;
+  });
+  return { connected: sseClients.size, byZone };
 }

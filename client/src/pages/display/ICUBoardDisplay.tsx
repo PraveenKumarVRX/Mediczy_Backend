@@ -58,6 +58,39 @@ export default function ICUBoardDisplay() {
   }, []);
 
   useEffect(() => {
+    const es = new EventSource('/api/display/events?zone=icu');
+    es.addEventListener('vitals_update', (e) => {
+      try {
+        const { bedId, vitals } = JSON.parse((e as MessageEvent).data);
+        if (!bedId || !vitals) return;
+        setBeds((prev) => prev.map((bed) => {
+          if (bed.bed_number !== bedId && !String(bed.bed_number).endsWith(String(bedId))) return bed;
+          const news2 = vitals.news2 ?? bed.news2;
+          let alert_level = bed.alert_level;
+          if (news2 != null) {
+            if (news2 >= 7) alert_level = 'red';
+            else if (news2 >= 5) alert_level = 'orange';
+            else if (news2 >= 3) alert_level = 'yellow';
+            else alert_level = 'green';
+          }
+          return {
+            ...bed,
+            spo2: vitals.spo2 ?? bed.spo2,
+            hr: vitals.hr ?? bed.hr,
+            bp: vitals.bp ?? bed.bp,
+            temp: vitals.temp ?? bed.temp,
+            rr: vitals.rr ?? bed.rr,
+            news2: news2 ?? bed.news2,
+            alert_level,
+          };
+        }));
+        setLastUpdated(new Date());
+      } catch (_) {}
+    });
+    return () => es.close();
+  }, []);
+
+  useEffect(() => {
     fetchICU();
     const t = setInterval(fetchICU, 15000);
     return () => clearInterval(t);
@@ -128,7 +161,7 @@ export default function ICUBoardDisplay() {
 
         {/* Footer */}
         <p className="text-gray-600 text-xs text-right shrink-0">
-          Last updated: {lastUpdated.toLocaleTimeString('en-IN')} · Auto-refresh every 15 s
+          Last updated: {lastUpdated.toLocaleTimeString('en-IN')} · MQTT/SSE vitals + 15s poll
         </p>
       </div>
     </DisplayShell>

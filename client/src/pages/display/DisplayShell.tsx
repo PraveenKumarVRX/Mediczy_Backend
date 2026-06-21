@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import DisplayVideoOverlay from '@/components/display/DisplayVideoOverlay';
 
 interface EmergencyBroadcast {
   id: number;
@@ -65,6 +66,12 @@ export function useDisplaySSE(zone?: string, deviceId?: string) {
     es.addEventListener('new-token', onQueue('new-token'));
     es.addEventListener('nurse_call', onQueue('nurse_call'));
     es.addEventListener('video_session_start', onQueue('video_session_start'));
+    es.addEventListener('vitals_update', (e) => {
+      try {
+        const payload = JSON.parse((e as MessageEvent).data);
+        setQueueEvent({ type: 'vitals_update', payload });
+      } catch (_) {}
+    });
     es.onerror = () => {
       setConnected(false);
       es.close();
@@ -149,6 +156,8 @@ export default function DisplayShell({
       <main className="flex-1 overflow-hidden">
         {children}
       </main>
+
+      <DisplayVideoOverlay zone={zone} />
 
       {/* Emergency overlay */}
       {emergency && (
