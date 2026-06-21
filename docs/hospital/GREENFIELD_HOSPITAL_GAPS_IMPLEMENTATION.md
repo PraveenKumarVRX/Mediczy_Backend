@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | **Document ID** | MED-HOSP-GAP-001 |
-| **Version** | 1.1 |
+| **Version** | 1.2 |
 | **Date** | 2026-06-17 |
 | **Owner** | AI CTO |
 | **Audience** | PM, BA, Engineering, QA, Security, Delivery |
@@ -42,8 +42,11 @@ Each gap has: **ID, priority, owner role, current state, target state, files, im
 | Native mobile apps | 35% | Build separately |
 | Hospital E2E QA | 40% | **No** |
 | Paperless kiosk (QR + camera self-registration) | 15% | **No** |
+| Smart displays (info boards, clinical walls) | 25% | **No** |
+| Video-ready displays (bedside, ER, ICU, OT) | 10% | **No** |
+| Hospital OS control plane (devices, CMS, command) | 20% | **No** |
 
-**Weighted overall:** ~58/100
+**Weighted overall:** ~55/100 (clinical core strong; campus display OS immature)
 
 ### 2.2 Verdict
 
@@ -51,6 +54,9 @@ Each gap has: **ID, priority, owner role, current state, target state, files, im
 |-----------------|--------|
 | Phased greenfield: OPD + insurance + pharmacy + lab | **Yes** (Phase 1) |
 | Paperless lobby: QR check-in + walk-in self-registration | **After KIOSK-001–005** (Phase 1b) |
+| Smart hospital info displays (queue, signage, dept boards) | **After DISPLAY-001 + HOS-001** (Phase 2a) |
+| Clinical display walls (ER, ICU, OT, ward) + MQTT vitals | **After DISPLAY-003 + IOT-001** (Phase 2b) |
+| Video-call ready surfaces (bedside, ER booth, family) | **After VIDEO-001–003** (Phase 3) |
 | IPD pilot (10–30 beds) using HMIS routes | **After Phase 0 + Phase 2** |
 | Full hospital ERP replacement on day one | **No** |
 | Multi-hospital SaaS with shared-row tenancy | **No** |
@@ -64,6 +70,7 @@ Each gap has: **ID, priority, owner role, current state, target state, files, im
 | **2 — IPD pilot** | HMIS UI + ADT/eMAR/discharge | Admit→discharge E2E passes in CI |
 | **3 — Productization** | Unified portal, IP billing, mobile | Sidebar = real APIs; no `localStorage` clinical data |
 | **4 — Scale & compliance** | ECS, NABH evidence, SaMD filing | Per-tenant accreditation pack exportable |
+| **Display OS** | Parallel track — see `SMART_HOSPITAL_OS_VISION.md` | Phase 1b → 2a → 2b → 2c → 3 (telepresence) → 4 (command) |
 
 ---
 
@@ -138,6 +145,41 @@ flowchart TD
 
 **Reuse (do not rebuild):** `DisplayShell.tsx`, `SelfCheckinKiosk.tsx` idle/timeout UX, `HospitalMRD.tsx` ZXing pattern, patient profile upload + MinIO + ClamAV, `hospital-display.route.js` token issuance + SSE, `abdm.route.js` OTP primitives.
 
+### 3.2 Smart Hospital OS — displays, interactive care & telepresence
+
+**North star:** MediQzy as a **Hospital Operating System** — every screen in the building (info board, kiosk, bedside, ICU wall, OT door, command centre) runs on the same platform as HMIS, with **video-call ready** surfaces in ER, ICU, OT, and IPD rooms.
+
+Full vision: **`docs/hospital/SMART_HOSPITAL_OS_VISION.md`**
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  MEDIQZY HOSPITAL OS                                                         │
+│  Clinical Core (HMIS) ──┬── Display & Kiosk Layer (18 zones, 40+ screens)   │
+│                         ├── Telepresence (LiveKit on bedside / ER / family)  │
+│                         ├── Real-Time (SSE + MQTT vitals bridge)             │
+│                         └── Control Plane (devices, CMS, emergency, KPIs)    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Built today (scaffold — mostly demo/poll data):**
+
+| Surface | Route | Maturity |
+|---------|-------|----------|
+| OPD queue board | `/display/queue` | Scaffold |
+| ICU board | `/display/icu-board` | Scaffold |
+| OT status | `/display/ot-status` | Scaffold |
+| Ward nursing | `/display/ward` | Scaffold |
+| Bedside terminal | `/display/bedside` | UI only; nurse call stub |
+| Blood bank / discharge | `/display/blood-bank`, `/display/discharge-status` | Scaffold |
+| Self check-in | `/kiosk/checkin` | Phone only |
+| Display admin | `/display/admin` | Partial device registry |
+| SSE + emergency | `DisplayShell` + `/api/display/events` | Works |
+| LiveKit video | Doctor/patient web consult | **Not on displays** |
+
+**Not built:** wayfinding kiosk, lobby CMS signage, ER triage wall, MQTT→display vitals, bedside video consult, ER tele-triage booth, family video kiosk, command centre KPI wall, nurse call API.
+
+**Display taxonomy (extended):** Types A–D per kiosk plan + **E (video booth)** + **F (command centre)**. Rule: Type D (bedside) and E must ship with camera + LiveKit join.
+
 ---
 
 ## 4. Master gap register
@@ -193,6 +235,21 @@ flowchart TD
 | GAP-KIOSK-005 | P0 | Harden check-in APIs (remove demo fallbacks, real schema) | Backend | 1 | Open |
 | GAP-KIOSK-006 | P1 | DPDP consent for kiosk photo/ID storage + retention | Security + BA | 1 | Open |
 | GAP-KIOSK-007 | P2 | Optional video liveness / ID verification at kiosk | AI + Frontend | 4 | Open |
+| GAP-HOS-001 | P1 | Hospital OS control plane (device registry, CMS, branding) | Frontend + Backend | 2 | Open |
+| GAP-HOS-002 | P2 | Digital twin / live floor map (occupancy overlay) | Frontend + Backend | 4 | Open |
+| GAP-HOS-003 | P2 | AI voice wayfinding on lobby kiosk | AI + Frontend | 4 | Open |
+| GAP-DISPLAY-001 | P1 | Passive info displays on production data (queue, signage, dept) | Frontend + Backend | 2 | Open |
+| GAP-DISPLAY-002 | P1 | Interactive care surfaces (bedside API, discharge, wayfinding kiosks) | Frontend + Backend | 2 | Open |
+| GAP-DISPLAY-003 | P1 | Clinical staff displays (ER, ICU, OT, ward) wired to HMIS | Frontend + Backend | 2 | Open |
+| GAP-DISPLAY-004 | P1 | Family waiting + corridor signage CMS | Frontend + Backend | 2 | Open |
+| GAP-DISPLAY-005 | P2 | Command centre executive KPI wall | Frontend + Backend | 4 | Open |
+| GAP-VIDEO-001 | P1 | Video-ready display SDK (LiveKit embed in DisplayShell) | Frontend + Backend | 3 | Open |
+| GAP-VIDEO-002 | P1 | ER tele-triage video booth kiosk | Frontend + Backend | 3 | Open |
+| GAP-VIDEO-003 | P1 | Bedside + family lounge video consult | Frontend + Backend | 3 | Open |
+| GAP-VIDEO-004 | P2 | ICU tele-intensivist overlay on clinical displays | Frontend + Backend | 4 | Open |
+| GAP-VIDEO-005 | P2 | OT remote expert / proctoring video channel | Frontend + Backend | 4 | Open |
+| GAP-IOT-001 | P1 | MQTT vitals → SSE bridge for ICU/ER displays | Backend + DevOps | 2 | Open |
+| GAP-IOT-002 | P2 | Ambient deterioration alerts on ward/ICU displays | AI + Backend | 4 | Open |
 
 ---
 
@@ -823,6 +880,238 @@ Response: { patientId, uhid, token_number, eReceiptQrPayload }
 
 ---
 
+### GAP-HOS-001 — Hospital OS control plane
+
+| | |
+|---|---|
+| **Owner** | Frontend + Backend |
+| **Phase** | 2a |
+| **Current** | `DisplayAdminPage` + `display_devices` table; emergency broadcast works; no CMS, no tenant branding, no command KPIs |
+| **Target** | Production control plane: enroll devices, assign zones, schedule CMS playlists, per-tenant branding, device health dashboard |
+
+**Deliverables**
+
+1. `display_content_schedules` table + CRUD API for lobby/corridor signage playlists.
+2. Device provisioning wizard: generate token, QR sticker for field tech, zone picker.
+3. Admin UI: live device grid (online/offline, last_seen, firmware/Chrome version).
+4. Per-tenant logo, colour, hospital name pushed to all `DisplayShell` instances via device config JSON.
+5. Integration with emergency broadcast (already exists) + audit log.
+
+**Files:** `DisplayAdminPage.tsx`, `hospital-display.route.js`, new `display-cms.route.js`
+
+**Acceptance criteria**
+
+- [ ] Field tech can register a screen in < 2 min without developer help
+- [ ] CMS playlist rotates on `/display/signage?zone=lobby` without redeploy
+- [ ] Revoked device token returns 401 within 60 s
+- [ ] All display API calls scoped to device's `organization_id`
+
+**Dependencies** | GAP-TEN-001
+
+---
+
+### GAP-DISPLAY-001 — Passive info displays on production data
+
+| | |
+|---|---|
+| **Owner** | Frontend + Backend |
+| **Phase** | 2a |
+| **Current** | `OPDQueueDisplay`, `BloodBankDisplay`, etc. poll APIs with demo/fallback data |
+| **Target** | Queue, pharmacy, lab, blood bank, lobby signage show **live tenant data** via SSE where applicable |
+
+**Scope**
+
+| Display | Route | Data source |
+|---------|-------|-------------|
+| OPD queue | `/display/queue` | OPD queue module + SSE `new-token` |
+| Pharmacy queue | `/display/pharmacy-queue` (new) | Pharmacy POS |
+| Lab collection | `/display/lab-queue` (new) | LIS |
+| Blood bank | `/display/blood-bank` | Blood bank module |
+| Lobby signage | `/display/signage` (new) | CMS + doctor roster |
+
+**Acceptance criteria**
+
+- [ ] Token board updates within 1 s of check-in (SSE, not 30 s poll)
+- [ ] Public displays never show full patient names (token/initials only)
+- [ ] Predictive wait time field (optional ML) documented for Phase 4
+
+**Dependencies** | GAP-HOS-001, GAP-KIOSK-005, GAP-TEN-001
+
+---
+
+### GAP-DISPLAY-002 — Interactive care surfaces
+
+| | |
+|---|---|
+| **Owner** | Frontend + Backend |
+| **Phase** | 2c |
+| **Current** | `BedsideDisplay` has nurse call **stub**; no wayfinding or discharge kiosks |
+| **Target** | Bedside, discharge, and wayfinding kiosks wired to HMIS + real nurse call API |
+
+**New routes**
+
+| Route | Features |
+|-------|----------|
+| `/display/bedside?bed=` | Care team, meds, diet, vitals, meal rating, **nurse call API**, patient app QR |
+| `/kiosk/wayfinding` | Floor map, find doctor, dept hours |
+| `/kiosk/discharge` | PREMS, discharge instructions QR, transport request, bill QR |
+
+**Nurse call API (proposed):** `POST /api/display/bedside/nurse-call` → SSE to ward station display + nurse mobile push.
+
+**Acceptance criteria**
+
+- [ ] Nurse call from bedside reaches ward station display < 2 s
+- [ ] Bedside shows only patient assigned to that bed (device config `bed_id`)
+- [ ] Discharge kiosk completes PREMS and stores score linked to admission
+
+**Dependencies** | GAP-IPD-001, GAP-TEN-001, GAP-HOS-001
+
+---
+
+### GAP-DISPLAY-003 — Clinical staff displays (ER, ICU, OT, ward)
+
+| | |
+|---|---|
+| **Owner** | Frontend + Backend |
+| **Phase** | 2b |
+| **Current** | `ICUBoardDisplay`, `OTStatusDisplay`, `WardNursingDisplay` — scaffold data |
+| **Target** | Staff-only displays in restricted areas show **live HMIS + vitals** |
+
+**Scope**
+
+| Zone | Route | Data |
+|------|-------|------|
+| ER triage (staff) | `/display/er-triage` (new) | `er_visits`, ESI, triage AI |
+| ER public wait | `/display/er-waiting` (new) | Aggregate wait by acuity — no names |
+| ICU central | `/display/icu-board` | Beds, NEWS2, vent flags |
+| OT complex | `/display/ot-status` | OT schedule, WHO checklist status |
+| Ward station | `/display/ward` | Beds, meds due, fall risk, discharge status |
+
+**Acceptance criteria**
+
+- [ ] ICU board refreshes vitals within 15 s (via GAP-IOT-001)
+- [ ] ER board colour-codes ESI 1–5; resus room display on Code Blue SSE
+- [ ] OT corridor board shows initials only; staff board shows full data
+
+**Dependencies** | GAP-IPD-005, GAP-IOT-001, GAP-TEN-001
+
+---
+
+### GAP-DISPLAY-004 — Family waiting & corridor signage
+
+| | |
+|---|---|
+| **Owner** | Frontend + Backend |
+| **Phase** | 2c |
+| **Current** | Not built |
+| **Target** | Privacy-safe family status for ICU/OT; corridor digital signage on CMS |
+
+**Deliverables**
+
+1. `/display/family-waiting` — token-based status: "Patient T3: OT — In progress"
+2. `/display/signage?zone=corridor` — wayfinding arrows, advisories, health tips
+3. SSE push when ICU/OT status changes for linked family token
+
+**Acceptance criteria**
+
+- [ ] Family display never shows patient name — token or initials only
+- [ ] Status updates within 5 s of OT/ICU workflow event
+
+---
+
+### GAP-IOT-001 — MQTT vitals → SSE bridge
+
+| | |
+|---|---|
+| **Owner** | Backend + DevOps |
+| **Phase** | 2b |
+| **Current** | MQTT vitals consumed by ICU module; not pushed to display SSE broker |
+| **Target** | Bridge service: MQTT topic `vitals/{ward}/{bed}` → `pushToZone('icu-a', 'vitals', payload)` |
+
+**Implementation steps**
+
+1. Add `server/services/display-mqtt-bridge.service.js` subscribing to vitals topics.
+2. Normalize payload: HR, BP, SpO2, RR, Temp, NEWS2, timestamp.
+3. Rate-limit push to 15 s per bed to avoid SSE flood.
+4. On disconnect: display shows "Vitals feed reconnecting" (DisplayShell pattern).
+
+**Acceptance criteria**
+
+- [ ] ICU board updates without full page reload
+- [ ] Bridge survives MQTT reconnect; no memory leak over 24 h soak test
+
+**Dependencies** | GAP-DISPLAY-003
+
+---
+
+### GAP-VIDEO-001 — Video-ready display SDK
+
+| | |
+|---|---|
+| **Owner** | Frontend + Backend |
+| **Phase** | 3 |
+| **Current** | LiveKit in `DoctorVideoConsultation.tsx`; displays have no video component |
+| **Target** | Reusable `DisplayVideoRoom` component; device-scoped LiveKit tokens; SSE session start/end |
+
+**Deliverables**
+
+1. Extract `VideoRoom` from doctor consult into `client/src/components/display/DisplayVideoRoom.tsx`.
+2. `POST /api/display/video/sessions` — create room, return tokens for display + remote party.
+3. SSE events: `video_session_start`, `video_session_end`.
+4. `DisplayShell` renders video overlay full-screen when session active; dismiss returns to idle content.
+
+**Acceptance criteria**
+
+- [ ] Bedside display joins LiveKit room with token expiring ≤ 4 h
+- [ ] Video overlay does not leak after session end (tracks stopped, DOM cleared)
+- [ ] Works on Chrome kiosk over HTTPS with front camera
+
+**Dependencies** | `videoProvider.js`, GAP-TEN-001, GAP-DISPLAY-002
+
+---
+
+### GAP-VIDEO-002 — ER tele-triage video booth
+
+| | |
+|---|---|
+| **Owner** | Frontend + Backend |
+| **Phase** | 3 |
+| **Current** | Emergency triage AI exists; no kiosk video booth |
+| **Target** | `/kiosk/er-triage` — symptom intake → queue → auto-connect video to ER physician |
+
+**Flow:** Touch → chief complaint (voice/text) → triage AI ESI suggestion → issue ER token → LiveKit room with on-call ER doctor.
+
+**Acceptance criteria**
+
+- [ ] Walk-in can complete triage + video without staff login on kiosk
+- [ ] SaMD quality gates on triage output if ESI influences routing (see SaMD scorecard)
+- [ ] Session recorded per hospital policy with consent banner
+
+**Dependencies** | GAP-VIDEO-001, GAP-IPD-005, GAP-KIOSK-006
+
+---
+
+### GAP-VIDEO-003 — Bedside + family lounge video consult
+
+| | |
+|---|---|
+| **Owner** | Frontend + Backend |
+| **Phase** | 3 |
+| **Current** | Patient/doctor web video only |
+| **Target** | Patient initiates nurse/doctor video from bedside; approved visitor joins from family kiosk |
+
+**Routes:** `/display/bedside` (nurse/doctor call buttons), `/kiosk/family-video` (visitation token + schedule).
+
+**Acceptance criteria**
+
+- [ ] Nurse can answer from ward web or mobile without leaving EMR context
+- [ ] Family visit blocked outside approved window
+- [ ] Visitation audit log: who, when, duration
+
+**Dependencies** | GAP-VIDEO-001, GAP-DISPLAY-002, GAP-DISPLAY-004
+
+---
+
 ## 6. P1 gaps — detailed implementation
 
 ### GAP-IPD-001 — Ward master data CRUD API
@@ -1024,6 +1313,12 @@ Use `server/routes/nabh-jci.route.js` to upload checkpoint evidence per hospital
 | GAP-UX-002 | Bedside nurse mobile | Barcode meds, glove-friendly vitals |
 | GAP-DEPT-001 | Dept modules on timeline | blood bank, CSSD, dietary, mortuary |
 | GAP-KIOSK-007 | Video liveness / ID verification at kiosk | Optional third-party or on-device; not required for Phase 1b |
+| GAP-DISPLAY-005 | Command centre executive KPI wall | 86" census, OT utilisation, revenue, incidents — `/display/command` |
+| GAP-VIDEO-004 | ICU tele-intensivist overlay | Remote intensivist joins ICU board LiveKit overlay |
+| GAP-VIDEO-005 | OT remote expert / proctoring | Surgeon requests expert on OT room display |
+| GAP-HOS-002 | Digital twin / live floor map | Bed/OT/ER occupancy on 2D map |
+| GAP-HOS-003 | AI voice wayfinding | Lobby kiosk natural-language directions |
+| GAP-IOT-002 | Ambient deterioration alerts on displays | NEWS2 threshold → highlight bed on ward/ICU wall |
 
 ---
 
@@ -1104,6 +1399,44 @@ Use `server/routes/nabh-jci.route.js` to upload checkpoint evidence per hospital
 
 ---
 
+### Phase 2a — Smart info displays (Display OS)
+
+| Work items | Gap IDs |
+|------------|---------|
+| Hospital OS control plane (device enroll, CMS) | HOS-001 |
+| OPD queue board on live data + SSE | DISPLAY-001 |
+| Lobby / corridor signage | DISPLAY-001, HOS-001 |
+| Pharmacy / lab / blood bank boards | DISPLAY-001 |
+| Display device provisioning in greenfield playbook | TEN-003, HOS-001 |
+
+**Phase 2a exit gate:** All lobby/OPD screens enrolled; queue board SSE < 1 s; emergency broadcast tested on every device.
+
+---
+
+### Phase 2b — Clinical display walls
+
+| Work items | Gap IDs |
+|------------|---------|
+| ER triage + public waiting displays | DISPLAY-003, IPD-005 |
+| ICU / OT / ward staff boards on HMIS data | DISPLAY-003 |
+| MQTT vitals → SSE bridge | IOT-001 |
+
+**Phase 2b exit gate:** ICU board shows live vitals; ER board shows ESI-coded patients; OT status matches HMIS schedule.
+
+---
+
+### Phase 2c — Interactive patient care
+
+| Work items | Gap IDs |
+|------------|---------|
+| Bedside terminal + nurse call API | DISPLAY-002 |
+| Wayfinding + discharge kiosks | DISPLAY-002 |
+| Family waiting display (ICU/OT) | DISPLAY-004 |
+
+**Phase 2c exit gate:** Nurse call from bedside reaches ward station; discharge kiosk captures PREMS.
+
+---
+
 ### Phase 3 — Productization
 
 | Work items | Gap IDs |
@@ -1117,6 +1450,20 @@ Use `server/routes/nabh-jci.route.js` to upload checkpoint evidence per hospital
 
 ---
 
+### Phase 3b — Telepresence (video-call ready hospital)
+
+| Work items | Gap IDs |
+|------------|---------|
+| Video SDK embedded in DisplayShell | VIDEO-001 |
+| Bedside + family lounge video consult | VIDEO-003 |
+| ER tele-triage video booth | VIDEO-002 |
+| ICU tele-intensivist overlay (optional) | VIDEO-004 |
+| OT remote proctoring (optional) | VIDEO-005 |
+
+**Phase 3b exit gate:** Bedside video to nurse works E2E; ER booth connects to physician; family visit enforces policy.
+
+---
+
 ### Phase 4 — Scale & compliance
 
 | Work items | Gap IDs |
@@ -1124,6 +1471,9 @@ Use `server/routes/nabh-jci.route.js` to upload checkpoint evidence per hospital
 | ECS migration | OPS-003 |
 | SaMD clinical validation | CMP-004 |
 | CDSCO filing | CMP-005 |
+| Command centre KPI wall | DISPLAY-005 |
+| Digital twin floor map | HOS-002 |
+| AI wayfinding + ambient alerts | HOS-003, IOT-002 |
 | Dept module integration | DEPT-001 |
 | Public API docs | API-002 |
 
@@ -1169,7 +1519,11 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 | **G1** | Phase 1 go-live | Insurance E2E manual script; OPD booking works; no placeholder routes used |
 | **G1b** | Paperless lobby (Phase 1b) | KIOSK-005 smoke green; walk-in registration E2E; ABHA QR on staging; consent logged |
 | **G2** | IPD pilot start | QA-001 pass; ARCH-001 redirects live; ward seed exists |
+| **G2a** | Smart info displays | HOS-001 devices enrolled; DISPLAY-001 queue SSE live |
+| **G2b** | Clinical display walls | DISPLAY-003 + IOT-001; ICU vitals on board |
+| **G2c** | Interactive care | DISPLAY-002 nurse call E2E; DISPLAY-004 family board |
 | **G3** | IPD production | ARCH-004 complete; BIL-003 discharge billing; IPD-004 optional |
+| **G3b** | Telepresence | VIDEO-001 SDK; VIDEO-003 bedside video; VIDEO-002 ER booth |
 | **G4** | Multi-site SaaS | TEN-001 100% route coverage; OPS-003 if on ECS |
 
 ---
@@ -1182,13 +1536,13 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 | **BA** | Workflow specs, charge master rules, NABH checkpoint mapping |
 | **Principal Engineer** | ARCH-003, TEN-004, API gateway decisions |
 | **Tech Lead** | Code review all P0; tenant middleware patterns |
-| **Backend** | MIG-003, ARCH-002, IPD APIs, BIL, EMAR-pharmacy bridge, KIOSK-003–005 |
-| **Frontend** | ARCH-001, ARCH-004, BIL-004, KIOSK-001–002 |
+| **Backend** | MIG-003, ARCH-002, IPD APIs, BIL, EMAR-pharmacy bridge, KIOSK-003–005, DISPLAY APIs, IOT-001, VIDEO sessions |
+| **Frontend** | ARCH-001, ARCH-004, BIL-004, KIOSK-001–002, DISPLAY-001–004, VIDEO-001–003 |
 | **Mobile** | MOB-001–003 |
 | **AI Engineer** | CMP-002, CMP-004 (with Medical Director); KIOSK-007 (liveness) |
 | **DevOps** | MIG-001–002, TEN-003, OPS-*, deploy runbooks, kiosk device provisioning |
-| **UX** | UX-001, UX-002, bedside flows, kiosk wizard UX |
-| **UI** | Hospital admin screens for ward/OT setup |
+| **UX** | UX-001, UX-002, bedside flows, kiosk wizard UX, display zone IA |
+| **UI** | Hospital admin screens, display/kiosk touch targets, command centre |
 | **QA** | QA-001–004, test data fixtures |
 | **Security** | TEN-001–002, MIG-004–005, QA-002, CMP-001, KIOSK-004, KIOSK-006 |
 | **Delivery** | Phase gates, customer onboarding, training materials |
@@ -1210,6 +1564,10 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 | Patient mobile API gateway | `server/api/mobile/index.js` |
 | SaMD software governance | 22/27 scorecard items |
 | Display/kiosk layer (plan + partial check-in) | `docs/hospital/MEDIQZY_DISPLAY_KIOSK_PLAN.md`, `/kiosk/checkin`, `SelfCheckinKiosk.tsx` |
+| Smart Hospital OS vision | `docs/hospital/SMART_HOSPITAL_OS_VISION.md` |
+| Display pages (scaffold) | `client/src/pages/display/*` — queue, ICU, OT, ward, bedside |
+| SSE + emergency shell | `DisplayShell.tsx`, `hospital-display.route.js` |
+| LiveKit video (web consult — not displays yet) | `videoProvider.js`, `DoctorVideoConsultation.tsx` |
 | Kiosk QR scan pattern (staff only — reuse for kiosk) | `HospitalMRD.tsx` (`@zxing/browser`) |
 | Profile photo upload pipeline (reuse for kiosk capture) | `user.route.js`, MinIO + ClamAV |
 
@@ -1221,6 +1579,10 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 | Walk-in patient at kiosk | KIOSK-003 |
 | ABHA at kiosk without staff login | KIOSK-004 |
 | Production-hardened check-in APIs | KIOSK-005 |
+| Video on hospital displays | VIDEO-001–005 |
+| Clinical walls on live HMIS/MQTT data | DISPLAY-003, IOT-001 |
+| Hospital OS control plane (CMS, command) | HOS-001, DISPLAY-005 |
+| Interactive bedside nurse call | DISPLAY-002 |
 
 ---
 
@@ -1262,11 +1624,30 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 - [ ] GAP-QA-001 — Admit→discharge E2E green
 - [ ] Medical director sign-off on eMAR workflow
 
+### Phase 2a–2c — Smart Hospital displays (optional parallel track)
+
+- [ ] GAP-HOS-001 — All prod screens enrolled; CMS signage live
+- [ ] GAP-DISPLAY-001 — OPD queue board on SSE production data
+- [ ] GAP-DISPLAY-003 + GAP-IOT-001 — ICU/ER/OT/ward boards on live data
+- [ ] GAP-DISPLAY-002 — Bedside nurse call API operational
+- [ ] GAP-DISPLAY-004 — Family waiting board privacy-safe
+
 ### Phase 3 — Full IPD + billing
 
 - [ ] GAP-ARCH-004 — No clinical localStorage
 - [ ] GAP-BIL-001–003 — IP billing operational
 - [ ] GAP-IPD-004 — Pharmacy loop (if in-house pharmacy)
+
+### Phase 3b — Telepresence
+
+- [ ] GAP-VIDEO-001 — DisplayVideoRoom SDK in DisplayShell
+- [ ] GAP-VIDEO-003 — Bedside + family video consult E2E
+- [ ] GAP-VIDEO-002 — ER tele-triage booth on staging
+
+### Phase 4 — Command & world-class OS
+
+- [ ] GAP-DISPLAY-005 — Command centre KPI wall
+- [ ] GAP-HOS-002 — Digital twin floor map (if in scope)
 
 ---
 
@@ -1286,6 +1667,7 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 | Doctor mobile API | `docs/doctor/DOCTOR_APP_API_INTEGRATION_GUIDE.md` |
 | Production deploy | `docs/deployment/PRODUCTION_DEPLOYMENT_RUNBOOK.md` |
 | Display & kiosk plan (Zone 1a) | `docs/hospital/MEDIQZY_DISPLAY_KIOSK_PLAN.md` |
+| **Smart Hospital OS vision** | `docs/hospital/SMART_HOSPITAL_OS_VISION.md` |
 
 ---
 
@@ -1305,6 +1687,7 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 |---------|------|---------|
 | 1.0 | 2026-06-17 | Initial greenfield gaps document |
 | 1.1 | 2026-06-17 | Added paperless QR + camera self-registration (GAP-KIOSK-001–007), §3.1 architecture, Phase 1b plan |
+| 1.2 | 2026-06-17 | Smart Hospital OS vision — displays, interactive care, video telepresence (GAP-HOS/DISPLAY/VIDEO/IOT), Phase 2a–2c, 3b |
 
 ---
 

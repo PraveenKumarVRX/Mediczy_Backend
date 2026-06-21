@@ -9,6 +9,21 @@
 
 ## 🆕 GREENFIELD IMPLEMENTATION BACKLOG (June 2026)
 
+### **SMART_HOSPITAL_OS_VISION.md** ⭐ NORTH-STAR — WORLD-CLASS HOSPITAL OS
+**Read Time:** 30 minutes  
+**Audience:** CEO, CTO, PM, UX, Engineering, Hospital IT  
+**Purpose:** Vision for MediQzy as a unified Hospital OS — every screen smart, video-call ready, AI-native
+
+**Covers:**
+- 6 platform pillars (clinical, displays, telepresence, real-time, AI, governance)
+- 18 zones — info displays, interactive care kiosks, ER/ICU/OT clinical walls
+- Video-ready surfaces (bedside, ER booth, family lounge, tele-ICU, OT proctor)
+- Control plane, MQTT vitals bridge, phased Display OS roadmap
+
+**Path:** `docs/hospital/SMART_HOSPITAL_OS_VISION.md`
+
+---
+
 ### **GREENFIELD_HOSPITAL_GAPS_IMPLEMENTATION.md** ⭐ FOR ENGINEERING & DELIVERY
 **Read Time:** 45 minutes  
 **Audience:** CTO, PM, BA, Engineering, QA, Security, Delivery  
@@ -17,8 +32,9 @@
 **Sections:**
 - P0/P1/P2 gap IDs with owners and acceptance criteria
 - Architecture context (hospital portal vs HMIS stack)
+- Smart Hospital OS + paperless kiosk gaps (KIOSK, DISPLAY, VIDEO, HOS, IOT)
 - Migration runbook, QA gates, sign-off checklist
-- Phase 0–4 implementation timeline
+- Phase 0–4 + Display OS phases (1b, 2a–2c, 3b)
 
 **When to use:** Before any greenfield hospital go-live; reference gap IDs in PRs (e.g. `GAP-ARCH-002`)
 

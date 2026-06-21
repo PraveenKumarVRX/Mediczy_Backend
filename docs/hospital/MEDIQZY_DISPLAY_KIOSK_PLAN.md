@@ -2,8 +2,10 @@
 ## Implementation Plan — v1.0
 
 **Date:** May 16, 2026
-**Status:** Phase 1 active implementation
-**Scope:** All patient-facing, staff-facing, and clinical displays across a multi-specialty hospital campus
+**Status:** Phase 1 active implementation  
+**Scope:** All patient-facing, staff-facing, and clinical displays across a multi-specialty hospital campus  
+**North-star OS blueprint:** `docs/hospital/SMART_HOSPITAL_OS_VISION.md`  
+**Gap backlog:** `docs/hospital/GREENFIELD_HOSPITAL_GAPS_IMPLEMENTATION.md` (GAP-KIOSK, GAP-DISPLAY, GAP-VIDEO, GAP-HOS, GAP-IOT)
 
 ---
 
