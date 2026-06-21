@@ -51,6 +51,8 @@ const DISPLAY_TYPES = [
   { type: 'command-centre', label: 'Command Centre KPI Wall', path: '/display/command' },
   { type: 'floor-map', label: 'Digital Twin Floor Map', path: '/display/floor-map' },
   { type: 'family-video', label: 'Family Video Kiosk', path: '/kiosk/family-video' },
+  { type: 'er-triage-kiosk', label: 'ER Tele-Triage Kiosk', path: '/kiosk/er-triage' },
+  { type: 'er-triage-board', label: 'ER Triage Queue Board', path: '/display/er-triage' },
   { type: 'queue-console', label: 'Queue Console', path: '/hospital/queue-console' },
 ];
 

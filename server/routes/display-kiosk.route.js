@@ -7,6 +7,9 @@ import { connectPostgres } from '../db/postgres.js';
 import pool from '../db/pgPool.js';
 import * as queue from '../services/hospital-queue.service.js';
 import Appointment from '../models/postgres/appointment.model.postgres.js';
+import emergencyTriageService from '../services/ai-emergency-triage.service.js';
+import { buildLiveKitJoinData } from '../utils/videoProvider.js';
+import { pushToZone } from '../services/display-sse-broker.service.js';
 import { Op } from 'sequelize';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -161,6 +164,89 @@ router.post('/register', async (req, res) => {
     });
   } catch (e) {
     console.error('[kiosk] register error:', e.message);
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// POST /api/display/kiosk/er-triage — AI ESI triage + ER queue token + optional video (GAP-VIDEO-002)
+router.post('/er-triage', async (req, res) => {
+  try {
+    const {
+      symptoms,
+      patientName,
+      phone,
+      painScale,
+      age,
+      gender,
+      vitals,
+      consentVersion,
+      startVideo = true,
+    } = req.body || {};
+
+    if (!symptoms || String(symptoms).trim().length < 10) {
+      return res.status(400).json({ success: false, message: 'symptoms required (min 10 chars)' });
+    }
+    if (!consentVersion) {
+      return res.status(400).json({ success: false, message: 'consentVersion required' });
+    }
+
+    const triage = await emergencyTriageService.triage({
+      symptoms: String(symptoms),
+      vitals: vitals || {},
+      painScale: painScale != null ? parseInt(painScale, 10) : null,
+      age: age != null ? parseInt(age, 10) : null,
+      gender,
+    });
+
+    if (triage.qualityGate?.blockers?.length) {
+      return res.status(422).json({
+        success: false,
+        message: 'Triage requires immediate staff review — please alert the triage nurse.',
+        triage,
+      });
+    }
+
+    const esiLabel = `ESI-${triage.esiLevel}`;
+    const entry = await queue.checkIn({
+      organizationId: req.organizationId,
+      department: 'er',
+      queueZone: 'er-triage',
+      patientName: patientName || 'ER Walk-in',
+      queueType: triage.esiLevel <= 2 ? 'emergency' : 'urgent',
+      triageLevel: esiLabel,
+      chiefComplaint: String(symptoms).slice(0, 500),
+      consentVersion,
+      metadata: {
+        phone: phone || null,
+        esiLevel: triage.esiLevel,
+        category: triage.category,
+        ambulanceNeeded: triage.ambulanceNeeded,
+        notifyOptIn: !!phone,
+        notifyPhone: phone || null,
+        source: 'er-triage-kiosk',
+      },
+    });
+
+    let video = null;
+    if (startVideo !== false) {
+      const roomId = `er-triage-${entry.id}`;
+      const join = await buildLiveKitJoinData({
+        meetingId: roomId,
+        identity: `er-patient-${entry.id}`,
+        name: patientName || 'ER Patient',
+      });
+      pushToZone('er-triage', 'video_session_start', {
+        roomId,
+        sessionType: 'er-triage',
+        bedId: entry.tokenNumber,
+        join,
+      });
+      video = { roomId, join };
+    }
+
+    res.status(201).json({ success: true, triage, entry, video });
+  } catch (e) {
+    console.error('[kiosk] er-triage error:', e.message);
     res.status(500).json({ success: false, message: e.message });
   }
 });

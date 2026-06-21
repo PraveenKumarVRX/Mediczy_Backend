@@ -28,6 +28,7 @@
     "test:doctor-auth-deploy-health": "node scripts/qa/doctor-auth-deploy-health.mjs",
     "test:doctor-mobile-issue-smoke": "node scripts/qa/doctor-mobile-issue-smoke.mjs",
     "test:corporate-employee-list-smoke": "node scripts/qa/corporate-employee-list.smoke.mjs",
+    "test:hospital-os-queue-smoke": "node scripts/qa/hospital-os-queue.smoke.mjs",
     "test:user-login-security-regression": "node scripts/qa/user-login-security-regression.mjs",
     "test:consultation-membership-exemption": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand __tests__/consultation-membership-exemption.test.js",
     "test:rls-coverage": "node scripts/qa/verify-rls-coverage.mjs",

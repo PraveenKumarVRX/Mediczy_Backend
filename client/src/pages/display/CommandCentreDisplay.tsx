@@ -23,6 +23,7 @@ interface CommandData {
   };
   revenueToday: number;
   displays: { connected: number; byZone: Record<string, number> };
+  incidents: { codeBlueActive: number; nurseCallsOpen: number };
   live: boolean;
 }
 
@@ -52,6 +53,7 @@ export default function CommandCentreDisplay() {
     queues: { opdWaiting: 0, erWaiting: 0, completedToday: 0, byDepartment: [] },
     revenueToday: 0,
     displays: { connected: 0, byZone: {} },
+    incidents: { codeBlueActive: 0, nurseCallsOpen: 0 },
     live: false,
   };
 
@@ -67,6 +69,7 @@ export default function CommandCentreDisplay() {
           { label: 'ICU Critical', value: d.census.icuCritical, color: 'text-red-400' },
           { label: 'OT In Progress', value: `${d.census.otInProgress}/${d.census.otRooms}`, color: 'text-orange-300' },
           { label: 'Live Displays', value: d.displays.connected, color: 'text-gray-200' },
+          { label: 'Nurse Calls Open', value: d.incidents?.nurseCallsOpen ?? 0, color: 'text-pink-300' },
         ].map((kpi) => (
           <div key={kpi.label} className="bg-gray-900/80 border border-gray-700 rounded-2xl p-5">
             <p className="text-gray-500 text-xs uppercase tracking-widest">{kpi.label}</p>

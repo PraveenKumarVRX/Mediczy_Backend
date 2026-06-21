@@ -40,20 +40,42 @@ async function main() {
       patientName: 'Smoke Test Patient',
       queueType: 'walk_in',
       chiefComplaint: 'smoke test',
+      metadata: { notifyOptIn: false },
     });
     if (!entry?.tokenNumber?.startsWith('A-')) throw new Error('bad token');
     ok(`check-in issued ${entry.tokenNumber}`);
 
     const board = await queue.getBoardSnapshot({ organizationId: 1, queueZone: 'opd-waiting' });
     if (!board.entries?.length) throw new Error('empty board');
-    ok(`board snapshot ${board.entries.length} entries`);
+    if (!board.waitEstimate?.p50ConsultMins) throw new Error('missing wait estimate');
+    ok(`board snapshot ${board.entries.length} entries (p50=${board.waitEstimate.p50ConsultMins}m)`);
+
+    const analytics = await queue.getHospitalQueueAnalytics(1);
+    if (!analytics.byDepartment) throw new Error('missing analytics');
+    ok('hospital queue analytics');
+
+    const erEntry = await queue.checkIn({
+      organizationId: 1,
+      department: 'er',
+      queueZone: 'er-triage',
+      patientName: 'ER Smoke',
+      queueType: 'emergency',
+      triageLevel: 'ESI-3',
+      chiefComplaint: 'smoke er triage',
+    });
+    if (!erEntry?.tokenNumber?.startsWith('ER-')) throw new Error('bad er token');
+    ok(`er triage token ${erEntry.tokenNumber}`);
+
+    const parsed = queue.parseKioskQrPayload(JSON.stringify({ type: 'appointment', id: 42 }));
+    if (parsed.type !== 'appointment' || parsed.appointmentId !== 42) throw new Error('qr parse failed');
+    ok('kiosk QR parse');
 
     const uhid = await queue.allocateUhid(1);
     if (!uhid.startsWith('UHID-')) throw new Error('bad uhid');
     ok(`uhid ${uhid}`);
 
     const stats = getSSEStats();
-    ok(`sse broker ready (clients=${stats.clients})`);
+    ok(`sse broker ready (connected=${stats.connected})`);
   } catch (e) {
     fail('queue operations', e);
   }

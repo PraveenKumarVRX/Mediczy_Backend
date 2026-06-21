@@ -646,6 +646,21 @@ router.get('/signage', async (req, res) => {
   }
 });
 
+// GET /api/display/er-triage — ER queue board for triage staff display (GAP-DISPLAY-003)
+router.get('/er-triage', async (req, res) => {
+  try {
+    const orgId = parseInt(req.query.organizationId || process.env.HOSPITAL_DEFAULT_ORG_ID || '1', 10);
+    const board = await queueService.getBoardSnapshot({
+      organizationId: orgId,
+      queueZone: 'er-triage',
+      department: 'er',
+    });
+    res.json({ success: true, live: true, ...board });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
 // GET /api/display/command — executive command centre KPIs (GAP-DISPLAY-005)
 router.get('/command', async (req, res) => {
   try {
@@ -680,6 +695,10 @@ router.get('/command', async (req, res) => {
       `SELECT COALESCE(SUM(amount), 0)::float AS total FROM payments
        WHERE status = 'completed' AND created_at::date = CURRENT_DATE`
     );
+    const nurseCallsOpen = await safeQueryOne(
+      `SELECT COUNT(*)::int AS c FROM bedside_nurse_calls
+       WHERE resolved_at IS NULL AND created_at::date = CURRENT_DATE`
+    );
 
     res.json({
       success: true,
@@ -700,7 +719,7 @@ router.get('/command', async (req, res) => {
       },
       revenueToday: Math.round(revenueToday?.total || 0),
       displays: displayStats,
-      incidents: { codeBlueActive: 0, nurseCallsOpen: 0 },
+      incidents: { codeBlueActive: 0, nurseCallsOpen: nurseCallsOpen?.c || 0 },
     });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
@@ -794,6 +813,17 @@ router.post('/video/sessions', async (req, res) => {
       join,
     });
     res.json({ success: true, roomId, join });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// POST /api/display/video/sessions/end — dismiss video overlay on zone displays
+router.post('/video/sessions/end', async (req, res) => {
+  try {
+    const { targetZone, roomId } = req.body;
+    pushToZone(targetZone || 'ward', 'video_session_end', { roomId, ts: Date.now() });
+    res.json({ success: true });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
   }

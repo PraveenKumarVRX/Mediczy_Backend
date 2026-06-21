@@ -49,7 +49,16 @@ export default function DisplayVideoOverlay({ zone }: Props) {
       />
       <button
         type="button"
-        onClick={() => setSession(null)}
+        onClick={async () => {
+          setSession(null);
+          try {
+            await fetch('/api/display/video/sessions/end', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ targetZone: zone, roomId: session.roomId }),
+            });
+          } catch (_) {}
+        }}
         className="absolute top-4 right-4 z-50 px-4 py-2 bg-red-700 rounded-lg text-white font-bold"
       >
         End Call

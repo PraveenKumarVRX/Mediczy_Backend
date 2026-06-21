@@ -868,6 +868,13 @@ app.use('/api/downloads', express.static(path.join(__dirname, 'public/downloads'
     }
   }
 }));
+
+// Kiosk patient photos (device-uploaded, LAN-only displays)
+app.use('/uploads/kiosk', express.static(path.join(__dirname, '../uploads/kiosk'), {
+  maxAge: '1h',
+  fallthrough: true,
+}));
+
 const globalFileUploadMiddleware = fileUpload({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max file size
   abortOnLimit: true,
