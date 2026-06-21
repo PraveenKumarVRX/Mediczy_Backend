@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | **Document ID** | MED-HOSP-GAP-001 |
-| **Version** | 1.0 |
+| **Version** | 1.1 |
 | **Date** | 2026-06-17 |
 | **Owner** | AI CTO |
 | **Audience** | PM, BA, Engineering, QA, Security, Delivery |
@@ -41,6 +41,7 @@ Each gap has: **ID, priority, owner role, current state, target state, files, im
 | Multi-tenant PHI isolation | 50% | **No** |
 | Native mobile apps | 35% | Build separately |
 | Hospital E2E QA | 40% | **No** |
+| Paperless kiosk (QR + camera self-registration) | 15% | **No** |
 
 **Weighted overall:** ~58/100
 
@@ -49,6 +50,7 @@ Each gap has: **ID, priority, owner role, current state, target state, files, im
 | Deployment type | Ready? |
 |-----------------|--------|
 | Phased greenfield: OPD + insurance + pharmacy + lab | **Yes** (Phase 1) |
+| Paperless lobby: QR check-in + walk-in self-registration | **After KIOSK-001–005** (Phase 1b) |
 | IPD pilot (10–30 beds) using HMIS routes | **After Phase 0 + Phase 2** |
 | Full hospital ERP replacement on day one | **No** |
 | Multi-hospital SaaS with shared-row tenancy | **No** |
@@ -88,6 +90,53 @@ Mediqzy runs **two parallel hospital stacks**:
 ```
 
 **Rule until GAP-ARCH-001 is closed:** Staff must **not** use `/hospital/beds`, `/hospital/opd-ipd`, `/hospital/billing` for real operations. Use `/hmis/*` and `/ward/*`.
+
+### 3.1 Paperless kiosk / self-registration (current vs target)
+
+Zone **1a** in `MEDIQZY_DISPLAY_KIOSK_PLAN.md` calls for appointment lookup by phone/ABHA, token issuance, and wayfinding. The **built** experience is narrower: phone-only check-in for **existing** appointments — no QR scan, no camera capture, no walk-in new-patient registration.
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│  CURRENT (partial — demo-capable, not production paperless)              │
+│  UI:  /kiosk/checkin → SelfCheckinKiosk.tsx (phone keypad only)           │
+│  API: POST /api/display/checkin/appointments | issue-token               │
+│  QR:  @zxing/browser in HospitalMRD.tsx (staff MRD scan — not kiosk)     │
+│  Cam: getUserMedia in MRD / triage / video — not registration kiosk      │
+│  ABHA: POST /api/abdm/abha/register/* (authUser required — not kiosk)    │
+└──────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌──────────────────────────────────────────────────────────────────────────┐
+│  TARGET — paperless QR + camera self-registration (GAP-KIOSK-001–007)    │
+│  Entry: ABHA QR | appointment QR | hospital deep-link QR | walk-in       │
+│  Capture: live patient photo (+ optional ID doc image) with DPDP consent   │
+│  Output: UHID/MRN + OPD queue token + e-receipt QR (no paper form)       │
+│  Privacy: public queue boards show token/initials only                     │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**Target flow (lobby kiosk):**
+
+```mermaid
+flowchart TD
+  A[Touch kiosk] --> B{Entry path}
+  B -->|Scan ABHA QR| C[Fetch ABHA profile via ABDM]
+  B -->|Scan appointment QR| D[Load pre-booked visit]
+  B -->|Scan hospital QR| E[Open registration wizard]
+  B -->|Walk-in new| F[Phone OTP verify]
+  C --> G[Confirm demographics]
+  D --> H[Confirm visit]
+  E --> G
+  F --> G
+  G --> I[Camera: ID doc optional]
+  G --> J[Camera: patient photo]
+  I --> K[Create or link patient + UHID]
+  J --> K
+  H --> K
+  K --> L[Issue OPD token + e-receipt QR]
+  L --> M[Queue board SSE update]
+```
+
+**Reuse (do not rebuild):** `DisplayShell.tsx`, `SelfCheckinKiosk.tsx` idle/timeout UX, `HospitalMRD.tsx` ZXing pattern, patient profile upload + MinIO + ClamAV, `hospital-display.route.js` token issuance + SSE, `abdm.route.js` OTP primitives.
 
 ---
 
@@ -137,6 +186,13 @@ Mediqzy runs **two parallel hospital stacks**:
 | GAP-UX-001 | P1 | Single staff SSO across portals | Frontend + Backend | 3 | Open |
 | GAP-UX-002 | P2 | Bedside nurse mobile UX | UX + Mobile | 3 | Open |
 | GAP-DEPT-001 | P2 | Dept modules (blood bank, CSSD…) on patient timeline | Backend + Frontend | 4 | Open |
+| GAP-KIOSK-001 | P0 | QR-based kiosk entry (ABHA / appointment / walk-in deep link) | Frontend + Backend | 1 | Open |
+| GAP-KIOSK-002 | P0 | Camera ID + patient photo capture at kiosk | Frontend + Backend | 1 | Open |
+| GAP-KIOSK-003 | P0 | Walk-in new patient registration API (User + UHID + token) | Backend | 1 | Open |
+| GAP-KIOSK-004 | P0 | Kiosk ABHA flow without staff JWT (device token + OTP limits) | Backend + Security | 1 | Open |
+| GAP-KIOSK-005 | P0 | Harden check-in APIs (remove demo fallbacks, real schema) | Backend | 1 | Open |
+| GAP-KIOSK-006 | P1 | DPDP consent for kiosk photo/ID storage + retention | Security + BA | 1 | Open |
+| GAP-KIOSK-007 | P2 | Optional video liveness / ID verification at kiosk | AI + Frontend | 4 | Open |
 
 ---
 
@@ -563,6 +619,210 @@ node server/scripts/greenfield/provision-hospital.mjs \
 
 ---
 
+### GAP-KIOSK-001 — QR-based kiosk entry
+
+| | |
+|---|---|
+| **Owner** | Frontend + Backend |
+| **Phase** | 1 (Phase 1b — paperless lobby) |
+| **Current** | `/kiosk/checkin` accepts phone only; QR scanning exists in `HospitalMRD.tsx` (staff); no patient-facing QR |
+| **Target** | Kiosk home offers: **Scan QR** or **Enter phone** or **Walk-in registration** |
+
+**QR entry paths**
+
+| QR type | Payload | Action |
+|---------|---------|--------|
+| ABHA QR | NDHM health ID | Resolve profile via ABDM (see GAP-KIOSK-004) |
+| Appointment QR | `appointmentId` + HMAC or signed JWT | Skip phone lookup; go to confirm step |
+| Hospital registration QR | `hospitalId`, `dept`, `visitType` | Start walk-in wizard (GAP-KIOSK-003) |
+
+**Files**
+
+| Layer | Path |
+|-------|------|
+| UI | `client/src/pages/display/SelfCheckinKiosk.tsx` (extend) or new `SelfRegistrationKiosk.tsx` |
+| QR lib | Reuse `@zxing/browser` from `client/src/pages/hospital/HospitalMRD.tsx` |
+| Routes | `client/src/routes/index.tsx` — add `/kiosk/register` if separate from check-in |
+| API | `server/routes/hospital-display.route.js` — `POST /api/display/kiosk/parse-qr` |
+| Plan | `docs/hospital/MEDIQZY_DISPLAY_KIOSK_PLAN.md` Zone 1a |
+
+**Implementation steps**
+
+1. Add kiosk step machine: `idle → choose-entry → scan-qr | enter-phone | walk-in → …`
+2. Port ZXing `decodeFromVideoDevice` pattern from MRD into kiosk component (HTTPS + one-time camera permission).
+3. Implement `parse-qr` endpoint: classify payload type; validate signature/tenant; return next-step hint.
+4. Wire appointment QR to existing `checkin/issue-token` path after confirm.
+5. Register kiosk device via `display_devices` + optional `x-device-token` header.
+
+**Acceptance criteria**
+
+- [ ] ABHA, appointment, and hospital deep-link QRs each route to the correct wizard step
+- [ ] Invalid/expired QR shows user-friendly error; idle timeout resets session
+- [ ] QR scan works on Chrome kiosk mode over HTTPS
+- [ ] No staff login required on public kiosk routes
+
+**Dependencies** | GAP-KIOSK-004 (ABHA QR), GAP-KIOSK-005 (appointment schema), GAP-TEN-001 (tenant scope on kiosk APIs)
+
+---
+
+### GAP-KIOSK-002 — Camera ID + patient photo capture at kiosk
+
+| | |
+|---|---|
+| **Owner** | Frontend + Backend |
+| **Phase** | 1 |
+| **Current** | Profile photo upload fixed for patient/doctor web; no kiosk capture flow |
+| **Target** | Kiosk captures **live patient photo** (required for new registration); **ID document photo** (optional Phase 1b, required before go-live if hospital policy mandates) |
+
+**Files**
+
+| Layer | Path |
+|-------|------|
+| UI | Kiosk wizard step `capture-photo` / `capture-id` |
+| Upload | Reuse `server/routes/user.route.js` presign or direct upload; ClamAV via `registrationHelpers.js` |
+| Storage | MinIO bucket `patient-media` (or tenant-scoped prefix) |
+| Link | Patient record `profilePicture` + new `id_document_key` column or `patient_documents` table |
+
+**Implementation steps**
+
+1. Add `<video>` preview + capture frame to blob (canvas) in kiosk UI.
+2. POST multipart to kiosk-scoped upload endpoint (device token auth, rate limited).
+3. Store object key on patient; never expose raw bucket URL without signed URL.
+4. Show consent screen before capture (GAP-KIOSK-006).
+5. Compress image client-side (max 2 MB) before upload.
+
+**Acceptance criteria**
+
+- [ ] Patient photo attached to newly registered or linked patient record
+- [ ] Upload rejected if ClamAV flags file
+- [ ] Camera permission denial shows fallback: "Visit registration counter"
+- [ ] Captured images not retained in browser memory after session reset
+
+**Dependencies** | GAP-KIOSK-003, GAP-KIOSK-006, GAP-TEN-001
+
+---
+
+### GAP-KIOSK-003 — Walk-in new patient registration API
+
+| | |
+|---|---|
+| **Owner** | Backend |
+| **Phase** | 1 |
+| **Current** | Kiosk errors with "visit registration counter" when no appointment; doctor can create patient on behalf (`doctor.route.js`); no public kiosk registration |
+| **Target** | Unauthenticated (device-token) endpoint creates or links patient, assigns hospital UHID/MRN, issues OPD queue token |
+
+**Endpoint spec (proposed)**
+
+```
+POST /api/display/kiosk/register
+Headers: x-device-token (required), x-tenant-id or derived from device
+Body: {
+  phone, otpVerified: true,
+  firstName, lastName, dateOfBirth, gender,
+  abhaId?: string,
+  departmentId?: string,
+  visitType: 'walk-in' | 'follow-up',
+  photoKey?: string,
+  idDocumentKey?: string,
+  consentVersion: string
+}
+Response: { patientId, uhid, token_number, eReceiptQrPayload }
+```
+
+**Implementation steps**
+
+1. Phone OTP verify (reuse SMS/WhatsApp OTP service with kiosk rate limits).
+2. If `abhaId` present, merge demographics from ABDM response; de-duplicate by ABHA or phone.
+3. Create `User` (role patient) + hospital-scoped MRN/UHID (sequence per `organization_id`).
+4. Optionally create same-day walk-in `appointment` or `opd_visit` row for queue routing.
+5. Call token issuance (extend `checkin_tokens` or integrate HMIS queue module).
+6. Emit HL7 `A04` / internal `patient.registered` event if Kafka consumer enabled.
+7. Return e-receipt QR encoding `{ uhid, token, date }` for patient phone scan.
+
+**Acceptance criteria**
+
+- [ ] Walk-in patient receives queue token without front-desk staff action
+- [ ] Duplicate phone + same day returns existing visit link option (no duplicate UHID)
+- [ ] All writes scoped to kiosk device's `organization_id`
+- [ ] Audit log: device ID, timestamp, consent version, no password set on kiosk-created accounts
+
+**Dependencies** | GAP-TEN-001, GAP-KIOSK-005, GAP-KIOSK-006
+
+---
+
+### GAP-KIOSK-004 — Kiosk ABHA flow (no staff JWT)
+
+| | |
+|---|---|
+| **Owner** | Backend + Security |
+| **Phase** | 1 |
+| **Current** | `POST /api/abdm/abha/register/init` and `/verify` behind `authUser` |
+| **Target** | Kiosk-safe ABHA: scan QR → fetch/link profile OR mobile OTP create/link; rate limited; device token auth |
+
+**Files**
+
+| Path | Change |
+|------|--------|
+| `server/routes/abdm.route.js` | Add `/api/abdm/kiosk/abha/*` routes with `deviceAuth` + IP/device rate limits |
+| `server/routes/hospital-display.route.js` | Reuse `deviceAuth` middleware pattern |
+| Env | `ABDM_CLIENT_ID`, `ABDM_CLIENT_SECRET`, HIP credentials per tenant |
+
+**Implementation steps**
+
+1. Extract ABHA OTP logic from existing routes into shared service.
+2. New router mounted at `/api/abdm/kiosk` with `deviceAuth` + `abhaOtpRateLimit`.
+3. Support ABHA QR parse (healthId / PHR address) → ABDM profile fetch.
+4. Map ABHA demographics to kiosk registration payload (GAP-KIOSK-003).
+5. Security review: no PHI in QR logs; kiosk cannot export bulk ABHA data.
+
+**Acceptance criteria**
+
+- [ ] Valid ABHA QR pre-fills registration form; user confirms before submit
+- [ ] OTP brute-force blocked (existing rate limiter + device throttle)
+- [ ] ABHA link stored on patient record; audit trail in `abdm_audit` or equivalent
+- [ ] Works only when ABDM credentials configured for tenant (graceful degrade otherwise)
+
+**Dependencies** | GAP-CMP-001 (DPDP), GAP-TEN-001, ABDM sandbox/prod credentials
+
+---
+
+### GAP-KIOSK-005 — Harden check-in APIs (remove demo fallbacks)
+
+| | |
+|---|---|
+| **Owner** | Backend |
+| **Phase** | 1 |
+| **Current** | `POST /api/display/checkin/appointments` returns demo appointment when DB empty; `issue-token` returns demo token on DB error; SQL joins `doctors`/`patients` tables may not match Sequelize schema |
+| **Target** | Production-only responses; correct appointment/patient joins; appointment status updated on check-in |
+
+**Files**
+
+| Path |
+|------|
+| `server/routes/hospital-display.route.js` |
+| `server/models/appointment*.js` (verify canonical schema) |
+| `server/utils/appointmentSlotTime.js` (slot canonicalization) |
+
+**Implementation steps**
+
+1. Remove demo fallback blocks (lines returning `DEMO-001` / `A-001`).
+2. Rewrite appointment lookup using Sequelize models or verified SQL against `appointments` + `users` + `doctors`.
+3. Filter by `organization_id` from device token config.
+4. On successful check-in: set appointment status `checked_in`; record `checked_in_at`.
+5. Integrate `checkin_tokens` with HMIS OPD queue if separate queue table exists.
+6. Add smoke test: `server/scripts/qa/kiosk-checkin.smoke.mjs`.
+
+**Acceptance criteria**
+
+- [ ] No demo data returned when `NODE_ENV=production`
+- [ ] Phone lookup returns only today's confirmed appointments for tenant
+- [ ] Token sequence unique per day per counter prefix
+- [ ] SSE `new-token` event received on OPD queue display
+
+**Dependencies** | GAP-TEN-001
+
+---
+
 ## 6. P1 gaps — detailed implementation
 
 ### GAP-IPD-001 — Ward master data CRUD API
@@ -726,6 +986,32 @@ Use `server/routes/nabh-jci.route.js` to upload checkpoint evidence per hospital
 
 ---
 
+### GAP-KIOSK-006 — DPDP consent for kiosk photo/ID storage
+
+| | |
+|---|---|
+| **Owner** | Security + BA |
+| **Phase** | 1 |
+| **Current** | `dpdp-privacy.service.js` exists; no kiosk-specific consent capture |
+| **Target** | Touch consent screen before camera; versioned consent text; retention policy enforced |
+
+**Deliverables**
+
+1. Consent copy (EN + HI): purpose (identity verification, MRD), retention period, right to erasure.
+2. `consentVersion` + `consentedAt` stored on registration audit row.
+3. ID document images: encrypt at rest (GAP-MIG-005); auto-purge after N days if policy allows.
+4. Privacy notice URL on kiosk idle screen.
+
+**Acceptance criteria**
+
+- [ ] Registration blocked if consent not accepted
+- [ ] Consent version bump forces re-display on next visit
+- [ ] DPO register documents kiosk as processing activity
+
+**Dependencies** | GAP-CMP-001, GAP-KIOSK-002, GAP-MIG-005
+
+---
+
 ## 7. P2 gaps — backlog
 
 | ID | Summary | Notes |
@@ -737,6 +1023,7 @@ Use `server/routes/nabh-jci.route.js` to upload checkpoint evidence per hospital
 | GAP-CMP-005 | CDSCO filing | Before commercial SaMD claims |
 | GAP-UX-002 | Bedside nurse mobile | Barcode meds, glove-friendly vitals |
 | GAP-DEPT-001 | Dept modules on timeline | blood bank, CSSD, dietary, mortuary |
+| GAP-KIOSK-007 | Video liveness / ID verification at kiosk | Optional third-party or on-device; not required for Phase 1b |
 
 ---
 
@@ -779,6 +1066,25 @@ Use `server/routes/nabh-jci.route.js` to upload checkpoint evidence per hospital
 **Modules in scope:** `/hospital/dashboard`, `/hospital-insurance/*`, `/pharmacy/*`, `/lab/*`, doctor + patient flows
 
 **Modules explicitly out of scope:** `/hospital/beds`, `/hospital/opd-ipd` placeholders
+
+---
+
+### Phase 1b — Paperless lobby (QR + camera self-registration)
+
+| Work items | Gap IDs |
+|------------|---------|
+| Harden check-in APIs (no demo data) | KIOSK-005 |
+| QR entry on kiosk (ABHA + appointment + deep link) | KIOSK-001 |
+| Walk-in registration API + UHID + token | KIOSK-003 |
+| Kiosk ABHA (device token, OTP limits) | KIOSK-004 |
+| Camera patient photo (+ optional ID) | KIOSK-002 |
+| DPDP consent screen | KIOSK-006 |
+| Kiosk smoke test in CI | QA-003 (extend) |
+| Chrome kiosk HTTPS deploy + device token provisioning | TEN-003 |
+
+**Routes in scope:** `/kiosk/checkin`, `/kiosk/register` (new), `/display/queue`
+
+**Phase 1b exit gate:** Walk-in patient completes registration + receives token without staff; ABHA QR check-in works on staging; no demo fallbacks in prod.
 
 ---
 
@@ -861,6 +1167,7 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 |------|------|----------|
 | **G0** | Before any prod PHI | MIG-001–005, TEN-004, QA-002, CMP-001 |
 | **G1** | Phase 1 go-live | Insurance E2E manual script; OPD booking works; no placeholder routes used |
+| **G1b** | Paperless lobby (Phase 1b) | KIOSK-005 smoke green; walk-in registration E2E; ABHA QR on staging; consent logged |
 | **G2** | IPD pilot start | QA-001 pass; ARCH-001 redirects live; ward seed exists |
 | **G3** | IPD production | ARCH-004 complete; BIL-003 discharge billing; IPD-004 optional |
 | **G4** | Multi-site SaaS | TEN-001 100% route coverage; OPS-003 if on ECS |
@@ -875,15 +1182,15 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 | **BA** | Workflow specs, charge master rules, NABH checkpoint mapping |
 | **Principal Engineer** | ARCH-003, TEN-004, API gateway decisions |
 | **Tech Lead** | Code review all P0; tenant middleware patterns |
-| **Backend** | MIG-003, ARCH-002, IPD APIs, BIL, EMAR-pharmacy bridge |
-| **Frontend** | ARCH-001, ARCH-004, BIL-004 |
+| **Backend** | MIG-003, ARCH-002, IPD APIs, BIL, EMAR-pharmacy bridge, KIOSK-003–005 |
+| **Frontend** | ARCH-001, ARCH-004, BIL-004, KIOSK-001–002 |
 | **Mobile** | MOB-001–003 |
-| **AI Engineer** | CMP-002, CMP-004 (with Medical Director) |
-| **DevOps** | MIG-001–002, TEN-003, OPS-*, deploy runbooks |
-| **UX** | UX-001, UX-002, bedside flows |
+| **AI Engineer** | CMP-002, CMP-004 (with Medical Director); KIOSK-007 (liveness) |
+| **DevOps** | MIG-001–002, TEN-003, OPS-*, deploy runbooks, kiosk device provisioning |
+| **UX** | UX-001, UX-002, bedside flows, kiosk wizard UX |
 | **UI** | Hospital admin screens for ward/OT setup |
 | **QA** | QA-001–004, test data fixtures |
-| **Security** | TEN-001–002, MIG-004–005, QA-002, CMP-001 |
+| **Security** | TEN-001–002, MIG-004–005, QA-002, CMP-001, KIOSK-004, KIOSK-006 |
 | **Delivery** | Phase gates, customer onboarding, training materials |
 
 ---
@@ -902,7 +1209,18 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 | Doctor API + mobile web | `DOCTOR_APP_API_INTEGRATION_GUIDE.md`, `DoctorMobileHome.tsx` |
 | Patient mobile API gateway | `server/api/mobile/index.js` |
 | SaMD software governance | 22/27 scorecard items |
-| Display/kiosk layer | `docs/hospital/MEDIQZY_DISPLAY_KIOSK_PLAN.md` |
+| Display/kiosk layer (plan + partial check-in) | `docs/hospital/MEDIQZY_DISPLAY_KIOSK_PLAN.md`, `/kiosk/checkin`, `SelfCheckinKiosk.tsx` |
+| Kiosk QR scan pattern (staff only — reuse for kiosk) | `HospitalMRD.tsx` (`@zxing/browser`) |
+| Profile photo upload pipeline (reuse for kiosk capture) | `user.route.js`, MinIO + ClamAV |
+
+**Not done — do not assume available:**
+
+| Area | Gap IDs |
+|------|---------|
+| Paperless QR + camera self-registration | KIOSK-001–007 |
+| Walk-in patient at kiosk | KIOSK-003 |
+| ABHA at kiosk without staff login | KIOSK-004 |
+| Production-hardened check-in APIs | KIOSK-005 |
 
 ---
 
@@ -926,6 +1244,16 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 - [ ] Sidebar audit: no placeholder routes in use
 - [ ] GAP-OPS-002 — Alerting live
 - [ ] Rollback plan documented
+
+### Phase 1b — Paperless lobby (optional Day-1; recommended for greenfield)
+
+- [ ] GAP-KIOSK-005 — Check-in APIs hardened; demo fallbacks removed in prod
+- [ ] GAP-KIOSK-001 — QR entry live (appointment QR minimum)
+- [ ] GAP-KIOSK-003 — Walk-in registration issues UHID + queue token
+- [ ] GAP-KIOSK-002 — Patient photo capture on new registration
+- [ ] GAP-KIOSK-006 — Consent screen + audit trail
+- [ ] GAP-KIOSK-004 — ABHA QR (if ABDM credentials provisioned)
+- [ ] Kiosk devices registered in `display_devices`; HTTPS Chrome kiosk tested
 
 ### Phase 2 — IPD pilot
 
@@ -957,6 +1285,7 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 | Patient mobile API | `docs/patient/PATIENT_MOBILE_APP_API_GUIDE.md` |
 | Doctor mobile API | `docs/doctor/DOCTOR_APP_API_INTEGRATION_GUIDE.md` |
 | Production deploy | `docs/deployment/PRODUCTION_DEPLOYMENT_RUNBOOK.md` |
+| Display & kiosk plan (Zone 1a) | `docs/hospital/MEDIQZY_DISPLAY_KIOSK_PLAN.md` |
 
 ---
 
@@ -970,7 +1299,12 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 | Phase complete | PM updates §8 status; Delivery archives evidence |
 
 **Next review date:** 2026-07-01  
-**Version history:** 1.0 — Initial greenfield gaps document (2026-06-17)
+**Version history:**
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2026-06-17 | Initial greenfield gaps document |
+| 1.1 | 2026-06-17 | Added paperless QR + camera self-registration (GAP-KIOSK-001–007), §3.1 architecture, Phase 1b plan |
 
 ---
 
