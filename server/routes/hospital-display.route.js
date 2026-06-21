@@ -1,26 +1,14 @@
 import express from 'express';
 import { connectPostgres } from '../db/postgres.js';
+import { Op } from 'sequelize';
+import Appointment from '../models/postgres/appointment.model.postgres.js';
+import { registerDisplaySSE, pushToZone, pushToAll } from '../services/display-sse-broker.service.js';
+import * as queueService from '../services/hospital-queue.service.js';
+import { buildLiveKitJoinData } from '../utils/videoProvider.js';
 
 const router = express.Router();
 
-// ─── In-memory SSE broker ────────────────────────────────────────────────────
-// Map<clientId, { res, zone, deviceId }>
-const sseClients = new Map();
-let _clientSeq = 0;
-
-function pushToAll(event, data) {
-  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  sseClients.forEach(({ res }) => { try { res.write(payload); } catch (_) {} });
-}
-
-function pushToZone(zone, event, data) {
-  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  sseClients.forEach((client) => {
-    if (!zone || client.zone === zone) {
-      try { client.res.write(payload); } catch (_) {}
-    }
-  });
-}
+registerDisplaySSE(router);
 
 // ─── DB helpers ──────────────────────────────────────────────────────────────
 async function safeQuery(sql, params = []) {
@@ -115,34 +103,7 @@ function deviceAuth(req, res, next) {
     .catch(() => res.status(500).json({ success: false, message: 'Auth error' }));
 }
 
-// ─── SSE endpoint ─────────────────────────────────────────────────────────────
-// GET /api/display/events?zone=opd-waiting
-router.get('/events', (req, res) => {
-  const zone = req.query.zone || null;
-  const deviceId = req.query.deviceId || null;
-
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no'); // for nginx
-  res.flushHeaders();
-
-  // Send initial heartbeat
-  res.write(`event: connected\ndata: ${JSON.stringify({ ts: Date.now(), zone })}\n\n`);
-
-  const clientId = ++_clientSeq;
-  sseClients.set(clientId, { res, zone, deviceId });
-
-  // Keepalive every 25s
-  const keepalive = setInterval(() => {
-    try { res.write(': ping\n\n'); } catch (_) {}
-  }, 25000);
-
-  req.on('close', () => {
-    clearInterval(keepalive);
-    sseClients.delete(clientId);
-  });
-});
+// ─── SSE endpoint (registered via display-sse-broker.service.js) ─────────────
 
 // ─── Emergency broadcasts ─────────────────────────────────────────────────────
 
@@ -266,51 +227,55 @@ const ZONE_CATALOG = [
 // ─── Display data endpoints ───────────────────────────────────────────────────
 // All are public (no auth) — meant for browser kiosk displays on internal LAN
 
-// OPD Queue board
-// GET /api/display/queue?counter=1
+// OPD Queue board — unified smart queue
 router.get('/queue', async (req, res) => {
-  const { counter } = req.query;
-  // Try live data from queue_tokens table
-  const activeWhere = counter ? 'WHERE counter_id=$1 AND status IN (\'waiting\',\'calling\')' : 'WHERE status IN (\'waiting\',\'calling\')';
-  const params = counter ? [counter] : [];
-
-  const liveTokens = await safeQuery(
-    `SELECT * FROM queue_tokens ${activeWhere} ORDER BY created_at ASC LIMIT 20`,
-    params
-  );
-
-  if (liveTokens.length > 0) {
-    const current = liveTokens.find(t => t.status === 'calling') || liveTokens[0];
-    const next = liveTokens.filter(t => t.id !== current.id).slice(0, 3);
-    return res.json({
-      success: true,
-      current: { token: current.token_number, counter: current.counter_id, doctor: current.doctor_name },
-      next: next.map(t => ({ token: t.token_number, counter: t.counter_id })),
-      waiting: liveTokens.length,
-      avgWaitMins: 12,
-      live: true,
+  try {
+    const isProd = process.env.NODE_ENV === 'production';
+    const board = await queueService.getBoardSnapshot({
+      organizationId: req.query.organizationId,
+      queueZone: 'opd-waiting',
+      department: req.query.department || 'opd',
+      doctorId: req.query.doctorId ? parseInt(req.query.doctorId, 10) : undefined,
+      counterId: req.query.counter,
     });
-  }
 
-  // Fallback demo data
-  res.json({
-    success: true,
-    current: { token: 'A-047', counter: 'Counter 2', doctor: 'Dr. Sharma (Gen. Medicine)' },
-    next: [
-      { token: 'A-048', counter: 'Counter 1' },
-      { token: 'A-049', counter: 'Counter 3' },
-      { token: 'B-012', counter: 'Counter 2' },
-    ],
-    waiting: 18,
-    avgWaitMins: 12,
-    live: false,
-    healthTips: [
-      'Stay hydrated — drink at least 8 glasses of water daily.',
-      'Regular hand washing prevents 80% of common infections.',
-      'A 30-minute walk daily reduces heart disease risk by 35%.',
-      'Adequate sleep (7-8 hrs) boosts immune function significantly.',
-    ],
-  });
+    if (board.entries?.length > 0 || board.current?.token) {
+      return res.json({
+        success: true,
+        current: board.current || { token: '—', counter: '—', doctor: '' },
+        next: board.next,
+        waiting: board.waiting,
+        avgWaitMins: board.avgWaitMins,
+        live: true,
+      });
+    }
+
+    if (isProd) {
+      return res.json({
+        success: true,
+        current: { token: '—', counter: '—', doctor: '' },
+        next: [],
+        waiting: 0,
+        avgWaitMins: 0,
+        live: true,
+      });
+    }
+
+    res.json({
+      success: true,
+      current: { token: 'A-047', counter: 'Counter 2', doctor: 'Dr. Sharma (Gen. Medicine)' },
+      next: [
+        { token: 'A-048', counter: 'Counter 1' },
+        { token: 'A-049', counter: 'Counter 3' },
+      ],
+      waiting: 0,
+      avgWaitMins: 12,
+      live: false,
+    });
+  } catch (e) {
+    console.error('[display] queue error:', e.message);
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 // ICU Board
@@ -549,38 +514,47 @@ router.get('/cssd', async (_req, res) => {
 
 // ─── Kiosk check-in endpoints ─────────────────────────────────────────────────
 
-// POST /api/display/checkin/appointments — lookup appointments by phone
+// POST /api/display/checkin/appointments — Sequelize appointment lookup (no demo in prod)
 router.post('/checkin/appointments', async (req, res) => {
   const { phone } = req.body;
   if (!phone) return res.status(400).json({ success: false, message: 'phone required' });
+  const normalized = String(phone).replace(/\D/g, '').slice(-10);
 
-  const normalized = phone.replace(/\D/g, '').slice(-10);
+  try {
+    const appointments = await Appointment.findAll({
+      where: {
+        patientPhone: { [Op.like]: `%${normalized}` },
+        appointmentDate: new Date().toISOString().slice(0, 10),
+        status: { [Op.in]: ['pending', 'accepted', 'scheduled', 'confirmed'] },
+      },
+      order: [['appointmentTime', 'ASC']],
+      limit: 5,
+    });
 
-  const appointments = await safeQuery(
-    `SELECT a.id, a.appointment_date, a.appointment_time, a.status,
-            d.name as doctor_name, d.specialty,
-            p.name as patient_name
-     FROM appointments a
-     LEFT JOIN doctors d ON d.id = a.doctor_id
-     LEFT JOIN patients p ON p.phone = $1 OR p.phone = $2
-     WHERE (a.patient_phone=$1 OR a.patient_phone=$2)
-       AND a.appointment_date = CURRENT_DATE
-       AND a.status IN ('confirmed','scheduled')
-     ORDER BY a.appointment_time
-     LIMIT 5`,
-    [normalized, phone]
-  );
+    if (appointments.length > 0) {
+      return res.json({
+        success: true,
+        live: true,
+        appointments: appointments.map((a) => ({
+          id: a.id,
+          appointment_date: a.appointmentDate,
+          appointment_time: a.appointmentTime,
+          doctor_name: a.doctorName,
+          specialty: a.specialization,
+          patient_name: a.patientName,
+          status: a.status,
+        })),
+      });
+    }
 
-  if (appointments.length > 0) {
-    return res.json({ success: true, appointments, live: true });
-  }
+    if (process.env.NODE_ENV === 'production') {
+      return res.json({ success: true, live: true, appointments: [] });
+    }
 
-  // Demo fallback
-  res.json({
-    success: true,
-    live: false,
-    appointments: [
-      {
+    res.json({
+      success: true,
+      live: false,
+      appointments: [{
         id: 'DEMO-001',
         appointment_date: new Date().toISOString().slice(0, 10),
         appointment_time: '10:30',
@@ -588,39 +562,47 @@ router.post('/checkin/appointments', async (req, res) => {
         specialty: 'Internal Medicine',
         patient_name: 'Demo Patient',
         status: 'confirmed',
-      },
-    ],
-  });
+      }],
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
-// POST /api/display/checkin/issue-token — confirm check-in and issue queue token
+// POST /api/display/checkin/issue-token — unified queue check-in
 router.post('/checkin/issue-token', async (req, res) => {
   try {
-    const { appointment_id, patient_name, doctor_name } = req.body;
+    const { appointment_id, patient_name, doctor_name, doctor_id, organization_id } = req.body;
     if (!appointment_id) return res.status(400).json({ success: false, message: 'appointment_id required' });
 
-    // Generate token
-    const prefix = 'A';
-    const existingCount = await safeQuery(
-      "SELECT COUNT(*) FROM checkin_tokens WHERE issued_at::date = CURRENT_DATE"
-    );
-    const seq = (parseInt(existingCount[0]?.count || '0') + 1);
-    const token_number = `${prefix}-${String(seq).padStart(3, '0')}`;
+    const entry = await queueService.checkIn({
+      organizationId: organization_id,
+      department: 'opd',
+      queueZone: 'opd-waiting',
+      patientName: patient_name,
+      appointmentId: parseInt(appointment_id, 10) || appointment_id,
+      doctorName: doctor_name,
+      doctorId: doctor_id ? parseInt(doctor_id, 10) : undefined,
+      queueType: 'scheduled',
+      priorityScore: 60,
+    });
 
-    const db = await connectPostgres();
-    const result = await db.query(
-      `INSERT INTO checkin_tokens (token_number, patient_name, appointment_id, doctor_name, status)
-       VALUES ($1,$2,$3,$4,'waiting') RETURNING *`,
-      [token_number, patient_name, appointment_id, doctor_name]
-    );
-    const issued = result.rows[0];
-
-    // Push token event to OPD queue displays
-    pushToZone('opd-waiting', 'new-token', issued);
-
-    res.json({ success: true, token: issued });
+    res.json({
+      success: true,
+      live: true,
+      token: {
+        token_number: entry.tokenNumber,
+        patient_name: entry.patientName,
+        doctor_name: entry.doctorName,
+        status: entry.status,
+        issued_at: entry.checkInAt,
+        estimated_wait_minutes: entry.estimatedWaitMinutes,
+      },
+    });
   } catch (e) {
-    // Fallback: return a demo token if DB not available
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(500).json({ success: false, message: e.message });
+    }
     res.json({
       success: true,
       live: false,
@@ -632,6 +614,57 @@ router.post('/checkin/issue-token', async (req, res) => {
         issued_at: new Date().toISOString(),
       },
     });
+  }
+});
+
+// POST /api/display/bedside/nurse-call
+router.post('/bedside/nurse-call', async (req, res) => {
+  try {
+    const { bed, ward, patient_id, patient_name, organization_id } = req.body;
+    if (!bed) return res.status(400).json({ success: false, message: 'bed required' });
+    const call = await queueService.createNurseCall({
+      organizationId: organization_id,
+      bedId: bed,
+      wardZone: ward || 'ward',
+      patientId: patient_id,
+      patientName: patient_name,
+    });
+    res.json({ success: true, call });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// GET /api/display/signage?zone=lobby
+router.get('/signage', async (req, res) => {
+  try {
+    const zone = req.query.zone || 'lobby';
+    const slides = await queueService.listCmsSlides(req.query.organizationId, zone);
+    res.json({ success: true, zone, slides, live: slides.length > 0 });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// POST /api/display/video/sessions — LiveKit room for display surfaces
+router.post('/video/sessions', async (req, res) => {
+  try {
+    const { sessionType, targetZone, bedId, patientId, role = 'patient' } = req.body;
+    const roomId = `display-${sessionType || 'consult'}-${Date.now()}`;
+    const join = await buildLiveKitJoinData({
+      meetingId: roomId,
+      identity: `${role}-${patientId || bedId || Date.now()}`,
+      name: role,
+    });
+    pushToZone(targetZone || 'ward', 'video_session_start', {
+      roomId,
+      sessionType,
+      bedId,
+      join,
+    });
+    res.json({ success: true, roomId, join });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
   }
 });
 

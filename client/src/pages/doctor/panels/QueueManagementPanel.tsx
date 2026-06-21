@@ -33,7 +33,7 @@ export default function QueueManagementPanel() {
   const fetchQueue = async () => {
     try {
       const token = localStorage.getItem('doctorToken');
-      const { data } = await axios.get('/api/doctor/queue/my-queue', {
+      const { data } = await axios.get('/api/v1/queue/my', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setQueue(data.data);
@@ -51,7 +51,7 @@ export default function QueueManagementPanel() {
       const nextPatient = queue.find(p => p.status === 'waiting');
       if (!nextPatient) return;
 
-      await axios.patch(`/api/doctor/queue/${nextPatient.id}/call`, {}, {
+      await axios.patch(`/api/v1/queue/${nextPatient.id}/call`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       fetchQueue();
@@ -63,7 +63,7 @@ export default function QueueManagementPanel() {
   const completeConsultation = async (entryId: number) => {
     try {
       const token = localStorage.getItem('doctorToken');
-      await axios.patch(`/api/doctor/queue/${entryId}/complete`, {}, {
+      await axios.patch(`/api/v1/queue/${entryId}/complete`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       fetchQueue();
@@ -75,7 +75,7 @@ export default function QueueManagementPanel() {
   const markNoShow = async (entryId: number) => {
     try {
       const token = localStorage.getItem('doctorToken');
-      await axios.patch(`/api/doctor/queue/${entryId}/no-show`, {}, {
+      await axios.patch(`/api/v1/queue/${entryId}/no-show`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       fetchQueue();

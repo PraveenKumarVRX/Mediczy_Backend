@@ -167,6 +167,8 @@ import ehrRouter from './routes/ehr.route.js';
 import payrollRouter from './routes/payroll.route.js';
 import roadmapIntelligenceRouter from './routes/roadmap-intelligence.route.js';
 import hospitalDisplayRouter from './routes/hospital-display.route.js';
+import hospitalQueueRouter from './routes/hospital-queue.route.js';
+import displayKioskRouter from './routes/display-kiosk.route.js';
 import emrRouter from './routes/emr.route.js';
 import healthDiaryRouter from './routes/health-diary.route.js';
 import healthIntelligenceRouter from './routes/health-intelligence.route.js';
@@ -1331,6 +1333,8 @@ app.use("/api/ehr", ehrRouter); // Electronic Health Records - admin access to p
 app.use('/api/payroll', payrollRouter);
 app.use('/api/roadmap-intelligence', roadmapIntelligenceRouter);
 app.use('/api/display', hospitalDisplayRouter);
+app.use('/api/display/kiosk', displayKioskRouter);
+app.use('/api/v1/queue', hospitalQueueRouter);
 app.use("/api/emr", emrRouter); // EMR folder per user — accessible by team members
 app.use("/api/health-diary", healthDiaryRouter); // Patient health journal and diary entries
 app.use("/api/health-intelligence", healthIntelligenceRouter); // Dr. iSHA Health Intelligence Dashboard

@@ -1817,6 +1817,7 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 ### Phase 1b — Paperless lobby (optional Day-1; recommended for greenfield)
 
 - [ ] GAP-KIOSK-005 — Check-in APIs hardened; demo fallbacks removed in prod
+- [ ] **GAP-QUEUE-001** — Kiosk token flows into unified queue (doctor panel sees it)
 - [ ] GAP-KIOSK-001 — QR entry live (appointment QR minimum)
 - [ ] GAP-KIOSK-003 — Walk-in registration issues UHID + queue token
 - [ ] GAP-KIOSK-002 — Patient photo capture on new registration
@@ -1834,7 +1835,9 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 ### Phase 2a–2c — Smart Hospital displays (optional parallel track)
 
 - [ ] GAP-HOS-001 — All prod screens enrolled; CMS signage live
+- [ ] **GAP-QUEUE-002** — Queue SSE: token called → wall board < 1 s
 - [ ] GAP-DISPLAY-001 — OPD queue board on SSE production data
+- [ ] **GAP-QUEUE-007** — Front-desk queue console operational
 - [ ] GAP-DISPLAY-003 + GAP-IOT-001 — ICU/ER/OT/ward boards on live data
 - [ ] GAP-DISPLAY-002 — Bedside nurse call API operational
 - [ ] GAP-DISPLAY-004 — Family waiting board privacy-safe
@@ -1895,6 +1898,7 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 | 1.0 | 2026-06-17 | Initial greenfield gaps document |
 | 1.1 | 2026-06-17 | Added paperless QR + camera self-registration (GAP-KIOSK-001–007), §3.1 architecture, Phase 1b plan |
 | 1.2 | 2026-06-17 | Smart Hospital OS vision — displays, interactive care, video telepresence (GAP-HOS/DISPLAY/VIDEO/IOT), Phase 2a–2c, 3b |
+| 1.3 | 2026-06-17 | Smart Queue Management (GAP-QUEUE-001–008), §3.3 fragmentation analysis, unified queue service spec |
 
 ---
 

@@ -4,21 +4,26 @@ import QueueEntry from '../models/queue-management.model.js';
 import { authDoctor } from '../middleware/doctor.middleware.js';
 import { notificationService } from '../services/notification.service.js';
 
-// Get doctor's current queue
+import * as hospitalQueue from '../services/hospital-queue.service.js';
+
+// Get doctor's current queue — unified Hospital OS queue
 router.get('/my-queue', authDoctor, async (req, res) => {
   try {
-    const queue = await QueueEntry.findAll({
-      where: { 
-        doctorId: req.doctor.id,
-        status: ['waiting', 'called', 'in_consultation']
-      },
-      order: [
-        ['priority', 'DESC'],
-        ['checkInTime', 'ASC']
-      ]
-    });
-    
-    res.json({ success: true, data: queue });
+    const org = req.user?.organization_id || req.user?.tenant_id || 1;
+    const entries = await hospitalQueue.listDoctorQueue(req.doctor.id, org);
+    const mapped = entries.map((e) => ({
+      id: e.id,
+      patientId: e.patientId,
+      patientName: e.patientName || `Patient #${e.patientId || e.id}`,
+      queueType: e.queueType,
+      priority: e.priorityScore,
+      status: e.status === 'serving' ? 'in_consultation' : e.status,
+      estimatedWaitMinutes: e.estimatedWaitMinutes,
+      eta: e.checkInAt,
+      checkInTime: e.checkInAt,
+      chiefComplaint: e.chiefComplaint,
+    }));
+    res.json({ success: true, data: mapped });
   } catch (error) {
     console.error('Fetch queue error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch queue', error: error.message });

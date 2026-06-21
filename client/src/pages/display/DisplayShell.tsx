@@ -22,6 +22,7 @@ export function useDisplaySSE(zone?: string, deviceId?: string) {
   const [emergency, setEmergency] = useState<EmergencyBroadcast | null>(null);
   const [announcement, setAnnouncement] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const [queueEvent, setQueueEvent] = useState<{ type: string; payload: Record<string, unknown> } | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
   const connect = useCallback(() => {
@@ -52,10 +53,21 @@ export function useDisplaySSE(zone?: string, deviceId?: string) {
         setTimeout(() => setAnnouncement(null), 10000);
       } catch (_) {}
     });
+    const onQueue = (type: string) => (e: Event) => {
+      try {
+        const payload = JSON.parse((e as MessageEvent).data);
+        setQueueEvent({ type, payload });
+      } catch (_) {}
+    };
+    es.addEventListener('queue_token_called', onQueue('queue_token_called'));
+    es.addEventListener('queue_token_issued', onQueue('queue_token_issued'));
+    es.addEventListener('queue_updated', onQueue('queue_updated'));
+    es.addEventListener('new-token', onQueue('new-token'));
+    es.addEventListener('nurse_call', onQueue('nurse_call'));
+    es.addEventListener('video_session_start', onQueue('video_session_start'));
     es.onerror = () => {
       setConnected(false);
       es.close();
-      // Auto-reconnect after 5 s
       setTimeout(connect, 5000);
     };
   }, [zone, deviceId]);
@@ -72,7 +84,7 @@ export function useDisplaySSE(zone?: string, deviceId?: string) {
     } catch (_) {}
   }, []);
 
-  return { emergency, dismissEmergency, announcement, connected };
+  return { emergency, dismissEmergency, announcement, connected, queueEvent, clearQueueEvent: () => setQueueEvent(null) };
 }
 
 function Clock() {

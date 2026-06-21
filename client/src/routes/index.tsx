@@ -844,6 +844,8 @@ const SecurityImplementationPage = lazyNamed(_SecurityModulePages, "SecurityImpl
 // ─── Hospital Display & Kiosk System ─────────────────────────────────────────
 const OPDQueueDisplay        = lazy(() => import("@/pages/display/OPDQueueDisplay"));
 const SelfCheckinKiosk       = lazy(() => import("@/pages/display/SelfCheckinKiosk"));
+const QueueConsole           = lazy(() => import("@/pages/display/QueueConsole"));
+const LobbySignageDisplay    = lazy(() => import("@/pages/display/LobbySignageDisplay"));
 const ICUBoardDisplay        = lazy(() => import("@/pages/display/ICUBoardDisplay"));
 const BedsideDisplay         = lazy(() => import("@/pages/display/BedsideDisplay"));
 const BloodBankDisplay       = lazy(() => import("@/pages/display/BloodBankDisplay"));
@@ -1778,6 +1780,8 @@ const AppRoutes = () => {
         <Route path="/display/bedside"          element={<BedsideDisplay />} />
         <Route path="/display/discharge-status" element={<DischargeStatusDisplay />} />
         <Route path="/kiosk/checkin"            element={<SelfCheckinKiosk />} />
+        <Route path="/hospital/queue-console"   element={<QueueConsole />} />
+        <Route path="/display/signage"           element={<LobbySignageDisplay />} />
         <Route path="/display/admin"            element={<DisplayAdminPage />} />
 
         {/* ── Misc ────────────────────────────────────────────────────── */}

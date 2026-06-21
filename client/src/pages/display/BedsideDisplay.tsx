@@ -21,12 +21,26 @@ function NurseCallButton() {
   const [calling, setCalling] = useState(false);
   const [called, setCalled] = useState(false);
 
-  const handleCall = () => {
+  const handleCall = async () => {
     if (calling || called) return;
     setCalling(true);
-    // In production: POST to nurse-call endpoint
-    setTimeout(() => { setCalling(false); setCalled(true); }, 1000);
-    setTimeout(() => setCalled(false), 15000);
+    try {
+      const bed = new URLSearchParams(window.location.search).get('bed') ?? '3B-02';
+      await fetch('/api/display/bedside/nurse-call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bed,
+          ward: new URLSearchParams(window.location.search).get('ward') || 'ward',
+          patient_name: document.title,
+        }),
+      });
+      setCalling(false);
+      setCalled(true);
+      setTimeout(() => setCalled(false), 15000);
+    } catch (_) {
+      setCalling(false);
+    }
   };
 
   return (
