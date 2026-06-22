@@ -4,7 +4,11 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand __tests__/hospital-insurance.test.js",
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
+    "migrate:all": "node scripts/migrate-all.mjs up",
+    "migrate:status": "node scripts/migrate-all.mjs status",
+    "test:hospital-portal-smoke": "node scripts/qa/hospital-portal-smoke.mjs",
+    "test:tenant-pentest": "node scripts/qa/tenant-isolation-pentest.mjs",
     "test:smoke": "node scripts/sanity-smoke-regression.mjs",
     "test:communication-hub-smoke": "node scripts/qa/communication-hub-smoke.mjs",
     "test:whatsapp-sib-auth-smoke": "node scripts/whatsapp-sib-auth-smoke.mjs",

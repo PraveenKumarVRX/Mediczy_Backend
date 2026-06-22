@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import DisplayShell from './DisplayShell';
+import DisplayVideoOverlay from '@/components/display/DisplayVideoOverlay';
 
 interface ICUBed {
   bed_number: string;
@@ -45,6 +46,21 @@ function Vital({ label, value, unit = '' }: { label: string; value: string | num
 export default function ICUBoardDisplay() {
   const [beds, setBeds] = useState<ICUBed[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [teleOpen, setTeleOpen] = useState(false);
+  const [teleSession, setTeleSession] = useState<{ serverUrl: string; token: string } | null>(null);
+
+  const startTeleIcu = async () => {
+    const res = await fetch('/api/display/kiosk/video-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ purpose: 'tele-icu', roomName: `tele-icu-${Date.now()}` }),
+    });
+    const json = await res.json();
+    if (json.serverUrl && json.token) {
+      setTeleSession({ serverUrl: json.serverUrl, token: json.token });
+      setTeleOpen(true);
+    }
+  };
 
   const fetchICU = useCallback(async () => {
     try {
@@ -87,6 +103,16 @@ export default function ICUBoardDisplay() {
         setLastUpdated(new Date());
       } catch (_) {}
     });
+    es.addEventListener('ambient_deterioration', (e) => {
+      try {
+        const alert = JSON.parse((e as MessageEvent).data);
+        const bedId = alert.bedId;
+        setBeds((prev) => prev.map((bed) => {
+          if (bed.bed_number !== bedId) return bed;
+          return { ...bed, alert_level: alert.severity === 'critical' ? 'red' : 'orange' };
+        }));
+      } catch (_) {}
+    });
     return () => es.close();
   }, []);
 
@@ -105,6 +131,11 @@ export default function ICUBoardDisplay() {
       <div className="h-full flex flex-col p-4 gap-4">
 
         {/* Summary strip */}
+        <div className="flex justify-end shrink-0">
+          <button type="button" onClick={startTeleIcu} className="text-sm bg-teal-700 hover:bg-teal-600 text-white px-4 py-2 rounded-lg">
+            Tele-intensivist (GAP-VIDEO-004)
+          </button>
+        </div>
         <div className="grid grid-cols-4 gap-3 shrink-0">
           {[
             { label: 'Total Beds', value: beds.length, color: 'text-white' },
@@ -164,6 +195,9 @@ export default function ICUBoardDisplay() {
           Last updated: {lastUpdated.toLocaleTimeString('en-IN')} · MQTT/SSE vitals + 15s poll
         </p>
       </div>
+      {teleOpen && teleSession && (
+        <DisplayVideoOverlay open={teleOpen} onClose={() => setTeleOpen(false)} serverUrl={teleSession.serverUrl} token={teleSession.token} />
+      )}
     </DisplayShell>
   );
 }

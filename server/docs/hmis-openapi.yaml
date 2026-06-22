@@ -1,0 +1,17 @@
+openapi: 3.0.3
+info:
+  title: MediQzy Hospital Integrator API
+  version: 1.0.0
+paths:
+  /api/v1/adt/admit:
+    post:
+      summary: Admit inpatient
+  /api/v1/adt/discharge:
+    post:
+      summary: Discharge A03
+  /api/v1/queue/checkin:
+    post:
+      summary: OPD queue check-in
+  /api/display/kiosk/register:
+    post:
+      summary: Paperless walk-in registration

@@ -32,6 +32,9 @@ const MIGRATIONS = [
   { name: 'Phase 2: Create eMAR tables',              file: './migrations/20260525000006-create-emar-tables.js' },
   { name: 'Phase 2: Create vitals & alerts',          file: './migrations/20260525000007-create-vitals-and-alerts.js' },
   { name: 'Phase 3-5: Clinical, discharge, follow-up',file: './migrations/20260526000001-create-hmis-phase3-5-tables.js' },
+  { name: 'GAP-MIG-003: ER visits',                   file: './migrations/20260617000001-create-er-visits.js' },
+  { name: 'GAP-BIL-001: Charge master',               file: './migrations/20260617000002-create-charge-master.js' },
+  { name: 'GAP-IPD-004: Pharmacy dispense queue',    file: './migrations/20260617000003-create-pharmacy-dispense-queue.js' },
 ];
 
 async function runAll() {

@@ -20,6 +20,16 @@ import pool from '../../db/pgPool.js';
 import semanticCache from './semantic-cache.service.js';
 import cognitiveRouter, { TIERS, TIER_PROVIDERS } from './cognitive-router.js';
 import { recordTelemetry } from './evaluation-engine.js';
+import { maskPhi } from '../../utils/phi-masker.js';
+
+function sanitizeMessagesForLlm(messages) {
+  return (messages || []).map((m) => {
+    if (m?.content && typeof m.content === 'object') {
+      return { ...m, content: maskPhi(m.content) };
+    }
+    return m;
+  });
+}
 
 // ─── Provider Clients (lazy-init) ───────────────────────────
 
@@ -582,6 +592,7 @@ async function chat({
   cognitiveTier = null,    // 'reflex' | 'standard' | 'deep' — from CognitiveRouter.classify()
   cognitiveDecisionId = null,  // for outcome recording
 }) {
+  messages = sanitizeMessagesForLlm(messages);
   const dbConfig = await getModelConfig();
 
   // Tier-aware defaults — smaller/faster for simple queries

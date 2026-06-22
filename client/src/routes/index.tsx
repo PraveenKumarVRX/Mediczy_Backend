@@ -347,7 +347,7 @@ const HospitalPatientsPage     = lazyNamed(_HospitalModulePages, "HospitalPatien
 const HospitalOpdIpdPage       = lazyNamed(_HospitalModulePages, "HospitalOpdIpdPage");
 const HospitalPharmacyPage     = lazyNamed(_HospitalModulePages, "HospitalPharmacyPage");
 const HospitalLabReportsPage   = lazyNamed(_HospitalModulePages, "HospitalLabReportsPage");
-const HospitalBillingPage      = lazyNamed(_HospitalModulePages, "HospitalBillingPage");
+const HospitalBillingPage      = lazy(() => import("@/pages/hospital/HospitalBillingPage"));
 const HospitalClaimsPage       = lazyNamed(_HospitalModulePages, "HospitalClaimsPage");
 const HospitalStaffPage        = lazyNamed(_HospitalModulePages, "HospitalStaffPage");
 const HospitalSettingsPage     = lazyNamed(_HospitalModulePages, "HospitalSettingsPage");
@@ -857,6 +857,8 @@ const HospitalFloorMapDisplay = lazy(() => import("@/pages/display/HospitalFloor
 const FamilyVideoKiosk       = lazy(() => import("@/pages/display/FamilyVideoKiosk"));
 const ERTriageKiosk          = lazy(() => import("@/pages/display/ERTriageKiosk"));
 const ERTriageDisplay        = lazy(() => import("@/pages/display/ERTriageDisplay"));
+const WayfindingKiosk        = lazy(() => import("@/pages/display/WayfindingKiosk"));
+const OTProctorDisplay       = lazy(() => import("@/pages/display/OTProctorDisplay"));
 const DisplayAdminPage       = lazy(() => import("@/pages/display/DisplayAdminPage"));
 
 // ─── PageLoader — Suspense fallback ──────────────────────────────────────────
@@ -1791,7 +1793,9 @@ const AppRoutes = () => {
         <Route path="/display/floor-map"        element={<HospitalFloorMapDisplay />} />
         <Route path="/kiosk/family-video"       element={<FamilyVideoKiosk />} />
         <Route path="/kiosk/er-triage"           element={<ERTriageKiosk />} />
+        <Route path="/kiosk/wayfinding"          element={<WayfindingKiosk />} />
         <Route path="/display/er-triage"        element={<ERTriageDisplay />} />
+        <Route path="/display/ot-proctor"       element={<OTProctorDisplay />} />
         <Route path="/display/admin"            element={<DisplayAdminPage />} />
 
         {/* ── Misc ────────────────────────────────────────────────────── */}

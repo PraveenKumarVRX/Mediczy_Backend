@@ -5,8 +5,24 @@ import {
   getActiveOrders, getDueMedications, updateOrderStatus
 } from '../services/emar.service.js';
 import { enforceHighAlertMedConsent } from '../services/consent-enforcement.service.js';
+import { enqueueFromAdministration } from '../services/emar-pharmacy-bridge.service.js';
 
 const router = express.Router();
+
+async function afterAdministration(organizationId, body, result) {
+  try {
+    await enqueueFromAdministration({
+      organizationId,
+      admissionId: body.admissionId,
+      patientId: body.patientId,
+      medicationOrderId: body.orderId || result?.orderId,
+      administrationId: result?.id,
+      drugName: body.drugName || body.medicationName || 'medication',
+      dose: body.dose,
+      route: body.route,
+    });
+  } catch (_) { /* table may not exist on legacy env */ }
+}
 
 // POST /api/v1/emar/orders
 router.post('/orders', authUser, async (req, res) => {
@@ -58,6 +74,7 @@ router.post('/administer', authUser, async (req, res) => {
     }
 
     const result = await recordAdministration({ ...req.body, administeredBy: req.user.id });
+    await afterAdministration(organizationId, req.body, result);
     res.status(201).json({ success: true, data: result });
   } catch (err) {
     const status = (err.blocked || err.consentBlocked) ? 403 : 400;
@@ -118,6 +135,7 @@ router.post('/:orderId/administer', authUser, async (req, res) => {
       await enforceHighAlertMedConsent({ organizationId, patientId: req.body.patientId, drugName: req.body.drugName || 'unknown', override: consentOverride });
     }
     const result = await recordAdministration({ ...req.body, orderId: parseInt(req.params.orderId), administeredBy: req.user.id });
+    await afterAdministration(organizationId, req.body, result);
     res.status(201).json({ success: true, data: result });
   } catch (err) {
     const status = (err.blocked || err.consentBlocked) ? 403 : 400;

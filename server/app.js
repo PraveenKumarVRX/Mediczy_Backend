@@ -171,6 +171,7 @@ import hospitalQueueRouter from './routes/hospital-queue.route.js';
 import displayKioskRouter from './routes/display-kiosk.route.js';
 import abdmKioskRouter from './routes/abdm-kiosk.route.js';
 import hospitalDownloadsRouter from './routes/hospital-downloads.route.js';
+import hospitalOpenApiRouter from './routes/hospital-openapi.route.js';
 import emrRouter from './routes/emr.route.js';
 import healthDiaryRouter from './routes/health-diary.route.js';
 import healthIntelligenceRouter from './routes/health-intelligence.route.js';
@@ -862,6 +863,7 @@ app.use((err, req, res, next) => {
 
 // Public hospital documentation (Word/PPT) — before static + ring-fencing
 app.use('/api/downloads/hospital', hospitalDownloadsRouter);
+app.use('/api/docs', hospitalOpenApiRouter);
 
 // Serve downloadable app binaries (APKs, etc.)
 app.use('/api/downloads', express.static(path.join(__dirname, 'public/downloads'), {
@@ -1694,6 +1696,12 @@ import clinicalReportsRouter from './routes/clinical-reports.route.js';
 import aiHmisOpsRouter from './routes/ai-hmis-ops.route.js';
 import aiRevenueRouter from './routes/ai-revenue.route.js';
 import aiDeptRouter from './routes/ai-dept.route.js';
+import wardsAdminRouter from './routes/wards-admin.route.js';
+import otRoomsAdminRouter from './routes/ot-rooms-admin.route.js';
+import chargeMasterRouter from './routes/charge-master.route.js';
+import pharmacyDispenseRouter from './routes/pharmacy-dispense.route.js';
+import hospitalOsControlRouter from './routes/hospital-os-control.route.js';
+import ssoRouter from './routes/sso.route.js';
 
 app.use('/api/v1/adt', adtRouter);
 app.use('/api/v1/beds', bedsManagementRouter);
@@ -1725,6 +1733,12 @@ app.use('/api/v1/reports/clinical', clinicalReportsRouter);
 app.use('/api/v1/ai-ops', aiHmisOpsRouter);
 app.use('/api/v1/ai-revenue', aiRevenueRouter);
 app.use('/api/v1/ai-dept', aiDeptRouter);
+app.use('/api/v1/wards', wardsAdminRouter);
+app.use('/api/v1/ot-rooms', otRoomsAdminRouter);
+app.use('/api/v1/charge-master', chargeMasterRouter);
+app.use('/api/v1/pharmacy-dispense', pharmacyDispenseRouter);
+app.use('/api/v1/hospital-os', hospitalOsControlRouter);
+app.use('/api/sso', ssoRouter);
 
 // ============== ENTERPRISE API v2 (New Architecture) ==============
 // API v2 - Enterprise-grade endpoints with proper MVC pattern

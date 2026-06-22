@@ -60,7 +60,7 @@ const mainNavItems: SidebarItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/hospital/dashboard" },
   { icon: BriefcaseMedical, label: "Practice Management", href: "/hospital/practice-management", capability: "practice_management" },
   { icon: CalendarCheck, label: "Appointments", href: "/hospital/appointments", capability: "appointments" },
-  { icon: Bed, label: "Bed Management", href: "/hospital/beds", capability: "bed_management" },
+  { icon: Bed, label: "Bed Management", href: "/hmis/beds/map", capability: "bed_management" },
   { icon: Users, label: "Patients", href: "/hospital/patients", capability: "patients" },
   { icon: Stethoscope, label: "Doctors", href: "/hospital/doctors", capability: "doctors" },
   { icon: Network, label: "Branches & Clinics", href: "/hospital/branches", capability: "branches" },
@@ -71,7 +71,7 @@ const mainNavItems: SidebarItem[] = [
 const clinicalItems: SidebarItem[] = [
   { icon: FileHeart, label: "EHR", href: "/hospital/ehr", capability: "ehr" },
   { icon: FolderOpen, label: "MRD", href: "/hospital/mrd", capability: "mrd" },
-  { icon: ClipboardList, label: "OPD/IPD", href: "/hospital/opd-ipd", capability: "opd_ipd" },
+  { icon: ClipboardList, label: "OPD/IPD", href: "/hmis/command-center", capability: "opd_ipd" },
   { icon: ClipboardCheck, label: "IP Sheets", href: "/hospital/ip-sheets", capability: "ip_sheets" },
   { icon: FileCheck, label: "Discharge Summary", href: "/hospital/discharge-summary", capability: "discharge_summary" },
   { icon: Pill, label: "Pharmacy", href: "/hospital/pharmacy", capability: "pharmacy" },

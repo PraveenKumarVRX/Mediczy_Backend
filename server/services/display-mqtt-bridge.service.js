@@ -5,6 +5,7 @@
 import { createClient } from 'redis';
 import mqtt from 'mqtt';
 import { pushToZone, pushToAll } from './display-sse-broker.service.js';
+import { pushAmbientDeteriorationAlert } from './ambient-deterioration.service.js';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const MQTT_URL = process.env.MQTT_BROKER_URL || process.env.MQTT_URL || '';
@@ -34,6 +35,7 @@ function parseVitalsPayload(payload, topic) {
 
 export function pushVitalsToDisplay(wardZone, bedId, vitals) {
   pushToZone(wardZone, 'vitals_update', { bedId, vitals, ts: Date.now() });
+  pushAmbientDeteriorationAlert(wardZone, bedId, vitals);
 }
 
 async function handleHypergridEvent(event) {

@@ -1,0 +1,5 @@
+# GAP-API-002 — Hospital integrator OpenAPI
+
+Public contract served at `/api/docs/hospital-openapi.json`.
+
+See `server/routes/hospital-openapi.route.js` for path catalog. Full YAML: `server/docs/hospital-integrator-openapi.yaml`.

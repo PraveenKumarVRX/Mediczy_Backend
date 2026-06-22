@@ -10,6 +10,7 @@ import Appointment from '../models/postgres/appointment.model.postgres.js';
 import emergencyTriageService from '../services/ai-emergency-triage.service.js';
 import { buildLiveKitJoinData } from '../utils/videoProvider.js';
 import { pushToZone } from '../services/display-sse-broker.service.js';
+import { assessKioskLiveness } from '../services/kiosk-liveness.service.js';
 import { Op } from 'sequelize';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -247,6 +248,50 @@ router.post('/er-triage', async (req, res) => {
     res.status(201).json({ success: true, triage, entry, video });
   } catch (e) {
     console.error('[kiosk] er-triage error:', e.message);
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// POST /api/display/kiosk/liveness — GAP-KIOSK-007
+router.post('/liveness', async (req, res) => {
+  try {
+    const { frames, idImageBase64 } = req.body;
+    const result = assessKioskLiveness({ frames, idImageBase64 });
+    if (!result.passed) {
+      return res.status(422).json({ success: false, ...result });
+    }
+    res.json({ success: true, ...result });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// GET /api/display/kiosk/wayfinding — GAP-HOS-003 (text directions)
+router.post('/wayfinding', async (req, res) => {
+  try {
+    const { query, language = 'en' } = req.body;
+    if (!query || String(query).trim().length < 3) {
+      return res.status(400).json({ success: false, message: 'query required' });
+    }
+    const q = String(query).toLowerCase();
+    const destinations = [
+      { keys: ['opd', 'doctor', 'consult'], direction: 'Level 1 → OPD corridor → follow queue board tokens', zone: 'opd' },
+      { keys: ['lab', 'blood test'], direction: 'Level 1 → Diagnostics wing → Lab collection counter', zone: 'lab' },
+      { keys: ['pharmacy', 'medicine'], direction: 'Ground floor → Pharmacy counter near exit', zone: 'pharmacy' },
+      { keys: ['er', 'emergency'], direction: 'Ground floor → Red ER entrance (24×7)', zone: 'er' },
+      { keys: ['radiology', 'x-ray', 'scan'], direction: 'Level 1 → Imaging suite → RIS desk', zone: 'ris' },
+      { keys: ['billing', 'insurance'], direction: 'Level 1 → Front desk → Insurance & billing counter', zone: 'billing' },
+    ];
+    const match = destinations.find((d) => d.keys.some((k) => q.includes(k)));
+    res.json({
+      success: true,
+      query,
+      language,
+      direction: match?.direction || 'Please proceed to the main reception desk for assistance.',
+      zone: match?.zone || 'lobby',
+      aiAssisted: true,
+    });
+  } catch (e) {
     res.status(500).json({ success: false, message: e.message });
   }
 });
