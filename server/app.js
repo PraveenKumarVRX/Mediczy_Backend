@@ -170,6 +170,7 @@ import hospitalDisplayRouter from './routes/hospital-display.route.js';
 import hospitalQueueRouter from './routes/hospital-queue.route.js';
 import displayKioskRouter from './routes/display-kiosk.route.js';
 import abdmKioskRouter from './routes/abdm-kiosk.route.js';
+import hospitalDownloadsRouter from './routes/hospital-downloads.route.js';
 import emrRouter from './routes/emr.route.js';
 import healthDiaryRouter from './routes/health-diary.route.js';
 import healthIntelligenceRouter from './routes/health-intelligence.route.js';
@@ -859,11 +860,20 @@ app.use((err, req, res, next) => {
   return next(err);
 });
 
+// Public hospital documentation (Word/PPT) — before static + ring-fencing
+app.use('/api/downloads/hospital', hospitalDownloadsRouter);
+
 // Serve downloadable app binaries (APKs, etc.)
 app.use('/api/downloads', express.static(path.join(__dirname, 'public/downloads'), {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.apk')) {
       res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+      res.setHeader('Content-Disposition', 'attachment');
+    } else if (filePath.endsWith('.docx')) {
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', 'attachment');
+    } else if (filePath.endsWith('.pptx')) {
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
       res.setHeader('Content-Disposition', 'attachment');
     }
   }

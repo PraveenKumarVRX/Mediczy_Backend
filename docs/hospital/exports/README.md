@@ -15,9 +15,18 @@ bash scripts/docs/export-hospital-docs.sh
 
 ## Download (when server is running)
 
-- `https://<your-host>/api/downloads/hospital/MediQzy_Hospital_OS_Workflow_Charts.docx`
-- `https://<your-host>/api/downloads/hospital/MediQzy_Hospital_OS_Workflow_Charts.pptx`
-- `https://<your-host>/api/downloads/hospital/MediQzy_Greenfield_Hospital_Gaps_Implementation.docx`
-- `https://<your-host>/api/downloads/hospital/MediQzy_Greenfield_Hospital_Gaps_Implementation.pptx`
+**No login required** after deploy (public `/api/downloads` whitelist).
+
+- Landing page: `https://<your-host>/api/downloads/hospital/index.html`
+- File catalog (JSON): `https://<your-host>/api/downloads/hospital/`
+
+| File | URL |
+|------|-----|
+| Workflow Charts (Word) | `/api/downloads/hospital/MediQzy_Hospital_OS_Workflow_Charts.docx` |
+| Workflow Charts (PPT) | `/api/downloads/hospital/MediQzy_Hospital_OS_Workflow_Charts.pptx` |
+| Gaps doc (Word) | `/api/downloads/hospital/MediQzy_Greenfield_Hospital_Gaps_Implementation.docx` |
+| Gaps doc (PPT) | `/api/downloads/hospital/MediQzy_Greenfield_Hospital_Gaps_Implementation.pptx` |
+
+Example production: `https://mediqzy.com/api/downloads/hospital/MediQzy_Hospital_OS_Workflow_Charts.docx`
 
 **Note:** Mermaid diagrams in the Markdown are exported as text/code blocks. Paste into [mermaid.live](https://mermaid.live) to render charts, or edit diagrams in PowerPoint.
