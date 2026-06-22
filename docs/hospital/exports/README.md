@@ -4,9 +4,16 @@ Generated from Markdown sources. Regenerate after doc edits:
 
 ```bash
 bash scripts/docs/export-hospital-docs.sh
+bash scripts/docs/build-master-gap-doc.sh   # single large Word package
 ```
 
-## Files
+## ⭐ Master package (recommended)
+
+| Document | Word (.docx) | Contents |
+|----------|--------------|----------|
+| **Master Gap Implementation (all-in-one)** | [MediQzy_Hospital_OS_Master_Gap_Implementation.docx](./MediQzy_Hospital_OS_Master_Gap_Implementation.docx) | Part I: Gaps backlog · Part II: All module workflows · Part III: Paperless + AI · Part IV: Workflow charts |
+
+## Individual files
 
 | Document | Word (.docx) | PowerPoint (.pptx) | Source |
 |----------|--------------|-------------------|--------|
@@ -24,6 +31,7 @@ bash scripts/docs/export-hospital-docs.sh
 
 | File | URL |
 |------|-----|
+| Master Gap Implementation (all-in-one) | `/api/downloads/hospital/MediQzy_Hospital_OS_Master_Gap_Implementation.docx` |
 | Workflow Charts (Word) | `/api/downloads/hospital/MediQzy_Hospital_OS_Workflow_Charts.docx` |
 | Workflow Charts (PPT) | `/api/downloads/hospital/MediQzy_Hospital_OS_Workflow_Charts.pptx` |
 | Complete Workflows (Word) | `/api/downloads/hospital/MediQzy_Complete_Hospital_Workflows.docx` |

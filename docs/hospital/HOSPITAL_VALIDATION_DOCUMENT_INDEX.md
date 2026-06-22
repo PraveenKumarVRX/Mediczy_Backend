@@ -43,6 +43,8 @@
 
 **Downloads (Word / PowerPoint):** `docs/hospital/exports/` or `/api/downloads/hospital/MediQzy_Greenfield_Hospital_Gaps_Implementation.{docx,pptx}`
 
+**⭐ Single master Word package (gaps + workflows + paperless AI + charts):** [MediQzy_Hospital_OS_Master_Gap_Implementation.docx](./exports/MediQzy_Hospital_OS_Master_Gap_Implementation.docx) or `/api/downloads/hospital/MediQzy_Hospital_OS_Master_Gap_Implementation.docx` — build with `bash scripts/docs/build-master-gap-doc.sh`
+
 ---
 
 ### **MEDIQZY_HOSPITAL_OS_WORKFLOW_CHARTS.md** ⭐ PATIENT & OPERATIONS WORKFLOWS

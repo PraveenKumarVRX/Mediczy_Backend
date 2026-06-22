@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | **Document ID** | MED-HOSP-GAP-001 |
-| **Version** | 1.3 |
+| **Version** | 1.5 |
 | **Date** | 2026-06-17 |
 | **Owner** | AI CTO |
 | **Audience** | PM, BA, Engineering, QA, Security, Delivery |
@@ -1949,6 +1949,7 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 | 1.2 | 2026-06-17 | Smart Hospital OS vision — displays, interactive care, video telepresence (GAP-HOS/DISPLAY/VIDEO/IOT), Phase 2a–2c, 3b |
 | 1.3 | 2026-06-17 | Smart Queue Management (GAP-QUEUE-001–008), §3.3 fragmentation analysis, unified queue service spec |
 | 1.4 | 2026-06-17 | Hospital OS implementation complete (PR #19): queue/kiosk/display/video/MQTT/command centre; honest gap status table |
+| 1.5 | 2026-06-17 | Master Word package: `MEDIQZY_HOSPITAL_OS_MASTER_GAP_IMPLEMENTATION.md` + `build-master-gap-doc.sh` |
 
 ---
 

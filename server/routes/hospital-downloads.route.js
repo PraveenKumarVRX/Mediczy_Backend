@@ -13,6 +13,12 @@ const DOWNLOAD_DIR = path.join(__dirname, '../public/downloads/hospital');
 
 const FILES = [
   {
+    id: 'master-gap-docx',
+    filename: 'MediQzy_Hospital_OS_Master_Gap_Implementation.docx',
+    title: 'Hospital OS — Master Gap Implementation Package (single Word doc — all parts)',
+    format: 'docx',
+  },
+  {
     id: 'workflow-charts-docx',
     filename: 'MediQzy_Hospital_OS_Workflow_Charts.docx',
     title: 'Hospital OS — Patient & Operations Workflow Charts (Word)',
