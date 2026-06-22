@@ -991,10 +991,10 @@ const AppRoutes = () => {
         <Route path="/hospital/discharge-summary"          element={<HospitalDischargeSummary />} />
         <Route path="/hospital/ip-sheets"                  element={<HospitalIPSheets />} />
         <Route path="/hospital/appointments"               element={<HospitalAppointmentsPage />} />
-        <Route path="/hospital/beds"                       element={<HospitalBedsPage />} />
+        <Route path="/hospital/beds"                       element={<Navigate to="/hmis/beds/map" replace />} />
         <Route path="/hospital/patients"                   element={<HospitalPatientsPage />} />
         <Route path="/hospital/doctors"                    element={<HospitalDoctorsManagement />} />
-        <Route path="/hospital/opd-ipd"                    element={<HospitalOpdIpdPage />} />
+        <Route path="/hospital/opd-ipd"                    element={<Navigate to="/hmis/command-center" replace />} />
         <Route path="/hospital/pharmacy"                   element={<HospitalPharmacyPage />} />
         <Route path="/hospital/lab-reports"                element={<HospitalLabReportsPage />} />
         <Route path="/hospital/billing"                    element={<HospitalBillingPage />} />

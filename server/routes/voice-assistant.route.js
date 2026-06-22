@@ -26,6 +26,18 @@ import FormData from 'form-data';
 import { AccessToken, AgentDispatchClient } from 'livekit-server-sdk';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
+import {
+  composeBriefingResponse,
+  GREETING_RESPONSE,
+  inferBriefingRequest,
+  inferNavigationScreen,
+  isDoubtFollowUp,
+  isIdentityOrGreeting,
+  isSubstantiveAnswer,
+  lastAssistantText,
+  stripRedundantIshaIntro,
+  toSpokenText,
+} from '../services/voice-assistant-response.service.js';
 import logger from '../config/logger.js';
 import pool from '../db/pgPool.js';
 import { getAIServiceConfig } from '../config/ai-services.config.js';
@@ -398,22 +410,6 @@ RESPONSE FORMAT:
 - Medical answers: lead with the answer, end with "Verify with clinical judgment."
 - Greetings/who-are-you: briefly state you are iSHA and name 1-2 key capabilities. One sentence only.
 - All other responses: no greeting, no sign-off, no filler — answer the task directly.`;
-}
-
-// ─── TTS text helper — convert long formatted text to short spoken version ────
-function toSpokenText(text, maxSentences = 3) {
-  if (!text) return '';
-  // Strip bullet chars and action badge prefix lines
-  const cleaned = text
-    .replace(/^[•\-]\s*/gm, '')
-    .replace(/\n{2,}/g, '\n')
-    .trim();
-  // Split on sentence boundaries
-  const sentences = cleaned
-    .split(/(?<=[.!?])\s+/)
-    .map(s => s.trim())
-    .filter(Boolean);
-  return sentences.slice(0, maxSentences).join(' ');
 }
 
 // ─── Execute server-side tools ─────────────────────────────────────────────
@@ -1100,8 +1096,73 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
   const enrichedContext = { ...context, doctorName: req.user?.firstName || req.user?.name };
   const systemPrompt = buildSystemPrompt(enrichedContext);
   const currentPatientId = context.currentPatient?.id || context.currentPatient?._id;
+  const trimmedText = text.trim();
 
-  const deterministicAppointmentFilter = inferAppointmentListFilter(text);
+  // Restate last answer for "are you sure?" — avoid redundant LLM round-trip
+  if (isDoubtFollowUp(trimmedText)) {
+    const prior = lastAssistantText(history);
+    if (prior) {
+      const speak = toSpokenText(prior, 4);
+      return res.json({
+        intent: 'general',
+        action: null,
+        parameters: null,
+        response: prior,
+        speak,
+        requiresConfirmation: false,
+      });
+    }
+  }
+
+  if (isIdentityOrGreeting(trimmedText)) {
+    return res.json({
+      intent: 'general',
+      action: null,
+      parameters: null,
+      response: GREETING_RESPONSE,
+      speak: GREETING_RESPONSE,
+      requiresConfirmation: false,
+    });
+  }
+
+  const navScreen = inferNavigationScreen(trimmedText);
+  if (navScreen) {
+    const screenLabels = {
+      appointments: 'Appointments', patients: 'Patients', prescriptions: 'Prescriptions',
+      dashboard: 'Dashboard', analytics: 'Analytics', billing: 'Billing',
+      'health-records': 'Health Records', 'er-dashboard': 'ER Dashboard',
+      'icu-dashboard': 'ICU Dashboard', 'voice-scribe': 'Voice Scribe',
+      calculators: 'Medical Calculators', 'ai-assist': 'AI Assist',
+      templates: 'Document Templates', monitoring: 'Remote Monitoring',
+      queue: 'Queue', staff: 'Staff',
+    };
+    const label = screenLabels[navScreen] || navScreen;
+    const msg = `Opening ${label}`;
+    return res.json({
+      intent: 'action',
+      action: 'navigate_to',
+      parameters: { screen: navScreen },
+      response: msg,
+      speak: msg,
+      requiresConfirmation: false,
+    });
+  }
+
+  if (inferBriefingRequest(trimmedText)) {
+    const briefing = await executeGetDoctorBriefing(doctorId, 'all');
+    const { response, speak } = composeBriefingResponse(briefing);
+    return res.json({
+      intent: 'action',
+      action: 'get_doctor_briefing',
+      parameters: {},
+      response,
+      speak,
+      data: briefing,
+      requiresConfirmation: false,
+    });
+  }
+
+  const deterministicAppointmentFilter = inferAppointmentListFilter(trimmedText);
   if (deterministicAppointmentFilter) {
     const payload = await buildAppointmentListPayload(doctorId, { filter: deterministicAppointmentFilter });
     return res.json(payload);
@@ -1249,8 +1310,19 @@ Rules:
     // No action / general — check if iSHA answered a medical question via 'general'
     if (!toolName || toolName === 'general') {
       const SCOPE_REJECT   = "I'm iSHA, your clinical assistant. I can only help";
-      const GREETING_RESP  = "I'm iSHA, your AI clinical assistant. I can manage";
+      const GREETING_RESP  = GREETING_RESPONSE;
       const OFF_TOPIC_MSG  = "I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks.";
+
+      if (isIdentityOrGreeting(trimmedText)) {
+        return res.json({
+          intent: 'general',
+          action: null,
+          parameters: null,
+          response: GREETING_RESP,
+          speak: GREETING_RESP,
+          requiresConfirmation: false,
+        });
+      }
 
       // Detect if iSHA slipped and answered a non-clinical question anyway
       const NON_CLINICAL_RE = /\b(python|javascript|typescript|java\b|golang|rust|c\+\+|programming|for\s+loop|while\s+loop|\bvariable\b|\barray\b|\bfunction\s*\(|console\.|print\(|def\s+\w|capital\s+of|president\s+of|ipl\b|cricket\s+world|football\s+match|photosynthesis|geography)\b/i;
@@ -1258,18 +1330,19 @@ Rules:
 
       // Re-route: BiMediX2 used 'general' but wrote a substantive clinical answer
       const isClinicalFallthrough = directContent &&
-        directContent.length > 80 &&
+        isSubstantiveAnswer(directContent, 80) &&
         !directContent.startsWith(SCOPE_REJECT) &&
         !directContent.startsWith(GREETING_RESP) &&
         !hasNonClinicalContent;
 
       if (isClinicalFallthrough) {
+        const answer = stripRedundantIshaIntro(directContent);
         return res.json({
           intent: 'medical_query',
           action: 'medical_query',
           parameters: null,
-          response: directContent,
-          speak: directContent,
+          response: answer,
+          speak: toSpokenText(answer, 4),
           requiresConfirmation: false,
         });
       }
@@ -1277,58 +1350,64 @@ Rules:
       // Non-clinical content answered by model — substitute rejection phrase
       const responseText = hasNonClinicalContent
         ? OFF_TOPIC_MSG
-        : (directContent || "I'm your SmartHealth assistant. How can I help?");
+        : stripRedundantIshaIntro(directContent || "How can I help with your clinic today?");
 
       return res.json({
         intent: 'general',
         action: null,
         parameters: null,
         response: responseText,
-        speak: responseText,
+        speak: toSpokenText(responseText, 2),
         requiresConfirmation: false,
       });
     }
 
     // ── Step 3: Execute or relay ───────────────────────────────────────────
 
-    // medical_query — iSHA already answered in directContent; fall back to answerMedicalQuery
+    // medical_query — use substantive iSHA answer or fetch once
     if (toolName === 'medical_query') {
-      const answer = directContent || await answerMedicalQuery(args.query || text, args.context || '');
+      const answer = isSubstantiveAnswer(directContent, 40)
+        ? stripRedundantIshaIntro(directContent)
+        : await answerMedicalQuery(args.query || trimmedText, args.context || '');
       return res.json({
         intent: 'medical_query',
         action: 'medical_query',
         parameters: args,
         response: answer,
-        speak: answer,
+        speak: toSpokenText(answer, 4),
         requiresConfirmation: false,
       });
     }
 
-    // get_drug_info — iSHA may have answered directly; fall back to answerMedicalQuery
+    // get_drug_info — avoid filler directContent; fetch clinical answer once
     if (toolName === 'get_drug_info') {
       const q = `${args.question ? args.question + ' for ' : 'Complete information about '}${args.drug}`;
-      const answer = directContent || await answerMedicalQuery(q, '', `Focus on: dosage, indications, side effects, contraindications.`);
+      const answer = isSubstantiveAnswer(directContent, 40)
+        ? stripRedundantIshaIntro(directContent)
+        : await answerMedicalQuery(q, '', 'Focus on: dosage, indications, side effects, contraindications. Be concise.');
       return res.json({
         intent: 'medical_query',
         action: 'get_drug_info',
         parameters: args,
         response: answer,
-        speak: answer,
+        speak: toSpokenText(answer, 4),
         requiresConfirmation: false,
       });
     }
 
-    // check_drug_interactions — iSHA may have answered directly; fall back to answerMedicalQuery
+    // check_drug_interactions
     if (toolName === 'check_drug_interactions') {
       const drugs = (args.drugs || []).join(', ');
       const q = `What are the clinically significant interactions between: ${drugs}?`;
-      const answer = directContent || await answerMedicalQuery(q, '', 'Be specific about severity levels (major/moderate/minor).');
+      const answer = isSubstantiveAnswer(directContent, 40)
+        ? stripRedundantIshaIntro(directContent)
+        : await answerMedicalQuery(q, '', 'Be specific about severity levels (major/moderate/minor). Be concise.');
       return res.json({
         intent: 'medical_query',
         action: 'check_drug_interactions',
         parameters: args,
         response: answer,
-        speak: answer,
+        speak: toSpokenText(answer, 4),
         requiresConfirmation: false,
       });
     }
@@ -1505,46 +1584,8 @@ Rules:
     // get_doctor_briefing — execute server-side
     if (toolName === 'get_doctor_briefing') {
       const briefing = await executeGetDoctorBriefing(doctorId, args.priority || 'all');
-      const { unreadNotifications, pendingRequests, upcomingSoon, pendingTasks = [] } = briefing;
-
-      const parts = [];
-
-      if (upcomingSoon.length > 0) {
-        parts.push(`⏰ **Upcoming in 2 hours:** ${upcomingSoon.map(a => `${a.appointmentTime} — ${a.patientName}`).join(', ')}`);
-      }
-      if (pendingRequests.length > 0) {
-        parts.push(`📋 **${pendingRequests.length} pending appointment request${pendingRequests.length > 1 ? 's' : ''}:** ${pendingRequests.map(a => `${a.patientName} on ${a.appointmentDate}`).join(', ')}`);
-      }
-      if (unreadNotifications.length > 0) {
-        const urgentItems = unreadNotifications.filter(n => n.priority === 'urgent');
-        const highItems   = unreadNotifications.filter(n => n.priority === 'high');
-        const normalItems = unreadNotifications.filter(n => !['urgent','high'].includes(n.priority));
-        if (urgentItems.length > 0) parts.push(`🚨 **URGENT (${urgentItems.length}):** ${urgentItems.map(n => n.title).join(' | ')}`);
-        if (highItems.length > 0)   parts.push(`🔴 **High priority (${highItems.length}):** ${highItems.map(n => n.title).join(' | ')}`);
-        if (normalItems.length > 0) parts.push(`📬 **${normalItems.length} unread notification${normalItems.length > 1 ? 's' : ''}`);
-      }
-      if (pendingTasks.length > 0) {
-        parts.push(`✅ **${pendingTasks.length} pending task${pendingTasks.length > 1 ? 's' : ''}:** ${pendingTasks.map(t => t.title).join(' | ')}`);
-      }
-
-      if (parts.length === 0) {
-        const msg = 'No new updates, alerts, or pending tasks at the moment.';
-        return res.json({ intent: 'action', action: 'get_doctor_briefing', parameters: args, response: msg, speak: msg, data: briefing, requiresConfirmation: false });
-      }
-
-      const fullText = parts.join('\n');
-      const spokenParts = [];
-      if (upcomingSoon.length > 0)   spokenParts.push(`${upcomingSoon.length} appointment${upcomingSoon.length > 1 ? 's' : ''} coming up soon.`);
-      if (pendingRequests.length > 0) spokenParts.push(`${pendingRequests.length} pending appointment request${pendingRequests.length > 1 ? 's' : ''}.`);
-      const urgentNotifs = unreadNotifications.filter(n => n.priority === 'urgent');
-      const highNotifs   = unreadNotifications.filter(n => n.priority === 'high');
-      if (urgentNotifs.length > 0)   spokenParts.push(`Urgent alert: ${urgentNotifs[0].title}.`);
-      else if (highNotifs.length > 0) spokenParts.push(`${highNotifs.length} high-priority notification${highNotifs.length > 1 ? 's' : ''}.`);
-      else if (unreadNotifications.length > 0) spokenParts.push(`${unreadNotifications.length} unread notifications.`);
-      if (pendingTasks.length > 0)   spokenParts.push(`You also have ${pendingTasks.length} pending task${pendingTasks.length > 1 ? 's' : ''}.`);
-      const spokenText = spokenParts.join(' ') || fullText;
-
-      return res.json({ intent: 'action', action: 'get_doctor_briefing', parameters: args, response: fullText, speak: spokenText, data: briefing, requiresConfirmation: false });
+      const { response, speak } = composeBriefingResponse(briefing);
+      return res.json({ intent: 'action', action: 'get_doctor_briefing', parameters: args, response, speak, data: briefing, requiresConfirmation: false });
     }
 
     // add_task — create a doctor task from voice

@@ -346,13 +346,8 @@ export default function DoctorVoiceAssistant() {
               // User said "Hey iSHA, do something" — process the command immediately
               sendToAgentRef.current?.(inlineCommand);
             } else {
-              // Pure wake phrase — greet with briefing
-              let wakeMsg = `Yes, Dr. ${doctorFirstName}?`;
-              try {
-                const br = await api.get('/voice-assistant/briefing');
-                if (br.data?.hasUrgent && br.data?.speakText)
-                  wakeMsg = `Dr. ${doctorFirstName}, ${br.data.speakText}`;
-              } catch { /* silent */ }
+              // Pure wake phrase — short ack only (avoid duplicate briefing vs proactive poll)
+              const wakeMsg = `Yes, Dr. ${doctorFirstName}?`;
               speakRef.current?.(wakeMsg);
             }
           }
@@ -381,15 +376,18 @@ export default function DoctorVoiceAssistant() {
 
   // ── Proactive briefing: poll every 2 min for urgent/high alerts ───────────
   const lastSpokenAlertRef = useRef<number>(0);
+  const lastBriefingTextRef = useRef<string>("");
   const briefingPollRef    = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const pollBriefing = async () => {
-      if (isSpeaking || isListening) return;
+      if (isSpeaking || isListening || isProcessing) return;
       if (Date.now() - lastSpokenAlertRef.current < 5 * 60 * 1000) return;
       try {
         const { data } = await api.get("/voice-assistant/briefing");
         if (data?.hasUpdates && data?.speakText) {
+          if (data.speakText === lastBriefingTextRef.current) return;
+          lastBriefingTextRef.current = data.speakText;
           lastSpokenAlertRef.current = Date.now();
           const alertMsg: Message = {
             id: `briefing-${Date.now()}`,
@@ -397,7 +395,7 @@ export default function DoctorVoiceAssistant() {
             text: data.speakText,
             intent: data.hasUrgent ? "urgent" : "notification",
             action: "get_doctor_briefing",
-            parameters: null,
+            parameters: { proactive: true },
             requiresConfirmation: false,
             timestamp: new Date(),
           };
@@ -406,8 +404,8 @@ export default function DoctorVoiceAssistant() {
         }
       } catch { /* silent */ }
     };
-    const initialTimer = setTimeout(pollBriefing, 30_000);
-    briefingPollRef.current = setInterval(pollBriefing, 2 * 60 * 1000);
+    const initialTimer = setTimeout(pollBriefing, 60_000);
+    briefingPollRef.current = setInterval(pollBriefing, 3 * 60 * 1000);
     return () => {
       clearTimeout(initialTimer);
       if (briefingPollRef.current) clearInterval(briefingPollRef.current);
@@ -449,7 +447,8 @@ export default function DoctorVoiceAssistant() {
 
     const history = messagesRef.current
       .filter(m => m.id !== "welcome")
-      .slice(-10)
+      .filter(m => !(m.id.startsWith("briefing-") && m.action === "get_doctor_briefing"))
+      .slice(-8)
       .map(m => ({ role: m.role, text: m.text }));
 
     try {
@@ -459,10 +458,14 @@ export default function DoctorVoiceAssistant() {
         context: { currentScreen: window.location.pathname.split("/").pop() || "dashboard" },
       });
 
+      const displayText = (data.speak && data.response && data.response.length > data.speak.length + 40)
+        ? data.speak
+        : data.response;
+
       const assistantMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        text: data.response,
+        text: displayText,
         intent: data.intent,
         action: data.action,
         parameters: data.parameters,
