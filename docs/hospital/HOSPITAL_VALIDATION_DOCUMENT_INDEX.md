@@ -41,6 +41,8 @@
 
 **Path:** `docs/hospital/GREENFIELD_HOSPITAL_GAPS_IMPLEMENTATION.md`
 
+**Downloads (Word / PowerPoint):** `docs/hospital/exports/` or `/api/downloads/hospital/MediQzy_Greenfield_Hospital_Gaps_Implementation.{docx,pptx}`
+
 ---
 
 ### **MEDIQZY_HOSPITAL_OS_WORKFLOW_CHARTS.md** ⭐ PATIENT & OPERATIONS WORKFLOWS
@@ -56,6 +58,8 @@
 - API quick reference + implementation maturity (🟢/🟡/🔴)
 
 **Path:** `docs/hospital/MEDIQZY_HOSPITAL_OS_WORKFLOW_CHARTS.md`
+
+**Downloads (Word / PowerPoint):** `docs/hospital/exports/` or `/api/downloads/hospital/MediQzy_Hospital_OS_Workflow_Charts.{docx,pptx}`
 
 ---
 
