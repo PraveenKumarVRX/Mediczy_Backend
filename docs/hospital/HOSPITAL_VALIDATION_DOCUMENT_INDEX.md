@@ -43,6 +43,22 @@
 
 ---
 
+### **MEDIQZY_HOSPITAL_OS_WORKFLOW_CHARTS.md** ⭐ PATIENT & OPERATIONS WORKFLOWS
+**Read Time:** 25 minutes  
+**Audience:** Hospital operations, nursing, front desk, clinical leads, IT, delivery  
+**Purpose:** End-to-end workflow charts from admission to discharge — OPD, ER, IPD, queue, displays, ADT, discharge
+
+**Covers:**
+- Four patient entry paths (scheduled OPD, walk-in, ER, elective IPD)
+- Master journey + detailed Mermaid sequence/swimlane charts
+- Operations maps: departments, queue state machine, ADT timeline, RACI, insurance overlay
+- Display/kiosk touchpoints per journey stage
+- API quick reference + implementation maturity (🟢/🟡/🔴)
+
+**Path:** `docs/hospital/MEDIQZY_HOSPITAL_OS_WORKFLOW_CHARTS.md`
+
+---
+
 ## 🗂️ DOCUMENT OVERVIEW
 
 ### 1. **HOSPITAL_VALIDATION_COMPLETE_PACKAGE.md** ⭐ START HERE
