@@ -29,4 +29,17 @@ bash scripts/docs/export-hospital-docs.sh
 
 Example production: `https://mediqzy.com/api/downloads/hospital/MediQzy_Hospital_OS_Workflow_Charts.docx`
 
-**Note:** Mermaid diagrams in the Markdown are exported as text/code blocks. Paste into [mermaid.live](https://mermaid.live) to render charts, or edit diagrams in PowerPoint.
+**Note:** Mermaid diagrams in the Markdown are exported as text/code blocks in Word/PPT. For **visual flowcharts**, see below.
+
+## Visual flowcharts (PNG / SVG)
+
+Render all 15 diagrams from the workflow Markdown:
+
+```bash
+node scripts/docs/render-workflow-diagrams.mjs
+```
+
+Output: `docs/hospital/exports/diagrams/*.png` and `*.svg` + `index.html` preview.
+
+Then **Insert → Picture** in Word/PowerPoint, or import SVG into draw.io / Figma for editable GUI layouts.
+
