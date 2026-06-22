@@ -84,6 +84,28 @@
 
 ---
 
+### **MEDIQZY_GREENFIELD_PAPERLESS_AI_FLOWS.md** ⭐ PAPERLESS + AI COPILOTS — GREENFIELD
+**Read Time:** 40 minutes  
+**Audience:** Greenfield hospital CEOs, clinical directors, IT, implementation  
+**Purpose:** Paperless journeys (no paper from arrival) and AI-augmented / copilot flows at every department
+
+**Covers:**
+- Master paperless journey arrival → discharge
+- Paperless lobby flow (QR, camera, ABHA, OTP, e-receipt)
+- Per-department: paperless touchpoints + AI augmentation + copilot routes
+- Copilot catalog: Admin, Doctor Voice Assistant, AI Ops, AI Dept Hub, Revenue, Governance
+- SaMD quality gates + human-in-the-loop overlay
+- Greenfield phase map (1b → 4) with AI deliverables
+- Open gaps: wayfinding, liveness, ambient deterioration, tele-ICU, OT proctoring
+
+**Path:** `docs/hospital/MEDIQZY_GREENFIELD_PAPERLESS_AI_FLOWS.md`
+
+**Downloads:** `/api/downloads/hospital/MediQzy_Greenfield_Paperless_AI_Flows.{docx,pptx}`
+
+**Visual flowcharts:** `docs/hospital/exports/diagrams/paperless-ai/` (16 PNG/SVG)
+
+---
+
 ## 🗂️ DOCUMENT OVERVIEW
 
 ### 1. **HOSPITAL_VALIDATION_COMPLETE_PACKAGE.md** ⭐ START HERE

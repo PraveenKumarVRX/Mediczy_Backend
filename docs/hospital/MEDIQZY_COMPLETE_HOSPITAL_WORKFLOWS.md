@@ -5,7 +5,7 @@
 **Audience:** Hospital operations, clinical directors, IT, implementation teams  
 **Scope:** End-to-end flows across **all** MediQzy hospital modules — OPD, ER, admission, ward, ICU, OT, lab, radiology, pharmacy, insurance, billing, MRD, blood bank, dietary, CSSD, procurement, finance, displays, and command centre.
 
-**Companion docs:** [MEDIQZY_HOSPITAL_OS_WORKFLOW_CHARTS.md](./MEDIQZY_HOSPITAL_OS_WORKFLOW_CHARTS.md) (kiosk/display focus) · [GREENFIELD_HOSPITAL_GAPS_IMPLEMENTATION.md](./GREENFIELD_HOSPITAL_GAPS_IMPLEMENTATION.md) (gap IDs)
+**Companion docs:** [MEDIQZY_HOSPITAL_OS_WORKFLOW_CHARTS.md](./MEDIQZY_HOSPITAL_OS_WORKFLOW_CHARTS.md) (kiosk/display focus) · [GREENFIELD_HOSPITAL_GAPS_IMPLEMENTATION.md](./GREENFIELD_HOSPITAL_GAPS_IMPLEMENTATION.md) (gap IDs) · [MEDIQZY_GREENFIELD_PAPERLESS_AI_FLOWS.md](./MEDIQZY_GREENFIELD_PAPERLESS_AI_FLOWS.md) (paperless + AI copilots)
 
 **Legend:** 🟢 Live API + wired UI · 🟡 Partial · 🔴 Scaffold / demo data
 

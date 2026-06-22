@@ -8,7 +8,7 @@
 | **Owner** | AI CTO |
 | **Audience** | PM, BA, Engineering, QA, Security, Delivery |
 | **Status** | ACTIVE — implementation backlog |
-| **Related audits** | `HOSPITAL_ROLLOUT_READINESS_ASSESSMENT.md`, `TENANT_SETUP_AUDIT.md`, `SAMD_READINESS_SCORECARD.md`, `MEDIQZY_COMPLETE_HOSPITAL_WORKFLOWS.md` |
+| **Related audits** | `HOSPITAL_ROLLOUT_READINESS_ASSESSMENT.md`, `TENANT_SETUP_AUDIT.md`, `SAMD_READINESS_SCORECARD.md`, `MEDIQZY_COMPLETE_HOSPITAL_WORKFLOWS.md`, `MEDIQZY_GREENFIELD_PAPERLESS_AI_FLOWS.md` |
 
 ---
 
@@ -146,6 +146,31 @@ flowchart TD
 ```
 
 **Reuse (do not rebuild):** `DisplayShell.tsx`, `SelfCheckinKiosk.tsx` idle/timeout UX, `HospitalMRD.tsx` ZXing pattern, patient profile upload + MinIO + ClamAV, `hospital-display.route.js` token issuance + SSE, `abdm.route.js` OTP primitives.
+
+**Full paperless + AI copilot flows (all departments):** see **`MEDIQZY_GREENFIELD_PAPERLESS_AI_FLOWS.md`** — master journey, per-department AI augmentation, copilot catalog, SaMD overlay.
+
+### 3.1b AI-augmented & copilot flows (greenfield target)
+
+Every department gets **AI augmentation** (not autonomous clinical action) plus named **copilot surfaces**:
+
+| Zone | Paperless | AI / copilot | Route |
+|------|-----------|--------------|-------|
+| Lobby | QR + camera registration | Predictive wait, queue notify | `/kiosk/checkin`, `/display/queue` |
+| OPD | Digital scribe notes | Dr. iSHA voice assistant, DDI checker | `/doctor/assistant`, `/doctor/voice-scribe` |
+| ER | Kiosk symptom intake | **AI ESI triage** (Class III SaMD) + tele-triage video | `/kiosk/er-triage` |
+| ADT | Digital admit | Smart bed allocation, capacity forecast | `/hmis/ai-ops` |
+| Insurance | e-Docs, no fax | Pre-auth engine, insurance AI bot, admin copilot | `/hospital-insurance/*`, `/admin/copilot` |
+| Ward | Tablet vitals + eMAR | NEWS2 alerts, workload balance | `/hmis/ai-dept`, `/hmis/ai-ops` |
+| ICU | Digital charts + vitals wall | Dept hub, tele-ICU overlay (partial) | `/display/icu-board` |
+| OT | Digital checklist + implants | OT analytics, post-op scribe draft | `/hmis/ot/*` |
+| Lab | Digital orders + reports | Critical value alerts, report scanner | `/report-scanner` |
+| Pharmacy | Digital Rx + barcode | Drug interaction (Class III SaMD) | prescribing flows |
+| Billing | e-Estimates + payment | Revenue intelligence, denial risk | `/hmis/ai-revenue` |
+| MRD | Digital chart | Documentation audit, NLP entities | `/hmis/ai-ops` |
+| Discharge | e-Summary + instructions | AI summary synthesis, follow-up | `/hmis/discharge` |
+| Command | Device-enrolled displays | Admin copilot, SaMD governance | `/admin/copilot`, `/admin/ai-governance` |
+
+**Mandatory:** All SaMD outputs pass `ai-quality-gates.service.js` + licensed staff review. Full flows: **`MEDIQZY_GREENFIELD_PAPERLESS_AI_FLOWS.md`**.
 
 ### 3.2 Smart Hospital OS — displays, interactive care & telepresence
 

@@ -63,6 +63,29 @@ const SOURCES = [
     ],
     title: 'MediQzy — complete hospital module flowcharts',
   },
+  {
+    source: path.join(ROOT, 'docs/hospital/MEDIQZY_GREENFIELD_PAPERLESS_AI_FLOWS.md'),
+    outDir: path.join(ROOT, 'docs/hospital/exports/diagrams/paperless-ai'),
+    names: [
+      '01-platform-stack',
+      '02-master-paperless-journey',
+      '03-paperless-lobby',
+      '04-reception-queue',
+      '05-doctor-opd-scribe',
+      '06-er-ai-triage',
+      '07-admission-beds',
+      '08-insurance-digital',
+      '09-ward-nursing',
+      '10-icu-vitals',
+      '11-ot-digital',
+      '12-lab-digital',
+      '13-pharmacy-ddi',
+      '14-discharge-digital',
+      '15-command-copilots',
+      '16-samd-governance',
+    ],
+    title: 'MediQzy — greenfield paperless & AI flowcharts',
+  },
 ];
 
 function renderSource({ source, outDir, names, title }) {

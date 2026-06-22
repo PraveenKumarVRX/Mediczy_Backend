@@ -37,6 +37,18 @@ const FILES = [
     format: 'pptx',
   },
   {
+    id: 'paperless-ai-docx',
+    filename: 'MediQzy_Greenfield_Paperless_AI_Flows.docx',
+    title: 'Greenfield Paperless & AI-Augmented Flows (Word)',
+    format: 'docx',
+  },
+  {
+    id: 'paperless-ai-pptx',
+    filename: 'MediQzy_Greenfield_Paperless_AI_Flows.pptx',
+    title: 'Greenfield Paperless & AI-Augmented Flows (PowerPoint)',
+    format: 'pptx',
+  },
+  {
     id: 'gaps-docx',
     filename: 'MediQzy_Greenfield_Hospital_Gaps_Implementation.docx',
     title: 'Greenfield Hospital — Gaps Implementation (Word)',
