@@ -63,6 +63,27 @@
 
 ---
 
+### **MEDIQZY_COMPLETE_HOSPITAL_WORKFLOWS.md** ⭐ ALL MODULES — DOCTOR · LAB · PHARMACY · ADT · INSURANCE · BILLING · ER · MRD · OT · ICU · WARD
+**Read Time:** 45 minutes  
+**Audience:** Hospital operations, clinical directors, department heads, IT, implementation teams  
+**Purpose:** End-to-end flows for **every** hospital module — not just kiosk/display
+
+**Covers:**
+- Hospital module map (20 departments) + master admission→discharge timeline
+- Detailed workflows: queue, doctor OPD, ER, ADT, insurance, ward/eMAR, ICU, OT, lab, RIS, pharmacy, billing, MRD, discharge
+- Ancillary: blood bank, dietary, CSSD, procurement, command centre
+- Cross-module integration matrix + role-based swimlane
+- Route quick reference (`/hmis/*`, `/hospital/*`, `/doctor/*`, `/lab/*`, etc.)
+- Implementation priority for go-live (P0–P3)
+
+**Path:** `docs/hospital/MEDIQZY_COMPLETE_HOSPITAL_WORKFLOWS.md`
+
+**Downloads (Word / PowerPoint):** `docs/hospital/exports/` or `/api/downloads/hospital/MediQzy_Complete_Hospital_Workflows.{docx,pptx}`
+
+**Visual flowcharts:** `docs/hospital/exports/diagrams/complete/` (20 PNG/SVG diagrams)
+
+---
+
 ## 🗂️ DOCUMENT OVERVIEW
 
 ### 1. **HOSPITAL_VALIDATION_COMPLETE_PACKAGE.md** ⭐ START HERE

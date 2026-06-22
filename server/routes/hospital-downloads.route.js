@@ -25,6 +25,18 @@ const FILES = [
     format: 'pptx',
   },
   {
+    id: 'complete-workflows-docx',
+    filename: 'MediQzy_Complete_Hospital_Workflows.docx',
+    title: 'Complete Hospital Module Workflows — all departments (Word)',
+    format: 'docx',
+  },
+  {
+    id: 'complete-workflows-pptx',
+    filename: 'MediQzy_Complete_Hospital_Workflows.pptx',
+    title: 'Complete Hospital Module Workflows — all departments (PowerPoint)',
+    format: 'pptx',
+  },
+  {
     id: 'gaps-docx',
     filename: 'MediQzy_Greenfield_Hospital_Gaps_Implementation.docx',
     title: 'Greenfield Hospital — Gaps Implementation (Word)',

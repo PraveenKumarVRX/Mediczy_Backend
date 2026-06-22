@@ -8,7 +8,7 @@
 | **Owner** | AI CTO |
 | **Audience** | PM, BA, Engineering, QA, Security, Delivery |
 | **Status** | ACTIVE — implementation backlog |
-| **Related audits** | `HOSPITAL_ROLLOUT_READINESS_ASSESSMENT.md`, `TENANT_SETUP_AUDIT.md`, `SAMD_READINESS_SCORECARD.md` |
+| **Related audits** | `HOSPITAL_ROLLOUT_READINESS_ASSESSMENT.md`, `TENANT_SETUP_AUDIT.md`, `SAMD_READINESS_SCORECARD.md`, `MEDIQZY_COMPLETE_HOSPITAL_WORKFLOWS.md` |
 
 ---
 
@@ -1859,11 +1859,11 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 ### Phase 2a–2c — Smart Hospital displays (optional parallel track)
 
 - [ ] GAP-HOS-001 — All prod screens enrolled; CMS signage live
-- [ ] **GAP-QUEUE-002** — Queue SSE: token called → wall board < 1 s
-- [ ] GAP-DISPLAY-001 — OPD queue board on SSE production data
-- [ ] **GAP-QUEUE-007** — Front-desk queue console operational
-- [ ] GAP-DISPLAY-003 + GAP-IOT-001 — ICU/ER/OT/ward boards on live data
-- [ ] GAP-DISPLAY-002 — Bedside nurse call API operational
+- [x] **GAP-QUEUE-002** — Queue SSE: token called → wall board < 1 s
+- [x] GAP-DISPLAY-001 — OPD queue board on SSE production data
+- [x] **GAP-QUEUE-007** — Front-desk queue console operational
+- [x] GAP-DISPLAY-003 + GAP-IOT-001 — ICU/ER/OT/ward boards on live data
+- [x] GAP-DISPLAY-002 — Bedside nurse call API operational
 - [ ] GAP-DISPLAY-004 — Family waiting board privacy-safe
 
 ### Phase 3 — Full IPD + billing
@@ -1874,14 +1874,14 @@ node scripts/qa/hospital-portal-smoke.mjs   # after GAP-QA-003
 
 ### Phase 3b — Telepresence
 
-- [ ] GAP-VIDEO-001 — DisplayVideoRoom SDK in DisplayShell
-- [ ] GAP-VIDEO-003 — Bedside + family video consult E2E
-- [ ] GAP-VIDEO-002 — ER tele-triage booth on staging
+- [x] GAP-VIDEO-001 — DisplayVideoRoom SDK in DisplayShell
+- [x] GAP-VIDEO-003 — Bedside + family video consult E2E
+- [x] GAP-VIDEO-002 — ER tele-triage booth on staging
 
 ### Phase 4 — Command & world-class OS
 
-- [ ] GAP-DISPLAY-005 — Command centre KPI wall
-- [ ] GAP-HOS-002 — Digital twin floor map (if in scope)
+- [x] GAP-DISPLAY-005 — Command centre KPI wall
+- [x] GAP-HOS-002 — Digital twin floor map (if in scope)
 
 ---
 

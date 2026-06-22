@@ -21,5 +21,6 @@ convert() {
 
 echo "Exporting hospital docs..."
 convert "$ROOT/docs/hospital/MEDIQZY_HOSPITAL_OS_WORKFLOW_CHARTS.md" "MediQzy_Hospital_OS_Workflow_Charts"
+convert "$ROOT/docs/hospital/MEDIQZY_COMPLETE_HOSPITAL_WORKFLOWS.md" "MediQzy_Complete_Hospital_Workflows"
 convert "$ROOT/docs/hospital/GREENFIELD_HOSPITAL_GAPS_IMPLEMENTATION.md" "MediQzy_Greenfield_Hospital_Gaps_Implementation"
 echo "Done → $EXPORT"
