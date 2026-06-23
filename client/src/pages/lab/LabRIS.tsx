@@ -16,6 +16,7 @@ import {
   Download, Printer, Eye, Trash2,
 } from 'lucide-react';
 import DicomViewer from '../../components/lab/DicomViewer';
+import { openOhifViewer, buildOhifViewerUrl } from '@/utils/imagingViewer';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Study {
@@ -45,6 +46,9 @@ interface Study {
   notes: string | null;
   image_count: number;
   series_count: number;
+  pacs_source?: string;
+  series_instance_uid?: string | null;
+  sop_instance_uid?: string | null;
   created_at: string;
 }
 
@@ -1121,8 +1125,17 @@ const LabRIS: React.FC = () => {
               {activeTab === 'viewer' && (
                 <div className="h-full flex flex-col">
                   <div className="px-4 py-2 border-b border-gray-800 flex items-center gap-3 flex-wrap bg-gray-950/70">
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full ${dicomWebFileUrl ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-800 text-slate-300'}`}>
-                      Source: {dicomWebFileUrl ? 'DICOMweb' : 'RIS File'}
+                    {selectedStudy.is_dicom && selectedStudy.study_instance_uid && (
+                      <button
+                        type="button"
+                        onClick={() => openOhifViewer(selectedStudy.study_instance_uid)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
+                      >
+                        <Eye size={13} /> Open in OHIF Viewer
+                      </button>
+                    )}
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full ${selectedStudy.pacs_source === 'orthanc' || selectedStudy.is_dicom ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-800 text-slate-300'}`}>
+                      PACS: {selectedStudy.is_dicom ? 'Orthanc' : 'Legacy file'}
                     </span>
                     {selectedStudy.is_dicom && dicomWebInstances.length > 0 && (
                       <>
@@ -1142,16 +1155,36 @@ const LabRIS: React.FC = () => {
                     )}
                   </div>
                   <div className="flex-1 min-h-0">
-                    <DicomViewer
-                      studyId={selectedStudy.id}
-                      fileName={selectedStudy.file_name}
-                      mimeType={selectedStudy.mime_type}
-                      isDicom={selectedStudy.is_dicom}
-                      patientName={selectedStudy.patient_name}
-                      modality={selectedStudy.modality}
-                      studyDate={fmt(selectedStudy.study_date)}
-                      fileUrlOverride={dicomWebFileUrl || undefined}
-                    />
+                    {selectedStudy.is_dicom ? (
+                      <div className="h-full flex flex-col items-center justify-center gap-4 p-8 text-center bg-gray-950">
+                        <ScanLine className="w-12 h-12 text-indigo-400" />
+                        <div>
+                          <p className="text-white font-semibold">DICOM series stored in Orthanc PACS</p>
+                          <p className="text-sm text-gray-400 mt-1 max-w-md">
+                            Use OHIF for multi-slice CT/MRI viewing. Cornerstone preview below is for quick single-instance check only.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => openOhifViewer(selectedStudy.study_instance_uid)}
+                          className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold"
+                        >
+                          Open in OHIF Viewer
+                        </button>
+                        <p className="text-[10px] text-gray-600 font-mono break-all">{buildOhifViewerUrl(selectedStudy.study_instance_uid)}</p>
+                      </div>
+                    ) : (
+                      <DicomViewer
+                        studyId={selectedStudy.id}
+                        fileName={selectedStudy.file_name}
+                        mimeType={selectedStudy.mime_type}
+                        isDicom={false}
+                        patientName={selectedStudy.patient_name}
+                        modality={selectedStudy.modality}
+                        studyDate={fmt(selectedStudy.study_date)}
+                        fileUrlOverride={undefined}
+                      />
+                    )}
                   </div>
                 </div>
               )}

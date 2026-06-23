@@ -14,7 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import api from "@/utils/api";
 import { useToast } from "@/hooks/use-toast";
-import ImagingStudyPanel from "@/components/imaging/ImagingStudyPanel";
+import { openOhifViewer } from "@/utils/imagingViewer";
 
 const DicomViewer = lazy(() => import("@/components/lab/DicomViewer"));
 
@@ -398,6 +398,7 @@ interface RisStudy {
   file_name: string;
   mime_type: string;
   is_dicom: boolean;
+  study_instance_uid?: string;
   referring_doctor_name: string | null;
   lab_id: number;
 }
@@ -505,9 +506,17 @@ function ReferredStudiesPanel() {
                 <Button
                   size="sm"
                   className="mt-3 w-full h-7 text-[11px] bg-teal-700/40 hover:bg-teal-700/70 text-teal-300 border border-teal-700/40"
-                  onClick={e => { e.stopPropagation(); setViewer(s); }}
+                  onClick={e => {
+                    e.stopPropagation();
+                    if (s.is_dicom && s.study_instance_uid) {
+                      openOhifViewer(s.study_instance_uid);
+                    } else {
+                      setViewer(s);
+                    }
+                  }}
                 >
-                  <Eye className="w-3 h-3 mr-1" /> View Study
+                  <Eye className="w-3 h-3 mr-1" />
+                  {s.is_dicom && s.study_instance_uid ? 'Open in OHIF' : 'View Study'}
                 </Button>
               </div>
             );
@@ -515,8 +524,8 @@ function ReferredStudiesPanel() {
         </div>
       )}
 
-      {/* DicomViewer modal */}
-      {viewer && (
+      {/* Legacy file viewer (PDF / JPEG / video — not DICOM) */}
+      {viewer && !viewer.is_dicom && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="relative w-full max-w-5xl max-h-[90vh] overflow-auto">
             <Suspense fallback={<div className="flex items-center justify-center h-64 text-slate-400">Loading viewer…</div>}>
@@ -544,7 +553,7 @@ function ReferredStudiesPanel() {
 export default function DoctorImaging() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [view, setView]               = useState<'my-studies' | 'referred' | 'pacs'>('my-studies');
+  const [view, setView]               = useState<'my-studies' | 'referred'>('my-studies');
   const [studies, setStudies]         = useState<ImagingStudy[]>([]);
   const [loading, setLoading]         = useState(false);
   const [activeType, setActiveType]   = useState<string>("All");
@@ -618,12 +627,6 @@ export default function DoctorImaging() {
               >
                 <FlaskConical className="w-3.5 h-3.5" /> Lab Referred
               </button>
-              <button
-                onClick={() => setView('pacs')}
-                className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all', view === 'pacs' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white')}
-              >
-                <Activity className="w-3.5 h-3.5" /> PACS / OHIF
-              </button>
             </div>
             {view === 'my-studies' && (
               <Button onClick={() => setShowUpload(true)}
@@ -636,13 +639,6 @@ export default function DoctorImaging() {
 
         {/* Referred studies panel */}
         {view === 'referred' && <ReferredStudiesPanel />}
-
-        {/* HyperGrid PACS + OHIF */}
-        {view === 'pacs' && (
-          <div className="min-h-[70vh] rounded-2xl border border-slate-700/60 bg-slate-900/40 p-4">
-            <ImagingStudyPanel />
-          </div>
-        )}
 
         {/* Filters — only shown for My Studies */}
         {view === 'my-studies' && (<>

@@ -1,8 +1,8 @@
 /**
- * HyperGrid imaging study list + report editor for doctor portal.
+ * HyperGrid imaging study list — launches OHIF in separate tab (not embedded).
  */
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshCw, FileText, ScanLine, Calendar } from 'lucide-react';
+import { RefreshCw, FileText, ScanLine, Calendar, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import api from '@/utils/api';
 import { useToast } from '@/hooks/use-toast';
-import OHIFViewerEmbed from './OHIFViewerEmbed';
+import { openOhifViewer } from '@/utils/imagingViewer';
 
 interface HypergridStudy {
   study_instance_uid: string;
@@ -33,12 +33,11 @@ interface WorklistItem {
 
 interface ImagingStudyPanelProps {
   patientId?: string | number;
-  onSelectStudy?: (uid: string) => void;
 }
 
-export default function ImagingStudyPanel({ patientId, onSelectStudy }: ImagingStudyPanelProps) {
+export default function ImagingStudyPanel({ patientId }: ImagingStudyPanelProps) {
   const { toast } = useToast();
-  const [tab, setTab] = useState<'studies' | 'worklist' | 'viewer' | 'report'>('studies');
+  const [tab, setTab] = useState<'studies' | 'worklist' | 'report'>('studies');
   const [studies, setStudies] = useState<HypergridStudy[]>([]);
   const [worklist, setWorklist] = useState<WorklistItem[]>([]);
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
@@ -46,12 +45,6 @@ export default function ImagingStudyPanel({ patientId, onSelectStudy }: ImagingS
   const [findings, setFindings] = useState('');
   const [impression, setImpression] = useState('');
   const [saving, setSaving] = useState(false);
-
-  const selectStudy = (uid: string) => {
-    setSelectedUid(uid);
-    onSelectStudy?.(uid);
-    setTab('viewer');
-  };
 
   const loadStudies = useCallback(async () => {
     setLoading(true);
@@ -105,7 +98,6 @@ export default function ImagingStudyPanel({ patientId, onSelectStudy }: ImagingS
   const tabs = [
     { id: 'studies' as const, label: 'Studies', icon: ScanLine },
     { id: 'worklist' as const, label: 'Worklist', icon: Calendar },
-    { id: 'viewer' as const, label: 'OHIF Viewer', icon: ScanLine },
     { id: 'report' as const, label: 'Report', icon: FileText },
   ];
 
@@ -113,12 +105,7 @@ export default function ImagingStudyPanel({ patientId, onSelectStudy }: ImagingS
     <div className="flex flex-col h-full gap-3">
       <div className="flex items-center gap-2 flex-wrap">
         {tabs.map(({ id, label, icon: Icon }) => (
-          <Button
-            key={id}
-            variant={tab === id ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setTab(id)}
-          >
+          <Button key={id} variant={tab === id ? 'default' : 'outline'} size="sm" onClick={() => setTab(id)}>
             <Icon className="h-4 w-4 mr-1" /> {label}
           </Button>
         ))}
@@ -130,29 +117,19 @@ export default function ImagingStudyPanel({ patientId, onSelectStudy }: ImagingS
       {tab === 'studies' && (
         <ScrollArea className="flex-1 border rounded-lg">
           <div className="p-2 space-y-1">
-            {studies.length === 0 && (
-              <p className="text-sm text-muted-foreground p-4 text-center">No DICOM studies found</p>
-            )}
             {studies.map((s) => (
-              <button
-                key={s.study_instance_uid}
-                type="button"
-                onClick={() => selectStudy(s.study_instance_uid)}
-                className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                  selectedUid === s.study_instance_uid ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium truncate">{s.patient_name || 'Unknown patient'}</span>
-                  {s.modality && <Badge variant="secondary">{s.modality}</Badge>}
+              <div key={s.study_instance_uid} className="p-3 rounded-lg border border-border flex items-center justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{s.patient_name || 'Unknown'}</span>
+                    {s.modality && <Badge variant="secondary">{s.modality}</Badge>}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{s.study_description || s.study_instance_uid}</p>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1 truncate">
-                  {s.study_description || s.study_instance_uid}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {s.study_date || '—'} · {s.instance_count ?? 0} instances
-                </p>
-              </button>
+                <Button size="sm" variant="outline" onClick={() => openOhifViewer(s.study_instance_uid)}>
+                  <ExternalLink className="h-4 w-4 mr-1" /> OHIF
+                </Button>
+              </div>
             ))}
           </div>
         </ScrollArea>
@@ -161,49 +138,25 @@ export default function ImagingStudyPanel({ patientId, onSelectStudy }: ImagingS
       {tab === 'worklist' && (
         <ScrollArea className="flex-1 border rounded-lg">
           <div className="p-2 space-y-1">
-            {worklist.length === 0 && (
-              <p className="text-sm text-muted-foreground p-4 text-center">Worklist empty</p>
-            )}
             {worklist.map((w) => (
               <div key={w.id} className="p-3 rounded-lg border border-border">
                 <div className="flex justify-between">
                   <span className="font-medium">{w.patient_name}</span>
                   <Badge>{w.modality}</Badge>
                 </div>
-                <p className="text-xs text-muted-foreground">{w.requested_procedure || '—'}</p>
-                <p className="text-xs">{w.scheduled_date} · {w.status}</p>
+                <p className="text-xs text-muted-foreground">{w.scheduled_date} · {w.status}</p>
               </div>
             ))}
           </div>
         </ScrollArea>
       )}
 
-      {tab === 'viewer' && (
-        <OHIFViewerEmbed studyInstanceUID={selectedUid || ''} className="flex-1" />
-      )}
-
       {tab === 'report' && (
         <div className="flex flex-col gap-3 flex-1">
-          <Input
-            placeholder="Study UID"
-            value={selectedUid || ''}
-            onChange={(e) => setSelectedUid(e.target.value)}
-          />
-          <Textarea
-            placeholder="Findings *"
-            value={findings}
-            onChange={(e) => setFindings(e.target.value)}
-            rows={6}
-          />
-          <Textarea
-            placeholder="Impression"
-            value={impression}
-            onChange={(e) => setImpression(e.target.value)}
-            rows={3}
-          />
-          <Button onClick={saveReport} disabled={saving}>
-            {saving ? 'Saving…' : 'Save radiology report'}
-          </Button>
+          <Input placeholder="Study UID" value={selectedUid || ''} onChange={(e) => setSelectedUid(e.target.value)} />
+          <Textarea placeholder="Findings *" value={findings} onChange={(e) => setFindings(e.target.value)} rows={6} />
+          <Textarea placeholder="Impression" value={impression} onChange={(e) => setImpression(e.target.value)} rows={3} />
+          <Button onClick={saveReport} disabled={saving}>{saving ? 'Saving…' : 'Save radiology report'}</Button>
         </div>
       )}
     </div>

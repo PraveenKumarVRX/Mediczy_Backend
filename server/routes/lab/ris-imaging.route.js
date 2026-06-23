@@ -19,6 +19,11 @@ import { authLab } from '../../middleware/authLab.middleware.js';
 import { s3Client, BUCKET, s3PresignedUrl } from '../../utils/s3-storage.js';
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import crypto    from 'crypto';
+import {
+  parseDicomUidsFromFile,
+  stowDicomToOrthanc,
+  formatDicomStudyDate,
+} from '../../services/orthanc-pacs.service.js';
 
 const router = express.Router();
 
@@ -279,6 +284,11 @@ const ensureTable = async () => {
     CREATE INDEX IF NOT EXISTS idx_ris_patient    ON ris_studies(patient_name);
     CREATE INDEX IF NOT EXISTS idx_ris_modality   ON ris_studies(modality);
     CREATE INDEX IF NOT EXISTS idx_ris_status     ON ris_studies(status);
+    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS series_instance_uid VARCHAR(128);
+    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS sop_instance_uid VARCHAR(128);
+    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS orthanc_study_id VARCHAR(64);
+    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS orthanc_instance_id VARCHAR(64);
+    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS pacs_source VARCHAR(20) DEFAULT 's3';
     CREATE INDEX IF NOT EXISTS idx_ris_study_date ON ris_studies(study_date DESC);
 
     CREATE TABLE IF NOT EXISTS ris_study_audit_events (
@@ -392,29 +402,8 @@ const upload = multer({
   },
 });
 
-// ─── Helper: extract DICOM tags from buffer ───────────────────────────────────
-const parseDicomTags = (filePath) => {
-  try {
-    // Dynamic import to avoid ESM issues with older dicom-parser
-    const buf = fs.readFileSync(filePath);
-    // Simple DICOM header check (starts with 128-byte preamble + DICM magic)
-    const isDicom = buf.length > 132 &&
-      buf[128] === 0x44 && buf[129] === 0x49 &&
-      buf[130] === 0x43 && buf[131] === 0x4D;
-    if (!isDicom) return { isDicom: false, tags: {} };
-
-    // Read key tags manually (avoid dependency issues)
-    const tags = {};
-    const getText = (offset, len) => {
-      try { return buf.slice(offset, offset + len).toString('ascii').trim().replace(/\0/g,''); }
-      catch { return ''; }
-    };
-    // Return basic info — client-side cornerstone handles full parsing
-    return { isDicom: true, tags };
-  } catch {
-    return { isDicom: false, tags: {} };
-  }
-};
+// ─── Helper: DICOM UID extraction (dicom-parser) ───────────────────────────
+const readDicomMeta = (filePath) => parseDicomUidsFromFile(filePath);
 
 // ─── POST /upload ─────────────────────────────────────────────────────────────
 router.post('/upload', authLab, upload.single('file'), async (req, res) => {
@@ -436,9 +425,24 @@ router.post('/upload', authLab, upload.single('file'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'patientName is required' });
     }
 
-    const { isDicom, tags } = parseDicomTags(req.file.path);
+    const dicomMeta = readDicomMeta(req.file.path);
+    const isDicom = dicomMeta.isDicom;
 
-    // Upload from /tmp to S3
+    let orthancResult = null;
+    if (isDicom) {
+      const fileBuffer = fs.readFileSync(req.file.path);
+      try {
+        orthancResult = await stowDicomToOrthanc(fileBuffer, req.file.originalname || 'instance.dcm');
+      } catch (orthancErr) {
+        fs.unlinkSync(req.file.path);
+        return res.status(502).json({
+          success: false,
+          message: `Orthanc STOW-RS failed: ${orthancErr.message}. DICOM must be ingested to PACS before RIS registration.`,
+        });
+      }
+    }
+
+    // Archive to S3 (compliance backup; OHIF reads from Orthanc)
     const ext    = path.extname(req.file.originalname) || '';
     const s3Key  = `ris/${Date.now()}_${crypto.randomBytes(8).toString('hex')}${ext}`;
     await s3Client.send(new PutObjectCommand({
@@ -449,89 +453,105 @@ router.post('/upload', authLab, upload.single('file'), async (req, res) => {
     }));
     fs.unlink(req.file.path, () => {});
 
+    const resolvedStudyUid = orthancResult?.studyInstanceUID
+      || studyInstanceUid
+      || dicomMeta.studyInstanceUID
+      || (isDicom ? null : `1.2.3.${Date.now()}`);
+    if (isDicom && !resolvedStudyUid) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ success: false, message: 'Could not resolve StudyInstanceUID from DICOM' });
+    }
+
     const result = await pool.query(`
       INSERT INTO ris_studies
         (lab_id, patient_name, patient_dob, patient_sex,
-         accession_number, study_instance_uid,
+         accession_number, study_instance_uid, series_instance_uid, sop_instance_uid,
+         orthanc_study_id, orthanc_instance_id, pacs_source,
          modality, body_part, study_description, referring_physician,
          referring_doctor_id, referring_doctor_name,
          study_date, study_time, priority,
          file_name, original_name, file_path, file_size, mime_type,
          is_dicom, dicom_tags, notes)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
       RETURNING *
     `, [
       req.lab.id,
-      patientName.trim(),
+      (orthancResult?.patientName || patientName).trim(),
       patientDob || null,
       (patientSex || 'U').charAt(0).toUpperCase(),
-      accessionNumber || `ACC-${Date.now()}`,
-      studyInstanceUid || `1.2.3.${Date.now()}`,
-      modality.toUpperCase(),
+      orthancResult?.accessionNumber || accessionNumber || `ACC-${Date.now()}`,
+      resolvedStudyUid,
+      orthancResult?.seriesInstanceUID || dicomMeta.seriesInstanceUID || null,
+      orthancResult?.sopInstanceUID || dicomMeta.sopInstanceUID || null,
+      orthancResult?.orthancStudyId || null,
+      orthancResult?.orthancInstanceId || null,
+      isDicom ? 'orthanc' : 's3',
+      (orthancResult?.modality || modality).toUpperCase(),
       bodyPart || null,
-      studyDescription || null,
+      orthancResult?.studyDescription || studyDescription || null,
       referringPhysician || null,
       referringDoctorId ? parseInt(referringDoctorId) : null,
       referringDoctorName || null,
-      studyDate || new Date().toISOString().slice(0,10),
+      orthancResult?.studyDate
+        ? (formatDicomStudyDate(orthancResult.studyDate) || studyDate || new Date().toISOString().slice(0, 10))
+        : (formatDicomStudyDate(dicomMeta.studyDate) || studyDate || new Date().toISOString().slice(0, 10)),
       studyTime || null,
       priority,
       s3Key,
       req.file.originalname,
-      s3Key,           // file_path now stores S3 key
+      s3Key,
       req.file.size,
       req.file.mimetype,
       isDicom,
-      JSON.stringify(tags),
+      JSON.stringify({ ...dicomMeta, orthancMethod: orthancResult?.method }),
       notes || null,
     ]);
 
     const study = result.rows[0];
 
-    // Best-effort PACS sync so LabRIS studies are discoverable via DICOMweb endpoints.
-    try {
-      await pool.query(
-        `INSERT INTO hg_dicom_studies
-           (study_instance_uid, patient_id, patient_name, modality,
-            study_date, study_description, accession_number, tenant_id, created_by, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
-         ON CONFLICT (study_instance_uid, tenant_id)
-         DO UPDATE SET
-           modality = EXCLUDED.modality,
-           study_description = EXCLUDED.study_description,
-           accession_number = EXCLUDED.accession_number,
-           updated_at = NOW()`,
-        [
-          study.study_instance_uid,
-          study.patient_id || null,
-          study.patient_name || null,
-          study.modality || null,
-          study.study_date || null,
-          study.study_description || null,
-          study.accession_number || null,
-          req.lab.id,
-          req.lab.id,
-        ]
-      );
-
-      const sopUid = `2.25.${Date.now()}.${study.id}`;
-      await pool.query(
-        `INSERT INTO hg_dicom_instances
-           (sop_instance_uid, study_instance_uid, file_path, file_size,
-            content_type, tenant_id, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,NOW())
-         ON CONFLICT (sop_instance_uid) DO NOTHING`,
-        [
-          sopUid,
-          study.study_instance_uid,
-          study.file_path,
-          study.file_size,
-          study.mime_type,
-          req.lab.id,
-        ]
-      );
-    } catch (syncErr) {
-      console.warn('[RIS] PACS sync warning:', syncErr?.message || syncErr);
+    // Index in HyperGrid metadata using real Orthanc UIDs (for worklist / reports)
+    if (isDicom && study.study_instance_uid) {
+      try {
+        await pool.query(
+          `INSERT INTO hg_dicom_studies
+             (study_instance_uid, patient_id, patient_name, modality,
+              study_date, study_description, accession_number, tenant_id, created_by, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+           ON CONFLICT (study_instance_uid, tenant_id)
+           DO UPDATE SET modality = EXCLUDED.modality, updated_at = NOW()`,
+          [
+            study.study_instance_uid,
+            study.patient_id || null,
+            study.patient_name,
+            study.modality,
+            study.study_date,
+            study.study_description,
+            study.accession_number,
+            req.lab.id,
+            req.lab.id,
+          ],
+        );
+        if (study.sop_instance_uid) {
+          await pool.query(
+            `INSERT INTO hg_dicom_instances
+               (sop_instance_uid, study_instance_uid, series_instance_uid, file_path, file_size,
+                content_type, tenant_id, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+             ON CONFLICT (sop_instance_uid, tenant_id) DO NOTHING`,
+            [
+              study.sop_instance_uid,
+              study.study_instance_uid,
+              study.series_instance_uid,
+              study.file_path,
+              study.file_size,
+              study.mime_type,
+              req.lab.id,
+            ],
+          );
+        }
+      } catch (syncErr) {
+        console.warn('[RIS] HyperGrid metadata sync warning:', syncErr?.message || syncErr);
+      }
     }
 
     const actor = getActor(req);
