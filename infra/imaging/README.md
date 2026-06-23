@@ -57,4 +57,34 @@ ORTHANC_PASSWORD=change-this-password
 
 Deploy **one Orthanc instance per hospital tenant**. MediQzy handles tenancy in `ris_studies`; Orthanc is not a multi-tenant isolation boundary.
 
+## Platform phases (1–4)
+
+| Phase | Capability | API / service |
+|-------|------------|---------------|
+| 1 | Batch DICOM upload, MWL, report templates, metrics | `POST /api/lab/ris/upload-series`, `/api/imaging/platform/mwl`, `/templates` |
+| 2 | Kafka workflow, collaboration SSE, OpenSearch search | `/api/imaging/platform/workflow/*`, `/collab/*`, `/search` |
+| 3 | AI triage microservice (physician review required) | `IMAGING_TRIAGE_URL`, `/api/imaging/platform/triage/*` |
+| 4 | VNA lifecycle, OHIF hanging protocols, full compose | `/api/imaging/platform/vna/*`, `compose.full.yml` |
+
+### Full stack (optional)
+
+```bash
+cd infra/imaging
+docker compose -f compose.yml -f compose.full.yml up -d
+```
+
+Includes Kafka, Redis, OpenSearch, MinIO, Keycloak, Temporal, Prometheus, Grafana, imaging-triage.
+
+### Environment (platform)
+
+```env
+IMAGING_TRIAGE_URL=http://127.0.0.1:8010
+OPENSEARCH_URL=http://127.0.0.1:9200
+KAFKA_ENABLED=true
+KAFKA_BROKERS=localhost:9092
+KEYCLOAK_ENABLED=false
+KEYCLOAK_REALM_URL=https://keycloak.example/realms/mediczy
+VITE_OHIF_BASE_PATH=/ohif
+```
+
 See also: `docs/imaging/IMAGING_STACK_DEPLOYMENT.md`

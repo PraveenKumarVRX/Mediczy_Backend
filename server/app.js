@@ -255,6 +255,7 @@ import hypergridTerminologyRouter  from './routes/hypergrid-terminology.route.js
 import hypergridDicomRouter        from './routes/hypergrid-dicom.route.js';
 import orthancWebhookRouter        from './routes/orthanc-webhook.route.js';
 import imagingSessionRouter        from './routes/imaging-session.route.js';
+import imagingPlatformRouter       from './routes/imaging-platform.route.js';
 import hypergridSmartFhirRouter    from './routes/hypergrid-smart-fhir.route.js';
 import hypergridTwinsRouter        from './routes/hypergrid-twins.route.js';
 import hypergridConnectorRouter    from './routes/hypergrid-connector.route.js';
@@ -1596,6 +1597,7 @@ app.use('/api/hypergrid/terminology', hypergridTerminologyRouter);
 app.use('/api/hypergrid/dicom',       hypergridDicomRouter);
 app.use('/api/orthanc',               orthancWebhookRouter);
 app.use('/api/imaging',               imagingSessionRouter);
+app.use('/api/imaging/platform',      imagingPlatformRouter);
 app.use('/api/hypergrid/smart',       hypergridSmartFhirRouter);
 app.use('/api/hypergrid/twins',       hypergridTwinsRouter);
 app.use('/api/hypergrid/connectors',  hypergridConnectorRouter);

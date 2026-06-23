@@ -53,6 +53,19 @@ if (!isTest && process.env.KAFKA_ENABLED === 'true') {
   initKafkaWorker();
 }
 
+const initImagingWorkflowWorker = async () => {
+  try {
+    const { startImagingWorkflowWorker } = await import('./imaging-workflow.worker.js');
+    await startImagingWorkflowWorker();
+  } catch (error) {
+    console.warn('⚠️  Imaging workflow worker not available:', error.message);
+  }
+};
+
+if (!isTest) {
+  initImagingWorkflowWorker();
+}
+
 // Initialize Email Inbox Sync worker
 const initEmailSyncWorker = async () => {
   try {

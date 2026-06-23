@@ -114,6 +114,19 @@ bash scripts/testing/dicomweb-smoke.sh
 | DB migrations | ✅ `20260623000001-align-hg-dicom-schema.js` |
 | DICOMweb OHIF compatibility | ✅ QIDO/WADO paths + `application/dicom+json` |
 
+## Platform phases 1–4 (2026-06)
+
+| Phase | Delivered |
+|-------|-----------|
+| 1 | Batch `POST /api/lab/ris/upload-series`, MWL, report templates, Prometheus metrics |
+| 2 | Kafka workflow events, collaboration SSE, OpenSearch search with Postgres fallback |
+| 3 | `ai-engine/imaging-triage` FastAPI service, governed triage API (`/api/imaging/platform/triage/*`) |
+| 4 | VNA lifecycle metadata, OHIF hanging protocols, `infra/imaging/compose.full.yml` |
+
+Run full stack: `cd infra/imaging && docker compose -f compose.yml -f compose.full.yml up -d`
+
+Platform API base: `/api/imaging/platform`
+
 ## Notes
 
 - **Manual lab upload** still works via `/api/lab/ris` → syncs to `hg_dicom_*`

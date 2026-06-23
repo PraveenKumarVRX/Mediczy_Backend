@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import DicomViewer from '../../components/lab/DicomViewer';
 import { openOhifViewer, buildOhifViewerUrl } from '@/utils/imagingViewer';
+import ImagingReportEditor from '../../components/imaging/ImagingReportEditor';
+import ImagingCollabPanel from '../../components/imaging/ImagingCollabPanel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Study {
@@ -174,7 +176,7 @@ const UploadModal: React.FC<{
     studyDate: new Date().toISOString().slice(0,10),
     priority: 'Routine', notes: '',
   });
-  const [file, setFile]       = useState<File | null>(null);
+  const [files, setFiles]       = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
   const fileRef               = useRef<HTMLInputElement>(null);
@@ -182,17 +184,25 @@ const UploadModal: React.FC<{
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) { setError('Please select a file'); return; }
+    if (!files.length) { setError('Please select at least one file'); return; }
     if (!form.patientName.trim()) { setError('Patient name is required'); return; }
 
     setUploading(true);
     setError(null);
     try {
       const fd = new FormData();
-      fd.append('file', file);
+      const isBatchDicom = files.length > 1 && files.every((f) =>
+        f.name.toLowerCase().endsWith('.dcm') || f.type === 'application/dicom',
+      );
+      if (isBatchDicom) {
+        files.forEach((f) => fd.append('files', f));
+      } else {
+        fd.append('file', files[0]);
+      }
       Object.entries(form).forEach(([k,v]) => fd.append(k,v));
 
-      const res = await axios.post(`${API_BASE}/upload`, fd, {
+      const endpoint = isBatchDicom ? `${API_BASE}/upload-series` : `${API_BASE}/upload`;
+      const res = await axios.post(endpoint, fd, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data',
@@ -248,25 +258,30 @@ const UploadModal: React.FC<{
             onClick={() => fileRef.current?.click()}
             className="border-2 border-dashed border-gray-700 hover:border-indigo-500 rounded-xl p-6 text-center cursor-pointer transition-colors"
           >
-            {file ? (
+            {files.length ? (
               <div className="text-green-400">
                 <CheckCircle2 className="mx-auto mb-1" size={20} />
-                <div className="text-sm font-medium">{file.name}</div>
-                <div className="text-xs text-gray-500">{fmtSize(file.size)}</div>
+                <div className="text-sm font-medium">
+                  {files.length === 1 ? files[0].name : `${files.length} DICOM files selected`}
+                </div>
+                <div className="text-xs text-gray-500">
+                  {fmtSize(files.reduce((s, f) => s + f.size, 0))}
+                </div>
               </div>
             ) : (
               <div className="text-gray-500">
                 <Upload className="mx-auto mb-2" size={24} />
                 <div className="text-sm">Click to select DICOM / Image / Video / PDF</div>
-                <div className="text-xs mt-1">Max 500 MB</div>
+                <div className="text-xs mt-1">Multi-select .dcm for series batch upload · Max 500 MB each</div>
               </div>
             )}
             <input
               ref={fileRef}
               type="file"
               hidden
+              multiple
               accept=".dcm,image/*,video/*,application/pdf"
-              onChange={e => setFile(e.target.files?.[0] || null)}
+              onChange={e => setFiles(Array.from(e.target.files || []))}
             />
           </div>
 
@@ -468,12 +483,12 @@ const ReportPanel: React.FC<{
         </div>
       )}
 
-      <textarea
-        className="flex-1 w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-600"
-        placeholder="Enter radiology report findings, impressions, and recommendations..."
+      <ImagingReportEditor
+        studyId={study.id}
+        modality={study.modality}
         value={text}
-        onChange={e => setText(e.target.value)}
-        rows={12}
+        onChange={setText}
+        token={token}
       />
 
       <div className="mt-3 p-3 rounded-lg border border-gray-700 bg-gray-900/70 space-y-3">
@@ -1172,6 +1187,14 @@ const LabRIS: React.FC = () => {
                           Open in OHIF Viewer
                         </button>
                         <p className="text-[10px] text-gray-600 font-mono break-all">{buildOhifViewerUrl(selectedStudy.study_instance_uid)}</p>
+                        {token && (
+                          <div className="w-full max-w-md mt-2">
+                            <ImagingCollabPanel
+                              studyInstanceUID={selectedStudy.study_instance_uid}
+                              token={token}
+                            />
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <DicomViewer

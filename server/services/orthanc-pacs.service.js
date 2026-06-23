@@ -208,3 +208,27 @@ export async function getOrthancHealth() {
     return { ok: false, error: err.message };
   }
 }
+
+/** STOW multiple DICOM instances (series / batch upload). */
+export async function stowMultipleDicomFiles(fileEntries) {
+  const results = [];
+  for (const entry of fileEntries) {
+    const buffer = entry.buffer instanceof Buffer ? entry.buffer : Buffer.from(entry.buffer);
+    const result = await stowDicomToOrthanc(buffer, entry.filename || 'instance.dcm');
+    results.push(result);
+  }
+  if (!results.length) {
+    throw new Error('No DICOM files to ingest');
+  }
+  const primary = results[0];
+  const studyUids = new Set(results.map((r) => r.studyInstanceUID).filter(Boolean));
+  if (studyUids.size > 1) {
+    throw new Error(`Batch contains ${studyUids.size} different StudyInstanceUIDs — upload one study per batch`);
+  }
+  return {
+    ...primary,
+    instanceCount: results.length,
+    instances: results,
+    method: 'stow-rs-batch',
+  };
+}

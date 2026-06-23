@@ -2,6 +2,7 @@
  * Lab RIS Imaging Routes — PACS / DICOM
  *
  * POST   /api/lab/ris/upload          — upload DICOM / image / video
+ * POST   /api/lab/ris/upload-series   — batch DICOM instances (one study)
  * GET    /api/lab/ris/studies         — list studies (PACS worklist)
  * GET    /api/lab/ris/file/:id        — serve file (authenticated)
  * GET    /api/lab/ris/:id             — get study metadata
@@ -22,8 +23,12 @@ import crypto    from 'crypto';
 import {
   parseDicomUidsFromFile,
   stowDicomToOrthanc,
+  stowMultipleDicomFiles,
   formatDicomStudyDate,
 } from '../../services/orthanc-pacs.service.js';
+import { onDicomStudyIngested } from '../../services/imaging/imaging-ingest.service.js';
+import { indexStudyDocument } from '../../services/imaging/imaging-search.service.js';
+import { publishEvent, KAFKA_TOPICS } from '../../config/kafka.js';
 
 const router = express.Router();
 
@@ -577,10 +582,161 @@ router.post('/upload', authLab, upload.single('file'), async (req, res) => {
       actorName: actor.actorName,
     });
 
+    if (isDicom) {
+      await onDicomStudyIngested({
+        study,
+        tenantId: req.lab.id,
+        orthancResult,
+        s3Key,
+      }).catch((err) => console.warn('[RIS] imaging ingest hook:', err?.message));
+    }
+
     return res.status(201).json({ success: true, study });
   } catch (err) {
     console.error('[RIS] Upload error:', err);
     try { if (req.file?.path) fs.unlinkSync(req.file.path); } catch {}
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── POST /upload-series — batch DICOM instances (one study) ─────────────────
+router.post('/upload-series', authLab, upload.array('files', 100), async (req, res) => {
+  const files = req.files || [];
+  if (!files.length) {
+    return res.status(400).json({ success: false, message: 'No files uploaded' });
+  }
+  try {
+    const {
+      patientName, patientDob, patientSex,
+      modality = 'OT', bodyPart, studyDescription,
+      referringPhysician, referringDoctorId, referringDoctorName,
+      studyDate, studyTime,
+      priority = 'Routine', accessionNumber, notes,
+    } = req.body;
+
+    if (!patientName) {
+      files.forEach((f) => { try { fs.unlinkSync(f.path); } catch {} });
+      return res.status(400).json({ success: false, message: 'patientName is required' });
+    }
+
+    const dicomBuffers = [];
+    for (const f of files) {
+      const meta = readDicomMeta(f.path);
+      if (!meta.isDicom) {
+        files.forEach((x) => { try { fs.unlinkSync(x.path); } catch {} });
+        return res.status(400).json({ success: false, message: `Non-DICOM file in batch: ${f.originalname}` });
+      }
+      dicomBuffers.push({
+        buffer: fs.readFileSync(f.path),
+        filename: f.originalname || 'instance.dcm',
+        meta,
+      });
+    }
+
+    let orthancResult;
+    try {
+      orthancResult = await stowMultipleDicomFiles(dicomBuffers);
+    } catch (orthancErr) {
+      files.forEach((f) => { try { fs.unlinkSync(f.path); } catch {} });
+      return res.status(502).json({
+        success: false,
+        message: `Orthanc batch STOW failed: ${orthancErr.message}`,
+      });
+    }
+
+    const primaryMeta = dicomBuffers[0].meta;
+    const s3Keys = [];
+    for (const f of files) {
+      const ext = path.extname(f.originalname) || '.dcm';
+      const s3Key = `ris/${Date.now()}_${crypto.randomBytes(8).toString('hex')}${ext}`;
+      await s3Client.send(new PutObjectCommand({
+        Bucket: BUCKET,
+        Key: s3Key,
+        Body: fs.createReadStream(f.path),
+        ContentType: f.mimetype || 'application/dicom',
+      }));
+      s3Keys.push(s3Key);
+      fs.unlink(f.path, () => {});
+    }
+
+    const resolvedStudyUid = orthancResult.studyInstanceUID || primaryMeta.studyInstanceUID;
+    if (!resolvedStudyUid) {
+      return res.status(400).json({ success: false, message: 'Could not resolve StudyInstanceUID from batch' });
+    }
+
+    const result = await pool.query(`
+      INSERT INTO ris_studies
+        (lab_id, patient_name, patient_dob, patient_sex,
+         accession_number, study_instance_uid, series_instance_uid, sop_instance_uid,
+         orthanc_study_id, orthanc_instance_id, pacs_source,
+         modality, body_part, study_description, referring_physician,
+         referring_doctor_id, referring_doctor_name,
+         study_date, study_time, priority,
+         file_name, original_name, file_path, file_size, mime_type,
+         is_dicom, dicom_tags, notes, image_count, series_count)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
+      RETURNING *
+    `, [
+      req.lab.id,
+      (orthancResult.patientName || patientName).trim(),
+      patientDob || null,
+      (patientSex || 'U').charAt(0).toUpperCase(),
+      orthancResult.accessionNumber || accessionNumber || `ACC-${Date.now()}`,
+      resolvedStudyUid,
+      orthancResult.seriesInstanceUID || primaryMeta.seriesInstanceUID || null,
+      orthancResult.sopInstanceUID || primaryMeta.sopInstanceUID || null,
+      orthancResult.orthancStudyId || null,
+      orthancResult.orthancInstanceId || null,
+      'orthanc',
+      (orthancResult.modality || modality).toUpperCase(),
+      bodyPart || null,
+      orthancResult.studyDescription || studyDescription || null,
+      referringPhysician || null,
+      referringDoctorId ? parseInt(referringDoctorId, 10) : null,
+      referringDoctorName || null,
+      orthancResult.studyDate
+        ? (formatDicomStudyDate(orthancResult.studyDate) || studyDate || new Date().toISOString().slice(0, 10))
+        : (formatDicomStudyDate(primaryMeta.studyDate) || studyDate || new Date().toISOString().slice(0, 10)),
+      studyTime || null,
+      priority,
+      s3Keys[0],
+      files[0].originalname,
+      s3Keys[0],
+      files.reduce((sum, f) => sum + f.size, 0),
+      'application/dicom',
+      true,
+      JSON.stringify({ batch: true, instanceCount: orthancResult.instanceCount, s3Keys }),
+      notes || null,
+      orthancResult.instanceCount || files.length,
+      1,
+    ]);
+
+    const study = result.rows[0];
+    const actor = getActor(req);
+    await writeAuditEvent(pool, {
+      studyId: study.id,
+      labId: req.lab.id,
+      eventType: 'STUDY_BATCH_UPLOADED',
+      actorId: actor.actorId,
+      actorName: actor.actorName,
+      details: { instanceCount: orthancResult.instanceCount, patientName: study.patient_name },
+    });
+
+    await onDicomStudyIngested({
+      study,
+      tenantId: req.lab.id,
+      orthancResult,
+      s3Key: s3Keys[0],
+    }).catch((err) => console.warn('[RIS] batch ingest hook:', err?.message));
+
+    return res.status(201).json({
+      success: true,
+      study,
+      instanceCount: orthancResult.instanceCount,
+    });
+  } catch (err) {
+    console.error('[RIS] Batch upload error:', err);
+    (req.files || []).forEach((f) => { try { fs.unlinkSync(f.path); } catch {} });
     return res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -1575,7 +1731,28 @@ router.put('/:id/report', authLab, async (req, res) => {
     }
 
     await client.query('COMMIT');
-    return res.json({ success: true, study: row.rows[0] });
+    const saved = row.rows[0];
+    const topic = reportStatus === 'Final'
+      ? KAFKA_TOPICS.IMAGING_REPORT_FINALIZED
+      : KAFKA_TOPICS.IMAGING_REPORT_DRAFTED;
+    publishEvent(topic, {
+      studyId: saved.id,
+      studyInstanceUID: saved.study_instance_uid,
+      tenantId: req.lab.id,
+      reportStatus,
+    }).catch(() => {});
+    if (reportStatus === 'Draft' || reportStatus === 'Final') {
+      indexStudyDocument({
+        tenantId: req.lab.id,
+        studyInstanceUID: saved.study_instance_uid,
+        patientName: saved.patient_name,
+        modality: saved.modality,
+        studyDate: saved.study_date,
+        reportText: saved.report_text,
+        impression: saved.report_text,
+      }).catch(() => {});
+    }
+    return res.json({ success: true, study: saved });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
     return res.status(500).json({ success: false, message: err.message });
