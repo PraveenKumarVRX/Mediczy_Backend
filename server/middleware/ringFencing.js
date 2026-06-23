@@ -669,6 +669,8 @@ const PUBLIC_ENDPOINTS = [
   '/api/broker-integrations/health',
   '/api/broker-integrations/claims/submit',
   '/api/broker-integrations/webhooks',
+  '/api/orthanc/webhook',
+  '/api/orthanc/health',
   '/api/homecare/login',
   '/api/homecare/book',    // Patient homecare booking (public — no auth required)
   '/api/corporate/login',

@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import api from "@/utils/api";
 import { useToast } from "@/hooks/use-toast";
+import ImagingStudyPanel from "@/components/imaging/ImagingStudyPanel";
 
 const DicomViewer = lazy(() => import("@/components/lab/DicomViewer"));
 
@@ -543,7 +544,7 @@ function ReferredStudiesPanel() {
 export default function DoctorImaging() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [view, setView]               = useState<'my-studies' | 'referred'>('my-studies');
+  const [view, setView]               = useState<'my-studies' | 'referred' | 'pacs'>('my-studies');
   const [studies, setStudies]         = useState<ImagingStudy[]>([]);
   const [loading, setLoading]         = useState(false);
   const [activeType, setActiveType]   = useState<string>("All");
@@ -617,6 +618,12 @@ export default function DoctorImaging() {
               >
                 <FlaskConical className="w-3.5 h-3.5" /> Lab Referred
               </button>
+              <button
+                onClick={() => setView('pacs')}
+                className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all', view === 'pacs' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white')}
+              >
+                <Activity className="w-3.5 h-3.5" /> PACS / OHIF
+              </button>
             </div>
             {view === 'my-studies' && (
               <Button onClick={() => setShowUpload(true)}
@@ -629,6 +636,13 @@ export default function DoctorImaging() {
 
         {/* Referred studies panel */}
         {view === 'referred' && <ReferredStudiesPanel />}
+
+        {/* HyperGrid PACS + OHIF */}
+        {view === 'pacs' && (
+          <div className="min-h-[70vh] rounded-2xl border border-slate-700/60 bg-slate-900/40 p-4">
+            <ImagingStudyPanel />
+          </div>
+        )}
 
         {/* Filters — only shown for My Studies */}
         {view === 'my-studies' && (<>

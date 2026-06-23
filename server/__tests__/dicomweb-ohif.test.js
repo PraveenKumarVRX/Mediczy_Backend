@@ -1,0 +1,38 @@
+import {
+  studyToDicomJson,
+  instanceToDicomJson,
+  groupInstancesBySeries,
+} from '../services/dicomweb-ohif.service.js';
+
+describe('dicomweb-ohif', () => {
+  it('converts study row to DICOM JSON tags', () => {
+    const json = studyToDicomJson({
+      study_instance_uid: '1.2.3.4',
+      patient_name: 'DOE^JOHN',
+      modality: 'CT',
+      study_date: '2024-06-01',
+    }, 3);
+    expect(json['0020000D'].Value[0]).toBe('1.2.3.4');
+    expect(json['00080060'].Value[0]).toBe('CT');
+    expect(json['00201208'].Value[0]).toBe('3');
+  });
+
+  it('groups instances by series', () => {
+    const map = groupInstancesBySeries([
+      { series_instance_uid: 's1', sop_instance_uid: 'i1' },
+      { series_instance_uid: 's1', sop_instance_uid: 'i2' },
+      { series_instance_uid: 's2', sop_instance_uid: 'i3' },
+    ]);
+    expect(map.get('s1').length).toBe(2);
+    expect(map.get('s2').length).toBe(1);
+  });
+
+  it('builds instance DICOM JSON', () => {
+    const json = instanceToDicomJson(
+      { study_instance_uid: '1.2.3', modality: 'MR' },
+      { sop_instance_uid: '9.9.9', series_instance_uid: '5.5.5' },
+    );
+    expect(json['00080018'].Value[0]).toBe('9.9.9');
+    expect(json['0020000E'].Value[0]).toBe('5.5.5');
+  });
+});
