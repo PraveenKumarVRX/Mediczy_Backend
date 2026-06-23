@@ -29,6 +29,9 @@ import {
 import { onDicomStudyIngested } from '../../services/imaging/imaging-ingest.service.js';
 import { indexStudyDocument } from '../../services/imaging/imaging-search.service.js';
 import { publishEvent, KAFKA_TOPICS } from '../../config/kafka.js';
+import {
+  onReportDraftSaved, onReportFinalized,
+} from '../../services/imaging/imaging-workflow-hooks.service.js';
 
 const router = express.Router();
 
@@ -1732,6 +1735,17 @@ router.put('/:id/report', authLab, async (req, res) => {
 
     await client.query('COMMIT');
     const saved = row.rows[0];
+    const hookCtx = {
+      study: saved,
+      tenantId: req.lab.id,
+      actorId: actor.actorId,
+      actorName: actor.actorName,
+    };
+    if (reportStatus === 'Final') {
+      onReportFinalized(hookCtx).catch((e) => console.warn('[RIS] workflow finalize:', e?.message));
+    } else if (reportStatus === 'Draft') {
+      onReportDraftSaved({ studyId: saved.id, ...hookCtx, reportText: saved.report_text }).catch(() => {});
+    }
     const topic = reportStatus === 'Final'
       ? KAFKA_TOPICS.IMAGING_REPORT_FINALIZED
       : KAFKA_TOPICS.IMAGING_REPORT_DRAFTED;

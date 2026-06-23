@@ -31,6 +31,9 @@ import {
 } from '../services/imaging/imaging-vna.service.js';
 import { getStudyPlatformSummary } from '../services/imaging/imaging-ingest.service.js';
 import { generateReportDraft, getLatestDraft, approveDraft } from '../services/imaging/imaging-report-drafter.service.js';
+import { assertStudyAccess } from '../services/imaging/imaging-study-access.service.js';
+import { getInterpretationForStudy } from '../services/imaging/imaging-interpretability.service.js';
+import { runVnaLifecycleJob } from '../services/imaging/imaging-vna.service.js';
 import { compareWithPriorStudies } from '../services/imaging/imaging-prior-comparison.service.js';
 import {
   listOpenCriticalAlerts, acknowledgeCriticalAlert,
@@ -260,21 +263,37 @@ router.post('/reports/draft', authImaging, async (req, res) => {
     if (!studyId) return res.status(400).json({ success: false, message: 'studyId required' });
     const result = await generateReportDraft({
       studyId: parseInt(studyId, 10),
-      tenantId: getTenantId(req),
       actorId: req.user?.id,
-      actorName: req.user?.name || 'radiologist',
+      actorName: req.user?.name || req.user?.role || 'radiologist',
       structuredFindings,
       includePriorComparison,
+      req,
     });
     return res.json({ success: true, ...result });
   } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
+    const status = err.status || 500;
+    return res.status(status).json({ success: false, message: err.message });
   }
 });
 
 router.get('/reports/draft/:studyId', authImaging, async (req, res) => {
-  const draft = await getLatestDraft(parseInt(req.params.studyId, 10), getTenantId(req));
-  return res.json({ success: true, draft });
+  try {
+    const { tenantId } = await assertStudyAccess(parseInt(req.params.studyId, 10), req);
+    const draft = await getLatestDraft(parseInt(req.params.studyId, 10), tenantId);
+    return res.json({ success: true, draft });
+  } catch (err) {
+    return res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+});
+
+router.get('/interpretation/:studyId', authImaging, async (req, res) => {
+  try {
+    const { tenantId } = await assertStudyAccess(parseInt(req.params.studyId, 10), req);
+    const interpretation = await getInterpretationForStudy(parseInt(req.params.studyId, 10), tenantId);
+    return res.json({ success: true, interpretation });
+  } catch (err) {
+    return res.status(err.status || 500).json({ success: false, message: err.message });
+  }
 });
 
 router.post('/reports/draft/:draftId/approve', authImaging, async (req, res) => {
@@ -384,6 +403,40 @@ router.get('/analytics/lesions/:patientKey', authImaging, async (req, res) => {
 router.get('/lesions/:patientKey/timeline', authImaging, async (req, res) => {
   const rows = await getLesionTimeline(getTenantId(req), req.params.patientKey, req.query.lesionId || null);
   return res.json({ success: true, timeline: rows });
+});
+
+router.post('/vna/lifecycle/run', authImaging, async (req, res) => {
+  const result = await runVnaLifecycleJob(getTenantId(req), parseInt(req.body?.olderThanDays || '90', 10));
+  return res.json({ success: true, ...result });
+});
+
+router.post('/measurements/from-viewer', authImaging, async (req, res) => {
+  try {
+    const { studyId, studyInstanceUID, lesionLabel, location, sizeMm, volumeMm3, patientName, data } = req.body || {};
+    const access = studyId
+      ? await assertStudyAccess(parseInt(studyId, 10), req)
+      : null;
+    const tenantId = access?.tenantId || getTenantId(req);
+    const row = await saveMeasurement({
+      studyId: access?.study?.id || studyId,
+      studyInstanceUID: studyInstanceUID || access?.study?.study_instance_uid,
+      tenantId,
+      lesionLabel,
+      location,
+      sizeMm: sizeMm != null ? Number(sizeMm) : null,
+      volumeMm3: volumeMm3 != null ? Number(volumeMm3) : null,
+      tool: 'ohif',
+      data: {
+        ...(data || {}),
+        patientName: patientName || access?.study?.patient_name,
+        studyDate: access?.study?.study_date,
+      },
+      createdBy: req.user?.id,
+    });
+    return res.status(201).json({ success: true, measurement: row });
+  } catch (err) {
+    return res.status(err.status || 500).json({ success: false, message: err.message });
+  }
 });
 
 export default router;

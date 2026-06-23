@@ -16,10 +16,11 @@ import {
   Download, Printer, Eye, Trash2,
 } from 'lucide-react';
 import DicomViewer from '../../components/lab/DicomViewer';
-import { openOhifViewer, buildOhifViewerUrl } from '@/utils/imagingViewer';
+import { openOhifViewer, buildOhifViewerUrl, listenOhifMeasurements } from '@/utils/imagingViewer';
 import ImagingReportEditor from '../../components/imaging/ImagingReportEditor';
 import ImagingCollabPanel from '../../components/imaging/ImagingCollabPanel';
 import ImagingAnalyticsPanel from '../../components/imaging/ImagingAnalyticsPanel';
+import ImagingPlatformPanels from '../../components/imaging/ImagingPlatformPanels';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Study {
@@ -729,6 +730,15 @@ const LabRIS: React.FC = () => {
   }, [selectedStudy?.id, fetchCriticalAlerts]);
 
   useEffect(() => {
+    if (!token || !selectedStudy?.study_instance_uid) return undefined;
+    return listenOhifMeasurements(token, {
+      studyId: selectedStudy.id,
+      studyInstanceUID: selectedStudy.study_instance_uid,
+      patientName: selectedStudy.patient_name,
+    });
+  }, [token, selectedStudy?.id, selectedStudy?.study_instance_uid, selectedStudy?.patient_name]);
+
+  useEffect(() => {
     if (!selectedStudy?.id || !selectedStudy?.is_dicom || !selectedStudy?.study_instance_uid || !token) {
       setDicomWebFileUrl(null);
       setDicomWebInstances([]);
@@ -1420,6 +1430,17 @@ const LabRIS: React.FC = () => {
                       </div>
                     )}
                   </div>
+
+                  {token && selectedStudy && (
+                    <div className="mb-4">
+                      <ImagingPlatformPanels
+                        token={token}
+                        studyId={selectedStudy.id}
+                        studyInstanceUID={selectedStudy.study_instance_uid}
+                        patientName={selectedStudy.patient_name}
+                      />
+                    </div>
+                  )}
 
                   <ReportPanel
                     study={selectedStudy}

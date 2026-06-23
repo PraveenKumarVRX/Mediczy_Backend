@@ -35,3 +35,26 @@ export async function listVnaByTenant(tenantId, tier = null) {
   );
   return r.rows;
 }
+
+/** Promote VNA object to warm tier when S3 backup exists. */
+export async function promoteToWarmTier(studyInstanceUID, tenantId) {
+  const r = await pool.query(
+    `UPDATE imaging_vna_objects SET storage_tier = 'warm', lifecycle_state = 'active'
+     WHERE study_instance_uid = $1 AND tenant_id = $2 AND s3_key IS NOT NULL
+     RETURNING *`,
+    [studyInstanceUID, tenantId],
+  );
+  return r.rows[0];
+}
+
+/** Run lifecycle job — warm tier for studies older than N days with S3 key. */
+export async function runVnaLifecycleJob(tenantId, olderThanDays = 90) {
+  const r = await pool.query(
+    `UPDATE imaging_vna_objects SET storage_tier = 'warm', lifecycle_state = 'migrating'
+     WHERE tenant_id = $1 AND storage_tier = 'hot' AND s3_key IS NOT NULL
+       AND created_at < NOW() - ($2::text || ' days')::interval
+     RETURNING id`,
+    [tenantId, String(olderThanDays)],
+  );
+  return { promoted: r.rowCount || r.rows.length };
+}

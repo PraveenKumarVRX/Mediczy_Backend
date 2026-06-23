@@ -14,24 +14,35 @@ import { extractStructuredFindings } from './imaging-findings-extractor.service.
 import { recordMetric } from './imaging-observability.service.js';
 import { computeDraftConfidence } from './imaging-report-confidence.js';
 import { transitionWorkflow, getWorkflowForStudy } from './imaging-workflow.service.js';
+import { persistImagingInterpretation } from './imaging-interpretability.service.js';
+import { assertStudyAccess } from './imaging-study-access.service.js';
 
 const MODEL_VERSION = 'imaging-report-drafter-v1';
 const DISCLAIMER = 'AI-generated draft — radiologist review and sign-off required before clinical use.';
 
 export async function generateReportDraft({
   studyId,
-  tenantId,
+  tenantId: tenantIdIn,
   actorId,
   actorName,
   structuredFindings = null,
   includePriorComparison = true,
+  req = null,
 }) {
-  const studyRes = await pool.query(
-    `SELECT * FROM ris_studies WHERE id = $1 AND lab_id = $2`,
-    [studyId, tenantId],
-  );
-  const study = studyRes.rows[0];
-  if (!study) throw new Error('Study not found');
+  let study;
+  let tenantId = tenantIdIn;
+  if (req) {
+    const access = await assertStudyAccess(studyId, req);
+    study = access.study;
+    tenantId = access.tenantId;
+  } else {
+    const studyRes = await pool.query(
+      `SELECT * FROM ris_studies WHERE id = $1 AND lab_id = $2`,
+      [studyId, tenantId],
+    );
+    study = studyRes.rows[0];
+    if (!study) throw new Error('Study not found');
+  }
 
   const triage = await getTriageForStudy(study.study_instance_uid, tenantId);
   let findings = structuredFindings;
@@ -120,12 +131,25 @@ export async function generateReportDraft({
 
   await recordMetric('imaging_report_draft_generated', 1, { modality: study.modality, tenantId });
 
+  const interpretability = await persistImagingInterpretation({
+    studyId: study.id,
+    studyInstanceUID: study.study_instance_uid,
+    tenantId,
+    source: MODEL_VERSION,
+    structuredFindings: findings,
+    triage,
+    priorComparison,
+    gateResult,
+    draftText: draftBody,
+  });
+
   return {
     draft: r.rows[0],
     disclaimer: DISCLAIMER,
     gateResult,
     findings,
     priorComparison,
+    interpretability,
   };
 }
 

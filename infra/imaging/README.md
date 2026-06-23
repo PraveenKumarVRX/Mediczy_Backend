@@ -61,10 +61,14 @@ Deploy **one Orthanc instance per hospital tenant**. MediQzy handles tenancy in 
 
 | Phase | Capability | API |
 |-------|------------|-----|
-| A | AI draft report, Whisper dictation, quality gates | `POST /api/imaging/platform/reports/draft`, `/reports/dictate` |
-| B | Prior comparison, critical alerts, STAT queue | `/priors/:studyId/compare`, `/alerts/critical` |
-| C | Structured findings (`/analyze`), measurements sync | `/measurements`, Python `/analyze` |
-| D | Longitudinal timeline, lesion tracking, analytics | `/longitudinal/*`, `/analytics` |
+| A | AI draft report, Whisper dictation, quality gates, interpretability | `POST /reports/draft`, `/interpretation/:studyId` |
+| B | Prior comparison, critical alerts, STAT queue, workflow on finalize | `/priors/*`, `/alerts/critical` |
+| C | Structured findings (`/analyze`), measurements, OHIF bridge | `/measurements/from-viewer` |
+| D | Longitudinal timeline, lesion tracking, analytics, VNA lifecycle | `/longitudinal/*`, `/vna/lifecycle/run` |
+
+Doctor referred studies can use platform APIs via `assertStudyAccess` (referring physician).
+
+OHIF measurement bridge: `listenOhifMeasurements()` in `client/src/utils/imagingViewer.ts`.
 
 SaMD: all AI outputs are advisory — radiologist sign-off required.
 

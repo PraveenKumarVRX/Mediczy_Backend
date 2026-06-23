@@ -113,8 +113,15 @@ services:
     build:
       context: ./imaging-triage
     restart: unless-stopped
+    environment:
+      ORTHANC_URL: http://orthanc:8042
+      ORTHANC_USER: pacs
+      ORTHANC_PASSWORD: change-this-password
     ports:
       - "8010:8010"
+    depends_on:
+      orthanc:
+        condition: service_healthy
     networks:
       - imaging
 

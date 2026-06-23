@@ -1,20 +1,50 @@
 /**
- * Phase 2: Real-time imaging collaboration — SSE + Redis-style in-memory broker.
- * "Figma for medical imaging" — shared sessions, live annotations.
+ * Phase 2: Real-time imaging collaboration — SSE + optional Redis pub/sub.
  */
 import pool from '../../db/pgPool.js';
 import { publishEvent, KAFKA_TOPICS } from '../../config/kafka.js';
 
 const sseClients = new Map();
 let _seq = 0;
+let _redisPub = null;
+let _redisSub = null;
+const REDIS_CHANNEL = 'imaging:collab';
 
-function broadcast(sessionId, event, data) {
+async function getRedisClients() {
+  if (_redisPub) return { pub: _redisPub, sub: _redisSub };
+  if (!process.env.REDIS_URL && !process.env.REDIS_HOST) return null;
+  try {
+    const { createRedisClient } = await import('../../config/redis-connection.js');
+    _redisPub = createRedisClient();
+    _redisSub = createRedisClient();
+    await _redisSub.subscribe(REDIS_CHANNEL);
+    _redisSub.on('message', (_ch, msg) => {
+      try {
+        const { sessionId, event, data } = JSON.parse(msg);
+        localBroadcast(sessionId, event, data);
+      } catch { /* */ }
+    });
+    return { pub: _redisPub, sub: _redisSub };
+  } catch {
+    return null;
+  }
+}
+
+function localBroadcast(sessionId, event, data) {
   const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   sseClients.forEach((client) => {
     if (String(client.sessionId) === String(sessionId)) {
       try { client.res.write(payload); } catch { /* disconnected */ }
     }
   });
+}
+
+async function broadcast(sessionId, event, data) {
+  localBroadcast(sessionId, event, data);
+  const redis = await getRedisClients();
+  if (redis?.pub) {
+    redis.pub.publish(REDIS_CHANNEL, JSON.stringify({ sessionId, event, data })).catch(() => {});
+  }
 }
 
 export async function createSession({ studyInstanceUID, tenantId, userId, userName }) {

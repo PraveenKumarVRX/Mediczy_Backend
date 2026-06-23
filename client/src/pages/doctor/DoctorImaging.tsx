@@ -15,6 +15,8 @@ import { cn } from "@/lib/utils";
 import api from "@/utils/api";
 import { useToast } from "@/hooks/use-toast";
 import { openOhifViewer } from "@/utils/imagingViewer";
+import ImagingReportEditor from "@/components/imaging/ImagingReportEditor";
+import ImagingPlatformPanels from "@/components/imaging/ImagingPlatformPanels";
 
 const DicomViewer = lazy(() => import("@/components/lab/DicomViewer"));
 
@@ -416,6 +418,8 @@ function ReferredStudiesPanel() {
   const [loading, setLoading]         = useState(false);
   const [search, setSearch]           = useState('');
   const [viewer, setViewer]           = useState<RisStudy | null>(null);
+  const [reportStudy, setReportStudy] = useState<RisStudy | null>(null);
+  const [reportText, setReportText]   = useState('');
   const doctorToken = localStorage.getItem('token') || '';
 
   const fetch = useCallback(async () => {
@@ -518,6 +522,20 @@ function ReferredStudiesPanel() {
                   <Eye className="w-3 h-3 mr-1" />
                   {s.is_dicom && s.study_instance_uid ? 'Open in OHIF' : 'View Study'}
                 </Button>
+                {s.is_dicom && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-2 w-full h-7 text-[11px] border-indigo-700/50 text-indigo-300"
+                    onClick={e => {
+                      e.stopPropagation();
+                      setReportStudy(s);
+                      setReportText(s.report_text || '');
+                    }}
+                  >
+                    <FileText className="w-3 h-3 mr-1" /> AI Report
+                  </Button>
+                )}
               </div>
             );
           })}
@@ -542,6 +560,35 @@ function ReferredStudiesPanel() {
                 onClose={() => setViewer(null)}
               />
             </Suspense>
+          </div>
+        </div>
+      )}
+
+      {reportStudy && doctorToken && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-auto p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-semibold">AI Report — {reportStudy.patient_name}</h3>
+              <button type="button" onClick={() => setReportStudy(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <ImagingPlatformPanels
+              token={doctorToken}
+              studyId={reportStudy.id}
+              studyInstanceUID={reportStudy.study_instance_uid || ''}
+              patientName={reportStudy.patient_name}
+            />
+            <div className="mt-4">
+              <ImagingReportEditor
+                studyId={reportStudy.id}
+                studyInstanceUID={reportStudy.study_instance_uid || ''}
+                patientName={reportStudy.patient_name}
+                modality={reportStudy.modality}
+                value={reportText}
+                onChange={setReportText}
+                token={doctorToken}
+              />
+            </div>
+            <p className="text-[10px] text-slate-500 mt-3">Draft for review — coordinating lab finalizes official report.</p>
           </div>
         </div>
       )}
