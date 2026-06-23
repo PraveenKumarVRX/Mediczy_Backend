@@ -72,6 +72,11 @@ export async function requestTriage({ studyId, studyInstanceUID, tenantId, modal
     studyId, studyInstanceUID, findings, confidence, modelVersion,
   }).catch(() => {});
 
+  const { evaluateCriticalFindings } = await import('./imaging-critical-alerts.service.js');
+  await evaluateCriticalFindings({
+    studyId, studyInstanceUID, tenantId, findings,
+  }).catch(() => {});
+
   return r.rows[0];
 }
 

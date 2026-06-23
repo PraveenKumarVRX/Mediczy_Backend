@@ -57,6 +57,17 @@ ORTHANC_PASSWORD=change-this-password
 
 Deploy **one Orthanc instance per hospital tenant**. MediQzy handles tenancy in `ris_studies`; Orthanc is not a multi-tenant isolation boundary.
 
+## AI reporting phases A–D
+
+| Phase | Capability | API |
+|-------|------------|-----|
+| A | AI draft report, Whisper dictation, quality gates | `POST /api/imaging/platform/reports/draft`, `/reports/dictate` |
+| B | Prior comparison, critical alerts, STAT queue | `/priors/:studyId/compare`, `/alerts/critical` |
+| C | Structured findings (`/analyze`), measurements sync | `/measurements`, Python `/analyze` |
+| D | Longitudinal timeline, lesion tracking, analytics | `/longitudinal/*`, `/analytics` |
+
+SaMD: all AI outputs are advisory — radiologist sign-off required.
+
 ## Platform phases (1–4)
 
 | Phase | Capability | API / service |

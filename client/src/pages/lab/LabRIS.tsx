@@ -19,6 +19,7 @@ import DicomViewer from '../../components/lab/DicomViewer';
 import { openOhifViewer, buildOhifViewerUrl } from '@/utils/imagingViewer';
 import ImagingReportEditor from '../../components/imaging/ImagingReportEditor';
 import ImagingCollabPanel from '../../components/imaging/ImagingCollabPanel';
+import ImagingAnalyticsPanel from '../../components/imaging/ImagingAnalyticsPanel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Study {
@@ -485,6 +486,8 @@ const ReportPanel: React.FC<{
 
       <ImagingReportEditor
         studyId={study.id}
+        studyInstanceUID={study.study_instance_uid}
+        patientName={study.patient_name}
         modality={study.modality}
         value={text}
         onChange={setText}
@@ -959,6 +962,12 @@ const LabRIS: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {token && (
+          <div className="px-3 py-2 border-b border-gray-800">
+            <ImagingAnalyticsPanel token={token} />
+          </div>
+        )}
 
         {/* Study list */}
         <div className="flex-1 overflow-y-auto divide-y divide-gray-800">
