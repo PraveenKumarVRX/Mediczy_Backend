@@ -35,6 +35,9 @@ export async function extractStructuredFindings({
       measurements: modelFindings.measurements || [],
       critical: modelFindings.critical || false,
       confidence: modelFindings.confidence_score ?? 0.7,
+      inference_backend: modelFindings.inference_backend || 'heuristic',
+      feature_attributions: modelFindings.feature_attributions || [],
+      dicom_loaded: modelFindings.dicom_loaded === true,
     };
   }
 

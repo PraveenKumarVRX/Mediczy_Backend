@@ -26,6 +26,8 @@ export async function requestTriage({ studyId, studyInstanceUID, tenantId, modal
   let findings = [];
   let confidence = 0;
   let modelVersion = 'imaging-triage-v1';
+  let inferenceBackend = 'heuristic';
+  let featureAttributions = [];
 
   try {
     const res = await fetch(`${TRIAGE_URL}/triage`, {
@@ -39,37 +41,51 @@ export async function requestTriage({ studyId, studyInstanceUID, tenantId, modal
       findings = body.findings || [];
       confidence = body.confidence_score ?? body.confidence ?? 0;
       modelVersion = body.model_version || modelVersion;
+      inferenceBackend = body.inference_backend || inferenceBackend;
+      featureAttributions = body.feature_attributions || [];
     } else {
       findings = await llmTriageFallback(modality, studyInstanceUID);
       confidence = 0.5;
       modelVersion = 'llm-fallback-v1';
+      inferenceBackend = 'llm-fallback';
     }
   } catch {
     findings = await llmTriageFallback(modality, studyInstanceUID);
     confidence = 0.4;
     modelVersion = 'llm-fallback-v1';
+    inferenceBackend = 'llm-fallback';
   }
 
   const r = await pool.query(
     `INSERT INTO imaging_ai_triage
-       (study_id, study_instance_uid, tenant_id, modality, findings, confidence_score, model_version, status)
-     VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,'complete')
+       (study_id, study_instance_uid, tenant_id, modality, findings, confidence_score,
+        model_version, inference_backend, feature_attributions, status)
+     VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9::jsonb,'complete')
      ON CONFLICT (study_instance_uid, tenant_id)
      DO UPDATE SET
        study_id = EXCLUDED.study_id,
        findings = EXCLUDED.findings,
        confidence_score = EXCLUDED.confidence_score,
        model_version = EXCLUDED.model_version,
+       inference_backend = EXCLUDED.inference_backend,
+       feature_attributions = EXCLUDED.feature_attributions,
        status = 'complete',
        created_at = NOW()
      RETURNING *`,
-    [studyId, studyInstanceUID, tenantId, modality, JSON.stringify(findings), confidence, modelVersion],
+    [
+      studyId, studyInstanceUID, tenantId, modality,
+      JSON.stringify(findings), confidence, modelVersion,
+      inferenceBackend, JSON.stringify(featureAttributions),
+    ],
   );
 
   await pool.query(`UPDATE ris_studies SET ai_triage_status = 'complete' WHERE id = $1`, [studyId]).catch(() => {});
-  await recordMetric('imaging_ai_triage_latency_ms', Date.now() - start, { modality });
+  await recordMetric('imaging_ai_triage_latency_ms', Date.now() - start, {
+    modality,
+    inference_backend: inferenceBackend,
+  });
   await publishEvent(KAFKA_TOPICS.IMAGING_AI_TRIAGE_COMPLETE, {
-    studyId, studyInstanceUID, findings, confidence, modelVersion,
+    studyId, studyInstanceUID, findings, confidence, modelVersion, inferenceBackend,
   }).catch(() => {});
 
   const { evaluateCriticalFindings } = await import('./imaging-critical-alerts.service.js');

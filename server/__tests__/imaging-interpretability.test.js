@@ -12,6 +12,21 @@ describe('imaging interpretability', () => {
     expect(c.score).toBeGreaterThan(0.7);
   });
 
+  it('prefers CV model feature attributions when present', () => {
+    const attrs = buildFeatureAttributions(
+      {
+        items: [{ label: 'nodule', severity: 'low' }],
+        feature_attributions: [
+          { feature: 'Pneumonia', attribution: 0.82, direction: 'positive' },
+        ],
+        inference_backend: 'torchxrayvision',
+      },
+      [],
+    );
+    expect(attrs[0].feature).toBe('Pneumonia');
+    expect(attrs[0].source).toBe('torchxrayvision');
+  });
+
   it('builds feature attributions sorted by weight', () => {
     const attrs = buildFeatureAttributions(
       { items: [{ label: 'pneumothorax', severity: 'high', note: 'urgent' }] },

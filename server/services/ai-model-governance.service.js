@@ -211,26 +211,28 @@ export const MODEL_CARDS = {
 
   'imaging-triage-v1': {
     componentName:      'Imaging AI Triage',
-    version:            'v1-screening',
+    version:            'v1.3-cv-pipeline',
     regulatoryClass:    'Class IIb SaMD (moderate risk)',
     intendedUse:        'Screen imaging studies for review priorities and flag suspicious regions for radiologist attention. Informs worklist prioritization only.',
     notIntendedFor:     'Autonomous diagnosis; final clinical disposition without radiologist review.',
-    inputFeatures:      ['StudyInstanceUID', 'Modality', 'Orthanc study reference'],
-    outputDescription:  'Array of findings with severity labels, confidence score, critical alert triggers.',
-    modelType:          'Python screening service (MONAI-ready) + LLM fallback',
+    inputFeatures:      ['StudyInstanceUID', 'Modality', 'Orthanc DICOM pixels', 'Orthanc study reference'],
+    outputDescription:  'Findings with severity, confidence, inference_backend, feature_attributions, critical alert triggers.',
+    modelType:          'TorchXRayVision (CXR) + MONAI UNet (CT/MRI when weights mounted) + nnU-Net v2 (optional) + heuristic/LLM fallback',
     knownLimitations: [
-      'Current model is screening stub — not clinically validated',
+      'MONAI/nnU-Net weights require per-site clinical validation before production use',
+      'CT proxy via TorchXRayVision axial slice is screening-only — not a dedicated CT model',
       'False negatives possible for critical findings',
-      'Modality-specific models not yet deployed'
+      'Heuristic fallback when DICOM unavailable or weights not mounted'
     ],
     safetyControls: [
       'Critical findings trigger STAT queue bump + alert',
       'reviewTriage() endpoint for physician acknowledgment',
-      'Quality gates on downstream report drafting'
+      'Quality gates on downstream report drafting',
+      'Model weight changes require governanceService.proposeChange() approval'
     ],
     changeControlPlan: 'Model weight or threshold changes require medical director approval via governance pipeline.',
     lastValidatedAt:   null,
-    regulatoryNotes:   'Advisory triage only. Critical alerts expedite review but do not replace radiologist.'
+    regulatoryNotes:   'Advisory triage only. CV backends emit feature_attributions for interpretability; radiologist sign-off mandatory.'
   },
 
   'admin-copilot-v1': {

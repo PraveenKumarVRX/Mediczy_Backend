@@ -16,7 +16,34 @@ export function computeImagingConfidence({ structuredFindings, triage, priorComp
   };
 }
 
-export function buildFeatureAttributions(structuredFindings, triageFindings = []) {
+export function buildFeatureAttributions(structuredFindings, triageFindings = [], triageMeta = null) {
+  const cvAttributions = structuredFindings?.feature_attributions
+    || structuredFindings?.featureAttributions;
+  if (Array.isArray(cvAttributions) && cvAttributions.length) {
+    return cvAttributions
+      .map((a) => ({
+        feature: a.feature || a.label,
+        attribution: Number(a.attribution ?? a.weight ?? 0.5),
+        direction: a.direction || 'positive',
+        note: a.note || '',
+        source: structuredFindings?.inference_backend || 'cv-model',
+      }))
+      .sort((a, b) => b.attribution - a.attribution);
+  }
+
+  const triageCv = triageMeta?.feature_attributions;
+  if (Array.isArray(triageCv) && triageCv.length) {
+    return triageCv
+      .map((a) => ({
+        feature: a.feature || a.label,
+        attribution: Number(a.attribution ?? 0.5),
+        direction: a.direction || 'screening',
+        note: a.note || '',
+        source: triageMeta?.inference_backend || 'cv-model',
+      }))
+      .sort((a, b) => b.attribution - a.attribution);
+  }
+
   const items = structuredFindings?.items || [];
   const attributions = items.map((f, i) => ({
     feature: f.label || f.name || `finding_${i}`,

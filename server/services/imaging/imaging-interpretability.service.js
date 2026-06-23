@@ -22,7 +22,7 @@ export async function persistImagingInterpretation({
   draftText,
 }) {
   const confidence = computeImagingConfidence({ structuredFindings, triage, priorComparison, gateResult });
-  const attributions = buildFeatureAttributions(structuredFindings, triage?.findings);
+  const attributions = buildFeatureAttributions(structuredFindings, triage?.findings, triage);
   const explanation = buildLimeStyleExplanation(attributions, draftText);
 
   const r = await pool.query(

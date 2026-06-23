@@ -78,7 +78,7 @@ SaMD: all AI outputs are advisory — radiologist sign-off required.
 |-------|------------|---------------|
 | 1 | Batch DICOM upload, MWL, report templates, metrics | `POST /api/lab/ris/upload-series`, `/api/imaging/platform/mwl`, `/templates` |
 | 2 | Kafka workflow, collaboration SSE, OpenSearch search | `/api/imaging/platform/workflow/*`, `/collab/*`, `/search` |
-| 3 | AI triage microservice (physician review required) | `IMAGING_TRIAGE_URL`, `/api/imaging/platform/triage/*` |
+| 3 | AI triage microservice — TorchXRayVision + MONAI/nnU-Net when weights mounted | `IMAGING_TRIAGE_URL`, `/api/imaging/platform/triage/*` |
 | 4 | VNA lifecycle, OHIF hanging protocols, full compose | `/api/imaging/platform/vna/*`, `compose.full.yml` |
 
 ### Full stack (optional)
@@ -94,12 +94,31 @@ Includes Kafka, Redis, OpenSearch, MinIO, Keycloak, Temporal, Prometheus, Grafan
 
 ```env
 IMAGING_TRIAGE_URL=http://127.0.0.1:8010
+MODEL_WEIGHTS_DIR=/app/models
+NNUNET_MODEL_FOLDER=          # optional — path to nnU-Net v2 checkpoint folder
 OPENSEARCH_URL=http://127.0.0.1:9200
 KAFKA_ENABLED=true
 KAFKA_BROKERS=localhost:9092
 KEYCLOAK_ENABLED=false
 KEYCLOAK_REALM_URL=https://keycloak.example/realms/mediczy
 VITE_OHIF_BASE_PATH=/ohif
+```
+
+### CV model weights
+
+Place clinically validated checkpoints under `infra/imaging/imaging-triage/models/` (mounted read-only in Docker):
+
+| File | Modality | Backend |
+|------|----------|---------|
+| `ct_lung_nodule_unet.pt` | CT | MONAI UNet |
+| `mri_brain_unet.pt` | MRI | MONAI UNet |
+
+TorchXRayVision (chest X-ray) auto-downloads NIH+RSNA weights on first inference. Check status: `GET http://localhost:8010/models/status`.
+
+```bash
+cd infra/imaging/imaging-triage
+python scripts/download_weights.py --check
+docker compose -f ../compose.yml -f ../compose.full.yml up -d --build imaging-triage
 ```
 
 See also: `docs/imaging/IMAGING_STACK_DEPLOYMENT.md`
