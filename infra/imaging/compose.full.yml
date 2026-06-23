@@ -111,7 +111,7 @@ services:
 
   imaging-triage:
     build:
-      context: ../../ai-engine/imaging-triage
+      context: ./imaging-triage
     restart: unless-stopped
     ports:
       - "8010:8010"
