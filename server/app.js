@@ -1625,9 +1625,11 @@ app.use('/api/hospital', hospitalAuthAliasRouter); // Hospital authentication (l
 // Lab Service Routes
 import labAuthRouter from './routes/lab/auth.routes.js';
 import labRisImagingRouter from './routes/lab/ris-imaging.route.js';
+import dicomModalityRouter from './routes/dicom-modality.route.js';
 
 app.use('/api/lab', labAuthRouter); // Lab authentication (login, logout, verify)
 app.use('/api/lab/ris', labRisImagingRouter); // Lab RIS — PACS/DICOM imaging
+app.use('/api/dicom', dicomModalityRouter); // DICOM modality peer registry (Orthanc sync)
 
 // Pharmacy Service Routes
 // NOTE: Pharmacy routes already registered at line 616 with pharmacyRouter
