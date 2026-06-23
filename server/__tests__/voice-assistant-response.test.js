@@ -4,6 +4,7 @@ import {
   inferNavigationScreen,
   isDoubtFollowUp,
   isIdentityOrGreeting,
+  isSibPlaceholderResponse,
   isSubstantiveAnswer,
   lastAssistantText,
   stripRedundantIshaIntro,
@@ -67,5 +68,10 @@ describe('voice-assistant-response', () => {
   it('infers briefing requests', () => {
     expect(inferBriefingRequest('give me my briefing')).toBe(true);
     expect(inferBriefingRequest('show appointments')).toBe(false);
+  });
+
+  it('detects SIB placeholder junk responses', () => {
+    expect(isSibPlaceholderResponse('I understood this as a health intelligence request. Please confirm before I take action.')).toBe(true);
+    expect(isSibPlaceholderResponse('Metformin 500mg twice daily with meals.')).toBe(false);
   });
 });

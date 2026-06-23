@@ -119,5 +119,19 @@ export function inferBriefingRequest(text) {
   );
 }
 
+export function inferTodaySummaryRequest(text) {
+  const t = String(text || '').toLowerCase();
+  return /\b(how many patients?|patient count|today(?:'| i)?s summary|appointment count|how busy)\b/.test(t);
+}
+
 export const GREETING_RESPONSE =
   "I'm iSHA, your AI clinical assistant. I can manage appointments, tasks, patient records, and drug questions.";
+
+export function isSibPlaceholderResponse(text) {
+  const t = String(text || '').toLowerCase();
+  return (
+    /health intelligence request/.test(t) ||
+    /please confirm before i take action/.test(t) ||
+    /i understood this as a/.test(t)
+  );
+}

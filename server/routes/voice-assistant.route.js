@@ -31,8 +31,10 @@ import {
   GREETING_RESPONSE,
   inferBriefingRequest,
   inferNavigationScreen,
+  inferTodaySummaryRequest,
   isDoubtFollowUp,
   isIdentityOrGreeting,
+  isSibPlaceholderResponse,
   isSubstantiveAnswer,
   lastAssistantText,
   stripRedundantIshaIntro,
@@ -1162,6 +1164,22 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
     });
   }
 
+  if (inferTodaySummaryRequest(trimmedText)) {
+    const summary = await executeGetTodaySummary(doctorId);
+    const spoken = summary
+      ? `Today you have ${summary.todayAppointments} appointments: ${summary.completed} completed, ${summary.pending} pending.`
+      : "Unable to fetch today's summary right now.";
+    return res.json({
+      intent: 'action',
+      action: 'get_today_summary',
+      parameters: null,
+      response: spoken,
+      speak: spoken,
+      data: summary,
+      requiresConfirmation: false,
+    });
+  }
+
   const deterministicAppointmentFilter = inferAppointmentListFilter(trimmedText);
   if (deterministicAppointmentFilter) {
     const payload = await buildAppointmentListPayload(doctorId, { filter: deterministicAppointmentFilter });
@@ -1260,6 +1278,11 @@ Rules:
       toolName = parsed.action || 'general';
       args = parsed.parameters || {};
       directContent = parsed.response || null;
+
+      if (isSibPlaceholderResponse(directContent)) {
+        throw new Error('SIB placeholder response — fallback to cascade');
+      }
+
       ishaOk = true;
     } catch (ishaErr) {
       logger.warn('[VoiceAssistant] SIB intent path failed, falling back to cascade', { error: ishaErr.message });
