@@ -59,7 +59,7 @@ export default function DischargeWorkflow() {
       if (draftRes.status === 'fulfilled') {
         const d = draftRes.value.data?.data;
         setDraft(d ?? null);
-        setContent(d?.content ?? '');
+        setContent(d?.content ?? d?.draft_content ?? d?.final_content ?? '');
       }
       setError(null);
     } catch (e: any) {
@@ -78,7 +78,7 @@ export default function DischargeWorkflow() {
       const res = await api.post('/v1/discharge/draft', { admissionId: parseInt(admissionId) });
       const d = res.data?.data;
       setDraft(d);
-      setContent(d?.content ?? '');
+      setContent(d?.content ?? d?.draft_content ?? d?.final_content ?? '');
       setError(null);
     } catch (e: any) {
       setError(e?.response?.data?.message ?? 'Failed to create draft');

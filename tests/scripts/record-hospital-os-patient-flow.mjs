@@ -547,10 +547,14 @@ async function phaseDischarge(page) {
 
 async function phaseClosing(page) {
   await showTitleCard(page, 'Complete Patient Journey', 'Walk-in → OPD → Admission → Care → Discharge — powered by Mediqzy Hospital OS');
-  await page.goto(`${BASE_URL}/display/discharge-status`, { waitUntil: 'domcontentloaded' });
-  await pause(page, 2500);
-  await page.goto(`${BASE_URL}/patient/care-journey`, { waitUntil: 'domcontentloaded' });
-  await pause(page, 3000);
+  try {
+    await page.goto(`${BASE_URL}/display/discharge-status`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await pause(page, 2500);
+  } catch { /* optional display */ }
+  try {
+    await page.goto(`${BASE_URL}/patient/care-journey`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await pause(page, 3000);
+  } catch { /* optional patient portal view */ }
 }
 
 async function main() {

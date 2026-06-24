@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 /**
- * Seeds a complete Hospital OS demo: org, beds, hospital login, optional walk-in patient.
+ * Seeds a complete Hospital OS demo with rich dummy data (no Docker required).
+ *
+ * Prerequisites: native PostgreSQL + Redis running locally.
  *
  * Usage (from server/):
+ *   npm run demo:seed
  *   node scripts/demo/seed-hospital-os-demo.mjs
  */
 import bcrypt from 'bcrypt';
@@ -13,28 +16,84 @@ import { initDischargeReadiness } from '../../services/adt.service.js';
 
 const ORG_ID = parseInt(process.env.HOSPITAL_DEFAULT_ORG_ID || '1', 10);
 
+const DEMO_PATIENTS = [
+  { first: 'Priya', last: 'Singh', phone: '9876543211', gender: 'female', complaint: 'Abdominal pain', doctor: 'Dr. Patel', ipd: true, diagnosis: 'Acute appendicitis', bed: 'GEN-11' },
+  { first: 'Rahul', last: 'Mehta', phone: '9876543212', gender: 'male', complaint: 'Chest discomfort', doctor: 'Dr. Sharma', ipd: true, diagnosis: 'Unstable angina', bed: 'GEN-12' },
+  { first: 'Ananya', last: 'Iyer', phone: '9876543213', gender: 'female', complaint: 'Fever & cough', doctor: 'Dr. Patel', opd: true },
+  { first: 'Vikram', last: 'Reddy', phone: '9876543214', gender: 'male', complaint: 'Knee pain', doctor: 'Dr. Nair', opd: true },
+  { first: 'Sneha', last: 'Desai', phone: '9876543215', gender: 'female', complaint: 'Diabetes follow-up', doctor: 'Dr. Sharma', opd: true },
+  { first: 'Arjun', last: 'Kapoor', phone: '9876543216', gender: 'male', complaint: 'Migraine', doctor: 'Dr. Patel', opd: true },
+];
+
 async function resolveOrgId() {
   const row = await run(`SELECT id FROM hospitals WHERE email = 'hospital@mediczy.com' LIMIT 1`);
   return row.rows[0]?.id || ORG_ID;
 }
-const DEMO_PHONE = '9876543211';
-const DEMO_FIRST = 'Priya';
-const DEMO_LAST = 'Singh';
 
 async function run(sql, params = []) {
   return pool.query(sql, params);
 }
 
+async function upsertPatient({ first, last, phone, gender }) {
+  const userRow = await run(`SELECT id FROM users WHERE "phoneNumber" LIKE $1 LIMIT 1`, [`%${phone.slice(-10)}`]);
+  if (userRow.rows[0]) return userRow.rows[0].id;
+
+  const email = `demo+${phone}@patient.mediqzy.local`;
+  const hash = await bcrypt.hash(`demo-${phone}`, 10);
+  const ins = await run(
+    `INSERT INTO users ("firstName","lastName",email,password,"phoneNumber",gender,"dateOfBirth",status,"emailVerified",role,metadata)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'active',true,'user',$8) RETURNING id`,
+    [first, last, email, hash, phone, gender, '1988-06-15', JSON.stringify({ source: 'demo-seed' })]
+  );
+  return ins.rows[0].id;
+}
+
+async function ensureBed(orgId, wardId, bedNum, status = 'available') {
+  const exists = await run(
+    `SELECT id, status FROM beds WHERE organization_id = $1 AND bed_number = $2 LIMIT 1`,
+    [orgId, bedNum]
+  );
+  if (exists.rows[0]) {
+    if (status !== 'available') {
+      await run(`UPDATE beds SET status = $2 WHERE id = $1`, [exists.rows[0].id, status]);
+    }
+    return exists.rows[0].id;
+  }
+  const ins = await run(
+    `INSERT INTO beds (ward_id, organization_id, bed_number, bed_type, status, is_active)
+     VALUES ($1,$2,$3,'general',$4,true) RETURNING id`,
+    [wardId, orgId, bedNum, status]
+  );
+  return ins.rows[0].id;
+}
+
+const DISCHARGE_DRAFT = `DISCHARGE SUMMARY — Mediqzy Demo Hospital
+
+Patient: Priya Singh (UHID-000001)
+Admission: IP2026000001 | Ward: General Ward A | Bed: GEN-11
+Diagnosis: Acute appendicitis — laparoscopic appendectomy performed
+
+Hospital Course:
+Patient presented with right iliac fossa pain and low-grade fever. CT abdomen confirmed acute appendicitis.
+Underwent uneventful laparoscopic appendectomy on Day 1. Post-operative recovery was satisfactory.
+Afebrile from Day 2. Tolerating oral diet. Ambulating independently.
+
+Discharge Medications:
+1. Paracetamol 650mg oral Q6H PRN pain (5 days)
+2. Pantoprazole 40mg oral OD (7 days)
+
+Follow-up: Surgical OPD in 7 days with Dr. Patel.
+Diet: Light home diet; avoid spicy/fried food for 1 week.
+Activity: Avoid heavy lifting for 2 weeks.
+
+Emergency: Return if fever >101°F, wound redness, or severe pain.`;
+
 async function main() {
-  console.log('🏥 Seeding Hospital OS demo data...');
+  console.log('🏥 Seeding Hospital OS demo data (live PostgreSQL, no Docker)...');
   await sequelize.authenticate();
   const orgId = await resolveOrgId();
 
-  // Hospital login account (legacy hospitals table)
-  const existingHospital = await run(
-    `SELECT id FROM hospitals WHERE email = $1 LIMIT 1`,
-    ['hospital@mediczy.com']
-  );
+  const existingHospital = await run(`SELECT id FROM hospitals WHERE email = $1 LIMIT 1`, ['hospital@mediczy.com']);
   if (!existingHospital.rows[0]) {
     const hash = await bcrypt.hash('Hospital123', 10);
     await run(
@@ -47,7 +106,6 @@ async function main() {
     console.log('ℹ️  Hospital account already exists');
   }
 
-  // Ward + beds (minimal)
   let wardId;
   const ward = await run(`SELECT id FROM wards WHERE organization_id = $1 AND name = 'General Ward A' LIMIT 1`, [orgId]);
   if (ward.rows[0]) {
@@ -62,163 +120,174 @@ async function main() {
     console.log('✅ Created ward General Ward A');
   }
 
+  const bedIds = {};
   for (const bedNum of ['GEN-11', 'GEN-12', 'GEN-13', 'GEN-14']) {
-    const exists = await run(
-      `SELECT 1 FROM beds WHERE organization_id = $1 AND bed_number = $2 LIMIT 1`,
-      [orgId, bedNum]
-    );
-    if (!exists.rows[0]) {
-      await run(
-        `INSERT INTO beds (ward_id, organization_id, bed_number, bed_type, status, is_active)
-         VALUES ($1,$2,$3,'general','available',true)`,
-        [wardId, orgId, bedNum]
-      );
-    }
+    bedIds[bedNum] = await ensureBed(orgId, wardId, bedNum);
   }
   console.log('✅ Beds GEN-11..GEN-14 ready');
 
-  // Demo walk-in patient in today's OPD queue
-  const phone = DEMO_PHONE;
-  let patientId;
-  const userRow = await run(`SELECT id FROM users WHERE "phoneNumber" LIKE $1 LIMIT 1`, [`%${phone.slice(-10)}`]);
-  if (userRow.rows[0]) {
-    patientId = userRow.rows[0].id;
-  } else {
-    const email = `demo+${phone}@patient.mediqzy.local`;
-    const hash = await bcrypt.hash(`demo-${phone}`, 10);
-    const ins = await run(
-      `INSERT INTO users ("firstName","lastName",email,password,"phoneNumber",gender,status,"emailVerified",role,metadata)
-       VALUES ($1,$2,$3,$4,$5,'female','active',true,'user',$6) RETURNING id`,
-      [DEMO_FIRST, DEMO_LAST, email, hash, phone, JSON.stringify({ source: 'demo-seed' })]
-    );
-    patientId = ins.rows[0].id;
-    console.log(`✅ Created demo patient ${DEMO_FIRST} ${DEMO_LAST} (id=${patientId})`);
-  }
-
-  const uhid = await queue.allocateUhid(orgId).catch(() => `UHID-DEMO-${patientId}`);
+  // Clear today's OPD queue for clean demo tokens A-001, A-002...
   await run(
-    `UPDATE users SET metadata = COALESCE(metadata,'{}'::jsonb) || $2::jsonb WHERE id = $1`,
-    [patientId, JSON.stringify({ uhid, registeredVia: 'demo-seed' })]
-  );
-
-  await queue.checkIn({
-    organizationId: orgId,
-    department: 'opd',
-    queueZone: 'opd-waiting',
-    patientId,
-    patientName: `${DEMO_FIRST} ${DEMO_LAST}`,
-    doctorName: 'Dr. Patel',
-    queueType: 'walk_in',
-    chiefComplaint: 'Abdominal pain',
-    metadata: { uhid, demo: true },
-  }).catch((e) => console.warn('Queue check-in skipped:', e.message));
-
-  // ── Inpatient demo: admission, bed, vitals, meds, discharge checklist ──
-  const bedRow = await run(
-    `SELECT id FROM beds WHERE organization_id = $1 AND bed_number = 'GEN-11' LIMIT 1`,
+    `DELETE FROM hospital_queue_entries WHERE organization_id = $1 AND department = 'opd' AND check_in_at::date = CURRENT_DATE`,
     [orgId]
-  );
-  const bedId = bedRow.rows[0]?.id;
+  ).catch(() => {});
 
-  let admissionId;
-  const existingAdm = await run(
-    `SELECT id FROM ip_admissions WHERE patient_id = $1 AND status NOT IN ('discharged','cancelled') ORDER BY id DESC LIMIT 1`,
-    [patientId]
-  );
-  if (existingAdm.rows[0]) {
-    admissionId = existingAdm.rows[0].id;
-    if (bedId) {
-      await run(
-        `UPDATE ip_admissions SET ward_id = $2, bed_id = $3, admission_diagnosis = COALESCE(admission_diagnosis, 'Acute appendicitis'), updated_at = NOW() WHERE id = $1`,
-        [admissionId, wardId, bedId]
-      );
-      await run(`UPDATE beds SET status = 'occupied' WHERE id = $1`, [bedId]);
-    }
-  } else if (bedId) {
-    const admIns = await run(
-      `INSERT INTO ip_admissions (
-         organization_id, patient_id, admission_number, admission_type, admission_datetime,
-         admission_diagnosis, ward_id, bed_id, expected_los_days, status
-       ) VALUES ($1,$2,$3,'op_converted',NOW(),'Acute appendicitis',$4,$5,3,'admitted')
-       RETURNING id`,
-      [orgId, patientId, `IP${new Date().getFullYear()}DEMO`, wardId, bedId]
-    );
-    admissionId = admIns.rows[0].id;
-    await run(`UPDATE beds SET status = 'occupied' WHERE id = $1`, [bedId]);
-    console.log(`✅ Created demo admission id=${admissionId}`);
-  }
+  let priyaId = null;
+  let priyaAdmissionId = null;
 
-  if (admissionId) {
-    await initDischargeReadiness(admissionId, orgId).catch((e) => console.warn('Readiness init:', e.message));
+  for (const p of DEMO_PATIENTS) {
+    const patientId = await upsertPatient(p);
+    const uhid = await queue.allocateUhid(orgId).catch(() => `UHID-DEMO-${patientId}`);
     await run(
-      `UPDATE discharge_readiness_items SET is_complete = TRUE, completed_at = NOW(), completed_by = 'demo-seed'
-       WHERE admission_id = $1 AND dimension IN ('clinical', 'nursing_education', 'medication_reconciliation')`,
-      [admissionId]
-    ).catch(() => {});
-
-    const vitalsExists = await run(
-      `SELECT 1 FROM vital_records WHERE admission_id = $1 LIMIT 1`,
-      [admissionId]
+      `UPDATE users SET metadata = COALESCE(metadata,'{}'::jsonb) || $2::jsonb WHERE id = $1`,
+      [patientId, JSON.stringify({ uhid, registeredVia: 'demo-seed' })]
     );
-    if (!vitalsExists.rows[0]) {
+
+    if (p.opd) {
+      await queue.checkIn({
+        organizationId: orgId,
+        department: 'opd',
+        queueZone: 'opd-waiting',
+        patientId,
+        patientName: `${p.first} ${p.last}`,
+        doctorName: p.doctor,
+        queueType: 'walk_in',
+        chiefComplaint: p.complaint,
+        metadata: { uhid, demo: true },
+      }).catch((e) => console.warn(`Queue ${p.first}:`, e.message));
+    }
+
+    if (p.ipd) {
+      const bedId = bedIds[p.bed];
+      await ensureBed(orgId, wardId, p.bed, 'occupied');
+
+      const existingAdm = await run(
+        `SELECT id FROM ip_admissions WHERE patient_id = $1 AND status NOT IN ('discharged','cancelled') ORDER BY id DESC LIMIT 1`,
+        [patientId]
+      );
+
+      let admissionId;
+      if (existingAdm.rows[0]) {
+        admissionId = existingAdm.rows[0].id;
+        await run(
+          `UPDATE ip_admissions SET ward_id = $2, bed_id = $3, admission_diagnosis = $4, updated_at = NOW() WHERE id = $1`,
+          [admissionId, wardId, bedId, p.diagnosis]
+        );
+      } else {
+        const admNum = p.first === 'Priya' ? `IP${new Date().getFullYear()}000001` : `IP${new Date().getFullYear()}${String(patientId).padStart(5, '0')}`;
+        const admIns = await run(
+          `INSERT INTO ip_admissions (
+             organization_id, patient_id, admission_number, admission_type, admission_datetime,
+             admission_diagnosis, ward_id, bed_id, expected_los_days, status
+           ) VALUES ($1,$2,$3,'op_converted',NOW() - INTERVAL '1 day' * $6,$4,$5,$7,3,'admitted')
+           RETURNING id`,
+          [orgId, patientId, admNum, p.diagnosis, wardId, p.first === 'Priya' ? 1 : 0, bedId]
+        );
+        admissionId = admIns.rows[0].id;
+      }
+
+      if (p.first === 'Priya') {
+        priyaId = patientId;
+        priyaAdmissionId = admissionId;
+      }
+
+      await initDischargeReadiness(admissionId, orgId).catch(() => {});
+
+      if (p.first === 'Priya') {
+        await run(
+          `UPDATE discharge_readiness_items SET is_complete = TRUE, completed_at = NOW(), completed_by = 'demo-seed'
+           WHERE admission_id = $1 AND dimension IN ('clinical', 'nursing_education', 'medication_reconciliation', 'billing')`,
+          [admissionId]
+        );
+      }
+
+      await run(`DELETE FROM vital_records WHERE admission_id = $1`, [admissionId]).catch(() => {});
       await run(
         `INSERT INTO vital_records (
            organization_id, admission_id, patient_id, recorded_at, source,
            temperature, pulse, bp_systolic, bp_diastolic, spo2, respiratory_rate, news2_score
-         ) VALUES ($1,$2,$3,NOW(),'manual',37.8,92,118,76,97,18,3)`,
-        [orgId, admissionId, patientId]
+         ) VALUES ($1,$2,$3,NOW(),'manual',$4,$5,$6,$7,$8,$9,$10)`,
+        [orgId, admissionId, patientId,
+          p.first === 'Priya' ? 37.4 : 36.8,
+          p.first === 'Priya' ? 88 : 76,
+          p.first === 'Priya' ? 116 : 128,
+          p.first === 'Priya' ? 74 : 82,
+          p.first === 'Priya' ? 98 : 96,
+          p.first === 'Priya' ? 16 : 18,
+          p.first === 'Priya' ? 2 : 4]
       );
-      console.log('✅ Seeded latest vitals');
-    }
 
-    const medExists = await run(
-      `SELECT 1 FROM medication_orders WHERE admission_id = $1 LIMIT 1`,
-      [admissionId]
-    );
-    if (!medExists.rows[0]) {
-      await run(
-        `INSERT INTO medication_orders (
-           organization_id, admission_id, patient_id, drug_name, dose, route, frequency, order_status, start_datetime
-         ) VALUES
-         ($1,$2,$3,'Ceftriaxone','1g','iv','BD','active',NOW()),
-         ($1,$2,$3,'Paracetamol','650mg','oral','Q6H','active',NOW())`,
-        [orgId, admissionId, patientId]
-      );
-      console.log('✅ Seeded active medications');
-    }
-
-    await run(`
-      CREATE TABLE IF NOT EXISTS patient_allergies (
-        id SERIAL PRIMARY KEY,
-        patient_id INTEGER NOT NULL,
-        allergen TEXT NOT NULL,
-        reaction_type TEXT,
-        severity TEXT,
-        active BOOLEAN DEFAULT TRUE,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    const allergyExists = await run(
-      `SELECT 1 FROM patient_allergies WHERE patient_id = $1 AND allergen = 'Penicillin' LIMIT 1`,
-      [patientId]
-    );
-    if (!allergyExists.rows[0]) {
-      await run(
-        `INSERT INTO patient_allergies (patient_id, allergen, reaction_type, severity, active)
-         VALUES ($1,'Penicillin','Rash','moderate',true)`,
-        [patientId]
-      );
+      await run(`DELETE FROM medication_orders WHERE admission_id = $1`, [admissionId]).catch(() => {});
+      if (p.first === 'Priya') {
+        await run(
+          `INSERT INTO medication_orders (organization_id, admission_id, patient_id, drug_name, dose, route, frequency, order_status, start_datetime)
+           VALUES ($1,$2,$3,'Ceftriaxone','1g','iv','BD','active',NOW()),
+                  ($1,$2,$3,'Paracetamol','650mg','oral','Q6H','active',NOW()),
+                  ($1,$2,$3,'Pantoprazole','40mg','oral','OD','active',NOW())`,
+          [orgId, admissionId, patientId]
+        );
+      } else {
+        await run(
+          `INSERT INTO medication_orders (organization_id, admission_id, patient_id, drug_name, dose, route, frequency, order_status, start_datetime)
+           VALUES ($1,$2,$3,'Aspirin','75mg','oral','OD','active',NOW()),
+                  ($1,$2,$3,'Atorvastatin','20mg','oral','HS','active',NOW())`,
+          [orgId, admissionId, patientId]
+        );
+      }
     }
   }
 
-  console.log('\n🎯 Demo ready:');
-  console.log(`   Kiosk walk-in: ${DEMO_FIRST} ${DEMO_LAST}, phone ${phone}`);
-  console.log(`   Patient ID for admission: ${patientId}`);
-  if (admissionId) console.log(`   Active admission ID: ${admissionId}`);
+  console.log(`✅ ${DEMO_PATIENTS.length} demo patients (2 IPD, 4 OPD queue)`);
+
+  if (priyaId && priyaAdmissionId) {
+    await run(`
+      CREATE TABLE IF NOT EXISTS patient_allergies (
+        id SERIAL PRIMARY KEY, patient_id INTEGER NOT NULL, allergen TEXT NOT NULL,
+        reaction_type TEXT, severity TEXT, active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await run(`DELETE FROM patient_allergies WHERE patient_id = $1`, [priyaId]).catch(() => {});
+    await run(
+      `INSERT INTO patient_allergies (patient_id, allergen, reaction_type, severity, active)
+       VALUES ($1,'Penicillin','Rash','moderate',true)`,
+      [priyaId]
+    );
+
+    await run(`
+      CREATE TABLE IF NOT EXISTS clinical_notes (
+        id BIGSERIAL PRIMARY KEY, patient_id BIGINT, admission_id BIGINT,
+        note_type TEXT, chief_complaint TEXT, diagnosis TEXT, plan TEXT, assessment TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(), signed_at TIMESTAMPTZ
+      )
+    `).catch(() => {});
+    await run(`DELETE FROM clinical_notes WHERE admission_id = $1`, [priyaAdmissionId]).catch(() => {});
+    await run(
+      `INSERT INTO clinical_notes (patient_id, admission_id, note_type, chief_complaint, diagnosis, plan, signed_at)
+       VALUES ($1,$2,'progress','Abdominal pain','Acute appendicitis — post-op Day 2','Continue IV antibiotics, advance diet, plan discharge Day 3',NOW())`,
+      [priyaId, priyaAdmissionId]
+    );
+
+    await run(`
+      CREATE TABLE IF NOT EXISTS discharge_packets (
+        id BIGSERIAL PRIMARY KEY, organization_id BIGINT, admission_id BIGINT NOT NULL, patient_id BIGINT,
+        draft_content TEXT, final_content TEXT, status TEXT DEFAULT 'draft',
+        ai_generated BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await run(`DELETE FROM discharge_packets WHERE admission_id = $1`, [priyaAdmissionId]).catch(() => {});
+    await run(
+      `INSERT INTO discharge_packets (organization_id, admission_id, patient_id, draft_content, status, ai_generated)
+       VALUES ($1,$2,$3,$4,'draft',true)`,
+      [orgId, priyaAdmissionId, priyaId, DISCHARGE_DRAFT]
+    );
+    console.log('✅ Discharge draft + clinical note seeded for Priya Singh');
+  }
+
+  console.log('\n🎯 Demo ready (native stack — no Docker):');
   console.log('   Hospital login: hospital@mediczy.com / Hospital123');
-  console.log('   OPD display: /display/queue?zone=opd-waiting');
-  console.log(`   Inpatient workspace: /hmis/patient/${patientId}/workspace`);
-  if (admissionId) console.log(`   Discharge workflow: /hmis/admission/${admissionId}/discharge`);
+  console.log('   OPD display:    /display/queue?zone=opd-waiting');
+  if (priyaId) console.log(`   Star patient:   Priya Singh (id=${priyaId})`);
+  if (priyaAdmissionId) console.log(`   Admission:      ${priyaAdmissionId} | Discharge: /hmis/admission/${priyaAdmissionId}/discharge`);
   await pool.end();
   await sequelize.close();
 }
