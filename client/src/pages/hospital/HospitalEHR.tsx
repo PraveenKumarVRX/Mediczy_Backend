@@ -18,6 +18,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import api from '@/utils/api';
+import { loadHospitalStore } from '@/utils/hospitalStorage';
 import { downloadReport } from '@/utils/reportActions';
 import {
   patientService,

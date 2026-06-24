@@ -60,12 +60,39 @@ export function useHospitalAuth() {
               setIsVerified(true);
             })
             .catch(() => {
+              // Demo fallback: keep session when cached hospital data exists
+              const cached = (() => {
+                try {
+                  const raw = localStorage.getItem('hospitalData');
+                  return raw ? JSON.parse(raw) : null;
+                } catch {
+                  return null;
+                }
+              })();
+              if (cached && localStorage.getItem('hospitalToken')) {
+                setHospitalData(cached);
+                setIsVerified(true);
+                return;
+              }
               clearHospitalSession();
               navigate('/hospital/login');
             });
         } else {
-          clearHospitalSession();
-          navigate('/hospital/login');
+          const cached = (() => {
+            try {
+              const raw = localStorage.getItem('hospitalData');
+              return raw ? JSON.parse(raw) : null;
+            } catch {
+              return null;
+            }
+          })();
+          if (cached && localStorage.getItem('hospitalToken')) {
+            setHospitalData(cached);
+            setIsVerified(true);
+          } else {
+            clearHospitalSession();
+            navigate('/hospital/login');
+          }
         }
       })
       .finally(() => setIsLoading(false));

@@ -88,6 +88,12 @@ Activity: Avoid heavy lifting for 2 weeks.
 
 Emergency: Return if fever >101°F, wound redness, or severe pain.`;
 
+const DEMO_CAPABILITIES = [
+  'practice_management', 'appointments', 'bed_management', 'patients', 'doctors',
+  'branches', 'ambulance', 'communication', 'ehr', 'mrd', 'opd_ipd', 'ip_sheets',
+  'discharge_summary', 'pharmacy', 'lab_reports', 'insurance_billing', 'billing', 'staff_management',
+];
+
 async function main() {
   console.log('🏥 Seeding Hospital OS demo data (live PostgreSQL, no Docker)...');
   await sequelize.authenticate();
@@ -105,6 +111,12 @@ async function main() {
   } else {
     console.log('ℹ️  Hospital account already exists');
   }
+
+  await run(
+    `UPDATE hospitals SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb WHERE email = 'hospital@mediczy.com'`,
+    [JSON.stringify({ capabilities: DEMO_CAPABILITIES, demo: true })]
+  );
+  console.log('✅ Demo hospital capabilities unlocked (EHR, MRD, Communication, etc.)');
 
   let wardId;
   const ward = await run(`SELECT id FROM wards WHERE organization_id = $1 AND name = 'General Ward A' LIMIT 1`, [orgId]);

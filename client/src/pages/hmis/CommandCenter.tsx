@@ -43,9 +43,18 @@ export default function CommandCenter() {
         api.get('/v1/analytics/quality'),
       ]);
       if (ccRes.status === 'fulfilled')  setSnapshot(ccRes.value.data?.data ?? null);
-      if (opsRes.status === 'fulfilled') setOps(opsRes.value.data?.data ?? []);
-      if (clinRes.status === 'fulfilled') setClinical(clinRes.value.data?.data ?? []);
-      if (qualRes.status === 'fulfilled') setQuality(qualRes.value.data?.data ?? []);
+      if (opsRes.status === 'fulfilled') {
+        const raw = opsRes.value.data?.data;
+        setOps(Array.isArray(raw) ? raw : []);
+      }
+      if (clinRes.status === 'fulfilled') {
+        const raw = clinRes.value.data?.data;
+        setClinical(Array.isArray(raw) ? raw : []);
+      }
+      if (qualRes.status === 'fulfilled') {
+        const raw = qualRes.value.data?.data;
+        setQuality(Array.isArray(raw) ? raw : []);
+      }
       setLastUpdated(new Date());
       setError(null);
     } catch (e: any) {

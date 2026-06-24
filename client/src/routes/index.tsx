@@ -320,6 +320,8 @@ const HospitalDashboard                = lazy(() => import("@/pages/hospital/Hos
 const CEODashboard                     = lazy(() => import("@/pages/hospital/CEODashboard"));
 const COODashboard                     = lazy(() => import("@/pages/hospital/COODashboard"));
 const MSDashboard                      = lazy(() => import("@/pages/hospital/MSDashboard"));
+const CFODashboard                     = lazy(() => import("@/pages/hospital/CFODashboard"));
+const AdmissionWristbandPrint          = lazy(() => import("@/pages/hospital/AdmissionWristbandPrint"));
 const HospitalPracticeManagement       = lazy(() => import("@/pages/hospital/HospitalPracticeManagement"));
 const HospitalCorporateManagement      = lazy(() => import("@/pages/hospital/HospitalCorporateManagement"));
 const HospitalInsurancePayerManagement = lazy(() => import("@/pages/hospital/HospitalInsurancePayerManagement"));
@@ -992,6 +994,7 @@ const AppRoutes = () => {
         <Route path="/hospital/ceo"                        element={<CEODashboard />} />
         <Route path="/hospital/coo"                        element={<COODashboard />} />
         <Route path="/hospital/ms"                         element={<MSDashboard />} />
+        <Route path="/hospital/cfo"                        element={<CFODashboard />} />
         <Route path="/hospital/practice-management"        element={<HospitalPracticeManagement />} />
         <Route path="/hospital/corporate-management"       element={<HospitalCorporateManagement />} />
         <Route path="/hospital/insurance-payer-management" element={<HospitalInsurancePayerManagement />} />
@@ -1634,6 +1637,7 @@ const AppRoutes = () => {
         {/* ── Ward / ADT / ER / HMIS (Phase 1-5 Patient Journey) ─────── */}
         <Route path="/hospital/ward"                                    element={<WardDashboard />} />
         <Route path="/hospital/adt/admit"                               element={<AdmitPatientForm />} />
+        <Route path="/hospital/adt/wristband"                           element={<AdmissionWristbandPrint />} />
         <Route path="/hospital/adt/transfer"                            element={<HospitalADTTransfer />} />
         <Route path="/hospital/adt/er-to-ip"                           element={<AdmitPatientForm />} />
         <Route path="/hospital/vitals/record"                           element={<HospitalVitalsRecord />} />

@@ -314,6 +314,19 @@ const normalizeCapabilities = (...sources) => {
   return undefined;
 };
 
+const DEMO_HOSPITAL_CAPABILITIES = [
+  'practice_management', 'appointments', 'bed_management', 'patients', 'doctors',
+  'branches', 'ambulance', 'communication', 'ehr', 'mrd', 'opd_ipd', 'ip_sheets',
+  'discharge_summary', 'pharmacy', 'lab_reports', 'insurance_billing', 'billing', 'staff_management',
+];
+
+const resolveHospitalCapabilities = (hospital) => {
+  const caps = normalizeCapabilities(hospital?.metadata?.capabilities, hospital?.features);
+  if (caps?.length) return caps;
+  if (hospital?.email === 'hospital@mediczy.com') return DEMO_HOSPITAL_CAPABILITIES;
+  return undefined;
+};
+
 const buildHospitalTokenPayload = ({ hospital, tenant, user }) => {
   if (tenant && user) {
     return {
@@ -339,7 +352,7 @@ const buildHospitalTokenPayload = ({ hospital, tenant, user }) => {
       userType: 'hospital',
       hospitalName: hospital.hospitalName || hospital.name,
       tenant_id: hospital.tenantId || null,
-      capabilities: normalizeCapabilities(hospital.metadata?.capabilities, hospital.features)
+      capabilities: resolveHospitalCapabilities(hospital)
     };
   }
 
@@ -611,7 +624,8 @@ export const hospitalLogin = async (req, res) => {
         state: hospital.state,
         status: hospital.status,
         totalBeds: hospital.totalBeds,
-        availableBeds: hospital.availableBeds
+        availableBeds: hospital.availableBeds,
+        capabilities: resolveHospitalCapabilities(hospital) || DEMO_HOSPITAL_CAPABILITIES,
       },
       interopConfig,
     });

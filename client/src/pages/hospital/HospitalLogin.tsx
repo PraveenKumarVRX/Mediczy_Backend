@@ -27,6 +27,7 @@ const HospitalLogin = () => {
         const ROLE_ROUTES: Record<string, string> = {
           ceo: '/hospital/ceo',
           coo: '/hospital/coo',
+          cfo: '/hospital/cfo',
           ms:  '/hospital/ms',
           medical_superintendent: '/hospital/ms',
           cmo: '/hospital/ms',
@@ -107,6 +108,7 @@ const HospitalLogin = () => {
       const ROLE_ROUTES: Record<string, string> = {
         ceo: '/hospital/ceo',
         coo: '/hospital/coo',
+        cfo: '/hospital/cfo',
         ms:  '/hospital/ms',
         medical_superintendent: '/hospital/ms',
         cmo: '/hospital/ms',

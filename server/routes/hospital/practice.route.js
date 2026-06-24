@@ -23,6 +23,11 @@ import { evaluateVitalsAndAlert, ensureClinicalIntelligenceTables } from '../../
 
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
+const DEMO_HOSPITAL_CAPABILITIES = [
+  'practice_management', 'appointments', 'bed_management', 'patients', 'doctors',
+  'branches', 'ambulance', 'communication', 'ehr', 'mrd', 'opd_ipd', 'ip_sheets',
+  'discharge_summary', 'pharmacy', 'lab_reports', 'insurance_billing', 'billing', 'staff_management',
+];
 const STORE_DIR = process.env.HOSPITAL_PRACTICE_STORE || '/tmp/mediczy/hospital-practice';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -157,6 +162,13 @@ const verifyHospitalToken = (req, res, next) => {
     const validRoles = [
       'hospital',
       'hospital_admin',
+      'ceo',
+      'coo',
+      'cfo',
+      'ms',
+      'medical_superintendent',
+      'cmo',
+      'chief_medical_officer',
       'doctor',
       'staff',
       'nurse',
@@ -168,7 +180,10 @@ const verifyHospitalToken = (req, res, next) => {
       'ot_staff',
       'icu_staff',
       'quality_staff',
-      'security_staff'
+      'security_staff',
+      'billing',
+      'receptionist',
+      'insurance_coordinator',
     ];
     if (!validRoles.includes(role)) {
       return res.status(403).json({ success: false, message: 'Hospital role required' });
@@ -442,11 +457,13 @@ router.get('/', verifyHospitalToken, async (req, res) => {
 });
 
 router.get('/capabilities', verifyHospitalToken, async (req, res) => {
-  return res.json({ success: true, capabilities: req.capabilities || [], data: req.capabilities || [] });
+  const caps = req.capabilities?.length ? req.capabilities : DEMO_HOSPITAL_CAPABILITIES;
+  return res.json({ success: true, capabilities: caps, data: caps });
 });
 
 router.get('/plan/capabilities', verifyHospitalToken, async (req, res) => {
-  return res.json({ success: true, capabilities: req.capabilities || [], data: req.capabilities || [] });
+  const caps = req.capabilities?.length ? req.capabilities : DEMO_HOSPITAL_CAPABILITIES;
+  return res.json({ success: true, capabilities: caps, data: caps });
 });
 
 router.get('/summary', verifyHospitalToken, async (req, res) => {

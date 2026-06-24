@@ -12,7 +12,8 @@ import {
   LayoutGrid, Bed, UserPlus, Activity, Stethoscope, HeartPulse, Syringe,
   FlaskConical, Pill, Receipt, Shield, Ambulance, Video, Scan, Lock,
   Building2, Users, Brain, Mic, Sparkles, BarChart3, Siren, Monitor,
-  ClipboardList, FileText, ArrowRight, RefreshCw
+  ClipboardList, FileText, ArrowRight, RefreshCw, Briefcase, FolderOpen,
+  FileHeart, MessageSquare, QrCode, Wallet, UserCog
 } from 'lucide-react';
 
 type Module = {
@@ -29,12 +30,30 @@ type Section = { label: string; modules: Module[] };
 
 const SECTIONS: Section[] = [
   {
+    label: 'Executive Dashboards',
+    modules: [
+      { title: 'CEO Dashboard', description: 'Revenue, strategy & board KPIs', path: '/hospital/ceo', icon: Briefcase, gradient: 'from-indigo-500 to-purple-600' },
+      { title: 'CFO Dashboard', description: 'Cash, AR/AP & payer settlements', path: '/hospital/cfo', icon: Wallet, gradient: 'from-emerald-500 to-teal-600' },
+      { title: 'COO Dashboard', description: 'Beds, throughput & operations', path: '/hospital/coo', icon: Activity, gradient: 'from-blue-500 to-cyan-600' },
+      { title: 'MS Dashboard', description: 'Clinical governance & NABH', path: '/hospital/ms', icon: UserCog, gradient: 'from-violet-500 to-fuchsia-600' },
+    ],
+  },
+  {
+    label: 'Records & Communication',
+    modules: [
+      { title: 'EMR / EHR', description: 'Electronic health records', path: '/hospital/ehr', icon: FileHeart, gradient: 'from-emerald-500 to-green-600' },
+      { title: 'Medical Records (MRD)', description: 'File retrieval & digitization', path: '/hospital/mrd', icon: FolderOpen, gradient: 'from-purple-500 to-violet-600' },
+      { title: 'Communication Hub', description: 'SMS, email, WhatsApp, voice', path: '/hospital/communication', icon: MessageSquare, gradient: 'from-sky-500 to-blue-600' },
+    ],
+  },
+  {
     label: 'Patient Journey',
     modules: [
       { title: 'Walk-in Kiosk', description: 'Self check-in & token', path: '/kiosk/checkin', icon: UserPlus, gradient: 'from-teal-500 to-cyan-600', external: true },
       { title: 'OPD Queue Board', description: 'Live waiting room', path: '/display/queue?zone=opd-waiting', icon: Monitor, gradient: 'from-sky-500 to-blue-600', external: true },
       { title: 'Practice Management', description: 'OPD roster & convert to IPD', path: '/hospital/practice-management', icon: ClipboardList, gradient: 'from-indigo-500 to-violet-600' },
       { title: 'Admit Patient', description: 'ADT with bed reservation', path: '/hospital/adt/admit', icon: Bed, gradient: 'from-blue-500 to-indigo-600' },
+      { title: 'QR Wristband Print', description: 'Patient ID band after admission', path: '/hospital/adt/wristband?patientId=1&name=Priya%20Singh&admissionNumber=IP2026000001&bed=GEN-11&ward=General%20Ward%20A', icon: QrCode, gradient: 'from-slate-600 to-zinc-800' },
       { title: 'Ward Dashboard', description: 'Bed map & nurse tasks', path: '/hospital/ward', icon: Activity, gradient: 'from-emerald-500 to-teal-600' },
       { title: 'Live Bed Map', description: 'Reserve & allocate beds', path: '/hmis/beds/map', icon: Bed, gradient: 'from-green-500 to-emerald-600' },
       { title: 'Inpatient Workspace', description: 'Vitals, meds, notes', path: '/hmis/patient/1/workspace', icon: Stethoscope, gradient: 'from-teal-600 to-green-600' },

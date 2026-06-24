@@ -214,6 +214,7 @@ import billingRouter from './routes/billing.route.js';
 import moduleAccessRouter from './routes/module-access.route.js';
 import roleRouter from './routes/role.route.js';
 import hospitalPracticeRouter from './routes/hospital/practice.route.js';
+import executiveDashboardRouter from './routes/hospital/executive-dashboard.route.js';
 import userAssociationRouter from './routes/userAssociation.route.js';
 
 // Webinar routes
@@ -1480,6 +1481,7 @@ import doctorRisReferredRouter from './routes/doctor-ris-referred.route.js';
 app.use('/api/doctors/ris-referred', doctorRisReferredRouter); // Lab-referred RIS studies (read-only for doctor)
 app.use('/api/ai-nodes', localAiNodeRouter); // Cloud Mother - Local AI Node management for hospital multi-tenancy
 app.use('/api', hospitalRouter); // Hospital directory and SPN network
+app.use('/api/hospital', executiveDashboardRouter); // CEO/CFO/COO/MS executive dashboards
 app.use('/api/hospital/practice', hospitalPracticeRouter); // Hospital practice management (appointments, patients, staff, resources)
 app.use('/api/hospital', hospitalPracticeRouter); // Alias practice endpoints for hospital dashboard modules
 app.use('/api/hospital/auth', hospitalAuthRouter); // Hospital authentication & corporate onboarding

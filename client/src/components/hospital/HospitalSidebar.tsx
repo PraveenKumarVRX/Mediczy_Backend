@@ -33,6 +33,8 @@ import {
   Network,
   BarChart3,
   Lock,
+  Briefcase,
+  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -56,6 +58,13 @@ interface HospitalSidebarProps {
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
 }
+
+const executiveItems: SidebarItem[] = [
+  { icon: Briefcase, label: "CEO Dashboard", href: "/hospital/ceo" },
+  { icon: Wallet, label: "CFO Dashboard", href: "/hospital/cfo" },
+  { icon: Activity, label: "COO Dashboard", href: "/hospital/coo" },
+  { icon: UserCog, label: "MS Dashboard", href: "/hospital/ms" },
+];
 
 const mainNavItems: SidebarItem[] = [
   { icon: LayoutGrid, label: "Hospital OS", href: "/hospital/os" },
@@ -239,6 +248,20 @@ const HospitalSidebar = ({ capabilities, mobileOpen = false, onCloseMobile, onLo
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
+        {/* Executive */}
+        <div>
+          {!collapsed && (
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+              Executive
+            </p>
+          )}
+          <div className="space-y-1">
+            {executiveItems.map((item) => (
+              <NavItem key={item.href} item={item} />
+            ))}
+          </div>
+        </div>
+
         {/* Main */}
         <div>
           {!collapsed && (

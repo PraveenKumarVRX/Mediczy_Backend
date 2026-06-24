@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import HospDeptLayout from '@/components/hosp-dept/HospDeptLayout';
+import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -185,7 +185,7 @@ export default function ERQueue() {
   };
 
   return (
-    <HospDeptLayout>
+    <HospitalLayout title="Emergency Queue" subtitle="ESI triage & fast-track">
       <div className="p-4 md:p-6 space-y-5">
 
         {/* Header */}
@@ -261,6 +261,6 @@ export default function ERQueue() {
           })}
         </div>
       </div>
-    </HospDeptLayout>
+    </HospitalLayout>
   );
 }

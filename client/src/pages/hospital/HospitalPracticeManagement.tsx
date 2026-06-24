@@ -1315,7 +1315,7 @@ const HospitalPracticeManagement = () => {
                   <Button variant="outline" className="w-full justify-start gap-2" onClick={() => toast({ title: 'Export started', description: 'Patient list export in progress.' })}>
                     <Download className="h-4 w-4" /> Export Patient List
                   </Button>
-                  <Button variant="outline" className="w-full justify-start gap-2" onClick={() => toast({ title: 'Print ready', description: 'Wristband sent to printer.' })}>
+                  <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/hospital/adt/wristband?patientId=1&name=Priya%20Singh&admissionNumber=IP2026000001&bed=GEN-11&ward=General%20Ward%20A')}>
                     <Printer className="h-4 w-4" /> Print Wristband
                   </Button>
                 </CardContent>

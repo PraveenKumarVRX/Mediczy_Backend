@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
   User, Bed, Stethoscope, Shield, Building2, AlertCircle,
-  CheckCircle2, Loader2, ArrowLeft, Search
+  CheckCircle2, Loader2, ArrowLeft, Search, Printer, QrCode
 } from 'lucide-react';
 
 type AdmissionType = 'elective' | 'emergency' | 'op_converted' | 'corporate' | 'day_care';
@@ -73,7 +73,13 @@ export default function AdmitPatientForm() {
   const [loading, setLoading] = useState(false);
   const [bedSearching, setBedSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<{ admissionNumber: string; bedNumber: string; wardName: string } | null>(null);
+  const [success, setSuccess] = useState<{
+    admissionNumber: string;
+    bedNumber: string;
+    wardName: string;
+    patientId: string;
+    patientName: string;
+  } | null>(null);
 
   const set = (field: keyof FormData, value: string | boolean) =>
     setForm(prev => ({ ...prev, [field]: value }));
@@ -147,7 +153,9 @@ export default function AdmitPatientForm() {
         setSuccess({
           admissionNumber: json.data.admission_number,
           bedNumber: allocatedBed?.bed_number || 'TBD',
-          wardName: allocatedBed?.ward_name || 'TBD'
+          wardName: allocatedBed?.ward_name || 'TBD',
+          patientId: form.patientId,
+          patientName: form.patientName || `Patient ${form.patientId}`,
         });
       } else {
         setError(json.message || 'Admission failed');
@@ -159,6 +167,15 @@ export default function AdmitPatientForm() {
   };
 
   if (success) {
+    const wristbandQs = new URLSearchParams({
+      patientId: success.patientId,
+      name: success.patientName,
+      admissionNumber: success.admissionNumber,
+      bed: success.bedNumber,
+      ward: success.wardName,
+      uhid: `UHID${success.patientId.padStart(6, '0')}`,
+    });
+
     return (
       <HospitalLayout>
         <div className="p-6 max-w-md mx-auto">
@@ -172,6 +189,10 @@ export default function AdmitPatientForm() {
                   <span className="font-bold text-slate-800">{success.admissionNumber}</span>
                 </div>
                 <div className="flex justify-between">
+                  <span className="text-slate-500">Patient</span>
+                  <span className="font-medium">{success.patientName}</span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-slate-500">Ward</span>
                   <span className="font-medium">{success.wardName}</span>
                 </div>
@@ -180,12 +201,18 @@ export default function AdmitPatientForm() {
                   <span className="font-medium">{success.bedNumber}</span>
                 </div>
               </div>
+              <Button
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white gap-2"
+                onClick={() => navigate(`/hospital/adt/wristband?${wristbandQs.toString()}`)}
+              >
+                <QrCode className="h-4 w-4" /> Print QR Wristband
+              </Button>
               <div className="flex gap-3 pt-2">
-                <Button variant="outline" className="flex-1" onClick={() => navigate('/hospital/ward')}>
+                <Button variant="outline" className="flex-1 gap-1" onClick={() => navigate('/hospital/ward')}>
                   Ward Dashboard
                 </Button>
-                <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => navigate('/ot/schedule')}>
-                  Schedule OT
+                <Button variant="outline" className="flex-1 gap-1" onClick={() => navigate('/hmis/patient/1/workspace')}>
+                  <Printer className="h-3.5 w-3.5" /> IP Workspace
                 </Button>
               </div>
             </CardContent>
