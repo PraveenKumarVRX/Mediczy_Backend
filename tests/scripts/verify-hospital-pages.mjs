@@ -10,7 +10,8 @@ const API_URL = process.env.API_URL || 'http://localhost:8000';
 const ROUTES = [
   '/hospital/os',
   '/hospital/ceo', '/hospital/coo', '/hospital/ms', '/hospital/cfo',
-  '/hospital/mrd', '/hospital/ehr', '/hospital/communication',
+  '/hospital/mrd', '/hospital/ehr',   '/hospital/communication',
+  '/hospital/asset-tracking',
   '/hospital/adt/admit', '/hospital/adt/wristband?patientId=1&name=Priya%20Singh&admissionNumber=IP2026000001&bed=GEN-11&ward=General%20Ward%20A',
   '/hospital/practice-management', '/hospital/ward', '/hospital/billing',
   '/hospital/er/queue', '/hospital/icu-board', '/hospital/nurse-station',

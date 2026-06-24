@@ -91,7 +91,7 @@ Emergency: Return if fever >101°F, wound redness, or severe pain.`;
 const DEMO_CAPABILITIES = [
   'practice_management', 'appointments', 'bed_management', 'patients', 'doctors',
   'branches', 'ambulance', 'communication', 'ehr', 'mrd', 'opd_ipd', 'ip_sheets',
-  'discharge_summary', 'pharmacy', 'lab_reports', 'insurance_billing', 'billing', 'staff_management',
+  'discharge_summary', 'pharmacy', 'lab_reports', 'insurance_billing', 'billing', 'staff_management', 'asset_tracking',
 ];
 
 async function main() {

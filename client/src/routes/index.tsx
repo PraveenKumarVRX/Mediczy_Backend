@@ -363,6 +363,7 @@ const HospitalICUBoard         = lazy(() => import("@/pages/hospital/HospitalICU
 const HospitalRadiology        = lazy(() => import("@/pages/hospital/HospitalRadiology"));
 const HospitalPharmacyDispense = lazy(() => import("@/pages/hospital/HospitalPharmacyDispense"));
 const HospitalSecurity         = lazy(() => import("@/pages/hospital/HospitalSecurity"));
+const HospitalAssetTracking    = lazy(() => import("@/pages/hospital/HospitalAssetTracking"));
 const HospitalCorporateCRM     = lazy(() => import("@/pages/hospital/HospitalCorporateCRM"));
 const HospitalClaimsPage       = lazyNamed(_HospitalModulePages, "HospitalClaimsPage");
 const HospitalStaffPage        = lazyNamed(_HospitalModulePages, "HospitalStaffPage");
@@ -1651,6 +1652,8 @@ const AppRoutes = () => {
         <Route path="/hospital/radiology"                               element={<HospitalRadiology />} />
         <Route path="/hospital/pharmacy-dispense"                       element={<HospitalPharmacyDispense />} />
         <Route path="/hospital/security"                                element={<HospitalSecurity />} />
+        <Route path="/hospital/asset-tracking"                         element={<HospitalAssetTracking />} />
+        <Route path="/hospital/assets"                                  element={<Navigate to="/hospital/asset-tracking" replace />} />
         <Route path="/hospital/corporate-crm"                           element={<HospitalCorporateCRM />} />
         <Route path="/hospital/er/queue"                                element={<ERQueuePage />} />
         <Route path="/patient/care-journey"                             element={<SmartCareNavigator />} />

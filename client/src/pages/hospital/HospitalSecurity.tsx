@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Lock, Camera, Shield, AlertTriangle } from 'lucide-react';
+import { Lock, Camera, Shield, AlertTriangle, Package } from 'lucide-react';
 
 export default function HospitalSecurity() {
   const navigate = useNavigate();
@@ -13,6 +13,7 @@ export default function HospitalSecurity() {
         <h1 className="text-2xl font-bold flex items-center gap-2"><Lock className="h-6 w-6 text-slate-700" /> Security & Surveillance</h1>
         <div className="grid md:grid-cols-2 gap-4">
           {[
+            { title: 'Asset Tracking', desc: 'RFID/RTLS live map, IoT tags & theft alarms', path: '/hospital/asset-tracking', icon: Package },
             { title: 'CCTV Command', desc: 'Live camera feeds & incident log', path: '/security/cctv', icon: Camera },
             { title: 'Access Control', desc: 'Staff badges & zone permissions', path: '/security/access', icon: Shield },
             { title: 'Incident Reports', desc: 'Security events & escalation', path: '/security/incidents', icon: AlertTriangle },

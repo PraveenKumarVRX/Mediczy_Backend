@@ -26,7 +26,7 @@ const JWT_SECRET = JWT_CONFIG.SECRET;
 const DEMO_HOSPITAL_CAPABILITIES = [
   'practice_management', 'appointments', 'bed_management', 'patients', 'doctors',
   'branches', 'ambulance', 'communication', 'ehr', 'mrd', 'opd_ipd', 'ip_sheets',
-  'discharge_summary', 'pharmacy', 'lab_reports', 'insurance_billing', 'billing', 'staff_management',
+  'discharge_summary', 'pharmacy', 'lab_reports', 'insurance_billing', 'billing', 'staff_management', 'asset_tracking',
 ];
 const STORE_DIR = process.env.HOSPITAL_PRACTICE_STORE || '/tmp/mediczy/hospital-practice';
 const __filename = fileURLToPath(import.meta.url);

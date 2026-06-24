@@ -644,7 +644,7 @@ const criticalAssetWatchlist = [
   { assetId: 'AST-1010', name: 'Ambulance AMB-03', zone: 'Off Campus', tag: 'GPS Tracker', battery: 62, signal: 88, lastPing: '11:11', status: 'Active' },
 ];
 
-export const SecurityAssetTrackingPage = () => {
+export function AssetTrackingContent() {
   const { loading, error, refresh } = useSecurityPortalData();
   const inventory = fallbackAssetInventory;
   const movements = fallbackAssetMovements;
@@ -660,14 +660,7 @@ export const SecurityAssetTrackingPage = () => {
   const openAlarms = theftAlarms.filter((a) => a.status === 'Investigating').length;
 
   return (
-    <HospDeptLayout
-      deptKey="security" deptName="Security" badgeLabel="Security"
-      loginPath="/security/login" DeptIcon={Lock}
-      navSections={securityNavSections}
-      title="Asset Tracking"
-      subtitle="Hospital asset inventory, registry, authorised movement, theft alarms, and compliance reports"
-    >
-      <div className="space-y-5">
+    <div className="space-y-5 p-4 md:p-6">
         <SecurityDataState loading={loading} error={error} refresh={refresh} />
 
         {/* ── Top KPI Bar ─────────────────────────────────────────────── */}
@@ -1050,10 +1043,9 @@ export const SecurityAssetTrackingPage = () => {
             </div>
           </TabsContent>
         </Tabs>
-      </div>
-    </HospDeptLayout>
+    </div>
   );
-};
+}
 
 export const SecuritySettingsPage = () => {
   const { data, loading, error, refresh } = useSecurityPortalData();
@@ -1300,3 +1292,18 @@ export const SecurityImplementationPage = () => {
     </HospDeptLayout>
   );
 };
+
+export const SecurityAssetTrackingPage = () => (
+  <HospDeptLayout
+    deptKey="security"
+    deptName="Security"
+    badgeLabel="Security"
+    loginPath="/security/login"
+    DeptIcon={Lock}
+    navSections={securityNavSections}
+    title="Asset Tracking"
+    subtitle="Hospital asset inventory, registry, authorised movement, theft alarms, and compliance reports"
+  >
+    <AssetTrackingContent />
+  </HospDeptLayout>
+);

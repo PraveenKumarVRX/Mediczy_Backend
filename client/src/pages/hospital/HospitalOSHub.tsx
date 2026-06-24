@@ -13,7 +13,7 @@ import {
   FlaskConical, Pill, Receipt, Shield, Ambulance, Video, Scan, Lock,
   Building2, Users, Brain, Mic, Sparkles, BarChart3, Siren, Monitor,
   ClipboardList, FileText, ArrowRight, RefreshCw, Briefcase, FolderOpen,
-  FileHeart, MessageSquare, QrCode, Wallet, UserCog
+  FileHeart, MessageSquare, QrCode, Wallet, UserCog, Package
 } from 'lucide-react';
 
 type Module = {
@@ -98,6 +98,7 @@ const SECTIONS: Section[] = [
     label: 'Operations & Security',
     modules: [
       { title: 'Ambulance Dispatch', description: 'Fleet & ETA tracking', path: '/hospital/ambulance', icon: Ambulance, gradient: 'from-red-400 to-orange-500' },
+      { title: 'Asset Tracking', description: 'RFID/RTLS · BLE · GPS live map', path: '/hospital/asset-tracking', icon: Package, gradient: 'from-amber-500 to-orange-600', badge: 'IoT' },
       { title: 'Security & CCTV', description: 'Surveillance command', path: '/hospital/security', icon: Lock, gradient: 'from-gray-600 to-slate-800' },
       { title: 'Command Center', description: 'Hospital-wide KPIs', path: '/hmis/command-center', icon: LayoutGrid, gradient: 'from-teal-600 to-cyan-700' },
       { title: 'Discharge Board', description: 'Pending discharges', path: '/hmis/discharge-board', icon: FileText, gradient: 'from-amber-400 to-orange-500' },

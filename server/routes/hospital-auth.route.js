@@ -317,7 +317,7 @@ const normalizeCapabilities = (...sources) => {
 const DEMO_HOSPITAL_CAPABILITIES = [
   'practice_management', 'appointments', 'bed_management', 'patients', 'doctors',
   'branches', 'ambulance', 'communication', 'ehr', 'mrd', 'opd_ipd', 'ip_sheets',
-  'discharge_summary', 'pharmacy', 'lab_reports', 'insurance_billing', 'billing', 'staff_management',
+  'discharge_summary', 'pharmacy', 'lab_reports', 'insurance_billing', 'billing', 'staff_management', 'asset_tracking',
 ];
 
 const resolveHospitalCapabilities = (hospital) => {

@@ -35,6 +35,7 @@ import {
   Lock,
   Briefcase,
   Wallet,
+  Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -76,6 +77,7 @@ const mainNavItems: SidebarItem[] = [
   { icon: Stethoscope, label: "Doctors", href: "/hospital/doctors", capability: "doctors" },
   { icon: Network, label: "Branches & Clinics", href: "/hospital/branches", capability: "branches" },
   { icon: Ambulance, label: "Ambulance", href: "/hospital/ambulance", capability: "ambulance" },
+  { icon: Package, label: "Asset Tracking", href: "/hospital/asset-tracking", capability: "asset_tracking" },
   { icon: MessageSquare, label: "Communication Hub", href: "/hospital/communication", capability: "communication" },
 ];
 
