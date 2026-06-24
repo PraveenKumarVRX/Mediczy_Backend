@@ -4,6 +4,7 @@
   "description": "Automated tests for Mediczy platform",
   "scripts": {
     "test": "playwright test",
+    "record:hospital-os-demo": "node scripts/record-hospital-os-patient-flow.mjs",
     "test:smoke": "playwright test smoke.spec.ts",
     "test:admin": "playwright test admin-login.spec.ts",
     "test:admin-features": "playwright test admin-functionality.spec.ts",
