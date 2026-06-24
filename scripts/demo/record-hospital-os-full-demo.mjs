@@ -80,14 +80,77 @@ const PHASES = [
   {
     part: 'Overview',
     title: 'Hospital OS Command Hub',
-    subtitle: 'One integrated platform for the entire hospital — 40+ modules, live data',
+    subtitle: 'One integrated platform — executive dashboards, clinical, AI, billing, asset tracking & more',
     url: '/hospital/os',
     waitFor: 'World-Class HMIS',
+    waitMs: 5000,
+    scroll: true,
+  },
+  {
+    part: 'Executive · 1/4',
+    title: 'CEO Dashboard',
+    subtitle: 'Revenue, EBITDA, bed occupancy, payer mix, and strategic KPIs',
+    url: '/hospital/ceo',
+    waitFor: 'CEO Command',
+    waitMs: 3500,
+    scroll: true,
+  },
+  {
+    part: 'Executive · 2/4',
+    title: 'CFO Dashboard',
+    subtitle: 'Cash position, AR/AP, collection efficiency, and payer settlements',
+    url: '/hospital/cfo',
+    waitFor: 'CFO Finance',
+    waitMs: 3500,
+    scroll: true,
+  },
+  {
+    part: 'Executive · 3/4',
+    title: 'COO Dashboard',
+    subtitle: 'Bed throughput, staffing, supply chain, and operational excellence',
+    url: '/hospital/coo',
+    waitFor: 'COO',
+    waitMs: 3500,
+    scroll: true,
+  },
+  {
+    part: 'Executive · 4/4',
+    title: 'MS Dashboard',
+    subtitle: 'Clinical governance, NABH compliance, quality metrics, and physician roster',
+    url: '/hospital/ms',
+    waitFor: 'Medical Superintendent',
+    waitMs: 3500,
+    scroll: true,
+  },
+  {
+    part: 'Records · 1/3',
+    title: 'Electronic Health Records (EHR)',
+    subtitle: 'Patient charts, vitals, labs, imaging, prescriptions, and encounters',
+    url: '/hospital/ehr',
+    waitFor: 'Electronic Health',
     waitMs: 4000,
     scroll: true,
   },
   {
-    part: 'Patient Journey · 1/8',
+    part: 'Records · 2/3',
+    title: 'Medical Records Department (MRD)',
+    subtitle: 'File retrieval, digitization queue, audit trail, and compliance',
+    url: '/hospital/mrd',
+    waitFor: 'Medical Records',
+    waitMs: 3500,
+    scroll: true,
+  },
+  {
+    part: 'Records · 3/3',
+    title: 'Communication Hub',
+    subtitle: 'SMS, email, WhatsApp, and voice — patient outreach dashboard',
+    url: '/hospital/communication',
+    waitFor: 'Communication',
+    waitMs: 3500,
+    scroll: true,
+  },
+  {
+    part: 'Patient Journey · 1/5',
     title: 'Walk-in Kiosk',
     subtitle: 'Paperless self check-in — UHID, token, consent',
     fn: async (page) => {
@@ -109,14 +172,14 @@ const PHASES = [
     },
   },
   {
-    part: 'Patient Journey · 2/8',
+    part: 'Patient Journey · 2/5',
     title: 'OPD Queue Display',
     subtitle: 'Real-time waiting room board for patients and staff',
     url: '/display/queue?zone=opd-waiting',
     waitMs: 4000,
   },
   {
-    part: 'Patient Journey · 3/8',
+    part: 'Patient Journey · 3/5',
     title: 'Practice Management',
     subtitle: 'Live OPD/IPD roster — convert outpatient to inpatient',
     url: '/hospital/practice-management',
@@ -124,7 +187,7 @@ const PHASES = [
     waitMs: 3500,
   },
   {
-    part: 'Patient Journey · 4/8',
+    part: 'Patient Journey · 4/5',
     title: 'Admission & Bed Management',
     subtitle: 'ADT with bed allocation, reservation token, and ward census',
     fn: async (page) => {
@@ -132,6 +195,14 @@ const PHASES = [
       await visit(page, '/hospital/ward', { waitFor: 'Ward', waitMs: 3500, scroll: true });
       await visit(page, '/hospital/adt/admit?patientId=1&type=op_converted&name=Priya%20Singh', { waitFor: 'Admit', waitMs: 3000 });
     },
+  },
+  {
+    part: 'Patient Journey · 5/5',
+    title: 'QR Wristband Printing',
+    subtitle: 'Patient ID band with scannable QR — UHID, admission, ward & bed',
+    url: '/hospital/adt/wristband?patientId=1&name=Priya%20Singh&admissionNumber=IP2026000001&bed=GEN-11&ward=General%20Ward%20A',
+    waitFor: 'Wristband',
+    waitMs: 4000,
   },
   {
     part: 'Clinical · ER',
@@ -270,8 +341,17 @@ const PHASES = [
   },
   {
     part: 'Operations',
+    title: 'Asset Tracking — RFID / RTLS / IoT',
+    subtitle: 'Live zone map, inventory, BLE/GPS tags, movement log, and theft alarms',
+    url: '/hospital/asset-tracking',
+    waitFor: 'Asset Tracking',
+    waitMs: 4000,
+    scroll: true,
+  },
+  {
+    part: 'Operations',
     title: 'Security & Surveillance',
-    subtitle: 'CCTV command, access control, and incident management',
+    subtitle: 'CCTV command, access control, asset tracking launcher, and incidents',
     url: '/hospital/security',
     waitMs: 3000,
   },
@@ -291,7 +371,7 @@ const PHASES = [
     waitMs: 4000,
   },
   {
-    part: 'Discharge · 7/8',
+    part: 'Discharge · 1/2',
     title: 'Discharge Workflow',
     subtitle: 'Readiness checklist, AI discharge summary, sign & send packet',
     url: `/hmis/admission/${DEMO.admissionId}/discharge`,
@@ -300,7 +380,7 @@ const PHASES = [
     scroll: true,
   },
   {
-    part: 'Discharge · 8/8',
+    part: 'Discharge · 2/2',
     title: 'Discharge Board',
     subtitle: 'Pending discharges across all wards',
     url: '/hmis/discharge-board',
@@ -328,7 +408,7 @@ async function main() {
 
   await showTitleCard(page,
     'Mediqzy Hospital OS',
-    'Complete HMIS demo — patient journey, clinical departments, AI, billing, and operations',
+    'Complete HMIS demo — executive dashboards, EHR/MRD, patient journey, AI, billing, asset tracking & discharge',
     'Full Platform Tour'
   );
 
@@ -356,7 +436,7 @@ async function main() {
 
   await showTitleCard(page,
     'Complete Hospital Operating System',
-    'Walk-in → OPD → ER → ICU → OT → AI-assisted care → Billing → Insurance → Discharge — Mediqzy',
+    'CEO → CFO → COO → MS → EHR → MRD → Admission → QR Band → AI Care → Billing → Asset Tracking → Discharge — Mediqzy',
     'Thank You'
   );
 

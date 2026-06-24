@@ -682,6 +682,7 @@ const globalLimiter = rateLimit({
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => process.env.DISABLE_RATE_LIMIT === 'true',
 });
 
 const authLimiter = rateLimit({
