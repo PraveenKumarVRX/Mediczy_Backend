@@ -42,12 +42,19 @@ export default function DischargeWorkflow() {
     setLoading(true);
     try {
       const [readRes, draftRes] = await Promise.allSettled([
-        api.get(`/api/v1/adt/discharge/readiness/${admissionId}`),
-        api.get(`/api/v1/discharge/draft/${admissionId}`)
+        api.get(`/v1/adt/discharge/readiness/${admissionId}`),
+        api.get(`/v1/discharge/draft/${admissionId}`)
       ]);
 
       if (readRes.status === 'fulfilled') {
-        setReadiness(readRes.value.data?.data?.checks ?? []);
+        const raw = readRes.value.data?.data;
+        const items = raw?.checks ?? raw?.items ?? [];
+        setReadiness(items.map((item: any) => ({
+          key: item.key ?? item.dimension ?? String(item.id),
+          label: item.label,
+          met: item.met ?? item.is_complete ?? false,
+          details: item.details ?? item.notes ?? undefined,
+        })));
       }
       if (draftRes.status === 'fulfilled') {
         const d = draftRes.value.data?.data;
@@ -68,7 +75,7 @@ export default function DischargeWorkflow() {
     if (!admissionId) return;
     setActionLoading('create');
     try {
-      const res = await api.post('/api/v1/discharge/draft', { admissionId: parseInt(admissionId) });
+      const res = await api.post('/v1/discharge/draft', { admissionId: parseInt(admissionId) });
       const d = res.data?.data;
       setDraft(d);
       setContent(d?.content ?? '');
@@ -84,7 +91,7 @@ export default function DischargeWorkflow() {
     if (!draft) return;
     setActionLoading('save');
     try {
-      const res = await api.put(`/api/v1/discharge/draft/${draft.id}`, { content });
+      const res = await api.put(`/v1/discharge/draft/${draft.id}`, { content });
       setDraft(res.data?.data ?? draft);
       setEditing(false);
     } catch (e: any) {
@@ -98,7 +105,7 @@ export default function DischargeWorkflow() {
     if (!draft) return;
     setActionLoading('sign');
     try {
-      const res = await api.post(`/api/v1/discharge/sign/${draft.id}`);
+      const res = await api.post(`/v1/discharge/sign/${draft.id}`);
       setDraft(res.data?.data ?? draft);
       setError(null);
     } catch (e: any) {
@@ -112,7 +119,7 @@ export default function DischargeWorkflow() {
     if (!draft) return;
     setActionLoading('send');
     try {
-      const res = await api.post(`/api/v1/discharge/packet/send/${draft.id}`);
+      const res = await api.post(`/v1/discharge/packet/send/${draft.id}`);
       setDraft(res.data?.data ?? draft);
       setError(null);
     } catch (e: any) {

@@ -54,6 +54,88 @@ const writeState = async (state) => {
   await fs.writeFile(storePath, JSON.stringify(state, null, 2));
 };
 
+async function fetchLivePracticePatients(organizationId) {
+  const orgId = organizationId;
+  const [queueRows, ipdRows] = await Promise.all([
+    sequelize.query(
+      `SELECT DISTINCT ON (q.patient_id)
+          q.patient_id AS id,
+          q.patient_name AS name,
+          u."phoneNumber" AS phone,
+          u.email,
+          u.gender,
+          u.metadata,
+          'OPD' AS admission_status
+       FROM hospital_queue_entries q
+       LEFT JOIN users u ON u.id = q.patient_id
+       WHERE q.organization_id = :orgId
+         AND q.department = 'opd'
+         AND q.check_in_at::date = CURRENT_DATE
+         AND q.status IN ('waiting', 'called', 'in_service')
+       ORDER BY q.patient_id, q.check_in_at DESC`,
+      { replacements: { orgId }, type: QueryTypes.SELECT }
+    ),
+    sequelize.query(
+      `SELECT
+          a.patient_id AS id,
+          COALESCE(NULLIF(TRIM(u."firstName" || ' ' || COALESCE(u."lastName", '')), ''), 'Patient') AS name,
+          u."phoneNumber" AS phone,
+          u.email,
+          u.gender,
+          u.metadata,
+          'IPD' AS admission_status,
+          a.admission_diagnosis AS diagnosis,
+          a.admission_datetime AS admission_date,
+          w.name AS ward,
+          b.bed_number AS bed
+       FROM ip_admissions a
+       LEFT JOIN users u ON u.id = a.patient_id
+       LEFT JOIN beds b ON b.id = a.bed_id
+       LEFT JOIN wards w ON w.id = b.ward_id
+       WHERE a.organization_id = :orgId AND a.status IN ('admitted', 'in_ot', 'in_icu', 'pre_admitted')
+       ORDER BY a.admission_datetime DESC`,
+      { replacements: { orgId }, type: QueryTypes.SELECT }
+    ),
+  ]);
+
+  const mapRow = (row, status) => {
+    const meta = typeof row.metadata === 'object' && row.metadata ? row.metadata : {};
+    return {
+      id: String(row.id),
+      uhid: meta.uhid || `UHID${row.id}`,
+      name: row.name || 'Unknown',
+      age: meta.age || 0,
+      gender: row.gender || 'Other',
+      phone: row.phone || '',
+      email: row.email || '',
+      address: meta.address || '',
+      bloodGroup: meta.bloodGroup || '—',
+      admissionStatus: status,
+      admissionDate: row.admission_date ? String(row.admission_date).slice(0, 10) : undefined,
+      assignedDoctor: meta.doctorName || undefined,
+      department: meta.department || 'General',
+      bed: row.bed || undefined,
+      ward: row.ward || undefined,
+      diagnosis: row.diagnosis || undefined,
+    };
+  };
+
+  const seen = new Set();
+  const patients = [];
+  for (const row of ipdRows) {
+    seen.add(String(row.id));
+    patients.push(mapRow(row, 'IPD'));
+  }
+  for (const row of queueRows) {
+    const id = String(row.id);
+    if (!seen.has(id)) {
+      seen.add(id);
+      patients.push(mapRow(row, 'OPD'));
+    }
+  }
+  return patients;
+}
+
 const generateId = (prefix) => {
   if (crypto.randomUUID) {
     return `${prefix}${crypto.randomUUID().replace(/-/g, '').slice(0, 8)}`;
@@ -697,6 +779,24 @@ router.post('/appointments/:id/status', verifyHospitalToken, async (req, res) =>
 
 router.get('/patients', verifyHospitalToken, async (req, res) => {
   const { search } = req.query;
+  try {
+    const livePatients = await fetchLivePracticePatients(req.hospitalId);
+    if (livePatients.length > 0) {
+      const filtered = livePatients.filter((p) => {
+        if (!search) return true;
+        const term = String(search).toLowerCase();
+        return (
+          p.name?.toLowerCase().includes(term) ||
+          p.phone?.toLowerCase().includes(term) ||
+          p.uhid?.toLowerCase().includes(term)
+        );
+      });
+      return res.json({ success: true, data: filtered, total: filtered.length, live: true });
+    }
+  } catch (error) {
+    console.warn('[practice] live patients fallback:', error.message);
+  }
+
   const state = await readState();
   const practice = getPractice(state, req.hospitalId, req.hospitalName);
   const filtered = practice.patients.filter((p) => {
@@ -757,6 +857,18 @@ router.post('/patients', verifyHospitalToken, async (req, res) => {
 });
 
 router.patch('/patients/:id', verifyHospitalToken, async (req, res) => {
+  if (/^\d+$/.test(req.params.id) && req.body.admissionStatus === 'IPD') {
+    return res.json({
+      success: true,
+      message: 'Redirect to ADT admission',
+      data: {
+        id: req.params.id,
+        admissionStatus: 'IPD',
+        redirect: `/hospital/adt/admit?patientId=${req.params.id}&type=op_converted`,
+      },
+    });
+  }
+
   const state = await readState();
   const practice = getPractice(state, req.hospitalId, req.hospitalName);
   const index = practice.patients.findIndex((p) => p.id === req.params.id || p.uhid === req.params.id);

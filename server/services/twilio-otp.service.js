@@ -28,6 +28,11 @@ class TwilioOTPService {
     this.maxRetries = 2; // up to 3 total attempts
     
     if (!this.accountSid || !this.authToken) {
+      if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
+        this.disabled = true;
+        console.warn('⚠️  Twilio OTP disabled — credentials not configured');
+        return;
+      }
       throw new Error('❌ Twilio credentials not configured in .env');
     }
 

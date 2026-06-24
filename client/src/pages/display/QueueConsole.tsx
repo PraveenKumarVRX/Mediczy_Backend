@@ -26,7 +26,10 @@ export default function QueueConsole() {
 
   const fetchConsole = useCallback(async () => {
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('staffToken');
+      const token =
+        localStorage.getItem('hospitalToken') ||
+        localStorage.getItem('token') ||
+        localStorage.getItem('staffToken');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const res = await fetch(`/api/v1/queue/console?zone=${encodeURIComponent(zone)}`, { headers });
       const json = await res.json();

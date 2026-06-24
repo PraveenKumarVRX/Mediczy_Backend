@@ -162,6 +162,29 @@ export const AuthProvider = ({ children }) => {
     // Check if it's a nurse route - nurse routes have their own auth flow
     const isNurseRoute = location.pathname.startsWith('/nurse');
     
+    // Public hospital OS surfaces — kiosks & waiting-room displays (no login)
+    const isHospitalOsPublicRoute =
+      location.pathname.startsWith('/kiosk/') ||
+      location.pathname.startsWith('/display/');
+
+    if (isHospitalOsPublicRoute) {
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+
+    // HMIS staff consoles — require hospital portal session
+    const isHmisRoute = location.pathname.startsWith('/hmis/');
+    if (isHmisRoute) {
+      const hospitalToken = getValidPortalToken('hospitalToken');
+      if (!hospitalToken) {
+        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+        navigate('/hospital/login', { replace: true });
+        return;
+      }
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+    
     // Check if it's an assistant route - assistant routes have their own auth flow
     const isAssistantRoute = location.pathname.startsWith('/assistant');
     

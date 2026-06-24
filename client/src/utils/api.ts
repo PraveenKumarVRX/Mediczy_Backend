@@ -83,6 +83,24 @@ api.interceptors.request.use(
       return config;
     }
 
+    // Normalize paths that accidentally double the /api prefix (baseURL is already /api)
+    if (config.url?.startsWith('/api/')) {
+      config.url = config.url.replace(/^\/api/, '');
+    }
+
+    const requestPath = config.url || '';
+    const prefersHospitalToken =
+      /^\/(v1\/(adt|beds|emar|vitals|clinical-workspace|discharge|analytics|nursing|navigation|echart|follow-up|recovery|hl7|fhir|reports|ot|ai-))/i.test(requestPath) ||
+      requestPath.startsWith('/hospital/');
+
+    if (prefersHospitalToken && typeof window !== 'undefined') {
+      const hospitalToken = localStorage.getItem('hospitalToken');
+      if (hospitalToken) {
+        config.headers = { ...(config.headers || {}), Authorization: `Bearer ${hospitalToken}` } as any;
+        return config;
+      }
+    }
+
     // Respect explicit Authorization header if already set (e.g., admin token)
     const hasAuth = config.headers && (config.headers as any).Authorization;
     if (!hasAuth) {

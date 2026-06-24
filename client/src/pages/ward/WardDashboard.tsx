@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import HospDeptLayout from '@/components/hosp-dept/HospDeptLayout';
+import HospitalLayout from '@/components/hospital/HospitalLayout';
+import api from '@/utils/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -88,10 +89,8 @@ const severityBadge: Record<string, string> = {
 // ── API helpers ───────────────────────────────────────────────────────────────
 
 async function apiFetch(path: string) {
-  const res = await fetch(path, { credentials: 'include' });
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  const json = await res.json();
-  return json.data ?? json;
+  const res = await api.get(path);
+  return res.data?.data ?? res.data;
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
@@ -109,10 +108,10 @@ export default function WardDashboard() {
   const loadData = useCallback(async () => {
     try {
       const [bedMap, activeAlerts, dueList, censusData] = await Promise.all([
-        apiFetch(`/api/v1/beds/map${selectedWard ? `?wardId=${selectedWard}` : ''}`).catch(() => []),
-        apiFetch('/api/v1/vitals/alerts').catch(() => []),
-        apiFetch('/api/v1/emar/due').catch(() => []),
-        apiFetch('/api/v1/beds/census').catch(() => []),
+        apiFetch(`/v1/beds/map${selectedWard ? `?wardId=${selectedWard}` : ''}`).catch(() => []),
+        apiFetch('/v1/vitals/alerts').catch(() => []),
+        apiFetch('/v1/emar/due').catch(() => []),
+        apiFetch('/v1/beds/census').catch(() => []),
       ]);
       setBeds(bedMap);
       setAlerts(activeAlerts);
@@ -151,7 +150,7 @@ export default function WardDashboard() {
   }, {});
 
   return (
-    <HospDeptLayout>
+    <HospitalLayout>
       <div className="p-4 md:p-6 space-y-6">
 
         {/* Header */}
@@ -414,6 +413,6 @@ export default function WardDashboard() {
           </div>
         </div>
       </div>
-    </HospDeptLayout>
+    </HospitalLayout>
   );
 }

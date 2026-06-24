@@ -1,5 +1,5 @@
 import express from 'express';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -138,7 +138,7 @@ router.post('/register', async (req, res) => {
     const entry = await queue.checkIn({
       organizationId: orgId,
       department: department || 'opd',
-      queueZone: queueZone || 'OPD-MAIN',
+      queueZone: queueZone || 'opd-waiting',
       patientId,
       patientName: `${firstName} ${lastName || ''}`.trim(),
       doctorId: doctorId || null,

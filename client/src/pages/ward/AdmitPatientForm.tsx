@@ -9,7 +9,8 @@
 
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import HospDeptLayout from '@/components/hosp-dept/HospDeptLayout';
+import HospitalLayout from '@/components/hospital/HospitalLayout';
+import api from '@/utils/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -80,16 +81,11 @@ export default function AdmitPatientForm() {
     setBedSearching(true);
     setAllocatedBed(null);
     try {
-      const res = await fetch('/api/v1/beds/allocate', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          wardType: form.wardPreference,
-          isCritical: form.admissionType === 'emergency',
-        })
+      const res = await api.post('/v1/beds/allocate', {
+        wardType: form.wardPreference,
+        isCritical: form.admissionType === 'emergency',
       });
-      const json = await res.json();
+      const json = res.data;
       if (json.success && json.data) {
         setAllocatedBed({ id: json.data.id, bed_number: json.data.bed_number, ward_name: json.data.ward_name });
       } else {
@@ -111,33 +107,27 @@ export default function AdmitPatientForm() {
     setLoading(true);
     setError(null);
     try {
-      // Determine endpoint
-      let endpoint = '/api/v1/adt/admit';
-      if (form.sourceErId) endpoint = '/api/v1/adt/er-to-ip';
-      else if (form.sourceConsultationId || form.admissionType === 'op_converted') endpoint = '/api/v1/adt/convert-op-to-ip';
+      let endpoint = '/v1/adt/admit';
+      if (form.sourceErId) endpoint = '/v1/adt/er-to-ip';
+      else if (form.sourceConsultationId || form.admissionType === 'op_converted') endpoint = '/v1/adt/convert-op-to-ip';
 
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          patientId: parseInt(form.patientId),
-          admissionType: form.admissionType,
-          admissionDiagnosis: form.admissionDiagnosis,
-          admittingDoctorId: form.admittingDoctorId ? parseInt(form.admittingDoctorId) : undefined,
-          bedId: allocatedBed?.id,
-          expectedLosDays: parseInt(form.expectedLosDays) || 4,
-          mlcCase: form.mlcCase,
-          insuranceClaimId: form.insuranceClaimId ? parseInt(form.insuranceClaimId) : undefined,
-          corporateAccountId: form.corporateAccountId ? parseInt(form.corporateAccountId) : undefined,
-          depositAmount: form.depositAmount ? parseFloat(form.depositAmount) : 0,
-          notes: form.notes,
-          sourceConsultationId: form.sourceConsultationId ? parseInt(form.sourceConsultationId) : undefined,
-          erRecordId: form.sourceErId ? parseInt(form.sourceErId) : undefined,
-          consultationId: form.sourceConsultationId ? parseInt(form.sourceConsultationId) : undefined,
-        })
+      const res = await api.post(endpoint, {
+        patientId: parseInt(form.patientId),
+        admissionType: form.admissionType,
+        admissionDiagnosis: form.admissionDiagnosis,
+        admittingDoctorId: form.admittingDoctorId ? parseInt(form.admittingDoctorId) : undefined,
+        bedId: allocatedBed?.id,
+        expectedLosDays: parseInt(form.expectedLosDays) || 4,
+        mlcCase: form.mlcCase,
+        insuranceClaimId: form.insuranceClaimId ? parseInt(form.insuranceClaimId) : undefined,
+        corporateAccountId: form.corporateAccountId ? parseInt(form.corporateAccountId) : undefined,
+        depositAmount: form.depositAmount ? parseFloat(form.depositAmount) : 0,
+        notes: form.notes,
+        sourceConsultationId: form.sourceConsultationId ? parseInt(form.sourceConsultationId) : undefined,
+        erRecordId: form.sourceErId ? parseInt(form.sourceErId) : undefined,
+        consultationId: form.sourceConsultationId ? parseInt(form.sourceConsultationId) : undefined,
       });
-      const json = await res.json();
+      const json = res.data;
       if (json.success) {
         setSuccess({
           admissionNumber: json.data.admission_number,
@@ -155,7 +145,7 @@ export default function AdmitPatientForm() {
 
   if (success) {
     return (
-      <HospDeptLayout>
+      <HospitalLayout>
         <div className="p-6 max-w-md mx-auto">
           <Card className="border shadow-sm text-center">
             <CardContent className="p-8 space-y-4">
@@ -186,12 +176,12 @@ export default function AdmitPatientForm() {
             </CardContent>
           </Card>
         </div>
-      </HospDeptLayout>
+      </HospitalLayout>
     );
   }
 
   return (
-    <HospDeptLayout>
+    <HospitalLayout>
       <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-4">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="gap-1">
@@ -381,6 +371,6 @@ export default function AdmitPatientForm() {
           </Button>
         </form>
       </div>
-    </HospDeptLayout>
+    </HospitalLayout>
   );
 }

@@ -5,7 +5,7 @@
  *
  * Usage:
  *   node scripts/demo/record-hospital-os-patient-flow.mjs
- *   BASE_URL=https://mediqzy.com node scripts/demo/record-hospital-os-patient-flow.mjs
+ *   LIVE_MODE=1 BASE_URL=http://localhost:9443 node scripts/demo/record-hospital-os-patient-flow.mjs
  */
 
 import { chromium } from '@playwright/test';
@@ -15,6 +15,8 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE_URL = process.env.BASE_URL || 'http://localhost:9443';
+const LIVE_MODE = process.env.LIVE_MODE === '1' || process.env.LIVE_MODE === 'true';
+const API_URL = process.env.API_URL || 'http://localhost:8000';
 const DEMO_JWT =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkZW1vLXJlY29yZGluZyIsImV4cCI6NDEwMjQ0NDgwMH0.recording';
 const OUTPUT_DIR = process.env.DEMO_OUTPUT_DIR || '/opt/cursor/artifacts/hospital-os-demo';
@@ -25,10 +27,10 @@ const DEMO = {
   lastName: 'Singh',
   phone: '9876543211',
   complaint: 'Abdominal pain and fever',
-  token: 'A-047',
-  uhid: 'UHID-DEMO-2847',
-  patientId: '2',
-  admissionId: '1042',
+  token: LIVE_MODE ? 'A-001' : 'A-047',
+  uhid: LIVE_MODE ? 'UHID-000001' : 'UHID-DEMO-2847',
+  patientId: LIVE_MODE ? '1' : '2',
+  admissionId: LIVE_MODE ? '1' : '1042',
 };
 
 async function pause(page, ms = 1200) {
@@ -67,6 +69,21 @@ function json(body, status = 200) {
 }
 
 async function setupAuthBypass(page) {
+  if (LIVE_MODE) {
+    const loginRes = await fetch(`${API_URL}/api/hospital/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'hospital@mediczy.com', password: 'Hospital123' }),
+    });
+    const loginJson = await loginRes.json();
+    const hospitalToken = loginJson.token;
+    await page.addInitScript(({ hospitalToken, hospital }) => {
+      localStorage.setItem('hospitalToken', hospitalToken);
+      localStorage.setItem('userType', 'hospital');
+      localStorage.setItem('hospitalData', JSON.stringify(hospital || { id: 3, name: 'Mediqzy Demo Hospital' }));
+    }, { hospitalToken, hospital: loginJson.hospital });
+    return;
+  }
   await page.addInitScript((token) => {
     localStorage.setItem('token', token);
     localStorage.setItem('userType', 'user');
@@ -382,6 +399,7 @@ async function setupApiMocks(page) {
 }
 
 async function setHospitalSession(page) {
+  if (LIVE_MODE) return; // live auth already injected in setupAuthBypass
   await page.evaluate((token) => {
     localStorage.setItem('hospitalToken', token);
     localStorage.setItem('hospitalData', JSON.stringify({
@@ -407,7 +425,7 @@ async function injectHospitalSession(page) {
 
 async function phaseWalkIn(page) {
   await showTitleCard(page, '1 · Walk-in Registration', 'Paperless kiosk check-in for new patients');
-  await page.goto(`${BASE_URL}/kiosk/checkin`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE_URL}/kiosk/checkin`, { waitUntil: 'domcontentloaded', timeout: 45000 });
   await pause(page, 2000);
 
   const touchStart = page.getByText('Touch to Start');
@@ -444,15 +462,18 @@ async function phaseOpdQueue(page) {
 async function phaseHospitalOpd(page) {
   await showTitleCard(page, '3 · OPD Consultation', 'Hospital staff manage appointments and convert to inpatient');
 
-  await page.goto(`${BASE_URL}/hospital/login`, { waitUntil: 'networkidle' });
-  await page.getByPlaceholder('hospital@example.com').fill('hospital@mediczy.com');
-  await page.getByPlaceholder('Enter your password').fill('Hospital123');
-  await pause(page, 800);
-  await page.getByRole('button', { name: /Sign In/i }).click();
-  await page.waitForURL(/\/hospital\/(dashboard|practice-management)/, { timeout: 15000 }).catch(() => {});
-  await pause(page, 1500);
-
-  await page.goto(`${BASE_URL}/hospital/practice-management`, { waitUntil: 'networkidle' });
+  if (LIVE_MODE) {
+    await page.goto(`${BASE_URL}/hospital/practice-management`, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  } else {
+    await page.goto(`${BASE_URL}/hospital/login`, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await page.getByPlaceholder('hospital@example.com').fill('hospital@mediczy.com');
+    await page.getByPlaceholder('Enter your password').fill('Hospital123');
+    await pause(page, 800);
+    await page.getByRole('button', { name: /Sign In/i }).click();
+    await page.waitForURL(/\/hospital\/(dashboard|practice-management)/, { timeout: 15000 }).catch(() => {});
+    await pause(page, 1500);
+    await page.goto(`${BASE_URL}/hospital/practice-management`, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  }
   await page.getByText('Practice Management').waitFor({ timeout: 20000 }).catch(() => {});
   await pause(page, 2000);
 
@@ -477,7 +498,7 @@ async function phaseHospitalOpd(page) {
 async function phaseAdmission(page) {
   await showTitleCard(page, '4 · Admission & Bed Assignment', 'ADT workflow with live bed map and ward census');
   await setHospitalSession(page);
-  await page.goto(`${BASE_URL}/hospital/ward`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE_URL}/hospital/ward`, { waitUntil: 'domcontentloaded', timeout: 45000 });
   await page.getByText(/Ward Dashboard|Bed Map/i).first().waitFor({ timeout: 20000 }).catch(() => {});
   await pause(page, 3000);
 
@@ -489,7 +510,7 @@ async function phaseAdmission(page) {
 async function phaseInpatientCare(page) {
   await showTitleCard(page, '5 · Inpatient Care', 'Clinical workspace with vitals, medications, and care plans');
   await setHospitalSession(page);
-  await page.goto(`${BASE_URL}/hmis/patient/${DEMO.patientId}/workspace`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE_URL}/hmis/patient/${DEMO.patientId}/workspace`, { waitUntil: 'domcontentloaded', timeout: 45000 });
   await page.getByText(/Inpatient Workspace|Priya Singh/i).first().waitFor({ timeout: 20000 }).catch(() => {});
   await pause(page, 3500);
 }
@@ -497,7 +518,7 @@ async function phaseInpatientCare(page) {
 async function phaseDischarge(page) {
   await showTitleCard(page, '6 · Discharge', 'Readiness checklist, discharge summary, and patient packet');
   await setHospitalSession(page);
-  await page.goto(`${BASE_URL}/hmis/discharge-board`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE_URL}/hmis/admission/${DEMO.admissionId}/discharge`, { waitUntil: 'domcontentloaded', timeout: 45000 });
   await page.getByText(/Discharge Readiness|Discharge Board/i).first().waitFor({ timeout: 20000 }).catch(() => {});
   await pause(page, 2500);
 
@@ -557,7 +578,7 @@ async function main() {
 
   const page = await context.newPage();
   await setupAuthBypass(page);
-  await setupApiMocks(page);
+  if (!LIVE_MODE) await setupApiMocks(page);
 
   try {
     await phaseWalkIn(page);

@@ -29,20 +29,59 @@ export default function InpatientWorkspace() {
     if (!patientId) return;
     setLoading(true);
     try {
-      const summaryRes = await api.get(`/api/v1/clinical-workspace/patient/${patientId}`);
-      const p: PatientSummary = summaryRes.data?.data;
+      const summaryRes = await api.get(`/v1/clinical-workspace/patient/${patientId}`);
+      const payload = summaryRes.data;
+      const p: PatientSummary | null = payload?.data?.admissionId
+        ? payload.data
+        : payload?.workspace?.summary ?? payload?.data ?? null;
       setPatient(p);
 
-      if (p?.admissionId) {
-        const [vitRes, medRes, alertRes] = await Promise.allSettled([
-          api.get(`/api/v1/vitals/${p.admissionId}/latest`),
-          api.get(`/api/v1/emar/orders/${p.admissionId}`),
-          api.get(`/api/v1/lab-rules/alerts/${patientId}`),
-        ]);
-        if (vitRes.status === 'fulfilled') setVitals(vitRes.value.data?.data ?? []);
-        if (medRes.status === 'fulfilled') setMeds(medRes.value.data?.data ?? []);
-        if (alertRes.status === 'fulfilled') setAlerts(alertRes.value.data?.data ?? []);
+      const ws = payload?.workspace;
+      if (ws?.vitalsDisplay?.length) {
+        setVitals(ws.vitalsDisplay);
+      } else if (p?.admissionId) {
+        const vitRes = await api.get(`/v1/vitals/${p.admissionId}/latest`);
+        const raw = vitRes.data?.data;
+        if (Array.isArray(raw)) setVitals(raw);
+        else if (raw) {
+          setVitals([
+            { label: 'Temp', value: String(raw.temperature ?? '—'), unit: '°C' },
+            { label: 'Pulse', value: String(raw.pulse ?? '—'), unit: 'bpm' },
+            { label: 'BP', value: `${raw.bp_systolic ?? '—'}/${raw.bp_diastolic ?? '—'}`, unit: 'mmHg' },
+            { label: 'SpO₂', value: String(raw.spo2 ?? '—'), unit: '%' },
+            { label: 'RR', value: String(raw.respiratory_rate ?? '—'), unit: '/min' },
+          ]);
+        }
       }
+
+      if (ws?.medicationsDisplay?.length) {
+        setMeds(ws.medicationsDisplay);
+      } else if (p?.admissionId) {
+        const medRes = await api.get(`/v1/emar/orders/${p.admissionId}`);
+        const rows = medRes.data?.data ?? [];
+        setMeds(rows.map((m: any) => ({
+          orderId: m.id,
+          drugName: m.drug_name ?? m.drugName,
+          dose: m.dose,
+          route: m.route,
+          frequency: m.frequency,
+          status: m.order_status ?? m.status ?? 'active',
+        })));
+      }
+
+      if (ws?.activeAlerts?.length) {
+        setAlerts(ws.activeAlerts.map((a: any) => ({
+          id: a.id,
+          test: a.alert_type ?? 'Alert',
+          value: a.alert_message ?? '',
+          threshold: a.news2_score != null ? `NEWS2 ${a.news2_score}` : '—',
+          severity: (a.severity === 'critical' ? 'critical' : a.severity === 'high' ? 'high' : 'moderate') as LabAlert['severity'],
+        })));
+      } else if (p?.admissionId) {
+        const alertRes = await api.get(`/v1/lab-rules/alerts/${patientId}`);
+        setAlerts(alertRes.data?.data ?? []);
+      }
+
       setError(null);
     } catch (e: any) {
       setError(e?.response?.data?.message ?? 'Failed to load patient workspace');
@@ -182,10 +221,10 @@ export default function InpatientWorkspace() {
               {[
                 { label: 'Place Order', icon: PlusCircle, cls: 'bg-teal-600 hover:bg-teal-700 text-white' },
                 { label: 'Write Note', icon: FileText, cls: 'bg-slate-700 hover:bg-slate-800 text-white' },
-                { label: 'Start Discharge', icon: LogOut, cls: 'bg-amber-600 hover:bg-amber-700 text-white' },
+                { label: 'Start Discharge', icon: LogOut, cls: 'bg-amber-600 hover:bg-amber-700 text-white', action: () => patient?.admissionId && navigate(`/hmis/admission/${patient.admissionId}/discharge`) },
                 { label: 'Add to Follow-Up', icon: Star, cls: 'bg-blue-600 hover:bg-blue-700 text-white' },
-              ].map(({ label, icon: Icon, cls }) => (
-                <Button key={label} className={`${cls} flex items-center gap-1`}>
+              ].map(({ label, icon: Icon, cls, action }) => (
+                <Button key={label} className={`${cls} flex items-center gap-1`} onClick={action}>
                   <Icon className="h-4 w-4" /> {label}
                 </Button>
               ))}

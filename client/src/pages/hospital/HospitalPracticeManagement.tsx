@@ -100,7 +100,7 @@ const HospitalPracticeManagement = () => {
   const navigate = useNavigate();
   const [hospitalData, setHospitalData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('appointments');
+  const [activeTab, setActiveTab] = useState('patients');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDepartment, setFilterDepartment] = useState('all');
   const [showNewAppointmentDialog, setShowNewAppointmentDialog] = useState(false);
@@ -232,6 +232,17 @@ const HospitalPracticeManagement = () => {
         staff: Array.isArray(practice.staff) ? practice.staff : undefined,
         resources: Array.isArray(practice.resources) ? practice.resources : undefined,
       });
+
+      // Load live OPD/IPD patients when available
+      try {
+        const patientsRes = await api.get('/hospital/practice/patients', { headers: hospitalHeaders() });
+        const livePatients = patientsRes.data?.data;
+        if (Array.isArray(livePatients) && livePatients.length > 0) {
+          hydratePractice({ patients: livePatients });
+        }
+      } catch (_) {
+        /* keep local/demo patients when API unavailable */
+      }
       
     } catch (error) {
       handleApiError(error, 'Failed to fetch practice data');
@@ -729,6 +740,29 @@ const HospitalPracticeManagement = () => {
   };
 
   const handleConvertToIPD = async (patient: Patient) => {
+    const numericId = /^\d+$/.test(patient.id);
+    if (numericId) {
+      try {
+        const { data } = await api.patch(
+          `/hospital/practice/patients/${patient.id}`,
+          { admissionStatus: 'IPD' },
+          { headers: hospitalHeaders() }
+        );
+        const redirect = data?.data?.redirect;
+        if (redirect) {
+          navigate(redirect);
+          toast({ title: 'Admission', description: `Complete admission for ${patient.name}.` });
+          return;
+        }
+      } catch (_) {
+        /* fall through to direct navigation */
+      }
+      navigate(
+        `/hospital/adt/admit?patientId=${encodeURIComponent(patient.id)}&name=${encodeURIComponent(patient.name)}&type=op_converted`
+      );
+      toast({ title: 'Admission', description: `Complete admission for ${patient.name}.` });
+      return;
+    }
     try {
       let updated: Patient = { ...patient, admissionStatus: 'IPD' };
       try {

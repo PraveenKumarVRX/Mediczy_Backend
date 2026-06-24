@@ -9,7 +9,12 @@ router.get('/patient/:patientId', authUser, async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const workspace = await getPatientWorkspace(parseInt(req.params.patientId), organizationId);
-    res.json({ success: true, data: workspace });
+    // Flatten summary for HMIS inpatient UI while preserving full workspace payload
+    res.json({
+      success: true,
+      data: workspace.summary || workspace,
+      workspace,
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

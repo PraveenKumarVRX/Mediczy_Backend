@@ -151,6 +151,140 @@ router.get('/', authUser, requireHospitalAuth, async (req, res) => {
   }
 });
 
+/**
+ * List patients for practice management (OPD queue + active IPD)
+ * GET /api/hospital/practice/patients
+ */
+router.get('/patients', authUser, requireHospitalAuth, async (req, res) => {
+  try {
+    const organizationId = req.user.organization_id || req.user.hospitalId || req.user.id;
+
+    const [queueRows, ipdRows] = await Promise.all([
+      sequelize.query(
+        `SELECT DISTINCT ON (q.patient_id)
+            q.patient_id AS id,
+            q.patient_name AS name,
+            u."phoneNumber" AS phone,
+            u.email,
+            u.gender,
+            u.metadata,
+            'OPD' AS admission_status,
+            q.token_number,
+            q.check_in_at
+         FROM hospital_queue_entries q
+         LEFT JOIN users u ON u.id = q.patient_id
+         WHERE q.organization_id = :orgId
+           AND q.department = 'opd'
+           AND q.check_in_at::date = CURRENT_DATE
+           AND q.status IN ('waiting', 'called', 'in_service')
+         ORDER BY q.patient_id, q.check_in_at DESC`,
+        { replacements: { orgId: organizationId }, type: QueryTypes.SELECT }
+      ),
+      sequelize.query(
+        `SELECT
+            a.patient_id AS id,
+            COALESCE(u."firstName" || ' ' || NULLIF(u."lastName", ''), u."firstName", 'Patient') AS name,
+            u."phoneNumber" AS phone,
+            u.email,
+            u.gender,
+            u.metadata,
+            'IPD' AS admission_status,
+            a.id AS admission_id,
+            a.admission_number,
+            a.admission_diagnosis AS diagnosis,
+            a.admitted_at AS admission_date,
+            w.name AS ward,
+            b.bed_number AS bed
+         FROM ip_admissions a
+         LEFT JOIN users u ON u.id = a.patient_id
+         LEFT JOIN beds b ON b.id = a.bed_id
+         LEFT JOIN wards w ON w.id = b.ward_id
+         WHERE a.organization_id = :orgId AND a.status = 'active'
+         ORDER BY a.admitted_at DESC`,
+        { replacements: { orgId: organizationId }, type: QueryTypes.SELECT }
+      ),
+    ]);
+
+    const mapRow = (row, status) => {
+      const meta = typeof row.metadata === 'object' ? row.metadata : {};
+      return {
+        id: String(row.id),
+        uhid: meta.uhid || row.admission_number || `UHID${row.id}`,
+        name: row.name || 'Unknown',
+        age: meta.age || 0,
+        gender: (row.gender || 'Other').replace(/^./, c => c.toUpperCase()),
+        phone: row.phone || '',
+        email: row.email || undefined,
+        address: meta.address || '',
+        bloodGroup: meta.bloodGroup || '—',
+        admissionStatus: status,
+        admissionDate: row.admission_date ? String(row.admission_date).slice(0, 10) : undefined,
+        assignedDoctor: meta.doctorName || undefined,
+        department: meta.department || 'General',
+        bed: row.bed || undefined,
+        ward: row.ward || undefined,
+        diagnosis: row.diagnosis || undefined,
+      };
+    };
+
+    const seen = new Set();
+    const patients = [];
+    for (const row of ipdRows) {
+      seen.add(String(row.id));
+      patients.push(mapRow(row, 'IPD'));
+    }
+    for (const row of queueRows) {
+      const id = String(row.id);
+      if (!seen.has(id)) {
+        seen.add(id);
+        patients.push(mapRow(row, 'OPD'));
+      }
+    }
+
+    return res.json({ success: true, data: patients });
+  } catch (error) {
+    console.error('List practice patients error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * Convert OPD patient to IPD (redirect payload for ADT form)
+ * PATCH /api/hospital/practice/patients/:id
+ */
+router.patch('/patients/:id', authUser, requireHospitalAuth, async (req, res) => {
+  try {
+    const patientId = parseInt(req.params.id, 10);
+    if (!patientId) {
+      return res.status(400).json({ success: false, message: 'Invalid patient id' });
+    }
+    const { admissionStatus } = req.body;
+    if (admissionStatus !== 'IPD') {
+      return res.status(400).json({ success: false, message: 'Only IPD conversion supported' });
+    }
+
+    const user = await User.findByPk(patientId, {
+      attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'metadata'],
+    });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Patient not found' });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        id: String(user.id),
+        name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+        admissionStatus: 'IPD',
+        redirect: `/hospital/adt/admit?patientId=${user.id}&name=${encodeURIComponent(`${user.firstName} ${user.lastName}`.trim())}&type=op_converted`,
+      },
+    });
+  } catch (error) {
+    console.error('Patch practice patient error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // ============================================================================
 // INSURANCE & BILLING - Claims Management
 // ============================================================================

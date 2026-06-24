@@ -233,7 +233,7 @@ router.get('/queue', async (req, res) => {
     const isProd = process.env.NODE_ENV === 'production';
     const board = await queueService.getBoardSnapshot({
       organizationId: req.query.organizationId,
-      queueZone: 'opd-waiting',
+      queueZone: req.query.zone || 'opd-waiting',
       department: req.query.department || 'opd',
       doctorId: req.query.doctorId ? parseInt(req.query.doctorId, 10) : undefined,
       counterId: req.query.counter,

@@ -380,7 +380,20 @@ const USER_TYPE_PERMISSIONS = {
       '/api/v1/ot',       // OT Scheduling
       '/api/v1/emar',     // eMAR
       '/api/v1/vitals',   // Vitals & Early Warning
-      '/api/v1/er'        // ER Workflow
+      '/api/v1/er',       // ER Workflow
+      '/api/v1/clinical-workspace',
+      '/api/v1/analytics',
+      '/api/v1/discharge',
+      '/api/v1/nursing',
+      '/api/v1/navigation',
+      '/api/v1/echart',
+      '/api/v1/follow-up',
+      '/api/v1/recovery',
+      '/api/v1/reports',
+      '/api/v1/queue',
+      '/api/v1/lab-rules',
+      '/api/v1/hl7',
+      '/api/fhir',
     ],
     tokenField: 'hospitalId'
   },
@@ -725,6 +738,8 @@ const PUBLIC_ENDPOINTS = [
   '/api/pharmacy/medicines', // Public medicine search from master database
   '/api/lab-tests/catalog',  // Public lab test catalog — browse tests and prices without login
   '/api/email/track/',       // Email open/click tracking pixels (hit by email clients, no auth)
+  '/api/display',            // Hospital kiosk & waiting-room displays (LAN/public)
+  '/api/abdm/kiosk',         // ABHA kiosk registration flow
   '/health', // Public health check
 ];
 

@@ -9,24 +9,90 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 
-export async function getPatientWorkspace(patientId, organizationId) {
-  const [patient] = await sequelize.query(
+async function fetchPatientDemographics(patientId) {
+  const [fromPatients] = await sequelize.query(
     `SELECT id, first_name, last_name, date_of_birth, gender, blood_group,
             phone, email, uhid
      FROM patients WHERE id = :patientId LIMIT 1`,
     { replacements: { patientId }, type: QueryTypes.SELECT }
   ).catch(() => [null]);
 
+  if (fromPatients) return fromPatients;
+
+  const [fromUsers] = await sequelize.query(
+    `SELECT id,
+            "firstName" AS first_name,
+            "lastName" AS last_name,
+            "dateOfBirth" AS date_of_birth,
+            gender,
+            NULL::text AS blood_group,
+            "phoneNumber" AS phone,
+            email,
+            COALESCE(metadata->>'uhid', '') AS uhid
+     FROM users WHERE id = :patientId LIMIT 1`,
+    { replacements: { patientId }, type: QueryTypes.SELECT }
+  ).catch(() => [null]);
+
+  return fromUsers || null;
+}
+
+function calcAge(dateOfBirth) {
+  if (!dateOfBirth) return 0;
+  const dob = new Date(dateOfBirth);
+  if (Number.isNaN(dob.getTime())) return 0;
+  const now = new Date();
+  let age = now.getFullYear() - dob.getFullYear();
+  const m = now.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age -= 1;
+  return Math.max(age, 0);
+}
+
+export function toPatientSummary(workspace) {
+  const patient = workspace.patient;
+  const admission = workspace.activeAdmission;
+  if (!patient && !admission) return null;
+
+  const name = patient
+    ? `${patient.first_name || ''} ${patient.last_name || ''}`.trim()
+    : 'Unknown patient';
+
+  return {
+    name,
+    age: calcAge(patient?.date_of_birth),
+    bed: admission?.bed_number || '—',
+    ward: admission?.ward_name || '—',
+    diagnosis: admission?.admission_diagnosis || admission?.diagnosis || '—',
+    allergies: (workspace.allergies || []).map((a) => a.allergen).filter(Boolean),
+    admittedAt: admission?.admission_datetime || admission?.admitted_at || new Date().toISOString(),
+    admissionId: admission?.id || null,
+  };
+}
+
+export function formatVitalsForDisplay(record) {
+  if (!record) return [];
+  const items = [
+    { label: 'Temp', value: record.temperature, unit: '°C', flag: record.temperature >= 38 ? 'high' : undefined },
+    { label: 'Pulse', value: record.pulse, unit: 'bpm', flag: record.pulse >= 100 ? 'high' : undefined },
+    { label: 'BP', value: record.bp_systolic && record.bp_diastolic ? `${record.bp_systolic}/${record.bp_diastolic}` : null, unit: 'mmHg' },
+    { label: 'SpO₂', value: record.spo2, unit: '%', flag: record.spo2 < 94 ? 'low' : undefined },
+    { label: 'RR', value: record.respiratory_rate, unit: '/min' },
+  ];
+  return items.filter((i) => i.value != null && i.value !== '');
+}
+
+export async function getPatientWorkspace(patientId, organizationId) {
+  const patient = await fetchPatientDemographics(patientId);
+
   const [admission] = await sequelize.query(
-    `SELECT a.*, w.name as ward_name, b.bed_number,
-            d.first_name || ' ' || d.last_name as admitting_doctor_name
+    `SELECT a.*, w.name AS ward_name, b.bed_number
      FROM ip_admissions a
      LEFT JOIN wards w ON w.id = a.ward_id
-     LEFT JOIN beds b  ON b.id = a.bed_id
-     LEFT JOIN doctors d ON d.id = a.admitting_doctor_id
-     WHERE a.patient_id = :patientId AND a.status NOT IN ('discharged','cancelled')
+     LEFT JOIN beds b ON b.id = a.bed_id
+     WHERE a.patient_id = :patientId
+       AND a.status NOT IN ('discharged','cancelled')
+       AND (:orgId IS NULL OR a.organization_id = :orgId)
      ORDER BY a.admission_datetime DESC LIMIT 1`,
-    { replacements: { patientId }, type: QueryTypes.SELECT }
+    { replacements: { patientId, orgId: organizationId || null }, type: QueryTypes.SELECT }
   ).catch(() => [null]);
 
   const vitals = admission ? await sequelize.query(
@@ -38,13 +104,13 @@ export async function getPatientWorkspace(patientId, organizationId) {
 
   const alerts = admission ? await sequelize.query(
     `SELECT * FROM early_warning_alerts
-     WHERE admission_id = :admId AND acknowledged = FALSE
+     WHERE admission_id = :admId AND acknowledged_at IS NULL AND COALESCE(resolved, FALSE) = FALSE
      ORDER BY triggered_at DESC LIMIT 10`,
     { replacements: { admId: admission.id }, type: QueryTypes.SELECT }
   ).catch(() => []) : [];
 
   const activeMeds = admission ? await sequelize.query(
-    `SELECT drug_name, dose, route, frequency, start_datetime, special_instructions
+    `SELECT id, drug_name, dose, route, frequency, start_datetime, order_status, special_instructions
      FROM medication_orders
      WHERE admission_id = :admId AND order_status = 'active'
      ORDER BY drug_name`,
@@ -81,7 +147,7 @@ export async function getPatientWorkspace(patientId, organizationId) {
     { replacements: { admId: admission.id }, type: QueryTypes.SELECT }
   ).catch(() => []) : [];
 
-  return {
+  const workspace = {
     patient: patient || null,
     activeAdmission: admission || null,
     latestVitals: vitals[0] || null,
@@ -92,6 +158,20 @@ export async function getPatientWorkspace(patientId, organizationId) {
     recentNotes,
     pendingOrders,
     pendingOT: otBooking[0] || null,
-    generatedAt: new Date()
+    generatedAt: new Date(),
+  };
+
+  return {
+    ...workspace,
+    summary: toPatientSummary(workspace),
+    vitalsDisplay: formatVitalsForDisplay(vitals[0]),
+    medicationsDisplay: activeMeds.map((m) => ({
+      orderId: m.id,
+      drugName: m.drug_name,
+      dose: m.dose,
+      route: m.route,
+      frequency: m.frequency,
+      status: m.order_status,
+    })),
   };
 }
