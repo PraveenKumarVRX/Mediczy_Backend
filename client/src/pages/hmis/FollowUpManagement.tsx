@@ -68,8 +68,8 @@ export default function FollowUpManagement() {
     setLoading(true);
     try {
       const [planRes, alertRes] = await Promise.allSettled([
-        api.get(`/api/v1/follow-up/plans?patientId=${patientId}`),
-        api.get(`/api/v1/recovery/alerts?patientId=${patientId}`)
+        api.get(`/v1/follow-up/plans?patientId=${patientId}`),
+        api.get(`/v1/recovery/alerts?patientId=${patientId}`)
       ]);
       if (planRes.status === 'fulfilled') setPlans(planRes.value.data?.data ?? []);
       if (alertRes.status === 'fulfilled') setAlerts(alertRes.value.data?.data ?? []);
@@ -85,7 +85,7 @@ export default function FollowUpManagement() {
 
   const acknowledgeAlert = async (alertId: number) => {
     try {
-      await api.post(`/api/v1/recovery/alerts/${alertId}/acknowledge`);
+      await api.post(`/v1/recovery/alerts/${alertId}/acknowledge`);
       setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, acknowledged: true } : a));
     } catch {
       // silent
@@ -96,7 +96,7 @@ export default function FollowUpManagement() {
     if (!patientId) return;
     setSubmitting(true);
     try {
-      await api.post('/api/v1/recovery/check-in', {
+      await api.post('/v1/recovery/check-in', {
         patientId: parseInt(patientId),
         pain_score: parseInt(checkIn.pain_score),
         fever: checkIn.fever,
@@ -118,7 +118,7 @@ export default function FollowUpManagement() {
     if (!patientId || !newPlan.follow_up_date) return;
     setAddingPlan(true);
     try {
-      await api.post('/api/v1/follow-up/schedule', {
+      await api.post('/v1/follow-up/schedule', {
         patientId: parseInt(patientId),
         ...newPlan
       });

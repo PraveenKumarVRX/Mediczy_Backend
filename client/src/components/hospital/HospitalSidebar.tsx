@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
+  LayoutGrid,
   LayoutDashboard,
   Users,
   CalendarCheck,
@@ -57,6 +58,7 @@ interface HospitalSidebarProps {
 }
 
 const mainNavItems: SidebarItem[] = [
+  { icon: LayoutGrid, label: "Hospital OS", href: "/hospital/os" },
   { icon: LayoutDashboard, label: "Dashboard", href: "/hospital/dashboard" },
   { icon: BriefcaseMedical, label: "Practice Management", href: "/hospital/practice-management", capability: "practice_management" },
   { icon: CalendarCheck, label: "Appointments", href: "/hospital/appointments", capability: "appointments" },

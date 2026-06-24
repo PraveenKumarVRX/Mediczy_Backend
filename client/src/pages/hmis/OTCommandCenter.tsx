@@ -49,7 +49,7 @@ export default function OTCommandCenter() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/api/v1/ot/cases/today');
+      const res = await api.get('/v1/ot/cases/today');
       setCases(res.data?.data ?? []);
       setError(null);
     } catch (e: any) {
@@ -64,7 +64,7 @@ export default function OTCommandCenter() {
   const updateStatus = async (id: number) => {
     setUpdating(id);
     try {
-      await api.get(`/api/v1/ot/${id}/checklist-status`);
+      await api.get(`/v1/ot/${id}/checklist-status`);
     } catch {
       /* ignore, UI demo */
     } finally {

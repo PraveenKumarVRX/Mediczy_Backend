@@ -75,7 +75,7 @@ export default function PatientTimeline() {
     if (!patientId) return;
     setLoading(true);
     try {
-      const res = await api.get(`/api/v1/navigation/patient/${patientId}/timeline?limit=200`);
+      const res = await api.get(`/v1/navigation/patient/${patientId}/timeline?limit=200`);
       setEvents(res.data?.data?.events ?? []);
       setError(null);
     } catch (e: any) {

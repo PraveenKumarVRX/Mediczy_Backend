@@ -39,11 +39,11 @@ export default function PredictiveAnalytics() {
     setLoading(true);
     try {
       const [r1, r2, r3, r4, r5] = await Promise.allSettled([
-        api.get('/api/v1/analytics/readmission-risk?limit=10'),
-        api.get('/api/v1/analytics/predicted-los'),
-        api.get('/api/v1/analytics/discharge-delay-forecast'),
-        api.get('/api/v1/analytics/anomalies'),
-        api.get('/api/v1/analytics/benchmarks'),
+        api.get('/v1/analytics/readmission-risk?limit=10'),
+        api.get('/v1/analytics/predicted-los'),
+        api.get('/v1/analytics/discharge-delay-forecast'),
+        api.get('/v1/analytics/anomalies'),
+        api.get('/v1/analytics/benchmarks'),
       ]);
       if (r1.status === 'fulfilled') setReadmission(r1.value.data?.data ?? []);
       if (r2.status === 'fulfilled') setLosData(r2.value.data?.data ?? []);

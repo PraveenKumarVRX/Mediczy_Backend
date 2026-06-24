@@ -37,10 +37,10 @@ export default function CommandCenter() {
     setLoading(true);
     try {
       const [ccRes, opsRes, clinRes, qualRes] = await Promise.allSettled([
-        api.get('/api/v1/analytics/command-center'),
-        api.get('/api/v1/analytics/operational'),
-        api.get('/api/v1/analytics/clinical'),
-        api.get('/api/v1/analytics/quality'),
+        api.get('/v1/analytics/command-center'),
+        api.get('/v1/analytics/operational'),
+        api.get('/v1/analytics/clinical'),
+        api.get('/v1/analytics/quality'),
       ]);
       if (ccRes.status === 'fulfilled')  setSnapshot(ccRes.value.data?.data ?? null);
       if (opsRes.status === 'fulfilled') setOps(opsRes.value.data?.data ?? []);

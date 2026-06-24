@@ -69,6 +69,7 @@ export default function AdmitPatientForm() {
   });
 
   const [allocatedBed, setAllocatedBed] = useState<{ id: number; bed_number: string; ward_name: string } | null>(null);
+  const [bedReservationToken, setBedReservationToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [bedSearching, setBedSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,19 +81,32 @@ export default function AdmitPatientForm() {
   const searchBed = async () => {
     setBedSearching(true);
     setAllocatedBed(null);
+    setBedReservationToken(null);
     try {
       const res = await api.post('/v1/beds/allocate', {
         wardType: form.wardPreference,
         isCritical: form.admissionType === 'emergency',
       });
       const json = res.data;
-      if (json.success && json.data) {
-        setAllocatedBed({ id: json.data.id, bed_number: json.data.bed_number, ward_name: json.data.ward_name });
-      } else {
+      if (!json.success || !json.data) {
         setError('No beds available for the selected ward type');
+        return;
       }
-    } catch {
-      setError('Could not check bed availability');
+      const bed = json.data;
+      const reserveRes = await api.post('/v1/beds/reserve', {
+        bedId: bed.id,
+        context: { patientId: form.patientId, admissionType: form.admissionType },
+        ttlMinutes: 15,
+      });
+      const token = reserveRes.data?.data?.token;
+      if (!token) {
+        setError('Could not reserve bed — try again');
+        return;
+      }
+      setAllocatedBed({ id: bed.id, bed_number: bed.bed_number, ward_name: bed.ward_name });
+      setBedReservationToken(token);
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'Could not check bed availability');
     }
     setBedSearching(false);
   };
@@ -117,6 +131,7 @@ export default function AdmitPatientForm() {
         admissionDiagnosis: form.admissionDiagnosis,
         admittingDoctorId: form.admittingDoctorId ? parseInt(form.admittingDoctorId) : undefined,
         bedId: allocatedBed?.id,
+        bedReservationToken: bedReservationToken || undefined,
         expectedLosDays: parseInt(form.expectedLosDays) || 4,
         mlcCase: form.mlcCase,
         insuranceClaimId: form.insuranceClaimId ? parseInt(form.insuranceClaimId) : undefined,
@@ -169,7 +184,7 @@ export default function AdmitPatientForm() {
                 <Button variant="outline" className="flex-1" onClick={() => navigate('/hospital/ward')}>
                   Ward Dashboard
                 </Button>
-                <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => navigate('/hospital/ot/schedule')}>
+                <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => navigate('/ot/schedule')}>
                   Schedule OT
                 </Button>
               </div>

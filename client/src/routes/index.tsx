@@ -348,6 +348,20 @@ const HospitalOpdIpdPage       = lazyNamed(_HospitalModulePages, "HospitalOpdIpd
 const HospitalPharmacyPage     = lazyNamed(_HospitalModulePages, "HospitalPharmacyPage");
 const HospitalLabReportsPage   = lazyNamed(_HospitalModulePages, "HospitalLabReportsPage");
 const HospitalBillingPage      = lazy(() => import("@/pages/hospital/HospitalBillingPage"));
+const HospitalOSHub            = lazy(() => import("@/pages/hospital/HospitalOSHub"));
+const HospitalDoctorWorkspace  = lazy(() => import("@/pages/hospital/HospitalDoctorWorkspace"));
+const HospitalNurseStation     = lazy(() => import("@/pages/hospital/HospitalNurseStation"));
+const HospitalADTTransfer      = lazy(() => import("@/pages/hospital/HospitalADTTransfer"));
+const HospitalVitalsRecord     = lazy(() => import("@/pages/hospital/HospitalVitalsRecord"));
+const HospitalAIScribe         = lazy(() => import("@/pages/hospital/HospitalAIScribe"));
+const HospitalClinicalCDSS     = lazy(() => import("@/pages/hospital/HospitalClinicalCDSS"));
+const HospitalVoiceAssistantPage = lazy(() => import("@/pages/hospital/HospitalVoiceAssistantPage"));
+const HospitalTeleconsult      = lazy(() => import("@/pages/hospital/HospitalTeleconsult"));
+const HospitalICUBoard         = lazy(() => import("@/pages/hospital/HospitalICUBoard"));
+const HospitalRadiology        = lazy(() => import("@/pages/hospital/HospitalRadiology"));
+const HospitalPharmacyDispense = lazy(() => import("@/pages/hospital/HospitalPharmacyDispense"));
+const HospitalSecurity         = lazy(() => import("@/pages/hospital/HospitalSecurity"));
+const HospitalCorporateCRM     = lazy(() => import("@/pages/hospital/HospitalCorporateCRM"));
 const HospitalClaimsPage       = lazyNamed(_HospitalModulePages, "HospitalClaimsPage");
 const HospitalStaffPage        = lazyNamed(_HospitalModulePages, "HospitalStaffPage");
 const HospitalSettingsPage     = lazyNamed(_HospitalModulePages, "HospitalSettingsPage");
@@ -973,6 +987,7 @@ const AppRoutes = () => {
         {/* ── Hospital ────────────────────────────────────────────────── */}
         <Route path="/hospital/register"                   element={<HospitalRegister />} />
         <Route path="/hospital/login"                      element={<HospitalLogin />} />
+        <Route path="/hospital/os"                         element={<HospitalOSHub />} />
         <Route path="/hospital/dashboard"                  element={<HospitalDashboard />} />
         <Route path="/hospital/ceo"                        element={<CEODashboard />} />
         <Route path="/hospital/coo"                        element={<COODashboard />} />
@@ -1619,7 +1634,20 @@ const AppRoutes = () => {
         {/* ── Ward / ADT / ER / HMIS (Phase 1-5 Patient Journey) ─────── */}
         <Route path="/hospital/ward"                                    element={<WardDashboard />} />
         <Route path="/hospital/adt/admit"                               element={<AdmitPatientForm />} />
+        <Route path="/hospital/adt/transfer"                            element={<HospitalADTTransfer />} />
         <Route path="/hospital/adt/er-to-ip"                           element={<AdmitPatientForm />} />
+        <Route path="/hospital/vitals/record"                           element={<HospitalVitalsRecord />} />
+        <Route path="/hospital/doctor-workspace"                        element={<HospitalDoctorWorkspace />} />
+        <Route path="/hospital/nurse-station"                           element={<HospitalNurseStation />} />
+        <Route path="/hospital/ai-scribe"                             element={<HospitalAIScribe />} />
+        <Route path="/hospital/clinical-cdss"                           element={<HospitalClinicalCDSS />} />
+        <Route path="/hospital/voice-assistant"                         element={<HospitalVoiceAssistantPage />} />
+        <Route path="/hospital/teleconsult"                             element={<HospitalTeleconsult />} />
+        <Route path="/hospital/icu-board"                               element={<HospitalICUBoard />} />
+        <Route path="/hospital/radiology"                               element={<HospitalRadiology />} />
+        <Route path="/hospital/pharmacy-dispense"                       element={<HospitalPharmacyDispense />} />
+        <Route path="/hospital/security"                                element={<HospitalSecurity />} />
+        <Route path="/hospital/corporate-crm"                           element={<HospitalCorporateCRM />} />
         <Route path="/hospital/er/queue"                                element={<ERQueuePage />} />
         <Route path="/patient/care-journey"                             element={<SmartCareNavigator />} />
         <Route path="/hmis/patient/:patientId/timeline"                 element={<PatientTimeline />} />

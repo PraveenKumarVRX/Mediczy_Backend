@@ -42,10 +42,19 @@ export default function BedMap() {
     try {
       const wardParam = wardFilter !== 'all' ? `?wardId=${wardFilter}` : '';
       const [bedsRes, censusRes] = await Promise.allSettled([
-        api.get(`/api/v1/beds/map${wardParam}`),
-        api.get('/api/v1/beds/census'),
+        api.get(`/v1/beds/map${wardParam}`),
+        api.get('/v1/beds/census'),
       ]);
-      if (bedsRes.status === 'fulfilled') setBeds(bedsRes.value.data?.data ?? []);
+      if (bedsRes.status === 'fulfilled') {
+        const raw = bedsRes.value.data?.data ?? [];
+        setBeds(raw.map((b: any) => ({
+          bedId: b.id,
+          bedNumber: b.bed_number,
+          ward: b.ward_name || 'Ward',
+          wardId: b.ward_id,
+          status: b.status,
+        })));
+      }
       if (censusRes.status === 'fulfilled') setCensus(censusRes.value.data?.data ?? null);
       setError(null);
     } catch (e: any) {
@@ -60,7 +69,7 @@ export default function BedMap() {
   const reserveBed = async (bedId: number) => {
     setReserving(bedId);
     try {
-      await api.post('/api/v1/beds/reserve', { bedId });
+      await api.post('/v1/beds/reserve', { bedId });
       setBeds(prev => prev.map(b => b.bedId === bedId ? { ...b, status: 'occupied' } : b));
     } catch (e: any) {
       setError(e?.response?.data?.message ?? 'Reservation failed');

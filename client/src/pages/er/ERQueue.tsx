@@ -8,6 +8,7 @@ import {
   RefreshCw, Siren, HeartPulse, Stethoscope
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import api from '@/utils/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -140,8 +141,8 @@ export default function ERQueue() {
 
   const loadQueue = useCallback(async () => {
     try {
-      const res = await fetch('/api/v1/er/queue', { credentials: 'include' });
-      const json = await res.json();
+      const res = await api.get('/v1/er/queue');
+      const json = res.data;
       if (json.success) setQueue(json.data);
     } catch {}
     setLoading(false);
@@ -162,17 +163,12 @@ export default function ERQueue() {
 
     setActivatingOT(patient.id);
     try {
-      const res = await fetch('/api/v1/er/emergency-ot', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          patientId: patient.patient_id,
-          procedureName,
-          notes: `Emergency OT from ER queue — ${patient.chief_complaint || ''}`
-        })
+      const res = await api.post('/v1/er/emergency-ot', {
+        patientId: patient.patient_id,
+        procedureName,
+        notes: `Emergency OT from ER queue — ${patient.chief_complaint || ''}`,
       });
-      const json = await res.json();
+      const json = res.data;
       if (json.success) {
         alert(`Emergency OT activated — Room allocated. Booking #${json.data?.id}`);
       } else {

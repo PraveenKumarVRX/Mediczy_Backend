@@ -64,13 +64,13 @@ export default function AIOperationsHub() {
     setLoading(true);
     try {
       if (tab === 'forecast') {
-        const r = await api.get('/api/v1/ai-ops/capacity-forecast?hours=24');
+        const r = await api.get('/v1/ai-ops/capacity-forecast?hours=24');
         setForecast(r.data?.data ?? null);
       } else if (tab === 'docs') {
-        const r = await api.get('/api/v1/ai-ops/documentation-audit');
+        const r = await api.get('/v1/ai-ops/documentation-audit');
         setDocAudit(r.data?.data ?? null);
       } else if (tab === 'workload') {
-        const r = await api.get('/api/v1/ai-ops/workload-balance');
+        const r = await api.get('/v1/ai-ops/workload-balance');
         setWorkload(r.data?.data ?? null);
       }
       setLastUpdated(new Date());
@@ -85,7 +85,7 @@ export default function AIOperationsHub() {
     setBedLoading(true);
     setBedResult(null);
     try {
-      const r = await api.post('/api/v1/ai-ops/bed-allocation', bedForm);
+      const r = await api.post('/v1/ai-ops/bed-allocation', bedForm);
       setBedResult(r.data?.data ?? null);
     } catch (e: any) {
       setBedResult({ error: e?.response?.data?.message ?? 'Allocation failed' });

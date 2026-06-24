@@ -26,8 +26,8 @@ export default function HL7FHIRMonitor() {
     setLoading(true);
     try {
       const [s1, s2, s3] = await Promise.allSettled([
-        api.get('/api/v1/hl7/status'),
-        api.get('/api/v1/hl7/message-types'),
+        api.get('/v1/hl7/status'),
+        api.get('/v1/hl7/message-types'),
         api.get('/api/fhir/r4/metadata'),
       ]);
       if (s1.status === 'fulfilled') setHL7Status(s1.value.data?.data ?? null);
@@ -46,7 +46,7 @@ export default function HL7FHIRMonitor() {
     setValidateLoading(true);
     setValidateResult(null);
     try {
-      const res = await api.post('/api/v1/hl7/validate', { raw: validateInput });
+      const res = await api.post('/v1/hl7/validate', { raw: validateInput });
       setValidateResult(res.data);
     } catch (e: any) {
       setValidateResult({ valid: false, error: e?.response?.data?.message ?? e.message });

@@ -472,7 +472,7 @@ export default function AIDepartmentHub() {
 
   // Load summary on mount
   useEffect(() => {
-    api.get('/api/v1/ai-dept/summary').then(r => setSummary(r.data?.data)).catch(() => {});
+    api.get('/v1/ai-dept/summary').then(r => setSummary(r.data?.data)).catch(() => {});
   }, []);
 
   const loadDept = useCallback(async (id: DeptId) => {
@@ -480,7 +480,7 @@ export default function AIDepartmentHub() {
     setDeptData(null);
     setLoading(true);
     try {
-      const r = await api.get(`/api/v1/ai-dept/${id}`);
+      const r = await api.get(`/v1/ai-dept/${id}`);
       setDeptData(r.data?.data ?? {});
       setLastUpdated(new Date());
     } catch {

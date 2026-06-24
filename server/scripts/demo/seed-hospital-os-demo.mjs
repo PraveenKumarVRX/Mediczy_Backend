@@ -283,7 +283,44 @@ async function main() {
     console.log('✅ Discharge draft + clinical note seeded for Priya Singh');
   }
 
+  // ER queue demo patients
+  await run(`DELETE FROM er_visits WHERE organization_id = $1 AND created_at::date = CURRENT_DATE`, [orgId]).catch(() => {});
+  for (const er of [
+    { name: 'Rajesh Kumar', triage: 'red', complaint: 'Chest pain radiating to left arm', mlc: false },
+    { name: 'Meena Devi', triage: 'yellow', complaint: 'Road traffic accident — limb injury', mlc: true },
+    { name: 'Suresh Nair', triage: 'green', complaint: 'Minor laceration', mlc: false },
+  ]) {
+    await run(
+      `INSERT INTO er_visits (organization_id, patient_name, triage_level, chief_complaint, mlc_case, arrival_time, status)
+       VALUES ($1,$2,$3,$4,$5,NOW() - INTERVAL '30 minutes',$6)`,
+      [orgId, er.name, er.triage, er.complaint, er.mlc, 'active']
+    ).catch(() => {});
+  }
+  console.log('✅ ER triage queue seeded');
+
+  // OT booking for Priya (appendectomy completed)
+  if (priyaId && priyaAdmissionId) {
+    let otRoomId;
+    const otRoom = await run(`SELECT id FROM ot_rooms WHERE organization_id = $1 LIMIT 1`, [orgId]);
+    if (!otRoom.rows[0]) {
+      const ins = await run(
+        `INSERT INTO ot_rooms (organization_id, name, room_type, status, active) VALUES ($1,'OT-1','major','available',true) RETURNING id`,
+        [orgId]
+      );
+      otRoomId = ins.rows[0].id;
+    } else otRoomId = otRoom.rows[0].id;
+
+    await run(`DELETE FROM ot_bookings WHERE admission_id = $1`, [priyaAdmissionId]).catch(() => {});
+    await run(
+      `INSERT INTO ot_bookings (organization_id, admission_id, patient_id, ot_room_id, procedure_name, scheduled_start, scheduled_end, ot_status)
+       VALUES ($1,$2,$3,$4,'Laparoscopic appendectomy',NOW() - INTERVAL '1 day',NOW() - INTERVAL '22 hours','completed')`,
+      [orgId, priyaAdmissionId, priyaId, otRoomId]
+    ).catch(() => {});
+    console.log('✅ OT booking seeded');
+  }
+
   console.log('\n🎯 Demo ready (native stack — no Docker):');
+  console.log('   Hospital OS Hub: /hospital/os');
   console.log('   Hospital login: hospital@mediczy.com / Hospital123');
   console.log('   OPD display:    /display/queue?zone=opd-waiting');
   if (priyaId) console.log(`   Star patient:   Priya Singh (id=${priyaId})`);

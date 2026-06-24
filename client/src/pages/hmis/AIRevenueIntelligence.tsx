@@ -59,13 +59,13 @@ export default function AIRevenueIntelligence() {
     setLoading(true);
     try {
       if (tab === 'gaps') {
-        const r = await api.get('/api/v1/ai-revenue/billing-gaps');
+        const r = await api.get('/v1/ai-revenue/billing-gaps');
         setGaps(r.data?.data ?? null);
       } else if (tab === 'leakage') {
-        const r = await api.get('/api/v1/ai-revenue/leakage-score');
+        const r = await api.get('/v1/ai-revenue/leakage-score');
         setLeakage(r.data?.data ?? null);
       } else if (tab === 'denial') {
-        const r = await api.get('/api/v1/ai-revenue/denial-risk');
+        const r = await api.get('/v1/ai-revenue/denial-risk');
         setDenial(r.data?.data ?? null);
       }
       setLastUpdated(new Date());
@@ -81,7 +81,7 @@ export default function AIRevenueIntelligence() {
     setOrderLoading(true);
     setOrders(null);
     try {
-      const r = await api.post('/api/v1/ai-revenue/smart-orders', orderForm);
+      const r = await api.post('/v1/ai-revenue/smart-orders', orderForm);
       setOrders(r.data?.data ?? null);
     } finally {
       setOrderLoading(false);

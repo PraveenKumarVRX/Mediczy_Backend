@@ -71,8 +71,8 @@ export default function EChartingPage() {
     setLoading(true);
     try {
       const [flowRes, ioRes] = await Promise.all([
-        api.get(`/api/v1/echart/flowsheet/${admissionId}?limit=50`),
-        api.get(`/api/v1/echart/io/${admissionId}?days=3`)
+        api.get(`/v1/echart/flowsheet/${admissionId}?limit=50`),
+        api.get(`/v1/echart/io/${admissionId}?days=3`)
       ]);
       setEntries(flowRes.data?.data ?? []);
       setIOSummary(ioRes.data?.data ?? []);
@@ -89,7 +89,7 @@ export default function EChartingPage() {
   const submitVitals = async () => {
     setSaving(true);
     try {
-      await api.post('/api/v1/echart/entry', {
+      await api.post('/v1/echart/entry', {
         admissionId: parseInt(admissionId!),
         entryType: 'vitals',
         bpSystolic:      vitals.bpSystolic      ? parseInt(vitals.bpSystolic)      : undefined,
@@ -119,7 +119,7 @@ export default function EChartingPage() {
   const submitIO = async () => {
     setSaving(true);
     try {
-      await api.post('/api/v1/echart/entry', {
+      await api.post('/v1/echart/entry', {
         admissionId: parseInt(admissionId!),
         entryType: 'io',
         ioType: io.ioType,
@@ -139,7 +139,7 @@ export default function EChartingPage() {
   const submitObs = async () => {
     setSaving(true);
     try {
-      await api.post('/api/v1/echart/entry', {
+      await api.post('/v1/echart/entry', {
         admissionId: parseInt(admissionId!),
         entryType: 'observation',
         observationText: obs.observationText,

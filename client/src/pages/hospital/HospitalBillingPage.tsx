@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import HospitalLayout from '@/components/layout/HospitalLayout';
+import HospitalLayout from '@/components/hospital/HospitalLayout';
 import api from '@/utils/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';

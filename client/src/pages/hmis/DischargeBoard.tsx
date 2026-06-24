@@ -60,7 +60,7 @@ export default function DischargeBoard() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/api/v1/adt/admissions?status=active');
+      const res = await api.get('/v1/adt/admissions?status=active');
       setAdmissions(res.data?.data ?? []);
       setError(null);
     } catch (e: any) {
@@ -75,7 +75,7 @@ export default function DischargeBoard() {
   const initiateDischarge = async (id: number) => {
     setDischarging(id);
     try {
-      await api.post('/api/v1/adt/discharge', { admissionId: id });
+      await api.post('/v1/adt/discharge', { admissionId: id });
       setAdmissions(prev => prev.filter(a => a.id !== id));
     } catch (e: any) {
       setError(e?.response?.data?.message ?? 'Discharge initiation failed');

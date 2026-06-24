@@ -58,7 +58,7 @@ export default function NursingTaskBoard() {
     if (!admissionId) return;
     setLoading(true);
     try {
-      const res = await api.get(`/api/v1/nursing/tasks?admissionId=${admissionId}`);
+      const res = await api.get(`/v1/nursing/tasks?admissionId=${admissionId}`);
       setTasks(res.data?.data ?? []);
       setError(null);
     } catch (e: any) {
@@ -74,7 +74,7 @@ export default function NursingTaskBoard() {
     if (!admissionId) return;
     setGenerating(true);
     try {
-      await api.post('/api/v1/nursing/tasks/auto-generate', { admissionId: parseInt(admissionId) });
+      await api.post('/v1/nursing/tasks/auto-generate', { admissionId: parseInt(admissionId) });
       await load();
     } catch (e: any) {
       setError(e?.response?.data?.message ?? 'Auto-generate failed');
@@ -86,7 +86,7 @@ export default function NursingTaskBoard() {
   const completeTask = async (taskId: number) => {
     setCompleting(taskId);
     try {
-      await api.put(`/api/v1/nursing/tasks/${taskId}/complete`, { notes: '' });
+      await api.put(`/v1/nursing/tasks/${taskId}/complete`, { notes: '' });
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'completed' } : t));
     } catch (e: any) {
       setError(e?.response?.data?.message ?? 'Could not complete task');

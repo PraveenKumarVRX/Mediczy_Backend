@@ -58,7 +58,7 @@ export default function AnesthesiaAssessment() {
     setSaving(true);
     setError(null);
     try {
-      await api.post('/api/v1/anesthesia/assessment', {
+      await api.post('/v1/anesthesia/assessment', {
         ...form,
         otBookingId: parseInt(otBookingId),
         mouth_opening_cm: form.mouth_opening_cm ? parseFloat(form.mouth_opening_cm) : null,

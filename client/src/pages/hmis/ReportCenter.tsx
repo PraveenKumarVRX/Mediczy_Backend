@@ -35,8 +35,8 @@ export default function ReportCenter() {
   const loadCatalogAndDigest = useCallback(async () => {
     try {
       const [catRes, digRes] = await Promise.allSettled([
-        api.get('/api/v1/reports/clinical/catalog'),
-        api.get('/api/v1/reports/clinical/executive-digest'),
+        api.get('/v1/reports/clinical/catalog'),
+        api.get('/v1/reports/clinical/executive-digest'),
       ]);
       if (catRes.status === 'fulfilled') setCatalog(catRes.value.data?.data ?? []);
       if (digRes.status === 'fulfilled') setDigest(digRes.value.data?.data ?? null);
@@ -51,7 +51,7 @@ export default function ReportCenter() {
     setLoading(true);
     setReportData(null);
     try {
-      const res = await api.get(`/api/v1/reports/clinical/${id}`);
+      const res = await api.get(`/v1/reports/clinical/${id}`);
       setReportData(res.data?.data ?? {});
     } finally {
       setLoading(false);

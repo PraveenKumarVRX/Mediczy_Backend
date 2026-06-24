@@ -42,7 +42,7 @@ export default function EMARPage() {
     setLoading(true);
     try {
       const wardParam = wardFilter !== 'all' ? `&wardId=${wardFilter}` : '';
-      const res = await api.get(`/api/v1/emar/due?window=${window}${wardParam}`);
+      const res = await api.get(`/v1/emar/due?window=${window}${wardParam}`);
       setItems(res.data?.data ?? []);
       setError(null);
     } catch (e: any) {
@@ -57,7 +57,7 @@ export default function EMARPage() {
   const administer = async (item: EMARItem) => {
     setAdministering(item.orderId);
     try {
-      await api.post('/api/v1/emar/administer', {
+      await api.post('/v1/emar/administer', {
         orderId: item.orderId,
         admissionId: item.admissionId,
         patientId: item.patientId,

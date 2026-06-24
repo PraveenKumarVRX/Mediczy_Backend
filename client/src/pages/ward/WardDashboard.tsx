@@ -376,7 +376,7 @@ export default function WardDashboard() {
                       size="sm"
                       variant="outline"
                       className="mt-2 h-6 text-xs w-full"
-                      onClick={() => navigate(`/hospital/emar/administer/${med.schedule_id}`)}
+                      onClick={() => navigate('/hmis/emar')}
                     >
                       Mark Given
                     </Button>
@@ -397,7 +397,7 @@ export default function WardDashboard() {
                   { label: 'Admit Patient',     path: '/hospital/adt/admit',         icon: Plus,          cls: 'bg-blue-600 text-white hover:bg-blue-700' },
                   { label: 'Transfer Bed',       path: '/hospital/adt/transfer',       icon: ArrowRight,    cls: 'bg-amber-500 text-white hover:bg-amber-600' },
                   { label: 'Record Vitals',      path: '/hospital/vitals/record',      icon: Heart,         cls: 'bg-teal-600 text-white hover:bg-teal-700' },
-                  { label: 'Initiate Discharge', path: '/hospital/adt/discharge',      icon: TrendingDown,  cls: 'bg-emerald-600 text-white hover:bg-emerald-700' },
+                  { label: 'Initiate Discharge', path: '/hmis/discharge-board',      icon: TrendingDown,  cls: 'bg-emerald-600 text-white hover:bg-emerald-700' },
                   { label: 'E-Charting',         path: '/hmis/echart',                 icon: ClipboardList, cls: 'bg-purple-600 text-white hover:bg-purple-700' },
                 ].map(a => (
                   <Button

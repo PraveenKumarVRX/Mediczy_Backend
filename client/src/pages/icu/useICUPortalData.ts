@@ -93,7 +93,7 @@ const getICUAuthHeaders = () => {
 export const fetchICUPortalData = async (): Promise<ICUPortalData> => {
   try {
     // Primary: new HMIS ICU API
-    const censusRes = await api.get('/api/v1/icu/census', { headers: getICUAuthHeaders() });
+    const censusRes = await api.get('/v1/icu/census', { headers: getICUAuthHeaders() });
     const patients: ICUPortalPatient[] = (censusRes.data?.data ?? []).map((p: any) => ({
       patientId:   p.patient_id,
       bedId:       p.id,
