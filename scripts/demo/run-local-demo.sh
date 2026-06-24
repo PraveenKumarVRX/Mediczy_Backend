@@ -43,12 +43,15 @@ cd "$ROOT/tests"
 node scripts/verify-hospital-os-flow.mjs
 
 if [[ "${RECORD:-1}" == "1" ]]; then
-  echo "==> Recording live demo video..."
+  echo "==> Recording FULL Hospital OS demo (all flows)..."
   mkdir -p /opt/cursor/artifacts/hospital-os-demo
   LIVE_MODE=1 BASE_URL="$BASE_URL" API_URL="$API_URL" \
     DEMO_OUTPUT_DIR=/opt/cursor/artifacts/hospital-os-demo \
-    node scripts/record-hospital-os-patient-flow.mjs
-  echo "✅ Video: /opt/cursor/artifacts/hospital-os-demo/mediqzy-hospital-os-patient-flow-demo.webm"
+    node "$ROOT/tests/scripts/record-hospital-os-full-demo.mjs" || \
+  LIVE_MODE=1 BASE_URL="$BASE_URL" API_URL="$API_URL" \
+    DEMO_OUTPUT_DIR=/opt/cursor/artifacts/hospital-os-demo \
+    node "$ROOT/scripts/demo/record-hospital-os-full-demo.mjs"
+  echo "✅ Full demo: /opt/cursor/artifacts/hospital-os-demo/mediqzy-hospital-os-full-demo.mp4"
 fi
 
 echo ""

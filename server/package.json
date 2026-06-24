@@ -19,6 +19,7 @@
     "dev:watch": "nodemon --watch . --ignore node_modules --ignore logs index.js",
     "demo:bootstrap": "node scripts/demo/bootstrap-hospital-os-db.mjs",
     "demo:seed": "node scripts/demo/seed-hospital-os-demo.mjs",
+    "demo:record": "node ../scripts/demo/record-hospital-os-full-demo.mjs",
     "demo:run": "bash ../scripts/demo/run-local-demo.sh",
     "prod": "NODE_ENV=production node index.js",
     "deploy": "../deploy-production.sh",
