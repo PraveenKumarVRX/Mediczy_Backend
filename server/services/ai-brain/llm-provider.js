@@ -195,9 +195,9 @@ async function callIsha(params) {
     }
   }
 
-  // bi-medix2 is a completion model — drop function-calling / internal-only fields
-  // it doesn't understand (tools, tool_choice, response_format, fastDeadline).
-  const { tools: _t, tool_choice: _tc, response_format: _rf, fastDeadline: _fd, ...rest } = params;
+  // bi-medix2 is a completion model — drop function-calling fields it doesn't
+  // understand (tools, tool_choice, response_format).
+  const { tools: _t, tool_choice: _tc, response_format: _rf, ...rest } = params;
   const sanitisedParams = { ...rest, messages };
 
   try {
@@ -341,9 +341,10 @@ async function callSib(params) {
 
   const baseUrl = getProviderEnv('SIB_URL') || 'http://localhost:8005';
   const url = `${baseUrl.replace(/\/$/, '')}/chat`;
-  // Interactive paths (voice assistant) need a tight deadline so a down/slow SIB
-  // does not produce multi-second dead-air before the cascade falls back.
-  const sibTimeoutMs = Number(getProviderEnv('SIB_TIMEOUT_MS')) || (params.fastDeadline ? 4_000 : 8_000);
+  // Default 8s matches the long-standing working behavior; SIB_TIMEOUT_MS lets ops
+  // tune it without code changes. Do NOT shorten blindly — SIB proxies to iSHA
+  // (bi-medix2) and clinical inference can legitimately take several seconds.
+  const sibTimeoutMs = Number(getProviderEnv('SIB_TIMEOUT_MS')) || 8_000;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), sibTimeoutMs);
 
@@ -570,10 +571,9 @@ async function callProvider(provider, params) {
     return callIsha(finalParams);
   }
 
-  // Groq / OpenAI use their respective SDKs — strip internal-only flags they don't accept
+  // Groq / OpenAI use their respective SDKs
   const client = provider.getClient();
-  const { fastDeadline: _fastDeadline, ...sdkParams } = finalParams;
-  return client.chat.completions.create(sdkParams);
+  return client.chat.completions.create(finalParams);
 }
 
 const CLINICAL_CACHE_KEYWORDS = /\b(symptom|symptoms|diagnos|triage|emergency|pain|fever|cough|blood pressure|bp|diabetes|hypertension|medication|medicine|drug|dose|dosage|prescription|allergy|lab report|test result|patient|clinical|treatment|therapy|risk score|chest pain|stroke|pregnan|infection|cancer|asthma|cardiac|renal|liver)\b/i;
@@ -615,7 +615,6 @@ async function chat({
   cacheScope = null,       // tenant/patient/session scope required before caching clinical text
   cognitiveTier = null,    // 'reflex' | 'standard' | 'deep' — from CognitiveRouter.classify()
   cognitiveDecisionId = null,  // for outcome recording
-  fastDeadline = false,    // interactive (voice) path — use a tight SIB timeout so dead-air is short
 }) {
   messages = sanitizeMessagesForLlm(messages);
   const dbConfig = await getModelConfig();
@@ -712,7 +711,6 @@ async function chat({
       messages,
       temperature: temp,
       max_tokens: maxTok,
-      fastDeadline,
     };
 
     if (tools && tools.length > 0) {

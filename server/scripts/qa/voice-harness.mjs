@@ -2,7 +2,7 @@
 /**
  * Isolated harness that mounts the REAL voice-assistant router with a stub auth
  * (req.skipAuth + injected doctor) so the actual route handlers — STT fallback
- * chain, agent deterministic routing, LLM fastDeadline plumbing — can be smoke
+ * chain, agent deterministic routing, LLM cascade — can be smoke
  * tested against the real DB + real llm-provider without the unrelated global
  * ring-fencing / doctor-schema auth plumbing.
  */

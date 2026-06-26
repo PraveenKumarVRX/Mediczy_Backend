@@ -1306,7 +1306,6 @@ Rules:
         temperature: 0.1,
         skipCache: true,
         forceProvider: 'sib',
-        fastDeadline: true,  // voice path — keep SIB dead-air short before cascading to Groq
       });
 
       const raw = (ishaResp.content || '').trim();
