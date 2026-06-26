@@ -1175,6 +1175,16 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
     });
   }
 
+  // Appointment-list intent must be checked BEFORE generic navigation: a phrase
+  // like "show today's appointments" should LIST appointments (with data), not
+  // just navigate to the appointments screen. inferAppointmentListFilter already
+  // excludes "open/go to/navigate" so pure navigation still falls through below.
+  const deterministicAppointmentFilter = inferAppointmentListFilter(trimmedText);
+  if (deterministicAppointmentFilter) {
+    const payload = await buildAppointmentListPayload(doctorId, { filter: deterministicAppointmentFilter });
+    return res.json(payload);
+  }
+
   const navScreen = inferNavigationScreen(trimmedText);
   if (navScreen) {
     const screenLabels = {
@@ -1226,12 +1236,6 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
       data: summary,
       requiresConfirmation: false,
     });
-  }
-
-  const deterministicAppointmentFilter = inferAppointmentListFilter(trimmedText);
-  if (deterministicAppointmentFilter) {
-    const payload = await buildAppointmentListPayload(doctorId, { filter: deterministicAppointmentFilter });
-    return res.json(payload);
   }
 
   // Build conversation messages with history for continuity (last 10 turns)
