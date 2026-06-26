@@ -915,9 +915,11 @@ router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req,
 
   const language = req.body.language || 'en';
   const GROQ_API_KEY = process.env.GROQ_API_KEY;
+  const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+  const attempted = [];
 
   // ── Primary: Groq Whisper (whisper-large-v3-turbo, ~300ms) ──────────────────
-  if (GROQ_API_KEY) {
+  if (GROQ_API_KEY && GROQ_API_KEY !== 'your_groq_api_key_here') {
     try {
       const groqForm = new FormData();
       groqForm.append('file', req.file.buffer, {
@@ -941,13 +943,47 @@ router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req,
         logger.info(`[STT] Groq Whisper: "${text.slice(0, 80)}"`);
         return res.json({ text, language, provider: 'groq-whisper' });
       }
-      logger.warn('[STT] Groq Whisper failed, falling back to local', { status: groqResp.status });
+      attempted.push('groq');
+      logger.warn('[STT] Groq Whisper failed, falling back', { status: groqResp.status });
     } catch (err) {
-      logger.warn('[STT] Groq Whisper error, falling back to local', { error: err.message });
+      attempted.push('groq');
+      logger.warn('[STT] Groq Whisper error, falling back', { error: err.message });
     }
   }
 
-  // ── Fallback: local Whisper (offline scribe, port 8006) ─────────────────────
+  // ── Fallback 1: OpenAI Whisper (whisper-1) ──────────────────────────────────
+  if (OPENAI_API_KEY && !OPENAI_API_KEY.startsWith('sk-proj-test') && OPENAI_API_KEY !== 'your-openai-api-key') {
+    try {
+      const oaForm = new FormData();
+      oaForm.append('file', req.file.buffer, {
+        filename: req.file.originalname || 'audio.wav',
+        contentType: req.file.mimetype || 'audio/wav',
+      });
+      oaForm.append('model', 'whisper-1');
+      if (language && language !== 'auto') oaForm.append('language', language);
+
+      const oaResp = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { ...oaForm.getHeaders(), 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+        body: oaForm,
+        timeout: 15000,
+      });
+
+      if (oaResp.ok) {
+        const data = await oaResp.json();
+        const text = (data.text || '').trim();
+        logger.info(`[STT] OpenAI Whisper: "${text.slice(0, 80)}"`);
+        return res.json({ text, language, provider: 'openai-whisper' });
+      }
+      attempted.push('openai');
+      logger.warn('[STT] OpenAI Whisper failed, falling back to local', { status: oaResp.status });
+    } catch (err) {
+      attempted.push('openai');
+      logger.warn('[STT] OpenAI Whisper error, falling back to local', { error: err.message });
+    }
+  }
+
+  // ── Fallback 2: local Whisper (offline scribe, port 8006) ───────────────────
   try {
     const form = new FormData();
     form.append('file', req.file.buffer, {
@@ -965,19 +1001,31 @@ router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req,
 
     if (!response.ok) {
       const errText = await response.text().catch(() => '');
-      return res.status(502).json({ error: `STT service error: ${errText.slice(0, 200)}` });
+      attempted.push('local-whisper');
+      logger.error('[VoiceAssistant] STT all providers failed', { attempted, localStatus: response.status });
+      return res.status(503).json({
+        error: 'Speech transcription is temporarily unavailable.',
+        code: 'stt_unavailable',
+        attempted,
+        detail: errText.slice(0, 200),
+      });
     }
 
     const data = await response.json();
     return res.json({
-      text: data.transcription || data.text || '',
+      text: data.transcription || data.transcript || data.text || '',
       language: data.detected_language || language,
       duration: data.duration_seconds || null,
       provider: 'local-whisper',
     });
   } catch (err) {
-    logger.error('[VoiceAssistant] STT error', { error: err.message });
-    return res.status(500).json({ error: err.message });
+    attempted.push('local-whisper');
+    logger.error('[VoiceAssistant] STT error — all providers exhausted', { error: err.message, attempted });
+    return res.status(503).json({
+      error: 'Speech transcription is temporarily unavailable. Please type your command.',
+      code: 'stt_unavailable',
+      attempted,
+    });
   }
 });
 
@@ -1254,6 +1302,7 @@ Rules:
         temperature: 0.1,
         skipCache: true,
         forceProvider: 'sib',
+        fastDeadline: true,  // voice path — keep SIB dead-air short before cascading to Groq
       });
 
       const raw = (ishaResp.content || '').trim();

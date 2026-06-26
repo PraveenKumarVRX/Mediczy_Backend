@@ -137,7 +137,10 @@ export default function DoctorVoiceAssistant() {
   const [pendingAction, setPendingAction] = useState<Message | null>(null);
   const [isAwoken, setIsAwoken]          = useState(false);   // assistant in active mode
   const [vadReady, setVadReady]          = useState(false);   // VAD model loaded
+  const [vadError, setVadError]          = useState<string | null>(null); // mic/model init failure
+  const [vadRetry, setVadRetry]          = useState(0);       // bump to re-init VAD
   const [micVolume, setMicVolume]        = useState(0);       // 0-1 orb animation input
+  const sttDownNotifiedRef               = useRef<number>(0); // throttle "STT down" feedback
 
   const vadRef           = useRef<MicVAD | null>(null);
   const speakAbortRef    = useRef<AbortController | null>(null);
@@ -296,14 +299,40 @@ export default function DoctorVoiceAssistant() {
   useEffect(() => {
     let vad: MicVAD | null = null;
 
-    const transcribeAudio = async (audio: Float32Array): Promise<string> => {
+    const transcribeAudio = async (audio: Float32Array): Promise<{ text: string; serviceDown: boolean }> => {
       const wav = float32ToWav(audio);
       const form = new FormData();
       form.append('audio', wav, 'recording.wav');
       try {
         const r = await api.post('/voice-assistant/stt', form, { headers: { 'Content-Type': 'multipart/form-data' } });
-        return (r.data?.text || '').trim();
-      } catch { return ''; }
+        return { text: (r.data?.text || '').trim(), serviceDown: false };
+      } catch (err: unknown) {
+        // 503 / stt_unavailable means the transcription backend is down — surface it
+        // instead of silently dropping the command (which looks like "not responding").
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        return { text: '', serviceDown: status === 503 || status === 502 || status === 500 || status === undefined };
+      }
+    };
+
+    const notifySttDown = () => {
+      // Throttle to once per 30s so we don't spam on every utterance
+      if (Date.now() - sttDownNotifiedRef.current < 30_000) return;
+      sttDownNotifiedRef.current = Date.now();
+      toast({
+        title: 'Voice transcription unavailable',
+        description: 'I could not hear that. Please type your command below.',
+        variant: 'destructive',
+      });
+      setMessages(prev => [...prev, {
+        id: `stt-down-${Date.now()}`,
+        role: 'assistant',
+        text: "I couldn't transcribe your voice just now — the speech service is unavailable. You can type your command instead.",
+        intent: 'error',
+        action: null,
+        parameters: null,
+        requiresConfirmation: false,
+        timestamp: new Date(),
+      }]);
     };
 
     MicVAD.new({
@@ -323,7 +352,8 @@ export default function DoctorVoiceAssistant() {
         // Don't process our own output or overlapping requests
         if (isSpeakingRef.current || isProcessingRef.current) return;
 
-        const transcript = await transcribeAudio(audio);
+        const { text: transcript, serviceDown } = await transcribeAudio(audio);
+        if (serviceDown) { notifySttDown(); return; }
         if (!transcript) return;
         const t = transcript.toLowerCase().trim();
 
@@ -363,7 +393,17 @@ export default function DoctorVoiceAssistant() {
       vadRef.current = v;
       v.start();
       setVadReady(true);
-    }).catch(err => console.warn('VAD init failed, voice commands require mic permission:', err));
+      setVadError(null);
+    }).catch(err => {
+      console.warn('VAD init failed, voice commands require mic permission:', err);
+      setVadReady(false);
+      // Distinguish permission denial from asset/model load failure for a clear CTA
+      const name = (err as Error)?.name || '';
+      const msg = /NotAllowed|Permission/i.test(name + String(err))
+        ? 'Microphone access was blocked. Allow mic permission to use voice commands.'
+        : 'Voice model failed to load. You can still type commands, or retry.';
+      setVadError(msg);
+    });
 
     return () => {
       vad?.destroy();
@@ -372,7 +412,7 @@ export default function DoctorVoiceAssistant() {
       stopSpeaking();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [vadRetry]);
 
   // ── Proactive briefing: poll every 2 min for urgent/high alerts ───────────
   const lastSpokenAlertRef = useRef<number>(0);
@@ -582,6 +622,7 @@ export default function DoctorVoiceAssistant() {
                 {isListening   ? "Listening…"
                 : isSpeaking   ? "Speaking…"
                 : isProcessing ? "Thinking…"
+                : vadError     ? "Voice input off · type below"
                 : vadReady     ? `Say "Hey iSHA" · SmartHealth`
                 : "Loading voice model…"}
               </p>
@@ -604,6 +645,24 @@ export default function DoctorVoiceAssistant() {
             </Button>
           </div>
         </div>
+
+        {/* ── Mic / voice-model error banner ────────────────────────────── */}
+        {vadError && (
+          <div className="flex items-center justify-between gap-3 px-5 py-2.5 bg-amber-950/70 border-b border-amber-700/60">
+            <div className="flex items-center gap-2 text-amber-200 text-xs">
+              <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+              <span>{vadError}</span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs border-amber-600 text-amber-200 hover:bg-amber-900/60 flex-shrink-0"
+              onClick={() => { setVadError(null); setVadRetry(c => c + 1); }}
+            >
+              <RotateCcw className="h-3 w-3 mr-1" /> Retry mic
+            </Button>
+          </div>
+        )}
 
         {/* ── Suggested prompts ─────────────────────────────────────────── */}
         <div className="flex gap-2 px-5 py-2.5 overflow-x-auto border-b border-slate-700/60 bg-slate-900/50">
@@ -767,7 +826,9 @@ export default function DoctorVoiceAssistant() {
           </div>
 
           <p className="text-center text-[10px] text-slate-600 mt-2">
-            {vadReady
+            {vadError
+              ? "Voice input unavailable — type your command above, or retry the mic."
+              : vadReady
               ? `Say "Hey iSHA" anytime · Tap the orb to activate · ${isAwoken ? "Active — listening for commands" : "Standby"}`
               : "Loading voice model…"}
           </p>
