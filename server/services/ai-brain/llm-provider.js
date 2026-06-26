@@ -195,7 +195,10 @@ async function callIsha(params) {
     }
   }
 
-  const sanitisedParams = { ...params, messages };
+  // bi-medix2 is a completion model — drop function-calling / internal-only fields
+  // it doesn't understand (tools, tool_choice, response_format, fastDeadline).
+  const { tools: _t, tool_choice: _tc, response_format: _rf, fastDeadline: _fd, ...rest } = params;
+  const sanitisedParams = { ...rest, messages };
 
   try {
     const res = await fetch(url, {
@@ -418,6 +421,21 @@ async function callSib(params) {
 
 // ─── Provider Definitions ───────────────────────────────────
 
+/**
+ * iSHA.buzz (bi-medix2 clinical LLM) is a real fallback — not just a diagnostics
+ * endpoint. It is enabled in the cascade whenever its credentials are configured,
+ * so the app reaches it directly when the SIB gateway is down (SIB is supposed to
+ * proxy to iSHA, so without this the model is unreachable if the gateway fails).
+ */
+function isIshaConfigured() {
+  return Boolean(
+    getProviderEnv('ISHA_AI_URL') &&
+    getProviderEnv('ISHA_AUTH_USERNAME') &&
+    getProviderEnv('ISHA_AUTH_PASSWORD')
+  );
+}
+const ISHA_DIRECT_ENABLED = isIshaConfigured();
+
 const PROVIDERS = [
   {
     name: 'sib',
@@ -444,12 +462,14 @@ const PROVIDERS = [
   },
   {
     name: 'isha',
-    label: 'iSHA.buzz direct (diagnostics only; app traffic goes through SIB)',
+    label: 'iSHA.buzz direct (bi-medix2 clinical LLM — fallback when SIB gateway is down)',
     model: getProviderEnv('ISHA_LLM_MODEL') || 'bi-medix2',
     getClient: () => ({ available: true }),
     useFetch: true,
-    priority: 90,
-    disabled: true,
+    priority: 2,
+    // Enabled as a genuine cascade fallback whenever iSHA credentials are set.
+    // Falls through gracefully (cascade continues) if the endpoint is unreachable.
+    disabled: !ISHA_DIRECT_ENABLED,
     extraBody: { agent_type: 'Clinical' },
   },
   {
