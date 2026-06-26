@@ -140,7 +140,15 @@ export default function DoctorVoiceAssistant() {
   const [vadError, setVadError]          = useState<string | null>(null); // mic/model init failure
   const [vadRetry, setVadRetry]          = useState(0);       // bump to re-init VAD
   const [micVolume, setMicVolume]        = useState(0);       // 0-1 orb animation input
+  const [sttMode, setSttMode]            = useState<'server' | 'browser'>('server'); // active transcription engine
   const sttDownNotifiedRef               = useRef<number>(0); // throttle "STT down" feedback
+
+  // Browser-native Web Speech API is a zero-dependency STT fallback (Chrome/Edge).
+  // It runs entirely on-device, so voice commands keep working even when the
+  // server transcription providers (Groq/OpenAI/offline-scribe) are unavailable.
+  const browserSttSupported = typeof window !== 'undefined' &&
+    !!((window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition ||
+       (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition);
 
   const vadRef           = useRef<MicVAD | null>(null);
   const speakAbortRef    = useRef<AbortController | null>(null);
@@ -157,6 +165,13 @@ export default function DoctorVoiceAssistant() {
   const speakRef         = useRef<((text: string) => void) | null>(null);
   const sendToAgentRef   = useRef<((text: string) => void) | null>(null);
   const awokenTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Browser SpeechRecognition fallback
+  const recognitionRef       = useRef<any>(null);                          // active SpeechRecognition instance
+  const recognitionActiveRef = useRef(false);                              // should recognition auto-restart
+  const micPausedRef         = useRef(false);                              // mic paused during TTS playback
+  const sttModeRef           = useRef<'server' | 'browser'>('server');     // current engine for callbacks
+  const processTranscriptRef = useRef<((t: string) => void) | null>(null); // shared wake/command handler
+  const startBrowserSttRef   = useRef<(() => boolean) | null>(null);       // late-bound starter
 
   // Keep refs in sync
   useEffect(() => { isAwokenRef.current     = isAwoken;     }, [isAwoken]);
@@ -198,8 +213,16 @@ export default function DoctorVoiceAssistant() {
   }, []);
 
   const speak = useCallback(async (text: string, onEnd?: () => void) => {
+    // Resume whichever capture engine is active (VAD or browser SpeechRecognition)
     const resumeVAD = () => {
-      vadRef.current?.start().catch(() => {});
+      micPausedRef.current = false;
+      if (sttModeRef.current === 'browser') {
+        if (recognitionActiveRef.current) {
+          try { recognitionRef.current?.start(); } catch { /* already running */ }
+        }
+      } else {
+        vadRef.current?.start().catch(() => {});
+      }
     };
 
     if (!ttsEnabled) { resumeVAD(); onEnd?.(); return; }
@@ -210,8 +233,13 @@ export default function DoctorVoiceAssistant() {
     const clean = text.replace(/[*_#`•]/g, "").trim().slice(0, 1000);
     if (!clean) { onEnd?.(); return; }
 
-    // Pause VAD while speaking so we don't transcribe our own output
-    vadRef.current?.pause();
+    // Pause capture while speaking so we don't transcribe our own output
+    micPausedRef.current = true;
+    if (sttModeRef.current === 'browser') {
+      try { recognitionRef.current?.stop(); } catch { /* noop */ }
+    } else {
+      vadRef.current?.pause();
+    }
 
     // Safety: resume VAD after 20s if audio never plays (silent failure)
     let safetyTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
@@ -295,8 +323,140 @@ export default function DoctorVoiceAssistant() {
   // ── Keep speakRef / sendToAgentRef in sync ────────────────────────────────
   useEffect(() => { speakRef.current = speak; }, [speak]);
 
+  // ── Shared transcript handler (used by BOTH VAD+server STT and browser STT) ─
+  const processTranscript = useCallback((raw: string) => {
+    const transcript = (raw || '').trim();
+    if (!transcript) return;
+    if (isSpeakingRef.current || isProcessingRef.current) return;
+    const t = transcript.toLowerCase().trim();
+
+    const FILLER = /^(um+|uh+|hmm+|okay|ok|yeah|yep|nope|ah+|oh+|er+|hm+|\.\.\.)$/i;
+    if (t.length < 2 || FILLER.test(t)) return;
+
+    if (!isAwokenRef.current) {
+      // Passive mode — only respond to wake phrase
+      if (isWakePhrase(t)) {
+        isAwokenRef.current = true;
+        setIsAwoken(true);
+        if (awokenTimerRef.current) clearTimeout(awokenTimerRef.current);
+        awokenTimerRef.current = setTimeout(() => { isAwokenRef.current = false; setIsAwoken(false); }, 60_000);
+
+        const inlineCommand = extractCommand(t);
+        if (inlineCommand.length > 3) {
+          sendToAgentRef.current?.(inlineCommand);
+        } else {
+          speakRef.current?.(`Yes, Dr. ${doctorFirstName}?`);
+        }
+      }
+    } else {
+      // Active mode — send to agent
+      if (awokenTimerRef.current) clearTimeout(awokenTimerRef.current);
+      awokenTimerRef.current = setTimeout(() => { isAwokenRef.current = false; setIsAwoken(false); }, 60_000);
+      sendToAgentRef.current?.(transcript);
+    }
+  }, [doctorFirstName]);
+  useEffect(() => { processTranscriptRef.current = processTranscript; }, [processTranscript]);
+
+  const notifySttDown = useCallback(() => {
+    // Throttle to once per 30s so we don't spam on every utterance
+    if (Date.now() - sttDownNotifiedRef.current < 30_000) return;
+    sttDownNotifiedRef.current = Date.now();
+    toast({
+      title: 'Voice transcription unavailable',
+      description: 'I could not hear that. Please type your command below.',
+      variant: 'destructive',
+    });
+    setMessages(prev => [...prev, {
+      id: `stt-down-${Date.now()}`,
+      role: 'assistant',
+      text: "I couldn't transcribe your voice just now — the speech service is unavailable. You can type your command instead.",
+      intent: 'error',
+      action: null,
+      parameters: null,
+      requiresConfirmation: false,
+      timestamp: new Date(),
+    }]);
+  }, [toast]);
+
+  // ── Browser-native SpeechRecognition (zero-dependency on-device STT) ────────
+  const startBrowserStt = useCallback((): boolean => {
+    const SR = (window as unknown as { SpeechRecognition?: any; webkitSpeechRecognition?: any }).SpeechRecognition
+      || (window as unknown as { webkitSpeechRecognition?: any }).webkitSpeechRecognition;
+    if (!SR) return false;
+
+    try { recognitionRef.current?.stop(); } catch { /* noop */ }
+    try { vadRef.current?.pause(); } catch { /* noop */ }
+
+    const rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = false;
+    rec.lang = 'en-IN';
+
+    rec.onstart = () => { setVadReady(true); setVadError(null); };
+    rec.onspeechstart = () => { if (!isSpeakingRef.current) setIsListening(true); };
+    rec.onspeechend = () => setIsListening(false);
+    rec.onresult = (e: any) => {
+      setIsListening(false);
+      if (isSpeakingRef.current || isProcessingRef.current || micPausedRef.current) return;
+      for (let i = e.resultIndex; i < e.results.length; i += 1) {
+        if (e.results[i].isFinal) {
+          const txt = (e.results[i][0]?.transcript || '').trim();
+          if (txt) processTranscriptRef.current?.(txt);
+        }
+      }
+    };
+    rec.onerror = (ev: any) => {
+      if (ev?.error === 'not-allowed' || ev?.error === 'service-not-allowed') {
+        recognitionActiveRef.current = false;
+        setVadReady(false);
+        setVadError('Microphone access was blocked. Allow mic permission to use voice commands.');
+      }
+      // 'no-speech' / 'aborted' / 'network' are transient — onend auto-restarts
+    };
+    rec.onend = () => {
+      if (recognitionActiveRef.current && !micPausedRef.current) {
+        try { rec.start(); } catch { /* already running */ }
+      }
+    };
+
+    recognitionRef.current = rec;
+    recognitionActiveRef.current = true;
+    try { rec.start(); return true; } catch { return false; }
+  }, []);
+  useEffect(() => { startBrowserSttRef.current = startBrowserStt; }, [startBrowserStt]);
+
+  // Auto-switch from server STT (VAD pipeline) to on-device browser STT.
+  const switchToBrowserStt = useCallback((): boolean => {
+    if (sttModeRef.current === 'browser') return true;
+    if (!browserSttSupported) return false;
+    try { vadRef.current?.destroy(); } catch { /* noop */ }
+    vadRef.current = null;
+    sttModeRef.current = 'browser';
+    setSttMode('browser');
+    const ok = startBrowserSttRef.current?.() ?? false;
+    if (ok) {
+      toast({ title: 'Switched to on-device voice', description: "Using your browser's built-in speech recognition." });
+    } else {
+      notifySttDown();
+    }
+    return ok;
+  }, [browserSttSupported, toast, notifySttDown]);
+
+  // ── Stop browser recognition on unmount ────────────────────────────────────
+  useEffect(() => () => {
+    recognitionActiveRef.current = false;
+    try { recognitionRef.current?.stop(); } catch { /* noop */ }
+    recognitionRef.current = null;
+  }, []);
+
   // ── VAD: always-on mic, auto-wake + auto-command ──────────────────────────
   useEffect(() => {
+    // Skip the VAD/server-STT pipeline entirely when running in browser-STT mode
+    if (sttModeRef.current === 'browser') {
+      startBrowserSttRef.current?.();
+      return;
+    }
+
     let vad: MicVAD | null = null;
 
     const transcribeAudio = async (audio: Float32Array): Promise<{ text: string; serviceDown: boolean }> => {
@@ -312,27 +472,6 @@ export default function DoctorVoiceAssistant() {
         const status = (err as { response?: { status?: number } })?.response?.status;
         return { text: '', serviceDown: status === 503 || status === 502 || status === 500 || status === undefined };
       }
-    };
-
-    const notifySttDown = () => {
-      // Throttle to once per 30s so we don't spam on every utterance
-      if (Date.now() - sttDownNotifiedRef.current < 30_000) return;
-      sttDownNotifiedRef.current = Date.now();
-      toast({
-        title: 'Voice transcription unavailable',
-        description: 'I could not hear that. Please type your command below.',
-        variant: 'destructive',
-      });
-      setMessages(prev => [...prev, {
-        id: `stt-down-${Date.now()}`,
-        role: 'assistant',
-        text: "I couldn't transcribe your voice just now — the speech service is unavailable. You can type your command instead.",
-        intent: 'error',
-        action: null,
-        parameters: null,
-        requiresConfirmation: false,
-        timestamp: new Date(),
-      }]);
     };
 
     MicVAD.new({
@@ -353,40 +492,17 @@ export default function DoctorVoiceAssistant() {
         if (isSpeakingRef.current || isProcessingRef.current) return;
 
         const { text: transcript, serviceDown } = await transcribeAudio(audio);
-        if (serviceDown) { notifySttDown(); return; }
-        if (!transcript) return;
-        const t = transcript.toLowerCase().trim();
-
-        // Filter noise
-        const FILLER = /^(um+|uh+|hmm+|okay|ok|yeah|yep|nope|ah+|oh+|er+|hm+|\.\.\.)$/i;
-        if (t.length < 2 || FILLER.test(t)) return;
-
-        if (!isAwokenRef.current) {
-          // Passive mode — only respond to wake phrase
-          if (isWakePhrase(t)) {
-            isAwokenRef.current = true;
-            setIsAwoken(true);
-            // Reset awoken state after 60s of no further interaction
-            if (awokenTimerRef.current) clearTimeout(awokenTimerRef.current);
-            awokenTimerRef.current = setTimeout(() => { isAwokenRef.current = false; setIsAwoken(false); }, 60_000);
-
-            // Extract command embedded in wake phrase (e.g. "Hey iSHA show appointments")
-            const inlineCommand = extractCommand(t);
-            if (inlineCommand.length > 3) {
-              // User said "Hey iSHA, do something" — process the command immediately
-              sendToAgentRef.current?.(inlineCommand);
-            } else {
-              // Pure wake phrase — short ack only (avoid duplicate briefing vs proactive poll)
-              const wakeMsg = `Yes, Dr. ${doctorFirstName}?`;
-              speakRef.current?.(wakeMsg);
-            }
+        if (serviceDown) {
+          // Server transcription is down — fall back to on-device browser STT if
+          // available so voice keeps working; otherwise tell the doctor to type.
+          if (browserSttSupported && sttModeRef.current === 'server') {
+            switchToBrowserStt();
+          } else {
+            notifySttDown();
           }
-        } else {
-          // Active mode — send to agent
-          if (awokenTimerRef.current) clearTimeout(awokenTimerRef.current);
-          awokenTimerRef.current = setTimeout(() => { isAwokenRef.current = false; setIsAwoken(false); }, 60_000);
-          sendToAgentRef.current?.(transcript);
+          return;
         }
+        processTranscriptRef.current?.(transcript);
       },
     }).then(v => {
       vad = v;
@@ -623,7 +739,7 @@ export default function DoctorVoiceAssistant() {
                 : isSpeaking   ? "Speaking…"
                 : isProcessing ? "Thinking…"
                 : vadError     ? "Voice input off · type below"
-                : vadReady     ? `Say "Hey iSHA" · SmartHealth`
+                : vadReady     ? (sttMode === 'browser' ? `On-device voice · Say "Hey iSHA"` : `Say "Hey iSHA" · SmartHealth`)
                 : "Loading voice model…"}
               </p>
             </div>
@@ -657,7 +773,15 @@ export default function DoctorVoiceAssistant() {
               size="sm"
               variant="outline"
               className="h-7 text-xs border-amber-600 text-amber-200 hover:bg-amber-900/60 flex-shrink-0"
-              onClick={() => { setVadError(null); setVadRetry(c => c + 1); }}
+              onClick={() => {
+                setVadError(null);
+                recognitionActiveRef.current = false;
+                try { recognitionRef.current?.stop(); } catch { /* noop */ }
+                recognitionRef.current = null;
+                sttModeRef.current = 'server';
+                setSttMode('server');
+                setVadRetry(c => c + 1);
+              }}
             >
               <RotateCcw className="h-3 w-3 mr-1" /> Retry mic
             </Button>
@@ -829,7 +953,7 @@ export default function DoctorVoiceAssistant() {
             {vadError
               ? "Voice input unavailable — type your command above, or retry the mic."
               : vadReady
-              ? `Say "Hey iSHA" anytime · Tap the orb to activate · ${isAwoken ? "Active — listening for commands" : "Standby"}`
+              ? `Say "Hey iSHA" anytime · Tap the orb to activate${sttMode === 'browser' ? ' · on-device speech' : ''} · ${isAwoken ? "Active — listening for commands" : "Standby"}`
               : "Loading voice model…"}
           </p>
         </div>
