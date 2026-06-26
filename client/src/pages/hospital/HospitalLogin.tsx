@@ -56,7 +56,8 @@ const HospitalLogin = () => {
       const hasSubdomain =
         hostParts.length > 2 &&
         hostname !== 'mediqzy.com' &&
-        hostname !== 'www.mediqzy.com';
+        hostname !== 'www.mediqzy.com' &&
+        hostname !== 'app.mediqzy.com';
       const subdomain = hasSubdomain ? hostParts[0] : undefined;
 
       const loginAttempts = subdomain

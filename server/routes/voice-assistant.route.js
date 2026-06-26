@@ -1136,8 +1136,26 @@ router.get('/livekit-token', authUser, requireDoctor, async (req, res) => {
 
 // ─── POST /agent — Text → Intent + Action/Answer ─────────────────────────────
 
+// Extract a patient name from recent appointment-list assistant messages in history.
+// Used by the deterministic cancel/reschedule path when the doctor says "cancel that".
+function extractPatientFromHistory(history) {
+  const lines = Array.isArray(history) ? history : [];
+  // Walk backwards through assistant messages looking for the appointment list format
+  // e.g. "09:00 — MR kumar (scheduled): ..." or "› HH:MM — Name (status)"
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const m = lines[i];
+    if (m.role !== 'assistant') continue;
+    const text = String(m.text || '');
+    const match = text.match(/[›•\-–]\s*\d{1,2}:\d{2}[^—]*—\s*([A-Za-z][A-Za-z\s.'-]{1,40})\s*\(/);
+    if (match) return match[1].trim();
+    const match2 = text.match(/([A-Z][A-Za-z\s.'-]{2,40})\s*\((?:scheduled|confirmed|pending|completed)\)/i);
+    if (match2) return match2[1].trim();
+  }
+  return null;
+}
+
 router.post('/agent', authUser, requireDoctor, async (req, res) => {
-  const { text, context = {}, history = [] } = req.body;
+  const { text, context = {}, history = [], pendingAction = null } = req.body;
   if (!text || typeof text !== 'string' || !text.trim()) {
     return res.status(400).json({ error: 'text is required' });
   }
@@ -1238,6 +1256,72 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
     });
   }
 
+  // ── Confirmation short-circuit ─────────────────────────────────────────────
+  // If the client sent a pendingAction and the user confirmed it, execute directly.
+  const CONFIRM_STARTS = /^(yes|yeah|yep|ok|okay|sure|proceed|go ahead|do it|please do|absolutely|affirmative|cancel it)\b/i;
+  const CONFIRM_NON_COMMAND = /^[a-z,.'!\s]*(confirmed?|please|it'?s?|that'?s?|right|fine|correct|proceed|go|ahead|done|great|perfect)?[,.'!\s]*$/i;
+  const isConfirmation = pendingAction?.action &&
+    CONFIRM_STARTS.test(trimmedText) &&
+    CONFIRM_NON_COMMAND.test(trimmedText.replace(CONFIRM_STARTS, '').trim());
+  if (isConfirmation) {
+    const { action: pendingTool, parameters: pendingArgs = {} } = pendingAction;
+    if (pendingTool === 'cancel_appointment') {
+      const result = await executeCancelAppointment(doctorId, pendingArgs.appointment_id, pendingArgs.patient_name, pendingArgs.reason || 'Cancelled by doctor');
+      const msg = result.success
+        ? `Appointment for ${result.cancelled[0].patientName} has been cancelled.`
+        : `Could not cancel: ${result.error}`;
+      return res.json({ intent: 'action', action: 'cancel_appointment', parameters: pendingArgs, response: msg, speak: msg, requiresConfirmation: false });
+    }
+    if (pendingTool === 'reschedule_appointment') {
+      const result = await executeRescheduleAppointment(doctorId, pendingArgs.appointment_id, pendingArgs.patient_name, pendingArgs.new_date, pendingArgs.new_time);
+      const msg = result.success
+        ? `Appointment for ${result.rescheduled.patientName} rescheduled to ${result.newDate} at ${result.newTime}.`
+        : `Could not reschedule: ${result.error}`;
+      return res.json({ intent: 'action', action: 'reschedule_appointment', parameters: pendingArgs, response: msg, speak: msg, requiresConfirmation: false });
+    }
+    if (pendingTool === 'schedule_followup') {
+      const days = parseInt(pendingArgs.days, 10) || 7;
+      const followUpDate = new Date();
+      followUpDate.setDate(followUpDate.getDate() + days);
+      const dateStr = followUpDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+      const msg = `Follow-up scheduled in ${days} days (${dateStr}).`;
+      return res.json({ intent: 'action', action: 'schedule_followup', parameters: pendingArgs, response: msg, speak: msg, requiresConfirmation: false });
+    }
+  }
+
+  // ── Deterministic cancel detection ────────────────────────────────────────
+  // "cancel that", "cancel the appointment", "cancel it", "cancel mr kumar" etc.
+  // Resolved from conversation history — avoids LLM misclassification entirely.
+  const CANCEL_RE = /\b(cancel|cancell?ing|undo)\b/i;
+  const APPOINTMENT_REF_RE = /\b(appointment|booking|slot|visit|that|it|the|this|him|her)\b/i;
+  const CANCEL_WITH_NAME_RE = /\bcancel(?:l?ing)?\s+(?:the\s+)?(?:mr\.?\s+|dr\.?\s+|ms\.?\s+)?[A-Za-z][A-Za-z\s.'-]{2,}/i;
+  if (CANCEL_RE.test(trimmedText) && (APPOINTMENT_REF_RE.test(trimmedText) || CANCEL_WITH_NAME_RE.test(trimmedText) || extractPatientFromHistory(history))) {
+    let patientName = null;
+    const nameFromText = trimmedText.match(/\bcancel(?:l?ing)?\s+(?:the\s+)?(?:appointment\s+(?:for|of)\s+)?(?:mr\.?\s+|dr\.?\s+|ms\.?\s+)?([A-Za-z][A-Za-z\s.'-]{2,40}?)(?:\s*['']s)?\s*(?:appointment|booking)?\s*$/i);
+    if (nameFromText) patientName = nameFromText[1].trim();
+    // Reference/filler words ("that", "it", "the appointment"…) are not patient names —
+    // fall back to resolving the patient from the recent appointment list in history.
+    const REFERENCE_WORDS = /^(that|it|this|the|him|her|appointment|booking|slot|visit|the appointment|my appointment)$/i;
+    if (patientName && REFERENCE_WORDS.test(patientName)) patientName = null;
+    if (!patientName) patientName = extractPatientFromHistory(history);
+
+    if (patientName) {
+      const result = await executeCancelAppointment(doctorId, null, patientName, 'Cancelled by doctor via voice');
+      let msg;
+      if (result.success && result.cancelled.length > 0) {
+        const c = result.cancelled[0];
+        msg = `Appointment for ${c.patientName} on ${new Date(c.appointmentDate).toLocaleDateString('en-IN')} at ${c.appointmentTime} has been cancelled.`;
+      } else {
+        msg = result.error === 'No matching active appointment found.'
+          ? `No active appointment found for ${patientName}. It may already be cancelled or completed.`
+          : `Could not cancel: ${result.error}`;
+      }
+      return res.json({ intent: 'action', action: 'cancel_appointment', parameters: { patient_name: patientName }, response: msg, speak: msg, data: result, requiresConfirmation: false });
+    }
+    const askMsg = "Who should I cancel the appointment for? Please say the patient's name.";
+    return res.json({ intent: 'action', action: 'cancel_appointment', parameters: {}, response: askMsg, speak: askMsg, requiresConfirmation: false });
+  }
+
   // Build conversation messages with history for continuity (last 10 turns)
   const historyMessages = Array.isArray(history)
     ? history.slice(-10).map(m => ({
@@ -1273,29 +1357,37 @@ Available actions and their parameters:
 - "medical_query"           → {"query":"the clinical question"}
 - "general"                 → {}
 
-Rules:
-- IDENTITY / GREETING (who are you, what can you do, hello, hi, good morning, introduce yourself) → {"action":"general","parameters":{},"response":"I'm iSHA, your AI clinical assistant. I can manage appointments, tasks, patient health, drug questions, and clinical notes — just speak naturally."}
-- NON-CLINICAL QUERY (geography, capital cities, history, sports, weather, trivia, coding, general knowledge, politics, entertainment) → respond ONLY: {"action":"general","parameters":{},"response":"I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks."}
-- TASK / REMINDER / TO-DO (remind me, add task, note to self, don't forget, I need to, add to my list) → add_task with title extracted from speech
-- SHOW TASKS / MY LIST / WHAT DO I NEED TO DO → list_tasks
-- DONE / COMPLETED / MARK AS DONE / FINISHED TASK → complete_task
-- "reschedule" → always reschedule_appointment
-- "alerts / messages / updates / notifications / briefing / what's new" → always get_doctor_briefing (NOT get_today_summary)
-- "how many patients / appointment count / today's summary" → get_today_summary
-- DRUG DOSE / SIDE EFFECTS / INDICATION / CONTRAINDICATION (e.g. "dose of metformin", "side effects of aspirin", "when to use lisinopril") → get_drug_info with {"drug":"<name>","question":"<specific aspect>"}
-- DRUG INTERACTIONS (e.g. "interaction between X and Y", "can I combine X with Y") → check_drug_interactions with {"drugs":["X","Y"]}
-- CLINICAL / MEDICAL QUESTION without a specific drug (diagnosis criteria, treatment protocol, symptoms, physiology) → medical_query with {"query":"<question>"}
-- For get_drug_info, check_drug_interactions, medical_query: write the full clinical answer directly in "response"
-- For all other actions: write a 1-sentence spoken confirmation in "response"`;
+STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointment/booking/task actions):
+- CANCEL / UNDO appointment → cancel_appointment (NEVER medical_query)
+- BOOK / SCHEDULE appointment → book_appointment (NEVER medical_query)
+- RESCHEDULE / MOVE appointment → reschedule_appointment (NEVER medical_query)
+- CONFIRM / YES / PROCEED → if previous assistant message shows a pending action, use general with response "Executing…" (the server handles execution via pendingAction)
+- IDENTITY / GREETING (who are you, hello, hi, good morning) → general
+- NON-CLINICAL QUERY (geography, capitals, sports, weather, coding, trivia) → general with response "I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks."
+- TASK / REMINDER / TO-DO (remind me, add task, note to self) → add_task
+- SHOW TASKS / MY LIST → list_tasks
+- DONE / MARK AS DONE → complete_task
+- RESCHEDULE → always reschedule_appointment
+- ALERTS / BRIEFING / WHAT'S NEW → get_doctor_briefing
+- HOW MANY PATIENTS / TODAY'S SUMMARY → get_today_summary
+- DRUG DOSE / SIDE EFFECTS / INDICATION / CONTRAINDICATION → get_drug_info with {"drug":"<name>","question":"<aspect>"}
+- DRUG INTERACTIONS → check_drug_interactions with {"drugs":["drug1","drug2"]}
+- CLINICAL/MEDICAL QUESTION (diagnosis, symptoms, treatment, physiology — NOT appointments or tasks) → medical_query with {"query":"<question>"}
+- For get_drug_info, check_drug_interactions, medical_query: write the full clinical answer in "response". For all others: 1-sentence spoken confirmation.
+- NEVER respond with "I understood this as a health intelligence request" or ask for confirmation — just classify and respond.`;
 
   try {
-    // ── Step 1: Call central LLM router (SIB-first) for JSON intent ─────
+    // ── Step 1: Call LLM router for JSON intent classification ─────
     let toolName = null;
     let args = {};
     let directContent = null;
     let ishaOk = false;
 
     try {
+      // Use Groq for intent JSON classification (instruction-following, JSON-reliable).
+      // iSHA (sib) is a medical knowledge model — good for medical_query answers, poor
+      // for command routing — so command classification goes to Groq, while medical
+      // answers still cascade through SIB/iSHA below.
       const ishaResp = await llmProvider.chat({
         messages: [
           { role: 'system', content: ishaIntentPrompt },
@@ -1305,7 +1397,7 @@ Rules:
         maxTokens: 600,
         temperature: 0.1,
         skipCache: true,
-        forceProvider: 'sib',
+        forceProvider: 'groq',
       });
 
       const raw = (ishaResp.content || '').trim();

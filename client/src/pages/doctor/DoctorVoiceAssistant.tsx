@@ -479,10 +479,14 @@ export default function DoctorVoiceAssistant() {
       onnxWASMBasePath: '/',
       model:           'legacy',
       ortConfig:  (ort) => { ort.env.wasm.wasmPaths = '/'; },
-      positiveSpeechThreshold: 0.75,
-      negativeSpeechThreshold: 0.55,
-      minSpeechFrames:   4,
-      preSpeechPadFrames: 5,
+      // 0.65 starts detecting speech sooner (was 0.75 — too late, missing "Hey iSHA" start)
+      positiveSpeechThreshold: 0.65,
+      // 0.45 holds on longer before declaring silence (was 0.55 — cutting off too early)
+      negativeSpeechThreshold: 0.45,
+      // 8 frames = ~256ms minimum clip (was 4 — clips too short for Whisper)
+      minSpeechFrames:   8,
+      // 20 frames = ~640ms pre-roll (was 5/160ms — missed first syllable of wake phrase)
+      preSpeechPadFrames: 20,
       onFrameProcessed: ({ isSpeech }) => { setMicVolume(isSpeech); },
       onSpeechStart: () => { setIsListening(true); },
       onSpeechEnd: async (audio) => {
@@ -612,6 +616,10 @@ export default function DoctorVoiceAssistant() {
         text,
         history,
         context: { currentScreen: window.location.pathname.split("/").pop() || "dashboard" },
+        // Pass pending action so server can execute it directly when user says "yes/confirm"
+        pendingAction: pendingAction
+          ? { action: pendingAction.action, parameters: pendingAction.parameters }
+          : null,
       });
 
       const displayText = (data.speak && data.response && data.response.length > data.speak.length + 40)
@@ -655,7 +663,7 @@ export default function DoctorVoiceAssistant() {
     } finally {
       setIsProcessing(false);
     }
-  }, [speak, executeAction]);
+  }, [speak, executeAction, pendingAction]);
 
   // Keep sendToAgentRef in sync
   useEffect(() => { sendToAgentRef.current = sendToAgent; }, [sendToAgent]);
