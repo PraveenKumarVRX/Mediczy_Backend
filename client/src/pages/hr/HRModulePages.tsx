@@ -11,6 +11,7 @@ import {
   ShieldCheck, Gift, FileText, TrendingUp, ClipboardCheck,
   Building2, Phone, Mail, MapPin, CheckCircle2, AlertCircle,
   XCircle, MoreHorizontal, Edit, Eye, CalendarCheck, Activity,
+  Fingerprint, RefreshCw, Trash2, Wifi, WifiOff, Database,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { exportToExcel } from '@/utils/exportToExcel';
@@ -29,7 +30,9 @@ export const hrNavSections: DeptNavSection[] = [
       { icon: Calendar,    label: 'Attendance',         href: '/hr/attendance' },
       { icon: CalendarOff, label: 'Leave Management',   href: '/hr/leaves' },
       { icon: Clock,       label: 'Shifts & Roster',    href: '/hr/shifts' },
+      { icon: FileText,    label: 'Timesheets',         href: '/hr/timesheets' },
       { icon: ClipboardCheck, label: 'Onboarding',      href: '/hr/onboarding' },
+      { icon: FileText, label: 'Documents',             href: '/hr/documents' },
     ],
   },
   {
@@ -46,6 +49,8 @@ export const hrNavSections: DeptNavSection[] = [
       { icon: Briefcase,    label: 'Recruitment', href: '/hr/recruitment' },
       { icon: GraduationCap,label: 'Training',    href: '/hr/training' },
       { icon: Star,         label: 'Performance', href: '/hr/performance' },
+      { icon: TrendingUp,   label: 'Goals & OKRs', href: '/hr/goals' },
+      { icon: Activity,     label: 'Engagement',   href: '/hr/surveys' },
       { icon: TrendingUp,   label: 'Appraisals',  href: '/hr/appraisals' },
     ],
   },
@@ -103,6 +108,14 @@ const sc: Record<string, string> = {
   Absent:    'bg-red-100 text-red-700',
   Late:      'bg-amber-100 text-amber-700',
   Open:      'bg-blue-100 text-blue-700',
+  Draft:     'bg-slate-100 text-slate-600',
+  Paused:    'bg-amber-100 text-amber-700',
+  Sourced:   'bg-slate-100 text-slate-600',
+  Screening: 'bg-blue-100 text-blue-700',
+  Shortlisted: 'bg-teal-100 text-teal-700',
+  Interview: 'bg-violet-100 text-violet-700',
+  Offer:     'bg-amber-100 text-amber-700',
+  Hired:     'bg-emerald-100 text-emerald-700',
   Closed:    'bg-slate-100 text-slate-600',
   Scheduled: 'bg-violet-100 text-violet-700',
   Completed: 'bg-emerald-100 text-emerald-700',
@@ -120,69 +133,357 @@ const TD = ({ children, center }: { children: React.ReactNode; center?: boolean 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 1. STAFF DIRECTORY
 // ═══════════════════════════════════════════════════════════════════════════════
-const staff = [
-  { id: 'EMP001', name: 'Dr. Kavita Joshi',   dept: 'Cardiology',   role: 'Consultant',     phone: '9876543210', joined: '01-Mar-26', status: 'Active' },
-  { id: 'EMP002', name: 'Sanjay Kumar',        dept: 'Nursing',      role: 'Staff Nurse',    phone: '9876543211', joined: '05-Mar-26', status: 'Active' },
-  { id: 'EMP003', name: 'Pooja Verma',         dept: 'Accounts',     role: 'Billing Exec',   phone: '9876543212', joined: '10-Mar-26', status: 'Active' },
-  { id: 'EMP004', name: 'Mohammed Iqbal',      dept: 'Housekeeping', role: 'Ward Attender',  phone: '9876543213', joined: '12-Mar-26', status: 'Active' },
-  { id: 'EMP005', name: 'Dr. Ramesh Pillai',   dept: 'Orthopaedics', role: 'Consultant',     phone: '9876543214', joined: '15-Feb-26', status: 'Active' },
-  { id: 'EMP006', name: 'Sunita Rao',          dept: 'OT',           role: 'OT Technician',  phone: '9876543215', joined: '20-Jan-26', status: 'Active' },
-  { id: 'EMP007', name: 'Arun Sharma',         dept: 'Radiology',    role: 'Radiographer',   phone: '9876543216', joined: '01-Jan-26', status: 'Inactive' },
-  { id: 'EMP008', name: 'Meena Nair',          dept: 'Pharmacy',     role: 'Pharmacist',     phone: '9876543217', joined: '15-Dec-25', status: 'Active' },
-];
+type StaffMember = {
+  id: number | string;
+  employeeCode: string;
+  biometricUserId?: string | null;
+  firstName?: string;
+  lastName?: string;
+  name: string;
+  email: string;
+  phone?: string;
+  department: string;
+  locationId?: number | string | null;
+  locationName?: string | null;
+  branchCode?: string | null;
+  designation: string;
+  employmentType?: string;
+  role: string;
+  joinedAt?: string;
+  status: string;
+  gender?: string;
+  deviceUid?: string | null;
+};
+
+type BiometricDevice = {
+  id: number | string;
+  deviceUid: string;
+  name: string;
+  location?: string | null;
+  locationId?: number | string | null;
+  locationName?: string | null;
+  vendor?: string | null;
+  connectionType?: string;
+  status: string;
+  lastSyncAt?: string | null;
+};
+
+type HrLocation = {
+  id: number | string;
+  code: string;
+  name: string;
+  locationType?: string;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  status: string;
+};
+
+type HrUser = {
+  id: number | string;
+  name: string;
+  email: string;
+  phone?: string;
+  role: string;
+  status: string;
+  permissions?: string[];
+  locationIds?: string[];
+  locations?: HrLocation[];
+};
+
+type HrFeature = { key: string; label: string };
+
+type HrSummary = {
+  totalStaff: number;
+  activeStaff: number;
+  presentToday: number;
+  absentToday: number;
+  attendanceRate: number;
+  biometricEventsToday: number;
+  devices: { total: number; online: number };
+  byDepartment: Record<string, number>;
+  byLocation?: Record<string, number>;
+};
+
+type AttendanceRow = {
+  staffId: number | string;
+  employeeCode: string;
+  name: string;
+  department: string;
+  checkIn?: string | null;
+  checkOut?: string | null;
+  hours?: number | null;
+  status: string;
+  source: string;
+  deviceName?: string | null;
+  events: number;
+};
+
+type AttendancePayload = {
+  date: string;
+  summary: { present: number; absent: number; late: number; total: number; biometricEvents: number };
+  rows: AttendanceRow[];
+};
+
+type AuditEvent = {
+  id: number | string;
+  eventAt: string;
+  eventType: string;
+  source: string;
+  employeeCode?: string | null;
+  biometricUserId?: string | null;
+  deviceName?: string | null;
+  deviceUid?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
+};
+
+const unwrapData = <T,>(response: any, fallback: T): T => response?.data?.data ?? response?.data ?? fallback;
+const hrHeaders = () => {
+  const token = localStorage.getItem('hrToken') || localStorage.getItem('hospitalToken') || localStorage.getItem('token') || '';
+  return token ? { Authorization: 'Bearer ' + token } : {};
+};
+const errText = (error: any) => error?.response?.data?.message || error?.message || 'Request failed';
+const displayDate = (value?: string | null) => value ? new Date(value).toLocaleDateString() : '-';
+const statusLabel = (value?: string) => {
+  const normalized = String(value || '').toLowerCase();
+  if (normalized === 'active') return 'Active';
+  if (normalized === 'inactive') return 'Inactive';
+  if (normalized === 'online') return 'Active';
+  if (normalized === 'offline') return 'Inactive';
+  if (normalized === 'late') return 'Late';
+  if (normalized === 'present') return 'Present';
+  if (normalized === 'absent') return 'Absent';
+  return value || '-';
+};
+const todayDate = () => new Date().toISOString().slice(0, 10);
+const currentTime = () => new Date().toISOString().slice(11, 16);
+const makeStaffForm = () => ({
+  firstName: '',
+  lastName: '',
+  email: '',
+  phone: '',
+  department: 'General',
+  designation: '',
+  role: 'staff',
+  gender: 'Other',
+  dateOfBirth: '1990-01-01',
+  joinedAt: todayDate(),
+  employmentType: 'Full-time',
+  employeeCode: '',
+  biometricUserId: '',
+  deviceUid: '',
+  locationId: '',
+  locationName: '',
+  branchCode: '',
+});
+const roleOptions = ['staff', 'doctor', 'nurse', 'receptionist', 'billing', 'accounts_staff', 'mrd_staff', 'insurance_desk_staff', 'hr_staff', 'it_edp_staff', 'ot_staff', 'icu_staff', 'quality_staff', 'security_staff', 'pharmacy_staff', 'lab_staff'];
+const departmentOptions = ['General', 'Nursing', 'OPD', 'IPD', 'ICU', 'OT', 'Pharmacy', 'Laboratory', 'Radiology', 'Accounts', 'Billing', 'Front Office', 'Housekeeping', 'Security', 'HR'];
 
 export const HRStaffPage = () => {
   const [q, setQ] = useState('');
-  const [deptF, setDeptF] = useState('All');
-  const depts = ['All', ...Array.from(new Set(staff.map(s => s.dept)))];
-  const rows = staff.filter(s =>
-    (deptF === 'All' || s.dept === deptF) &&
-    (s.name.toLowerCase().includes(q.toLowerCase()) || s.id.toLowerCase().includes(q.toLowerCase()))
+  const [deptF, setDeptF] = useState('all');
+  const [locationF, setLocationF] = useState('all');
+  const [staffRows, setStaffRows] = useState<StaffMember[]>([]);
+  const [devices, setDevices] = useState<BiometricDevice[]>([]);
+  const [locations, setLocations] = useState<HrLocation[]>([]);
+  const [summary, setSummary] = useState<HrSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [staffForm, setStaffForm] = useState(makeStaffForm);
+  const [deviceForm, setDeviceForm] = useState({ deviceUid: '', name: '', location: '', locationId: '', vendor: 'ZKTeco', connectionType: 'api', status: 'online' });
+
+  const load = async () => {
+    setLoading(true);
+    setMessage('');
+    try {
+      const [staffRes, devicesRes, summaryRes, locationsRes] = await Promise.all([
+        api.get('/hr/staff', { headers: hrHeaders() }),
+        api.get('/hr/biometric-devices', { headers: hrHeaders() }),
+        api.get('/hr/summary', { headers: hrHeaders() }),
+        api.get('/hr/locations', { headers: hrHeaders() }),
+      ]);
+      setStaffRows(unwrapData<StaffMember[]>(staffRes, []));
+      setDevices(unwrapData<BiometricDevice[]>(devicesRes, []));
+      setSummary(unwrapData<HrSummary | null>(summaryRes, null));
+      setLocations(unwrapData<HrLocation[]>(locationsRes, []));
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const depts = ['all', ...Array.from(new Set([...departmentOptions, ...staffRows.map(s => s.department).filter(Boolean)]))];
+  const rows = staffRows.filter(s =>
+    (deptF === 'all' || s.department === deptF) &&
+    (locationF === 'all' || String(s.locationId || '') === locationF) &&
+    (s.name.toLowerCase().includes(q.toLowerCase()) || s.email.toLowerCase().includes(q.toLowerCase()) || String(s.employeeCode || '').toLowerCase().includes(q.toLowerCase()))
   );
+
+  const addStaff = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      const selectedLocation = locations.find(location => String(location.id) === String(staffForm.locationId));
+      await api.post('/hr/staff', { ...staffForm, locationName: selectedLocation?.name || '', branchCode: selectedLocation?.code || '' }, { headers: hrHeaders() });
+      setStaffForm(makeStaffForm());
+      setMessage('Staff member added. Account is flagged for first-login password reset.');
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveDevice = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      await api.post('/hr/biometric-devices', deviceForm, { headers: hrHeaders() });
+      setDeviceForm({ deviceUid: '', name: '', location: '', locationId: '', vendor: 'ZKTeco', connectionType: 'api', status: 'online' });
+      setMessage('Biometric device registered. Device events can now be synced into attendance.');
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deactivateStaff = async (id: number | string) => {
+    setMessage('');
+    try {
+      await api.delete('/hr/staff/' + id, { headers: hrHeaders() });
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    }
+  };
+
   return (
-    <Wrap title="Staff Directory" subtitle="Search & manage all hospital staff records">
+    <Wrap title="Staff Directory" subtitle="Staff records, onboarding, and biometric identity mapping">
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        <KPI label="Total Staff"    value="482" sub="All departments"       icon={Users}       color="text-teal-600" />
-        <KPI label="Active"         value="466" sub="Currently employed"    icon={CheckCircle2} color="text-emerald-600" />
-        <KPI label="On Probation"   value="14"  sub="Joined last 3 months"  icon={Clock}       color="text-amber-600" />
-        <KPI label="Resigned (YTD)" value="8"   sub="Jan–Mar 2026"          icon={XCircle}     color="text-red-600" />
+        <KPI label="Total Staff" value={String(summary?.totalStaff ?? staffRows.length)} sub="Tenant-scoped records" icon={Users} color="text-teal-600" />
+        <KPI label="Locations" value={String(locations.filter(l => l.status === 'active').length)} sub="Branches / units" icon={Building2} color="text-emerald-600" />
+        <KPI label="Present Today" value={String(summary?.presentToday ?? 0)} sub={(summary?.attendanceRate ?? 0) + '% attendance'} icon={CalendarCheck} color="text-blue-600" />
+        <KPI label="Biometric Devices" value={(summary?.devices.online ?? devices.filter(d => d.status === 'online').length) + '/' + (summary?.devices.total ?? devices.length)} sub="Online / registered" icon={Fingerprint} color="text-violet-600" />
       </div>
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between pb-3">
-          <CardTitle className="text-base">Staff Register</CardTitle>
-          <div className="flex gap-2">
-            <div className="relative"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-8 h-8 w-48 text-sm" placeholder="Search name/ID" value={q} onChange={e => setQ(e.target.value)} /></div>
-            <select className="h-8 text-sm border rounded-md px-2" value={deptF} onChange={e => setDeptF(e.target.value)}>{depts.map(d => <option key={d}>{d}</option>)}</select>
-            <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700"><PlusCircle className="h-4 w-4" />Add Staff</Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="border-b"><TH>Emp ID</TH><TH>Name</TH><TH>Department</TH><TH>Role</TH><TH>Phone</TH><TH>Joined</TH><TH>Status</TH><TH>Actions</TH></tr></thead>
-              <tbody className="divide-y">
-                {rows.map(r => (
-                  <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                    <TD><span className="font-mono text-xs">{r.id}</span></TD>
-                    <TD><span className="font-medium">{r.name}</span></TD>
-                    <TD>{r.dept}</TD>
-                    <TD>{r.role}</TD>
-                    <TD>{r.phone}</TD>
-                    <TD>{r.joined}</TD>
-                    <TD><Bdg s={r.status} /></TD>
-                    <TD>
-                      <div className="flex gap-1">
-                        <button className="p-1 hover:bg-slate-100 rounded"><Eye className="h-4 w-4 text-slate-500" /></button>
-                        <button className="p-1 hover:bg-slate-100 rounded"><Edit className="h-4 w-4 text-slate-500" /></button>
-                      </div>
-                    </TD>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+
+      {message && <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{message}</div>}
+
+      <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_380px] gap-6">
+        <div className="space-y-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-3">
+              <CardTitle className="text-base">Staff Register</CardTitle>
+              <div className="flex flex-wrap gap-2 justify-end">
+                <div className="relative"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-8 h-8 w-52 text-sm" placeholder="Search name, email, ID" value={q} onChange={e => setQ(e.target.value)} /></div>
+                <select className="h-8 text-sm border rounded-md px-2 bg-background" value={deptF} onChange={e => setDeptF(e.target.value)}>{depts.map(d => <option key={d} value={d}>{d === 'all' ? 'All departments' : d}</option>)}</select>
+                <select className="h-8 text-sm border rounded-md px-2 bg-background" value={locationF} onChange={e => setLocationF(e.target.value)}><option value="all">All locations</option>{locations.map(l => <option key={l.id} value={l.id}>{l.code} - {l.name}</option>)}</select>
+                <Button variant="outline" size="sm" className="gap-1" onClick={load} disabled={loading}><RefreshCw className="h-4 w-4" />Refresh</Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b"><TH>Emp ID</TH><TH>Name</TH><TH>Location</TH><TH>Department</TH><TH>Role</TH><TH>Phone</TH><TH>Biometric</TH><TH>Joined</TH><TH>Status</TH><TH>Actions</TH></tr></thead>
+                  <tbody className="divide-y">
+                    {rows.map(r => (
+                      <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                        <TD><span className="font-mono text-xs">{r.employeeCode}</span></TD>
+                        <TD><div><span className="font-medium">{r.name}</span><p className="text-xs text-muted-foreground">{r.email}</p></div></TD>
+                        <TD><div><span>{r.locationName || '-'}</span><p className="text-xs text-muted-foreground">{r.branchCode || ''}</p></div></TD>
+                        <TD>{r.department}</TD>
+                        <TD>{r.designation || r.role}</TD>
+                        <TD>{r.phone || '-'}</TD>
+                        <TD><div className="text-xs"><span className="font-mono">{r.biometricUserId || '-'}</span><p className="text-muted-foreground">{r.deviceUid || 'No device'}</p></div></TD>
+                        <TD>{displayDate(r.joinedAt)}</TD>
+                        <TD><Bdg s={statusLabel(r.status)} /></TD>
+                        <TD><Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => deactivateStaff(r.id)} title="Deactivate"><Trash2 className="h-4 w-4 text-red-500" /></Button></TD>
+                      </tr>
+                    ))}
+                    {!loading && rows.length === 0 && <tr><TD center><span className="text-muted-foreground">No staff records found</span></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base">Biometric Device Registry</CardTitle></CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b"><TH>Status</TH><TH>Device UID</TH><TH>Name</TH><TH>Location</TH><TH>Vendor</TH><TH>Last Sync</TH></tr></thead>
+                  <tbody className="divide-y">
+                    {devices.map(device => (
+                      <tr key={device.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                        <TD>{device.status === 'online' ? <Wifi className="h-4 w-4 text-emerald-600" /> : <WifiOff className="h-4 w-4 text-slate-500" />}</TD>
+                        <TD><span className="font-mono text-xs">{device.deviceUid}</span></TD>
+                        <TD>{device.name}</TD>
+                        <TD>{device.locationName || device.location || '-'}</TD>
+                        <TD>{device.vendor || '-'}</TD>
+                        <TD>{device.lastSyncAt ? new Date(device.lastSyncAt).toLocaleString() : '-'}</TD>
+                      </tr>
+                    ))}
+                    {devices.length === 0 && <tr><TD><span className="text-muted-foreground">No devices registered</span></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-6">
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><UserPlus className="h-4 w-4" />Add Staff</CardTitle></CardHeader>
+            <CardContent>
+              <form className="space-y-3" onSubmit={addStaff}>
+                <div className="grid grid-cols-2 gap-2"><Input required placeholder="First name" value={staffForm.firstName} onChange={e => setStaffForm({ ...staffForm, firstName: e.target.value })} /><Input required placeholder="Last name" value={staffForm.lastName} onChange={e => setStaffForm({ ...staffForm, lastName: e.target.value })} /></div>
+                <Input required type="email" placeholder="Email" value={staffForm.email} onChange={e => setStaffForm({ ...staffForm, email: e.target.value })} />
+                <Input required placeholder="Phone" value={staffForm.phone} onChange={e => setStaffForm({ ...staffForm, phone: e.target.value })} />
+                <select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={staffForm.locationId} onChange={e => setStaffForm({ ...staffForm, locationId: e.target.value })}><option value="">No location assigned</option>{locations.map(l => <option key={l.id} value={l.id}>{l.code} - {l.name}</option>)}</select>
+                <div className="grid grid-cols-2 gap-2">
+                  <select className="h-10 text-sm border rounded-md px-2 bg-background" value={staffForm.department} onChange={e => setStaffForm({ ...staffForm, department: e.target.value })}>{departmentOptions.map(d => <option key={d}>{d}</option>)}</select>
+                  <Input placeholder="Designation" value={staffForm.designation} onChange={e => setStaffForm({ ...staffForm, designation: e.target.value })} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <select className="h-10 text-sm border rounded-md px-2 bg-background" value={staffForm.role} onChange={e => setStaffForm({ ...staffForm, role: e.target.value })}>{roleOptions.map(r => <option key={r} value={r}>{r.replaceAll('_', ' ')}</option>)}</select>
+                  <select className="h-10 text-sm border rounded-md px-2 bg-background" value={staffForm.gender} onChange={e => setStaffForm({ ...staffForm, gender: e.target.value })}><option>Other</option><option>Female</option><option>Male</option></select>
+                </div>
+                <div className="grid grid-cols-2 gap-2"><Input type="date" value={staffForm.joinedAt} onChange={e => setStaffForm({ ...staffForm, joinedAt: e.target.value })} /><Input type="date" value={staffForm.dateOfBirth} onChange={e => setStaffForm({ ...staffForm, dateOfBirth: e.target.value })} /></div>
+                <div className="grid grid-cols-2 gap-2"><Input placeholder="Employee code" value={staffForm.employeeCode} onChange={e => setStaffForm({ ...staffForm, employeeCode: e.target.value })} /><Input placeholder="Biometric user ID" value={staffForm.biometricUserId} onChange={e => setStaffForm({ ...staffForm, biometricUserId: e.target.value })} /></div>
+                <select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={staffForm.deviceUid} onChange={e => setStaffForm({ ...staffForm, deviceUid: e.target.value })}><option value="">No default device</option>{devices.map(d => <option key={d.deviceUid} value={d.deviceUid}>{d.name} ({d.deviceUid})</option>)}</select>
+                <Button type="submit" className="w-full gap-1 bg-teal-600 hover:bg-teal-700" disabled={saving}><PlusCircle className="h-4 w-4" />Add Staff</Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><Fingerprint className="h-4 w-4" />Add Biometric Device</CardTitle></CardHeader>
+            <CardContent>
+              <form className="space-y-3" onSubmit={saveDevice}>
+                <Input required placeholder="Device UID" value={deviceForm.deviceUid} onChange={e => setDeviceForm({ ...deviceForm, deviceUid: e.target.value })} />
+                <Input required placeholder="Device name" value={deviceForm.name} onChange={e => setDeviceForm({ ...deviceForm, name: e.target.value })} />
+                <select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={deviceForm.locationId} onChange={e => setDeviceForm({ ...deviceForm, locationId: e.target.value })}><option value="">No branch mapped</option>{locations.map(l => <option key={l.id} value={l.id}>{l.code} - {l.name}</option>)}</select>
+                <Input placeholder="Location label / floor" value={deviceForm.location} onChange={e => setDeviceForm({ ...deviceForm, location: e.target.value })} />
+                <div className="grid grid-cols-2 gap-2"><Input placeholder="Vendor" value={deviceForm.vendor} onChange={e => setDeviceForm({ ...deviceForm, vendor: e.target.value })} /><select className="h-10 text-sm border rounded-md px-2 bg-background" value={deviceForm.status} onChange={e => setDeviceForm({ ...deviceForm, status: e.target.value })}><option value="online">Online</option><option value="offline">Offline</option><option value="maintenance">Maintenance</option></select></div>
+                <Button type="submit" variant="outline" className="w-full gap-1" disabled={saving}><Database className="h-4 w-4" />Register Device</Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </Wrap>
   );
 };
@@ -190,56 +491,187 @@ export const HRStaffPage = () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // 2. ATTENDANCE
 // ═══════════════════════════════════════════════════════════════════════════════
-const attendance = [
-  { id: 'EMP001', name: 'Dr. Kavita Joshi',   dept: 'Cardiology',   in: '08:02', out: '16:05', hours: '8h 03m', status: 'Present' },
-  { id: 'EMP002', name: 'Sanjay Kumar',        dept: 'Nursing',      in: '07:55', out: '15:58', hours: '8h 03m', status: 'Present' },
-  { id: 'EMP003', name: 'Pooja Verma',         dept: 'Accounts',     in: '09:18', out: '18:10', hours: '8h 52m', status: 'Late' },
-  { id: 'EMP004', name: 'Mohammed Iqbal',      dept: 'Housekeeping', in: '—',     out: '—',     hours: '—',      status: 'Absent' },
-  { id: 'EMP005', name: 'Dr. Ramesh Pillai',   dept: 'Orthopaedics', in: '09:00', out: '17:00', hours: '8h 00m', status: 'Present' },
-  { id: 'EMP006', name: 'Sunita Rao',          dept: 'OT',           in: '07:30', out: '15:35', hours: '8h 05m', status: 'Present' },
-  { id: 'EMP007', name: 'Arun Sharma',         dept: 'Radiology',    in: '—',     out: '—',     hours: '—',      status: 'Absent' },
-  { id: 'EMP008', name: 'Meena Nair',          dept: 'Pharmacy',     in: '09:05', out: '17:10', hours: '8h 05m', status: 'Present' },
-];
-
 export const HRAttendancePage = () => {
-  const [dateF, setDateF] = useState('21-Mar-2026');
+  const [dateF, setDateF] = useState(todayDate());
+  const [attendance, setAttendance] = useState<AttendancePayload | null>(null);
+  const [staffRows, setStaffRows] = useState<StaffMember[]>([]);
+  const [devices, setDevices] = useState<BiometricDevice[]>([]);
+  const [audit, setAudit] = useState<AuditEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [manual, setManual] = useState({ staffId: '', eventType: 'check_in', date: todayDate(), time: currentTime(), note: '' });
+  const [syncEvent, setSyncEvent] = useState({ deviceUid: '', employeeCode: '', biometricUserId: '', eventType: 'check_in', date: todayDate(), time: currentTime() });
+
+  const load = async () => {
+    setLoading(true);
+    setMessage('');
+    try {
+      const [attendanceRes, staffRes, devicesRes, auditRes] = await Promise.all([
+        api.get('/hr/attendance?date=' + dateF, { headers: hrHeaders() }),
+        api.get('/hr/staff', { headers: hrHeaders() }),
+        api.get('/hr/biometric-devices', { headers: hrHeaders() }),
+        api.get('/hr/audit', { headers: hrHeaders() }),
+      ]);
+      setAttendance(unwrapData<AttendancePayload | null>(attendanceRes, null));
+      setStaffRows(unwrapData<StaffMember[]>(staffRes, []));
+      setDevices(unwrapData<BiometricDevice[]>(devicesRes, []));
+      setAudit(unwrapData<AuditEvent[]>(auditRes, []));
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [dateF]);
+
+  const recordManual = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      await api.post('/hr/attendance/manual', manual, { headers: hrHeaders() });
+      setManual({ ...manual, note: '', time: currentTime() });
+      setMessage('Manual attendance event recorded.');
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const ingestDeviceEvent = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      await api.post('/hr/biometric-events', {
+        ...syncEvent,
+        eventAt: syncEvent.date + 'T' + syncEvent.time + ':00.000Z',
+        source: 'biometric',
+      }, { headers: hrHeaders() });
+      setSyncEvent({ ...syncEvent, employeeCode: '', biometricUserId: '', time: currentTime() });
+      setMessage('Biometric punch ingested and attendance recalculated.');
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const summary = attendance?.summary;
+  const rows = attendance?.rows || [];
+
   return (
-    <Wrap title="Attendance" subtitle="Daily attendance, biometric logs & exceptions">
+    <Wrap title="Attendance" subtitle="Daily attendance, biometric logs, manual corrections, and device health">
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        <KPI label="Present Today"  value="431" sub="89.4% of total"     icon={CheckCircle2}  color="text-emerald-600" />
-        <KPI label="Absent Today"   value="29"  sub="6 on leave + 23 UA" icon={XCircle}       color="text-red-600" />
-        <KPI label="Late Arrivals"  value="18"  sub=">9:00 AM check-in"  icon={Clock}         color="text-amber-600" />
-        <KPI label="On Night Shift" value="62"  sub="Currently on duty"   icon={CalendarCheck} color="text-blue-600" />
+        <KPI label="Present Today" value={String(summary?.present ?? 0)} sub={(summary?.total ?? 0) + ' total staff'} icon={CheckCircle2} color="text-emerald-600" />
+        <KPI label="Absent Today" value={String(summary?.absent ?? 0)} sub="No check-in captured" icon={XCircle} color="text-red-600" />
+        <KPI label="Late Arrivals" value={String(summary?.late ?? 0)} sub="After 10:00 check-in" icon={Clock} color="text-amber-600" />
+        <KPI label="Biometric Events" value={String(summary?.biometricEvents ?? 0)} sub={devices.filter(d => d.status === 'online').length + ' devices online'} icon={Fingerprint} color="text-violet-600" />
       </div>
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between pb-3">
-          <CardTitle className="text-base">Attendance Register</CardTitle>
-          <div className="flex gap-2">
-            <Input type="date" className="h-8 text-sm w-44" defaultValue="2026-03-21" onChange={e => setDateF(e.target.value)} />
-            <Button variant="outline" size="sm" className="gap-1"><Download className="h-4 w-4" />Export</Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="border-b"><TH>Emp ID</TH><TH>Name</TH><TH>Department</TH><TH>Check-In</TH><TH>Check-Out</TH><TH>Hours</TH><TH>Status</TH></tr></thead>
-              <tbody className="divide-y">
-                {attendance.map(r => (
-                  <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                    <TD><span className="font-mono text-xs">{r.id}</span></TD>
-                    <TD><span className="font-medium">{r.name}</span></TD>
-                    <TD>{r.dept}</TD>
-                    <TD><span className="font-mono">{r.in}</span></TD>
-                    <TD><span className="font-mono">{r.out}</span></TD>
-                    <TD><span className="font-mono">{r.hours}</span></TD>
-                    <TD><Bdg s={r.status} /></TD>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+
+      {message && <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{message}</div>}
+
+      <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_380px] gap-6">
+        <div className="space-y-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-3">
+              <CardTitle className="text-base">Attendance Register</CardTitle>
+              <div className="flex gap-2">
+                <Input type="date" className="h-8 text-sm w-44" value={dateF} onChange={e => setDateF(e.target.value)} />
+                <Button variant="outline" size="sm" className="gap-1" onClick={() => exportToExcel(rows, 'hr-attendance-' + dateF)}><Download className="h-4 w-4" />Export</Button>
+                <Button variant="outline" size="sm" className="gap-1" onClick={load} disabled={loading}><RefreshCw className="h-4 w-4" />Refresh</Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b"><TH>Emp ID</TH><TH>Name</TH><TH>Department</TH><TH>Check-In</TH><TH>Check-Out</TH><TH>Hours</TH><TH>Source</TH><TH>Status</TH></tr></thead>
+                  <tbody className="divide-y">
+                    {rows.map(r => (
+                      <tr key={r.staffId} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                        <TD><span className="font-mono text-xs">{r.employeeCode}</span></TD>
+                        <TD><span className="font-medium">{r.name}</span></TD>
+                        <TD>{r.department}</TD>
+                        <TD><span className="font-mono">{r.checkIn || '-'}</span></TD>
+                        <TD><span className="font-mono">{r.checkOut || '-'}</span></TD>
+                        <TD><span className="font-mono">{r.hours === null || r.hours === undefined ? '-' : r.hours + 'h'}</span></TD>
+                        <TD><div className="text-xs"><span>{r.source}</span><p className="text-muted-foreground">{r.deviceName || r.events + ' events'}</p></div></TD>
+                        <TD><Bdg s={statusLabel(r.status)} /></TD>
+                      </tr>
+                    ))}
+                    {!loading && rows.length === 0 && <tr><TD><span className="text-muted-foreground">No attendance rows for this date</span></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base">Latest Biometric Audit</CardTitle></CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b"><TH>Time</TH><TH>Staff</TH><TH>Event</TH><TH>Device</TH><TH>Source</TH></tr></thead>
+                  <tbody className="divide-y">
+                    {audit.slice(0, 12).map(event => (
+                      <tr key={event.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                        <TD>{new Date(event.eventAt).toLocaleString()}</TD>
+                        <TD>{(event.firstName || event.lastName) ? ((event.firstName || '') + ' ' + (event.lastName || '')).trim() : event.employeeCode || event.biometricUserId || '-'}</TD>
+                        <TD>{event.eventType.replace('_', ' ')}</TD>
+                        <TD>{event.deviceName || event.deviceUid || '-'}</TD>
+                        <TD>{event.source}</TD>
+                      </tr>
+                    ))}
+                    {audit.length === 0 && <tr><TD><span className="text-muted-foreground">No biometric events captured yet</span></TD><TD></TD><TD></TD><TD></TD><TD></TD></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-6">
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><Edit className="h-4 w-4" />Manual Punch</CardTitle></CardHeader>
+            <CardContent>
+              <form className="space-y-3" onSubmit={recordManual}>
+                <select required className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={manual.staffId} onChange={e => setManual({ ...manual, staffId: e.target.value })}><option value="">Select staff</option>{staffRows.map(s => <option key={s.id} value={s.id}>{s.employeeCode} - {s.name}</option>)}</select>
+                <div className="grid grid-cols-2 gap-2"><select className="h-10 text-sm border rounded-md px-2 bg-background" value={manual.eventType} onChange={e => setManual({ ...manual, eventType: e.target.value })}><option value="check_in">Check in</option><option value="check_out">Check out</option></select><Input type="date" value={manual.date} onChange={e => setManual({ ...manual, date: e.target.value })} /></div>
+                <Input type="time" value={manual.time} onChange={e => setManual({ ...manual, time: e.target.value })} />
+                <Input placeholder="Correction note" value={manual.note} onChange={e => setManual({ ...manual, note: e.target.value })} />
+                <Button type="submit" className="w-full gap-1 bg-teal-600 hover:bg-teal-700" disabled={saving}><CalendarCheck className="h-4 w-4" />Record Punch</Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><Fingerprint className="h-4 w-4" />Device Event Sync</CardTitle></CardHeader>
+            <CardContent>
+              <form className="space-y-3" onSubmit={ingestDeviceEvent}>
+                <select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={syncEvent.deviceUid} onChange={e => setSyncEvent({ ...syncEvent, deviceUid: e.target.value })}><option value="">Unmapped device</option>{devices.map(d => <option key={d.deviceUid} value={d.deviceUid}>{d.name} ({d.deviceUid})</option>)}</select>
+                <Input placeholder="Employee code" value={syncEvent.employeeCode} onChange={e => setSyncEvent({ ...syncEvent, employeeCode: e.target.value })} />
+                <Input placeholder="Biometric user ID" value={syncEvent.biometricUserId} onChange={e => setSyncEvent({ ...syncEvent, biometricUserId: e.target.value })} />
+                <div className="grid grid-cols-2 gap-2"><select className="h-10 text-sm border rounded-md px-2 bg-background" value={syncEvent.eventType} onChange={e => setSyncEvent({ ...syncEvent, eventType: e.target.value })}><option value="check_in">Check in</option><option value="check_out">Check out</option></select><Input type="date" value={syncEvent.date} onChange={e => setSyncEvent({ ...syncEvent, date: e.target.value })} /></div>
+                <Input type="time" value={syncEvent.time} onChange={e => setSyncEvent({ ...syncEvent, time: e.target.value })} />
+                <Button type="submit" variant="outline" className="w-full gap-1" disabled={saving}><Database className="h-4 w-4" />Ingest Event</Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base">Device Health</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              {devices.map(device => <div key={device.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"><div><p className="font-medium">{device.name}</p><p className="text-xs text-muted-foreground">{device.location || device.deviceUid}</p></div>{device.status === 'online' ? <Wifi className="h-4 w-4 text-emerald-600" /> : <WifiOff className="h-4 w-4 text-slate-500" />}</div>)}
+              {devices.length === 0 && <p className="text-sm text-muted-foreground">Register a biometric device from Staff Directory.</p>}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </Wrap>
   );
 };
@@ -247,210 +679,76 @@ export const HRAttendancePage = () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // 3. LEAVE MANAGEMENT
 // ═══════════════════════════════════════════════════════════════════════════════
-const leaves = [
-  { id: 'LV001', name: 'Dr. Priya S.',    dept: 'Medicine',     type: 'Casual',  from: '17-Mar-26', to: '18-Mar-26', days: 2, status: 'Pending',  reason: 'Personal work' },
-  { id: 'LV002', name: 'Nurse Rekha D.', dept: 'ICU',          type: 'Medical', from: '18-Mar-26', to: '20-Mar-26', days: 3, status: 'Approved', reason: 'Fever/illness' },
-  { id: 'LV003', name: 'Ramesh H.',       dept: 'Housekeeping', type: 'Casual',  from: '16-Mar-26', to: '16-Mar-26', days: 1, status: 'Approved', reason: 'Family function' },
-  { id: 'LV004', name: 'Anita M.',        dept: 'OPD',          type: 'Annual',  from: '20-Mar-26', to: '24-Mar-26', days: 5, status: 'Pending',  reason: 'Vacation' },
-  { id: 'LV005', name: 'Rajesh P.',       dept: 'Lab',          type: 'LOP',     from: '15-Mar-26', to: '15-Mar-26', days: 1, status: 'Rejected', reason: 'Unauthorized' },
-  { id: 'LV006', name: 'Sunita R.',       dept: 'OT',           type: 'Maternity',from:'01-Mar-26', to: '30-May-26', days: 90, status: 'Approved', reason: 'Maternity leave' },
-];
-
-const leaveBalance = [
-  { type: 'Casual Leave',   allotted: 12, used: 5,  balance: 7  },
-  { type: 'Medical Leave',  allotted: 12, used: 3,  balance: 9  },
-  { type: 'Annual Leave',   allotted: 21, used: 8,  balance: 13 },
-  { type: 'Maternity',      allotted: 90, used: 90, balance: 0  },
-  { type: 'LOP',            allotted: 0,  used: 1,  balance: -1 },
-];
-
 export const HRLeavesPage = () => {
   const [tab, setTab] = useState<'requests' | 'balance'>('requests');
-  return (
-    <Wrap title="Leave Management" subtitle="Apply, approve & track all employee leaves">
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        <KPI label="On Leave Today"   value="28"  sub="6 medical, 22 casual"   icon={CalendarOff}   color="text-amber-600" />
-        <KPI label="Pending Approval" value="4"   sub="Requires manager review" icon={AlertCircle}   color="text-red-600" />
-        <KPI label="Approved (Month)" value="39"  sub="March 2026"              icon={CheckCircle2}  color="text-emerald-600" />
-        <KPI label="LOP (Month)"      value="3"   sub="Loss of pay days"        icon={XCircle}       color="text-red-600" />
-      </div>
-      <div className="flex gap-2 mb-4">
-        {(['requests', 'balance'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
-            {t === 'requests' ? 'Leave Requests' : 'Leave Balance'}
-          </button>
-        ))}
-        <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700 ml-auto"><PlusCircle className="h-4 w-4" />Apply Leave</Button>
-      </div>
-      {tab === 'requests' ? (
-        <Card>
-          <CardContent className="pt-4">
-            <table className="w-full text-sm">
-              <thead><tr className="border-b"><TH>ID</TH><TH>Employee</TH><TH>Type</TH><TH>From</TH><TH>To</TH><TH>Days</TH><TH>Reason</TH><TH>Status</TH></tr></thead>
-              <tbody className="divide-y">
-                {leaves.map(l => (
-                  <tr key={l.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                    <TD><span className="font-mono text-xs">{l.id}</span></TD>
-                    <TD><span className="font-medium">{l.name}</span><br /><span className="text-xs text-muted-foreground">{l.dept}</span></TD>
-                    <TD>{l.type}</TD>
-                    <TD>{l.from}</TD>
-                    <TD>{l.to}</TD>
-                    <TD center><span className="font-semibold">{l.days}</span></TD>
-                    <TD><span className="text-xs text-muted-foreground">{l.reason}</span></TD>
-                    <TD><Bdg s={l.status} /></TD>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="pt-4">
-            <table className="w-full text-sm">
-              <thead><tr className="border-b"><TH>Leave Type</TH><TH>Allotted</TH><TH>Used</TH><TH>Balance</TH></tr></thead>
-              <tbody className="divide-y">
-                {leaveBalance.map(b => (
-                  <tr key={b.type} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                    <TD><span className="font-medium">{b.type}</span></TD>
-                    <TD center>{b.allotted}</TD>
-                    <TD center>{b.used}</TD>
-                    <TD center><span className={`font-semibold ${b.balance < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{b.balance}</span></TD>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
-      )}
-    </Wrap>
-  );
+  const [rows, setRows] = useState<any[]>([]);
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [summary, setSummary] = useState<any>(null);
+  const [form, setForm] = useState({ staffId: '', leaveType: 'Casual', startDate: todayDate(), endDate: todayDate(), reason: '' });
+  const [message, setMessage] = useState('');
+  const load = async () => {
+    try {
+      const [leavesRes, staffRes, summaryRes] = await Promise.all([api.get('/hr/leaves', { headers: hrHeaders() }), api.get('/hr/staff', { headers: hrHeaders() }), api.get('/hr/leaves/summary', { headers: hrHeaders() })]);
+      setRows(unwrapData<any[]>(leavesRes, [])); setStaff(unwrapData<StaffMember[]>(staffRes, [])); setSummary(unwrapData<any>(summaryRes, null));
+    } catch (error) { setMessage(errText(error)); }
+  };
+  useEffect(() => { load(); }, []);
+  const applyLeave = async (event: React.FormEvent) => { event.preventDefault(); try { await api.post('/hr/leaves', form, { headers: hrHeaders() }); setForm({ staffId: '', leaveType: 'Casual', startDate: todayDate(), endDate: todayDate(), reason: '' }); setMessage('Leave request created.'); await load(); } catch (error) { setMessage(errText(error)); } };
+  const setStatus = async (id: number | string, status: string) => { try { await api.patch('/hr/leaves/' + id + '/status', { status }, { headers: hrHeaders() }); await load(); } catch (error) { setMessage(errText(error)); } };
+  const balances = ['Casual Leave', 'Medical Leave', 'Annual Leave', 'Maternity', 'LOP'].map(type => ({ type, allotted: type === 'Maternity' ? 90 : type === 'LOP' ? 0 : type === 'Annual Leave' ? 21 : 12, used: rows.filter(r => String(r.leaveType || '').toLowerCase().startsWith(type.split(' ')[0].toLowerCase()) && r.status === 'approved').reduce((sum, r) => sum + Number(r.days || 0), 0) }));
+  return <Wrap title="Leave Management" subtitle="Apply, approve, and track employee leaves through HR APIs">
+    {message && <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{message}</div>}
+    <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6"><KPI label="On Leave Today" value={String(summary?.onLeaveToday ?? 0)} sub="Approved active leave" icon={CalendarOff} color="text-amber-600" /><KPI label="Pending Approval" value={String(summary?.pending ?? 0)} sub="Requires HR action" icon={AlertCircle} color="text-red-600" /><KPI label="Approved (Month)" value={String(summary?.approvedMonth ?? 0)} sub="Current month" icon={CheckCircle2} color="text-emerald-600" /><KPI label="LOP (Month)" value={String(summary?.lopDays ?? 0)} sub="Loss of pay days" icon={XCircle} color="text-red-600" /></div>
+    <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6"><div><div className="flex gap-2 mb-4">{(['requests','balance'] as const).map(t => <button key={t} onClick={() => setTab(t)} className={`px-4 py-1.5 rounded-lg text-sm font-medium ${tab === t ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-700'}`}>{t === 'requests' ? 'Leave Requests' : 'Leave Balance'}</button>)}</div>{tab === 'requests' ? <Card><CardContent className="pt-4"><table className="w-full text-sm"><thead><tr className="border-b"><TH>ID</TH><TH>Employee</TH><TH>Type</TH><TH>From</TH><TH>To</TH><TH>Days</TH><TH>Reason</TH><TH>Status</TH><TH>Actions</TH></tr></thead><tbody className="divide-y">{rows.map(l => <tr key={l.id}><TD><span className="font-mono text-xs">LV{l.id}</span></TD><TD><span className="font-medium">{[l.firstName,l.lastName].filter(Boolean).join(' ') || '-'}</span><br /><span className="text-xs text-muted-foreground">{l.staffMetadata?.department || '-'}</span></TD><TD>{l.leaveType}</TD><TD>{displayDate(l.startDate)}</TD><TD>{displayDate(l.endDate)}</TD><TD center>{Number(l.days || 0)}</TD><TD><span className="text-xs text-muted-foreground">{l.reason || '-'}</span></TD><TD><Bdg s={statusLabel(l.status)} /></TD><TD><div className="flex gap-1"><Button size="sm" variant="ghost" onClick={() => setStatus(l.id, 'approved')}>Approve</Button><Button size="sm" variant="ghost" onClick={() => setStatus(l.id, 'rejected')}>Reject</Button></div></TD></tr>)}</tbody></table></CardContent></Card> : <Card><CardContent className="pt-4"><table className="w-full text-sm"><thead><tr className="border-b"><TH>Leave Type</TH><TH>Allotted</TH><TH>Used</TH><TH>Balance</TH></tr></thead><tbody>{balances.map(b => <tr key={b.type}><TD>{b.type}</TD><TD center>{b.allotted}</TD><TD center>{b.used}</TD><TD center><span className={b.allotted - b.used < 0 ? 'text-red-600 font-semibold' : 'text-emerald-600 font-semibold'}>{b.allotted - b.used}</span></TD></tr>)}</tbody></table></CardContent></Card>}</div><Card><CardHeader><CardTitle className="text-base">Apply Leave</CardTitle></CardHeader><CardContent><form className="space-y-3" onSubmit={applyLeave}><select required className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={form.staffId} onChange={e => setForm({ ...form, staffId: e.target.value })}><option value="">Select staff</option>{staff.map(s => <option key={s.id} value={s.id}>{s.employeeCode} - {s.name}</option>)}</select><select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={form.leaveType} onChange={e => setForm({ ...form, leaveType: e.target.value })}><option>Casual</option><option>Medical</option><option>Annual</option><option>Maternity</option><option>LOP</option></select><div className="grid grid-cols-2 gap-2"><Input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} /><Input type="date" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} /></div><Input placeholder="Reason" value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} /><Button className="w-full bg-teal-600 hover:bg-teal-700">Submit</Button></form></CardContent></Card></div>
+  </Wrap>;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 4. SHIFTS & ROSTER (NEW)
+// 4. SHIFTS & ROSTER
 // ═══════════════════════════════════════════════════════════════════════════════
-const shifts = [
-  { name: 'Dr. Kavita Joshi',   dept: 'Cardiology',   shift: 'Morning (6A-2P)',  week: ['M','T','W','T','F','—','—'], status: 'Active' },
-  { name: 'Sanjay Kumar',       dept: 'Nursing',       shift: 'Evening (2P-10P)', week: ['M','T','W','T','F','S','—'], status: 'Active' },
-  { name: 'Pooja Verma',        dept: 'Accounts',      shift: 'General (9A-6P)',  week: ['M','T','W','T','F','—','—'], status: 'Active' },
-  { name: 'Sunita Rao',         dept: 'OT',            shift: 'Morning (6A-2P)',  week: ['—','T','W','T','F','S','S'], status: 'Active' },
-  { name: 'Mohammed Iqbal',     dept: 'Housekeeping',  shift: 'Night (10P-6A)',   week: ['M','—','W','T','F','S','—'], status: 'Active' },
-  { name: 'Meena Nair',         dept: 'Pharmacy',      shift: 'General (9A-6P)',  week: ['M','T','—','T','F','—','—'], status: 'Active' },
-];
-const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-
-export const HRShiftsPage = () => (
-  <Wrap title="Shifts & Roster" subtitle="Weekly shift scheduling and roster management">
-    <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-      <KPI label="Morning Shift"  value="186" sub="06:00 AM – 02:00 PM" icon={CalendarCheck} color="text-teal-600" />
-      <KPI label="Evening Shift"  value="154" sub="02:00 PM – 10:00 PM" icon={Clock}         color="text-amber-600" />
-      <KPI label="Night Shift"    value="62"  sub="10:00 PM – 06:00 AM" icon={Star}          color="text-blue-600" />
-      <KPI label="Weekly Off Today" value="80" sub="Roster off today"   icon={CalendarOff}   color="text-slate-600" />
-    </div>
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-3">
-        <CardTitle className="text-base">Weekly Roster — Mar 17–23, 2026</CardTitle>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="gap-1"><Download className="h-4 w-4" />Export</Button>
-          <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700"><PlusCircle className="h-4 w-4" />Assign Shift</Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b">
-                <TH>Employee</TH><TH>Department</TH><TH>Shift</TH>
-                {days.map(d => <TH key={d}>{d}</TH>)}
-                <TH>Status</TH>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {shifts.map(r => (
-                <tr key={r.name} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                  <TD><span className="font-medium">{r.name}</span></TD>
-                  <TD>{r.dept}</TD>
-                  <TD><span className="text-xs">{r.shift}</span></TD>
-                  {r.week.map((w, i) => (
-                    <td key={i} className="py-2.5 text-center">
-                      <span className={`text-xs font-bold ${w === '—' ? 'text-slate-300' : 'text-teal-600'}`}>{w}</span>
-                    </td>
-                  ))}
-                  <TD><Bdg s={r.status} /></TD>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
-  </Wrap>
-);
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 5. ONBOARDING (NEW)
-// ═══════════════════════════════════════════════════════════════════════════════
-const onboarding = [
-  { name: 'Dr. Kavita Joshi',  role: 'Cardiologist',   joined: '01-Mar-26', daysIn: 20,
-    tasks: { docs: true, id: true, email: true, training: true, mentor: true, payroll: false } },
-  { name: 'Sanjay Kumar',      role: 'Staff Nurse',    joined: '05-Mar-26', daysIn: 16,
-    tasks: { docs: true, id: true, email: true, training: true, mentor: false, payroll: false } },
-  { name: 'Pooja Verma',       role: 'Billing Exec',   joined: '10-Mar-26', daysIn: 11,
-    tasks: { docs: true, id: true, email: false, training: false, mentor: false, payroll: false } },
-  { name: 'Mohammed Iqbal',    role: 'Ward Attender',  joined: '12-Mar-26', daysIn: 9,
-    tasks: { docs: true, id: false, email: false, training: false, mentor: false, payroll: false } },
-];
-const taskLabels: Record<string, string> = {
-  docs: 'Documents', id: 'ID Card', email: 'Email Setup',
-  training: 'Training', mentor: 'Mentor Assigned', payroll: 'Payroll Setup',
+export const HRShiftsPage = () => {
+  const [rows, setRows] = useState<any[]>([]); const [staff, setStaff] = useState<StaffMember[]>([]); const [locations, setLocations] = useState<HrLocation[]>([]); const [date, setDate] = useState(todayDate()); const [message, setMessage] = useState('');
+  const [form, setForm] = useState({ staffId: '', locationId: '', shiftName: 'Morning', shiftStart: '06:00', shiftEnd: '14:00', rosterDate: todayDate(), notes: '' });
+  const load = async () => { try { const [r,s,l] = await Promise.all([api.get('/hr/shifts?date=' + date, { headers: hrHeaders() }), api.get('/hr/staff', { headers: hrHeaders() }), api.get('/hr/locations', { headers: hrHeaders() })]); setRows(unwrapData<any[]>(r, [])); setStaff(unwrapData<StaffMember[]>(s, [])); setLocations(unwrapData<HrLocation[]>(l, [])); } catch (error) { setMessage(errText(error)); } };
+  useEffect(() => { load(); }, [date]);
+  const save = async (event: React.FormEvent) => { event.preventDefault(); try { await api.post('/hr/shifts', form, { headers: hrHeaders() }); setMessage('Shift assigned.'); await load(); } catch (error) { setMessage(errText(error)); } };
+  return <Wrap title="Shifts & Roster" subtitle="Weekly shift scheduling and branch-aware roster management"><div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6"><KPI label="Roster Entries" value={String(rows.length)} sub="Visible window" icon={CalendarCheck} color="text-teal-600" /><KPI label="Morning" value={String(rows.filter(r => /morning/i.test(r.shiftName)).length)} sub="Early shift" icon={Clock} color="text-amber-600" /><KPI label="Night" value={String(rows.filter(r => /night/i.test(r.shiftName)).length)} sub="Night coverage" icon={Star} color="text-blue-600" /><KPI label="Locations" value={String(locations.length)} sub="Branch coverage" icon={Building2} color="text-slate-600" /></div>{message && <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{message}</div>}<div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6"><Card><CardHeader className="flex flex-row items-center justify-between pb-3"><CardTitle className="text-base">Roster</CardTitle><Input className="h-8 w-40" type="date" value={date} onChange={e => setDate(e.target.value)} /></CardHeader><CardContent><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b"><TH>Employee</TH><TH>Location</TH><TH>Shift</TH><TH>Date</TH><TH>Time</TH><TH>Status</TH></tr></thead><tbody className="divide-y">{rows.map(r => <tr key={r.id}><TD><span className="font-medium">{[r.firstName,r.lastName].filter(Boolean).join(' ') || '-'}</span><p className="text-xs text-muted-foreground">{r.staffMetadata?.department || '-'}</p></TD><TD>{r.locationName || '-'}</TD><TD>{r.shiftName}</TD><TD>{displayDate(r.rosterDate)}</TD><TD>{(r.shiftStart || '').slice(0,5)}-{(r.shiftEnd || '').slice(0,5)}</TD><TD><Bdg s={statusLabel(r.status)} /></TD></tr>)}</tbody></table></div></CardContent></Card><Card><CardHeader><CardTitle className="text-base">Assign Shift</CardTitle></CardHeader><CardContent><form className="space-y-3" onSubmit={save}><select required className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={form.staffId} onChange={e => setForm({ ...form, staffId: e.target.value })}><option value="">Select staff</option>{staff.map(s => <option key={s.id} value={s.id}>{s.employeeCode} - {s.name}</option>)}</select><select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={form.locationId} onChange={e => setForm({ ...form, locationId: e.target.value })}><option value="">No location</option>{locations.map(l => <option key={l.id} value={l.id}>{l.code} - {l.name}</option>)}</select><Input placeholder="Shift name" value={form.shiftName} onChange={e => setForm({ ...form, shiftName: e.target.value })} /><div className="grid grid-cols-2 gap-2"><Input type="time" value={form.shiftStart} onChange={e => setForm({ ...form, shiftStart: e.target.value })} /><Input type="time" value={form.shiftEnd} onChange={e => setForm({ ...form, shiftEnd: e.target.value })} /></div><Input type="date" value={form.rosterDate} onChange={e => setForm({ ...form, rosterDate: e.target.value })} /><Button className="w-full bg-teal-600 hover:bg-teal-700">Assign</Button></form></CardContent></Card></div></Wrap>;
 };
 
-export const HROnboardingPage = () => (
-  <Wrap title="Employee Onboarding" subtitle="Track onboarding progress for new joiners">
-    <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-      <KPI label="Active Onboarding" value="4"  sub="Joined last 30 days"   icon={UserPlus}     color="text-teal-600" />
-      <KPI label="Tasks Completed"   value="62%" sub="Across all joiners"    icon={CheckCircle2} color="text-emerald-600" />
-      <KPI label="Pending Tasks"     value="14" sub="Need immediate action"  icon={AlertCircle}  color="text-amber-600" />
-      <KPI label="Fully Onboarded"   value="1"  sub="This month"             icon={Star}         color="text-blue-600" />
-    </div>
-    <div className="space-y-4">
-      {onboarding.map(emp => {
-        const done = Object.values(emp.tasks).filter(Boolean).length;
-        const total = Object.values(emp.tasks).length;
-        const pct = Math.round((done / total) * 100);
-        return (
-          <Card key={emp.name}>
-            <CardContent className="pt-4">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <p className="font-semibold">{emp.name}</p>
-                  <p className="text-xs text-muted-foreground">{emp.role} · Joined {emp.joined} ({emp.daysIn} days)</p>
-                </div>
-                <div className="text-right">
-                  <span className={`text-sm font-bold ${pct === 100 ? 'text-emerald-600' : pct > 50 ? 'text-amber-600' : 'text-red-600'}`}>{pct}%</span>
-                  <p className="text-xs text-muted-foreground">{done}/{total} done</p>
-                </div>
-              </div>
-              <div className="h-1.5 bg-slate-100 rounded-full mb-3">
-                <div className={`h-full rounded-full ${pct === 100 ? 'bg-emerald-500' : pct > 50 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(emp.tasks).map(([k, v]) => (
-                  <span key={k} className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${v ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                    {v ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-                    {taskLabels[k]}
-                  </span>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
-    </div>
-  </Wrap>
-);
+// ═══════════════════════════════════════════════════════════════════════════════
+// 5. ONBOARDING
+// ═══════════════════════════════════════════════════════════════════════════════
+export const HROnboardingPage = () => {
+  const [rows, setRows] = useState<any[]>([]); const [form, setForm] = useState({ staffId: '', taskKey: 'documents', taskLabel: 'Documents', dueDate: todayDate() }); const [message, setMessage] = useState('');
+  const load = async () => { try { const r = await api.get('/hr/onboarding', { headers: hrHeaders() }); setRows(unwrapData<any[]>(r, [])); } catch (error) { setMessage(errText(error)); } };
+  useEffect(() => { load(); }, []);
+  const saveTask = async (event: React.FormEvent) => { event.preventDefault(); try { await api.post('/hr/onboarding/tasks', form, { headers: hrHeaders() }); setMessage('Onboarding task saved.'); await load(); } catch (error) { setMessage(errText(error)); } };
+  const done = async (id: number | string) => { try { await api.patch('/hr/onboarding/tasks/' + id + '/status', { status: 'completed' }, { headers: hrHeaders() }); await load(); } catch (error) { setMessage(errText(error)); } };
+  const active = rows.filter(r => (r.tasks || []).some((t: any) => t.status !== 'completed')).length;
+  return <Wrap title="Employee Onboarding" subtitle="Track onboarding progress, documents, IDs, access, training, and payroll setup"><div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6"><KPI label="Active Onboarding" value={String(active)} sub="Pending task owners" icon={UserPlus} color="text-teal-600" /><KPI label="Staff Tracked" value={String(rows.length)} sub="Active employees" icon={Users} color="text-blue-600" /><KPI label="Pending Tasks" value={String(rows.reduce((n,r)=>n+(r.tasks||[]).filter((t:any)=>t.status!=='completed').length,0))} sub="Need action" icon={AlertCircle} color="text-amber-600" /><KPI label="Completed Tasks" value={String(rows.reduce((n,r)=>n+(r.tasks||[]).filter((t:any)=>t.status==='completed').length,0))} sub="Across staff" icon={CheckCircle2} color="text-emerald-600" /></div>{message && <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{message}</div>}<div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6"><div className="space-y-4">{rows.map(emp => { const tasks = emp.tasks || []; const pct = tasks.length ? Math.round(tasks.filter((t:any)=>t.status==='completed').length / tasks.length * 100) : 0; return <Card key={emp.id}><CardContent className="pt-4"><div className="flex items-start justify-between mb-3"><div><p className="font-semibold">{emp.name}</p><p className="text-xs text-muted-foreground">{emp.designation} · {emp.department}</p></div><span className="text-sm font-bold text-teal-600">{pct}%</span></div><div className="grid grid-cols-2 md:grid-cols-3 gap-2">{tasks.map((t:any)=><button key={t.id} onClick={()=>done(t.id)} className={`flex items-center gap-2 text-xs rounded-md border px-2 py-1.5 ${t.status==='completed'?'bg-emerald-50 border-emerald-200 text-emerald-700':'bg-slate-50 text-slate-600'}`}>{t.status==='completed'?<CheckCircle2 className="h-3.5 w-3.5" />:<Clock className="h-3.5 w-3.5" />}{t.taskLabel}</button>)}</div></CardContent></Card> })}</div><Card><CardHeader><CardTitle className="text-base">Add Task</CardTitle></CardHeader><CardContent><form className="space-y-3" onSubmit={saveTask}><select required className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={form.staffId} onChange={e=>setForm({...form,staffId:e.target.value})}><option value="">Select staff</option>{rows.map(r=><option key={r.id} value={r.id}>{r.employeeCode} - {r.name}</option>)}</select><select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={form.taskKey} onChange={e=>setForm({...form,taskKey:e.target.value,taskLabel:e.target.selectedOptions[0].text})}><option value="documents">Documents</option><option value="id_card">ID Card</option><option value="email_setup">Email Setup</option><option value="training">Training</option><option value="mentor">Mentor Assigned</option><option value="payroll">Payroll Setup</option></select><Input type="date" value={form.dueDate} onChange={e=>setForm({...form,dueDate:e.target.value})}/><Button className="w-full bg-teal-600 hover:bg-teal-700">Save Task</Button></form></CardContent></Card></div></Wrap>;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 5A. TIMESHEETS
+// ═══════════════════════════════════════════════════════════════════════════════
+export const HRTimesheetsPage = () => {
+  const [rows,setRows]=useState<any[]>([]); const [staff,setStaff]=useState<StaffMember[]>([]); const [date,setDate]=useState(todayDate()); const [message,setMessage]=useState(''); const [form,setForm]=useState({staffId:'',workDate:todayDate(),task:'General duty',hours:8,notes:''});
+  const load=async()=>{try{const [r,s]=await Promise.all([api.get('/hr/timesheets?date='+date,{headers:hrHeaders()}),api.get('/hr/staff',{headers:hrHeaders()})]);setRows(unwrapData<any[]>(r,[]));setStaff(unwrapData<StaffMember[]>(s,[]));}catch(e){setMessage(errText(e));}}; useEffect(()=>{load();},[date]);
+  const save=async(e:React.FormEvent)=>{e.preventDefault();try{await api.post('/hr/timesheets',form,{headers:hrHeaders()});setMessage('Timesheet submitted.');await load();}catch(err){setMessage(errText(err));}}; const status=async(id:any,st:string)=>{try{await api.patch('/hr/timesheets/'+id+'/status',{status:st},{headers:hrHeaders()});await load();}catch(e){setMessage(errText(e));}};
+  return <Wrap title="Timesheets" subtitle="Submitted hours, approvals, and duty logs"><div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6"><KPI label="Entries" value={String(rows.length)} sub="Selected week" icon={FileText} color="text-teal-600"/><KPI label="Hours" value={String(rows.reduce((n,r)=>n+Number(r.hours||0),0))} sub="Submitted" icon={Clock} color="text-blue-600"/><KPI label="Pending" value={String(rows.filter(r=>r.status==='submitted').length)} sub="Approval queue" icon={AlertCircle} color="text-amber-600"/><KPI label="Approved" value={String(rows.filter(r=>r.status==='approved').length)} sub="Ready for payroll" icon={CheckCircle2} color="text-emerald-600"/></div>{message&&<div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{message}</div>}<div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6"><Card><CardHeader className="flex flex-row items-center justify-between pb-3"><CardTitle className="text-base">Weekly Timesheets</CardTitle><Input className="h-8 w-40" type="date" value={date} onChange={e=>setDate(e.target.value)}/></CardHeader><CardContent><table className="w-full text-sm"><thead><tr className="border-b"><TH>Employee</TH><TH>Date</TH><TH>Task</TH><TH>Hours</TH><TH>Status</TH><TH>Actions</TH></tr></thead><tbody>{rows.map(r=><tr key={r.id}><TD>{[r.firstName,r.lastName].filter(Boolean).join(' ')}</TD><TD>{displayDate(r.workDate)}</TD><TD>{r.task}</TD><TD center>{Number(r.hours||0)}</TD><TD><Bdg s={statusLabel(r.status)}/></TD><TD><Button size="sm" variant="ghost" onClick={()=>status(r.id,'approved')}>Approve</Button></TD></tr>)}</tbody></table></CardContent></Card><Card><CardHeader><CardTitle className="text-base">Add Timesheet</CardTitle></CardHeader><CardContent><form className="space-y-3" onSubmit={save}><select required className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={form.staffId} onChange={e=>setForm({...form,staffId:e.target.value})}><option value="">Select staff</option>{staff.map(s=><option key={s.id} value={s.id}>{s.employeeCode} - {s.name}</option>)}</select><Input type="date" value={form.workDate} onChange={e=>setForm({...form,workDate:e.target.value})}/><Input value={form.task} onChange={e=>setForm({...form,task:e.target.value})}/><Input type="number" min="0" step="0.25" value={form.hours} onChange={e=>setForm({...form,hours:Number(e.target.value)})}/><Input placeholder="Notes" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})}/><Button className="w-full bg-teal-600 hover:bg-teal-700">Submit</Button></form></CardContent></Card></div></Wrap>;
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 5B. DOCUMENT MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════════
+export const HRDocumentsPage = () => {
+  const [docs,setDocs]=useState<any[]>([]); const [staff,setStaff]=useState<StaffMember[]>([]); const [file,setFile]=useState<File|null>(null); const [form,setForm]=useState({staffId:'',documentType:'id_proof'}); const [message,setMessage]=useState('');
+  const load=async()=>{try{const [d,s]=await Promise.all([api.get('/hr/documents',{headers:hrHeaders()}),api.get('/hr/staff',{headers:hrHeaders()})]);setDocs(unwrapData<any[]>(d,[]));setStaff(unwrapData<StaffMember[]>(s,[]));}catch(e){setMessage(errText(e));}}; useEffect(()=>{load();},[]);
+  const upload=async(e:React.FormEvent)=>{e.preventDefault(); if(!file) return setMessage('Select a document file.'); try{const fd=new FormData(); fd.append('document',file); if(form.staffId) fd.append('staffId',form.staffId); fd.append('documentType',form.documentType); await api.post('/hr/documents',fd,{headers:hrHeaders()}); setFile(null); setMessage('Document stored.'); await load();}catch(err){setMessage(errText(err));}};
+  const verify=async(id:any,status:string)=>{try{await api.patch('/hr/documents/'+id+'/verify',{status},{headers:hrHeaders()});await load();}catch(e){setMessage(errText(e));}};
+  return <Wrap title="Document Management" subtitle="Employee documents, verification, and secure HR storage"><div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6"><KPI label="Documents" value={String(docs.length)} sub="Stored" icon={FileText} color="text-teal-600"/><KPI label="Verified" value={String(docs.filter(d=>d.verificationStatus==='verified').length)} sub="Approved" icon={CheckCircle2} color="text-emerald-600"/><KPI label="Pending" value={String(docs.filter(d=>d.verificationStatus==='pending').length)} sub="Needs review" icon={AlertCircle} color="text-amber-600"/><KPI label="Staff" value={String(new Set(docs.map(d=>d.staffId).filter(Boolean)).size)} sub="With documents" icon={Users} color="text-blue-600"/></div>{message&&<div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{message}</div>}<div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6"><Card><CardHeader><CardTitle className="text-base">Employee Documents</CardTitle></CardHeader><CardContent><table className="w-full text-sm"><thead><tr className="border-b"><TH>Employee</TH><TH>Type</TH><TH>File</TH><TH>Size</TH><TH>Status</TH><TH>Actions</TH></tr></thead><tbody>{docs.map(d=><tr key={d.id}><TD>{[d.firstName,d.lastName].filter(Boolean).join(' ')||'Unassigned'}</TD><TD>{benefitLabel(d.documentType)}</TD><TD><span className="font-medium">{d.originalName}</span><p className="text-xs text-muted-foreground">{d.storageProvider}</p></TD><TD>{bytesLabel(d.fileSize)}</TD><TD><Bdg s={statusLabel(d.verificationStatus)}/></TD><TD><Button size="sm" variant="ghost" onClick={()=>verify(d.id,'verified')}>Verify</Button></TD></tr>)}</tbody></table></CardContent></Card><Card><CardHeader><CardTitle className="text-base">Upload Document</CardTitle></CardHeader><CardContent><form className="space-y-3" onSubmit={upload}><select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={form.staffId} onChange={e=>setForm({...form,staffId:e.target.value})}><option value="">Unassigned</option>{staff.map(s=><option key={s.id} value={s.id}>{s.employeeCode} - {s.name}</option>)}</select><select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={form.documentType} onChange={e=>setForm({...form,documentType:e.target.value})}><option value="id_proof">ID proof</option><option value="address_proof">Address proof</option><option value="qualification">Qualification</option><option value="license">License</option><option value="contract">Contract</option><option value="other">Other</option></select><Input type="file" onChange={e=>setFile(e.target.files?.[0]||null)}/><Button className="w-full bg-teal-600 hover:bg-teal-700">Store Document</Button></form></CardContent></Card></div></Wrap>;
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 6. PAYROLL
@@ -577,212 +875,920 @@ export const HRPfEsiPage = () => (
 );
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 8. BENEFITS (NEW)
+// 8. BENEFITS
 // ═══════════════════════════════════════════════════════════════════════════════
-const benefits = [
-  { name: 'Group Health Insurance', provider: 'Star Health', coverage: '₹3L/employee', enrolled: 462, premium: '₹12.4L/yr', status: 'Active' },
-  { name: 'Term Life Insurance',    provider: 'LIC',         coverage: '₹15L',         enrolled: 450, premium: '₹8.2L/yr',  status: 'Active' },
-  { name: 'Accident Insurance',     provider: 'New India',   coverage: '₹5L',          enrolled: 466, premium: '₹3.1L/yr',  status: 'Active' },
-  { name: 'Canteen Subsidy',        provider: 'Internal',    coverage: '₹50/day',      enrolled: 380, premium: '₹5.7L/yr',  status: 'Active' },
-  { name: 'Transport Allowance',    provider: 'Internal',    coverage: '₹2,000/month', enrolled: 290, premium: '₹5.8L/yr',  status: 'Active' },
-  { name: 'Children Education',     provider: 'LIC',         coverage: '₹15,000/yr',   enrolled: 120, premium: '₹1.8L/yr',  status: 'Active' },
-];
+type BenefitProgram = {
+  id: number | string;
+  name: string;
+  provider: string;
+  benefitType: string;
+  coverage?: string | null;
+  enrolledCount: number;
+  annualCost: number;
+  renewalDate?: string | null;
+  status: string;
+  complianceNotes?: string | null;
+};
 
-export const HRBenefitsPage = () => (
-  <Wrap title="Employee Benefits" subtitle="Insurance, allowances & wellness benefits management">
-    <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-      <KPI label="Total Benefits"    value="6"      sub="Active benefit programs"  icon={Gift}        color="text-teal-600" />
-      <KPI label="Annual Cost"       value="₹37L"   sub="FY 2025-26"               icon={Wallet}      color="text-emerald-600" />
-      <KPI label="Health Enrolled"   value="462"    sub="Group health insurance"   icon={ShieldCheck} color="text-blue-600" />
-      <KPI label="Renewal (Apr)"     value="3"      sub="Policies up for renewal"  icon={AlertCircle} color="text-amber-600" />
-    </div>
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-3">
-        <CardTitle className="text-base">Benefits Register</CardTitle>
-        <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700"><PlusCircle className="h-4 w-4" />Add Benefit</Button>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b"><TH>Benefit</TH><TH>Provider</TH><TH>Coverage</TH><TH>Enrolled</TH><TH>Annual Premium</TH><TH>Status</TH></tr></thead>
-            <tbody className="divide-y">
-              {benefits.map(b => (
-                <tr key={b.name} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                  <TD><span className="font-medium">{b.name}</span></TD>
-                  <TD>{b.provider}</TD>
-                  <TD>{b.coverage}</TD>
-                  <TD center><span className="font-semibold">{b.enrolled}</span></TD>
-                  <TD><span className="font-semibold text-emerald-700">{b.premium}</span></TD>
-                  <TD><Bdg s={b.status} /></TD>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
-  </Wrap>
-);
+type BenefitSummary = {
+  total: number;
+  active: number;
+  annualCost: number;
+  enrolled: number;
+  renewalsDue: number;
+  attentionRequired: number;
+};
+
+const benefitLabel = (value: string) => String(value || '').split('_').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+const makeBenefitForm = () => ({
+  name: '',
+  provider: 'Internal',
+  benefitType: 'wellness',
+  coverage: '',
+  enrolledCount: 0,
+  annualCost: 0,
+  renewalDate: '',
+  status: 'active',
+  complianceNotes: '',
+});
+const benefitStatusLabel = (status: string) => {
+  if (status === 'active') return 'Active';
+  if (status === 'inactive') return 'Inactive';
+  if (status === 'renewal_due') return 'Due';
+  if (status === 'expired') return 'Overdue';
+  return benefitLabel(status);
+};
+
+export const HRBenefitsPage = () => {
+  const [benefits, setBenefits] = useState<BenefitProgram[]>([]);
+  const [summary, setSummary] = useState<BenefitSummary | null>(null);
+  const [form, setForm] = useState(makeBenefitForm);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    setMessage('');
+    try {
+      const [benefitRes, summaryRes] = await Promise.all([
+        api.get('/hr/benefits', { headers: hrHeaders() }),
+        api.get('/hr/benefits/summary', { headers: hrHeaders() }),
+      ]);
+      setBenefits(unwrapData<BenefitProgram[]>(benefitRes, []));
+      setSummary(unwrapData<BenefitSummary | null>(summaryRes, null));
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const addBenefit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      await api.post('/hr/benefits', form, { headers: hrHeaders() });
+      setForm(makeBenefitForm());
+      setMessage('Benefit program saved. Renewal and enrollment KPIs have been refreshed.');
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Wrap title="Employee Benefits" subtitle="Insurance, allowances, wellness benefits, renewals, and compliance tracking">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        <KPI label="Active Benefits" value={String(summary?.active ?? benefits.filter(b => b.status === 'active').length)} sub={(summary?.total ?? benefits.length) + ' total programs'} icon={Gift} color="text-teal-600" />
+        <KPI label="Annual Cost" value={fmt(summary?.annualCost ?? benefits.reduce((sum, b) => sum + Number(b.annualCost || 0), 0))} sub="Benefit budget exposure" icon={Wallet} color="text-emerald-600" />
+        <KPI label="Enrolled Lives" value={String(summary?.enrolled ?? benefits.reduce((sum, b) => sum + Number(b.enrolledCount || 0), 0))} sub="Across all benefit programs" icon={ShieldCheck} color="text-blue-600" />
+        <KPI label="Renewals Due" value={String(summary?.renewalsDue ?? 0)} sub={(summary?.attentionRequired ?? 0) + ' need attention'} icon={AlertCircle} color="text-amber-600" />
+      </div>
+
+      {message && <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{message}</div>}
+
+      <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_380px] gap-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <CardTitle className="text-base">Benefits Register</CardTitle>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="gap-1" onClick={() => exportToExcel(benefits, 'hr-benefits')}><Download className="h-4 w-4" />Export</Button>
+              <Button variant="outline" size="sm" className="gap-1" onClick={load} disabled={loading}><RefreshCw className="h-4 w-4" />Refresh</Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b"><TH>Benefit</TH><TH>Provider</TH><TH>Type</TH><TH>Coverage</TH><TH>Enrolled</TH><TH>Annual Cost</TH><TH>Renewal</TH><TH>Status</TH></tr></thead>
+                <tbody className="divide-y">
+                  {benefits.map(b => (
+                    <tr key={b.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                      <TD><span className="font-medium">{b.name}</span>{b.complianceNotes && <p className="text-xs text-muted-foreground">{b.complianceNotes}</p>}</TD>
+                      <TD>{b.provider}</TD>
+                      <TD>{benefitLabel(b.benefitType)}</TD>
+                      <TD>{b.coverage || '-'}</TD>
+                      <TD center><span className="font-semibold">{Number(b.enrolledCount || 0).toLocaleString('en-IN')}</span></TD>
+                      <TD><span className="font-semibold text-emerald-700">{fmt(b.annualCost || 0)}</span></TD>
+                      <TD>{b.renewalDate ? displayDate(b.renewalDate) : '-'}</TD>
+                      <TD><Bdg s={benefitStatusLabel(b.status)} /></TD>
+                    </tr>
+                  ))}
+                  {!loading && benefits.length === 0 && <tr><TD><span className="text-muted-foreground">No benefit programs configured yet</span></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD></tr>}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><PlusCircle className="h-4 w-4" />Add Benefit</CardTitle></CardHeader>
+          <CardContent>
+            <form className="space-y-3" onSubmit={addBenefit}>
+              <Input required placeholder="Benefit name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+              <div className="grid grid-cols-2 gap-2"><Input placeholder="Provider" value={form.provider} onChange={e => setForm({ ...form, provider: e.target.value })} /><select className="h-10 text-sm border rounded-md px-2 bg-background" value={form.benefitType} onChange={e => setForm({ ...form, benefitType: e.target.value })}><option value="insurance">Insurance</option><option value="wellness">Wellness</option><option value="allowance">Allowance</option><option value="subsidy">Subsidy</option><option value="retirement">Retirement</option></select></div>
+              <Input placeholder="Coverage or entitlement" value={form.coverage} onChange={e => setForm({ ...form, coverage: e.target.value })} />
+              <div className="grid grid-cols-2 gap-2"><Input type="number" min={0} placeholder="Enrolled" value={form.enrolledCount} onChange={e => setForm({ ...form, enrolledCount: Number(e.target.value) })} /><Input type="number" min={0} placeholder="Annual cost" value={form.annualCost} onChange={e => setForm({ ...form, annualCost: Number(e.target.value) })} /></div>
+              <div className="grid grid-cols-2 gap-2"><Input type="date" value={form.renewalDate} onChange={e => setForm({ ...form, renewalDate: e.target.value })} /><select className="h-10 text-sm border rounded-md px-2 bg-background" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}><option value="active">Active</option><option value="renewal_due">Renewal due</option><option value="inactive">Inactive</option><option value="expired">Expired</option></select></div>
+              <textarea className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm" placeholder="Compliance notes, eligibility rules, renewal owner" value={form.complianceNotes} onChange={e => setForm({ ...form, complianceNotes: e.target.value })} />
+              <Button type="submit" className="w-full gap-1 bg-teal-600 hover:bg-teal-700" disabled={saving}><Gift className="h-4 w-4" />Save Benefit</Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    </Wrap>
+  );
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 9. RECRUITMENT
 // ═══════════════════════════════════════════════════════════════════════════════
-const jobs = [
-  { id: 'JD001', title: 'Cardiologist',       dept: 'Cardiology',  posted: '01-Mar-26', applicants: 18, shortlisted: 5, status: 'Open' },
-  { id: 'JD002', title: 'ICU Nurse',          dept: 'Nursing',     posted: '05-Mar-26', applicants: 42, shortlisted: 8, status: 'Open' },
-  { id: 'JD003', title: 'Radiographer',       dept: 'Radiology',   posted: '10-Mar-26', applicants: 12, shortlisted: 3, status: 'Open' },
-  { id: 'JD004', title: 'Medical Coder',      dept: 'Accounts',    posted: '01-Feb-26', applicants: 35, shortlisted: 6, status: 'Closed' },
-  { id: 'JD005', title: 'Lab Technician',     dept: 'Lab',         posted: '15-Mar-26', applicants: 8,  shortlisted: 2, status: 'Open' },
-  { id: 'JD006', title: 'Ward Admin',         dept: 'Admin',       posted: '18-Mar-26', applicants: 22, shortlisted: 4, status: 'Open' },
-];
+type RecruitmentRequisition = {
+  id: number | string;
+  requisitionCode: string;
+  title: string;
+  department: string;
+  role: string;
+  openings: number;
+  priority: string;
+  status: string;
+  location?: string | null;
+  employmentType?: string;
+  experienceMin: number;
+  experienceMax: number;
+  skills: string[];
+  description?: string | null;
+  aiJobBrief?: { headline?: string; mustHave?: string[]; screeningCriteria?: string[]; interviewFocus?: string[] };
+  applicants: number;
+  shortlisted: number;
+  interviews: number;
+  offers: number;
+  hired: number;
+  createdAt?: string;
+};
 
-export const HRRecruitmentPage = () => (
-  <Wrap title="Recruitment" subtitle="Job postings, candidate pipeline & interview tracking">
-    <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-      <KPI label="Open Positions"    value="5"   sub="Active job postings"     icon={Briefcase}   color="text-teal-600" />
-      <KPI label="Total Applicants"  value="102" sub="Across all roles"        icon={Users}       color="text-blue-600" />
-      <KPI label="Shortlisted"       value="22"  sub="Pending interview"       icon={UserPlus}    color="text-amber-600" />
-      <KPI label="Hired (Month)"     value="4"   sub="Offer letters issued"    icon={CheckCircle2} color="text-emerald-600" />
-    </div>
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-3">
-        <CardTitle className="text-base">Job Postings</CardTitle>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="gap-1"><Download className="h-4 w-4" />Export</Button>
-          <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700"><PlusCircle className="h-4 w-4" />New Posting</Button>
+type RecruitmentCandidate = {
+  id: number | string;
+  requisitionId?: number | string | null;
+  requisitionCode?: string | null;
+  requisitionTitle?: string | null;
+  candidateCode: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  currentRole?: string | null;
+  experienceYears: number;
+  source: string;
+  stage: string;
+  resumeText?: string | null;
+  skills: string[];
+  aiScore?: number | null;
+  aiSummary?: string | null;
+  aiRecommendation?: string | null;
+  aiRisks?: string[];
+  expectedCtc?: number | null;
+  noticePeriodDays?: number | null;
+  metadata?: any;
+  createdAt?: string;
+};
+
+type RecruitmentSummary = {
+  open_positions: number;
+  openings: number;
+  candidates: number;
+  shortlisted: number;
+  upcoming_interviews: number;
+  offers: number;
+  hired_month: number;
+};
+
+type CvDocument = {
+  id: number | string;
+  candidateId?: number | string | null;
+  originalName: string;
+  fileSize: number;
+  storageProvider: string;
+  publicUrl?: string | null;
+  aiSummary?: string | null;
+  aiSkills?: string[];
+  createdAt?: string;
+};
+
+type HrMailSetting = { id: number | string; email: string; displayName?: string | null; imapHost?: string | null; lastSyncedAt?: string | null; isDefault?: boolean; };
+type HrInboxEmail = {
+  id: number | string;
+  fromAddr: string;
+  fromName?: string;
+  subject: string;
+  bodyPreview?: string;
+  attachments?: Array<{ filename: string; cvDocumentId?: number | string; rejected?: boolean }>;
+  aiIntent: string;
+  aiStatus: string;
+  receivedAt?: string;
+};
+
+const stageOptions = ['sourced', 'screening', 'shortlisted', 'interview', 'offer', 'hired', 'rejected'];
+const stageText = (stage: string) => String(stage || '').split('_').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
+const makeReqForm = () => ({
+  title: '',
+  department: 'Nursing',
+  role: 'staff',
+  openings: 1,
+  priority: 'normal',
+  status: 'open',
+  location: '',
+  employmentType: 'Full-time',
+  experienceMin: 1,
+  experienceMax: 8,
+  skills: '',
+  description: '',
+});
+const makeCandidateForm = () => ({
+  requisitionId: '',
+  name: '',
+  email: '',
+  phone: '',
+  currentRole: '',
+  experienceYears: 1,
+  source: 'direct',
+  skills: '',
+  resumeText: '',
+  expectedCtc: '',
+  noticePeriodDays: '',
+});
+const makeInterviewForm = () => ({ candidateId: '', roundName: 'HR Screen', interviewer: '', scheduledAt: '', mode: 'video' });
+const makeOfferForm = () => ({ candidateId: '', offeredCtc: '', joiningDate: todayDate(), note: '' });
+const makeInboxForm = () => ({ email: '', displayName: 'HR Inbox', imapHost: 'imap.gmail.com', imapPort: 993, imapSecure: true, imapUsername: '', imapPassword: '' });
+const bytesLabel = (value: number) => {
+  const n = Number(value || 0);
+  if (n >= 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+  if (n >= 1024) return Math.round(n / 1024) + ' KB';
+  return n + ' B';
+};
+
+export const HRRecruitmentPage = () => {
+  const [summary, setSummary] = useState<RecruitmentSummary | null>(null);
+  const [requisitions, setRequisitions] = useState<RecruitmentRequisition[]>([]);
+  const [candidates, setCandidates] = useState<RecruitmentCandidate[]>([]);
+  const [selectedReq, setSelectedReq] = useState('all');
+  const [stageFilter, setStageFilter] = useState('all');
+  const [reqForm, setReqForm] = useState(makeReqForm);
+  const [candidateForm, setCandidateForm] = useState(makeCandidateForm);
+  const [interviewForm, setInterviewForm] = useState(makeInterviewForm);
+  const [offerForm, setOfferForm] = useState(makeOfferForm);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [selectedCandidateId, setSelectedCandidateId] = useState<number | string | null>(null);
+  const [cvDocs, setCvDocs] = useState<CvDocument[]>([]);
+  const [cvFile, setCvFile] = useState<File | null>(null);
+  const [cvCandidateId, setCvCandidateId] = useState('');
+  const [mailSettings, setMailSettings] = useState<HrMailSetting[]>([]);
+  const [inboxEmails, setInboxEmails] = useState<HrInboxEmail[]>([]);
+  const [inboxForm, setInboxForm] = useState(makeInboxForm);
+
+  const load = async () => {
+    setLoading(true);
+    setMessage('');
+    try {
+      const query = new URLSearchParams();
+      if (selectedReq !== 'all') query.set('requisitionId', selectedReq);
+      if (stageFilter !== 'all') query.set('stage', stageFilter);
+      const [summaryRes, reqRes, candRes, cvRes, mailRes, inboxRes] = await Promise.all([
+        api.get('/hr/recruitment/summary', { headers: hrHeaders() }),
+        api.get('/hr/recruitment/requisitions', { headers: hrHeaders() }),
+        api.get('/hr/recruitment/candidates' + (query.toString() ? '?' + query.toString() : ''), { headers: hrHeaders() }),
+        api.get('/hr/recruitment/cv-documents', { headers: hrHeaders() }),
+        api.get('/hr/mail/settings', { headers: hrHeaders() }),
+        api.get('/hr/mail/inbox?limit=10', { headers: hrHeaders() }),
+      ]);
+      const reqs = unwrapData<RecruitmentRequisition[]>(reqRes, []);
+      setSummary(unwrapData<RecruitmentSummary | null>(summaryRes, null));
+      setRequisitions(reqs);
+      setCandidates(unwrapData<RecruitmentCandidate[]>(candRes, []));
+      setCvDocs(unwrapData<CvDocument[]>(cvRes, []));
+      setMailSettings(unwrapData<HrMailSetting[]>(mailRes, []));
+      setInboxEmails(unwrapData<{ emails: HrInboxEmail[] }>(inboxRes, { emails: [] }).emails || []);
+      if (!candidateForm.requisitionId && reqs[0]) setCandidateForm(prev => ({ ...prev, requisitionId: String(reqs[0].id) }));
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [selectedReq, stageFilter]);
+
+  const selectedReqObj = requisitions.find(r => String(r.id) === selectedReq) || requisitions[0] || null;
+  const selectedCandidate = candidates.find(c => c.id === selectedCandidateId) || candidates[0] || null;
+  const topCandidates = [...candidates].sort((a, b) => Number(b.aiScore || 0) - Number(a.aiScore || 0)).slice(0, 5);
+
+  const createReq = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      await api.post('/hr/recruitment/requisitions', { ...reqForm, skills: reqForm.skills.split(',').map(s => s.trim()).filter(Boolean) }, { headers: hrHeaders() });
+      setReqForm(makeReqForm());
+      setMessage('Requisition created with AI screening criteria and interview focus.');
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addCandidate = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      await api.post('/hr/recruitment/candidates', {
+        ...candidateForm,
+        requisitionId: candidateForm.requisitionId || null,
+        skills: candidateForm.skills.split(',').map(s => s.trim()).filter(Boolean),
+        expectedCtc: candidateForm.expectedCtc ? Number(candidateForm.expectedCtc) : null,
+        noticePeriodDays: candidateForm.noticePeriodDays ? Number(candidateForm.noticePeriodDays) : null,
+      }, { headers: hrHeaders() });
+      setCandidateForm(makeCandidateForm());
+      setMessage('Candidate added and AI-screened against the selected requisition.');
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const screenCandidate = async (id: number | string) => {
+    setMessage('');
+    try {
+      const res = await api.post('/hr/recruitment/candidates/' + id + '/ai-screen', {}, { headers: hrHeaders() });
+      setMessage('AI screening completed: ' + (res.data?.data?.recommendation || 'Score refreshed'));
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    }
+  };
+
+  const moveStage = async (id: number | string, stage: string) => {
+    setMessage('');
+    try {
+      await api.patch('/hr/recruitment/candidates/' + id + '/stage', { stage }, { headers: hrHeaders() });
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    }
+  };
+
+  const scheduleInterview = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!interviewForm.candidateId) return setMessage('Select a candidate before scheduling an interview.');
+    setSaving(true);
+    setMessage('');
+    try {
+      await api.post('/hr/recruitment/candidates/' + interviewForm.candidateId + '/interviews', interviewForm, { headers: hrHeaders() });
+      setInterviewForm(makeInterviewForm());
+      setMessage('Interview scheduled with AI-generated question pack.');
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const markOffer = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!offerForm.candidateId) return setMessage('Select a candidate before marking an offer.');
+    setSaving(true);
+    setMessage('');
+    try {
+      await api.post('/hr/recruitment/candidates/' + offerForm.candidateId + '/offer', offerForm, { headers: hrHeaders() });
+      setOfferForm(makeOfferForm());
+      setMessage('Offer details saved and candidate moved to offer stage.');
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const hireCandidate = async (candidate: RecruitmentCandidate) => {
+    setMessage('');
+    try {
+      await api.post('/hr/recruitment/candidates/' + candidate.id + '/hire', {
+        department: selectedReqObj?.department,
+        designation: selectedReqObj?.title || candidate.currentRole,
+        role: selectedReqObj?.role || 'staff',
+        phone: candidate.phone,
+      }, { headers: hrHeaders() });
+      setMessage('Candidate hired and staff record created with first-login password reset required.');
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    }
+  };
+
+  const uploadCv = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!cvFile) return setMessage('Select a CV file before uploading.');
+    setSaving(true);
+    setMessage('');
+    try {
+      const formData = new FormData();
+      formData.append('cv', cvFile);
+      if (cvCandidateId) formData.append('candidateId', cvCandidateId);
+      await api.post('/hr/recruitment/cv-documents', formData, { headers: hrHeaders() });
+      setCvFile(null);
+      setCvCandidateId('');
+      setMessage('CV stored in the HR tenant intake folder.');
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveInboxSettings = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      await api.post('/hr/mail/settings', inboxForm, { headers: hrHeaders() });
+      setInboxForm(makeInboxForm());
+      setMessage('HR inbox connected. Sync it to let AI classify recruitment and benefits emails.');
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const syncInbox = async (id: number | string) => {
+    setMessage('');
+    try {
+      const res = await api.post('/hr/mail/settings/' + id + '/sync', {}, { headers: hrHeaders() });
+      setMessage('HR inbox synced: ' + JSON.stringify(res.data?.data || {}));
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    }
+  };
+
+  const runInboxAction = async (email: HrInboxEmail, action?: string) => {
+    setMessage('');
+    try {
+      await api.post('/hr/mail/inbox/' + email.id + '/ai-action', { action: action || email.aiIntent, requisitionId: selectedReq !== 'all' ? selectedReq : undefined }, { headers: hrHeaders() });
+      setMessage(action === 'benefits' || email.aiIntent === 'benefits' ? 'Benefit intake item created from HR inbox.' : 'Candidate created from HR inbox.');
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    }
+  };
+
+  return (
+    <Wrap title="Recruitment" subtitle="AI-assisted requisitions, screening, interviews, offers, and hiring">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        <KPI label="Open Positions" value={String(summary?.openings ?? 0)} sub={(summary?.open_positions ?? 0) + ' active requisitions'} icon={Briefcase} color="text-teal-600" />
+        <KPI label="Candidates" value={String(summary?.candidates ?? candidates.length)} sub="All active pipelines" icon={Users} color="text-blue-600" />
+        <KPI label="Shortlisted" value={String(summary?.shortlisted ?? 0)} sub="Screening and interview" icon={UserPlus} color="text-amber-600" />
+        <KPI label="Hired (Month)" value={String(summary?.hired_month ?? 0)} sub={(summary?.offers ?? 0) + ' offers active'} icon={CheckCircle2} color="text-emerald-600" />
+      </div>
+
+      {message && <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{message}</div>}
+
+      <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_400px] gap-6">
+        <div className="space-y-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-3">
+              <CardTitle className="text-base">Requisition Pipeline</CardTitle>
+              <div className="flex gap-2">
+                <select className="h-8 text-sm border rounded-md px-2 bg-background" value={selectedReq} onChange={e => setSelectedReq(e.target.value)}><option value="all">All requisitions</option>{requisitions.map(r => <option key={r.id} value={r.id}>{r.requisitionCode} - {r.title}</option>)}</select>
+                <Button variant="outline" size="sm" className="gap-1" onClick={() => exportToExcel(requisitions, 'hr-requisitions')}><Download className="h-4 w-4" />Export</Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b"><TH>Req</TH><TH>Position</TH><TH>Dept</TH><TH>Openings</TH><TH>Applicants</TH><TH>AI Brief</TH><TH>Status</TH></tr></thead>
+                  <tbody className="divide-y">
+                    {requisitions.map(r => (
+                      <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                        <TD><span className="font-mono text-xs">{r.requisitionCode}</span></TD>
+                        <TD><span className="font-medium">{r.title}</span><p className="text-xs text-muted-foreground">{r.experienceMin}-{r.experienceMax} yrs · {r.priority}</p></TD>
+                        <TD>{r.department}</TD>
+                        <TD center>{r.openings}</TD>
+                        <TD center><span className="font-semibold">{r.applicants}</span><p className="text-xs text-muted-foreground">{r.shortlisted} shortlisted</p></TD>
+                        <TD><span className="text-xs text-muted-foreground">{r.aiJobBrief?.mustHave?.slice(0, 3).join(', ') || r.skills.slice(0, 3).join(', ') || '-'}</span></TD>
+                        <TD><Bdg s={stageText(r.status)} /></TD>
+                      </tr>
+                    ))}
+                    {!loading && requisitions.length === 0 && <tr><TD><span className="text-muted-foreground">No requisitions yet</span></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-3">
+              <CardTitle className="text-base">Candidate Command Center</CardTitle>
+              <div className="flex gap-2">
+                <select className="h-8 text-sm border rounded-md px-2 bg-background" value={stageFilter} onChange={e => setStageFilter(e.target.value)}><option value="all">All stages</option>{stageOptions.map(s => <option key={s} value={s}>{stageText(s)}</option>)}</select>
+                <Button variant="outline" size="sm" className="gap-1" onClick={load} disabled={loading}><RefreshCw className="h-4 w-4" />Refresh</Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b"><TH>Candidate</TH><TH>Role</TH><TH>AI Score</TH><TH>Recommendation</TH><TH>Stage</TH><TH>Actions</TH></tr></thead>
+                  <tbody className="divide-y">
+                    {candidates.map(c => (
+                      <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50" onClick={() => setSelectedCandidateId(c.id)}>
+                        <TD><span className="font-medium">{c.name}</span><p className="text-xs text-muted-foreground">{c.candidateCode} · {c.email || c.phone || '-'}</p></TD>
+                        <TD>{c.requisitionTitle || c.currentRole || '-'}<p className="text-xs text-muted-foreground">{c.experienceYears} yrs · {c.source}</p></TD>
+                        <TD><span className={`font-bold ${Number(c.aiScore || 0) >= 80 ? 'text-emerald-600' : Number(c.aiScore || 0) >= 60 ? 'text-amber-600' : 'text-slate-500'}`}>{c.aiScore ?? '-'}</span></TD>
+                        <TD><span className="text-xs text-muted-foreground">{c.aiRecommendation || c.aiSummary || 'Not screened'}</span></TD>
+                        <TD><Bdg s={stageText(c.stage)} /></TD>
+                        <TD>
+                          <div className="flex flex-wrap gap-1">
+                            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={(e) => { e.stopPropagation(); screenCandidate(c.id); }}>AI</Button>
+                            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={(e) => { e.stopPropagation(); moveStage(c.id, 'shortlisted'); }}>Shortlist</Button>
+                            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={(e) => { e.stopPropagation(); setInterviewForm({ ...interviewForm, candidateId: String(c.id) }); }}>Interview</Button>
+                            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={(e) => { e.stopPropagation(); hireCandidate(c); }}>Hire</Button>
+                          </div>
+                        </TD>
+                      </tr>
+                    ))}
+                    {!loading && candidates.length === 0 && <tr><TD><span className="text-muted-foreground">No candidates yet</span></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader><CardTitle className="text-base flex items-center gap-2"><Activity className="h-4 w-4" />AI Match Insights</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {topCandidates.map(c => <div key={c.id} className="rounded-md border p-3"><div className="flex items-center justify-between"><p className="font-medium text-sm">{c.name}</p><span className="font-bold text-teal-600">{c.aiScore ?? '-'}</span></div><p className="text-xs text-muted-foreground mt-1">{c.aiSummary || 'Run AI screening to generate a summary.'}</p>{Boolean(c.aiRisks?.length) && <p className="text-xs text-red-600 mt-1">Risk: {c.aiRisks?.[0]}</p>}</div>)}
+                {topCandidates.length === 0 && <p className="text-sm text-muted-foreground">Add candidates to generate AI ranking.</p>}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader><CardTitle className="text-base">Selected Candidate</CardTitle></CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                {selectedCandidate ? <>
+                  <div className="flex items-center justify-between"><span className="font-medium">{selectedCandidate.name}</span><Bdg s={stageText(selectedCandidate.stage)} /></div>
+                  <p className="text-muted-foreground">{selectedCandidate.aiSummary || 'No AI summary yet.'}</p>
+                  <p><span className="font-medium">Skills:</span> {selectedCandidate.skills?.join(', ') || '-'}</p>
+                  <p><span className="font-medium">Recommendation:</span> {selectedCandidate.aiRecommendation || '-'}</p>
+                  {Boolean(selectedCandidate.aiRisks?.length) && <p className="text-red-600"><span className="font-medium">Risks:</span> {selectedCandidate.aiRisks?.join('; ')}</p>}
+                  <div className="flex flex-wrap gap-2 pt-2">{stageOptions.map(stage => <Button key={stage} variant="outline" size="sm" onClick={() => moveStage(selectedCandidate.id, stage)}>{stageText(stage)}</Button>)}</div>
+                </> : <p className="text-muted-foreground">Select a candidate from the table.</p>}
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b"><TH>JD ID</TH><TH>Position</TH><TH>Department</TH><TH>Posted</TH><TH>Applicants</TH><TH>Shortlisted</TH><TH>Status</TH><TH>Actions</TH></tr></thead>
-            <tbody className="divide-y">
-              {jobs.map(j => (
-                <tr key={j.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                  <TD><span className="font-mono text-xs">{j.id}</span></TD>
-                  <TD><span className="font-medium">{j.title}</span></TD>
-                  <TD>{j.dept}</TD>
-                  <TD>{j.posted}</TD>
-                  <TD center><span className="font-semibold">{j.applicants}</span></TD>
-                  <TD center><span className="font-semibold text-teal-600">{j.shortlisted}</span></TD>
-                  <TD><Bdg s={j.status} /></TD>
-                  <TD><button className="p-1 hover:bg-slate-100 rounded"><Eye className="h-4 w-4 text-slate-500" /></button></TD>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+        <div className="space-y-6">
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><PlusCircle className="h-4 w-4" />New Requisition</CardTitle></CardHeader>
+            <CardContent>
+              <form className="space-y-3" onSubmit={createReq}>
+                <Input required placeholder="Position title" value={reqForm.title} onChange={e => setReqForm({ ...reqForm, title: e.target.value })} />
+                <div className="grid grid-cols-2 gap-2"><select className="h-10 text-sm border rounded-md px-2 bg-background" value={reqForm.department} onChange={e => setReqForm({ ...reqForm, department: e.target.value })}>{departmentOptions.map(d => <option key={d}>{d}</option>)}</select><Input type="number" min={1} value={reqForm.openings} onChange={e => setReqForm({ ...reqForm, openings: Number(e.target.value) })} /></div>
+                <div className="grid grid-cols-2 gap-2"><Input type="number" min={0} placeholder="Min exp" value={reqForm.experienceMin} onChange={e => setReqForm({ ...reqForm, experienceMin: Number(e.target.value) })} /><Input type="number" min={0} placeholder="Max exp" value={reqForm.experienceMax} onChange={e => setReqForm({ ...reqForm, experienceMax: Number(e.target.value) })} /></div>
+                <Input placeholder="Must-have skills, comma separated" value={reqForm.skills} onChange={e => setReqForm({ ...reqForm, skills: e.target.value })} />
+                <Input placeholder="Location" value={reqForm.location} onChange={e => setReqForm({ ...reqForm, location: e.target.value })} />
+                <textarea className="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm" placeholder="Role description and hiring context" value={reqForm.description} onChange={e => setReqForm({ ...reqForm, description: e.target.value })} />
+                <Button type="submit" className="w-full gap-1 bg-teal-600 hover:bg-teal-700" disabled={saving}><Briefcase className="h-4 w-4" />Create With AI Brief</Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><UserPlus className="h-4 w-4" />Add Candidate</CardTitle></CardHeader>
+            <CardContent>
+              <form className="space-y-3" onSubmit={addCandidate}>
+                <select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={candidateForm.requisitionId} onChange={e => setCandidateForm({ ...candidateForm, requisitionId: e.target.value })}><option value="">Talent pool only</option>{requisitions.map(r => <option key={r.id} value={r.id}>{r.requisitionCode} - {r.title}</option>)}</select>
+                <Input required placeholder="Candidate name" value={candidateForm.name} onChange={e => setCandidateForm({ ...candidateForm, name: e.target.value })} />
+                <div className="grid grid-cols-2 gap-2"><Input type="email" placeholder="Email" value={candidateForm.email} onChange={e => setCandidateForm({ ...candidateForm, email: e.target.value })} /><Input placeholder="Phone" value={candidateForm.phone} onChange={e => setCandidateForm({ ...candidateForm, phone: e.target.value })} /></div>
+                <div className="grid grid-cols-2 gap-2"><Input placeholder="Current role" value={candidateForm.currentRole} onChange={e => setCandidateForm({ ...candidateForm, currentRole: e.target.value })} /><Input type="number" min={0} step="0.5" value={candidateForm.experienceYears} onChange={e => setCandidateForm({ ...candidateForm, experienceYears: Number(e.target.value) })} /></div>
+                <Input placeholder="Candidate skills, comma separated" value={candidateForm.skills} onChange={e => setCandidateForm({ ...candidateForm, skills: e.target.value })} />
+                <textarea className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm" placeholder="Paste resume summary, profile notes, certifications, clinical/operational exposure" value={candidateForm.resumeText} onChange={e => setCandidateForm({ ...candidateForm, resumeText: e.target.value })} />
+                <div className="grid grid-cols-2 gap-2"><Input placeholder="Expected CTC" value={candidateForm.expectedCtc} onChange={e => setCandidateForm({ ...candidateForm, expectedCtc: e.target.value })} /><Input placeholder="Notice days" value={candidateForm.noticePeriodDays} onChange={e => setCandidateForm({ ...candidateForm, noticePeriodDays: e.target.value })} /></div>
+                <Button type="submit" className="w-full gap-1 bg-teal-600 hover:bg-teal-700" disabled={saving}><Activity className="h-4 w-4" />Add & AI Screen</Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><FileText className="h-4 w-4" />CV Intake Folder</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <form className="space-y-3" onSubmit={uploadCv}>
+                <select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={cvCandidateId} onChange={e => setCvCandidateId(e.target.value)}><option value="">Unassigned HR intake</option>{candidates.map(c => <option key={c.id} value={c.id}>{c.candidateCode} - {c.name}</option>)}</select>
+                <Input type="file" accept=".pdf,.doc,.docx,.txt" onChange={e => setCvFile(e.target.files?.[0] || null)} />
+                <Button type="submit" variant="outline" className="w-full gap-1" disabled={saving}><Database className="h-4 w-4" />Store CV</Button>
+              </form>
+              <div className="space-y-2 max-h-56 overflow-auto">
+                {cvDocs.slice(0, 8).map(doc => <div key={doc.id} className="rounded-md border px-3 py-2 text-sm"><div className="flex items-center justify-between gap-2"><span className="font-medium truncate">{doc.originalName}</span><span className="text-xs text-muted-foreground">{bytesLabel(doc.fileSize)}</span></div><p className="text-xs text-muted-foreground">{doc.storageProvider} · {doc.createdAt ? new Date(doc.createdAt).toLocaleString() : '-'}</p></div>)}
+                {cvDocs.length === 0 && <p className="text-sm text-muted-foreground">No CVs stored yet.</p>}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><Mail className="h-4 w-4" />HR Mail Inbox</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              {mailSettings.length === 0 ? <form className="space-y-3" onSubmit={saveInboxSettings}>
+                <Input required type="email" placeholder="hr@hospital.com" value={inboxForm.email} onChange={e => setInboxForm({ ...inboxForm, email: e.target.value, imapUsername: e.target.value })} />
+                <div className="grid grid-cols-2 gap-2"><Input placeholder="IMAP host" value={inboxForm.imapHost} onChange={e => setInboxForm({ ...inboxForm, imapHost: e.target.value })} /><Input type="number" placeholder="Port" value={inboxForm.imapPort} onChange={e => setInboxForm({ ...inboxForm, imapPort: Number(e.target.value) })} /></div>
+                <Input required placeholder="IMAP username" value={inboxForm.imapUsername} onChange={e => setInboxForm({ ...inboxForm, imapUsername: e.target.value })} />
+                <Input required type="password" placeholder="App password" value={inboxForm.imapPassword} onChange={e => setInboxForm({ ...inboxForm, imapPassword: e.target.value })} />
+                <Button type="submit" className="w-full bg-teal-600 hover:bg-teal-700" disabled={saving}>Connect Inbox</Button>
+              </form> : <div className="space-y-2">{mailSettings.map(setting => <div key={setting.id} className="rounded-md border px-3 py-2 text-sm"><div className="flex items-center justify-between gap-2"><span className="font-medium truncate">{setting.email}</span><Button variant="outline" size="sm" onClick={() => syncInbox(setting.id)}>Sync</Button></div><p className="text-xs text-muted-foreground">Last sync: {setting.lastSyncedAt ? new Date(setting.lastSyncedAt).toLocaleString() : 'Never'}</p></div>)}</div>}
+              <div className="space-y-2 max-h-72 overflow-auto">
+                {inboxEmails.map(email => <div key={email.id} className="rounded-md border px-3 py-2 text-sm"><div className="flex items-start justify-between gap-2"><div><p className="font-medium line-clamp-1">{email.subject || '(no subject)'}</p><p className="text-xs text-muted-foreground">{email.fromName || email.fromAddr} · {benefitLabel(email.aiIntent)}</p></div><Bdg s={email.aiIntent === 'benefits' ? 'Due' : email.aiStatus === 'candidate_created' ? 'Hired' : 'Pending'} /></div><p className="text-xs text-muted-foreground mt-1 line-clamp-2">{email.bodyPreview}</p><div className="flex flex-wrap gap-2 mt-2"><Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => runInboxAction(email, 'recruitment')}>Candidate</Button><Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => runInboxAction(email, 'benefits')}>Benefit</Button></div></div>)}
+                {inboxEmails.length === 0 && <p className="text-sm text-muted-foreground">No HR inbox emails synced yet.</p>}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><Calendar className="h-4 w-4" />Interview & Offer</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <form className="space-y-3" onSubmit={scheduleInterview}>
+                <select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={interviewForm.candidateId} onChange={e => setInterviewForm({ ...interviewForm, candidateId: e.target.value })}><option value="">Select candidate</option>{candidates.map(c => <option key={c.id} value={c.id}>{c.candidateCode} - {c.name}</option>)}</select>
+                <div className="grid grid-cols-2 gap-2"><Input placeholder="Round" value={interviewForm.roundName} onChange={e => setInterviewForm({ ...interviewForm, roundName: e.target.value })} /><Input placeholder="Interviewer" value={interviewForm.interviewer} onChange={e => setInterviewForm({ ...interviewForm, interviewer: e.target.value })} /></div>
+                <Input type="datetime-local" value={interviewForm.scheduledAt} onChange={e => setInterviewForm({ ...interviewForm, scheduledAt: e.target.value })} />
+                <Button type="submit" variant="outline" className="w-full" disabled={saving}>Schedule Interview</Button>
+              </form>
+              <form className="space-y-3 border-t pt-4" onSubmit={markOffer}>
+                <select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={offerForm.candidateId} onChange={e => setOfferForm({ ...offerForm, candidateId: e.target.value })}><option value="">Select candidate for offer</option>{candidates.map(c => <option key={c.id} value={c.id}>{c.candidateCode} - {c.name}</option>)}</select>
+                <div className="grid grid-cols-2 gap-2"><Input placeholder="Offered CTC" value={offerForm.offeredCtc} onChange={e => setOfferForm({ ...offerForm, offeredCtc: e.target.value })} /><Input type="date" value={offerForm.joiningDate} onChange={e => setOfferForm({ ...offerForm, joiningDate: e.target.value })} /></div>
+                <Input placeholder="Offer note" value={offerForm.note} onChange={e => setOfferForm({ ...offerForm, note: e.target.value })} />
+                <Button type="submit" variant="outline" className="w-full" disabled={saving}>Mark Offer</Button>
+              </form>
+            </CardContent>
+          </Card>
         </div>
-      </CardContent>
-    </Card>
-  </Wrap>
-);
+      </div>
+    </Wrap>
+  );
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 10. TRAINING
+// 10. LMS / TRAINING
 // ═══════════════════════════════════════════════════════════════════════════════
-const trainings = [
-  { id: 'TR001', title: 'BLS & CPR Certification',        dept: 'All Clinical',  trainer: 'Dr. Mohan R.',   date: '15-Mar-26', enrolled: 45, completed: 42, status: 'Completed' },
-  { id: 'TR002', title: 'Fire Safety & Evacuation Drill', dept: 'All',           trainer: 'Safety Officer', date: '18-Mar-26', enrolled: 120,completed: 118,status: 'Completed' },
-  { id: 'TR003', title: 'Infection Control Protocol',     dept: 'Nursing & OT',  trainer: 'ICNO Team',      date: '22-Mar-26', enrolled: 60, completed: 0,  status: 'Scheduled' },
-  { id: 'TR004', title: 'EHR System Training',            dept: 'Admin & Billing',trainer: 'IT Team',       date: '25-Mar-26', enrolled: 35, completed: 0,  status: 'Scheduled' },
-  { id: 'TR005', title: 'NABH Standards Refresher',       dept: 'All HODs',      trainer: 'QA Team',        date: '28-Mar-26', enrolled: 22, completed: 0,  status: 'Scheduled' },
-];
+export const HRTrainingPage = () => {
+  const [programs,setPrograms]=useState<any[]>([]); const [staff,setStaff]=useState<StaffMember[]>([]); const [message,setMessage]=useState(''); const [form,setForm]=useState({title:'',department:'All',trainer:'',scheduledAt:'',durationHours:1,capacity:30}); const [enroll,setEnroll]=useState({programId:'',staffId:''});
+  const load=async()=>{try{const [p,s]=await Promise.all([api.get('/hr/lms/programs',{headers:hrHeaders()}),api.get('/hr/staff',{headers:hrHeaders()})]);setPrograms(unwrapData<any[]>(p,[]));setStaff(unwrapData<StaffMember[]>(s,[]));}catch(e){setMessage(errText(e));}}; useEffect(()=>{load();},[]);
+  const save=async(e:React.FormEvent)=>{e.preventDefault();try{await api.post('/hr/lms/programs',form,{headers:hrHeaders()});setForm({title:'',department:'All',trainer:'',scheduledAt:'',durationHours:1,capacity:30});setMessage('LMS program created.');await load();}catch(err){setMessage(errText(err));}};
+  const doEnroll=async(e:React.FormEvent)=>{e.preventDefault();try{await api.post('/hr/lms/programs/'+enroll.programId+'/enroll',{staffId:enroll.staffId},{headers:hrHeaders()});setMessage('Staff enrolled.');await load();}catch(err){setMessage(errText(err));}};
+  return <Wrap title="Learning Management System" subtitle="Training programs, enrollments, completions, and certifications"><div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6"><KPI label="Programs" value={String(programs.length)} sub="LMS catalog" icon={GraduationCap} color="text-teal-600"/><KPI label="Completed" value={String(programs.reduce((n,p)=>n+Number(p.completed||0),0))} sub="Enrollments" icon={CheckCircle2} color="text-emerald-600"/><KPI label="Upcoming" value={String(programs.filter(p=>p.status==='scheduled').length)} sub="Scheduled" icon={Calendar} color="text-amber-600"/><KPI label="Enrolled" value={String(programs.reduce((n,p)=>n+Number(p.enrolled||0),0))} sub="Total seats" icon={Users} color="text-blue-600"/></div>{message&&<div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{message}</div>}<div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6"><Card><CardHeader><CardTitle className="text-base">Training Calendar</CardTitle></CardHeader><CardContent><table className="w-full text-sm"><thead><tr className="border-b"><TH>ID</TH><TH>Program</TH><TH>Department</TH><TH>Trainer</TH><TH>Date</TH><TH>Enrolled</TH><TH>Completed</TH><TH>Status</TH></tr></thead><tbody>{programs.map(t=><tr key={t.id}><TD><span className="font-mono text-xs">{t.programCode}</span></TD><TD><span className="font-medium">{t.title}</span></TD><TD>{t.department}</TD><TD>{t.trainer||'-'}</TD><TD>{t.scheduledAt?new Date(t.scheduledAt).toLocaleString():'-'}</TD><TD center>{t.enrolled}</TD><TD center>{t.completed}</TD><TD><Bdg s={statusLabel(t.status)}/></TD></tr>)}</tbody></table></CardContent></Card><div className="space-y-6"><Card><CardHeader><CardTitle className="text-base">Create Program</CardTitle></CardHeader><CardContent><form className="space-y-3" onSubmit={save}><Input required placeholder="Program title" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/><Input placeholder="Department" value={form.department} onChange={e=>setForm({...form,department:e.target.value})}/><Input placeholder="Trainer" value={form.trainer} onChange={e=>setForm({...form,trainer:e.target.value})}/><Input type="datetime-local" value={form.scheduledAt} onChange={e=>setForm({...form,scheduledAt:e.target.value})}/><div className="grid grid-cols-2 gap-2"><Input type="number" min="0.5" step="0.5" value={form.durationHours} onChange={e=>setForm({...form,durationHours:Number(e.target.value)})}/><Input type="number" min="0" value={form.capacity} onChange={e=>setForm({...form,capacity:Number(e.target.value)})}/></div><Button className="w-full bg-teal-600 hover:bg-teal-700">Create</Button></form></CardContent></Card><Card><CardHeader><CardTitle className="text-base">Enroll Staff</CardTitle></CardHeader><CardContent><form className="space-y-3" onSubmit={doEnroll}><select required className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={enroll.programId} onChange={e=>setEnroll({...enroll,programId:e.target.value})}><option value="">Select program</option>{programs.map(p=><option key={p.id} value={p.id}>{p.programCode} - {p.title}</option>)}</select><select required className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={enroll.staffId} onChange={e=>setEnroll({...enroll,staffId:e.target.value})}><option value="">Select staff</option>{staff.map(s=><option key={s.id} value={s.id}>{s.employeeCode} - {s.name}</option>)}</select><Button className="w-full" variant="outline">Enroll</Button></form></CardContent></Card></div></div></Wrap>;
+};
 
-export const HRTrainingPage = () => (
-  <Wrap title="Training & Development" subtitle="Training schedules, completions & certifications">
-    <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-      <KPI label="Programs (Month)" value="5"  sub="March 2026"                icon={GraduationCap} color="text-teal-600" />
-      <KPI label="Completed"        value="2"  sub="BLS, Fire Safety"           icon={CheckCircle2}  color="text-emerald-600" />
-      <KPI label="Upcoming"        value="3"  sub="Next 10 days"               icon={Calendar}      color="text-amber-600" />
-      <KPI label="Certifications Expiring" value="5" sub="Within 30 days"     icon={AlertCircle}   color="text-red-600" />
-    </div>
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-3">
-        <CardTitle className="text-base">Training Calendar</CardTitle>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="gap-1"><Download className="h-4 w-4" />Export</Button>
-          <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700"><PlusCircle className="h-4 w-4" />Schedule</Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b"><TH>ID</TH><TH>Program</TH><TH>Department</TH><TH>Trainer</TH><TH>Date</TH><TH>Enrolled</TH><TH>Completed</TH><TH>Status</TH></tr></thead>
-            <tbody className="divide-y">
-              {trainings.map(t => (
-                <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                  <TD><span className="font-mono text-xs">{t.id}</span></TD>
-                  <TD><span className="font-medium">{t.title}</span></TD>
-                  <TD><span className="text-xs">{t.dept}</span></TD>
-                  <TD>{t.trainer}</TD>
-                  <TD>{t.date}</TD>
-                  <TD center>{t.enrolled}</TD>
-                  <TD center><span className={t.completed === t.enrolled && t.enrolled > 0 ? 'text-emerald-600 font-semibold' : ''}>{t.completed}</span></TD>
-                  <TD><Bdg s={t.status} /></TD>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
-  </Wrap>
-);
+// ═══════════════════════════════════════════════════════════════════════════════
+// 10A. GOALS & OKRS
+// ═══════════════════════════════════════════════════════════════════════════════
+export const HRGoalsPage = () => {
+  const [rows,setRows]=useState<any[]>([]); const [staff,setStaff]=useState<StaffMember[]>([]); const [message,setMessage]=useState(''); const [form,setForm]=useState({staffId:'',title:'',metric:'Completion',targetValue:100,currentValue:0,dueDate:todayDate()});
+  const load=async()=>{try{const [g,s]=await Promise.all([api.get('/hr/goals',{headers:hrHeaders()}),api.get('/hr/staff',{headers:hrHeaders()})]);setRows(unwrapData<any[]>(g,[]));setStaff(unwrapData<StaffMember[]>(s,[]));}catch(e){setMessage(errText(e));}}; useEffect(()=>{load();},[]);
+  const save=async(e:React.FormEvent)=>{e.preventDefault();try{await api.post('/hr/goals',form,{headers:hrHeaders()});setForm({staffId:'',title:'',metric:'Completion',targetValue:100,currentValue:0,dueDate:todayDate()});setMessage('Goal saved.');await load();}catch(err){setMessage(errText(err));}};
+  const progress=async(id:any,currentValue:any)=>{try{await api.patch('/hr/goals/'+id+'/progress',{currentValue:Number(currentValue)},{headers:hrHeaders()});await load();}catch(e){setMessage(errText(e));}};
+  return <Wrap title="Goals & OKRs" subtitle="Employee goals, measurable outcomes, and progress tracking"><div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6"><KPI label="Active Goals" value={String(rows.filter(r=>r.status==='active').length)} sub="In progress" icon={TrendingUp} color="text-teal-600"/><KPI label="Completed" value={String(rows.filter(r=>r.status==='completed').length)} sub="Closed goals" icon={CheckCircle2} color="text-emerald-600"/><KPI label="Avg Progress" value={(rows.length?Math.round(rows.reduce((n,r)=>n+Number(r.progress||0),0)/rows.length):0)+'%'} sub="All goals" icon={BarChart3} color="text-blue-600"/><KPI label="Due Soon" value={String(rows.filter(r=>r.dueDate && new Date(r.dueDate)<new Date(Date.now()+14*86400000)).length)} sub="Next 14 days" icon={AlertCircle} color="text-amber-600"/></div>{message&&<div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{message}</div>}<div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6"><Card><CardHeader><CardTitle className="text-base">Goal Register</CardTitle></CardHeader><CardContent><div className="space-y-3">{rows.map(g=><div key={g.id} className="rounded-md border px-3 py-2 text-sm"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{g.title}</p><p className="text-xs text-muted-foreground">{[g.firstName,g.lastName].filter(Boolean).join(' ') || 'Hospital'} · {g.metric} · due {displayDate(g.dueDate)}</p></div><Bdg s={statusLabel(g.status)}/></div><div className="mt-2 h-2 bg-slate-100 rounded-full"><div className="h-full bg-teal-500 rounded-full" style={{width:Math.min(100,Number(g.progress||0))+'%'}} /></div><div className="mt-2 flex gap-2"><Input className="h-8 w-28" type="number" defaultValue={g.currentValue} onBlur={e=>progress(g.id,e.target.value)}/><span className="text-xs text-muted-foreground self-center">/ {g.targetValue}</span></div></div>)}</div></CardContent></Card><Card><CardHeader><CardTitle className="text-base">Create Goal</CardTitle></CardHeader><CardContent><form className="space-y-3" onSubmit={save}><select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={form.staffId} onChange={e=>setForm({...form,staffId:e.target.value})}><option value="">Hospital / department goal</option>{staff.map(s=><option key={s.id} value={s.id}>{s.employeeCode} - {s.name}</option>)}</select><Input required placeholder="Goal title" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/><Input placeholder="Metric" value={form.metric} onChange={e=>setForm({...form,metric:e.target.value})}/><div className="grid grid-cols-2 gap-2"><Input type="number" value={form.targetValue} onChange={e=>setForm({...form,targetValue:Number(e.target.value)})}/><Input type="number" value={form.currentValue} onChange={e=>setForm({...form,currentValue:Number(e.target.value)})}/></div><Input type="date" value={form.dueDate} onChange={e=>setForm({...form,dueDate:e.target.value})}/><Button className="w-full bg-teal-600 hover:bg-teal-700">Save Goal</Button></form></CardContent></Card></div></Wrap>;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 10B. ENGAGEMENT SURVEYS
+// ═══════════════════════════════════════════════════════════════════════════════
+export const HRSurveysPage = () => {
+  const [rows,setRows]=useState<any[]>([]); const [message,setMessage]=useState(''); const [form,setForm]=useState({title:'',audience:'All staff',status:'active',startsAt:'',endsAt:'',questions:'How satisfied are you with your work environment?\nDo you have the tools needed to do your job?'});
+  const load=async()=>{try{const r=await api.get('/hr/surveys',{headers:hrHeaders()});setRows(unwrapData<any[]>(r,[]));}catch(e){setMessage(errText(e));}}; useEffect(()=>{load();},[]);
+  const save=async(e:React.FormEvent)=>{e.preventDefault();try{await api.post('/hr/surveys',{...form,questions:form.questions.split('\n').map(q=>q.trim()).filter(Boolean)},{headers:hrHeaders()});setForm({title:'',audience:'All staff',status:'active',startsAt:'',endsAt:'',questions:form.questions});setMessage('Survey created.');await load();}catch(err){setMessage(errText(err));}};
+  return <Wrap title="Employee Engagement Surveys" subtitle="Pulse surveys, participation, and engagement scores"><div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6"><KPI label="Surveys" value={String(rows.length)} sub="Total" icon={Activity} color="text-teal-600"/><KPI label="Active" value={String(rows.filter(r=>r.status==='active').length)} sub="Open now" icon={CheckCircle2} color="text-emerald-600"/><KPI label="Responses" value={String(rows.reduce((n,r)=>n+Number(r.responses||0),0))} sub="Captured" icon={Users} color="text-blue-600"/><KPI label="Avg Score" value={(rows.length?Math.round(rows.reduce((n,r)=>n+Number(r.avgScore||0),0)/rows.length):0).toString()} sub="Engagement" icon={Star} color="text-amber-600"/></div>{message&&<div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{message}</div>}<div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6"><Card><CardHeader><CardTitle className="text-base">Survey Register</CardTitle></CardHeader><CardContent><table className="w-full text-sm"><thead><tr className="border-b"><TH>Title</TH><TH>Audience</TH><TH>Responses</TH><TH>Avg Score</TH><TH>Status</TH></tr></thead><tbody>{rows.map(r=><tr key={r.id}><TD><span className="font-medium">{r.title}</span></TD><TD>{r.audience}</TD><TD center>{r.responses}</TD><TD center>{r.avgScore}</TD><TD><Bdg s={statusLabel(r.status)}/></TD></tr>)}</tbody></table></CardContent></Card><Card><CardHeader><CardTitle className="text-base">Create Survey</CardTitle></CardHeader><CardContent><form className="space-y-3" onSubmit={save}><Input required placeholder="Survey title" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/><Input placeholder="Audience" value={form.audience} onChange={e=>setForm({...form,audience:e.target.value})}/><select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}><option value="draft">Draft</option><option value="active">Active</option><option value="closed">Closed</option></select><Input type="datetime-local" value={form.startsAt} onChange={e=>setForm({...form,startsAt:e.target.value})}/><Input type="datetime-local" value={form.endsAt} onChange={e=>setForm({...form,endsAt:e.target.value})}/><textarea className="min-h-28 w-full rounded-md border bg-background px-3 py-2 text-sm" value={form.questions} onChange={e=>setForm({...form,questions:e.target.value})}/><Button className="w-full bg-teal-600 hover:bg-teal-700">Create Survey</Button></form></CardContent></Card></div></Wrap>;
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 11. PERFORMANCE
 // ═══════════════════════════════════════════════════════════════════════════════
-const perf = [
-  { name: 'Dr. Kavita Joshi',  dept: 'Cardiology', rating: 5, kra: 92, attendance: 98, patient: 96, overall: 'Exceptional' },
-  { name: 'Sanjay Kumar',      dept: 'Nursing',    rating: 4, kra: 85, attendance: 94, patient: 88, overall: 'Good' },
-  { name: 'Pooja Verma',       dept: 'Accounts',   rating: 4, kra: 80, attendance: 90, patient: 82, overall: 'Good' },
-  { name: 'Mohammed Iqbal',    dept: 'Housekeeping',rating:3, kra: 72, attendance: 75, patient: 78, overall: 'Average' },
-  { name: 'Dr. Ramesh Pillai', dept: 'Orthopaedics',rating:5, kra: 95, attendance: 99, patient: 97, overall: 'Exceptional' },
-  { name: 'Sunita Rao',        dept: 'OT',         rating: 4, kra: 88, attendance: 96, patient: 90, overall: 'Good' },
-];
-const ratingColor: Record<string, string> = {
-  Exceptional: 'text-emerald-600', Good: 'text-blue-600', Average: 'text-amber-600', Poor: 'text-red-600',
+type PerformanceRow = {
+  id?: number | string | null;
+  staffId: number | string;
+  employeeCode: string;
+  name: string;
+  department: string;
+  designation?: string;
+  cycle: string;
+  kraScore: number;
+  attendanceScore: number;
+  patientScore: number;
+  qualityScore: number;
+  teamworkScore: number;
+  overallScore: number;
+  rating: number;
+  overallLabel: string;
+  status: string;
+  managerNotes?: string;
+  aiSummary?: string;
+  aiRisks?: string[];
+  presentDays: number;
+  biometricEvents: number;
+  lateEvents: number;
 };
 
-export const HRPerformancePage = () => (
-  <Wrap title="Performance Management" subtitle="KRA reviews, ratings & performance tracking">
-    <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-      <KPI label="Reviews Due (Q1)"  value="82"   sub="Jan–Mar 2026"           icon={Star}        color="text-amber-600" />
-      <KPI label="Exceptional"       value="24"   sub="Rating ≥ 4.5"           icon={Star}        color="text-emerald-600" />
-      <KPI label="Needs Improvement" value="11"   sub="Rating < 3"             icon={AlertCircle} color="text-red-600" />
-      <KPI label="Avg Dept Score"    value="86%"  sub="Hospital-wide"          icon={BarChart3}   color="text-teal-600" />
-    </div>
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-3">
-        <CardTitle className="text-base">Performance Reviews — Q1 2026</CardTitle>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="gap-1"><Download className="h-4 w-4" />Export</Button>
-          <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700"><PlusCircle className="h-4 w-4" />Start Review</Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b"><TH>Employee</TH><TH>Department</TH><TH>KRA Score</TH><TH>Attendance</TH><TH>Patient Score</TH><TH>Rating</TH><TH>Overall</TH></tr></thead>
-            <tbody className="divide-y">
-              {perf.map(p => (
-                <tr key={p.name} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                  <TD><span className="font-medium">{p.name}</span></TD>
-                  <TD>{p.dept}</TD>
-                  <TD center><span className="font-semibold">{p.kra}%</span></TD>
-                  <TD center><span className="font-semibold">{p.attendance}%</span></TD>
-                  <TD center><span className="font-semibold">{p.patient}%</span></TD>
-                  <TD center>{'★'.repeat(p.rating)}<span className="text-slate-300">{'★'.repeat(5 - p.rating)}</span></TD>
-                  <TD><span className={`font-semibold ${ratingColor[p.overall]}`}>{p.overall}</span></TD>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
-  </Wrap>
-);
+type PerformancePayload = {
+  cycle: string;
+  summary: { totalStaff: number; reviewed: number; reviewsDue: number; exceptional: number; needsImprovement: number; avgScore: number };
+  rows: PerformanceRow[];
+};
+
+const ratingColor: Record<string, string> = {
+  Exceptional: 'text-emerald-600', Good: 'text-blue-600', Average: 'text-amber-600', 'Needs Improvement': 'text-red-600', Pending: 'text-slate-500',
+};
+const defaultPerfCycle = () => {
+  const now = new Date();
+  return now.getFullYear() + '-Q' + (Math.floor(now.getMonth() / 3) + 1);
+};
+const makePerformanceForm = () => ({
+  staffId: '',
+  cycle: defaultPerfCycle(),
+  kraScore: 80,
+  attendanceScore: 80,
+  patientScore: 80,
+  qualityScore: 80,
+  teamworkScore: 80,
+  managerNotes: '',
+  status: 'manager_review',
+});
+const perfStatusLabel = (value: string) => benefitLabel(value || 'draft');
+
+export const HRPerformancePage = () => {
+  const [cycle, setCycle] = useState(defaultPerfCycle());
+  const [payload, setPayload] = useState<PerformancePayload | null>(null);
+  const [form, setForm] = useState(makePerformanceForm);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    setMessage('');
+    try {
+      const res = await api.get('/hr/performance?cycle=' + encodeURIComponent(cycle), { headers: hrHeaders() });
+      const data = unwrapData<PerformancePayload | null>(res, null);
+      setPayload(data);
+      if (!form.staffId && data?.rows?.[0]) {
+        setForm(prev => ({ ...prev, staffId: String(data.rows[0].staffId), cycle: data.cycle, attendanceScore: Math.round(Number(data.rows[0].attendanceScore || 0)) }));
+      }
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, [cycle]);
+
+  const rows = payload?.rows || [];
+  const summary = payload?.summary;
+  const selectedStaff = rows.find(row => String(row.staffId) === String(form.staffId));
+
+  const startReview = (row: PerformanceRow) => {
+    setForm({
+      staffId: String(row.staffId),
+      cycle,
+      kraScore: Math.round(Number(row.kraScore || 0)) || 80,
+      attendanceScore: Math.round(Number(row.attendanceScore || 0)) || 80,
+      patientScore: Math.round(Number(row.patientScore || 0)) || 80,
+      qualityScore: Math.round(Number(row.qualityScore || 0)) || 80,
+      teamworkScore: Math.round(Number(row.teamworkScore || 0)) || 80,
+      managerNotes: row.managerNotes || '',
+      status: row.status || 'manager_review',
+    });
+  };
+
+  const saveReview = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!form.staffId) return setMessage('Select staff before saving a performance review.');
+    setSaving(true);
+    setMessage('');
+    try {
+      await api.post('/hr/performance/reviews', {
+        ...form,
+        cycle,
+        kraScore: Number(form.kraScore),
+        attendanceScore: Number(form.attendanceScore),
+        patientScore: Number(form.patientScore),
+        qualityScore: Number(form.qualityScore),
+        teamworkScore: Number(form.teamworkScore),
+      }, { headers: hrHeaders() });
+      setMessage('Performance review saved and AI summary refreshed.');
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Wrap title="Performance Management" subtitle="KRA reviews, biometric attendance contribution, ratings, and performance tracking">
+      {message && <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{message}</div>}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        <KPI label="Reviews Due" value={String(summary?.reviewsDue ?? 0)} sub={cycle} icon={Star} color="text-amber-600" />
+        <KPI label="Exceptional" value={String(summary?.exceptional ?? 0)} sub="Score 90%+" icon={Star} color="text-emerald-600" />
+        <KPI label="Needs Improvement" value={String(summary?.needsImprovement ?? 0)} sub="Score below 60%" icon={AlertCircle} color="text-red-600" />
+        <KPI label="Avg Dept Score" value={(summary?.avgScore ?? 0) + '%'} sub={(summary?.reviewed ?? 0) + ' reviewed / ' + (summary?.totalStaff ?? 0)} icon={BarChart3} color="text-teal-600" />
+      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <Card className="xl:col-span-2">
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <CardTitle className="text-base">Performance Reviews - {cycle}</CardTitle>
+            <div className="flex gap-2">
+              <Input className="h-8 w-28" value={cycle} onChange={e => setCycle(e.target.value)} />
+              <Button variant="outline" size="sm" className="gap-1" onClick={() => exportToExcel(rows, 'hr-performance-' + cycle)}><Download className="h-4 w-4" />Export</Button>
+              <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700" onClick={() => rows[0] && startReview(rows[0])}><PlusCircle className="h-4 w-4" />Start Review</Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b"><TH>Employee</TH><TH>Department</TH><TH>KRA</TH><TH>Attendance</TH><TH>Patient</TH><TH>Rating</TH><TH>Overall</TH><TH>Status</TH></tr></thead>
+                <tbody className="divide-y">
+                  {rows.map(p => (
+                    <tr key={p.staffId} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer" onClick={() => startReview(p)}>
+                      <TD><div><span className="font-medium">{p.name}</span><p className="text-xs text-muted-foreground">{p.employeeCode} · {p.designation || 'Staff'}</p></div></TD>
+                      <TD>{p.department}</TD>
+                      <TD center><span className="font-semibold">{Math.round(Number(p.kraScore || 0))}%</span></TD>
+                      <TD center><div><span className="font-semibold">{Math.round(Number(p.attendanceScore || 0))}%</span><p className="text-xs text-muted-foreground">{p.presentDays} days · {p.biometricEvents} punches</p></div></TD>
+                      <TD center><span className="font-semibold">{Math.round(Number(p.patientScore || 0))}%</span></TD>
+                      <TD center>{'★'.repeat(Math.round(Number(p.rating || 0)))}<span className="text-slate-300">{'★'.repeat(Math.max(0, 5 - Math.round(Number(p.rating || 0))))}</span></TD>
+                      <TD><span className={`font-semibold ${ratingColor[p.overallLabel] || 'text-slate-600'}`}>{p.overallLabel}</span><p className="text-xs text-muted-foreground">{Math.round(Number(p.overallScore || 0))}%</p></TD>
+                      <TD><Bdg s={perfStatusLabel(p.status)} /></TD>
+                    </tr>
+                  ))}
+                  {!loading && rows.length === 0 && <tr><TD><span className="text-muted-foreground">No staff available for performance monitoring</span></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD></tr>}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-base">Manager Review</CardTitle></CardHeader>
+          <CardContent>
+            <form className="space-y-3" onSubmit={saveReview}>
+              <select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={form.staffId} onChange={e => {
+                const row = rows.find(item => String(item.staffId) === e.target.value);
+                if (row) startReview(row); else setForm({ ...form, staffId: e.target.value });
+              }}>
+                <option value="">Select staff</option>{rows.map(row => <option key={row.staffId} value={row.staffId}>{row.employeeCode} - {row.name}</option>)}
+              </select>
+              <div className="grid grid-cols-2 gap-2"><Input type="number" min="0" max="100" placeholder="KRA" value={form.kraScore} onChange={e => setForm({ ...form, kraScore: Number(e.target.value) })} /><Input type="number" min="0" max="100" placeholder="Attendance" value={form.attendanceScore} onChange={e => setForm({ ...form, attendanceScore: Number(e.target.value) })} /></div>
+              <div className="grid grid-cols-2 gap-2"><Input type="number" min="0" max="100" placeholder="Patient score" value={form.patientScore} onChange={e => setForm({ ...form, patientScore: Number(e.target.value) })} /><Input type="number" min="0" max="100" placeholder="Quality" value={form.qualityScore} onChange={e => setForm({ ...form, qualityScore: Number(e.target.value) })} /></div>
+              <Input type="number" min="0" max="100" placeholder="Teamwork" value={form.teamworkScore} onChange={e => setForm({ ...form, teamworkScore: Number(e.target.value) })} />
+              <Input placeholder="Manager note" value={form.managerNotes} onChange={e => setForm({ ...form, managerNotes: e.target.value })} />
+              <select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}><option value="manager_review">Manager review</option><option value="hr_review">HR review</option><option value="completed">Completed</option><option value="draft">Draft</option></select>
+              <Button type="submit" className="w-full bg-teal-600 hover:bg-teal-700" disabled={saving || !form.staffId}>Save Review</Button>
+            </form>
+            {selectedStaff && <div className="mt-4 rounded-md border px-3 py-2 text-sm"><p className="font-medium">AI monitoring note</p><p className="text-xs text-muted-foreground mt-1">{selectedStaff.aiSummary}</p>{selectedStaff.aiRisks?.length ? <p className="text-xs text-red-600 mt-2">{selectedStaff.aiRisks.join(', ')}</p> : null}</div>}
+          </CardContent>
+        </Card>
+      </div>
+    </Wrap>
+  );
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 12. APPRAISALS (NEW)
@@ -1006,124 +2012,176 @@ export const HRCompliancePage = () => (
 // ═══════════════════════════════════════════════════════════════════════════════
 // 16. SETTINGS
 // ═══════════════════════════════════════════════════════════════════════════════
-export const HRSettingsPage = () => (
-  <Wrap title="HR Settings" subtitle="Configure HR portal, policies and access controls">
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {[
-        { title: 'Organisation Details', icon: Building2, fields: [
-          { label: 'Hospital Name',    value: 'Mediczy Hospital' },
-          { label: 'PF Account No.',   value: 'KN/25894' },
-          { label: 'ESI Account No.',  value: '32-00001' },
-          { label: 'TAN Number',       value: 'BLRM01234F' },
-        ]},
-        { title: 'Leave Policy', icon: CalendarOff, fields: [
-          { label: 'Casual Leave / Year',  value: '12 days' },
-          { label: 'Medical Leave / Year', value: '12 days' },
-          { label: 'Annual Leave / Year',  value: '21 days' },
-          { label: 'Carry Forward Limit',  value: '15 days' },
-        ]},
-        { title: 'Payroll Config', icon: Wallet, fields: [
-          { label: 'Payroll Cycle',    value: 'Monthly (Last Working Day)' },
-          { label: 'PF Rate',          value: '12% (Employee & Employer)' },
-          { label: 'ESI Rate',         value: '3.25% (Employer) / 0.75%' },
-          { label: 'Gratuity Formula', value: '15/26 × Basic × Years' },
-        ]},
-        { title: 'Access Controls', icon: ShieldCheck, fields: [
-          { label: 'HR Manager',       value: 'Full Access' },
-          { label: 'Dept HODs',        value: 'View + Approve Leaves' },
-          { label: 'Payroll Team',     value: 'Payroll Module Only' },
-          { label: 'Staff',            value: 'Self-Service (Leaves, Slip)' },
-        ]},
-      ].map(sec => (
-        <Card key={sec.title}>
-          <CardHeader className="flex flex-row items-center gap-2 pb-3">
-            <div className="p-2 rounded-xl bg-teal-50 dark:bg-teal-950">
-              <sec.icon className="h-4 w-4 text-teal-600" />
-            </div>
-            <CardTitle className="text-sm">{sec.title}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {sec.fields.map(f => (
-              <div key={f.label} className="flex justify-between text-sm border-b pb-2 last:border-0 last:pb-0">
-                <span className="text-muted-foreground">{f.label}</span>
-                <span className="font-medium text-right max-w-[55%]">{f.value}</span>
+const makeLocationForm = () => ({ code: '', name: '', locationType: 'branch', address: '', city: '', state: '', phone: '', email: '' });
+const makeHrUserForm = () => ({ firstName: '', lastName: '', email: '', phone: '', role: 'hr_staff', locationIds: [] as string[] });
+
+export const HRSettingsPage = () => {
+  const [locations, setLocations] = useState<HrLocation[]>([]);
+  const [hrUsers, setHrUsers] = useState<HrUser[]>([]);
+  const [features, setFeatures] = useState<HrFeature[]>([]);
+  const [locationForm, setLocationForm] = useState(makeLocationForm);
+  const [hrUserForm, setHrUserForm] = useState(makeHrUserForm);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const load = async () => {
+    setMessage('');
+    try {
+      const [locationsRes, usersRes, featuresRes] = await Promise.all([
+        api.get('/hr/locations', { headers: hrHeaders() }),
+        api.get('/hr/users', { headers: hrHeaders() }),
+        api.get('/hr/features', { headers: hrHeaders() }),
+      ]);
+      setLocations(unwrapData<HrLocation[]>(locationsRes, []));
+      setHrUsers(unwrapData<HrUser[]>(usersRes, []));
+      setFeatures(unwrapData<{ features: HrFeature[] }>(featuresRes, { features: [] }).features || []);
+    } catch (error) {
+      setMessage(errText(error));
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const saveLocation = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      await api.post('/hr/locations', locationForm, { headers: hrHeaders() });
+      setLocationForm(makeLocationForm());
+      setMessage('Location saved. Staff, HR users, and biometric devices can now be mapped to it.');
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveHrUser = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      await api.post('/hr/users', hrUserForm, { headers: hrHeaders() });
+      setHrUserForm(makeHrUserForm());
+      setMessage('HR user created with all HRMS feature permissions and selected branch scope.');
+      await load();
+    } catch (error) {
+      setMessage(errText(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleHrUserLocation = (id: string) => {
+    setHrUserForm(current => ({
+      ...current,
+      locationIds: current.locationIds.includes(id) ? current.locationIds.filter(item => item !== id) : [...current.locationIds, id],
+    }));
+  };
+
+  return (
+    <Wrap title="HR Settings" subtitle="All HRMS capabilities, branches, locations, and HR user access">
+      {message && <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{message}</div>}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2 space-y-6">
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><ShieldCheck className="h-4 w-4" />Enabled HRMS Features</CardTitle></CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {features.map(feature => <div key={feature.key} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"><CheckCircle2 className="h-4 w-4 text-emerald-600" /><span>{feature.label}</span></div>)}
+                {features.length === 0 && <p className="text-sm text-muted-foreground">Feature catalog will load after HR API is available.</p>}
               </div>
-            ))}
-            <Button variant="outline" size="sm" className="w-full mt-2 gap-1"><Edit className="h-4 w-4" />Edit</Button>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  </Wrap>
-);
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-3">
+              <CardTitle className="text-base flex items-center gap-2"><Building2 className="h-4 w-4" />Locations & Branches</CardTitle>
+              <Button variant="outline" size="sm" className="gap-1" onClick={load}><RefreshCw className="h-4 w-4" />Refresh</Button>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b"><TH>Code</TH><TH>Name</TH><TH>Type</TH><TH>City</TH><TH>Contact</TH><TH>Status</TH></tr></thead>
+                  <tbody className="divide-y">
+                    {locations.map(location => <tr key={location.id}><TD><span className="font-mono text-xs">{location.code}</span></TD><TD><span className="font-medium">{location.name}</span><p className="text-xs text-muted-foreground">{location.address || '-'}</p></TD><TD>{benefitLabel(location.locationType || 'branch')}</TD><TD>{location.city || '-'}</TD><TD>{location.phone || location.email || '-'}</TD><TD><Bdg s={statusLabel(location.status)} /></TD></tr>)}
+                    {locations.length === 0 && <tr><TD><span className="text-muted-foreground">No branches configured</span></TD><TD></TD><TD></TD><TD></TD><TD></TD><TD></TD></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><Users className="h-4 w-4" />HR Users</CardTitle></CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b"><TH>Name</TH><TH>Role</TH><TH>Locations</TH><TH>Status</TH></tr></thead>
+                  <tbody className="divide-y">
+                    {hrUsers.map(user => <tr key={user.id}><TD><span className="font-medium">{user.name}</span><p className="text-xs text-muted-foreground">{user.email}</p></TD><TD>{user.role.replaceAll('_', ' ')}</TD><TD>{user.locations?.length ? user.locations.map(l => l.code).join(', ') : 'All / unassigned'}</TD><TD><Bdg s={statusLabel(user.status)} /></TD></tr>)}
+                    {hrUsers.length === 0 && <tr><TD><span className="text-muted-foreground">No HR users created yet</span></TD><TD></TD><TD></TD><TD></TD></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-6">
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><PlusCircle className="h-4 w-4" />Add Location</CardTitle></CardHeader>
+            <CardContent>
+              <form className="space-y-3" onSubmit={saveLocation}>
+                <div className="grid grid-cols-2 gap-2"><Input required placeholder="Code" value={locationForm.code} onChange={e => setLocationForm({ ...locationForm, code: e.target.value })} /><select className="h-10 text-sm border rounded-md px-2 bg-background" value={locationForm.locationType} onChange={e => setLocationForm({ ...locationForm, locationType: e.target.value })}><option value="branch">Branch</option><option value="campus">Campus</option><option value="clinic">Clinic</option><option value="unit">Unit</option></select></div>
+                <Input required placeholder="Location / branch name" value={locationForm.name} onChange={e => setLocationForm({ ...locationForm, name: e.target.value })} />
+                <Input placeholder="Address" value={locationForm.address} onChange={e => setLocationForm({ ...locationForm, address: e.target.value })} />
+                <div className="grid grid-cols-2 gap-2"><Input placeholder="City" value={locationForm.city} onChange={e => setLocationForm({ ...locationForm, city: e.target.value })} /><Input placeholder="State" value={locationForm.state} onChange={e => setLocationForm({ ...locationForm, state: e.target.value })} /></div>
+                <div className="grid grid-cols-2 gap-2"><Input placeholder="Phone" value={locationForm.phone} onChange={e => setLocationForm({ ...locationForm, phone: e.target.value })} /><Input type="email" placeholder="Email" value={locationForm.email} onChange={e => setLocationForm({ ...locationForm, email: e.target.value })} /></div>
+                <Button type="submit" className="w-full bg-teal-600 hover:bg-teal-700" disabled={saving}>Save Location</Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><UserPlus className="h-4 w-4" />Add HR User</CardTitle></CardHeader>
+            <CardContent>
+              <form className="space-y-3" onSubmit={saveHrUser}>
+                <div className="grid grid-cols-2 gap-2"><Input required placeholder="First name" value={hrUserForm.firstName} onChange={e => setHrUserForm({ ...hrUserForm, firstName: e.target.value })} /><Input required placeholder="Last name" value={hrUserForm.lastName} onChange={e => setHrUserForm({ ...hrUserForm, lastName: e.target.value })} /></div>
+                <Input required type="email" placeholder="Email" value={hrUserForm.email} onChange={e => setHrUserForm({ ...hrUserForm, email: e.target.value })} />
+                <Input required placeholder="Phone" value={hrUserForm.phone} onChange={e => setHrUserForm({ ...hrUserForm, phone: e.target.value })} />
+                <select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={hrUserForm.role} onChange={e => setHrUserForm({ ...hrUserForm, role: e.target.value })}><option value="hr_staff">HR staff</option><option value="hospital_admin">Hospital admin</option></select>
+                <div className="space-y-2 rounded-md border p-3">
+                  <p className="text-xs font-medium text-muted-foreground">Branch scope</p>
+                  {locations.map(location => <label key={location.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={hrUserForm.locationIds.includes(String(location.id))} onChange={() => toggleHrUserLocation(String(location.id))} /><span>{location.code} - {location.name}</span></label>)}
+                  {locations.length === 0 && <p className="text-xs text-muted-foreground">Create locations first, or leave scope unrestricted.</p>}
+                </div>
+                <Button type="submit" className="w-full bg-teal-600 hover:bg-teal-700" disabled={saving}>Create HR User</Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </Wrap>
+  );
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 17. SUPPORT
+// 17. SUPPORT / HR HELP DESK
 // ═══════════════════════════════════════════════════════════════════════════════
 const faqs = [
-  { q: 'How do I apply for leave?',          a: 'Go to Leave Management → Apply Leave. Your manager will be notified for approval.' },
-  { q: 'When is salary credited?',           a: 'Salary is processed on the last working day of each month via bank transfer.' },
-  { q: 'How to get a salary slip?',          a: 'Download from Payroll module → select month → Download Slip.' },
-  { q: 'How to update personal details?',    a: 'Contact HR admin with supporting documents. Profile updates require HR approval.' },
-  { q: 'PF withdrawal process?',             a: 'Submit Form 19 (PF withdrawal) or Form 31 (advance) to HR, will be processed via EPFO portal.' },
+  { q: 'How do I apply for leave?', a: 'Use Leave Management. HR can create and approve requests from the workflow.' },
+  { q: 'How to submit timesheets?', a: 'Use Timesheets. Approved entries become payroll-ready duty logs.' },
+  { q: 'How to upload documents?', a: 'Use Document Management and select the employee and document type.' },
+  { q: 'How are branches managed?', a: 'Use HR Settings to add locations and assign HR users to branch scope.' },
 ];
 
-export const HRSupportPage = () => (
-  <Wrap title="Help & Support" subtitle="HR helpdesk, FAQs and contact information">
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-2 space-y-4">
-        <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-base">Frequently Asked Questions</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            {faqs.map(f => (
-              <div key={f.q} className="border-b pb-4 last:border-0">
-                <p className="font-semibold text-sm mb-1">{f.q}</p>
-                <p className="text-sm text-muted-foreground">{f.a}</p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-      <div className="space-y-4">
-        <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-base">HR Contact</CardTitle></CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {[
-              { icon: Phone,   label: 'HR Helpdesk', value: '080-4567-8901' },
-              { icon: Mail,    label: 'Email',        value: 'hr@mediczy.com' },
-              { icon: MapPin,  label: 'Office',       value: 'Admin Block, 2nd Floor' },
-              { icon: Clock,   label: 'Hours',        value: 'Mon–Sat 9AM–6PM' },
-            ].map(c => (
-              <div key={c.label} className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-teal-50 dark:bg-teal-950">
-                  <c.icon className="h-4 w-4 text-teal-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">{c.label}</p>
-                  <p className="font-medium">{c.value}</p>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-base">Quick Links</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            {[
-              { label: 'EPFO Portal',    href: 'https://www.epfindia.gov.in' },
-              { label: 'ESIC Portal',    href: 'https://www.esic.in' },
-              { label: 'TRACES (TDS)',   href: 'https://www.tdscpc.gov.in' },
-              { label: 'Labour Dept.',   href: 'https://labour.gov.in' },
-            ].map(l => (
-              <a key={l.label} href={l.href} target="_blank" rel="noopener noreferrer"
-                className="flex items-center justify-between text-sm p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                <span className="text-teal-600 font-medium">{l.label}</span>
-                <span className="text-muted-foreground text-xs">→</span>
-              </a>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  </Wrap>
-);
+export const HRSupportPage = () => {
+  const [tickets,setTickets]=useState<any[]>([]); const [staff,setStaff]=useState<StaffMember[]>([]); const [message,setMessage]=useState(''); const [form,setForm]=useState({staffId:'',category:'general',subject:'',description:'',priority:'medium'});
+  const load=async()=>{try{const [t,s]=await Promise.all([api.get('/hr/helpdesk/tickets',{headers:hrHeaders()}),api.get('/hr/staff',{headers:hrHeaders()})]);setTickets(unwrapData<any[]>(t,[]));setStaff(unwrapData<StaffMember[]>(s,[]));}catch(e){setMessage(errText(e));}}; useEffect(()=>{load();},[]);
+  const save=async(e:React.FormEvent)=>{e.preventDefault();try{await api.post('/hr/helpdesk/tickets',form,{headers:hrHeaders()});setForm({staffId:'',category:'general',subject:'',description:'',priority:'medium'});setMessage('Help desk ticket created.');await load();}catch(err){setMessage(errText(err));}};
+  const setStatus=async(id:any,status:string)=>{try{await api.patch('/hr/helpdesk/tickets/'+id+'/status',{status},{headers:hrHeaders()});await load();}catch(e){setMessage(errText(e));}};
+  return <Wrap title="HR Help Desk" subtitle="Employee HR tickets, FAQs, and support workflows">{message&&<div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{message}</div>}<div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6"><KPI label="Open Tickets" value={String(tickets.filter(t=>t.status==='open').length)} sub="Help desk queue" icon={HelpCircle} color="text-teal-600"/><KPI label="High Priority" value={String(tickets.filter(t=>t.priority==='high').length)} sub="Needs action" icon={AlertCircle} color="text-red-600"/><KPI label="Resolved" value={String(tickets.filter(t=>['resolved','closed'].includes(t.status)).length)} sub="Closed tickets" icon={CheckCircle2} color="text-emerald-600"/><KPI label="Categories" value={String(new Set(tickets.map(t=>t.category)).size)} sub="Request types" icon={Filter} color="text-blue-600"/></div><div className="grid grid-cols-1 lg:grid-cols-3 gap-6"><div className="lg:col-span-2 space-y-4"><Card><CardHeader><CardTitle className="text-base">Help Desk Tickets</CardTitle></CardHeader><CardContent><table className="w-full text-sm"><thead><tr className="border-b"><TH>Ticket</TH><TH>Employee</TH><TH>Category</TH><TH>Priority</TH><TH>Status</TH><TH>Actions</TH></tr></thead><tbody>{tickets.map(t=><tr key={t.id}><TD><span className="font-mono text-xs">{t.ticketCode}</span><p className="font-medium">{t.subject}</p></TD><TD>{[t.firstName,t.lastName].filter(Boolean).join(' ')||'-'}</TD><TD>{benefitLabel(t.category)}</TD><TD><Bdg s={t.priority==='high'?'Overdue':t.priority==='medium'?'Pending':'Active'}/></TD><TD><Bdg s={statusLabel(t.status)}/></TD><TD><div className="flex gap-1"><Button size="sm" variant="ghost" onClick={()=>setStatus(t.id,'in_progress')}>Start</Button><Button size="sm" variant="ghost" onClick={()=>setStatus(t.id,'resolved')}>Resolve</Button></div></TD></tr>)}</tbody></table></CardContent></Card><Card><CardHeader className="pb-3"><CardTitle className="text-base">Frequently Asked Questions</CardTitle></CardHeader><CardContent className="space-y-4">{faqs.map(f=><div key={f.q} className="border-b pb-4 last:border-0"><p className="font-semibold text-sm mb-1">{f.q}</p><p className="text-sm text-muted-foreground">{f.a}</p></div>)}</CardContent></Card></div><div className="space-y-4"><Card><CardHeader><CardTitle className="text-base">Create Ticket</CardTitle></CardHeader><CardContent><form className="space-y-3" onSubmit={save}><select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={form.staffId} onChange={e=>setForm({...form,staffId:e.target.value})}><option value="">No employee selected</option>{staff.map(s=><option key={s.id} value={s.id}>{s.employeeCode} - {s.name}</option>)}</select><select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={form.category} onChange={e=>setForm({...form,category:e.target.value})}><option value="payroll">Payroll</option><option value="benefits">Benefits</option><option value="documents">Documents</option><option value="leave">Leave</option><option value="general">General</option></select><Input required placeholder="Subject" value={form.subject} onChange={e=>setForm({...form,subject:e.target.value})}/><Input placeholder="Description" value={form.description} onChange={e=>setForm({...form,description:e.target.value})}/><select className="h-10 w-full text-sm border rounded-md px-2 bg-background" value={form.priority} onChange={e=>setForm({...form,priority:e.target.value})}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select><Button className="w-full bg-teal-600 hover:bg-teal-700">Create Ticket</Button></form></CardContent></Card><Card><CardHeader className="pb-3"><CardTitle className="text-base">HR Contact</CardTitle></CardHeader><CardContent className="space-y-3 text-sm">{[{icon:Phone,label:'HR Helpdesk',value:'080-4567-8901'},{icon:Mail,label:'Email',value:'hr@mediczy.com'},{icon:MapPin,label:'Office',value:'Admin Block, 2nd Floor'},{icon:Clock,label:'Hours',value:'Mon-Sat 9AM-6PM'}].map(c=><div key={c.label} className="flex items-center gap-3"><div className="p-2 rounded-lg bg-teal-50 dark:bg-teal-950"><c.icon className="h-4 w-4 text-teal-600" /></div><div><p className="text-xs text-muted-foreground">{c.label}</p><p className="font-medium">{c.value}</p></div></div>)}</CardContent></Card></div></div></Wrap>;
+};

@@ -368,6 +368,7 @@ const USER_TYPE_PERMISSIONS = {
     allowedPaths: [
       '/api/hospital',
       '/api/hospital/staff',
+      '/api/hr',
       '/api/hospital/dashboard',
       '/api/hospital/patients',
       '/api/hospital/appointments',
@@ -617,6 +618,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/hospital/auth/verify',
   '/api/hospital/auth/refresh',
   '/api/hospital/auth/logout',
+  '/api/hr/login',
   '/api/clinic/login',
   '/api/clinic/register',
   '/api/clinic/send-email-otp',

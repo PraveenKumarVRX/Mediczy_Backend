@@ -729,13 +729,17 @@ const HRStaffPage         = lazyNamed(_HRModulePages, "HRStaffPage");
 const HRAttendancePage    = lazyNamed(_HRModulePages, "HRAttendancePage");
 const HRLeavesPage        = lazyNamed(_HRModulePages, "HRLeavesPage");
 const HRShiftsPage        = lazyNamed(_HRModulePages, "HRShiftsPage");
+const HRTimesheetsPage    = lazyNamed(_HRModulePages, "HRTimesheetsPage");
 const HROnboardingPage    = lazyNamed(_HRModulePages, "HROnboardingPage");
+const HRDocumentsPage     = lazyNamed(_HRModulePages, "HRDocumentsPage");
 const HRPayrollPage       = lazyNamed(_HRModulePages, "HRPayrollPage");
 const HRPfEsiPage         = lazyNamed(_HRModulePages, "HRPfEsiPage");
 const HRBenefitsPage      = lazyNamed(_HRModulePages, "HRBenefitsPage");
 const HRRecruitmentPage   = lazyNamed(_HRModulePages, "HRRecruitmentPage");
 const HRTrainingPage      = lazyNamed(_HRModulePages, "HRTrainingPage");
 const HRPerformancePage   = lazyNamed(_HRModulePages, "HRPerformancePage");
+const HRGoalsPage         = lazyNamed(_HRModulePages, "HRGoalsPage");
+const HRSurveysPage       = lazyNamed(_HRModulePages, "HRSurveysPage");
 const HRAppraisalsPage    = lazyNamed(_HRModulePages, "HRAppraisalsPage");
 const HRReportsPage       = lazyNamed(_HRModulePages, "HRReportsPage");
 const HRAnalyticsPage     = lazyNamed(_HRModulePages, "HRAnalyticsPage");
@@ -1566,13 +1570,17 @@ const AppRoutes = () => {
         <Route path="/hr/attendance"   element={<HRAttendancePage />} />
         <Route path="/hr/leaves"       element={<HRLeavesPage />} />
         <Route path="/hr/shifts"       element={<HRShiftsPage />} />
+        <Route path="/hr/timesheets"   element={<HRTimesheetsPage />} />
         <Route path="/hr/onboarding"   element={<HROnboardingPage />} />
+        <Route path="/hr/documents"    element={<HRDocumentsPage />} />
         <Route path="/hr/payroll"      element={<HRPayrollPage />} />
         <Route path="/hr/pf-esi"       element={<HRPfEsiPage />} />
         <Route path="/hr/benefits"     element={<HRBenefitsPage />} />
         <Route path="/hr/recruitment"  element={<HRRecruitmentPage />} />
         <Route path="/hr/training"     element={<HRTrainingPage />} />
         <Route path="/hr/performance"  element={<HRPerformancePage />} />
+        <Route path="/hr/goals"        element={<HRGoalsPage />} />
+        <Route path="/hr/surveys"      element={<HRSurveysPage />} />
         <Route path="/hr/appraisals"   element={<HRAppraisalsPage />} />
         <Route path="/hr/reports"      element={<HRReportsPage />} />
         <Route path="/hr/analytics"    element={<HRAnalyticsPage />} />

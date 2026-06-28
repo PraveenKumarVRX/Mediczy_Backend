@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import HospDeptLayout from '@/components/hosp-dept/HospDeptLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,8 +11,29 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { hrNavSections } from './HRModulePages';
+import api from '@/utils/api';
 
 const navSections = hrNavSections;
+
+type HrSummary = {
+  totalStaff: number;
+  activeStaff: number;
+  presentToday: number;
+  absentToday: number;
+  attendanceRate: number;
+  biometricEventsToday: number;
+  devices: { total: number; online: number };
+  byDepartment: Record<string, number>;
+};
+type AttendancePayload = { rows: Array<{ department: string; status: string }> };
+type StaffMember = { id: number | string; name: string; role?: string; designation?: string; joinedAt?: string; status: string };
+type RecruitmentSummary = { open_positions: number; openings: number; candidates: number; shortlisted: number; upcoming_interviews: number; offers: number; hired_month: number };
+
+const unwrapData = <T,>(response: any, fallback: T): T => response?.data?.data ?? response?.data ?? fallback;
+const hrHeaders = () => {
+  const token = localStorage.getItem('hrToken') || localStorage.getItem('hospitalToken') || localStorage.getItem('token') || '';
+  return token ? { Authorization: 'Bearer ' + token } : {};
+};
 
 const kpis = [
   { label: 'Total Staff',          value: '482',  sub: 'Across all depts',    icon: Users,       color: 'text-teal-600' },
@@ -49,6 +71,47 @@ const statusColor: Record<string, string> = {
 
 const HRDashboard = () => {
   const navigate = useNavigate();
+  const [summary, setSummary] = useState<HrSummary | null>(null);
+  const [attendance, setAttendance] = useState<AttendancePayload | null>(null);
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [recruitment, setRecruitment] = useState<RecruitmentSummary | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([
+      api.get('/hr/summary', { headers: hrHeaders() }).catch(() => null),
+      api.get('/hr/attendance', { headers: hrHeaders() }).catch(() => null),
+      api.get('/hr/staff?limit=50', { headers: hrHeaders() }).catch(() => null),
+      api.get('/hr/recruitment/summary', { headers: hrHeaders() }).catch(() => null),
+    ]).then(([summaryRes, attendanceRes, staffRes, recruitmentRes]) => {
+      if (!mounted) return;
+      setSummary(summaryRes ? unwrapData<HrSummary | null>(summaryRes, null) : null);
+      setAttendance(attendanceRes ? unwrapData<AttendancePayload | null>(attendanceRes, null) : null);
+      setStaff(staffRes ? unwrapData<StaffMember[]>(staffRes, []) : []);
+      setRecruitment(recruitmentRes ? unwrapData<RecruitmentSummary | null>(recruitmentRes, null) : null);
+    });
+    return () => { mounted = false; };
+  }, []);
+
+  const dashboardKpis = [
+    { label: 'Total Staff', value: String(summary?.totalStaff ?? kpis[0].value), sub: `${summary?.activeStaff ?? 'Active'} active`, icon: Users, color: 'text-teal-600' },
+    { label: 'Present Today', value: String(summary?.presentToday ?? kpis[1].value), sub: `${summary?.attendanceRate ?? '89.4'}% attendance`, icon: UserCheck, color: 'text-emerald-600' },
+    { label: 'Absent Today', value: String(summary?.absentToday ?? '0'), sub: `${summary?.biometricEventsToday ?? 0} biometric events`, icon: Clock, color: 'text-amber-600' },
+    { label: 'Open Positions', value: String(recruitment?.openings ?? '0'), sub: `${recruitment?.open_positions ?? 0} requisitions`, icon: UserPlus, color: 'text-blue-600' },
+  ];
+
+  const attendanceByDept = summary?.byDepartment ? Object.entries(summary.byDepartment).map(([dept, total]) => {
+    const deptRows = attendance?.rows?.filter(row => row.department === dept) || [];
+    const present = deptRows.filter(row => row.status === 'Present' || row.status === 'Late').length;
+    return { dept, present, total, absent: Math.max(total - present, 0) };
+  }) : deptAttendance;
+
+  const recentStaff = staff.length ? [...staff]
+    .filter(member => member.status === 'active')
+    .sort((a, b) => new Date(b.joinedAt || 0).getTime() - new Date(a.joinedAt || 0).getTime())
+    .slice(0, 4)
+    .map(member => ({ name: member.name, role: member.designation || member.role || 'Staff', joined: member.joinedAt ? new Date(member.joinedAt).toLocaleDateString() : '-' })) : recentHires;
+
   return (
     <HospDeptLayout
       deptKey="hr"
@@ -62,7 +125,7 @@ const HRDashboard = () => {
     >
       {/* KPI Cards */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-5 mb-6">
-        {kpis.map((k) => (
+        {dashboardKpis.map((k) => (
           <Card key={k.label} className="hover:shadow-md transition-shadow">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
@@ -92,7 +155,7 @@ const HRDashboard = () => {
               </Button>
             </CardHeader>
             <CardContent className="space-y-3">
-              {deptAttendance.map((d) => {
+              {attendanceByDept.map((d) => {
                 const pct = Math.round((d.present / d.total) * 100);
                 return (
                   <div key={d.dept}>
@@ -156,7 +219,7 @@ const HRDashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {recentHires.map((h) => (
+                {recentStaff.map((h) => (
                   <div key={h.name} className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-full bg-gradient-to-br from-teal-100 to-teal-200 flex items-center justify-center text-teal-700 font-semibold text-sm">

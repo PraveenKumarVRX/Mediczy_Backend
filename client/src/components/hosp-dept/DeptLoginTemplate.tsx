@@ -87,24 +87,10 @@ const DeptLoginTemplate = ({
       // Store token under department-specific key
       const d = data as any;
       const token = d.token ?? d.data?.token;
-      // Debug logging: API response and token
-      // eslint-disable-next-line no-console
-      console.log('[DeptLoginTemplate] Login API response:', d);
-      // eslint-disable-next-line no-console
-      console.log('[DeptLoginTemplate] Storing token under key:', tokenKey, 'Token:', token);
       localStorage.setItem(tokenKey, token);
       if (d.refreshToken) localStorage.setItem(`${deptKey}RefreshToken`, d.refreshToken);
       localStorage.setItem('userType', deptKey);
       localStorage.setItem(`${deptKey}Data`, JSON.stringify(d.data?.staff ?? d.hospital ?? d.user ?? {}));
-      // Debug logging: localStorage state after login
-      // eslint-disable-next-line no-console
-      console.log('[DeptLoginTemplate] localStorage snapshot:', {
-        [tokenKey]: localStorage.getItem(tokenKey),
-        [`${deptKey}RefreshToken`]: localStorage.getItem(`${deptKey}RefreshToken`),
-        userType: localStorage.getItem('userType'),
-        [`${deptKey}Data`]: localStorage.getItem(`${deptKey}Data`),
-      });
-
       navigate(dashboardPath);
     } catch (err: any) {
       clearDeptSession(deptKey);

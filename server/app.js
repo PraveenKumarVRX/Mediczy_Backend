@@ -146,6 +146,7 @@ import corporateBookingsRouter from './routes/corporate-bookings.route.js';
 import hospitalRouter from './routes/hospital.route.js';
 import hospitalAuthRouter from './routes/hospital-auth.route.js';
 import hospitalAuthAliasRouter from './routes/hospital/auth.routes.js';
+import hrmsRouter from './routes/hrms.route.js';
 import hospitalInsuranceRouter from './routes/hospital-insurance.route.js';
 import hospitalInsuranceAuthRouter from './routes/hospital-insurance/auth.routes.js';
 import hospitalInsuranceEmailRouter from './routes/hospital-insurance/email.route.js';
@@ -1540,6 +1541,8 @@ import unifiedPatientRouter from './routes/unified-patient.routes.js';
 
 // Unified Hospital Staff Routes (for Mediczy Mobile App - Multi-tenant)
 import unifiedHospitalStaffRouter from './routes/unified-hospital-staff.routes.js';
+import { hrStaffLogin } from './controller/unified-hospital-staff.controller.js';
+import { body as expressBody } from 'express-validator';
 
 // Super Admin Routes
 import superadminClinicRouter from './routes/superadmin-clinic.routes.js';
@@ -1566,6 +1569,14 @@ app.use('/api/clinic', clinicPatientRouter); // Clinic patient management (signu
 
 // Unified Patient Routes - Single Mediczy Mobile App for all tenants
 app.use('/api/patient', unifiedPatientRouter); // Patient signup, login, profile (multi-tenant)
+app.post('/api/hr/login', authLimiter, [
+  expressBody('hospital_id').optional().trim(),
+  expressBody('hospital_slug').optional().trim(),
+  expressBody('hospital_domain').optional().trim(),
+  expressBody('email').isEmail().withMessage('Invalid email'),
+  expressBody('password').notEmpty().withMessage('Password is required')
+], hrStaffLogin); // HR portal login alias for web bundle
+app.use('/api/hr', hrmsRouter); // HRMS staff, attendance, and biometric device workflows
 
 // Unified Hospital Staff Routes - Single Mediczy Mobile App for all hospital staff
 app.use('/api/hospital/staff', unifiedHospitalStaffRouter); // Doctor, nurse, assistant, insurance coordinator (multi-tenant)
