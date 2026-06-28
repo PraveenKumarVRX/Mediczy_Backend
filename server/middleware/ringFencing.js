@@ -369,6 +369,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/hospital',
       '/api/hospital/staff',
       '/api/hr',
+      '/api/payroll',
       '/api/hospital/dashboard',
       '/api/hospital/patients',
       '/api/hospital/appointments',

@@ -771,9 +771,11 @@ export const HRPayrollPage = () => {
   const [latestRun, setLatestRun] = useState<any>(null);
   const [lines, setLines] = useState<PayrollLine[]>([]);
   const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState('');
   const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('hrToken') || localStorage.getItem('hospitalToken') || ''}` });
   const refresh = async () => {
     setLoading(true);
+    setMessage('');
     try {
       const [structureRes, runRes] = await Promise.all([
         api.get('/payroll/structures', { headers: headers() }),
@@ -788,11 +790,32 @@ export const HRPayrollPage = () => {
       } else {
         setLines([]);
       }
+    } catch (error) {
+      setMessage(errText(error));
+      setStructures([]);
+      setLatestRun(null);
+      setLines([]);
     } finally { setLoading(false); }
   };
   useEffect(() => { refresh(); }, []);
-  const runPayroll = async () => { await api.post('/payroll/runs', { month: new Date().toISOString().slice(0,7) }, { headers: headers() }); await refresh(); };
-  const seedStructure = async () => { await api.post('/payroll/structures', { employeeCode: `EMP-${Date.now()}`, employeeName: 'New Employee', department: 'General', designation: 'Staff', basic: 30000, hra: 12000, allowances: 3000 }, { headers: headers() }); await refresh(); };
+  const runPayroll = async () => {
+    setMessage('');
+    try {
+      await api.post('/payroll/runs', { month: new Date().toISOString().slice(0,7) }, { headers: headers() });
+      await refresh();
+    } catch (error) {
+      setMessage(errText(error));
+    }
+  };
+  const seedStructure = async () => {
+    setMessage('');
+    try {
+      await api.post('/payroll/structures', { employeeCode: `EMP-${Date.now()}`, employeeName: 'New Employee', department: 'General', designation: 'Staff', basic: 30000, hra: 12000, allowances: 3000 }, { headers: headers() });
+      await refresh();
+    } catch (error) {
+      setMessage(errText(error));
+    }
+  };
   return (
     <Wrap title="Payroll Processing" subtitle="Monthly salary computation and disbursement">
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
@@ -801,6 +824,7 @@ export const HRPayrollPage = () => {
         <KPI label="PF Contribution" value={fmt(latestRun?.pf_total || 0)} sub="Employee contribution" icon={ShieldCheck} color="text-blue-600" />
         <KPI label="Net Disbursable" value={fmt(latestRun?.net_total || 0)} sub={latestRun?.status || 'draft'} icon={FileText} color="text-amber-600" />
       </div>
+      {message && <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{message}</div>}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <CardTitle className="text-base">Payroll Register</CardTitle>

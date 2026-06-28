@@ -4,13 +4,24 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 import { connectPostgres } from '../db/postgres.js';
 
 const router = express.Router();
+const PAYROLL_ALLOWED_ROLES = new Set(['hr_staff', 'hospital_admin', 'admin', 'system_admin', 'super_admin']);
 const authPayroll = (req, res, next) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ success: false, message: 'Authentication required' });
   try {
     const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
+    const role = decoded.role || decoded.userRole;
+    if (!PAYROLL_ALLOWED_ROLES.has(role)) {
+      return res.status(403).json({ success: false, message: 'Payroll privileges required' });
+    }
+
+    const tenantId = decoded.organization_id || decoded.hospital_id || decoded.hospitalId || decoded.tenant_id || decoded.org_id;
+    if (!tenantId || !Number.isInteger(Number(tenantId)) || Number(tenantId) <= 0) {
+      return res.status(403).json({ success: false, message: 'Valid hospital context is required' });
+    }
+
     req.payrollUser = decoded;
-    req.tenantId = decoded.tenant_id || decoded.hospital_id || decoded.id;
+    req.tenantId = Number(tenantId);
     next();
   } catch {
     res.status(401).json({ success: false, message: 'Invalid token' });
