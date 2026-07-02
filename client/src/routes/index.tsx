@@ -702,6 +702,8 @@ const ScmOpsControl        = lazyNamed(_SCMModulePages, "ScmOpsControl");
 const ScmReports           = lazyNamed(_SCMModulePages, "ScmReports");
 const ScmInventory         = lazyNamed(_SCMModulePages, "ScmInventory");
 const ScmApprovals         = lazyNamed(_SCMModulePages, "ScmApprovals");
+const ScmCharges           = lazyNamed(_SCMModulePages, "ScmCharges");
+const ScmImplants          = lazyNamed(_SCMModulePages, "ScmImplants");
 // Queue
 const QueueTokens   = lazyNamed(_QueueExperiencePages, "QueueTokensPage");
 const QueueCounters = lazyNamed(_QueueExperiencePages, "QueueCountersPage");
@@ -1556,6 +1558,8 @@ const AppRoutes = () => {
         <Route path="/scm/suppliers"    element={<ScmSupplierOps />} />
         <Route path="/scm/ops"           element={<ScmOpsControl />} />
         <Route path="/scm/approvals"     element={<ScmApprovals />} />
+        <Route path="/scm/charges"       element={<ScmCharges />} />
+        <Route path="/scm/implants"      element={<ScmImplants />} />
         <Route path="/scm/reports"       element={<ScmReports />} />
         {/* Queue */}
         <Route path="/queue/tokens"   element={<QueueTokens />} />

@@ -652,6 +652,8 @@ const scmNav: DeptNavSection[] = [
     items: [
       { icon: FileText,       label: "AP Invoices",     href: "/scm/ap-invoices" },
       { icon: Stethoscope,    label: "Clinical Supply", href: "/scm/clinical" },
+      { icon: CreditCard,     label: "Charge Capture",  href: "/scm/charges" },
+      { icon: HeartPulse,     label: "Implant UDI",     href: "/scm/implants" },
       { icon: Truck,          label: "Supplier Ops",    href: "/scm/suppliers" },
       { icon: ShieldCheck,    label: "Ops Control",     href: "/scm/ops" },
       { icon: MonitorCheck,   label: "Approvals",       href: "/scm/approvals" },

@@ -1867,4 +1867,8 @@ cron.schedule('0 1 25 * *', async () => {
   }
 });
 
+// ============== SCM: PAR Auto-Reorder (every 6h) ==============
+import { startScmParReorderCron } from './services/scm-par-reorder-cron.service.js';
+startScmParReorderCron();
+
 export default app;

@@ -313,7 +313,88 @@ export async function ensureScmPhase25Tables(db) {
   `);
 }
 
+export async function ensureScmEnterpriseTables(db) {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS scm_implant_traces (
+      id SERIAL PRIMARY KEY,
+      item_id INTEGER REFERENCES scm_items(id) ON DELETE SET NULL,
+      patient_id INTEGER NOT NULL,
+      encounter_id INTEGER,
+      udi_di VARCHAR(80),
+      udi_pi VARCHAR(120),
+      serial_number VARCHAR(80),
+      lot_number VARCHAR(80),
+      manufacturer VARCHAR(160),
+      implanted_at TIMESTAMP,
+      implanted_by VARCHAR(160),
+      procedure_code VARCHAR(80),
+      status VARCHAR(40) NOT NULL DEFAULT 'implanted',
+      recall_flag BOOLEAN NOT NULL DEFAULT FALSE,
+      organization_id INTEGER,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS scm_edi_ingest_log (
+      id SERIAL PRIMARY KEY,
+      source VARCHAR(80) NOT NULL DEFAULT 'edi',
+      document_type VARCHAR(40) NOT NULL,
+      external_id VARCHAR(120),
+      vendor_id INTEGER REFERENCES scm_vendors(id) ON DELETE SET NULL,
+      payload JSONB,
+      status VARCHAR(40) NOT NULL DEFAULT 'processed',
+      asn_id INTEGER REFERENCES scm_asn(id) ON DELETE SET NULL,
+      error_message TEXT,
+      organization_id INTEGER,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS scm_par_reorder_log (
+      id SERIAL PRIMARY KEY,
+      location_id INTEGER REFERENCES scm_locations(id) ON DELETE SET NULL,
+      item_id INTEGER REFERENCES scm_items(id) ON DELETE SET NULL,
+      on_hand NUMERIC(12,2),
+      par_level NUMERIC(12,2),
+      suggested_qty NUMERIC(12,2),
+      po_id INTEGER REFERENCES scm_purchase_orders(id) ON DELETE SET NULL,
+      status VARCHAR(40) NOT NULL DEFAULT 'suggested',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS scm_billing_charges (
+      id SERIAL PRIMARY KEY,
+      charge_capture_id INTEGER REFERENCES scm_charge_captures(id) ON DELETE CASCADE,
+      billing_order_number VARCHAR(80),
+      patient_id INTEGER,
+      encounter_id INTEGER,
+      amount NUMERIC(12,2),
+      status VARCHAR(40) NOT NULL DEFAULT 'posted',
+      posted_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS scm_staff (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      password VARCHAR(255) NOT NULL,
+      name VARCHAR(255),
+      scm_role VARCHAR(40) DEFAULT 'admin',
+      organization_id INTEGER,
+      "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    ALTER TABLE scm_staff ADD COLUMN IF NOT EXISTS scm_role VARCHAR(40) DEFAULT 'admin';
+    ALTER TABLE scm_staff ADD COLUMN IF NOT EXISTS organization_id INTEGER;
+
+    ALTER TABLE scm_items ADD COLUMN IF NOT EXISTS organization_id INTEGER;
+    ALTER TABLE scm_vendors ADD COLUMN IF NOT EXISTS organization_id INTEGER;
+    ALTER TABLE scm_purchase_orders ADD COLUMN IF NOT EXISTS organization_id INTEGER;
+    ALTER TABLE scm_indents ADD COLUMN IF NOT EXISTS organization_id INTEGER;
+    ALTER TABLE scm_indents ADD COLUMN IF NOT EXISTS po_id INTEGER REFERENCES scm_purchase_orders(id) ON DELETE SET NULL;
+  `);
+}
+
 export async function ensureAllScmTables(db) {
   await ensureScmFoundationTables(db);
   await ensureScmPhase25Tables(db);
+  await ensureScmEnterpriseTables(db);
 }

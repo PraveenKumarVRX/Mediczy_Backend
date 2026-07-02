@@ -4,6 +4,7 @@ import {
   Truck, ShieldCheck, Thermometer, Pill, BarChart3, PlusCircle, Boxes,
   CheckCircle2, Archive, MonitorCheck,
 } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from 'recharts';
 import DeptStaffLayout from '@/components/hosp-dept/DeptStaffLayout';
 import { scmNav } from './DepartmentDashboards';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -230,13 +231,22 @@ export const ScmWarehouses = () => {
 
 export const ScmIndents = () => {
   const { rows: items } = useScmList<Item>('/scm/items');
-  const { rows, refresh } = useScmList<{ id: number; indent_number: string; department: string; status: string }>('/scm/indents');
+  const { rows: vendors } = useScmList<Vendor>('/scm/vendors');
+  const { rows, refresh } = useScmList<{ id: number; indent_number: string; department: string; status: string; po_id?: number }>('/scm/indents');
   const [department, setDepartment] = useState('OT');
   const [itemId, setItemId] = useState('');
   const [quantity, setQuantity] = useState('5');
+  const [convertVendor, setConvertVendor] = useState<Record<number, string>>({});
   const create = async () => {
     if (!itemId) return;
     await api.post('/scm/indents', { department, requestedBy: 'Dept', lines: [{ itemId: Number(itemId), quantity: Number(quantity) }] });
+    refresh();
+  };
+  const approve = async (id: number) => { await api.patch(`/scm/indents/${id}/approve`); refresh(); };
+  const convertToPo = async (id: number) => {
+    const vendorId = convertVendor[id];
+    if (!vendorId) return;
+    await api.post(`/scm/indents/${id}/convert-to-po`, { vendorId: Number(vendorId) });
     refresh();
   };
   return (
@@ -248,9 +258,7 @@ export const ScmIndents = () => {
             <Input value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="Department" />
             <Select value={itemId} onValueChange={setItemId}>
               <SelectTrigger><SelectValue placeholder="Item" /></SelectTrigger>
-              <SelectContent>
-                {items.map((i) => <SelectItem key={i.id} value={String(i.id)}>{i.name}</SelectItem>)}
-              </SelectContent>
+              <SelectContent>{items.map((i) => <SelectItem key={i.id} value={String(i.id)}>{i.name}</SelectItem>)}</SelectContent>
             </Select>
             <Input value={quantity} onChange={(e) => setQuantity(e.target.value)} />
             <Button onClick={create}><ClipboardList className="h-4 w-4 mr-2" />Submit</Button>
@@ -259,9 +267,21 @@ export const ScmIndents = () => {
         <Card>
           <CardContent className="space-y-2 pt-6">
             {rows.map((indent) => (
-              <div key={indent.id} className="flex justify-between border rounded-md p-3">
-                <div>{indent.indent_number} · {indent.department}</div>
-                <Badge>{indent.status}</Badge>
+              <div key={indent.id} className="flex flex-wrap items-center justify-between gap-2 border rounded-md p-3">
+                <div>{indent.indent_number} · {indent.department} {indent.po_id ? `· PO #${indent.po_id}` : ''}</div>
+                <div className="flex items-center gap-2">
+                  <Badge>{indent.status}</Badge>
+                  {indent.status === 'submitted' && <Button size="sm" variant="outline" onClick={() => approve(indent.id)}>Approve</Button>}
+                  {indent.status === 'approved' && !indent.po_id && (
+                    <>
+                      <Select value={convertVendor[indent.id] || ''} onValueChange={(v) => setConvertVendor((s) => ({ ...s, [indent.id]: v }))}>
+                        <SelectTrigger className="w-36 h-8"><SelectValue placeholder="Vendor" /></SelectTrigger>
+                        <SelectContent>{vendors.map((v) => <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>)}</SelectContent>
+                      </Select>
+                      <Button size="sm" onClick={() => convertToPo(indent.id)}>Create PO</Button>
+                    </>
+                  )}
+                </div>
               </div>
             ))}
           </CardContent>
@@ -470,18 +490,42 @@ export const ScmClinicalSupply = () => {
 
 export const ScmSupplierOps = () => {
   const { rows: vendors, refresh: refreshVendors } = useScmList<Vendor>('/scm/vendors');
+  const { rows: items } = useScmList<Item>('/scm/items');
   const { rows: asn, refresh: refreshAsn } = useScmList<any>('/scm/asn');
   const { rows: blankets, refresh: refreshBlankets } = useScmList<any>('/scm/blanket-orders');
   const [vendorCode, setVendorCode] = useState('');
   const [name, setName] = useState('');
+  const [selectedVendor, setSelectedVendor] = useState('');
+  const [catalogue, setCatalogue] = useState<any[]>([]);
+  const [riskScore, setRiskScore] = useState('50');
+  const [catItemId, setCatItemId] = useState('');
+  const [catPrice, setCatPrice] = useState('100');
+  const loadCatalogue = async (vendorId: string) => {
+    setSelectedVendor(vendorId);
+    if (!vendorId) return;
+    const { data } = await api.get(`/scm/vendors/${vendorId}/catalogue`);
+    setCatalogue(data.data || []);
+  };
   const createVendor = async () => {
     if (!vendorCode || !name) return;
-    await api.post('/scm/vendors', { vendorCode, name, category: 'Medical supplies', riskScore: 40 });
+    await api.post('/scm/vendors', { vendorCode, name, category: 'Medical supplies', riskScore: Number(riskScore) });
     setVendorCode(''); setName(''); refreshVendors();
   };
-  const createAsn = async () => {
+  const updateRisk = async (id: number) => {
+    await api.patch(`/scm/vendors/${id}/risk`, { riskScore: Number(riskScore) });
+    refreshVendors();
+  };
+  const addCatalogue = async () => {
+    if (!selectedVendor || !catItemId) return;
+    await api.post(`/scm/vendors/${selectedVendor}/catalogue`, { itemId: Number(catItemId), contractPrice: Number(catPrice) });
+    loadCatalogue(selectedVendor);
+  };
+  const ingestEdi = async () => {
     if (!vendors[0]) return;
-    await api.post('/scm/asn', { vendorId: vendors[0].id, lines: [] });
+    await api.post('/scm/asn/ingest', {
+      documentType: '856', externalId: `EDI-${Date.now()}`, vendorId: vendors[0].id,
+      lines: items.slice(0, 2).map((i) => ({ itemId: i.id, quantity: 10 })),
+    });
     refreshAsn();
   };
   const createBlanket = async () => {
@@ -493,23 +537,37 @@ export const ScmSupplierOps = () => {
     <Wrap title="Supplier Operations">
       <div className="space-y-4">
         <Card>
-          <CardHeader><CardTitle className="text-base">Vendor & ASN</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Vendor & Catalogue</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Input placeholder="Code" value={vendorCode} onChange={(e) => setVendorCode(e.target.value)} />
               <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+              <Input className="w-20" value={riskScore} onChange={(e) => setRiskScore(e.target.value)} placeholder="Risk" />
               <Button onClick={createVendor}><Truck className="h-4 w-4 mr-2" />Add Vendor</Button>
             </div>
+            <div className="flex flex-wrap gap-2 items-center">
+              <Select value={selectedVendor} onValueChange={loadCatalogue}>
+                <SelectTrigger className="w-48"><SelectValue placeholder="Select vendor" /></SelectTrigger>
+                <SelectContent>{vendors.map((v) => <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>)}</SelectContent>
+              </Select>
+              <Select value={catItemId} onValueChange={setCatItemId}>
+                <SelectTrigger className="w-48"><SelectValue placeholder="Catalogue item" /></SelectTrigger>
+                <SelectContent>{items.map((i) => <SelectItem key={i.id} value={String(i.id)}>{i.name}</SelectItem>)}</SelectContent>
+              </Select>
+              <Input className="w-24" value={catPrice} onChange={(e) => setCatPrice(e.target.value)} />
+              <Button variant="outline" onClick={addCatalogue}>Add to Catalogue</Button>
+              {selectedVendor && <Button variant="outline" size="sm" onClick={() => updateRisk(Number(selectedVendor))}>Update Risk</Button>}
+            </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={createAsn}>Create ASN</Button>
+              <Button variant="outline" onClick={ingestEdi}>Ingest EDI ASN (856)</Button>
               <Button variant="outline" onClick={createBlanket}>Blanket Order</Button>
             </div>
           </CardContent>
         </Card>
         <div className="grid md:grid-cols-3 gap-4">
-          <Card><CardHeader><CardTitle className="text-sm">Vendors ({vendors.length})</CardTitle></CardHeader><CardContent>{vendors.slice(0, 5).map((v) => <div key={v.id} className="text-sm py-1">{v.name} · risk {v.risk_score}</div>)}</CardContent></Card>
-          <Card><CardHeader><CardTitle className="text-sm">ASN ({asn.length})</CardTitle></CardHeader><CardContent>{asn.slice(0, 5).map((a) => <div key={a.id} className="text-sm py-1">{a.asn_number}</div>)}</CardContent></Card>
-          <Card><CardHeader><CardTitle className="text-sm">Blanket ({blankets.length})</CardTitle></CardHeader><CardContent>{blankets.slice(0, 5).map((b) => <div key={b.id} className="text-sm py-1">{b.blanket_number}</div>)}</CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-sm">Vendors ({vendors.length})</CardTitle></CardHeader><CardContent>{vendors.map((v) => <div key={v.id} className="text-sm py-1 flex justify-between"><span>{v.name}</span><Badge variant={Number(v.risk_score) > 70 ? 'destructive' : 'secondary'}>risk {v.risk_score}</Badge></div>)}</CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-sm">Catalogue ({catalogue.length})</CardTitle></CardHeader><CardContent>{catalogue.map((c) => <div key={c.id} className="text-sm py-1">{c.item_name} · ₹{c.contract_price}</div>)}</CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-sm">ASN ({asn.length})</CardTitle></CardHeader><CardContent>{asn.slice(0, 5).map((a) => <div key={a.id} className="text-sm py-1">{a.asn_number} · {a.status}</div>)}</CardContent></Card>
         </div>
       </div>
     </Wrap>
@@ -520,48 +578,182 @@ export const ScmOpsControl = () => {
   const { rows: counts, refresh: refreshCounts } = useScmList<any>('/scm/cycle-counts');
   const { rows: coldChain, refresh: refreshCold } = useScmList<any>('/scm/cold-chain');
   const { rows: controlled, refresh: refreshControlled } = useScmList<any>('/scm/controlled-substances');
+  const { rows: warehouses } = useScmList<{ id: number; name: string }>('/scm/warehouses');
+  const { rows: locations, refresh: refreshLoc } = useScmList<any>('/scm/locations');
   const [temperature, setTemperature] = useState('4.5');
   const [itemId, setItemId] = useState('1');
+  const [warehouseId, setWarehouseId] = useState('1');
+  const [parLevel, setParLevel] = useState('20');
+  const [countedQty, setCountedQty] = useState('10');
   const logCold = async () => {
     await api.post('/scm/cold-chain', { itemId: Number(itemId), temperatureC: Number(temperature), recordedBy: 'SCM' });
     refreshCold();
   };
   const scheduleCount = async () => {
-    await api.post('/scm/cycle-counts', { warehouseId: 1, lines: [] });
+    await api.post('/scm/cycle-counts', { warehouseId: Number(warehouseId), lines: [] });
     refreshCounts();
+  };
+  const completeCount = async (countId: number) => {
+    await api.patch(`/scm/cycle-counts/${countId}/complete`, {
+      countedBy: 'SCM',
+      lines: [{ lineId: 1, itemId: Number(itemId), systemQty: 0, countedQty: Number(countedQty) }],
+    });
+    refreshCounts();
+  };
+  const addLocation = async () => {
+    await api.post('/scm/locations', { warehouseId: Number(warehouseId), code: `BIN-${Date.now()}`, parLevel: Number(parLevel) });
+    refreshLoc();
   };
   const logControlled = async () => {
     await api.post('/scm/controlled-substances', { itemId: Number(itemId), txnType: 'issue', quantity: -1, witnessName: 'Pharmacist' });
     refreshControlled();
   };
+  const runParReorder = async () => {
+    await api.post('/scm/par-reorder/run', { autoCreatePo: false });
+  };
   return (
     <Wrap title="Operations Control">
       <div className="space-y-4">
         <Card>
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><ShieldCheck className="h-4 w-4" />Cycle Count & Compliance</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><ShieldCheck className="h-4 w-4" />Cycle Count & PAR</CardTitle></CardHeader>
           <CardContent className="flex flex-wrap gap-2">
+            <Select value={warehouseId} onValueChange={setWarehouseId}>
+              <SelectTrigger className="w-40"><SelectValue placeholder="Warehouse" /></SelectTrigger>
+              <SelectContent>{warehouses.map((w) => <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>)}</SelectContent>
+            </Select>
             <Button variant="outline" onClick={scheduleCount}>Schedule Cycle Count</Button>
+            <Input className="w-20" value={parLevel} onChange={(e) => setParLevel(e.target.value)} placeholder="PAR" />
+            <Button variant="outline" onClick={addLocation}>Add PAR Bin</Button>
+            <Button variant="outline" onClick={runParReorder}>Run PAR Scan</Button>
             <Input className="w-24" value={itemId} onChange={(e) => setItemId(e.target.value)} />
+            <Input className="w-24" value={countedQty} onChange={(e) => setCountedQty(e.target.value)} />
             <Input className="w-24" value={temperature} onChange={(e) => setTemperature(e.target.value)} />
-            <Button variant="outline" onClick={logCold}><Thermometer className="h-4 w-4 mr-2" />Log Cold Chain</Button>
-            <Button onClick={logControlled}>Log Controlled Substance</Button>
+            <Button variant="outline" onClick={logCold}><Thermometer className="h-4 w-4 mr-2" />Cold Chain</Button>
+            <Button onClick={logControlled}>Controlled Substance</Button>
           </CardContent>
         </Card>
-        <div className="grid md:grid-cols-3 gap-4">
-          <Card><CardHeader><CardTitle className="text-sm">Cycle Counts ({counts.length})</CardTitle></CardHeader><CardContent>{counts.slice(0, 4).map((c) => <div key={c.id} className="text-sm py-1">{c.count_number} · {c.status}</div>)}</CardContent></Card>
-          <Card><CardHeader><CardTitle className="text-sm">Cold Chain ({coldChain.length})</CardTitle></CardHeader><CardContent>{coldChain.slice(0, 4).map((c) => <div key={c.id} className="text-sm py-1">{c.temperature_c}°C {c.alert_triggered && '⚠'}</div>)}</CardContent></Card>
-          <Card><CardHeader><CardTitle className="text-sm">Controlled ({controlled.length})</CardTitle></CardHeader><CardContent>{controlled.slice(0, 4).map((c) => <div key={c.id} className="text-sm py-1">{c.txn_type} · {c.quantity}</div>)}</CardContent></Card>
+        <div className="grid md:grid-cols-4 gap-4">
+          <Card><CardHeader><CardTitle className="text-sm">Cycle Counts</CardTitle></CardHeader><CardContent>{counts.slice(0, 4).map((c) => (
+            <div key={c.id} className="text-sm py-1 flex justify-between">{c.count_number} · {c.status}
+              {c.status === 'scheduled' && <Button size="sm" variant="ghost" onClick={() => completeCount(c.id)}>Complete</Button>}
+            </div>
+          ))}</CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-sm">PAR Locations ({locations.length})</CardTitle></CardHeader><CardContent>{locations.slice(0, 4).map((l) => <div key={l.id} className="text-sm py-1">{l.code} · PAR {l.par_level}</div>)}</CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-sm">Cold Chain</CardTitle></CardHeader><CardContent>{coldChain.slice(0, 4).map((c) => <div key={c.id} className="text-sm py-1">{c.temperature_c}°C {c.alert_triggered && '⚠'}</div>)}</CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-sm">Controlled</CardTitle></CardHeader><CardContent>{controlled.slice(0, 4).map((c) => <div key={c.id} className="text-sm py-1">{c.txn_type} · {c.quantity}</div>)}</CardContent></Card>
         </div>
       </div>
     </Wrap>
   );
 };
 
+export const ScmCharges = () => {
+  const { rows: items } = useScmList<Item>('/scm/items');
+  const [charges, setCharges] = useState<any[]>([]);
+  const [patientId, setPatientId] = useState('');
+  const [itemId, setItemId] = useState('');
+  const [unitPrice, setUnitPrice] = useState('500');
+  const refresh = async () => {
+    const { data } = await api.get('/scm/charge-captures');
+    setCharges(data.data || []);
+  };
+  useEffect(() => { refresh(); }, []);
+  const capture = async () => {
+    if (!patientId || !itemId) return;
+    await api.post('/scm/charge-captures', { patientId: Number(patientId), itemId: Number(itemId), quantity: 1, unitPrice: Number(unitPrice) });
+    refresh();
+  };
+  const bill = async (id: number) => {
+    await api.post(`/scm/charge-captures/${id}/bill`);
+    refresh();
+  };
+  return (
+    <Wrap title="Charge Capture">
+      <Card>
+        <CardHeader><CardTitle className="text-base">Supply Charges → Billing</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <Input placeholder="Patient ID" value={patientId} onChange={(e) => setPatientId(e.target.value)} />
+            <Select value={itemId} onValueChange={setItemId}>
+              <SelectTrigger className="w-48"><SelectValue placeholder="Item" /></SelectTrigger>
+              <SelectContent>{items.map((i) => <SelectItem key={i.id} value={String(i.id)}>{i.name}</SelectItem>)}</SelectContent>
+            </Select>
+            <Input className="w-24" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />
+            <Button onClick={capture}>Capture Charge</Button>
+          </div>
+          <div className="space-y-2">
+            {charges.map((c) => (
+              <div key={c.id} className="flex justify-between border rounded p-3 text-sm">
+                <span>{c.item_name} · Patient {c.patient_id} · ₹{c.unit_price}</span>
+                <div className="flex gap-2">
+                  <Badge>{c.billed ? 'billed' : 'pending'}</Badge>
+                  {!c.billed && <Button size="sm" onClick={() => bill(c.id)}>Post to Billing</Button>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </Wrap>
+  );
+};
+
+export const ScmImplants = () => {
+  const { rows: items } = useScmList<Item>('/scm/items');
+  const [traces, setTraces] = useState<any[]>([]);
+  const [patientId, setPatientId] = useState('');
+  const [udiDi, setUdiDi] = useState('');
+  const [serialNumber, setSerialNumber] = useState('');
+  const [itemId, setItemId] = useState('');
+  const refresh = async () => {
+    const { data } = await api.get('/scm/implant-traces');
+    setTraces(data.data || []);
+  };
+  useEffect(() => { refresh(); }, []);
+  const register = async () => {
+    if (!patientId) return;
+    await api.post('/scm/implant-traces', {
+      patientId: Number(patientId), itemId: itemId ? Number(itemId) : null,
+      udiDi, serialNumber, implantedBy: 'SCM',
+    });
+    refresh();
+  };
+  return (
+    <Wrap title="Implant UDI Traceability">
+      <Card>
+        <CardHeader><CardTitle className="text-base">Register Implant to Patient</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid md:grid-cols-5 gap-2">
+            <Input placeholder="Patient ID" value={patientId} onChange={(e) => setPatientId(e.target.value)} />
+            <Select value={itemId} onValueChange={setItemId}>
+              <SelectTrigger><SelectValue placeholder="Item" /></SelectTrigger>
+              <SelectContent>{items.filter((i) => i.category?.toLowerCase().includes('implant') || true).map((i) => <SelectItem key={i.id} value={String(i.id)}>{i.name}</SelectItem>)}</SelectContent>
+            </Select>
+            <Input placeholder="UDI-DI" value={udiDi} onChange={(e) => setUdiDi(e.target.value)} />
+            <Input placeholder="Serial #" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} />
+            <Button onClick={register}>Trace Implant</Button>
+          </div>
+          <div className="space-y-2">
+            {traces.map((t) => (
+              <div key={t.id} className="border rounded p-3 text-sm flex justify-between">
+                <span>{t.item_name || 'Implant'} · Patient {t.patient_id} · {t.udi_di || t.serial_number}</span>
+                <Badge>{t.status}</Badge>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </Wrap>
+  );
+};
+
 export const ScmReports = () => {
   const [summary, setSummary] = useState<Record<string, number>>({});
+  const [spend, setSpend] = useState<{ monthly: any[]; byVendor: any[]; byCategory: any[] }>({ monthly: [], byVendor: [], byCategory: [] });
   const [reorder, setReorder] = useState<any[]>([]);
   useEffect(() => {
     api.get('/scm/overview').then((res) => setSummary(res.data.data || {}));
+    api.get('/scm/analytics/spend').then((res) => setSpend(res.data.data || { monthly: [], byVendor: [], byCategory: [] })).catch(() => {});
     api.get('/scm/ai/reorder-advisor').then((res) => setReorder(res.data.data || [])).catch(() => {});
   }, []);
   return (
@@ -578,6 +770,36 @@ export const ScmReports = () => {
             ))}
           </CardContent>
         </Card>
+        <div className="grid md:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader><CardTitle className="text-base">Monthly Spend (12mo)</CardTitle></CardHeader>
+            <CardContent className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={spend.monthly}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="spend" stroke="#0d9488" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle className="text-base">Spend by Vendor (6mo)</CardTitle></CardHeader>
+            <CardContent className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={spend.byVendor}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="vendor_name" tick={{ fontSize: 9 }} interval={0} angle={-20} textAnchor="end" height={60} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip />
+                  <Bar dataKey="spend" fill="#6366f1" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
         {reorder.length > 0 && (
           <Card>
             <CardHeader><CardTitle className="text-base">AI Reorder Recommendations</CardTitle></CardHeader>

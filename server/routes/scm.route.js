@@ -2,9 +2,9 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { loginScm } from '../controllers/dept/scm.controller.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
-import { connectPostgres } from '../db/postgres.js';
-import { ensureAllScmTables } from '../migrations/scm-tables.migration.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
+import { getScmDb, poStatusAfterReceipt as unifiedPoStatus, scmOverviewMetrics } from '../services/scm-unified.service.js';
+import { scmRbacGuard } from '../middleware/scm-rbac.middleware.js';
 import {
   actorFrom,
   decideOperationsApproval,
@@ -29,43 +29,21 @@ const authScm = (req, res, next) => {
 };
 
 const ensureTables = async () => {
-  const db = await connectPostgres();
-  await ensureAllScmTables(db);
+  const db = await getScmDb();
   await ensureOperationsGovernanceTables(db);
   return db;
 };
 
 const actor = (req, fallback = 'SCM') => actorFrom(req.scmUser, fallback);
 
-const poStatusAfterReceipt = async (db, orderId) => {
-  const { rows: lines } = await db.query(
-    'SELECT quantity, received_quantity FROM scm_po_lines WHERE order_id = $1',
-    [orderId]
-  );
-  if (!lines.length) return 'approved';
-  const fullyReceived = lines.every((l) => Number(l.received_quantity) >= Number(l.quantity));
-  const anyReceived = lines.some((l) => Number(l.received_quantity) > 0);
-  if (fullyReceived) return 'received';
-  if (anyReceived) return 'partial_receipt';
-  return 'approved';
-};
-
 router.post('/login', (req, res, next) => { req.skipAuth = true; next(); }, loginScm);
 
 // ─── Overview ────────────────────────────────────────────────────────────────
 
-router.get('/overview', authScm, async (_req, res) => {
+router.get('/overview', authScm, scmRbacGuard, async (_req, res) => {
   const db = await ensureTables();
-  const { rows } = await db.query(`
-    SELECT
-      (SELECT COUNT(*)::int FROM scm_items WHERE status = 'active') AS active_items,
-      (SELECT COUNT(*)::int FROM scm_purchase_orders WHERE status IN ('draft','submitted','approved','partial_receipt')) AS open_pos,
-      (SELECT COUNT(*)::int FROM scm_ap_invoices WHERE status IN ('draft','matched','approved')) AS open_invoices,
-      (SELECT COUNT(*)::int FROM scm_indents WHERE status IN ('submitted','approved')) AS open_indents,
-      (SELECT COUNT(*)::int FROM scm_case_carts WHERE status IN ('preparing','ready')) AS active_case_carts,
-      (SELECT COUNT(*)::int FROM scm_cycle_counts WHERE status = 'scheduled') AS scheduled_counts
-  `);
-  res.json({ success: true, data: rows[0] });
+  const data = await scmOverviewMetrics(db);
+  res.json({ success: true, data });
 });
 
 // ─── Item master & inventory ─────────────────────────────────────────────────
@@ -147,6 +125,53 @@ router.post('/indents', authScm, async (req, res) => {
     await db.query('INSERT INTO scm_indent_lines (indent_id, item_id, quantity) VALUES ($1,$2,$3)', [rows[0].id, line.itemId, line.quantity]);
   }
   res.status(201).json({ success: true, data: rows[0] });
+});
+
+router.patch('/indents/:id/approve', authScm, scmRbacGuard, async (req, res) => {
+  const db = await ensureTables();
+  const { rows } = await db.query(
+    `UPDATE scm_indents SET status = 'approved' WHERE id = $1 AND status = 'submitted' RETURNING *`,
+    [req.params.id]
+  );
+  if (!rows[0]) return res.status(404).json({ success: false, message: 'Indent not found or not submittable' });
+  await recordOperationsAudit(db, { module: 'scm', entityType: 'indent', entityId: rows[0].id, action: 'indent_approved', actor: actor(req) });
+  res.json({ success: true, data: rows[0] });
+});
+
+router.post('/indents/:id/convert-to-po', authScm, scmRbacGuard, async (req, res) => {
+  const db = await ensureTables();
+  const { vendorId } = req.body;
+  if (!vendorId) return res.status(400).json({ success: false, message: 'vendorId is required' });
+  const { rows: indents } = await db.query('SELECT * FROM scm_indents WHERE id = $1', [req.params.id]);
+  const indent = indents[0];
+  if (!indent) return res.status(404).json({ success: false, message: 'Indent not found' });
+  if (indent.status !== 'approved') return res.status(409).json({ success: false, message: 'Indent must be approved first' });
+  if (indent.po_id) return res.status(409).json({ success: false, message: 'Indent already converted to PO', poId: indent.po_id });
+
+  const { rows: lines } = await db.query(`
+    SELECT l.*, i.name AS item_name, c.contract_price
+    FROM scm_indent_lines l
+    JOIN scm_items i ON i.id = l.item_id
+    LEFT JOIN scm_vendor_catalogue c ON c.item_id = l.item_id AND c.vendor_id = $2
+    WHERE l.indent_id = $1
+  `, [indent.id, vendorId]);
+  if (!lines.length) return res.status(400).json({ success: false, message: 'Indent has no lines' });
+
+  const total = lines.reduce((s, l) => s + Number(l.quantity) * Number(l.contract_price || 100), 0);
+  const { rows: po } = await db.query(`
+    INSERT INTO scm_purchase_orders (po_number, vendor_id, department, requested_by, total_amount, status)
+    VALUES ($1,$2,$3,$4,$5,'submitted') RETURNING *
+  `, [`PO-IND-${Date.now()}`, vendorId, indent.department, indent.requested_by, total]);
+  for (const line of lines) {
+    await db.query(
+      'INSERT INTO scm_po_lines (order_id, item_id, description, quantity, unit_price) VALUES ($1,$2,$3,$4,$5)',
+      [po[0].id, line.item_id, line.item_name, line.quantity, line.contract_price || 100]
+    );
+  }
+  await db.query('UPDATE scm_indents SET po_id = $2, status = $3 WHERE id = $1', [indent.id, po[0].id, 'converted']);
+  await requestOperationsApproval(db, { module: 'scm', entityType: 'order', entityId: po[0].id, action: 'approve_po', requestedBy: actor(req) });
+  await recordOperationsAudit(db, { module: 'scm', entityType: 'indent', entityId: indent.id, action: 'indent_converted_to_po', actor: actor(req), details: { poId: po[0].id } });
+  res.status(201).json({ success: true, data: { indent: { ...indent, po_id: po[0].id }, purchaseOrder: po[0] } });
 });
 
 // ─── Vendors ─────────────────────────────────────────────────────────────────
@@ -286,7 +311,7 @@ router.post('/orders/:id/grn', authScm, async (req, res) => {
       [rows[0].id, line.lineId, line.itemId || null, line.receivedQuantity, line.batchNumber || null, line.expiryDate || null]
     );
   }
-  const nextStatus = await poStatusAfterReceipt(db, order.id);
+  const nextStatus = await unifiedPoStatus(db, order.id);
   await db.query('UPDATE scm_purchase_orders SET status = $2, updated_at = NOW() WHERE id = $1', [order.id, nextStatus]);
   await requestOperationsApproval(db, { module: 'scm', entityType: 'grn', entityId: rows[0].id, action: 'post_grn', requestedBy: actor(req, receivedBy || 'Stores') });
   res.status(201).json({ success: true, data: { ...rows[0], orderStatus: nextStatus } });
@@ -462,7 +487,7 @@ router.post('/case-carts', authScm, async (req, res) => {
   res.status(201).json({ success: true, data: rows[0] });
 });
 
-router.post('/charge-captures', authScm, async (req, res) => {
+router.post('/charge-captures', authScm, scmRbacGuard, async (req, res) => {
   const db = await ensureTables();
   const { patientId, encounterId, itemId, quantity, unitPrice, costCenterId, sourceType, sourceId } = req.body;
   if (!itemId) return res.status(400).json({ success: false, message: 'itemId is required' });
@@ -471,6 +496,34 @@ router.post('/charge-captures', authScm, async (req, res) => {
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *
   `, [patientId || null, encounterId || null, itemId, quantity || 1, unitPrice || null, costCenterId || null, sourceType || null, sourceId || null]);
   res.status(201).json({ success: true, data: rows[0] });
+});
+
+router.get('/charge-captures', authScm, scmRbacGuard, async (_req, res) => {
+  const db = await ensureTables();
+  const { rows } = await db.query(`
+    SELECT c.*, i.name AS item_name, i.item_code
+    FROM scm_charge_captures c
+    LEFT JOIN scm_items i ON i.id = c.item_id
+    ORDER BY c.created_at DESC LIMIT 100
+  `);
+  res.json({ success: true, data: rows });
+});
+
+router.post('/charge-captures/:id/bill', authScm, scmRbacGuard, async (req, res) => {
+  const db = await ensureTables();
+  const { rows: caps } = await db.query('SELECT * FROM scm_charge_captures WHERE id = $1', [req.params.id]);
+  const cap = caps[0];
+  if (!cap) return res.status(404).json({ success: false, message: 'Charge capture not found' });
+  if (cap.billed) return res.status(409).json({ success: false, message: 'Already billed' });
+  const amount = Number(cap.quantity) * Number(cap.unit_price || 0);
+  const orderNumber = `SCM-CHG-${Date.now()}`;
+  await db.query(`
+    INSERT INTO scm_billing_charges (charge_capture_id, billing_order_number, patient_id, encounter_id, amount, status)
+    VALUES ($1,$2,$3,$4,$5,'posted')
+  `, [cap.id, orderNumber, cap.patient_id, cap.encounter_id, amount]);
+  const { rows } = await db.query('UPDATE scm_charge_captures SET billed = TRUE WHERE id = $1 RETURNING *', [cap.id]);
+  await recordOperationsAudit(db, { module: 'scm', entityType: 'charge_capture', entityId: cap.id, action: 'charge_billed', actor: actor(req), details: { orderNumber, amount } });
+  res.json({ success: true, data: { charge: rows[0], billingOrderNumber: orderNumber, amount } });
 });
 
 router.get('/formulary', authScm, async (_req, res) => {
@@ -529,6 +582,40 @@ router.post('/blanket-orders', authScm, async (req, res) => {
     VALUES ($1,$2,$3,$4,$5) RETURNING *
   `, [`BLK-${Date.now()}`, vendorId, maxAmount, validFrom || null, validTo || null]);
   res.status(201).json({ success: true, data: rows[0] });
+});
+
+router.post('/asn/ingest', authScm, scmRbacGuard, async (req, res) => {
+  const db = await ensureTables();
+  const { documentType = '856', externalId, vendorCode, vendorId, poNumber, expectedAt, lines = [], rawPayload } = req.body;
+  let vid = vendorId;
+  if (!vid && vendorCode) {
+    const { rows: v } = await db.query('SELECT id FROM scm_vendors WHERE vendor_code = $1', [vendorCode]);
+    vid = v[0]?.id;
+  }
+  if (!vid) return res.status(400).json({ success: false, message: 'vendorId or vendorCode required' });
+
+  let poId = null;
+  if (poNumber) {
+    const { rows: po } = await db.query('SELECT id FROM scm_purchase_orders WHERE po_number = $1', [poNumber]);
+    poId = po[0]?.id || null;
+  }
+
+  const { rows: asn } = await db.query(
+    'INSERT INTO scm_asn (asn_number, po_id, vendor_id, expected_at, status) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+    [`EDI-${externalId || Date.now()}`, poId, vid, expectedAt || null, 'in_transit']
+  );
+  for (const line of lines) {
+    const itemId = line.itemId || (line.itemCode
+      ? (await db.query('SELECT id FROM scm_items WHERE item_code = $1', [line.itemCode])).rows[0]?.id
+      : null);
+    if (itemId) await db.query('INSERT INTO scm_asn_lines (asn_id, item_id, quantity) VALUES ($1,$2,$3)', [asn[0].id, itemId, line.quantity]);
+  }
+  await db.query(`
+    INSERT INTO scm_edi_ingest_log (source, document_type, external_id, vendor_id, payload, status, asn_id)
+    VALUES ('edi',$1,$2,$3,$4,'processed',$5)
+  `, [documentType, externalId || asn[0].asn_number, vid, JSON.stringify(rawPayload || req.body), asn[0].id]);
+  await recordOperationsAudit(db, { module: 'scm', entityType: 'asn', entityId: asn[0].id, action: 'edi_asn_ingested', actor: actor(req) });
+  res.status(201).json({ success: true, data: asn[0] });
 });
 
 // ─── Ops control ─────────────────────────────────────────────────────────────
@@ -620,6 +707,113 @@ router.post('/controlled-substances', authScm, async (req, res) => {
     [itemId, 'controlled_substance', quantity, 'controlled_log', rows[0].id, notes || null]
   );
   res.status(201).json({ success: true, data: rows[0] });
+});
+
+// ─── PAR locations, implant UDI traceability, spend analytics ────────────────
+
+router.get('/locations', authScm, scmRbacGuard, async (_req, res) => {
+  const db = await ensureTables();
+  const { rows } = await db.query(`
+    SELECT loc.*, w.name AS warehouse_name, w.code AS warehouse_code
+    FROM scm_locations loc
+    JOIN scm_warehouses w ON w.id = loc.warehouse_id
+    ORDER BY w.name, loc.code
+  `);
+  res.json({ success: true, data: rows });
+});
+
+router.post('/locations', authScm, scmRbacGuard, async (req, res) => {
+  const db = await ensureTables();
+  const { warehouseId, code, zone, parLevel, maxLevel } = req.body;
+  if (!warehouseId || !code) return res.status(400).json({ success: false, message: 'warehouseId and code required' });
+  const { rows } = await db.query(
+    'INSERT INTO scm_locations (warehouse_id, code, zone, par_level, max_level) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+    [warehouseId, code, zone || null, parLevel || 0, maxLevel || 0]
+  );
+  res.status(201).json({ success: true, data: rows[0] });
+});
+
+router.patch('/locations/:id/par', authScm, scmRbacGuard, async (req, res) => {
+  const db = await ensureTables();
+  const { parLevel, maxLevel } = req.body;
+  const { rows } = await db.query(
+    'UPDATE scm_locations SET par_level = COALESCE($2, par_level), max_level = COALESCE($3, max_level) WHERE id = $1 RETURNING *',
+    [req.params.id, parLevel, maxLevel]
+  );
+  if (!rows[0]) return res.status(404).json({ success: false, message: 'Location not found' });
+  res.json({ success: true, data: rows[0] });
+});
+
+router.get('/implant-traces', authScm, scmRbacGuard, async (req, res) => {
+  const db = await ensureTables();
+  const { patientId } = req.query;
+  const params = [];
+  let where = '1=1';
+  if (patientId) { where += ' AND patient_id = $1'; params.push(patientId); }
+  const { rows } = await db.query(`
+    SELECT t.*, i.item_code, i.name AS item_name
+    FROM scm_implant_traces t
+    LEFT JOIN scm_items i ON i.id = t.item_id
+    WHERE ${where}
+    ORDER BY t.created_at DESC LIMIT 100
+  `, params);
+  res.json({ success: true, data: rows });
+});
+
+router.post('/implant-traces', authScm, scmRbacGuard, async (req, res) => {
+  const db = await ensureTables();
+  const {
+    itemId, patientId, encounterId, udiDi, udiPi, serialNumber, lotNumber,
+    manufacturer, implantedAt, implantedBy, procedureCode,
+  } = req.body;
+  if (!patientId || (!udiDi && !serialNumber)) {
+    return res.status(400).json({ success: false, message: 'patientId and udiDi or serialNumber required' });
+  }
+  const orgId = req.scmUser?.organization_id || null;
+  const { rows } = await db.query(`
+    INSERT INTO scm_implant_traces (
+      item_id, patient_id, encounter_id, udi_di, udi_pi, serial_number, lot_number,
+      manufacturer, implanted_at, implanted_by, procedure_code, organization_id
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *
+  `, [itemId || null, patientId, encounterId || null, udiDi || null, udiPi || null,
+    serialNumber || null, lotNumber || null, manufacturer || null,
+    implantedAt || new Date().toISOString(), implantedBy || actor(req), procedureCode || null, orgId]);
+  await recordOperationsAudit(db, { module: 'scm', entityType: 'implant', entityId: rows[0].id, action: 'implant_traced', actor: actor(req), details: { patientId, udiDi } });
+  res.status(201).json({ success: true, data: rows[0] });
+});
+
+router.get('/analytics/spend', authScm, scmRbacGuard, async (_req, res) => {
+  const db = await ensureTables();
+  const { rows: monthly } = await db.query(`
+    SELECT to_char(created_at, 'YYYY-MM') AS month,
+           COUNT(*)::int AS po_count,
+           COALESCE(SUM(total_amount),0)::numeric AS spend
+    FROM scm_purchase_orders
+    WHERE created_at >= NOW() - INTERVAL '12 months'
+    GROUP BY 1 ORDER BY 1
+  `);
+  const { rows: byVendor } = await db.query(`
+    SELECT v.name AS vendor_name, COALESCE(SUM(o.total_amount),0)::numeric AS spend, COUNT(o.id)::int AS po_count
+    FROM scm_purchase_orders o
+    JOIN scm_vendors v ON v.id = o.vendor_id
+    WHERE o.created_at >= NOW() - INTERVAL '6 months'
+    GROUP BY v.name ORDER BY spend DESC LIMIT 10
+  `);
+  const { rows: byCategory } = await db.query(`
+    SELECT i.category, COALESCE(SUM(l.quantity * l.unit_price),0)::numeric AS spend
+    FROM scm_po_lines l
+    JOIN scm_items i ON i.id = l.item_id
+    JOIN scm_purchase_orders o ON o.id = l.order_id
+    WHERE o.created_at >= NOW() - INTERVAL '6 months'
+    GROUP BY i.category ORDER BY spend DESC
+  `);
+  res.json({ success: true, data: { monthly, byVendor, byCategory } });
+});
+
+router.post('/par-reorder/run', authScm, scmRbacGuard, async (req, res) => {
+  const { runParReorderScan } = await import('../services/scm-par-reorder-cron.service.js');
+  const result = await runParReorderScan({ autoCreatePo: Boolean(req.body?.autoCreatePo) });
+  res.json({ success: true, data: result });
 });
 
 // ─── Governance ──────────────────────────────────────────────────────────────
