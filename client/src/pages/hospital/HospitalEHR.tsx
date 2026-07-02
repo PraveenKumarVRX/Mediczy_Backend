@@ -29,6 +29,7 @@ import {
   imagingOrderService,
   prescriptionService,
   procedureService,
+  orderStatusService,
 } from '@/services/hospital.service';
 import { 
   FileHeart, Activity, Bell, Plus, Search, ArrowLeft, Edit, 
@@ -249,6 +250,12 @@ const HospitalEHR = () => {
   const [expandedSections, setExpandedSections] = useState<string[]>(['vitals', 'encounters', 'medications']);
   const [patientReports, setPatientReports] = useState<PatientReport[]>([]);
   const [loadingReports, setLoadingReports] = useState(false);
+  const [orderStatus, setOrderStatus] = useState<{
+    labOrders: Array<{ id: number; order_number?: string; status?: string; test_type?: string }>;
+    prescriptions: Array<{ id: number; status?: string; pharmacy_status?: string }>;
+    billingCharges: Array<{ id: number; charge_type?: string; amount?: number; status?: string }>;
+  } | null>(null);
+  const [loadingOrderStatus, setLoadingOrderStatus] = useState(false);
   const { toast } = useToast();
   const [noteForm, setNoteForm] = useState({
     type: 'Progress Note' as ClinicalNote['type'],
@@ -491,6 +498,26 @@ const HospitalEHR = () => {
     fetchReports();
   }, [selectedPatient]);
 
+  useEffect(() => {
+    if (!selectedPatient) {
+      setOrderStatus(null);
+      return;
+    }
+    const fetchOrderStatus = async () => {
+      setLoadingOrderStatus(true);
+      try {
+        const response = await orderStatusService.getForPatient(selectedPatient.id);
+        setOrderStatus(response?.data || null);
+      } catch (err) {
+        console.error('Failed to fetch order status:', err);
+        setOrderStatus(null);
+      } finally {
+        setLoadingOrderStatus(false);
+      }
+    };
+    fetchOrderStatus();
+  }, [selectedPatient]);
+
   const toggleSection = (section: string) => {
     setExpandedSections(prev => 
       prev.includes(section) ? prev.filter(s => s !== section) : [...prev, section]
@@ -656,6 +683,61 @@ const HospitalEHR = () => {
                   <p className="text-xs text-muted-foreground">BMI</p>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Send className="h-4 w-4" /> Lab & Pharmacy Order Status
+              </CardTitle>
+              <CardDescription>Live routing from EMR to lab and pharmacy portals</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loadingOrderStatus ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading order status…
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Lab Orders</p>
+                    {(orderStatus?.labOrders || []).slice(0, 4).map((order) => (
+                      <div key={order.id} className="flex items-center justify-between text-sm border rounded-md px-3 py-2">
+                        <span className="truncate">{order.order_number || order.test_type || `Order #${order.id}`}</span>
+                        <Badge variant="outline">{order.status || 'ordered'}</Badge>
+                      </div>
+                    ))}
+                    {(orderStatus?.labOrders || []).length === 0 && (
+                      <p className="text-xs text-muted-foreground">No routed lab orders</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Pharmacy Rx</p>
+                    {(orderStatus?.prescriptions || []).slice(0, 4).map((rx) => (
+                      <div key={rx.id} className="flex items-center justify-between text-sm border rounded-md px-3 py-2">
+                        <span>Rx #{rx.id}</span>
+                        <Badge variant="outline">{rx.pharmacy_status || rx.status || 'active'}</Badge>
+                      </div>
+                    ))}
+                    {(orderStatus?.prescriptions || []).length === 0 && (
+                      <p className="text-xs text-muted-foreground">No pharmacy prescriptions</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Billing Charges</p>
+                    {(orderStatus?.billingCharges || []).slice(0, 4).map((charge) => (
+                      <div key={charge.id} className="flex items-center justify-between text-sm border rounded-md px-3 py-2">
+                        <span>{charge.charge_type} · ₹{charge.amount}</span>
+                        <Badge variant="outline">{charge.status || 'pending'}</Badge>
+                      </div>
+                    ))}
+                    {(orderStatus?.billingCharges || []).length === 0 && (
+                      <p className="text-xs text-muted-foreground">No billing charges yet</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 

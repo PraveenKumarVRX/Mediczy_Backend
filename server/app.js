@@ -1634,9 +1634,11 @@ app.use('/api/hospital', hospitalAuthAliasRouter); // Hospital authentication (l
 
 // Lab Service Routes
 import labAuthRouter from './routes/lab/auth.routes.js';
+import labOrdersRouter from './routes/lab/orders.route.js';
 import labRisImagingRouter from './routes/lab/ris-imaging.route.js';
 
 app.use('/api/lab', labAuthRouter); // Lab authentication (login, logout, verify)
+app.use('/api/lab/orders', labOrdersRouter); // Lab incoming EMR orders
 app.use('/api/lab/ris', labRisImagingRouter); // Lab RIS — PACS/DICOM imaging
 
 // Pharmacy Service Routes

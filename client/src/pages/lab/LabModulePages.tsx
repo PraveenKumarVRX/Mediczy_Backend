@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import api from "@/utils/api";
+import labOrderService from "@/services/lab.service";
 import {
   CartesianGrid,
   Line,
@@ -37,6 +38,7 @@ type Priority = "Routine" | "Normal" | "Urgent";
 
 type LabOrder = {
   id: Id;
+  apiId?: string;
   patientName: string;
   tests: string;
   status: OrderStatus;
@@ -344,21 +346,77 @@ export const LabOrdersPage = () => {
   const { toast } = useToast();
   const location = useLocation();
 
-  const [orders, setOrders] = useLocalStorageState<LabOrder[]>("lab.orders", [
-    {
-      id: "ORD-2024-001",
-      patientName: "Rajesh Kumar",
-      tests: "CBC, Lipid Profile",
-      status: "Pending",
-      priority: "Normal",
-      orderedAt: "2024-12-10",
-    },
-  ]);
-
+  const [orders, setOrders] = useState<LabOrder[]>([]);
+  const [loading, setLoading] = useState(true);
   const [openNew, setOpenNew] = useState(false);
   const [openView, setOpenView] = useState(false);
   const [viewOrder, setViewOrder] = useState<LabOrder | null>(null);
   const [form, setForm] = useState({ patientName: "", tests: "", priority: "Normal" as Priority });
+
+  const formatTests = (row: { tests?: unknown; test_type?: string }) => {
+    if (typeof row.test_type === 'string' && row.test_type) return row.test_type;
+    if (Array.isArray(row.tests)) {
+      return row.tests.map((t: { name?: string }) => t?.name).filter(Boolean).join(', ');
+    }
+    if (typeof row.tests === 'string') return row.tests;
+    return 'Lab tests';
+  };
+
+  const mapApiOrder = (row: {
+    id: number | string;
+    order_number?: string;
+    patient_name?: string;
+    tests?: unknown;
+    test_type?: string;
+    status?: string;
+    priority?: string;
+    created_at?: string;
+  }): LabOrder => ({
+    id: String(row.order_number || row.id),
+    apiId: String(row.id),
+    patientName: row.patient_name || 'Patient',
+    tests: formatTests(row),
+    status: (() => {
+      const s = String(row.status || 'pending').toLowerCase();
+      if (s === 'completed') return 'Completed';
+      if (['processing', 'in_progress', 'sample_collected'].includes(s)) return 'Processing';
+      return 'Pending';
+    })(),
+    priority: (() => {
+      const p = String(row.priority || 'routine').toLowerCase();
+      if (p === 'urgent' || p === 'emergency') return 'Urgent';
+      if (p === 'normal') return 'Normal';
+      return 'Routine';
+    })(),
+    orderedAt: row.created_at ? String(row.created_at).slice(0, 10) : today(),
+  });
+
+  const loadOrders = async () => {
+    const token = localStorage.getItem('labToken');
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await labOrderService.getIncoming({ limit: 100 });
+      const rows = Array.isArray(data?.orders) ? data.orders : [];
+      setOrders(rows.map(mapApiOrder));
+    } catch (error) {
+      console.error('Failed to load lab orders', error);
+      toast({
+        title: 'Could not load orders',
+        description: 'Showing cached data if available.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadOrders();
+  }, []);
 
   useEffect(() => {
     if (location.pathname === "/lab/orders/new") setOpenNew(true);
@@ -377,27 +435,27 @@ export const LabOrdersPage = () => {
   }, [orders]);
 
   const createOrder = () => {
-    if (!form.patientName.trim() || !form.tests.trim()) {
-      toast({ title: "Missing details", description: "Patient and tests are required." });
-      return;
-    }
-    const newOrder: LabOrder = {
-      id: makeId("ORD"),
-      patientName: form.patientName.trim(),
-      tests: form.tests.trim(),
-      status: "Pending",
-      priority: form.priority,
-      orderedAt: today(),
-    };
-    setOrders((prev) => [newOrder, ...prev]);
+    toast({
+      title: "EMR-routed orders only",
+      description: "New orders arrive from hospital EMR. Use hospital practice to place orders.",
+    });
     setOpenNew(false);
-    setForm({ patientName: "", tests: "", priority: "Normal" });
-    toast({ title: "Order created", description: `${newOrder.id} added.` });
   };
 
-  const processOrder = (id: string) => {
-    setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: "Processing" } : o)));
-    toast({ title: "Processing started", description: `${id} moved to Processing.` });
+  const processOrder = async (order: LabOrder) => {
+    try {
+      const apiId = order.apiId || order.id;
+      await labOrderService.updateStatus(apiId, 'processing');
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status: "Processing" } : o)));
+      toast({ title: "Processing started", description: `${order.id} moved to Processing.` });
+      await loadOrders();
+    } catch (error: unknown) {
+      toast({
+        title: "Update failed",
+        description: error instanceof Error ? error.message : 'Could not update order',
+        variant: 'destructive',
+      });
+    }
   };
 
   return (
@@ -428,6 +486,7 @@ export const LabOrdersPage = () => {
         </div>
 
         <StatGrid items={stats} />
+        {loading && <p className="text-sm text-muted-foreground">Loading incoming EMR orders…</p>}
 
         <Card>
           <CardHeader>
@@ -470,7 +529,7 @@ export const LabOrdersPage = () => {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => processOrder(order.id)}
+                          onClick={() => processOrder(order)}
                           disabled={order.status !== "Pending"}
                         >
                           Process

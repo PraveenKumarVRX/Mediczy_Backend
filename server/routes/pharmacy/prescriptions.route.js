@@ -7,6 +7,7 @@ import { db } from '../../db/index.js';
 import n8nService from '../../services/n8n.service.js';
 import { requirePharmacyAuth } from '../../middleware/pharmacyAuth.middleware.js';
 import { logPharmacyAudit } from '../../services/pharmacy-audit.service.js';
+import emrOrderRouter from '../../services/emr-order-router.service.js';
 
 const router = express.Router();
 
@@ -137,10 +138,15 @@ router.get('/', async (req, res) => {
     const pharmacyId = req.pharmacyId;
     const params = [pharmacyId];
     let statusClause = '';
+    let sourceClause = '';
 
     if (status) {
       params.push(String(status));
       statusClause = 'AND LOWER(p.status) = LOWER($' + params.length + ')';
+    }
+
+    if (req.query.source === 'emr') {
+      sourceClause = "AND p.source_type IN ('hospital_emr', 'emr')";
     }
 
     params.push(limit, offset);
@@ -158,7 +164,7 @@ router.get('/', async (req, res) => {
       'LEFT JOIN doctors d ON p.doctor_id = d.id',
       'LEFT JOIN users du ON d."userId" = du.id',
       'LEFT JOIN pharmacy_prescription_medicines pmx ON p.id = pmx.prescription_id',
-      'WHERE p.pharmacy_id = $1 ' + statusClause,
+      'WHERE p.pharmacy_id = $1 ' + statusClause + ' ' + sourceClause,
       'GROUP BY p.id, pu."firstName", pu."lastName", du."firstName", du."lastName"',
       'ORDER BY p.created_at DESC',
       'LIMIT $' + limitIndex + ' OFFSET $' + offsetIndex + ';'
@@ -281,7 +287,23 @@ router.put('/:prescriptionId/status', async (req, res) => {
       req
     });
 
-    res.json({ success: true, message: 'Prescription status updated successfully', prescription: updateResult.rows[0] });
+    let billing = null;
+    if (statusConfig.dispensed) {
+      try {
+        billing = await emrOrderRouter.finalizePharmacyDispenseBilling(Number(prescriptionId), {
+          pharmacyId
+        });
+      } catch (billingError) {
+        console.error('Pharmacy dispense billing error:', billingError);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Prescription status updated successfully',
+      prescription: updateResult.rows[0],
+      billing
+    });
   } catch (error) {
     console.error('Update prescription status error:', error);
     res.status(500).json({ success: false, message: 'Failed to update prescription status', error: error.message });

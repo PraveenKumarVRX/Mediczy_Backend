@@ -445,6 +445,20 @@ export const labOrderService = {
 };
 
 // ============================================================================
+// ORDER STATUS (EMR → Lab / Pharmacy)
+// ============================================================================
+
+export const orderStatusService = {
+  getForPatient: async (patientId: number | string) => {
+    const response = await api.get(`${BASE_URL}/order-status`, {
+      params: { patientId },
+      headers: getHospitalHeaders()
+    });
+    return response.data;
+  }
+};
+
+// ============================================================================
 // IMAGING ORDERS
 // ============================================================================
 
@@ -799,6 +813,7 @@ export default {
   labOrders: labOrderService,
   imagingOrders: imagingOrderService,
   prescriptions: prescriptionService,
+  orderStatus: orderStatusService,
   procedures: procedureService,
   ipSheets: ipSheetService,
   branches: branchService,

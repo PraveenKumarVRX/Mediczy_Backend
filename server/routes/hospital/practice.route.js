@@ -18,6 +18,7 @@ import MedicalRecord from '../../models/postgres/medicalRecord.model.postgres.js
 import EHRRecord from '../../models/postgres/ehrRecord.model.postgres.js';
 import VitalSign from '../../models/postgres/vitalSign.model.postgres.js';
 import n8nService from '../../services/n8n.service.js';
+import emrOrderRouter from '../../services/emr-order-router.service.js';
 import { enforceInsurancePolicyStandards } from '../../services/insurance-policy-standards.service.js';
 import { evaluateVitalsAndAlert, ensureClinicalIntelligenceTables } from '../../services/clinical-intelligence.service.js';
 
@@ -1704,7 +1705,29 @@ router.post('/prescriptions', verifyHospitalToken, async (req, res) => {
       console.error('Failed to trigger n8n prescription workflow:', n8nError);
     }
 
-    res.status(201).json({ success: true, message: 'Prescription created successfully', data: prescription[0] });
+    const createdPrescription = prescription?.[0] || prescription;
+    let routing = null;
+    try {
+      routing = await emrOrderRouter.routePrescription({
+        prescriptionId: createdPrescription?.id,
+        hospitalId,
+        patientId,
+        doctorId,
+        medications,
+        notes,
+        diagnosis,
+        labTests: req.body.labTests
+      });
+    } catch (routeError) {
+      console.error('EMR prescription routing error:', routeError);
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Prescription created successfully',
+      data: createdPrescription,
+      routing
+    });
   } catch (error) {
     console.error('Error creating prescription:', error);
     res.status(500).json({ success: false, message: 'Failed to create prescription', error: error.message });
@@ -1911,10 +1934,48 @@ router.post('/lab-orders', verifyHospitalToken, async (req, res) => {
       }
     );
 
-    res.status(201).json({ success: true, message: 'Lab order created successfully', data: order[0] });
+    const createdOrder = order?.[0] || order;
+    let routing = null;
+    try {
+      routing = await emrOrderRouter.routeLabOrder({
+        labOrderId: createdOrder?.id,
+        hospitalId,
+        patientId,
+        doctorId: req.body.doctorId,
+        tests,
+        totalAmount,
+        orderNumber,
+        priority,
+        notes
+      });
+    } catch (routeError) {
+      console.error('EMR lab order routing error:', routeError);
+    }
+
+    res.status(201).json({ success: true, message: 'Lab order created successfully', data: createdOrder, routing });
   } catch (error) {
     console.error('Error creating lab order:', error);
     res.status(500).json({ success: false, message: 'Failed to create lab order', error: error.message });
+  }
+});
+
+/**
+ * GET /api/hospital/practice/order-status
+ * Unified lab + pharmacy order status for a patient
+ */
+router.get('/order-status', verifyHospitalToken, async (req, res) => {
+  try {
+    const hospitalId = req.hospitalId;
+    const { patientId } = req.query;
+    if (!patientId) {
+      return res.status(400).json({ success: false, message: 'patientId is required' });
+    }
+
+    const status = await emrOrderRouter.getPatientOrderStatus(hospitalId, patientId);
+    res.json({ success: true, data: status });
+  } catch (error) {
+    console.error('Error fetching order status:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch order status', error: error.message });
   }
 });
 
@@ -2375,7 +2436,24 @@ router.post('/labs', verifyHospitalToken, async (req, res) => {
       createdOrder.doctor = doctor || null;
     }
 
-    res.status(201).json({ success: true, message: 'Lab order created successfully', data: createdOrder });
+    let routing = null;
+    try {
+      routing = await emrOrderRouter.routeLabOrder({
+        labOrderId: labOrder.id,
+        hospitalId: organizationId,
+        patientId,
+        doctorId,
+        testType,
+        totalAmount: 0,
+        orderNumber,
+        priority,
+        notes
+      });
+    } catch (routeError) {
+      console.error('EMR lab order routing error:', routeError);
+    }
+
+    res.status(201).json({ success: true, message: 'Lab order created successfully', data: createdOrder, routing });
   } catch (error) {
     console.error('Error creating lab order:', error);
     res.status(500).json({ success: false, message: 'Failed to create lab order', error: error.message });

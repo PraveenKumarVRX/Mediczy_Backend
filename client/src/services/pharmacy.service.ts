@@ -215,7 +215,7 @@ const pharmacyService = {
   // ============ Prescriptions ============
   prescriptions: {
     // Get all prescriptions
-    getAll: async (params?: { status?: string; limit?: number; offset?: number }) => {
+    getAll: async (params?: { status?: string; limit?: number; offset?: number; source?: string }) => {
       const response = await api.get(`${API_URL}/pharmacy/prescriptions`, {
         headers: getAuthHeader(),
         params,
