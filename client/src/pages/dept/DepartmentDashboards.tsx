@@ -6,7 +6,9 @@
  * All stat values are static placeholders ("0" / "—") until backend API
  * integration is added per department.
  */
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import api from "@/utils/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import DeptStaffLayout, { DeptNavSection } from "@/components/hosp-dept/DeptStaffLayout";
@@ -669,6 +671,67 @@ const scmConfig: DeptDashboardConfig = {
   ],
 };
 
+type ScmOverview = {
+  active_items?: number;
+  open_pos?: number;
+  open_invoices?: number;
+  open_indents?: number;
+  active_case_carts?: number;
+  scheduled_counts?: number;
+};
+
+const SCM_STAT_KEYS: Record<string, keyof ScmOverview> = {
+  "Active Items": "active_items",
+  "Open POs": "open_pos",
+  "Open Invoices": "open_invoices",
+  "Case Carts": "active_case_carts",
+};
+
+const ScmDashboardView = () => {
+  const [overview, setOverview] = useState<ScmOverview | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get("/scm/overview");
+        if (!cancelled) setOverview(data.data ?? {});
+      } catch {
+        if (!cancelled) setOverview(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const config = useMemo<DeptDashboardConfig>(() => ({
+    ...scmConfig,
+    stats: scmConfig.stats.map((stat) => {
+      const key = SCM_STAT_KEYS[stat.label];
+      const raw = key && overview ? overview[key] : undefined;
+      const value = loading ? "…" : String(raw ?? 0);
+      return { ...stat, value };
+    }),
+  }), [overview, loading]);
+
+  return (
+    <DeptStaffLayout
+      deptKey={scmConfig.deptKey}
+      deptName={scmConfig.deptName}
+      badgeLabel={scmConfig.badgeLabel}
+      loginPath={scmConfig.loginPath}
+      DeptIcon={scmConfig.DeptIcon}
+      navSections={scmConfig.navSections}
+      title="Dashboard"
+      subtitle="Supply chain command center"
+    >
+      <DeptDashboard config={config} deptData={null} />
+    </DeptStaffLayout>
+  );
+};
+
 // ── Queue Management ──────────────────────────────────────────────────────────
 const queueNav: DeptNavSection[] = [
   {
@@ -726,7 +789,7 @@ export const FinanceDashboard = () => <DashboardWrapper config={financeConfig} /
 export const InfectionControlDashboard = () => <DashboardWrapper config={infectionControlConfig} />;
 export const MortuaryDashboard = () => <DashboardWrapper config={mortuaryConfig} />;
 export const ProcurementDashboard = () => <DashboardWrapper config={procurementConfig} />;
-export const ScmDashboard = () => <DashboardWrapper config={scmConfig} />;
+export const ScmDashboard = () => <ScmDashboardView />;
 export const QueueDashboard = () => <DashboardWrapper config={queueConfig} />;
 
 // Also export nav configs so DepartmentModulePages can re-use them.

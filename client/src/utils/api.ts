@@ -101,6 +101,19 @@ api.interceptors.request.use(
       }
     }
 
+    const prefersDeptToken =
+      requestPath.startsWith('/scm/') ? 'scmToken'
+      : requestPath.startsWith('/procurement/') ? 'procurementToken'
+      : null;
+
+    if (prefersDeptToken && typeof window !== 'undefined') {
+      const deptToken = localStorage.getItem(prefersDeptToken);
+      if (deptToken) {
+        config.headers = { ...(config.headers || {}), Authorization: `Bearer ${deptToken}` } as any;
+        return config;
+      }
+    }
+
     // Respect explicit Authorization header if already set (e.g., admin token)
     const hasAuth = config.headers && (config.headers as any).Authorization;
     if (!hasAuth) {
