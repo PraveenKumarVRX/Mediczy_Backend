@@ -1,8 +1,9 @@
 /**
- * Clinical Coding Bridge — note sign → ICD/CPT → billing charges
+ * Clinical Coding Bridge — note sign → ICD/CPT → billing charges (fee-schedule aware)
  */
 import pool from '../db/pgPool.js';
 import { createCodingSuggestions } from './clinical-intelligence.service.js';
+import feeSchedule from './fee-schedule-versioning.service.js';
 
 export async function bridgeCodingToBilling(note, hospitalId) {
   if (!note?.patientId || !hospitalId) return { bridged: false };
@@ -25,17 +26,30 @@ export async function bridgeCodingToBilling(note, hospitalId) {
     );
     if (exists.rowCount) continue;
 
+    const feeRow = await feeSchedule.resolveCharge(hospitalId, code).catch(() => null);
+    const amount = Number(feeRow?.unit_price ?? feeRow?.unitPrice ?? 0);
+    const description = feeRow?.name
+      ? `${feeRow.name} (${code})`
+      : `ICD/CPT ${code} — ${s.description || ''}`.trim();
+
     await pool.query(
       `INSERT INTO hospital_billing_charges
          (hospital_id, patient_id, admission_id, charge_type, source_type, source_id, description, amount, status, metadata)
-       VALUES ($1,$2,$3,'diagnosis','clinical_coding',$4,$5,0,'pending',$6::jsonb)`,
+       VALUES ($1,$2,$3,'diagnosis','clinical_coding',$4,$5,$6,'pending',$7::jsonb)`,
       [
         hospitalId,
         note.patientId,
         note.admissionId || null,
         note.id,
-        `ICD/CPT ${code} — ${s.description || ''}`.trim(),
-        JSON.stringify({ code, noteId: note.id, confidence: s.confidence }),
+        description,
+        amount,
+        JSON.stringify({
+          code,
+          noteId: note.id,
+          confidence: s.confidence,
+          versionId: feeRow?.version_id || null,
+          feeScheduleMatched: Boolean(feeRow),
+        }),
       ]
     ).catch(() => {});
     chargesCreated += 1;

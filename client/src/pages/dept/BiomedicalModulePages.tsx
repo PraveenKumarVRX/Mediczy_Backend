@@ -36,6 +36,7 @@ const biomedLayout = (title: string, subtitle: string, children: React.ReactNode
     navSections={biomedNav}
     title={title}
     subtitle={subtitle}
+    copilotModule="biomedical"
   >
     {children}
   </DeptStaffLayout>

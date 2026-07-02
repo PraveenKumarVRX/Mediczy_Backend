@@ -260,6 +260,41 @@ register({
 });
 
 register({
+  name: 'get_denials_summary',
+  description: 'Summary of insurance claim denials by status for hospital claims copilot.',
+  category: 'billing',
+  parameters: {
+    type: 'object',
+    properties: {
+      status: { type: 'string', description: 'Filter by denial status (open, appeal_drafted, resolved)' },
+    },
+    required: [],
+  },
+  async execute(params, ctx) {
+    const hospitalId = orgId(ctx);
+    if (!hospitalId) return { error: 'Hospital context required' };
+
+    let sql = `SELECT status, COUNT(*)::int AS cnt, COALESCE(SUM(denied_amount),0) AS denied_total
+      FROM claim_denials WHERE hospital_id = $1`;
+    const values = [hospitalId];
+    if (params.status) {
+      values.push(params.status);
+      sql += ` AND status = $${values.length}`;
+    }
+    sql += ' GROUP BY status ORDER BY cnt DESC';
+    const { rows } = await pool.query(sql, values).catch(() => ({ rows: [] }));
+
+    const recent = await pool.query(
+      `SELECT id, claim_number, denial_code, denial_reason, denied_amount, status, created_at
+       FROM claim_denials WHERE hospital_id = $1 ORDER BY created_at DESC LIMIT 5`,
+      [hospitalId]
+    ).catch(() => ({ rows: [] }));
+
+    return { byStatus: rows, recentDenials: recent.rows };
+  },
+});
+
+register({
   name: 'get_quality_kpi_snapshot',
   description: 'NABH/JCI quality KPI snapshot for compliance copilot.',
   category: 'quality',

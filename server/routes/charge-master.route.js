@@ -50,4 +50,40 @@ router.post('/clearance/:admissionId/finalize', async (req, res) => {
   res.json({ success: true, data });
 });
 
+// ── Fee schedule versioning (Wave 2) ─────────────────────────────────────────
+router.get('/versions', async (req, res) => {
+  try {
+    const feeSchedule = (await import('../services/fee-schedule-versioning.service.js')).default;
+    const versions = await feeSchedule.listVersions(orgId(req));
+    res.json({ success: true, data: versions });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+router.post('/versions', async (req, res) => {
+  try {
+    const feeSchedule = (await import('../services/fee-schedule-versioning.service.js')).default;
+    const version = await feeSchedule.createVersion(orgId(req), {
+      versionCode: req.body.versionCode,
+      effectiveFrom: req.body.effectiveFrom,
+      effectiveTo: req.body.effectiveTo,
+      createdBy: req.userId || req.user?.id,
+    });
+    res.status(201).json({ success: true, data: version });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
+
+router.get('/resolve/:code', async (req, res) => {
+  try {
+    const feeSchedule = (await import('../services/fee-schedule-versioning.service.js')).default;
+    const charge = await feeSchedule.resolveCharge(orgId(req), req.params.code, req.query.asOf);
+    res.json({ success: true, data: charge });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
 export default router;

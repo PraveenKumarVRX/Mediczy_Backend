@@ -357,6 +357,7 @@ export function BloodBankDashboard() {
       DeptIcon={Droplets}
       loginPath="/blood-bank/login"
       navSections={bloodBankNav}
+      copilotModule="bloodbank"
     >
       <div className="space-y-5 pb-8">
 

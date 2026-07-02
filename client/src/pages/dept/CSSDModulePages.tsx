@@ -13,7 +13,7 @@ type CSSDJob = { id: number; job_number: string; set_id: number; set_code?: stri
 type CSSDCycle = { id: number; cycle_number: string; autoclave_id: string; status: string; temperature?: number; pressure?: number };
 
 const Wrap = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <DeptStaffLayout deptKey="cssd" deptName="CSSD" badgeLabel="CSSD" loginPath="/cssd/login" DeptIcon={ShieldCheck} navSections={cssdNav} title={title} subtitle="Sterilization lifecycle tracking">
+  <DeptStaffLayout deptKey="cssd" deptName="CSSD" badgeLabel="CSSD" loginPath="/cssd/login" DeptIcon={ShieldCheck} navSections={cssdNav} title={title} subtitle="Sterilization lifecycle tracking" copilotModule="cssd">
     {children}
   </DeptStaffLayout>
 );

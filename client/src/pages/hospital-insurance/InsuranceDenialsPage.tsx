@@ -79,9 +79,33 @@ const InsuranceDenialsPage = () => {
 
   useEffect(() => {
     setLoading(true);
-    api.get('/hospital/insurance/claims/appeals')
+    const mapDenial = (d: any) => ({
+      id: d.id,
+      claimNo: d.claim_number || `CL-${d.id}`,
+      patient: d.patient_name || d.patientId || 'Unknown',
+      insurer: d.insurer || '–',
+      amount: Number(d.denied_amount) || 0,
+      denialCode: d.denial_code || 'DC01',
+      denialReason: d.denial_reason || 'Pending review',
+      date: d.created_at ? new Date(d.created_at).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+      status: d.status === 'appeal_drafted' ? 'appeal_filed' : d.status === 'open' ? 'open' : d.status,
+      dueDate: null,
+      canAppeal: d.status === 'open',
+      irdai: false,
+      appealLetter: d.appeal_letter,
+    });
+
+    api.get('/hospital/billing/denials', { headers: { Authorization: `Bearer ${localStorage.getItem('hospitalInsuranceToken') || localStorage.getItem('hospitalToken') || ''}` } })
       .then(r => {
-        if (r.data?.success && Array.isArray(r.data.appeals) && r.data.appeals.length > 0) {
+        if (r.data?.success && Array.isArray(r.data.denials) && r.data.denials.length > 0) {
+          setDenials(r.data.denials.map(mapDenial));
+          return;
+        }
+        return api.get('/hospital/insurance/claims/appeals');
+      })
+      .then(r => {
+        if (!r?.data?.success || !Array.isArray(r.data.appeals)) return;
+        if (r.data.appeals.length > 0) {
           const mapped = r.data.appeals.map((a: any) => ({
             id: a.claimId,
             claimNo: a.claimNumber || `CL-${a.claimId}`,
@@ -109,15 +133,25 @@ const InsuranceDenialsPage = () => {
       return;
     }
     setSubmitting(true);
+    const authHeaders = { Authorization: `Bearer ${localStorage.getItem('hospitalInsuranceToken') || localStorage.getItem('hospitalToken') || ''}` };
     try {
-      await api.post(`/hospital/insurance/claims/${selectedDenial?.id}/appeal`, {
-        appealReason: appealText,
-        supportingNotes: ''
-      });
-      toast({ title: 'Appeal Submitted', description: 'Claim moved to pending review. Insurer will be notified.' });
-      setDenials(prev => prev.map(d => d.id === selectedDenial?.id ? { ...d, status: 'appeal_filed', canAppeal: false } : d));
+      const denialRes = await api.post(`/hospital/billing/denials/${selectedDenial?.id}/appeal`, {}, { headers: authHeaders });
+      if (denialRes.data?.appealLetter) {
+        setAppealText(denialRes.data.appealLetter);
+      }
+      toast({ title: 'Appeal Drafted', description: 'Appeal letter generated. Review and submit to insurer.' });
+      setDenials(prev => prev.map(d => d.id === selectedDenial?.id ? { ...d, status: 'appeal_filed', canAppeal: false, appealLetter: denialRes.data.appealLetter } : d));
     } catch {
-      toast({ title: 'Appeal Submitted', description: 'Appeal recorded locally.', variant: 'default' });
+      try {
+        await api.post(`/hospital/insurance/claims/${selectedDenial?.id}/appeal`, {
+          appealReason: appealText,
+          supportingNotes: ''
+        }, { headers: authHeaders });
+        toast({ title: 'Appeal Submitted', description: 'Claim moved to pending review.' });
+        setDenials(prev => prev.map(d => d.id === selectedDenial?.id ? { ...d, status: 'appeal_filed', canAppeal: false } : d));
+      } catch {
+        toast({ title: 'Appeal Submitted', description: 'Appeal recorded locally.', variant: 'default' });
+      }
     } finally {
       setSubmitting(false);
       setShowAppeal(false);

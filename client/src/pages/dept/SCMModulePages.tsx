@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { SCMAIAssistant } from '@/components/scm/SCMAIAssistant';
 import api from '@/utils/api';
 
 type Item = { id: number; item_code: string; name: string; category?: string; reorder_level?: number };
@@ -25,21 +24,19 @@ type Approval = { id: number; action: string; entity_type: string; entity_id: nu
 type AuditEntry = { id: number; action: string; actor?: string; created_at?: string; entity_type?: string };
 
 const Wrap = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <>
-    <DeptStaffLayout
-      deptKey="scm"
-      deptName="Supply Chain"
-      badgeLabel="SCM"
-      loginPath="/scm/login"
-      DeptIcon={Package}
-      navSections={scmNav}
-      title={title}
-      subtitle="Hospital supply chain management"
-    >
-      {children}
-    </DeptStaffLayout>
-    <SCMAIAssistant />
-  </>
+  <DeptStaffLayout
+    deptKey="scm"
+    deptName="Supply Chain"
+    badgeLabel="SCM"
+    loginPath="/scm/login"
+    DeptIcon={Package}
+    navSections={scmNav}
+    title={title}
+    subtitle="Hospital supply chain management"
+    copilotModule="scm"
+  >
+    {children}
+  </DeptStaffLayout>
 );
 
 const useScmList = <T,>(path: string) => {

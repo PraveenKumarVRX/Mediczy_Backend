@@ -214,6 +214,7 @@ const SIBAIDashboard           = lazy(() => import("@/pages/admin/SIBAIDashboard
 const HyperGridDashboard       = lazy(() => import("@/pages/admin/HyperGridDashboard"));
 const HyperGridAIView          = lazy(() => import("@/pages/admin/HyperGridAIView"));
 const HyperGridIoTView         = lazy(() => import("@/pages/admin/HyperGridIoTView"));
+const FederatedLearningDashboard = lazy(() => import("@/pages/admin/FederatedLearningDashboard"));
 const AdminCopilot             = lazy(() => import("@/pages/admin/AdminCopilot"));
 const AdminSaMD                = lazy(() => import("@/pages/admin/AdminSaMD"));
 
@@ -1354,6 +1355,7 @@ const AppRoutes = () => {
         <Route path="/admin/hypergrid"            element={<AdminRoute><HyperGridDashboard /></AdminRoute>} />
         <Route path="/admin/hypergrid-ai"         element={<AdminRoute><HyperGridAIView /></AdminRoute>} />
         <Route path="/admin/hypergrid-iot"        element={<AdminRoute><HyperGridIoTView /></AdminRoute>} />
+        <Route path="/admin/ai/federated"        element={<AdminRoute><FederatedLearningDashboard /></AdminRoute>} />
         <Route path="/admin/settings"            element={<AdminRoute><SettingsPage /></AdminRoute>} />
         <Route path="/admin/dashboard"           element={<AdminRoute><AdminDashboardHome /></AdminRoute>} />
         <Route path="/admin"                     element={<AdminRoute><AdminDashboardHome /></AdminRoute>} />

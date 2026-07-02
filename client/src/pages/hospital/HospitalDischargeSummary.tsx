@@ -337,6 +337,13 @@ const HospitalDischargeSummary = () => {
       });
       return;
     }
+    const patient = admittedPatients.find((item) => item.id === selectedPatient);
+    setFormData((prev) => ({
+      ...prev,
+      patientId: selectedPatient,
+      admissionDate: patient?.admissionDate || prev.admissionDate,
+      attendingDoctor: patient?.attendingDoctor || prev.attendingDoctor,
+    }));
     setShowCreateDialog(false);
     setActiveTab('create');
   };
@@ -809,7 +816,7 @@ const HospitalDischargeSummary = () => {
                           </div>
                         )}
                         {readmissionRisk.level === 'high' && (
-                          <Button className="mt-3" size="sm">Create follow-up care plan</Button>
+                          <Button className="mt-3" size="sm" onClick={createDischargePlan}>Create follow-up care plan</Button>
                         )}
                       </CardContent>
                     </Card>
@@ -822,7 +829,11 @@ const HospitalDischargeSummary = () => {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="space-y-2">
                         <Label>Patient ID</Label>
-                        <Input value={formData.patientId || 'P10045'} placeholder="Patient ID" />
+                        <Input
+                          value={formData.patientId}
+                          placeholder="Patient ID"
+                          onChange={(e) => setFormData({ ...formData, patientId: e.target.value })}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Admission Date</Label>

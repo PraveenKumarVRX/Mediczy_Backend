@@ -38,6 +38,7 @@ const dietLayout = (title: string, subtitle: string, children: React.ReactNode) 
     navSections={dietaryNav}
     title={title}
     subtitle={subtitle}
+    copilotModule="dietary"
   >
     {children}
   </DeptStaffLayout>

@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import DeptStaffLayout from "@/components/hosp-dept/DeptStaffLayout";
 import { consentNav } from "./DepartmentDashboards";
-import { ConsentAIAssistant } from "@/components/consent/ConsentAIAssistant";
 import {
   Clock, FileCheck, AlertTriangle, BookOpen, Shield, CheckCircle2,
   TrendingUp, TrendingDown, ArrowRight, BarChart3, ClipboardCheck,
@@ -170,6 +169,7 @@ export function ConsentDashboard() {
       navSections={consentNav}
       title="Consent Dashboard"
       subtitle="Real-time patient consent tracking and compliance management"
+      copilotModule="consent"
     >
       <div className="space-y-6">
 
@@ -440,8 +440,6 @@ export function ConsentDashboard() {
         </div>
 
       </div>
-
-      <ConsentAIAssistant />
     </DeptStaffLayout>
   );
 }

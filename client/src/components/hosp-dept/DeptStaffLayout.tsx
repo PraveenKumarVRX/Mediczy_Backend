@@ -24,6 +24,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useTheme } from "@/utils/theme.provider";
 import { useDeptStaffAuth } from "@/hooks/useDeptStaffAuth";
 import { DeptAuthData } from "@/hooks/useHospDeptAuth";
+import ModuleCopilot from "@/components/copilot/ModuleCopilot";
+import type { ModuleCopilotId } from "@/config/moduleCopilot.registry";
 
 // ─── Exported types ───────────────────────────────────────────────────────────
 
@@ -51,6 +53,7 @@ interface DeptStaffLayoutProps {
   navSections: DeptNavSection[];
   title?: string;
   subtitle?: string;
+  copilotModule?: ModuleCopilotId;
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
@@ -199,6 +202,7 @@ const DeptStaffLayout = ({
   navSections,
   title,
   subtitle,
+  copilotModule,
 }: DeptStaffLayoutProps) => {
   const navigate = useNavigate();
   const { setTheme, theme } = useTheme();
@@ -308,6 +312,7 @@ const DeptStaffLayout = ({
         {/* Page content */}
         <main className="p-6">{children}</main>
       </div>
+      {copilotModule && <ModuleCopilot moduleId={copilotModule} context={{ deptKey, screen: title }} />}
     </div>
   );
 };

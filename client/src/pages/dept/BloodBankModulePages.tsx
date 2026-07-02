@@ -14,7 +14,7 @@ const headers = () => ({ Authorization: `Bearer ${localStorage.getItem("bloodBan
 
 function Shell({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <DeptStaffLayout deptKey="blood-bank" deptName="Blood Bank" badgeLabel="BLOOD BANK" loginPath="/blood-bank/login" DeptIcon={Droplets} navSections={bloodBankNav} title={title} subtitle="Operational blood bank workflow">
+    <DeptStaffLayout deptKey="blood-bank" deptName="Blood Bank" badgeLabel="BLOOD BANK" loginPath="/blood-bank/login" DeptIcon={Droplets} navSections={bloodBankNav} title={title} subtitle="Operational blood bank workflow" copilotModule="bloodbank">
       {children}
     </DeptStaffLayout>
   );

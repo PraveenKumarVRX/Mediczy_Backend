@@ -151,7 +151,7 @@ const ToneBadge = ({ value }: { value: string }) => (
 );
 
 const PageShell = ({ title, subtitle, actions, children }: { title: string; subtitle: string; actions?: React.ReactNode; children: React.ReactNode; }) => (
-  <HospDeptLayout deptKey="security" deptName="Security" badgeLabel="Security" loginPath="/security/login" DeptIcon={Lock} navSections={securityNavSections} title={title} subtitle={subtitle}>
+  <HospDeptLayout deptKey="security" deptName="Security" badgeLabel="Security" loginPath="/security/login" DeptIcon={Lock} navSections={securityNavSections} title={title} subtitle={subtitle} copilotModule="security">
     <div className="space-y-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-2">

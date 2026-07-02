@@ -13,6 +13,7 @@ import { SCMAIAssistant } from "@/components/scm/SCMAIAssistant";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import DeptStaffLayout, { DeptNavSection } from "@/components/hosp-dept/DeptStaffLayout";
+import type { ModuleCopilotId } from "@/config/moduleCopilot.registry";
 import { DeptAuthData } from "@/hooks/useHospDeptAuth";
 import {
   Archive, Wrench, Droplets, ClipboardCheck, ShieldCheck, Utensils,
@@ -176,11 +177,17 @@ const DeptDashboard = ({ config, deptData }: { config: DeptDashboardConfig; dept
 
 // ─── Wrapper that calls DeptStaffLayout + feeds deptData ──────────────────────
 
+const DEPT_COPILOT_MAP: Record<string, ModuleCopilotId> = {
+  'blood-bank': 'bloodbank',
+  cssd: 'cssd',
+  dietary: 'dietary',
+  biomedical: 'biomedical',
+  consent: 'consent',
+  scm: 'scm',
+  procurement: 'scm',
+};
+
 const DashboardWrapper = ({ config }: { config: DeptDashboardConfig }) => {
-  // We render the layout (which calls useDeptStaffAuth internally) and pass
-  // deptData via a render-prop pattern through children.
-  // Since DeptStaffLayout doesn't expose deptData, we read it separately via
-  // a thin inner component that receives it as a prop.
   return (
     <DeptStaffLayout
       deptKey={config.deptKey}
@@ -191,6 +198,7 @@ const DashboardWrapper = ({ config }: { config: DeptDashboardConfig }) => {
       navSections={config.navSections}
       title="Dashboard"
       subtitle={`${config.deptName} overview`}
+      copilotModule={DEPT_COPILOT_MAP[config.deptKey]}
     >
       <DeptDashboard config={config} deptData={null} />
     </DeptStaffLayout>

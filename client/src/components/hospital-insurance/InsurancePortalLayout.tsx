@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useTheme } from "@/utils/theme.provider";
+import ModuleCopilot from "@/components/copilot/ModuleCopilot";
 
 interface InsurancePortalLayoutProps {
   children: ReactNode;
@@ -176,6 +177,7 @@ const InsurancePortalLayout = ({ children, title, subtitle }: InsurancePortalLay
           </div>
         </main>
       </div>
+      <ModuleCopilot moduleId="insurance" context={{ screen: title, portal: slug }} />
     </div>
   );
 };

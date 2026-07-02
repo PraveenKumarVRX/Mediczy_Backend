@@ -75,7 +75,7 @@ export const hrNavSections: DeptNavSection[] = [
 const Wrap = ({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) => (
   <HospDeptLayout deptKey="hr" deptName="Human Resources" badgeLabel="HR"
     loginPath="/hr/login" DeptIcon={Users} navSections={hrNavSections}
-    title={title} subtitle={subtitle}>
+    title={title} subtitle={subtitle} copilotModule="hr">
     {children}
   </HospDeptLayout>
 );

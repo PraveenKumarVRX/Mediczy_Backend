@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useTheme } from "@/utils/theme.provider";
+import ModuleCopilot from "@/components/copilot/ModuleCopilot";
 
 interface AmbulanceLayoutProps {
   children: ReactNode;
@@ -140,6 +141,7 @@ const AmbulanceLayout = ({ children, title, subtitle }: AmbulanceLayoutProps) =>
         {/* Page Content */}
         <main className="p-6">{children}</main>
       </div>
+      <ModuleCopilot moduleId="ambulance" context={{ screen: title }} />
     </div>
   );
 };

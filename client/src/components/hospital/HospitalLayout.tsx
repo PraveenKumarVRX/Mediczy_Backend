@@ -37,6 +37,13 @@ const PATH_COPILOT_MAP: Array<[RegExp, ModuleCopilotId]> = [
   [/\/hospital\/icu/i, 'icu'],
   [/\/hospital\/mrd/i, 'mrd'],
   [/\/hospital\/security/i, 'security'],
+  [/\/hospital\/ambulance/i, 'ambulance'],
+  [/\/hospital\/er/i, 'er'],
+  [/\/hospital\/discharge/i, 'clinical'],
+  [/\/hospital\/scribe/i, 'clinical'],
+  [/\/hospital\/ot/i, 'ot'],
+  [/\/hospital\/quality/i, 'quality'],
+  [/\/hospital\/accounts/i, 'accounts'],
 ];
 
 interface Notification {

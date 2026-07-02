@@ -395,6 +395,21 @@ router.post('/denials/:id/appeal', requireBillingWrite, async (req, res) => {
   }
 });
 
+router.post('/denials/:id/resolve', requireBillingWrite, async (req, res) => {
+  try {
+    const denialService = (await import('../../services/denial-management.service.js')).default;
+    const result = await denialService.resolveDenial(
+      req.hospitalId,
+      Number(req.params.id),
+      { resolution: req.body.resolution, notes: req.body.notes },
+      req.userId
+    );
+    res.json({ success: true, ...result });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
+
 // ── Audit trail ───────────────────────────────────────────────────────────
 router.get('/audit', requireBillingRead, async (req, res) => {
   try {

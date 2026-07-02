@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
+import { Link } from "react-router-dom";
 import AdminLayout from "@/components/layout/AdminLayout";
 import api from "@/utils/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -133,6 +134,7 @@ function ModuleCard({ mod, live }: { mod: AIModule; live: any }) {
 // ── Main ────────────────────────────────────────────────────────────────────
 export default function HyperGridAIView() {
   const [liveStats, setLiveStats] = useState<Record<string, any>>({});
+  const [federatedStatus, setFederatedStatus] = useState<any>(null);
   const [totalEvents, setTotalEvents] = useState(0);
   const [loading, setLoading] = useState(false);
   const [refreshedAt, setRefreshedAt] = useState(new Date());
@@ -140,11 +142,12 @@ export default function HyperGridAIView() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch HyperGrid AI-adjacent events
       const evRes = await api.get("/hypergrid/events?type=VitalsObserved&limit=1").catch(() => null);
       if (evRes?.data?.total) setTotalEvents(evRes.data.total);
 
-      // Attempt to fetch individual AI module stats (graceful degradation)
+      const flRes = await api.get("/v3/ai-deeptech/federated/status").catch(() => null);
+      if (flRes?.data) setFederatedStatus(flRes.data.data ?? flRes.data);
+
       const results = await Promise.allSettled(
         AI_MODULES.map(m => api.get(m.endpoint))
       );
@@ -174,10 +177,17 @@ export default function HyperGridAIView() {
               Scribe · Vision · Brain · DeepTech · CDSS · Proactive Alerts
             </p>
           </div>
-          <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" asChild>
+              <Link to="/admin/ai/federated">
+                Federated Learning{federatedStatus?.models?.length ? ` (${federatedStatus.models.length})` : ''}
+              </Link>
+            </Button>
+            <Button size="sm" variant="outline" onClick={load} disabled={loading}>
+              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         {/* Top KPIs */}
