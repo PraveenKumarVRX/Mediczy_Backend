@@ -3,15 +3,36 @@
 set -euo pipefail
 
 RESET_TO_ORIGIN_MAIN="${RESET_TO_ORIGIN_MAIN:-false}"
+AUTO_STASH_ON_SYNC="${AUTO_STASH_ON_SYNC:-true}"
 TARGET_BRANCH="${TARGET_BRANCH:-main}"
 REMOTE_REF="origin/${TARGET_BRANCH}"
+
+stash_local_changes() {
+  local dirty=false
+  if ! git diff --quiet 2>/dev/null; then dirty=true; fi
+  if ! git diff --cached --quiet 2>/dev/null; then dirty=true; fi
+  if [ -n "$(git ls-files --others --exclude-standard)" ]; then dirty=true; fi
+  if [ "$dirty" != true ]; then
+    return 0
+  fi
+  local msg="deploy-sync-$(date +%Y%m%d%H%M%S)"
+  echo "Local changes detected — stashing tracked + untracked files ($msg)..."
+  git stash push -u -m "$msg"
+  echo "✓ Stashed. Recover later: git stash list"
+}
 
 echo "Fetching ${REMOTE_REF}..."
 git fetch origin "${TARGET_BRANCH}"
 
+if [ "$AUTO_STASH_ON_SYNC" = true ]; then
+  stash_local_changes
+fi
+
 if [ "$RESET_TO_ORIGIN_MAIN" = true ]; then
   echo "RESET_TO_ORIGIN_MAIN=true — resetting hard to ${REMOTE_REF}"
   git checkout "${TARGET_BRANCH}" 2>/dev/null || git checkout -B "${TARGET_BRANCH}" "${REMOTE_REF}"
+  # Remove untracked files that would block checkout of files from main
+  git clean -fd
   git reset --hard "${REMOTE_REF}"
   echo "✓ Reset to $(git rev-parse --short HEAD)"
   exit 0

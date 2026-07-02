@@ -13,6 +13,10 @@
 #
 #   Discard local server commits and match GitHub main exactly:
 #     RESET_TO_ORIGIN_MAIN=true bash scripts/deploy/deploy-full-prod-s3.sh
+#
+#   If git pull fails with "would be overwritten by merge", either run the deploy
+#   script (auto-stashes) or reset explicitly:
+#     RESET_TO_ORIGIN_MAIN=true bash scripts/deploy/deploy-full-prod-s3.sh
 
 set -euo pipefail
 
