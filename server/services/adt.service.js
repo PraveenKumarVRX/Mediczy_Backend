@@ -319,6 +319,30 @@ export async function dischargePatient({
     }
   }
 
+  // Billing clearance gate — ensure final bill and zero balance (or supervisor override)
+  const { runDischargeBillingGate } = await import('./discharge-billing-clearance.service.js');
+  try {
+    await runDischargeBillingGate(admissionId, organizationId, performedBy);
+  } catch (billingErr) {
+    if (override?.reasonCode && override?.approverId) {
+      await sequelize.query(
+        `INSERT INTO discharge_overrides (admission_id, organization_id, missing_items, reason_code, approver_id, approver_role)
+         VALUES (:admId, :orgId, :items::jsonb, :reason, :approver, :role)`,
+        {
+          replacements: {
+            admId: admissionId, orgId: organizationId,
+            items: JSON.stringify(billingErr.issues || [{ code: 'BILLING', message: billingErr.message }]),
+            reason: override.reasonCode, approver: override.approverId, role: override.approverRole || null
+          },
+          type: QueryTypes.INSERT
+        }
+      );
+    } else {
+      const issues = (billingErr.issues || []).map(i => i.message).join('; ') || billingErr.message;
+      throw new Error(`Discharge blocked — billing clearance failed: ${issues}`);
+    }
+  }
+
   const tx = await sequelize.transaction();
   try {
     const [current] = await sequelize.query(

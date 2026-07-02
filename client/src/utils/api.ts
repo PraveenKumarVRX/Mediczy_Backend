@@ -90,7 +90,7 @@ api.interceptors.request.use(
 
     const requestPath = config.url || '';
     const prefersHospitalToken =
-      /^\/(v1\/(adt|beds|emar|vitals|clinical-workspace|discharge|analytics|nursing|navigation|echart|follow-up|recovery|hl7|fhir|reports|ot|ai-))/i.test(requestPath) ||
+      /^\/(v1\/(adt|beds|emar|vitals|clinical-workspace|discharge|analytics|nursing|navigation|echart|follow-up|recovery|hl7|fhir|reports|ot|ai-|charge-master|billing))/i.test(requestPath) ||
       requestPath.startsWith('/hospital/');
 
     if (prefersHospitalToken && typeof window !== 'undefined') {

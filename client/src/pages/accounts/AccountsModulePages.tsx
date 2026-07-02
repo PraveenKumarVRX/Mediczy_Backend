@@ -2,7 +2,7 @@
  * AccountsModulePages — World-class Hospital Accounts Department Portal.
  * Complete finance & billing management: 17 functional module pages.
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import HospDeptLayout, { DeptNavSection } from '@/components/hosp-dept/HospDeptLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -21,6 +21,12 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import hospitalBillingService from '@/services/hospital-billing.service';
+
+const fmtInr = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+const billStatusLabel: Record<string, string> = {
+  paid: 'Paid', partial: 'Partial', issued: 'Pending', draft: 'Draft', overdue: 'Overdue', voided: 'Cancelled',
+};
 
 // ── Shared Navigation (6 sections, 17 modules) ─────────────────────────────
 export const accountsNavSections: DeptNavSection[] = [
@@ -135,36 +141,61 @@ const TD = ({ children, className }: { children: React.ReactNode; className?: st
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. BILL GENERATION
 // ═══════════════════════════════════════════════════════════════════════════
-const bills = [
-  { id: 'INV-2460', patient: 'Ramesh Kumar',     uhid: 'UHID-10041', dept: 'Cardiology',   amount: '₹18,400', paid: '₹18,400', balance: '₹0',     status: 'Paid',    date: '21 Mar 2026' },
-  { id: 'INV-2459', patient: 'Sunita Sharma',    uhid: 'UHID-10035', dept: 'Orthopaedics', amount: '₹12,200', paid: '₹6,000',  balance: '₹6,200', status: 'Partial', date: '21 Mar 2026' },
-  { id: 'INV-2458', patient: 'Ajay Verma',       uhid: 'UHID-10022', dept: 'General OPD',  amount: '₹1,800',  paid: '₹0',      balance: '₹1,800', status: 'Pending', date: '20 Mar 2026' },
-  { id: 'INV-2457', patient: 'Priya Nair',       uhid: 'UHID-10056', dept: 'Gynaecology',  amount: '₹28,000', paid: '₹28,000', balance: '₹0',     status: 'Paid',    date: '20 Mar 2026' },
-  { id: 'INV-2456', patient: 'Deepak Mishra',    uhid: 'UHID-10018', dept: 'Neurology',    amount: '₹42,600', paid: '₹0',      balance: '₹42,600',status: 'Pending', date: '19 Mar 2026' },
-  { id: 'INV-2455', patient: 'Ananya Singh',     uhid: 'UHID-10061', dept: 'Oncology',     amount: '₹85,000', paid: '₹85,000', balance: '₹0',     status: 'Paid',    date: '19 Mar 2026' },
-  { id: 'INV-2454', patient: 'Rakesh Gupta',     uhid: 'UHID-10009', dept: 'Urology',      amount: '₹22,000', paid: '₹0',      balance: '₹22,000',status: 'Draft',   date: '18 Mar 2026' },
-  { id: 'INV-2453', patient: 'Meena Patel',      uhid: 'UHID-10073', dept: 'Dermatology',  amount: '₹4,500',  paid: '₹4,500',  balance: '₹0',     status: 'Paid',    date: '18 Mar 2026' },
-];
 export const AccountsBillsPage = () => {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('All');
+  const [bills, setBills] = useState<Array<{
+    id: string; patient: string; uhid: string; dept: string;
+    amount: string; paid: string; balance: string; status: string; date: string;
+  }>>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await hospitalBillingService.listInvoices({ limit: 100 } as { status?: string; patientId?: number });
+        const rows = (res.invoices || []).map((inv: Record<string, unknown>) => ({
+          id: String(inv.bill_number || inv.id),
+          patient: `Patient #${inv.patient_id}`,
+          uhid: `UHID-${inv.patient_id}`,
+          dept: String(inv.bill_type || 'IPD').toUpperCase(),
+          amount: fmtInr(Number(inv.total_amount)),
+          paid: fmtInr(Number(inv.amount_paid)),
+          balance: fmtInr(Number(inv.amount_due)),
+          status: billStatusLabel[String(inv.status)] || String(inv.status),
+          date: inv.created_at ? new Date(String(inv.created_at)).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
+        }));
+        setBills(rows);
+      } catch {
+        setBills([]);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
   const statuses = ['All', 'Paid', 'Pending', 'Partial', 'Draft'];
   const filtered = bills.filter(b =>
     (filter === 'All' || b.status === filter) &&
     (b.patient.toLowerCase().includes(search.toLowerCase()) || b.id.toLowerCase().includes(search.toLowerCase()))
   );
+  const todayTotal = bills.reduce((s, b) => s + Number(b.amount.replace(/[₹,]/g, '')), 0);
+  const paidCount = bills.filter(b => b.status === 'Paid').length;
+  const pendingCount = bills.filter(b => b.status === 'Pending').length;
+  const draftCount = bills.filter(b => b.status === 'Draft').length;
+
   return (
     <Wrap title="Bill Generation" subtitle="Create & manage patient invoices">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
-        <KPICard label="Today's Bills" value="24" sub="₹1,24,500 total" icon={Receipt} color="text-teal-600" />
-        <KPICard label="Paid" value="17" sub="₹98,200 collected" icon={CheckCircle2} color="text-emerald-600" up={true} />
-        <KPICard label="Pending" value="5" sub="₹18,800 outstanding" icon={Clock} color="text-amber-600" />
-        <KPICard label="Draft" value="2" sub="Awaiting finalization" icon={FileText} color="text-slate-500" />
+        <KPICard label="Total Bills" value={String(bills.length)} sub={fmtInr(todayTotal)} icon={Receipt} color="text-teal-600" />
+        <KPICard label="Paid" value={String(paidCount)} sub="Settled invoices" icon={CheckCircle2} color="text-emerald-600" up={true} />
+        <KPICard label="Pending" value={String(pendingCount)} sub="Awaiting payment" icon={Clock} color="text-amber-600" />
+        <KPICard label="Draft" value={String(draftCount)} sub="Awaiting finalization" icon={FileText} color="text-slate-500" />
       </div>
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <CardTitle className="text-base flex items-center gap-2"><Receipt className="h-4 w-4 text-teal-600" />All Invoices</CardTitle>
+            <CardTitle className="text-base flex items-center gap-2"><Receipt className="h-4 w-4 text-teal-600" />All Invoices {loading && <RefreshCw className="h-3 w-3 animate-spin" />}</CardTitle>
             <div className="flex flex-wrap gap-2">
               <div className="relative"><Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" /><Input placeholder="Search patient / invoice…" className="pl-8 h-8 w-52 text-sm" value={search} onChange={e => setSearch(e.target.value)} /></div>
               <div className="flex gap-1">{statuses.map(s => <button key={s} onClick={() => setFilter(s)} className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${filter === s ? 'bg-teal-600 text-white border-teal-600' : 'border-border hover:bg-muted'}`}>{s}</button>)}</div>
@@ -265,35 +296,60 @@ export const AccountsPatientAcctsPage = () => {
 // ═══════════════════════════════════════════════════════════════════════════
 // 3. PAYMENTS RECEIVED
 // ═══════════════════════════════════════════════════════════════════════════
-const payments = [
-  { id: 'PAY-8821', patient: 'Ananya Singh',  invoice: 'INV-2455', mode: 'UPI',       amount: '₹85,000', date: '19 Mar 2026', time: '14:32', ref: 'UPI8821XYZ', status: 'Settled' },
-  { id: 'PAY-8820', patient: 'Priya Nair',    invoice: 'INV-2457', mode: 'Card',      amount: '₹28,000', date: '20 Mar 2026', time: '11:15', ref: 'CARD7720ABC', status: 'Settled' },
-  { id: 'PAY-8819', patient: 'Ramesh Kumar',  invoice: 'INV-2460', mode: 'Cash',      amount: '₹18,400', date: '21 Mar 2026', time: '09:50', ref: 'CASH-001',    status: 'Settled' },
-  { id: 'PAY-8818', patient: 'Sunita Sharma', invoice: 'INV-2459', mode: 'NEFT',      amount: '₹6,000',  date: '21 Mar 2026', time: '08:45', ref: 'NEFT9918XY',  status: 'Settled' },
-  { id: 'PAY-8817', patient: 'Meena Patel',   invoice: 'INV-2453', mode: 'UPI',       amount: '₹4,500',  date: '18 Mar 2026', time: '16:20', ref: 'UPI8817ZZZ', status: 'Settled' },
-  { id: 'PAY-8816', patient: 'Kiran Rao',     invoice: 'INV-2440', mode: 'Insurance', amount: '₹1,20,000',date:'17 Mar 2026',time: '10:00', ref: 'TPA-MEDI-44', status: 'Pending' },
-];
 const modeColor: Record<string, string> = {
-  Cash: 'bg-green-100 text-green-700', UPI: 'bg-blue-100 text-blue-700',
-  Card: 'bg-violet-100 text-violet-700', NEFT: 'bg-sky-100 text-sky-700',
-  Insurance: 'bg-amber-100 text-amber-700', RTGS: 'bg-teal-100 text-teal-700',
+  cash: 'bg-green-100 text-green-700', upi: 'bg-blue-100 text-blue-700',
+  card: 'bg-violet-100 text-violet-700', neft: 'bg-sky-100 text-sky-700',
+  insurance: 'bg-amber-100 text-amber-700', rtgs: 'bg-teal-100 text-teal-700',
+  credit: 'bg-orange-100 text-orange-700',
 };
 export const AccountsPaymentsPage = () => {
   const [mode, setMode] = useState('All');
+  const [payments, setPayments] = useState<Array<{
+    id: string; patient: string; invoice: string; mode: string;
+    amount: string; date: string; time: string; ref: string; status: string;
+  }>>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await hospitalBillingService.listPayments({ limit: 100 });
+        const rows = (res.payments || []).map((p: Record<string, unknown>) => ({
+          id: `PAY-${p.id}`,
+          patient: `Patient #${p.patient_id}`,
+          invoice: String(p.bill_number || p.invoice_id),
+          mode: String(p.payment_method || 'cash').replace(/^./, (c) => c.toUpperCase()),
+          amount: fmtInr(Number(p.amount)),
+          date: p.created_at ? new Date(String(p.created_at)).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
+          time: p.created_at ? new Date(String(p.created_at)).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—',
+          ref: String(p.reference_number || p.gateway_payment_id || '—'),
+          status: p.status === 'completed' ? 'Settled' : String(p.status),
+        }));
+        setPayments(rows);
+      } catch {
+        setPayments([]);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
   const modes = ['All', 'Cash', 'UPI', 'Card', 'NEFT', 'Insurance'];
-  const filtered = payments.filter(p => mode === 'All' || p.mode === mode);
+  const filtered = payments.filter(p => mode === 'All' || p.mode.toLowerCase() === mode.toLowerCase());
+  const totalCollected = payments.reduce((s, p) => s + Number(p.amount.replace(/[₹,]/g, '')), 0);
+
   return (
     <Wrap title="Payments Received" subtitle="Record, reconcile & track all incoming payments">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
-        <KPICard label="Today's Collection" value="₹1,24,500" sub="+8.2% vs yesterday" icon={Banknote} color="text-emerald-600" up={true} />
-        <KPICard label="Monthly Collection" value="₹38,20,000" sub="Mar 2026" icon={TrendingUp} color="text-teal-600" up={true} />
-        <KPICard label="UPI / Digital" value="₹22,80,000" sub="59.8% of total" icon={CreditCard} color="text-blue-600" />
-        <KPICard label="Cash" value="₹8,40,000" sub="22% of total" icon={IndianRupee} color="text-amber-600" />
+        <KPICard label="Total Payments" value={String(payments.length)} sub={fmtInr(totalCollected)} icon={Banknote} color="text-emerald-600" up={true} />
+        <KPICard label="Settled" value={String(payments.filter(p => p.status === 'Settled').length)} sub="Confirmed receipts" icon={TrendingUp} color="text-teal-600" up={true} />
+        <KPICard label="Digital" value={String(payments.filter(p => ['UPI', 'Card'].includes(p.mode)).length)} sub="UPI + Card" icon={CreditCard} color="text-blue-600" />
+        <KPICard label="Cash" value={String(payments.filter(p => p.mode === 'Cash').length)} sub="Counter collections" icon={IndianRupee} color="text-amber-600" />
       </div>
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <CardTitle className="text-base flex items-center gap-2"><Banknote className="h-4 w-4 text-teal-600" />Payment Register</CardTitle>
+            <CardTitle className="text-base flex items-center gap-2"><Banknote className="h-4 w-4 text-teal-600" />Payment Register {loading && <RefreshCw className="h-3 w-3 animate-spin" />}</CardTitle>
             <div className="flex flex-wrap gap-2">
               <div className="flex gap-1">{modes.map(m => <button key={m} onClick={() => setMode(m)} className={`px-2.5 py-1 rounded-lg text-xs font-medium border ${mode === m ? 'bg-teal-600 text-white border-teal-600' : 'border-border hover:bg-muted'}`}>{m}</button>)}</div>
               <Button variant="outline" size="sm" className="gap-1 h-8"><Download className="h-3.5 w-3.5" />Export</Button>

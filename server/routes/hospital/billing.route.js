@@ -1,23 +1,59 @@
 /**
  * Hospital Billing Suite API
- * Multi-station cashiering, centralized billing, cash/credit/insurance, PGI, templates, audit
+ * Multi-station cashiering, centralized billing, cash/credit/insurance, PGI, audit, RCM phases
  */
 
 import express from 'express';
 import { verifyHospitalToken } from '../../middleware/hospitalAuth.middleware.js';
+import { requireBillingRead, requireBillingWrite, requireBillingSupervisor } from '../../middleware/billingAuth.middleware.js';
 import hospitalBilling from '../../services/hospital-billing.service.js';
+import eraService from '../../services/hospital-era.service.js';
+import glService from '../../services/hospital-gl.service.js';
+import paymentGateway from '../../services/payment-gateway.service.js';
 
 const router = express.Router();
-router.use(verifyHospitalToken);
 
 const ctxFrom = (req) => ({
   req,
   actorId: req.userId,
-  actorName: req.hospitalUser?.name || req.hospitalUser?.email || req.userRole
+  actorName: req.hospitalUser?.name || req.hospitalUser?.email || req.userRole,
 });
 
+// Razorpay webhook — no hospital JWT; mounted before auth middleware
+router.post('/pgi/webhook', async (req, res) => {
+  try {
+    const signature = req.headers['x-razorpay-signature'];
+    const body = req.rawBody || JSON.stringify(req.body);
+    if (!paymentGateway.verifyRazorpayWebhook(body, signature)) {
+      return res.status(400).json({ success: false, message: 'Invalid webhook signature' });
+    }
+    const event = JSON.parse(body);
+    if (event.event === 'payment.captured') {
+      const payment = event.payload?.payment?.entity;
+      const orderId = payment?.order_id;
+      const notes = payment?.notes || {};
+      const hospitalId = Number(notes.hospitalId);
+      const invoiceId = Number(notes.invoiceId);
+      if (hospitalId && invoiceId && orderId) {
+        await hospitalBilling.confirmPgiPayment(hospitalId, {
+          invoiceId,
+          razorpayOrderId: orderId,
+          razorpayPaymentId: payment.id,
+          signature: signature || 'webhook',
+        });
+      }
+    }
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[PGI webhook]', e.message);
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+router.use(verifyHospitalToken);
+
 // ── Stations ────────────────────────────────────────────────────────────────
-router.get('/stations', async (req, res) => {
+router.get('/stations', requireBillingRead, async (req, res) => {
   try {
     const data = await hospitalBilling.listStations(req.hospitalId);
     res.json({ success: true, stations: data });
@@ -26,7 +62,7 @@ router.get('/stations', async (req, res) => {
   }
 });
 
-router.post('/stations', async (req, res) => {
+router.post('/stations', requireBillingWrite, async (req, res) => {
   try {
     const station = await hospitalBilling.createStation(req.hospitalId, req.body);
     res.status(201).json({ success: true, station });
@@ -36,7 +72,7 @@ router.post('/stations', async (req, res) => {
 });
 
 // ── Cashier sessions ────────────────────────────────────────────────────────
-router.post('/sessions/open', async (req, res) => {
+router.post('/sessions/open', requireBillingWrite, async (req, res) => {
   try {
     const session = await hospitalBilling.openCashierSession(req.hospitalId, req.body, ctxFrom(req));
     res.status(201).json({ success: true, session });
@@ -45,7 +81,7 @@ router.post('/sessions/open', async (req, res) => {
   }
 });
 
-router.post('/sessions/:sessionId/close', async (req, res) => {
+router.post('/sessions/:sessionId/close', requireBillingWrite, async (req, res) => {
   try {
     const session = await hospitalBilling.closeCashierSession(req.hospitalId, req.params.sessionId, req.body, ctxFrom(req));
     res.json({ success: true, session });
@@ -54,7 +90,16 @@ router.post('/sessions/:sessionId/close', async (req, res) => {
   }
 });
 
-router.get('/sessions/active', async (req, res) => {
+router.post('/sessions/:sessionId/reconcile', requireBillingWrite, async (req, res) => {
+  try {
+    const result = await hospitalBilling.reconcileSession(req.hospitalId, Number(req.params.sessionId), ctxFrom(req), req.body);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
+
+router.get('/sessions/active', requireBillingRead, async (req, res) => {
   try {
     const { stationId } = req.query;
     if (!stationId) return res.status(400).json({ success: false, message: 'stationId required' });
@@ -65,8 +110,8 @@ router.get('/sessions/active', async (req, res) => {
   }
 });
 
-// ── Centralized dashboard ───────────────────────────────────────────────────
-router.get('/centralized', async (req, res) => {
+// ── Centralized dashboard + CFO ─────────────────────────────────────────────
+router.get('/centralized', requireBillingRead, async (req, res) => {
   try {
     const data = await hospitalBilling.getCentralizedDashboard(req.hospitalId);
     res.json({ success: true, data });
@@ -75,12 +120,21 @@ router.get('/centralized', async (req, res) => {
   }
 });
 
+router.get('/cfo/dashboard', requireBillingRead, async (req, res) => {
+  try {
+    const data = await hospitalBilling.getCfoDashboard(req.hospitalId, req.query);
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
 // ── Patient account ─────────────────────────────────────────────────────────
-router.get('/patients/:patientId/account', async (req, res) => {
+router.get('/patients/:patientId/account', requireBillingRead, async (req, res) => {
   try {
     const data = await hospitalBilling.aggregatePatientAccount(req.hospitalId, {
       patientId: Number(req.params.patientId),
-      admissionId: req.query.admissionId ? Number(req.query.admissionId) : undefined
+      admissionId: req.query.admissionId ? Number(req.query.admissionId) : undefined,
     });
     res.json({ success: true, data });
   } catch (e) {
@@ -88,8 +142,21 @@ router.get('/patients/:patientId/account', async (req, res) => {
   }
 });
 
+router.post('/patients/:patientId/statements', requireBillingWrite, async (req, res) => {
+  try {
+    const result = await hospitalBilling.generatePatientStatement(
+      req.hospitalId,
+      Number(req.params.patientId),
+      req.body.admissionId ? Number(req.body.admissionId) : null
+    );
+    res.status(201).json({ success: true, ...result });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
+
 // ── Templates ───────────────────────────────────────────────────────────────
-router.get('/templates', async (req, res) => {
+router.get('/templates', requireBillingRead, async (req, res) => {
   try {
     const templates = await hospitalBilling.listTemplates(req.hospitalId);
     res.json({ success: true, templates });
@@ -99,7 +166,7 @@ router.get('/templates', async (req, res) => {
 });
 
 // ── Invoices ────────────────────────────────────────────────────────────────
-router.get('/invoices', async (req, res) => {
+router.get('/invoices', requireBillingRead, async (req, res) => {
   try {
     const invoices = await hospitalBilling.listInvoices(req.hospitalId, req.query);
     res.json({ success: true, invoices });
@@ -108,11 +175,11 @@ router.get('/invoices', async (req, res) => {
   }
 });
 
-router.post('/invoices', async (req, res) => {
+router.post('/invoices', requireBillingWrite, async (req, res) => {
   try {
     const result = await hospitalBilling.createInvoice(req.hospitalId, {
       ...req.body,
-      createdBy: req.userId
+      createdBy: req.userId,
     }, ctxFrom(req));
     res.status(201).json({ success: true, ...result });
   } catch (e) {
@@ -120,7 +187,7 @@ router.post('/invoices', async (req, res) => {
   }
 });
 
-router.get('/invoices/:invoiceId', async (req, res) => {
+router.get('/invoices/:invoiceId', requireBillingRead, async (req, res) => {
   try {
     const invoice = await hospitalBilling.getInvoice(req.hospitalId, Number(req.params.invoiceId));
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
@@ -130,7 +197,7 @@ router.get('/invoices/:invoiceId', async (req, res) => {
   }
 });
 
-router.get('/invoices/:invoiceId/pdf', async (req, res) => {
+router.get('/invoices/:invoiceId/pdf', requireBillingRead, async (req, res) => {
   try {
     const pdf = await hospitalBilling.generateInvoicePdf(req.hospitalId, Number(req.params.invoiceId), req.hospitalName);
     res.json({ success: true, pdf });
@@ -139,13 +206,43 @@ router.get('/invoices/:invoiceId/pdf', async (req, res) => {
   }
 });
 
-// ── Payments (cash / card / UPI / credit / insurance) ─────────────────────
-router.post('/invoices/:invoiceId/payments', async (req, res) => {
+router.post('/invoices/:invoiceId/void', requireBillingSupervisor, async (req, res) => {
+  try {
+    const result = await hospitalBilling.voidInvoice(req.hospitalId, Number(req.params.invoiceId), ctxFrom(req), req.body.reason);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
+
+router.post('/invoices/:invoiceId/adjustments', requireBillingWrite, async (req, res) => {
+  try {
+    const adjustment = await hospitalBilling.createAdjustment(req.hospitalId, {
+      ...req.body,
+      invoiceId: Number(req.params.invoiceId),
+    }, ctxFrom(req));
+    res.status(201).json({ success: true, adjustment });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
+
+router.get('/payments', requireBillingRead, async (req, res) => {
+  try {
+    const payments = await hospitalBilling.listPayments(req.hospitalId, req.query);
+    res.json({ success: true, payments });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// ── Payments on invoice ───────────────────────────────────────────────────────
+router.post('/invoices/:invoiceId/payments', requireBillingWrite, async (req, res) => {
   try {
     const result = await hospitalBilling.recordPayment(req.hospitalId, Number(req.params.invoiceId), {
       ...req.body,
       receivedBy: req.userId,
-      receivedByName: req.hospitalUser?.name || req.userRole
+      receivedByName: req.hospitalUser?.name || req.userRole,
     }, ctxFrom(req));
     res.json({ success: true, ...result });
   } catch (e) {
@@ -153,8 +250,100 @@ router.post('/invoices/:invoiceId/payments', async (req, res) => {
   }
 });
 
-// ── Auto PGI (Razorpay payment link / order) ────────────────────────────────
-router.post('/invoices/:invoiceId/payment-link', async (req, res) => {
+router.post('/payments/:paymentId/void', requireBillingSupervisor, async (req, res) => {
+  try {
+    const result = await hospitalBilling.voidPayment(req.hospitalId, Number(req.params.paymentId), ctxFrom(req), req.body.reason);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
+
+router.post('/payments/:paymentId/refund', requireBillingSupervisor, async (req, res) => {
+  try {
+    const result = await hospitalBilling.refundPayment(
+      req.hospitalId, Number(req.params.paymentId), req.body.amount, ctxFrom(req), req.body.reason
+    );
+    res.json({ success: true, ...result });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
+
+router.post('/payments/:paymentId/allocate', requireBillingWrite, async (req, res) => {
+  try {
+    const result = await hospitalBilling.allocatePayment(
+      req.hospitalId, Number(req.params.paymentId), req.body.allocations, ctxFrom(req)
+    );
+    res.json({ success: true, ...result });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
+
+// ── Credit accounts ─────────────────────────────────────────────────────────
+router.post('/credit-accounts/:id/approve', requireBillingSupervisor, async (req, res) => {
+  try {
+    const account = await hospitalBilling.approveCreditAccount(req.hospitalId, Number(req.params.id), ctxFrom(req), req.body);
+    res.json({ success: true, account });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
+
+// ── ERA / Insurance remittance ────────────────────────────────────────────────
+router.post('/era/post', requireBillingWrite, async (req, res) => {
+  try {
+    const result = await eraService.postEraRemittance(req.hospitalId, req.body, {
+      id: req.userId, name: req.hospitalUser?.name, req,
+    });
+    res.status(201).json({ success: true, ...result });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
+
+router.get('/era', requireBillingRead, async (req, res) => {
+  try {
+    const postings = await eraService.listEraPostings(req.hospitalId, req.query);
+    res.json({ success: true, postings });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// ── GL journal ────────────────────────────────────────────────────────────────
+router.get('/gl/export', requireBillingRead, async (req, res) => {
+  try {
+    const data = await glService.exportGlJournal(req.hospitalId, req.query);
+    res.json({ success: true, ...data });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+router.get('/gl/summary', requireBillingRead, async (req, res) => {
+  try {
+    const data = await glService.getGlSummary(req.hospitalId, req.query);
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// ── Billing period close ──────────────────────────────────────────────────────
+router.post('/periods/close', requireBillingSupervisor, async (req, res) => {
+  try {
+    const { periodStart, periodEnd } = req.body;
+    const result = await hospitalBilling.closeBillingPeriod(req.hospitalId, periodStart, periodEnd, ctxFrom(req));
+    res.json({ success: true, ...result });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
+
+// ── Auto PGI ──────────────────────────────────────────────────────────────────
+router.post('/invoices/:invoiceId/payment-link', requireBillingWrite, async (req, res) => {
   try {
     const pgi = await hospitalBilling.createPaymentLink(req.hospitalId, Number(req.params.invoiceId), ctxFrom(req));
     res.json({ success: true, pgi });
@@ -163,11 +352,11 @@ router.post('/invoices/:invoiceId/payment-link', async (req, res) => {
   }
 });
 
-router.post('/pgi/confirm', async (req, res) => {
+router.post('/pgi/confirm', requireBillingWrite, async (req, res) => {
   try {
     const { invoiceId, razorpayOrderId, razorpayPaymentId, signature } = req.body;
     const result = await hospitalBilling.confirmPgiPayment(req.hospitalId, {
-      invoiceId: Number(invoiceId), razorpayOrderId, razorpayPaymentId, signature
+      invoiceId: Number(invoiceId), razorpayOrderId, razorpayPaymentId, signature,
     });
     res.json({ success: true, ...result });
   } catch (e) {
@@ -176,7 +365,7 @@ router.post('/pgi/confirm', async (req, res) => {
 });
 
 // ── Audit trail ───────────────────────────────────────────────────────────
-router.get('/audit', async (req, res) => {
+router.get('/audit', requireBillingRead, async (req, res) => {
   try {
     const audit = await hospitalBilling.listAuditLog(req.hospitalId, req.query);
     res.json({ success: true, audit });

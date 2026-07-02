@@ -827,7 +827,7 @@ app.use(compression({
 app.use(express.json({
   limit: '50mb',
   verify: (req, _res, buf) => {
-    if (req.originalUrl === '/api/payments/webhook') {
+    if (req.originalUrl === '/api/payments/webhook' || req.originalUrl === '/api/hospital/billing/pgi/webhook') {
       req.rawBody = buf.toString('utf8');
     }
   }
@@ -1840,6 +1840,19 @@ cron.schedule('0 1 * * 1', async () => {
     cronTick('ai_demographic_parity', { groups: result.groups?.length || 0, flagged: result.disparityFlagged || 0 });
   } catch (err) {
     cronTickError('ai_demographic_parity', err.message);
+  }
+});
+
+// ============== Hospital Billing Nightly Cron (02:00 IST) ==============
+import { runNightlyBilling } from './services/hospital-billing-cron.service.js';
+
+cron.schedule('0 2 * * *', async () => {
+  cronTickStart('hospital_billing_nightly');
+  try {
+    const result = await runNightlyBilling();
+    cronTick('hospital_billing_nightly', result);
+  } catch (err) {
+    cronTickError('hospital_billing_nightly', err.message);
   }
 });
 

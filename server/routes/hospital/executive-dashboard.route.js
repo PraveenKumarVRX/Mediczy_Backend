@@ -6,6 +6,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import pool from '../../db/pgPool.js';
+import hospitalBilling from '../../services/hospital-billing.service.js';
 
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
@@ -105,38 +106,39 @@ router.get('/ceo/financials', verifyHospitalToken, async (req, res) => {
 });
 
 router.get('/cfo/financials', verifyHospitalToken, async (req, res) => {
-  return res.json({
-    success: true,
-    data: {
-      cashPosition: 1240,
-      arOutstanding: 1860,
-      apOutstanding: 420,
-      collectionEfficiency: 94.2,
-      dso: 28,
-      budgetUtilization: 87,
-      claimsPending: 312,
-      claimsSettledMtd: 1840,
-      arAging: [
-        { bucket: '0-30d', amount: 820 },
-        { bucket: '31-60d', amount: 540 },
-        { bucket: '61-90d', amount: 320 },
-        { bucket: '90d+', amount: 180 },
-      ],
-      cashFlow: [
-        { month: 'Jan', inflow: 3820, outflow: 2980 },
-        { month: 'Feb', inflow: 4010, outflow: 3050 },
-        { month: 'Mar', inflow: 4180, outflow: 3120 },
-        { month: 'Apr', inflow: 4390, outflow: 3180 },
-        { month: 'May', inflow: 4620, outflow: 3240 },
-      ],
-      deptMargin: [
-        { dept: 'Cardiology', revenue: 920, margin: 42 },
-        { dept: 'Orthopaedics', revenue: 780, margin: 38 },
-        { dept: 'Oncology', revenue: 480, margin: 35 },
-        { dept: 'General Surgery', revenue: 510, margin: 32 },
-      ],
-    },
-  });
+  try {
+    const live = await hospitalBilling.getCfoDashboard(req.hospitalId, req.query);
+    return res.json({
+      success: true,
+      data: {
+        cashPosition: Math.round(live.cashPosition / 1000),
+        arOutstanding: Math.round(live.arOutstanding / 1000),
+        apOutstanding: 420,
+        collectionEfficiency: live.collectionEfficiency,
+        dso: 28,
+        budgetUtilization: 87,
+        claimsPending: live.claimsPending,
+        claimsSettledMtd: Math.round(live.claimsSettledMtd / 1000),
+        arAging: live.accountsReceivable.map((r) => ({ bucket: r.status, amount: Math.round(Number(r.outstanding) / 1000) })),
+        cashFlow: [
+          { month: 'Jan', inflow: 3820, outflow: 2980 },
+          { month: 'Feb', inflow: 4010, outflow: 3050 },
+          { month: 'Mar', inflow: 4180, outflow: 3120 },
+          { month: 'Apr', inflow: 4390, outflow: 3180 },
+          { month: 'May', inflow: Math.round(live.cashPosition / 1000), outflow: 3240 },
+        ],
+        deptMargin: [
+          { dept: 'Cardiology', revenue: 920, margin: 42 },
+          { dept: 'Orthopaedics', revenue: 780, margin: 38 },
+          { dept: 'Oncology', revenue: 480, margin: 35 },
+          { dept: 'General Surgery', revenue: 510, margin: 32 },
+        ],
+        revenueByMode: live.revenueByMode,
+      },
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 router.get('/coo/operations', verifyHospitalToken, async (req, res) => {

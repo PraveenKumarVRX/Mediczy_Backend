@@ -279,15 +279,28 @@ export async function getCentralizedDashboard(hospitalId) {
   };
 }
 
-async function buildLinesFromCharges(hospitalId, patientId, admissionId) {
+async function buildLinesFromCharges(hospitalId, patientId, admissionId, chargeIds = null) {
+  const params = [hospitalId, patientId];
+  let admissionClause = '';
+  let idClause = '';
+  if (admissionId) {
+    params.push(admissionId);
+    admissionClause = ` AND (admission_id = $${params.length} OR admission_id IS NULL)`;
+  }
+  if (Array.isArray(chargeIds) && chargeIds.length > 0) {
+    params.push(chargeIds);
+    idClause = ` AND id = ANY($${params.length}::bigint[])`;
+  }
   const { rows } = await pool.query(
-    `SELECT id, charge_type, description, amount, source_type, source_id
+    `SELECT id, charge_type, description, amount, source_type, source_id, admission_id
      FROM hospital_billing_charges
      WHERE hospital_id = $1 AND patient_id = $2 AND status IN ('pending','posted')
+     ${admissionClause}${idClause}
      ORDER BY created_at ASC`,
-    [hospitalId, patientId]
+    params
   );
   return rows.map((c) => ({
+    chargeId: c.id,
     chargeSource: c.source_type || 'charge',
     chargeSourceId: c.source_id || c.id,
     chargeCode: c.charge_type,
@@ -303,10 +316,12 @@ export async function createInvoice(hospitalId, data, ctx = {}) {
   await ensureTables();
   const {
     patientId, admissionId, stationId, sessionId, templateId, billType, paymentMode,
-    discountAmount, taxAmount, insuranceAmount, lines, autoPgi, insuranceClaimId, createdBy
+    discountAmount, taxAmount, insuranceAmount, lines, chargeIds, autoPgi, insuranceClaimId, createdBy
   } = data;
 
-  let invoiceLines = Array.isArray(lines) && lines.length > 0 ? lines : await buildLinesFromCharges(hospitalId, patientId, admissionId);
+  let invoiceLines = Array.isArray(lines) && lines.length > 0
+    ? lines
+    : await buildLinesFromCharges(hospitalId, patientId, admissionId, chargeIds);
   if (invoiceLines.length === 0) {
     throw new Error('No billable charges found for this patient');
   }
@@ -328,55 +343,79 @@ export async function createInvoice(hospitalId, data, ctx = {}) {
   }
 
   const number = billNumber(hospitalId);
-  const { rows } = await pool.query(
-    `INSERT INTO hospital_invoices
-      (hospital_id, bill_number, patient_id, admission_id, station_id, session_id, template_id,
-       bill_type, payment_mode, subtotal, discount_amount, tax_amount, total_amount,
-       insurance_amount, patient_liability, amount_due, status, insurance_claim_id, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'issued',$17,$18)
-     RETURNING *`,
-    [
-      hospitalId, number, patientId, admissionId || null, stationId || null, sessionId || null, template,
-      billType || 'ipd', paymentMode || 'mixed', subtotal, discount, tax, total, insurance, patientLiability,
-      patientLiability, insuranceClaimId || null, createdBy || null
-    ]
-  );
-  const invoice = rows[0];
+  const chargeIdsToLink = invoiceLines.map((l) => l.chargeId).filter(Boolean);
+  const client = await pool.connect();
 
-  for (const line of invoiceLines) {
-    const qty = Number(line.quantity) || 1;
-    const unit = Number(line.unitPrice) || 0;
-    const lineTotal = Number(line.lineTotal) || qty * unit;
-    await pool.query(
-      `INSERT INTO hospital_invoice_lines
-        (invoice_id, charge_source, charge_source_id, charge_code, description, category,
-         quantity, unit_price, tax_percent, line_total, insurance_payable)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `INSERT INTO hospital_invoices
+        (hospital_id, bill_number, patient_id, admission_id, station_id, session_id, template_id,
+         bill_type, payment_mode, subtotal, discount_amount, tax_amount, total_amount,
+         insurance_amount, patient_liability, amount_paid, amount_due, status, insurance_claim_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,0,$15,'issued',$16,$17)
+       RETURNING *`,
       [
-        invoice.id, line.chargeSource || null, line.chargeSourceId || null, line.chargeCode || null,
-        line.description, line.category || 'general', qty, unit, line.taxPercent || 0, lineTotal,
-        line.insurancePayable !== false
+        hospitalId, number, patientId, admissionId || null, stationId || null, sessionId || null, template,
+        billType || 'ipd', paymentMode || 'mixed', subtotal, discount, tax, total, insurance, patientLiability,
+        insuranceClaimId || null, createdBy || null
       ]
     );
+    const invoice = rows[0];
+
+    for (const line of invoiceLines) {
+      const qty = Number(line.quantity) || 1;
+      const unit = Number(line.unitPrice) || 0;
+      const lineTotal = Number(line.lineTotal) || qty * unit;
+      await client.query(
+        `INSERT INTO hospital_invoice_lines
+          (invoice_id, charge_source, charge_source_id, charge_code, description, category,
+           quantity, unit_price, tax_percent, line_total, insurance_payable)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [
+          invoice.id, line.chargeSource || null, line.chargeSourceId || null, line.chargeCode || null,
+          line.description, line.category || 'general', qty, unit, line.taxPercent || 0, lineTotal,
+          line.insurancePayable !== false
+        ]
+      );
+    }
+
+    if (chargeIdsToLink.length > 0) {
+      await client.query(
+        `UPDATE hospital_billing_charges
+         SET status = 'invoiced', invoice_id = $1, updated_at = NOW()
+         WHERE hospital_id = $2 AND id = ANY($3::bigint[]) AND status IN ('pending','posted')`,
+        [invoice.id, hospitalId, chargeIdsToLink]
+      );
+    } else {
+      const chargeParams = [invoice.id, hospitalId, patientId];
+      let chargeSql = `UPDATE hospital_billing_charges SET status = 'invoiced', invoice_id = $1, updated_at = NOW()
+         WHERE hospital_id = $2 AND patient_id = $3 AND status IN ('pending','posted')`;
+      if (admissionId) {
+        chargeParams.push(admissionId);
+        chargeSql += ` AND (admission_id = $${chargeParams.length} OR admission_id IS NULL)`;
+      }
+      await client.query(chargeSql, chargeParams);
+    }
+
+    await client.query('COMMIT');
+
+    await logBillingAudit({
+      hospitalId, stationId, sessionId, actorId: createdBy, action: 'invoice.create',
+      resourceType: 'hospital_invoice', resourceId: String(invoice.id), afterState: invoice, req: ctx.req
+    });
+
+    let pgi = null;
+    if (autoPgi && patientLiability > 0) {
+      pgi = await createPaymentLink(hospitalId, invoice.id, ctx);
+    }
+    return { invoice, pgi };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
-
-  await pool.query(
-    `UPDATE hospital_billing_charges SET status = 'invoiced', updated_at = NOW()
-     WHERE hospital_id = $1 AND patient_id = $2 AND status IN ('pending','posted')`,
-    [hospitalId, patientId]
-  );
-
-  await logBillingAudit({
-    hospitalId, stationId, sessionId, actorId: createdBy, action: 'invoice.create',
-    resourceType: 'hospital_invoice', resourceId: String(invoice.id), afterState: invoice, req: ctx.req
-  });
-
-  let pgi = null;
-  if (autoPgi && patientLiability > 0) {
-    pgi = await createPaymentLink(hospitalId, invoice.id, ctx);
-  }
-
-  return { invoice, pgi };
 }
 
 export async function recordPayment(hospitalId, invoiceId, data, ctx = {}) {
@@ -385,80 +424,101 @@ export async function recordPayment(hospitalId, invoiceId, data, ctx = {}) {
   const amount = Number(data.amount);
   if (!amount || amount <= 0) throw new Error('Payment amount must be positive');
 
-  const inv = await pool.query(`SELECT * FROM hospital_invoices WHERE id = $1 AND hospital_id = $2`, [invoiceId, hospitalId]);
-  const invoice = inv.rows[0];
-  if (!invoice) throw new Error('Invoice not found');
-
-  if (method === 'credit') {
-    await applyCreditPayment(hospitalId, invoice.patient_id, amount, invoiceId, ctx);
-  }
-
-  const { rows: payRows } = await pool.query(
-    `INSERT INTO hospital_payments
-      (hospital_id, invoice_id, station_id, session_id, payment_method, amount, reference_number,
-       insurance_claim_id, received_by, received_by_name, notes, gateway_status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'captured') RETURNING *`,
-    [
-      hospitalId, invoiceId, data.stationId || invoice.station_id, data.sessionId || invoice.session_id,
-      method, amount, data.referenceNumber || null, data.insuranceClaimId || invoice.insurance_claim_id || null,
-      data.receivedBy || ctx.actorId || null, data.receivedByName || ctx.actorName || null, data.notes || null
-    ]
-  );
-
-  const newPaid = Number(invoice.amount_paid) + amount;
-  const newDue = Math.max(0, Number(invoice.patient_liability) - newPaid);
-  const status = newDue <= 0 ? 'paid' : 'partial';
-
-  await pool.query(
-    `UPDATE hospital_invoices
-     SET amount_paid = $1, amount_due = $2, status = $3, payment_mode = $4, updated_at = NOW(),
-         finalized_at = CASE WHEN $2 <= 0 THEN COALESCE(finalized_at, NOW()) ELSE finalized_at END
-     WHERE id = $5`,
-    [newPaid, newDue, status, method, invoiceId]
-  );
-
-  if (data.sessionId) {
-    const col = {
-      cash: 'cash_collected', card: 'card_collected', upi: 'upi_collected',
-      credit: 'credit_collected', insurance: 'insurance_collected'
-    }[method] || 'cash_collected';
-    await pool.query(
-      `UPDATE billing_cashier_sessions
-       SET ${col} = ${col} + $1, total_collected = total_collected + $1
-       WHERE id = $2`,
-      [amount, data.sessionId]
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const inv = await client.query(
+      `SELECT * FROM hospital_invoices WHERE id = $1 AND hospital_id = $2 AND voided_at IS NULL FOR UPDATE`,
+      [invoiceId, hospitalId]
     );
+    const invoice = inv.rows[0];
+    if (!invoice) throw new Error('Invoice not found');
+
+    if (method === 'credit') {
+      await applyCreditPayment(client, hospitalId, invoice.patient_id, amount, invoiceId, ctx, data.creditApproved);
+    }
+
+    const payStatus = method === 'credit' ? 'credit_pending' : 'completed';
+    const { rows: payRows } = await client.query(
+      `INSERT INTO hospital_payments
+        (hospital_id, invoice_id, station_id, session_id, payment_method, amount, reference_number,
+         insurance_claim_id, received_by, received_by_name, notes, gateway_status, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'captured',$12) RETURNING *`,
+      [
+        hospitalId, invoiceId, data.stationId || invoice.station_id, data.sessionId || invoice.session_id,
+        method, amount, data.referenceNumber || null, data.insuranceClaimId || invoice.insurance_claim_id || null,
+        data.receivedBy || ctx.actorId || null, data.receivedByName || ctx.actorName || null, data.notes || null,
+        payStatus
+      ]
+    );
+
+    const newPaid = Number(invoice.amount_paid) + (method === 'credit' ? 0 : amount);
+    const creditApplied = method === 'credit' ? amount : 0;
+    const effectivePaid = newPaid + creditApplied;
+    const newDue = Math.max(0, Number(invoice.patient_liability) - effectivePaid);
+    const status = newDue <= 0 ? 'paid' : 'partial';
+    const payMode = invoice.payment_mode === 'mixed' || invoice.amount_paid > 0 ? 'mixed' : method;
+
+    await client.query(
+      `UPDATE hospital_invoices
+       SET amount_paid = $1, amount_due = $2, status = $3,
+           payment_mode = CASE WHEN payment_mode = 'mixed' OR $4 = 'mixed' THEN 'mixed' ELSE $4 END,
+           updated_at = NOW(),
+           finalized_at = CASE WHEN $2 <= 0 THEN COALESCE(finalized_at, NOW()) ELSE finalized_at END
+       WHERE id = $5`,
+      [effectivePaid, newDue, status, payMode, invoiceId]
+    );
+
+    if (data.sessionId && method !== 'credit') {
+      const col = {
+        cash: 'cash_collected', card: 'card_collected', upi: 'upi_collected',
+        insurance: 'insurance_collected'
+      }[method] || 'cash_collected';
+      await client.query(
+        `UPDATE billing_cashier_sessions SET ${col} = ${col} + $1, total_collected = total_collected + $1 WHERE id = $2`,
+        [amount, data.sessionId]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    await logBillingAudit({
+      hospitalId, stationId: data.stationId, sessionId: data.sessionId, actorId: data.receivedBy,
+      actorName: data.receivedByName, action: 'payment.record', resourceType: 'hospital_payment',
+      resourceId: String(payRows[0].id), afterState: payRows[0], req: ctx.req
+    });
+
+    return { payment: payRows[0], invoiceStatus: status, amountDue: newDue };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
-
-  await logBillingAudit({
-    hospitalId, stationId: data.stationId, sessionId: data.sessionId, actorId: data.receivedBy,
-    actorName: data.receivedByName, action: 'payment.record', resourceType: 'hospital_payment',
-    resourceId: String(payRows[0].id), afterState: payRows[0], req: ctx.req
-  });
-
-  return { payment: payRows[0], invoiceStatus: status, amountDue: newDue };
 }
 
-async function applyCreditPayment(hospitalId, patientId, amount, invoiceId, ctx) {
-  let account = await pool.query(
-    `SELECT * FROM hospital_credit_accounts WHERE hospital_id = $1 AND patient_id = $2`,
+async function applyCreditPayment(client, hospitalId, patientId, amount, invoiceId, ctx, creditApproved = false) {
+  let account = await client.query(
+    `SELECT * FROM hospital_credit_accounts WHERE hospital_id = $1 AND patient_id = $2 FOR UPDATE`,
     [hospitalId, patientId]
   );
   if (!account.rows[0]) {
-    const created = await pool.query(
-      `INSERT INTO hospital_credit_accounts (hospital_id, patient_id, credit_limit, balance)
-       VALUES ($1,$2,50000,0) RETURNING *`,
-      [hospitalId, patientId]
+    if (!creditApproved) throw new Error('Credit account required — supervisor approval needed');
+    const created = await client.query(
+      `INSERT INTO hospital_credit_accounts (hospital_id, patient_id, credit_limit, balance, approved_by, status)
+       VALUES ($1,$2,0,0,$3,'active') RETURNING *`,
+      [hospitalId, patientId, ctx.actorName || 'supervisor']
     );
     account = created;
   }
   const acct = account.rows[0];
+  if (acct.status !== 'active') throw new Error('Credit account is not active');
   const newBalance = Number(acct.balance) + amount;
   if (acct.credit_limit > 0 && newBalance > Number(acct.credit_limit)) {
     throw new Error('Credit limit exceeded');
   }
-  await pool.query(`UPDATE hospital_credit_accounts SET balance = $1, updated_at = NOW() WHERE id = $2`, [newBalance, acct.id]);
-  await pool.query(
+  await client.query(`UPDATE hospital_credit_accounts SET balance = $1, updated_at = NOW() WHERE id = $2`, [newBalance, acct.id]);
+  await client.query(
     `INSERT INTO hospital_credit_ledger (credit_account_id, invoice_id, entry_type, amount, balance_after, created_by)
      VALUES ($1,$2,'debit',$3,$4,$5)`,
     [acct.id, invoiceId, amount, newBalance, ctx.actorId || null]
@@ -559,6 +619,26 @@ export async function listInvoices(hospitalId, { status, patientId, limit = 50, 
   return rows;
 }
 
+export async function listPayments(hospitalId, { limit = 50, offset = 0, patientId } = {}) {
+  await ensureTables();
+  const params = [hospitalId];
+  let clauses = '';
+  if (patientId) {
+    params.push(patientId);
+    clauses += ` AND p.invoice_id IN (SELECT id FROM hospital_invoices WHERE patient_id = $${params.length})`;
+  }
+  params.push(Math.min(200, limit), offset);
+  const { rows } = await pool.query(
+    `SELECT p.*, i.bill_number, i.patient_id
+     FROM hospital_payments p
+     JOIN hospital_invoices i ON i.id = p.invoice_id
+     WHERE p.hospital_id = $1 ${clauses}
+     ORDER BY p.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params
+  );
+  return rows;
+}
+
 export async function generateInvoicePdf(hospitalId, invoiceId, hospitalName) {
   const invoice = await getInvoice(hospitalId, invoiceId);
   if (!invoice) throw new Error('Invoice not found');
@@ -579,9 +659,350 @@ export async function listAuditLog(hospitalId, { limit = 100, offset = 0 } = {})
   return rows;
 }
 
+// ─── Phase 1: Adjustments, void, refund ─────────────────────────────────────
+
+export async function createAdjustment(hospitalId, data, ctx = {}) {
+  await ensureTables();
+  const { invoiceId, adjustmentType, amount, reason, approvedByName } = data;
+  if (!invoiceId || !adjustmentType || amount == null) throw new Error('invoiceId, adjustmentType, amount required');
+
+  const inv = await pool.query(`SELECT * FROM hospital_invoices WHERE id = $1 AND hospital_id = $2`, [invoiceId, hospitalId]);
+  if (!inv.rows[0]) throw new Error('Invoice not found');
+
+  const r = await pool.query(
+    `INSERT INTO hospital_bill_adjustments
+       (hospital_id, invoice_id, adjustment_type, amount, reason, approved_by_name, approved_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+    [hospitalId, invoiceId, adjustmentType, Number(amount), reason || null, approvedByName || null, ctx.actorId || null]
+  );
+
+  const newTotal = Math.max(0, Number(inv.rows[0].total_amount) - Number(amount));
+  const newDue = Math.max(0, newTotal - Number(inv.rows[0].amount_paid));
+  const status = newDue <= 0 ? 'paid' : Number(inv.rows[0].amount_paid) > 0 ? 'partial' : 'issued';
+  await pool.query(
+    `UPDATE hospital_invoices SET total_amount = $2, patient_liability = $2, amount_due = $3, status = $4, updated_at = NOW() WHERE id = $1`,
+    [invoiceId, newTotal, newDue, status]
+  );
+
+  await logBillingAudit({
+    hospitalId, actorId: ctx.actorId, actorName: ctx.actorName,
+    action: 'adjustment.create', resourceType: 'adjustment', resourceId: String(r.rows[0].id),
+    afterState: r.rows[0], req: ctx.req
+  });
+  return r.rows[0];
+}
+
+export async function voidInvoice(hospitalId, invoiceId, ctx = {}, reason) {
+  await ensureTables();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const inv = await client.query(
+      `SELECT * FROM hospital_invoices WHERE id = $1 AND hospital_id = $2 AND voided_at IS NULL FOR UPDATE`,
+      [invoiceId, hospitalId]
+    );
+    if (!inv.rows[0]) throw new Error('Invoice not found or already voided');
+
+    await client.query(
+      `UPDATE hospital_invoices SET status = 'voided', voided_at = NOW(), voided_by = $2, void_reason = $3, updated_at = NOW() WHERE id = $1`,
+      [invoiceId, ctx.actorId || null, reason || null]
+    );
+    await client.query(
+      `UPDATE hospital_billing_charges SET status = 'pending', invoice_id = NULL, updated_at = NOW()
+       WHERE invoice_id = $1 AND hospital_id = $2`,
+      [invoiceId, hospitalId]
+    );
+    await client.query('COMMIT');
+
+    await logBillingAudit({
+      hospitalId, actorId: ctx.actorId, actorName: ctx.actorName,
+      action: 'invoice.void', resourceType: 'hospital_invoice', resourceId: String(invoiceId),
+      beforeState: inv.rows[0], reason, req: ctx.req
+    });
+    return { success: true, invoiceId };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+export async function voidPayment(hospitalId, paymentId, ctx = {}, reason) {
+  await ensureTables();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const pay = await client.query(
+      `SELECT * FROM hospital_payments WHERE id = $1 AND hospital_id = $2 AND voided_at IS NULL FOR UPDATE`,
+      [paymentId, hospitalId]
+    );
+    if (!pay.rows[0]) throw new Error('Payment not found or already voided');
+
+    const amount = Number(pay.rows[0].amount);
+    const invoiceId = pay.rows[0].invoice_id;
+
+    await client.query(
+      `UPDATE hospital_payments SET status = 'voided', voided_at = NOW(), voided_by = $2, void_reason = $3 WHERE id = $1`,
+      [paymentId, ctx.actorId || null, reason || null]
+    );
+
+    if (invoiceId) {
+      const inv = await client.query(`SELECT amount_paid, patient_liability FROM hospital_invoices WHERE id = $1 FOR UPDATE`, [invoiceId]);
+      if (inv.rows[0]) {
+        const newPaid = Math.max(0, Number(inv.rows[0].amount_paid) - amount);
+        const liability = Number(inv.rows[0].patient_liability);
+        const newDue = Math.max(0, liability - newPaid);
+        const status = newDue <= 0 ? 'paid' : newPaid > 0 ? 'partial' : 'issued';
+        await client.query(
+          `UPDATE hospital_invoices SET amount_paid = $2, amount_due = $3, status = $4, updated_at = NOW() WHERE id = $1`,
+          [invoiceId, newPaid, newDue, status]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    await logBillingAudit({
+      hospitalId, actorId: ctx.actorId, action: 'payment.void',
+      resourceType: 'hospital_payment', resourceId: String(paymentId),
+      beforeState: pay.rows[0], reason, req: ctx.req
+    });
+    return { success: true, paymentId };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+export async function refundPayment(hospitalId, paymentId, refundAmount, ctx = {}, reason) {
+  await ensureTables();
+  const pay = await pool.query(`SELECT * FROM hospital_payments WHERE id = $1 AND hospital_id = $2`, [paymentId, hospitalId]);
+  if (!pay.rows[0]) throw new Error('Payment not found');
+  const amt = Number(refundAmount || pay.rows[0].amount);
+  if (amt > Number(pay.rows[0].amount)) throw new Error('Refund exceeds payment');
+
+  await pool.query(
+    `INSERT INTO hospital_payment_refunds (hospital_id, payment_id, invoice_id, amount, reason, approved_by)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+    [hospitalId, paymentId, pay.rows[0].invoice_id, amt, reason || null, ctx.actorId || null]
+  );
+  await pool.query(
+    `UPDATE hospital_payments SET status = 'refunded', refund_amount = $2, refund_reason = $3, refunded_at = NOW(), refunded_by = $4 WHERE id = $1`,
+    [paymentId, amt, reason || null, ctx.actorId || null]
+  );
+
+  if (pay.rows[0].invoice_id) {
+    const inv = await pool.query(`SELECT amount_paid, patient_liability FROM hospital_invoices WHERE id = $1`, [pay.rows[0].invoice_id]);
+    if (inv.rows[0]) {
+      const newPaid = Math.max(0, Number(inv.rows[0].amount_paid) - amt);
+      const newDue = Math.max(0, Number(inv.rows[0].patient_liability) - newPaid);
+      const status = newDue <= 0 ? 'paid' : newPaid > 0 ? 'partial' : 'issued';
+      await pool.query(`UPDATE hospital_invoices SET amount_paid = $2, amount_due = $3, status = $4, updated_at = NOW() WHERE id = $1`,
+        [pay.rows[0].invoice_id, newPaid, newDue, status]);
+    }
+  }
+
+  await logBillingAudit({
+    hospitalId, actorId: ctx.actorId, action: 'payment.refund',
+    resourceType: 'hospital_payment', resourceId: String(paymentId),
+    metadata: { refundAmount: amt }, reason, req: ctx.req
+  });
+  return { success: true, paymentId, refundAmount: amt };
+}
+
+// ─── Phase 2: Session reconciliation, credit approval, allocations, statements
+
+export async function reconcileSession(hospitalId, sessionId, ctx = {}, { countedCash, notes } = {}) {
+  await ensureTables();
+  const session = await pool.query(
+    `SELECT * FROM billing_cashier_sessions WHERE id = $1 AND hospital_id = $2`,
+    [sessionId, hospitalId]
+  );
+  if (!session.rows[0]) throw new Error('Session not found');
+  if (session.rows[0].status !== 'open') throw new Error('Session not open');
+
+  const expectedCash = Number(session.rows[0].cash_collected || 0);
+  const counted = countedCash != null ? Number(countedCash) : expectedCash;
+  const variance = counted - expectedCash;
+
+  await pool.query(
+    `UPDATE billing_cashier_sessions
+     SET status = 'reconciled', closed_at = NOW(), closing_total = total_collected,
+         closing_cash_counted = $2, closing_cash_expected = $3, cash_variance = $4,
+         reconciliation_notes = $5, notes = COALESCE($5, notes)
+     WHERE id = $1`,
+    [sessionId, counted, expectedCash, variance, notes || null]
+  );
+
+  await logBillingAudit({
+    hospitalId, sessionId, actorId: ctx.actorId,
+    action: 'session.reconcile', resourceType: 'cashier_session', resourceId: String(sessionId),
+    metadata: { expectedCash, countedCash: counted, variance }, req: ctx.req
+  });
+
+  return { sessionId, expectedCash, countedCash: counted, variance };
+}
+
+export async function approveCreditAccount(hospitalId, creditAccountId, ctx = {}, { approvedLimit, notes } = {}) {
+  await ensureTables();
+  const r = await pool.query(
+    `UPDATE hospital_credit_accounts
+     SET status = 'active', credit_limit = COALESCE($3, credit_limit),
+         approved_by = $4, approved_by_id = $5, approved_at = NOW(), notes = COALESCE($6, notes), updated_at = NOW()
+     WHERE id = $1 AND hospital_id = $2 RETURNING *`,
+    [creditAccountId, hospitalId, approvedLimit || null, ctx.actorName || null, ctx.actorId || null, notes || null]
+  );
+  if (!r.rows[0]) throw new Error('Credit account not found');
+
+  await logBillingAudit({
+    hospitalId, actorId: ctx.actorId, action: 'credit.approve',
+    resourceType: 'credit_account', resourceId: String(creditAccountId), afterState: r.rows[0], req: ctx.req
+  });
+  return r.rows[0];
+}
+
+export async function allocatePayment(hospitalId, paymentId, allocations, ctx = {}) {
+  await ensureTables();
+  const pay = await pool.query(`SELECT * FROM hospital_payments WHERE id = $1 AND hospital_id = $2`, [paymentId, hospitalId]);
+  if (!pay.rows[0]) throw new Error('Payment not found');
+
+  const totalAlloc = allocations.reduce((s, a) => s + Number(a.amount), 0);
+  if (Math.abs(totalAlloc - Number(pay.rows[0].amount)) > 0.01) {
+    throw new Error('Allocation total must equal payment amount');
+  }
+
+  for (const alloc of allocations) {
+    await pool.query(
+      `INSERT INTO hospital_payment_allocations (payment_id, invoice_id, amount) VALUES ($1,$2,$3)`,
+      [paymentId, alloc.invoiceId, alloc.amount]
+    );
+    const inv = await pool.query(`SELECT amount_paid, patient_liability FROM hospital_invoices WHERE id = $1`, [alloc.invoiceId]);
+    if (inv.rows[0]) {
+      const newPaid = Number(inv.rows[0].amount_paid) + Number(alloc.amount);
+      const liability = Number(inv.rows[0].patient_liability);
+      const newDue = Math.max(0, liability - newPaid);
+      const status = newDue <= 0 ? 'paid' : 'partial';
+      await pool.query(`UPDATE hospital_invoices SET amount_paid = $2, amount_due = $3, status = $4, updated_at = NOW() WHERE id = $1`,
+        [alloc.invoiceId, newPaid, newDue, status]);
+    }
+  }
+
+  await logBillingAudit({
+    hospitalId, actorId: ctx.actorId, action: 'payment.allocate',
+    resourceType: 'hospital_payment', resourceId: String(paymentId),
+    metadata: { allocations }, req: ctx.req
+  });
+  return { paymentId, allocations };
+}
+
+export async function generatePatientStatement(hospitalId, patientId, admissionId = null) {
+  await ensureTables();
+  const account = await aggregatePatientAccount(hospitalId, { patientId, admissionId });
+  const closingBalance = account.summary.totalDue;
+
+  const stmt = await pool.query(
+    `INSERT INTO hospital_patient_statements
+       (hospital_id, patient_id, statement_number, total_due, metadata, status)
+     VALUES ($1,$2,$3,$4,$5,'issued') RETURNING *`,
+    [
+      hospitalId, patientId,
+      `STMT-${Date.now().toString(36).toUpperCase()}`,
+      closingBalance,
+      JSON.stringify({ charges: account.charges.slice(0, 50), invoices: account.invoices, admissionId }),
+    ]
+  );
+
+  return { statement: stmt.rows[0], account };
+}
+
+// ─── Phase 3: Billing period close + CFO dashboard ────────────────────────────
+
+export async function closeBillingPeriod(hospitalId, periodStart, periodEnd, ctx = {}) {
+  await ensureTables();
+  const periodCode = `${periodStart}_${periodEnd}`;
+  const summary = await pool.query(
+    `SELECT
+       COALESCE(SUM(CASE WHEN status NOT IN ('voided','cancelled') THEN total_amount ELSE 0 END), 0) AS invoiced,
+       COALESCE(SUM(CASE WHEN status NOT IN ('voided','cancelled') THEN amount_paid ELSE 0 END), 0) AS collected
+     FROM hospital_invoices
+     WHERE hospital_id = $1 AND created_at >= $2::date AND created_at < ($3::date + INTERVAL '1 day')`,
+    [hospitalId, periodStart, periodEnd]
+  );
+
+  const r = await pool.query(
+    `INSERT INTO billing_periods (hospital_id, period_code, start_date, end_date, status, closed_by, closed_at)
+     VALUES ($1,$2,$3,$4,'closed',$5,NOW())
+     ON CONFLICT (hospital_id, period_code) DO UPDATE SET status = 'closed', closed_by = $5, closed_at = NOW()
+     RETURNING *`,
+    [hospitalId, periodCode, periodStart, periodEnd, ctx.actorId || null]
+  );
+
+  await logBillingAudit({
+    hospitalId, actorId: ctx.actorId, action: 'period.close',
+    resourceType: 'billing_period', resourceId: String(r.rows[0].id),
+    metadata: summary.rows[0], req: ctx.req
+  });
+  return { period: r.rows[0], summary: summary.rows[0] };
+}
+
+export async function getCfoDashboard(hospitalId, { from, to } = {}) {
+  await ensureTables();
+  const fromDate = from || new Date(Date.now() - 30 * 86400000).toISOString();
+  const toDate = to || new Date().toISOString();
+
+  const [revenue, ar, sessions, claims] = await Promise.all([
+    pool.query(
+      `SELECT payment_method, SUM(amount) AS total, COUNT(*)::int AS cnt
+       FROM hospital_payments
+       WHERE hospital_id = $1 AND status = 'completed' AND created_at >= $2 AND created_at < $3
+       GROUP BY payment_method`,
+      [hospitalId, fromDate, toDate]
+    ),
+    pool.query(
+      `SELECT status, SUM(amount_due) AS outstanding, COUNT(*)::int AS cnt
+       FROM hospital_invoices
+       WHERE hospital_id = $1 AND status IN ('issued','partial','overdue') AND voided_at IS NULL
+       GROUP BY status`,
+      [hospitalId]
+    ),
+    pool.query(
+      `SELECT COUNT(*) FILTER (WHERE status = 'open')::int AS open_sessions,
+              COUNT(*) FILTER (WHERE status = 'reconciled' AND closed_at >= $2)::int AS reconciled_recent
+       FROM billing_cashier_sessions WHERE hospital_id = $1`,
+      [hospitalId, fromDate]
+    ),
+    pool.query(
+      `SELECT status, COUNT(*)::int AS cnt, COALESCE(SUM(total_claimed),0) AS claimed, COALESCE(SUM(total_paid),0) AS paid
+       FROM insurance_claims WHERE hospital_id = $1 GROUP BY status`,
+      [hospitalId]
+    ).catch(() => ({ rows: [] })),
+  ]);
+
+  const totalCollected = revenue.rows.reduce((s, r) => s + Number(r.total || 0), 0);
+  const arOutstanding = ar.rows.reduce((s, r) => s + Number(r.outstanding || 0), 0);
+
+  return {
+    period: { from: fromDate, to: toDate },
+    cashPosition: totalCollected,
+    arOutstanding,
+    collectionEfficiency: arOutstanding + totalCollected > 0
+      ? Math.round((totalCollected / (totalCollected + arOutstanding)) * 1000) / 10 : 100,
+    revenueByMode: revenue.rows,
+    accountsReceivable: ar.rows,
+    sessions: sessions.rows[0],
+    claims: claims.rows,
+    claimsPending: claims.rows.filter((c) => !['paid', 'settled'].includes(c.status)).reduce((s, c) => s + c.cnt, 0),
+    claimsSettledMtd: claims.rows.filter((c) => ['paid', 'settled'].includes(c.status)).reduce((s, c) => s + Number(c.paid || 0), 0),
+  };
+}
+
 export default {
   listStations, createStation, openCashierSession, closeCashierSession, getActiveSession,
   listTemplates, aggregatePatientAccount, getCentralizedDashboard, createInvoice, recordPayment,
-  createPaymentLink, confirmPgiPayment, getInvoice, listInvoices, generateInvoicePdf, listAuditLog,
-  logBillingAudit
+  createPaymentLink, confirmPgiPayment, getInvoice, listInvoices, listPayments, generateInvoicePdf, listAuditLog,
+  logBillingAudit, createAdjustment, voidInvoice, voidPayment, refundPayment,
+  reconcileSession, approveCreditAccount, allocatePayment, generatePatientStatement,
+  closeBillingPeriod, getCfoDashboard,
 };

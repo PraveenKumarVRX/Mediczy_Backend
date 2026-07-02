@@ -1791,13 +1791,33 @@ router.get('/patient/:patientId/eligibility', authUser, requireRole(['hospital',
  */
 router.post('/reconciliation/upload', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
   try {
-    // Accept file upload via multipart/form-data
+    const hospitalId = req.user.hospital_id || req.user.tenant_id || req.user.id;
+    const remittances = Array.isArray(req.body?.remittances) ? req.body.remittances : (req.body?.claimNumber ? [req.body] : []);
+    if (remittances.length === 0) {
+      return res.json({
+        success: true,
+        message: 'Reconciliation file received. No remittance rows in payload — upload CSV parser pending.',
+        matched: 0, unmatched: 0, total: 0,
+      });
+    }
+    const eraService = (await import('../services/hospital-era.service.js')).default;
+    const results = [];
+    for (const row of remittances) {
+      try {
+        const posted = await eraService.postEraRemittance(hospitalId, row, { id: req.user.id, name: req.user.name });
+        results.push({ success: true, ...posted });
+      } catch (e) {
+        results.push({ success: false, claimNumber: row.claimNumber, message: e.message });
+      }
+    }
+    const matched = results.filter((r) => r.success).length;
     res.json({
       success: true,
-      message: 'Reconciliation file received. Processing will be completed shortly.',
-      matched: 0,
-      unmatched: 0,
-      total: 0,
+      message: `Posted ${matched} of ${remittances.length} ERA remittance(s)`,
+      matched,
+      unmatched: remittances.length - matched,
+      total: remittances.length,
+      results,
     });
   } catch (error) {
     console.error('Reconciliation upload error:', error);

@@ -1,15 +1,17 @@
 /** GAP-BIL-001 — Charge master CRUD */
 import express from 'express';
-import { authUser } from '../middleware/auth.middleware.js';
+import { hospitalContextFromToken } from '../middleware/hospitalContext.middleware.js';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 import { runBedDayCharging } from '../services/ip-bed-day-charging.service.js';
 import { evaluateBillingClearance, autoFinalizeEstimate } from '../services/discharge-billing-clearance.service.js';
 
 const router = express.Router();
-const orgId = (req) => req.user.organization_id || req.user.tenant_id || req.user.id;
+const orgId = (req) => req.hospitalId || req.hospitalOrgId || req.user?.organization_id || req.user?.tenant_id || req.user?.id;
 
-router.get('/charges', authUser, async (req, res) => {
+router.use(hospitalContextFromToken);
+
+router.get('/charges', async (req, res) => {
   const rows = await sequelize.query(
     'SELECT * FROM charge_master WHERE organization_id = :orgId ORDER BY category, code',
     { replacements: { orgId: orgId(req) }, type: QueryTypes.SELECT },
@@ -17,7 +19,7 @@ router.get('/charges', authUser, async (req, res) => {
   res.json({ success: true, data: rows });
 });
 
-router.post('/charges', authUser, async (req, res) => {
+router.post('/charges', async (req, res) => {
   const { code, name, category, unitPrice, taxPercent, insurancePayable } = req.body;
   const [row] = await sequelize.query(
     `INSERT INTO charge_master (organization_id, code, name, category, unit_price, tax_percent, insurance_payable, active, created_at, updated_at)
@@ -33,18 +35,18 @@ router.post('/charges', authUser, async (req, res) => {
   res.status(201).json({ success: true, data: row });
 });
 
-router.post('/bed-day-charge/run', authUser, async (req, res) => {
+router.post('/bed-day-charge/run', async (req, res) => {
   const result = await runBedDayCharging(orgId(req));
   res.json({ success: true, data: result });
 });
 
-router.get('/clearance/:admissionId', authUser, async (req, res) => {
+router.get('/clearance/:admissionId', async (req, res) => {
   const data = await evaluateBillingClearance(parseInt(req.params.admissionId, 10), orgId(req));
   res.json({ success: true, data });
 });
 
-router.post('/clearance/:admissionId/finalize', authUser, async (req, res) => {
-  const data = await autoFinalizeEstimate(parseInt(req.params.admissionId, 10), orgId(req), req.user.id);
+router.post('/clearance/:admissionId/finalize', async (req, res) => {
+  const data = await autoFinalizeEstimate(parseInt(req.params.admissionId, 10), orgId(req), req.userId || req.user?.id);
   res.json({ success: true, data });
 });
 
