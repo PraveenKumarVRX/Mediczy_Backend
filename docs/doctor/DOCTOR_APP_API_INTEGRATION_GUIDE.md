@@ -1,6 +1,6 @@
 # Mediqzy — Doctor Mobile App API Integration Guide
 
-> **Version:** 2.11 · **Last Updated:** 2026-06-13  
+> **Version:** 2.12 · **Last Updated:** 2026-07-02  
 > **Base URL (Production):** `https://app.mediqzy.com/api`  
 > **WebSocket URL:** `https://app.mediqzy.com` (path: `/socket.io`)  
 > **LiveKit URL:** `wss://msh-kw9tvxa9.livekit.cloud` *(LiveKit Cloud)*
@@ -47,6 +47,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| **2.12** | 2026-07-02 | Sanity pass: fixed broken markdown fence in Section 15.1.3 (Clinical Workflow); Section 9.10 documents `GET /api/doctors/my-patients/:patientId/vitals-history` and clarifies that patient vitals **trend charts** are not exposed as a dedicated endpoint (use history list or Remote Health Monitoring trends); Section 28 RIS-referred response fields aligned to live `ris_studies` column names (`patient_name`, `body_part`, `study_description`, `report_status`, `report_text`, `study_date`, `id` for file download); Section 20 attached pharmacy/lab paths confirmed as `/api/doctor-settings/*`. |
 | **2.11** | 2026-06-13 | Doctor mobile integration update: appointment settings now preserve `blockedSlots`, `inPerson.locationId`, and `practiceLocations`; patient vitals now persist through the `patient_vitals` migration and return `201` on create; iSHA appointment-list commands now query live doctor appointments instead of model-generated content. |
 | **2.10** | 2026-06-05 | Deploy health script now supports integrated review-policy smoke execution in a single run (`scripts/qa/doctor-auth-deploy-health.mjs`) when `DOCTOR_EMAIL` and `DOCTOR_PASSWORD` are provided. |
 | **2.9** | 2026-06-05 | Added deploy-ready smoke command for review consultation policy validation (`scripts/qa/doctor-review-policy-smoke.mjs`) that verifies: base consultation booking succeeds, first review is free (`freeReviewApplied=true`), and second review is billable. |
@@ -1781,6 +1782,47 @@ Add a clinical history entry for the patient.
 }
 ```
 
+### 9.10 Get Patient Vitals History
+
+> **New — verified July 2026**
+
+```
+GET /api/doctors/my-patients/:patientId/vitals-history
+Authorization: Bearer <token>
+```
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `limit` | integer | 20 | Max records to return (newest first) |
+
+Returns a chronological list of vitals snapshots from `patient_vitals`. There is **no** separate doctor-app endpoint for vitals **trend charts** (e.g. sparklines over 30 days). Build charts client-side from this history list, or use Remote Health Monitoring trends (`GET /api/doctors/health-monitoring/patients/:patientId/trends`) for enrolled monitoring patients only.
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "patientId": "42",
+  "count": 2,
+  "vitals": [
+    {
+      "id": 101,
+      "patient_id": 42,
+      "recorded_by_doctor_id": 7,
+      "bp": "120/80",
+      "heart_rate": 72,
+      "temperature": "98.60",
+      "spo2": 98,
+      "weight": "70.00",
+      "height": "170.00",
+      "blood_glucose": "110.00",
+      "notes": "Post-consultation check",
+      "recorded_at": "2026-06-13T10:30:00.000Z"
+    }
+  ]
+}
+```
+
 **Mobile App API (`api.js`):**
 
 ```javascript
@@ -1791,6 +1833,7 @@ export const Patients = {
   getDetails:     (id)     => api.get(`/doctors/patients/${id}`),
   getMedicalHistory:(id)   => api.get(`/doctors/patients/${id}/history`),
   recordVitals:   (id, d)  => api.post(`/doctors/my-patients/${id}/vitals`, d),
+  getVitalsHistory:(id, p) => api.get(`/doctors/my-patients/${id}/vitals-history`, { params: p }),
   addHistory:     (id, d)  => api.post(`/doctors/my-patients/${id}/history`, d),
 };
 ```
@@ -2866,7 +2909,6 @@ Authorization: Bearer <token>
 GET /api/doctor/clinical-workflow/notes/patient/:patientId
 Authorization: Bearer <token>
 ```
-```
 
 ### 15.2 ICD-10 Code Search
 
@@ -3851,10 +3893,12 @@ Returns imaging studies referred to or associated with this doctor's patients.
 | Param | Type | Description |
 |---|---|---|
 | `modality` | string | Filter: `CT` · `MRI` · `USG` · `ECHO` · `XRAY` · `PET` |
-| `status` | string | `pending` · `reported` · `reviewed` |
-| `patientId` | integer | Filter by patient |
+| `status` | string | Study status in `ris_studies.status` |
+| `patientName` | string | Partial match on `patient_name` |
+| `from` | string | `study_date` on or after (YYYY-MM-DD) |
+| `to` | string | `study_date` on or before (YYYY-MM-DD) |
 | `page` | integer | Default: 1 |
-| `limit` | integer | Default: 20 |
+| `limit` | integer | Default: 50 |
 
 **Response (200):**
 
@@ -3864,22 +3908,30 @@ Returns imaging studies referred to or associated with this doctor's patients.
   "studies": [
     {
       "id": 101,
-      "patientName": "Jane Doe",
-      "patientId": 42,
+      "patient_name": "Jane Doe",
       "modality": "CT",
-      "bodyPart": "Chest",
-      "description": "CT Chest with contrast — rule out PE",
-      "reportStatus": "reported",
-      "reportText": "No evidence of pulmonary embolism. Mild bilateral pleural effusion.",
-      "reportedAt": "2026-04-30T14:30:00.000Z",
-      "referredAt": "2026-04-29T10:00:00.000Z",
-      "fileId": 55,
-      "accessionNumber": "RIS-2026-101"
+      "body_part": "Chest",
+      "study_description": "CT Chest with contrast — rule out PE",
+      "report_status": "reported",
+      "report_text": "No evidence of pulmonary embolism. Mild bilateral pleural effusion.",
+      "reported_at": "2026-04-30T14:30:00.000Z",
+      "study_date": "2026-04-29",
+      "accession_number": "RIS-2026-101",
+      "referring_doctor_id": 7,
+      "referring_doctor_name": "Dr. Smith",
+      "status": "reported",
+      "file_name": "report.pdf",
+      "mime_type": "application/pdf",
+      "is_dicom": false
     }
   ],
-  "pagination": { "total": 12, "page": 1, "limit": 20, "pages": 1 }
+  "total": 12,
+  "page": 1,
+  "limit": 50
 }
 ```
+
+> **Field note:** Use study `id` (not a separate `fileId`) when calling the file endpoint below.
 
 ### 28.2 Get Study Detail
 
@@ -3893,16 +3945,29 @@ Authorization: Bearer <token>
 ```json
 {
   "success": true,
-  "study": { "id": 101, "patientName": "Jane Doe", "modality": "CT", "reportText": "...", "fileId": 55, ... }
+  "study": {
+    "id": 101,
+    "patient_name": "Jane Doe",
+    "modality": "CT",
+    "body_part": "Chest",
+    "study_description": "CT Chest with contrast",
+    "report_text": "No evidence of pulmonary embolism.",
+    "report_status": "reported",
+    "reported_at": "2026-04-30T14:30:00.000Z",
+    "study_date": "2026-04-29",
+    "accession_number": "RIS-2026-101"
+  }
 }
 ```
 
 ### 28.3 Get Study File (DICOM / PDF Report)
 
 ```
-GET /api/doctors/ris-referred/file/:fileId
+GET /api/doctors/ris-referred/file/:studyId
 Authorization: Bearer <token>
 ```
+
+`:studyId` is the study `id` from list/detail responses (same row used for authorization).
 
 Returns the study file (DICOM viewer link or PDF report). In the mobile app, this URL is opened via `Linking.openURL()` for external viewer or download.
 
@@ -3917,8 +3982,8 @@ import { Linking } from 'react-native';
 const res = await DoctorImaging.list({ modality: selectedModality });
 setStudies(res.data.studies);
 
-// Open/download report
-const fileUrl = DoctorImaging.getFileUrl(study.fileId);
+// Open/download report (study id, not a separate fileId)
+const fileUrl = DoctorImaging.getFileUrl(study.id);
 await Linking.openURL(fileUrl);
 ```
 
@@ -3928,7 +3993,7 @@ await Linking.openURL(fileUrl);
 export const DoctorImaging = {
   list:       (params) => api.get('/doctors/ris-referred', { params }),
   getById:    (id)     => api.get(`/doctors/ris-referred/${id}`),
-  getFileUrl: (id)     => `${BASE_URL}/doctors/ris-referred/file/${id}`,
+  getFileUrl: (studyId)=> `${BASE_URL}/doctors/ris-referred/file/${studyId}`,
 };
 ```
 
@@ -4204,7 +4269,7 @@ The doctor app (`MSH_D_App`) uses Firebase project **`doctorapp-6c768`** with se
 
 - Lists RIS-referred studies: `GET /api/doctors/ris-referred`
 - Filter chips (CT/MRI/USG/ECHO/XRAY) pass `?modality=` query param
-- Open DICOM/PDF: `Linking.openURL(DoctorImaging.getFileUrl(study.fileId))`
+- Open DICOM/PDF: `Linking.openURL(DoctorImaging.getFileUrl(study.id))`
 - Accessible via Sidebar → **Lab Imaging**
 
 ### Emergency Triage

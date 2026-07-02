@@ -3,8 +3,8 @@
  * department portals: Asset, Biomedical, Blood Bank, Consent, CSSD, Dietary,
  * Finance, Infection Control, Mortuary, Procurement, Queue Management.
  *
- * All stat values are static placeholders ("0" / "—") until backend API
- * integration is added per department.
+ * SCM and Procurement dashboards fetch live stats from their overview APIs.
+ * Other department stat cards use static placeholders until wired.
  */
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -604,10 +604,10 @@ const procurementConfig: DeptDashboardConfig = {
   navSections: procurementNav,
   heroGradient: "bg-gradient-to-br from-indigo-600 to-indigo-800",
   stats: [
-    { icon: ShoppingCart, label: "Open POs",              value: "0",  gradient: "", iconBg: "bg-indigo-100 dark:bg-indigo-950 text-indigo-600" },
-    { icon: MonitorCheck, label: "Pending Approvals",     value: "0",  gradient: "", iconBg: "bg-amber-100 dark:bg-amber-950 text-amber-600" },
-    { icon: Truck,        label: "Received This Month",   value: "0",  gradient: "", iconBg: "bg-green-100 dark:bg-green-950 text-green-600" },
-    { icon: DollarSign,   label: "Total PO Value",        value: "₹0", gradient: "", iconBg: "bg-blue-100 dark:bg-blue-950 text-blue-600" },
+    { icon: ShoppingCart, label: "Open POs",          value: "0", gradient: "", iconBg: "bg-indigo-100 dark:bg-indigo-950 text-indigo-600" },
+    { icon: MonitorCheck, label: "Awaiting Receipt",  value: "0", gradient: "", iconBg: "bg-amber-100 dark:bg-amber-950 text-amber-600" },
+    { icon: Truck,        label: "Approved Vendors",  value: "0", gradient: "", iconBg: "bg-green-100 dark:bg-green-950 text-green-600" },
+    { icon: CheckCircle2, label: "Today's GRNs",      value: "0", gradient: "", iconBg: "bg-blue-100 dark:bg-blue-950 text-blue-600" },
   ],
   quickActions: [
     { icon: ShoppingCart, label: "Purchase Orders", path: "/procurement/orders" },
@@ -669,6 +669,65 @@ const scmConfig: DeptDashboardConfig = {
     { icon: Stethoscope,  label: "Clinical Supply", path: "/scm/clinical" },
     { icon: BarChart3,    label: "Reports",         path: "/scm/reports" },
   ],
+};
+
+type ProcurementOverview = {
+  open_orders?: number;
+  awaiting_receipt?: number;
+  approved_vendors?: number;
+  todays_grns?: number;
+};
+
+const PROCUREMENT_STAT_KEYS: Record<string, keyof ProcurementOverview> = {
+  "Open POs": "open_orders",
+  "Awaiting Receipt": "awaiting_receipt",
+  "Approved Vendors": "approved_vendors",
+  "Today's GRNs": "todays_grns",
+};
+
+const ProcurementDashboardView = () => {
+  const [overview, setOverview] = useState<ProcurementOverview | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get("/procurement/overview");
+        if (!cancelled) setOverview(data.data ?? {});
+      } catch {
+        if (!cancelled) setOverview(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const config = useMemo<DeptDashboardConfig>(() => ({
+    ...procurementConfig,
+    stats: procurementConfig.stats.map((stat) => {
+      const key = PROCUREMENT_STAT_KEYS[stat.label];
+      const raw = key && overview ? overview[key] : undefined;
+      const value = loading ? "…" : String(raw ?? 0);
+      return { ...stat, value };
+    }),
+  }), [overview, loading]);
+
+  return (
+    <DeptStaffLayout
+      deptKey={procurementConfig.deptKey}
+      deptName={procurementConfig.deptName}
+      badgeLabel={procurementConfig.badgeLabel}
+      loginPath={procurementConfig.loginPath}
+      DeptIcon={procurementConfig.DeptIcon}
+      navSections={procurementConfig.navSections}
+      title="Dashboard"
+      subtitle="Procurement command center"
+    >
+      <DeptDashboard config={config} deptData={null} />
+    </DeptStaffLayout>
+  );
 };
 
 type ScmOverview = {
@@ -788,7 +847,7 @@ export const DietaryDashboard = () => <DashboardWrapper config={dietaryConfig} /
 export const FinanceDashboard = () => <DashboardWrapper config={financeConfig} />;
 export const InfectionControlDashboard = () => <DashboardWrapper config={infectionControlConfig} />;
 export const MortuaryDashboard = () => <DashboardWrapper config={mortuaryConfig} />;
-export const ProcurementDashboard = () => <DashboardWrapper config={procurementConfig} />;
+export const ProcurementDashboard = () => <ProcurementDashboardView />;
 export const ScmDashboard = () => <ScmDashboardView />;
 export const QueueDashboard = () => <DashboardWrapper config={queueConfig} />;
 
