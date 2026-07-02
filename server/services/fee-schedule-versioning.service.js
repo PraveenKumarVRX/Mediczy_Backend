@@ -5,6 +5,22 @@ import pool from '../db/pgPool.js';
 
 async function ensureTables() {
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS charge_master (
+      id SERIAL PRIMARY KEY,
+      organization_id INTEGER NOT NULL,
+      code VARCHAR(50) NOT NULL,
+      name VARCHAR(200) NOT NULL,
+      category VARCHAR(30) NOT NULL,
+      unit_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+      tax_percent NUMERIC(5,2) DEFAULT 0,
+      insurance_payable BOOLEAN DEFAULT TRUE,
+      active BOOLEAN DEFAULT TRUE,
+      metadata JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (organization_id, code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_charge_master_category ON charge_master(category);
     CREATE TABLE IF NOT EXISTS charge_master_versions (
       id BIGSERIAL PRIMARY KEY,
       organization_id INTEGER NOT NULL,

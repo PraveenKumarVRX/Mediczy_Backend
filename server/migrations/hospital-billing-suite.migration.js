@@ -199,12 +199,12 @@ async function seedDefaults() {
       '{"disclaimer":"This is a computer-generated bill.","showSignature":true}'::jsonb
     WHERE NOT EXISTS (SELECT 1 FROM hospital_bill_templates WHERE hospital_id = 1 AND template_code = 'GST_ITEMIZED');
 
-    INSERT INTO hospital_bill_templates (hospital_id, template_code, template_name, template_type, payer_type, header_config)
+    INSERT INTO hospital_bill_templates (hospital_id, template_code, template_name, template_type, payer_type, is_default, header_config)
     SELECT 1, 'INSURANCE_SUMMARY', 'Insurance Summary Bill', 'summary', 'insurance', FALSE,
       '{"title":"Insurance Bill Summary","showPolicy":true,"showPreAuth":true}'::jsonb
     WHERE NOT EXISTS (SELECT 1 FROM hospital_bill_templates WHERE hospital_id = 1 AND template_code = 'INSURANCE_SUMMARY');
 
-    INSERT INTO hospital_bill_templates (hospital_id, template_code, template_name, template_type, payer_type, header_config)
+    INSERT INTO hospital_bill_templates (hospital_id, template_code, template_name, template_type, payer_type, is_default, header_config)
     SELECT 1, 'CASH_RECEIPT', 'Cash Counter Receipt', 'receipt', 'cash', FALSE,
       '{"title":"Payment Receipt","thermal":true}'::jsonb
     WHERE NOT EXISTS (SELECT 1 FROM hospital_bill_templates WHERE hospital_id = 1 AND template_code = 'CASH_RECEIPT');
