@@ -81,6 +81,7 @@ const Wrap = ({ title, subtitle, children, actions }: WrapProps) => (
     navSections={icuNavSections}
     title={title}
     subtitle={subtitle}
+    copilotModule="icu"
   >
     <div className="space-y-5">
       <div className="flex items-center justify-between"><div /><div className="flex gap-2">{actions}</div></div>

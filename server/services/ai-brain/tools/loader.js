@@ -10,5 +10,6 @@ import './memory-tools.js';
 import './rag-tools.js';
 import './intelligence-tools.js';
 import './system-tools.js';
+import './module-tools.js';
 
 export { getToolDefinitions, listTools, execute } from './index.js';

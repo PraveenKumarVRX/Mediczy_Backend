@@ -107,6 +107,7 @@ const OTDashboard = () => {
       navSections={navSections}
       title="OT Dashboard"
       subtitle="Surgical scheduling & theatre management"
+      copilotModule="ot"
     >
       {/* KPI Cards */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-5 mb-6">

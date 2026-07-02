@@ -217,6 +217,9 @@ function _mapToAgentRole(rawRole) {
   if (r.includes('platform') || r === 'superadmin' || r === 'super_admin') return ROLES.PLATFORM_ADMIN;
   if (r.includes('hospital_admin') || r === 'admin' || r === 'manager') return ROLES.HOSPITAL_ADMIN;
   if (r === 'medical_director' || r === 'medicaldirector') return ROLES.HOSPITAL_ADMIN;
+  if (['hospital', 'ceo', 'coo', 'cfo', 'ms', 'medical_superintendent', 'cmo',
+       'billing', 'accounts_staff', 'insurance_desk_staff', 'insurance_coordinator',
+       'receptionist'].includes(r)) return ROLES.HOSPITAL_ADMIN;
   if (r === 'doctor' || r === 'physician' || r.startsWith('dr')) return ROLES.DOCTOR;
   if (r === 'nurse' || r === 'staff' || r === 'paramedic') return ROLES.NURSE;
   if (r === 'analyst' || r === 'data_analyst') return ROLES.ANALYST;

@@ -364,6 +364,37 @@ router.post('/pgi/confirm', requireBillingWrite, async (req, res) => {
   }
 });
 
+// ── Denial management (Wave 2) ────────────────────────────────────────────────
+router.get('/denials', requireBillingRead, async (req, res) => {
+  try {
+    const denialService = (await import('../../services/denial-management.service.js')).default;
+    const denials = await denialService.listDenials(req.hospitalId, req.query);
+    res.json({ success: true, denials });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+router.post('/denials', requireBillingWrite, async (req, res) => {
+  try {
+    const denialService = (await import('../../services/denial-management.service.js')).default;
+    const denial = await denialService.createDenial(req.hospitalId, req.body, req.userId);
+    res.status(201).json({ success: true, denial });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
+
+router.post('/denials/:id/appeal', requireBillingWrite, async (req, res) => {
+  try {
+    const denialService = (await import('../../services/denial-management.service.js')).default;
+    const result = await denialService.draftAppeal(req.hospitalId, Number(req.params.id), req.userId);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
+
 // ── Audit trail ───────────────────────────────────────────────────────────
 router.get('/audit', requireBillingRead, async (req, res) => {
   try {

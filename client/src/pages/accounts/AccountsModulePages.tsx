@@ -82,12 +82,13 @@ export const accountsNavSections: DeptNavSection[] = [
 const navSections = accountsNavSections;
 
 // ── Shared UI helpers ───────────────────────────────────────────────────────
-const Wrap = ({ title, subtitle, children }: {
+const Wrap = ({ title, subtitle, children, copilotModule = 'accounts' as const }: {
   title: string; subtitle: string; children: React.ReactNode;
+  copilotModule?: import('@/config/moduleCopilot.registry').ModuleCopilotId;
 }) => (
   <HospDeptLayout deptKey="accounts" deptName="Accounts" badgeLabel="Accounts"
     loginPath="/accounts/login" DeptIcon={DollarSign} navSections={navSections}
-    title={title} subtitle={subtitle}>
+    title={title} subtitle={subtitle} copilotModule={copilotModule}>
     {children}
   </HospDeptLayout>
 );

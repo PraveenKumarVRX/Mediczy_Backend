@@ -351,6 +351,9 @@ async function runAgent(task, identity, conversationMessages, ragContext = '', o
         userId: identity.userId,
         userType: identity.role,
         agentId: task.agentId,
+        hospitalId: opts.hospitalId,
+        organizationId: opts.organizationId,
+        tenantId: opts.hospitalId || opts.organizationId,
       });
 
       toolsExecuted.push({ name: tc.function.name, result: toolResult });
@@ -384,7 +387,7 @@ async function runAgent(task, identity, conversationMessages, ragContext = '', o
 /**
  * Execute a task DAG — runs independent tasks in parallel, respects dependsOn.
  */
-async function executeGraph(plan, identity, conversationMessages) {
+async function executeGraph(plan, identity, conversationMessages, toolContext = {}) {
   // Get agentic RAG context for the overall query (shared across agents)
   let ragContext = '';
   try {
@@ -415,6 +418,8 @@ async function executeGraph(plan, identity, conversationMessages) {
       ready.map(task => runAgent(task, identity, conversationMessages, ragContext, {
         cognitiveTier:      plan.cognitiveTier,
         cognitiveDecisionId: plan.cognitiveDecisionId,
+        hospitalId: toolContext.hospitalId,
+        organizationId: toolContext.organizationId,
       }))
     );
 
@@ -541,8 +546,11 @@ export async function processRequest({ message, req, conversationId, contextMess
   timeoutError.code = 'AGENT_TIMEOUT';
   timeoutError.status = 504;
 
+  const hospitalId = req.hospitalId || req.user?.hospital_id || req.user?.tenant_id || req.user?.organization_id;
+  const toolContext = { hospitalId, organizationId: hospitalId };
+
   const agentResults = await Promise.race([
-    executeGraph(plan, identity, contextMessages),
+    executeGraph(plan, identity, contextMessages, toolContext),
     new Promise((_, rej) => setTimeout(() => rej(timeoutError), AGENT_RUN_TIMEOUT_MS)),
   ]);
   const totalTokens = agentResults.reduce((s, r) => s + (r.tokens || 0), 0);

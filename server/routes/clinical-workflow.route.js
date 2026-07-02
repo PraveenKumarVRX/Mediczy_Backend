@@ -226,10 +226,22 @@ router.post('/notes/:id/sign', authDoctor, async (req, res) => {
 
     const codingSuggestions = await createCodingSuggestions(note);
 
+    let billingBridge = null;
+    try {
+      const hospitalId = req.doctor?.hospital_id || req.user?.hospital_id || req.user?.tenant_id;
+      if (hospitalId) {
+        const { bridgeCodingToBilling } = await import('../services/clinical-coding-bridge.service.js');
+        billingBridge = await bridgeCodingToBilling(note, hospitalId);
+      }
+    } catch (e) {
+      console.warn('[clinical-workflow] billing bridge:', e.message);
+    }
+
     res.json({
       success: true,
       data: note,
       codingSuggestions,
+      billingBridge,
       requiresCodingReview: codingSuggestions.length > 0
     });
   } catch (error) {

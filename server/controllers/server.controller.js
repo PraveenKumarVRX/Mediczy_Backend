@@ -4,6 +4,7 @@ import { setupSocketIO } from "../chat/chathandler.controller.js";
 import AppointmentNotificationService from "../services/appointment-notification.service.js";
 import socketService from "../services/socket.service.js";
 import cacheService from "../services/cache.service.js";
+import { attachScribeWebSocket } from "../services/scribe-stream.service.js";
 
 /**
  * Server Controller
@@ -40,6 +41,8 @@ class ServerController {
     console.log('🔔 Initializing Appointment Notification Service...');
     this.notificationService = new AppointmentNotificationService(this.io);
     this.notificationService.initialize();
+
+    attachScribeWebSocket(this.server);
     
     return this.server;
   }

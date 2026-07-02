@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useTheme } from "@/utils/theme.provider";
+import ModuleCopilot from "@/components/copilot/ModuleCopilot";
 
 interface LabLayoutProps {
   children: ReactNode;
@@ -145,6 +146,7 @@ const LabLayout = ({ children, title, subtitle }: LabLayoutProps) => {
 
         <main className="p-6">{children}</main>
       </div>
+      <ModuleCopilot moduleId="lab" context={{ title }} />
     </div>
   );
 };

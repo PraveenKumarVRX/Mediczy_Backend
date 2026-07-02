@@ -59,6 +59,13 @@ const T = {
   // System / admin (isSystem=true in registry)
   SYSTEM:        ['list_agents', 'get_system_status', 'get_audit_logs',
                   'configure_agent', 'reload_prompts', 'get_agent_metrics'],
+
+  // Hospital module copilot tools
+  MODULE_BILLING: ['get_billing_account_summary', 'get_open_invoices', 'get_insurance_claims_summary'],
+  MODULE_ADT:     ['get_admission_status', 'get_discharge_clearance'],
+  MODULE_LAB:     ['get_lab_orders_pending'],
+  MODULE_CLINICAL:['get_early_warning_alerts', 'query_patient_cohort', 'get_discharge_clearance'],
+  MODULE_QUALITY: ['get_quality_kpi_snapshot'],
 };
 
 // ─── Agent Definitions ────────────────────────────────────────────────────────
@@ -82,6 +89,8 @@ export const AGENTS = {
       ...T.LAB_READ, ...T.LAB_WRITE,
       ...T.WELLNESS, ...T.MEMORY, ...T.RAG,
       ...T.INTEL, ...T.FINANCE, ...T.SYSTEM,
+      ...T.MODULE_BILLING, ...T.MODULE_ADT, ...T.MODULE_LAB,
+      ...T.MODULE_CLINICAL, ...T.MODULE_QUALITY,
     ],
     systemPromptSuffix: `
 AGENT ROLE: Admin Agent — full privileged system access.
@@ -106,6 +115,7 @@ ALWAYS: confirm with the user before modifying system configuration.`,
       ...T.LAB_READ, ...T.LAB_WRITE,
       ...T.WELLNESS, ...T.MEMORY, ...T.RAG,
       ...T.INTEL, ...T.APPT,
+      ...T.MODULE_CLINICAL, ...T.MODULE_ADT, ...T.MODULE_LAB,
     ],
     systemPromptSuffix: `
 AGENT ROLE: Clinical Agent — specialist medical AI assistant.
@@ -129,6 +139,7 @@ ALWAYS: flag critical values (BP > 180/120, SpO2 < 92%, glucose < 60 or > 400).`
     allowedTools: [
       ...T.PATIENT_READ, ...T.LAB_READ,
       ...T.WELLNESS, ...T.RAG, ...T.INTEL, ...T.FINANCE,
+      ...T.MODULE_BILLING, ...T.MODULE_QUALITY, ...T.MODULE_CLINICAL,
     ],
     systemPromptSuffix: `
 AGENT ROLE: Analyst Agent — data intelligence, READ-ONLY.
@@ -150,6 +161,7 @@ ALWAYS: include sample size, confidence intervals, and data quality caveats in a
     priority: 5,
     allowedTools: [
       ...T.APPT, ...T.WELLNESS, ...T.MEMORY,
+      ...T.MODULE_ADT,
     ],
     systemPromptSuffix: `
 AGENT ROLE: Worker Agent — task execution specialist.
@@ -171,6 +183,7 @@ Be efficient. Confirm task completion with a brief summary.`,
     priority: 5,
     allowedTools: [
       ...T.RAG, ...T.INTEL, ...T.LAB_READ,
+      ...T.MODULE_LAB,
     ],
     systemPromptSuffix: `
 AGENT ROLE: Research Agent — medical knowledge specialist.
@@ -192,6 +205,7 @@ ALWAYS: cite sources. Rate evidence quality (Grade A/B/C or LOE 1/2/3).`,
     priority: 7,
     allowedTools: [
       ...T.FINANCE, ...T.PATIENT_READ, ...T.LAB_READ,
+      ...T.MODULE_BILLING, ...T.MODULE_ADT,
     ],
     systemPromptSuffix: `
 AGENT ROLE: Insurance Agent — healthcare finance specialist.
@@ -214,6 +228,7 @@ ALWAYS: verify policy coverage before approving claims. Flag exclusions explicit
     allowedTools: [
       ...T.PATIENT_READ, ...T.PATIENT_WRITE,
       ...T.INTEL, ...T.APPT,
+      ...T.MODULE_CLINICAL, ...T.MODULE_ADT,
     ],
     systemPromptSuffix: `
 AGENT ROLE: Emergency Agent — critical care AI triage coordinator.

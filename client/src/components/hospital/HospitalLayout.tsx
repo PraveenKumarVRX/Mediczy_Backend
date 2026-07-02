@@ -1,5 +1,5 @@
-import { ReactNode, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { ReactNode, useState, useMemo } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import HospitalSidebar from "./HospitalSidebar";
 import { Bell, HeartPulse, ChevronDown, Building2, Sun, Moon, Loader2, Menu } from "lucide-react";
@@ -15,12 +15,29 @@ import {
 import { useTheme } from "@/utils/theme.provider";
 import { useHospitalAuth } from "@/hooks/useHospitalAuth";
 import api from "@/utils/api";
+import ModuleCopilot from "@/components/copilot/ModuleCopilot";
+import type { ModuleCopilotId } from "@/config/moduleCopilot.registry";
 
 interface HospitalLayoutProps {
   children: ReactNode;
   title?: string;
   subtitle?: string;
+  copilotModule?: ModuleCopilotId;
 }
+
+const PATH_COPILOT_MAP: Array<[RegExp, ModuleCopilotId]> = [
+  [/\/hospital\/billing/i, 'billing'],
+  [/\/hospital\/cfo/i, 'cfo'],
+  [/\/hospital\/ehr/i, 'emr'],
+  [/\/hospital\/adt/i, 'adt'],
+  [/\/hospital\/nurse/i, 'nursing'],
+  [/\/hospital\/pharmacy/i, 'pharmacy'],
+  [/\/hospital\/lab/i, 'lab'],
+  [/\/hospital\/insurance/i, 'insurance'],
+  [/\/hospital\/icu/i, 'icu'],
+  [/\/hospital\/mrd/i, 'mrd'],
+  [/\/hospital\/security/i, 'security'],
+];
 
 interface Notification {
   id: string | number;
@@ -28,8 +45,16 @@ interface Notification {
   time: string;
 }
 
-const HospitalLayout = ({ children, title, subtitle }: HospitalLayoutProps) => {
+const HospitalLayout = ({ children, title, subtitle, copilotModule }: HospitalLayoutProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const resolvedCopilot = useMemo(() => {
+    if (copilotModule) return copilotModule;
+    for (const [re, id] of PATH_COPILOT_MAP) {
+      if (re.test(location.pathname)) return id;
+    }
+    return undefined;
+  }, [copilotModule, location.pathname]);
   const { setTheme, theme } = useTheme();
   const { hospitalData, isLoading: authLoading, logout } = useHospitalAuth();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -188,6 +213,7 @@ const HospitalLayout = ({ children, title, subtitle }: HospitalLayoutProps) => {
         {/* Page Content */}
         <main className="p-4 md:p-6">{children}</main>
       </div>
+      {resolvedCopilot && <ModuleCopilot moduleId={resolvedCopilot} context={{ path: location.pathname, title }} />}
     </div>
   );
 };

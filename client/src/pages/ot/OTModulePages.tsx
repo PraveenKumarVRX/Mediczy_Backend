@@ -71,7 +71,7 @@ const Wrap = ({ title, subtitle, children, actions }: {
 }) => (
   <HospDeptLayout deptKey="ot" deptName="Operation Theatre" badgeLabel="OT"
     loginPath="/ot/login" DeptIcon={Scissors} navSections={otNavSections}
-    title={title} subtitle={subtitle}>
+    title={title} subtitle={subtitle} copilotModule="ot">
     <div className="space-y-5">
       <div className="flex items-center justify-between"><div /><div className="flex gap-2">{actions}</div></div>
       {children}

@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useTheme } from "@/utils/theme.provider";
+import ModuleCopilot from "@/components/copilot/ModuleCopilot";
 
 interface PharmacyLayoutProps {
   children: ReactNode;
@@ -131,6 +132,7 @@ const PharmacyLayout = ({ children, title, subtitle }: PharmacyLayoutProps) => {
 
         <main className="p-6">{children}</main>
       </div>
+      <ModuleCopilot moduleId="pharmacy" />
     </div>
   );
 };

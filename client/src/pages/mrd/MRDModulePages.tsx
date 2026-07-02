@@ -62,7 +62,7 @@ const wrap = (title: string, subtitle: string, Icon: React.ElementType, addBtn?:
   () => (
     <HospDeptLayout deptKey="mrd" deptName="Medical Records" badgeLabel="MRD"
       loginPath="/mrd/login" DeptIcon={FolderOpen} navSections={navSections}
-      title={title} subtitle={subtitle}>
+      title={title} subtitle={subtitle} copilotModule="mrd">
       <PlaceholderPage title={title} description={subtitle} icon={Icon} addBtn={addBtn} />
     </HospDeptLayout>
   );

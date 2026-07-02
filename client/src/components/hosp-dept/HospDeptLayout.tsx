@@ -17,6 +17,8 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useTheme } from "@/utils/theme.provider";
 import { useDeptAuth, DeptAuthData } from "@/hooks/useHospDeptAuth";
+import ModuleCopilot from "@/components/copilot/ModuleCopilot";
+import type { ModuleCopilotId } from "@/config/moduleCopilot.registry";
 
 export interface DeptNavItem {
   icon: React.ElementType;
@@ -40,6 +42,7 @@ interface HospDeptLayoutProps {
   navSections: DeptNavSection[];
   title?: string;
   subtitle?: string;
+  copilotModule?: ModuleCopilotId;
 }
 
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
@@ -160,7 +163,7 @@ const Sidebar = ({ deptKey, deptName, DeptIcon, navSections, logout }: SidebarPr
 
 const HospDeptLayout = ({
   children, deptKey, deptName, badgeLabel, loginPath,
-  DeptIcon, navSections, title, subtitle,
+  DeptIcon, navSections, title, subtitle, copilotModule,
 }: HospDeptLayoutProps) => {
   const navigate = useNavigate();
   const { setTheme, theme } = useTheme();
@@ -250,6 +253,7 @@ const HospDeptLayout = ({
         {/* Page content */}
         <main className="p-6">{children}</main>
       </div>
+      {copilotModule && <ModuleCopilot moduleId={copilotModule} context={{ deptKey, screen: title }} />}
     </div>
   );
 };

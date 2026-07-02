@@ -201,6 +201,7 @@ const PageShell = ({ title, subtitle, actions, children }: {
     navSections={qualityNavSections}
     title={title}
     subtitle={subtitle}
+    copilotModule="quality"
   >
     <div className="space-y-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

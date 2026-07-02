@@ -42,7 +42,8 @@ export function hospitalContextFromToken(req, res, next) {
 function attachContext(req, res, next) {
   req.hospitalId = resolveHospitalIdFromRequest(req);
   req.hospitalOrgId = req.hospitalId;
-  if (!req.hospitalId) {
+  req.userId = req.user?.id || req.userId;
+  if (!req.hospitalId && !req.user?.id) {
     return res.status(401).json({ success: false, message: 'Hospital organization context required' });
   }
   next();
