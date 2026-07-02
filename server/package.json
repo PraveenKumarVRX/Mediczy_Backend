@@ -9,7 +9,7 @@
     "migrate:status": "node scripts/migrate-all.mjs status",
     "test:hospital-portal-smoke": "node scripts/qa/hospital-portal-smoke.mjs",
     "test:tenant-pentest": "node scripts/qa/tenant-isolation-pentest.mjs",
-    "test:smoke": "node scripts/sanity-smoke-regression.mjs",
+    "test:worldclass-smoke": "node scripts/qa/worldclass-features-smoke.mjs",
     "test:communication-hub-smoke": "node scripts/qa/communication-hub-smoke.mjs",
     "test:whatsapp-sib-auth-smoke": "node scripts/whatsapp-sib-auth-smoke.mjs",
     "test:rag-refresh-audit": "node scripts/rag-refresh-audit.mjs",
