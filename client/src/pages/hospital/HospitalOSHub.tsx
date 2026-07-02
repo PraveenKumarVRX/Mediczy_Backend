@@ -77,7 +77,7 @@ const SECTIONS: Section[] = [
   {
     label: 'Revenue & Insurance',
     modules: [
-      { title: 'IP Billing', description: 'Charge master & clearance', path: '/hospital/billing', icon: Receipt, gradient: 'from-emerald-600 to-green-700' },
+      { title: 'IP Billing', description: 'Billing suite · stations · PGI · audit', path: '/hospital/billing', icon: Receipt, gradient: 'from-emerald-600 to-green-700' },
       { title: 'Insurance Claims', description: 'Pre-auth & NHCX', path: '/hospital/insurance-claims', icon: Shield, gradient: 'from-blue-500 to-sky-600' },
       { title: 'Pharmacy Dispense', description: 'IP pharmacy queue', path: '/hospital/pharmacy-dispense', icon: Pill, gradient: 'from-green-500 to-lime-600' },
       { title: 'Corporate Health', description: 'Employer contracts & checkups', path: '/hospital/corporate-management', icon: Building2, gradient: 'from-orange-500 to-amber-600' },
