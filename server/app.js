@@ -219,6 +219,7 @@ import hospitalPracticeRouter from './routes/hospital/practice.route.js';
 import hospitalBillingRouter from './routes/hospital/billing.route.js';
 import moduleCopilotRouter from './routes/module-copilot.route.js';
 import rwePlatformRouter from './routes/rwe-platform.route.js';
+import hospitalClinicalNotesRouter from './routes/hospital-clinical-notes.route.js';
 import executiveDashboardRouter from './routes/hospital/executive-dashboard.route.js';
 import userAssociationRouter from './routes/userAssociation.route.js';
 
@@ -1493,6 +1494,7 @@ app.use('/api', hospitalRouter); // Hospital directory and SPN network
 app.use('/api/hospital', executiveDashboardRouter); // CEO/CFO/COO/MS executive dashboards
 app.use('/api/hospital/practice', hospitalPracticeRouter); // Hospital practice management (appointments, patients, staff, resources)
 app.use('/api/hospital/billing', hospitalBillingRouter); // Hospital billing suite — stations, invoices, PGI, audit
+app.use('/api/hospital/clinical-notes', hospitalClinicalNotesRouter); // Hospital HMIS progress notes / SOAP
 app.use('/api/hospital', hospitalPracticeRouter); // Alias practice endpoints for hospital dashboard modules
 app.use('/api/hospital/auth', hospitalAuthRouter); // Hospital authentication & corporate onboarding
 app.use('/api/user-associations', userAssociationRouter); // User hierarchy and entity associations

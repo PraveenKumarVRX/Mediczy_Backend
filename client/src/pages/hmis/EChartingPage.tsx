@@ -42,8 +42,12 @@ const TABS = ['vitals', 'io', 'observations', 'assessments'] as const;
 type Tab = typeof TABS[number];
 
 export default function EChartingPage() {
-  const { admissionId } = useParams<{ admissionId: string }>();
+  const { admissionId: admissionParam } = useParams<{ admissionId: string }>();
   const navigate = useNavigate();
+  const [pickedAdmission, setPickedAdmission] = useState('');
+  const admissionId = admissionParam || pickedAdmission || undefined;
+
+  const [beds, setBeds] = useState<Array<{ admission_id?: number; patient_id?: number; bed_number?: string; ward_name?: string }>>([]);
 
   const [activeTab, setActiveTab]     = useState<Tab>('vitals');
   const [entries, setEntries]         = useState<FlowsheetEntry[]>([]);
@@ -85,6 +89,35 @@ export default function EChartingPage() {
   }, [admissionId]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    if (!admissionParam) {
+      api.get('/v1/beds/map').then((res) => {
+        const rows = (res.data?.data || []).filter((b: any) => b.status === 'occupied' && b.admission_id);
+        setBeds(rows);
+      }).catch(() => {});
+    }
+  }, [admissionParam]);
+
+  if (!admissionId) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-6 max-w-lg mx-auto">
+        <h1 className="text-xl font-bold mb-2 flex items-center gap-2">
+          <Activity className="h-5 w-5 text-teal-600" /> Bedside e-Charting
+        </h1>
+        <p className="text-sm text-muted-foreground mb-4">Select an occupied bed to open the nursing flowsheet.</p>
+        <div className="space-y-2">
+          {beds.map((b) => (
+            <Button key={b.admission_id} variant="outline" className="w-full justify-start"
+              onClick={() => navigate(`/hmis/admission/${b.admission_id}/echart`)}>
+              {b.bed_number} · {b.ward_name} · Admission #{b.admission_id}
+            </Button>
+          ))}
+          {!beds.length && <p className="text-sm text-muted-foreground">No occupied beds with admissions found.</p>}
+        </div>
+      </div>
+    );
+  }
 
   const submitVitals = async () => {
     setSaving(true);

@@ -10,6 +10,13 @@ import llmProvider from '../services/ai-brain/llm-provider.js';
 import { connectPostgres } from '../db/postgres.js';
 import { createCodingSuggestions } from '../services/clinical-intelligence.service.js';
 import { draftSoapNote } from '../services/healthcare-ai-opportunity.service.js';
+import {
+  createClinicalNote,
+  listClinicalNotes,
+  updateClinicalNote,
+  signClinicalNote,
+  getClinicalNoteById,
+} from '../services/clinical-notes.service.js';
 
 const router = express.Router();
 
@@ -19,6 +26,8 @@ router.post('/notes', authDoctor, async (req, res) => {
     const {
       appointmentId,
       patientId,
+      admissionId,
+      noteType,
       subjective,
       objective,
       assessment,
@@ -26,12 +35,19 @@ router.post('/notes', authDoctor, async (req, res) => {
       chiefComplaint,
       vitals,
       icd10Codes,
-      cptCodes
+      cptCodes,
     } = req.body;
 
-    const clinicalNote = await ClinicalNote.create({
+    if (!patientId) {
+      return res.status(400).json({ success: false, message: 'patientId is required' });
+    }
+
+    const clinicalNote = await createClinicalNote({
       appointmentId,
-      patientId,
+      patientId: Number(patientId),
+      admissionId: admissionId ? Number(admissionId) : null,
+      noteType: noteType || 'progress_note',
+      authorRole: 'doctor',
       doctorId: req.doctor.id,
       subjective,
       objective,
@@ -41,7 +57,7 @@ router.post('/notes', authDoctor, async (req, res) => {
       vitals,
       icd10Codes: icd10Codes || [],
       cptCodes: cptCodes || [],
-      status: 'draft'
+      status: 'draft',
     });
 
     res.json({
@@ -180,10 +196,10 @@ router.post('/notes/draft-from-transcript', authDoctor, async (req, res) => {
 // Get Clinical Notes for Patient
 router.get('/notes/patient/:patientId', authDoctor, async (req, res) => {
   try {
-    const notes = await ClinicalNote.findAll({
-      where: { patientId: req.params.patientId },
-      order: [['createdAt', 'DESC']],
-      limit: parseInt(req.query.limit) || 50
+    const notes = await listClinicalNotes({
+      patientId: Number(req.params.patientId),
+      admissionId: req.query.admissionId ? Number(req.query.admissionId) : undefined,
+      limit: req.query.limit,
     });
 
     res.json({
@@ -199,32 +215,43 @@ router.get('/notes/patient/:patientId', authDoctor, async (req, res) => {
   }
 });
 
+// Get Clinical Notes for Admission (IPD ward rounds)
+router.get('/notes/admission/:admissionId', authDoctor, async (req, res) => {
+  try {
+    const notes = await listClinicalNotes({
+      admissionId: Number(req.params.admissionId),
+      limit: req.query.limit,
+    });
+    res.json({ success: true, data: notes });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch admission notes' });
+  }
+});
+
+// Full note update (SOAP fields)
+router.put('/notes/:id', authDoctor, async (req, res) => {
+  try {
+    const note = await updateClinicalNote(Number(req.params.id), req.doctor.id, req.body);
+    if (!note) {
+      return res.status(404).json({ success: false, message: 'Clinical note not found' });
+    }
+    res.json({ success: true, data: note });
+  } catch (error) {
+    const status = error.message?.includes('Signed') ? 409 : 500;
+    res.status(status).json({ success: false, message: error.message || 'Failed to update note' });
+  }
+});
+
 // Sign Clinical Note
 router.post('/notes/:id/sign', authDoctor, async (req, res) => {
   try {
-    const note = await ClinicalNote.findOne({
-      where: { id: req.params.id, doctorId: req.doctor.id }
-    });
-
-    if (!note) {
-      return res.status(404).json({
-        success: false,
-        message: 'Note not found'
-      });
+    const signed = await signClinicalNote(Number(req.params.id), req.doctor.id);
+    if (!signed) {
+      return res.status(404).json({ success: false, message: 'Note not found' });
     }
 
-    const crypto = await import('crypto');
-    const signatureHash = crypto.createHash('sha256')
-      .update(`${note.id}-${req.doctor.id}-${new Date().toISOString()}`)
-      .digest('hex');
-
-    await note.update({
-      status: 'signed',
-      signedAt: new Date(),
-      signatureHash
-    });
-
-    const codingSuggestions = await createCodingSuggestions(note);
+    const note = await ClinicalNote.findByPk(req.params.id);
+    const codingSuggestions = note ? await createCodingSuggestions(note) : [];
 
     let billingBridge = null;
     try {
@@ -239,7 +266,7 @@ router.post('/notes/:id/sign', authDoctor, async (req, res) => {
 
     res.json({
       success: true,
-      data: note,
+      data: signed,
       codingSuggestions,
       billingBridge,
       requiresCodingReview: codingSuggestions.length > 0

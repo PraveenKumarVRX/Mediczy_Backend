@@ -70,6 +70,7 @@ const SECTIONS: Section[] = [
       { title: 'Doctor Workspace', description: 'Rounds, orders, AI tools', path: '/hospital/doctor-workspace', icon: Stethoscope, gradient: 'from-cyan-500 to-blue-600' },
       { title: 'eMAR', description: 'Medication administration', path: '/hmis/emar', icon: Pill, gradient: 'from-blue-600 to-indigo-700' },
       { title: 'e-Charting', description: 'Nursing documentation', path: '/hmis/echart', icon: FileText, gradient: 'from-slate-600 to-slate-800' },
+      { title: 'Doctor Progress Notes', description: 'IPD SOAP & ward rounds', path: '/hmis/patient/1/doctor-notes', icon: Stethoscope, gradient: 'from-cyan-600 to-teal-700' },
       { title: 'Lab Orders', description: 'IP lab requisitions', path: '/hospital/lab-order', icon: FlaskConical, gradient: 'from-amber-500 to-yellow-600' },
       { title: 'RIS / PACS', description: 'DICOM imaging worklist', path: '/hospital/radiology', icon: Scan, gradient: 'from-slate-500 to-zinc-700' },
     ],
