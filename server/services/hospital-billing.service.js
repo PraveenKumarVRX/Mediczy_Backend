@@ -81,6 +81,20 @@ async function ensureTables() {
       resource_id VARCHAR(80), before_state JSONB, after_state JSONB, ip_address VARCHAR(64), user_agent TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS hospital_patient_statements (
+      id BIGSERIAL PRIMARY KEY,
+      hospital_id INTEGER NOT NULL,
+      patient_id INTEGER NOT NULL,
+      statement_number VARCHAR(50) NOT NULL,
+      total_due NUMERIC(14,2) DEFAULT 0,
+      delivery_method VARCHAR(20) DEFAULT 'print',
+      status VARCHAR(20) DEFAULT 'issued',
+      metadata JSONB DEFAULT '{}'::jsonb,
+      issued_at TIMESTAMPTZ DEFAULT NOW(),
+      delivered_at TIMESTAMPTZ,
+      UNIQUE (hospital_id, statement_number)
+    );
+    ALTER TABLE hospital_patient_statements ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
   `);
   tablesReady = true;
 }
@@ -897,24 +911,114 @@ export async function allocatePayment(hospitalId, paymentId, allocations, ctx = 
   return { paymentId, allocations };
 }
 
-export async function generatePatientStatement(hospitalId, patientId, admissionId = null) {
+export async function generatePatientStatement(hospitalId, patientId, admissionId = null, options = {}) {
   await ensureTables();
   const account = await aggregatePatientAccount(hospitalId, { patientId, admissionId });
   const closingBalance = account.summary.totalDue;
+  const deliveryMethod = options.deliveryMethod || 'print';
 
   const stmt = await pool.query(
     `INSERT INTO hospital_patient_statements
-       (hospital_id, patient_id, statement_number, total_due, metadata, status)
-     VALUES ($1,$2,$3,$4,$5,'issued') RETURNING *`,
+       (hospital_id, patient_id, statement_number, total_due, delivery_method, metadata, status)
+     VALUES ($1,$2,$3,$4,$5,$6,'issued') RETURNING *`,
     [
       hospitalId, patientId,
       `STMT-${Date.now().toString(36).toUpperCase()}`,
       closingBalance,
+      deliveryMethod,
       JSON.stringify({ charges: account.charges.slice(0, 50), invoices: account.invoices, admissionId }),
     ]
   );
 
-  return { statement: stmt.rows[0], account };
+  const result = { statement: stmt.rows[0], account };
+
+  if (['sms', 'whatsapp', 'both'].includes(deliveryMethod)) {
+    result.delivery = await deliverPatientStatement(hospitalId, stmt.rows[0].id, {
+      channels: deliveryMethod === 'both' ? ['sms', 'whatsapp'] : [deliveryMethod],
+      actorId: options.actorId,
+    });
+  }
+
+  return result;
+}
+
+export async function listPatientStatements(hospitalId, patientId, { limit = 20 } = {}) {
+  await ensureTables();
+  const { rows } = await pool.query(
+    `SELECT * FROM hospital_patient_statements
+     WHERE hospital_id = $1 AND patient_id = $2
+     ORDER BY issued_at DESC LIMIT $3`,
+    [hospitalId, patientId, Math.min(100, limit)]
+  );
+  return rows;
+}
+
+export async function deliverPatientStatement(hospitalId, statementId, { channels = ['sms'], actorId } = {}) {
+  await ensureTables();
+  const stmt = await pool.query(
+    `SELECT * FROM hospital_patient_statements WHERE id = $1 AND hospital_id = $2`,
+    [statementId, hospitalId]
+  );
+  if (!stmt.rows[0]) throw new Error('Statement not found');
+
+  const row = stmt.rows[0];
+  const patient = await pool.query(
+    `SELECT id, email, phone_number, phone, name FROM users WHERE id = $1 LIMIT 1`,
+    [row.patient_id]
+  ).catch(() => ({ rows: [] }));
+
+  const user = patient.rows[0];
+  if (!user?.id) throw new Error('Patient contact not found');
+
+  let paymentLink = null;
+  const openInv = await pool.query(
+    `SELECT id FROM hospital_invoices
+     WHERE hospital_id = $1 AND patient_id = $2 AND amount_due > 0 AND status NOT IN ('voided','paid')
+     ORDER BY created_at DESC LIMIT 1`,
+    [hospitalId, row.patient_id]
+  );
+  if (openInv.rows[0]) {
+    try {
+      const pgi = await createPaymentLink(hospitalId, openInv.rows[0].id, { actorId });
+      paymentLink = pgi?.paymentLink || pgi?.shortUrl || null;
+    } catch {
+      // optional payment link
+    }
+  }
+
+  const notificationService = (await import('./notification.service.js')).default;
+  const deliveryChannels = channels.filter((c) => ['sms', 'whatsapp', 'email'].includes(c));
+
+  const sendResult = await notificationService.send({
+    userId: user.id,
+    userType: 'patient',
+    type: 'hospital_patient_statement',
+    channels: deliveryChannels.length ? deliveryChannels : ['sms', 'whatsapp'],
+    variables: {
+      patientName: user.name || 'Patient',
+      statementNumber: row.statement_number,
+      totalDue: Number(row.total_due).toLocaleString('en-IN'),
+      paymentLink: paymentLink || 'Contact billing desk',
+      hospitalName: process.env.HOSPITAL_NAME || 'Hospital',
+    },
+    data: { statementId: row.id, hospitalId },
+  });
+
+  await pool.query(
+    `UPDATE hospital_patient_statements
+     SET delivery_method = $2, status = 'delivered', delivered_at = NOW(),
+         metadata = metadata || $3::jsonb
+     WHERE id = $1`,
+    [row.id, deliveryChannels.join('+') || 'sms', JSON.stringify({ delivery: sendResult })]
+  );
+
+  await logBillingAudit({
+    hospitalId, actorId, action: 'statement.deliver',
+    resourceType: 'patient_statement', resourceId: String(row.id),
+    afterState: { channels: deliveryChannels, statementNumber: row.statement_number },
+  });
+
+  return { success: true, statementId: row.id, delivery: sendResult };
 }
 
 // ─── Phase 3: Billing period close + CFO dashboard ────────────────────────────
@@ -1004,5 +1108,6 @@ export default {
   createPaymentLink, confirmPgiPayment, getInvoice, listInvoices, listPayments, generateInvoicePdf, listAuditLog,
   logBillingAudit, createAdjustment, voidInvoice, voidPayment, refundPayment,
   reconcileSession, approveCreditAccount, allocatePayment, generatePatientStatement,
+  listPatientStatements, deliverPatientStatement,
   closeBillingPeriod, getCfoDashboard,
 };

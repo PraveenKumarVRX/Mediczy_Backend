@@ -55,8 +55,22 @@ const hospitalBillingService = {
     return res.data;
   },
 
-  generateStatement: async (patientId: number, admissionId?: number) => {
-    const res = await api.post(`${BASE}/patients/${patientId}/statements`, { admissionId }, { headers: getHospitalHeaders() });
+  generateStatement: async (patientId: number, options?: { admissionId?: number; deliveryMethod?: string }) => {
+    const res = await api.post(`${BASE}/patients/${patientId}/statements`, options || {}, { headers: getHospitalHeaders() });
+    return res.data;
+  },
+
+  listStatements: async (patientId: number) => {
+    const res = await api.get(`${BASE}/patients/${patientId}/statements`, { headers: getHospitalHeaders() });
+    return res.data;
+  },
+
+  deliverStatement: async (patientId: number, statementId: number, channels: string[]) => {
+    const res = await api.post(
+      `${BASE}/patients/${patientId}/statements/${statementId}/deliver`,
+      { channels },
+      { headers: getHospitalHeaders() }
+    );
     return res.data;
   },
 

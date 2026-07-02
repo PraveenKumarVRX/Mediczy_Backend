@@ -215,6 +215,9 @@ const HyperGridDashboard       = lazy(() => import("@/pages/admin/HyperGridDashb
 const HyperGridAIView          = lazy(() => import("@/pages/admin/HyperGridAIView"));
 const HyperGridIoTView         = lazy(() => import("@/pages/admin/HyperGridIoTView"));
 const FederatedLearningDashboard = lazy(() => import("@/pages/admin/FederatedLearningDashboard"));
+const HyperGridMarketplace       = lazy(() => import("@/pages/admin/HyperGridMarketplace"));
+const EnterpriseLoginPage        = lazy(() => import("@/pages/enterprise/EnterpriseLoginPage"));
+const EnterpriseCallbackPage     = lazy(() => import("@/pages/enterprise/EnterpriseCallbackPage"));
 const AdminCopilot             = lazy(() => import("@/pages/admin/AdminCopilot"));
 const AdminSaMD                = lazy(() => import("@/pages/admin/AdminSaMD"));
 
@@ -1011,6 +1014,8 @@ const AppRoutes = () => {
         {/* ── Hospital ────────────────────────────────────────────────── */}
         <Route path="/hospital/register"                   element={<HospitalRegister />} />
         <Route path="/hospital/login"                      element={<HospitalLogin />} />
+        <Route path="/enterprise/login"                    element={<EnterpriseLoginPage />} />
+        <Route path="/enterprise/callback"                element={<EnterpriseCallbackPage />} />
         <Route path="/hospital/os"                         element={<HospitalOSHub />} />
         <Route path="/hospital/dashboard"                  element={<HospitalDashboard />} />
         <Route path="/hospital/ceo"                        element={<CEODashboard />} />
@@ -1353,6 +1358,7 @@ const AppRoutes = () => {
         <Route path="/admin/samd-compliance"      element={<AdminRoute><AdminSaMD /></AdminRoute>} />
         <Route path="/admin/ai-guard"             element={<AdminRoute><SIBAIDashboard /></AdminRoute>} />
         <Route path="/admin/hypergrid"            element={<AdminRoute><HyperGridDashboard /></AdminRoute>} />
+        <Route path="/admin/hypergrid/marketplace" element={<AdminRoute><HyperGridMarketplace /></AdminRoute>} />
         <Route path="/admin/hypergrid-ai"         element={<AdminRoute><HyperGridAIView /></AdminRoute>} />
         <Route path="/admin/hypergrid-iot"        element={<AdminRoute><HyperGridIoTView /></AdminRoute>} />
         <Route path="/admin/ai/federated"        element={<AdminRoute><FederatedLearningDashboard /></AdminRoute>} />

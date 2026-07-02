@@ -1,5 +1,7 @@
 import express from 'express';
 import { authUser, authDoctor } from '../middleware/auth.middleware.js';
+import legacyBillingDeprecation from '../middleware/legacy-billing-deprecation.middleware.js';
+import ledgerBridge from '../services/billing-ledger-bridge.service.js';
 import { Order, Invoice, Payment, Transaction, Refund } from '../models/billing.model.intelligent.js';
 import paymentGateway from '../services/payment-gateway.service.js';
 import invoiceService from '../services/invoice.service.js';
@@ -10,8 +12,35 @@ import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 
 const router = express.Router();
 
+router.use(legacyBillingDeprecation);
+
 // ============================================================================
-// ORDER MANAGEMENT
+// UNIFIED LEDGER (canonical — hospital RCM)
+// ============================================================================
+
+router.get('/ledger/unified/:patientId', authUser, async (req, res) => {
+  try {
+    const hospitalId = ledgerBridge.resolveHospitalIdFromUser(req.user);
+    if (!hospitalId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Hospital context required. Use /api/hospital/billing for hospital staff.',
+        migrateTo: '/api/hospital/billing',
+      });
+    }
+    const data = await ledgerBridge.getUnifiedPatientLedger(
+      hospitalId,
+      Number(req.params.patientId),
+      req.query.admissionId ? Number(req.query.admissionId) : null
+    );
+    res.json({ success: true, data, deprecated: true, canonical: '/api/hospital/billing' });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// ============================================================================
+// ORDER MANAGEMENT (legacy — mirrored to hospital ledger when hospital context exists)
 // ============================================================================
 
 /**
@@ -70,10 +99,16 @@ router.post('/orders/create', authUser, async (req, res) => {
       notes
     });
 
+    const hospitalId = ledgerBridge.resolveHospitalIdFromUser(req.user);
+    if (hospitalId) {
+      await ledgerBridge.mirrorLegacyOrderToHospitalCharge(order, hospitalId, userId).catch(() => {});
+    }
+
     return res.status(201).json({
       success: true,
       message: 'Order created successfully',
-      data: { order }
+      data: { order },
+      ledger: hospitalId ? { mirrored: true, canonical: '/api/hospital/billing' } : { mirrored: false },
     });
 
   } catch (error) {

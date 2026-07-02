@@ -1726,6 +1726,7 @@ import chargeMasterRouter from './routes/charge-master.route.js';
 import pharmacyDispenseRouter from './routes/pharmacy-dispense.route.js';
 import hospitalOsControlRouter from './routes/hospital-os-control.route.js';
 import ssoRouter from './routes/sso.route.js';
+import enterpriseAuthRouter from './routes/enterprise-auth.route.js';
 
 app.use('/api/v1/adt', adtRouter);
 app.use('/api/v1/beds', bedsManagementRouter);
@@ -1763,6 +1764,7 @@ app.use('/api/v1/charge-master', chargeMasterRouter);
 app.use('/api/v1/pharmacy-dispense', pharmacyDispenseRouter);
 app.use('/api/v1/hospital-os', hospitalOsControlRouter);
 app.use('/api/sso', ssoRouter);
+app.use('/api/enterprise/auth', enterpriseAuthRouter);
 
 // ============== ENTERPRISE API v2 (New Architecture) ==============
 // API v2 - Enterprise-grade endpoints with proper MVC pattern

@@ -418,7 +418,7 @@ export default function HyperGridDashboard() {
             { label: "AI Intelligence", href: "/admin/hypergrid-ai",           icon: Cpu,        color: "text-indigo-500" },
             { label: "Edge Fleet",      href: "/admin/hypergrid-iot",          icon: Server,     color: "text-green-500" },
             { label: "Connectors",      href: "/admin/hypergrid-iot",          icon: GitBranch,  color: "text-purple-500" },
-            { label: "Marketplace",     href: "/admin/hypergrid",              icon: Store,      color: "text-amber-500" },
+            { label: "Marketplace",     href: "/admin/hypergrid/marketplace",  icon: Store,      color: "text-amber-500" },
           ].map(({ label, href, icon: Icon, color }) => (
             <a key={label} href={href}
               className="flex flex-col items-center gap-2 p-4 rounded-lg border hover:border-indigo-300 hover:bg-indigo-50 transition-colors cursor-pointer text-center">

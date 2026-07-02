@@ -50,6 +50,7 @@ export default function HospitalBillingPage() {
   const [clearance, setClearance] = useState<unknown>(null);
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [paymentAmount, setPaymentAmount] = useState('');
+  const [statementChannel, setStatementChannel] = useState('print');
   const [selectedInvoiceId, setSelectedInvoiceId] = useState('');
 
   const loadCore = useCallback(async () => {
@@ -176,6 +177,24 @@ export default function HospitalBillingPage() {
     }
   };
 
+  const sendPatientStatement = async () => {
+    if (!patientId) return;
+    try {
+      const res = await hospitalBillingService.generateStatement(Number(patientId), {
+        admissionId: admissionId ? Number(admissionId) : undefined,
+        deliveryMethod: statementChannel,
+      });
+      toast({
+        title: 'Statement issued',
+        description: res.statement?.statement_number
+          ? `${res.statement.statement_number}${res.delivery ? ' — delivered via ' + statementChannel : ''}`
+          : 'Statement created',
+      });
+    } catch (e: unknown) {
+      toast({ title: 'Statement failed', description: e instanceof Error ? e.message : '', variant: 'destructive' });
+    }
+  };
+
   const checkClearance = async () => {
     if (!admissionId) return;
     const res = await api.get(`/v1/charge-master/clearance/${admissionId}`);
@@ -292,10 +311,25 @@ export default function HospitalBillingPage() {
                 </div>
 
                 {patientAccount && (
-                  <div className="border rounded-lg p-4 text-sm space-y-1">
+                  <div className="border rounded-lg p-4 text-sm space-y-3">
                     <p>Pending charges: {money((patientAccount.summary as { pendingCharges?: number })?.pendingCharges)}</p>
                     <p>Total due: {money((patientAccount.summary as { totalDue?: number })?.totalDue)}</p>
                     <p>Credit balance: {money((patientAccount.creditAccount as { balance?: number })?.balance)}</p>
+                    <div className="flex flex-wrap gap-2 items-end pt-2 border-t">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Statement delivery</Label>
+                        <Select value={statementChannel} onValueChange={setStatementChannel}>
+                          <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="print">Print only</SelectItem>
+                            <SelectItem value="sms">SMS</SelectItem>
+                            <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                            <SelectItem value="both">SMS + WhatsApp</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button variant="secondary" size="sm" onClick={sendPatientStatement}>Issue Statement</Button>
+                    </div>
                   </div>
                 )}
 

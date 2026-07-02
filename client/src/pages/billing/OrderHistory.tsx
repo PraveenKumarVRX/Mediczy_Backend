@@ -83,6 +83,9 @@ const OrderHistory = () => {
       if (orderTypeFilter) params.orderType = orderTypeFilter;
       const response = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/billing/orders`, { headers: { Authorization: `Bearer ${token}` }, params });
       if (response.data.success) { setOrders(response.data.data.orders); setTotalOrders(response.data.data.pagination.total); }
+      if (response.headers?.['x-ledger-canonical']) {
+        console.info('[billing] Legacy /api/billing deprecated. Canonical ledger:', response.headers['x-ledger-canonical']);
+      }
     } catch (error: any) {
       const is500 = error?.response?.status === 500;
       toast({

@@ -248,6 +248,11 @@ const HospitalLogin = () => {
               </Link>
             </div>
             <div className="mt-3 text-center text-sm text-muted-foreground">
+              <Link to="/enterprise/login" className="text-teal-600 hover:underline font-medium">
+                Enterprise SSO (SAML / OIDC)
+              </Link>
+            </div>
+            <div className="mt-3 text-center text-sm text-muted-foreground">
               Need help? Contact{' '}
               <a href="mailto:support@mediczy.com" className="text-teal-600 hover:underline font-medium">
                 support@mediczy.com

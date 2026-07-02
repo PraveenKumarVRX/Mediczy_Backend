@@ -147,9 +147,37 @@ router.post('/patients/:patientId/statements', requireBillingWrite, async (req, 
     const result = await hospitalBilling.generatePatientStatement(
       req.hospitalId,
       Number(req.params.patientId),
-      req.body.admissionId ? Number(req.body.admissionId) : null
+      req.body.admissionId ? Number(req.body.admissionId) : null,
+      { deliveryMethod: req.body.deliveryMethod, actorId: req.userId }
     );
     res.status(201).json({ success: true, ...result });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
+
+router.get('/patients/:patientId/statements', requireBillingRead, async (req, res) => {
+  try {
+    const statements = await hospitalBilling.listPatientStatements(
+      req.hospitalId,
+      Number(req.params.patientId),
+      req.query
+    );
+    res.json({ success: true, statements });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+router.post('/patients/:patientId/statements/:statementId/deliver', requireBillingWrite, async (req, res) => {
+  try {
+    const channels = req.body.channels || [req.body.channel || 'sms'];
+    const delivery = await hospitalBilling.deliverPatientStatement(
+      req.hospitalId,
+      Number(req.params.statementId),
+      { channels: Array.isArray(channels) ? channels : [channels], actorId: req.userId }
+    );
+    res.json({ success: true, ...delivery });
   } catch (e) {
     res.status(400).json({ success: false, message: e.message });
   }

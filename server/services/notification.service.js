@@ -277,6 +277,14 @@ class NotificationService {
         message: '{{patientName}} adherence is {{adherenceRate}}% for prescription {{prescriptionId}}.',
         channels: ['push', 'email', 'in-app'],
         priority: 'high'
+      },
+
+      // Hospital patient billing statement
+      hospital_patient_statement: {
+        title: 'Hospital Account Statement — {{statementNumber}}',
+        message: 'Dear {{patientName}}, your hospital account balance is ₹{{totalDue}}. Statement {{statementNumber}}. Pay online: {{paymentLink}} — {{hospitalName}}',
+        channels: ['sms', 'whatsapp', 'email', 'in-app'],
+        priority: 'high'
       }
     };
   }
