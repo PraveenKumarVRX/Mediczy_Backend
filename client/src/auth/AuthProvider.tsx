@@ -422,14 +422,14 @@ export const AuthProvider = ({ children }) => {
       '/it-edp/', '/ot/', '/icu/', '/quality/', '/security/',
       '/asset/', '/biomedical/', '/blood-bank/', '/consent/', '/cssd/',
       '/dietary/', '/finance/', '/infection-control/', '/mortuary/',
-      '/procurement/', '/queue/'
+      '/procurement/', '/scm/', '/queue/'
     ];
     const deptLoginPaths = [
       '/accounts/login', '/mrd/login', '/insurance-desk/login', '/hr/login',
       '/it-edp/login', '/ot/login', '/icu/login', '/quality/login', '/security/login',
       '/asset/login', '/biomedical/login', '/blood-bank/login', '/consent/login',
       '/cssd/login', '/dietary/login', '/finance/login', '/infection-control/login',
-      '/mortuary/login', '/procurement/login', '/queue/login'
+      '/mortuary/login', '/procurement/login', '/scm/login', '/queue/login'
     ];
     const deptPublicPaths = ['/queue/kiosk'];
     const isDeptPortalRoute = deptPortalPrefixes.some(p => location.pathname.startsWith(p));

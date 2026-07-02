@@ -26,10 +26,26 @@ const ROLE_TOKEN_KEYS: Record<string, string> = {
   ngo: "ngoToken",
   hospitalInsurance: "hospitalInsuranceToken",
   crm: "crmToken",
+  scm: "scmToken",
 };
 
+const DEPT_TOKEN_KEYS = [
+  "procurementToken",
+  "scmToken",
+  "assetToken",
+  "biomedicalToken",
+  "bloodBankToken",
+  "consentToken",
+  "cssdToken",
+  "dietaryToken",
+  "financeToken",
+  "infectionControlToken",
+  "mortuaryToken",
+  "queueToken",
+];
+
 const ALL_TOKEN_KEYS = Array.from(
-  new Set([...Object.values(ROLE_TOKEN_KEYS), "token"])
+  new Set([...Object.values(ROLE_TOKEN_KEYS), ...DEPT_TOKEN_KEYS, "token"])
 );
 
 export const clearAuthTokens = () => {

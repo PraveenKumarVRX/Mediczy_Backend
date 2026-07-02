@@ -206,6 +206,7 @@ import financeRouter from './routes/dept/finance.route.js';
 import infectionControlRouter from './routes/dept/infectionControl.route.js';
 import mortuaryRouter from './routes/dept/mortuary.route.js';
 import procurementRouter from './routes/dept/procurement.route.js';
+import scmRouter from './routes/scm.route.js';
 import deptQueueRouter from './routes/dept/queue.route.js';
 
 // API v1 Routes (Multi-tenant wellness platform API)
@@ -1031,6 +1032,7 @@ app.use('/api/finance', financeRouter);
 app.use('/api/infection-control', infectionControlRouter);
 app.use('/api/mortuary', mortuaryRouter);
 app.use('/api/procurement', procurementRouter);
+app.use('/api/scm', scmRouter);
 app.use('/api/queue', deptQueueRouter);
 // 10. Ring-Fencing Middleware (Prevent cross-user privilege escalation)
 app.use(ringFencingMiddleware);

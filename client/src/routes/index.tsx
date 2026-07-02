@@ -610,6 +610,7 @@ const FinanceLogin          = lazyNamed(_DepartmentLoginPages, "FinanceLogin");
 const InfectionControlLogin = lazyNamed(_DepartmentLoginPages, "InfectionControlLogin");
 const MortuaryLogin         = lazyNamed(_DepartmentLoginPages, "MortuaryLogin");
 const ProcurementLogin      = lazyNamed(_DepartmentLoginPages, "ProcurementLogin");
+const SCMLogin              = lazy(() => import("@/auth/dept/SCMLogin"));
 const QueueLogin            = lazyNamed(_DepartmentLoginPages, "QueueLogin");
 const QueuePortalLogin      = lazy(() => import("@/auth/dept/QueueLogin"));
 const _DeptDashboards        = () => import("@/pages/dept/DepartmentDashboards");
@@ -634,6 +635,7 @@ const FinanceDashboard           = lazyNamed(_DeptDashboards, "FinanceDashboard"
 const InfectionControlDashboard  = lazyNamed(_DeptDashboards, "InfectionControlDashboard");
 const MortuaryDashboard          = lazyNamed(_DeptDashboards, "MortuaryDashboard");
 const ProcurementDashboard       = lazyNamed(_DeptDashboards, "ProcurementDashboard");
+const ScmDashboard               = lazyNamed(_DeptDashboards, "ScmDashboard");
 const QueueDashboard             = lazyNamed(_QueueExperiencePages, "QueueDashboardPage");
 
 // Department module pages — Asset
@@ -688,6 +690,16 @@ const ProcurementOrders    = lazyNamed(_DeptModulePages, "ProcurementOrders");
 const ProcurementVendors   = lazyNamed(_DeptModulePages, "ProcurementVendors");
 const ProcurementApprovals = lazyNamed(_DeptModulePages, "ProcurementApprovals");
 const ProcurementReports   = lazyNamed(_DeptModulePages, "ProcurementReports");
+const _SCMModulePages      = () => import("@/pages/dept/SCMModulePages");
+const ScmItems             = lazyNamed(_SCMModulePages, "ScmItems");
+const ScmOrders            = lazyNamed(_SCMModulePages, "ScmOrders");
+const ScmWarehouses        = lazyNamed(_SCMModulePages, "ScmWarehouses");
+const ScmIndents           = lazyNamed(_SCMModulePages, "ScmIndents");
+const ScmApInvoices        = lazyNamed(_SCMModulePages, "ScmApInvoices");
+const ScmClinicalSupply    = lazyNamed(_SCMModulePages, "ScmClinicalSupply");
+const ScmSupplierOps       = lazyNamed(_SCMModulePages, "ScmSupplierOps");
+const ScmOpsControl        = lazyNamed(_SCMModulePages, "ScmOpsControl");
+const ScmReports           = lazyNamed(_SCMModulePages, "ScmReports");
 // Queue
 const QueueTokens   = lazyNamed(_QueueExperiencePages, "QueueTokensPage");
 const QueueCounters = lazyNamed(_QueueExperiencePages, "QueueCountersPage");
@@ -1464,6 +1476,7 @@ const AppRoutes = () => {
         <Route path="/infection-control/login" element={<InfectionControlLogin />} />
         <Route path="/mortuary/login"          element={<MortuaryLogin />} />
         <Route path="/procurement/login"       element={<ProcurementLogin />} />
+        <Route path="/scm/login"               element={<SCMLogin />} />
         <Route path="/queue/login"             element={<QueuePortalLogin />} />
         <Route path="/asset/dashboard"             element={<AssetDashboard />} />
         <Route path="/biomedical/dashboard"        element={<BiomedicalDashboard />} />
@@ -1475,6 +1488,7 @@ const AppRoutes = () => {
         <Route path="/infection-control/dashboard" element={<InfectionControlDashboard />} />
         <Route path="/mortuary/dashboard"          element={<MortuaryDashboard />} />
         <Route path="/procurement/dashboard"       element={<ProcurementDashboard />} />
+        <Route path="/scm/dashboard"               element={<ScmDashboard />} />
         <Route path="/queue/dashboard"             element={<QueueDashboard />} />
 
         {/* ── Department sub-module pages ─────────────────────────────── */}
@@ -1529,6 +1543,16 @@ const AppRoutes = () => {
         <Route path="/procurement/vendors"   element={<ProcurementVendors />} />
         <Route path="/procurement/approvals" element={<ProcurementApprovals />} />
         <Route path="/procurement/reports"   element={<ProcurementReports />} />
+        {/* SCM */}
+        <Route path="/scm/items"         element={<ScmItems />} />
+        <Route path="/scm/orders"        element={<ScmOrders />} />
+        <Route path="/scm/warehouses"    element={<ScmWarehouses />} />
+        <Route path="/scm/indents"       element={<ScmIndents />} />
+        <Route path="/scm/ap-invoices"   element={<ScmApInvoices />} />
+        <Route path="/scm/clinical"      element={<ScmClinicalSupply />} />
+        <Route path="/scm/suppliers"    element={<ScmSupplierOps />} />
+        <Route path="/scm/ops"           element={<ScmOpsControl />} />
+        <Route path="/scm/reports"       element={<ScmReports />} />
         {/* Queue */}
         <Route path="/queue/tokens"   element={<QueueTokens />} />
         <Route path="/queue/counters" element={<QueueCounters />} />

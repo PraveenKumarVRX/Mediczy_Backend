@@ -616,6 +616,59 @@ const procurementConfig: DeptDashboardConfig = {
   ],
 };
 
+// ── Supply Chain Management (SCM) ─────────────────────────────────────────────
+const scmNav: DeptNavSection[] = [
+  {
+    title: "Overview",
+    items: [{ icon: LayoutDashboard, label: "Dashboard", href: "/scm/dashboard" }],
+  },
+  {
+    title: "Foundation",
+    items: [
+      { icon: Boxes,          label: "Item Master",   href: "/scm/items" },
+      { icon: ShoppingCart,   label: "Purchase Orders", href: "/scm/orders" },
+      { icon: Archive,        label: "Warehouses",    href: "/scm/warehouses" },
+      { icon: Clipboard,      label: "Indents",       href: "/scm/indents" },
+    ],
+  },
+  {
+    title: "Enterprise",
+    items: [
+      { icon: FileText,       label: "AP Invoices",     href: "/scm/ap-invoices" },
+      { icon: Stethoscope,    label: "Clinical Supply", href: "/scm/clinical" },
+      { icon: Truck,          label: "Supplier Ops",    href: "/scm/suppliers" },
+      { icon: ShieldCheck,    label: "Ops Control",     href: "/scm/ops" },
+    ],
+  },
+  {
+    title: "Reporting",
+    items: [{ icon: BarChart3, label: "Reports", href: "/scm/reports" }],
+  },
+];
+
+const scmConfig: DeptDashboardConfig = {
+  deptKey: "scm",
+  deptName: "Supply Chain",
+  badgeLabel: "SCM",
+  DeptIcon: Boxes,
+  loginPath: "/scm/login",
+  navSections: scmNav,
+  heroGradient: "bg-gradient-to-br from-teal-600 to-emerald-800",
+  stats: [
+    { icon: Boxes,        label: "Active Items",      value: "0",  gradient: "", iconBg: "bg-teal-100 dark:bg-teal-950 text-teal-600" },
+    { icon: ShoppingCart, label: "Open POs",          value: "0",  gradient: "", iconBg: "bg-indigo-100 dark:bg-indigo-950 text-indigo-600" },
+    { icon: FileText,     label: "Open Invoices",     value: "0",  gradient: "", iconBg: "bg-amber-100 dark:bg-amber-950 text-amber-600" },
+    { icon: Stethoscope,  label: "Case Carts",        value: "0",  gradient: "", iconBg: "bg-emerald-100 dark:bg-emerald-950 text-emerald-600" },
+  ],
+  quickActions: [
+    { icon: Boxes,        label: "Item Master",     path: "/scm/items" },
+    { icon: ShoppingCart, label: "Purchase Orders", path: "/scm/orders" },
+    { icon: FileText,     label: "AP Invoices",     path: "/scm/ap-invoices" },
+    { icon: Stethoscope,  label: "Clinical Supply", path: "/scm/clinical" },
+    { icon: BarChart3,    label: "Reports",         path: "/scm/reports" },
+  ],
+};
+
 // ── Queue Management ──────────────────────────────────────────────────────────
 const queueNav: DeptNavSection[] = [
   {
@@ -673,11 +726,12 @@ export const FinanceDashboard = () => <DashboardWrapper config={financeConfig} /
 export const InfectionControlDashboard = () => <DashboardWrapper config={infectionControlConfig} />;
 export const MortuaryDashboard = () => <DashboardWrapper config={mortuaryConfig} />;
 export const ProcurementDashboard = () => <DashboardWrapper config={procurementConfig} />;
+export const ScmDashboard = () => <DashboardWrapper config={scmConfig} />;
 export const QueueDashboard = () => <DashboardWrapper config={queueConfig} />;
 
 // Also export nav configs so DepartmentModulePages can re-use them.
 export {
   assetNav, biomedNav, consentNav, cssdNav,
   dietaryNav, financeNav, infectionControlNav, mortuaryNav,
-  procurementNav, queueNav,
+  procurementNav, scmNav, queueNav,
 };

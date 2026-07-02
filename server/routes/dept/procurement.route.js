@@ -129,10 +129,24 @@ router.get('/orders', authProcurement, async (_req, res) => {
   res.json({ success: true, data: rows });
 });
 
+router.get('/orders/receivable', authProcurement, async (_req, res) => {
+  const db = await ensureTables();
+  const { rows } = await db.query(`
+    SELECT o.*, v.name AS vendor_name
+    FROM procurement_orders o
+    LEFT JOIN procurement_vendors v ON v.id = o.vendor_id
+    WHERE o.status IN ('approved', 'partial_receipt')
+    ORDER BY o.created_at DESC
+  `);
+  res.json({ success: true, data: rows });
+});
+
 router.post('/orders', authProcurement, async (req, res) => {
   const db = await ensureTables();
   const { vendorId, department, requestedBy, requiredBy, lines = [] } = req.body;
   if (!vendorId || !Array.isArray(lines) || !lines.length) return res.status(400).json({ success: false, message: 'vendorId and lines are required' });
+  const missingItem = lines.filter((line) => !line.itemCode && !line.itemId);
+  if (missingItem.length) return res.status(400).json({ success: false, message: 'All PO lines require itemCode or itemId' });
   const total = lines.reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.unitPrice || 0), 0);
   const { rows } = await db.query(`
     INSERT INTO procurement_orders (po_number, vendor_id, department, requested_by, total_amount, required_by)
@@ -172,6 +186,9 @@ router.post('/orders/:id/grn', authProcurement, async (req, res) => {
   const { receivedBy, notes, lines = [] } = req.body;
   const { rows: orders } = await db.query('SELECT * FROM procurement_orders WHERE id = $1', [req.params.id]);
   if (!orders[0]) return res.status(404).json({ success: false, message: 'Order not found' });
+  if (!['approved', 'partial_receipt'].includes(orders[0].status)) {
+    return res.status(409).json({ success: false, message: `PO status ${orders[0].status} is not receivable` });
+  }
   const { rows } = await db.query(`
     INSERT INTO procurement_grns (grn_number, order_id, received_by, notes)
     VALUES ($1,$2,$3,$4)
@@ -180,6 +197,11 @@ router.post('/orders/:id/grn', authProcurement, async (req, res) => {
   for (const line of lines) {
     await db.query(`UPDATE procurement_order_lines SET received_quantity = LEAST(quantity, received_quantity + $2) WHERE id = $1`, [line.lineId, line.receivedQuantity]);
   }
+  const { rows: poLines } = await db.query('SELECT quantity, received_quantity FROM procurement_order_lines WHERE order_id = $1', [req.params.id]);
+  const nextStatus = poLines.length && poLines.every((l) => Number(l.received_quantity) >= Number(l.quantity))
+    ? 'received'
+    : poLines.some((l) => Number(l.received_quantity) > 0) ? 'partial_receipt' : orders[0].status;
+  await db.query('UPDATE procurement_orders SET status = $2, updated_at = NOW() WHERE id = $1', [req.params.id, nextStatus]);
   const actor = actorFrom(req.procurementUser, receivedBy || 'Stores');
   await requestOperationsApproval(db, { module: 'stores', entityType: 'grn', entityId: rows[0].id, action: 'post_to_ledger', requestedBy: actor });
   await recordOperationsAudit(db, { module: 'stores', entityType: 'grn', entityId: rows[0].id, action: 'grn_created', actor, details: { orderId: Number(req.params.id), lineCount: lines.length } });
