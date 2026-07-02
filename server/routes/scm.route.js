@@ -4,6 +4,7 @@ import { loginScm } from '../controllers/dept/scm.controller.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { connectPostgres } from '../db/postgres.js';
 import { ensureAllScmTables } from '../migrations/scm-tables.migration.js';
+import llmProvider from '../services/ai-brain/llm-provider.js';
 import {
   actorFrom,
   decideOperationsApproval,
@@ -251,6 +252,14 @@ router.post('/orders', authScm, async (req, res) => {
 
 router.patch('/orders/:id/approve', authScm, async (req, res) => {
   const db = await ensureTables();
+  const { rows: approvals } = await db.query(`
+    SELECT id FROM operations_approvals
+    WHERE module='scm' AND entity_type='order' AND entity_id=$1 AND action='approve_po' AND status='pending'
+    ORDER BY created_at DESC LIMIT 1
+  `, [req.params.id]);
+  if (approvals[0]) {
+    await decideOperationsApproval(db, { id: approvals[0].id, status: 'approved', decidedBy: actor(req) });
+  }
   const { rows } = await db.query(`UPDATE scm_purchase_orders SET status = 'approved', updated_at = NOW() WHERE id = $1 RETURNING *`, [req.params.id]);
   if (!rows[0]) return res.status(404).json({ success: false, message: 'Order not found' });
   await recordOperationsAudit(db, { module: 'scm', entityType: 'order', entityId: rows[0].id, action: 'po_approved', actor: actor(req) });
@@ -283,10 +292,37 @@ router.post('/orders/:id/grn', authScm, async (req, res) => {
   res.status(201).json({ success: true, data: { ...rows[0], orderStatus: nextStatus } });
 });
 
+router.get('/grns', authScm, async (_req, res) => {
+  const db = await ensureTables();
+  const { rows } = await db.query(`
+    SELECT g.*, o.po_number, o.vendor_id, v.name AS vendor_name,
+      EXISTS(SELECT 1 FROM scm_inventory_ledger l WHERE l.reference_type = 'grn' AND l.reference_id = g.id) AS posted
+    FROM scm_grns g
+    JOIN scm_purchase_orders o ON o.id = g.order_id
+    LEFT JOIN scm_vendors v ON v.id = o.vendor_id
+    ORDER BY g.created_at DESC
+    LIMIT 100
+  `);
+  res.json({ success: true, data: rows });
+});
+
 router.patch('/grns/:id/post', authScm, async (req, res) => {
   const db = await ensureTables();
   const { rows: grns } = await db.query('SELECT * FROM scm_grns WHERE id = $1', [req.params.id]);
   if (!grns[0]) return res.status(404).json({ success: false, message: 'GRN not found' });
+  const { rows: existing } = await db.query(
+    `SELECT 1 FROM scm_inventory_ledger WHERE reference_type = 'grn' AND reference_id = $1 LIMIT 1`,
+    [grns[0].id]
+  );
+  if (existing.length) return res.status(409).json({ success: false, message: 'GRN already posted to inventory' });
+  const { rows: approvals } = await db.query(`
+    SELECT id FROM operations_approvals
+    WHERE module='scm' AND entity_type='grn' AND entity_id=$1 AND action='post_grn' AND status='pending'
+    ORDER BY created_at DESC LIMIT 1
+  `, [req.params.id]);
+  if (approvals[0]) {
+    await decideOperationsApproval(db, { id: approvals[0].id, status: 'approved', decidedBy: actor(req) });
+  }
   const { rows: lines } = await db.query('SELECT * FROM scm_grn_lines WHERE grn_id = $1', [grns[0].id]);
   for (const line of lines) {
     await db.query(
@@ -295,7 +331,7 @@ router.patch('/grns/:id/post', authScm, async (req, res) => {
     );
   }
   await recordOperationsAudit(db, { module: 'scm', entityType: 'grn', entityId: grns[0].id, action: 'grn_posted', actor: actor(req), details: { lineCount: lines.length } });
-  res.json({ success: true, data: grns[0] });
+  res.json({ success: true, data: { ...grns[0], posted: true, lineCount: lines.length } });
 });
 
 // ─── AP invoices & payments ──────────────────────────────────────────────────
@@ -598,6 +634,75 @@ router.get('/audit', authScm, async (_req, res) => {
   const db = await ensureTables();
   const audit = await listOperationsAudit(db, 'scm', 100);
   res.json({ success: true, data: audit });
+});
+
+// ─── AI-guided supply chain advisor (NOT SaMD — administrative SCM guidance) ─
+
+router.post('/ai/chat', authScm, async (req, res) => {
+  try {
+    const { message, context = '', history = [] } = req.body;
+    if (!message?.trim()) return res.status(400).json({ success: false, message: 'message is required' });
+
+    const db = await ensureTables();
+    const { rows: overview } = await db.query(`
+      SELECT
+        (SELECT COUNT(*)::int FROM scm_items WHERE status = 'active') AS active_items,
+        (SELECT COUNT(*)::int FROM scm_purchase_orders WHERE status IN ('draft','submitted')) AS pending_pos,
+        (SELECT COUNT(*)::int FROM scm_indents WHERE status = 'submitted') AS open_indents,
+        (SELECT COUNT(*)::int FROM scm_ap_invoices WHERE status IN ('draft','matched')) AS open_invoices
+    `);
+    const metrics = overview[0] || {};
+
+    const systemContext = `You are iSHA Supply Chain Advisor, an AI assistant for hospital SCM staff at Mediqzy. You help with:
+- Purchase order workflow (indent → PO → approve → GRN → post to inventory → AP 3-way match)
+- Vendor risk, cold-chain compliance (2–8°C), controlled substance witness rules
+- OR preference cards, case carts, formulary tiers
+- NABH/JCI inventory controls, FEFO, cycle counts
+- Epic/Cerner-style best practices adapted for Indian hospitals
+
+Live metrics: ${JSON.stringify(metrics)}. User context: ${context || 'SCM portal'}.
+Be actionable, concise, and flag when physician/pharmacist sign-off is required. Do not make autonomous purchasing decisions.`;
+
+    const messages = [
+      { role: 'system', content: systemContext },
+      ...history.slice(-6).map((h) => ({ role: h.role, content: h.content })),
+      { role: 'user', content: message },
+    ];
+
+    const result = await llmProvider.complete({ messages, maxTokens: 900, temperature: 0.4 });
+    const reply = result?.content || result?.text || result?.message || String(result || '');
+
+    res.json({ success: true, reply, advisor: 'iSHA Supply Chain', timestamp: new Date().toISOString() });
+  } catch (err) {
+    console.error('[SCM AI] chat error:', err.message);
+    res.status(500).json({ success: false, message: 'Supply chain advisor temporarily unavailable.' });
+  }
+});
+
+router.post('/ai/reorder-advisor', authScm, async (_req, res) => {
+  const db = await ensureTables();
+  const { rows } = await db.query(`
+    SELECT i.id, i.item_code, i.name, i.reorder_level, i.criticality,
+           COALESCE(SUM(l.quantity_delta), 0)::numeric AS on_hand
+    FROM scm_items i
+    LEFT JOIN scm_inventory_ledger l ON l.item_id = i.id
+    WHERE i.status = 'active'
+    GROUP BY i.id
+    HAVING COALESCE(SUM(l.quantity_delta), 0) < i.reorder_level OR i.criticality = 'A'
+    ORDER BY i.criticality, (COALESCE(SUM(l.quantity_delta), 0) - i.reorder_level) ASC
+    LIMIT 25
+  `);
+  const recommendations = rows.map((r) => ({
+    itemId: r.id,
+    itemCode: r.item_code,
+    name: r.name,
+    onHand: Number(r.on_hand),
+    reorderLevel: Number(r.reorder_level),
+    criticality: r.criticality,
+    suggestedQty: Math.max(Number(r.reorder_level) * 2 - Number(r.on_hand), Number(r.reorder_level)),
+    priority: r.criticality === 'A' ? 'critical' : Number(r.on_hand) <= 0 ? 'stockout' : 'reorder',
+  }));
+  res.json({ success: true, data: recommendations, generatedAt: new Date().toISOString() });
 });
 
 export default router;

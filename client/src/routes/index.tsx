@@ -700,6 +700,8 @@ const ScmClinicalSupply    = lazyNamed(_SCMModulePages, "ScmClinicalSupply");
 const ScmSupplierOps       = lazyNamed(_SCMModulePages, "ScmSupplierOps");
 const ScmOpsControl        = lazyNamed(_SCMModulePages, "ScmOpsControl");
 const ScmReports           = lazyNamed(_SCMModulePages, "ScmReports");
+const ScmInventory         = lazyNamed(_SCMModulePages, "ScmInventory");
+const ScmApprovals         = lazyNamed(_SCMModulePages, "ScmApprovals");
 // Queue
 const QueueTokens   = lazyNamed(_QueueExperiencePages, "QueueTokensPage");
 const QueueCounters = lazyNamed(_QueueExperiencePages, "QueueCountersPage");
@@ -1545,6 +1547,7 @@ const AppRoutes = () => {
         <Route path="/procurement/reports"   element={<ProcurementReports />} />
         {/* SCM */}
         <Route path="/scm/items"         element={<ScmItems />} />
+        <Route path="/scm/inventory"    element={<ScmInventory />} />
         <Route path="/scm/orders"        element={<ScmOrders />} />
         <Route path="/scm/warehouses"    element={<ScmWarehouses />} />
         <Route path="/scm/indents"       element={<ScmIndents />} />
@@ -1552,6 +1555,7 @@ const AppRoutes = () => {
         <Route path="/scm/clinical"      element={<ScmClinicalSupply />} />
         <Route path="/scm/suppliers"    element={<ScmSupplierOps />} />
         <Route path="/scm/ops"           element={<ScmOpsControl />} />
+        <Route path="/scm/approvals"     element={<ScmApprovals />} />
         <Route path="/scm/reports"       element={<ScmReports />} />
         {/* Queue */}
         <Route path="/queue/tokens"   element={<QueueTokens />} />

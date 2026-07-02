@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "@/utils/api";
+import { SCMAIAssistant } from "@/components/scm/SCMAIAssistant";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import DeptStaffLayout, { DeptNavSection } from "@/components/hosp-dept/DeptStaffLayout";
@@ -50,6 +51,7 @@ interface DeptDashboardConfig {
   heroGradient: string;
   stats: StatCard[];
   quickActions: QuickAction[];
+  activityItems?: { action: string; detail?: string; at?: string }[];
 }
 
 // ─── Shared dashboard renderer ────────────────────────────────────────────────
@@ -146,15 +148,26 @@ const DeptDashboard = ({ config, deptData }: { config: DeptDashboardConfig; dept
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-48 flex flex-col items-center justify-center gap-3 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl text-slate-400">
-            <CheckCircle2 className="h-10 w-10 opacity-30" />
-            <div className="text-center">
-              <p className="text-sm font-medium">No recent activity</p>
-              <p className="text-xs mt-1 text-slate-400/70">
-                Activity feed will appear here once the module is live.
-              </p>
+          {config.activityItems && config.activityItems.length > 0 ? (
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {config.activityItems.map((item, idx) => (
+                <div key={idx} className="flex justify-between text-sm border-b pb-2">
+                  <span className="font-medium">{item.action}</span>
+                  <span className="text-xs text-muted-foreground">{item.at || item.detail}</span>
+                </div>
+              ))}
             </div>
-          </div>
+          ) : (
+            <div className="h-48 flex flex-col items-center justify-center gap-3 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl text-slate-400">
+              <CheckCircle2 className="h-10 w-10 opacity-30" />
+              <div className="text-center">
+                <p className="text-sm font-medium">No recent activity</p>
+                <p className="text-xs mt-1 text-slate-400/70">
+                  Activity feed will appear here once the module is live.
+                </p>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -628,8 +641,9 @@ const scmNav: DeptNavSection[] = [
     title: "Foundation",
     items: [
       { icon: Boxes,          label: "Item Master",   href: "/scm/items" },
+      { icon: Archive,        label: "Inventory",     href: "/scm/inventory" },
       { icon: ShoppingCart,   label: "Purchase Orders", href: "/scm/orders" },
-      { icon: Archive,        label: "Warehouses",    href: "/scm/warehouses" },
+      { icon: Warehouse,      label: "Warehouses",    href: "/scm/warehouses" },
       { icon: Clipboard,      label: "Indents",       href: "/scm/indents" },
     ],
   },
@@ -640,6 +654,7 @@ const scmNav: DeptNavSection[] = [
       { icon: Stethoscope,    label: "Clinical Supply", href: "/scm/clinical" },
       { icon: Truck,          label: "Supplier Ops",    href: "/scm/suppliers" },
       { icon: ShieldCheck,    label: "Ops Control",     href: "/scm/ops" },
+      { icon: MonitorCheck,   label: "Approvals",       href: "/scm/approvals" },
     ],
   },
   {
@@ -664,9 +679,9 @@ const scmConfig: DeptDashboardConfig = {
   ],
   quickActions: [
     { icon: Boxes,        label: "Item Master",     path: "/scm/items" },
+    { icon: Archive,      label: "Inventory",       path: "/scm/inventory" },
     { icon: ShoppingCart, label: "Purchase Orders", path: "/scm/orders" },
-    { icon: FileText,     label: "AP Invoices",     path: "/scm/ap-invoices" },
-    { icon: Stethoscope,  label: "Clinical Supply", path: "/scm/clinical" },
+    { icon: MonitorCheck, label: "Approvals",       path: "/scm/approvals" },
     { icon: BarChart3,    label: "Reports",         path: "/scm/reports" },
   ],
 };
@@ -748,14 +763,26 @@ const SCM_STAT_KEYS: Record<string, keyof ScmOverview> = {
 
 const ScmDashboardView = () => {
   const [overview, setOverview] = useState<ScmOverview | null>(null);
+  const [activityItems, setActivityItems] = useState<{ action: string; detail?: string; at?: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const { data } = await api.get("/scm/overview");
-        if (!cancelled) setOverview(data.data ?? {});
+        const [overviewRes, auditRes] = await Promise.all([
+          api.get("/scm/overview"),
+          api.get("/scm/audit"),
+        ]);
+        if (!cancelled) {
+          setOverview(overviewRes.data.data ?? {});
+          const audit = auditRes.data.data || [];
+          setActivityItems(audit.slice(0, 8).map((e: any) => ({
+            action: e.action?.replace(/_/g, ' ') || 'activity',
+            detail: e.entity_type,
+            at: e.created_at ? new Date(e.created_at).toLocaleString() : undefined,
+          })));
+        }
       } catch {
         if (!cancelled) setOverview(null);
       } finally {
@@ -773,21 +800,25 @@ const ScmDashboardView = () => {
       const value = loading ? "…" : String(raw ?? 0);
       return { ...stat, value };
     }),
-  }), [overview, loading]);
+    activityItems,
+  }), [overview, loading, activityItems]);
 
   return (
-    <DeptStaffLayout
-      deptKey={scmConfig.deptKey}
-      deptName={scmConfig.deptName}
-      badgeLabel={scmConfig.badgeLabel}
-      loginPath={scmConfig.loginPath}
-      DeptIcon={scmConfig.DeptIcon}
-      navSections={scmConfig.navSections}
-      title="Dashboard"
-      subtitle="Supply chain command center"
-    >
-      <DeptDashboard config={config} deptData={null} />
-    </DeptStaffLayout>
+    <>
+      <DeptStaffLayout
+        deptKey={scmConfig.deptKey}
+        deptName={scmConfig.deptName}
+        badgeLabel={scmConfig.badgeLabel}
+        loginPath={scmConfig.loginPath}
+        DeptIcon={scmConfig.DeptIcon}
+        navSections={scmConfig.navSections}
+        title="Dashboard"
+        subtitle="Supply chain command center"
+      >
+        <DeptDashboard config={config} deptData={null} />
+      </DeptStaffLayout>
+      <SCMAIAssistant />
+    </>
   );
 };
 

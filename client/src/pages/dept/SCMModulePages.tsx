@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Package, ShoppingCart, Warehouse, ClipboardList, FileText, Stethoscope,
   Truck, ShieldCheck, Thermometer, Pill, BarChart3, PlusCircle, Boxes,
+  CheckCircle2, Archive, MonitorCheck,
 } from 'lucide-react';
 import DeptStaffLayout from '@/components/hosp-dept/DeptStaffLayout';
 import { scmNav } from './DepartmentDashboards';
@@ -9,6 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SCMAIAssistant } from '@/components/scm/SCMAIAssistant';
 import api from '@/utils/api';
 
 type Item = { id: number; item_code: string; name: string; category?: string; reorder_level?: number };
@@ -16,19 +19,26 @@ type Vendor = { id: number; vendor_code: string; name: string; risk_score?: numb
 type Order = { id: number; po_number: string; vendor_name?: string; total_amount: number; status: string; lines?: any[] };
 type Invoice = { id: number; invoice_number: string; vendor_name?: string; amount: number; status: string; match_status: string };
 
+type Grn = { id: number; grn_number: string; po_number?: string; vendor_name?: string; posted?: boolean };
+type Approval = { id: number; action: string; entity_type: string; entity_id: number; status: string; requested_by?: string };
+type AuditEntry = { id: number; action: string; actor?: string; created_at?: string; entity_type?: string };
+
 const Wrap = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <DeptStaffLayout
-    deptKey="scm"
-    deptName="Supply Chain"
-    badgeLabel="SCM"
-    loginPath="/scm/login"
-    DeptIcon={Package}
-    navSections={scmNav}
-    title={title}
-    subtitle="Hospital supply chain management"
-  >
-    {children}
-  </DeptStaffLayout>
+  <>
+    <DeptStaffLayout
+      deptKey="scm"
+      deptName="Supply Chain"
+      badgeLabel="SCM"
+      loginPath="/scm/login"
+      DeptIcon={Package}
+      navSections={scmNav}
+      title={title}
+      subtitle="Hospital supply chain management"
+    >
+      {children}
+    </DeptStaffLayout>
+    <SCMAIAssistant />
+  </>
 );
 
 const useScmList = <T,>(path: string) => {
@@ -83,10 +93,18 @@ export const ScmOrders = () => {
   const { rows: vendors } = useScmList<Vendor>('/scm/vendors');
   const { rows: items } = useScmList<Item>('/scm/items');
   const { rows: orders, refresh } = useScmList<Order>('/scm/orders');
+  const [grns, setGrns] = useState<Grn[]>([]);
   const [vendorId, setVendorId] = useState('');
   const [itemId, setItemId] = useState('');
   const [quantity, setQuantity] = useState('10');
   const [unitPrice, setUnitPrice] = useState('25');
+
+  const loadGrns = async () => {
+    const { data } = await api.get('/scm/grns');
+    setGrns(data.data || []);
+  };
+  useEffect(() => { loadGrns(); }, []);
+
   const create = async () => {
     if (!vendorId || !itemId) return;
     const item = items.find((i) => i.id === Number(itemId));
@@ -98,12 +116,20 @@ export const ScmOrders = () => {
     });
     refresh();
   };
+  const approve = async (id: number) => {
+    await api.patch(`/scm/orders/${id}/approve`);
+    refresh();
+  };
   const receive = async (order: Order) => {
     await api.post(`/scm/orders/${order.id}/grn`, {
       receivedBy: 'Stores',
       lines: (order.lines || []).map((line: any) => ({ lineId: line.id, itemId: line.itemId, receivedQuantity: line.quantity })),
     });
-    refresh();
+    await Promise.all([refresh(), loadGrns()]);
+  };
+  const postGrn = async (id: number) => {
+    await api.patch(`/scm/grns/${id}/post`);
+    await Promise.all([refresh(), loadGrns()]);
   };
   return (
     <Wrap title="Purchase Orders">
@@ -111,10 +137,20 @@ export const ScmOrders = () => {
         <Card>
           <CardHeader><CardTitle className="text-base">Create PO</CardTitle></CardHeader>
           <CardContent className="grid md:grid-cols-5 gap-2">
-            <Input placeholder="Vendor ID" value={vendorId} onChange={(e) => setVendorId(e.target.value)} />
-            <Input placeholder="Item ID" value={itemId} onChange={(e) => setItemId(e.target.value)} />
-            <Input value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-            <Input value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} />
+            <Select value={vendorId} onValueChange={setVendorId}>
+              <SelectTrigger><SelectValue placeholder="Vendor" /></SelectTrigger>
+              <SelectContent>
+                {vendors.map((v) => <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={itemId} onValueChange={setItemId}>
+              <SelectTrigger><SelectValue placeholder="Item" /></SelectTrigger>
+              <SelectContent>
+                {items.map((i) => <SelectItem key={i.id} value={String(i.id)}>{i.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Input value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="Qty" />
+            <Input value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="Unit price" />
             <Button onClick={create}><PlusCircle className="h-4 w-4 mr-2" />Create</Button>
           </CardContent>
         </Card>
@@ -122,22 +158,38 @@ export const ScmOrders = () => {
           <CardHeader><CardTitle className="text-base flex items-center gap-2"><ShoppingCart className="h-4 w-4" />Orders</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             {orders.map((order) => (
-              <div key={order.id} className="flex items-center justify-between border rounded-md p-3">
+              <div key={order.id} className="flex flex-wrap items-center justify-between gap-2 border rounded-md p-3">
                 <div>
                   <div className="font-medium">{order.po_number}</div>
                   <div className="text-xs text-muted-foreground">{order.vendor_name || 'Vendor'} · ₹{order.total_amount}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge>{order.status}</Badge>
+                  {['draft', 'submitted'].includes(order.status) && (
+                    <Button size="sm" variant="outline" onClick={() => approve(order.id)}>Approve</Button>
+                  )}
                   {['approved', 'partial_receipt'].includes(order.status) && (
-                    <Button size="sm" onClick={() => receive(order)}>GRN</Button>
+                    <Button size="sm" onClick={() => receive(order)}>Create GRN</Button>
                   )}
                 </div>
               </div>
             ))}
           </CardContent>
         </Card>
-        <p className="text-xs text-muted-foreground">Vendors: {vendors.map((v) => `${v.id}:${v.name}`).join(' · ')}</p>
+        <Card>
+          <CardHeader><CardTitle className="text-base">Goods Receipt (GRN) — Post to Inventory</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            {grns.filter((g) => !g.posted).map((g) => (
+              <div key={g.id} className="flex items-center justify-between border rounded-md p-3">
+                <div className="text-sm">{g.grn_number} · {g.po_number} · {g.vendor_name}</div>
+                <Button size="sm" onClick={() => postGrn(g.id)}>Post to Stock</Button>
+              </div>
+            ))}
+            {!grns.filter((g) => !g.posted).length && (
+              <p className="text-sm text-muted-foreground">No GRNs pending inventory post.</p>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </Wrap>
   );
@@ -193,8 +245,13 @@ export const ScmIndents = () => {
         <Card>
           <CardHeader><CardTitle className="text-base">Raise Indent</CardTitle></CardHeader>
           <CardContent className="grid md:grid-cols-4 gap-2">
-            <Input value={department} onChange={(e) => setDepartment(e.target.value)} />
-            <Input placeholder="Item ID" value={itemId} onChange={(e) => setItemId(e.target.value)} />
+            <Input value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="Department" />
+            <Select value={itemId} onValueChange={setItemId}>
+              <SelectTrigger><SelectValue placeholder="Item" /></SelectTrigger>
+              <SelectContent>
+                {items.map((i) => <SelectItem key={i.id} value={String(i.id)}>{i.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
             <Input value={quantity} onChange={(e) => setQuantity(e.target.value)} />
             <Button onClick={create}><ClipboardList className="h-4 w-4 mr-2" />Submit</Button>
           </CardContent>
@@ -209,7 +266,91 @@ export const ScmIndents = () => {
             ))}
           </CardContent>
         </Card>
-        <p className="text-xs text-muted-foreground">Items: {items.slice(0, 5).map((i) => `${i.id}:${i.name}`).join(' · ')}</p>
+      </div>
+    </Wrap>
+  );
+};
+
+export const ScmInventory = () => {
+  const { rows, refresh } = useScmList<{ item_id: number; item_code: string; name: string; warehouse_code?: string; quantity_on_hand: number }>('/scm/inventory/balances');
+  return (
+    <Wrap title="Inventory Balances">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2"><Archive className="h-4 w-4" />Stock on Hand</CardTitle>
+          <Button size="sm" variant="outline" onClick={refresh}>Refresh</Button>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {rows.map((row, idx) => (
+            <div key={`${row.item_id}-${row.warehouse_code || idx}`} className="flex justify-between border rounded-md p-3 text-sm">
+              <div>
+                <div className="font-medium">{row.name}</div>
+                <div className="text-xs text-muted-foreground">{row.item_code} · {row.warehouse_code || 'All stores'}</div>
+              </div>
+              <Badge variant={Number(row.quantity_on_hand) <= 0 ? 'destructive' : 'secondary'}>
+                {Number(row.quantity_on_hand)} on hand
+              </Badge>
+            </div>
+          ))}
+          {!rows.length && <p className="text-sm text-muted-foreground">No inventory movements yet. Approve PO → GRN → Post to stock.</p>}
+        </CardContent>
+      </Card>
+    </Wrap>
+  );
+};
+
+export const ScmApprovals = () => {
+  const { rows: orders, refresh } = useScmList<Order>('/scm/orders');
+  const [approvals, setApprovals] = useState<Approval[]>([]);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
+  const loadGovernance = async () => {
+    const [a, b] = await Promise.all([api.get('/scm/approvals'), api.get('/scm/audit')]);
+    setApprovals(a.data.data || []);
+    setAudit(b.data.data || []);
+  };
+  useEffect(() => { loadGovernance(); }, []);
+  const approveOrder = async (id: number) => {
+    await api.patch(`/scm/orders/${id}/approve`);
+    await Promise.all([refresh(), loadGovernance()]);
+  };
+  const pendingOrders = orders.filter((o) => o.status === 'draft' || o.status === 'submitted');
+  return (
+    <Wrap title="Approvals & Audit">
+      <div className="space-y-4">
+        <Card>
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><MonitorCheck className="h-4 w-4" />Pending PO Approvals</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            {pendingOrders.map((o) => (
+              <div key={o.id} className="flex justify-between border rounded-md p-3">
+                <span>{o.po_number} · ₹{o.total_amount}</span>
+                <Button size="sm" onClick={() => approveOrder(o.id)}>Approve</Button>
+              </div>
+            ))}
+            {!pendingOrders.length && <p className="text-sm text-muted-foreground">No POs awaiting approval.</p>}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-base">Governance Queue ({approvals.filter((a) => a.status === 'pending').length})</CardTitle></CardHeader>
+          <CardContent className="space-y-1 text-sm">
+            {approvals.slice(0, 10).map((a) => (
+              <div key={a.id} className="flex justify-between py-1 border-b">
+                <span>{a.action} · {a.entity_type} #{a.entity_id}</span>
+                <Badge>{a.status}</Badge>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-base">Audit Trail</CardTitle></CardHeader>
+          <CardContent className="space-y-1 text-sm max-h-64 overflow-y-auto">
+            {audit.slice(0, 20).map((e) => (
+              <div key={e.id} className="flex justify-between py-1 border-b text-xs">
+                <span>{e.action} · {e.entity_type}</span>
+                <span className="text-muted-foreground">{e.actor} · {e.created_at ? new Date(e.created_at).toLocaleString() : ''}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       </div>
     </Wrap>
   );
@@ -312,6 +453,15 @@ export const ScmClinicalSupply = () => {
         </div>
         <Card>
           <CardHeader><CardTitle className="text-base flex items-center gap-2"><Pill className="h-4 w-4" />Formulary ({formulary.length})</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            {formulary.map((f: any) => (
+              <div key={f.id} className="flex justify-between border rounded-md p-2 text-sm">
+                <span>{f.item_name || f.item_id}</span>
+                <Badge>{f.tier || 'standard'}</Badge>
+              </div>
+            ))}
+            {!formulary.length && <p className="text-sm text-muted-foreground">No formulary entries yet.</p>}
+          </CardContent>
         </Card>
       </div>
     </Wrap>
@@ -409,22 +559,39 @@ export const ScmOpsControl = () => {
 
 export const ScmReports = () => {
   const [summary, setSummary] = useState<Record<string, number>>({});
+  const [reorder, setReorder] = useState<any[]>([]);
   useEffect(() => {
     api.get('/scm/overview').then((res) => setSummary(res.data.data || {}));
+    api.get('/scm/ai/reorder-advisor').then((res) => setReorder(res.data.data || [])).catch(() => {});
   }, []);
   return (
     <Wrap title="SCM Reports">
-      <Card>
-        <CardHeader><CardTitle className="text-base flex items-center gap-2"><BarChart3 className="h-4 w-4" />Command Center</CardTitle></CardHeader>
-        <CardContent className="grid md:grid-cols-3 gap-3">
-          {Object.entries(summary).map(([k, v]) => (
-            <div key={k} className="border rounded-md p-4">
-              <div className="text-xs text-muted-foreground">{k}</div>
-              <div className="text-2xl font-bold">{String(v)}</div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+      <div className="space-y-4">
+        <Card>
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><BarChart3 className="h-4 w-4" />Command Center</CardTitle></CardHeader>
+          <CardContent className="grid md:grid-cols-3 gap-3">
+            {Object.entries(summary).map(([k, v]) => (
+              <div key={k} className="border rounded-md p-4">
+                <div className="text-xs text-muted-foreground">{k.replace(/_/g, ' ')}</div>
+                <div className="text-2xl font-bold">{String(v)}</div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+        {reorder.length > 0 && (
+          <Card>
+            <CardHeader><CardTitle className="text-base">AI Reorder Recommendations</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              {reorder.map((r) => (
+                <div key={r.itemId} className="flex justify-between text-sm border rounded p-2">
+                  <span>{r.name} ({r.onHand} on hand)</span>
+                  <Badge variant={r.priority === 'critical' ? 'destructive' : 'outline'}>Order {r.suggestedQty}</Badge>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </Wrap>
   );
 };
