@@ -83,7 +83,7 @@ createRoot(document.getElementById("root")!).render(
 // Enhanced Service Worker Registration with better error handling
 if ('serviceWorker' in navigator && window.isSecureContext) {
   window.addEventListener('load', () => {
-    const SW_VERSION = 'v20';
+    const SW_VERSION = 'v21';
     let refreshing = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (refreshing) return;

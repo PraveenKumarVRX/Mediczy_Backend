@@ -63,6 +63,18 @@ aws s3 sync "$BUILD_DIR" "$S3_BUCKET" \
 echo -e "${GREEN}✅ Files uploaded to S3${NC}"
 echo ""
 
+# Step 2b: Ensure CloudFront rewrites SPA deep links (idempotent)
+if [ "${SKIP_CF_SPA_CONFIG:-false}" != true ]; then
+  echo -e "${YELLOW}🌐 Step 2b/4: CloudFront SPA routing...${NC}"
+  if bash "$SCRIPT_DIR/configure-cloudfront-spa-routing.sh" 2>/dev/null; then
+    echo -e "${GREEN}✅ CloudFront SPA routing OK${NC}"
+  else
+    echo -e "${YELLOW}⚠️  CloudFront SPA config skipped (no AWS permissions or jq missing)${NC}"
+    echo -e "${YELLOW}   Run manually: bash scripts/deploy/configure-cloudfront-spa-routing.sh${NC}"
+  fi
+  echo ""
+fi
+
 # Step 3: Try to invalidate CloudFront
 echo -e "${YELLOW}🔄 Step 3/4: Attempting CloudFront cache invalidation...${NC}"
 if aws cloudfront create-invalidation \
@@ -91,10 +103,15 @@ echo ""
 # Step 4: Verification
 echo -e "${YELLOW}✓ Step 4/4: Verifying deployment...${NC}"
 if aws s3 ls "$S3_BUCKET/index.html" > /dev/null 2>&1; then
-  echo -e "${GREEN}✅ Deployment successful!${NC}"
+  echo -e "${GREEN}✅ S3 index.html present${NC}"
+  if bash "$SCRIPT_DIR/verify-spa-routes.sh"; then
+    echo -e "${GREEN}✅ Deployment successful!${NC}"
+  else
+    echo -e "${YELLOW}⚠️  S3 upload OK but SPA route check failed — see above${NC}"
+    exit 1
+  fi
   echo -e "${BLUE}🌐 Frontend URL: https://app.mediqzy.com${NC}"
-  echo -e "${BLUE}📝 Team Settings: https://app.mediqzy.com/team/settings${NC}"
-  echo -e "${BLUE}🤖 AI Doctor: https://app.mediqzy.com/ai-doctor${NC}"
+  echo -e "${BLUE}📦 SCM Dashboard: https://app.mediqzy.com/scm/dashboard${NC}"
 else
   echo -e "${RED}❌ Deployment verification failed${NC}"
   exit 1

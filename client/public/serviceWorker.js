@@ -1,12 +1,12 @@
 // Service Worker for Mediczy Healthcare Platform
-const CACHE_NAME = 'mediczy-v20'; // v20: force doctor online-count UI bundle refresh
+const CACHE_NAME = 'mediczy-v21'; // v21: SPA navigate fallback when origin returns 404
 const ESSENTIAL_URLS = [
   '/'
 ];
 
 // Install event - cache only the HTML shell for offline fallback
 self.addEventListener('install', (event) => {
-  console.log('🔧 ServiceWorker v20 installing...');
+  console.log('🔧 ServiceWorker v21 installing...');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
@@ -24,7 +24,7 @@ self.addEventListener('install', (event) => {
 
 // Activate event - clean up ALL old caches and take control
 self.addEventListener('activate', (event) => {
-  console.log('🚀 ServiceWorker v20 activating...');
+  console.log('🚀 ServiceWorker v21 activating...');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -78,12 +78,19 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // For HTML navigation requests: network-first, fallback to cached shell
+  // For HTML navigation requests: network-first, SPA fallback, then cached shell
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
-        .then((response) => {
-          // Update cached HTML shell
+        .then(async (response) => {
+          if (response && (response.status === 404 || response.status === 403)) {
+            const shell = await fetch('/index.html', { cache: 'no-store' }).catch(() => null);
+            if (shell && shell.ok) {
+              const clone = shell.clone();
+              caches.open(CACHE_NAME).then(c => c.put('/', clone)).catch(() => {});
+              return shell;
+            }
+          }
           if (response && response.status === 200) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then(c => c.put('/', clone)).catch(() => {});
