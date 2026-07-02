@@ -10,7 +10,9 @@ import {
 
 const TOOLS = [
   { title: 'Doctor Dashboard', desc: 'Appointments, patients, rounds', path: '/doctor/dashboard', icon: Stethoscope, color: 'bg-blue-600' },
-  { title: 'AI Voice Scribe', desc: 'Ambient documentation from consultation', path: '/doctor/voice-scribe', icon: Mic, color: 'bg-violet-600', badge: 'AI' },
+  { title: 'SOAP Clinical Notes', desc: 'Progress notes, sign & ICD-10', path: '/doctor/clinical-workspace', icon: ClipboardList, color: 'bg-purple-600' },
+  { title: 'IP Progress Notes', desc: 'Bedside ward round documentation', path: '/hmis/patient/1/doctor-notes', icon: FileText, color: 'bg-teal-700' },
+  { title: 'AI Voice Scribe', desc: 'Ambient IPD/OPD documentation', path: '/doctor/voice-scribe?docType=ipd_notes', icon: Mic, color: 'bg-violet-600', badge: 'AI' },
   { title: 'Clinical CDSS', desc: 'AI triage & decision support', path: '/doctor/triage', icon: Brain, color: 'bg-fuchsia-600', badge: 'AI' },
   { title: 'Voice Assistant', desc: 'Hands-free orders & queries', path: '/doctor/assistant', icon: Sparkles, color: 'bg-cyan-600', badge: 'AI' },
   { title: 'Video Consult', desc: 'Teleconsultation with patients', path: '/doctor/video', icon: Video, color: 'bg-sky-600' },

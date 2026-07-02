@@ -789,6 +789,8 @@ const AnesthesiaAssessment  = lazy(() => import("@/pages/hmis/AnesthesiaAssessme
 const DischargeWorkflow     = lazy(() => import("@/pages/hmis/DischargeWorkflow"));
 const FollowUpManagement    = lazy(() => import("@/pages/hmis/FollowUpManagement"));
 const EChartingPage         = lazy(() => import("@/pages/hmis/EChartingPage"));
+const DoctorInpatientNotesPage = lazy(() => import("@/pages/hmis/DoctorInpatientNotesPage"));
+const EnhancedDoctorDashboard  = lazy(() => import("@/pages/doctor/EnhancedDoctorDashboard"));
 const ClinicalCalculators   = lazy(() => import("@/pages/hmis/ClinicalCalculators"));
 const BedsideReference      = lazy(() => import("@/pages/hmis/BedsideReference"));
 // Section 16 screens — bed map, OT command center, eMAR, discharge board, inpatient workspace, leadership analytics
@@ -972,6 +974,7 @@ const AppRoutes = () => {
         <Route path="/doctor/home"                element={<DoctorMobileHome />} />
         <Route path="/doctor-dashboard"           element={<DoctorDashboard />} />
         <Route path="/doctor/dashboard"           element={<DoctorDashboard />} />
+        <Route path="/doctor/clinical-workspace"  element={<MainLayout><EnhancedDoctorDashboard /></MainLayout>} />
         <Route path="/doctor/appointments"        element={<DoctorAppointments />} />
         <Route path="/doctor/availability"        element={<DoctorAppointmentSettings />} />
         <Route path="/doctor/prescriptions"       element={<DoctorPrescriptions />} />
@@ -1703,6 +1706,8 @@ const AppRoutes = () => {
         <Route path="/hmis/admission/:admissionId/discharge"            element={<DischargeWorkflow />} />
         <Route path="/hmis/patient/:patientId/follow-up"                element={<FollowUpManagement />} />
         <Route path="/hmis/admission/:admissionId/echart"              element={<EChartingPage />} />
+        <Route path="/hmis/admission/:admissionId/doctor-notes"       element={<DoctorInpatientNotesPage />} />
+        <Route path="/hmis/patient/:patientId/doctor-notes"           element={<DoctorInpatientNotesPage />} />
         <Route path="/hmis/echart"                                      element={<EChartingPage />} />
         <Route path="/hmis/calculators"                                 element={<ClinicalCalculators />} />
         <Route path="/hmis/reference"                                   element={<BedsideReference />} />

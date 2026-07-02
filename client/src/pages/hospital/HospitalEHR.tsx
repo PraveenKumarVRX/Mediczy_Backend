@@ -1781,30 +1781,46 @@ const HospitalEHR = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddNoteDialog(false)}>Cancel</Button>
-            <Button onClick={() => {
+            <Button onClick={async () => {
               if (!selectedPatient) return;
-              updateSelectedPatient((patient) => {
-                const note: ClinicalNote = {
-                  id: `N-${Date.now()}`,
-                  type: noteForm.type,
-                  author: noteForm.author,
+              try {
+                await api.post('/hospital/clinical-notes/notes', {
+                  patientId: Number(selectedPatient.id),
+                  noteType: noteForm.type.replace(/\s+/g, '_').toLowerCase(),
+                  subject: noteForm.subject,
+                  content: noteForm.content,
+                  subjective: `${noteForm.subject ? `${noteForm.subject}\n\n` : ''}${noteForm.content}`.trim(),
                   authorRole: noteForm.authorRole,
-                  createdAt: new Date().toISOString(),
-                  content: `${noteForm.subject ? `${noteForm.subject}\n\n` : ''}${noteForm.content}`.trim()
-                };
-                return { ...patient, notes: [note, ...patient.notes] };
-              });
-              setNoteForm({
-                type: 'Progress Note',
-                author: 'Dr. On Call',
-                authorRole: 'Physician',
-                subject: '',
-                content: ''
-              });
-              toast({
-                title: "Note Added",
-                description: "Clinical note has been added to patient record.",
-              });
+                });
+                updateSelectedPatient((patient) => {
+                  const note: ClinicalNote = {
+                    id: `N-${Date.now()}`,
+                    type: noteForm.type,
+                    author: noteForm.author,
+                    authorRole: noteForm.authorRole,
+                    createdAt: new Date().toISOString(),
+                    content: `${noteForm.subject ? `${noteForm.subject}\n\n` : ''}${noteForm.content}`.trim()
+                  };
+                  return { ...patient, notes: [note, ...patient.notes] };
+                });
+                setNoteForm({
+                  type: 'Progress Note',
+                  author: 'Dr. On Call',
+                  authorRole: 'Physician',
+                  subject: '',
+                  content: ''
+                });
+                toast({
+                  title: "Note Saved",
+                  description: "Clinical note saved to EHR database.",
+                });
+              } catch (e: any) {
+                toast({
+                  variant: 'destructive',
+                  title: 'Save failed',
+                  description: e?.response?.data?.message || 'Could not persist note',
+                });
+              }
               setShowAddNoteDialog(false);
             }}>Save Note</Button>
           </DialogFooter>

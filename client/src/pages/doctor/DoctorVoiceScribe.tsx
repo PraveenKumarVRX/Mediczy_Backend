@@ -5,7 +5,8 @@
  * offline-scribe full-pipeline endpoint, and displays the structured result.
  */
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import MainLayout from '@/components/layout/MainLayoutdoctor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -114,6 +115,7 @@ const formatDoc = (doc: unknown): string => {
 // ─── Main page component ─────────────────────────────────────────────────────
 const DoctorVoiceScribe = () => {
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
 
   // Recording
   const [recState, setRecState]    = useState<RecordingState>('idle');
@@ -129,7 +131,12 @@ const DoctorVoiceScribe = () => {
 
   // Form
   const [language, setLanguage]     = useState('auto');
-  const [docType, setDocType]       = useState('prescription');
+  const [docType, setDocType]       = useState(searchParams.get('docType') || 'prescription');
+
+  useEffect(() => {
+    const dt = searchParams.get('docType');
+    if (dt) setDocType(dt);
+  }, [searchParams]);
   const [patientName, setPatientName] = useState('');
   const [patientAge, setPatientAge]   = useState('');
   const [patientGender, setPatientGender] = useState('');

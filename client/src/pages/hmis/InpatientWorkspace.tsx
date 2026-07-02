@@ -219,12 +219,42 @@ export default function InpatientWorkspace() {
             {/* Panel 5: Actions */}
             <div className="flex flex-wrap gap-2">
               {[
-                { label: 'Place Order', icon: PlusCircle, cls: 'bg-teal-600 hover:bg-teal-700 text-white' },
-                { label: 'Write Note', icon: FileText, cls: 'bg-slate-700 hover:bg-slate-800 text-white' },
-                { label: 'Start Discharge', icon: LogOut, cls: 'bg-amber-600 hover:bg-amber-700 text-white', action: () => patient?.admissionId && navigate(`/hmis/admission/${patient.admissionId}/discharge`) },
-                { label: 'Add to Follow-Up', icon: Star, cls: 'bg-blue-600 hover:bg-blue-700 text-white' },
+                {
+                  label: 'Place Order',
+                  icon: PlusCircle,
+                  cls: 'bg-teal-600 hover:bg-teal-700 text-white',
+                  action: () => navigate(`/hospital/lab-order?patientId=${patientId}`),
+                },
+                {
+                  label: 'Write Note',
+                  icon: FileText,
+                  cls: 'bg-slate-700 hover:bg-slate-800 text-white',
+                  action: () => {
+                    const adm = patient?.admissionId;
+                    if (adm) navigate(`/hmis/admission/${adm}/doctor-notes`);
+                    else navigate(`/hmis/patient/${patientId}/doctor-notes`);
+                  },
+                },
+                {
+                  label: 'Nursing e-Chart',
+                  icon: Activity,
+                  cls: 'bg-emerald-600 hover:bg-emerald-700 text-white',
+                  action: () => patient?.admissionId && navigate(`/hmis/admission/${patient.admissionId}/echart`),
+                },
+                {
+                  label: 'Start Discharge',
+                  icon: LogOut,
+                  cls: 'bg-amber-600 hover:bg-amber-700 text-white',
+                  action: () => patient?.admissionId && navigate(`/hmis/admission/${patient.admissionId}/discharge`),
+                },
+                {
+                  label: 'Add to Follow-Up',
+                  icon: Star,
+                  cls: 'bg-blue-600 hover:bg-blue-700 text-white',
+                  action: () => navigate(`/hmis/patient/${patientId}/follow-up`),
+                },
               ].map(({ label, icon: Icon, cls, action }) => (
-                <Button key={label} className={`${cls} flex items-center gap-1`} onClick={action}>
+                <Button key={label} className={`${cls} flex items-center gap-1`} onClick={action} disabled={!action}>
                   <Icon className="h-4 w-4" /> {label}
                 </Button>
               ))}
