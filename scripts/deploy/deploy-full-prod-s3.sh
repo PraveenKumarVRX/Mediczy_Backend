@@ -74,7 +74,14 @@ deploy_body() {
   (
     cd client
     export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=3072}"
-    npm ci --prefer-offline
+    # vite/tailwind/typescript are devDependencies — must install even when NODE_ENV=production
+    rm -rf node_modules
+    NODE_ENV=development npm ci --include=dev --prefer-offline
+    if [ ! -x node_modules/.bin/vite ]; then
+      echo -e "${RED}❌ vite missing after npm ci (devDependencies not installed)${NC}"
+      echo -e "${RED}   Retry: cd client && rm -rf node_modules && NODE_ENV=development npm ci --include=dev${NC}"
+      exit 1
+    fi
     npm run build
   )
   TEAM_BUNDLE="$(ls client/dist/assets/TeamCorporateManagement-*.js 2>/dev/null | xargs -n1 basename | head -1 || true)"
@@ -146,7 +153,12 @@ echo "[3/7] Building client..."
 (
   cd client
   export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=3072}"
-  npm ci --prefer-offline
+  rm -rf node_modules
+  NODE_ENV=development npm ci --include=dev --prefer-offline
+  if [ ! -x node_modules/.bin/vite ]; then
+    echo "❌ vite missing after npm ci"
+    exit 1
+  fi
   npm run build
 )
 TEAM_BUNDLE="$(ls client/dist/assets/TeamCorporateManagement-*.js 2>/dev/null | xargs -n1 basename | head -1 || true)"
