@@ -192,35 +192,34 @@ CREATE INDEX IF NOT EXISTS idx_billing_audit_resource ON billing_audit_log(resou
 `;
 
 async function seedDefaults() {
-  await pool.query(`
-    INSERT INTO hospital_bill_templates (hospital_id, template_code, template_name, template_type, payer_type, is_default, header_config, footer_config)
-    SELECT 1, 'GST_ITEMIZED', 'GST Itemized IP Bill', 'itemized', 'all', TRUE,
-      '{"title":"Tax Invoice","showGstin":true,"showUhid":true}'::jsonb,
-      '{"disclaimer":"This is a computer-generated bill.","showSignature":true}'::jsonb
-    WHERE NOT EXISTS (SELECT 1 FROM hospital_bill_templates WHERE hospital_id = 1 AND template_code = 'GST_ITEMIZED');
+  const seeds = [
+    `INSERT INTO hospital_bill_templates (hospital_id, template_code, template_name, template_type, payer_type, is_default, header_config, footer_config)
+     SELECT 1, 'GST_ITEMIZED', 'GST Itemized IP Bill', 'itemized', 'all', TRUE,
+       '{"title":"Tax Invoice","showGstin":true,"showUhid":true}'::jsonb,
+       '{"disclaimer":"This is a computer-generated bill.","showSignature":true}'::jsonb
+     WHERE NOT EXISTS (SELECT 1 FROM hospital_bill_templates WHERE hospital_id = 1 AND template_code = 'GST_ITEMIZED')`,
+    `INSERT INTO hospital_bill_templates (hospital_id, template_code, template_name, template_type, payer_type, is_default, header_config)
+     SELECT 1, 'INSURANCE_SUMMARY', 'Insurance Summary Bill', 'summary', 'insurance', FALSE,
+       '{"title":"Insurance Bill Summary","showPolicy":true,"showPreAuth":true}'::jsonb
+     WHERE NOT EXISTS (SELECT 1 FROM hospital_bill_templates WHERE hospital_id = 1 AND template_code = 'INSURANCE_SUMMARY')`,
+    `INSERT INTO hospital_bill_templates (hospital_id, template_code, template_name, template_type, payer_type, is_default, header_config)
+     SELECT 1, 'CASH_RECEIPT', 'Cash Counter Receipt', 'receipt', 'cash', FALSE,
+       '{"title":"Payment Receipt","thermal":true}'::jsonb
+     WHERE NOT EXISTS (SELECT 1 FROM hospital_bill_templates WHERE hospital_id = 1 AND template_code = 'CASH_RECEIPT')`,
+    `INSERT INTO billing_stations (hospital_id, station_code, station_name, location, station_type)
+     SELECT 1, 'MAIN-CASH', 'Main Cash Counter', 'Ground Floor — Billing Wing', 'cashier'
+     WHERE NOT EXISTS (SELECT 1 FROM billing_stations WHERE hospital_id = 1 AND station_code = 'MAIN-CASH')`,
+    `INSERT INTO billing_stations (hospital_id, station_code, station_name, location, station_type, accepts_insurance)
+     SELECT 1, 'INS-DESK', 'Insurance Desk', 'Ground Floor — TPA Wing', 'insurance', TRUE
+     WHERE NOT EXISTS (SELECT 1 FROM billing_stations WHERE hospital_id = 1 AND station_code = 'INS-DESK')`,
+    `INSERT INTO billing_stations (hospital_id, station_code, station_name, location, station_type, accepts_credit)
+     SELECT 1, 'IPD-BILLING', 'IPD Billing Station', 'First Floor — IPD Lobby', 'ipd', TRUE
+     WHERE NOT EXISTS (SELECT 1 FROM billing_stations WHERE hospital_id = 1 AND station_code = 'IPD-BILLING')`,
+  ];
 
-    INSERT INTO hospital_bill_templates (hospital_id, template_code, template_name, template_type, payer_type, is_default, header_config)
-    SELECT 1, 'INSURANCE_SUMMARY', 'Insurance Summary Bill', 'summary', 'insurance', FALSE,
-      '{"title":"Insurance Bill Summary","showPolicy":true,"showPreAuth":true}'::jsonb
-    WHERE NOT EXISTS (SELECT 1 FROM hospital_bill_templates WHERE hospital_id = 1 AND template_code = 'INSURANCE_SUMMARY');
-
-    INSERT INTO hospital_bill_templates (hospital_id, template_code, template_name, template_type, payer_type, is_default, header_config)
-    SELECT 1, 'CASH_RECEIPT', 'Cash Counter Receipt', 'receipt', 'cash', FALSE,
-      '{"title":"Payment Receipt","thermal":true}'::jsonb
-    WHERE NOT EXISTS (SELECT 1 FROM hospital_bill_templates WHERE hospital_id = 1 AND template_code = 'CASH_RECEIPT');
-
-    INSERT INTO billing_stations (hospital_id, station_code, station_name, location, station_type)
-    SELECT 1, 'MAIN-CASH', 'Main Cash Counter', 'Ground Floor — Billing Wing', 'cashier'
-    WHERE NOT EXISTS (SELECT 1 FROM billing_stations WHERE hospital_id = 1 AND station_code = 'MAIN-CASH');
-
-    INSERT INTO billing_stations (hospital_id, station_code, station_name, location, station_type, accepts_insurance)
-    SELECT 1, 'INS-DESK', 'Insurance Desk', 'Ground Floor — TPA Wing', 'insurance', TRUE
-    WHERE NOT EXISTS (SELECT 1 FROM billing_stations WHERE hospital_id = 1 AND station_code = 'INS-DESK');
-
-    INSERT INTO billing_stations (hospital_id, station_code, station_name, location, station_type, accepts_credit)
-    SELECT 1, 'IPD-BILLING', 'IPD Billing Station', 'First Floor — IPD Lobby', 'ipd', TRUE
-    WHERE NOT EXISTS (SELECT 1 FROM billing_stations WHERE hospital_id = 1 AND station_code = 'IPD-BILLING');
-  `);
+  for (const sql of seeds) {
+    await pool.query(sql);
+  }
 }
 
 async function run() {
