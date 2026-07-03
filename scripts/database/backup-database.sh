@@ -38,3 +38,10 @@ echo "Old backups cleaned (retention: $RETENTION_DAYS days)"
 
 # Show backup size
 du -h "${BACKUP_FILE}.gz"
+
+# Push latest dump offsite (S3/MinIO) — uses local file if live pg_dump lacks RDS master
+if [ -f "$ROOT_DIR/scripts/backup/daily-offsite-backup.sh" ]; then
+  echo "Syncing to offsite storage..."
+  ROOT="$ROOT_DIR" bash "$ROOT_DIR/scripts/backup/daily-offsite-backup.sh" --upload-local-only \
+    >> "$ROOT_DIR/logs/backup.log" 2>&1 || echo "WARN: offsite sync failed (see logs/backup.log)"
+fi
