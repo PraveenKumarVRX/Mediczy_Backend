@@ -139,6 +139,7 @@ log "IDE / build caches:"
 for path in \
   "$HOME_DIR/.vscode-server" \
   "$HOME_DIR/.gradle/caches" \
+  "$HOME_DIR/.android/avd" \
   "$HOME_DIR/.npm" \
   "$HOME_DIR/.cache" \
   "$HOME_DIR/models"; do
@@ -242,6 +243,7 @@ if [ "$DO_CLEANUP" -eq 1 ]; then
     fi
     run_rm "$HOME_DIR/.gradle/caches"
     run_rm "$HOME_DIR/.vscode-server/data/CachedExtensionVSIXs"
+    run_rm "$HOME_DIR/.android/avd"
     run_cmd "find '$HOME_DIR/.cache' -type f -atime +30 -delete 2>/dev/null || true"
   fi
 

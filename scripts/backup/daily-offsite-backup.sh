@@ -45,8 +45,18 @@ source "$ROOT/scripts/ops/load-prod-env.sh"
 PG_HOST="$POSTGRES_HOST"
 PG_PORT="$POSTGRES_PORT"
 PG_DB="$POSTGRES_DATABASE"
-PG_USER="$POSTGRES_USER"
-export PGPASSWORD="$POSTGRES_PASSWORD"
+
+# Prefer dedicated backup user (RDS master); fall back to app user + schema exclusions
+if [ -n "${POSTGRES_BACKUP_PASSWORD:-}" ]; then
+  PG_USER="${POSTGRES_BACKUP_USER:-postgres}"
+  export PGPASSWORD="$POSTGRES_BACKUP_PASSWORD"
+  DUMP_EXCLUDE_SCHEMAS="${PG_DUMP_EXCLUDE_SCHEMAS:-}"
+else
+  PG_USER="$POSTGRES_USER"
+  export PGPASSWORD="$POSTGRES_PASSWORD"
+  # mediczy_helper cannot LOCK n8n.* tables on RDS
+  DUMP_EXCLUDE_SCHEMAS="${PG_DUMP_EXCLUDE_SCHEMAS:-n8n}"
+fi
 
 AWS_REGION="${AWS_REGION:-ap-south-1}"
 S3_BACKUP_BUCKET="${S3_BACKUP_BUCKET:-mediczy-backups}"
@@ -63,6 +73,21 @@ if ! command -v pg_dump >/dev/null 2>&1; then
 fi
 
 log "Starting offsite backup for ${PG_DB}@${PG_HOST} (user=${PG_USER}, ssl=${PGSSLMODE:-prefer})"
+
+# Build --exclude-schema flags (e.g. n8n — mediczy_helper cannot LOCK those tables)
+PG_DUMP_EXCLUDE_ARGS=()
+if [ -n "${PG_DUMP_EXCLUDE_SCHEMAS:-}" ]; then
+  IFS=',' read -ra _schemas <<< "$PG_DUMP_EXCLUDE_SCHEMAS"
+  for _schema in "${_schemas[@]}"; do
+    _schema="${_schema#"${_schema%%[![:space:]]*}"}"
+    _schema="${_schema%"${_schema##*[![:space:]]}"}"
+    [ -n "$_schema" ] || continue
+    PG_DUMP_EXCLUDE_ARGS+=(--exclude-schema="$_schema")
+  done
+  if [ "${#PG_DUMP_EXCLUDE_ARGS[@]}" -gt 0 ]; then
+    log "Excluding schemas: ${PG_DUMP_EXCLUDE_SCHEMAS}"
+  fi
+fi
 
 # Quick connectivity check before full dump
 if ! pg_isready -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" -t 10 >/dev/null 2>&1; then
@@ -83,6 +108,7 @@ pg_dump \
   --format=plain \
   --no-owner \
   --no-acl \
+  "${PG_DUMP_EXCLUDE_ARGS[@]}" \
   2>"$PG_DUMP_LOG" \
   | gzip -9 > "$DUMP_FILE"
 DUMP_RC=${PIPESTATUS[0]}
@@ -91,7 +117,7 @@ set -o pipefail
 if [ "$DUMP_RC" -ne 0 ] || [ ! -s "$DUMP_FILE" ]; then
   log "pg_dump stderr:"
   sed "s/^/${LOG_PREFIX}   /" "$PG_DUMP_LOG" >&2 || true
-  fail "pg_dump failed (exit $DUMP_RC) — check RDS security group, credentials, and PGSSLMODE"
+  fail "pg_dump failed (exit $DUMP_RC) — set POSTGRES_BACKUP_PASSWORD (RDS master) in .env or exclude schemas"
 fi
 
 DUMP_SIZE=$(du -sh "$DUMP_FILE" | cut -f1)

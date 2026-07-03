@@ -43,3 +43,9 @@ export POSTGRES_USER="${POSTGRES_USER:-mediczy_helper}"
 export POSTGRES_DATABASE="${POSTGRES_DATABASE:-mediczy_prod}"
 export POSTGRES_HOST="${POSTGRES_HOST:-mediczy-prod.cloqkwiey4k0.ap-south-1.rds.amazonaws.com}"
 export POSTGRES_PORT="${POSTGRES_PORT:-5432}"
+
+# Optional dedicated RDS master user for pg_dump (full dump). App user lacks n8n schema access.
+export POSTGRES_BACKUP_USER="${POSTGRES_BACKUP_USER:-${RDS_MASTER_USER:-postgres}}"
+export POSTGRES_BACKUP_PASSWORD="${POSTGRES_BACKUP_PASSWORD:-${RDS_MASTER_PASSWORD:-${POSTGRES_PRIMARY_PASSWORD:-}}}}"
+# Comma-separated schemas to skip (n8n tables are not readable by mediczy_helper)
+export PG_DUMP_EXCLUDE_SCHEMAS="${PG_DUMP_EXCLUDE_SCHEMAS:-n8n}"
