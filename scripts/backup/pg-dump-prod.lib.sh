@@ -6,6 +6,10 @@ RDS_INSTANCE_ID="${RDS_INSTANCE_ID:-mediczy-prod}"
 AWS_REGION="${AWS_REGION:-ap-south-1}"
 PG_DUMP_EXCLUDE_ARGS=()
 
+pg_dump_log() {
+  echo "[pg-dump $(date +%H:%M:%S)] $*"
+}
+
 pg_resolve_rds_master_user() {
   if [ -n "${RDS_MASTER_USERNAME:-}" ]; then
     echo "$RDS_MASTER_USERNAME"
