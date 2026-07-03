@@ -14,17 +14,17 @@
 set -euo pipefail
 
 ROOT="${ROOT:-/home/ubuntu/Mediczy}"
-ENV_FILE="${ENV_FILE:-$ROOT/.env}"
 DATE=$(date +%Y-%m-%d)
 TIMESTAMP=$(date +%Y-%m-%dT%H:%M:%S)
 LOG_PREFIX="[backup ${TIMESTAMP}]"
 TMPDIR=$(mktemp -d)
 WITH_UPLOADS=0
+PG_DUMP_LOG="${TMPDIR}/pg_dump.err"
 
 for arg in "$@"; do
   case "$arg" in
     --with-uploads) WITH_UPLOADS=1 ;;
-    --db-only)      ;; # default behaviour
+    --db-only)      ;;
     -h|--help)
       sed -n '2,12p' "$0"
       exit 0
@@ -39,19 +39,14 @@ fail() { echo "${LOG_PREFIX} ERROR: $*" >&2; rm -rf "$TMPDIR"; exit 1; }
 cleanup() { rm -rf "$TMPDIR"; }
 trap cleanup EXIT
 
-# Load production env (POSTGRES_*, AWS_*, MINIO_*)
-if [ -f "$ENV_FILE" ]; then
-  set -a
-  # shellcheck disable=SC1090
-  source <(grep -E '^(POSTGRES_|AWS_|S3_|MINIO_|DB_)' "$ENV_FILE" | sed 's/\r$//')
-  set +a
-fi
+# shellcheck disable=SC1091
+source "$ROOT/scripts/ops/load-prod-env.sh"
 
-PG_HOST="${POSTGRES_HOST:-mediczy-prod.cloqkwiey4k0.ap-south-1.rds.amazonaws.com}"
-PG_PORT="${POSTGRES_PORT:-5432}"
-PG_DB="${POSTGRES_DATABASE:-mediczy_prod}"
-PG_USER="${POSTGRES_USER:-postgres}"
-export PGPASSWORD="${POSTGRES_PASSWORD:-}"
+PG_HOST="$POSTGRES_HOST"
+PG_PORT="$POSTGRES_PORT"
+PG_DB="$POSTGRES_DATABASE"
+PG_USER="$POSTGRES_USER"
+export PGPASSWORD="$POSTGRES_PASSWORD"
 
 AWS_REGION="${AWS_REGION:-ap-south-1}"
 S3_BACKUP_BUCKET="${S3_BACKUP_BUCKET:-mediczy-backups}"
@@ -60,14 +55,25 @@ MINIO_ALIAS="${MINIO_ALIAS:-minio}"
 MINIO_BACKUP_BUCKET="${MINIO_BACKUP_BUCKET:-mediczy-backups}"
 
 if [ -z "${PGPASSWORD:-}" ]; then
-  fail "POSTGRES_PASSWORD not set — add to $ENV_FILE or export PGPASSWORD"
+  fail "POSTGRES_PASSWORD not set — check $ROOT/.env and server/.env"
 fi
 
-log "Starting offsite backup for ${PG_DB}@${PG_HOST}"
+if ! command -v pg_dump >/dev/null 2>&1; then
+  fail "pg_dump not found — run: sudo apt-get install -y postgresql-client"
+fi
+
+log "Starting offsite backup for ${PG_DB}@${PG_HOST} (user=${PG_USER}, ssl=${PGSSLMODE:-prefer})"
+
+# Quick connectivity check before full dump
+if ! pg_isready -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" -t 10 >/dev/null 2>&1; then
+  log "WARN: pg_isready failed — attempting dump anyway"
+fi
 
 # ── 1. PostgreSQL dump ────────────────────────────────────────────────────────
 DUMP_FILE="${TMPDIR}/${PG_DB}.sql.gz"
 log "Dumping PostgreSQL..."
+
+set +o pipefail
 pg_dump \
   -h "$PG_HOST" \
   -p "$PG_PORT" \
@@ -77,9 +83,16 @@ pg_dump \
   --format=plain \
   --no-owner \
   --no-acl \
-  2>/dev/null \
-  | gzip -9 > "$DUMP_FILE" \
-  || fail "pg_dump failed"
+  2>"$PG_DUMP_LOG" \
+  | gzip -9 > "$DUMP_FILE"
+DUMP_RC=${PIPESTATUS[0]}
+set -o pipefail
+
+if [ "$DUMP_RC" -ne 0 ] || [ ! -s "$DUMP_FILE" ]; then
+  log "pg_dump stderr:"
+  sed "s/^/${LOG_PREFIX}   /" "$PG_DUMP_LOG" >&2 || true
+  fail "pg_dump failed (exit $DUMP_RC) — check RDS security group, credentials, and PGSSLMODE"
+fi
 
 DUMP_SIZE=$(du -sh "$DUMP_FILE" | cut -f1)
 log "Dump complete: ${DUMP_SIZE}"
@@ -95,7 +108,7 @@ if command -v aws >/dev/null 2>&1; then
     log "S3 upload OK"
     UPLOADED=1
   else
-    log "WARN: S3 upload failed — ensure bucket ${S3_BACKUP_BUCKET} exists and IAM allows s3:PutObject"
+    log "WARN: S3 upload failed — create bucket: aws s3 mb s3://${S3_BACKUP_BUCKET} --region ${AWS_REGION}"
   fi
 else
   log "WARN: aws CLI not found — skipping S3"
@@ -113,12 +126,10 @@ if command -v mc >/dev/null 2>&1; then
       log "WARN: MinIO upload failed"
     fi
   else
-    log "MinIO alias '${MINIO_ALIAS}' or bucket '${MINIO_BACKUP_BUCKET}' not configured — skipping"
-    log "  Setup: mc alias set minio http://127.0.0.1:9000 ACCESS_KEY SECRET_KEY"
-    log "         mc mb minio/mediczy-backups"
+    log "MinIO not configured — skipping (S3-only is fine)"
   fi
 else
-  log "mc not installed — skipping MinIO (S3-only backup is fine)"
+  log "mc not installed — skipping MinIO"
 fi
 
 if [ "$UPLOADED" -eq 0 ]; then
@@ -142,15 +153,17 @@ if [ "$WITH_UPLOADS" -eq 1 ] && command -v mc >/dev/null 2>&1 && command -v aws 
   fi
 fi
 
-# ── 5. Local retention (small copy for quick restore) ─────────────────────────
+# ── 5. Local retention (keep latest 2 after successful offsite upload) ──────────
 LOCAL_DIR="/var/backups/mediczy"
 mkdir -p "$LOCAL_DIR"
 LOCAL_COPY="${LOCAL_DIR}/${PG_DB}_${DATE}.sql.gz"
 cp "$DUMP_FILE" "$LOCAL_COPY"
-find "$LOCAL_DIR" -type f -name "${PG_DB}_*.sql.gz" -mtime +7 -delete 2>/dev/null || true
-log "Local copy: ${LOCAL_COPY} (7-day retention)"
+mapfile -t LOCAL_DUMPS < <(ls -1t "$LOCAL_DIR"/${PG_DB}_*.sql.gz 2>/dev/null || true)
+for ((i=2; i<${#LOCAL_DUMPS[@]}; i++)); do
+  rm -f "${LOCAL_DUMPS[$i]}"
+done
+log "Local copy: ${LOCAL_COPY} (keep latest 2)"
 
 log "Backup complete."
 log "  Offsite: ${DEST_KEY} (${DUMP_SIZE})"
 log "  S3:      s3://${S3_BACKUP_BUCKET}/${DEST_KEY}"
-log "  MinIO:   ${MINIO_ALIAS}/${MINIO_BACKUP_BUCKET}/${DEST_KEY} (if configured)"
