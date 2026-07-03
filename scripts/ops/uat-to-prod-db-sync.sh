@@ -125,3 +125,8 @@ PROD_TABLES=$(PGPASSWORD="$PROD_PASS" psql "host=$PROD_HOST port=$PROD_PORT dbna
 echo "[$(date -Iseconds)] public tables: uat=$UAT_TABLES prod=$PROD_TABLES"
 
 echo "[$(date -Iseconds)] Sync complete"
+
+echo "[$(date -Iseconds)] Reassigning table ownership to mediczy_helper"
+bash "$ROOT_DIR/scripts/ops/fix-prod-db-ownership.sh" || {
+  echo "[$(date -Iseconds)] WARNING: ownership fix failed — run scripts/ops/fix-prod-db-ownership.sh manually"
+}
