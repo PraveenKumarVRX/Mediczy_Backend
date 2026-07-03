@@ -85,7 +85,7 @@ logging.getLogger("root").setLevel(logging.WARNING)  # suppress spaCy root INFO 
 
 # FastAPI imports
 try:
-    from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File
+    from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Request
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import StreamingResponse
     from pydantic import BaseModel, Field
