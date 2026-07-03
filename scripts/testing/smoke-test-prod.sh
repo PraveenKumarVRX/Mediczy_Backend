@@ -59,6 +59,33 @@ skip_test() {
   SKIPPED=$((SKIPPED+1))
 }
 
+curl_api() {
+  curl -s --max-time "${SMOKE_CURL_TIMEOUT:-30}" "$@"
+}
+
+wait_for_api_ready() {
+  local url="$API_BASE/api/health"
+  local max_wait="${SMOKE_API_WAIT_SEC:-120}"
+  local interval=3
+  local elapsed=0
+
+  echo "Waiting for API at $url (up to ${max_wait}s after PM2 restart)..."
+  while [ "$elapsed" -lt "$max_wait" ]; do
+    local body
+    body=$(curl -sf --max-time 5 "$url" 2>/dev/null || true)
+    if echo "$body" | grep -q '"status":"healthy"'; then
+      echo "✅ API ready (${elapsed}s)"
+      return 0
+    fi
+    sleep "$interval"
+    elapsed=$((elapsed + interval))
+  done
+
+  echo "❌ API not healthy after ${max_wait}s"
+  echo "   Check: pm2 logs mediczy-server --lines 80"
+  exit 1
+}
+
 json_eval() {
   local payload="$1"
   local expr="$2"
@@ -107,16 +134,45 @@ const loadedRoot = loadEnvFile(rootEnvPath);
 const loadedServer = loadEnvFile(serverEnvPath);
 
 function readPm2JwtSecret() {
+  const pick = (pm2Env) => {
+    if (!pm2Env) return null;
+    return (
+      pm2Env.JWT_SECRET ||
+      pm2Env.JWT_ACCESS_SECRET ||
+      pm2Env.env?.JWT_SECRET ||
+      pm2Env.env?.JWT_ACCESS_SECRET ||
+      null
+    );
+  };
+
   try {
     const { execSync } = require('child_process');
     const raw = execSync('pm2 jlist', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
     const apps = JSON.parse(raw);
     const server = apps.find((app) => app.name === 'mediczy-server');
-    const env = server?.pm2_env?.env || {};
-    return env.JWT_SECRET || env.JWT_ACCESS_SECRET || null;
+    const fromList = pick(server?.pm2_env);
+    if (fromList) return fromList;
+  } catch {
+    // fall through to pm2 env CLI
+  }
+
+  try {
+    const { execSync } = require('child_process');
+    const raw = execSync('pm2 env mediczy-server', {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    for (const line of raw.split('\n')) {
+      const secretMatch = line.match(/^JWT_SECRET:\s*(.+)$/);
+      if (secretMatch) return secretMatch[1].trim();
+      const accessMatch = line.match(/^JWT_ACCESS_SECRET:\s*(.+)$/);
+      if (accessMatch) return accessMatch[1].trim();
+    }
   } catch {
     return null;
   }
+
+  return null;
 }
 
 const pm2JwtSecret = readPm2JwtSecret();
@@ -339,20 +395,25 @@ JWT_ENV=$(json_eval "$IDENTITY_JSON" "data.get('jwtEnv')")
 ENV_ROOT=$(json_eval "$IDENTITY_JSON" "data.get('envFiles', {}).get('root')")
 ENV_SERVER=$(json_eval "$IDENTITY_JSON" "data.get('envFiles', {}).get('server')")
 echo "JWT env: ${JWT_ENV:-unknown} (root .env=${ENV_ROOT:-?} server/.env=${ENV_SERVER:-?})"
+if [ -z "$JWT_ENV" ] || [ "$JWT_ENV" = "unknown" ]; then
+  echo "⚠ Old smoke script? Run: bash scripts/ops/sync-prod-repo.sh"
+fi
+echo ""
+wait_for_api_ready
 echo ""
 echo "── CORE INFRASTRUCTURE ──"
-R=$(curl -s "$API_BASE/api/health")
+R=$(curl_api "$API_BASE/api/health")
 t "1. Health endpoint" "$R" '"status":"healthy"'
 DB=$(json_eval "$R" "((data.get('databases') or {}).get('postgres'))")
 t "2. PostgreSQL connected" "$DB" "connected"
 REDIS=$(json_eval "$R" "((data.get('databases') or {}).get('redis', 'unknown'))")
 t "3. Redis connected" "$REDIS" "connected"
-SIB=$(curl -s "$SIB_BASE/health" 2>/dev/null)
+SIB=$(curl_api "$SIB_BASE/health" 2>/dev/null)
 t "4. SIB FastAPI (port 8001)" "$SIB" "status"
 
 echo ""
 echo "── SIB AI ──"
-R=$(curl -s "$API_BASE/api/sib/ai-dashboard" -H "Authorization: Bearer $ADMIN_TOKEN")
+R=$(curl_api "$API_BASE/api/sib/ai-dashboard" -H "Authorization: Bearer $ADMIN_TOKEN")
 t "5. SIB AI Dashboard" "$R" '"success":true'
 TYPES=$(json_eval "$R" "len((((data.get('data') or {}).get('aiDecisionTypes')) or []))")
 tn "6. AI Decision Types (>=1)" "${TYPES:-0}" 1
@@ -360,11 +421,11 @@ tn "6. AI Decision Types (>=1)" "${TYPES:-0}" 1
 echo ""
 echo "── LEARNING LOOP ──"
 if [ -n "$DOC_TOKEN" ]; then
-  R=$(curl -s -X POST "$API_BASE/api/cdss/knowledge/feedback" \
+  R=$(curl_api -X POST "$API_BASE/api/cdss/knowledge/feedback" \
     -H "Authorization: Bearer $DOC_TOKEN" -H "Content-Type: application/json" \
     -d "{\"queryId\":\"smoke-test-$$\",\"action\":\"accepted\",\"queryText\":\"smoke test\",\"codesKept\":[\"Z00.0\"]}")
   t "7. CDSS Feedback submit" "$R" '"success":true'
-  R=$(curl -s "$API_BASE/api/cdss/knowledge/feedback/stats" -H "Authorization: Bearer $ADMIN_TOKEN")
+  R=$(curl_api "$API_BASE/api/cdss/knowledge/feedback/stats" -H "Authorization: Bearer $ADMIN_TOKEN")
   t "8. CDSS Feedback stats" "$R" '"success":true'
 else
   skip_test "7-8 doctor-token learning-loop tests skipped (no active doctor found)"
@@ -373,16 +434,16 @@ fi
 echo ""
 echo "── MEDICAL DATA ──"
 if [ -n "$DOC_TOKEN" ]; then
-  R=$(curl -s "$API_BASE/api/doctor/clinical-workflow/icd10/search?search=diabetes&limit=3" -H "Authorization: Bearer $DOC_TOKEN")
+  R=$(curl_api "$API_BASE/api/doctor/clinical-workflow/icd10/search?search=diabetes&limit=3" -H "Authorization: Bearer $DOC_TOKEN")
   t "9. ICD-10 search (diabetes)" "$R" '"success":true'
-  R=$(curl -s "$API_BASE/api/doctor/clinical-workflow/snomed/search?search=hypertension&limit=3" -H "Authorization: Bearer $DOC_TOKEN")
+  R=$(curl_api "$API_BASE/api/doctor/clinical-workflow/snomed/search?search=hypertension&limit=3" -H "Authorization: Bearer $DOC_TOKEN")
   t "10. SNOMED search (hypertension)" "$R" '"success":true'
-  R=$(curl -s "$API_BASE/api/doctor/clinical-workflow/cpt/search?q=blood&limit=3" -H "Authorization: Bearer $DOC_TOKEN")
+  R=$(curl_api "$API_BASE/api/doctor/clinical-workflow/cpt/search?q=blood&limit=3" -H "Authorization: Bearer $DOC_TOKEN")
   t "11. CPT search (blood)" "$R" '"success":true'
 
   echo ""
   echo "── CDSS AI QUERY ──"
-  R=$(curl -s -m 30 -X POST "$API_BASE/api/cdss/knowledge/query" \
+  R=$(curl_api -X POST "$API_BASE/api/cdss/knowledge/query" \
     -H "Authorization: Bearer $DOC_TOKEN" -H "Content-Type: application/json" \
     -d '{"query":"metformin dose for type 2 diabetes"}')
   t "12. CDSS LLM query" "$R" '"success":true'
@@ -394,12 +455,12 @@ fi
 
 echo ""
 echo "── FHIR R4 ──"
-R=$(curl -s "$API_BASE/api/fhir/r4/metadata")
+R=$(curl_api "$API_BASE/api/fhir/r4/metadata")
 t "13. FHIR CapabilityStatement" "$R" "CapabilityStatement"
 FVER=$(json_eval "$R" "data.get('fhirVersion', '')")
 t "14. FHIR version 4.0.1" "$FVER" "4.0.1"
 if [ -n "$DOC_TOKEN" ]; then
-  R=$(curl -s "$API_BASE/api/fhir/r4/Patient" -H "Authorization: Bearer $DOC_TOKEN")
+  R=$(curl_api "$API_BASE/api/fhir/r4/Patient" -H "Authorization: Bearer $DOC_TOKEN")
   t "15. FHIR Patient search" "$R" "Bundle"
 else
   skip_test "15 doctor-token FHIR patient search skipped (no active doctor found)"
@@ -407,17 +468,17 @@ fi
 
 echo ""
 echo "── ADMIN AND TENANT SURFACES ──"
-R=$(curl -s "$API_BASE/api/superadmin/tenants/tenants" -H "Authorization: Bearer $ADMIN_TOKEN")
+R=$(curl_api "$API_BASE/api/superadmin/tenants/tenants" -H "Authorization: Bearer $ADMIN_TOKEN")
 t "16. Superadmin tenant list" "$R" '"success":true'
-R=$(curl -s "$API_BASE/api/superadmin/tenants/tiers" -H "Authorization: Bearer $ADMIN_TOKEN")
+R=$(curl_api "$API_BASE/api/superadmin/tenants/tiers" -H "Authorization: Bearer $ADMIN_TOKEN")
 t "17. Tenant tiers config" "$R" '"success":true'
-R=$(curl -s "$API_BASE/api/admin/corporates" -H "Authorization: Bearer $ADMIN_TOKEN")
+R=$(curl_api "$API_BASE/api/admin/corporates" -H "Authorization: Bearer $ADMIN_TOKEN")
 t "18. Admin corporate list" "$R" '"success":true'
 CORPORATE_COUNT=$(json_eval "$R" "len((data.get('data') or []))")
 tn "19. Admin corporates available (>=1)" "${CORPORATE_COUNT:-0}" 1
 CORPORATE_ID=$(json_eval "$R" "((data.get('data') or [{}])[0] or {}).get('id')")
 if [[ "$CORPORATE_ID" =~ ^[0-9]+$ ]]; then
-  R=$(curl -s "$API_BASE/api/admin/corporate-employees/$CORPORATE_ID/activation-stats" -H "Authorization: Bearer $ADMIN_TOKEN")
+  R=$(curl_api "$API_BASE/api/admin/corporate-employees/$CORPORATE_ID/activation-stats" -H "Authorization: Bearer $ADMIN_TOKEN")
   t "20. Corporate activation stats" "$R" '"success":true'
   ACT_TOTAL=$(json_eval "$R" "((data.get('stats') or {}).get('total'))")
   ACT_LOGGED=$(json_eval "$R" "((data.get('stats') or {}).get('loggedIn'))")
@@ -430,10 +491,10 @@ fi
 
 echo ""
 echo "── EDGE CASES ──"
-R=$(curl -s -o /dev/null -w "%{http_code}" "$API_BASE/api/doctor/clinical-workflow/icd10/search?search=diabetes")
+R=$(curl_api -o /dev/null -w "%{http_code}" "$API_BASE/api/doctor/clinical-workflow/icd10/search?search=diabetes")
 t "23. No auth -> 401" "$R" "401"
 if [ -n "$DOC_TOKEN" ]; then
-  R=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_BASE/api/cdss/knowledge/query" \
+  R=$(curl_api -o /dev/null -w "%{http_code}" -X POST "$API_BASE/api/cdss/knowledge/query" \
     -H "Authorization: Bearer $DOC_TOKEN" -H "Content-Type: application/json" -d '{}')
   t "24. Empty CDSS query -> 400" "$R" "400"
 else
@@ -442,9 +503,9 @@ fi
 
 echo ""
 echo "── EXTERNAL HTTPS ──"
-R=$(curl -sk -o /dev/null -w "%{http_code}" "$APP_BASE/" 2>/dev/null)
+R=$(curl -sk --max-time "${SMOKE_CURL_TIMEOUT:-30}" -o /dev/null -w "%{http_code}" "$APP_BASE/" 2>/dev/null)
 t "25. Frontend (app.mediqzy.com)" "$R" "200"
-R=$(curl -sk -o /dev/null -w "%{http_code}" "$APP_BASE/api/health" 2>/dev/null)
+R=$(curl -sk --max-time "${SMOKE_CURL_TIMEOUT:-30}" -o /dev/null -w "%{http_code}" "$APP_BASE/api/health" 2>/dev/null)
 t "26. API HTTPS (mediqzy.com)" "$R" "200"
 
 echo ""
