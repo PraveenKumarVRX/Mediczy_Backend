@@ -10,6 +10,8 @@ API_BASE="${API_BASE:-http://localhost:8888}"
 APP_BASE="${APP_BASE:-https://app.mediqzy.com}"
 SIB_BASE="${SIB_BASE:-http://localhost:8001}"
 SERVER_DIR="${SERVER_DIR:-/home/ubuntu/Mediczy/server}"
+# PM2 loads root .env then server/.env (see ecosystem.config.js); smoke tests must match.
+MEDICZY_HOME="${MEDICZY_HOME:-$(dirname "$SERVER_DIR")}"
 
 ADMIN_TOKEN=""
 DOC_TOKEN=""
@@ -75,9 +77,11 @@ except Exception:
     print("")' "$expr"
 }
 
-IDENTITY_JSON=$(cd "$SERVER_DIR" && node <<'NODE'
+IDENTITY_JSON=$(cd "$SERVER_DIR" && MEDICZY_HOME="$MEDICZY_HOME" node <<'NODE'
 const path = require('path');
-require('dotenv').config({ path: path.resolve(process.cwd(), '.env') });
+const rootDir = process.env.MEDICZY_HOME || path.resolve(process.cwd(), '..');
+require('dotenv').config({ path: path.join(rootDir, '.env') });
+require('dotenv').config({ path: path.resolve(process.cwd(), '.env'), override: true });
 const { Client } = require('pg');
 const jwt = require('jsonwebtoken');
 
@@ -375,9 +379,11 @@ t "26. API HTTPS (mediqzy.com)" "$R" "200"
 
 echo ""
 echo "── DB RECORD COUNTS ──"
-COUNTS_JSON=$(cd "$SERVER_DIR" && node <<'NODE'
+COUNTS_JSON=$(cd "$SERVER_DIR" && MEDICZY_HOME="$MEDICZY_HOME" node <<'NODE'
 const path = require('path');
-require('dotenv').config({ path: path.resolve(process.cwd(), '.env') });
+const rootDir = process.env.MEDICZY_HOME || path.resolve(process.cwd(), '..');
+require('dotenv').config({ path: path.join(rootDir, '.env') });
+require('dotenv').config({ path: path.resolve(process.cwd(), '.env'), override: true });
 const { Client } = require('pg');
 
 function envFlag(name, fallback = false) {
