@@ -78,10 +78,52 @@ except Exception:
 }
 
 IDENTITY_JSON=$(cd "$SERVER_DIR" && MEDICZY_HOME="$MEDICZY_HOME" node <<'NODE'
+const fs = require('fs');
 const path = require('path');
 const rootDir = process.env.MEDICZY_HOME || path.resolve(process.cwd(), '..');
-require('dotenv').config({ path: path.join(rootDir, '.env') });
-require('dotenv').config({ path: path.resolve(process.cwd(), '.env'), override: true });
+const serverDir = process.cwd();
+
+// Mirror ecosystem.config.js loadEnvFile — PM2 source of truth for runtime secrets.
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return false;
+  fs.readFileSync(filePath, 'utf8')
+    .split('\n')
+    .forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return;
+      const idx = trimmed.indexOf('=');
+      if (idx === -1) return;
+      const key = trimmed.slice(0, idx).trim();
+      const raw = trimmed.slice(idx + 1).trim();
+      const val = raw.replace(/^(['"])(.*)\1$/, '$2');
+      if (key) process.env[key] = val;
+    });
+  return true;
+}
+
+const rootEnvPath = path.join(rootDir, '.env');
+const serverEnvPath = path.join(serverDir, '.env');
+const loadedRoot = loadEnvFile(rootEnvPath);
+const loadedServer = loadEnvFile(serverEnvPath);
+
+function readPm2JwtSecret() {
+  try {
+    const { execSync } = require('child_process');
+    const raw = execSync('pm2 jlist', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+    const apps = JSON.parse(raw);
+    const server = apps.find((app) => app.name === 'mediczy-server');
+    const env = server?.pm2_env?.env || {};
+    return env.JWT_SECRET || env.JWT_ACCESS_SECRET || null;
+  } catch {
+    return null;
+  }
+}
+
+const pm2JwtSecret = readPm2JwtSecret();
+if (pm2JwtSecret) {
+  process.env.JWT_SECRET = pm2JwtSecret;
+}
+
 const { Client } = require('pg');
 const jwt = require('jsonwebtoken');
 
@@ -110,9 +152,12 @@ const dbConfig = process.env.DATABASE_URL
         undefined,
       ssl: useSSL ? { rejectUnauthorized: false } : false,
     };
-const jwtSecret =
-  process.env.JWT_SECRET ||
-  'd6100dfd4597503924f69844c93a4cdddfa47bdbaff450c45a2ad774c857fde074e9ba41e6f7171c21c83f25e224f969e7e05681cc020f30e964017395a4fd8d';
+const jwtSecret = process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET;
+if (!jwtSecret) {
+  throw new Error(
+    `JWT_SECRET not found. Checked root=${rootEnvPath} (exists=${loadedRoot}) server=${serverEnvPath} (exists=${loadedServer})`
+  );
+}
 
 function quoteIdent(name) {
   return /[A-Z]/.test(name) ? `"${name}"` : name;
@@ -213,9 +258,11 @@ async function buildDoctorIdentity(client) {
 
     const adminPayload = {
       id: admin.id,
+      adminId: admin.id,
       email: admin.email,
       role: admin.role || 'admin',
-      isAdmin: Boolean(admin.is_admin),
+      userType: 'admin',
+      isAdmin: true,
       isTeam: Boolean(admin.is_team),
       firstName: admin.first_name || 'Smoke',
       lastName: admin.last_name || 'Admin',
@@ -224,14 +271,33 @@ async function buildDoctorIdentity(client) {
     };
 
     const doctor = await buildDoctorIdentity(client);
-    const doctorPayload = doctor ? { id: doctor.id, role: 'doctor' } : null;
+    const doctorPayload = doctor
+      ? {
+          id: doctor.id,
+          doctorId: doctor.id,
+          role: 'doctor',
+          userType: 'doctor',
+        }
+      : null;
+
+    const adminToken = jwt.sign(adminPayload, jwtSecret, { expiresIn: '15m', algorithm: 'HS256' });
+    const doctorToken = doctorPayload
+      ? jwt.sign(doctorPayload, jwtSecret, { expiresIn: '15m', algorithm: 'HS256' })
+      : '';
+
+    // Fail fast if local signing does not verify (secret mismatch vs running server).
+    jwt.verify(adminToken, jwtSecret, { algorithms: ['HS256'] });
 
     console.log(JSON.stringify({
-      adminToken: jwt.sign(adminPayload, jwtSecret, { expiresIn: '15m' }),
+      adminToken,
       adminEmail: adminPayload.email,
       adminRole: adminPayload.role,
-      doctorToken: doctorPayload ? jwt.sign(doctorPayload, jwtSecret, { expiresIn: '15m' }) : '',
+      doctorToken,
       doctorId: doctorPayload ? doctorPayload.id : null,
+      jwtEnv: pm2JwtSecret
+        ? 'pm2:mediczy-server'
+        : (process.env.JWT_SECRET ? 'JWT_SECRET' : 'JWT_ACCESS_SECRET'),
+      envFiles: { root: loadedRoot, server: loadedServer },
     }));
   } catch (error) {
     console.error(JSON.stringify({ error: error.message }));
@@ -269,6 +335,10 @@ echo "  MEDICZY PRODUCTION SMOKE TEST — $(date '+%Y-%m-%d %H:%M')"
 echo "═══════════════════════════════════════════════"
 echo ""
 echo "Smoke identity: admin=$ADMIN_EMAIL role=$ADMIN_ROLE doctor_token=$([ -n "$DOC_TOKEN" ] && echo yes || echo no)"
+JWT_ENV=$(json_eval "$IDENTITY_JSON" "data.get('jwtEnv')")
+ENV_ROOT=$(json_eval "$IDENTITY_JSON" "data.get('envFiles', {}).get('root')")
+ENV_SERVER=$(json_eval "$IDENTITY_JSON" "data.get('envFiles', {}).get('server')")
+echo "JWT env: ${JWT_ENV:-unknown} (root .env=${ENV_ROOT:-?} server/.env=${ENV_SERVER:-?})"
 echo ""
 echo "── CORE INFRASTRUCTURE ──"
 R=$(curl -s "$API_BASE/api/health")
@@ -380,10 +450,29 @@ t "26. API HTTPS (mediqzy.com)" "$R" "200"
 echo ""
 echo "── DB RECORD COUNTS ──"
 COUNTS_JSON=$(cd "$SERVER_DIR" && MEDICZY_HOME="$MEDICZY_HOME" node <<'NODE'
+const fs = require('fs');
 const path = require('path');
 const rootDir = process.env.MEDICZY_HOME || path.resolve(process.cwd(), '..');
-require('dotenv').config({ path: path.join(rootDir, '.env') });
-require('dotenv').config({ path: path.resolve(process.cwd(), '.env'), override: true });
+
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return false;
+  fs.readFileSync(filePath, 'utf8')
+    .split('\n')
+    .forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return;
+      const idx = trimmed.indexOf('=');
+      if (idx === -1) return;
+      const key = trimmed.slice(0, idx).trim();
+      const raw = trimmed.slice(idx + 1).trim();
+      const val = raw.replace(/^(['"])(.*)\1$/, '$2');
+      if (key) process.env[key] = val;
+    });
+  return true;
+}
+
+loadEnvFile(path.join(rootDir, '.env'));
+loadEnvFile(path.join(process.cwd(), '.env'));
 const { Client } = require('pg');
 
 function envFlag(name, fallback = false) {
