@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # One-time: allow RDS master user to pg_dump FORCE RLS tables (anonymous_patients, etc.)
-# AWS RDS postgres master is not a full superuser but can set BYPASSRLS on itself.
 #
 # Run once on EC2 as ubuntu:
 #   bash scripts/backup/enable-rds-backup-bypassrls.sh
@@ -12,16 +11,16 @@ AWS_REGION="${AWS_REGION:-ap-south-1}"
 
 # shellcheck disable=SC1091
 source "$ROOT/scripts/ops/load-prod-env.sh"
+# shellcheck disable=SC1091
+source "$ROOT/scripts/backup/pg-dump-prod.lib.sh"
 
-MASTER_USER="${POSTGRES_BACKUP_USER:-postgres}"
+MASTER_USER="$(pg_resolve_rds_master_user)"
 MASTER_PASS=""
 
 if [ -n "${POSTGRES_BACKUP_PASSWORD:-}" ] && [ "${RDS_MASTER_BACKUP:-}" = "true" ]; then
   MASTER_PASS="$POSTGRES_BACKUP_PASSWORD"
-elif command -v aws >/dev/null 2>&1; then
-  MASTER_PASS=$(aws ssm get-parameter --name /mediczy/prod/RDS_MASTER_PASSWORD \
-    --with-decryption --region "$AWS_REGION" \
-    --query Parameter.Value --output text 2>/dev/null || true)
+else
+  MASTER_PASS="$(pg_get_ssm_master_password || true)"
 fi
 
 if [ -z "$MASTER_PASS" ] || [ "$MASTER_PASS" = "YOUR_RDS_POSTGRES_MASTER_PASSWORD" ]; then

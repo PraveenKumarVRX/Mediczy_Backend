@@ -6,8 +6,31 @@ RDS_INSTANCE_ID="${RDS_INSTANCE_ID:-mediczy-prod}"
 AWS_REGION="${AWS_REGION:-ap-south-1}"
 PG_DUMP_EXCLUDE_ARGS=()
 
-pg_dump_log() {
-  echo "[pg-dump $(date +%H:%M:%S)] $*"
+pg_resolve_rds_master_user() {
+  if [ -n "${RDS_MASTER_USERNAME:-}" ]; then
+    echo "$RDS_MASTER_USERNAME"
+    return 0
+  fi
+  if command -v aws >/dev/null 2>&1; then
+    local u
+    u=$(aws rds describe-db-instances \
+      --db-instance-identifier "$RDS_INSTANCE_ID" \
+      --region "$AWS_REGION" \
+      --query 'DBInstances[0].MasterUsername' \
+      --output text 2>/dev/null || true)
+    if [ -n "$u" ] && [ "$u" != "None" ]; then
+      echo "$u"
+      return 0
+    fi
+  fi
+  echo "${POSTGRES_BACKUP_USER:-postgres}"
+}
+
+pg_get_ssm_master_password() {
+  command -v aws >/dev/null 2>&1 || return 1
+  aws ssm get-parameter --name /mediczy/prod/RDS_MASTER_PASSWORD \
+    --with-decryption --region "$AWS_REGION" \
+    --query Parameter.Value --output text 2>/dev/null
 }
 
 pg_build_exclude_args() {
@@ -33,7 +56,7 @@ pg_dump_prod_to_file() {
     user="$1" pass="$2" excludes="$3"
     pg_build_exclude_args "$excludes"
     pg_dump_log "Trying ${user}@${POSTGRES_HOST} (excludes: ${excludes:-none})"
-    : >"$errlog"
+    errlog="$(mktemp /tmp/mediczy-pg-dump.XXXXXX.err)"
     set +o pipefail
     PGPASSWORD="$pass" pg_dump \
       -h "${POSTGRES_HOST}" \
@@ -65,24 +88,22 @@ pg_dump_prod_to_file() {
   }
 
   # 1. SSM RDS master password (if stored)
-  if command -v aws >/dev/null 2>&1; then
-    local ssm_pass ssm_err=0
-    ssm_pass=$(aws ssm get-parameter --name /mediczy/prod/RDS_MASTER_PASSWORD \
-      --with-decryption --region "$AWS_REGION" \
-      --query Parameter.Value --output text 2>/dev/null) || ssm_err=1
-    if [ "$ssm_err" -ne 0 ] || [ -z "$ssm_pass" ] || [ "$ssm_pass" = "None" ]; then
-      pg_dump_log "SSM /mediczy/prod/RDS_MASTER_PASSWORD not readable (check IAM or run as ubuntu, not sudo)"
-    elif [ "$ssm_pass" = "YOUR_RDS_POSTGRES_MASTER_PASSWORD" ] || [ "$ssm_pass" = "<rds-postgres-password>" ]; then
-      pg_dump_log "SSM RDS_MASTER_PASSWORD is still a placeholder — set the real RDS postgres password"
-    else
-      _try_dump "${POSTGRES_BACKUP_USER:-postgres}" "$ssm_pass" "" && return 0
-      pg_dump_log "RDS master password in SSM did not authenticate — reset RDS master password and update SSM"
-    fi
+  local master_user master_pass
+  master_user="$(pg_resolve_rds_master_user)"
+  master_pass="$(pg_get_ssm_master_password || true)"
+  if [ -z "$master_pass" ] || [ "$master_pass" = "None" ]; then
+    pg_dump_log "SSM /mediczy/prod/RDS_MASTER_PASSWORD not readable from this host"
+  elif [ "$master_pass" = "YOUR_RDS_POSTGRES_MASTER_PASSWORD" ] || [ "$master_pass" = "<rds-postgres-password>" ]; then
+    pg_dump_log "SSM RDS_MASTER_PASSWORD is still a placeholder"
+  else
+    pg_dump_log "RDS master user from API: ${master_user}"
+    _try_dump "$master_user" "$master_pass" "" && return 0
+    pg_dump_log "RDS master dump failed (wrong password or need BYPASSRLS — run enable-rds-backup-bypassrls.sh)"
   fi
 
   # 2. .env explicit master
   if [ "${RDS_MASTER_BACKUP:-}" = "true" ] && [ -n "${POSTGRES_BACKUP_PASSWORD:-}" ]; then
-    _try_dump "${POSTGRES_BACKUP_USER:-postgres}" "$POSTGRES_BACKUP_PASSWORD" "" && return 0
+    _try_dump "${POSTGRES_BACKUP_USER:-$master_user}" "$POSTGRES_BACKUP_PASSWORD" "" && return 0
   fi
 
   # 3. RDS Secrets Manager (if enabled)
