@@ -46,15 +46,16 @@ PG_HOST="$POSTGRES_HOST"
 PG_PORT="$POSTGRES_PORT"
 PG_DB="$POSTGRES_DATABASE"
 
-# Prefer dedicated backup user (RDS master); fall back to app user + schema exclusions
-if [ -n "${POSTGRES_BACKUP_PASSWORD:-}" ]; then
+# Default: mediczy_helper + exclude n8n (helper cannot LOCK n8n.* on RDS).
+# Full dump: set RDS_MASTER_BACKUP=true plus POSTGRES_BACKUP_USER/PASSWORD in .env.
+if [ "${RDS_MASTER_BACKUP:-}" = "true" ] && [ -n "${POSTGRES_BACKUP_PASSWORD:-}" ]; then
   PG_USER="${POSTGRES_BACKUP_USER:-postgres}"
   export PGPASSWORD="$POSTGRES_BACKUP_PASSWORD"
   DUMP_EXCLUDE_SCHEMAS="${PG_DUMP_EXCLUDE_SCHEMAS:-}"
+  log "Using RDS master backup user: ${PG_USER}"
 else
-  PG_USER="$POSTGRES_USER"
+  PG_USER="${POSTGRES_USER:-mediczy_helper}"
   export PGPASSWORD="$POSTGRES_PASSWORD"
-  # mediczy_helper cannot LOCK n8n.* tables on RDS
   DUMP_EXCLUDE_SCHEMAS="${PG_DUMP_EXCLUDE_SCHEMAS:-n8n}"
 fi
 
@@ -76,8 +77,8 @@ log "Starting offsite backup for ${PG_DB}@${PG_HOST} (user=${PG_USER}, ssl=${PGS
 
 # Build --exclude-schema flags (e.g. n8n — mediczy_helper cannot LOCK those tables)
 PG_DUMP_EXCLUDE_ARGS=()
-if [ -n "${PG_DUMP_EXCLUDE_SCHEMAS:-}" ]; then
-  IFS=',' read -ra _schemas <<< "$PG_DUMP_EXCLUDE_SCHEMAS"
+if [ -n "${DUMP_EXCLUDE_SCHEMAS:-}" ]; then
+  IFS=',' read -ra _schemas <<< "$DUMP_EXCLUDE_SCHEMAS"
   for _schema in "${_schemas[@]}"; do
     _schema="${_schema#"${_schema%%[![:space:]]*}"}"
     _schema="${_schema%"${_schema##*[![:space:]]}"}"
@@ -85,7 +86,7 @@ if [ -n "${PG_DUMP_EXCLUDE_SCHEMAS:-}" ]; then
     PG_DUMP_EXCLUDE_ARGS+=(--exclude-schema="$_schema")
   done
   if [ "${#PG_DUMP_EXCLUDE_ARGS[@]}" -gt 0 ]; then
-    log "Excluding schemas: ${PG_DUMP_EXCLUDE_SCHEMAS}"
+    log "Excluding schemas: ${DUMP_EXCLUDE_SCHEMAS}"
   fi
 fi
 
