@@ -42,10 +42,10 @@ Run the same script. It will:
 
 ## 4) Health checks
 
-- Liveness endpoint: `GET /live`
+- Liveness endpoint: `GET /live` or `GET /cp/live` (both work; ALB/TG may use either)
 - Deep health endpoint: `GET /health` (includes DB check)
 
-ECS health check uses `/live` to avoid restarts caused by transient DB issues.
+ECS container health check uses `/cp/live` to avoid restarts caused by transient DB issues.
 
 ## 5) Required secrets (SSM)
 
