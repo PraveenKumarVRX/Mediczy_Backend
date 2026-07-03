@@ -105,6 +105,47 @@ bash deploy-prod-v3.sh
 
 ---
 
+## Storage Audit & Offsite Backups (2026-07)
+
+New scripts under `scripts/ops/` and `scripts/backup/`:
+
+```bash
+# Audit disk usage on EC2 (safe, read-only)
+bash /home/ubuntu/Mediczy/scripts/ops/storage-audit-cleanup.sh
+
+# Clean local clutter: old mediczy-backup-*, stale logs, PM2 flush, apt/npm cache
+bash /home/ubuntu/Mediczy/scripts/ops/storage-audit-cleanup.sh --cleanup
+
+# Push nightly pg_dump to S3 (+ MinIO if mc alias configured)
+bash /home/ubuntu/Mediczy/scripts/backup/daily-offsite-backup.sh
+
+# All-in-one
+bash /home/ubuntu/Mediczy/scripts/ops/storage-audit-cleanup.sh --all
+```
+
+**Offsite layout:** `s3://mediczy-backups/db/YYYY-MM-DD/mediczy_prod.sql.gz`
+
+**S3 setup (one-time):**
+```bash
+aws s3 mb s3://mediczy-backups --region ap-south-1
+# EC2 instance role needs s3:PutObject on mediczy-backups/*
+```
+
+**MinIO setup (optional, same-server):**
+```bash
+mc alias set minio http://127.0.0.1:9000 "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
+mc mb minio/mediczy-backups
+mc ilm rule add --expire-days 30 minio/mediczy-backups
+```
+
+**Recommended cron:**
+```bash
+0 2 * * * /home/ubuntu/Mediczy/scripts/backup/daily-offsite-backup.sh >> /home/ubuntu/Mediczy/logs/backup.log 2>&1
+30 3 1 * * /home/ubuntu/Mediczy/scripts/ops/storage-audit-cleanup.sh --cleanup >> /home/ubuntu/Mediczy/logs/storage-cleanup.log 2>&1
+```
+
+---
+
 ## Cleanup History
 
 ### Initial Cleanup (Feb 14, 2026, 18:55 UTC)
