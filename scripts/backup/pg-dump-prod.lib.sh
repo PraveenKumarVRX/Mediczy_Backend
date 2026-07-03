@@ -50,10 +50,17 @@ pg_dump_prod_to_file() {
     set -o pipefail
     if [ "$rc" -eq 0 ] && [ -s "$outfile" ]; then
       pg_dump_log "OK (${user})"
+      rm -f "$errlog"
       return 0
     fi
     pg_dump_log "Failed (${user}):"
     sed 's/^/  /' "$errlog" >&2 || true
+    if grep -q 'password authentication failed' "$errlog" 2>/dev/null; then
+      pg_dump_log "Hint: wrong password for ${user}"
+    elif grep -q 'row-level security policy' "$errlog" 2>/dev/null; then
+      pg_dump_log "Hint: ${user} cannot bypass FORCE RLS — run: bash scripts/backup/enable-rds-backup-bypassrls.sh"
+    fi
+    rm -f "$errlog"
     return 1
   }
 

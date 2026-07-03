@@ -9,7 +9,6 @@ BACKUP_DIR="/var/backups/mediczy"
 RETENTION_DAYS=7
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="$BACKUP_DIR/mediczy_db_$TIMESTAMP.sql"
-PG_DUMP_LOG="/tmp/mediczy-pg-dump.err"
 
 mkdir -p "$BACKUP_DIR"
 mkdir -p "$ROOT_DIR/logs"
