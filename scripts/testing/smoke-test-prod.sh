@@ -104,7 +104,14 @@ except Exception:
     print("")' "$expr"
 }
 
-IDENTITY_JSON=$(cd "$SERVER_DIR" && MEDICZY_HOME="$MEDICZY_HOME" node <<'NODE'
+echo "═══════════════════════════════════════════════"
+echo "  MEDICZY PRODUCTION SMOKE TEST — $(date '+%Y-%m-%d %H:%M')"
+echo "═══════════════════════════════════════════════"
+echo ""
+wait_for_api_ready
+echo "Acquiring smoke-test tokens ..."
+
+IDENTITY_JSON=$(cd "$SERVER_DIR" && MEDICZY_HOME="$MEDICZY_HOME" API_BASE="$API_BASE" node <<'NODE'
 const fs = require('fs');
 const path = require('path');
 const rootDir = process.env.MEDICZY_HOME || path.resolve(process.cwd(), '..');
@@ -132,6 +139,13 @@ const rootEnvPath = path.join(rootDir, '.env');
 const serverEnvPath = path.join(serverDir, '.env');
 const loadedRoot = loadEnvFile(rootEnvPath);
 const loadedServer = loadEnvFile(serverEnvPath);
+const apiBase = (process.env.API_BASE || 'http://localhost:8888').replace(/\/$/, '');
+
+function trimSecret(value) {
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  return trimmed || null;
+}
 
 function readPm2JwtSecret() {
   const pick = (pm2Env) => {
@@ -175,13 +189,167 @@ function readPm2JwtSecret() {
   return null;
 }
 
-const pm2JwtSecret = readPm2JwtSecret();
-if (pm2JwtSecret) {
-  process.env.JWT_SECRET = pm2JwtSecret;
+function collectJwtCandidates() {
+  const seen = new Set();
+  const out = [];
+  const add = (source, raw) => {
+    const secret = trimSecret(raw);
+    if (!secret || seen.has(secret)) return;
+    seen.add(secret);
+    out.push({ source, secret });
+  };
+  add('env:JWT_SECRET', process.env.JWT_SECRET);
+  add('env:JWT_ACCESS_SECRET', process.env.JWT_ACCESS_SECRET);
+  const pm2 = trimSecret(readPm2JwtSecret());
+  if (pm2) add('pm2:mediczy-server', pm2);
+  return out;
+}
+
+const jwt = require('jsonwebtoken');
+
+async function httpRequest(method, urlPath, { headers = {}, body } = {}) {
+  const url = `${apiBase}${urlPath}`;
+  const res = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: body != null ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(15000),
+  });
+  const text = await res.text();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = null;
+  }
+  return { status: res.status, text, json };
+}
+
+async function tryAdminLogin(email) {
+  const password =
+    process.env.SMOKE_ADMIN_PASSWORD ||
+    process.env.ADMIN_PASSWORD ||
+    process.env.TEST_ADMIN_PASSWORD;
+  if (!password) return null;
+  const { status, json } = await httpRequest('POST', '/api/admin/login', {
+    body: { email, password },
+  });
+  if (status === 200 && json?.token) {
+    return { token: json.token, source: 'login:admin' };
+  }
+  return null;
+}
+
+async function tryDoctorLogin(email) {
+  const password =
+    process.env.SMOKE_DOCTOR_PASSWORD ||
+    process.env.TEST_DOCTOR_PASSWORD ||
+    process.env.DOCTOR_PASSWORD;
+  if (!password || !email) return null;
+  const { status, json } = await httpRequest('POST', '/api/doctors/login', {
+    body: { email, password },
+  });
+  const token = json?.token || json?.accessToken || json?.data?.token;
+  if (status === 200 && token) {
+    return { token, source: 'login:doctor' };
+  }
+  return null;
+}
+
+function signAdminToken(adminPayload, secret) {
+  const { randomUUID } = require('crypto');
+  return jwt.sign(
+    {
+      ...adminPayload,
+      jti: randomUUID(),
+      tokenType: 'access',
+    },
+    secret,
+    { expiresIn: '15m', algorithm: 'HS256' }
+  );
+}
+
+function signDoctorToken(doctorPayload, secret) {
+  const { randomUUID } = require('crypto');
+  return jwt.sign(
+    {
+      ...doctorPayload,
+      jti: randomUUID(),
+      tokenType: 'access',
+    },
+    secret,
+    { expiresIn: '15m', algorithm: 'HS256' }
+  );
+}
+
+function tokenRejected(status, text) {
+  return (
+    status === 401 ||
+    text.includes('INVALID_TOKEN') ||
+    text.includes('invalid signature') ||
+    text.includes('Authentication required')
+  );
+}
+
+async function probeAdminToken(token) {
+  const { status, text } = await httpRequest('GET', '/api/sib/ai-dashboard', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (tokenRejected(status, text)) return false;
+  return status === 200 && text.includes('"success":true');
+}
+
+async function probeDoctorToken(token) {
+  const { status, text } = await httpRequest(
+    'GET',
+    '/api/doctor/clinical-workflow/icd10/search?search=diabetes&limit=1',
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (tokenRejected(status, text)) return false;
+  return status === 200 && text.includes('"success":true');
+}
+
+async function resolveAdminToken(adminPayload) {
+  const login = await tryAdminLogin(adminPayload.email);
+  if (login?.token && (await probeAdminToken(login.token))) {
+    return { adminToken: login.token, jwtEnv: login.source, workingSecret: null };
+  }
+
+  for (const { source, secret } of collectJwtCandidates()) {
+    const token = signAdminToken(adminPayload, secret);
+    if (await probeAdminToken(token)) {
+      return { adminToken: token, jwtEnv: `sign:${source}`, workingSecret: secret };
+    }
+  }
+
+  throw new Error(
+    'Could not obtain a valid admin token. Add SMOKE_ADMIN_PASSWORD to .env or run: pm2 restart mediczy-server --update-env'
+  );
+}
+
+async function resolveDoctorToken(doctorPayload, workingSecret) {
+  if (!doctorPayload) return { doctorToken: '', jwtEnvDoctor: null };
+
+  const login = await tryDoctorLogin(doctorPayload.email);
+  if (login?.token && (await probeDoctorToken(login.token))) {
+    return { doctorToken: login.token, jwtEnvDoctor: login.source };
+  }
+
+  const candidates = workingSecret
+    ? [{ source: 'sign:admin-probed', secret: workingSecret }]
+    : collectJwtCandidates();
+
+  for (const { source, secret } of candidates) {
+    const token = signDoctorToken(doctorPayload, secret);
+    if (await probeDoctorToken(token)) {
+      return { doctorToken: token, jwtEnvDoctor: source };
+    }
+  }
+
+  return { doctorToken: '', jwtEnvDoctor: 'unavailable' };
 }
 
 const { Client } = require('pg');
-const jwt = require('jsonwebtoken');
 
 function envFlag(name, fallback = false) {
   const raw = process.env[name];
@@ -208,12 +376,6 @@ const dbConfig = process.env.DATABASE_URL
         undefined,
       ssl: useSSL ? { rejectUnauthorized: false } : false,
     };
-const jwtSecret = process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET;
-if (!jwtSecret) {
-  throw new Error(
-    `JWT_SECRET not found. Checked root=${rootEnvPath} (exists=${loadedRoot}) server=${serverEnvPath} (exists=${loadedServer})`
-  );
-}
 
 function quoteIdent(name) {
   return /[A-Z]/.test(name) ? `"${name}"` : name;
@@ -285,6 +447,7 @@ async function buildDoctorIdentity(client) {
   if (!columns.size) return null;
 
   const idCol = pickColumn(columns, ['id'], 'id');
+  const emailCol = pickColumn(columns, ['email'], 'NULL');
   const statusPredicates = [];
   if (columns.has('status')) statusPredicates.push(`(${quoteIdent('status')} IS NULL OR ${quoteIdent('status')} = 'active')`);
   if (columns.has('isActive')) statusPredicates.push(`(${quoteIdent('isActive')} IS NULL OR ${quoteIdent('isActive')} = true)`);
@@ -292,7 +455,7 @@ async function buildDoctorIdentity(client) {
   const activeWhere = statusPredicates.length ? statusPredicates.join(' AND ') : 'true';
 
   const result = await client.query(`
-    SELECT ${idCol} AS id
+    SELECT ${idCol} AS id, ${emailCol}::text AS email
     FROM doctors
     WHERE ${activeWhere}
     ORDER BY ${idCol} ASC
@@ -331,28 +494,23 @@ async function buildDoctorIdentity(client) {
       ? {
           id: doctor.id,
           doctorId: doctor.id,
+          email: doctor.email || null,
           role: 'doctor',
           userType: 'doctor',
         }
       : null;
 
-    const adminToken = jwt.sign(adminPayload, jwtSecret, { expiresIn: '15m', algorithm: 'HS256' });
-    const doctorToken = doctorPayload
-      ? jwt.sign(doctorPayload, jwtSecret, { expiresIn: '15m', algorithm: 'HS256' })
-      : '';
-
-    // Fail fast if local signing does not verify (secret mismatch vs running server).
-    jwt.verify(adminToken, jwtSecret, { algorithms: ['HS256'] });
+    const adminResolved = await resolveAdminToken(adminPayload);
+    const doctorResolved = await resolveDoctorToken(doctorPayload, adminResolved.workingSecret);
 
     console.log(JSON.stringify({
-      adminToken,
+      adminToken: adminResolved.adminToken,
       adminEmail: adminPayload.email,
       adminRole: adminPayload.role,
-      doctorToken,
+      doctorToken: doctorResolved.doctorToken,
       doctorId: doctorPayload ? doctorPayload.id : null,
-      jwtEnv: pm2JwtSecret
-        ? 'pm2:mediczy-server'
-        : (process.env.JWT_SECRET ? 'JWT_SECRET' : 'JWT_ACCESS_SECRET'),
+      jwtEnv: adminResolved.jwtEnv,
+      jwtEnvDoctor: doctorResolved.jwtEnvDoctor,
       envFiles: { root: loadedRoot, server: loadedServer },
     }));
   } catch (error) {
@@ -386,20 +544,19 @@ if [ -z "$ADMIN_TOKEN" ]; then
   exit 1
 fi
 
-echo "═══════════════════════════════════════════════"
-echo "  MEDICZY PRODUCTION SMOKE TEST — $(date '+%Y-%m-%d %H:%M')"
-echo "═══════════════════════════════════════════════"
 echo ""
 echo "Smoke identity: admin=$ADMIN_EMAIL role=$ADMIN_ROLE doctor_token=$([ -n "$DOC_TOKEN" ] && echo yes || echo no)"
 JWT_ENV=$(json_eval "$IDENTITY_JSON" "data.get('jwtEnv')")
 ENV_ROOT=$(json_eval "$IDENTITY_JSON" "data.get('envFiles', {}).get('root')")
 ENV_SERVER=$(json_eval "$IDENTITY_JSON" "data.get('envFiles', {}).get('server')")
 echo "JWT env: ${JWT_ENV:-unknown} (root .env=${ENV_ROOT:-?} server/.env=${ENV_SERVER:-?})"
+JWT_DOCTOR=$(json_eval "$IDENTITY_JSON" "data.get('jwtEnvDoctor')")
+if [ -n "$JWT_DOCTOR" ]; then
+  echo "Doctor JWT: $JWT_DOCTOR"
+fi
 if [ -z "$JWT_ENV" ] || [ "$JWT_ENV" = "unknown" ]; then
   echo "⚠ Old smoke script? Run: bash scripts/ops/sync-prod-repo.sh"
 fi
-echo ""
-wait_for_api_ready
 echo ""
 echo "── CORE INFRASTRUCTURE ──"
 R=$(curl_api "$API_BASE/api/health")
