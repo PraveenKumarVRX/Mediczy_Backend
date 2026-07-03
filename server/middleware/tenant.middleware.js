@@ -32,9 +32,13 @@ export async function extractTenant(req, res, next) {
     // Skip tenant resolution for development/localhost
     const isDev = host.includes('localhost') || host.includes('127.0.0.1');
     
-    // Skip for mobile API health routes
-    const isMobilePublic = req.path.startsWith('/api/mobile');
-    if (isMobilePublic || isDev) {
+    // Skip for mobile API health routes and public monitoring endpoints
+    const isPublicMonitoring =
+      req.path === '/api/health' ||
+      req.path === '/health' ||
+      req.path === '/api/db/health' ||
+      req.path.startsWith('/api/mobile');
+    if (isPublicMonitoring || isDev) {
       req.tenant = null;
       req.tenantId = null;
       return next();
