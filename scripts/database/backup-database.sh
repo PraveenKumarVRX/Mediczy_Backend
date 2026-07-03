@@ -4,6 +4,8 @@
 
 set -e
 
+ROOT_DIR="${ROOT_DIR:-/home/ubuntu/Mediczy}"
+
 # Configuration
 BACKUP_DIR="/var/backups/mediczy"
 DB_NAME="${DB_NAME:-mediczy}"
