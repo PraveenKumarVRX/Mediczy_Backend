@@ -117,7 +117,7 @@ async function main() {
   const processes = [
     { name: 'mediczy-server (Node.js)', grep: 'mediczy-server' },
     { name: 'SIB FastAPI (Python)', grep: 'sib_app' },
-    { name: 'LiveKit', grep: 'livekit-server' },
+    // LiveKit runs on LiveKit Cloud — no local livekit-server process
     { name: 'PostgreSQL', grep: 'postgres.*mediczy' },
     { name: 'Redis', grep: 'redis-server' },
     { name: 'Nginx', grep: 'nginx' }

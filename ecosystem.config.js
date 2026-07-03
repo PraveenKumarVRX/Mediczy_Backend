@@ -218,31 +218,9 @@ module.exports = {
       kill_timeout: 15000
     },
 
-    // ==================== LiveKit Video Server ====================
-    {
-      name: 'livekit-server',
-      script: path.join(SCRIPTS_DIR, 'livekit-start.sh'),
-      cwd: '/home/ubuntu',
-      instances: 1,
-      exec_mode: 'fork',
-      interpreter: 'bash',
-      env: {
-        NODE_ENV: 'production'
-      },
-      error_file: '/tmp/livekit-error.log',
-      out_file: '/tmp/livekit-out.log',
-      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
-      merge_logs: true,
-      max_memory_restart: '1G',
-      watch: false,
-      autorestart: true,
-      max_restarts: 20,
-      min_uptime: '15s',
-      restart_delay: 5000,
-      kill_timeout: 10000,
-      wait_ready: true,
-      listen_timeout: 10000
-    },
+    // LiveKit: using LiveKit Cloud (wss://msh-kw9tvxa9.livekit.cloud).
+    // Token generation is in mediczy-server via livekit-server-sdk — no local server needed.
+    // To remove an existing PM2 process: pm2 delete livekit-server && pm2 save
 
     // ==================== n8n Workflow Automation ====================
     {
