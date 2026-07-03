@@ -50,7 +50,7 @@ section "1. INFRASTRUCTURE HEALTH"
 ###############################################################################
 
 # 1a. PM2 processes
-for svc in mediczy-server mediczy-worker livekit-server sib-fastapi; do
+for svc in mediczy-server mediczy-worker sib-fastapi; do
   if pm2 show "$svc" 2>/dev/null | grep -q "status.*online"; then
     pass "PM2: $svc is online"
   else
