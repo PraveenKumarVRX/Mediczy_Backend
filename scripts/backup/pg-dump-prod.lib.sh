@@ -59,12 +59,17 @@ pg_dump_prod_to_file() {
 
   # 1. SSM RDS master password (if stored)
   if command -v aws >/dev/null 2>&1; then
-    local ssm_pass
+    local ssm_pass ssm_err=0
     ssm_pass=$(aws ssm get-parameter --name /mediczy/prod/RDS_MASTER_PASSWORD \
       --with-decryption --region "$AWS_REGION" \
-      --query Parameter.Value --output text 2>/dev/null || true)
-    if [ -n "$ssm_pass" ] && [ "$ssm_pass" != "None" ]; then
+      --query Parameter.Value --output text 2>/dev/null) || ssm_err=1
+    if [ "$ssm_err" -ne 0 ] || [ -z "$ssm_pass" ] || [ "$ssm_pass" = "None" ]; then
+      pg_dump_log "SSM /mediczy/prod/RDS_MASTER_PASSWORD not readable (check IAM or run as ubuntu, not sudo)"
+    elif [ "$ssm_pass" = "YOUR_RDS_POSTGRES_MASTER_PASSWORD" ] || [ "$ssm_pass" = "<rds-postgres-password>" ]; then
+      pg_dump_log "SSM RDS_MASTER_PASSWORD is still a placeholder — set the real RDS postgres password"
+    else
       _try_dump "${POSTGRES_BACKUP_USER:-postgres}" "$ssm_pass" "" && return 0
+      pg_dump_log "RDS master password in SSM did not authenticate — reset RDS master password and update SSM"
     fi
   fi
 
