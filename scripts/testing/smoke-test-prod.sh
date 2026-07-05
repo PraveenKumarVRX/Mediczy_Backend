@@ -1,6 +1,13 @@
 #!/bin/bash
 set -u
 
+EXPORT_TOKENS_ONLY=false
+for arg in "$@"; do
+  case "$arg" in
+    --export-tokens) EXPORT_TOKENS_ONLY=true ;;
+  esac
+done
+
 PASS=0
 FAIL=0
 TOTAL=0
@@ -106,11 +113,13 @@ except Exception:
     print("")' "$expr"
 }
 
-echo "═══════════════════════════════════════════════"
-echo "  MEDICZY PRODUCTION SMOKE TEST — $(date '+%Y-%m-%d %H:%M')"
-echo "═══════════════════════════════════════════════"
-echo ""
-wait_for_api_ready
+if [ "$EXPORT_TOKENS_ONLY" != true ]; then
+  echo "═══════════════════════════════════════════════"
+  echo "  MEDICZY PRODUCTION SMOKE TEST — $(date '+%Y-%m-%d %H:%M')"
+  echo "═══════════════════════════════════════════════"
+  echo ""
+  wait_for_api_ready
+fi
 echo "Acquiring smoke-test tokens ..."
 
 IDENTITY_JSON=$(cd "$SERVER_DIR" && MEDICZY_HOME="$MEDICZY_HOME" API_BASE="$API_BASE" node <<'NODE'
@@ -544,6 +553,13 @@ if [ -z "$ADMIN_TOKEN" ]; then
   echo "❌ Unable to build admin smoke token"
   echo "   Identity output: $(echo "$IDENTITY_JSON" | head -c 300)"
   exit 1
+fi
+
+if [ "$EXPORT_TOKENS_ONLY" = true ]; then
+  printf 'export ADMIN_TOKEN=%q\n' "$ADMIN_TOKEN"
+  printf 'export DOC_TOKEN=%q\n' "$DOC_TOKEN"
+  echo "# admin=${ADMIN_EMAIL:-unknown} doctor_token=$([ -n "$DOC_TOKEN" ] && echo yes || echo no)"
+  exit 0
 fi
 
 echo ""
