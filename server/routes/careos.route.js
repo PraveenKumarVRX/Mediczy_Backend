@@ -153,6 +153,21 @@ router.post('/coordinator/:patientId/analyze', ...clinical, async (req, res) => 
   }
 });
 
+router.post('/coordinator/:patientId/alerts/:alertId/ack', ...clinical, async (req, res) => {
+  try {
+    const row = await careos.acknowledgeCoordinatorAlert(pid(req), orgId(req), req.params.alertId, {
+      action: req.body.action || 'approve',
+      userId: req.user?.id,
+      note: req.body.note,
+    });
+    if (!row) return res.status(404).json({ success: false, error: 'Alert not found' });
+    res.json({ success: true, data: row });
+  } catch (e) {
+    console.error('[CareOS] coordinator ack:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // ── Instant MDT / Clinical Board ─────────────────────────────────────────────
 router.post('/mdt/start', ...doctorOnly, async (req, res) => {
   const session = await careos.startClinicalBoard({

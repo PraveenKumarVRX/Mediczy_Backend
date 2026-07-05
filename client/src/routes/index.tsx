@@ -817,6 +817,7 @@ const HL7FHIRMonitor        = lazy(() => import("@/pages/hmis/HL7FHIRMonitor"));
 const AIOperationsHub       = lazy(() => import("@/pages/hmis/AIOperationsHub"));
 const AIRevenueIntelligence = lazy(() => import("@/pages/hmis/AIRevenueIntelligence"));
 const AIDepartmentHub       = lazy(() => import("@/pages/hmis/AIDepartmentHub"));
+const MDTInboxPage          = lazy(() => import("@/features/mdt/pages/MDTInboxPage"));
 
 const CLINICAL_PAGES = {
   PatientTimeline,
@@ -1049,8 +1050,8 @@ const AppRoutes = () => {
         <Route path="/doctor/healthos" element={<CareOSEcosystem />} />
         <Route path="/doctor/careos" element={<CareOSEcosystem />} />
         <Route path="/doctor/copilot" element={<HospitalCopilot />} />
-        <Route path="/doctor/patient/:patientId/healthos" element={<LivingPatientWorkspace />} />
-        <Route path="/doctor/patient/:patientId/careos" element={<LivingPatientWorkspace />} />
+        <Route path="/doctor/patient/:patientId/healthos/*" element={<LivingPatientWorkspace />} />
+        <Route path="/doctor/patient/:patientId/careos/*" element={<LivingPatientWorkspace />} />
         {portalClinicalRoutes("doctor", CLINICAL_PAGES)}
 
         {/* ── Webinars ───────────────────────────────────────────────── */}
@@ -1101,8 +1102,9 @@ const AppRoutes = () => {
         <Route path="/hospital/healthos" element={<CareOSEcosystem />} />
         <Route path="/hospital/careos" element={<CareOSEcosystem />} />
         <Route path="/hospital/copilot" element={<HospitalCopilot />} />
+        <Route path="/hospital/mdt/inbox" element={<MDTInboxPage />} />
         <Route path="/hospital/command-center" element={<CommandCenter />} />
-        <Route path="/hospital/patient/:patientId/healthos" element={<LivingPatientWorkspace />} />
+        <Route path="/hospital/patient/:patientId/healthos/*" element={<LivingPatientWorkspace />} />
         {portalClinicalRoutes("hospital", CLINICAL_PAGES)}
 
         {/* ── Clinic ──────────────────────────────────────────────────── */}

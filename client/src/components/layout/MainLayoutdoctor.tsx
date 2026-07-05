@@ -38,7 +38,8 @@ import {
   Briefcase,
   Mic,
   Calculator,
-  Sparkles
+  Sparkles,
+  HeartPulse,
 } from "lucide-react";
 import { BRAND } from "@/config/brand";
 import { memo, useEffect, useState, useRef } from "react";
@@ -78,6 +79,8 @@ const doctorNavItems: NavItem[] = [
   
   // Patient Care
   { icon: Users, label: "My Patients", path: "/doctor/patients", category: "Patient Care" },
+  { icon: HeartPulse, label: "HealthOS Platform", path: "/doctor/healthos", category: "Patient Care", highlight: true },
+  { icon: Sparkles, label: "Hospital Copilot", path: "/doctor/copilot", category: "Patient Care" },
   { icon: Calendar, label: "Appointments", path: "/doctor/appointments", category: "Patient Care" },
   { icon: FileText, label: "Health Records", path: "/doctor/health-records", category: "Patient Care" },
   { icon: AlertTriangle, label: "Emergency Triage", path: "/doctor/triage", category: "Patient Care", highlight: true },

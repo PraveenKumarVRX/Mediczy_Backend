@@ -1,6 +1,6 @@
 import { appendClinicalEvent, getClinicalTimeline } from './clinical-timeline.service.js';
 import { getOrCreateCareTeam, addTeamMember, autoInviteSpecialists } from './care-team.service.js';
-import { analyzePatient, listCoordinatorAlerts } from './clinical-coordinator.service.js';
+import { analyzePatient, listCoordinatorAlerts, acknowledgeCoordinatorAlert } from './clinical-coordinator.service.js';
 import { getPathway, updatePathway } from './treatment-pathway.service.js';
 import { startClinicalBoard, joinClinicalBoard, recordOpinion, getAIConsensus } from './mdt-board.service.js';
 import { buildClinicalPlayback } from './clinical-playback.service.js';
@@ -47,6 +47,7 @@ export {
   autoInviteSpecialists,
   analyzePatient,
   listCoordinatorAlerts,
+  acknowledgeCoordinatorAlert,
   getPathway,
   updatePathway,
   startClinicalBoard,
@@ -139,6 +140,7 @@ export default {
   autoInviteSpecialists,
   analyzePatient,
   listCoordinatorAlerts,
+  acknowledgeCoordinatorAlert,
   getPathway,
   updatePathway,
   startClinicalBoard,
