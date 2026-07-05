@@ -30,9 +30,11 @@ export default function ClinicalTranslatorPage() {
         <CardContent className="pt-4 space-y-3">
           <Textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Clinical text to translate..." rows={4} />
           <select className="border rounded-md px-3 py-2 text-sm" value={targetLang} onChange={(e) => setTargetLang(e.target.value)}>
-            {(languages.length ? languages : [{ code: 'hi', name: 'Hindi' }, { code: 'ta', name: 'Tamil' }]).map((l: any) => (
-              <option key={l.code} value={l.code}>{l.name || l.code}</option>
-            ))}
+            {(languages.length ? languages : ['hi', 'ta', 'te']).map((l: any) => {
+              const code = typeof l === 'string' ? l : l.code;
+              const name = typeof l === 'string' ? l.toUpperCase() : (l.name || l.code);
+              return <option key={code} value={code}>{name}</option>;
+            })}
           </select>
           <Button onClick={translate}>Translate</Button>
           {result && (
