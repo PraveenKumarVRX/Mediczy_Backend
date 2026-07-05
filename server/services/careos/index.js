@@ -17,8 +17,9 @@ import { startGlobalClinicalBoard, joinGlobalSession, translateClinicalMessage }
 
 export function getCareOSCapabilities() {
   return {
-    product: 'Mediqzy CareOS',
-    tagline: 'The Intelligent Operating System for Global Healthcare',
+    product: 'Mediqzy',
+    platform: 'Mediqzy CareOS',
+    tagline: 'The AI-Native Healthcare Operating System for Hospitals, Health Systems, and Cross-Border Care.',
     vision: 'system_of_intelligence_and_collaboration',
     stage: 1,
     roadmap: ['land', 'expand', 'network', 'platform'],

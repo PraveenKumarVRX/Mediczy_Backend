@@ -33,7 +33,9 @@ export async function getLivingWorkspace(patientId, organizationId, { admissionI
   const diagnosis = diagnosisHint;
 
   return {
-    product: 'Mediqzy CareOS',
+    product: 'Mediqzy',
+    platform: 'Mediqzy CareOS',
+    tagline: 'The AI-Native Healthcare Operating System for Hospitals, Health Systems, and Cross-Border Care.',
     positioning: 'Living Patient Workspace',
     patientId,
     organizationId,

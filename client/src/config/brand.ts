@@ -5,12 +5,12 @@
 
 export const BRAND = {
   // Brand Names
-  name: 'SmartHealth',
-  fullName: 'SmartHealth Hospital OS',
-  tagline: 'Complete, Paperless, Interoperable, Orchestrated Healthcare',
-  signoff: 'Team SmartHealth',
-  
-  // Logo (update asset if needed)
+  name: 'Mediqzy',
+  fullName: 'Mediqzy CareOS',
+  tagline: 'The AI-Native Healthcare Operating System for Hospitals, Health Systems, and Cross-Border Care.',
+  signoff: 'Team Mediqzy',
+
+  // Logo
   logo: '/logo/Mediqzy_logo.jpeg',
   
   // Colors (Tailwind classes)
@@ -72,6 +72,13 @@ export const BRAND = {
     linkedin: 'https://linkedin.com/company/smarthealth',
   },
 };
+
+export const CAREOS = {
+  name: 'Mediqzy',
+  product: 'Mediqzy CareOS',
+  tagline: 'The AI-Native Healthcare Operating System for Hospitals, Health Systems, and Cross-Border Care.',
+  shortTagline: 'AI-Native Healthcare Operating System',
+} as const;
 
 // Helper function to get role label
 export const getRoleLabel = (role: string): string => {

@@ -6,7 +6,7 @@
 | **Version** | 2.0 |
 | **Date** | 2026-07-05 |
 | **Owner** | AI CTO / Product |
-| **Tagline** | *The Intelligent Operating System for Global Healthcare* |
+| **Tagline** | *The AI-Native Healthcare Operating System for Hospitals, Health Systems, and Cross-Border Care.* |
 
 ---
 
@@ -157,7 +157,7 @@ Delivery stages: **Land → Expand → Network → Platform** — see `CAREOS_PL
 ## 10. GTM messaging
 
 **Wrong:** "Another HIS" / "Group chat for doctors"  
-**Right:** "The intelligent operating system for global healthcare — connect your hospital, your partners, and your patients in one living workspace."
+**Right:** "The AI-Native Healthcare Operating System for Hospitals, Health Systems, and Cross-Border Care."
 
 ---
 

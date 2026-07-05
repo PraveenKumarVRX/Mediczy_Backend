@@ -8,6 +8,7 @@ import {
   Store, FlaskConical, GraduationCap, Wallet, Radio, Building2, Home, Loader2,
 } from 'lucide-react';
 import { getCareOSHealth, getFederationStatus, listNetworkOrgs, getCareIdentity } from '@/services/careos.service';
+import { CAREOS } from '@/config/brand';
 
 const PILLARS = [
   { id: 'care_workspace', label: 'Care Workspace', icon: Globe, stage: 1, status: 'live' },
@@ -77,9 +78,9 @@ export default function CareOSEcosystem() {
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Network className="h-7 w-7 text-teal-400" />
-              Mediqzy CareOS
+              {CAREOS.name}
             </h1>
-            <p className="text-slate-300 text-sm">The Intelligent Operating System for Global Healthcare</p>
+            <p className="text-slate-300 text-sm max-w-2xl">{CAREOS.tagline}</p>
           </div>
         </div>
 
