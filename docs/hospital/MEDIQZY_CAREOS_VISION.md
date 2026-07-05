@@ -3,36 +3,106 @@
 | Field | Value |
 |-------|-------|
 | **Document ID** | MED-CAREOS-001 |
-| **Version** | 1.0 |
+| **Version** | 2.0 |
 | **Date** | 2026-07-05 |
 | **Owner** | AI CTO / Product |
-| **Tagline** | *The world's first AI-powered collaborative operating system for hospitals* |
+| **Tagline** | *The Intelligent Operating System for Global Healthcare* |
 
 ---
 
-## 1. The gap we target
+## 1. The ambition
 
-| What vendors build | What's fragmented | **CareOS owns** |
-|--------------------|-----------------|-----------------|
-| AI scribes | Point documentation tools | Patient-centric workspace |
-| Virtual nursing | Task lists per ward | Dynamic care team per patient |
-| Remote monitoring | Device dashboards | Timeline + AI coordinator |
-| Telehealth | Meeting links | One-touch clinical calls in-context |
-| Command centers | Ops KPIs only | Mission control + patient threads |
-| HIS/EHR | Department modules | **Everything revolves around the patient** |
+**Do not build another HIS.**
 
-**Do not market as another HIS.**  
-**Market as:** `Mediqzy CareOS` — collaborative operating system for hospitals.
+An HIS is a **system of record** — it stores information.  
+**CareOS** is a **system of intelligence and collaboration** — it coordinates people, AI, devices, and organizations.
 
-Analogy for investors and buyers:
+| Analogy | What it became |
+|---------|----------------|
+| Windows | Operating system for PCs |
+| Android | Operating system for mobile |
+| AWS | Operating system for cloud |
+| **Mediqzy CareOS** | **Operating layer for healthcare** |
 
-> Microsoft Teams + Figma + GitHub + ICU Monitoring + ChatGPT — designed for healthcare, with human-final clinical governance.
+Not software *for* hospitals. An operating system *for healthcare organizations* — hospitals, clinics, labs, pharmacies, insurers, governments, research, and patients.
 
 ---
 
-## 2. North star: Living Patient Workspace
+## 2. The problem: fragmented healthcare
 
-Every complex patient gets a **live digital workspace** — not a chat group.
+```
+Patient → Clinic → Hospital → Laboratory → Pharmacy → Insurance
+    → Home Care → Wearables → Specialists → Government → Research
+```
+
+Every participant uses different systems. The patient repeats their story. Records duplicate. Communication is slow.
+
+---
+
+## 3. The CareOS answer: connect, don't replace
+
+CareOS does not rip-and-replace every system on day one. It becomes the **intelligence layer** that connects them:
+
+```
+                    AI
+                     │
+Hospital ────────────┼──────── Clinic
+                     │
+Laboratory ──────────┼──────── Pharmacy
+                     │
+Insurance ───────────┼──────── Government
+                     │
+Wearables ───────────┼──────── Home Care
+                     │
+Research ────────────┼──────── Medical Devices
+                     │
+                 Patient
+```
+
+Open standards (FHIR), strong identity, consent management, and modular APIs let participants **keep existing systems** while collaborating in one workspace.
+
+---
+
+## 4. Core pillars
+
+### 4.1 Care Workspace
+Every patient gets one **live workspace** — not an EHR screen, a living digital environment: timeline, team, tasks, labs, imaging, AI, monitoring, decisions.
+
+### 4.2 Care AI
+Not ChatGPT in a sidebar. Role-specialized assistants: clinical, workflow, operational, documentation, research — each governed by SaMD policy.
+
+### 4.3 Care Graph
+Every relationship connected: patient → doctors → diseases → procedures → labs → devices → family → insurance → trials → research.
+
+### 4.4 Care Identity
+One verified professional identity across hospitals, telemedicine, research, emergency response. Patients get a **longitudinal identity** linkable across orgs — with consent and local law.
+
+### 4.5 Care Cloud
+Each hospital has a private environment. CareOS **federates** them securely when authorized.
+
+### 4.6 Medical Passport
+Patient-owned portable profile: allergies, diagnoses, meds, surgeries, vaccines, imaging/lab summaries. Patient chooses who sees what.
+
+### 4.7 Global collaboration
+Patient in Kenya. Specialist in India. Radiologist in Singapore. Insurance in UAE. Family in Canada. **One workspace.** AI translation. Time zones handled. Terminology standardized.
+
+---
+
+## 5. Differentiators vs. market
+
+| What vendors build | CareOS owns |
+|--------------------|-------------|
+| AI scribes (documentation) | Patient-centric workspace + timeline |
+| Virtual nursing (tasks) | Dynamic care team per patient |
+| Remote monitoring (dashboards) | Devices → timeline + AI coordinator |
+| Telehealth (meeting links) | One-touch in-context clinical calls |
+| Command centers (KPIs) | Mission control + patient threads + network signals |
+| HIS/EHR (departments) | **Everything revolves around the patient** |
+| Single-hospital software | **Cross-border federated ecosystem** |
+
+---
+
+## 6. North star: Living Patient Workspace
 
 ```
 Patient
@@ -43,144 +113,63 @@ Patient
 ├── Dynamic Care Team
 ├── Living Treatment Pathway
 ├── Tasks & Decisions
-├── MDT / Clinical Board
+├── MDT / Clinical Board   ← local + global
+├── Medical Passport       ← portable, consent-based
 ├── One-Touch Video
-├── Family Updates (approved)
-└── Clinical Playback (48h replay)
+├── Family Updates
+└── Clinical Playback
 ```
 
 ---
 
-## 3. Core differentiators (feature deep-dive)
-
-### 3.1 Clinical Timeline (replaces group chat)
-
-Every interaction becomes a **structured, permanent timeline event**:
+## 7. Platform modules (future)
 
 ```
-08:05  Troponin ↑
-08:06  AI: Possible NSTEMI progression — review ECG vs prior
-08:08  Cardiologist joined case
-08:11  Nurse: Chest pain 8/10
-08:12  ECG uploaded
-08:14  Decision: Shift to Cath Lab
-08:16  Cath Lab accepts
-08:17  Transport dispatched
+CareOS
+├── Care Workspace    ├── Care AI           ├── Care Graph
+├── Care Identity     ├── Care Cloud        ├── Care Video
+├── Care Monitoring   ├── Care Analytics    ├── Care Marketplace
+├── Care Research     ├── Care Education    ├── Care Finance
+├── Care Command      ├── Care Government   └── Care Home
 ```
 
-- No scrolling through thousands of messages
-- Full-text search across the care journey
-- AI, devices, labs, and humans use the **same event stream**
-
-### 3.2 AI as Chief Clinical Coordinator
-
-AI **watches continuously** (labs, vitals, meds, imaging, nurse notes, devices, guidelines) and emits **specific, actionable alerts**:
-
-> *Hemoglobin has fallen 2.4 g/dL in 6 hours. Recent hypotension noted. Consider evaluating for active bleeding.*
-
-Not: *"Patient unstable."*
-
-### 3.3 Dynamic MDT (Multidisciplinary Team)
-
-When diagnosis evolves (e.g. septic shock), AI **suggests and invites**:
-- ICU, ID, Nephrology, Clinical Pharmacy, Microbiology, Dietitian, Respiratory
-
-Nobody has to remember who to call.
-
-### 3.4 Living Treatment Pathway
-
-Visual progress through goals:
-
-```
-Current: Stabilize BP          ████████░░ 80%
-Next:    Extubation            Pending
-         Mobilization → Discharge → Home Monitoring
-```
-
-### 3.5 Intelligent Medical Board
-
-**Instant MDT** — doctor taps *Start Clinical Board* → specialists get *Join?* in one click.
-
-**AI Consensus** summarizes opinions + conflict areas (e.g. anticoagulation timing) — multi-agent reasoning, not replacement.
-
-### 3.6 Hospital Mission Control Displays
-
-ICU, OT, ER, wards, conference rooms = collaborative surfaces:
-- Annotate imaging, compare ECG, replay surgery video
-- One-touch join — no meeting IDs
-
-### 3.7 AI Meeting Assistant
-
-During video: transcribe, extract decisions, create tasks, update notes and pathway — ambient documentation aligned with SaMD policy (physician review).
-
-### 3.8 Patient Digital Twin + Clinical Playback
-
-One intelligent patient model; **replay last 48 hours** like CCTV for deterioration understanding.
-
-### 3.9 Hospital Memory
-
-> *Similar to Case #4312 (2024). Presentation match 87%. Final dx: Autoimmune encephalitis. Review lessons learned?*
-
-Institutional knowledge compounds over time.
-
-### 3.10 Family Collaboration Portal
-
-Clinician-approved updates only: treatment stage, today's plan, discharge checklist, education.
+Delivery stages: **Land → Expand → Network → Platform** — see `CAREOS_PLATFORM_ROADMAP.md`.
 
 ---
 
-## 4. Phase roadmap
+## 8. Cross-border example
 
-### Phase 1 (months 1–9) — **CareOS Foundation** ← current sprint
-
-| Deliverable | Status |
-|-------------|--------|
-| Living Patient Workspace UI | Implementing |
-| Clinical Timeline (structured events) | Implementing |
-| Dynamic Care Teams | Implementing |
-| Task management on timeline | Implementing |
-| AI coordinator alerts (specific) | Implementing |
-| Living treatment pathway | Implementing |
-| Instant MDT / Clinical Board scaffold | Implementing |
-| Video call token (one-touch) | Scaffold |
-| AI timeline summaries | Via Hospital Copilot |
-
-### Phase 2 (months 9–15)
-
-- Live device integration (MQTT → timeline)
-- ICU collaborative displays
-- Smart command center (Netflix-style)
-- Digital whiteboards on displays
-- Family portal v1
-
-### Phase 3 (months 15–24)
-
-- Full AI consensus engine
-- Clinical playback cinematic UI
-- Hospital memory similarity search
-- Cross-hospital collaboration
-- Predictive command center automation
+> Patient admitted in Nairobi. Cardiology second opinion from Apollo (India). Radiology read in Singapore. AI flags troponin trend. Family in Toronto sees approved updates. Insurance pre-auth in Dubai. **One Clinical Board. One timeline. Full audit.**
 
 ---
 
-## 5. Technical architecture
+## 9. Business strategy (phased)
 
-```
-CareOS API          /api/v3/careos
-Hospital OS         /api/v3/hospital-os  (copilot, twins, approvals)
-Clinical data       /api/v1/clinical-workspace, /api/v1/navigation
-Real-time           SSE + MQTT (HyperGrid)
-Video               LiveKit (patient-scoped rooms)
-Governance          SaMD gates, approval inbox, audit log
-```
+| Stage | Focus |
+|-------|-------|
+| **1 — Land** | AI-native hospital platform + Care Workspace |
+| **2 — Expand** | Labs, pharmacy, home care, wearables, passport |
+| **3 — Network** | Cross-hospital, cross-border, federation |
+| **4 — Platform** | APIs, marketplace, research, population health |
 
 ---
 
-## 6. Messaging for GTM
+## 10. GTM messaging
 
-**Wrong:** "Group chat for doctors"  
-**Right:** "Living Patient Workspace — every patient is a real-time collaborative environment where clinicians, nurses, devices, and AI contribute to one structured, searchable care journey."
+**Wrong:** "Another HIS" / "Group chat for doctors"  
+**Right:** "The intelligent operating system for global healthcare — connect your hospital, your partners, and your patients in one living workspace."
 
 ---
 
-*Companion: `CAREOS_PHASE1_IMPLEMENTATION.md`, `HOSPITAL_OS_2035_IMPLEMENTATION_PLAN.md`*
+## 11. Technical references
+
+| Document | Content |
+|----------|---------|
+| `CAREOS_ECOSYSTEM_ARCHITECTURE.md` | Federation, identity, graph, standards |
+| `CAREOS_PLATFORM_ROADMAP.md` | Stages 1–4 delivery plan |
+| `CAREOS_PHASE1_IMPLEMENTATION.md` | Phase 1 API + schema |
+| `HOSPITAL_OS_2035_IMPLEMENTATION_PLAN.md` | Platform copilot, twins (companion layer) |
+
+---
+
+*CareOS = product. Hospital OS = platform intelligence. Together they form the full stack.*

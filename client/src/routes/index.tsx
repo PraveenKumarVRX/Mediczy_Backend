@@ -805,6 +805,7 @@ const DischargeBoard        = lazy(() => import("@/pages/hmis/DischargeBoard"));
 const InpatientWorkspace    = lazy(() => import("@/pages/hmis/InpatientWorkspace"));
 const CommandCenter         = lazy(() => import("@/pages/hmis/CommandCenter"));
 const LivingPatientWorkspace = lazy(() => import("@/pages/hmis/LivingPatientWorkspace"));
+const CareOSEcosystem       = lazy(() => import("@/pages/hmis/CareOSEcosystem"));
 const PredictiveAnalytics   = lazy(() => import("@/pages/hmis/PredictiveAnalytics"));
 const ReportCenter          = lazy(() => import("@/pages/hmis/ReportCenter"));
 const HL7FHIRMonitor        = lazy(() => import("@/pages/hmis/HL7FHIRMonitor"));
@@ -1725,6 +1726,7 @@ const AppRoutes = () => {
         <Route path="/hmis/ot/command-center"                           element={<OTCommandCenter />} />
         <Route path="/hmis/emar"                                        element={<EMARPage />} />
         <Route path="/hmis/discharge-board"                             element={<DischargeBoard />} />
+        <Route path="/hmis/careos"                                       element={<CareOSEcosystem />} />
         <Route path="/hmis/patient/:patientId/careos"                  element={<LivingPatientWorkspace />} />
         <Route path="/hmis/patient/:patientId/workspace"                element={<InpatientWorkspace />} />
         <Route path="/hmis/command-center"                              element={<CommandCenter />} />

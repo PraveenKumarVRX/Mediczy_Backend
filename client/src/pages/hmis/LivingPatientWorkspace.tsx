@@ -153,8 +153,8 @@ export default function LivingPatientWorkspace() {
               <Video className="h-4 w-4 mr-1" /> One-touch Call
             </Button>
             <Button variant="secondary" size="sm" asChild>
-              <Link to={`/hmis/ai-ops`}>
-                <Brain className="h-4 w-4 mr-1" /> AI Operations
+              <Link to="/hmis/careos">
+                <Brain className="h-4 w-4 mr-1" /> CareOS Ecosystem
               </Link>
             </Button>
           </div>

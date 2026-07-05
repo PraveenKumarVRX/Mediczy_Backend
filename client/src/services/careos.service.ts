@@ -92,3 +92,54 @@ export async function getClinicalCallToken(patientId: number) {
   const res = await api.post(`/v3/careos/call/${patientId}/token`);
   return res.data;
 }
+
+// ── Ecosystem APIs ───────────────────────────────────────────────────────────
+
+export async function getMedicalPassport(patientId: number) {
+  const res = await api.get(`/v3/careos/ecosystem/passport/${patientId}`);
+  return res.data;
+}
+
+export async function shareMedicalPassport(patientId: number, body: {
+  sharedWithOrgId?: number;
+  purpose?: string;
+  expiresInHours?: number;
+}) {
+  const res = await api.post(`/v3/careos/ecosystem/passport/${patientId}/share`, body);
+  return res.data;
+}
+
+export async function getCareIdentity() {
+  const res = await api.get('/v3/careos/ecosystem/identity/me');
+  return res.data;
+}
+
+export async function getCareGraph(patientId: number) {
+  const res = await api.get(`/v3/careos/ecosystem/graph/${patientId}`);
+  return res.data;
+}
+
+export async function getFederationStatus() {
+  const res = await api.get('/v3/careos/ecosystem/federation/status');
+  return res.data;
+}
+
+export async function listNetworkOrgs(params?: { country?: string; type?: string }) {
+  const res = await api.get('/v3/careos/ecosystem/network/orgs', { params });
+  return res.data;
+}
+
+export async function startGlobalClinicalBoard(body: {
+  patientId: number;
+  title?: string;
+  invitedOrgIds?: number[];
+  languages?: string[];
+}) {
+  const res = await api.post('/v3/careos/ecosystem/global-board/start', body);
+  return res.data;
+}
+
+export async function translateClinical(text: string, sourceLang: string, targetLang: string) {
+  const res = await api.post('/v3/careos/ecosystem/translate', { text, sourceLang, targetLang });
+  return res.data;
+}

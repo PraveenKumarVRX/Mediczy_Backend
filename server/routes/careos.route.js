@@ -248,4 +248,141 @@ router.post('/call/:patientId/token', ...clinical, async (req, res) => {
   res.json({ success: true, data });
 });
 
+// ── Ecosystem: Medical Passport ────────────────────────────────────────────────
+router.get('/ecosystem/passport/:patientId', ...clinical, async (req, res) => {
+  const data = await careos.getOrSyncPassport(pid(req), orgId(req));
+  res.json({ success: true, data });
+});
+
+router.put('/ecosystem/passport/:patientId', ...doctorOnly, async (req, res) => {
+  const data = await careos.updatePassport(pid(req), { ...req.body, organizationId: orgId(req) });
+  res.json({ success: true, data });
+});
+
+router.post('/ecosystem/passport/:patientId/share', ...doctorOnly, async (req, res) => {
+  const passport = await careos.getOrSyncPassport(pid(req), orgId(req));
+  const data = await careos.sharePassport({
+    passportId: passport.id,
+    sharedWithOrgId: req.body.sharedWithOrgId,
+    sharedWithUserId: req.body.sharedWithUserId,
+    purpose: req.body.purpose || 'second_opinion',
+    scopes: req.body.scopes,
+    grantedBy: req.user.id,
+    expiresInHours: req.body.expiresInHours,
+  });
+  res.json({ success: true, data });
+});
+
+router.get('/ecosystem/passport/access/:token', authUser, async (req, res) => {
+  const data = await careos.getPassportByShareToken(req.params.token);
+  if (!data) return res.status(404).json({ success: false, error: 'Invalid or expired share token' });
+  res.json({ success: true, data });
+});
+
+// ── Ecosystem: Care Identity ───────────────────────────────────────────────────
+router.get('/ecosystem/identity/me', ...clinical, async (req, res) => {
+  const data = await careos.getOrCreateProfessionalIdentity(req.user.id, {
+    displayName: req.user.name || req.user.email,
+  });
+  res.json({ success: true, data });
+});
+
+router.post('/ecosystem/identity/affiliations', ...clinical, async (req, res) => {
+  const data = await careos.addAffiliation({
+    userId: req.user.id,
+    organizationId: req.body.organizationId || orgId(req),
+    orgNetworkId: req.body.orgNetworkId,
+    role: req.body.role,
+    department: req.body.department,
+  });
+  res.json({ success: true, data });
+});
+
+// ── Ecosystem: Care Graph ──────────────────────────────────────────────────────
+router.get('/ecosystem/graph/:patientId', ...clinical, async (req, res) => {
+  const data = await careos.getPatientSubgraph(pid(req), orgId(req));
+  res.json({ success: true, data });
+});
+
+router.post('/ecosystem/graph/:patientId/seed', ...clinical, async (req, res) => {
+  const data = await careos.seedPatientGraph(pid(req), orgId(req), req.body);
+  res.json({ success: true, data });
+});
+
+// ── Ecosystem: Federation ──────────────────────────────────────────────────────
+router.get('/ecosystem/federation/status', ...clinical, async (req, res) => {
+  const data = await careos.getFederationStatus(orgId(req));
+  res.json({ success: true, data });
+});
+
+router.get('/ecosystem/network/orgs', ...clinical, async (req, res) => {
+  const data = await careos.listNetworkOrgs({
+    countryCode: req.query.country,
+    orgType: req.query.type,
+  });
+  res.json({ success: true, data });
+});
+
+router.post('/ecosystem/network/orgs', ...doctorOnly, async (req, res) => {
+  const data = await careos.registerNetworkOrg({
+    organizationId: orgId(req),
+    displayName: req.body.displayName,
+    countryCode: req.body.countryCode,
+    orgType: req.body.orgType,
+    fhirEndpoint: req.body.fhirEndpoint,
+    capabilities: req.body.capabilities,
+  });
+  res.json({ success: true, data });
+});
+
+router.post('/ecosystem/federation/trust', ...doctorOnly, async (req, res) => {
+  const data = await careos.proposeTrust({
+    orgAId: req.body.orgAId,
+    orgBId: req.body.orgBId,
+    trustLevel: req.body.trustLevel,
+    purposes: req.body.purposes,
+    approvedBy: req.user.id,
+  });
+  res.json({ success: true, data });
+});
+
+// ── Ecosystem: Global Clinical Board ───────────────────────────────────────────
+router.post('/ecosystem/global-board/start', ...doctorOnly, async (req, res) => {
+  const data = await careos.startGlobalClinicalBoard({
+    patientId: Number(req.body.patientId),
+    organizationId: orgId(req),
+    title: req.body.title,
+    hostUserId: req.user.id,
+    invitedOrgIds: req.body.invitedOrgIds || [],
+    languages: req.body.languages || ['en'],
+  });
+  res.json({ success: true, data });
+});
+
+router.post('/ecosystem/global-board/:sessionId/join', ...clinical, async (req, res) => {
+  const data = await careos.joinGlobalSession({
+    sessionId: Number(req.params.sessionId),
+    userId: req.user.id,
+    orgNetworkId: req.body.orgNetworkId,
+    displayName: req.user.name || req.user.email,
+    role: req.body.role,
+    languagePreference: req.body.languagePreference,
+  });
+  res.json({ success: true, data });
+});
+
+router.post('/ecosystem/translate', ...clinical, async (req, res) => {
+  try {
+    const data = await careos.translateClinicalMessage({
+      text: req.body.text,
+      sourceLang: req.body.sourceLang || 'en',
+      targetLang: req.body.targetLang || 'en',
+      context: req.body.context,
+    });
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 export default router;

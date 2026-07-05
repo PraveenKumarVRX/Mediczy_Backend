@@ -21,7 +21,31 @@
 | GET/POST | `/family/:patientId/updates` | Family-approved updates |
 | POST | `/call/:patientId/token` | One-touch LiveKit clinical call |
 
-## Database tables
+## Ecosystem API: `/api/v3/careos/ecosystem` (Stage 2–3 scaffold)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/passport/:patientId` | Medical Passport (sync from workspace) |
+| PUT | `/passport/:patientId` | Update passport fields |
+| POST | `/passport/:patientId/share` | Consent-based share token |
+| GET | `/passport/access/:token` | Access passport via share token |
+| GET | `/identity/me` | Professional Care Identity + affiliations |
+| POST | `/identity/affiliations` | Add org affiliation |
+| GET | `/graph/:patientId` | Patient care subgraph |
+| POST | `/graph/:patientId/seed` | Seed graph from clinical data |
+| GET | `/federation/status` | Federation registration + trusts |
+| GET | `/network/orgs` | List network organizations |
+| POST | `/network/orgs` | Register org in CareOS network |
+| POST | `/federation/trust` | Create trust agreement |
+| POST | `/global-board/start` | Cross-border Clinical Board |
+| POST | `/global-board/:sessionId/join` | Join global session |
+| POST | `/translate` | Clinical message translation |
+
+## Ecosystem database tables
+
+See `careos-ecosystem.migration.js`: network orgs, federation trust, passports, shares, graph nodes/edges, global sessions.
+
+## Phase 1 database tables
 
 - `careos_care_teams` / `careos_team_members`
 - `careos_clinical_events` (extends timeline model)

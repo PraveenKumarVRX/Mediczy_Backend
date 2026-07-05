@@ -9,12 +9,36 @@ import { listFamilyUpdates, publishFamilyUpdate } from './family-portal.service.
 import { createPatientCallToken } from './one-touch-call.service.js';
 import { listTasks, createTask, updateTaskStatus } from './task-management.service.js';
 import { getLivingWorkspace } from './living-patient-workspace.service.js';
+import { getPatientSubgraph, seedPatientGraph } from './care-graph.service.js';
+import { getOrCreateProfessionalIdentity, addAffiliation } from './care-identity.service.js';
+import { getOrSyncPassport, updatePassport, sharePassport, getPassportByShareToken } from './medical-passport.service.js';
+import { registerNetworkOrg, listNetworkOrgs, proposeTrust, getFederationStatus } from './care-federation.service.js';
+import { startGlobalClinicalBoard, joinGlobalSession, translateClinicalMessage } from './global-collaboration.service.js';
 
 export function getCareOSCapabilities() {
   return {
     product: 'Mediqzy CareOS',
-    tagline: 'AI-powered collaborative operating system for hospitals',
-    phase: 1,
+    tagline: 'The Intelligent Operating System for Global Healthcare',
+    vision: 'system_of_intelligence_and_collaboration',
+    stage: 1,
+    roadmap: ['land', 'expand', 'network', 'platform'],
+    pillars: [
+      'care_workspace',
+      'care_ai',
+      'care_graph',
+      'care_identity',
+      'care_cloud',
+      'care_video',
+      'care_monitoring',
+      'care_analytics',
+      'care_marketplace',
+      'care_research',
+      'care_education',
+      'care_finance',
+      'care_command',
+      'care_government',
+      'care_home',
+    ],
     features: [
       'living_patient_workspace',
       'clinical_timeline',
@@ -27,6 +51,12 @@ export function getCareOSCapabilities() {
       'family_portal',
       'one_touch_clinical_call',
       'task_management',
+      'medical_passport',
+      'care_graph',
+      'care_identity',
+      'federation_trust',
+      'global_clinical_board',
+      'clinical_translation',
     ],
   };
 }
@@ -55,6 +85,21 @@ export {
   createTask,
   updateTaskStatus,
   getLivingWorkspace,
+  getPatientSubgraph,
+  seedPatientGraph,
+  getOrCreateProfessionalIdentity,
+  addAffiliation,
+  getOrSyncPassport,
+  updatePassport,
+  sharePassport,
+  getPassportByShareToken,
+  registerNetworkOrg,
+  listNetworkOrgs,
+  proposeTrust,
+  getFederationStatus,
+  startGlobalClinicalBoard,
+  joinGlobalSession,
+  translateClinicalMessage,
 };
 
 export default {
@@ -82,4 +127,19 @@ export default {
   createTask,
   updateTaskStatus,
   getLivingWorkspace,
+  getPatientSubgraph,
+  seedPatientGraph,
+  getOrCreateProfessionalIdentity,
+  addAffiliation,
+  getOrSyncPassport,
+  updatePassport,
+  sharePassport,
+  getPassportByShareToken,
+  registerNetworkOrg,
+  listNetworkOrgs,
+  proposeTrust,
+  getFederationStatus,
+  startGlobalClinicalBoard,
+  joinGlobalSession,
+  translateClinicalMessage,
 };
