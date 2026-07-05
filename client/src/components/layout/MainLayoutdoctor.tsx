@@ -38,7 +38,8 @@ import {
   Briefcase,
   Mic,
   Calculator,
-  Sparkles
+  Sparkles,
+  Network
 } from "lucide-react";
 import { BRAND } from "@/config/brand";
 import { memo, useEffect, useState, useRef } from "react";
@@ -98,6 +99,7 @@ const doctorNavItems: NavItem[] = [
   },
   { icon: BrainCircuit, label: "AI Doctor Assist", path: "/doctor/assist", category: "Clinical Tools", highlight: true },
   { icon: Sparkles, label: "iSHA Assistant", path: "/doctor/assistant", category: "Clinical Tools", highlight: true },
+  { icon: Network, label: "HealthOS", path: "/doctor/healthos", category: "Clinical Tools", highlight: true },
   { icon: Mic, label: "Voice Scribe", path: "/doctor/voice-scribe", category: "Clinical Tools", highlight: true },
   { icon: Calculator, label: "Medical Calculators", path: "/doctor/calculators", category: "Clinical Tools" },
   
