@@ -290,15 +290,25 @@ async function revokeAllUserTokens(userId) {
 }
 
 // ─── Host-header slug extraction ─────────────────────────────────────────────
+/** Platform hosts that are not tenant subdomains (must match client HospitalLogin.tsx). */
+const PLATFORM_ROOT_HOSTS = new Set([
+  'mediqzy.com',
+  'www.mediqzy.com',
+  'app.mediqzy.com',
+]);
+
 /**
  * Extract the subdomain from the request Host header.
- * Returns null if the host is the root domain or an IP.
+ * Returns null if the host is the root domain, platform app host, or an IP.
  */
 function extractSubdomainFromHost(req) {
-  const host = (req.headers.host || '').split(':')[0]; // strip port
+  const host = (req.headers.host || '').split(':')[0].toLowerCase(); // strip port
+  if (!host || PLATFORM_ROOT_HOSTS.has(host) || host.startsWith('localhost') || host.startsWith('127.0.0.1')) {
+    return null;
+  }
   const parts = host.split('.');
   // e.g. apollo.mediqzy.com → ['apollo','mediqzy','com']
-  if (parts.length >= 3 && !host.match(/^(www\.|mediqzy\.com|localhost)/)) {
+  if (parts.length >= 3) {
     return parts[0].toLowerCase();
   }
   return null;
