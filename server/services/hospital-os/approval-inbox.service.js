@@ -5,6 +5,8 @@ import pool from '../../db/pgPool.js';
 import { up as migrate } from '../../migrations/hospital-os-2035.migration.js';
 import { publishEvent } from './hospital-events.service.js';
 import { routeLabOrder } from '../emr-order-router.service.js';
+import { getOrCreateCareTeam } from '../careos/care-team.service.js';
+import { sendNotification } from '../notification.service.js';
 
 let ready = false;
 
@@ -101,6 +103,33 @@ async function executeApproval(approval, reviewerId) {
       notes: payload.notes,
     });
     result.executed = true;
+  }
+
+  // Communication Agent: on approval, actually dispatch the drafted message
+  // to real care-team members (those with a linked user_id — role-only
+  // placeholder invites from autoInviteSpecialists have none and are skipped)
+  // instead of leaving the approval as a dead-end record.
+  if (approval.approval_type === 'team_notification' && approval.patient_id) {
+    const orgId = payload.hospitalId || payload.organizationId || 1;
+    const team = await getOrCreateCareTeam(approval.patient_id, orgId).catch(() => null);
+    const target = String(payload.team || '').toLowerCase();
+    const recipients = (team?.members || []).filter((m) => {
+      if (!m.user_id) return false;
+      if (!target || target === 'care_team' || target === 'all' || target === 'team') return true;
+      return m.role?.toLowerCase() === target || m.display_name?.toLowerCase() === target;
+    });
+    const sent = [];
+    for (const m of recipients) {
+      const r = await sendNotification({
+        userId: m.user_id,
+        userType: 'doctor',
+        type: 'care_team_alert',
+        variables: { title: approval.title, message: payload.message || approval.summary || '' },
+        data: { patientId: approval.patient_id, approvalId: approval.id },
+      }).catch((e) => ({ success: false, error: e.message }));
+      sent.push({ userId: m.user_id, role: m.role, result: r });
+    }
+    result = { executed: true, recipients: sent.length, sent };
   }
 
   await pool.query(

@@ -176,6 +176,16 @@ router.post('/journey/optimize', ...clinical, async (req, res) => {
   res.json({ success: true, data: plan });
 });
 
+router.post('/journey/earlier-ot-slot', ...clinical, async (req, res) => {
+  const data = await hospitalOs.suggestEarlierOTSlot({
+    organizationId: orgId(req),
+    otRoomId: Number(req.body.otRoomId),
+    beforeScheduledStart: req.body.beforeScheduledStart,
+    durationMinutes: req.body.durationMinutes,
+  });
+  res.json({ success: true, data });
+});
+
 // ── Workforce AI ──────────────────────────────────────────────────────────────
 router.get('/workforce/analysis', ...leadership, async (req, res) => {
   const data = await hospitalOs.analyzeWorkforce({
@@ -190,6 +200,34 @@ router.get('/research/trials/:patientId', ...doctorOnly, async (req, res) => {
   const data = await hospitalOs.matchClinicalTrials({
     patientId: Number(req.params.patientId),
     organizationId: orgId(req),
+  });
+  res.json({ success: true, data });
+});
+
+router.get('/research/briefing/:patientId', ...doctorOnly, async (req, res) => {
+  const data = await hospitalOs.generateResearchBriefing({
+    patientId: Number(req.params.patientId),
+    organizationId: orgId(req),
+    diagnosisHint: req.query.diagnosis,
+  });
+  res.json({ success: true, data });
+});
+
+router.get('/radiology/:patientId/summary', ...doctorOnly, async (req, res) => {
+  const data = await hospitalOs.summarizeRadiology({ patientId: Number(req.params.patientId), tenantId: req.tenantId || 'default' });
+  res.json({ success: true, data });
+});
+
+router.get('/lab/:patientId/summary', ...doctorOnly, async (req, res) => {
+  const data = await hospitalOs.summarizeLabTrends({ patientId: Number(req.params.patientId), organizationId: orgId(req) });
+  res.json({ success: true, data });
+});
+
+router.get('/billing/:patientId/summary', ...clinical, async (req, res) => {
+  const data = await hospitalOs.summarizeBillingAccount({
+    patientId: Number(req.params.patientId),
+    hospitalId: orgId(req),
+    admissionId: req.query.admissionId ? Number(req.query.admissionId) : undefined,
   });
   res.json({ success: true, data });
 });

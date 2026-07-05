@@ -4,6 +4,7 @@
 import { Router } from 'express';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import careos from '../services/careos/index.js';
+import { getCareIntelligenceMesh } from '../services/ai-brain/care-intelligence-mesh.js';
 
 const router = Router();
 const clinical = [authUser, requireRole(['doctor', 'nurse', 'admin', 'assistant', 'hospital'])];
@@ -20,6 +21,13 @@ function pid(req) {
 // ── Meta ─────────────────────────────────────────────────────────────────────
 router.get('/health', authUser, (req, res) => {
   res.json({ success: true, ...careos.getCareOSCapabilities() });
+});
+
+// AI Orchestrator roster — the "AI Team" list of per-patient background
+// agents (Care Intelligence Mesh), separate from the conversational
+// tool-calling agents in ai-brain/agent-registry.js.
+router.get('/mesh/agents', authUser, (req, res) => {
+  res.json({ success: true, data: getCareIntelligenceMesh() });
 });
 
 // ── Living Patient Workspace ───────────────────────────────────────────────────
@@ -153,6 +161,17 @@ router.post('/coordinator/:patientId/analyze', ...clinical, async (req, res) => 
   }
 });
 
+router.get('/coordinator/:patientId/admission-briefing', ...clinical, async (req, res) => {
+  try {
+    const admissionId = req.query.admissionId ? Number(req.query.admissionId) : undefined;
+    const result = await careos.generateAdmissionBriefing(pid(req), orgId(req), admissionId);
+    res.json({ success: true, data: result });
+  } catch (e) {
+    console.error('[CareOS] admission briefing:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // ── Instant MDT / Clinical Board ─────────────────────────────────────────────
 router.post('/mdt/start', ...doctorOnly, async (req, res) => {
   const session = await careos.startClinicalBoard({
@@ -218,6 +237,17 @@ router.post('/memory/archive', ...doctorOnly, async (req, res) => {
   res.json({ success: true, data: row });
 });
 
+// Learning Agent: manual outcome capture for an archived case (e.g. a
+// clinician later confirms "no complications" or "readmitted elsewhere")
+router.post('/memory/:caseId/outcome', ...doctorOnly, async (req, res) => {
+  const row = await careos.recordCaseOutcome(Number(req.params.caseId), {
+    outcomeStatus: req.body.outcomeStatus,
+    readmittedWithin30d: req.body.readmittedWithin30d,
+    lengthOfStayDays: req.body.lengthOfStayDays,
+  });
+  res.json({ success: true, data: row });
+});
+
 // ── Family Portal ──────────────────────────────────────────────────────────────
 router.get('/family/:patientId/updates', authUser, async (req, res) => {
   const familyOnly = req.user.role === 'patient' || req.query.family === 'true';
@@ -242,6 +272,11 @@ router.post('/family/:patientId/updates', ...doctorOnly, async (req, res) => {
     visibleToFamily: req.body.visibleToFamily !== false,
   });
   res.json({ success: true, data: row });
+});
+
+router.get('/family/:patientId/draft', ...clinical, async (req, res) => {
+  const data = await careos.generateFamilyUpdateDraft(pid(req), orgId(req));
+  res.json({ success: true, data });
 });
 
 // ── One-touch Clinical Call ────────────────────────────────────────────────────

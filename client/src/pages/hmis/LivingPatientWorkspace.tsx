@@ -25,9 +25,14 @@ import {
   joinMDT,
   publishFamilyUpdate,
   listFamilyUpdates,
+  draftFamilyUpdate,
   syncFhirLabs,
   listPatientImaging,
+  getMeshAgents,
+  getAdmissionBriefing,
+  type MeshAgent,
 } from '@/services/careos.service';
+import { getResearchBriefing, getRadiologySummary, getLabSummary, getBillingSummary } from '@/services/hospitalOs.service';
 import { useClinicalPaths } from '@/hooks/useClinicalPaths';
 
 const SEVERITY_STYLE: Record<string, string> = {
@@ -56,6 +61,8 @@ export default function LivingPatientWorkspace() {
   const [familyBody, setFamilyBody] = useState('');
   const [familyUpdates, setFamilyUpdates] = useState<any[]>([]);
   const [imagingStudies, setImagingStudies] = useState<any[]>([]);
+  const [meshAgents, setMeshAgents] = useState<MeshAgent[]>([]);
+  const [meshResults, setMeshResults] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     if (!pid) return;
@@ -72,6 +79,35 @@ export default function LivingPatientWorkspace() {
   }, [pid]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    getMeshAgents().then((res) => setMeshAgents(res?.data || [])).catch(() => {});
+  }, []);
+
+  const MESH_RUNNERS: Record<string, (patientId: number) => Promise<{ data?: any }>> = {
+    clinical: getAdmissionBriefing,
+    research: getResearchBriefing,
+    radiology: getRadiologySummary,
+    laboratory: getLabSummary,
+    billing: getBillingSummary,
+    family: draftFamilyUpdate,
+  };
+
+  const runMeshAgent = async (agentId: string) => {
+    const runner = MESH_RUNNERS[agentId];
+    if (!runner) return;
+    setActionLoading(`mesh:${agentId}`);
+    try {
+      const res = await runner(pid);
+      const data = res?.data;
+      const text = data?.briefing || data?.summary || data?.body || (typeof data === 'string' ? data : JSON.stringify(data));
+      setMeshResults((prev) => ({ ...prev, [agentId]: text || 'No result.' }));
+    } catch (e: any) {
+      setMeshResults((prev) => ({ ...prev, [agentId]: e?.response?.data?.error || e?.message || 'Failed to run agent.' }));
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const runCoordinator = async () => {
     setActionLoading('coordinator');
@@ -122,6 +158,18 @@ export default function LivingPatientWorkspace() {
     setFamilyTitle('');
     setFamilyBody('');
     await loadFamily();
+  };
+
+  const draftFamily = async () => {
+    setActionLoading('familyDraft');
+    try {
+      const res = await draftFamilyUpdate(pid);
+      const draft = res?.data;
+      if (draft) {
+        setFamilyTitle(draft.title || '');
+        setFamilyBody(draft.body || '');
+      }
+    } finally { setActionLoading(null); }
   };
 
   const syncLabs = async () => {
@@ -322,6 +370,36 @@ export default function LivingPatientWorkspace() {
                   {!team.length && <p className="text-sm text-muted-foreground col-span-full">No team members yet</p>}
                 </CardContent>
               </Card>
+              <Card>
+                <CardHeader><CardTitle className="text-base">AI Team — Care Intelligence Mesh</CardTitle></CardHeader>
+                <CardContent className="grid sm:grid-cols-2 gap-2">
+                  {meshAgents.map((a) => (
+                    <div key={a.id} className="border rounded-lg p-3 text-sm space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-medium">{a.icon} {a.name}</p>
+                        <Badge variant={a.status === 'active' ? 'secondary' : 'outline'} className="text-[10px]">{a.status}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{a.description}</p>
+                      {a.invokable ? (
+                        <Button
+                          size="sm" variant="secondary" className="mt-1"
+                          disabled={actionLoading === `mesh:${a.id}`}
+                          onClick={() => runMeshAgent(a.id)}
+                        >
+                          {actionLoading === `mesh:${a.id}` ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Sparkles className="h-3 w-3 mr-1" />}
+                          Run
+                        </Button>
+                      ) : (
+                        <p className="text-[11px] text-muted-foreground italic">{a.trigger}</p>
+                      )}
+                      {meshResults[a.id] && (
+                        <p className="text-xs border-t pt-1 mt-1 whitespace-pre-wrap">{meshResults[a.id]}</p>
+                      )}
+                    </div>
+                  ))}
+                  {!meshAgents.length && <p className="text-sm text-muted-foreground col-span-full">Loading AI team…</p>}
+                </CardContent>
+              </Card>
             </TabsContent>
 
             <TabsContent value="pathway">
@@ -482,10 +560,17 @@ export default function LivingPatientWorkspace() {
 
             <TabsContent value="family" className="space-y-4">
               <Card>
-                <CardHeader><CardTitle className="text-base">Publish family update</CardTitle></CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle className="text-base">Publish family update</CardTitle>
+                  <Button variant="secondary" size="sm" disabled={actionLoading === 'familyDraft'} onClick={draftFamily}>
+                    {actionLoading === 'familyDraft' ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Sparkles className="h-4 w-4 mr-1" />}
+                    AI Draft Update
+                  </Button>
+                </CardHeader>
                 <CardContent className="space-y-2">
                   <Input placeholder="Title" value={familyTitle} onChange={(e) => setFamilyTitle(e.target.value)} />
                   <Input placeholder="Message for family" value={familyBody} onChange={(e) => setFamilyBody(e.target.value)} />
+                  <p className="text-xs text-muted-foreground">AI drafts are a starting point — review and edit before publishing. Nothing is sent to families until you approve it.</p>
                   <Button onClick={publishFamily}>Publish (clinician-approved)</Button>
                 </CardContent>
               </Card>

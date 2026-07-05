@@ -9,6 +9,7 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 import llmProvider from './ai-brain/llm-provider.js';
+import { ensureClinicalNoteColumns } from './clinical-notes.service.js';
 
 async function ensureTables() {
   await sequelize.query(`
@@ -49,6 +50,8 @@ ensureTables().catch(e => console.warn('[discharge-workflow] table init:', e.mes
 // ── Build AI draft context ────────────────────────────────────────────────────
 
 async function buildDraftContext(admissionId) {
+  await ensureClinicalNoteColumns();
+
   const [admission] = await sequelize.query(
     `SELECT a.*, p.first_name || ' ' || p.last_name as patient_name, p.date_of_birth, p.gender
      FROM ip_admissions a
@@ -57,9 +60,13 @@ async function buildDraftContext(admissionId) {
     { replacements: { admId: admissionId }, type: QueryTypes.SELECT }
   ).catch(() => [null]);
 
+  // clinical_notes has mixed casing: note_type/admission_id are snake_case
+  // (added via ALTER in ensureClinicalNoteColumns), chiefComplaint/assessment/
+  // createdAt are camelCase (Sequelize model columns) — there is no
+  // "diagnosis" column; "assessment" is the SOAP-note diagnosis-equivalent.
   const notes = await sequelize.query(
-    `SELECT note_type, chief_complaint, diagnosis, plan, assessment, created_at
-     FROM clinical_notes WHERE admission_id = :admId ORDER BY created_at DESC LIMIT 10`,
+    `SELECT note_type, "chiefComplaint" AS chief_complaint, assessment AS diagnosis, plan, assessment, "createdAt" AS created_at
+     FROM clinical_notes WHERE admission_id = :admId ORDER BY "createdAt" DESC LIMIT 10`,
     { replacements: { admId: admissionId }, type: QueryTypes.SELECT }
   ).catch(() => []);
 

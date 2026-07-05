@@ -64,4 +64,50 @@ export async function optimizeJourney({ patientId, organizationId, goals = [], t
   return plan;
 }
 
-export default { optimizeJourney };
+/**
+ * Operations/Workflow Agent: resource-aware scheduling — finds real gaps in
+ * an OT room's actual booking schedule, instead of a fixed template. There
+ * is no imaging-slots table in this codebase (the "MRI 2 hours earlier"
+ * example from the vision doc isn't buildable without one), so this covers
+ * ot_bookings, which is the one resource-scheduling table that actually
+ * exists with real slot data.
+ */
+export async function suggestEarlierOTSlot({ organizationId, otRoomId, beforeScheduledStart, durationMinutes = 60 }) {
+  const { rows: bookings } = await pool.query(
+    `SELECT scheduled_start, scheduled_end FROM ot_bookings
+     WHERE organization_id = $1 AND ot_room_id = $2
+       AND ot_status NOT IN ('cancelled', 'completed')
+       AND scheduled_start >= NOW() AND scheduled_start < $3
+     ORDER BY scheduled_start ASC`,
+    [organizationId, otRoomId, beforeScheduledStart]
+  ).catch(() => ({ rows: [] }));
+
+  const durationMs = durationMinutes * 60 * 1000;
+  let cursor = new Date();
+  for (const b of bookings) {
+    const gapMs = new Date(b.scheduled_start).getTime() - cursor.getTime();
+    if (gapMs >= durationMs) {
+      return {
+        available: true,
+        suggestedStart: cursor.toISOString(),
+        suggestedEnd: new Date(cursor.getTime() + durationMs).toISOString(),
+        reason: `OT room ${otRoomId} has a ${Math.round(gapMs / 60000)}-minute gap before the next booking at ${b.scheduled_start}.`,
+      };
+    }
+    cursor = new Date(b.scheduled_end);
+  }
+
+  const finalGapMs = new Date(beforeScheduledStart).getTime() - cursor.getTime();
+  if (finalGapMs >= durationMs) {
+    return {
+      available: true,
+      suggestedStart: cursor.toISOString(),
+      suggestedEnd: new Date(cursor.getTime() + durationMs).toISOString(),
+      reason: `OT room ${otRoomId} is free from ${cursor.toISOString()} until the originally scheduled time.`,
+    };
+  }
+
+  return { available: false, reason: 'No earlier gap of sufficient duration found in this OT room\'s schedule.' };
+}
+
+export default { optimizeJourney, suggestEarlierOTSlot };

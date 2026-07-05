@@ -82,3 +82,23 @@ export async function listSimulationScenarios() {
   const res = await api.get('/v3/hospital-os/simulate/scenarios');
   return res.data;
 }
+
+export async function getResearchBriefing(patientId: number) {
+  const res = await api.get(`/v3/hospital-os/research/briefing/${patientId}`);
+  return res.data;
+}
+
+export async function getRadiologySummary(patientId: number) {
+  const res = await api.get(`/v3/hospital-os/radiology/${patientId}/summary`);
+  return res.data;
+}
+
+export async function getLabSummary(patientId: number) {
+  const res = await api.get(`/v3/hospital-os/lab/${patientId}/summary`);
+  return res.data;
+}
+
+export async function getBillingSummary(patientId: number) {
+  const res = await api.get(`/v3/hospital-os/billing/${patientId}/summary`);
+  return res.data;
+}

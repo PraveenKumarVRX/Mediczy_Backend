@@ -32,10 +32,21 @@ export function attachScribeWebSocket(httpServer) {
       try {
         const msg = JSON.parse(data.toString());
         if (msg.type === 'text_chunk') {
-          chunks.push(msg.text);
-          ws.send(JSON.stringify({ type: 'partial', text: msg.text }));
+          // Documentation Agent — multi-participant tagging: true speaker
+          // diarization needs a speaker-embedding model we don't run, so
+          // this uses an explicit tag the client sends per chunk instead
+          // (e.g. a doctor/patient mic toggle in the UI). Untagged chunks
+          // fall back to 'unknown' rather than being silently merged.
+          chunks.push({ text: msg.text, speaker: msg.speakerRole || 'unknown', ts: Date.now() });
+          ws.send(JSON.stringify({ type: 'partial', text: msg.text, speaker: msg.speakerRole || 'unknown' }));
         } else if (msg.type === 'end') {
-          const fullText = chunks.join(' ');
+          const fullText = chunks.map((c) => c.text).join(' ');
+          const speakerSegments = [];
+          for (const c of chunks) {
+            const last = speakerSegments[speakerSegments.length - 1];
+            if (last && last.speaker === c.speaker) last.text += ' ' + c.text;
+            else speakerSegments.push({ speaker: c.speaker, text: c.text });
+          }
           let structured = null;
           try {
             const res = await fetch(`${process.env.API_INTERNAL_URL || 'http://127.0.0.1:' + (process.env.PORT || 8000)}/api/offline-scribe/full-pipeline`, {
@@ -47,7 +58,7 @@ export function attachScribeWebSocket(httpServer) {
           } catch {
             structured = { transcript: fullText };
           }
-          ws.send(JSON.stringify({ type: 'complete', transcript: fullText, structured }));
+          ws.send(JSON.stringify({ type: 'complete', transcript: fullText, speakerSegments, structured }));
           sessions.delete(sessionId);
         }
       } catch (e) {

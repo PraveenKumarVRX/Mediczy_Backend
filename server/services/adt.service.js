@@ -13,7 +13,9 @@ import { consumeReservation } from './bed-allocation.service.js';
 import { isComplexDiagnosis, autoInviteSpecialists } from './careos/care-team.service.js';
 import { appendClinicalEvent } from './careos/clinical-timeline.service.js';
 import { autoAdvancePathway } from './careos/treatment-pathway.service.js';
-import { archiveCase } from './careos/hospital-memory.service.js';
+import { archiveCase, flagReadmissionIfRecent } from './careos/hospital-memory.service.js';
+import { dispatchEvent } from './workflow-ai-orchestrator.service.js';
+import { publishEvent, KAFKA_TOPICS } from '../config/kafka.js';
 
 // ── B4: Discharge readiness table bootstrap ───────────────────────────────────
 
@@ -278,6 +280,30 @@ export async function admitPatient({
       });
     }
 
+    // Learning Agent: this admission is itself an outcome signal for any
+    // recently-archived case for the same patient — a readmission within
+    // 30 days of a "complex case" discharge is exactly the kind of feedback
+    // findSimilarCases should be able to warn future clinicians about.
+    flagReadmissionIfRecent(patientId, organizationId).catch((err) => {
+      console.warn('[adt.service] readmission flag failed:', err.message);
+    });
+
+    // Prediction Agent: LOS estimate, pathway suggestion, readmission-risk
+    // scoring — real logic in workflow-ai-orchestrator.service.js that was
+    // previously written but never called from anywhere.
+    dispatchEvent('patient.admitted', admission).catch((err) => {
+      console.warn('[adt.service] prediction agent dispatch failed:', err.message);
+    });
+
+    // Event bus: fire-and-forget publish alongside (not instead of) the
+    // direct calls above — anything that must happen for the admission to
+    // be valid stays a direct call; this is for side-effects that can
+    // tolerate being picked up a moment later by an independent consumer
+    // (see kafka-consumers.service.js's admission consumer).
+    publishEvent(KAFKA_TOPICS.PATIENT_ADMITTED, {
+      admissionId: admission.id, patientId, organizationId, admissionType, admissionDiagnosis,
+    }, { key: String(organizationId) }).catch(() => {});
+
     return admission;
   } catch (err) {
     await tx.rollback();
@@ -425,12 +451,26 @@ export async function dischargePatient({
       metadata: { dischargeType, dischargeSummaryId: dischargeSummaryId || null },
     }).catch((err) => console.warn('[adt.service] timeline event failed (discharge):', err.message));
 
+    // Prediction Agent: queues discharge-summary generation + 30-day
+    // follow-up reminder (real logic, previously dead code — see
+    // workflow-ai-orchestrator.service.js).
+    dispatchEvent('patient.discharged', { ...current, discharge_summary_id: dischargeSummaryId || current.discharge_summary_id }).catch((err) => {
+      console.warn('[adt.service] prediction agent dispatch failed (discharge):', err.message);
+    });
+
+    publishEvent(KAFKA_TOPICS.PATIENT_DISCHARGED, {
+      admissionId, patientId: current.patient_id, organizationId, dischargeType,
+    }, { key: String(organizationId) }).catch(() => {});
+
     // Hospital Knowledge Network: auto-archive complex cases on discharge so
     // future similar presentations can be matched — previously this only
     // happened if a clinician manually called POST /memory/archive.
     if (isComplexDiagnosis(current.admission_diagnosis)) {
       const keywords = String(current.admission_diagnosis || '')
         .toLowerCase().split(/\s+/).filter((w) => w.length > 3).slice(0, 8);
+      const losDays = current.admission_datetime
+        ? (Date.now() - new Date(current.admission_datetime).getTime()) / (1000 * 60 * 60 * 24)
+        : null;
       archiveCase({
         organizationId,
         patientId: current.patient_id,
@@ -438,6 +478,7 @@ export async function dischargePatient({
         finalDiagnosis: current.admission_diagnosis || null,
         lessonsLearned: reason || null,
         keywords,
+        lengthOfStayDays: losDays,
       }).catch((err) => console.warn('[adt.service] auto case-archive failed:', err.message));
     }
 

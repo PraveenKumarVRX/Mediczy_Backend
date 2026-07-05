@@ -56,7 +56,19 @@ interface Message {
   attachments: Attachment[] | Record<string, Attachment>;
   status: string;
   createdAt: string;
+  translated_content?: { lang: string; text: string; glossary?: { term: string; explanation: string }[] } | null;
 }
+
+const PATIENT_LANGUAGES: { code: string; label: string }[] = [
+  { code: "", label: "No translation" },
+  { code: "hi", label: "Hindi" },
+  { code: "te", label: "Telugu" },
+  { code: "ta", label: "Tamil" },
+  { code: "kn", label: "Kannada" },
+  { code: "ml", label: "Malayalam" },
+  { code: "mr", label: "Marathi" },
+  { code: "bn", label: "Bengali" },
+];
 
 const POLL_INTERVAL = 5000;
 
@@ -122,6 +134,7 @@ const DoctorMessaging: React.FC = () => {
   const [callPickerType, setCallPickerType]   = useState<"audio" | "video">("video");
   const [selectedCallees, setSelectedCallees] = useState<Set<string>>(new Set());
   const [callToasts, setCallToasts]           = useState<Array<{id:number; status:string; memberName:string}>>([]);
+  const [targetLang, setTargetLang]           = useState("");
   const callToastIdRef = useRef(0);
   const bottomRef    = useRef<HTMLDivElement>(null);
   const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -292,6 +305,7 @@ const DoctorMessaging: React.FC = () => {
         content: input.trim() || (pendingFile?.name ?? ""),
         messageType: msgType,
         attachments: JSON.stringify(attachments),
+        ...(recipientType === "patient" && targetLang ? { targetLang } : {}),
       });
       setMessages(prev => [...prev, data.message]);
       setInput(""); clearPendingFile();
@@ -633,6 +647,11 @@ const DoctorMessaging: React.FC = () => {
                       {msg.content && (atts.length === 0 || msg.content !== atts[0]?.name) && (
                         <span>{msg.content}</span>
                       )}
+                      {msg.translated_content?.text && (
+                        <div className={cn("mt-1 pt-1 border-t text-xs italic", isMe ? "border-blue-400/40 text-blue-100" : "border-slate-500/40 text-slate-300")}>
+                          {msg.translated_content.text}
+                        </div>
+                      )}
                       <span className={cn("block text-[10px] mt-0.5", isMe ? "text-blue-200 text-right" : "text-slate-500")}>
                         {new Date(msg.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
                         {isMe && msg.status === "read" && " ✓✓"}
@@ -663,6 +682,20 @@ const DoctorMessaging: React.FC = () => {
           )}
 
           {/* Input bar */}
+          {tab === "patients" && (
+            <div className="flex items-center gap-2 px-4 pt-2 -mb-1">
+              <span className="text-[11px] text-slate-500">Translate for patient:</span>
+              <select
+                value={targetLang}
+                onChange={(e) => setTargetLang(e.target.value)}
+                className="text-xs bg-slate-800/80 border border-slate-600/60 text-slate-200 rounded-lg px-2 py-1"
+              >
+                {PATIENT_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>{l.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="flex items-center gap-2 px-4 py-3 border-t border-slate-700/60 bg-slate-900/90">
             <input
               ref={fileInputRef}

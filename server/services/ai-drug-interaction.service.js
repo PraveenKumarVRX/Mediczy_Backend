@@ -78,6 +78,102 @@ const DRUG_CONDITION_INTERACTIONS = [
   { drug: /ace.?inhibitor|enalapril|lisinopril|ramipril/i, condition: /pregnan/i, severity: 'contraindicated', effect: 'ACE inhibitors are teratogenic — contraindicated in pregnancy.' },
 ];
 
+// ─── Therapeutic Drug Classes (duplicate-therapy detection) ─────────────────
+const DRUG_CLASSES = [
+  { name: 'NSAID', pattern: /ibuprofen|diclofenac|naproxen|aceclofenac|indomethacin|ketorolac|nsaid/i },
+  { name: 'ACE inhibitor', pattern: /enalapril|lisinopril|ramipril|captopril|perindopril/i },
+  { name: 'ARB', pattern: /losartan|telmisartan|valsartan|olmesartan/i },
+  { name: 'Benzodiazepine', pattern: /diazepam|lorazepam|alprazolam|clonazepam|midazolam/i },
+  { name: 'Opioid', pattern: /tramadol|morphine|codeine|oxycodone|fentanyl|pethidine/i },
+  { name: 'SSRI', pattern: /fluoxetine|sertraline|paroxetine|citalopram|escitalopram/i },
+  { name: 'Statin', pattern: /atorvastatin|simvastatin|rosuvastatin|lovastatin|pravastatin/i },
+  { name: 'PPI', pattern: /omeprazole|esomeprazole|pantoprazole|rabeprazole|lansoprazole/i },
+  { name: 'Beta-blocker', pattern: /atenolol|metoprolol|propranolol|bisoprolol|carvedilol/i },
+  { name: 'Sulfonylurea', pattern: /glimepiride|glipizide|glyburide|gliclazide/i },
+];
+
+function classify(drug) {
+  return DRUG_CLASSES.find((c) => c.pattern.test(drug))?.name || null;
+}
+
+/** Duplicate-therapy: 2+ drugs from the same class prescribed together. */
+function checkDuplicateTherapy(allDrugs) {
+  const byClass = new Map();
+  for (const drug of allDrugs) {
+    const cls = classify(drug);
+    if (!cls) continue;
+    if (!byClass.has(cls)) byClass.set(cls, []);
+    byClass.get(cls).push(drug);
+  }
+  const flags = [];
+  for (const [cls, drugs] of byClass) {
+    if (drugs.length >= 2) {
+      flags.push({
+        type: 'duplicate-therapy',
+        drugClass: cls,
+        drugs,
+        severity: 'moderate',
+        effect: `${drugs.join(' + ')} are both ${cls}s — duplicate therapy within the same class rarely adds benefit and increases side-effect risk. Review whether both are needed.`,
+        source: 'built-in',
+      });
+    }
+  }
+  return flags;
+}
+
+// Drugs that commonly need dose reduction or avoidance in renal impairment.
+const RENAL_ADJUST_DRUGS = [
+  { pattern: /metformin/i, note: 'avoid if eGFR < 30; halve dose if eGFR 30-45' },
+  { pattern: /nsaid|ibuprofen|diclofenac|naproxen/i, note: 'avoid — nephrotoxic, worsens renal function' },
+  { pattern: /enalapril|lisinopril|ramipril|captopril/i, note: 'start low, monitor potassium and creatinine' },
+  { pattern: /gabapentin|pregabalin/i, note: 'reduce dose — renally cleared' },
+  { pattern: /digoxin/i, note: 'reduce dose and monitor levels — renally cleared, narrow therapeutic index' },
+  { pattern: /glimepiride|glipizide|glyburide|gliclazide/i, note: 'hypoglycemia risk increases as renal clearance falls' },
+  { pattern: /vancomycin|gentamicin|amikacin/i, note: 'requires renal dose adjustment and level monitoring' },
+];
+
+/**
+ * Renal dosing flag — looks up the patient's most recent creatinine/eGFR
+ * from lab_results (not just a text match on chronicConditions, which is
+ * all the existing drug-condition rules relied on) and flags any prescribed
+ * drug that needs dose adjustment when renal function is impaired.
+ */
+async function checkRenalDosing(allDrugs, patientId) {
+  if (!patientId) return [];
+  const relevantDrugs = allDrugs.filter((d) => RENAL_ADJUST_DRUGS.some((r) => r.pattern.test(d)));
+  if (!relevantDrugs.length) return [];
+
+  let latestRenal = null;
+  try {
+    // lab_results is keyed by userId (== patientId), not admission — real
+    // columns are testName/value/isAbnormal/reportDate (camelCase).
+    const { rows } = await pool.query(
+      `SELECT "testName" AS test_name, value, "isAbnormal" AS is_abnormal, "reportDate" AS reported_at
+       FROM lab_results
+       WHERE "userId" = $1 AND ("testName" ILIKE '%creatinine%' OR "testName" ILIKE '%egfr%' OR "testName" ILIKE '%gfr%')
+       ORDER BY "reportDate" DESC LIMIT 1`,
+      [patientId]
+    );
+    latestRenal = rows[0] || null;
+  } catch (err) {
+    console.warn('[DrugInteraction] renal lab lookup failed:', err.message);
+    return [];
+  }
+
+  if (!latestRenal || !latestRenal.is_abnormal) return [];
+
+  return relevantDrugs.map((drug) => {
+    const rule = RENAL_ADJUST_DRUGS.find((r) => r.pattern.test(drug));
+    return {
+      type: 'renal-dosing',
+      drug,
+      severity: 'major',
+      effect: `Recent ${latestRenal.test_name} (${latestRenal.value}, abnormal as of ${new Date(latestRenal.reported_at).toDateString()}) suggests renal impairment. ${drug}: ${rule?.note || 'dose adjustment may be needed'}.`,
+      source: 'lab-derived',
+    };
+  });
+}
+
 class DrugInteractionChecker {
   /**
    * Check interactions for a list of medications
@@ -188,6 +284,12 @@ class DrugInteractionChecker {
         }
       }
     }
+
+    // 3b. Duplicate-therapy-class check (e.g. two NSAIDs prescribed together)
+    interactions.push(...checkDuplicateTherapy(allDrugs));
+
+    // 3c. Renal dosing flag — driven by actual lab values, not just condition text
+    interactions.push(...await checkRenalDosing(allDrugs, patientId));
 
     // 4. LLM-enhanced interaction check for drugs not in built-in database
     if (useLLM && allDrugs.length >= 2) {

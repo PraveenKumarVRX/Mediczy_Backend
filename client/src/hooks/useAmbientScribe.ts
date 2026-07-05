@@ -3,26 +3,41 @@
  */
 import { useCallback, useRef, useState } from 'react';
 
+export type SpeakerRole = 'doctor' | 'patient' | 'nurse' | 'family' | 'unknown';
+
 export interface AmbientScribeState {
   active: boolean;
   sessionId: string | null;
   partialText: string;
   fullTranscript: string;
+  speakerSegments: { speaker: SpeakerRole; text: string }[];
   structured: unknown;
   error: string | null;
+  speakerRole: SpeakerRole;
 }
 
 export function useAmbientScribe(token: string) {
   const wsRef = useRef<WebSocket | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  // Ref mirrors state.speakerRole so the long-lived SpeechRecognition
+  // callback (created once in start()) always reads the current speaker
+  // instead of the value captured at closure-creation time.
+  const speakerRoleRef = useRef<SpeakerRole>('doctor');
   const [state, setState] = useState<AmbientScribeState>({
     active: false,
     sessionId: null,
     partialText: '',
     fullTranscript: '',
+    speakerSegments: [],
     structured: null,
     error: null,
+    speakerRole: 'doctor',
   });
+
+  const setSpeakerRole = useCallback((role: SpeakerRole) => {
+    speakerRoleRef.current = role;
+    setState((s) => ({ ...s, speakerRole: role }));
+  }, []);
 
   const stopRecognition = useCallback(() => {
     try {
@@ -56,6 +71,7 @@ export function useAmbientScribe(token: string) {
           ...s,
           active: false,
           fullTranscript: msg.transcript || s.fullTranscript,
+          speakerSegments: msg.speakerSegments || [],
           structured: msg.structured,
           partialText: '',
         }));
@@ -86,7 +102,7 @@ export function useAmbientScribe(token: string) {
           setState((s) => ({ ...s, partialText: interim }));
         }
         if (finalChunk.trim()) {
-          wsRef.current?.send(JSON.stringify({ type: 'text_chunk', text: finalChunk.trim() }));
+          wsRef.current?.send(JSON.stringify({ type: 'text_chunk', text: finalChunk.trim(), speakerRole: speakerRoleRef.current }));
         }
       };
       recognition.onerror = () => {};
@@ -95,9 +111,9 @@ export function useAmbientScribe(token: string) {
     }
   }, [token, stopRecognition]);
 
-  const sendText = useCallback((text: string) => {
+  const sendText = useCallback((text: string, speakerRole?: SpeakerRole) => {
     if (!text.trim()) return;
-    wsRef.current?.send(JSON.stringify({ type: 'text_chunk', text: text.trim() }));
+    wsRef.current?.send(JSON.stringify({ type: 'text_chunk', text: text.trim(), speakerRole: speakerRole || speakerRoleRef.current }));
     setState((s) => ({ ...s, partialText: text }));
   }, []);
 
@@ -115,7 +131,7 @@ export function useAmbientScribe(token: string) {
     end('ipd');
   }, [end]);
 
-  return { state, start, sendText, end, stop };
+  return { state, start, sendText, end, stop, setSpeakerRole };
 }
 
 export default useAmbientScribe;
