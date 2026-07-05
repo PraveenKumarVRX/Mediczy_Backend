@@ -172,11 +172,12 @@ export const AuthProvider = ({ children }) => {
       return;
     }
 
-    // HMIS staff consoles — require hospital portal session
+    // HMIS / HealthOS staff consoles — hospital, doctor, nurse, assistant, or admin session
     const isHmisRoute = location.pathname.startsWith('/hmis/');
     if (isHmisRoute) {
-      const hospitalToken = getValidPortalToken('hospitalToken');
-      if (!hospitalToken) {
+      const hmisTokens = ['hospitalToken', 'doctorToken', 'nurseToken', 'assistantToken', 'adminToken'] as const;
+      const hasHmisAccess = hmisTokens.some((key) => getValidPortalToken(key));
+      if (!hasHmisAccess) {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate('/hospital/login', { replace: true });
         return;

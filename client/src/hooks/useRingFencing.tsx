@@ -75,7 +75,8 @@ const USER_TYPES: Record<string, PortalConfig> = {
       '/doctor/services',
       '/doctor/billing',
       '/doctor/health-records',
-      '/chatdoctor'
+      '/chatdoctor',
+      '/hmis'
     ],
     tokenKey: 'doctorToken',
     loginPath: '/doctor/login',
@@ -117,7 +118,8 @@ const USER_TYPES: Record<string, PortalConfig> = {
       '/nurse/medications',
       '/nurse/notes',
       '/nurse/appointments',
-      '/nurse/register-patient'
+      '/nurse/register-patient',
+      '/hmis'
     ],
     tokenKey: 'nurseToken',
     loginPath: '/nurse/login',
@@ -129,7 +131,8 @@ const USER_TYPES: Record<string, PortalConfig> = {
       '/assistant/login',
       '/assistant/dashboard',
       '/assistant/orders',
-      '/assistant/register-patient'
+      '/assistant/register-patient',
+      '/hmis'
     ],
     tokenKey: 'assistantToken',
     loginPath: '/assistant/login',
@@ -186,7 +189,8 @@ const USER_TYPES: Record<string, PortalConfig> = {
       '/admin/settings',
       '/admin/manage-assistants',
       '/admin/register-patient',
-      '/diagnostic'
+      '/diagnostic',
+      '/hmis'
     ],
     tokenKey: 'adminToken',
     loginPath: '/admin/login',
@@ -294,7 +298,8 @@ const USER_TYPES: Record<string, PortalConfig> = {
       '/hospital/staff',
       '/hospital/notifications',
       '/hospital/settings',
-      '/hospital/support'
+      '/hospital/support',
+      '/hmis'
     ],
     tokenKey: 'hospitalToken',
     loginPath: '/hospital/login',

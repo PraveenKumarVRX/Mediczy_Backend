@@ -92,7 +92,11 @@ api.interceptors.request.use(
     const prefersHospitalToken =
       /^\/(v1\/(adt|beds|emar|vitals|clinical-workspace|discharge|analytics|nursing|navigation|echart|follow-up|recovery|hl7|fhir|reports|ot|ai-|charge-master|billing))/i.test(requestPath) ||
       requestPath.startsWith('/hospital/') ||
-      requestPath.startsWith('/v3/module-copilot/');
+      requestPath.startsWith('/v3/module-copilot/') ||
+      requestPath.startsWith('/v3/healthos/') ||
+      requestPath.startsWith('/v3/careos/') ||
+      requestPath.startsWith('/v3/hospital-os/') ||
+      requestPath.startsWith('/hypergrid/');
 
     if (prefersHospitalToken && typeof window !== 'undefined') {
       const hospitalToken = localStorage.getItem('hospitalToken');

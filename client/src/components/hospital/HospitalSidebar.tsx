@@ -83,6 +83,8 @@ const mainNavItems: SidebarItem[] = [
 
 const clinicalItems: SidebarItem[] = [
   { icon: FileHeart, label: "EHR", href: "/hospital/ehr", capability: "ehr" },
+  { icon: HeartPulse, label: "HealthOS", href: "/hmis/healthos", capability: "ehr" },
+  { icon: Network, label: "Hospital Copilot", href: "/hmis/hospital-copilot", capability: "ehr" },
   { icon: FolderOpen, label: "MRD", href: "/hospital/mrd", capability: "mrd" },
   { icon: ClipboardList, label: "OPD/IPD", href: "/hmis/command-center", capability: "opd_ipd" },
   { icon: ClipboardCheck, label: "IP Sheets", href: "/hospital/ip-sheets", capability: "ip_sheets" },
