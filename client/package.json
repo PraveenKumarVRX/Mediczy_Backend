@@ -16,7 +16,8 @@
     "preview": "vite preview",
     "deploy": "../deploy-production.sh",
     "e2e:nurse": "node tests/nurseLogin.e2e.js",
-    "e2e:index-appointments-fallback": "node tests/indexAppointmentsFallback.e2e.js"
+    "e2e:index-appointments-fallback": "node tests/indexAppointmentsFallback.e2e.js",
+    "test:portal-routes-sanity": "node scripts/portal-routes-sanity.mjs"
   },
   "dependencies": {
     "@babel/runtime": "^7.26.9",

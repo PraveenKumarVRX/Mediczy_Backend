@@ -125,11 +125,10 @@ router.get('/studies', authAnyDicom, async (req, res) => {
     const r = await pool.query(
       `SELECT s.*, COUNT(i.id) AS instance_count
        FROM hg_dicom_studies s
-       LEFT JOIN hg_dicom_instances i ON i.study_instance_uid = s.study_instance_uid
-                                      AND i.tenant_id = s.tenant_id
+       LEFT JOIN hg_dicom_instances i ON i.study_id = s.id
        WHERE s.tenant_id = $1
-         AND ($2::text IS NULL OR s.patient_id = $2)
-         AND ($3::text IS NULL OR s.modality   = $3)
+         AND ($2::text IS NULL OR s.patient_id::text = $2)
+         AND ($3::text IS NULL OR s.modalities::text ILIKE '%' || $3 || '%')
          AND ($4::text IS NULL OR s.study_date::text = $4)
        GROUP BY s.id
        ORDER BY s.created_at DESC
@@ -150,14 +149,14 @@ router.get('/studies/:studyUID', authAnyDicom, async (req, res) => {
     const tenantId = req.user.tenantId || req.user.id;
     const r = await pool.query(
       `SELECT * FROM hg_dicom_studies
-       WHERE study_instance_uid = $1 AND tenant_id = $2`,
+       WHERE study_uid = $1 AND tenant_id = $2`,
       [req.params.studyUID, tenantId]
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Study not found' });
     const instances = await pool.query(
-      `SELECT * FROM hg_dicom_instances
-       WHERE study_instance_uid = $1 AND tenant_id = $2`,
-      [req.params.studyUID, tenantId]
+      `SELECT i.* FROM hg_dicom_instances i
+       WHERE i.study_id = $1`,
+      [r.rows[0].id]
     );
     res.json({ success: true, study: r.rows[0], instances: instances.rows });
   } catch (err) {
