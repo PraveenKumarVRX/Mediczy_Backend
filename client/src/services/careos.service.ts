@@ -143,3 +143,60 @@ export async function translateClinical(text: string, sourceLang: string, target
   const res = await api.post('/v3/healthos/ecosystem/translate', { text, sourceLang, targetLang });
   return res.data;
 }
+
+// ── Platform (all phases) ──────────────────────────────────────────────────────
+
+export async function getPlatformStatus() {
+  const res = await api.get('/v3/healthos/platform/status');
+  return res.data;
+}
+
+export async function listLabResults(patientId: number) {
+  const res = await api.get(`/v3/healthos/expand/labs/${patientId}`);
+  return res.data;
+}
+
+export async function listPharmacyOrders(patientId: number) {
+  const res = await api.get(`/v3/healthos/expand/pharmacy/${patientId}`);
+  return res.data;
+}
+
+export async function getMonitoringSummary(patientId: number) {
+  const res = await api.get(`/v3/healthos/expand/monitoring/${patientId}`);
+  return res.data;
+}
+
+export async function listReferrals(params?: Record<string, string>) {
+  const res = await api.get('/v3/healthos/network/referrals', { params });
+  return res.data;
+}
+
+export async function listNetworkSignals() {
+  const res = await api.get('/v3/healthos/network/signals');
+  return res.data;
+}
+
+export async function listMarketplaceApps(category?: string) {
+  const res = await api.get('/v3/healthos/platform/marketplace', { params: category ? { category } : undefined });
+  return res.data;
+}
+
+export async function getGovernmentDashboard(region?: string) {
+  const res = await api.get('/v3/healthos/platform/government/dashboard', { params: region ? { region } : undefined });
+  return res.data;
+}
+
+export async function getEmergencySummary() {
+  const res = await api.get('/v3/healthos/platform/emergency/summary');
+  return res.data;
+}
+
+export async function getPopulationDashboard() {
+  const res = await api.get('/v3/healthos/platform/analytics/population');
+  return res.data;
+}
+
+export async function matchTrials(patientId: number) {
+  const res = await api.get(`/v3/healthos/platform/research/match/${patientId}`);
+  return res.data;
+}

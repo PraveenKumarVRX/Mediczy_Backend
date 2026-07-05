@@ -12,12 +12,16 @@ import { listFamilyUpdates } from './family-portal.service.js';
 import { getOrSyncPassport } from './medical-passport.service.js';
 import { getPatientSubgraph } from './care-graph.service.js';
 import { getFederationStatus } from './care-federation.service.js';
+import { listLabResults } from './lab-connector.service.js';
+import { listPharmacyOrders } from './pharmacy-connector.service.js';
+import { listHomecareVisits } from './home-care.service.js';
+import { getMonitoringSummary } from './wearables-monitoring.service.js';
 
 export async function getLivingWorkspace(patientId, organizationId, { admissionId, timelineLimit = 50 } = {}) {
   const clinical = await getPatientWorkspace(patientId, organizationId).catch(() => null);
   const diagnosisHint = clinical?.activeAdmission?.diagnosis || clinical?.admission?.diagnosis || '';
 
-  const [timeline, careTeam, pathway, coordinatorAlerts, tasks, similarCases, familyUpdates, passport, careGraph, federation] = await Promise.all([
+  const [timeline, careTeam, pathway, coordinatorAlerts, tasks, similarCases, familyUpdates, passport, careGraph, federation, labs, pharmacy, homecare, monitoring] = await Promise.all([
     getClinicalTimeline(patientId, { organizationId, limit: timelineLimit }),
     getOrCreateCareTeam(patientId, organizationId, admissionId),
     getPathway(patientId, organizationId, admissionId),
@@ -28,6 +32,10 @@ export async function getLivingWorkspace(patientId, organizationId, { admissionI
     getOrSyncPassport(patientId, organizationId).catch(() => null),
     getPatientSubgraph(patientId, organizationId).catch(() => null),
     getFederationStatus(organizationId).catch(() => null),
+    listLabResults(patientId, organizationId).catch(() => []),
+    listPharmacyOrders(patientId, organizationId).catch(() => []),
+    listHomecareVisits(patientId, organizationId).catch(() => []),
+    getMonitoringSummary(patientId, organizationId).catch(() => null),
   ]);
 
   const diagnosis = diagnosisHint;
@@ -48,7 +56,10 @@ export async function getLivingWorkspace(patientId, organizationId, { admissionI
     sections: {
       timeline: { count: timeline.length, events: timeline },
       liveVitals: clinical?.vitalsDisplay || clinical?.vitals || [],
-      labs: clinical?.pendingOrders || clinical?.labs || [],
+      labs: labs.length ? labs : (clinical?.pendingOrders || clinical?.labs || []),
+      pharmacy,
+      homecare,
+      monitoring,
       imaging: clinical?.imaging || [],
       ai: { coordinatorAlerts, similarCases },
       specialists: careTeam.members.filter((m) => /consultant|specialist|cardiologist|neurologist/i.test(m.role)),

@@ -14,56 +14,29 @@ import { getOrCreateProfessionalIdentity, addAffiliation } from './care-identity
 import { getOrSyncPassport, updatePassport, sharePassport, getPassportByShareToken } from './medical-passport.service.js';
 import { registerNetworkOrg, listNetworkOrgs, proposeTrust, getFederationStatus } from './care-federation.service.js';
 import { startGlobalClinicalBoard, joinGlobalSession, translateClinicalMessage } from './global-collaboration.service.js';
+import { ingestLabResult, listLabResults } from './lab-connector.service.js';
+import { createPharmacyOrder, updatePharmacyStatus, listPharmacyOrders } from './pharmacy-connector.service.js';
+import { scheduleHomecareVisit, completeHomecareVisit, listHomecareVisits } from './home-care.service.js';
+import { ingestWearableReading, listWearableReadings, getMonitoringSummary } from './wearables-monitoring.service.js';
+import { createReferral, acceptReferral, listReferrals } from './referral-federation.service.js';
+import { shareDocument, listDocuments, getDocumentBundle } from './document-exchange.service.js';
+import { publishGlobalCase, searchGlobalCases } from './global-knowledge.service.js';
+import { detectNetworkSignals, listNetworkSignals, resolveSignal } from './hospital-network-signals.service.js';
+import { listMarketplaceApps, installApp, listInstalledApps } from './marketplace.service.js';
+import { createApiKey, listApiKeys, registerWebhook, listWebhooks } from './developer-platform.service.js';
+import { listTrials, matchTrialsForPatient, exportRWE } from './research-platform.service.js';
+import { getGovernmentDashboard, submitGovernmentReport, simulatePandemic } from './government-health.service.js';
+import { registerEmergencyResource, searchEmergencyResources, getEmergencyNetworkSummary } from './emergency-network.service.js';
+import { computePopulationMetrics, getPopulationDashboard } from './population-analytics.service.js';
+import { getPlatformStatus, getHealthOSCapabilities } from './platform-status.service.js';
 
 export function getCareOSCapabilities() {
-  return {
-    brand: 'Mediqzy',
-    product: 'HealthOS',
-    brandLine: 'Mediqzy - HealthOS',
-    tagline: 'Mediqzy - HealthOS',
-    vision: 'system_of_intelligence_and_collaboration',
-    stage: 1,
-    roadmap: ['land', 'expand', 'network', 'platform'],
-    pillars: [
-      'care_workspace',
-      'care_ai',
-      'care_graph',
-      'care_identity',
-      'care_cloud',
-      'care_video',
-      'care_monitoring',
-      'care_analytics',
-      'care_marketplace',
-      'care_research',
-      'care_education',
-      'care_finance',
-      'care_command',
-      'care_government',
-      'care_home',
-    ],
-    features: [
-      'living_patient_workspace',
-      'clinical_timeline',
-      'dynamic_care_teams',
-      'ai_clinical_coordinator',
-      'living_treatment_pathway',
-      'instant_mdt_board',
-      'clinical_playback',
-      'hospital_memory',
-      'family_portal',
-      'one_touch_clinical_call',
-      'task_management',
-      'medical_passport',
-      'care_graph',
-      'care_identity',
-      'federation_trust',
-      'global_clinical_board',
-      'clinical_translation',
-    ],
-  };
+  return getHealthOSCapabilities();
 }
 
 export {
+  getHealthOSCapabilities,
+  getPlatformStatus,
   appendClinicalEvent,
   getClinicalTimeline,
   getOrCreateCareTeam,
@@ -102,10 +75,52 @@ export {
   startGlobalClinicalBoard,
   joinGlobalSession,
   translateClinicalMessage,
+  ingestLabResult,
+  listLabResults,
+  createPharmacyOrder,
+  updatePharmacyStatus,
+  listPharmacyOrders,
+  scheduleHomecareVisit,
+  completeHomecareVisit,
+  listHomecareVisits,
+  ingestWearableReading,
+  listWearableReadings,
+  getMonitoringSummary,
+  createReferral,
+  acceptReferral,
+  listReferrals,
+  shareDocument,
+  listDocuments,
+  getDocumentBundle,
+  publishGlobalCase,
+  searchGlobalCases,
+  detectNetworkSignals,
+  listNetworkSignals,
+  resolveSignal,
+  listMarketplaceApps,
+  installApp,
+  listInstalledApps,
+  createApiKey,
+  listApiKeys,
+  registerWebhook,
+  listWebhooks,
+  listTrials,
+  matchTrialsForPatient,
+  exportRWE,
+  getGovernmentDashboard,
+  submitGovernmentReport,
+  simulatePandemic,
+  registerEmergencyResource,
+  searchEmergencyResources,
+  getEmergencyNetworkSummary,
+  computePopulationMetrics,
+  getPopulationDashboard,
 };
 
 export default {
   getCareOSCapabilities,
+  getHealthOSCapabilities,
+  getPlatformStatus,
   appendClinicalEvent,
   getClinicalTimeline,
   getOrCreateCareTeam,
@@ -144,4 +159,44 @@ export default {
   startGlobalClinicalBoard,
   joinGlobalSession,
   translateClinicalMessage,
+  ingestLabResult,
+  listLabResults,
+  createPharmacyOrder,
+  updatePharmacyStatus,
+  listPharmacyOrders,
+  scheduleHomecareVisit,
+  completeHomecareVisit,
+  listHomecareVisits,
+  ingestWearableReading,
+  listWearableReadings,
+  getMonitoringSummary,
+  createReferral,
+  acceptReferral,
+  listReferrals,
+  shareDocument,
+  listDocuments,
+  getDocumentBundle,
+  publishGlobalCase,
+  searchGlobalCases,
+  detectNetworkSignals,
+  listNetworkSignals,
+  resolveSignal,
+  listMarketplaceApps,
+  installApp,
+  listInstalledApps,
+  createApiKey,
+  listApiKeys,
+  registerWebhook,
+  listWebhooks,
+  listTrials,
+  matchTrialsForPatient,
+  exportRWE,
+  getGovernmentDashboard,
+  submitGovernmentReport,
+  simulatePandemic,
+  registerEmergencyResource,
+  searchEmergencyResources,
+  getEmergencyNetworkSummary,
+  computePopulationMetrics,
+  getPopulationDashboard,
 };

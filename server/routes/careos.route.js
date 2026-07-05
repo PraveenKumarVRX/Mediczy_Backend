@@ -385,4 +385,118 @@ router.post('/ecosystem/translate', ...clinical, async (req, res) => {
   }
 });
 
+// ── Platform status (all phases) ───────────────────────────────────────────────
+router.get('/platform/status', ...clinical, async (req, res) => {
+  const data = await careos.getPlatformStatus(orgId(req));
+  res.json({ success: true, data });
+});
+
+// ── STAGE 2: Expand ────────────────────────────────────────────────────────────
+router.get('/expand/labs/:patientId', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.listLabResults(pid(req), orgId(req)) });
+});
+router.post('/expand/labs/:patientId', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.ingestLabResult({ organizationId: orgId(req), patientId: pid(req), ...req.body }) });
+});
+router.get('/expand/pharmacy/:patientId', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.listPharmacyOrders(pid(req), orgId(req)) });
+});
+router.post('/expand/pharmacy/:patientId', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.createPharmacyOrder({ organizationId: orgId(req), patientId: pid(req), ...req.body }) });
+});
+router.patch('/expand/pharmacy/orders/:orderId', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.updatePharmacyStatus(Number(req.params.orderId), req.body.status, req.body.notes) });
+});
+router.get('/expand/homecare/:patientId', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.listHomecareVisits(pid(req), orgId(req)) });
+});
+router.post('/expand/homecare/:patientId', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.scheduleHomecareVisit({ organizationId: orgId(req), patientId: pid(req), ...req.body }) });
+});
+router.get('/expand/monitoring/:patientId', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.getMonitoringSummary(pid(req), orgId(req)) });
+});
+router.post('/expand/monitoring/:patientId', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.ingestWearableReading({ organizationId: orgId(req), patientId: pid(req), ...req.body }) });
+});
+
+// ── STAGE 3: Network ───────────────────────────────────────────────────────────
+router.get('/network/referrals', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.listReferrals({ orgId: req.query.orgNetworkId ? Number(req.query.orgNetworkId) : undefined, patientId: req.query.patientId ? Number(req.query.patientId) : undefined, status: req.query.status, direction: req.query.direction }) });
+});
+router.post('/network/referrals', ...doctorOnly, async (req, res) => {
+  res.json({ success: true, data: await careos.createReferral({ fromOrgId: req.body.fromOrgId, toOrgId: req.body.toOrgId, patientId: req.body.patientId, reason: req.body.reason, urgency: req.body.urgency, clinicalSummary: req.body.clinicalSummary, referredBy: req.user.id, passportShareId: req.body.passportShareId }) });
+});
+router.post('/network/referrals/:id/accept', ...doctorOnly, async (req, res) => {
+  res.json({ success: true, data: await careos.acceptReferral(Number(req.params.id), req.user.id) });
+});
+router.get('/network/documents/:patientId', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.listDocuments({ patientId: pid(req), referralId: req.query.referralId ? Number(req.query.referralId) : undefined, globalSessionId: req.query.sessionId ? Number(req.query.sessionId) : undefined }) });
+});
+router.post('/network/documents', ...doctorOnly, async (req, res) => {
+  res.json({ success: true, data: await careos.shareDocument({ ...req.body, sharedByOrgId: orgId(req), sharedByUserId: req.user.id }) });
+});
+router.get('/network/knowledge/search', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.searchGlobalCases(req.query.q || '') });
+});
+router.post('/network/knowledge/publish', ...doctorOnly, async (req, res) => {
+  res.json({ success: true, data: await careos.publishGlobalCase({ organizationId: orgId(req), ...req.body }) });
+});
+router.get('/network/signals', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.listNetworkSignals({ status: req.query.status }) });
+});
+router.post('/network/signals/detect', ...doctorOnly, async (req, res) => {
+  res.json({ success: true, data: await careos.detectNetworkSignals(orgId(req)) });
+});
+
+// ── STAGE 4: Platform ────────────────────────────────────────────────────────────
+router.get('/platform/marketplace', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.listMarketplaceApps({ category: req.query.category }) });
+});
+router.get('/platform/marketplace/installed', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.listInstalledApps(orgId(req)) });
+});
+router.post('/platform/marketplace/install', ...doctorOnly, async (req, res) => {
+  res.json({ success: true, data: await careos.installApp({ organizationId: orgId(req), appId: req.body.appId, installedBy: req.user.id, config: req.body.config }) });
+});
+router.get('/platform/developer/keys', ...doctorOnly, async (req, res) => {
+  res.json({ success: true, data: await careos.listApiKeys(orgId(req)) });
+});
+router.post('/platform/developer/keys', ...doctorOnly, async (req, res) => {
+  res.json({ success: true, data: await careos.createApiKey({ organizationId: orgId(req), name: req.body.name, scopes: req.body.scopes, createdBy: req.user.id, expiresInDays: req.body.expiresInDays }) });
+});
+router.get('/platform/developer/webhooks', ...doctorOnly, async (req, res) => {
+  res.json({ success: true, data: await careos.listWebhooks(orgId(req)) });
+});
+router.post('/platform/developer/webhooks', ...doctorOnly, async (req, res) => {
+  res.json({ success: true, data: await careos.registerWebhook({ organizationId: orgId(req), url: req.body.url, events: req.body.events, createdBy: req.user.id }) });
+});
+router.get('/platform/research/trials', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.listTrials({ condition: req.query.condition }) });
+});
+router.get('/platform/research/match/:patientId', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.matchTrialsForPatient(pid(req), orgId(req)) });
+});
+router.get('/platform/analytics/population', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.getPopulationDashboard(orgId(req)) });
+});
+router.post('/platform/analytics/population/compute', ...doctorOnly, async (req, res) => {
+  res.json({ success: true, data: await careos.computePopulationMetrics(orgId(req)) });
+});
+router.get('/platform/government/dashboard', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.getGovernmentDashboard(req.query.region) });
+});
+router.post('/platform/government/simulate', ...doctorOnly, async (req, res) => {
+  res.json({ success: true, data: await careos.simulatePandemic(req.body) });
+});
+router.get('/platform/emergency/resources', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.searchEmergencyResources({ resourceType: req.query.type, geoRegion: req.query.region }) });
+});
+router.get('/platform/emergency/summary', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.getEmergencyNetworkSummary() });
+});
+router.post('/platform/emergency/resources', ...doctorOnly, async (req, res) => {
+  res.json({ success: true, data: await careos.registerEmergencyResource({ organizationId: orgId(req), ...req.body }) });
+});
+
 export default router;

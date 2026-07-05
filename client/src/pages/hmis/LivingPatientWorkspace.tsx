@@ -185,6 +185,7 @@ export default function LivingPatientWorkspace() {
               <TabsTrigger value="pathway">Treatment Pathway</TabsTrigger>
               <TabsTrigger value="tasks">Tasks</TabsTrigger>
               <TabsTrigger value="playback">Clinical Playback</TabsTrigger>
+              <TabsTrigger value="ecosystem">Ecosystem</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-4">
@@ -342,6 +343,49 @@ export default function LivingPatientWorkspace() {
                   </CardContent>
                 </Card>
               )}
+            </TabsContent>
+
+            <TabsContent value="ecosystem" className="space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader><CardTitle className="text-base">Labs (Stage 2)</CardTitle></CardHeader>
+                  <CardContent className="text-sm space-y-1">
+                    {(workspace?.sections?.labs || []).slice(0, 5).map((l: any, i: number) => (
+                      <p key={i}>{l.test_name || l.test}: {l.result_value || l.value} {l.result_unit || ''}</p>
+                    ))}
+                    {!workspace?.sections?.labs?.length && <p className="text-muted-foreground">No lab results synced</p>}
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader><CardTitle className="text-base">Pharmacy</CardTitle></CardHeader>
+                  <CardContent className="text-sm space-y-1">
+                    {(workspace?.sections?.pharmacy || []).map((p: any) => (
+                      <p key={p.id}>{p.drug_name} — <Badge variant="outline" className="text-[10px]">{p.status}</Badge></p>
+                    ))}
+                    {!workspace?.sections?.pharmacy?.length && <p className="text-muted-foreground">No pharmacy orders</p>}
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader><CardTitle className="text-base">Wearables</CardTitle></CardHeader>
+                  <CardContent className="text-sm">
+                    {(workspace?.sections?.monitoring?.summary || []).map((m: any) => (
+                      <p key={m.metricType}>{m.metricType}: {m.latest?.value} (avg {Math.round(m.avg)})</p>
+                    ))}
+                    {!workspace?.sections?.monitoring?.summary?.length && <p className="text-muted-foreground">No wearable data</p>}
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader><CardTitle className="text-base">Medical Passport</CardTitle></CardHeader>
+                  <CardContent className="text-sm">
+                    {workspace?.medicalPassport ? (
+                      <>
+                        <p className="font-mono text-xs text-teal-700">{workspace.medicalPassport.careos_patient_id}</p>
+                        <p className="text-muted-foreground mt-1">{workspace.medicalPassport.summary_text || 'Synced profile'}</p>
+                      </>
+                    ) : <p className="text-muted-foreground">Passport not synced</p>}
+                  </CardContent>
+                </Card>
+              </div>
             </TabsContent>
           </Tabs>
         )}
