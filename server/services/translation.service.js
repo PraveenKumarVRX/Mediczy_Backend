@@ -201,7 +201,22 @@ class TranslationService {
         console.warn('[TranslationService] IndicTrans2 to English failed:', error.message);
       }
     }
-    
+
+    // Fallback: free Google Translate endpoint (works for all languages, not just
+    // the Indic set — this is what actually runs today since IndicTrans2 is dead).
+    const googleResult = await this.callGoogleFree(trimmed, detectedLang, 'en');
+    if (googleResult.success) {
+      const translationResult = {
+        text: googleResult.translation,
+        translated: true,
+        originalText: trimmed,
+        detectedLanguage: detectedLang,
+        provider: 'google-translate'
+      };
+      this.cacheTranslation(cacheKey, translationResult);
+      return translationResult;
+    }
+
     // Fallback: Return original text
     return {
       text: trimmed,
@@ -248,7 +263,21 @@ class TranslationService {
         console.warn('[TranslationService] IndicTrans2 from English failed:', error.message);
       }
     }
-    
+
+    // Fallback: free Google Translate endpoint.
+    const googleResult = await this.callGoogleFree(trimmed, 'en', targetLang);
+    if (googleResult.success) {
+      const translationResult = {
+        text: googleResult.translation,
+        translated: true,
+        originalText: trimmed,
+        targetLanguage: targetLang,
+        provider: 'google-translate'
+      };
+      this.cacheTranslation(cacheKey, translationResult);
+      return translationResult;
+    }
+
     // Fallback: Return original English text
     return {
       text: trimmed,
@@ -258,6 +287,37 @@ class TranslationService {
     };
   }
   
+  /**
+   * Free Google Translate endpoint (same one deep-translator/googletrans use under
+   * the hood — no API key needed). Used as the working fallback: the self-hosted
+   * IndicTrans2 API (INDICTRANS_API_URL) has no live deployment, so callIndicTrans
+   * always fails and this is what actually translates today.
+   */
+  async callGoogleFree(text, sourceLang, targetLang) {
+    try {
+      const url = new URL('https://translate.googleapis.com/translate_a/single');
+      url.searchParams.set('client', 'gtx');
+      url.searchParams.set('sl', sourceLang || 'auto');
+      url.searchParams.set('tl', targetLang);
+      url.searchParams.set('dt', 't');
+      url.searchParams.set('q', text);
+
+      const response = await fetch(url.toString(), { timeout: 8000 });
+      if (!response.ok) throw new Error(`Google Translate returned ${response.status}`);
+
+      const data = await response.json();
+      const translation = Array.isArray(data?.[0])
+        ? data[0].map((segment) => segment[0]).join('')
+        : null;
+      if (!translation) throw new Error('Empty translation');
+
+      return { success: true, translation, sourceLang, targetLang };
+    } catch (error) {
+      console.warn('[TranslationService] Google Translate fallback failed:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
   /**
    * Call IndicTrans2 API
    */

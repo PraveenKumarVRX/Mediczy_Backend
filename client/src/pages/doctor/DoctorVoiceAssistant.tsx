@@ -230,7 +230,9 @@ export default function DoctorVoiceAssistant() {
     speakAbortRef.current?.abort();
     const abortCtrl = new AbortController();
     speakAbortRef.current = abortCtrl;
-    const clean = text.replace(/[*_#`•]/g, "").trim().slice(0, 1000);
+    // "iSHA" reads as "eye-sha" to TTS engines (capital I → the pronoun "I") —
+    // respell phonetically so it's pronounced "ee-sha" instead.
+    const clean = text.replace(/[*_#`•]/g, "").replace(/\bisha\b/gi, "Eesha").trim().slice(0, 1000);
     if (!clean) { onEnd?.(); return; }
 
     // Pause capture while speaking so we don't transcribe our own output

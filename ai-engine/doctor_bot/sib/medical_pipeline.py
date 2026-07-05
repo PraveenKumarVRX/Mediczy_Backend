@@ -948,10 +948,29 @@ Thank you for sharing your health concern with me.
         # ═══════════════════════════════════════════════════════════════
         if fast_mode and intent in ("symptom_check", "medical_query", "medication_info"):
             logger.info("⚡ Fast path: Direct API call (skipping NER/FAISS)")
-            
-            # Call iSHA API directly
-            response = self._call_isha(query, None, patient_data, conversation_history=conversation_history)
-            
+
+            # "medical_query" is the general/catch-all intent (no specific symptom,
+            # drug, or risk match) — isha-inc.com's Gemma-4-E2B is the fast general
+            # chat model and handles it primarily; BiMediX2 (node1) is the fallback.
+            # symptom_check/medication_info stay on BiMediX2 first (1-3s) — MedGemma
+            # on isha-inc.com is clinically tuned but currently runs 6-9s (CPU-offload,
+            # tight VRAM on that host), which risks exceeding Node's 8s SIB_TIMEOUT_MS.
+            # It's kept as a fallback, not primary, until that's resolved.
+            if intent == "medical_query":
+                response = self._call_isha_inc(
+                    query, None, patient_data, conversation_history=conversation_history,
+                    model=os.environ.get("ISHA_INC_GENERAL_MODEL", "gemma-4-e2b-it-qat-q4-k-xl"),
+                )
+                if not response:
+                    response = self._call_isha(query, None, patient_data, conversation_history=conversation_history)
+            else:
+                response = self._call_isha(query, None, patient_data, conversation_history=conversation_history)
+                if not response:
+                    response = self._call_isha_inc(
+                        query, None, patient_data, conversation_history=conversation_history,
+                        model=os.environ.get("ISHA_INC_CRITICAL_MODEL", "medgemma-4b-it-q5-k-m"),
+                    )
+
             if response:
                 # Quick safety check
                 filtered_response, safety_alerts, is_emergency = self.apply_safety_filter(response)
@@ -1154,21 +1173,15 @@ Thank you for sharing your health concern with me.
         messages.append({"role": "user", "content": query})
         return messages
 
-    def _select_isha_inc_model(self, query: str) -> str:
-        insurance_keywords = (
-            "insurance", "claim", "billing", "coverage", "policy",
-            "premium", "deductible", "copay", "reimbursement",
-            "pre-authorization", "preauth", "network", "hmo", "ppo",
-        )
-        prompt_lower = str(query or "").lower()
-        if any(keyword in prompt_lower for keyword in insurance_keywords):
-            return os.environ.get("ISHA_INC_INSURANCE_MODEL", "insurance-llm")
-        return os.environ.get("ISHA_INC_MODEL", "medgemma-4b")
-
     def _call_isha_inc(self, query: str, context: Optional[List[str]],
                        patient_data: Optional[Dict],
-                       conversation_history: Optional[List[Dict]] = None) -> Optional[str]:
-        """Call iSHA node2 if its Cloudflare/origin route is healthy."""
+                       conversation_history: Optional[List[Dict]] = None,
+                       model: Optional[str] = None) -> Optional[str]:
+        """Call iSHA node2 (isha-inc.com), which now hosts multiple models behind
+        one gateway (simple_app.py routes by the `model` field to the matching
+        port). Defaults to ISHA_INC_MODEL when the caller doesn't need a specific
+        one — pass `model=` explicitly to target gemma/medgemma directly.
+        """
         if self._is_provider_on_cooldown("isha-inc"):
             return None
 
@@ -1181,7 +1194,7 @@ Thank you for sharing your health concern with me.
             import requests
 
             base_url = _normalize_provider_url(os.environ.get("ISHA_INC_URL", ""), "https://isha-inc.com")
-            model = self._select_isha_inc_model(query)
+            model = model or os.environ.get("ISHA_INC_MODEL", "qwen3-8b-q5-k-m")
             response = requests.post(
                 f"{base_url}/v1/chat/completions",
                 headers={

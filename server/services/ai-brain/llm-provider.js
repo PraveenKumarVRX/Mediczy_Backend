@@ -486,19 +486,12 @@ const PROVIDERS = [
   {
     name: 'isha-inc',
     label: 'isha-inc.com direct (diagnostics only; app traffic goes through SIB)',
-    model: getProviderEnv('ISHA_INC_MODEL') || 'smart-orchestrator',
+    // isha-inc.com serves a single model — verify with GET /v1/models before
+    // changing this default; there is no separate insurance/clinical model anymore.
+    model: getProviderEnv('ISHA_INC_MODEL') || 'qwen3-8b-q5-k-m',
     getClient: getIshaIncClient,
     useFetchIshaInc: true,
     priority: 92,
-    disabled: true,
-  },
-  {
-    name: 'isha-insurance',
-    label: 'isha-inc.com MedGemma direct (diagnostics only; app traffic goes through SIB)',
-    model: 'medgemma-4b',
-    getClient: () => ({ available: true }),
-    useFetchIshaInc: true,
-    priority: 93,
     disabled: true,
   },
   {
@@ -513,7 +506,7 @@ const PROVIDERS = [
   },
 ];
 
-const DIRECT_AI_PROVIDER_ALIASES = new Set(['isha', 'isha-reflex', 'isha-inc', 'isha-insurance']);
+const DIRECT_AI_PROVIDER_ALIASES = new Set(['isha', 'isha-reflex', 'isha-inc']);
 const ALLOW_DIRECT_AI_PROVIDERS = String(process.env.ALLOW_DIRECT_AI_PROVIDERS || '').toLowerCase() === 'true';
 
 // ─── Model config cache (60s TTL — avoids DB hit on every request) ───────────

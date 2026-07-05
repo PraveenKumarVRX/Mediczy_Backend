@@ -26,18 +26,30 @@ import FormData from 'form-data';
 import { AccessToken, AgentDispatchClient } from 'livekit-server-sdk';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
+import translationService from '../services/translation.service.js';
 import {
+  buildGreetingResponse,
   composeBriefingResponse,
+  GOODBYE_RESPONSE,
   GREETING_RESPONSE,
+  HOW_ARE_YOU_RESPONSE,
   inferBriefingRequest,
   inferNavigationScreen,
   inferTodaySummaryRequest,
   isDoubtFollowUp,
+  isGoodbye,
+  isGreeting,
+  isHowAreYou,
   isIdentityOrGreeting,
+  isIdentityQuestion,
+  isLanguageCapabilityQuestion,
   isSibPlaceholderResponse,
   isSubstantiveAnswer,
+  isThanks,
   lastAssistantText,
+  LANGUAGE_CAPABILITY_RESPONSE,
   stripRedundantIshaIntro,
+  THANKS_RESPONSE,
   toSpokenText,
 } from '../services/voice-assistant-response.service.js';
 import logger from '../config/logger.js';
@@ -377,6 +389,8 @@ function buildSystemPrompt(context = {}) {
 STRICT SCOPE — NEVER VIOLATE:
 - Non-clinical question (geography, capital cities, sports, history, weather, general trivia, coding, politics, etc.) → respond ONLY: "I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks."
 - Do NOT answer these even if you know the answer. Do NOT call any tool. Just output that one sentence.
+- EXCEPTION: brief questions about you as an assistant (what you can do, whether you know the doctor's name, what languages you support) are NOT off-topic — answer them honestly in one sentence. You understand and can respond in Hindi, Telugu, Tamil, Kannada, Malayalam, Marathi, Gujarati, Bengali, Punjabi, Urdu, Odia, Assamese, and English — messages may already be translated to English for you, but you should still confirm you can converse in the doctor's language if asked.
+- EXCEPTION: small talk (thanks, how are you, good job, goodbye) is NOT off-topic either — give a brief, warm, professional reply (one short sentence), never the refusal phrase.
 
 CORE BEHAVIOR:
 - Respond directly to the task. No greetings, no self-introduction, no "Good afternoon Doctor" on every message.
@@ -1164,7 +1178,34 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
   const enrichedContext = { ...context, doctorName: req.user?.firstName || req.user?.name };
   const systemPrompt = buildSystemPrompt(enrichedContext);
   const currentPatientId = context.currentPatient?.id || context.currentPatient?._id;
-  const trimmedText = text.trim();
+
+  // ── Regional language support ───────────────────────────────────────────
+  // Detect the doctor's spoken/typed language. Everything downstream (keyword
+  // matchers, tool routing, the LLM prompts) operates on English — translate the
+  // doctor's message to English here (same pattern as SIB's /chat: "Dr. iSHA
+  // always thinks in English — then we translate back"), then transparently
+  // translate every res.json() response/speak field back to their language.
+  const spokenLanguage = await translationService.detectLanguage(text.trim());
+  let trimmedText = text.trim();
+  if (spokenLanguage !== 'en') {
+    const inputTranslation = await translationService.translateToEnglish(trimmedText, spokenLanguage);
+    if (inputTranslation.translated) trimmedText = inputTranslation.text;
+
+    const originalJson = res.json.bind(res);
+    res.json = (payload) => {
+      Promise.resolve()
+        .then(async () => {
+          for (const field of ['response', 'speak']) {
+            if (payload && typeof payload[field] === 'string' && payload[field]) {
+              const out = await translationService.translateFromEnglish(payload[field], spokenLanguage);
+              if (out.translated) payload[field] = out.text;
+            }
+          }
+        })
+        .catch((err) => logger.warn('[VoiceAssistant] output translation failed', { error: err.message }))
+        .finally(() => originalJson(payload));
+    };
+  }
 
   // Restate last answer for "are you sure?" — avoid redundant LLM round-trip
   if (isDoubtFollowUp(trimmedText)) {
@@ -1182,13 +1223,69 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
     }
   }
 
-  if (isIdentityOrGreeting(trimmedText)) {
+  if (isLanguageCapabilityQuestion(trimmedText)) {
+    return res.json({
+      intent: 'general',
+      action: null,
+      parameters: null,
+      response: LANGUAGE_CAPABILITY_RESPONSE,
+      speak: LANGUAGE_CAPABILITY_RESPONSE,
+      requiresConfirmation: false,
+    });
+  }
+
+  if (isGreeting(trimmedText)) {
+    const msg = buildGreetingResponse(enrichedContext.doctorName);
+    return res.json({
+      intent: 'general',
+      action: null,
+      parameters: null,
+      response: msg,
+      speak: msg,
+      requiresConfirmation: false,
+    });
+  }
+
+  if (isIdentityQuestion(trimmedText)) {
     return res.json({
       intent: 'general',
       action: null,
       parameters: null,
       response: GREETING_RESPONSE,
       speak: GREETING_RESPONSE,
+      requiresConfirmation: false,
+    });
+  }
+
+  if (isThanks(trimmedText)) {
+    return res.json({
+      intent: 'general',
+      action: null,
+      parameters: null,
+      response: THANKS_RESPONSE,
+      speak: THANKS_RESPONSE,
+      requiresConfirmation: false,
+    });
+  }
+
+  if (isHowAreYou(trimmedText)) {
+    return res.json({
+      intent: 'general',
+      action: null,
+      parameters: null,
+      response: HOW_ARE_YOU_RESPONSE,
+      speak: HOW_ARE_YOU_RESPONSE,
+      requiresConfirmation: false,
+    });
+  }
+
+  if (isGoodbye(trimmedText)) {
+    return res.json({
+      intent: 'general',
+      action: null,
+      parameters: null,
+      response: GOODBYE_RESPONSE,
+      speak: GOODBYE_RESPONSE,
       requiresConfirmation: false,
     });
   }
@@ -1363,6 +1460,8 @@ STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointmen
 - RESCHEDULE / MOVE appointment → reschedule_appointment (NEVER medical_query)
 - CONFIRM / YES / PROCEED → if previous assistant message shows a pending action, use general with response "Executing…" (the server handles execution via pendingAction)
 - IDENTITY / GREETING (who are you, hello, hi, good morning) → general
+- CAPABILITY QUESTION (what can you do, do you know my name, what languages do you speak/understand) → general, answer honestly and briefly — NOT off-topic. You understand and can respond in Hindi, Telugu, Tamil, Kannada, Malayalam, Marathi, Gujarati, Bengali, Punjabi, Urdu, Odia, Assamese, and English.
+- SMALL TALK (thanks, how are you, good job, goodbye) → general, brief warm professional reply — NOT off-topic, NEVER the refusal phrase.
 - NON-CLINICAL QUERY (geography, capitals, sports, weather, coding, trivia) → general with response "I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks."
 - TASK / REMINDER / TO-DO (remind me, add task, note to self) → add_task
 - SHOW TASKS / MY LIST → list_tasks
@@ -1392,7 +1491,7 @@ STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointmen
         messages: [
           { role: 'system', content: ishaIntentPrompt },
           ...historyMessages,
-          { role: 'user', content: text.trim() }
+          { role: 'user', content: trimmedText }
         ],
         maxTokens: 600,
         temperature: 0.1,
@@ -1442,7 +1541,7 @@ STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointmen
             messages: [
               { role: 'system', content: systemPrompt },
               ...historyMessages,
-              { role: 'user', content: text.trim() }
+              { role: 'user', content: trimmedText }
             ],
             tools: ASSISTANT_TOOLS,
             toolChoice: 'auto',
@@ -1479,6 +1578,62 @@ STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointmen
       const SCOPE_REJECT   = "I'm iSHA, your clinical assistant. I can only help";
       const GREETING_RESP  = GREETING_RESPONSE;
       const OFF_TOPIC_MSG  = "I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks.";
+
+      if (isLanguageCapabilityQuestion(trimmedText)) {
+        return res.json({
+          intent: 'general',
+          action: null,
+          parameters: null,
+          response: LANGUAGE_CAPABILITY_RESPONSE,
+          speak: LANGUAGE_CAPABILITY_RESPONSE,
+          requiresConfirmation: false,
+        });
+      }
+
+      if (isGreeting(trimmedText)) {
+        const msg = buildGreetingResponse(enrichedContext.doctorName);
+        return res.json({
+          intent: 'general',
+          action: null,
+          parameters: null,
+          response: msg,
+          speak: msg,
+          requiresConfirmation: false,
+        });
+      }
+
+      if (isThanks(trimmedText)) {
+        return res.json({
+          intent: 'general',
+          action: null,
+          parameters: null,
+          response: THANKS_RESPONSE,
+          speak: THANKS_RESPONSE,
+          requiresConfirmation: false,
+        });
+      }
+
+      if (isHowAreYou(trimmedText)) {
+        return res.json({
+          intent: 'general',
+          action: null,
+          parameters: null,
+          response: HOW_ARE_YOU_RESPONSE,
+          speak: HOW_ARE_YOU_RESPONSE,
+          requiresConfirmation: false,
+        });
+      }
+
+      if (isGoodbye(trimmedText)) {
+        return res.json({
+          intent: 'general',
+          action: null,
+          parameters: null,
+          response: GOODBYE_RESPONSE,
+          speak: GOODBYE_RESPONSE,
+          requiresConfirmation: false,
+        });
+      }
 
       if (isIdentityOrGreeting(trimmedText)) {
         return res.json({

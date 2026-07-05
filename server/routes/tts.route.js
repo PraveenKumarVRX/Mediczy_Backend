@@ -29,6 +29,9 @@ function cleanTtsText(text) {
     .replace(/#{1,6}\s/g, '')
     .replace(/•/g, '')
     .replace(/---/g, '')
+    // "iSHA" reads as "eye-sha" to TTS engines (capital I → the pronoun "I") —
+    // respell phonetically so it's pronounced "ee-sha" instead.
+    .replace(/\bisha\b/gi, 'Eesha')
     .trim()
     .substring(0, 5000);
 }

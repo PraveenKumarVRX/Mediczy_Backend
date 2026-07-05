@@ -3,10 +3,15 @@
  * Keeps spoken output concise and avoids redundant intros / duplicate briefings.
  */
 
-const GREETING_RE = /^(hi|hello|hey|good\s+(morning|afternoon|evening)|namaste)\b/i;
-const IDENTITY_RE = /\b(who are you|what are you|what can you do|introduce yourself|your name)\b/i;
+const GREETING_RE = /^(hi+|hello|hey|good\s+(morning|afternoon|evening)|namaste)\b/i;
+const IDENTITY_RE = /\b(who are you|what are you|what can you do|introduce yourself|your name|know my name|my name)\b/i;
 const DOUBT_RE = /\b(are you sure|is that (right|correct)|really\??|confirm that|double check)\b/i;
 const FILLER_RESPONSE_RE = /^(sure|okay|ok|got it|let me|one moment|please wait|i'll|i will)\b/i;
+const LANGUAGE_CAPABILITY_RE = /\b(speak|talk|convers\w*|understand|reply|respond)\b[\s\S]{0,25}\b(telugu|hindi|tamil|kannada|malayalam|marathi|gujarati|bengali|punjabi|urdu|odia|assamese|regional\s+language|another\s+language|different\s+language|language)\b/i;
+// Colloquial small-talk — kept brief and professional, not silence or a hard refusal.
+const THANKS_RE = /\b(thank\s*you|thanks|thank\s*u)\b/i;
+const HOW_ARE_YOU_RE = /\bhow\s*(are|'?s)\s*(you|it\s*going|things)\b/i;
+const GOODBYE_RE = /^(bye+|goodbye|see\s+you|good\s*night|take\s+care)\b/i;
 
 export function toSpokenText(text, maxSentences = 3) {
   if (!text) return '';
@@ -21,13 +26,42 @@ export function toSpokenText(text, maxSentences = 3) {
   return sentences.slice(0, maxSentences).join(' ');
 }
 
-export function isIdentityOrGreeting(text) {
+export function isGreeting(text) {
   const t = String(text || '').trim().toLowerCase();
-  return IDENTITY_RE.test(t) || (GREETING_RE.test(t) && t.length < 40);
+  return GREETING_RE.test(t) && t.length < 40;
+}
+
+export function isIdentityQuestion(text) {
+  return IDENTITY_RE.test(String(text || '').trim().toLowerCase());
+}
+
+export function isIdentityOrGreeting(text) {
+  return isIdentityQuestion(text) || isGreeting(text);
 }
 
 export function isDoubtFollowUp(text) {
   return DOUBT_RE.test(String(text || '').toLowerCase());
+}
+
+export function isLanguageCapabilityQuestion(text) {
+  return LANGUAGE_CAPABILITY_RE.test(String(text || '').toLowerCase());
+}
+
+export function isThanks(text) {
+  return THANKS_RE.test(String(text || '').toLowerCase());
+}
+
+export function isHowAreYou(text) {
+  return HOW_ARE_YOU_RE.test(String(text || '').toLowerCase());
+}
+
+export function isGoodbye(text) {
+  const t = String(text || '').trim().toLowerCase();
+  return GOODBYE_RE.test(t) && t.length < 30;
+}
+
+export function buildGreetingResponse(doctorName) {
+  return doctorName ? `Hello Dr. ${doctorName}, how can I help you?` : 'Hello Doctor, how can I help you?';
 }
 
 export function stripRedundantIshaIntro(text) {
@@ -126,6 +160,13 @@ export function inferTodaySummaryRequest(text) {
 
 export const GREETING_RESPONSE =
   "I'm iSHA, your AI clinical assistant. I can manage appointments, tasks, patient records, and drug questions.";
+
+export const LANGUAGE_CAPABILITY_RESPONSE =
+  "Yes — you can speak to me in Hindi, Telugu, Tamil, Kannada, Malayalam, Marathi, Gujarati, Bengali, Punjabi, Urdu, Odia, Assamese, or English, and I'll reply in the same language.";
+
+export const THANKS_RESPONSE = "You're welcome, Doctor. Anything else I can help with?";
+export const HOW_ARE_YOU_RESPONSE = "I'm doing well, thank you — ready whenever you are.";
+export const GOODBYE_RESPONSE = "Goodbye, Doctor. Have a great day.";
 
 export function isSibPlaceholderResponse(text) {
   const t = String(text || '').toLowerCase();

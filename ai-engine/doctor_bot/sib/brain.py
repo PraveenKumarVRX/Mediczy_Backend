@@ -173,7 +173,7 @@ class RequestType(Enum):
 class LLMProvider(Enum):
     """LLM providers in fallback order (node1/node2 are both iSHA private GPU infrastructure)"""
     LLAMA_LOCAL = "isha_node1_bimedix2"    # ai.isha.buzz — BiMediX2-8B / InsuranceLLM
-    ISHA_INC    = "isha_node2"             # isha-inc.com — MedGemma-4B / InsuranceLLM / smart-orchestrator
+    ISHA_INC    = "isha_node2"             # isha-inc.com — single-model gateway (qwen3-8b-q5-k-m); SIB does the orchestration
     GROQ        = "groq"                   # cloud fallback 1
     OPENAI      = "openai"                 # cloud fallback 2
     GEMINI      = "gemini"                 # cloud fallback 3
@@ -334,15 +334,6 @@ class SyntheticIntelligenceBrain:
         return self._learning_pipeline
     
     # ==================== LLM Reasoning with Fallback ====================
-    
-    def _is_insurance_query(self, prompt: str) -> bool:
-        """Return True if the prompt is insurance/underwriting domain."""
-        keywords = ['insurance', 'claim', 'billing', 'coverage', 'policy', 'premium',
-                    'deductible', 'copay', 'reimbursement', 'pre-authorization', 'network',
-                    'underwriting', 'loss ratio', 'loading', 'irdai', 'tpa', 'gmc', 'gpa',
-                    'cashless', 'preauth', 'sum insured', 'co-pay', 'mediclaim']
-        lower = prompt.lower()
-        return any(kw in lower for kw in keywords)
 
     def llm_reasoning(self, prompt: str, system_prompt: Optional[str] = None,
                       user_id: Optional[str] = None) -> Dict[str, Any]:
@@ -351,7 +342,9 @@ class SyntheticIntelligenceBrain:
 
         Fallback order:
         1. iSHA node1 (ai.isha.buzz)  — BiMediX2-8B / OpenInsuranceLLM
-        2. iSHA node2 (isha-inc.com)  — MedGemma-4B / InsuranceLLM
+        2. iSHA node2 (isha-inc.com)  — single model (qwen3-8b-q5-k-m); node2 has no
+           per-domain models of its own, so insurance-vs-clinical framing is applied
+           by SIB via system_prompt rather than by picking a different remote model.
         3. Groq                        — cloud fallback 1
         4. OpenAI gpt-3.5-turbo        — cloud fallback 2
         5. Gemini 1.5-flash            — cloud fallback 3
@@ -378,13 +371,13 @@ class SyntheticIntelligenceBrain:
         except Exception as e:
             logger.warning(f"⚠️ iSHA node1 failed: {e}")
 
-        # iSHA GPU node 2
+        # iSHA GPU node 2 — SIB owns the orchestration (domain framing lives in
+        # system_prompt); node2 itself only ever serves one model.
         try:
-            node2_model = "insurance-llm" if self._is_insurance_query(prompt) else "medgemma-4b"
-            result = self._isha_inc_inference(prompt, system_prompt, model=node2_model)
+            result = self._isha_inc_inference(prompt, system_prompt)
             result["provider"] = LLMProvider.ISHA_INC.value
             result["latency_ms"] = round((time.time() - start_time) * 1000, 2)
-            logger.info(f"✅ iSHA node2 ({node2_model}): {result['latency_ms']}ms")
+            logger.info(f"✅ iSHA node2 ({result.get('model','?')}): {result['latency_ms']}ms")
             _cache_set(prompt, system_prompt, result, user_id)
             return result
         except Exception as e:
@@ -508,10 +501,16 @@ class SyntheticIntelligenceBrain:
         return {"answer": response.choices[0].message.content, "model": "llama-3.3-70b-versatile"}
 
     def _isha_inc_inference(self, prompt: str, system_prompt: Optional[str] = None,
-                            model: str = "insurance-llm", max_tokens: int = 512) -> Dict[str, Any]:
-        """iSHA GPU node2 via isha-inc.com — persistent httpx session (connection reuse)."""
+                            model: Optional[str] = None, max_tokens: int = 512) -> Dict[str, Any]:
+        """iSHA GPU node2 via isha-inc.com — persistent httpx session (connection reuse).
+
+        node2 serves a single model; the name comes from ISHA_INC_MODEL so it can be
+        repointed without a code change if the deployed model is swapped. Verify with
+        GET {base_url}/v1/models before changing the default.
+        """
         api_key = os.environ.get("ISHA_INC_API_KEY", "")
         base_url = _normalize_provider_url(os.environ.get("ISHA_INC_URL", ""), "https://isha-inc.com")
+        model = model or os.environ.get("ISHA_INC_MODEL", "qwen3-8b-q5-k-m")
 
         messages = []
         if system_prompt:
