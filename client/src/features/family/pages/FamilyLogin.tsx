@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { HeartPulse } from 'lucide-react';
+import { HeartPulse, Loader2 } from 'lucide-react';
+import { verifyFamilyAccess } from '@/services/careos.service';
 
 /** Family portal login — patient ID + access code (shared by care team) */
 export default function FamilyLogin() {
@@ -11,8 +12,9 @@ export default function FamilyLogin() {
   const [patientId, setPatientId] = useState('');
   const [accessCode, setAccessCode] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const pid = Number(patientId);
     if (!pid || Number.isNaN(pid)) {
@@ -23,9 +25,22 @@ export default function FamilyLogin() {
       setError('Enter the access code shared by the hospital.');
       return;
     }
-    sessionStorage.setItem('family_patient_id', String(pid));
-    sessionStorage.setItem('family_access', accessCode.trim());
-    navigate(`/family/patient/${pid}`);
+    setLoading(true);
+    setError('');
+    try {
+      const res = await verifyFamilyAccess(pid, accessCode.trim());
+      if (!res?.success) {
+        setError(res?.message || 'Invalid access code.');
+        return;
+      }
+      sessionStorage.setItem('family_patient_id', String(pid));
+      sessionStorage.setItem('family_access', accessCode.trim());
+      navigate(`/family/patient/${pid}`);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Could not verify access. Check your code and try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -53,15 +68,15 @@ export default function FamilyLogin() {
               <label className="text-sm font-medium">Access code</label>
               <Input
                 type="password"
-                placeholder="4–8 digit code"
+                placeholder="Last 4 digits of registered mobile"
                 value={accessCode}
                 onChange={(e) => setAccessCode(e.target.value)}
                 className="mt-1"
               />
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}
-            <Button type="submit" className="w-full bg-rose-600 hover:bg-rose-700">
-              View updates
+            <Button type="submit" className="w-full bg-rose-600 hover:bg-rose-700" disabled={loading}>
+              {loading ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : 'View updates'}
             </Button>
           </form>
         </CardContent>

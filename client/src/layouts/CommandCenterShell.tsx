@@ -5,6 +5,7 @@ import { BarChart2, RefreshCw } from 'lucide-react';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { COMMAND_CENTER_NAV } from '@/config/commandNav.config';
 import { useCommandCenterData } from '@/features/command/hooks/useCommandCenterData';
+import { useCommandCenterRealtime } from '@/features/command/hooks/useCommandCenterRealtime';
 import { LiveIndicator } from '@/components/clinical/LiveIndicator';
 
 const BASE = '/hospital/command-center';
@@ -23,6 +24,7 @@ function isActive(pathname: string, segment: string) {
 export default function CommandCenterShell() {
   const location = useLocation();
   const { loading, lastUpdated, refresh } = useCommandCenterData();
+  useCommandCenterRealtime(refresh);
 
   return (
     <HospitalLayout>

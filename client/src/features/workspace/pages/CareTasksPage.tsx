@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
+import { TaskCard } from '@/components/clinical/TaskCard';
 import { ListTodo } from 'lucide-react';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 import { createCareTask, updateCareTask } from '@/services/workspace.service';
@@ -50,13 +50,7 @@ export default function CareTasksPage() {
             <ClinicalEmptyState title="No tasks" description="Add care tasks for the nursing and medical team." />
           ) : (
             tasks.map((t) => (
-              <div key={t.id} className="flex items-center gap-2 border rounded-lg p-3 text-sm">
-                <span className={t.status === 'completed' ? 'line-through text-muted-foreground' : ''}>{t.title}</span>
-                <Badge variant="outline" className="ml-auto text-[10px]">{t.status}</Badge>
-                {t.status !== 'completed' && (
-                  <Button size="sm" variant="ghost" onClick={() => completeTask(t.id)}>Done</Button>
-                )}
-              </div>
+              <TaskCard key={t.id} task={t} onComplete={completeTask} />
             ))
           )}
         </CardContent>

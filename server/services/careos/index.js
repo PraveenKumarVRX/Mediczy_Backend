@@ -5,7 +5,7 @@ import { getPathway, updatePathway } from './treatment-pathway.service.js';
 import { startClinicalBoard, joinClinicalBoard, recordOpinion, getAIConsensus, createMdtCallToken, listMdtSessions } from './mdt-board.service.js';
 import { buildClinicalPlayback } from './clinical-playback.service.js';
 import { findSimilarCases, archiveCase } from './hospital-memory.service.js';
-import { listFamilyUpdates, publishFamilyUpdate } from './family-portal.service.js';
+import { listFamilyUpdates, publishFamilyUpdate, verifyFamilyAccess } from './family-portal.service.js';
 import { createPatientCallToken } from './one-touch-call.service.js';
 import { listTasks, createTask, updateTaskStatus } from './task-management.service.js';
 import { getLivingWorkspace } from './living-patient-workspace.service.js';
@@ -61,6 +61,7 @@ export {
   archiveCase,
   listFamilyUpdates,
   publishFamilyUpdate,
+  verifyFamilyAccess,
   createPatientCallToken,
   listTasks,
   createTask,
@@ -156,6 +157,7 @@ export default {
   archiveCase,
   listFamilyUpdates,
   publishFamilyUpdate,
+  verifyFamilyAccess,
   createPatientCallToken,
   listTasks,
   createTask,

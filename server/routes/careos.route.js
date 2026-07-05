@@ -249,6 +249,18 @@ router.post('/memory/archive', ...doctorOnly, async (req, res) => {
 });
 
 // ── Family Portal ──────────────────────────────────────────────────────────────
+router.post('/family/verify', async (req, res) => {
+  try {
+    const result = await careos.verifyFamilyAccess(Number(req.body.patientId), req.body.accessCode);
+    if (!result.valid) {
+      return res.status(401).json({ success: false, message: result.reason });
+    }
+    res.json({ success: true, data: { patientId: result.patientId } });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
 router.get('/family/:patientId/updates', authUser, async (req, res) => {
   const familyOnly = req.user.role === 'patient' || req.query.family === 'true';
   const rows = await careos.listFamilyUpdates(pid(req), { familyVisibleOnly: familyOnly });

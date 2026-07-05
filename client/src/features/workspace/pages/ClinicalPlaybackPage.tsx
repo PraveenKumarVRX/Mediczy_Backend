@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { PlayCircle, Loader2 } from 'lucide-react';
+import { PlaybackScrubber } from '@/components/clinical/PlaybackScrubber';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 import { getClinicalPlayback } from '@/services/workspace.service';
 
@@ -31,18 +32,8 @@ export default function ClinicalPlaybackPage() {
             <CardTitle className="text-base">{playback.replayLabel}</CardTitle>
             <p className="text-sm text-muted-foreground">{playback.summary}</p>
           </CardHeader>
-          <CardContent className="space-y-3 max-h-[60vh] overflow-y-auto">
-            {(playback.chapters || []).map((c: any, i: number) => (
-              <div key={i} className="flex gap-3 text-sm">
-                <span className="text-muted-foreground shrink-0 w-16">
-                  {new Date(c.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-                <div>
-                  <p className="font-medium">{c.title}</p>
-                  {c.detail && <p className="text-slate-600">{c.detail}</p>}
-                </div>
-              </div>
-            ))}
+          <CardContent>
+            <PlaybackScrubber chapters={playback.chapters || []} label={playback.replayLabel} />
           </CardContent>
         </Card>
       )}

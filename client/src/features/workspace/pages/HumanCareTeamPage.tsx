@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { CareTeamAvatarRow } from '@/components/clinical/CareTeamAvatarRow';
 import { Users, Loader2 } from 'lucide-react';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 import { autoInviteMDT, startClinicalBoard } from '@/services/workspace.service';
@@ -57,15 +57,7 @@ export default function HumanCareTeamPage() {
           {team.length === 0 ? (
             <ClinicalEmptyState title="No team members yet" description="Use AI auto-invite to assemble a multidisciplinary team based on diagnosis." />
           ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {team.map((m) => (
-                <div key={m.id} className="border rounded-lg p-3 text-sm">
-                  <p className="font-medium">{m.display_name || m.role}</p>
-                  <p className="text-xs text-muted-foreground capitalize">{m.role?.replace(/_/g, ' ')}</p>
-                  {m.invited_by === 'ai_mdt' && <Badge variant="secondary" className="mt-1 text-[10px]">AI invited</Badge>}
-                </div>
-              ))}
-            </div>
+            <CareTeamAvatarRow members={team} />
           )}
         </CardContent>
       </Card>
