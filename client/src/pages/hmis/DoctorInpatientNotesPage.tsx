@@ -98,7 +98,7 @@ export default function DoctorInpatientNotesPage() {
         <h1 className="text-xl font-bold mb-2">Doctor Progress Notes</h1>
         <p className="text-muted-foreground text-sm mb-4">
           Open from an inpatient workspace or use{' '}
-          <code className="text-xs bg-slate-200 px-1 rounded">/hmis/admission/:id/doctor-notes</code>
+          <code className="text-xs bg-slate-200 px-1 rounded">/hospital/admission/:id/doctor-notes</code>
         </p>
         <Button variant="outline" onClick={() => navigate(-1)}>Go back</Button>
       </div>
@@ -130,7 +130,7 @@ export default function DoctorInpatientNotesPage() {
           </Button>
           {resolvedAdmissionId && (
             <Button variant="outline" size="sm" asChild>
-              <Link to={`/hmis/admission/${resolvedAdmissionId}/echart`}>
+              <Link to={`/hospital/admission/${resolvedAdmissionId}/echart`}>
                 <Activity className="h-4 w-4 mr-1" /> Nursing e-Chart
               </Link>
             </Button>
@@ -198,7 +198,7 @@ export default function DoctorInpatientNotesPage() {
         {resolvedPatientId && (
           <div className="flex gap-2">
             <Button variant="outline" size="sm" asChild>
-              <Link to={`/hmis/patient/${resolvedPatientId}/workspace`}>
+              <Link to={`/hospital/patient/${resolvedPatientId}/workspace`}>
                 <User className="h-4 w-4 mr-1" /> Inpatient workspace
               </Link>
             </Button>

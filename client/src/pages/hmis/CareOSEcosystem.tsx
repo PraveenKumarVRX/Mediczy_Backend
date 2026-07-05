@@ -18,9 +18,11 @@ import {
   getFederationGatewayStatus,
 } from '@/services/careos.service';
 import { HEALTH_OS } from '@/config/brand';
+import { useClinicalPaths } from '@/hooks/useClinicalPaths';
 
 export default function CareOSEcosystem() {
   const navigate = useNavigate();
+  const paths = useClinicalPaths();
   const [platform, setPlatform] = useState<any>(null);
   const [federation, setFederation] = useState<any>(null);
   const [orgs, setOrgs] = useState<any[]>([]);
@@ -459,8 +461,8 @@ export default function CareOSEcosystem() {
         </Tabs>
 
         <div className="flex flex-wrap gap-3">
-          <Button className="bg-teal-600 hover:bg-teal-500" onClick={() => navigate('/hmis/command-center')}>Care Command</Button>
-          <Button variant="outline" className="border-white/20 text-white hover:bg-white/10" onClick={() => navigate('/hmis/ai-ops')}>Care AI</Button>
+          <Button className="bg-teal-600 hover:bg-teal-500" onClick={() => navigate(paths.commandCenter)}>Care Command</Button>
+          <Button variant="outline" className="border-white/20 text-white hover:bg-white/10" onClick={() => navigate(paths.aiOps)}>Care AI</Button>
         </div>
       </div>
     </div>

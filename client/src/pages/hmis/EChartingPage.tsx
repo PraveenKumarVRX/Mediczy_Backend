@@ -109,7 +109,7 @@ export default function EChartingPage() {
         <div className="space-y-2">
           {beds.map((b) => (
             <Button key={b.admission_id} variant="outline" className="w-full justify-start"
-              onClick={() => navigate(`/hmis/admission/${b.admission_id}/echart`)}>
+              onClick={() => navigate(`/hospital/admission/${b.admission_id}/echart`)}>
               {b.bed_number} · {b.ward_name} · Admission #{b.admission_id}
             </Button>
           ))}

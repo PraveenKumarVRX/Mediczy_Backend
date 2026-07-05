@@ -11,14 +11,14 @@ import {
 const TOOLS = [
   { title: 'Doctor Dashboard', desc: 'Appointments, patients, rounds', path: '/doctor/dashboard', icon: Stethoscope, color: 'bg-blue-600' },
   { title: 'SOAP Clinical Notes', desc: 'Progress notes, sign & ICD-10', path: '/doctor/clinical-workspace', icon: ClipboardList, color: 'bg-purple-600' },
-  { title: 'IP Progress Notes', desc: 'Bedside ward round documentation', path: '/hmis/patient/1/doctor-notes', icon: FileText, color: 'bg-teal-700' },
+  { title: 'IP Progress Notes', desc: 'Bedside ward round documentation', path: '/hospital/patient/1/doctor-notes', icon: FileText, color: 'bg-teal-700' },
   { title: 'AI Voice Scribe', desc: 'Ambient IPD/OPD documentation', path: '/doctor/voice-scribe?docType=ipd_notes', icon: Mic, color: 'bg-violet-600', badge: 'AI' },
   { title: 'Clinical CDSS', desc: 'AI triage & decision support', path: '/doctor/triage', icon: Brain, color: 'bg-fuchsia-600', badge: 'AI' },
   { title: 'Voice Assistant', desc: 'Hands-free orders & queries', path: '/doctor/assistant', icon: Sparkles, color: 'bg-cyan-600', badge: 'AI' },
   { title: 'Video Consult', desc: 'Teleconsultation with patients', path: '/doctor/video', icon: Video, color: 'bg-sky-600' },
   { title: 'Prescriptions', desc: 'e-Prescribing & drug checks', path: '/doctor/prescriptions', icon: FileText, color: 'bg-emerald-600' },
   { title: 'Patient Imaging', desc: 'RIS/PACS viewer', path: '/doctor/imaging', icon: Activity, color: 'bg-slate-700' },
-  { title: 'IP Workspace', desc: 'Inpatient clinical view', path: '/hmis/patient/1/workspace', icon: User, color: 'bg-teal-600' },
+  { title: 'IP Workspace', desc: 'Inpatient clinical view', path: '/hospital/patient/1/workspace', icon: User, color: 'bg-teal-600' },
 ];
 
 export default function HospitalDoctorWorkspace() {
@@ -40,7 +40,7 @@ export default function HospitalDoctorWorkspace() {
               <p className="font-semibold text-slate-800">Demo patient: Priya Singh</p>
               <p className="text-sm text-slate-600">Bed GEN-11 · Acute appendicitis · Post-op Day 2</p>
             </div>
-            <Button className="bg-teal-600 hover:bg-teal-700" onClick={() => navigate('/hmis/patient/1/workspace')}>
+            <Button className="bg-teal-600 hover:bg-teal-700" onClick={() => navigate('/hospital/patient/1/workspace')}>
               Open IP Workspace <ArrowRight className="h-4 w-4 ml-1" />
             </Button>
           </CardContent>

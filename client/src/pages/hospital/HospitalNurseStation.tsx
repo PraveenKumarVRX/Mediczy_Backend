@@ -51,7 +51,7 @@ export default function HospitalNurseStation() {
             <CardContent className="space-y-2 max-h-64 overflow-y-auto">
               {beds.length === 0 ? <p className="text-xs text-slate-400">No occupied beds</p> : beds.map((b: any) => (
                 <button key={b.id} className="w-full text-left p-2 rounded-lg bg-slate-50 hover:bg-teal-50 text-sm"
-                  onClick={() => b.patient_id && navigate(`/hmis/patient/${b.patient_id}/workspace`)}>
+                  onClick={() => b.patient_id && navigate(`/hospital/patient/${b.patient_id}/workspace`)}>
                   <span className="font-medium">{b.bed_number}</span>
                   <span className="text-slate-500 ml-2">{b.ward_name}</span>
                 </button>
@@ -68,7 +68,7 @@ export default function HospitalNurseStation() {
                   {m.is_overdue && <Badge className="ml-1 bg-red-100 text-red-700 text-[10px]">Overdue</Badge>}
                 </div>
               ))}
-              <Button variant="link" className="text-xs p-0 h-auto" onClick={() => navigate('/hmis/emar')}>Open eMAR →</Button>
+              <Button variant="link" className="text-xs p-0 h-auto" onClick={() => navigate('/hospital/emar')}>Open eMAR →</Button>
             </CardContent>
           </Card>
 
@@ -85,8 +85,8 @@ export default function HospitalNurseStation() {
         <div className="flex flex-wrap gap-2">
           {[
             { label: 'Record Vitals', path: '/hospital/vitals/record' },
-            { label: 'Nursing Tasks', path: '/hmis/admission/1/nursing-tasks' },
-            { label: 'e-Charting', path: '/hmis/echart' },
+            { label: 'Nursing Tasks', path: '/hospital/admission/1/nursing-tasks' },
+            { label: 'e-Charting', path: '/hospital/echart' },
             { label: 'Ward Dashboard', path: '/hospital/ward' },
           ].map(a => (
             <Button key={a.path} variant="outline" onClick={() => navigate(a.path)}>{a.label} <ArrowRight className="h-3 w-3 ml-1" /></Button>

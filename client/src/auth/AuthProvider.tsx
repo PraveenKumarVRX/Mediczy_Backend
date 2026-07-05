@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, useCallback, u
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useLocation } from "react-router-dom";
 import api from "@/utils/api";
-import { getToken, getUserType, hasHmisPortalSession, hasHospitalPortalSession } from "@/hooks/auth";
+import { getToken, getUserType, hasHospitalPortalSession } from "@/hooks/auth";
 import { profileProps, doctorProfileProps } from "@/lib/user.type";
 import "@/App.css";
 
@@ -168,19 +168,6 @@ export const AuthProvider = ({ children }) => {
       location.pathname.startsWith('/display/');
 
     if (isHospitalOsPublicRoute) {
-      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
-      return;
-    }
-
-    // HMIS / HealthOS staff consoles — hospital, doctor, nurse, assistant, or admin session
-    const isHmisRoute = location.pathname.startsWith('/hmis/');
-    if (isHmisRoute) {
-      if (!hasHmisPortalSession()) {
-        const next = encodeURIComponent(location.pathname + location.search);
-        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
-        navigate(`/hospital/login?next=${next}`, { replace: true });
-        return;
-      }
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
       return;
     }

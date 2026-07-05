@@ -231,27 +231,27 @@ export default function InpatientWorkspace() {
                   cls: 'bg-slate-700 hover:bg-slate-800 text-white',
                   action: () => {
                     const adm = patient?.admissionId;
-                    if (adm) navigate(`/hmis/admission/${adm}/doctor-notes`);
-                    else navigate(`/hmis/patient/${patientId}/doctor-notes`);
+                    if (adm) navigate(`/hospital/admission/${adm}/doctor-notes`);
+                    else navigate(`/hospital/patient/${patientId}/doctor-notes`);
                   },
                 },
                 {
                   label: 'Nursing e-Chart',
                   icon: Activity,
                   cls: 'bg-emerald-600 hover:bg-emerald-700 text-white',
-                  action: () => patient?.admissionId && navigate(`/hmis/admission/${patient.admissionId}/echart`),
+                  action: () => patient?.admissionId && navigate(`/hospital/admission/${patient.admissionId}/echart`),
                 },
                 {
                   label: 'Start Discharge',
                   icon: LogOut,
                   cls: 'bg-amber-600 hover:bg-amber-700 text-white',
-                  action: () => patient?.admissionId && navigate(`/hmis/admission/${patient.admissionId}/discharge`),
+                  action: () => patient?.admissionId && navigate(`/hospital/admission/${patient.admissionId}/discharge`),
                 },
                 {
                   label: 'Add to Follow-Up',
                   icon: Star,
                   cls: 'bg-blue-600 hover:bg-blue-700 text-white',
-                  action: () => navigate(`/hmis/patient/${patientId}/follow-up`),
+                  action: () => navigate(`/hospital/patient/${patientId}/follow-up`),
                 },
               ].map(({ label, icon: Icon, cls, action }) => (
                 <Button key={label} className={`${cls} flex items-center gap-1`} onClick={action} disabled={!action}>
