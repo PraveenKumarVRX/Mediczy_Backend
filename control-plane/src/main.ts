@@ -16,7 +16,7 @@ async function bootstrap() {
 
   // Route control-plane APIs under /cp while preserving health probes at /live and /health.
   app.setGlobalPrefix(process.env.CONTROL_PLANE_PREFIX || 'cp', {
-    exclude: ['health'],
+    exclude: ['health', 'live'],
   });
 
   const port = process.env.PORT || 3000;
