@@ -8,6 +8,17 @@ const IDENTITY_RE = /\b(who are you|what are you|what can you do|introduce yours
 const DOUBT_RE = /\b(are you sure|is that (right|correct)|really\??|confirm that|double check)\b/i;
 const FILLER_RESPONSE_RE = /^(sure|okay|ok|got it|let me|one moment|please wait|i'll|i will)\b/i;
 const LANGUAGE_CAPABILITY_RE = /\b(speak|talk|convers\w*|understand|reply|respond)\b[\s\S]{0,25}\b(telugu|hindi|tamil|kannada|malayalam|marathi|gujarati|bengali|punjabi|urdu|odia|assamese|regional\s+language|another\s+language|different\s+language|language)\b/i;
+// Distinguishes an actual switch REQUEST ("let's talk in Telugu now") from a
+// capability QUESTION ("can you speak Telugu?") — the former should get an
+// immediate acknowledgment in that language, not the same static info blurb
+// repeated every time the doctor tries to get it to actually switch.
+const LANGUAGE_NAMES = {
+  hindi: 'hi', telugu: 'te', tamil: 'ta', kannada: 'kn', malayalam: 'ml',
+  marathi: 'mr', gujarati: 'gu', bengali: 'bn', punjabi: 'pa', urdu: 'ur',
+  odia: 'or', assamese: 'as', english: 'en',
+};
+const LANGUAGE_NAME_RE = new RegExp(`\\b(${Object.keys(LANGUAGE_NAMES).join('|')})\\b`, 'i');
+const SWITCH_INTENT_RE = /\b(let'?s|lets|switch(?:\s+to)?|from\s+now\s+on|now\s+on|please\s+(speak|talk|respond|reply))\b|\bnow\b/i;
 // Colloquial small-talk — kept brief and professional, not silence or a hard refusal.
 const THANKS_RE = /\b(thank\s*you|thanks|thank\s*u)\b/i;
 const HOW_ARE_YOU_RE = /\bhow\s*(are|'?s)\s*(you|it\s*going|things)\b/i;
@@ -45,6 +56,20 @@ export function isDoubtFollowUp(text) {
 
 export function isLanguageCapabilityQuestion(text) {
   return LANGUAGE_CAPABILITY_RE.test(String(text || '').toLowerCase());
+}
+
+/**
+ * Returns the ISO code for a requested language switch (e.g. "let's talk in
+ * Telugu now" → "te"), or null if this isn't a switch request. Checked
+ * BEFORE isLanguageCapabilityQuestion — a switch request should never fall
+ * into the plain capability-question branch.
+ */
+export function extractLanguageSwitchRequest(text) {
+  const t = String(text || '').toLowerCase();
+  const nameMatch = t.match(LANGUAGE_NAME_RE);
+  if (!nameMatch) return null;
+  if (!SWITCH_INTENT_RE.test(t)) return null;
+  return LANGUAGE_NAMES[nameMatch[1].toLowerCase()] || null;
 }
 
 export function isThanks(text) {

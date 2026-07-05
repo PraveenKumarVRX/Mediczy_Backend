@@ -30,6 +30,7 @@ import translationService from '../services/translation.service.js';
 import {
   buildGreetingResponse,
   composeBriefingResponse,
+  extractLanguageSwitchRequest,
   GOODBYE_RESPONSE,
   GREETING_RESPONSE,
   HOW_ARE_YOU_RESPONSE,
@@ -392,6 +393,14 @@ STRICT SCOPE — NEVER VIOLATE:
 - EXCEPTION: brief questions about you as an assistant (what you can do, whether you know the doctor's name, what languages you support) are NOT off-topic — answer them honestly in one sentence. You understand and can respond in Hindi, Telugu, Tamil, Kannada, Malayalam, Marathi, Gujarati, Bengali, Punjabi, Urdu, Odia, Assamese, and English — messages may already be translated to English for you, but you should still confirm you can converse in the doctor's language if asked.
 - EXCEPTION: small talk (thanks, how are you, good job, goodbye) is NOT off-topic either — give a brief, warm, professional reply (one short sentence), never the refusal phrase.
 
+TONE — natural for conversation, crisp for actions:
+- Task actions (booking, listing, navigating, briefings, drug lookups): stay terse, 1 sentence
+  confirmation, no filler. This is the "efficient" half of the job.
+- Conversational replies (greetings, small talk, "how are you", general chat, explaining a
+  medical answer): talk like a sharp colleague, not a scripted bot. Use contractions ("I'm",
+  "you've", "that's"), vary how sentences open, skip stock phrases like "I am here to assist you
+  with your query." Still brief — 1-3 sentences — just not robotic.
+
 CORE BEHAVIOR:
 - Respond directly to the task. No greetings, no self-introduction, no "Good afternoon Doctor" on every message.
 - Only identify yourself as iSHA if the doctor explicitly asks who you are.
@@ -406,7 +415,7 @@ TOOL ROUTING (strict):
 | User says | Tool |
 |---|---|
 | "my appointments / today / pending / upcoming" | list_appointments |
-| "book / schedule / fix appointment for X on DATE at TIME" | book_appointment |
+| "book / schedule / fix appointment for X on DATE at TIME", or any "I need/want/am going to get an appointment" style request, even without full details | book_appointment |
 | "cancel appointment for X" | cancel_appointment |
 | "reschedule / move / shift / change appointment for X to DATE TIME" | reschedule_appointment (NOT list_appointments) |
 | "health / vitals / status of X" | get_patient_health |
@@ -1229,6 +1238,21 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
     }
   }
 
+  const switchLangCode = extractLanguageSwitchRequest(trimmedText);
+  if (switchLangCode) {
+    const ack = "Sure, let's talk in this language. How can I help?";
+    const translated = await translationService.translateFromEnglish(ack, switchLangCode);
+    const msg = translated.text || ack;
+    return res.json({
+      intent: 'general',
+      action: null,
+      parameters: null,
+      response: msg,
+      speak: msg,
+      requiresConfirmation: false,
+    });
+  }
+
   if (isLanguageCapabilityQuestion(trimmedText)) {
     return res.json({
       intent: 'general',
@@ -1460,9 +1484,18 @@ Available actions and their parameters:
 - "medical_query"           → {"query":"the clinical question"}
 - "general"                 → {}
 
+TONE for "response": task actions get one terse confirmation sentence, no filler. Anything
+conversational (small talk, greetings, medical_query explanations) should sound like a sharp
+colleague talking naturally — contractions, varied phrasing, no stock phrases like "I am here to
+assist you with your query" — while staying brief (1-3 sentences).
+
 STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointment/booking/task actions):
 - CANCEL / UNDO appointment → cancel_appointment (NEVER medical_query)
-- BOOK / SCHEDULE appointment → book_appointment (NEVER medical_query)
+- BOOK / SCHEDULE appointment → book_appointment (NEVER medical_query). Recognize ANY phrasing
+  that expresses wanting an appointment, not just "book"/"schedule" literally — e.g. "I'm going
+  to get an appointment", "I need an appointment", "I want to see the doctor", "can I get a
+  slot". If patient_name, date, or time are missing, still classify as book_appointment with
+  whatever parameters you have — the server will ask for the missing details.
 - RESCHEDULE / MOVE appointment → reschedule_appointment (NEVER medical_query)
 - CONFIRM / YES / PROCEED → if previous assistant message shows a pending action, use general with response "Executing…" (the server handles execution via pendingAction)
 - IDENTITY / GREETING (who are you, hello, hi, good morning) → general
@@ -1477,7 +1510,9 @@ STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointmen
 - HOW MANY PATIENTS / TODAY'S SUMMARY → get_today_summary
 - DRUG DOSE / SIDE EFFECTS / INDICATION / CONTRAINDICATION → get_drug_info with {"drug":"<name>","question":"<aspect>"}
 - DRUG INTERACTIONS → check_drug_interactions with {"drugs":["drug1","drug2"]}
-- CLINICAL/MEDICAL QUESTION (diagnosis, symptoms, treatment, physiology — NOT appointments or tasks) → medical_query with {"query":"<question>"}
+- CLINICAL/MEDICAL QUESTION (diagnosis, symptoms, treatment, physiology — NOT appointments or tasks,
+  and NOT "I want/need an appointment" style requests, which are book_appointment) → medical_query
+  with {"query":"<question>"}
 - For get_drug_info, check_drug_interactions, medical_query: write the full clinical answer in "response". For all others: 1-sentence spoken confirmation.
 - NEVER respond with "I understood this as a health intelligence request" or ask for confirmation — just classify and respond.`;
 
@@ -1584,6 +1619,21 @@ STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointmen
       const SCOPE_REJECT   = "I'm iSHA, your clinical assistant. I can only help";
       const GREETING_RESP  = GREETING_RESPONSE;
       const OFF_TOPIC_MSG  = "I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks.";
+
+      const switchLangCode2 = extractLanguageSwitchRequest(trimmedText);
+      if (switchLangCode2) {
+        const ack = "Sure, let's talk in this language. How can I help?";
+        const translated = await translationService.translateFromEnglish(ack, switchLangCode2);
+        const msg = translated.text || ack;
+        return res.json({
+          intent: 'general',
+          action: null,
+          parameters: null,
+          response: msg,
+          speak: msg,
+          requiresConfirmation: false,
+        });
+      }
 
       if (isLanguageCapabilityQuestion(trimmedText)) {
         return res.json({
