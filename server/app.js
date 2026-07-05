@@ -220,6 +220,7 @@ import hospitalBillingRouter from './routes/hospital/billing.route.js';
 import moduleCopilotRouter from './routes/module-copilot.route.js';
 import careosRouter from './routes/careos.route.js';
 import { healthosApiKeyOrUser } from './middleware/healthos-api-key.middleware.js';
+import hospitalOsRouter from './routes/hospital-os.route.js';
 import rwePlatformRouter from './routes/rwe-platform.route.js';
 import hospitalClinicalNotesRouter from './routes/hospital-clinical-notes.route.js';
 import executiveDashboardRouter from './routes/hospital/executive-dashboard.route.js';
@@ -1396,6 +1397,7 @@ app.use("/api/v3/ai-brain", authUser, aiBrainRouter); // AI Brain intelligence l
 app.use("/api/v3/module-copilot", moduleCopilotRouter); // Per-module AI copilots
 app.use("/api/v3/careos", healthosApiKeyOrUser, sibAIGuard, attachAIReporter, careosRouter);
 app.use("/api/v3/healthos", healthosApiKeyOrUser, sibAIGuard, attachAIReporter, careosRouter);
+app.use("/api/v3/hospital-os", sibAIGuard, attachAIReporter, hospitalOsRouter); // Hospital OS 2035 unified platform
 app.use("/api/v3/rwe", authUser, rwePlatformRouter); // Real-world evidence platform (Wave 4)
 app.use("/api/v3/ai-intelligence", authUser, aiIntelligenceRouter); // Drug interactions, insurance, triage, risk scores, insights
 app.use("/api/emergency", authUser, aiIntelligenceRouter); // Emergency alias (triage/assess, risk-score)
