@@ -78,7 +78,9 @@ const HospitalLogin = () => {
           ]
         : [
             { endpoint: '/hospital/auth/login', body: { email, password } },
+            { endpoint: '/hospital/auth/login/v2', body: { email, password } },
             { endpoint: '/hospital/login', body: { email, password } },
+            { endpoint: '/hospital/login/v2', body: { email, password } },
           ];
 
       let data: any = null;
@@ -94,7 +96,9 @@ const HospitalLogin = () => {
           break;
         } catch (err: any) {
           lastError = err;
-          if (err?.response?.status && ![404, 405].includes(err.response.status)) {
+          const status = err?.response?.status;
+          // Retry alternate endpoints on 404/405; also retry on 403 for platform-host login fallbacks
+          if (status && ![404, 405, 403].includes(status)) {
             throw err;
           }
         }
