@@ -22,7 +22,7 @@ export default function HospitalTeleconsult() {
             <p className="text-sm text-slate-600 flex items-center gap-2"><User className="h-4 w-4" /> Dr. Patel · Admission IP2026000001</p>
             <div className="flex gap-2 pt-2">
               <Button className="bg-sky-600 hover:bg-sky-700" onClick={() => navigate('/doctor/video')}>Start Video Consult</Button>
-              <Button variant="outline" onClick={() => navigate('/hmis/patient/1/follow-up')}>Follow-up Plan</Button>
+              <Button variant="outline" onClick={() => navigate('/hospital/patient/1/follow-up')}>Follow-up Plan</Button>
             </div>
           </CardContent>
         </Card>

@@ -364,6 +364,14 @@ const DoctorDashboard = () => {
       bgColor: "bg-orange-500/10 dark:bg-orange-500/20",
       iconColor: "text-orange-500",
     },
+    {
+      title: "HealthOS",
+      description: "Living patient workspace",
+      icon: HeartPulse,
+      link: "/doctor/healthos",
+      bgColor: "bg-emerald-500/10 dark:bg-emerald-500/20",
+      iconColor: "text-emerald-600",
+    },
   ];
 
   // Features grid

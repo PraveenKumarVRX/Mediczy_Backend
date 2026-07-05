@@ -17,6 +17,8 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import type { ComponentType } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import TeamGuard from "@/auth/TeamGuard";
+import { portalClinicalRoutes } from "@/routes/portalClinicalRoutes";
+import HmisLegacyRedirect from "@/routes/HmisLegacyRedirect";
 
 // ─── Critical-path — always in the initial bundle ───────────────────────────
 import Index            from "@/pages/Index";
@@ -817,6 +819,35 @@ const AIOperationsHub       = lazy(() => import("@/pages/hmis/AIOperationsHub"))
 const AIRevenueIntelligence = lazy(() => import("@/pages/hmis/AIRevenueIntelligence"));
 const AIDepartmentHub       = lazy(() => import("@/pages/hmis/AIDepartmentHub"));
 
+const CLINICAL_PAGES = {
+  PatientTimeline,
+  NursingTaskBoard,
+  AnesthesiaAssessment,
+  DischargeWorkflow,
+  FollowUpManagement,
+  EChartingPage,
+  DoctorInpatientNotesPage,
+  ClinicalCalculators,
+  BedsideReference,
+  BedMap,
+  OTCommandCenter,
+  EMARPage,
+  DischargeBoard,
+  CareOSEcosystem,
+  GlobalClinicalBoard,
+  MedicalPassportPortal,
+  LivingPatientWorkspace,
+  InpatientWorkspace,
+  CommandCenter,
+  HospitalCopilot,
+  PredictiveAnalytics,
+  ReportCenter,
+  HL7FHIRMonitor,
+  AIOperationsHub,
+  AIRevenueIntelligence,
+  AIDepartmentHub,
+};
+
 const OTLogin     = lazy(() => import("@/pages/ot/OTLogin"));
 const OTDashboard = lazy(() => import("@/pages/ot/OTDashboard"));
 const _OTModulePages = () => import("@/pages/ot/OTModulePages");
@@ -1015,6 +1046,13 @@ const AppRoutes = () => {
         <Route path="/doctor/imaging"             element={<DoctorImaging />} />
         <Route path="/doctor/webinars"            element={<DoctorWebinarDashboard />} />
         <Route path="/doctor/webinar/:webinarId/host" element={<WebinarRoomPage isHost={true} />} />
+        {/* HealthOS — explicit routes (also mounted via portalClinicalRoutes below) */}
+        <Route path="/doctor/healthos" element={<CareOSEcosystem />} />
+        <Route path="/doctor/careos" element={<CareOSEcosystem />} />
+        <Route path="/doctor/copilot" element={<HospitalCopilot />} />
+        <Route path="/doctor/patient/:patientId/healthos" element={<LivingPatientWorkspace />} />
+        <Route path="/doctor/patient/:patientId/careos" element={<LivingPatientWorkspace />} />
+        {portalClinicalRoutes("doctor", CLINICAL_PAGES)}
 
         {/* ── Webinars ───────────────────────────────────────────────── */}
         <Route path="/webinars"                   element={<WebinarListPage />} />
@@ -1045,10 +1083,10 @@ const AppRoutes = () => {
         <Route path="/hospital/discharge-summary"          element={<HospitalDischargeSummary />} />
         <Route path="/hospital/ip-sheets"                  element={<HospitalIPSheets />} />
         <Route path="/hospital/appointments"               element={<HospitalAppointmentsPage />} />
-        <Route path="/hospital/beds"                       element={<Navigate to="/hmis/beds/map" replace />} />
+        <Route path="/hospital/beds"                       element={<Navigate to="/hospital/beds/map" replace />} />
         <Route path="/hospital/patients"                   element={<HospitalPatientsPage />} />
         <Route path="/hospital/doctors"                    element={<HospitalDoctorsManagement />} />
-        <Route path="/hospital/opd-ipd"                    element={<Navigate to="/hmis/command-center" replace />} />
+        <Route path="/hospital/opd-ipd"                    element={<Navigate to="/hospital/command-center" replace />} />
         <Route path="/hospital/pharmacy"                   element={<HospitalPharmacyPage />} />
         <Route path="/hospital/lab-reports"                element={<HospitalLabReportsPage />} />
         <Route path="/hospital/billing"                    element={<HospitalBillingPage />} />
@@ -1061,6 +1099,12 @@ const AppRoutes = () => {
         <Route path="/hospital/notifications"              element={<HospitalNotifications />} />
         <Route path="/hospital/settings"                   element={<HospitalSettingsPage />} />
         <Route path="/hospital/support"                    element={<HospitalSupportPage />} />
+        <Route path="/hospital/healthos" element={<CareOSEcosystem />} />
+        <Route path="/hospital/careos" element={<CareOSEcosystem />} />
+        <Route path="/hospital/copilot" element={<HospitalCopilot />} />
+        <Route path="/hospital/command-center" element={<CommandCenter />} />
+        <Route path="/hospital/patient/:patientId/healthos" element={<LivingPatientWorkspace />} />
+        {portalClinicalRoutes("hospital", CLINICAL_PAGES)}
 
         {/* ── Clinic ──────────────────────────────────────────────────── */}
         <Route path="/clinic/login"         element={<ClinicLogin />} />
@@ -1187,6 +1231,7 @@ const AppRoutes = () => {
         <Route path="/nurse/chat"               element={<NurseChat />} />
         <Route path="/nurse/book-appointment"   element={<MainLayout><NurseBookAppointment /></MainLayout>} />
         <Route path="/nurse/video-consultation" element={<NurseVideoConsultation />} />
+        {portalClinicalRoutes("nurse", CLINICAL_PAGES)}
 
         {/* ── Assistant ───────────────────────────────────────────────── */}
         <Route path="/assistant/login"             element={<AssistantLogin />} />
@@ -1200,6 +1245,7 @@ const AppRoutes = () => {
         <Route path="/assistant/orders"            element={<MainLayout><OrderTasks /></MainLayout>} />
         <Route path="/assistant/reports"           element={<MainLayout><AssistantReports /></MainLayout>} />
         <Route path="/assistant/profile"           element={<MainLayout><AssistantDashboard /></MainLayout>} />
+        {portalClinicalRoutes("assistant", CLINICAL_PAGES)}
 
         {/* ── CRM ─────────────────────────────────────────────────────── */}
         <Route path="/crm/login"         element={<CRMLogin />} />
@@ -1714,37 +1760,8 @@ const AppRoutes = () => {
         <Route path="/hospital/corporate-crm"                           element={<HospitalCorporateCRM />} />
         <Route path="/hospital/er/queue"                                element={<ERQueuePage />} />
         <Route path="/patient/care-journey"                             element={<SmartCareNavigator />} />
-        <Route path="/hmis/patient/:patientId/timeline"                 element={<PatientTimeline />} />
-        <Route path="/hmis/admission/:admissionId/nursing-tasks"        element={<NursingTaskBoard />} />
-        <Route path="/hmis/ot/:otBookingId/anesthesia"                  element={<AnesthesiaAssessment />} />
-        <Route path="/hmis/admission/:admissionId/discharge"            element={<DischargeWorkflow />} />
-        <Route path="/hmis/patient/:patientId/follow-up"                element={<FollowUpManagement />} />
-        <Route path="/hmis/admission/:admissionId/echart"              element={<EChartingPage />} />
-        <Route path="/hmis/admission/:admissionId/doctor-notes"       element={<DoctorInpatientNotesPage />} />
-        <Route path="/hmis/patient/:patientId/doctor-notes"           element={<DoctorInpatientNotesPage />} />
-        <Route path="/hmis/echart"                                      element={<EChartingPage />} />
-        <Route path="/hmis/calculators"                                 element={<ClinicalCalculators />} />
-        <Route path="/hmis/reference"                                   element={<BedsideReference />} />
-        {/* Section 16 screens */}
-        <Route path="/hmis/beds/map"                                    element={<BedMap />} />
-        <Route path="/hmis/ot/command-center"                           element={<OTCommandCenter />} />
-        <Route path="/hmis/emar"                                        element={<EMARPage />} />
-        <Route path="/hmis/discharge-board"                             element={<DischargeBoard />} />
-        <Route path="/hmis/healthos"                                      element={<CareOSEcosystem />} />
-        <Route path="/hmis/careos"                                        element={<CareOSEcosystem />} />
-        <Route path="/hmis/healthos/board/:patientId"                   element={<GlobalClinicalBoard />} />
-        <Route path="/hmis/healthos/passport/:patientId"                 element={<MedicalPassportPortal />} />
-        <Route path="/hmis/patient/:patientId/healthos"                 element={<LivingPatientWorkspace />} />
-        <Route path="/hmis/patient/:patientId/careos"                     element={<LivingPatientWorkspace />} />
-        <Route path="/hmis/patient/:patientId/workspace"                element={<InpatientWorkspace />} />
-        <Route path="/hmis/command-center"                              element={<CommandCenter />} />
-        <Route path="/hmis/hospital-copilot"                          element={<HospitalCopilot />} />
-        <Route path="/hmis/predictive-analytics"                        element={<PredictiveAnalytics />} />
-        <Route path="/hmis/report-center"                               element={<ReportCenter />} />
-        <Route path="/hmis/hl7-fhir"                                    element={<HL7FHIRMonitor />} />
-        <Route path="/hmis/ai-ops"                                      element={<AIOperationsHub />} />
-        <Route path="/hmis/ai-revenue"                                  element={<AIRevenueIntelligence />} />
-        <Route path="/hmis/ai-dept"                                     element={<AIDepartmentHub />} />
+        {/* Legacy /hmis/* → /hospital/*, /doctor/*, /nurse/*, or /assistant/* */}
+        <Route path="/hmis/*" element={<HmisLegacyRedirect />} />
 
         {/* ── Quality & Accreditation (NABH + JCI) ────────────────────── */}
         <Route path="/quality/login"          element={<QualityLogin />} />

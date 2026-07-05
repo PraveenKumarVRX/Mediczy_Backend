@@ -28,6 +28,7 @@ import {
   syncFhirLabs,
   listPatientImaging,
 } from '@/services/careos.service';
+import { useClinicalPaths } from '@/hooks/useClinicalPaths';
 
 const SEVERITY_STYLE: Record<string, string> = {
   critical: 'border-l-red-500 bg-red-50',
@@ -38,6 +39,7 @@ const SEVERITY_STYLE: Record<string, string> = {
 export default function LivingPatientWorkspace() {
   const { patientId } = useParams<{ patientId: string }>();
   const navigate = useNavigate();
+  const paths = useClinicalPaths();
   const pid = Number(patientId);
 
   const [workspace, setWorkspace] = useState<any>(null);
@@ -197,7 +199,7 @@ export default function LivingPatientWorkspace() {
               <Video className="h-4 w-4 mr-1" /> One-touch Call
             </Button>
             <Button variant="secondary" size="sm" asChild>
-              <Link to="/hmis/healthos">
+              <Link to={paths.healthosHub}>
                 <Brain className="h-4 w-4 mr-1" /> HealthOS Platform
               </Link>
             </Button>
@@ -394,10 +396,10 @@ export default function LivingPatientWorkspace() {
               <div className="flex gap-2 flex-wrap">
                 <Button size="sm" variant="outline" onClick={syncLabs} disabled={actionLoading === 'labs'}>Sync FHIR labs</Button>
                 <Button size="sm" variant="outline" asChild>
-                  <Link to={`/hmis/healthos/passport/${patientId}`}>Medical Passport</Link>
+                  <Link to={paths.passport(patientId!)}>Medical Passport</Link>
                 </Button>
                 <Button size="sm" variant="outline" asChild>
-                  <Link to={`/hmis/healthos/board/${patientId}`}>Global Board</Link>
+                  <Link to={paths.globalBoard(patientId!)}>Global Board</Link>
                 </Button>
               </div>
               <div className="grid md:grid-cols-2 gap-4">

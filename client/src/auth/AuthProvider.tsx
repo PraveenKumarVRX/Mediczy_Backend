@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, useCallback, u
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useLocation } from "react-router-dom";
 import api from "@/utils/api";
-import { getToken, getUserType } from "@/hooks/auth";
+import { getToken, getUserType, hasHospitalPortalSession } from "@/hooks/auth";
 import { profileProps, doctorProfileProps } from "@/lib/user.type";
 import "@/App.css";
 
@@ -171,19 +171,6 @@ export const AuthProvider = ({ children }) => {
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
       return;
     }
-
-    // HMIS staff consoles — require hospital portal session
-    const isHmisRoute = location.pathname.startsWith('/hmis/');
-    if (isHmisRoute) {
-      const hospitalToken = getValidPortalToken('hospitalToken');
-      if (!hospitalToken) {
-        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
-        navigate('/hospital/login', { replace: true });
-        return;
-      }
-      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
-      return;
-    }
     
     // Check if it's an assistant route - assistant routes have their own auth flow
     const isAssistantRoute = location.pathname.startsWith('/assistant');
@@ -278,10 +265,10 @@ export const AuthProvider = ({ children }) => {
     
     // Check portal routes - require respective tokens
     if (isHospitalRoute) {
-      const hospitalToken = getValidPortalToken('hospitalToken');
-      if (!hospitalToken && location.pathname !== '/hospital/login' && location.pathname !== '/hospital/register') {
+      if (!hasHospitalPortalSession() && location.pathname !== '/hospital/login' && location.pathname !== '/hospital/register') {
+        const next = encodeURIComponent(location.pathname + location.search);
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
-        navigate("/hospital/login", { replace: true });
+        navigate(`/hospital/login?next=${next}`, { replace: true });
         return;
       }
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
