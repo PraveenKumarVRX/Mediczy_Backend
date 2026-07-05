@@ -119,8 +119,10 @@ if [ "$EXPORT_TOKENS_ONLY" != true ]; then
   echo "═══════════════════════════════════════════════"
   echo ""
   wait_for_api_ready
+  echo "Acquiring smoke-test tokens ..."
+else
+  echo "Acquiring smoke-test tokens ..." >&2
 fi
-echo "Acquiring smoke-test tokens ..."
 
 IDENTITY_JSON=$(cd "$SERVER_DIR" && MEDICZY_HOME="$MEDICZY_HOME" API_BASE="$API_BASE" node <<'NODE'
 const fs = require('fs');
@@ -550,15 +552,15 @@ ADMIN_ROLE=$(json_eval "$IDENTITY_JSON" "data.get('adminRole')")
 ADMIN_EMAIL=$(json_eval "$IDENTITY_JSON" "data.get('adminEmail')")
 
 if [ -z "$ADMIN_TOKEN" ]; then
-  echo "❌ Unable to build admin smoke token"
-  echo "   Identity output: $(echo "$IDENTITY_JSON" | head -c 300)"
+  echo "❌ Unable to build admin smoke token" >&2
+  echo "   Identity output: $(echo "$IDENTITY_JSON" | head -c 300)" >&2
   exit 1
 fi
 
 if [ "$EXPORT_TOKENS_ONLY" = true ]; then
   printf 'export ADMIN_TOKEN=%q\n' "$ADMIN_TOKEN"
   printf 'export DOC_TOKEN=%q\n' "$DOC_TOKEN"
-  echo "# admin=${ADMIN_EMAIL:-unknown} doctor_token=$([ -n "$DOC_TOKEN" ] && echo yes || echo no)"
+  printf '# admin=%s doctor_token=%s\n' "${ADMIN_EMAIL:-unknown}" "$([ -n "$DOC_TOKEN" ] && echo yes || echo no)"
   exit 0
 fi
 
