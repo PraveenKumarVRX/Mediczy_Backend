@@ -9,6 +9,8 @@ SKIPPED=0
 API_BASE="${API_BASE:-http://localhost:8888}"
 APP_BASE="${APP_BASE:-https://app.mediqzy.com}"
 SIB_BASE="${SIB_BASE:-http://localhost:8001}"
+# CDSS runs SIB → Groq cascade + KB/CIMS/ICD enrichment; 30s default curl is too short.
+SMOKE_CDSS_TIMEOUT="${SMOKE_CDSS_TIMEOUT:-90}"
 SERVER_DIR="${SERVER_DIR:-/home/ubuntu/Mediczy/server}"
 # PM2 loads root .env then server/.env (see ecosystem.config.js); smoke tests must match.
 MEDICZY_HOME="${MEDICZY_HOME:-$(dirname "$SERVER_DIR")}"
@@ -600,12 +602,16 @@ if [ -n "$DOC_TOKEN" ]; then
 
   echo ""
   echo "── CDSS AI QUERY ──"
-  R=$(curl_api -X POST "$API_BASE/api/cdss/knowledge/query" \
+  R=$(curl -s --max-time "$SMOKE_CDSS_TIMEOUT" -X POST "$API_BASE/api/cdss/knowledge/query" \
     -H "Authorization: Bearer $DOC_TOKEN" -H "Content-Type: application/json" \
-    -d '{"query":"metformin dose for type 2 diabetes"}')
+    -d '{"query":"metformin dose for type 2 diabetes","category":"dosage","searchCIMS":false}')
   t "12. CDSS LLM query" "$R" '"success":true'
+  if [ -z "$R" ]; then
+    echo "    hint: empty response (curl timeout ${SMOKE_CDSS_TIMEOUT}s) — retry with SMOKE_CDSS_TIMEOUT=120"
+  fi
   PROV=$(json_eval "$R" "data.get('provider') or 'none'")
-  echo "    LLM Provider: $PROV"
+  LAT=$(json_eval "$R" "data.get('latencyMs') or ''")
+  echo "    LLM Provider: ${PROV:-unknown}${LAT:+ (${LAT}ms)}"
 else
   skip_test "9-12 doctor-token medical-data tests skipped (no active doctor found)"
 fi

@@ -38,7 +38,7 @@ const doctorOrAdmin = [authUser, requireRole(['doctor', 'admin'])];
  */
 router.post('/query', authUser, async (req, res) => {
   try {
-    const { query, condition, category = 'diagnosis', specialty = 'general', searchKnowledge = true, sources = [] } = req.body;
+    const { query, condition, category = 'diagnosis', specialty = 'general', searchKnowledge = true, sources = [], searchCIMS = true } = req.body;
     const clinicalQuery = String(query || condition || '').trim();
 
     if (!clinicalQuery || clinicalQuery.length < 3) {
@@ -52,7 +52,8 @@ router.post('/query', authUser, async (req, res) => {
       category,
       specialty,
       searchKnowledge,
-      sources
+      sources,
+      searchCIMS: searchCIMS !== false,
     });
 
     res.json({
