@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, useCallback, u
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useLocation } from "react-router-dom";
 import api from "@/utils/api";
-import { getToken, getUserType } from "@/hooks/auth";
+import { getToken, getUserType, hasHmisPortalSession, hasHospitalPortalSession } from "@/hooks/auth";
 import { profileProps, doctorProfileProps } from "@/lib/user.type";
 import "@/App.css";
 
@@ -175,11 +175,10 @@ export const AuthProvider = ({ children }) => {
     // HMIS / HealthOS staff consoles — hospital, doctor, nurse, assistant, or admin session
     const isHmisRoute = location.pathname.startsWith('/hmis/');
     if (isHmisRoute) {
-      const hmisTokens = ['hospitalToken', 'doctorToken', 'nurseToken', 'assistantToken', 'adminToken'] as const;
-      const hasHmisAccess = hmisTokens.some((key) => getValidPortalToken(key));
-      if (!hasHmisAccess) {
+      if (!hasHmisPortalSession()) {
+        const next = encodeURIComponent(location.pathname + location.search);
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
-        navigate('/hospital/login', { replace: true });
+        navigate(`/hospital/login?next=${next}`, { replace: true });
         return;
       }
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
@@ -279,10 +278,10 @@ export const AuthProvider = ({ children }) => {
     
     // Check portal routes - require respective tokens
     if (isHospitalRoute) {
-      const hospitalToken = getValidPortalToken('hospitalToken');
-      if (!hospitalToken && location.pathname !== '/hospital/login' && location.pathname !== '/hospital/register') {
+      if (!hasHospitalPortalSession() && location.pathname !== '/hospital/login' && location.pathname !== '/hospital/register') {
+        const next = encodeURIComponent(location.pathname + location.search);
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
-        navigate("/hospital/login", { replace: true });
+        navigate(`/hospital/login?next=${next}`, { replace: true });
         return;
       }
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +7,17 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Building2, Eye, EyeOff, Activity, Lock, ArrowRight, CheckCircle2 } from 'lucide-react';
 import api from '@/utils/api';
+import { getSafeRedirectPath } from '@/hooks/auth';
+
+const ROLE_ROUTES: Record<string, string> = {
+  ceo: '/hospital/ceo',
+  coo: '/hospital/coo',
+  cfo: '/hospital/cfo',
+  ms: '/hospital/ms',
+  medical_superintendent: '/hospital/ms',
+  cmo: '/hospital/ms',
+  chief_medical_officer: '/hospital/ms',
+};
 
 const HospitalLogin = () => {
   const [email, setEmail] = useState('');
@@ -16,6 +27,14 @@ const HospitalLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const resolvePostLoginPath = (role?: string) => {
+    const next = getSafeRedirectPath(searchParams.get('next'));
+    if (next) return next;
+    const normalizedRole = (role || '').toLowerCase();
+    return ROLE_ROUTES[normalizedRole] || '/hospital/dashboard';
+  };
 
   useEffect(() => {
     const token = localStorage.getItem('hospitalToken');
@@ -23,23 +42,14 @@ const HospitalLogin = () => {
       try {
         const stored = localStorage.getItem('hospitalData');
         const hd = stored ? JSON.parse(stored) : {};
-        const role = (hd.role || '').toLowerCase();
-        const ROLE_ROUTES: Record<string, string> = {
-          ceo: '/hospital/ceo',
-          coo: '/hospital/coo',
-          cfo: '/hospital/cfo',
-          ms:  '/hospital/ms',
-          medical_superintendent: '/hospital/ms',
-          cmo: '/hospital/ms',
-        };
-        navigate(ROLE_ROUTES[role] || '/hospital/dashboard');
+        navigate(resolvePostLoginPath(hd.role), { replace: true });
       } catch {
-        navigate('/hospital/dashboard');
+        navigate(resolvePostLoginPath(), { replace: true });
       }
       return;
     }
     setIsCheckingAuth(false);
-  }, [navigate]);
+  }, [navigate, searchParams]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,20 +112,13 @@ const HospitalLogin = () => {
         localStorage.setItem('hospitalRefreshToken', data.refreshToken);
       }
       localStorage.setItem('userType', 'hospital');
+      localStorage.setItem('token', data.token);
       localStorage.setItem('hospitalData', JSON.stringify(data.hospital || data.user || {}));
+      window.dispatchEvent(new CustomEvent('authChange'));
 
-      // Role-based redirect for executive logins
+      // Role-based redirect for executive logins (honor ?next= for HMIS deep links)
       const role: string = (data.hospital?.role || data.user?.role || 'hospital_admin').toLowerCase();
-      const ROLE_ROUTES: Record<string, string> = {
-        ceo: '/hospital/ceo',
-        coo: '/hospital/coo',
-        cfo: '/hospital/cfo',
-        ms:  '/hospital/ms',
-        medical_superintendent: '/hospital/ms',
-        cmo: '/hospital/ms',
-        chief_medical_officer: '/hospital/ms',
-      };
-      navigate(ROLE_ROUTES[role] || '/hospital/dashboard');
+      navigate(resolvePostLoginPath(role), { replace: true });
     } catch (err: any) {
       console.error('Hospital login error:', err);
       if (err?.response?.status === 429) {

@@ -86,6 +86,15 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    label: 'HealthOS',
+    modules: [
+      { title: 'HealthOS Platform', description: 'Living patient workspace & care network', path: '/hmis/healthos', icon: HeartPulse, gradient: 'from-teal-500 to-emerald-600', badge: 'NEW' },
+      { title: 'Living Patient Workspace', description: 'Unified patient timeline & care team', path: '/hmis/patient/1/healthos', icon: Stethoscope, gradient: 'from-cyan-500 to-teal-600' },
+      { title: 'Hospital Copilot', description: 'AI assistant for hospital workflows', path: '/hmis/hospital-copilot', icon: Sparkles, gradient: 'from-violet-500 to-purple-600', badge: 'AI' },
+      { title: 'Care Command Center', description: 'Real-time ops & clinical KPIs', path: '/hmis/command-center', icon: LayoutGrid, gradient: 'from-teal-600 to-cyan-700' },
+    ],
+  },
+  {
     label: 'AI & Telehealth',
     modules: [
       { title: 'AI Scribe', description: 'Ambient voice-to-note', path: '/hospital/ai-scribe', icon: Mic, gradient: 'from-violet-500 to-indigo-600', badge: 'AI' },

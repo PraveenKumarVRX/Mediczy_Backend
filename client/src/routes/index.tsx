@@ -1048,6 +1048,9 @@ const AppRoutes = () => {
         <Route path="/hospital/patients"                   element={<HospitalPatientsPage />} />
         <Route path="/hospital/doctors"                    element={<HospitalDoctorsManagement />} />
         <Route path="/hospital/opd-ipd"                    element={<Navigate to="/hmis/command-center" replace />} />
+        <Route path="/hospital/healthos"                   element={<Navigate to="/hmis/healthos" replace />} />
+        <Route path="/hospital/careos"                     element={<Navigate to="/hmis/careos" replace />} />
+        <Route path="/hospital/hospital-copilot"           element={<Navigate to="/hmis/hospital-copilot" replace />} />
         <Route path="/hospital/pharmacy"                   element={<HospitalPharmacyPage />} />
         <Route path="/hospital/lab-reports"                element={<HospitalLabReportsPage />} />
         <Route path="/hospital/billing"                    element={<HospitalBillingPage />} />

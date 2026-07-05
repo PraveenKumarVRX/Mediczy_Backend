@@ -260,6 +260,53 @@ api.interceptors.response.use(
       }
     }
 
+    // Hospital 401 — silent refresh before evicting HMIS / hospital sessions
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      typeof window !== "undefined" &&
+      getUserType() === "hospital"
+    ) {
+      originalRequest._retry = true;
+      const refreshToken = window.localStorage.getItem("hospitalRefreshToken");
+      if (refreshToken) {
+        try {
+          const { data } = await axios.post(
+            `${api.defaults.baseURL}/hospital/auth/refresh`,
+            { refreshToken },
+            { skipAuth: true } as any
+          );
+          const nextToken = data.token || data.accessToken;
+          if (nextToken) {
+            window.localStorage.setItem("hospitalToken", nextToken);
+            window.localStorage.setItem("token", nextToken);
+            if (data.refreshToken) {
+              window.localStorage.setItem("hospitalRefreshToken", data.refreshToken);
+            }
+            window.dispatchEvent(new CustomEvent("authChange"));
+            (originalRequest as any).headers = {
+              ...(originalRequest.headers || {}),
+              Authorization: `Bearer ${nextToken}`,
+            };
+            return api(originalRequest);
+          }
+        } catch {
+          // fall through to clear session
+        }
+      }
+
+      window.localStorage.removeItem("hospitalToken");
+      window.localStorage.removeItem("hospitalRefreshToken");
+      window.localStorage.removeItem("hospitalData");
+      window.localStorage.removeItem("token");
+      window.localStorage.removeItem("userType");
+      const next = encodeURIComponent(window.location.pathname + window.location.search);
+      if (!window.location.pathname.startsWith("/hospital/login")) {
+        window.location.href = `/hospital/login?next=${next}`;
+      }
+      return Promise.reject(error);
+    }
+
     // Doctor 401 — try silent refresh first, then clear and redirect
     if (
       error.response?.status === 401 &&
