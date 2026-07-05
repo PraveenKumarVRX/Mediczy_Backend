@@ -1,6 +1,6 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { Sparkles } from 'lucide-react';
+import { ArrowLeft, Sparkles } from 'lucide-react';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { HOSPITAL_OS_NAV, hospitalOsPath } from '@/config/hospitalOsNav.config';
 
@@ -17,6 +17,9 @@ export default function HospitalOSShell() {
       <div className="min-h-screen bg-slate-50">
         <div className="border-b bg-white sticky top-0 z-20">
           <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
+            <Link to="/hospital/os" className="text-muted-foreground hover:text-slate-800">
+              <ArrowLeft className="h-5 w-5" />
+            </Link>
             <Sparkles className="h-6 w-6 text-violet-600" />
             <div>
               <h1 className="text-lg font-bold text-slate-800">Hospital OS 2035</h1>
