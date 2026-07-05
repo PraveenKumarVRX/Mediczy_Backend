@@ -347,6 +347,28 @@ router.post('/ecosystem/federation/trust', ...doctorOnly, async (req, res) => {
   res.json({ success: true, data });
 });
 
+router.get('/ecosystem/federation/gateway/status', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.getGatewayStatus(orgId(req)) });
+});
+
+router.post('/ecosystem/federation/gateway/proxy', ...doctorOnly, async (req, res) => {
+  try {
+    const data = await careos.proxyFhirToOrg({
+      fromOrgNetworkId: req.body.fromOrgNetworkId,
+      toOrgNetworkId: req.body.toOrgNetworkId,
+      method: req.body.method || 'GET',
+      fhirPath: req.body.fhirPath,
+      body: req.body.body,
+      actorUserId: req.user.id,
+      actorOrgId: orgId(req),
+      patientId: req.body.patientId,
+    });
+    res.json({ success: true, data });
+  } catch (e) {
+    res.status(400).json({ success: false, error: e.message });
+  }
+});
+
 // ── Ecosystem: Global Clinical Board ───────────────────────────────────────────
 router.post('/ecosystem/global-board/start', ...doctorOnly, async (req, res) => {
   const data = await careos.startGlobalClinicalBoard({
@@ -422,6 +444,15 @@ router.get('/expand/monitoring/:patientId', ...clinical, async (req, res) => {
 });
 router.post('/expand/monitoring/:patientId', ...clinical, async (req, res) => {
   res.json({ success: true, data: await careos.ingestWearableReading({ organizationId: orgId(req), patientId: pid(req), ...req.body }) });
+});
+
+router.get('/expand/imaging/:patientId', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.listPatientImagingStudies(pid(req), orgId(req)) });
+});
+router.get('/expand/imaging/study/:studyUID', ...clinical, async (req, res) => {
+  const data = await careos.getImagingStudy(req.params.studyUID, orgId(req));
+  if (!data) return res.status(404).json({ success: false, error: 'Study not found' });
+  res.json({ success: true, data });
 });
 
 // ── STAGE 3: Network ───────────────────────────────────────────────────────────

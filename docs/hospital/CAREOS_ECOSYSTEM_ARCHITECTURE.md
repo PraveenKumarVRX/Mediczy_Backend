@@ -196,7 +196,7 @@ Existing platform assets to extend:
               (consent, FHIR bundles, translate)
 ```
 
-Phase 1 runs **single-tenant** with federation tables ready. Multi-tenant federation gateway is Stage 3.
+Phase 1 runs **single-tenant** with federation tables ready. **Multi-tenant federation gateway** is available via `federation-gateway.service.js` (trust validation + FHIR proxy + HyperGrid edge gateways). DICOMweb is available via HyperGrid `/api/hypergrid/dicom`.
 
 ---
 

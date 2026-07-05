@@ -55,6 +55,7 @@ const STAGE_DEFS = {
       { id: 'pharmacy', label: 'Pharmacy Fulfillment', table: 'healthos_pharmacy_orders' },
       { id: 'homecare', label: 'Care Home Visits', table: 'healthos_homecare_visits' },
       { id: 'wearables', label: 'Wearables Monitoring', table: 'healthos_wearable_readings' },
+      { id: 'imaging', label: 'DICOMweb Imaging (HyperGrid)', table: 'hg_dicom_studies' },
       { id: 'passport', label: 'Medical Passport', table: 'careos_patient_passports' },
       { id: 'identity', label: 'Care Identity', table: 'careos_professional_identity' },
       { id: 'graph', label: 'Care Graph', table: 'careos_graph_nodes' },
@@ -65,6 +66,7 @@ const STAGE_DEFS = {
     goal: 'Cross-organization and cross-border collaboration',
     modules: [
       { id: 'federation', label: 'Care Cloud Federation', table: 'careos_network_orgs' },
+      { id: 'federation_gateway', label: 'Multi-tenant Federation Gateway', table: 'careos_federation_trust' },
       { id: 'referrals', label: 'Federated Referrals', table: 'healthos_referrals' },
       { id: 'documents', label: 'Document / Imaging Exchange', table: 'healthos_document_exchanges' },
       { id: 'global_board', label: 'Global Clinical Board', table: 'careos_global_sessions' },

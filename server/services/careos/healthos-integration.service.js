@@ -80,4 +80,47 @@ export async function syncWearablesFromAppleHealth(userId, patientId, organizati
   return { synced: synced.length, readings: synced };
 }
 
-export default { syncLabsFromFhir, syncWearablesFromAppleHealth };
+export async function listPatientImagingStudies(patientId, tenantId) {
+  const { rows } = await pool.query(
+    `SELECT s.id, s.study_instance_uid, s.study_uid, s.patient_id,
+            s.modality, s.study_date, s.study_description, s.patient_name,
+            COUNT(i.id) AS instance_count
+     FROM hg_dicom_studies s
+     LEFT JOIN hg_dicom_instances i
+       ON (i.study_instance_uid = s.study_instance_uid OR i.study_id = s.id)
+     WHERE s.patient_id = $1 AND s.tenant_id = $2
+     GROUP BY s.id
+     ORDER BY s.study_date DESC NULLS LAST, s.created_at DESC
+     LIMIT 50`,
+    [patientId, tenantId]
+  ).catch(() => ({ rows: [] }));
+  return rows.map((r) => ({
+    ...r,
+    studyUID: r.study_instance_uid || r.study_uid,
+    dicomwebUrl: `/api/hypergrid/dicom/studies/${r.study_instance_uid || r.study_uid}`,
+  }));
+}
+
+export async function getImagingStudy(studyUID, tenantId) {
+  const { rows } = await pool.query(
+    `SELECT * FROM hg_dicom_studies
+     WHERE (study_instance_uid = $1 OR study_uid = $1) AND tenant_id = $2 LIMIT 1`,
+    [studyUID, tenantId]
+  ).catch(() => ({ rows: [] }));
+  const study = rows[0];
+  if (!study) return null;
+  const uid = study.study_instance_uid || study.study_uid;
+  const { rows: instances } = await pool.query(
+    `SELECT * FROM hg_dicom_instances
+     WHERE study_instance_uid = $1 OR study_id = $2`,
+    [uid, study.id]
+  ).catch(() => ({ rows: [] }));
+  return {
+    study,
+    instances,
+    studyUID: uid,
+    dicomwebBase: `/api/hypergrid/dicom/studies/${uid}`,
+  };
+}
+
+export default { syncLabsFromFhir, syncWearablesFromAppleHealth, listPatientImagingStudies, getImagingStudy };

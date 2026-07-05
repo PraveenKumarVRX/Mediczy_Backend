@@ -310,3 +310,30 @@ export async function createPharmacyOrder(patientId: number, body: { drugName: s
   const res = await api.post(`/v3/healthos/expand/pharmacy/${patientId}`, body);
   return res.data;
 }
+
+export async function listPatientImaging(patientId: number) {
+  const res = await api.get(`/v3/healthos/expand/imaging/${patientId}`);
+  return res.data;
+}
+
+export async function getImagingStudy(studyUID: string) {
+  const res = await api.get(`/v3/healthos/expand/imaging/study/${studyUID}`);
+  return res.data;
+}
+
+export async function getFederationGatewayStatus() {
+  const res = await api.get('/v3/healthos/ecosystem/federation/gateway/status');
+  return res.data;
+}
+
+export async function proxyFhirToOrg(body: {
+  fromOrgNetworkId: number;
+  toOrgNetworkId: number;
+  fhirPath: string;
+  method?: string;
+  body?: unknown;
+  patientId?: number;
+}) {
+  const res = await api.post('/v3/healthos/ecosystem/federation/gateway/proxy', body);
+  return res.data;
+}

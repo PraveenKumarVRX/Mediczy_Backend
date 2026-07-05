@@ -473,6 +473,7 @@ async function runApiTests(client) {
   const healthosRoutes = [
     { path: '/api/v3/healthos/health', label: 'HealthOS health/capabilities' },
     { path: '/api/v3/healthos/platform/status', label: 'HealthOS platform status' },
+    { path: '/api/v3/healthos/ecosystem/federation/gateway/status', label: 'Federation gateway status' },
     { path: '/api/v3/careos/health', label: 'CareOS alias health' },
   ];
   for (const route of healthosRoutes) {

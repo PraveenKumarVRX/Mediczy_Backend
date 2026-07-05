@@ -8,6 +8,7 @@ import { ArrowLeft, Globe, Users, FileText, Languages } from 'lucide-react';
 import {
   startGlobalClinicalBoard, joinGlobalBoard, listNetworkOrgs,
   createReferral, shareDocument, translateClinical, listReferrals,
+  listPatientImaging,
 } from '@/services/careos.service';
 import { HEALTH_OS } from '@/config/brand';
 
@@ -26,6 +27,8 @@ export default function GlobalClinicalBoard() {
   const [translateText, setTranslateText] = useState('');
   const [translateResult, setTranslateResult] = useState('');
   const [targetLang, setTargetLang] = useState('hi');
+  const [imagingStudies, setImagingStudies] = useState<any[]>([]);
+  const [selectedStudyUid, setSelectedStudyUid] = useState('');
 
   const loadOrgs = async () => {
     const res = await listNetworkOrgs();
@@ -64,10 +67,16 @@ export default function GlobalClinicalBoard() {
     await shareDocument({
       patientId: pid,
       globalSessionId: session?.id,
-      documentType: 'clinical_summary',
-      title: docTitle || 'Clinical summary',
+      documentType: selectedStudyUid ? 'dicom_imaging' : 'clinical_summary',
+      title: docTitle || (selectedStudyUid ? 'DICOM imaging study' : 'Clinical summary'),
       fhirBundle: { resourceType: 'Bundle', type: 'document' },
+      dicomStudyUid: selectedStudyUid || undefined,
     });
+  };
+
+  const loadImaging = async () => {
+    const res = await listPatientImaging(pid);
+    setImagingStudies(res?.data || []);
   };
 
   const translate = async () => {
@@ -129,10 +138,26 @@ export default function GlobalClinicalBoard() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle className="text-base flex items-center gap-2"><FileText className="h-4 w-4" /> Share document</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><FileText className="h-4 w-4" /> Share document / imaging</CardTitle></CardHeader>
             <CardContent className="space-y-2">
               <Input placeholder="Document title" value={docTitle} onChange={(e) => setDocTitle(e.target.value)} />
+              <Button variant="outline" size="sm" onClick={loadImaging}>Load DICOMweb studies</Button>
+              {imagingStudies.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {imagingStudies.map((s) => (
+                    <Badge
+                      key={s.studyUID || s.id}
+                      variant={selectedStudyUid === (s.studyUID || s.study_instance_uid) ? 'default' : 'outline'}
+                      className="cursor-pointer text-[10px]"
+                      onClick={() => setSelectedStudyUid(s.studyUID || s.study_instance_uid)}
+                    >
+                      {s.modality || 'IMG'} — {s.study_description || s.studyUID}
+                    </Badge>
+                  ))}
+                </div>
+              )}
               <Button onClick={shareDoc} disabled={!session}>Share to board</Button>
+              {selectedStudyUid && <p className="text-xs text-muted-foreground">DICOMweb: /api/hypergrid/dicom/studies/{selectedStudyUid}</p>}
             </CardContent>
           </Card>
 

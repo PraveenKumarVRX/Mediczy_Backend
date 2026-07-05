@@ -24,8 +24,9 @@ import { publishGlobalCase, searchGlobalCases } from './global-knowledge.service
 import { detectNetworkSignals, listNetworkSignals, resolveSignal } from './hospital-network-signals.service.js';
 import { listMarketplaceApps, installApp, listInstalledApps } from './marketplace.service.js';
 import { createApiKey, listApiKeys, registerWebhook, listWebhooks, revokeApiKey } from './developer-platform.service.js';
-import { syncLabsFromFhir, syncWearablesFromAppleHealth } from './healthos-integration.service.js';
+import { syncLabsFromFhir, syncWearablesFromAppleHealth, listPatientImagingStudies, getImagingStudy } from './healthos-integration.service.js';
 import { dispatchWebhooks } from './webhook-delivery.service.js';
+import { getGatewayStatus, proxyFhirToOrg } from './federation-gateway.service.js';
 import { listTrials, matchTrialsForPatient, exportRWE } from './research-platform.service.js';
 import { getGovernmentDashboard, submitGovernmentReport, simulatePandemic } from './government-health.service.js';
 import { registerEmergencyResource, searchEmergencyResources, getEmergencyNetworkSummary } from './emergency-network.service.js';
@@ -120,7 +121,11 @@ export {
   revokeApiKey,
   syncLabsFromFhir,
   syncWearablesFromAppleHealth,
+  listPatientImagingStudies,
+  getImagingStudy,
   dispatchWebhooks,
+  getGatewayStatus,
+  proxyFhirToOrg,
 };
 
 export default {
@@ -208,5 +213,9 @@ export default {
   revokeApiKey,
   syncLabsFromFhir,
   syncWearablesFromAppleHealth,
+  listPatientImagingStudies,
+  getImagingStudy,
   dispatchWebhooks,
+  getGatewayStatus,
+  proxyFhirToOrg,
 };

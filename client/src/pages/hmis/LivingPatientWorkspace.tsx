@@ -26,6 +26,7 @@ import {
   publishFamilyUpdate,
   listFamilyUpdates,
   syncFhirLabs,
+  listPatientImaging,
 } from '@/services/careos.service';
 
 const SEVERITY_STYLE: Record<string, string> = {
@@ -52,6 +53,7 @@ export default function LivingPatientWorkspace() {
   const [familyTitle, setFamilyTitle] = useState('');
   const [familyBody, setFamilyBody] = useState('');
   const [familyUpdates, setFamilyUpdates] = useState<any[]>([]);
+  const [imagingStudies, setImagingStudies] = useState<any[]>([]);
 
   const load = useCallback(async () => {
     if (!pid) return;
@@ -226,7 +228,7 @@ export default function LivingPatientWorkspace() {
               <TabsTrigger value="pathway">Treatment Pathway</TabsTrigger>
               <TabsTrigger value="tasks">Tasks</TabsTrigger>
               <TabsTrigger value="playback">Clinical Playback</TabsTrigger>
-              <TabsTrigger value="ecosystem">Ecosystem</TabsTrigger>
+              <TabsTrigger value="ecosystem" onClick={() => listPatientImaging(pid).then((r) => setImagingStudies(r?.data || [])).catch(() => {})}>Ecosystem</TabsTrigger>
               <TabsTrigger value="mdt">Clinical Board</TabsTrigger>
               <TabsTrigger value="family" onClick={() => loadFamily()}>Family</TabsTrigger>
             </TabsList>
@@ -424,6 +426,18 @@ export default function LivingPatientWorkspace() {
                       <p key={m.metricType}>{m.metricType}: {m.latest?.value} (avg {Math.round(m.avg)})</p>
                     ))}
                     {!workspace?.sections?.monitoring?.summary?.length && <p className="text-muted-foreground">No wearable data</p>}
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader><CardTitle className="text-base">DICOMweb Imaging</CardTitle></CardHeader>
+                  <CardContent className="text-sm space-y-1">
+                    {imagingStudies.slice(0, 5).map((s: any) => (
+                      <p key={s.studyUID || s.id}>
+                        {s.modality || 'IMG'} — {s.study_description || s.studyUID}
+                        <span className="text-muted-foreground text-xs ml-1">({s.instance_count || 0} instances)</span>
+                      </p>
+                    ))}
+                    {!imagingStudies.length && <p className="text-muted-foreground">No DICOM studies — HyperGrid PACS</p>}
                   </CardContent>
                 </Card>
                 <Card>

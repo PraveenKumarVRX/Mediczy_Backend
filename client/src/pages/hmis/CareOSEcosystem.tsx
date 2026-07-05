@@ -15,6 +15,7 @@ import {
   installMarketplaceApp, listInstalledApps, createApiKey, listApiKeys, revokeApiKey,
   registerWebhook, listWebhooks, listReferrals, createReferral, acceptReferral,
   listClinicalTrials, getPopulationDashboard, resolveSignal, detectNetworkSignals,
+  getFederationGatewayStatus,
 } from '@/services/careos.service';
 import { HEALTH_OS } from '@/config/brand';
 
@@ -34,6 +35,7 @@ export default function CareOSEcosystem() {
   const [gov, setGov] = useState<any>(null);
   const [emergency, setEmergency] = useState<any>(null);
   const [signals, setSignals] = useState<any[]>([]);
+  const [gateway, setGateway] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [actionMsg, setActionMsg] = useState('');
 
@@ -188,7 +190,10 @@ export default function CareOSEcosystem() {
           <div className="bg-teal-900/50 border border-teal-600 rounded-lg px-4 py-2 text-sm text-teal-100">{actionMsg}</div>
         )}
 
-        <Tabs defaultValue="overview" onValueChange={(v) => { if (v === 'platform' || v === 'network') loadStage4(); }}>
+        <Tabs defaultValue="overview" onValueChange={(v) => {
+          if (v === 'platform' || v === 'network') loadStage4();
+          if (v === 'network') getFederationGatewayStatus().then((r) => setGateway(r?.data)).catch(() => {});
+        }}>
           <TabsList className="bg-white/10">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="stages">All Stages</TabsTrigger>
@@ -245,17 +250,30 @@ export default function CareOSEcosystem() {
                 </CardContent>
               </Card>
               <Card className="bg-white/5 border-white/10 text-white">
-                <CardHeader><CardTitle className="text-base flex items-center gap-2"><UserCircle className="h-4 w-4" /> Care Identity</CardTitle></CardHeader>
-                <CardContent className="text-sm">
-                  {identity ? (
+                <CardHeader><CardTitle className="text-base flex items-center gap-2"><Network className="h-4 w-4" /> Federation Gateway</CardTitle></CardHeader>
+                <CardContent className="text-sm space-y-1">
+                  {gateway ? (
                     <>
-                      <p className="font-mono text-xs text-teal-300">{identity.careos_professional_id}</p>
-                      <p>{identity.display_name}</p>
+                      <p>Multitenancy: <strong>{gateway.multitenancy}</strong></p>
+                      <p>Active trusts: <strong>{gateway.activeTrusts}</strong></p>
+                      <p>Edge gateways: <strong>{gateway.edgeGateways?.online}/{gateway.edgeGateways?.total} online</strong></p>
+                      <p className="text-xs text-slate-400">{(gateway.capabilities || []).join(' · ')}</p>
                     </>
-                  ) : <p className="text-slate-400">Clinician login required</p>}
+                  ) : <p className="text-slate-400">Loading gateway status…</p>}
                 </CardContent>
               </Card>
             </div>
+            <Card className="bg-white/5 border-white/10 text-white">
+              <CardHeader><CardTitle className="text-base flex items-center gap-2"><UserCircle className="h-4 w-4" /> Care Identity</CardTitle></CardHeader>
+              <CardContent className="text-sm">
+                {identity ? (
+                  <>
+                    <p className="font-mono text-xs text-teal-300">{identity.careos_professional_id}</p>
+                    <p>{identity.display_name}</p>
+                  </>
+                ) : <p className="text-slate-400">Clinician login required</p>}
+              </CardContent>
+            </Card>
 
             {orgs.length > 0 && (
               <Card className="bg-white/5 border-white/10 text-white">
