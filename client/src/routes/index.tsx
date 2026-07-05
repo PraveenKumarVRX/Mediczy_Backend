@@ -1045,6 +1045,12 @@ const AppRoutes = () => {
         <Route path="/doctor/imaging"             element={<DoctorImaging />} />
         <Route path="/doctor/webinars"            element={<DoctorWebinarDashboard />} />
         <Route path="/doctor/webinar/:webinarId/host" element={<WebinarRoomPage isHost={true} />} />
+        {/* HealthOS — explicit routes (also mounted via portalClinicalRoutes below) */}
+        <Route path="/doctor/healthos" element={<CareOSEcosystem />} />
+        <Route path="/doctor/careos" element={<CareOSEcosystem />} />
+        <Route path="/doctor/copilot" element={<HospitalCopilot />} />
+        <Route path="/doctor/patient/:patientId/healthos" element={<LivingPatientWorkspace />} />
+        <Route path="/doctor/patient/:patientId/careos" element={<LivingPatientWorkspace />} />
         {portalClinicalRoutes("doctor", CLINICAL_PAGES)}
 
         {/* ── Webinars ───────────────────────────────────────────────── */}
@@ -1092,6 +1098,11 @@ const AppRoutes = () => {
         <Route path="/hospital/notifications"              element={<HospitalNotifications />} />
         <Route path="/hospital/settings"                   element={<HospitalSettingsPage />} />
         <Route path="/hospital/support"                    element={<HospitalSupportPage />} />
+        <Route path="/hospital/healthos" element={<CareOSEcosystem />} />
+        <Route path="/hospital/careos" element={<CareOSEcosystem />} />
+        <Route path="/hospital/copilot" element={<HospitalCopilot />} />
+        <Route path="/hospital/command-center" element={<CommandCenter />} />
+        <Route path="/hospital/patient/:patientId/healthos" element={<LivingPatientWorkspace />} />
         {portalClinicalRoutes("hospital", CLINICAL_PAGES)}
 
         {/* ── Clinic ──────────────────────────────────────────────────── */}
