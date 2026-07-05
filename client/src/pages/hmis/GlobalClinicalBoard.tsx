@@ -11,10 +11,12 @@ import {
   listPatientImaging,
 } from '@/services/careos.service';
 import { HEALTH_OS } from '@/config/brand';
+import { useClinicalPaths } from '@/hooks/useClinicalPaths';
 
 export default function GlobalClinicalBoard() {
   const { patientId } = useParams<{ patientId: string }>();
   const navigate = useNavigate();
+  const paths = useClinicalPaths();
   const pid = Number(patientId);
 
   const [session, setSession] = useState<any>(null);
@@ -94,7 +96,7 @@ export default function GlobalClinicalBoard() {
             <p className="text-sm text-muted-foreground">Patient {patientId} — {HEALTH_OS.brandLine}</p>
           </div>
           <Button variant="outline" size="sm" asChild className="ml-auto">
-            <Link to={`/hmis/patient/${patientId}/healthos`}>Workspace</Link>
+            <Link to={paths.patientHealthos(patientId!)}>Workspace</Link>
           </Button>
         </div>
 

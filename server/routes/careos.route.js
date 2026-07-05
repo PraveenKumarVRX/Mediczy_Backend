@@ -6,7 +6,7 @@ import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import careos from '../services/careos/index.js';
 
 const router = Router();
-const clinical = [authUser, requireRole(['doctor', 'nurse', 'admin', 'assistant'])];
+const clinical = [authUser, requireRole(['doctor', 'nurse', 'admin', 'assistant', 'hospital'])];
 const doctorOnly = [authUser, requireRole(['doctor', 'admin'])];
 
 function orgId(req) {

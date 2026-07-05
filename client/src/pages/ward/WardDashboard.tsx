@@ -234,23 +234,23 @@ export default function WardDashboard() {
                             )}
                             {bed.admission_id && bed.patient_id && (
                               <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-20 hidden group-hover:flex flex-col gap-0.5 bg-white border border-slate-200 rounded-lg shadow-lg p-1 min-w-[130px]">
-                                <button onClick={() => navigate(`/hmis/patient/${bed.patient_id}/timeline`)}
+                                <button onClick={() => navigate(`/hospital/patient/${bed.patient_id}/timeline`)}
                                   className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-teal-50 text-slate-700 whitespace-nowrap">
                                   <HeartPulse className="h-3 w-3 text-teal-600" /> Timeline
                                 </button>
-                                <button onClick={() => navigate(`/hmis/admission/${bed.admission_id}/nursing-tasks`)}
+                                <button onClick={() => navigate(`/hospital/admission/${bed.admission_id}/nursing-tasks`)}
                                   className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-blue-50 text-slate-700 whitespace-nowrap">
                                   <ClipboardList className="h-3 w-3 text-blue-600" /> Nursing Tasks
                                 </button>
-                                <button onClick={() => navigate(`/hmis/admission/${bed.admission_id}/discharge`)}
+                                <button onClick={() => navigate(`/hospital/admission/${bed.admission_id}/discharge`)}
                                   className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-emerald-50 text-slate-700 whitespace-nowrap">
                                   <FileText className="h-3 w-3 text-emerald-600" /> Discharge
                                 </button>
-                                <button onClick={() => navigate(`/hmis/patient/${bed.patient_id}/follow-up`)}
+                                <button onClick={() => navigate(`/hospital/patient/${bed.patient_id}/follow-up`)}
                                   className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-purple-50 text-slate-700 whitespace-nowrap">
                                   <Calendar className="h-3 w-3 text-purple-600" /> Follow-up
                                 </button>
-                                <button onClick={() => navigate(`/hmis/admission/${bed.admission_id}/echart`)}
+                                <button onClick={() => navigate(`/hospital/admission/${bed.admission_id}/echart`)}
                                   className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-teal-50 text-slate-700 whitespace-nowrap">
                                   <Activity className="h-3 w-3 text-teal-600" /> E-Chart
                                 </button>
@@ -376,7 +376,7 @@ export default function WardDashboard() {
                       size="sm"
                       variant="outline"
                       className="mt-2 h-6 text-xs w-full"
-                      onClick={() => navigate('/hmis/emar')}
+                      onClick={() => navigate('/hospital/emar')}
                     >
                       Mark Given
                     </Button>
@@ -397,8 +397,8 @@ export default function WardDashboard() {
                   { label: 'Admit Patient',     path: '/hospital/adt/admit',         icon: Plus,          cls: 'bg-blue-600 text-white hover:bg-blue-700' },
                   { label: 'Transfer Bed',       path: '/hospital/adt/transfer',       icon: ArrowRight,    cls: 'bg-amber-500 text-white hover:bg-amber-600' },
                   { label: 'Record Vitals',      path: '/hospital/vitals/record',      icon: Heart,         cls: 'bg-teal-600 text-white hover:bg-teal-700' },
-                  { label: 'Initiate Discharge', path: '/hmis/discharge-board',      icon: TrendingDown,  cls: 'bg-emerald-600 text-white hover:bg-emerald-700' },
-                  { label: 'E-Charting',         path: '/hmis/echart',                 icon: ClipboardList, cls: 'bg-purple-600 text-white hover:bg-purple-700' },
+                  { label: 'Initiate Discharge', path: '/hospital/discharge-board',      icon: TrendingDown,  cls: 'bg-emerald-600 text-white hover:bg-emerald-700' },
+                  { label: 'E-Charting',         path: '/hospital/echart',                 icon: ClipboardList, cls: 'bg-purple-600 text-white hover:bg-purple-700' },
                 ].map(a => (
                   <Button
                     key={a.label}

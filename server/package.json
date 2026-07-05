@@ -47,7 +47,9 @@
     "ops:activate-subscription": "node scripts/admin/activate-user-subscription.mjs",
     "test:team-booking-alert": "node scripts/smoke-team-booking-alert.mjs",
     "test:team-booking-alert:send": "node scripts/smoke-team-booking-alert.mjs --send",
-    "test:healthos-smoke": "node scripts/healthos-smoke.mjs"
+    "test:healthos-smoke": "node scripts/healthos-smoke.mjs",
+    "test:portal-healthos-smoke": "node scripts/portal-healthos-smoke.mjs",
+    "test:ring-fence-healthos-sanity": "node scripts/ring-fence-healthos-sanity.mjs"
   },
   "keywords": [],
   "author": "",

@@ -129,7 +129,56 @@ export const getUserType = () => {
     | null;
 };
 
-// Function to get stored token
+/** Portal token keys allowed to open HMIS / HealthOS consoles */
+export const HMIS_PORTAL_TOKEN_KEYS = [
+  "hospitalToken",
+  "doctorToken",
+  "nurseToken",
+  "assistantToken",
+  "adminToken",
+] as const;
+
+/** Basic JWT shape check — does not validate signature or expiry */
+export const looksLikeJwt = (raw: string | null | undefined): boolean => {
+  if (!raw) return false;
+  const trimmed = String(raw).trim().replace(/^bearer\s+/i, "");
+  if (!trimmed || ["undefined", "null", "nan", "false"].includes(trimmed.toLowerCase())) {
+    return false;
+  }
+  const parts = trimmed.split(".");
+  return parts.length === 3 && parts.every((part) => part.length >= 2);
+};
+
+/**
+ * Route-gate check for HMIS pages. Mirrors useHospitalAuth leniency:
+ * accept a stored portal JWT or a recoverable hospital refresh session.
+ */
+export const hasHmisPortalSession = (): boolean => {
+  if (HMIS_PORTAL_TOKEN_KEYS.some((key) => looksLikeJwt(localStorage.getItem(key)))) {
+    return true;
+  }
+  return (
+    looksLikeJwt(localStorage.getItem("hospitalRefreshToken")) &&
+    !!localStorage.getItem("hospitalData")
+  );
+};
+
+export const hasHospitalPortalSession = (): boolean => {
+  if (looksLikeJwt(localStorage.getItem("hospitalToken"))) return true;
+  return (
+    looksLikeJwt(localStorage.getItem("hospitalRefreshToken")) &&
+    !!localStorage.getItem("hospitalData")
+  );
+};
+
+/** Prevent open-redirects while honoring in-app return paths */
+export const getSafeRedirectPath = (next: string | null | undefined): string | null => {
+  if (!next) return null;
+  const decoded = next.trim();
+  if (!decoded.startsWith("/") || decoded.startsWith("//")) return null;
+  return decoded;
+};
+
 export const getToken = () => {
   const normalizeToken = (raw: string | null): string | null => {
     if (!raw) return null;

@@ -411,6 +411,10 @@ const USER_TYPE_PERMISSIONS = {
       '/api/v1/lab-rules',
       '/api/v1/hl7',
       '/api/fhir',
+      '/api/v3/healthos',
+      '/api/v3/careos',
+      '/api/v3/hospital-os',
+      '/api/hypergrid',
     ],
     tokenField: 'hospitalId'
   },

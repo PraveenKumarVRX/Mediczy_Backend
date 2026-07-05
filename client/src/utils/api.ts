@@ -92,7 +92,11 @@ api.interceptors.request.use(
     const prefersHospitalToken =
       /^\/(v1\/(adt|beds|emar|vitals|clinical-workspace|discharge|analytics|nursing|navigation|echart|follow-up|recovery|hl7|fhir|reports|ot|ai-|charge-master|billing))/i.test(requestPath) ||
       requestPath.startsWith('/hospital/') ||
-      requestPath.startsWith('/v3/module-copilot/');
+      requestPath.startsWith('/v3/module-copilot/') ||
+      requestPath.startsWith('/v3/healthos/') ||
+      requestPath.startsWith('/v3/careos/') ||
+      requestPath.startsWith('/v3/hospital-os/') ||
+      requestPath.startsWith('/hypergrid/');
 
     if (prefersHospitalToken && typeof window !== 'undefined') {
       const hospitalToken = localStorage.getItem('hospitalToken');
@@ -254,6 +258,53 @@ api.interceptors.response.use(
       if (!window.location.pathname.startsWith("/crm/login")) {
         window.location.href = "/crm/login";
       }
+    }
+
+    // Hospital 401 — silent refresh before evicting HMIS / hospital sessions
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      typeof window !== "undefined" &&
+      getUserType() === "hospital"
+    ) {
+      originalRequest._retry = true;
+      const refreshToken = window.localStorage.getItem("hospitalRefreshToken");
+      if (refreshToken) {
+        try {
+          const { data } = await axios.post(
+            `${api.defaults.baseURL}/hospital/auth/refresh`,
+            { refreshToken },
+            { skipAuth: true } as any
+          );
+          const nextToken = data.token || data.accessToken;
+          if (nextToken) {
+            window.localStorage.setItem("hospitalToken", nextToken);
+            window.localStorage.setItem("token", nextToken);
+            if (data.refreshToken) {
+              window.localStorage.setItem("hospitalRefreshToken", data.refreshToken);
+            }
+            window.dispatchEvent(new CustomEvent("authChange"));
+            (originalRequest as any).headers = {
+              ...(originalRequest.headers || {}),
+              Authorization: `Bearer ${nextToken}`,
+            };
+            return api(originalRequest);
+          }
+        } catch {
+          // fall through to clear session
+        }
+      }
+
+      window.localStorage.removeItem("hospitalToken");
+      window.localStorage.removeItem("hospitalRefreshToken");
+      window.localStorage.removeItem("hospitalData");
+      window.localStorage.removeItem("token");
+      window.localStorage.removeItem("userType");
+      const next = encodeURIComponent(window.location.pathname + window.location.search);
+      if (!window.location.pathname.startsWith("/hospital/login")) {
+        window.location.href = `/hospital/login?next=${next}`;
+      }
+      return Promise.reject(error);
     }
 
     // Doctor 401 — try silent refresh first, then clear and redirect
