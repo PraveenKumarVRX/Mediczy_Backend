@@ -100,15 +100,22 @@ function float32ToWav(samples: Float32Array, sampleRate = 16000): Blob {
   return new Blob([buf], { type: 'audio/wav' });
 }
 
-/** Match "Hey iSHA" and common speech-recognition variants */
-const isWakePhrase = (t: string) =>
-  t.includes("hey isha") || t.includes("hey esha") || t.includes("hey yesha") ||
-  t.includes("hi isha")  || t.includes("hi esha")  || t.includes("hay isha")  ||
-  t.includes("hey eesha") || /\bisha\b/.test(t);
+/**
+ * Match "Hey iSHA" and common speech-recognition variants.
+ * "iSHA" isn't a dictionary word, so Whisper often mis-hears it as the nearest
+ * real word/name it knows — observed in production: "Hey, Sean.", "hey" (name
+ * dropped entirely). Since this screen only exists for invoking the assistant,
+ * any short "hey/hi ..." utterance is treated as a wake attempt regardless of
+ * what the second word transcribed to, not just the exact iSHA-sounding list.
+ */
+const isWakePhrase = (t: string) => {
+  if (/\b(isha|esha|yesha|eesha|aisha|asha|usha|isa)\b/.test(t)) return true;
+  return /^(hey|hi|hay|hii+|hello)\b/.test(t) && t.trim().split(/\s+/).length <= 3;
+};
 
 /** Strip the wake phrase from a transcript and return the command (if any) */
 const extractCommand = (t: string): string =>
-  t.replace(/\b(hey|hi|hay)\s+(isha|esha|yesha|eesha)\b[,\s]*/i, '').trim();
+  t.replace(/^(hey|hi|hay|hii+|hello)[,\s]+\S+\b[,\s.!?]*/i, '').trim();
 
 export default function DoctorVoiceAssistant() {
   const navigate = useNavigate();
